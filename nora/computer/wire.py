@@ -66,6 +66,7 @@ def stores(cfg: Any, engine: Any, metrics: Any)-> StoresWiring:
     computer_probe: ComputerdProbe | None = None
     computer_token: str | None = None
     if cfg.computer.enabled:
+        import nora.memory as memory
         from nora.infra.computer.client import ComputerdRuntime
 
         computer_token = _computer_token(cfg)
@@ -80,6 +81,7 @@ def stores(cfg: Any, engine: Any, metrics: Any)-> StoresWiring:
             timeout_seconds=cfg.computer.request_timeout_seconds,
             max_output_chars=cfg.computer.max_output_chars,
             observer=computer_metrics,
+            effects=memory.EffectRecorder(memory.wire.act_envelope(engine)),
         )
         computer_probe = ComputerdProbe(
             base_url=cfg.computer.base_url,
@@ -142,7 +144,7 @@ async def scoped(
             computer_redis=rt.computer_redis, computer_segments=rt.computer_segments,
             computer_tasks=rt.computer_tasks, computer_token=computer_token,
             lifecycle=rt.lifecycle, metrics=metrics, op_clock=op_clock,
-            scoped_cfg=cfg.computer.scoped, tabs=browser_tabs,
+            scoped_cfg=cfg.computer.scoped, tabs=browser_tabs, engine=engine,
         )
         if owner is not None:
             owner.own_computer(_close_scoped_acquisition(rt, queues))
@@ -195,6 +197,7 @@ def _scoped_computer_runtime(
             f"[computer.scoped] enabled but ${scoped_cfg.redis_url_env} "
             "(the dedicated nq:computer:* streams) is not set."
         )
+    import nora.memory as memory
     from nora.app.computer_queue import SegmentRegistry
     from nora.domain.computer_vms import FileScopeEndpoints
     from nora.infra.computer.lifecycle import HostLifecycleClient
@@ -202,6 +205,7 @@ def _scoped_computer_runtime(
     from nora.infra.sql.browser_tabs import SqlBrowserTabStore
     from nora.infra.sql.computer_tasks import SqlComputerTaskStore
 
+    effects = memory.EffectRecorder(memory.wire.act_envelope(engine))
     return ScopedRuntimeWiring(
         browser_tabs=SqlBrowserTabStore(engine),
         computer=ScopedComputerdRuntime(
@@ -210,6 +214,7 @@ def _scoped_computer_runtime(
             timeout_seconds=cfg.computer.request_timeout_seconds,
             max_output_chars=cfg.computer.max_output_chars,
             observer=computer_metrics,
+            effects=effects,
         ),
         computer_probe=None,
         computer_redis=aioredis.from_url(computer_redis_url),
@@ -219,7 +224,7 @@ def _scoped_computer_runtime(
         computer_tasks=SqlComputerTaskStore(engine),
         lifecycle=(
             HostLifecycleClient(
-                socket=scoped_cfg.lifecycle_socket, token=computer_token
+                socket=scoped_cfg.lifecycle_socket, token=computer_token, effects=effects,
             )
             if scoped_cfg.lifecycle_socket
             else None
@@ -257,18 +262,22 @@ def _close_scoped_acquisition(
 async def _scoped_computer_queues(
     allowlist, background, clock, compute_jobs, computer, computer_context, computer_events,
     computer_redis, computer_segments, computer_tasks, computer_token, lifecycle, metrics,
-    op_clock, scoped_cfg, tabs,
+    op_clock, scoped_cfg, tabs, engine,
 ) -> ScopedQueuesWiring:
     """The admission FIFO, task backend, queue runner and tab manager."""
+    import nora.memory as memory
     from nora.app.computer_queue import (
         ComputerAdmission,
         ComputerQueueRunner,
         ComputerTaskBackend,
         deliver_computer_task,
     )
+    from nora.app.computer_task_acts import ComputerTaskActs
     from nora.domain.computer import anything_running
     from nora.infra.computer.manager import ScopeBrowserManager
 
+    registration = engine.get_execution_options()["item_registration"]
+    acts = ComputerTaskActs(computer_redis, memory.wire.act_envelope(engine), registration.scope)
     _queue_audit, _browser_event = _computer_event_callbacks(
         background=background, clock=clock,
         computer_context=computer_context, computer_events=computer_events,
@@ -299,6 +308,7 @@ async def _scoped_computer_queues(
         reconcile=_reconcile_scope,
         audit=_queue_audit,
         lifecycle=lifecycle,
+        acts=acts,
     )
     return ScopedQueuesWiring(
         browser_manager=ScopeBrowserManager(
@@ -311,6 +321,7 @@ async def _scoped_computer_queues(
             idle_after=timedelta(seconds=scoped_cfg.browser_idle_seconds),
             on_event=_browser_event,
             lifecycle=lifecycle,
+            effects=memory.EffectRecorder(memory.wire.act_envelope(engine)),
         ),
         computer_admission=computer_admission,
         computer_queue_runner=ComputerQueueRunner(
@@ -323,6 +334,7 @@ async def _scoped_computer_queues(
             executors=computer_segments,
             audit=_queue_audit,
             lifecycle=lifecycle,
+            acts=acts,
         ),
         computer_task_backend=ComputerTaskBackend(tasks=computer_tasks),
     )
@@ -487,7 +499,7 @@ class BrowseWiring:
 
 def browse(
     browser_manager: Any, cfg: Any, computer: Any, model_client_for: Any,
-    route_model: Any,
+    route_model: Any, engine: Any,
 ) -> BrowseWiring:
 
     # `computer_browse` (ADR 0022): a sub-agent in the room's own browser, with a model
@@ -495,6 +507,8 @@ def browse(
     # `[computer]` AND `[computer.browse]` are on, so the registry withholds the tool.
     browser: BrowseAgentRunner | None = None
     if computer is not None and cfg.computer.browse.enabled:
+        import nora.memory as memory
+
         browse_cfg = cfg.computer.browse
         browser = BrowseAgentRunner(
             model_source=factory.ModelSource(
@@ -513,6 +527,7 @@ def browse(
             # own target on the scope's VM; `base_url` is only the shared-VM
             # fallback used when no manager is wired.
             manager=browser_manager,
+            effects=memory.EffectRecorder(memory.wire.act_envelope(engine)),
             settings=BrowseSettings(
                 max_steps=browse_cfg.max_steps,
                 timeout_seconds=browse_cfg.timeout_seconds,

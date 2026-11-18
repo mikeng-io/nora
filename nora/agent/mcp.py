@@ -13,13 +13,15 @@ the same shape `ReminderCaps` already uses (see `nora.agent.registry`).
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from strands.tools.mcp.mcp_client import MCPClient
+from strands.types._events import ToolResultEvent
 
 from nora.agent.catalog.groups import NATIVE_TOOL_BUDGETS
+from nora.memory import ActAuthority, ActEnvelope, Outcome, declare_act
 
 log = logging.getLogger("nora.agent.mcp")
 
@@ -43,6 +45,41 @@ class McpToolGroup:
 
     budget: int
     tools: tuple[Any, ...]
+    name: str = ""
+
+
+def _mounted_outcome(event: Any) -> Outcome | None:
+    if not isinstance(event, ToolResultEvent):
+        return None
+    return Outcome(
+        "done" if event.exception is None and event.tool_result.get("status") == "success"
+        else "uncertain"
+    )
+
+
+async def stream_mounted(
+    tool: Any, tool_use: Any, invocation_state: Any, *, mount: str,
+    envelope: ActEnvelope | None, **kwargs: Any,
+) -> AsyncIterator[Any]:
+    request_id = str(tool_use["toolUseId"])
+    if envelope is None:
+        yield ToolResultEvent({
+            "toolUseId": request_id, "status": "error",
+            "content": [{"text": "The tool's act recorder is unavailable."}],
+        })
+        return
+    act = declare_act(
+        "mcp.invoke", f"mcp:{mount}:{tool.tool_name}", event=request_id,
+        request_id=request_id, authority=ActAuthority(None),
+    )
+    duplicate = ToolResultEvent({
+        "toolUseId": request_id, "status": "error",
+        "content": [{"text": "This invocation was already recorded."}],
+    })
+    async for event in envelope.stream(
+        act, lambda: tool.stream(tool_use, invocation_state, **kwargs), _mounted_outcome, duplicate,
+    ):
+        yield event
 
 
 def build_mcp_tools(
@@ -136,5 +173,5 @@ def build_mcp_tools(
                 continue
             claimed.add(tool.tool_name)
             kept.append(tool)
-        groups[mount.name] = McpToolGroup(budget=mount.budget, tools=tuple(kept))
+        groups[mount.name] = McpToolGroup(budget=mount.budget, tools=tuple(kept), name=mount.name)
     return groups

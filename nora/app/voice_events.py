@@ -36,6 +36,7 @@ import logging
 from typing import Any
 
 from nora.infra.voice.hub import VoiceControllerHub
+from nora.memory import ActAuthority, act_event
 from nora.platform.discord.music_manager import MusicPlayerManager
 
 log = logging.getLogger("nora.app.voice_events")
@@ -104,7 +105,8 @@ class VoiceEventConsumer:
                 )
 
         try:
-            status, payload = await self._process(event_type, guild_id, body)
+            with act_event(event_id, ActAuthority(None)):
+                status, payload = await self._process(event_type, guild_id, body)
         except Exception:
             # The transition RAISED (a dead-generation play climbing
             # out of the advance, a store failure) — nothing was consumed,

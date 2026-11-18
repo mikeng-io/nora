@@ -63,7 +63,8 @@ class FakeCdp:
         self.target_lists = targets or [[{"targetId": "T0", "type": "page", "url": "about:blank"}]]
 
     async def call(self, method: str, params: dict[str, Any] | None = None, *,
-                   session_id: str | None = None, wait_s: float = 30.0) -> dict[str, Any]:
+                   session_id: str | None = None, wait_s: float = 30.0,
+                   mutating: bool = False) -> dict[str, Any]:
         params = params or {}
         self.calls.append((method, params))
         if method == "Page.getFrameTree":

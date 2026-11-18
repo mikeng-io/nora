@@ -39,6 +39,7 @@ from nora.agent.factory import (
 from nora.domain.computer import BrowseOutcome
 from nora.infra.computer.browser import BrowserError, BrowserPage, open_browser
 from nora.language.browse_render import render_browse_brief
+from nora.memory import EffectRecorder
 
 log = logging.getLogger(__name__)
 
@@ -324,13 +325,15 @@ class BrowseAgentRunner:
     the whole browser for one task."""
 
     def __init__(self, *, model_source: ModelSource, retry: RetryPolicy, base_url: str,
-                 token: str, settings: BrowseSettings, manager: Any = None) -> None:
+                 token: str, settings: BrowseSettings, manager: Any = None,
+                 effects: EffectRecorder | None = None) -> None:
         self._models = model_source
         self._retry = retry
         self._base_url = base_url
         self._token = token
         self._settings = settings
         self._manager = manager
+        self._effects = effects
 
     async def browse(self, *, scope: str, objective: str,
                      start_url: str | None = None,
@@ -400,5 +403,7 @@ class BrowseAgentRunner:
                 return await self._drive(
                     bound.page, objective, start_url,
                     task_id=str(owner), tab=bound.tab.target_id, record=record)
-        async with open_browser(base_url=self._base_url, token=self._token, scope=scope) as page:
+        async with open_browser(
+            base_url=self._base_url, token=self._token, scope=scope, effects=self._effects,
+        ) as page:
             return await self._drive(page, objective, start_url, record=record)

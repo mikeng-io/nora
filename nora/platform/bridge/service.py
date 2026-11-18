@@ -40,6 +40,7 @@ from typing import Any, Protocol
 
 from nora.domain.actions import ActionOwner
 from nora.infra.sql.bridge_store import SqlBridgeStore
+from nora.memory import ActAuthority, EffectRecorder, Outcome
 from nora.platform.bridge import telemetry as bt
 from nora.platform.bridge.actions import stored_request, validate_owner
 from nora.platform.bridge.envelope import Envelope, canonical_digest
@@ -416,6 +417,8 @@ class DurableActionService:
         receipt_intents: Callable[[], frozenset[str]],
         ops: frozenset[str] | None = None,
         metrics: Any | None = None,
+        effects: EffectRecorder | None = None,
+        room_unit: Callable[[str], str | None] | None = None,
     ) -> None:
         self._store = store
         self._platform = platform
@@ -424,6 +427,23 @@ class DurableActionService:
         self._receipt_intents = receipt_intents
         self._ops = ops
         self._metrics = metrics
+        self._effects = effects
+        self._room_unit = room_unit
+
+    async def _invoke_action(self, action: Mapping[str, Any]) -> ActionReply:
+        if self._effects is None:
+            return await self._execute(action)
+        room = str((action["request"].get("target") or {}).get("id") or "")
+        unit = self._room_unit(room) if self._room_unit is not None else None
+        executor = "bridge.typing" if action["op"] == "typing" else "bridge.delivery"
+        return await self._effects.invoke(
+            executor, f"{self._platform}:{room}", str(action["action_id"]),
+            ActAuthority(unit, room=room), lambda: self._execute(action),
+            judge=lambda result: Outcome(
+                "done" if result.state == "confirmed"
+                else "failed" if result.state == "rejected" else "uncertain"
+            ),
+        )
 
     # ---- HTTP path ---------------------------------------------------------
 
@@ -489,7 +509,7 @@ class DurableActionService:
                                action_id=aid) as sp:
             bt.lifecycle(self._metrics, "delivery_started",
                          platform=self._platform, action_id=aid, trace=bt.span_ref(sp))
-            reply = await self._execute(action)
+            reply = await self._invoke_action(action)
             final = await self._terminal(
                 aid, reply.state, platform_ref=reply.platform_ref,
                 platform_refs=reply.platform_refs,
@@ -554,7 +574,7 @@ class DurableActionService:
                 bt.lifecycle(self._metrics, "delivery_started",
                              platform=self._platform, action_id=action_id,
                              trace=bt.span_ref(sp))
-                reply = await self._execute({
+                reply = await self._invoke_action({
                     "action_id": action_id, "op": op, "request": request,
                     "owner": {"kind": owner.kind, "id": owner.id,
                               "generation": owner.generation}})

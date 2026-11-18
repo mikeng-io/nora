@@ -72,6 +72,7 @@ from nora.app.composition_platforms import (
     policies,
     presence_preflight,
     signal_link_consent,
+    signal_link_delivery,
 )
 from nora.app.composition_runtime import build_slots, stimulus, tasks
 from nora.app.composition_social import expiry, inbox, poller, summons
@@ -456,6 +457,7 @@ class Dependencies:
     # starts expiry even with the poller disabled.
     story_expiry: StoryMediaExpiry | None = None
     discord_control: BridgeControlClient | None = None
+    managed_link_delivery: Any = None
 
 
 def wall_clock() -> datetime:
@@ -475,22 +477,9 @@ async def build_dependencies(
     shape (besides `nora.__main__` itself, which only ever passes `cfg`
     straight through here). Everything downstream takes a `Dependencies`.
 
-    **`clock` names a dependency the graph shares** — `FirePath`,
-    `HeartbeatLoop`, `ComputePoller` and the rest each take one for the
-    reason `FirePath`'s own docstring gives; stating it once here is what
-    lets a harness say WHAT TIME IT IS — the proactive adaptor's whole
-    judgement (is this note due, has this position gone stale, is now the
-    moment) answers at a fixed instant. The default is `wall_clock`.
-
-    **`operational_clock` is the maintenance clock.** A frozen `clock` is a
-    semantic statement («the turn sees this instant»); it must not freeze
-    the queue's deadline, lease and idle arithmetic — under a frozen
-    snapshot the scoped computer's tasks would never time out and its tabs
-    never idle. The scoped-computer machinery (`ComputerAdmission`,
-    `ComputerQueueRunner`, `ScopeBrowserManager`, the deferred outbox's
-    stamp) reads `operational_clock`, which defaults to `clock`; the eval
-    subject passes the wall clock so maintenance keeps moving while the
-    block's time stands still.
+    `clock` sets the time that passes see. `operational_clock` defaults to it
+    and drives deadlines, leases and idle expiry. The eval subject can freeze
+    the time a pass sees while maintenance uses wall time.
 
     **Startup failure closes what it built.** Each acquisition registers
     with the `StartupOwner` before the next `await`; a raise or a cancel
@@ -516,7 +505,8 @@ async def _compose_dependencies(
     _documents_wire = importlib.import_module("nora.documents").wire
     _location_wire = importlib.import_module("nora.location").wire
     _media_wire = importlib.import_module("nora.media").wire
-    _memory_wire = importlib.import_module("nora.memory").wire
+    memory_area = importlib.import_module("nora.memory")
+    _memory_wire = memory_area.wire
     _people_wire = importlib.import_module("nora.people").wire
     _social_wire = importlib.import_module("nora.social").wire
     _subagents_wire = importlib.import_module("nora.subagents").wire
@@ -539,6 +529,8 @@ async def _compose_dependencies(
     _stores_managed = _stores_backend.managed
     access = _stores_backend.access
     persons_view = _stores_backend.persons_view
+    if discord_control is not None:
+        discord_control.attach_effects(memory_area.EffectRecorder(_memory_wire.act_envelope(engine)))
     _stores_audit = build_audit(cfg=cfg, engine=engine, metrics=metrics)
     audit = _stores_audit.audit
     owner.own_audit(audit)
@@ -549,7 +541,6 @@ async def _compose_dependencies(
     _stores_runtime_stores = runtime_stores(engine=engine)
     compute_jobs = _stores_runtime_stores.compute_jobs
     tool_call_log_store = _stores_runtime_stores.tool_call_log_store
-    # Forward declarations: the thunks below resolve these at use time.
     background: BackgroundTasks
     computer_context: Any
     fire_path: FirePath | None
@@ -605,6 +596,7 @@ async def _compose_dependencies(
         cognition_shared_document_room=cognition_shared_document_room,
         content_checks=content_checks,
         documents_store=documents_store,
+        engine=engine,
         media_objects=media_objects,
         metrics=metrics,
         persons=persons,
@@ -648,8 +640,10 @@ async def _compose_dependencies(
     _social_inbox = inbox(cfg=cfg, metrics=metrics)
     summons_inbox = _social_inbox.summons_inbox
     summons_wired = _social_inbox.summons_wired
+    link_delivery = signal_link_delivery(cfg, _memory_wire.act_envelope(engine))
     _platforms_adapters = await adapters(
         cfg=cfg,
+        engine=engine,
         discord_box=discord_box,
         discord_token=discord_token,
         metrics=metrics,
@@ -661,7 +655,7 @@ async def _compose_dependencies(
         voice_guild_ids=voice_guild_ids,
         voice_hub=voice_hub,
         owner=owner,
-        signal_consent=signal_link_consent(cfg, _stores_managed.services),
+        signal_consent=signal_link_consent(_stores_managed.services, link_delivery),
         access=access,
     )
     account = _platforms_adapters.account
@@ -689,9 +683,6 @@ async def _compose_dependencies(
     policy = _platforms_policies.policy
     presence_reader = _platforms_policies.presence_reader
     rosters = _platforms_policies.rosters
-    # The ONE in-room management invocation: the `!!!member` command's
-    # occasion path and the `member_update` tool share this object, so both
-    # entries authenticate through `HumanManagement` identically.
     room_commands = _people_wire.room_management(
         _stores_managed.services, rosters=rosters
     )
@@ -764,25 +755,17 @@ async def _compose_dependencies(
     unit_scopes = _people_unit_scopes.unit_scopes
     _models_source = source(client=client, route_model=route_model, tier=tier)
     models = _models_source.models
-    _computer_browse = _computer_wire.browse(
-        browser_manager=browser_manager,
-        cfg=cfg,
-        computer=computer,
-        model_client_for=model_client_for,
-        route_model=route_model,
-    )
-    browser = _computer_browse.browser
+    browser = _computer_wire.browse(
+        browser_manager=browser_manager, cfg=cfg, computer=computer, engine=engine,
+        model_client_for=model_client_for, route_model=route_model,
+    ).browser
     _models_runner = build_runner(cfg=cfg, metrics=metrics, models=models, tier=tier)
     runner = _models_runner.runner
     _people_homes = _people_wire.homes(allowlist=allowlist)
     proactive_homes = _people_homes.proactive_homes
     _models_runners = runners(
-        cfg=cfg,
-        metrics=metrics,
-        model_client_for=model_client_for,
-        route_model=route_model,
-        summons_wired=summons_wired,
-        tier=tier,
+        cfg=cfg, metrics=metrics, model_client_for=model_client_for,
+        route_model=route_model, summons_wired=summons_wired, tier=tier,
     )
     limits = _models_runners.limits
     participation_runner = _models_runners.participation_runner
@@ -984,6 +967,8 @@ async def _compose_dependencies(
     tool_registry = _agent_registry.tool_registry
     _agent_subagent_backend = backend(
         access=access,
+        acts=_memory_wire.act_envelope(engine),
+        room_unit=engine.get_execution_options()["item_registration"].scope.room_unit,
         audit=audit,
         cfg=cfg,
         clock=clock,
@@ -1368,6 +1353,7 @@ async def _compose_dependencies(
         memory=memory,
         persons=persons_view, access=access,
         managed_services=_stores_managed.services, managed_session=_stores_managed.session,
+        managed_link_delivery=link_delivery,
         metrics=metrics,
         media_join=media_join,
         policy=policy,

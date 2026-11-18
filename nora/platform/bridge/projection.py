@@ -119,7 +119,7 @@ ENV_HEALTH_PORT = "NORA_BRIDGE_PROJECTION_PORT"
 _CONTRACT_KEYS = frozenset({
     "revision", "generated_ms", "enabled", "account_key", "rooms",
     "dm_allowed_senders", "self_aliases", "deterministic_triggers",
-    "receipt_emoji", "room_receipt_senders", "music_channels",
+    "receipt_emoji", "room_receipt_senders", "music_channels", "room_units",
 })
 
 #: Contract bound: revision must survive JSON round-trips in JS exactly.
@@ -215,6 +215,10 @@ def _semantic(
         "enabled": bool(platform_cfg.enabled),
         "account_key": account_key,
         "rooms": rooms,
+        "room_units": {
+            room: entry.unit for entry in policy.rooms()
+            if entry.platform == platform and entry.unit for room in entry.ids
+        },
         "dm_allowed_senders": dm_senders,
         "self_aliases": sorted(aliases),
         "deterministic_triggers": (
@@ -234,6 +238,7 @@ def _deny(account_key: str) -> dict[str, Any]:
         "enabled": False,
         "account_key": account_key,
         "rooms": [],
+        "room_units": {},
         "dm_allowed_senders": [],
         "self_aliases": [],
         "deterministic_triggers": [],

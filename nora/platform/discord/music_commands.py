@@ -33,6 +33,7 @@ from nora.infra.voice.http_controller import (
 from nora.infra.voice.hub import VoiceControllerHub
 from nora.platform.discord import music_messages as m
 from nora.platform.discord.channels import is_voice_channel
+from nora.platform.discord.command_acts import DiscordCommandActs, command_event
 from nora.platform.discord.discord_commands import DiscordCommands
 from nora.platform.discord.music_manager import Connect, MusicPlayerManager
 from nora.platform.discord.music_notify import (
@@ -62,6 +63,7 @@ def _notify_factory(
     *,
     client: ClientGetter,
     resolve_music_channel: ResolveMusicChannel,
+    command_acts: DiscordCommandActs | None = None,
 ):
     """The announcement destination for a session started by `/music play`:
     the `music_channel` one of this guild's `policy.toml` rooms names, else
@@ -83,6 +85,7 @@ def _notify_factory(
             str(interaction.channel_id) if interaction.channel_id else None
         ),
         resolve_music_channel=resolve_music_channel,
+        command_acts=command_acts,
     )
 
 
@@ -138,10 +141,16 @@ class _QueuePaginator(discord.ui.View):
     message just sits in a channel, and a stale page would drift from
     reality the longer someone waits before clicking Next."""
 
-    def __init__(self, manager: MusicPlayerManager, guild_id: str) -> None:
+    def __init__(
+        self, manager: MusicPlayerManager, guild_id: str,
+        command_acts: DiscordCommandActs | None = None,
+        origin: discord.Interaction | None = None,
+    ) -> None:
         super().__init__(timeout=_QUEUE_VIEW_TIMEOUT_SECONDS)
         self._manager = manager
         self._guild_id = guild_id
+        self._command_acts = command_acts or DiscordCommandActs()
+        self._origin = origin
         self._page = 0
         self.message: discord.Message | None = None
 
@@ -182,17 +191,21 @@ class _QueuePaginator(discord.ui.View):
         if status is None or status.now_playing is None:
             for child in self.children:
                 child.disabled = True  # type: ignore[attr-defined]
-            await interaction.response.edit_message(content="Nothing is playing.", view=self)
+            await self._command_acts.respond(
+                interaction, "edit", content="Nothing is playing.", view=self
+            )
             self.stop()
             return
-        await interaction.response.edit_message(content=self.render_page(status), view=self)
+        await self._command_acts.respond(
+            interaction, "edit", content=self.render_page(status), view=self
+        )
 
     async def on_timeout(self) -> None:
         for child in self.children:
             child.disabled = True  # type: ignore[attr-defined]
         if self.message is not None:
             with contextlib.suppress(discord.HTTPException):
-                await self.message.edit(view=self)
+                await self._command_acts.timeout(self.message, self._origin, self)
 
 
 class MusicCommands(app_commands.Group):
@@ -209,6 +222,7 @@ class MusicCommands(app_commands.Group):
         voice_guild_ids: frozenset[str] = frozenset(),
         resolve_music_channel: ResolveMusicChannel = no_music_channel,
         client: ClientGetter | None = None,
+        command_acts: DiscordCommandActs | None = None,
     ) -> None:
         super().__init__(name="music", description="Play music in a voice channel.")
         self._manager = manager
@@ -220,14 +234,16 @@ class MusicCommands(app_commands.Group):
         # back to the interaction's own client keeps such a harness working
         # while production gets the getter that survives a reconnect.
         self._client = client
+        self._command_acts = command_acts or DiscordCommandActs()
 
     @app_commands.command(
         name="play", description="Play a track, or queue it if one's already playing.",
     )
     @app_commands.describe(query="A YouTube URL, or search text")
+    @command_event
     async def play(self, interaction: discord.Interaction, query: str) -> None:
         if interaction.guild_id is None:
-            await interaction.response.send_message(
+            await self._command_acts.respond(interaction, "reply",
                 m.music_not_in_server_line(), ephemeral=True,
             )
             return
@@ -258,7 +274,7 @@ class MusicCommands(app_commands.Group):
             log.info(
                 "music command: /music play guild=%s -> rejected (%s)", guild_id, decision,
             )
-            await interaction.response.send_message(line, ephemeral=True)
+            await self._command_acts.respond(interaction, "reply", line, ephemeral=True)
             return
         connect = (
             _connect_factory(self._hub, guild_id, str(channel.id))
@@ -269,7 +285,7 @@ class MusicCommands(app_commands.Group):
         voice_channel_id = (
             str(channel.id) if connect is not None and channel is not None else None
         )
-        await interaction.response.defer()
+        await self._command_acts.respond(interaction, "defer")
         try:
             outcome = await self._manager.play(
                 guild_id=guild_id, query_or_url=query, requested_by=str(interaction.user.id),
@@ -278,6 +294,7 @@ class MusicCommands(app_commands.Group):
                     interaction, guild_id,
                     client=self._client or (lambda: interaction.client),
                     resolve_music_channel=self._resolve_music_channel,
+                    command_acts=self._command_acts,
                 ),
                 voice_channel_id=voice_channel_id,
                 notify_channel_id=notify_channel_id,
@@ -289,7 +306,7 @@ class MusicCommands(app_commands.Group):
             # unresolved and Discord shows "The application did not respond"
             # with nothing in the logs to explain why.
             log.exception("music play failed for guild %s", guild_id)
-            await interaction.followup.send(
+            await self._command_acts.respond(interaction, "followup",
                 m.join_failed_line(), ephemeral=True, silent=True,
             )
             return
@@ -298,25 +315,28 @@ class MusicCommands(app_commands.Group):
                 "music command: /music play guild=%s -> rejected (not in a voice channel)",
                 guild_id,
             )
-            await interaction.followup.send(
+            await self._command_acts.respond(interaction, "followup",
                 m.join_voice_channel_line(), ephemeral=True, silent=True,
             )
             return
         log.info("music command: /music play guild=%s -> %s", guild_id, outcome.status)
         if outcome.status == "nothing_found":
-            await interaction.followup.send(_reply_for(outcome), silent=True)
+            await self._command_acts.respond(
+                interaction, "followup", _reply_for(outcome), silent=True
+            )
             return
         # No control view: music is driven by asking Nora, or by the slash
         # commands below, and nothing else. One reply, no components.
-        await interaction.followup.send(_reply_for(outcome), silent=True)
+        await self._command_acts.respond(interaction, "followup", _reply_for(outcome), silent=True)
 
     @app_commands.command(name="skip", description="Skip the current track.")
+    @command_event
     async def skip(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:
             return
         guild_id = str(interaction.guild_id)
         log.info("music command: /music skip guild=%s user=%s", guild_id, _who(interaction))
-        await interaction.response.defer()
+        await self._command_acts.respond(interaction, "defer")
         try:
             skipped = await self._manager.skip(guild_id)
         except VoiceControllerError:
@@ -325,12 +345,18 @@ class MusicCommands(app_commands.Group):
             # the manager's own `commit_pending` errors are already logged
             # there, so this is just the reply.
             log.exception("music skip failed for guild %s", guild_id)
-            await interaction.followup.send(m.controller_unavailable_line(), silent=True)
+            await self._command_acts.respond(
+                interaction, "followup", m.controller_unavailable_line(), silent=True
+            )
             return
         if skipped is None:
-            await interaction.followup.send(m.nothing_playing_line(), silent=True)
+            await self._command_acts.respond(
+                interaction, "followup", m.nothing_playing_line(), silent=True
+            )
             return
-        await interaction.followup.send(m.skipped_line(skipped), silent=True)
+        await self._command_acts.respond(
+            interaction, "followup", m.skipped_line(skipped), silent=True
+        )
 
     @app_commands.command(
         name="top", description="Move a queued track to play next.",
@@ -346,82 +372,98 @@ class MusicCommands(app_commands.Group):
             "music command: /music top guild=%s user=%s position=%s",
             guild_id, _who(interaction), position,
         )
-        await interaction.response.defer()
+        await self._command_acts.respond(interaction, "defer")
         moved = await self._manager.top(guild_id, position)
         if moved is None:
-            await interaction.followup.send(m.nothing_queued_at_position_line(), silent=True)
+            await self._command_acts.respond(
+                interaction, "followup", m.nothing_queued_at_position_line(), silent=True
+            )
             return
-        await interaction.followup.send(m.next_line(moved), silent=True)
+        await self._command_acts.respond(interaction, "followup", m.next_line(moved), silent=True)
 
     @app_commands.command(name="queue", description="Show what's playing and queued.")
+    @command_event
     async def queue(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:
             return
-        await interaction.response.defer()
+        await self._command_acts.respond(interaction, "defer")
         guild_id = str(interaction.guild_id)
         status = await self._manager.status(guild_id)
         if status is None or status.now_playing is None:
-            await interaction.followup.send(m.nothing_playing_line(), silent=True)
+            await self._command_acts.respond(
+                interaction, "followup", m.nothing_playing_line(), silent=True
+            )
             return
-        view = _QueuePaginator(self._manager, guild_id)
+        view = _QueuePaginator(self._manager, guild_id, self._command_acts, interaction)
         content = view.render_page(status)
         if len(status.queue) <= _QUEUE_PAGE_SIZE:
             # Fits on one screen -- no buttons that would only ever sit
             # disabled.
-            await interaction.followup.send(content, silent=True)
+            await self._command_acts.respond(interaction, "followup", content, silent=True)
             return
-        await interaction.followup.send(content, view=view, silent=True)
+        await self._command_acts.respond(interaction, "followup", content, view=view, silent=True)
         view.message = await interaction.original_response()
 
     @app_commands.command(name="pause", description="Pause playback.")
+    @command_event
     async def pause(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:
             return
         guild_id = str(interaction.guild_id)
         log.info("music command: /music pause guild=%s user=%s", guild_id, _who(interaction))
-        await interaction.response.defer()
+        await self._command_acts.respond(interaction, "defer")
         try:
             ok = await self._manager.pause(guild_id)
         except GenerationConflict:
             # Speech holds the connection (controller's `pause_during_speech`)
             # — a refusal, not a crash.
-            await interaction.followup.send(m.cannot_pause_now_line(), silent=True)
+            await self._command_acts.respond(
+                interaction, "followup", m.cannot_pause_now_line(), silent=True
+            )
             return
         except VoiceControllerError:
             log.exception("music pause failed for guild %s", guild_id)
-            await interaction.followup.send(m.controller_unavailable_line(), silent=True)
+            await self._command_acts.respond(
+                interaction, "followup", m.controller_unavailable_line(), silent=True
+            )
             return
-        await interaction.followup.send(
+        await self._command_acts.respond(interaction, "followup",
             m.paused_line() if ok else m.nothing_playing_line(), silent=True,
         )
 
     @app_commands.command(name="resume", description="Resume playback.")
+    @command_event
     async def resume(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:
             return
         guild_id = str(interaction.guild_id)
         log.info("music command: /music resume guild=%s user=%s", guild_id, _who(interaction))
-        await interaction.response.defer()
+        await self._command_acts.respond(interaction, "defer")
         try:
             ok = await self._manager.resume(guild_id)
         except GenerationConflict:
-            await interaction.followup.send(m.cannot_pause_now_line(), silent=True)
+            await self._command_acts.respond(
+                interaction, "followup", m.cannot_pause_now_line(), silent=True
+            )
             return
         except VoiceControllerError:
             log.exception("music resume failed for guild %s", guild_id)
-            await interaction.followup.send(m.controller_unavailable_line(), silent=True)
+            await self._command_acts.respond(
+                interaction, "followup", m.controller_unavailable_line(), silent=True
+            )
             return
-        await interaction.followup.send(
+        await self._command_acts.respond(interaction, "followup",
             m.resumed_line() if ok else m.not_paused_line(), silent=True,
         )
 
     @app_commands.command(name="stop", description="Stop playback and clear the queue.")
+    @command_event
     async def stop(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:
             return
         guild_id = str(interaction.guild_id)
         log.info("music command: /music stop guild=%s user=%s", guild_id, _who(interaction))
-        await interaction.response.defer()
+        await self._command_acts.respond(interaction, "defer")
         try:
             await self._manager.stop(guild_id)
         except VoiceControllerError:
@@ -429,12 +471,15 @@ class MusicCommands(app_commands.Group):
             # this can be raised (a controller outage), so the session is
             # already gone even though the reply below reports the outage.
             log.exception("music stop failed for guild %s", guild_id)
-            await interaction.followup.send(m.controller_unavailable_line(), silent=True)
+            await self._command_acts.respond(
+                interaction, "followup", m.controller_unavailable_line(), silent=True
+            )
             return
-        await interaction.followup.send(m.stopped_line(), silent=True)
+        await self._command_acts.respond(interaction, "followup", m.stopped_line(), silent=True)
 
     @app_commands.command(name="volume", description="Set playback volume (0-200%).")
     @app_commands.describe(percent="Volume as a percentage, 0-200 (100 = normal)")
+    @command_event
     async def volume(
         self, interaction: discord.Interaction, percent: app_commands.Range[int, 0, 200],
     ) -> None:
@@ -445,7 +490,7 @@ class MusicCommands(app_commands.Group):
             "music command: /music volume guild=%s user=%s percent=%s",
             guild_id, _who(interaction), percent,
         )
-        await interaction.response.defer()
+        await self._command_acts.respond(interaction, "defer")
         # Discord's own UI already enforces 0-200 via Range above; the
         # manager's own [0.0, 2.0] check is defense-in-depth, not the
         # primary guard -- kept because this class must not be the only
@@ -454,15 +499,23 @@ class MusicCommands(app_commands.Group):
             result = await self._manager.set_volume(guild_id, percent / 100.0)
         except VoiceControllerError:
             log.exception("music volume failed for guild %s", guild_id)
-            await interaction.followup.send(m.controller_unavailable_line(), silent=True)
+            await self._command_acts.respond(
+                interaction, "followup", m.controller_unavailable_line(), silent=True
+            )
             return
         if result is None:
-            await interaction.followup.send(m.nothing_playing_line(), silent=True)
+            await self._command_acts.respond(
+                interaction, "followup", m.nothing_playing_line(), silent=True
+            )
             return
         if not result:
-            await interaction.followup.send(m.volume_out_of_range_line(), silent=True)
+            await self._command_acts.respond(
+                interaction, "followup", m.volume_out_of_range_line(), silent=True
+            )
             return
-        await interaction.followup.send(m.volume_line(percent), silent=True)
+        await self._command_acts.respond(
+            interaction, "followup", m.volume_line(percent), silent=True
+        )
 
 
 async def register(
@@ -475,6 +528,7 @@ async def register(
     client_getter: ClientGetter | None = None,
     admission: Callable[
         [discord.Interaction], Coroutine[Any, Any, bool]] | None = None,
+    command_acts: DiscordCommandActs | None = None,
 ) -> None:
     """Built and synced fresh inside `DiscordAdapter.listen()`, same lifecycle
     as `client` itself — a fresh `discord.Client` per connection attempt
@@ -503,11 +557,17 @@ async def register(
         manager, hub=hub, voice_guild_ids=voice_guild_ids,
         resolve_music_channel=resolve_music_channel,
         client=client_getter,
+        command_acts=command_acts,
     ))
     tree.add_command(
-        DiscordCommands(hub=hub, voice_guild_ids=voice_guild_ids, manager=manager)
+        DiscordCommands(
+            hub=hub, voice_guild_ids=voice_guild_ids, manager=manager, command_acts=command_acts,
+        )
     )
-    await tree.sync()
+    await (command_acts or DiscordCommandActs()).sync(
+        tree, getattr(getattr(client, "ws", None), "session_id", None) or "",
+        str(getattr(client, "application_id", "") or ""),
+    )
 
 
 async def resume_persisted_sessions(
@@ -517,6 +577,7 @@ async def resume_persisted_sessions(
     hub: VoiceControllerHub | None,
     resolve_music_channel: ResolveMusicChannel = no_music_channel,
     client_getter: ClientGetter | None = None,
+    command_acts: DiscordCommandActs | None = None,
 ) -> None:
     """Boot-time resume: reconnects a guild's session ONLY if its voice channel still
     has a human in it right now -- symmetric with the "leave when a channel
@@ -564,6 +625,7 @@ async def resume_persisted_sessions(
                     client=client_getter or (lambda: client),
                     guild_id=session.guild_id,
                     fallback_channel_id=session.notify_channel_id,
+                    command_acts=command_acts,
                     resolve_music_channel=resolve_music_channel,
                 ),
             )

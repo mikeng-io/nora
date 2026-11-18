@@ -31,6 +31,15 @@ class PassContext:
     rev_identity: str
     rev_policy: str
 
+    def provenance(self) -> dict[str, str]:
+        return {
+            "writer": self.writer, "occasion": self.occasion, "pass": self.pass_id,
+            "trace": self.trace, "model": self.model, "rev_code": self.rev_code,
+            "rev_instruction": self.rev_instruction, "rev_skill": self.rev_skill,
+            "rev_config": self.rev_config, "rev_identity": self.rev_identity,
+            "rev_policy": self.rev_policy,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class RoomReference:

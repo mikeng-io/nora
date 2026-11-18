@@ -100,7 +100,7 @@ from ..infra.vision.preprocess import VIDEO_CHUNK_SECONDS, VIDEO_MAX_CHUNKS
 from ..language.profile_render import ProfileHeads
 from .lineage import LineagePolicy
 from .links import LinkCarry
-from .mcp import McpToolGroup
+from .mcp import McpToolGroup, stream_mounted
 from .memory_search import MemorySearch
 from .ports import ToolSpec, adapt
 from .reaction import ReactionPicker
@@ -165,17 +165,15 @@ class _AggregateBudget:
 
 
 class _AggregateBudgetedTool(AgentTool):
-    """A discovered MCP tool that also draws on its server's aggregate budget.
+    """A mounted tool whose invocation also draws on its server's shared budget."""
 
-    The per-tool ceiling (`ToolRegistry.budgets`) is checked by the guard before this runs; this
-    is the second ceiling, so calls spread over the server's tools cannot exceed the server's
-    budget. A refused call answers as an error result and never reaches the server.
-    """
-
-    def __init__(self, tool: Any, aggregate: _AggregateBudget) -> None:
+    def __init__(
+        self, tool: Any, aggregate: _AggregateBudget, *, mount: str, envelope: Any,
+    ) -> None:
         super().__init__()
         self._tool = tool
         self._aggregate = aggregate
+        self._mount, self._envelope = mount, envelope
 
     @property
     def tool_name(self) -> str:
@@ -197,14 +195,20 @@ class _AggregateBudgetedTool(AgentTool):
                                      "answer from what you already have."}],
             })
             return
-        async for event in self._tool.stream(tool_use, invocation_state, **kwargs):
+        async for event in stream_mounted(
+            self._tool, tool_use, invocation_state, mount=self._mount,
+            envelope=self._envelope, **kwargs,
+        ):
             yield event
 
 
-def aggregate_budgeted_tools(group: McpToolGroup) -> list[Any]:
+def aggregate_budgeted_tools(group: McpToolGroup, envelope: Any = None) -> list[Any]:
     """`group`'s tools, each gated on the one aggregate budget its server shares."""
     aggregate = _AggregateBudget(group.budget)
-    return [_AggregateBudgetedTool(tool, aggregate) for tool in group.tools]
+    return [
+        _AggregateBudgetedTool(tool, aggregate, mount=group.name, envelope=envelope)
+        for tool in group.tools
+    ]
 
 
 class ToolRegistry:
@@ -323,6 +327,7 @@ class ToolRegistry:
         artifact_link_base: str = "",
         clock: Callable[[], datetime] = utc_now,
         mcp_tools: Mapping[str, McpToolGroup] | None = None,
+        mcp_act_envelope: Any = None,
         versions: VersionManifest | None = None,
         releases: GithubReleases | None = None,
         giphy: GifSource | None = None,
@@ -627,18 +632,10 @@ class ToolRegistry:
         # repo does not set it). `| None` rather than a default instance
         # because ruff's B008 rejects a call in an argument default.
         self._caps = reminder_caps or ReminderCaps()
-        # The clock, injected. Three of `remind`'s six refusals are clock
-        # comparisons (`when < now`, `min_lead_seconds`, `max_horizon_days`), so
-        # a fake clock is what makes them testable without sleeping, and a
-        # collaborator through `__init__` is the only seam CLAUDE.md's
-        # test-seam policy allows.
         self._clock = clock
-        # Discovered MCP tool groups, keyed by server name. `.budgets()` folds
-        # an entry in ONLY when its server name is passed in that call's
-        # `allowed_mcp`; see `.budgets()` below for why an unconditional fold
-        # discloses names. `.specs()`/`.build()`'s `allowed_mcp` is the SAME
-        # value a caller must pass here.
+        # Budget, specification and execution all use the caller's same MCP allowlist.
         self._mcp_tools = dict(mcp_tools) if mcp_tools is not None else {}
+        self._mcp_act_envelope = mcp_act_envelope
         # One immutable snapshot for running identity and shipped release history.
         self._versions = versions if versions is not None else VersionManifest()
         self._releases = releases
@@ -1359,7 +1356,7 @@ class ToolRegistry:
         for name in allowed_mcp:
             group = self._mcp_tools.get(name)
             if group is not None:
-                tools.extend(aggregate_budgeted_tools(group))
+                tools.extend(aggregate_budgeted_tools(group, self._mcp_act_envelope))
         return ToolSurface(
             scope=scope,
             tools=tools,

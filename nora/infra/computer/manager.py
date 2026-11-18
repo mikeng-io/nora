@@ -75,6 +75,7 @@ from nora.infra.computer.browser import (
     open_browser_tab,
 )
 from nora.infra.computer.scoped import ScopeBinding, ScopedComputerdRuntime
+from nora.memory import ActAuthority, EffectRecorder, Outcome
 
 log = logging.getLogger("nora.computer.manager")
 
@@ -147,6 +148,7 @@ class ScopeBrowserManager:
         # `(scope, transition, subject)` — `tab_expired`, `browser_stopped`,
         # `popup_closed`. None keeps cleanup silent.
         on_event: Callable[[str, str, Any], Any] | None = None,
+        effects: EffectRecorder | None = None,
     ) -> None:
         self._lifecycle = lifecycle
         self._runtime = runtime
@@ -158,6 +160,7 @@ class ScopeBrowserManager:
         self._tasks = tasks
         self._segments = segments
         self._on_event = on_event
+        self._effects = effects
         #: The task currently holding a live attach per scope — the owner any
         #: unbound page target found during its attach is assigned to.
         self._active: dict[str, UUID] = {}
@@ -223,15 +226,7 @@ class ScopeBrowserManager:
 
     async def _reconcile(self, scope: str, binding: ScopeBinding,
                          cdp: Any, now: datetime, owner: UUID | None) -> None:
-        """Match live page targets with open rows ON THE ADMITTED
-        CONNECTION: an unbound page is an orphan. It is bound to the task
-        that owns its ACTUAL `openerId` (`via="popup"`) — never to the
-        `owner` task passed by the caller, which is only the task whose
-        attach triggered the pass — and an orphan whose opener is unknown
-        or whose bind did not land is closed, not exposed unattributed; a
-        row whose target is gone is `closed`. `getTargets` itself is
-        authoritative: a failed read raises `TabUnavailable`, it does not
-        silently retire or adopt anything."""
+        """Reconcile targets on the admitted connection using their actual opener."""
         try:
             got = await cdp.call("Target.getTargets")
         except BrowserError as exc:
@@ -346,6 +341,7 @@ class ScopeBrowserManager:
                 async with open_browser_tab(
                     base_url=binding.endpoint.base_url, token=self._token,
                     scope=scope, target_id=wanted, instance=binding.instance,
+                    effects=self._effects,
                 ) as page:
                     now = self._clock()
                     if wanted is None:
@@ -505,17 +501,10 @@ class ScopeBrowserManager:
         return claimed
 
     async def browser_stop(self, scope: str) -> bool:
-        """Ask computerd to stop the scope's browser and confirm, through
-        `state`, that it is gone. False when the VM could not answer or the
-        browser is still up.
+        """Stop the browser under the scope's current or newly claimed owner.
 
-        The stop runs INSIDE the scope's elected execution owner, not just
-        under the manager lock: it claims a `maintenance` segment through
-        the same `try_claim_head` every segment uses, so a `running` row —
-        a native or worker segment, which may be about to attach — makes
-        the claim fail and the browser is never stopped under it. Called
-        inside a segment that already owns the scope (the sweep's own),
-        the guest call is made directly."""
+        Confirm the stop with guest state. An active segment blocks a maintenance claim.
+        """
         if await self._owns(scope):
             return await self._browser_stop_guest(scope)
         claimed = await self._claim_maintenance(scope)
@@ -542,9 +531,16 @@ class ScopeBrowserManager:
                 "stopped": stopped}
 
     async def _browser_stop_guest(self, scope: str) -> bool:
-        """The guest half of `browser_stop`: POST the stop, then confirm
-        through `state` that the browser is gone. Caller holds the scope's
-        owner."""
+        """Stop and confirm guest state while the caller owns the scope."""
+        if self._effects is None:
+            return await self._stop_guest(scope)
+        return await self._effects.invoke(
+            "browser.stop", f"browser:{scope}", str(uuid.uuid4()), ActAuthority(None),
+            lambda: self._stop_guest(scope),
+            judge=lambda stopped: Outcome("done" if stopped else "uncertain"),
+        )
+
+    async def _stop_guest(self, scope: str) -> bool:
         binding = await self._runtime.binding(scope)
         if binding is None:
             return False
@@ -643,6 +639,7 @@ class ScopeBrowserManager:
                     base_url=binding.endpoint.base_url,
                     token=self._token, scope=scope,
                     instance=binding.instance,
+                    effects=self._effects,
                 ) as cdp:
                     for row in mine:
                         if not await self._close_confirmed(cdp, row.target_id):
@@ -772,6 +769,7 @@ class ScopeBrowserManager:
                     base_url=binding.endpoint.base_url,
                     token=self._token, scope=scope,
                     instance=binding.instance,
+                    effects=self._effects,
                 ) as cdp:
                     try:
                         await self._reconcile(scope, binding, cdp, now=now2,

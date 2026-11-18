@@ -39,6 +39,7 @@ from nora.domain.playback_liveness import (
 )
 from nora.domain.ports import TrackSource
 from nora.platform.discord import music_messages as m
+from nora.platform.discord.music_notify import notice_event
 from nora.platform.discord.music_player import (
     MusicPlayer,
     PlayerStatus,
@@ -617,7 +618,7 @@ class MusicPlayerManager:
         # same reason as `stop()`/`leave_voice()` above.
         if player is not None:
             await player.leave()
-        await self._announce_teardown(guild_id, notify, player)
+        await self._announce_teardown(guild_id, notify, player, generation=generation)
 
     def _generation_matches(self, guild_id: str, generation: str | None) -> bool:
         """The generation staleness probe, with the playback probe's fail-open-if-
@@ -822,18 +823,15 @@ class MusicPlayerManager:
             "notify_now_playing: sending notification for guild %s (track: %s)",
             guild_id, now_playing.title,
         )
-        # Tells apart a track someone actually queued from one autoplay
-        # picked (`AUTOPLAY_PERSON_ID`)
-        # -- otherwise a listener has no way to tell why a track nobody
-        # requested just started. Wording comes from the canonical message
-        # table (`music_messages.py`) — this module never formats its own.
+        # The announcement identifies autoplay tracks that nobody requested.
         is_autoplay = now_playing.added_by_person_id == AUTOPLAY_PERSON_ID
         line = (
             m.autoplay_now_playing_line(now_playing)
             if is_autoplay
             else m.now_playing_line(now_playing)
         )
-        await notify(line)
+        with notice_event(str(now_playing.id)):
+            await notify(line)
 
     def _schedule_idle_disconnect(self, guild_id: str) -> None:
         """Disconnect-timer rule 2: queue empty and nothing playing ->
@@ -1022,6 +1020,7 @@ class MusicPlayerManager:
 
     async def _announce_teardown(
         self, guild_id: str, notify: Notify | None, player: MusicPlayer | None,
+        *, generation: str | None = None,
     ) -> None:
         """Announce a `_leave` teardown — ONLY the one transition with no
         command reply of its own, `on_voice_death`. `/music stop` already
@@ -1032,7 +1031,8 @@ class MusicPlayerManager:
         if notify is None or player is None:
             return
         try:
-            await notify(m.connection_lost_line())
+            with notice_event(generation or ""):
+                await notify(m.connection_lost_line())
         except Exception:
             log.warning(
                 "could not announce music teardown for guild %s", guild_id, exc_info=True,

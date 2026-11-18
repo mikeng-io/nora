@@ -409,18 +409,17 @@ class SqlRecordStore:
         metrics: Any = None,
         mention_persons: Any = None,
         registration: SqlItemRegistration | None = None,
+        delivery_acts: Any = None,
     ) -> None:
-        """Wire the record engine, metrics, mention resolution and registration."""
         self._engine = engine
         self._max_per_conversation = max_per_conversation
         self._metrics = metrics
         self._mention_persons = mention_persons
         self._registration = registration
+        self.delivery_acts = delivery_acts
 
     def _resolved_mentions_json(self, message: NormalizedMessage) -> str | None:
-        """`mention_persons_json` for one message or edit: the sorted person
-        ids its @-mentions resolve to, or None when that is unknown (no
-        resolver wired, or an edit the platform gave no mentions for)."""
+        """Sorted mention identities, or None when the platform or resolver cannot say."""
         if self._mention_persons is None:
             return None
         if message.edit_of is not None and not message.edit_of.mentions_known:

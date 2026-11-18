@@ -49,19 +49,7 @@ class SqlAdmissionStore:
 
 
 def _stamp(context: PassContext) -> dict[str, str]:
-    return {
-        "writer": context.writer,
-        "occasion": context.occasion,
-        "pass": context.pass_id,
-        "trace": context.trace,
-        "model": context.model,
-        "rev_code": context.rev_code,
-        "rev_instruction": context.rev_instruction,
-        "rev_skill": context.rev_skill,
-        "rev_config": context.rev_config,
-        "rev_identity": context.rev_identity,
-        "rev_policy": context.rev_policy,
-    }
+    return context.provenance()
 
 
 def _link_values(link: Link) -> dict[str, Any]:

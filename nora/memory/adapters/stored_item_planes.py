@@ -93,6 +93,10 @@ class ItemPlanes:
             if key not in self._probes:
                 self._probes[key] = await self.scope.health_units(*key)
             units = self._probes[key]
+        elif name in {"computer_events", "tool_call_log", "nora_act", "nora_act_outcome",
+                      "nora_pass_output"}:
+            # Executor items are scoped when written, using their original authority.
+            return (), None, []
         else:
             if name == "presence_fixes":
                 person = row["person_id"]

@@ -315,7 +315,7 @@ class SqlItemRegistration:
         graph_id = item_graph_id(table.name, key, unit)
         await conn.execute(pg_insert(REGISTRY).values(
             id=graph_id, unit=unit, kind="item",
-        ).on_conflict_do_nothing(index_elements=["id", "unit"]))
+        ).on_conflict_do_nothing())
         values["graph_id"] = graph_id
         return values
 

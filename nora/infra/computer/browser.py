@@ -29,8 +29,16 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import unquote
+from uuid import uuid4
 
 import aiohttp
+
+from nora.memory import ActAuthority, EffectRecorder, Outcome
+
+_CDP_WRITES = {
+    "Target.createTarget", "Target.closeTarget", "Page.navigate",
+    "Emulation.setDeviceMetricsOverride", "DOM.scrollIntoViewIfNeeded", "DOM.focus",
+}
 
 #: Roles a person acts on. A snapshot lists these, plus headings for bearings.
 INTERACTIVE_ROLES = frozenset({
@@ -43,8 +51,7 @@ HEADING_ROLES = frozenset({"heading"})
 MAX_SNAPSHOT_ELEMENTS = 150
 #: An accessible name or value is cut at this many characters.
 MAX_LABEL_CHARS = 80
-#: How long a navigation may take to reach `complete` before the page is used
-#: as it stands.
+#: Use the page as it stands when this navigation deadline elapses.
 LOAD_SECONDS = 15.0
 #: A CDP call that has not answered after this long is an error.
 CALL_SECONDS = 30.0
@@ -80,13 +87,7 @@ class ActionRefusedError(BrowserError):
 
 @dataclass
 class ActionPolicy:
-    """What a browse task may still do to its page, decided before each CDP call.
-
-    Fail-closed, and read-only by default: a click or Enter that submits a form, typing
-    into a password or other sensitive field, and every action after `revoke` are refused.
-    No approval channel exists yet, so a person does the submission, not the task. Navigation
-    is not restricted here (no origin allowlist is configured; see the PR's Also).
-    """
+    """Refuse form submissions, sensitive inputs, and actions after revocation."""
 
     revoked: bool = False
 
@@ -94,8 +95,7 @@ class ActionPolicy:
         self.revoked = True
 
     def check(self, action: str, *, submits: bool = False, sensitive: bool = False) -> None:
-        """Raise `ActionRefusedError` if `action` may not run now. Called before the first CDP call
-        of an action and again, through `live`, immediately before each input is sent."""
+        """Check before the first CDP call and immediately before input."""
         self.live(action)
         if submits:
             raise ActionRefusedError(f"{action} would submit a form; a person must do that step")
@@ -143,13 +143,14 @@ class Snapshot:
 
 
 class CdpConnection:
-    """One CDP websocket: numbered calls answered in any order, events
-    fanned to `subscribe`d handlers. computerd admits ONE browser websocket
-    per scope, so everything that needs Chrome's target list — the attach,
-    the reconcile, the popup watch — shares this connection."""
+    """Multiplex calls and events over the scope's single CDP connection."""
 
-    def __init__(self, ws: aiohttp.ClientWebSocketResponse) -> None:
+    def __init__(
+        self, ws: aiohttp.ClientWebSocketResponse, *, effects: EffectRecorder | None = None,
+        scope: str = "",
+    ) -> None:
         self._ws = ws
+        self._effects, self._scope = effects, scope
         self._next = 0
         self._pending: dict[int, asyncio.Future[dict[str, Any]]] = {}
         self._handlers: list[Callable[[str, dict[str, Any]], None]] = []
@@ -190,7 +191,23 @@ class CdpConnection:
             self._pending.clear()
 
     async def call(self, method: str, params: dict[str, Any] | None = None, *,
-                   session_id: str | None = None, wait_s: float = CALL_SECONDS) -> dict[str, Any]:
+                   session_id: str | None = None, wait_s: float = CALL_SECONDS,
+                   mutating: bool = False) -> dict[str, Any]:
+        async def call() -> dict[str, Any]:
+            return await self._request(method, params, session_id=session_id, wait_s=wait_s)
+
+        if self._effects is not None and (
+            method in _CDP_WRITES or method.startswith("Input.") or mutating
+        ):
+            return await self._effects.invoke(
+                "browser.mutation", f"browser:{self._scope}", str(uuid4()), ActAuthority(None),
+                call, judge=lambda _value: Outcome("done"),
+            )
+        return await call()
+
+    async def _request(
+        self, method: str, params: dict[str, Any] | None, *, session_id: str | None, wait_s: float,
+    ) -> dict[str, Any]:
         self._next += 1
         mid = self._next
         message: dict[str, Any] = {"id": mid, "method": method, "params": params or {}}
@@ -241,8 +258,10 @@ class BrowserPage:
         """Revoke the page's action capability: every later action is refused."""
         self.policy.revoke()
 
-    async def _page(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        return await self.cdp.call(method, params, session_id=self.session_id)
+    async def _page(
+        self, method: str, params: dict[str, Any] | None = None, *, mutating: bool = False,
+    ) -> dict[str, Any]:
+        return await self.cdp.call(method, params, session_id=self.session_id, mutating=mutating)
 
     async def _frame(self) -> tuple[str, str]:
         """The main frame's id and its current document's `loaderId`."""
@@ -399,7 +418,7 @@ class BrowserPage:
         got = await self._page("Runtime.callFunctionOn", {
             "objectId": object_id, "functionDeclaration": function,
             "arguments": [{"value": a} for a in args], "returnByValue": True,
-        })
+        }, mutating=bool(live))
         if "exceptionDetails" in got:
             raise BrowserError(f"the action on {ref} failed on the page")
         return got.get("result", {}).get("value")
@@ -657,46 +676,27 @@ def _cut(text: str) -> str:
 
 @contextlib.asynccontextmanager
 async def open_browser(*, base_url: str, token: str, scope: str,
-                       timeout_seconds: float = CALL_SECONDS) -> AsyncIterator[BrowserPage]:
-    """Connect to the room's browser through computerd and attach to its page.
-
-    Raises `BrowserError` when computerd refuses (another client holds this
-    room's browser, every browser slot is busy, the computer is off) or the
-    page cannot be attached. A refusal is NOT asked again to learn its reason:
-    any request to that address may start a browser (computerd answers a
-    refusal with JSON instead of upgrading, and a second plain GET would run
-    its start path again)."""
-    ws_url = base_url.rstrip("/").replace("http://", "ws://", 1).replace(
-        "https://", "wss://", 1) + f"/v1/browser?scope={scope}"
-    headers = {"Authorization": f"Bearer {token}"}
-    timeout = aiohttp.ClientTimeout(total=None, sock_connect=timeout_seconds)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        try:
-            ws = await session.ws_connect(ws_url, headers=headers, max_msg_size=64 * 1024 * 1024,
-                                          heartbeat=30)
-        except aiohttp.WSServerHandshakeError as exc:
-            raise BrowserError(_handshake_refusal(exc)) from None
-        except (aiohttp.ClientError, OSError, TimeoutError) as exc:
-            raise BrowserError(f"the computer could not be reached: {type(exc).__name__}") from None
-        cdp = CdpConnection(ws)
-        try:
-            page = await _attach(cdp)
-            yield page
-        finally:
-            await cdp.close()
+                       timeout_seconds: float = CALL_SECONDS,
+                       effects: EffectRecorder | None = None) -> AsyncIterator[BrowserPage]:
+    """Attach to the room's browser page, with one start attempt per connection."""
+    async with connect_browser_cdp(
+        base_url=base_url, token=token, scope=scope,
+        timeout_seconds=timeout_seconds, effects=effects,
+    ) as cdp:
+        yield await _attach(cdp)
 
 
 @contextlib.asynccontextmanager
 async def connect_browser_cdp(*, base_url: str, token: str, scope: str,
                               timeout_seconds: float = CALL_SECONDS,
                               instance: str | None = None,
+                              effects: EffectRecorder | None = None,
                               ) -> AsyncIterator[CdpConnection]:
-    """A raw CDP connection to the scope's browser, no target attached: the
-    manager's channel for target bookkeeping (`getTargets`, `closeTarget`),
-    never for page actions. Starting the browser counts as the same on-demand
-    start `/v1/browser` always does. `instance` pins the connection to the
-    admitted VM boot — a scoped computerd refuses a browser attach that does
-    not name the boot it serves."""
+    """Start or connect to the scope's browser without attaching to a target.
+
+    `instance` pins the connection to the admitted VM boot. A second request
+    after a refused upgrade could start a browser.
+    """
     ws_url = base_url.rstrip("/").replace("http://", "ws://", 1).replace(
         "https://", "wss://", 1) + f"/v1/browser?scope={scope}"
     headers = {"Authorization": f"Bearer {token}"}
@@ -704,14 +704,21 @@ async def connect_browser_cdp(*, base_url: str, token: str, scope: str,
         headers["X-Computerd-Instance"] = instance
     timeout = aiohttp.ClientTimeout(total=None, sock_connect=timeout_seconds)
     async with aiohttp.ClientSession(timeout=timeout) as session:
+        async def connect() -> aiohttp.ClientWebSocketResponse:
+            return await session.ws_connect(
+                ws_url, headers=headers, max_msg_size=64 * 1024 * 1024, heartbeat=30,
+            )
+
         try:
-            ws = await session.ws_connect(ws_url, headers=headers, max_msg_size=64 * 1024 * 1024,
-                                          heartbeat=30)
+            ws = await connect() if effects is None else await effects.invoke(
+                "browser.connect", f"browser:{scope}", str(uuid4()), ActAuthority(None),
+                connect, judge=lambda _ws: Outcome("done"),
+            )
         except aiohttp.WSServerHandshakeError as exc:
             raise BrowserError(_handshake_refusal(exc)) from None
         except (aiohttp.ClientError, OSError, TimeoutError) as exc:
             raise BrowserError(f"the computer could not be reached: {type(exc).__name__}") from None
-        cdp = CdpConnection(ws)
+        cdp = CdpConnection(ws, effects=effects, scope=scope)
         try:
             yield cdp
         finally:
@@ -723,18 +730,15 @@ async def open_browser_tab(*, base_url: str, token: str, scope: str,
                            target_id: str | None = None,
                            timeout_seconds: float = CALL_SECONDS,
                            instance: str | None = None,
+                           effects: EffectRecorder | None = None,
                            ) -> AsyncIterator[BrowserPage]:
-    """Connect to the scope's browser and attach to ONE OWNED target.
+    """Attach to the task's tab, or create one when `target_id` is absent.
 
-    This is the task-owned attach: `target_id` names the tab a task bound
-    earlier (`BrowserTab`); None opens a fresh tab for a task with none. It
-    NEVER adopts the first/active page (that could be another task's) and
-    NEVER closes a page (popups and sibling tabs belong to their tasks).
-    A `target_id` the browser no longer holds is `BrowserError` — the handle
-    is stale, and the caller answers `expired`, never a substitute tab."""
+    A stale `target_id` raises `BrowserError`.
+    """
     async with connect_browser_cdp(
         base_url=base_url, token=token, scope=scope,
-        timeout_seconds=timeout_seconds, instance=instance,
+        timeout_seconds=timeout_seconds, instance=instance, effects=effects,
     ) as cdp:
         yield await _attach_owned(cdp, target_id)
 
