@@ -50,6 +50,7 @@ from tests.unit.test_holder_link import (
     _world,
 )
 from tests.unit.test_music_notify import GUILD, STARTED_IN, _Channel, _Client
+from tests.unit.test_music_player_manager import _TRACK_A, _FakeVoiceSession, _manager
 
 NOW = datetime(2026, 2, 1, tzinfo=UTC)
 AUTHORITY = ActAuthority(PASS.unit, "fixture-person", room=PASS.room, pass_context=PASS)
@@ -166,7 +167,7 @@ async def test_discord_scoped_deterministic_executors(acts, executor):
     if executor == "discord.command_reply":
         wire = AsyncMock()
         interaction = SimpleNamespace(
-            id=20, guild_id=GUILD, channel_id=STARTED_IN, user=SimpleNamespace(id=42),
+            id=20, guild_id=GUILD, channel_id=STARTED_IN, user=SimpleNamespace(id=42), extras={},
             response=SimpleNamespace(send_message=wire),
         )
         await command.respond(interaction, "reply", "Command response", ephemeral=True)
@@ -181,6 +182,61 @@ async def test_discord_scoped_deterministic_executors(acts, executor):
     act, _ = await _recorded(engine, executor, composed=False)
     if executor == "discord.command_reply":
         assert act["authority_person"] == "canonical-person"
+
+
+async def test_voice_death_without_generation_sends_one_teardown_notice(acts):
+    envelope, engine = acts
+    origin = f"{GUILD}/{STARTED_IN}"
+    commands = DiscordCommandActs(envelope, lambda room: PASS.unit if room == origin else None)
+    channel = _Channel(STARTED_IN)
+    notice = make_notify(client=lambda: _Client(channel), guild_id=GUILD,
+                         fallback_channel_id=STARTED_IN, command_acts=commands)
+    manager = _manager({"fixture track": _TRACK_A})
+    started = await manager.play(
+        guild_id=GUILD, query_or_url="fixture track", requested_by="fixture-person",
+        added_at=NOW, connect=AsyncMock(side_effect=_FakeVoiceSession),
+        voice_channel_id="fixture-voice", notify_channel_id=STARTED_IN, notify=notice,
+    )
+    assert started is not None and started.status == "playing"
+
+    await manager.on_voice_death(GUILD)
+    await manager.on_voice_death(GUILD)
+
+    assert channel.sent == [(
+        "Music stopped — voice connection lost. Use /music play to restart.", True,
+    )]
+    act, _ = await _recorded(engine, "discord.music_notice", composed=False)
+    assert act["trigger_id"]
+
+
+@pytest.mark.parametrize("ops", [("followup", "followup"), ("defer", "edit")])
+async def test_discord_interaction_records_each_response_in_order(acts, ops):
+    envelope, engine = acts
+    calls = []
+
+    async def send(text):
+        calls.append(text)
+
+    async def defer():
+        calls.append("deferred")
+
+    commands = DiscordCommandActs(envelope)
+    interaction = SimpleNamespace(
+        id=20, extras={}, followup=SimpleNamespace(send=send),
+        response=SimpleNamespace(defer=defer, edit_message=send),
+    )
+    labels = ("deferred" if ops[0] == "defer" else "First", "Second")
+    for op, label in zip(ops, labels, strict=True):
+        await commands.respond(interaction, op, *(() if op == "defer" else (label,)))
+
+    assert calls == list(labels)
+    rows = await _rows(engine, NORA_ACT)
+    assert {row["trigger_id"] for row in rows} == {str(interaction.id)}
+    assert sorted(row["ordinal"] for row in rows) == [0, 1]
+    outcomes = await _rows(engine, NORA_ACT_OUTCOME)
+    assert {row["act_id"] for row in outcomes if row["verdict"] == "done"} == {
+        row["id"] for row in rows
+    }
 
 
 @pytest.mark.parametrize("op", ["send", "react", "edit", "typing"])

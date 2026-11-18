@@ -7,7 +7,7 @@ from typing import Any
 
 _PRIVATE = frozenset({
     "reasoning", "reasoningContent", "reasoning_content", "thinking", "redactedThinking",
-    "reasoningText", "reasoning_text", "analysis", "hidden_reasoning",
+    "redacted_thinking", "reasoningText", "reasoning_text", "analysis", "hidden_reasoning",
 })
 
 

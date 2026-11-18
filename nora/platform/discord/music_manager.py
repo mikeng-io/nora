@@ -24,6 +24,7 @@ import logging
 from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from datetime import datetime
 from typing import Any
+from uuid import uuid4
 
 from nora.domain.music import (
     AUTOPLAY_PERSON_ID,
@@ -1022,16 +1023,11 @@ class MusicPlayerManager:
         self, guild_id: str, notify: Notify | None, player: MusicPlayer | None,
         *, generation: str | None = None,
     ) -> None:
-        """Announce a `_leave` teardown — ONLY the one transition with no
-        command reply of its own, `on_voice_death`. `/music stop` already
-        replies `Stopped.`, an idle timeout is expected, and an emptied
-        channel has nobody left to read it. `notify`/`player` are both `None` on an
-        already-torn-down guild (idempotent re-run), which must not
-        double-post."""
+        """Announce voice death once, after the player and notifier have been detached."""
         if notify is None or player is None:
             return
         try:
-            with notice_event(generation or ""):
+            with notice_event(generation or str(uuid4())):
                 await notify(m.connection_lost_line())
         except Exception:
             log.warning(
