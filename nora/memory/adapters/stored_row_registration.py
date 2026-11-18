@@ -50,18 +50,26 @@ async def _write_items(
     })
 
     key_columns = {f"_source_{name}": table.c[name].type for name in keys}
-    plane_columns = {name: table.c[name].type for name in rows[0] if name not in key_columns}
+    shared = {
+        name: value for name, value in rows[0].items()
+        if name not in key_columns and all(row[name] == value for row in rows)
+    }
+    plane_columns = {
+        name: table.c[name].type for name in rows[0]
+        if name not in key_columns and name not in shared
+    }
+    columns = key_columns | plane_columns
     payload = [
-        {name: value.isoformat() if isinstance(value, datetime) else value
-         for name, value in row.items()}
+        {name: row[name].isoformat() if isinstance(row[name], datetime) else row[name]
+         for name in columns}
         for row in rows
     ]
     records = sa.func.jsonb_to_recordset(sa.bindparam("items", type_=JSONB)).table_valued(
-        *(sa.column(name, type_) for name, type_ in (key_columns | plane_columns).items()),
+        *(sa.column(name, type_) for name, type_ in columns.items()),
     ).render_derived(with_types=True)
     update = sa.update(table).where(
         *(table.c[name] == records.c[f"_source_{name}"] for name in keys),
-    ).values({name: records.c[name] for name in plane_columns})
+    ).values({**shared, **{name: records.c[name] for name in plane_columns}})
     await conn.execute(update, {"items": payload})
 
 
