@@ -31,7 +31,9 @@ JOBS = (
 )
 
 
-def classify(paths: list[str], repo: Path = affected_tests.ROOT) -> dict[str, bool]:
+def classify(
+    paths: list[str], repo: Path = affected_tests.ROOT, *, pull_request: bool = False
+) -> dict[str, bool]:
     plan = dict.fromkeys(JOBS, False)
     plan["contracts"] = True
     for path in paths:
@@ -45,6 +47,7 @@ def classify(paths: list[str], repo: Path = affected_tests.ROOT) -> dict[str, bo
             "tests/contract/test_admission_probe_contract.py",
             "tests/infra/test_managed_admission_sql.py",
             "tests/integration/test_managed_admission_ory.py",
+            "tests/integration/test_managed_export_ory.py",
             "tests/integration/test_managed_identity_journey.py",
             "tests/integration/test_managed_identity_restore.py",
             "tests/integration/test_managed_runtime_recovery.py",
@@ -110,6 +113,10 @@ def classify(paths: list[str], repo: Path = affected_tests.ROOT) -> dict[str, bo
                 plan["codeql-javascript"] = True
         else:
             return dict.fromkeys(JOBS, True)
+    if pull_request:
+        # NOR-1 acceptance: the managed-identity Ory gate runs on every PR
+        # head, so the join never sees the named item-1 job skipped.
+        plan["ory"] = True
     return plan
 
 
@@ -539,7 +546,7 @@ def main() -> int:
         is_pr = "pull_request" in event
         paths = changed_paths(event, repo) if (
             is_pr or ("before" in event and "after" in event)) else []
-        plan = classify(paths, repo) if is_pr else dict.fromkeys(JOBS, True)
+        plan = classify(paths, repo, pull_request=True) if is_pr else dict.fromkeys(JOBS, True)
         docs = [p for p in paths if affected_tests._is_doc_or_data(p, repo)]
         # Retain selector metadata for explicit consumers. Automatic backend
         # CI uses the fixed fast baseline rather than this dependency record.

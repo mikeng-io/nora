@@ -214,7 +214,8 @@ def test_agent_skill_link_ci_uses_the_same_document_classification(
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     assert values["docs_only"] == str(canonical).lower()
     selected = {job for job, chosen in json.loads(values["plan"]).items() if chosen}
-    assert selected == ({"contracts"} if canonical else set(ci_plan.JOBS) - {"codeql-python"})
+    assert selected == (
+        {"contracts", "ory"} if canonical else set(ci_plan.JOBS) - {"codeql-python"})
     if canonical:
         assert "tests/architecture/test_agent_skills.py" in json.loads(values["readers"])
 
@@ -731,3 +732,26 @@ def test_python_codeql_is_on_demand_but_other_scans_stay_automatic(
     if event_name == "workflow_dispatch":
         needs["codeql-python"]["result"] = "cancelled"
         assert not ci_plan.verify(plan, needs)
+
+
+def test_pull_requests_always_run_the_ory_item1_gate(tmp_path, monkeypatch):
+    # NOR-1 item 1: an unrelated docs diff can never leave the named Ory job
+    # skipped on a PR head — the plan selects it and the join holds it.
+    event = tmp_path / "event.json"
+    event.write_text(json.dumps({"pull_request": {}}))
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setattr("sys.argv", ["ci_plan"])
+    monkeypatch.setattr(ci_plan, "changed_paths", lambda event, repo: ["docs/runbook.md"])
+    monkeypatch.setattr(ci_plan.affected_tests, "select", lambda paths, repo, **_: [])
+    assert ci_plan.main() == 0
+    values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    plan = json.loads(values["plan"])
+    assert plan["ory"]
+    needs = {"classify": {"result": "success"}}
+    needs.update({job: {"result": "success" if chosen else "skipped"}
+                  for job, chosen in plan.items()})
+    assert ci_plan.verify(plan, needs)
+    needs["ory"]["result"] = "skipped"
+    assert not ci_plan.verify(plan, needs)

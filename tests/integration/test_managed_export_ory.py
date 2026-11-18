@@ -65,12 +65,25 @@ async def test_export_rebuilds_the_admitted_mapping_over_real_ory(
 
         persons = load_persons(output / "identity.toml")
         generated = load_policy(output / "policy.toml")
+        source = load_persons(identity)
         # The same people, the same stable references, the same accounts.
         assert persons.subject_id_for("miles_old") == "miles"
-        assert persons.account_for("signal", "+85200000001").person_id == "miles"
-        assert persons.account_for("telegram", "800001").person_id == "miles"
         assert persons.social_off("miles")
-        assert set(persons.by_person) == {"miles", "ada", "listed_only"}
+        # Identity-source people plus `listed_only`, the policy member with
+        # no account block — exported with none, never a phantom grouping.
+        assert set(persons.by_person) == {*source.by_person, "listed_only"}
+        # The whole account grouping round-trips: every exported person
+        # carries exactly the source's accounts — platform, label and the
+        # full typed-identifier set — never merged, split or re-typed.
+        def groupings(holder, person_id):
+            return {
+                (a.platform, a.label, frozenset(
+                    (i.kind, i.value) for i in a.identifiers))
+                for a in holder.accounts_for(person_id)
+            }
+        for person_id in source.by_person:
+            assert groupings(persons, person_id) == groupings(source, person_id)
+        assert persons.accounts_for("listed_only") == ()
         # The emitted rooms hold exactly what Keto answers.
         room_a = generated.conversation("signal", "generated-room-a")
         room_b = generated.conversation("signal", "generated-room-b")
