@@ -27,8 +27,10 @@ Check, and cite file:line or the source for each finding:
 5. **Route.** The route matches the triggers in `nora-work/references/lifecycle.md`.
 
 **Return:** for each item, APPROVE or BLOCKER with a one-line reason. Label a
-BLOCKER that the author's pre-flight should have caught as `pre-flight miss`. A round
-with no BLOCKER ends brief review; Mike then approves the Done-when list.
+BLOCKER that the author's pre-flight should have caught as `pre-flight miss`.
+A round with no BLOCKER ends brief review, passes propose → plan and locks
+the Done-when list. Escalate under `nora-work/references/lifecycle.md`
+«When Mike is asked».
 
 ## Marking items (verify)
 
@@ -45,8 +47,8 @@ lowers or raises the severity.
 
 After a repair, a re-check covers the repair delta, the open findings and
 any evidence that was unavailable. Rounds continue without asking while each
-one closes blocker classes. Mike decides how to proceed when a round closes no
-class, or a repair introduces a new one.
+one closes blocker classes. Mike decides how to proceed when a re-check leaves
+blockers open and closes no class, or a repair introduces a new blocker class.
 
 When fixing a reported defect class, the author searches for every sibling
 instance, as the reviewer does when reporting one. A re-check that finds an

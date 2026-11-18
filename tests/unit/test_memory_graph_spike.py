@@ -60,7 +60,7 @@ async def test_replay_embedder_check_uses_effective_subject_config(
         checked.assert_not_awaited()
     indexed.assert_awaited_once_with(
         "generated-sandbox", source_url="generated-source",
-        model_id="generated-subject.gguf@0000feedbeef", graph=None)
+        model_id="generated-subject.gguf@0000feedbeef", graph=None, require_vectors=read)
 
 
 async def test_replay_sandbox_projects_with_the_subjects_graph_context(
@@ -93,7 +93,7 @@ async def test_replay_sandbox_projects_with_the_subjects_graph_context(
                       {"nora_name": cfg.doctrine.display_name, "produce": False})]
     indexed.assert_awaited_once_with(
         "generated-sandbox", source_url="generated-source",
-        model_id="generated-subject.gguf@0000feedbeef", graph=made)
+        model_id="generated-subject.gguf@0000feedbeef", graph=made, require_vectors=True)
 
 
 async def test_effective_embedder_refusal_prevents_index_preparation(tmp_path, monkeypatch):
@@ -440,14 +440,9 @@ async def test_judges_dial_the_eval_route_where_the_measurer_runs(
         "ask_text",
         AsyncMock(return_value=SimpleNamespace(finish_reason="stop", content="[]")),
     )
-    cfg = SimpleNamespace(
-        llm=SimpleNamespace(model="generated-session", timeout_seconds=1),
-        endpoint=lambda purpose, model: (
-            "http://host.docker.internal:20128/v1",
-            "generated-key",
-            model,
-        ),
-    )
+    from nora.config import load
+
+    cfg = load(example_config_path)
     judges = spike.Judges(cfg, ["cx/gpt-6.1-sol", "kmc/k3-256k"], example_config_path)
     assert judges.effective_models == ["cx/gpt-6.1-sol", "kmc/k3-256k"]
     for model_id in ("cx/gpt-6.1-sol", "kmc/k3-256k", "generated-session"):

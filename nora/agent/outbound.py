@@ -109,9 +109,11 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from ..domain.models import PersonRef
 from ..domain.ports import (
     LinkPreview,
     LinkPreviewSource,
@@ -303,8 +305,9 @@ class OutboundComposer:
         *,
         platform: str,
         conversation_id: str,
-        persons: Persons,
+        persons: Persons | None = None,
         metrics: Any,
+        access: Any = None,
         roster_source: RosterSource | None = None,
         preview_source: LinkPreviewSource | None = None,
         content_checks: bool = True,
@@ -312,11 +315,18 @@ class OutboundComposer:
         self._content_checks = content_checks
         self._platform = platform
         self._conversation_id = conversation_id
-        self._persons = persons
+        self._access = access
+        self._persons = (persons if persons is not None
+                         else access.persons_view())
         self._metrics = metrics
         self._roster_source = roster_source
         self._preview_source = preview_source
-        self._handles = _handle_index(persons)
+        # `None` means "build lazily from `access`" — the managed vocabulary
+        # is an async read, so it is fetched on the first resolvable handle.
+        self._handles = (
+            _handle_index(self._persons.by_person.values())
+            if access is None else None
+        )
         self._roster: Roster | None = None
 
     async def compose(self, styled: Styled) -> Outbound:
@@ -342,7 +352,7 @@ class OutboundComposer:
     # ------------------------------------------------------------------ mentions
 
     async def _mentions(self, text: str) -> tuple[Mention, ...]:
-        found = self._scan(text)
+        found = await self._scan(text)
         if not found:
             return ()                    # the common message: no roster read
         out: list[Mention] = []
@@ -366,14 +376,24 @@ class OutboundComposer:
                 # until an operator opts a person in; both leave the span exactly
                 # as Nora wrote it.
                 handle=(
-                    self._persons.instagram_handle(recipient)
+                    await self._instagram_handle(recipient)
                     if self._platform == "instagram" else None
                 ),
             ))
             self._metrics.inc("nora_outbound_mentions_total", outcome="sent")
         return tuple(out)
 
-    def _scan(self, text: str) -> list[tuple[int, int, str]]:
+    async def _instagram_handle(self, fbid: str) -> str | None:
+        if self._access is not None:
+            return await self._access.instagram_handle(fbid)
+        return self._persons.instagram_handle(fbid)
+
+    async def _vocabulary(self) -> dict[str, str | None]:
+        if self._handles is None:
+            self._handles = _handle_index(await self._access.person_refs())
+        return self._handles
+
+    async def _scan(self, text: str) -> list[tuple[int, int, str]]:
         """Every `@handle` in `text` as `(index of @, handle length, person_id)`.
 
         Longest-match over the known vocabulary, left to right, non-overlapping.
@@ -381,6 +401,9 @@ class OutboundComposer:
         阿豹 with a stray 妹 — a shorter handle that is a prefix of a longer one
         is the normal case in a family group, not an edge case.
         """
+        if "@" not in text:
+            return []
+        handles = await self._vocabulary()
         out: list[tuple[int, int, str]] = []
         i = 0
         while (i := text.find("@", i)) != -1:
@@ -389,7 +412,7 @@ class OutboundComposer:
                 # address or a handle from somewhere else, never a mention.
                 i += 1
                 continue
-            match = self._match_handle(text, i + 1)
+            match = self._match_handle(text, i + 1, handles)
             if match is None:
                 i += 1
                 continue
@@ -398,15 +421,17 @@ class OutboundComposer:
             i += 1 + len(handle)
         return out
 
-    def _match_handle(self, text: str, at: int) -> tuple[str, str] | None:
+    def _match_handle(
+        self, text: str, at: int, handles: dict[str, str | None],
+    ) -> tuple[str, str] | None:
         window = text[at:at + MAX_HANDLE_CHARS].casefold()
-        for handle in self._handles:            # pre-sorted longest first
+        for handle in handles:                  # pre-sorted longest first
             if not window.startswith(handle):
                 continue
             end = at + len(handle)
             if end < len(text) and _is_word(handle[-1]) and _is_word(text[end]):
                 continue                        # `@miles` inside `@mikeson`
-            person_id = self._handles[handle]
+            person_id = handles[handle]
             if person_id is None:
                 # An AMBIGUOUS handle — two people answer to it. Refused rather
                 # than resolved to either: tagging the wrong member of a family
@@ -418,7 +443,11 @@ class OutboundComposer:
         return None
 
     async def _recipient(self, person_id: str) -> str | None:
-        ids = self._persons.platform_ids(self._platform, person_id)
+        ids = (
+            await self._access.platform_ids(self._platform, person_id)
+            if self._access is not None
+            else self._persons.platform_ids(self._platform, person_id)
+        )
         if not ids:
             self._metrics.inc("nora_outbound_mentions_total", outcome="unresolved")
             return None
@@ -503,7 +532,7 @@ class OutboundComposer:
         return preview
 
 
-def _handle_index(persons: Persons) -> dict[str, str | None]:
+def _handle_index(refs: Iterable[PersonRef]) -> dict[str, str | None]:
     """Every name Nora may be tagged with, longest first, `None` if ambiguous.
     Built from `name`, `first_name` and `aliases`, the SAME three fields
     `nora.agent.room.RoomView.find` matches a lookup target on. An alias never
@@ -518,7 +547,8 @@ def _handle_index(persons: Persons) -> dict[str, str | None]:
     `_match_handle` can return on its first hit.
     """
     claims: dict[str, set[str]] = {}
-    for person_id, ref in persons.by_person.items():
+    for ref in refs:
+        person_id = ref.person_id
         for raw in (ref.name, ref.first_name, *ref.aliases):
             handle = (raw or "").strip().casefold()
             if not handle or len(handle) > MAX_HANDLE_CHARS:

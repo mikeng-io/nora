@@ -182,14 +182,9 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     # `assess.py`'s `recent` needs no pin: `recent` is already ambiguous
     # (audit.py/decision_log.py/tag_traces.py/tool_call_log.py all define one),
     # so `_ambiguous` skips it before the pin table is ever consulted.
-    ("rollups.py", "rows"): _Pin(
+    ("reminders.py", "in_rooms"): _Pin(
         "read_back_affordance",
-        "Every row of one unit rollup table in a build, surrogate ids and "
-        "system time stripped: what the step-2 determinism gate compares "
-        "between an incremental build and a rebuild "
-        "(tests/integration/test_rollup_builds.py). Its consumer at runtime is "
-        "`rollup_read` (design/cognition-loop/session.md), not built "
-        "in step 2a.",
+        "All reminder states in a named room set, retained for ledger read-back.",
     ),
     ("computer_events.py", "orphaned_starts"): _Pin(
         "read_back_affordance",
@@ -274,6 +269,22 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
 # `tests/unit/test_media_join.py` and by the store's own contract suite.
 _AMBIGUOUS: frozenset[str] = frozenset(
     {
+        # Binding adapters and holder services share these verbs; this AST gate
+        # cannot attribute them to one implementation and reports them unchecked.
+        "account_for", "account_record", "accounts_for",
+        "add_alias", "authority_blocks", "begin_commit",
+        "bind_identifiers", "block_authority", "canonical_person",
+        "challenge", "clear_block", "consolidate",
+        "correlate_kratos", "decide", "drop_membership_support",
+        "expire", "former_persons", "hold_identity",
+        "identity_held", "incomplete_operations", "latest_profile_operation",
+        "mark_committed", "members_of", "memberships_for",
+        "mutation", "observation_for", "operation",
+        "person", "person_lifecycle", "persons",
+        "record_for", "record_observation", "record_operation",
+        "release_identity_hold", "revoke_binding", "scoped_name_for",
+        "set_display_name", "set_lifecycle", "set_membership",
+        "set_scoped_name", "update_operation",
         "aclose", "append", "claim", "create", "delete", "fail",
         # Message targets and observation grounding have distinct by-id stores.
         "by_ids",
@@ -323,6 +334,8 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         "conversation", "conversations", "person_id", "platform", "rooms", "subject_id_for",
         # Aggregate retirement and lesson retirement are separate operations.
         "retire",
+        # Selected identity, snapshot and store facades share these method names.
+        "bind", "identity_ids", "latest_fix", "load", "rows", "since", "window",
     }
 )
 
@@ -336,6 +349,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 #
 _STORE_MODULES: frozenset[str] = frozenset(
     {
+        "account_links.py", "managed_identity.py",
         "aggregate_writes.py", "cognitive_graph_store.py", "item_registration.py",
         "mobility_writes.py", "observation_heads.py", "social_item_writes.py",
         "assess.py", "audit.py", "bridge_store.py", "cognition_store.py",

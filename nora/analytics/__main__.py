@@ -30,7 +30,7 @@ from .. import config
 from ..config import ConfigError
 from ..obs.health import serve
 from ..obs.logging import setup_logging
-from .composition import AnalyticsDependencies, AnalyticsStartupError, build_rollup
+from .composition import AnalyticsDependencies, AnalyticsStartupError, open_rollup
 
 log = logging.getLogger("nora.analytics.__main__")
 
@@ -57,13 +57,19 @@ def _metrics_app(deps: AnalyticsDependencies) -> web.Application:
         )
 
     async def health(_: web.Request) -> web.Response:
+        subjects: int | None
+        units: int | None
+        try:
+            subjects, units = len(deps.subjects), len(deps.units)
+        except RuntimeError:
+            subjects = units = None
         return web.json_response({
-            "status": "ok",
-            "subjects": len(deps.subjects),
-            "units": len(deps.units),
+            "status": "unavailable" if subjects is None else "ok",
+            "subjects": subjects,
+            "units": units,
             "enabled": deps.runner is not None,
             "config": deps.reload_files.status() if deps.reload_files else {},
-        })
+        }, status=503 if subjects is None else 200)
 
     app.router.add_get("/metrics", metrics_endpoint)
     app.router.add_get("/health", health)
@@ -93,6 +99,15 @@ async def _tick(
         return  # `_run` only loops here once it has confirmed the runner is set
     now_s = time.time()
     through_ms = int((now_s - deps.grace_seconds) * 1000)
+    if deps.refresh_identity is not None:
+        try:
+            await deps.refresh_identity()
+        except Exception as exc:  # noqa: BLE001 — a failed refresh must not publish stale derivations
+            log.error("analytics identity unavailable (%s)", type(exc).__name__)
+            for sid in first_seen:
+                deps.metrics.gauge("nora_analytics_rollup_age_seconds",
+                    max(0.0, now_s - last_success.get(sid, first_seen[sid])), subject=sid)
+            return
     failed: set[str] = {s.subject_id for s in deps.subjects}
     try:
         build_id = await runner.ensure_build(through_ms=through_ms)
@@ -155,7 +170,11 @@ async def _run(config_path: Path, *, rebuild: bool = False) -> None:
             )
         except Exception:
             log.warning("tracing setup failed; continuing without tracing", exc_info=True)
-    deps = build_rollup(cfg)
+    async with open_rollup(cfg) as deps:
+        await _run_built(deps, rebuild=rebuild)
+
+
+async def _run_built(deps: AnalyticsDependencies, *, rebuild: bool = False) -> None:
     if rebuild:
         if deps.runner is None:
             log.info("analytics disabled — nothing to rebuild")

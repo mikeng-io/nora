@@ -245,3 +245,271 @@ def test_source_url_default_refuses_missing_and_broken_credentials(
     (tmp_path / "secret.toml").write_text("malformed = [")
     with pytest.raises(ValueError, match="unreadable"):
         source_url_for("", tmp_path)
+
+
+# --- the journey selection ---------------------------------------------------
+
+_JOURNEY_PLAN = {
+    "version": 2,
+    "expected_wakes": 0,
+    "steps": [{"send": "the venue is Cedar Hall"}, {"until_delivery": True}],
+    "expectations": [{"turn": 0, "polarity": "must", "kind": "behavior",
+                      "text": "says where the outing was held",
+                      "check": "Cedar Hall"}],
+    "judges": ["alpha", "beta"],
+}
+
+
+def _journey_inputs(tmp_path):
+    """The declared cohort and services manifest a journey selection binds."""
+    import json
+
+    from evals.services import load_services
+
+    cohort_path = tmp_path / "cohort.json"
+    cohort_path.write_text(json.dumps({
+        "version": 1, "judges": ["alpha", "beta"],
+        "cases": [{"name": "the_outing", "plan": dict(_JOURNEY_PLAN)}]}))
+    services_path = tmp_path / "services.json"
+    services_path.write_text(json.dumps({"version": 1, "corpora": {
+        "autonomous_journey": {"the_outing": {
+            "kind": "journey_world", "policy": "[rooms]\nallow = []",
+            "judges": ["alpha", "beta"]}}}}))
+    return argparse.Namespace(
+        journey_cohort=cohort_path, services=services_path,
+        service_inputs=load_services(services_path), run_budget="10",
+        sample=1, memory_index=False, subject_overrides=None, judge=None,
+        measure="protocol")
+
+
+def test_the_journey_corpus_is_selectable_by_name_never_by_class_or_all():
+    assert _corpora_for(_args(corpus=["autonomous_journey"])) == ["autonomous_journey"]
+    everything = _corpora_for(_args(all=True))
+    assert "autonomous_journey" not in everything, (
+        "--all stays the yaml corpora; a live-clock journey needs its "
+        "declared inputs and never rides a bulk selection")
+    classes = set().union(*(
+        _corpora_for(_args(cls=[c])) for c in set(CORPUS_CLASS.values())))
+    assert "autonomous_journey" not in classes
+
+
+def test_a_journey_selection_binds_the_declared_inputs(tmp_path):
+    from evals.journey_cohort import bound_selection
+
+    cohort = bound_selection(_journey_inputs(tmp_path), ["autonomous_journey"], None)
+    assert cohort.judges == ("alpha", "beta")
+    assert [c.name for c in cohort.cases] == ["the_outing"]
+
+
+@pytest.mark.parametrize("damage", [
+    pytest.param({"journey_cohort": None}, id="no-cohort"),
+    pytest.param({"services": None}, id="no-services"),
+    pytest.param({"run_budget": None}, id="no-budget"),
+    pytest.param({"sample": 2}, id="sampled"),
+    pytest.param({"memory_index": True}, id="subject-arm"),
+    pytest.param({"subject_overrides": "x.json"}, id="subject-overrides"),
+    pytest.param({"judge": "some-judge"}, id="eval-judge-on-journey-only"),
+])
+def test_a_journey_selection_refuses_an_absent_or_promoting_input(tmp_path, damage):
+    """Every clause refuses BEFORE composition or model dispatch, and no
+    flag promotes the finite world into a real-model baseline."""
+    from evals.journey_cohort import bound_selection
+
+    args = _journey_inputs(tmp_path)
+    for key, value in damage.items():
+        setattr(args, key, value)
+    with pytest.raises(ValueError):
+        bound_selection(args, ["autonomous_journey"], None)
+
+
+def test_a_journey_selection_refuses_an_undeclared_world(tmp_path):
+    """A services manifest naming another corpus, a wrong-kind plan, or
+    aliases the cohort did not declare all refuse."""
+    import json
+
+    from evals.journey_cohort import bound_selection
+    from evals.services import load_services
+
+    args = _journey_inputs(tmp_path)
+    empty_services = tmp_path / "empty.json"
+    empty_services.write_text(json.dumps(
+        {"version": 1, "corpora": {"other": {"c": {
+            "version": 1, "bindings": {"llm.base_url": "x"}, "services": {"x": []}}}}}))
+    args.service_inputs = load_services(empty_services)
+    with pytest.raises(ValueError, match="no plans"):
+        bound_selection(args, ["autonomous_journey"], None)
+
+
+def test_the_cohort_flag_on_an_ordinary_selection_is_refused(tmp_path):
+    """A declared input that binds nothing is a selection error, not a
+    silently ignored flag."""
+    from evals.journey_cohort import bound_selection
+
+    with pytest.raises(ValueError, match="no selected corpus"):
+        bound_selection(_journey_inputs(tmp_path), ["standing"], None)
+
+
+def test_an_ordinary_selection_binds_no_cohort(tmp_path):
+    from evals.journey_cohort import bound_selection
+
+    args = _journey_inputs(tmp_path)
+    args.journey_cohort = None
+    assert bound_selection(args, ["standing"], None) is None
+
+
+# --------------------------------------------------------------------------
+# --measure: the off-default behavioral claim for the journey corpus.
+# --------------------------------------------------------------------------
+
+
+def test_the_measure_flag_is_off_default_and_refuses_an_unknown_claim():
+    from evals.cli import eval_parser
+
+    assert eval_parser().parse_args(
+        ["autonomous_journey"]).measure == "protocol"
+    assert eval_parser().parse_args(
+        ["autonomous_journey", "--measure", "behavioral"]
+    ).measure == "behavioral"
+    with pytest.raises(SystemExit):
+        eval_parser().parse_args(
+            ["autonomous_journey", "--measure", "live"])
+
+
+_GATEWAY = {"upstream": "http://127.0.0.1:9/v1",
+            "models": ["nora", "alpha", "beta"]}
+
+
+def _gateway_manifest(tmp_path):
+    """A manifest whose journey world declares the gateway `behavioral` needs."""
+    import json
+
+    from evals.services import load_services
+
+    path = tmp_path / "services-gateway.json"
+    path.write_text(json.dumps({"version": 1, "corpora": {
+        "autonomous_journey": {"the_outing": {
+            "kind": "journey_world", "policy": "[rooms]\nallow = []",
+            "judges": ["alpha", "beta"],
+            "model_gateway": dict(_GATEWAY)}}}}))
+    return path, load_services(path)
+
+
+def test_a_behavioral_selection_binds_the_declared_live_world(tmp_path):
+    """`--measure behavioral` meeting a per-case plan that declares its
+    own model gateway is the only way the journey's claim changes."""
+    from evals.journey_cohort import bound_selection
+
+    args = _journey_inputs(tmp_path)
+    args.measure = "behavioral"
+    args.services, args.service_inputs = _gateway_manifest(tmp_path)
+    cohort = bound_selection(args, ["autonomous_journey"], None)
+    assert cohort.judges == ("alpha", "beta")
+    assert [c.name for c in cohort.cases] == ["the_outing"]
+
+
+def test_a_behavioral_selection_cannot_promote_a_generated_world(tmp_path):
+    """A plan with no model gateway answers every request through
+    CausalProtocol/GeneratedJudge — finite responses, never model
+    behavior — so `--measure behavioral` refuses before any case
+    composes or a model is dispatched."""
+    from evals.journey_cohort import bound_selection
+
+    args = _journey_inputs(tmp_path)
+    args.measure = "behavioral"
+    with pytest.raises(ValueError, match="cannot promote"):
+        bound_selection(args, ["autonomous_journey"], None)
+
+
+def test_a_gateway_fixture_keeps_the_declared_protocol_measurement(
+        tmp_path):
+    """A declared gateway never promotes a protocol claim to behavior."""
+    from evals.journey_cohort import bound_selection
+
+    args = _journey_inputs(tmp_path)
+    args.services, args.service_inputs = _gateway_manifest(tmp_path)
+    cohort = bound_selection(args, ["autonomous_journey"], None)
+    assert [case.name for case in cohort.cases] == ["the_outing"]
+    assert args.bound_measurement.mode == "protocol-rehearsal"
+
+
+def test_a_behavioral_measurement_binds_the_journey_only(tmp_path):
+    """The off-default choice names the journey corpus: a behavioral
+    claim on an ordinary corpus refuses rather than silently bind."""
+    from evals.journey_cohort import bound_selection
+
+    args = _journey_inputs(tmp_path)
+    args.measure = "behavioral"
+    args.journey_cohort = None
+    with pytest.raises(ValueError, match="no journey corpus"):
+        bound_selection(args, ["standing"], None)
+
+
+# --------------------------------------------------------------------------
+# --run-input-bytes: the existing wire-input bound, exposed on the CLI.
+# --------------------------------------------------------------------------
+
+
+def _parsed_budget(*argv: str):
+    """The real flag path: argv -> parser -> run_budget_for -> RunBudget."""
+    from evals.cli import eval_parser, run_budget_for
+
+    args = eval_parser().parse_args(list(argv))
+    return run_budget_for(args.run_budget, input_bytes=args.run_input_bytes)
+
+
+def test_run_input_bytes_reaches_the_run_budget():
+    """The parsed `--run-input-bytes` value must land on the budget's real
+    `max_input_bytes` field — a flag that parses but binds nothing gates
+    nothing, which is exactly the silent-ignore this surface exists to
+    refuse."""
+    budget = _parsed_budget(
+        "tool_selection", "--run-budget", "10", "--run-input-bytes", "9000")
+    assert budget is not None
+    assert budget.max_input_bytes == 9000
+    assert budget.max_requests == 10
+
+
+def test_run_input_bytes_without_run_budget_is_refused_before_dispatch():
+    """`--run-input-bytes` alone would install no bound at all, so
+    `run_budget_for` refuses (the caller turns it into `refusing to run`,
+    before `active_run_budget` is ever set) rather than silently ignore it."""
+    with pytest.raises(ValueError, match="requires --run-budget"):
+        _parsed_budget("tool_selection", "--run-input-bytes", "9000")
+
+
+def test_run_input_bytes_admission_is_cumulative_with_a_permitted_control():
+    """The bound is on CUMULATIVE serialized request bytes: a first request
+    under the cap admits (the positive control — only a budget that actually
+    ran can admit), and the request that would carry the cumulative size over
+    it refuses before dispatch."""
+    from nora.domain.run_budget import RunBudgetError
+
+    budget = _parsed_budget(
+        "tool_selection", "--run-budget", "10", "--run-input-bytes", "9000")
+    reservation = budget.admit(input_bytes=7000, declared_output_tokens=10)
+    assert budget.requests == 1 and budget.input_bytes == 7000
+    with pytest.raises(RunBudgetError, match="input size"):
+        budget.admit(input_bytes=3000, declared_output_tokens=10)
+    assert budget.requests == 1          # the over-cap request never counted
+    budget.release(reservation)
+
+
+@pytest.mark.parametrize("bad", ["0", "-5", "1.5", "many"])
+def test_run_input_bytes_must_be_a_positive_integer(bad):
+    """A zero, negative or non-integer byte bound is an argparse refusal
+    (exit 2), never a bound that admits nothing for an unreadable reason."""
+    from evals.cli import eval_parser
+
+    with pytest.raises(SystemExit) as exc_info:
+        eval_parser().parse_args(
+            ["tool_selection", "--run-budget", "10",
+             "--run-input-bytes", bad])
+    assert exc_info.value.code == 2
+
+
+def test_no_run_input_bytes_leaves_the_wire_bound_unset():
+    """No flag, existing behaviour: `--run-budget` alone still parses and the
+    byte bound stays uninstalled — and no flag at all still builds no budget."""
+    assert _parsed_budget("tool_selection", "--run-budget", "10") \
+        .max_input_bytes is None
+    assert _parsed_budget("tool_selection") is None

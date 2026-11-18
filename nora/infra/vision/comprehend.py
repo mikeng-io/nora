@@ -433,23 +433,13 @@ class MediaComprehender:
         )
 
 
-#: One window's bytes AND the total window count of the read they belong to.
-#:
-#: The second argument is not decoration: the per-call vision ceiling divides
-#: by the SERIAL factor (`client.vision_waves`), and this function is the only
-#: place in the codebase that holds the window count before the model calls are
-#: issued — `cut_video` produces it per request, long after `VisionClient` was
-#: built. Every `ask` therefore takes it and hands it to `describe(windows=…)`;
-#: a caller that computed the ceiling itself would be the second writer of an
-#: invariant whose whole argument is that it is written down once.
+#: A window and total window count let VisionClient own its serial per-call ceiling;
+#: the caller does not derive another budget.
 AskWindow = Callable[[bytes, int], Awaitable[VisionResult | None]]
 
 
 def _timed_out(result: VisionResult | None) -> bool:
-    """Whether a window's call ran out of time — the one outcome a second
-    attempt can heal. `error` already got the client's own bounded retry
-    inside the same ceiling, and a `timeout` result is the only one that never
-    did: the shared `wait_for` fired around it."""
+    """Whether a window specifically timed out and permits one recovery attempt."""
     return (
         isinstance(result, VisionResult)
         and not result.available

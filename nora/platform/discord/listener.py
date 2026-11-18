@@ -57,6 +57,7 @@ class DiscordListener:
         *,
         clock: Callable[[], float] = time.monotonic,
         on_ready_extra: Callable[[], Awaitable[None]] | None = None,
+        on_resumed_extra: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._client = client
         self._token = token
@@ -67,6 +68,9 @@ class DiscordListener:
         # already has the commands from that same client's earlier
         # `on_ready` by the time any `on_resumed` fires within its lifetime.
         self._on_ready_extra = on_ready_extra
+        # `on_resumed` is the edge a missed event hides behind — the
+        # onboarding reconciler marks its collections dirty here.
+        self._on_resumed_extra = on_resumed_extra
         self.connected = False
         self.last_event_at: float | None = None
 
@@ -109,6 +113,8 @@ class DiscordListener:
             self.connected = True
             self.last_event_at = self._clock()   # a connected edge — see `on_ready`
             log.info("discord gateway resumed")
+            if self._on_resumed_extra is not None:
+                await self._on_resumed_extra()
 
         async def on_message(message: Any) -> None:
             self.last_event_at = self._clock()
@@ -223,30 +229,17 @@ class DiscordListener:
 
         # Registration binds on `coro.__name__` (discord.py's own convention),
         # which is exactly what the closures above are named for.
-        self._client.event(on_ready)
-        self._client.event(on_resumed)
-        self._client.event(on_message)
-        self._client.event(on_raw_message_edit)
-        self._client.event(on_raw_reaction_add)
-        self._client.event(on_raw_reaction_remove)
-        self._client.event(on_raw_message_delete)
-        self._client.event(on_raw_poll_vote_add)
-        self._client.event(on_raw_poll_vote_remove)
-        self._client.event(on_raw_reaction_clear)
-        self._client.event(on_raw_reaction_clear_emoji)
-        self._client.event(on_guild_channel_pins_update)
-        self._client.event(on_thread_create)
-        self._client.event(on_raw_thread_update)
-        self._client.event(on_raw_thread_delete)
-        self._client.event(on_member_join)
-        self._client.event(on_raw_member_remove)
-        self._client.event(on_member_update)
-        self._client.event(on_guild_channel_update)
-        self._client.event(on_guild_role_update)
-        self._client.event(on_scheduled_event_create)
-        self._client.event(on_scheduled_event_update)
-        self._client.event(on_scheduled_event_delete)
-        self._client.event(on_scheduled_event_user_add)
-        self._client.event(on_scheduled_event_user_remove)
-        self._client.event(on_disconnect)
+        for coro in (
+            on_ready, on_resumed, on_message, on_raw_message_edit,
+            on_raw_reaction_add, on_raw_reaction_remove, on_raw_message_delete,
+            on_raw_poll_vote_add, on_raw_poll_vote_remove, on_raw_reaction_clear,
+            on_raw_reaction_clear_emoji, on_guild_channel_pins_update,
+            on_thread_create, on_raw_thread_update, on_raw_thread_delete,
+            on_member_join, on_raw_member_remove, on_member_update,
+            on_guild_channel_update, on_guild_role_update,
+            on_scheduled_event_create, on_scheduled_event_update,
+            on_scheduled_event_delete, on_scheduled_event_user_add,
+            on_scheduled_event_user_remove, on_disconnect,
+        ):
+            self._client.event(coro)
         await self._client.start(self._token)

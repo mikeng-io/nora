@@ -22,8 +22,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal, TypeVar, get_args
 
+from opentelemetry import baggage, trace
 from opentelemetry import context as otel_context
-from opentelemetry import trace
 from opentelemetry.context import Context
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
@@ -577,22 +577,20 @@ def capture_context() -> Context:
 
 @contextmanager
 def attached(carrier: Context | None) -> Iterator[None]:
-    """Run the body under `carrier` instead of whatever context it inherited.
+    """Replace trace parenting while retaining local evaluation custody.
 
-    `None` — and a capture that degraded to an empty `Context` — attaches an
-    EMPTY context, which makes the body's spans roots of their own trace. That
-    is the fail-closed direction on purpose: a tag whose context was lost is a
-    trace on its own, never a tag silently filed under the previous tag's turn.
-
-    Never raises, on either half. `detach` is guarded separately from `attach`
-    because this wraps `_run_admitted`, whose `finally` is what releases R-10's
-    per-conversation lock — an exception escaping here would skip
-    `release_and_dispatch` and wedge the conversation forever, with no error
-    anywhere. The same rule `span` holds, for the same reason.
+    `None` starts a new trace. Only the private recorder and its capture
+    marker follow the owned work; other ambient trace/baggage stays detached.
+    Tracing failures never skip the caller's lock-release or cleanup.
     """
     token = None
     try:
-        token = otel_context.attach(carrier if carrier is not None else Context())
+        selected = carrier if carrier is not None else Context()
+        evidence = otel_context.get_value(EVAL_EVIDENCE_KEY)
+        if callable(evidence):
+            selected = otel_context.set_value(EVAL_EVIDENCE_KEY, evidence, selected)
+            selected = baggage.set_baggage("nora.eval.capture", "true", context=selected)
+        token = otel_context.attach(selected)
     except Exception:
         log.debug("trace context could not be attached; running as inherited",
                   exc_info=True)

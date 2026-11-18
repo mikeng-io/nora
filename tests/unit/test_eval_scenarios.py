@@ -567,14 +567,8 @@ def test_the_judge_is_handed_the_lesson_and_the_cases_behaviour():
 
 
 def test_memory_index_composes_the_graph_surface_and_only_when_asked(monkeypatch):
-    """`python -m evals --memory-index` (DEC-316): the after arm of a memory
-    routing run composes the subject with `[memory.index] read = true`
-    through `Spec.overrides`, the subject-override path the full restore uses,
-    and queries the embedder at its loopback publish, the only address the
-    host can reach it at; without the flag nothing is overridden, so every
-    other run is unchanged and never dials the embedder."""
+    """Only the declared memory-surface variable changes; service URLs are bound separately."""
     from evals import scenarios
-    from nora.subject import EMBEDDER_FROM_HOST
 
     captured: list = []
     monkeypatch.setattr(scenarios, "nora_task", lambda spec: captured.append(spec))
@@ -582,9 +576,7 @@ def test_memory_index_composes_the_graph_surface_and_only_when_asked(monkeypatch
     scenarios.experiment_for("tool_selection", source_url="x")
     assert captured[0].overrides == {
         "memory.index.read": True,
-        "memory.index.embedder_url": EMBEDDER_FROM_HOST,
     }
-    assert EMBEDDER_FROM_HOST.startswith("http://127.0.0.1:")
     assert captured[1].overrides is None
 
 

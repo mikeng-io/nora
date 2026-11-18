@@ -208,19 +208,19 @@ async def _until_done(backend: SubagentBackend, job_id: str, *, limit: float = 1
 # -- 1. the closed tool list -------------------------------------------------------------
 
 
-def _held(rig: _Rig) -> set[str]:
-    tools = rig.source.build(
+async def _held(rig: _Rig) -> set[str]:
+    tools = await rig.source.build(
         job_id="j1", platform=PLATFORM, conversation_id=ROOM, conversation_type="group",
         requester_person_id="miles",
     )
     return {t.tool_name for t in tools}
 
 
-def test_the_worker_holds_none_of_the_never_list(tmp_path):
+async def test_the_worker_holds_none_of_the_never_list(tmp_path):
     """Both sides: every tool it needs is there (a positive control, so the empty
     intersection below is not an empty build), and not one send, schedule, note, event or
     memory write is."""
-    held = _held(_Rig(tmp_path))
+    held = await _held(_Rig(tmp_path))
     assert {"computer_run", "computer_read", "computer_write", "computer_edit",
             "computer_import", "computer_export", "document_publish", "document_read",
             "web_search", "web_fetch", "media_fetch"} <= held
@@ -242,16 +242,16 @@ def test_the_list_is_derived_from_the_registry_and_names_real_tools(tmp_path):
         rig.registry) == set()
 
 
-def test_a_surface_that_holds_a_tool_off_the_list_is_refused(tmp_path, monkeypatch):
+async def test_a_surface_that_holds_a_tool_off_the_list_is_refused(tmp_path, monkeypatch):
     rig = _Rig(tmp_path)
     monkeypatch.setattr(subagent_tools, "ACTS", ACTS | {"send_reply"})
     with pytest.raises(SubagentToolsError, match="send_reply"):
-        _held(rig)
+        await _held(rig)
 
 
-def test_a_requester_who_is_not_on_file_builds_nothing(tmp_path):
+async def test_a_requester_who_is_not_on_file_builds_nothing(tmp_path):
     with pytest.raises(SubagentToolsError, match="requester"):
-        _Rig(tmp_path).source.build(
+        await _Rig(tmp_path).source.build(
             job_id="j1", platform=PLATFORM, conversation_id=ROOM, conversation_type="group",
             requester_person_id="nobody",
         )

@@ -3,12 +3,12 @@ import Image from "next/image";
 import { redirect } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { ArrowLeft, CircleAlert } from "lucide-react";
-import { DEV_LOGIN_ENABLED } from "@/auth";
+import { DEV_LOGIN_ENABLED, TELEGRAM_LOGIN_ENABLED } from "@/auth";
 import { art } from "@/components/nora/art";
 import { NoraMark, Wordmark } from "@/components/ui/avatar";
 import { discordPeople } from "@/server/allowlist";
 import { checkSession, readIdentityToml } from "@/server/session";
-import { signInAsDev, signInWithDiscord, signOutAction } from "@/server/actions";
+import { signInAsDev, signInWithDiscord, signInWithTelegram, signOutAction } from "@/server/actions";
 import { codeSignInEnabled } from "@/server/otp";
 import { CodeSignIn } from "./code-sign-in";
 import { ForgetDevice } from "./forget-device";
@@ -128,7 +128,7 @@ export default async function LoginPage({
                 {t("signedOut")}
               </p>
             ) : null}
-            {error && !refused ? (
+            {(error || check.status === "unavailable") && !refused ? (
               <p role="alert" className="flex items-center gap-2 text-body text-danger">
                 <CircleAlert className="size-4" aria-hidden="true" />
                 {t("error")}
@@ -150,6 +150,17 @@ export default async function LoginPage({
                 <p className="text-meta text-ink-muted">{t("footnote")}</p>
               )}
             </form>
+
+            {TELEGRAM_LOGIN_ENABLED ? (
+              <form action={async () => {
+                "use server";
+                await signInWithTelegram(locale, next);
+              }}>
+                <SubmitButton variant="outline" pendingLabel={t("redirectingTelegram")}>
+                  {t("telegram")}
+                </SubmitButton>
+              </form>
+            ) : null}
 
             {codeSignInEnabled() ? (
               <>

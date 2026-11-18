@@ -88,12 +88,9 @@ MANAGEMENT_PERMITS: frozenset[str] = frozenset(
 )
 PERMITS: frozenset[str] = ACCESS_PERMITS | MANAGEMENT_PERMITS
 
-#: How an operation ended (`management.md` «one application boundary»).
-#: `denied` is an authoritative refusal; `unavailable` means the required
-#: store could not answer and nothing was applied; `incomplete` means part of
-#: the intended effect committed and reconciliation is still owed — never
-#: reported as `complete`. A caller distinguishes all four; refusal is not
-#: service failure.
+#: Denied is an authoritative refusal; unavailable means no effect could be applied.
+#: Incomplete means a committed partial effect still owes reconciliation.
+#: Complete alone establishes the whole effect; callers preserve these distinctions.
 OPERATION_OUTCOMES: tuple[str, ...] = (
     "complete",
     "denied",
@@ -287,12 +284,20 @@ class RosterSync:
     """`sync_membership`: the observed member accounts of the target scope.
     `complete` is the roster's own completeness claim — only a complete,
     relevant roster may establish absence (`management.md` «Platform
-    discovery and membership»); a partial one can add, never remove."""
+    discovery and membership»); a partial one can add, never remove.
+    `observed_ms` is the producer's own upstream-read instant — `0` is
+    undated evidence the shared mutation boundary refuses, never a claim
+    of the epoch."""
 
     members: frozenset[Identifier]
     complete: bool
+    collection: str = ""
+    observed_ms: int = 0
 
     def __post_init__(self) -> None:
+        if (not isinstance(self.collection, str)
+                or (self.collection and not self.collection.strip())):
+            raise OperationError("a roster collection must be named when supplied")
         object.__setattr__(self, "members", frozenset(self.members))
 
 
@@ -436,20 +441,21 @@ class LifecycleAction:
 
 @dataclass(frozen=True)
 class ProfileEdit:
-    """`update_profile`: the trait fields being changed and the scope a
-    local nickname lives in — `None` is the holder's global profile, which an
-    operator cannot touch."""
+    """Exact descriptive values; a local nickname never edits a global trait."""
 
-    fields: frozenset[str]
+    display_name: str | None = None
+    nickname: str | None = None
     scope: Scope | None = None
 
     def __post_init__(self) -> None:
-        typed = frozenset(self.fields)
-        if not typed:
-            raise OperationError("a profile edit names the fields it changes")
-        if any(not f or not f.strip() for f in typed):
-            raise OperationError("a profile edit's field names must be non-blank")
-        object.__setattr__(self, "fields", typed)
+        if self.scope is None:
+            valid = isinstance(self.display_name, str) and self.nickname is None
+        else:
+            valid = isinstance(self.nickname, str) and self.display_name is None
+        if not valid:
+            raise OperationError(
+                "a profile edit supplies exactly its global name or local nickname"
+            )
 
 
 @dataclass(frozen=True)
@@ -472,13 +478,9 @@ class OperationSpec:
     bilateral: bool = False
 
 
-#: The closed operation vocabulary. A kind absent here is not an operation;
-#: the boundary cannot be asked for it. Ownership operations (link lifecycle,
-#: unlink) are bilateral or holder-owned — unlink is the account holder's own
-#: operation, not an installation power: installation suspends the global
-#: identity but never asserts account ownership. Membership and grant changes
-#: are scoped operations; registration and roster synchronisation are service
-#: operations within approved sources.
+#: Closed kinds: holder-owned account operations, scoped membership/grant operations,
+#: and registration/roster operations under approved service sources.
+#: Installation suspension grants no account ownership; linking remains bilateral.
 OPERATIONS: MappingProxyType[str, OperationSpec] = MappingProxyType(
     {
         # Discovery: a platform observation registers an unclaimed account
@@ -602,8 +604,7 @@ OPERATIONS: MappingProxyType[str, OperationSpec] = MappingProxyType(
 
 
 def _scoped(actor: Actor, scope: Scope, kind: str) -> None:
-    """An operator's delegation must reach the scope it mutates — at the
-    kind level here; id containment is the service's write-time check."""
+    """Require the operator's delegation to reach the exact mutation scope."""
     if actor.scope is None or not actor.scope.encloses(scope):
         raise OperationError(
             f"{kind!r} is outside the operator's bounded scope "
@@ -612,9 +613,7 @@ def _scoped(actor: Actor, scope: Scope, kind: str) -> None:
 
 
 def _cross_check(op: Operation) -> None:
-    """The field/cross-field invariants a kind carries beyond its actor,
-    target and payload types — what makes an operation not merely
-    well-typed but coherent."""
+    """Check kind-specific field invariants beyond actor, target and payload types."""
     actor, target, payload = op.actor, op.target, op.payload
     if op.kind in ("observe_account", "register_account"):
         ids = cast(AccountObservation | AccountRegistration, payload).identifiers

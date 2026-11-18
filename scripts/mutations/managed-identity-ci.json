@@ -1,0 +1,9 @@
+[
+  {
+    "name": "managed restore changes select required real Ory validation",
+    "file": "scripts/ci_plan.py",
+    "old": "            \"tests/integration/test_managed_identity_restore.py\",\n",
+    "new": "",
+    "target": "tests/architecture/test_ory_ci.py::test_managed_identity_changes_require_the_real_ory_job[tests/integration/test_managed_identity_restore.py]"
+  }
+]

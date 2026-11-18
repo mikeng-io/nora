@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from nora.domain.ticks import due_tick_of_at
+from tests.integration import managed_snapshot_rows as managed_rows
 
 T0 = datetime(2026, 9, 1, tzinfo=UTC)
 MS0 = int(T0.timestamp() * 1000)
@@ -53,6 +54,7 @@ def _ledger_row(kind: str, i: int) -> dict[str, Any]:
 
 #: A valid row per in-place table, for key `i`.
 ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
+    **managed_rows.ROWS,
     "legacy_graph_arrival": lambda i: {
         "unit": "u", "message_id": 1000+i, "revision": f"generated-{i}", "room": "signal:g1",
     },
@@ -360,6 +362,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
 
 #: The column each revision moves, and to what.
 REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
+    **managed_rows.REVISE,
     "legacy_graph_arrival": ("batched", lambda i: True),
     "legacy_entity": ("name", lambda i: f"Revised generated event {i}"),
     "legacy_relation": ("status", lambda i: "superseded"),
@@ -439,6 +442,7 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
 
 #: One append-only row, number `n`, citing the stable key-0 parents.
 APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
+    **managed_rows.APPEND,
     "notebook_entry_revision": lambda i: {
         "id": f"generated-entry-revision-{i}", "entry_id": "generated-entry-0", "seq": i,
         "base_revision_id": f"generated-entry-revision-{i - 1}" if i > 1 else None,
@@ -643,5 +647,3 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "unit": "u", "stimulus_id": n, "wake_id": n,
     },
 }
-
-

@@ -1,0 +1,37 @@
+[
+  {
+    "name": "engagement tagger resolves the arriving room name",
+    "file": "nora/engagement/context.py",
+    "old": "            msg.platform, msg.sender_id, scope=self._room_scope(msg))",
+    "new": "            msg.platform, msg.sender_id)",
+    "target": "tests/unit/test_scoped_engagement_names.py::test_the_rooms_nickname_renders_through_the_tag_context"
+  },
+  {
+    "name": "source scoped private names refuse before provider execution",
+    "file": "nora/agent/comprehend_tools.py",
+    "old": "            for scope in state.scopes:\n                ref = await access.person_ref(person_id, scope=scope)\n                if ref is None or not ref.name.strip():\n                    raise LookupError(\"scoped source person name unavailable\")\n                names.add(ref.name)",
+    "new": "            for scope in ():\n                pass",
+    "target": "tests/unit/test_managed_memory_scope.py::test_a_room_scoped_nickname_of_a_source_person_refuses_before_the_provider"
+  },
+  {
+    "name": "room target matching uses the room name view",
+    "file": "nora/access.py",
+    "old": "            if (ref := await self.person_ref(m.person_id, scope=scope)) is not None",
+    "new": "            if (ref := await self.person_ref(m.person_id)) is not None",
+    "target": "tests/unit/test_scoped_room_targets.py::test_a_room_nickname_targets_the_member_not_their_global_name"
+  },
+  {
+    "name": "fire requester uses the occasion room view",
+    "file": "nora/app/fire.py",
+    "old": "        ref = (await self._access.person_ref(occasion.person_id, scope=scope)",
+    "new": "        ref = (await self._access.person_ref(occasion.person_id)",
+    "target": "tests/unit/test_scoped_fire_names.py::test_the_occasion_rooms_nickname_renders_through_the_fire_turn"
+  },
+  {
+    "name": "transcript authors retain the caller scoped name view",
+    "file": "nora/access.py",
+    "old": "            ref = await self.resolve_ref(platform, row.sender_id, scope=scope)",
+    "new": "            ref = await self.resolve_ref(platform, row.sender_id)",
+    "target": "tests/unit/test_scoped_profile.py::test_the_room_facing_name_reads_forward_the_callers_scope"
+  }
+]

@@ -1,0 +1,142 @@
+[
+  {
+    "name": "the roster boundary refuses an unauthenticated caller",
+    "file": "nora/web/management_api.py",
+    "old": "    async def provision_roster(self, request: web.Request) -> web.Response:\n        credential = self._credential(request)\n        if credential is None:\n            return _reply(\"denied\", 401)",
+    "new": "    async def provision_roster(self, request: web.Request) -> web.Response:\n        credential = self._credential(request)\n        if credential is None:\n            pass",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "the roster credential binds each snapshot to its approved scopes and audience",
+    "file": "nora/web/management_api.py",
+    "old": "        if (roster.scope not in credential.scopes or roster.platform not in credential.actor.sources\n                or (roster.audience == \"collection\" and roster.scope.kind is ScopeKind.ROOM)):\n            return _reply(\"denied\", 403)",
+    "new": "        if False:\n            return _reply(\"denied\", 403)",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "a link request id names exactly one approved effect",
+    "file": "nora/infra/sql/account_links.py",
+    "old": "                if recorded.effect_id != link.effect_id:\n                    raise LinkStateError(\"request identity already names a different effect\")",
+    "new": "                if recorded.effect_id != link.effect_id and False:\n                    raise LinkStateError(\"request identity already names a different effect\")",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "each side's private challenge is drawn independently",
+    "file": "nora/people/app/holder_link.py",
+    "old": "            nonces = {LinkSide.INITIATING: secrets.token_urlsafe(24),\n                      LinkSide.RECEIVING: secrets.token_urlsafe(24)}",
+    "new": "            nonces = dict.fromkeys(LinkSide, secrets.token_urlsafe(24))",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "only a named holder can read a link request",
+    "file": "nora/people/app/holder_link.py",
+    "old": "        side = self._side_of(link, authentication.account)\n        if side is None:\n            return denied(\"not-a-party\")",
+    "new": "        side = self._side_of(link, authentication.account)\n        if side is None:\n            side = LinkSide.RECEIVING",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "an HTTP decision requires a fresh sign_in, never a retained session",
+    "file": "nora/web/holder_links.py",
+    "old": "        checked = await authenticate(request, purposes=frozenset({\"sign_in\"}))",
+    "new": "        checked = await authenticate(request, purposes=frozenset({\"sign_in\", \"session\"}))",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "a code sign-in carries no HTTP consent surface",
+    "file": "nora/people/app/holder_link.py",
+    "old": "            return LinkActionResult(denied(\"consent-surface-required\"))",
+    "new": "            return LinkActionResult(complete(\"recorded\"))",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "a private challenge nonce authenticates only its own side",
+    "file": "nora/domain/account_linking.py",
+    "old": "                or not hmac.compare_digest(_digest(proof.nonce), self.nonce_hashes[payload.side])):",
+    "new": "                or False):",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "a private consent from outside the named pair is refused",
+    "file": "nora/people/app/holder_link.py",
+    "old": "            if bound is not None and bound.account_id == record.account_id:\n                side = candidate\n        if side is None:\n            return denied(\"not-a-party\")",
+    "new": "            if bound is not None and bound.account_id == record.account_id:\n                side = candidate\n        if side is None:\n            side = LinkSide.RECEIVING",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "room and quoted text is never a consent decision",
+    "file": "nora/platform/signal/consent.py",
+    "old": "        key in data for key in (\n            \"groupInfo\", \"quote\", \"reaction\", \"remoteDelete\", \"editMessage\",\n        )",
+    "new": "        key in data for key in (\n            \"quote\", \"reaction\", \"remoteDelete\", \"editMessage\",\n        )",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "a private decision envelope reaches the consent seam",
+    "file": "nora/platform/signal/consent.py",
+    "old": "    if not isinstance(body, str) or (match := _DECISION.fullmatch(body)) is None:",
+    "new": "    if not isinstance(body, str) or (match := _DECISION.fullmatch(body)) is not None:",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "a portal viewer reads only its own identity",
+    "file": "nora/web/managed_viewer.py",
+    "old": "        if viewers and viewers != [principal.binding.person_id]:\n            return refusal(403)",
+    "new": "        if False and viewers != [principal.binding.person_id]:\n            return refusal(403)",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "an unverifiable assertion never reaches a portal data route",
+    "file": "nora/web/managed_viewer.py",
+    "old": "        except AuthenticationRefusedError:\n            return refusal(401)",
+    "new": "        except AuthenticationRefusedError:\n            return await handler(request)",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "the closed vocabulary admits no service-actor membership change",
+    "file": "nora/domain/management.py",
+    "old": "        \"set_membership\": OperationSpec(\n            actors=frozenset({ActorKind.OPERATOR}),",
+    "new": "        \"set_membership\": OperationSpec(\n            actors=frozenset({ActorKind.SERVICE, ActorKind.OPERATOR}),",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "a retained session is revalidated against the current binding",
+    "file": "nora/people/app/authentication.py",
+    "old": "        if authentication.binding is not None and authentication.binding != binding:\n            return AuthenticationResult(Verdict.DENIED)",
+    "new": "        if authentication.binding is not None and False:\n            return AuthenticationResult(Verdict.DENIED)",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "the holder detaches only the binding it proved for the person it expected",
+    "file": "nora/people/app/managed.py",
+    "old": "        if (bound is None or bound.person_id != payload.expected_person\n                or bound.person_id != op.actor.person_id):",
+    "new": "        if (bound is None or bound.person_id != op.actor.person_id):",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "a revoked binding can no longer authenticate",
+    "file": "nora/people/app/authentication.py",
+    "old": "        account = await self._bindings.record_for(account=authentication.account)\n        if account is None:\n            return AuthenticationResult(Verdict.DENIED)",
+    "new": "        account = await self._bindings.record_for(account=authentication.account)\n        if False:\n            return AuthenticationResult(Verdict.DENIED)",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "consolidation moves account ownership to the surviving person",
+    "file": "nora/infra/sql/managed_publication.py",
+    "old": "person_id=survivor,\n        revision=MANAGED_ACCOUNT.c.revision + 1,",
+    "new": "person_id=former,\n        revision=MANAGED_ACCOUNT.c.revision + 1,",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "a provider method proves only its own platform",
+    "file": "nora/web/management_auth.py",
+    "old": "        if self.account.platform != _PLATFORMS[self.authentication_method]:\n            raise ValueError(\"authentication method does not prove this account platform\")",
+    "new": "        if False:\n            raise ValueError(\"authentication method does not prove this account platform\")",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
+    "name": "an assertion authenticates only the exact request it was minted for",
+    "file": "nora/web/management_auth.py",
+    "old": "            if (claims.method != method or claims.path != path\n                    or claims.body_sha256 != hashlib.sha256(body).hexdigest()\n                    or issuer.methods.get(claims.authentication_method) != claims.proof_issuer):",
+    "new": "            if False:",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  }
+]

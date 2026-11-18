@@ -157,6 +157,7 @@ _ORDER = [
     "group_members",
     "lookup_person",
     "about",
+    "member_update",
     "ask_memory",
     "search_memory",
     "memory_search",
@@ -439,120 +440,34 @@ def build_tool_specs(
     # The Profile write (design/unified-memory/profiles.md): the graph surface's
     # `remember` writes a `told` line through it. `None` answers `unavailable`.
     profile: ProfileWriter | None = None,
-    # THE SWITCH (design/unified-memory/profiles.md): wired while
-    # `[memory.profile] read` is on beside `[memory.profile] write`;
-    # `character_read` then answers from the Profile accounts instead of the
-    # culture store — the same accounts `<profile>` renders; they cannot disagree.
+    # Profile heads shared with the rendered context; None withholds the read.
     profile_read: ProfileHeads | None = None,
+    # Management requires both the shared invocation and verified trigger message.
+    room_management=None,
+    message=None,
     content_checks: bool = True,
 ) -> tuple[ToolSpec, ...]:
-    """Every native tool, closed over one turn's collaborators.
+    """Build native specs closed over one turn's collaborators.
 
-    `fire_turn` is this turn's PROVENANCE: True when the heartbeat's fire path
-    built it (`nora.app.fire.FirePath`), False for a tag. A tool cannot
-    otherwise tell the two apart — the synthetic message a fire turn is built
-    from is a well-formed `NormalizedMessage` by construction, which is exactly
-    what makes it indistinguishable.
-
-    It defaults False and is threaded from `ToolRegistry.build`. The consumer
-    is `remind`, which refuses inside a fire turn — a reminder that can set a
-    reminder is a loop with no bound, and the turn it would fire into is the
-    one it is already in.
-
-    `dream_adaptor` is the SECOND provenance, the same shape (DEC-162): the
-    Dreamer adaptor's NAME when `nora.agent.dreamer.RegistryToolSource` built
-    this set, `""` otherwise. `remind` is again the consumer, and under it the
-    closure stamps what the model cannot: `kind="proactive"`, the `ai_peer` as
-    owner, the home room as destination, and a payload naming the note the row
-    is about — with the model's text screened by `dream_screen` before
-    `create`, because the tool call is the one sink a Dreamer write has.
-
-    `reminders`/`reminder_caps`/`clock` come from `ToolRegistry`, which owns all
-    three for the life of the process. `reminders=None` is the honest
-    "not configured" state (R-5) the offline and eval compositions ship in, not
-    an error; the caps and the clock fall back to `ReminderCaps()` and
-    `utc_now`, so a caller that never sets a reminder needs neither.
-
-    `versions` is the immutable process-lifetime build stamp and shipped
-    release history. Both version tools read this same snapshot.
-
-    `tool_call_log_store` is `recall_lookups`'s own collaborator, wired the
-    identical way: `None` in the offline/eval compositions and any composition
-    that has not wired the tool-recall log, which is what makes
-    `recall_lookups` answer `unavailable` (R-5) rather than crash.
-
-    `mobility` is `where_been`'s own collaborator (DEC-155): the
-    derived-presence read the tool answers from — `SqlMobilityStore`, the SAME
-    instance the composition root builds for the web dashboards (one pool, one
-    lifecycle; the tool reads through the store only, never `nora.analytics`
-    internals). Wired the honest way `reminders`/`versions` are: `None` in the
-    offline/eval compositions and any composition that has not built the
-    substrate, which is what makes `where_been` answer `unavailable` (R-5),
-    never `nothing_found` — an unwired store is «I could not check», never «no
-    derived pattern». The disclosure side (`room`, `presence_circles`,
-    `location_trusted`) is the SAME seam `where_is` speaks through.
-
-    `notes`/`note_unit` are the note tier's pair, and they are ONE piece of
-    wiring in two arguments rather than two independent ones: a note is keyed on
-    the unit, so a store with no unit to read is as unusable
-    as no store, and both states answer `unavailable` — never `nothing_found`,
-    which would report an unconsulted notebook as an empty one.
-
-    **`note_unit` RESOLVES a room to its unit; it is not a constant.** A
-    deployment with more than one unit, deliberately never paired in
-    `policy.toml`, would otherwise hand one room the OTHER's notebook — a
-    cross-unit read and write, the boundary the note scope exists to hold and
-    DEC-105/R-49 hold for `send_to`. So it takes `(platform, conversation_id)`
-    and answers `None` for a room policy cannot name, which is `unavailable`
-    rather than a guess.
-
-    `transcript` is the window the prefill SHOWED (`TagContext.transcript`,
-    what `nora.agent.prefill._transcript_block` numbered `#1..#N`): `send_reply`'s
-    `reply_to` and a note's `[#n]` index exactly these rows and nothing deeper.
-    `lookup_window` is the deeper read (`TagContext.lookup_transcript`, when
-    `[store] prompt_window` shows fewer rows than were read) and is `who_said`'s
-    alone, DEC-146's whole world, falling back to `transcript`. Both are
-    passed in rather than re-read. That is
-    comprehend-once — the window is interpreted at assembly and every consumer
-    computes on that one fixed model, so the tool cannot disagree with the block
-    the model is looking at. Re-querying the store for it would be a second
-    interpretation of the same messages and would drift the first time the
-    `limit` or the naming pass changed on one side.
-
-    `None` is the honest "no window was wired" state every other optional
-    collaborator above uses, and it answers `unavailable` — never
-    `nothing_found`, which would report an unread window as an empty one. An
-    EMPTY tuple is the same answer for the same reason: `EngagementContext.
-    _recent` degrades a FAILED store read to `()` (a thinner reply beats no
-    reply), so at this seam "the read broke" and "the room has said nothing"
-    are one value, and R-27 resolves that ambiguity towards `unavailable`.
-
-    `music` is `MusicToolBridge` (`nora.domain.ports`) — `None` in every
-    composition that has not wired `DiscordMusicToolBridge`, the same honest
-    wiring-gap shape every other optional collaborator above uses. All four
-    music tools ALSO refuse on `room.platform != "discord"` before ever
-    touching it, so a non-Discord room never reaches this collaborator at all.
-
-    `online_source`/`voice_source`/`presence` are `online_now`'s live-state
-    reads: the Steam summaries client, the Discord voice-membership source
-    (the narrow `voice` sub-arm), and the Discord per-person PRESENCE source
-    (the `online` arm's Discord half — status + rich presence; presence, not
-    voice membership, is what "Discord online" means). Each is `None` in every
-    composition that has not wired it — the same honest wiring-gap shape as
-    `mobility` above: an arm whose source is missing answers `unavailable`
-    (R-5), never `nothing_found`, and never crashes; the `online` arm
-    answers from whichever half IS wired and says so
-    (`steam_wired`/`discord_wired`/`voice_wired`).
-
-    `supplied_unit` is the Dreamer's half of the key path: a UNIT-keyed
-    adaptor's key IS the unit, so the runtime SUPPLIES it here rather than
-    letting `_unit()` derive it from the room — the Dreamer's synthetic `Room`
-    has no platform and carries the unit in its conversation slot, so the
-    derived path answers `None` and every unit-scoped verb would read
-    `unavailable` forever while looking wired. When truthy it WINS over the
-    resolver; `None` (every tag-path caller) leaves `_unit()` deriving it from
-    the room.
-    """
+    fire_turn marks heartbeat provenance; remind refuses recursive fire reminders.
+    dream_adaptor identifies the Dreamer source, whose screened proactive writes use
+    the AI peer, home room and referenced note rather than model-supplied authority.
+    reminders, reminder_caps and clock belong to the registry. Missing caps/clock
+    use ReminderCaps()/utc_now; an unwired reminder store reports unavailable.
+    versions is the immutable build/release snapshot shared by both version tools.
+    Missing recall logs, mobility or other read sources report unavailable, never
+    nothing_found. Mobility shares the where_is room/circle/disclosure boundary.
+    notes and note_unit are paired: the resolver takes platform/conversation_id,
+    never a global unit, and an unknown room or missing store reports unavailable.
+    transcript is the exact numbered prefill window for replies and note citations;
+    lookup_window is who_said's deeper window, falling back to transcript. Neither
+    is re-read. Missing or empty windows report unavailable because a failed Record
+    read can also produce an empty tuple.
+    Music reads require Discord. online_now reports which Steam/Discord/voice arms
+    were wired; Discord presence and voice membership remain distinct observations.
+    supplied_unit is the explicit key of a unit-bound Dreamer adaptor. When present
+    it overrides room resolution; ordinary tag callers derive their unit from the
+    actual room. Management remains unavailable without its verified message."""
     deps = ToolDeps(
         store=store,
         conversation_id=conversation_id,
@@ -656,6 +571,8 @@ def build_tool_specs(
         all_memory_surfaces=all_memory_surfaces,
         profile=profile,
         profile_read=profile_read,
+        room_management=room_management,
+        message=message,
         content_checks=content_checks,
     )
     built = {}
@@ -785,12 +702,11 @@ def build_tools(
     profile_read: ProfileHeads | None = None,
     relay: Relay | None = None,
     relay_turn: bool = False,
+    room_management=None,
+    message=None,
     content_checks: bool = True,
 ) -> list:
-    """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
-    the docstrings above become the tool's model-facing description/schema
-    (empty `description`/`schema` on every `ToolSpec` here means "derive from
-    the callable", see `nora.agent.ports.adapt`)."""
+    """Adapt native specs to Strands, deriving missing descriptions/schemas from callables."""
     specs = build_tool_specs(
         store=store, conversation_id=conversation_id, conversation_type=conversation_type,
         persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics, room=room,
@@ -822,6 +738,7 @@ def build_tools(
         culture=culture, observations=observations, social_items=social_items, subagent=subagent,
         video=video, video_ref_kinds=video_ref_kinds, memory_retrieval=memory_retrieval,
         profile=profile, profile_read=profile_read, relay=relay, relay_turn=relay_turn,
+        room_management=room_management, message=message,
         content_checks=content_checks
     )
     return [adapt(spec) for spec in specs]

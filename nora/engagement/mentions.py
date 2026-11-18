@@ -79,34 +79,39 @@ class MentionRenderer:
     """
 
     def __init__(
-        self, *, persons: Persons, display_name: str,
+        self, *, persons: Persons | None = None, display_name: str,
         self_ids: frozenset[str], metrics: Any,
+        access: Any = None,
         content_checks: bool = True,
     ) -> None:
         self._content_checks = content_checks
-        self._persons = persons
+        self._access = access
+        self._persons = (persons if persons is not None
+                         else access.persons_view())
         self._display_name = display_name
         self._self_ids = frozenset(self_ids)
         self._metrics = metrics
 
-    def rehydrate(self, ctx: TagContext) -> TagContext:
+    async def rehydrate(self, ctx: TagContext) -> TagContext:
         """`ctx` with every mention placeholder replaced, in the message and in
         every transcript row. Returns a new `TagContext`; nothing is mutated."""
         platform = ctx.message.platform
         message = dataclasses.replace(
             ctx.message,
-            body=self._render(ctx.message.body, ctx.message.raw, platform=platform),
+            body=await self._render(ctx.message.body, ctx.message.raw, platform=platform),
         )
         return dataclasses.replace(
             ctx,
             message=message,
-            transcript=tuple(self._row(row, platform) for row in ctx.transcript),
+            transcript=tuple(
+                [await self._row(row, platform) for row in ctx.transcript]
+            ),
             lookup_transcript=tuple(
-                self._row(row, platform) for row in ctx.lookup_transcript
+                [await self._row(row, platform) for row in ctx.lookup_transcript]
             ),
         )
 
-    def _row(self, row: TranscriptRow, platform: str) -> TranscriptRow:
+    async def _row(self, row: TranscriptRow, platform: str) -> TranscriptRow:
         """An EDITED row carries two texts from two envelopes:
         its body is the latest edit's, whose
         spans index into `edit.raw_json`, and `edit.was` is the first text,
@@ -114,18 +119,18 @@ class MentionRenderer:
         the envelope it came from — the rule `mention_spans` exists to keep."""
         if row.edit is None:
             return dataclasses.replace(
-                row, body=self._text(row.body, row.raw_json, row.id, platform),
+                row, body=await self._text(row.body, row.raw_json, row.id, platform),
             )
         return dataclasses.replace(
             row,
-            body=self._text(row.body, row.edit.raw_json, row.id, platform),
+            body=await self._text(row.body, row.edit.raw_json, row.id, platform),
             edit=dataclasses.replace(
                 row.edit,
-                was=self._text(row.edit.was, row.raw_json, row.id, platform),
+                was=await self._text(row.edit.was, row.raw_json, row.id, platform),
             ),
         )
 
-    def _text(
+    async def _text(
         self, text: str | None, raw_json: str | None, row_id: int, platform: str,
     ) -> str | None:
         if not text or PLACEHOLDER not in text or not raw_json:
@@ -139,9 +144,9 @@ class MentionRenderer:
             return text
         if not isinstance(event, dict):
             return text
-        return self._render(text, event, platform=platform)
+        return await self._render(text, event, platform=platform)
 
-    def _render(self, body: str, event: dict[str, Any], *, platform: str) -> str:
+    async def _render(self, body: str, event: dict[str, Any], *, platform: str) -> str:
         if not body or PLACEHOLDER not in body:
             return body
         spans = mention_spans(event)
@@ -165,14 +170,18 @@ class MentionRenderer:
                 # than cutting a hole in somebody's message on a guess.
                 log.warning("mention offsets do not land on a placeholder; leaving the body")
                 continue
-            out = out[:span.start] + self._handle(span, platform) + out[end:]
+            out = out[:span.start] + await self._handle(span, platform) + out[end:]
         return out
 
-    def _handle(self, span: MentionSpan, platform: str) -> str:
+    async def _handle(self, span: MentionSpan, platform: str) -> str:
         if self._self_ids & set(span.ids):
             return f"@{self._display_name}"
         for value in span.ids:
-            ref = self._persons.resolve(platform, value)
+            ref = (
+                await self._access.resolve_ref(platform, value)
+                if self._access is not None
+                else self._persons.resolve(platform, value)
+            )
             if ref is None:
                 continue
             # `scan_identifiers`, not `scan_reply`: this text is going into the

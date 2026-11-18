@@ -2,22 +2,22 @@
   {
     "name": "8765_44874 ingest sender gate: a relevance-gate candidate skips the sender check, so an excluded mapped sender is noted for a participation turn",
     "file": "nora/ingest/pipeline.py",
-    "old": "        if (decision.engage or decision.relevance_gate) and not self._allowlist.is_allowed(",
-    "new": "        if decision.engage and not self._allowlist.is_allowed(",
+    "old": "            if (decision.engage or decision.relevance_gate)",
+    "new": "            if decision.engage",
     "target": "tests/unit/test_ingest_pipeline.py::test_an_unlisted_mapped_sender_is_not_a_relevance_candidate"
   },
   {
     "name": "8765_44864 compute poller: a finished job is delivered with no policy re-check at delivery time",
     "file": "nora/app/compute_poller.py",
-    "old": "            if not self._policy.is_allowed(\n                platform=job.platform, conversation_id=job.conversation_id,\n                person_id=job.requester_person_id,\n            ):",
-    "new": "            if False:",
+    "old": "            if not verdict.allowed:\n                # The room was removed",
+    "new": "            if False:\n                # The room was removed",
     "target": "tests/unit/test_compute_poller.py::test_a_finished_job_is_not_delivered_once_its_room_is_removed"
   },
   {
     "name": "8765_44864 boot telling: a job whose grant is gone is still spoken into its room after a restart",
     "file": "nora/app/composition_fire.py",
-    "old": "        if not policy.is_allowed(\n            platform=job.platform,\n            conversation_id=job.conversation_id,\n            person_id=job.requester_person_id,\n        ):",
-    "new": "        if False:",
+    "old": "        if not verdict.allowed:\n            log.warning(\n                \"lost compute job",
+    "new": "        if False:\n            log.warning(\n                \"lost compute job",
     "target": "tests/unit/test_compute_poller.py::test_a_lost_job_is_not_spoken_after_restart_once_its_grant_is_gone"
   },
   {

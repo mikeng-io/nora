@@ -1,0 +1,9 @@
+[
+  {
+    "name": "the journey world binds its declared model gateway into IsolatedServices",
+    "file": "nora/subject/journey_world.py",
+    "old": "model_gateway=self.model_gateway)",
+    "new": "model_gateway=None)",
+    "target": "tests/integration/subject/test_journey_model_gateway.py::test_the_declared_world_admits_subject_and_judges_through_the_budget"
+  }
+]

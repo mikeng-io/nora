@@ -678,9 +678,7 @@ def _dict_status_literal(node: ast.Dict) -> str | None:
 
 
 def _dict_is_passthrough(node: ast.Dict) -> bool:
-    """A `**expr` spread among the keys (AST marks one with a `None` key) --
-    `instagram_read`'s `{**out, "person": name}`: its status is whatever the
-    spread carries, never a literal this file can read."""
+    """Whether a dict spreads a source whose status cannot be read statically."""
     return any(k is None for k in node.keys)
 
 

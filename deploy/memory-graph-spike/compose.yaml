@@ -1,7 +1,7 @@
 name: nora-memory-graph-spike
 services:
   snapshot:
-    image: pgvector/pgvector:pg18
+    image: pgvector/pgvector:pg18@sha256:38681dc6eaf55308e2a4c6de392d131652dcfac70e1263e35cd9b5ea3fe39782
     init: true
     environment:
       POSTGRES_HOST_AUTH_METHOD: trust

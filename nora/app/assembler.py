@@ -47,15 +47,13 @@ from nora.persons import Persons
 from nora.policy import Policy
 
 
-def lineage_policy(cfg: Config, *, policy: Policy, persons: Persons) -> LineagePolicy:
-    """The ONE `LineagePolicy` of a process: every room of `policy.toml`, the location circles of
-    `identity.toml` (the same `circles_from_persons` `where_is` reads) and
-    `[lineage] mode`. A pure value; the tag path's assembler, the fire path
-    and the tool registry (`record_query`) each hold one built here, so the
-    three cannot disagree about who a room is."""
+def lineage_policy(
+    cfg: Config, *, policy: Policy, persons: Persons, access: object = None,
+) -> LineagePolicy:
+    """Shared lineage policy with file topology and selected current identity facts."""
     return LineagePolicy.from_policy(
         policy, circles=LiveSequence(lambda: circles_from_persons(persons)), mode=cfg.lineage.mode,
-        content_checks=cfg.content_checks.enabled,
+        content_checks=cfg.content_checks.enabled, access=access,
     )
 
 
@@ -85,6 +83,7 @@ def build_assembler(
     rosters: Mapping[str, RosterSource] | None = None,
     self_ids: frozenset[str] = frozenset(),
     observations: object = None,
+    access: object = None,
 ) -> TranscriptInjection:
     return TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
@@ -127,7 +126,7 @@ def build_assembler(
         # Lineage. Built here, from the
         # same policy and identity every harness already passes, so an eval
         # turn is filtered exactly as a live one in every `[lineage] mode`.
-        lineage=lineage_policy(cfg, policy=policy, persons=persons),
+        lineage=lineage_policy(cfg, policy=policy, persons=persons, access=access),
         # `<computer>`. The SAME reader the
         # fire path holds; `None` while `[computer]` is off, and in every
         # harness, which renders no block.
@@ -155,4 +154,7 @@ def build_assembler(
         # (transcript) and folded object heads (standing slot). `None` in
         # a harness renders neither — never a guessed source line.
         observations=observations,
+        # The selected backend's identity+access facade (`nora.access`).
+        # `None` builds a file-mode facade over `persons`/`policy`.
+        access=access,
     )

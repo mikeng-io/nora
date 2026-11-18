@@ -1,0 +1,240 @@
+"""Bulk onboarding through real HTTP and managed services, with generated accounts."""
+
+import asyncio
+
+import pytest
+from aiohttp import web
+
+from nora.domain.identity import Identifier
+from nora.domain.managed import ObservationFreshness
+from nora.domain.management import Actor, ActorKind, Scope, ScopeKind
+from nora.people.app.managed import ManagedServices
+from nora.testing.managed import (
+    FakeAuthorityBackend,
+    FakeBindingStore,
+    FakeIdentityRegistry,
+    FakeLinkRequests,
+    FakeTopologySource,
+)
+from nora.web.management_api import ProvisioningCredential, register_management_routes
+
+PATH = "/app/v1/management/rosters"
+UNIT = Scope(ScopeKind.UNIT, "generated-unit")
+ROOM = Scope(ScopeKind.ROOM, "generated-room")
+AUTH = {"Authorization": "Bearer generated-roster-secret"}
+
+
+def account(number, classification="person"):
+    return {"account": {"platform": "discord", "kind": "user_id", "value": f"generated-{number}"},
+            "classification": classification}
+
+
+#: One producer instant for every default roster — a retry must carry the
+#: SAME stamp, not a fresh receipt time, or it stops being a retry.
+NOW_MS = 1_700_000_000_000
+
+
+def roster(key="generated-snapshot", members=None, **kwargs):
+    return {"operation_id": key, "collection": "generated-guild", "platform": "discord",
+        "scope": {"kind": "unit", "id": UNIT.id}, "audience": "collection",
+        "members": [account(n) for n in range(150)] if members is None else members,
+        "complete": True, "observed_ms": NOW_MS, **kwargs}
+
+
+@pytest.fixture
+async def surface(aiohttp_client):
+    services = ManagedServices(FakeBindingStore(), FakeAuthorityBackend(),
+        FakeTopologySource(rooms={ROOM.id: (UNIT.id, False)},
+            units={UNIT.id: "generated-workspace"}, workspaces={"generated-workspace"}),
+        FakeIdentityRegistry(), FakeLinkRequests(),
+        freshness=ObservationFreshness(wall_clock=lambda: NOW_MS / 1000))
+    app = web.Application()
+    register_management_routes(app, services=services, credentials=(ProvisioningCredential(
+        Actor(ActorKind.SERVICE, service_id="generated-bridge", sources={"discord"}),
+        "generated-roster-secret", frozenset({UNIT, ROOM})),))
+    return await aiohttp_client(app), services
+
+
+async def test_one_roster_registers_over_a_hundred_people_without_duplicate_on_retry(surface):
+    client, services = surface
+    response = await client.post(PATH, json=roster(), headers=AUTH)
+    assert response.status == 200, await response.text()
+    assert response.headers["Cache-Control"] == "no-store"
+    people = set(services.bindings.people)
+    assert len(people) == 150
+    assert len(services.registry.identities) == 150
+    memberships = await services.bindings.members_of(UNIT)
+    assert len(memberships) == 150
+    assert all(m.sources == {'sync:["generated-bridge","generated-guild"]'} for m in memberships)
+    assert not (await services.authority.check(scope=ROOM, person_id=memberships[0].person_id,
+                                             permit="view")).allowed
+    room_facts = await services.backend.relations_on(scope=ROOM)
+    unit_facts = await services.backend.relations_on(scope=UNIT)
+    assert (await client.post(PATH, json=roster(), headers=AUTH)).status == 200
+    # The retry returns the EXISTING registrations — same people, identities
+    # and members, not merely the same count.
+    assert set(services.bindings.people) == people
+    assert len(services.registry.identities) == 150
+    assert len(await services.bindings.members_of(UNIT)) == 150
+    # Concurrent rediscovery of the same snapshot registers nobody new either.
+    duplicates = await asyncio.gather(
+        *(client.post(PATH, json=roster(), headers=AUTH) for _ in range(3)))
+    assert [r.status for r in duplicates] == [200, 200, 200]
+    assert set(services.bindings.people) == people
+    assert len(services.registry.identities) == 150
+    assert len(await services.bindings.members_of(UNIT)) == 150
+    assert await services.backend.relations_on(scope=ROOM) == room_facts
+    assert await services.backend.relations_on(scope=UNIT) == unit_facts
+    assert not (await services.authority.check(scope=ROOM, person_id=memberships[0].person_id,
+                                             permit="view")).allowed
+    assert (await client.post(PATH, json=roster(members=[]), headers=AUTH)).status == 403
+
+
+async def test_partial_roster_labels_and_complete_departure_are_distinct(surface):
+    client, services = surface
+    assert (await client.post(PATH, json=roster(members=[account(1), account(2, "bot")]),
+                              headers=AUTH)).status == 200
+    assert len(services.bindings.people) == 2
+    partial = roster("generated-partial", [account(3, "unknown")], complete=False,
+                     observed_ms=NOW_MS + 1_000)
+    assert (await client.post(PATH, json=partial, headers=AUTH)).status == 200
+    assert len(await services.bindings.members_of(UNIT)) == 3
+    complete = roster("generated-complete", [account(4, "unknown")],
+                     observed_ms=NOW_MS + 2_000)
+    assert (await client.post(PATH, json=complete, headers=AUTH)).status == 200
+    member = await services.bindings.account_for("discord", "user_id", "generated-4")
+    assert [m.person_id for m in await services.bindings.members_of(UNIT)] == [member.person_id]
+    departed = await client.post(PATH, json=roster(
+        "generated-departure", [], observed_ms=NOW_MS + 3_000), headers=AUTH)
+    assert departed.status == 200
+    assert await services.bindings.members_of(UNIT) == ()
+    assert (await services.bindings.memberships_for(member.person_id))[0].state.value == "left"
+
+
+@pytest.mark.parametrize("classification", ["person", "bot", "unknown", None])
+async def test_private_roster_registers_without_requiring_account_nature(surface, classification):
+    client, services = surface
+    row = account(1, classification)
+    if classification is None:
+        row.pop("classification")
+    request = roster(members=[row])
+    response = await client.post(PATH, json=request, headers=AUTH)
+    assert response.status == 200, await response.text()
+    original = await services.bindings.record_for(
+        account=Identifier("discord", "user_id", "generated-1"))
+    assert original is not None
+    assert (await client.post(PATH, json=request, headers=AUTH)).status == 200
+    current = await services.bindings.record_for(
+        account=Identifier("discord", "user_id", "generated-1"))
+    assert current.account_id == original.account_id and current.person_id == original.person_id
+    assert len(services.bindings.people) == len(services.registry.identities) == 1
+    assert not (await services.authority.check(scope=ROOM,
+        person_id=original.person_id, permit="view")).allowed
+    assert not (await services.authority.check(scope=UNIT,
+        person_id=original.person_id, permit="manage_members")).allowed
+
+
+async def test_an_undated_or_stale_complete_roster_preserves_membership(surface):
+    """The old wrongful-departure regression, inverted: a complete roster
+    whose producer instant is absent, stale or future-dated is
+    `unavailable` and moves NO membership — never an empty sync."""
+    client, services = surface
+    assert (await client.post(PATH, json=roster(members=[account(1)]), headers=AUTH)).status == 200
+    assert len(await services.bindings.members_of(UNIT)) == 1
+    person = (await services.bindings.members_of(UNIT))[0].person_id
+    undated = roster("generated-undated", [])
+    del undated["observed_ms"]
+    for key, bad in (("generated-undated", None),
+                     ("generated-stale", NOW_MS - 600_000),
+                     ("generated-future", NOW_MS + 600_000)):
+        body = roster(key, [])
+        if bad is None:
+            del body["observed_ms"]
+        else:
+            body["observed_ms"] = bad
+        response = await client.post(PATH, json=body, headers=AUTH)
+        assert response.status == 503, await response.text()
+        members = await services.bindings.members_of(UNIT)
+        assert [m.person_id for m in members] == [person]
+        assert members[0].state.value == "member"
+
+
+async def test_an_older_snapshot_never_supersedes_a_newer_one(surface):
+    """A complete roster older than the accepted mark is refused — and a
+    newer PARTIAL observation advances the mark that refuses it."""
+    client, services = surface
+    now = NOW_MS
+    assert (await client.post(PATH, json=roster(
+        "generated-newer", [account(1), account(2)],
+        observed_ms=now), headers=AUTH)).status == 200
+    # The same instant carrying different content is refused; an exact
+    # retry of the recorded effect returns its recorded outcome.
+    conflicting = roster("generated-conflict", [account(1)], observed_ms=now)
+    assert (await client.post(PATH, json=conflicting, headers=AUTH)).status == 503
+    assert (await client.post(PATH, json=roster(
+        "generated-newer", [account(1), account(2)],
+        observed_ms=now), headers=AUTH)).status == 200
+    newer_partial = roster("generated-partial", [account(1)],
+        complete=False, observed_ms=now + 1_000)
+    assert (await client.post(PATH, json=newer_partial, headers=AUTH)).status == 200
+    older_complete = roster("generated-older", [], observed_ms=now - 1_000)
+    response = await client.post(PATH, json=older_complete, headers=AUTH)
+    assert response.status == 503
+    assert len(await services.bindings.members_of(UNIT)) == 2
+    # The earlier accepted roster's own instant is now superseded — but an
+    # exact replay of its journaled op still answers its recorded outcome
+    # without reapplying anything.
+    assert (await client.post(PATH, json=roster(
+        "generated-newer", [account(1), account(2)],
+        observed_ms=now), headers=AUTH)).status == 200
+    assert len(await services.bindings.members_of(UNIT)) == 2
+
+
+async def test_registry_failure_leaves_no_membership_and_retry_repairs_original_person(surface):
+    client, services = surface
+    services.registry.down = True
+    request = roster(members=[account(1)])
+    assert (await client.post(PATH, json=request, headers=AUTH)).status == 409
+    original = set(services.bindings.people)
+    assert len(original) == 1
+    assert not await services.bindings.members_of(UNIT)
+    services.registry.down = False
+    assert (await client.post(PATH, json=request, headers=AUTH)).status == 200
+    assert set(services.bindings.people) == original
+    assert len(await services.bindings.members_of(UNIT)) == 1
+    assert len(services.registry.identities) == 1
+
+
+@pytest.mark.parametrize("change,expected", [
+    ({"scope": {"kind": "room", "id": ROOM.id}}, 403),
+    ({"scope": {"kind": "unit", "id": "unapproved-unit"}}, 403),
+    ({"platform": "signal", "members": []}, 403),
+    ({"actor": {"kind": "installation"}}, 400),
+])
+async def test_source_scope_and_collection_audience_cannot_be_enlarged(surface, change, expected):
+    client, services = surface
+    assert (await client.post(PATH, json=roster(**change), headers=AUTH)).status == expected
+    assert not services.bindings.people
+
+
+async def test_missing_service_credential_and_conflicting_classifications_refuse(surface):
+    client, services = surface
+    assert (await client.post(PATH, json=roster())).status == 401
+    assert (await client.post(PATH, json=roster(members=[account(1), account(1, "bot")]),
+                              headers=AUTH)).status == 400
+    assert not services.bindings.people
+
+
+async def test_revoked_binding_is_never_re_registered_by_a_later_snapshot(surface):
+    from nora.domain.identity import Identifier
+
+    client, services = surface
+    body = roster(members=[account(1)])
+    assert (await client.post(PATH, json=body, headers=AUTH)).status == 200
+    original_people = set(services.bindings.people)
+    await services.bindings.revoke_binding(
+        account=Identifier("discord", "user_id", "generated-1"))
+    body["operation_id"] = "generated-after-revocation"
+    assert (await client.post(PATH, json=body, headers=AUTH)).status == 409
+    assert set(services.bindings.people) == original_people
+    assert await services.bindings.account_for("discord", "user_id", "generated-1") is None

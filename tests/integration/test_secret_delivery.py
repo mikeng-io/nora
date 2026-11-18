@@ -36,15 +36,17 @@ def test_prepare_delivers_scoped_redis_reference(tmp_path, alias, credential_sou
     assert arguments
     overlay = json.loads(Path(arguments[-1]).read_text())
     assert overlay["services"]["nora"]["environment"] == {key: value}
+    assert overlay["services"]["app"]["environment"] == {"NORA_IDENTITY_BACKEND": "file"}
     assert all(not service["environment"] for name, service in overlay["services"].items()
-               if name != "nora")
+               if name not in {"nora", "app"})
     assert "UNRELATED_PRIVATE_KEY" not in Path(arguments[1]).read_text()
 
 
+@pytest.mark.parametrize("managed", [False, True])
 @pytest.mark.parametrize("external_output", [False, True])
 @pytest.mark.parametrize("signoz", [False, True])
 def test_native_compose_consumes_projection_without_shared_secret_mount(
-    tmp_path, external_output, signoz,
+    tmp_path, external_output, signoz, managed,
 ):
     import os
     import shutil
@@ -59,6 +61,10 @@ def test_native_compose_consumes_projection_without_shared_secret_mount(
         '[platforms.discord]\ntoken_env="CUSTOM_DISCORD"\n'
         '[presence]\nclient_credential_env="CUSTOM_LIFE360"\n'
         'geocode_api_key_env="CUSTOM_MAPS"\n')
+    if managed:
+        with (tmp_path / "config.toml").open("a") as config:
+            config.write('[identity]\nbackend="managed"\n'
+                         '[identity.authentication.portal]\nkey_env="CUSTOM_PORTAL"\n')
     if signoz:
         with (tmp_path / "config.toml").open("a") as config:
             config.write('[obs.tracing]\nenabled=true\n'
@@ -81,6 +87,9 @@ def test_native_compose_consumes_projection_without_shared_secret_mount(
     for name in required:
         synthetic.setdefault(name, "synthetic-canary")
     synthetic["AUTH_URL"] = "https://example.invalid"
+    synthetic["CUSTOM_PORTAL"] = "synthetic-portal-signing-key-32-bytes"
+    synthetic["AUTH_TELEGRAM_ID"] = "synthetic-telegram-client"
+    synthetic["AUTH_TELEGRAM_SECRET"] = "synthetic-telegram-credential"  # noqa: S105 - generated
     synthetic["CUSTOM_ENDPOINT_KEY"] = "synthetic-dollar$literal"
     (tmp_path / "secret.toml").write_text(
         '[credentials]\n' + ''.join(f'{k}={json.dumps(v)}\n' for k, v in synthetic.items()))
@@ -104,6 +113,16 @@ def test_native_compose_consumes_projection_without_shared_secret_mount(
     delivered = services["nora"]["environment"]["CUSTOM_ENDPOINT_KEY"].replace("$$", "$")
     assert delivered == synthetic["CUSTOM_ENDPOINT_KEY"]
     assert services["app"]["environment"]["NORA_OTP_API_TOKEN"] == synthetic["CUSTOM_OTP"]
+    portal = services["app"]["environment"]
+    assert portal["NORA_IDENTITY_BACKEND"] == ("managed" if managed else "file")
+    assert portal["AUTH_TELEGRAM_ID"] == synthetic["AUTH_TELEGRAM_ID"]
+    assert portal["AUTH_TELEGRAM_SECRET"] == synthetic["AUTH_TELEGRAM_SECRET"]
+    if managed:
+        assert portal["NORA_AUTHENTICATION_ISSUER"] == "portal"
+        assert portal["NORA_AUTHENTICATION_KEY"] == synthetic["CUSTOM_PORTAL"]
+        assert services["nora"]["environment"]["CUSTOM_PORTAL"] == synthetic["CUSTOM_PORTAL"]
+    else:
+        assert "NORA_AUTHENTICATION_KEY" not in portal
     assert (services["voice-sidecar"]["environment"]["DISCORD_BOT_TOKEN"]
             == synthetic["CUSTOM_DISCORD"])
     assert "alert-bridge" not in services
@@ -116,3 +135,60 @@ def test_native_compose_consumes_projection_without_shared_secret_mount(
     assert services["db"]["environment"]["POSTGRES_PASSWORD"] == synthetic["POSTGRES_PASSWORD"]
     assert not any("secret.toml" in str(volume) for service in services.values()
                    for volume in service.get("volumes", []))
+
+
+@pytest.mark.parametrize("issuer", ["portal", "alternate"])
+def test_managed_portal_uses_only_its_configured_key_and_preserves_otp(tmp_path, issuer):
+    (tmp_path / "config.toml").write_text(
+        '[identity]\nbackend="managed"\n'
+        '[identity.authentication.portal]\nkey_env="PORTAL_KEY"\n'
+        '[identity.authentication.alternate]\nkey_env="ALTERNATE_KEY"\n'
+        '[identity.managed]\nkratos_admin_key_env="ORY_KEY"\n'
+        '[identity.provisioning.bridge]\ntoken_env="PROVISIONER_TOKEN"\n'
+        '[otp]\napi_token_env="CUSTOM_OTP"\n')
+    values = {"PORTAL_KEY": "synthetic-portal-signing-key-32-bytes",
+              "ALTERNATE_KEY": "synthetic-alternate-signing-key-32-bytes",
+              "ORY_KEY": "synthetic-private-admin", "PROVISIONER_TOKEN": "synthetic-provisioner",
+              "CUSTOM_OTP": "synthetic-otp-bearer"}
+    (tmp_path / "secret.toml").write_text('[credentials]\n' + ''.join(
+        f'{key}={json.dumps(value)}\n' for key, value in values.items()))
+    arguments = prepare(tmp_path, {"NORA_AUTHENTICATION_ISSUER": issuer,
+                                   "NORA_IDENTITY_BACKEND": "file"})
+    services = json.loads(Path(arguments[-1]).read_text())["services"]
+    assert services["app"]["environment"] == {
+        "NORA_IDENTITY_BACKEND": "managed", "NORA_AUTHENTICATION_ISSUER": issuer,
+        "NORA_AUTHENTICATION_KEY": values["PORTAL_KEY" if issuer == "portal" else "ALTERNATE_KEY"],
+        "NORA_OTP_API_TOKEN": values["CUSTOM_OTP"],
+    }
+    assert services["nora"]["environment"]["ORY_KEY"] == values["ORY_KEY"]
+    for reader in ("app", "presence", "analytics"):
+        assert "ORY_KEY" not in services[reader]["environment"]
+        assert "PROVISIONER_TOKEN" not in services[reader]["environment"]
+
+
+def test_missing_configured_portal_key_refuses_without_values(tmp_path):
+    (tmp_path / "config.toml").write_text(
+        '[identity]\nbackend="managed"\n'
+        '[identity.authentication.portal]\nkey_env="PORTAL_KEY"\n')
+    with pytest.raises(ValueError, match="configured portal authentication key unavailable"):
+        prepare(tmp_path, {})
+    assert not (tmp_path / ".secret-delivery/compose.json").exists()
+
+
+def test_unconfigured_gateway_cannot_borrow_another_issuers_key(tmp_path):
+    (tmp_path / "config.toml").write_text(
+        '[identity]\nbackend="managed"\n'
+        '[identity.authentication.other]\nkey_env="OTHER_KEY"\n')
+    arguments = prepare(tmp_path, {"OTHER_KEY": "synthetic-unrelated-signing-key-32-bytes"})
+    services = json.loads(Path(arguments[-1]).read_text())["services"]
+    assert services["app"]["environment"] == {
+        "NORA_IDENTITY_BACKEND": "managed", "NORA_AUTHENTICATION_ISSUER": "portal"}
+    assert services["nora"]["environment"]["OTHER_KEY"]
+
+
+def test_managed_without_a_portal_issuer_still_refuses_file_fallback(tmp_path):
+    (tmp_path / "config.toml").write_text('[identity]\nbackend="managed"\n')
+    arguments = prepare(tmp_path, {})
+    services = json.loads(Path(arguments[-1]).read_text())["services"]
+    assert services["app"]["environment"] == {
+        "NORA_IDENTITY_BACKEND": "managed", "NORA_AUTHENTICATION_ISSUER": "portal"}

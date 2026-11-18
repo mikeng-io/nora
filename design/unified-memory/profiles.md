@@ -2,9 +2,11 @@
 
 ## A bounded synthesis
 
-A profile is Nora's current, revisable understanding of a person, room, unit,
-another agent or herself. It is one account per entity per unit, with three
-parts:
+A profile is Nora's current, revisable understanding of an entity inside one
+unit, with three parts. Its subject may be a registered
+[identity](../managed-identity-access/identity.md#one-identity-many-accounts),
+a room, a unit or Nora herself. This descriptive profile is distinct from a
+platform account, authentication record or agent deployment configuration:
 
 - **Facts** say who or what the entity is: names, roles, relationships, stable
   attributes and instructions. Authored names and account mappings render from

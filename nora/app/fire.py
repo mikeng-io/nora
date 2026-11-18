@@ -71,6 +71,7 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
+from nora.access import IdentityAccess
 from nora.agent.catalog.model import turn_occasion
 from nora.agent.guards import ReplyGuard
 from nora.agent.lineage import (
@@ -128,6 +129,8 @@ from nora.domain.lineage import (
     WORKING_SET,
     room_key,
 )
+from nora.domain.managed import room_scope_id
+from nora.domain.management import Scope, ScopeKind
 from nora.domain.media import MediaBlob
 from nora.domain.media_join import MediaJoin
 from nora.domain.memo import Memo, MemoStore
@@ -645,6 +648,7 @@ class FirePath:
         # due row is not proof the act is still needed, and an unread premise
         # is no check at all.
         shared: Callable[..., Awaitable[SharedView]] | None = None,
+        access: Any = None,  # `nora.access.IdentityAccess`; `None` → file `Persons` reads
     ) -> None:
         # `<standing>` renders on the fire path too. `build_prefill` is shared
         # and parameterised only by `header=`, so SUPPRESSING the block here
@@ -703,9 +707,7 @@ class FirePath:
         # `Policy` instance the assembler holds — a fire path with its own
         # idea of a room's unit would render another social unit's notes
         # into this one. `None` keeps the tier inert.
-        self._notes = notes
-        self._memos = memos
-        self._policy = policy
+        self._notes, self._memos, self._policy = notes, memos, policy
         # THE SWITCH (45 §5): `None` until `[memory.profile] read` is on — see the
         # parameter. The reads it replaces check it and are not made.
         self._profile_reader = profile
@@ -715,6 +717,7 @@ class FirePath:
         # tag reply's are. `None` is `[lineage] mode = "off"`.
         self._lineage = lineage
         self._persons = persons
+        self._access = access or IdentityAccess.for_files(persons, policy)
         self._records = records
         # The shared quote-window resolver (DEC-195). `None` keeps
         # `build_context`'s plain `context_window` fetch.
@@ -863,15 +866,10 @@ class FirePath:
         implementer toward an empty transcript and an empty card — a fire turn
         with no context at all, and nothing anywhere saying so.
         """
-        # `.get`, not `[...]`: identity.toml loads once at startup and a row may
-        # be thirty days old, so the person it names may have left the file. A
-        # KeyError here would surface as `failed_error` with a traceback; `speak`
-        # refuses it as `failed_policy` with a sentence instead. `None` for an
-        # occasion held on nobody's behalf, which is not an error at all.
-        ref = (
-            self._persons.by_person.get(occasion.person_id)
-            if occasion.person_id is not None else None
-        )
+        # Resolve the occasion's room view; an absent requester remains None.
+        scope = Scope(ScopeKind.ROOM, room_scope_id(occasion.platform, occasion.conversation_id))
+        ref = (await self._access.person_ref(occasion.person_id, scope=scope)
+               if occasion.person_id is not None else None)
 
         transcript: tuple[TranscriptRow, ...] = ()
         if self._quote_window is not None:
@@ -908,7 +906,8 @@ class FirePath:
         # turn renders the SAME transcript block through the SAME prefill, so
         # leaving it out here would reintroduce the two-name-space bug on exactly
         # the path nobody is watching when it fires.
-        transcript = self._persons.name_transcript(transcript, platform=occasion.platform)
+        transcript = await self._access.name_transcript(
+            transcript, platform=occasion.platform, scope=scope)
         if self._media_join is not None:
             transcript = await self._media_join.enrich(transcript, path="fire")
 
@@ -1013,9 +1012,9 @@ class FirePath:
             presence=presence,
             computer=computer,
             documents=documents,
-            room_members=self._room_members(occasion),
+            room_members=await self._room_members(occasion),
             lineage_room=(
-                self._lineage.render_room(
+                await self._lineage.read_room(
                     platform=occasion.platform,
                     conversation_id=occasion.conversation_id,
                 )
@@ -1023,13 +1022,23 @@ class FirePath:
             ),
         )
 
-    def _room_members(self, occasion: Event) -> tuple[PersonRef, ...]:
+    async def _room_members(self, occasion: Event) -> tuple[PersonRef, ...]:
         """This room's listed persons for `<room_members>` (a pure lookup, no
         read), the same answer the tag path's assembler gives."""
-        if self._policy is None:
+        if self._policy is None and self._access.is_file_backend:
             return ()
-        conv = self._policy.conversation(occasion.platform, occasion.conversation_id)
-        return self._persons.room_members(conv.persons) if conv is not None else ()
+        return await self._access.room_refs(
+            occasion.platform, occasion.conversation_id)
+
+    async def _render_room(self, occasion: Event) -> Any:
+        """The lineage policy's room view — configured lineage or policy-derived."""
+        lineage = self._lineage
+        if lineage is None:
+            if self._policy is None:
+                raise ValueError("a room view requires lineage or policy")
+            lineage = LineagePolicy.from_policy(self._policy, access=self._access)
+        return await lineage.read_room(
+            platform=occasion.platform, conversation_id=occasion.conversation_id)
 
     async def _read_computer(self, occasion: Event) -> ComputerView | None:
         """`<computer>` for this occasion's room, or `None` (no reader, or a
@@ -1106,7 +1115,7 @@ class FirePath:
         if occasion.kind != "participation" or not self._ai_peer:
             return ()
         query = _window_query(transcript)
-        refs = self._window_speakers(occasion, transcript)
+        refs = await self._window_speakers(occasion, transcript)
         try:
             people = await asyncio.wait_for(
                 self._recall_people(occasion, refs, query),
@@ -1124,31 +1133,19 @@ class FirePath:
             return ()
         return people
 
-    def _window_speakers(
+    async def _window_speakers(
         self, occasion: Event, transcript: Sequence[TranscriptRow],
     ) -> tuple[PersonRef, ...]:
-        """The distinct people who SPOKE in this window, most recent first,
-        bounded by `[honcho] people_in_window_speakers`.
-
-        **Most recent first, and the bound is what makes the order matter.** A
-        window of twelve rows can hold more speakers than the bound admits, and
-        the ones worth a read are the ones still talking — a person who spoke
-        once at the top of the window and left is exactly who the turn is not
-        deciding about.
-
-        Resolved through `Persons`, so an unmapped sender contributes NOTHING
-        rather than a row keyed on a raw platform id: `honcho_peer_id` is the
-        roster's canonical id and there is no memory to read under a phone
-        number. Nora's own rows are skipped: her own account is `<self>`, read
-        separately from the culture store.
-        """
+        """Bounded canonical speakers, most recent first; skip self and unmapped senders."""
         if self._people_in_window_speakers <= 0:
             return ()
+        scope = Scope(ScopeKind.ROOM, room_scope_id(occasion.platform, occasion.conversation_id))
         found: dict[str, PersonRef] = {}
         for row in reversed(tuple(transcript)):
             if row.is_nora:
                 continue
-            ref = self._persons.resolve(occasion.platform, row.sender_id)
+            ref = await self._access.resolve_ref(
+                occasion.platform, row.sender_id, scope=scope)
             if ref is None or ref.person_id in found:
                 continue
             found[ref.person_id] = ref
@@ -1493,10 +1490,9 @@ class FirePath:
             return ()
         return await read_character(
             self._culture, unit=convo.unit,
-            members=fire_character_people(
-                self._room_members(occasion), persons=self._persons,
-                platform=occasion.platform, person=ref, transcript=transcript,
-            ),
+            members=await fire_character_people(
+                await self._room_members(occasion), access=self._access,
+                platform=occasion.platform, person=ref, transcript=transcript),
             stage="fire_character", platform=occasion.platform,
             metrics=self._metrics,
             timeout_seconds=self._standing_store_timeout_seconds,
@@ -1524,13 +1520,11 @@ class FirePath:
         if convo is None or not convo.unit:
             return ()
         reader = self._profile_reader
-        members = self._room_members(occasion)
-        target = (self._lineage or LineagePolicy.from_policy(self._policy)).render_room(
-            platform=occasion.platform, conversation_id=occasion.conversation_id,
-        )
+        members = await self._room_members(occasion)
+        target = await self._render_room(occasion)
         room = Room(
             platform=occasion.platform, conversation_id=occasion.conversation_id,
-            roster_source=self._rosters.get(occasion.platform), persons=self._persons,
+            roster_source=self._rosters.get(occasion.platform), access=self._access,
             tagger=ref, self_ids=self._profile_self_ids,
         )
 
@@ -1575,19 +1569,17 @@ class FirePath:
         if view is not None:
             views.append(view)
         # THEIRS, with their authored identity lines (45 §3).
-        for person in fire_character_people(
-            members, persons=self._persons,
-            platform=occasion.platform, person=ref, transcript=transcript,
-        ):
+        for person in await fire_character_people(
+            members, access=self._access,
+            platform=occasion.platform, person=ref, transcript=transcript):
             view = await one(
                 character_key(convo.unit, person.person_id),
                 entity="person", of=person.person_id, stage="fire_profile_person",
                 authored=authored_identity(
                     name=person.name, aliases=person.aliases,
                     platforms=tuple(sorted({
-                        platform_name(p)
-                        for (p, _), pid in self._persons.index.items()
-                        if pid == person.person_id
+                        platform_name(a.platform)
+                        for a in await self._access.accounts_for(person.person_id)
                     })),
                 ),
             )
@@ -1618,15 +1610,11 @@ class FirePath:
         standing_permits = None
         if self._lineage is not None:
             room = Room(
-                platform=occasion.platform,
-                conversation_id=occasion.conversation_id,
-                roster_source=self._rosters.get(occasion.platform),
-                persons=self._persons, tagger=ref,
-                self_ids=self._profile_self_ids,
+                platform=occasion.platform, conversation_id=occasion.conversation_id,
+                roster_source=self._rosters.get(occasion.platform), access=self._access,
+                tagger=ref, self_ids=self._profile_self_ids,
             )
-            target = self._lineage.render_room(
-                platform=occasion.platform,
-                conversation_id=occasion.conversation_id)
+            target = await self._render_room(occasion)
             try:
                 narrowed = await ledger_target(target, room)
             except Exception:
@@ -1968,8 +1956,8 @@ class FirePath:
             # tag path: on the assembled context, never at ingest (the audit
             # stores what arrived) and never in the prefill (which may not import
             # nora.platform).
-            ctx = MentionRenderer(
-                persons=self._persons, display_name=self._display_name,
+            ctx = await MentionRenderer(
+                display_name=self._display_name, access=self._access,
                 self_ids=self_ids, metrics=self._metrics,
                 content_checks=self._registry.content_checks,
             ).rehydrate(ctx)
@@ -2041,7 +2029,7 @@ class FirePath:
                 # shape where a mention is most obviously wanted.
                 composer=OutboundComposer(
                     platform=occasion.platform, conversation_id=occasion.conversation_id,
-                    persons=self._persons, metrics=self._metrics,
+                    metrics=self._metrics, access=self._access,
                     roster_source=self._rosters.get(occasion.platform),
                     preview_source=self._preview_source,
                     content_checks=self._registry.content_checks,
@@ -2050,7 +2038,7 @@ class FirePath:
             )
             room = Room(
                 platform=occasion.platform, conversation_id=occasion.conversation_id,
-                roster_source=self._rosters.get(occasion.platform), persons=self._persons,
+                roster_source=self._rosters.get(occasion.platform), access=self._access,
                 # `None` for an occasion nobody asked for, which is what makes
                 # `Room.scope()` report UNAVAILABLE there rather than a room —
                 # the honest state (R-21), not a degraded one.
@@ -2829,7 +2817,10 @@ class FirePath:
         except Exception:
             log.exception("relevance gate shadow transcript read failed")
         else:
-            named = self._persons.name_transcript(tuple(raw), platform=platform)
+            named = await self._access.name_transcript(
+                tuple(raw), platform=platform,
+                scope=Scope(
+                    ScopeKind.ROOM, room_scope_id(platform, conversation_id)))
             for row in reversed(named):
                 # The newest row that actually SAID something — an attachment
                 # or a reaction has no words for a reviewer to read.

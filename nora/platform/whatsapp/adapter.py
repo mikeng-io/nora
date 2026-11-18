@@ -35,12 +35,13 @@ from .send import WhatsAppSender
 class WhatsAppAdapter:
     platform = "whatsapp"
 
-    def __init__(self, base_url: str, *, dm_recipients: Set[str] = frozenset()) -> None:
+    def __init__(self, base_url: str, *, dm_recipients: Set[str] = frozenset(),
+                 dm_gate: Callable[[str], Awaitable[bool]] | None = None) -> None:
         """`dm_recipients` is every direct address in `identity.toml`; the
         sender refuses a 1:1 message to any other JID."""
         self._base_url = base_url
         self._listener = WhatsAppListener(base_url)
-        self._sender = WhatsAppSender(base_url, dm_recipients=dm_recipients)
+        self._sender = WhatsAppSender(base_url, dm_recipients=dm_recipients, dm_gate=dm_gate)
         self._reactor = WhatsAppReactor(base_url)
         self._identity: PlatformIdentity | None = None
 

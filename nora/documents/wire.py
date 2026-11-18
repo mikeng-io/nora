@@ -38,14 +38,15 @@ class GroundWiring:
     cognition_shared_document_room: Any
 
 
-def ground(allowlist, cfg, content_checks, doctrine_store, persons) -> GroundWiring:
+def ground(allowlist, cfg, content_checks, doctrine_store, persons, access=None) -> GroundWiring:
     _require_a_sendable_public_url(cfg.documents.public_url, content_checks=content_checks)
     cognition_context_screen = cognition_context_screen_fn(
         content_checks=content_checks,
         doctrine_store=doctrine_store,
         canary=cfg.doctrine.canary,
     )
-    cognition_shared_document_room = shared_document_room(allowlist=allowlist, persons=persons)
+    cognition_shared_document_room = shared_document_room(
+        allowlist=allowlist, persons=persons, access=access)
     return GroundWiring(
         cognition_context_screen=cognition_context_screen,
         cognition_shared_document_room=cognition_shared_document_room,

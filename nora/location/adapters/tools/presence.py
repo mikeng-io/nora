@@ -6,12 +6,13 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from nora.agent.room import find_by_name
-from nora.agent.toolkit.results import _record
 from nora.agent.whereis import (
     Whereis,
     _dedupe,
     presence_audience,
 )
+from nora.location.app.circles import reader_for
+from nora.location.app.circles import record_result as _record
 
 log = logging.getLogger("nora.tools")
 
@@ -21,7 +22,6 @@ def _make_where_is(deps):
     geocoder = deps.geocoder
     location_trusted = deps.location_trusted
     metrics = deps.metrics
-    presence_circles = deps.presence_circles
     presence_source = deps.presence_source
     refresher = deps.refresher
     room = deps.room
@@ -39,7 +39,8 @@ def _make_where_is(deps):
         Args:
             person: Who they asked about, exactly as they said it.
         """
-        if presence_source is None or not presence_circles:
+        circles = await reader_for(deps).read()
+        if presence_source is None or not circles:
             # Presence not wired (offline/eval compositions, or `[presence]`
             # disabled / identity.toml carrying no circle). `unavailable`, never a
             # silent empty — a wiring gap must look like «I could not check», not
@@ -53,7 +54,7 @@ def _make_where_is(deps):
         # the seam's own behaviour. With several, a non-`refused` answer from a circle
         # the room IS a subset of outranks a `refused` from one it is not (the refusal
         results: list[dict] = []
-        for circle in presence_circles:
+        for circle in circles:
             out = await Whereis(
                 room=room,
                 circle=circle,
@@ -108,13 +109,13 @@ def _make__been_iso(deps):
 def _make__resolve_bound_place(deps):
     mobility = deps.mobility
     persons = deps.persons
-    presence_circles = deps.presence_circles
     _place_words = deps._place_words
     _presence_audience = _make__presence_audience(deps)
 
     async def _resolve_bound_place(place_id: int) -> tuple[Any, str | None]:
         """A derived place for `route`, or `None` when this room may not be"""
-        if mobility is None or not presence_circles:
+        circles = await reader_for(deps).read()
+        if mobility is None or not circles:
             return None, None
         try:
             place = await mobility.place_by_id(place_id=place_id)
@@ -123,9 +124,13 @@ def _make__resolve_bound_place(deps):
             return None, None
         if place is None:
             return None, None
-        for circle in presence_circles:
+        subject = (await room_access.canonical_person(place.subject_id)
+                   if (room_access := getattr(deps.room, "access", None)) is not None
+                   and not room_access.is_file_backend
+                   else persons.subject_id_for(place.subject_id))
+        for circle in circles:
             if not any(
-                persons.subject_id_for(pid) == place.subject_id for pid in circle.person_ids
+                pid == subject for pid in circle.person_ids
             ):
                 continue
             _, refusal = await _presence_audience(
@@ -200,8 +205,6 @@ def _make__presence_audience(deps):
                 "guessing or blaming anyone's sharing settings.",
             }
         if unnamed_blocks or not subset_ok:
-            # WHICH condition fired, so a refusal is diagnosable from the
-            # metric instead of inferred — the same labels `locate` uses.
             reason = "unnamed" if unnamed_blocks else "not_subset"
             if metrics is not None:
                 metrics.inc(
@@ -239,9 +242,7 @@ def _make__presence_audience(deps):
                 view.unnamed,
                 circle.circle_id,
             )
-        # R-47: who may be ASKED ABOUT resolves against the CIRCLE unioned with the
-        # room — the audience gate has already been cleared above. No name (or 「大家」)
-        # means the room's own people: the group asking about the group.
+        # After the audience check, targets may come from the circle or room.
         if not asked or asked.casefold() in _been_everyone:
             refs = _dedupe(view.people)
             if not refs:
@@ -251,6 +252,9 @@ def _make__presence_audience(deps):
                     "is no derived pattern to report. Say so, and do "
                     "not guess.",
                 }
+            if not await _eligible(deps, refs):
+                return (), {"status": "unavailable",
+                            "note": "I can't verify current location access."}
             return tuple(refs), None
         matches = _dedupe(find_by_name(circle.people, asked) + view.find(asked))
         if not matches:
@@ -265,6 +269,18 @@ def _make__presence_audience(deps):
                 "could_be": [p.name for p in matches],
                 "note": "More than one person here goes by that. Ask which one.",
             }
+        if not await _eligible(deps, matches):
+            return (), {"status": "unavailable",
+                            "note": "I can't verify current location access."}
         return (matches[0],), None
 
     return _presence_audience
+
+
+async def _eligible(deps, refs) -> bool:
+    reader = reader_for(deps)
+    if not reader.managed:
+        return True
+    circles = await reader.read()
+    eligible = {pid for circle in circles for pid in circle.person_ids}
+    return all(ref.person_id in eligible for ref in refs)

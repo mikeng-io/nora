@@ -21,16 +21,22 @@ class AggregatePlanes:
     def __init__(self, writes: AggregateWrites, scope: RegistrationScope) -> None:
         self.writes = writes
         self.scope = scope
+        self._circle_placements: dict[str, dict[str | None, tuple[str, ...]]] = {}
 
-    def units_for(self, table: sa.Table, row: RowData) -> tuple[str, ...]:
+    async def units_for(self, table: sa.Table, row: RowData) -> tuple[str, ...]:
         if table.name.startswith("rollup_"):
             return (row["unit"],)
         if table.name == "platform_object_state":
             unit = self.scope.room_unit(row["platform"], row["conversation_id"])
             return (unit,) if unit else ()
         if table.name == "presence_places":
-            return self.scope.circle_units(row["circle_id"])
-        return self.scope.person_units(row["subject_id"])
+            return tuple(unit for unit in await self._places(row["circle_id"]) if unit is not None)
+        return await self.scope.person_units(row["subject_id"])
+
+    async def _places(self, circle: str) -> dict[str | None, tuple[str, ...]]:
+        if circle not in self._circle_placements:
+            self._circle_placements[circle] = await self.scope.circle_placements(circle) or {}
+        return self._circle_placements[circle]
 
     async def _link(
         self, conn: AsyncConnection, source: sa.Table, id_: int, unit: str,
@@ -51,7 +57,7 @@ class AggregatePlanes:
             return await self.writes.graph.aggregate_planes(
                 conn, table, unit=unit, key=(row["circle_id"], row["place_id"], unit),
                 occurred_at=at, asserted_at=at, minimum="internal",
-                persons=self.scope.circle_persons(row["circle_id"], unit=unit),
+                persons=(await self._places(row["circle_id"]))[unit],
             )
         if family.startswith("rollup_"):
             inputs = await self.writes.rollup_inputs(conn, table, row, row["build_id"])

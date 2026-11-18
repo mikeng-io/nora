@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -215,7 +214,9 @@ def test_agent_skill_link_ci_uses_the_same_document_classification(
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     assert values["docs_only"] == str(canonical).lower()
     selected = {job for job, chosen in json.loads(values["plan"]).items() if chosen}
-    assert selected == ({"contracts"} if canonical else set(ci_plan.JOBS) - {"codeql-python"})
+    assert selected == (
+        {"contracts", "ory", "portal-browser"}
+        if canonical else set(ci_plan.JOBS) - {"codeql-python"})
     if canonical:
         assert "tests/architecture/test_agent_skills.py" in json.loads(values["readers"])
 
@@ -240,119 +241,6 @@ def test_shared_document_reader_keeps_full_suite_fallback(tmp_path, monkeypatch)
     plan = json.loads(values["plan"])
     assert plan["contracts"] and not plan["python"]
     assert not any(selected for name, selected in plan.items() if name.startswith("codeql-"))
-
-
-def _acceptance_source() -> tuple[str, dict]:
-    root = Path(__file__).resolve().parents[2]
-    workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())
-    step = next(s for s in workflow["jobs"]["contracts"]["steps"]
-                if s.get("name") == "Selected backend acceptance")
-    source = step["run"].split("<<'PYTEST'\n", 1)[1].rsplit("PYTEST", 1)[0]
-    return source, step
-
-
-def _acceptance_env(monkeypatch, tmp_path, readers, *, testmon=None,
-                    event_name="pull_request", base_sha="b" * 40,
-                    record: bool = False):
-    """The script's whole input surface, set — never ambient. The exec'd
-    workflow step reads READERS, TESTMON, BASE_SHA, EVENT_NAME and
-    .testmondata in its cwd; inheriting any of them from the pytest process
-    (hosted: TESTMON=true from the step env; local: a gitignored record) made
-    this test pass locally and fail hosted."""
-    monkeypatch.setenv("READERS", json.dumps(readers))
-    monkeypatch.setenv("EVENT_NAME", event_name)
-    monkeypatch.setenv("BASE_SHA", base_sha)
-    if testmon is None:
-        monkeypatch.delenv("TESTMON", raising=False)
-    else:
-        monkeypatch.setenv("TESTMON", testmon)
-    monkeypatch.chdir(tmp_path)
-    if record:
-        (tmp_path / ".testmondata").write_bytes(b"record")
-
-
-def _fake_run(calls, failure, selected_line=None):
-    """Subprocess.run for the exec'd step: answers the selector call with a
-    fixed selection and records the gate command. A fake behaves like the
-    real subprocess, including the wrong-call shapes."""
-    def run(command, **kwargs):
-        if "affected_tests.py" in " ".join(map(str, command)):
-            assert kwargs.get("capture_output") is True
-            return subprocess.CompletedProcess(
-                command, 0, stdout=f"{selected_line}\n")
-        assert kwargs.get("check") is True
-        calls.append(command)
-        if len(calls) - 1 == failure:
-            raise subprocess.CalledProcessError(1, command)
-        return subprocess.CompletedProcess(command, 0)
-    return run
-
-
-@pytest.mark.parametrize("targets", [
-    "ALL", ["tests/integration/test_latency.py"],
-    ["tests/unit/test_engagement_pipeline.py",
-     "tests/integration/test_bridge_queue_telemetry.py"], [],
-])
-@pytest.mark.parametrize("failure", [None, 0, 1])
-def test_timing_contracts_run_without_competing_pytest_workers(
-    monkeypatch, tmp_path, targets, failure,
-):
-    source, _ = _acceptance_source()
-    runner = [sys.executable, "-m", "scripts.pytest_gate",
-              "--junit-dir", "backend-results"]
-    expected = ([runner] if targets == "ALL"
-                else [[*runner, *targets]] if targets else [])
-    calls = []
-    _acceptance_env(monkeypatch, tmp_path, targets)
-    monkeypatch.setattr(subprocess, "run", _fake_run(calls, failure))
-    if failure is not None and failure < len(expected):
-        with pytest.raises(subprocess.CalledProcessError):
-            exec(compile(source, ".github/workflows/ci.yml", "exec"), {})  # noqa: S102 — trusted repo workflow
-        assert calls == expected[:failure + 1]
-    else:
-        exec(compile(source, ".github/workflows/ci.yml", "exec"), {})  # noqa: S102 — trusted repo workflow
-        assert calls == expected
-
-
-def test_acceptance_script_without_a_record_resolves_to_all(
-    monkeypatch, tmp_path,
-):
-    """The complete-acceptance helper fails broad without a record."""
-    source, _ = _acceptance_source()
-    calls = []
-    _acceptance_env(monkeypatch, tmp_path, ["tests/test_docs.py"],
-                    testmon="true", record=False)
-    monkeypatch.setattr(subprocess, "run", _fake_run(calls, None))
-    exec(compile(source, ".github/workflows/ci.yml", "exec"), {})  # noqa: S102
-    assert calls == [[sys.executable, "-m", "scripts.pytest_gate",
-                      "--junit-dir", "backend-results"]]
-
-
-def test_acceptance_script_with_a_record_uses_the_resolved_selection(
-    monkeypatch, tmp_path,
-):
-    """The step resolves the real selector's line with the record present."""
-    source, _ = _acceptance_source()
-    calls = []
-    _acceptance_env(monkeypatch, tmp_path, ["docs-reader"],
-                    testmon="true", record=True)
-    monkeypatch.setattr(
-        subprocess, "run",
-        _fake_run(calls, None, selected_line="tests/test_docs.py"))
-    exec(compile(source, ".github/workflows/ci.yml", "exec"), {})  # noqa: S102
-    assert calls == [[sys.executable, "-m", "scripts.pytest_gate",
-                      "--junit-dir", "backend-results", "tests/test_docs.py"]]
-
-
-def test_manual_dispatch_records_complete_acceptance(monkeypatch, tmp_path):
-    """The manually selected acceptance step records the complete suite."""
-    source, _ = _acceptance_source()
-    calls = []
-    _acceptance_env(monkeypatch, tmp_path, "ALL", event_name="workflow_dispatch")
-    monkeypatch.setattr(subprocess, "run", _fake_run(calls, None))
-    exec(compile(source, ".github/workflows/ci.yml", "exec"), {})  # noqa: S102
-    assert calls == [[sys.executable, "-m", "scripts.pytest_gate",
-                      "--junit-dir", "backend-results", "--testmon"]]
 
 
 @pytest.mark.parametrize(
@@ -763,36 +651,6 @@ def test_escape_report_marks_only_failures_the_selection_skipped():
     assert "escapes (red, not selected): 0" in "\n".join(all_lines)
 
 
-def test_full_backend_replaces_the_nonblocking_measurement():
-    root = Path(__file__).resolve().parents[2]
-    jobs = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())["jobs"]
-    assert "suite-timing" not in jobs
-    assert "contracts" in jobs["checks"]["needs"]
-    assert jobs["contracts"]["env"]["NORA_TEST_MAX_WORKERS"] == "4"
-    steps = jobs["contracts"]["steps"]
-    fixed = next(step for step in steps
-                 if step.get("name") == "Architecture and documentation contracts")
-    assert "needs.classify.outputs.readers != '\"ALL\"'" in fixed["if"]
-    upload = next(
-        step for step in steps
-        if step.get("uses", "").startswith("actions/upload-artifact@")
-        and "backend-results/*" in step["with"]["path"]
-    )
-    assert upload["if"] == "${{ !cancelled() }}"
-    record = next(
-        step for step in steps
-        if step.get("uses", "").startswith("actions/upload-artifact@")
-        and step["with"]["path"] == ".testmondata"
-    )
-    # a partial record (failed run) must never reach pull requests
-    assert record["if"] == (
-        "${{ github.event_name == 'workflow_dispatch' && "
-        "github.ref == 'refs/heads/master' && success() }}"
-    )
-    assert record["with"]["name"].startswith("testmon-data-")
-    assert record["with"]["if-no-files-found"] == "error"
-
-
 def _release_repo_with_symlink(root: Path, mode: int = 0o120000) -> dict:
     """Base/head where nora/__init__.py is a symlink (or a mode-100755 file):
     the raw diff is modification-only but the object is not a regular file."""
@@ -852,21 +710,6 @@ def test_an_executable_release_file_is_not_eligible(tmp_path, monkeypatch):
     assert not ci_plan.release_eligible(tmp_path / "x", event)
 
 
-def test_automatic_backend_is_bounded_and_full_acceptance_is_manual():
-    root = Path(__file__).resolve().parents[2]
-    workflow = yaml.safe_load((root / '.github/workflows/ci.yml').read_text())
-    assert 'schedule' not in workflow[True]
-    steps = workflow['jobs']['contracts']['steps']
-    full = next(s for s in steps if s.get('name') == 'Selected backend acceptance')
-    fast = next(s for s in steps if s.get('name') == 'Fast backend baseline')
-    assert full['if'] == "github.event_name == 'workflow_dispatch'"
-    assert fast['if'] == "github.event_name != 'workflow_dispatch'"
-    assert fast['run'] == 'uv run python -m scripts.ci_fast_tests'
-    assert not any(s.get('run') == 'uv run python -m scripts.ci_plan release' for s in steps)
-    assert workflow['jobs']['contracts']['timeout-minutes'].endswith('|| 4 }}')
-    assert not any(s.get('continue-on-error', False) for s in steps)
-
-
 @pytest.mark.parametrize("event_name", ["pull_request", "push", "workflow_dispatch"])
 def test_python_codeql_is_on_demand_but_other_scans_stay_automatic(
     tmp_path, monkeypatch, event_name,
@@ -890,3 +733,50 @@ def test_python_codeql_is_on_demand_but_other_scans_stay_automatic(
     if event_name == "workflow_dispatch":
         needs["codeql-python"]["result"] = "cancelled"
         assert not ci_plan.verify(plan, needs)
+
+
+def test_pull_requests_always_run_the_ory_item1_gate(tmp_path, monkeypatch):
+    # NOR-1 item 1: an unrelated docs diff can never leave the named Ory job
+    # skipped on a PR head — the plan selects it and the join holds it.
+    event = tmp_path / "event.json"
+    event.write_text(json.dumps({"pull_request": {}}))
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setattr("sys.argv", ["ci_plan"])
+    monkeypatch.setattr(ci_plan, "changed_paths", lambda event, repo: ["docs/runbook.md"])
+    monkeypatch.setattr(ci_plan.affected_tests, "select", lambda paths, repo, **_: [])
+    assert ci_plan.main() == 0
+    values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    plan = json.loads(values["plan"])
+    assert plan["ory"]
+    needs = {"classify": {"result": "success"}}
+    needs.update({job: {"result": "success" if chosen else "skipped"}
+                  for job, chosen in plan.items()})
+    assert ci_plan.verify(plan, needs)
+    needs["ory"]["result"] = "skipped"
+    assert not ci_plan.verify(plan, needs)
+
+
+def test_pull_requests_always_run_the_portal_browser_item5_gate(tmp_path, monkeypatch):
+    # NOR-1 item 5: test_managed_portal_browser is met only when its tests
+    # pass in a job on every PR head — a docs-only diff can never leave the
+    # named job skipped, and the join treats its skip as failure.
+    event = tmp_path / "event.json"
+    event.write_text(json.dumps({"pull_request": {}}))
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setattr("sys.argv", ["ci_plan"])
+    monkeypatch.setattr(ci_plan, "changed_paths", lambda event, repo: ["docs/runbook.md"])
+    monkeypatch.setattr(ci_plan.affected_tests, "select", lambda paths, repo, **_: [])
+    assert ci_plan.main() == 0
+    values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    plan = json.loads(values["plan"])
+    assert plan["portal-browser"]
+    needs = {"classify": {"result": "success"}}
+    needs.update({job: {"result": "success" if chosen else "skipped"}
+                  for job, chosen in plan.items()})
+    assert ci_plan.verify(plan, needs)
+    needs["portal-browser"]["result"] = "skipped"
+    assert not ci_plan.verify(plan, needs)

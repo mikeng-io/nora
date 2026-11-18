@@ -65,7 +65,7 @@ class SocialItemWrites:
             if (reg := self._registration) is None:
                 wrote = bool((await conn.execute(stmt)).rowcount)
             else:
-                for unit in reg.scope.person_units(person) or (None,):
+                for unit in await reg.scope.person_units(person) or (None,):
                     inserted = await reg.insert_once(
                         conn, SOCIAL_ITEM, stmt, unit=unit, persons=(person,),
                         occurred_at=item.taken_at,
@@ -99,7 +99,8 @@ class SocialItemWrites:
         if id is not None:
             values["id"] = id
         async with self._engine.begin() as conn:
-            units = self._registration.scope.person_units(person) if self._registration else ()
+            registration = self._registration
+            units = await registration.scope.person_units(person) if registration else ()
             if self._registration is not None:
                 values["recorded_at"] = await conn.scalar(sa.select(sa.func.clock_timestamp()))
             for index, unit in enumerate(units or (None,)):

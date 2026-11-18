@@ -30,12 +30,13 @@ from nora.app.composition_helpers import (
     _unified_profile_writers_retired,
     character_person_keys,
     character_unit_keys,
+    selected_character_person_keys,
 )
 from nora.app.composition_readers import scope_home_rooms
 from nora.app.raw_clients import _RelevanceGateModelClient
 from nora.app.startup import StartupError
 from nora.domain.culture import nora_character_key
-from nora.domain.live import LiveMapping
+from nora.domain.live import AsyncLiveMapping, LiveMapping
 from nora.infra.sql.character import SqlCharacterEvidence
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.language import SqlLanguageStore
@@ -43,8 +44,9 @@ from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.profile import SqlProfileStore
 from nora.infra.sql.profile_inputs import SqlProfileInputs
 from nora.infra.sql.rollup_read import SqlRollupRead
-from nora.infra.sql.social_stream import readable_social_store
+from nora.infra.sql.social_stream import SqlSocialStreamStore, readable_social_store
 from nora.infra.sql.tension import SqlTensionStore
+from nora.language.background_identity import BackgroundIdentity
 from nora.language.character import (
     CHARACTER_NORA_ADAPTOR_NAME,
     CHARACTER_PERSON_ADAPTOR_NAME,
@@ -98,22 +100,25 @@ class ProfileAdaptorWiring:
 
 def _character_adaptors(
     allowlist: Any, cfg: Any, content_checks: Any, engine: Any,
-    metrics: Any, note_store: Any, persons: Any,
+    metrics: Any, note_store: Any, persons: Any, access: Any = None,
 ) -> CharacterAdaptorWiring:
     """Culture's room fold and the Character sessions (person, unit, Nora)."""
     schedules, adaptors = _culture_adaptor(
         allowlist=allowlist, cfg=cfg, engine=engine,
-        metrics=metrics, note_store=note_store, persons=persons,
+        metrics=metrics, note_store=note_store, persons=persons, access=access,
     )
-    person_keys = LiveMapping(lambda: character_person_keys(allowlist, persons))
+    person_keys = (AsyncLiveMapping(lambda: selected_character_person_keys(allowlist, access))
+        if access is not None and not access.is_file_backend
+        else LiveMapping(lambda: character_person_keys(allowlist, persons)))
     culture_store = SqlCultureStore(engine)
     p_sched, p_ad = _character_person_adaptor(
         cfg=cfg, content_checks=content_checks, culture_store=culture_store,
         engine=engine, metrics=metrics, person_keys=person_keys, persons=persons,
+        access=access,
     )
     c_sched, c_ad, unit_keys, nora_keys = _character_collective_adaptors(
         allowlist=allowlist, cfg=cfg, culture_store=culture_store, engine=engine,
-        metrics=metrics, persons=persons,
+        metrics=metrics, persons=persons, access=access,
     )
     return CharacterAdaptorWiring(
         adaptors=(*adaptors, *p_ad, *c_ad),
@@ -127,7 +132,7 @@ def _character_adaptors(
 
 def _culture_adaptor(
     allowlist: Any, cfg: Any, engine: Any, metrics: Any,
-    note_store: Any, persons: Any,
+    note_store: Any, persons: Any, access: Any = None,
 ) -> Any:
 
     # THE CULTURE TIER (DEC-182..185) is the first schedule registered.
@@ -150,7 +155,7 @@ def _culture_adaptor(
     }
     adaptors = (
         CultureAdaptor(
-            culture=SqlCultureStore(engine),
+            access=access, culture=SqlCultureStore(engine),
             # THE NOTE INDEX: an account of how a room works that cannot see what the roo…
             # is inferring a thing the note index already states. `None` for the tier bei…
             # real configuration and renders no block, not an empty one. NOT `standing`:…
@@ -203,7 +208,7 @@ def _culture_adaptor(
 
 def _character_person_adaptor(
     cfg: Any, content_checks: Any, culture_store: Any, engine: Any,
-    metrics: Any, person_keys: Any, persons: Any,
+    metrics: Any, person_keys: Any, persons: Any, access: Any = None,
 ) -> Any:
     schedules = {
         CHARACTER_PERSON_ADAPTOR_NAME: AdaptorSchedule(
@@ -219,15 +224,17 @@ def _character_person_adaptor(
         CharacterPersonAdaptor(
             culture=culture_store,
             evidence=PersonEvidence(
-                store=SqlCharacterEvidence(engine),
+                store=SqlCharacterEvidence(engine,
+                    identity_ids=access.identity_ids if access is not None else None),
                 keys=person_keys,
-                # Their social items are evidence too (design/
-                # cognition-loop/observation.md), read whether or not the poller
-                # runs, opted-out persons left out by the store.
-                social=readable_social_store(engine, persons),
-                former_ids=persons.former_ids_for,
+                # Evidence and input assembly both enforce current social consent.
+                social=(SqlSocialStreamStore(engine) if access is not None
+                    and not access.is_file_backend else readable_social_store(engine, persons)),
+                access=access,
+                former_ids=access.former_ids_for if access is not None
+                    else persons.former_ids_for,
             ),
-            keys=person_keys,
+            keys=person_keys, identity=BackgroundIdentity(access),
             metrics=metrics,
             screen=functools.partial(scan_identifiers, content_checks=content_checks),
             render_chars=cfg.media.comprehension_render_chars,
@@ -240,7 +247,7 @@ def _character_person_adaptor(
 
 def _character_collective_adaptors(
     allowlist: Any, cfg: Any, culture_store: Any, engine: Any,
-    metrics: Any, persons: Any,
+    metrics: Any, persons: Any, access: Any = None,
 ) -> Any:
 
 
@@ -272,7 +279,7 @@ def _character_collective_adaptors(
     }
     adaptors: tuple[Any, ...] = (
         CharacterNoraAdaptor(
-            culture=culture_store,
+            culture=culture_store, identity=BackgroundIdentity(access),
             evidence=NoraEvidence(
                 store=SqlCharacterEvidence(engine),
                 keys=nora_keys,
@@ -304,7 +311,7 @@ def _character_collective_adaptors(
 def _profile_adaptors(
     allowlist: Any, cfg: Any, character: Any, clock: Any,
     content_checks: Any, engine: Any, media_join: Any, metrics: Any,
-    persons: Any, profile_index: Any,
+    persons: Any, profile_index: Any, access: Any = None,
 ) -> ProfileAdaptorWiring:
     """The Profile sessions (person, verdict judge, collectives), in shadow."""
 
@@ -342,7 +349,7 @@ def _profile_adaptors(
                 clock=clock, content_checks=content_checks, engine=engine,
                 media_join=media_join, metrics=metrics, persons=persons,
                 profile_collective_keys=profile_collective_keys,
-                profile_index=profile_index,
+                profile_index=profile_index, access=access,
             )
         )
         c_sched, c_ad = _profile_collective_adaptors(
@@ -353,7 +360,7 @@ def _profile_adaptors(
             profile_room_keys=profile_room_keys,
             profile_social=profile_social, profile_store=profile_store,
             profile_unit_keys=profile_unit_keys,
-            profile_nora_keys=profile_nora_keys,
+            profile_nora_keys=profile_nora_keys, access=access,
         )
         schedules = {**p_sched, **c_sched}
         adaptors = (*p_ad, *c_ad)
@@ -364,6 +371,7 @@ def _profile_person_adaptors(
     allowlist: Any, cfg: Any, character: Any, clock: Any,
     content_checks: Any, engine: Any, media_join: Any, metrics: Any,
     persons: Any, profile_collective_keys: Any, profile_index: Any,
+    access: Any = None,
 ) -> Any:
     """The person account's session and the verdict judge."""
     profile_store = SqlProfileStore(
@@ -371,11 +379,16 @@ def _profile_person_adaptors(
         screen=functools.partial(text_offence, content_checks=content_checks),
         index=profile_index,
     )
-    profile_reads = SqlCharacterEvidence(engine)
+    profile_reads = SqlCharacterEvidence(engine,
+        identity_ids=access.identity_ids if access is not None else None)
     # The person accounts' social input (45 §4): the readable
     # store's (opted-out, gone and hidden left out there), the
     # same store the social cursor and the counts come from.
     profile_social = readable_social_store(engine, persons)
+    # Selected person reads are gated by current preferences in evidence and render.
+    # Collective readers retain their own store rather than inheriting this scope.
+    person_social = (SqlSocialStreamStore(engine) if access is not None
+        and not access.is_file_backend else profile_social)
     schedules = {
         PROFILE_PERSON_ADAPTOR_NAME: AdaptorSchedule(
             min_interval_seconds=cfg.memory.profile.update_every_seconds,
@@ -402,10 +415,12 @@ def _profile_person_adaptors(
                 profile=profile_store,
                 keys=character.person_keys,
                 wake_batch=cfg.memory.profile.person.update_every_messages,
-                source_inputs=SqlProfileInputs(engine, social=profile_social),
+                source_inputs=SqlProfileInputs(engine, social=person_social,
+                    identity_ids=access.identity_ids if access is not None else None),
                 source_timeout_seconds=cfg.standing.store_timeout_seconds,
-                social=profile_social,
-                former_ids=persons.former_ids_for,
+                social=person_social, access=access,
+                former_ids=access.former_ids_for if access is not None
+                    else persons.former_ids_for,
             ),
             reads=profile_reads,
             keys=character.person_keys,
@@ -420,7 +435,7 @@ def _profile_person_adaptors(
             # The social items' render (45 §4): screened like the
             # Character session's, captions redacted to the author's
             # own handle, each reading clipped as the media reads.
-            social=profile_social,
+            social=person_social, identity=BackgroundIdentity(access),
             coordinate_screen=looks_like_coordinate if content_checks else None,
             screen=functools.partial(scan_identifiers, content_checks=content_checks),
             render_chars=cfg.media.comprehension_render_chars,
@@ -437,12 +452,7 @@ def _profile_person_adaptors(
                 lambda: {
                     **{
                         key: DocketAccount(
-                            about=(
-                                ref.name
-                                if (ref := persons.by_person.get(pk.person.person_id))
-                                is not None
-                                else "someone"
-                            ),
+                            about=pk.person.name,
                             rooms=tuple(
                                 (r.platform, r.key)
                                 for r in pk.rooms
@@ -476,7 +486,7 @@ def _profile_collective_adaptors(
     allowlist: Any, cfg: Any, character: Any, content_checks: Any,
     engine: Any, media_join: Any, metrics: Any, persons: Any,
     profile_index: Any, profile_reads: Any, profile_room_keys: Any, profile_social: Any,
-    profile_store: Any, profile_unit_keys: Any, profile_nora_keys: Any,
+    profile_store: Any, profile_unit_keys: Any, profile_nora_keys: Any, access: Any = None,
 ) -> Any:
     """The room, unit and Nora collective accounts."""
     schedules = {
@@ -507,7 +517,7 @@ def _profile_collective_adaptors(
     adaptors = (
         *(
             ProfileCollectiveAdaptor(
-                kind=kind,
+                kind=kind, identity=BackgroundIdentity(access),
                 profile=profile_store,
                 culture=character.culture_store,
                 render=profile_index,
@@ -519,7 +529,9 @@ def _profile_collective_adaptors(
                     keys=keys,
                     kind=kind,
                     render=profile_index,
-                    source_inputs=SqlProfileInputs(engine, social=profile_social),
+                    identity=BackgroundIdentity(access),
+                    source_inputs=SqlProfileInputs(engine, social=(SqlSocialStreamStore(engine)
+                        if access is not None and not access.is_file_backend else profile_social)),
                     members=LiveMapping(
                         functools.partial(
                             _collective_members,
@@ -554,7 +566,7 @@ class DreamObjectivesWiring:
 def _dream_objectives(
     allowlist: Any, cfg: Any, clock: Any, content_checks: Any,
     engine: Any, media_join: Any, metrics: Any, note_store: Any,
-    persons: Any, profile_index: Any, unit_scopes: Any,
+    persons: Any, profile_index: Any, unit_scopes: Any, access: Any = None,
 ) -> DreamObjectivesWiring:
     """Every objective session and its wake schedule, minus the retired."""
     adaptors: tuple[Any, ...] = ()
@@ -563,7 +575,7 @@ def _dream_objectives(
         character = _character_adaptors(
             allowlist=allowlist, cfg=cfg, content_checks=content_checks,
             engine=engine, metrics=metrics, note_store=note_store,
-            persons=persons,
+            persons=persons, access=access,
         )
         adaptors = (*adaptors, *character.adaptors)
         schedules = {**schedules, **character.schedules}
@@ -571,7 +583,7 @@ def _dream_objectives(
             allowlist=allowlist, cfg=cfg, character=character,
             clock=clock, content_checks=content_checks, engine=engine,
             media_join=media_join, metrics=metrics, persons=persons,
-            profile_index=profile_index,
+            profile_index=profile_index, access=access,
         )
         adaptors = (*adaptors, *profile.adaptors)
         schedules = {**schedules, **profile.schedules}
@@ -673,12 +685,12 @@ def _lessons_evidence(
 def _dream_tool_source(
     allowlist: Any, audit: Any, cfg: Any, memory: Any,
     metrics: Any, persons: Any, proactive_homes: Any, registry: Any,
-    rosters: Any, tool_registry: Any,
+    rosters: Any, tool_registry: Any, access: Any,
 ) -> Any:
     """The registry-backed tool source every Dreamer session speaks through."""
     return RegistryToolSource(
         registry=tool_registry,
-        store=audit,
+        store=audit, access=access,
         persons=persons,
         honcho=memory,
         metrics=metrics,

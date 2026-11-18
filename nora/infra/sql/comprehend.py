@@ -50,6 +50,7 @@ class SqlComprehendRecords:
         can_release_place: Any = None,
         social_off_ids: frozenset[str] = frozenset(),
         model_id: str = "cognition-runtime",
+        access: Any = None,
     ) -> None:
         self.engine, self.media_join = engine, media_join
         self.rooms_by_unit, self.persons_by_unit = rooms_by_unit, persons_by_unit
@@ -57,6 +58,37 @@ class SqlComprehendRecords:
         self.can_release_place = can_release_place
         self.social_off_ids = social_off_ids
         self.model_id = model_id
+        self.access = access
+
+    async def _unit_persons(self, unit: str) -> set[str]:
+        """Managed: CURRENT members of the unit's configured rooms; else the file projection."""
+        if self.access is not None and not self.access.is_file_backend:
+            members: set[str] = set()
+            for platform, conversation_id in self.rooms_by_unit.get(unit, []):
+                members.update(
+                    ref.person_id
+                    for ref in await self.access.room_refs(platform, conversation_id)
+                )
+            return members
+        return set(self.persons_by_unit.get(unit, set()))
+
+    async def _canonical(self, person_id: str) -> str:
+        """Fold to the canonical subject for a permission question only; file mode stays literal."""
+        if self.access is None or self.access.is_file_backend:
+            return person_id
+        return await self.access.canonical_person(person_id) or person_id
+
+    async def _social_off(self, persons: Any) -> frozenset[str]:
+        """Opted-out ids among this source's people, asked of the selected backend at read time."""
+        if self.access is not None:
+            return frozenset(await self.access.social_off_ids(tuple(persons)))
+        return self.social_off_ids
+
+    async def _persons_in_unit(self, persons: Any, unit: str) -> bool:
+        """Every recorded person id folds to a current member of the unit's rooms."""
+        return bool(persons) and {
+            await self._canonical(p) for p in persons
+        } <= await self._unit_persons(unit)
 
     async def act_result(self, key: str, session: int, result: Any = None) -> Any:
         async with self.engine.begin() as conn:
@@ -156,7 +188,7 @@ class SqlComprehendRecords:
                 # Not projected yet: fail so the wake retries (NoResultFound, as before).
                 raise NoResultFound("No row was found when one was required")
             if kind in ("social", "social_media", "social_location") and (
-                set(node["persons"]) & self.social_off_ids
+                set(node["persons"]) & await self._social_off(node["persons"])
             ):
                 raise ValueError("social consent withdrawn")
             room_key = node["origin_room"] or ""
@@ -165,10 +197,7 @@ class SqlComprehendRecords:
                 raise ValueError("source outside unit")
             if node["unit"] is None and not (
                 room_key in room_keys
-                or (
-                    node["persons"]
-                    and set(node["persons"]) <= self.persons_by_unit.get(work.unit, set())
-                )
+                or await self._persons_in_unit(node["persons"], work.unit)
             ):
                 raise ValueError("unscoped source")
             if not room_key and self.rooms_by_unit.get(work.unit):

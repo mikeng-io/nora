@@ -48,7 +48,7 @@ class SqlSourceHealthLog:
         )
         try:
             registration = self._registration
-            units = registration.scope.health_units(source, scope) if registration else ()
+            units = await registration.scope.health_units(source, scope) if registration else ()
             async with self._engine.begin() as conn:
                 for unit in units or (None,):
                     values = await registration.planes(

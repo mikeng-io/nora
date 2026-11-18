@@ -88,11 +88,8 @@ READ_CONCURRENCY = 4
 #: ceiling (25 s) plus 5 s for ffmpeg.
 ITEM_TIMEOUT_SECONDS = 150.0
 
-#: One VIDEO look: the chunked read's own whole budget (`VIDEO_READ_SECONDS`
-#: — two per-call ceilings, the first pass and a timed-out window's one
-#: recovery attempt) plus the url download ceiling and ffmpeg. The recovery
-#: pass fits INSIDE this number because the read is handed the look's own
-#: deadline and spends from it, never beside it.
+#: A video look includes its window/recovery budget, download and ffmpeg.
+#: Nested reads spend the same look deadline, including their recovery pass.
 VIDEO_ITEM_TIMEOUT_SECONDS = 30.0 + VIDEO_READ_SECONDS
 
 #: Every look together: one video envelope plus the margin another item
@@ -241,10 +238,8 @@ async def read_view(
         limit = video_item_timeout if item.kind != "image" else item_timeout
         async with look.slots:
             started.add(n)
-            # The look's allowance IS the deadline a nested read spends: the
-            # video read's one recovery pass comes out of this same number —
-            # the item's envelope and what the batch has left — never beside
-            # it, and never more than the `wait_for` that kills the look.
+            # Nested recovery spends the lesser of the item allowance and batch time left;
+            # its deadline never exceeds the enclosing wait_for.
             allowance = max(
                 0.0,
                 min(limit, deadline_total - asyncio.get_running_loop().time()),

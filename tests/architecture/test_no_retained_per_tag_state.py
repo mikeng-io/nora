@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import gc
 
+from nora.access import IdentityAccess
 from nora.agent.guards import ReplyGuard
 from nora.agent.registry import ToolRegistry
 from nora.app.runtime import BackgroundTasks
@@ -131,6 +132,7 @@ def _build_pipeline() -> tuple[EngagementPipeline, BackgroundTasks]:
         doctrine_store=_FakeDoctrineStore(), context_assembler=assembler,
         runner=_ReplyingRunner(), tool_registry=ToolRegistry(),
         policy=permissive_policy(),
+        access=IdentityAccess.for_files(persons=persons, policy=permissive_policy()),
         debounce=Debounce(0.0), canary="CANARY-XYZ",
         display_name="Nora", ai_peer="nora", context_window=10,
         timeout_seconds=5.0, limits={"turns": 4, "output_tokens": 400, "total_tokens": 24000},

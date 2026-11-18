@@ -1,0 +1,119 @@
+"""The one measurement claim a run declares, and its honest result policy.
+
+Protocol rehearsal keeps behavior UNMEASURED, including a fixture served
+through the declared gateway. Behavioral evaluation additionally requires
+that declared claim and a gateway; a gateway alone never selects the claim.
+
+Every surface reads this module, never its own string: the SDK draw's
+`environment_state` (`per_draw`), the retained corpus JSON (`mode`/
+`behavior`), the three-axis rollup (`behavior_status`) and the CLI line.
+The parent's autonomous-journey adapter reads `for_world` and
+`retained_behavior` for the per-case report it owns.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any
+
+from evals.outcome import ERROR, FAIL, PASS, REVIEW, UNKNOWN, UNMEASURED
+from nora.subject.eval_evidence import EvidenceError
+
+#: The claim a run binds into its grading selection and stamps per draw.
+PROTOCOL_REHEARSAL = "protocol-rehearsal"
+BEHAVIORAL_EVALUATION = "behavioral-evaluation"
+
+#: The `--measure` surface: how the caller names each claim.
+MEASURES = ("protocol", "behavioral")
+
+
+@dataclass(frozen=True, slots=True)
+class Measurement:
+    """The bound measurement: one mode, its per-draw stamp and its rollup."""
+
+    mode: str = PROTOCOL_REHEARSAL
+
+    def __post_init__(self) -> None:
+        if self.mode not in (PROTOCOL_REHEARSAL, BEHAVIORAL_EVALUATION):
+            raise ValueError("unknown measurement mode")
+
+    @property
+    def behavioral(self) -> bool:
+        return self.mode == BEHAVIORAL_EVALUATION
+
+    @property
+    def phrase(self) -> str:
+        """The run line's prose form (`mode: <phrase>`)."""
+        return "behavioral evaluation" if self.behavioral else "protocol rehearsal"
+
+    def bind(self, evidence: Any) -> None:
+        """Bind before dispatch; a run cannot change its measurement claim."""
+        declared = evidence.metadata.get("measurement")
+        if declared is not None and declared != self.mode:
+            raise EvidenceError("measurement_claim_conflict")
+        if declared is None:
+            evidence.record("measurement_bound", measurement=self.mode)
+            evidence.metadata["measurement"] = self.mode
+
+    def per_draw(self, *, error: Any, judged: Any) -> str:
+        """`NORA_BEHAVIOR` on one draw's `environment_state`.
+
+        Protocol draws never claim behavior. A behavioral draw claims what
+        its own path retained — the journey's verdict — `ERROR` when the
+        draw errored, and `UNMEASURED` when nothing was retained (an
+        unestablished draw, never a pass).
+        """
+        if not self.behavioral:
+            return UNMEASURED
+        if error:
+            return ERROR
+        return str(judged) if judged else UNMEASURED
+
+    def behavior_status(self, *, verdicts: Mapping[str, int],
+                        unanswered: int, execution: str,
+                        validity: str) -> str:
+        """The behavior axis for a measurement-bound report.
+
+        Instrument ERRORs and unanswered rows are `ERROR`, never a quality
+        score; `FAIL`/`REVIEW` are the evaluator's own observed outcomes;
+        `PASS` requires an established measurement — valid execution AND
+        validity — so an unestablished run stays `UNKNOWN`.
+        """
+        if not self.behavioral:
+            return UNMEASURED
+        if unanswered or verdicts.get(ERROR) or not any(verdicts.values()):
+            return ERROR
+        if execution != PASS or validity != PASS:
+            return ERROR if ERROR in (execution, validity) else UNKNOWN
+        if verdicts.get(FAIL):
+            return FAIL
+        if verdicts.get(REVIEW):
+            return REVIEW
+        return PASS
+
+    def retained_behavior(self, verdict: str) -> str:
+        """What a per-case report may claim for behavior: the verdict under
+        a behavioral measurement, `UNMEASURED` under protocol."""
+        return verdict if self.behavioral else UNMEASURED
+
+
+#: The two bound claims, for callers that select rather than construct.
+PROTOCOL = Measurement()
+BEHAVIORAL = Measurement(mode=BEHAVIORAL_EVALUATION)
+
+
+def for_measure(value: str) -> Measurement:
+    """The measurement a `--measure` choice names; anything else is refused."""
+    if value == "behavioral":
+        return BEHAVIORAL
+    if value == "protocol":
+        return PROTOCOL
+    raise ValueError(f"unknown measurement {value!r}; declare one of {MEASURES}")
+
+
+def for_world(world: Any, measurement: Measurement = PROTOCOL) -> Measurement:
+    """Validate the declared claim against the world without inferring it."""
+    if measurement.behavioral and getattr(world, "model_gateway", None) is None:
+        raise ValueError("a behavioral measurement cannot promote a generated world")
+    return measurement

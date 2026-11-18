@@ -104,6 +104,7 @@ def describers(
     cfg,
     content_checks,
     engine,
+    extra_model_clients,
     media_objects,
     memory,
     metrics,
@@ -118,9 +119,14 @@ def describers(
     # The per-modality DIRECT lanes (DEC-197): a describer configured with a direct provider
     # travels through its own client, NOT the process-wide OmniRoute client — OmniRoute
     # drops `video_url` content blocks, so a video described through it would reach the…
+    direct_clients = _direct_describer_clients(cfg)
+    if extra_model_clients is not None:
+        # Describer lanes create AsyncOpenAI clients outside the model lane;
+        # folded into its list they close with it — otherwise nothing ever did.
+        extra_model_clients.extend(direct_clients.values())
     vision_client = VisionClient(
         client=model_client_for("vision"),
-        direct_clients=_direct_describer_clients(cfg),
+        direct_clients=direct_clients,
         model=route_model("vision", cfg.media.vision_model),
         max_tokens=cfg.media.vision_max_tokens,
         reasoning_effort=cfg.media.vision_reasoning_effort,
@@ -231,7 +237,7 @@ def images(cfg, metrics) -> ImagesWiring:
         cfg,
         metrics,
         cfg.credentials,
-        state_dir=Path("/app/state"),
+        state_dir=Path(cfg.image_gen.state_dir),
     )
     # Sender-generated link previews ([preview]). Keyless, so `enabled` is the whole gate.
     # Off is the shipped default and is not a degradation: a reply carrying a link goes out

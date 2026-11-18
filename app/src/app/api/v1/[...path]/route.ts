@@ -1,5 +1,6 @@
+import { privateApiFetch } from "@/server/private-api-fetch";
 import { NextResponse } from "next/server";
-import { checkSession } from "@/server/session";
+import { checkSession, sessionFailure } from "@/server/session";
 import { resolveUpstream } from "@/server/upstream";
 
 // Server-only: NORA_API_BASE never reaches the browser. This route is the
@@ -13,7 +14,7 @@ const PRIVATE = { "cache-control": "private, no-store" };
 export async function GET(request: Request, { params }: { params: Promise<{ path: string[] }> }) {
   const check = await checkSession();
   if (check.status !== "ok") {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401, headers: PRIVATE });
+    return sessionFailure(check);
   }
 
   const { path } = await params;
@@ -24,7 +25,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ path
 
   let res: Response;
   try {
-    res = await fetch(`${NORA_API_BASE}${resolved.upstreamPath}`, {
+    res = await privateApiFetch(`${NORA_API_BASE}${resolved.upstreamPath}`, {
       cache: "no-store",
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
