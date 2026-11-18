@@ -52,7 +52,6 @@ async def _insert_person(conn: AsyncConnection, person: ManagedPerson) -> None:
             kratos_identity_id=person.kratos_identity_id,
             display_name=person.display_name,
         )
-        .on_conflict_do_nothing(index_elements=["person_id"])
     )
 
 
