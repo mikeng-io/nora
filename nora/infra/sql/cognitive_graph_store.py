@@ -247,6 +247,13 @@ class SqlCognitiveGraph:
             .where(ENTITY.c.unit == unit, ENTITY.c.id.in_(endpoints))
             .order_by(ENTITY.c.id).with_for_update()
         )).all()
+        replaced = await conn.scalar(
+            sa.select(ENTITY.c.replaces)
+            .where(ENTITY.c.unit == unit, ENTITY.c.replaces.in_(endpoints))
+            .order_by(ENTITY.c.replaces).limit(1)
+        )
+        if replaced is not None:
+            raise StaleBaseError(replaced)
         if len(locked) != 2 or any(
             row.state != "admitted" or row.basis != "inferred" or row.pointer_kind is not None
             for row in locked

@@ -288,7 +288,10 @@ async def test_definite_edge_failure_rolls_back_row_and_registry(engine) -> None
     assert not await _rows(engine, EDGE)
 
 
-async def test_merge_stores_relation_and_evidence_without_replacing_either_entity(engine) -> None:
+@pytest.mark.parametrize("stale_endpoint", [None, "source", "survivor"])
+async def test_merge_stores_relation_and_evidence_without_replacing_either_entity(
+    engine, stale_endpoint: str | None,
+) -> None:
     graph = SqlCognitiveGraph(engine)
     for id in ("source", "survivor"):
         await graph.create(
@@ -318,7 +321,19 @@ async def test_merge_stores_relation_and_evidence_without_replacing_either_entit
     )
     svc = _service(engine)
     shown = ("source", "survivor", "item-1")
+    if stale_endpoint is not None:
+        base = (await _rows(engine, ENTITY))[stale_endpoint]
+        await graph.revise(
+            ENTITY, dict(base, id="successor", replaces=stale_endpoint),
+        )
+
     result = await svc.admit((merge,), PASS, shown)
+    if stale_endpoint is not None:
+        assert result.outcomes == (Refusal("stale_base", "base"),)
+        assert not await _rows(engine, EDGE)
+        assert (await _rows(engine, ENTITY))["source"]["state"] == "admitted"
+        return
+
     assert result.outcomes == (Stored("merge", "source"),)
     rows = await _rows(engine, ENTITY)
     assert (rows["source"]["state"], rows["survivor"]["state"]) == ("merged", "admitted")

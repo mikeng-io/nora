@@ -93,7 +93,7 @@ class AdmissionService:
         return AdmissionResult(tuple(outcomes_list), tuple(revisions), tuple(retirements))
 
     def _context(self, context: PassContext) -> PassContext | Refusal:
-        if self._identity.unit(context.unit) is None:
+        if self._identity.resolve_admission_unit(context.unit) is None:
             return Refusal("wrong_unit", "unit")
         if context.room is None:
             return context
@@ -136,7 +136,7 @@ class AdmissionService:
             )
             if isinstance(choice, Refusal):
                 return choice
-            await self._store.write(choice, context)
+            await self._store.persist_admitted_proposal(choice, context)
         except StaleBaseError:
             return Refusal("stale_base", "base")
         except AdmissionUnavailableError as exc:

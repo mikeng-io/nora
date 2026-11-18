@@ -32,7 +32,7 @@ class SqlAdmissionStore:
     async def read(self, unit: str, ids: frozenset[str]) -> Mapping[str, RowFacts]:
         return await self._rows.read(unit, ids)
 
-    async def write(self, decision: Admitted, context: PassContext) -> None:
+    async def persist_admitted_proposal(self, decision: Admitted, context: PassContext) -> None:
         row, edges = _serialize(decision, context)
         base, survivor = decision.base, decision.survivor
         try:

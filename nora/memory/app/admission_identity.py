@@ -25,7 +25,7 @@ class AdmissionIdentity:
             for platform in {room.platform for room in self._rooms}
         }
 
-    def unit(self, ref: str) -> str | None:
+    def resolve_admission_unit(self, ref: str) -> str | None:
         return ref if ref in self._units else None
 
     def room(self, ref: str, unit: str, *, platform: str | None = None) -> RoomReference | None:
