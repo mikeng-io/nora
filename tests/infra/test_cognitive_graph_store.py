@@ -124,15 +124,34 @@ async def test_revise_writes_each_kinds_successor_state(store, kind, table) -> N
 
 
 async def test_two_revisions_against_one_base_admit_exactly_one(store) -> None:
+    """The first revision's transaction is held open; the second is observed
+    blocked on it in Postgres before the first commits, so the two overlap."""
     graph, engine = store
     await graph.create(CLAIM, _row("claim", id="c-0"))
-    results = await asyncio.gather(
-        graph.revise(CLAIM, _row("claim", id="c-1", replaces="c-0")),
-        graph.revise(CLAIM, _row("claim", id="c-2", replaces="c-0")),
-        return_exceptions=True,
-    )
-    refusals = [r for r in results if isinstance(r, StaleBaseError)]
-    assert len(refusals) == 1
+    first = _row("claim", id="c-1", replaces="c-0")
+    async with engine.connect() as held:
+        tx = await held.begin()
+        await held.execute(sa.insert(REGISTRY).values(
+            id=first["id"], kind=first["kind"], unit=first["unit"]))
+        await held.execute(sa.insert(CLAIM).values(first))
+        second = asyncio.create_task(
+            graph.revise(CLAIM, _row("claim", id="c-2", replaces="c-0")))
+        held_pid = (await held.execute(sa.text("SELECT pg_backend_pid()"))).scalar_one()
+        pids: list[int] = []
+        async with engine.connect() as probe:
+            for _ in range(100):
+                pids = (await probe.execute(sa.text(
+                    "SELECT pid FROM pg_stat_activity WHERE pid <> :me "
+                    "AND pid <> pg_backend_pid() AND wait_event_type = 'Lock'"
+                ), {"me": held_pid})).scalars().all()
+                if pids:
+                    break
+                await asyncio.sleep(0.05)
+        assert pids, "the second revision never waited on the first"
+        assert not second.done()
+        await tx.commit()
+    with pytest.raises(StaleBaseError):
+        await second
     async with engine.connect() as conn:
         ids = (await conn.execute(
             sa.select(CLAIM.c.id).order_by(CLAIM.c.id)
