@@ -25,6 +25,16 @@ QUESTION = "Which generated venue and time should be selected?"
 FOLLOWUP = "Which generated venue was finally selected?"
 ANSWER = "The selected generated venue is Cedar Hall."
 
+# Generated journeys still use the live scheduler and a positive reminder lead.
+CAUSAL_TIMING = {
+    "cognition.tick_seconds": 0.25,
+    "cognition.cue_quiet_seconds": 0.5,
+    "cognition.cooldown_seconds": 1.0,
+    "cognition.time_floors": [],
+    "heartbeat.tick_seconds": 1.0,
+    "reminders.min_lead_seconds": 2,
+}
+
 #: The system-role marker `fold_prompt(unit=True)` appends — the ONLY wire
 #: difference between the unit fold (`{"items": [...]}` contract) and the
 #: room fold (`{"standing": ...}` contract).
@@ -171,7 +181,9 @@ class CausalProtocol:
         return result
 
     def source(self, text, words):
-        matches = re.findall(r'<m n="(\d+)"[^>]*>(.*?)</m>', html.unescape(text), re.DOTALL)
+        matches = re.findall(
+            r'<m n="(\d+)"[^>]*>(.*?)</m\s*>', html.unescape(text), re.DOTALL,
+        )
         return next(int(mid) for mid, body in matches if words in html.unescape(body))
 
     def _fold(self, request, text):
@@ -340,7 +352,7 @@ class CausalProtocol:
                 and not tools
                 and (
                     spoken := re.search(
-                        r"<spoken_reply\b[^>]*>(.*?)</spoken_reply>", user, re.DOTALL
+                        r"<spoken_reply\b[^>]*>(.*?)</spoken_reply\s*>", user, re.DOTALL
                     )
                 )
             ):

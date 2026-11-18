@@ -11,6 +11,7 @@ import sqlalchemy as sa
 from aiohttp import web
 
 from nora.__main__ import App
+from nora.domain.ticks import TICK_SECONDS
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import (
     BRIDGE_ACTION,
@@ -35,7 +36,7 @@ from nora.subject.journey_world import (
     memory_service,
 )
 from nora.subject.obtain import SubjectSpec, build_config, default_policy, obtain
-from nora.testing.causal_protocol import CORRECTION, INITIAL, TITLE
+from nora.testing.causal_protocol import CAUSAL_TIMING, CORRECTION, INITIAL, TITLE
 from nora.testing.signal_daemon import FakeSignalDaemon
 from tests.integration.subject.test_causal_runtime_journey import (
     runtime_evidence as runtime_evidence,
@@ -98,7 +99,8 @@ async def test_real_app_autonomous_cognition_fire_and_later_correction(
     policy = (default_policy(("signal", "g1"), unit="generated-unit")
               + "home_room = true\nproactive = true\n")
     overrides = {"platforms.signal.mode": "bridge", "platforms.signal.enabled": True,
-                 "cognition.enabled": True, "heartbeat.enabled": True, "obs.metrics.port": port}
+                 "cognition.enabled": True, "heartbeat.enabled": True, "obs.metrics.port": port,
+                 **CAUSAL_TIMING}
     spec = SubjectSpec(database_url=clean_pg_url, workdir=tmp_path / "subject",
                        policy=policy, overrides=overrides)
     cfg = build_config(spec)
@@ -140,7 +142,7 @@ async def test_real_app_autonomous_cognition_fire_and_later_correction(
                 cfg.cognition.cue_quiet_seconds + cfg.cognition.tick_seconds + 30)
             assert len(await rows(engine, NOTE_REVISION)) == 1
             await wait_for_phase(protocol, 5, engine, task,
-                cfg.reminders.min_lead_seconds + cfg.heartbeat.tick_seconds * 2 + 30)
+                cfg.reminders.min_lead_seconds + TICK_SECONDS + cfg.heartbeat.tick_seconds * 2 + 30)
             await wait_for_delivery(engine, protocol, task)
             await ingress(runtime, engine, task, CORRECTION, 2)
             await wait_for_phase(protocol, 9, engine, task,

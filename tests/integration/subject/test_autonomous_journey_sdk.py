@@ -20,10 +20,11 @@ from evals.backbone import JourneyGrader, Spec, nora_task
 from evals.rebuilt.entry import ENTRY_POINTS
 from nora.subject.eval_evidence import EvidenceError, read_events
 from nora.subject.journey_world import JourneyServices
-from nora.subject.obtain import SubjectSpec, build_config, default_policy
+from nora.subject.obtain import _DEFAULT_IDENTITY, SubjectSpec, build_config, default_policy
 from nora.subject.recorded_services import RecordedServices
 from nora.testing.causal_protocol import (
     ANSWER,
+    CAUSAL_TIMING,
     CORRECTION,
     FOLLOWUP,
     INITIAL,
@@ -61,13 +62,13 @@ def world(*, overrides=None):
     policy = (default_policy(("signal", "g1"), unit="generated-unit")
               + "home_room = true\nproactive = true\n")
     return JourneyServices(
-        policy=policy, room=("signal", "g1"),
+        policy=policy, room=("signal", "g1"), identity=_DEFAULT_IDENTITY,
         overrides={
             "platforms.signal.mode": "bridge",
             "platforms.signal.enabled": True,
             "cognition.enabled": True,
             "heartbeat.enabled": True,
-            # Preserve deployment scheduling; unsupported occasions fail the finite world.
+            **CAUSAL_TIMING,
             **(overrides or {}),
         },
         judge_models=JUDGES)
