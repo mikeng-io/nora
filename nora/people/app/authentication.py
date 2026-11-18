@@ -47,7 +47,7 @@ class AccountSessions:
     ) -> AuthenticationResult:
         account = await self._bindings.record_for(account=authentication.account)
         if account is None:
-            return AuthenticationResult(Verdict.DENIED)
+            return AuthenticationResult(Verdict.UNAVAILABLE)
         canonical = await self._bindings.canonical_person(account.person_id)
         if canonical is None or canonical != account.person_id:
             return AuthenticationResult(Verdict.UNAVAILABLE)
