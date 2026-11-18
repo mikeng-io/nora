@@ -293,3 +293,52 @@ def test_empty_or_non_service_credential_is_refused(changes):
 def test_mount_refuses_ambiguous_or_empty_authentication_configuration(credentials):
     with pytest.raises(ValueError):
         register_management_routes(web.Application(), services=None, credentials=credentials)
+
+
+async def test_a_service_credential_cannot_issue_installation_operations(surface):
+    """Initial authority is out of band: the bearer authenticates a
+    SERVICE actor, `suspend_identity` admits INSTALLATION alone, and the
+    typed vocabulary refuses the actor at decode — before any use case."""
+    client, services = surface
+    body = {
+        "operation_id": "synthetic-suspend", "kind": "suspend_identity",
+        "target": {"kind": "person", "person_id": "synthetic-person"},
+        "payload": {"reason": "generated-reason"},
+        "observed_revisions": {"identity": "r-1", "authority": "r-1"},
+    }
+    response = await client.post(PATH, headers=AUTH, json=body)
+    assert response.status == 400
+    assert not services.registration.calls and not services.authority.calls
+
+
+@pytest.mark.parametrize("marking", [
+    {"role": "synthetic-guild-owner"}, {"admin": True},
+    {"permissions": ["synthetic-administrator"]},
+])
+async def test_a_roster_member_cannot_carry_a_platform_role_marking(surface, marking):
+    """A platform admin-like marking cannot ride a roster: the member
+    schema carries `account` + `classification` alone, so `role`/`admin`
+    marks are refused at the request boundary — they never reach a sync
+    that would have to ignore them. What sync does write is `member`
+    alone (`test_an_observed_member_without_delegation_holds_no_management`)."""
+    client, services = surface
+    member = {"account": {"platform": "discord", "kind": "user_id",
+                          "value": "synthetic-admin-marked"}}
+    body = {
+        "operation_id": "synthetic-roster", "collection": "synthetic-guild",
+        "platform": "discord",
+        "scope": {"kind": ROOM.kind.value, "id": ROOM.id},
+        "audience": "room", "complete": False, "observed_ms": 1,
+        "members": [{**member, **marking}],
+    }
+    response = await client.post(
+        "/app/v1/management/rosters", headers=AUTH, json=body)
+    assert response.status == 400
+    assert not services.registration.calls and not services.authority.calls
+    # Control: the same roster without the marking crosses the schema and
+    # reaches the use-case layer — its failure here is the transport
+    # fake's, a different status, proving the 400 is the marking refusal.
+    body["members"] = [member]
+    response = await client.post(
+        "/app/v1/management/rosters", headers=AUTH, json=body)
+    assert response.status != 400

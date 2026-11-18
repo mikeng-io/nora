@@ -63,6 +63,7 @@ def classify(
             "tests/unit/test_link_publication.py",
             "tests/web/test_holder_links.py",
             "tests/web/test_roster_provisioning.py",
+            "tests/web/test_managed_ory_credentials.py",
             "tests/contract/test_binding_store_scoped_contract.py",
         }:
             plan["ory"] = True

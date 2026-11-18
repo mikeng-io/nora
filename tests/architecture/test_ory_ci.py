@@ -33,6 +33,7 @@ from scripts import ci_plan
     "tests/unit/test_link_publication.py",
     "tests/web/test_holder_links.py",
     "tests/web/test_roster_provisioning.py",
+    "tests/web/test_managed_ory_credentials.py",
     "tests/contract/test_binding_store_scoped_contract.py",
 ])
 def test_managed_identity_changes_require_the_real_ory_job(path):

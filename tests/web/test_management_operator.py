@@ -273,3 +273,14 @@ async def test_scoped_profile_http_reports_a_committed_partial_change(surface):
     assert await services.scoped_profile.reconcile()
     assert (await send(surface, body)).status == 200
     assert store.name_writes == 1
+
+
+async def test_a_session_cannot_mint_installation_authority(surface):
+    """The session path hardcodes OPERATOR: a well-formed
+    `suspend_identity` body under a valid session is refused at decode —
+    the authenticated session cannot nominate installation authority."""
+    body = {"operation_id": str(uuid4()), "kind": "suspend_identity",
+        "target": {"kind": "person", "person_id": "generated-member"},
+        "payload": {"reason": "generated-reason"},
+        "observed_revisions": {"identity": "r-1", "authority": "r-1"}}
+    assert (await send(surface, body)).status == 400

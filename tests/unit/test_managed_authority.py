@@ -26,6 +26,7 @@ from nora.domain.identity import Identifier
 from nora.domain.managed import (
     AccountState,
     AuthorityBlock,
+    CheckResult,
     ManagedAccount,
     ManagedPerson,
     MembershipState,
@@ -49,6 +50,7 @@ from nora.domain.management import (
     Target,
     TargetKind,
 )
+from nora.people import PortalScopes
 from nora.people.app.managed import AuthorityService, ManagedServices
 from nora.testing.managed import (
     FakeAuthorityBackend,
@@ -850,3 +852,48 @@ async def test_an_open_room_admits_an_unmapped_sender_without_widening():
     assert read.verdict is Verdict.DENIED
     assert await store.members_of(
         Scope(ScopeKind.ROOM, "signal/conv-open")) == ()
+
+
+async def test_open_room_admission_grants_no_portal_principal_and_no_sibling_read():
+    """The admission gate is not the read boundary: `permitted` lets an
+    unmapped sender into a flagged-open room, but a portal read is
+    `PortalScopes.snapshot` — `check(view)` per scope under a session-
+    derived person_id an unregistered sender can never supply. A viewer
+    id that is no person's fails closed, and a real member's snapshot
+    carries the open room while the protected sibling stays invisible."""
+    open_room = Scope(ScopeKind.ROOM, "signal/conv-open")
+    store = FakeBindingStore()
+    backend = FakeAuthorityBackend()
+    topology = FakeTopologySource(
+        rooms={"signal/conv-open": (UNIT.id, True), ROOM.id: (UNIT.id, False)},
+        units={UNIT.id: WS.id},
+        workspaces={WS.id},
+    )
+    services = ManagedServices(
+        store, backend, topology, FakeIdentityRegistry(), FakeLinkRequests())
+    admitted = await services.access.permitted(
+        platform="signal", conversation_id="conv-open", person_id=None)
+    assert admitted.verdict is Verdict.ALLOWED
+
+    scopes = PortalScopes(store, topology, services.authority)
+    # The admitted sender holds no person_id: the only principal its
+    # portal request could name is one that does not exist — the boundary
+    # answers `unavailable`, never an empty-but-real access set.
+    ghost = await scopes.snapshot("person_ghost")
+    assert isinstance(ghost, CheckResult)
+    assert ghost.verdict is Verdict.UNAVAILABLE
+
+    # A real member's snapshot is scoped by `check(view)`: the open room
+    # it belongs to is visible, the protected sibling is not — the open
+    # flag widened admission, never a read.
+    await _person(store, PERSON)
+    await store.set_membership(
+        person_id=PERSON, scope=open_room, member=True, source="generated")
+    await backend.put_relation(
+        scope=open_room, relation="member", person_id=PERSON)
+    access = await scopes.snapshot(PERSON)
+    assert not isinstance(access, CheckResult)
+    assert access.rooms == frozenset({("signal", "conv-open")})
+    assert dict(access.units) == {UNIT.id: WS.id}
+    assert (await services.authority.check(
+        scope=ROOM, person_id=PERSON, permit="view")).verdict is Verdict.DENIED
