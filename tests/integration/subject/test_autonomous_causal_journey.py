@@ -188,7 +188,9 @@ async def assert_journey(engine, protocol, first, daemon, feeds, scope, boundary
                and row["tracked"] == 1 and not row["detail"].get("recorded_wake_forced")
                for row in wakes), wakes
     assert all(row["outcome"] == "closed" for row in outcomes), outcomes
-    assert wakes[0]["at_ms"] - first.received_ms >= 120_000
+    assert wakes[0]["at_ms"] - first.received_ms >= (
+        int(protocol.cfg.cognition.cue_quiet_seconds * 1_000)
+    )
     assert len(await rows(engine, COGNITION_SESSION)) == 2
     versions = await rows(engine, NOTE_REVISION)
     assert len(versions) == 2 and len({row["note_id"] for row in versions}) == 1
