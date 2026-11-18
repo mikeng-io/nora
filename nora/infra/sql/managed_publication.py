@@ -294,4 +294,4 @@ async def consolidate_people(
         revision=MANAGED_PERSON.c.revision + 1,
         updated_at=sa.func.now(),
     ))
-    return complete()
+    return denied("consolidation-refused")
