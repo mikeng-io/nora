@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.19.12](https://github.com/mikeng-io/nora/compare/v7.19.11...v7.19.12) (2026-11-18)
+
+
+### Maintenance
+
+* **ory:** split the managed-identity gate into two parallel jobs ([13c4359](https://github.com/mikeng-io/nora/commit/13c435978ccebae42f5a1366b9a500d836693f7e))
+
 ## [7.19.11](https://github.com/mikeng-io/nora/compare/v7.19.10...v7.19.11) (2026-11-18)
 
 
