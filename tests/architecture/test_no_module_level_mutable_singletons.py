@@ -46,11 +46,45 @@ _ALLOWED = frozenset({
     # A logger IS the module-level object the stdlib intends; `getLogger` is
     # idempotent and returns the same instance to every caller.
     "log", "logger",
-    # `nora/subject/obtain.py`'s UNRESOLVED is an immutable sentinel —
-    # `_Unresolved` defines only `__repr__`; identity is the contract and
-    # nothing per-request accumulates in it.
-    "UNRESOLVED",
 })
+
+#: (module, name) -> the locally-defined class the binding must construct.
+#: `obtain.py`'s UNRESOLVED is an immutable identity sentinel: `_Unresolved`
+#: defines only `__repr__`, holds nothing and is compared with `is`.
+_PINNED_SENTINELS = {
+    ("nora/subject/obtain.py", "UNRESOLVED"): "_Unresolved",
+}
+
+#: The pin exempts ONLY that exact binding — a `UNRESOLVED` in any other
+#: module, or a different value under the same name here, is scanned like
+#: everything else.
+
+#: Methods an identity sentinel may define — read-only dunders only. No
+#: `__init__`: an instance that takes or holds state is exactly the mutable
+#: singleton this rule forbids.
+_SENTINEL_DUNDERS = frozenset({
+    "__repr__", "__str__", "__bool__", "__hash__",
+    "__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__",
+})
+
+
+def _is_identity_sentinel(tree: ast.Module, class_name: str) -> bool:
+    """The class is defined here and is a pure identity sentinel."""
+
+    # Docstring, `pass` or a read-only dunder only — the moment `_Unresolved`
+    # grows an `__init__` or an attribute, the pin's exemption lapses and the
+    # binding is flagged again.
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == class_name:
+            return all(
+                (isinstance(stmt, ast.Expr)
+                 and isinstance(stmt.value, ast.Constant))
+                or isinstance(stmt, ast.Pass)
+                or (isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and stmt.name in _SENTINEL_DUNDERS)
+                for stmt in node.body
+            )
+    return False
 
 
 def _mutated_names(tree: ast.Module) -> set[str]:
@@ -81,50 +115,102 @@ def _is_mutable_construction(value: ast.Call) -> bool:
     return name in _STATEFUL_CONSTRUCTORS
 
 
+def _singleton_offenders(tree: ast.Module, rel: str) -> list[str]:
+    """One module's module-level names bound to per-process state; extracted so a synthetic module can be checked."""
+    local_classes = {n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
+    mutated = _mutated_names(tree)
+    offenders: list[str] = []
+    for node in tree.body:
+        targets: list[ast.expr] = []
+        value: ast.expr | None = None
+        if isinstance(node, ast.Assign):
+            targets, value = node.targets, node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets, value = [node.target], node.value
+        # A LOCALLY-DEFINED class is not the only shape: a bare mutable container
+        # (`_HANDLER_CACHE: dict = {}`) and an instance of an IMPORTED class
+        # (`_SHARED_FORMATTER = logging.Formatter(...)`) are module-level state too.
+        # What the rule is about is module-level state that outlives a request, not
+        # where the class happens to be written.
+        kind: str | None = None
+        if isinstance(value, ast.Call) and (
+            (isinstance(value.func, ast.Name) and value.func.id in local_classes)
+            or _is_mutable_construction(value)
+        ):
+            kind = ast.unparse(value.func) + "(...)"
+        elif (
+            isinstance(value, ast.Dict | ast.List | ast.Set)
+            and any(
+                isinstance(t, ast.Name) and t.id in mutated
+                for t in targets
+            )
+        ):
+            # A container that is WRITTEN somewhere in this module. A
+            # read-only table is a constant and is left alone; the shape
+            # DEC-13 forbids is state that accumulates across requests.
+            kind = type(value).__name__.lower() + " literal, mutated in this module"
+        if kind is None:
+            continue
+        for target in targets:
+            if not isinstance(target, ast.Name) or target.id in _ALLOWED:
+                continue
+            pin = _PINNED_SENTINELS.get((rel, target.id))
+            if (
+                pin is not None
+                and isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Name)
+                and value.func.id == pin
+                and _is_identity_sentinel(tree, pin)
+            ):
+                continue
+            offenders.append(f"{rel}:{node.lineno}: {target.id} = {kind}")
+    return offenders
+
+
 def test_no_module_level_instantiation_of_a_locally_defined_class() -> None:
     offenders: list[str] = []
     for path in _production_modules():
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        local_classes = {n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
-        for node in tree.body:
-            targets: list[ast.expr] = []
-            value: ast.expr | None = None
-            if isinstance(node, ast.Assign):
-                targets, value = node.targets, node.value
-            elif isinstance(node, ast.AnnAssign) and node.value is not None:
-                targets, value = [node.target], node.value
-            # A LOCALLY-DEFINED class is not the only shape: a bare mutable container
-            # (`_HANDLER_CACHE: dict = {}`) and an instance of an IMPORTED class
-            # (`_SHARED_FORMATTER = logging.Formatter(...)`) are module-level state too.
-            # What the rule is about is module-level state that outlives a request, not
-            # where the class happens to be written.
-            kind: str | None = None
-            if isinstance(value, ast.Call) and (
-                (isinstance(value.func, ast.Name) and value.func.id in local_classes)
-                or _is_mutable_construction(value)
-            ):
-                kind = ast.unparse(value.func) + "(...)"
-            elif (
-                isinstance(value, ast.Dict | ast.List | ast.Set)
-                and any(
-                    isinstance(t, ast.Name) and t.id in _mutated_names(tree)
-                    for t in targets
-                )
-            ):
-                # A container that is WRITTEN somewhere in this module. A
-                # read-only table is a constant and is left alone; the shape
-                # DEC-13 forbids is state that accumulates across requests.
-                kind = type(value).__name__.lower() + " literal, mutated in this module"
-            if kind is None:
-                continue
-            for target in targets:
-                if isinstance(target, ast.Name) and target.id not in _ALLOWED:
-                    rel = path.relative_to(ROOT)
-                    offenders.append(f"{rel}:{node.lineno}: {target.id} = {kind}")
+        offenders.extend(
+            _singleton_offenders(tree, path.relative_to(ROOT).as_posix()))
     assert not offenders, (
         "module-level singleton(s) — a class instantiated and bound to a "
         f"module-level name in its own module (DEC-13): {offenders}"
     )
+
+
+def test_the_sentinel_pin_is_scoped_to_its_module_and_shape() -> None:
+    """The exemption admits only `obtain.py`'s UNRESOLVED, and only while the
+    name binds the immutable `_Unresolved` sentinel — a `UNRESOLVED` in any
+    other module, or a mutable value at the pinned place, is flagged."""
+    real = ast.parse(
+        (ROOT / "nora/subject/obtain.py").read_text(encoding="utf-8"))
+    assert _singleton_offenders(real, "nora/subject/obtain.py") == []
+
+    sentinel = (
+        "class _Unresolved:\n"
+        "    def __repr__(self):\n"
+        "        return 'UNRESOLVED'\n"
+        "UNRESOLVED = _Unresolved()\n"
+    )
+    assert _singleton_offenders(ast.parse(sentinel), "nora/scratch.py")
+
+    stateful = (
+        "class _Unresolved:\n"
+        "    def __init__(self):\n"
+        "        self.items = []\n"
+        "    def __repr__(self):\n"
+        "        return 'UNRESOLVED'\n"
+        "UNRESOLVED = _Unresolved()\n"
+    )
+    assert _singleton_offenders(ast.parse(stateful), "nora/subject/obtain.py")
+
+    mutated_here = ast.parse(
+        "UNRESOLVED = []\n"
+        "def f():\n"
+        "    UNRESOLVED.append(1)\n"
+    )
+    assert _singleton_offenders(mutated_here, "nora/subject/obtain.py")
 
 
 def test_no_global_statements_in_production_code() -> None:
