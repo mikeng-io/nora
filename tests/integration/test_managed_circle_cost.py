@@ -140,7 +140,7 @@ async def test_current_reads_measure_real_requests_and_recheck_remote_lifecycle(
                 for label, key, bound in (
                         ("first-scoped-read", "SELECT", 2433),
                         ("first-scoped-read", "kratos:GET", 128),
-                        ("lineage", "SELECT", 2051),
+                        ("lineage", "SELECT", 0),
                         ("lineage", "kratos:GET", 128),
                         ("lineage", "keto:GET", 128),
                         ("where-is-tool", "SELECT", 6678),
