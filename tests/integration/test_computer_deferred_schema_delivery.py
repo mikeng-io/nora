@@ -94,6 +94,7 @@ def _rig(persons):
         computer_leases=ComputerLeases(),
         computer_exports=FakeComputerExportStore(),
         browser=FakeBrowserRunner(),
+        web_browser=FakeBrowserRunner(),
         computer_admission=ComputerAdmission(
             tasks=FakeComputerTaskStore(), redis=FakeStreamRedis(),
             clock=lambda: NOW,

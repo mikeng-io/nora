@@ -31,7 +31,6 @@ from nora.policy import Conversation, Policy
 from nora.testing import FakeBrowserTabStore
 from tests.unit.test_web_browse_tool import (
     ALIAS,
-    ROOM,
     UNIT,
     admission_for_tests,
     bindings_for,
@@ -98,8 +97,9 @@ async def _chromium(tmp_path):
         await process.wait()
 
 
-def _relay(http, endpoint, scope, token):
+def _relay(http, endpoint, scope, token, connections):
     async def serve(request):
+        connections.append(request.query["scope"])
         assert request.query["scope"] == scope
         assert request.headers["X-Computerd-Instance"] == "generated-instance"
         assert request.headers["Authorization"] == f"Bearer {token}"
@@ -139,17 +139,19 @@ async def _redraw(http, endpoint, tabs, scope):
             await cdp.close()
 
 
-async def _dispatch(registry, admission, bindings, scope, args):
+async def _dispatch(registry, admission, bindings, unit, args):
+    scope = computer_unit_scope(unit)
+    room_id = bindings["conversation_id"]
     row = (await admission.submit(
         scope=scope, kind="browse", payload={"tool": "web_browse", "args": args},
-        origin={"actor": "tag", "platform": "signal", "conversation_id": ROOM,
+        origin={"actor": "tag", "platform": "signal", "conversation_id": room_id,
                 "conversation_type": "group", "requester_person_id": "generated"},
     )).task
     conversation = Conversation(
-        platform="signal", ids=frozenset({ROOM}), persons=frozenset({"generated"}),
-        label="Generated", unit=UNIT,
+        platform="signal", ids=frozenset({room_id}), persons=frozenset({"generated"}),
+        label="Generated", unit=unit,
     )
-    policy = Policy(conversations=(conversation,), _by_id={("signal", ROOM): conversation})
+    policy = Policy(conversations=(conversation,), _by_id={("signal", room_id): conversation})
     dispatch = ComputerToolDispatch(
         registry=registry, store=None, persons=bindings["persons"], honcho=None,
         metrics=bindings["metrics"], policy=policy, scope_for=lambda *_: scope,
@@ -173,8 +175,11 @@ def _decision(prompt, label):
 async def test_registered_web_browse_journey(tmp_path, aiohttp_server):
     scope = computer_unit_scope(UNIT)
     commits = []
+    connections = []
+    visits = []
 
-    async def offer(_request):
+    async def offer(request):
+        visits.append(request.path_qs)
         return web.Response(text=SITE, content_type="text/html")
 
     async def commit(request):
@@ -186,7 +191,7 @@ async def test_registered_web_browse_journey(tmp_path, aiohttp_server):
         app.router.add_get("/offer", offer)
         app.router.add_post("/commit", commit)
         token = uuid4().hex
-        app.router.add_get("/v1/browser", _relay(http, endpoint, scope, token))
+        app.router.add_get("/v1/browser", _relay(http, endpoint, scope, token, connections))
         server = await aiohttp_server(app)
         url = str(server.make_url("/offer"))
         base = str(server.make_url("/"))
@@ -233,7 +238,7 @@ async def test_registered_web_browse_journey(tmp_path, aiohttp_server):
             admission = admission_for_tests(tmp_path)
             registry = registry_for(browser, manager, admission)
             bindings = bindings_for(tmp_path)
-            result = await _dispatch(registry, admission, bindings, scope, {
+            result = await _dispatch(registry, admission, bindings, UNIT, {
                 "objective": "Check the offer and published stock for Wan Chai.",
                 "start_url": url,
             })
@@ -245,3 +250,17 @@ async def test_registered_web_browse_journey(tmp_path, aiohttp_server):
             [tab] = await tabs.open_for_scope(scope, instance="generated-instance")
             assert result["task"] == str(tab.task_id) and result["tab"] == tab.target_id
             assert len(requests) == 6 and commits == []
+
+            other_unit = "generated-other-unit"
+            other_scope = computer_unit_scope(other_unit)
+            foreign_registry = registry_for(browser, manager, admission, unit=other_unit)
+            foreign_bindings = {**bindings, "conversation_id": "generated-other-room"}
+            refused = await _dispatch(foreign_registry, admission, foreign_bindings, other_unit, {
+                "objective": "Check whether the offer is still shown.",
+                "start_url": url + "?foreign=1",
+                "task": result["task"],
+            })
+            assert refused["status"] == "unavailable" and refused["reason"] == "expired", refused
+            assert connections == [scope] and visits == ["/offer"] and len(requests) == 6
+            assert await tabs.open_for_scope(other_scope, instance="generated-instance") == []
+            assert await tabs.open_for_scope(scope, instance="generated-instance") == [tab]

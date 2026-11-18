@@ -41,9 +41,9 @@ ROOM = "generated-room"
 UNIT = "generated-unit"
 
 
-def registry_for(web_browser, manager, admission, **kwargs):
+def registry_for(web_browser, manager, admission, *, unit=UNIT, **kwargs):
     return ToolRegistry(
-        unit_for=lambda *_: UNIT, computer=FakeSandboxRuntime(),
+        unit_for=lambda *_: unit, computer=FakeSandboxRuntime(),
         blobs=FakeBlobStore(), computer_events=FakeComputerEventStore(),
         computer_admission=admission, browser_manager=manager, web_browser=web_browser,
         **kwargs,

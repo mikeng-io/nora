@@ -85,6 +85,7 @@ class _Rig:
             computer_leases=ComputerLeases(),
             computer_exports=self.exports,
             browser=FakeBrowserRunner(),
+            web_browser=FakeBrowserRunner(),
             computer_admission=self.admission,
             browser_manager=object(),
             computer_dm_scope_for=lambda platform, cid: "dm-anchor-1",
