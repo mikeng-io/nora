@@ -170,7 +170,7 @@ class UnitRollups:
                 for pid in (subject, *scope.former_ids)}
 
     async def projection_time(self) -> int | None:
-        return await self._store.projection_time(tuple(
+        return await self._store.read_projection_frontier(tuple(
             ProjectionInputs(unit.unit, unit.rooms, tuple(
                 (circle, (person, *scope.former_ids))
                 for person in unit.members if (scope := self._people.get(person)) is not None

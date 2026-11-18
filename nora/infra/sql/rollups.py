@@ -153,7 +153,7 @@ class SqlRollupStore:
         self._graph = SqlCognitiveGraph(engine)
         self._computed = AggregateWrites(self._graph, registration)
 
-    async def projection_time(self, inputs: Sequence[ProjectionInputs]) -> int | None:
+    async def read_projection_frontier(self, inputs: Sequence[ProjectionInputs]) -> int | None:
         async with self._engine.connect() as conn:
             return await projection_time(conn, inputs)
 
