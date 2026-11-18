@@ -32,7 +32,7 @@
       }
     },
     "signal-bridge": {
-      "image": "ghcr.io/mikeng-io/nora-signal-bridge@sha256:39c140f01b2fbd86be19c694fd92ea2c8c2291bd7619859cdc0dc12712e357b6",
+      "image": "ghcr.io/mikeng-io/nora-signal-bridge@sha256:b1102d98190f6c734e2e0306b7b2aed0628656b12eb82b71b9883eecefa00d01",
       "container_name": "signal-bridge",
       "restart": "unless-stopped",
       "networks": [
@@ -86,7 +86,7 @@
       }
     },
     "discord-bridge": {
-      "image": "ghcr.io/mikeng-io/nora-discord-bridge@sha256:baa1568be3d0eaefe100f48610c1f607c4d8ab52bc1de98b6ce0e72156b82c03",
+      "image": "ghcr.io/mikeng-io/nora-discord-bridge@sha256:70e2f5f7e4866befde84149c435b4b7b17e24694087f2b0114587556684053d7",
       "container_name": "discord-bridge",
       "restart": "unless-stopped",
       "networks": [
@@ -261,7 +261,7 @@
       }
     },
     "bridge-projection": {
-      "image": "ghcr.io/mikeng-io/nora-bridge-projection@sha256:6a9f920679a628b90d38dee2c53a62ed7f278149ad30b04224e70a58f197ec74",
+      "image": "ghcr.io/mikeng-io/nora-bridge-projection@sha256:e0fbd95114dcd348a800e766d86524daaf29a03e23d71f9d8fef5997d51b3ada",
       "container_name": "bridge-projection",
       "restart": "unless-stopped",
       "networks": [
@@ -311,7 +311,7 @@
       }
     },
     "nora": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:adc1756af602055797b8a10f84cc40512942829b66f586d026832d08f0fdb4b3",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:61d8d59e434998ea67794a2ea02c21928683a86fbae7d17b7c34d8f1c55392cb",
       "container_name": "nora",
       "restart": "unless-stopped",
       "stop_grace_period": "75s",
@@ -412,7 +412,7 @@
       "mem_limit": "256m"
     },
     "app": {
-      "image": "ghcr.io/mikeng-io/nora-app@sha256:aa426dab9f13ad0e3af8df6ff4048a417e571200d2e2e3a55281f9a6d14d7e04",
+      "image": "ghcr.io/mikeng-io/nora-app@sha256:34aa06676ae6570da1239d7459268c059ea3497df13fd915935af0ee71f38437",
       "container_name": "nora-app",
       "restart": "unless-stopped",
       "networks": [
@@ -434,6 +434,8 @@
         "AUTH_DISCORD_ID=${DISCORD_CLIENT_ID:?set DISCORD_CLIENT_ID in the host environment first}",
         "AUTH_DISCORD_SECRET=${DISCORD_CLIENT_SECRET:?set DISCORD_CLIENT_SECRET in the host environment first}",
         "AUTH_SECRET=${AUTH_SECRET:?set AUTH_SECRET in the host environment first}",
+        "AUTH_TELEGRAM_ID=${AUTH_TELEGRAM_ID:-}",
+        "AUTH_TELEGRAM_SECRET=${AUTH_TELEGRAM_SECRET:-}",
         "AUTH_URL=${AUTH_URL:?set AUTH_URL (the public origin, e.g. https://nora.67.zone) in the host environment first}",
         "NORA_OTP_API_TOKEN=${NORA_OTP_API_TOKEN:-}",
         "NORA_DOWNLOADS_DIR=/data/downloads"
@@ -444,7 +446,7 @@
       ]
     },
     "site": {
-      "image": "ghcr.io/mikeng-io/nora-site@sha256:074c3c04627801a7ae6bf035abfbc0df133ca78f49a357b43e5ccd33f6075523",
+      "image": "ghcr.io/mikeng-io/nora-site@sha256:0d52e0423fb4bc2d3e1f1a4d5e94cb2842afa228170e3562961f3d73a0c338b5",
       "container_name": "nora-site",
       "profiles": [
         "site"
@@ -455,7 +457,7 @@
       ]
     },
     "presence": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:adc1756af602055797b8a10f84cc40512942829b66f586d026832d08f0fdb4b3",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:61d8d59e434998ea67794a2ea02c21928683a86fbae7d17b7c34d8f1c55392cb",
       "container_name": "presence",
       "restart": "unless-stopped",
       "entrypoint": [
@@ -507,7 +509,7 @@
       }
     },
     "analytics": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:adc1756af602055797b8a10f84cc40512942829b66f586d026832d08f0fdb4b3",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:61d8d59e434998ea67794a2ea02c21928683a86fbae7d17b7c34d8f1c55392cb",
       "container_name": "analytics",
       "restart": "unless-stopped",
       "entrypoint": [
@@ -649,7 +651,7 @@
       }
     },
     "db": {
-      "image": "pgvector/pgvector:pg18",
+      "image": "pgvector/pgvector:pg18@sha256:38681dc6eaf55308e2a4c6de392d131652dcfac70e1263e35cd9b5ea3fe39782",
       "init": true,
       "restart": "unless-stopped",
       "networks": [
@@ -684,7 +686,7 @@
           "max-file": "3"
         }
       },
-      "image": "ghcr.io/mikeng-io/nora-stt@sha256:72ab7bfbd12ed8ddb97a3bfdc8de2121805b99405b633f048a143e7ba2d2c8ca",
+      "image": "ghcr.io/mikeng-io/nora-stt@sha256:ceb4cf011256e4cd870d6dbedba02c21c8d85674ca26d03ba636ffca25e481ba",
       "container_name": "stt",
       "restart": "unless-stopped",
       "networks": [
