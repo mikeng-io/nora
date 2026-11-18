@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.19.8](https://github.com/mikeng-io/nora/compare/v7.19.7...v7.19.8) (2026-11-18)
+
+
+### Bug Fixes
+
+* **gc:** keep a branch that is the base of an open PR ([6d6e6f0](https://github.com/mikeng-io/nora/commit/6d6e6f0003217c5617db956098ab7ed5f627ae64))
+* **gc:** remove nothing, worktrees included, when open PRs cannot be fully read ([1ba40db](https://github.com/mikeng-io/nora/commit/1ba40db4600868cd3530ce80147fd0e701a0f241))
+
 ## [7.19.7](https://github.com/mikeng-io/nora/compare/v7.19.6...v7.19.7) (2026-11-17)
 
 
