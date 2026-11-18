@@ -143,7 +143,7 @@ async def test_current_reads_measure_real_requests_and_recheck_remote_lifecycle(
                         ("lineage", "SELECT", 2051),
                         ("lineage", "kratos:GET", 128),
                         ("lineage", "keto:GET", 128),
-                        ("where-is-tool", "SELECT", 6678),
+                        ("where-is-tool", "SELECT", 0),
                         ("where-is-tool", "kratos:GET", 512)):
                     bucket = "sql" if key == "SELECT" else "ory_http"
                     actual = measurements[label][bucket].get(key, 0)
