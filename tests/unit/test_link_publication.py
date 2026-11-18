@@ -432,6 +432,52 @@ async def test_unlink_is_holder_exact_and_drops_derived_sessions():
     assert ("grant_view", PERSON_A) in rows and ("grant_view", PERSON_B) not in rows
 
 
+async def test_unlink_refuses_a_registered_non_holder_speaking_for_the_holders_account():
+    """A live, registered person who is not the account's holder cannot drive
+    its unlink. Construction pins actor.account to the target account, so the
+    discriminating forgery claims the holder's exact account with the wrong
+    person — only `_unlink`'s person-exactness check refuses it."""
+    store, backend, _topology, registry, links, svc = await _linked_world()
+    await backend.put_relation(scope=ROOM, relation="grant_view", person_id=PERSON_B)
+    await _approved(svc, links)
+    outcome = await svc.commit("synthetic-request", now=NOW + timedelta(seconds=3))
+    assert outcome.status is OutcomeStatus.COMPLETE
+    await _person(store, registry, PERSON_C, ACCT_C)
+    from nora.people.app.managed import RegistrationService
+    registration = RegistrationService(store, registry)
+    bound = await store.record_for(account=ACCT_R)
+    intruder = await store.person(PERSON_C)
+    wrong = Operation(
+        "gen-unlink-intruder", "unlink_account",
+        Actor(ActorKind.HOLDER, person_id=PERSON_C,
+              account=ACCT_R, proof_issuer=ISSUER[LinkSide.RECEIVING]),
+        Target(TargetKind.ACCOUNT, account=ACCT_R),
+        Unlink(expected_person=PERSON_A),
+        {"identity": str(intruder.revision),
+         "ownership": str(bound.revision), "authority": "observed"},
+    )
+    outcome = await registration.apply(wrong)
+    assert outcome.status is OutcomeStatus.DENIED
+    assert outcome.detail == "binding-mismatch"
+    # The refusal touched nothing: the binding still names the real holder.
+    assert (await store.record_for(account=ACCT_R)).person_id == PERSON_A
+    # Positive control — the holder's own unlink completes.
+    holder = await store.person(PERSON_A)
+    bound = await store.record_for(account=ACCT_R)
+    right = Operation(
+        "gen-unlink-holder", "unlink_account",
+        Actor(ActorKind.HOLDER, person_id=PERSON_A,
+              account=ACCT_R, proof_issuer=ISSUER[LinkSide.RECEIVING]),
+        Target(TargetKind.ACCOUNT, account=ACCT_R),
+        Unlink(expected_person=PERSON_A),
+        {"identity": str(holder.revision),
+         "ownership": str(bound.revision), "authority": "observed"},
+    )
+    outcome = await registration.apply(right)
+    assert outcome.status is OutcomeStatus.COMPLETE
+    assert await store.record_for(account=ACCT_R) is None
+
+
 async def test_suspending_the_survivor_restores_no_loser_grants():
     """Suspension is a global hold, not a rewind: the consolidated grant
     stays exactly where the link put it, the alias stands and the retired
