@@ -176,15 +176,21 @@ async def test_current_head_revision_settles_the_condition_and_pins_its_witness(
                 "ALTER TABLE edge ADD CONSTRAINT generated_reject_close "
                 "CHECK (type <> 'closed_by')",
             ))
-        with pytest.raises(sa.exc.IntegrityError):
-            await matcher.run_once()
-        assert await _endings(engine) == {role: None}
-        assert (await _edges(engine, "watches"))[role]["state"] == "live"
-        async with engine.begin() as conn:
-            await conn.execute(sa.text("ALTER TABLE edge DROP CONSTRAINT generated_reject_close"))
+        try:
+            with pytest.raises(sa.exc.IntegrityError):
+                await matcher.run_once()
+            assert await _endings(engine) == {role: None}
+            assert (await _edges(engine, "watches"))[role]["state"] == "live"
+        finally:
+            async with engine.begin() as conn:
+                await conn.execute(sa.text(
+                    "ALTER TABLE edge DROP CONSTRAINT generated_reject_close",
+                ))
     await matcher.run_once()
     assert await _endings(engine) == {role: ending}
-    edge = (await _edges(engine))[role]
+    edges = await _edges(engine)
+    assert set(edges) == {role}
+    edge = edges[role]
     assert edge["dst_id"] == current["graph_id"]
     if role == "holds":
         assert (await _edges(engine, "watches"))[role]["state"] == "retired"
@@ -194,7 +200,7 @@ async def test_current_head_revision_settles_the_condition_and_pins_its_witness(
         image = await conn.scalar(sa.select(h.image).where(
             h.table_name == table.name, h.recorded_at == edge["occurred_at"],
         ))
-    assert image["source_state"]["state"] == "closed"
+    assert image is not None and image["source_state"]["state"] == "closed"
 
 
 async def test_done_wins_and_unhealthy_or_absent_health_is_unknown(engine):

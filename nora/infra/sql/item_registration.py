@@ -342,7 +342,7 @@ class SqlItemRegistration:
 async def touch_planes(
     registration: SqlItemRegistration | None, conn: AsyncConnection,
     table: sa.Table, message_id: int, message: NormalizedMessage, person_id: str | None,
-    *, cues: tuple[str, ...] = (), own: bool = False,
+    *, own: bool = False,
 ) -> dict[str, Any]:
     if registration is None:
         return {}
@@ -352,7 +352,7 @@ async def touch_planes(
     return await registration.planes(
         conn, table, unit=registration.scope.message_unit(message),
         room=origin_room, occurred_at=epoch_ms(message.timestamp), persons=(person_id,),
-        cues=cues, own=own,
+        cues=graph_item_cues(None, addressed=message.conversation_type == "dm"), own=own,
     )
 
 

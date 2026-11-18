@@ -16,7 +16,13 @@ from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, NORA_ACT_OUTCOME,
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.infra.sql.item_registration import epoch_ms
 from nora.infra.sql.mobility import SqlMobilityStore
-from nora.infra.sql.schema import MESSAGES, PLATFORM_OBSERVATION, PRESENCE_STAYS, STIMULUS
+from nora.infra.sql.schema import (
+    MESSAGE_REACTION,
+    MESSAGES,
+    PLATFORM_OBSERVATION,
+    PRESENCE_STAYS,
+    STIMULUS,
+)
 from nora.memory.adapters.act_store import SqlActStore
 from nora.memory.domain.acts import Outcome, Verdict
 from nora.memory.domain.admission_proposals import Retire, Revise, Scope
@@ -77,6 +83,19 @@ async def test_a_record_item_gets_one_classified_stimulus(engine, cue):
     ),)
     async with engine.connect() as conn:
         assert await conn.scalar(sa.select(sa.func.count()).select_from(STIMULUS)) == 0
+
+
+async def test_a_touch_in_noras_direct_room_gets_an_addressing_cue(engine):
+    writer = _Writer(engine, _registration())
+    store = SqlRecordStore(engine, registration=writer.registration)
+    message = replace(writer._message(), conversation_type="dm")
+    target = await store.append(message=message, is_nora=True)
+    reaction = await store.append_reaction(message_id=target, message=message, person_id=_PERSON)
+    row = (await _rows(engine, MESSAGE_REACTION))[reaction]
+    assert await SqlGraphStimuli(engine).read(_UNIT) == (GraphStimulus(
+        _UNIT, "strong_cue", row["graph_id"], _AT, "message_reaction",
+        _ROOM, _PERSON, ("addresses_nora",),
+    ),)
 
 
 async def test_source_replay_keeps_one_item_stimulus(engine):

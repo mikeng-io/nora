@@ -8,13 +8,13 @@ from zoneinfo import ZoneInfo
 import pytest
 import sqlalchemy as sa
 
-from nora.app.graph_observe import GraphObserve
+from nora.app.graph_observe import graph_observe
 from nora.domain.graph_stimuli import GraphStimulus
 from nora.infra.sql.cognitive_graph_schema import CLAIM, INTENTION
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.infra.sql.schema import COGNITION_SESSION, STIMULUS
-from nora.memory.wire import condition_matcher, graph_clock
+from nora.memory.wire import graph_clock
 from nora.obs.metrics import Metrics
 from tests.fakes import FakeClock
 from tests.infra.test_cognitive_graph_admission import _rows
@@ -111,10 +111,7 @@ async def test_deadline_keeps_its_stored_instant_when_display_zone_changes(engin
 async def test_due_detection_runs_without_a_model_pass_or_legacy_time_stimulus(engine):
     await _schedule(engine, "deadline", _INSTANT + timedelta(seconds=30))
     clock = FakeClock(_INSTANT.timestamp())
-    observe = GraphObserve(
-        clock=graph_clock(engine, lambda: datetime.fromtimestamp(clock(), UTC)),
-        matcher=condition_matcher(engine), metrics=Metrics(),
-    )
+    observe = graph_observe(engine, lambda: datetime.fromtimestamp(clock(), UTC), Metrics())
     await observe.tick()
     clock.advance(30)
     await observe.tick()

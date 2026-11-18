@@ -533,11 +533,12 @@ async def _compose_dependencies(
     if discord_control is not None:
         discord_control.attach_effects(memory_area.EffectRecorder(_memory_wire.act_envelope(engine)))
     registry: AdapterRegistry
-    audit = build_audit(
+    _stores_audit = build_audit(
         cfg=cfg, engine=engine, metrics=metrics,
         self_ids=lambda platform: registry.identity_for(platform).aliases
         if platform in registry.identities else frozenset(),
-    ).audit
+    )
+    audit = _stores_audit.audit
     owner.own_audit(audit)
     _location_stores = _location_wire.stores(engine=engine)
     mobility = _location_stores.mobility
@@ -753,8 +754,7 @@ async def _compose_dependencies(
     model_client_for = _models_lane.model_client_for
     route_model = _models_lane.route_model
     tier = _models_lane.tier
-    _stores_language_scopes = build_language_scopes(allowlist=allowlist)
-    language_scopes = _stores_language_scopes.language_scopes
+    language_scopes = build_language_scopes(allowlist=allowlist).language_scopes
     _people_unit_scopes = _people_wire.unit_scopes(allowlist=allowlist)
     unit_scopes = _people_unit_scopes.unit_scopes
     _models_source = source(client=client, route_model=route_model, tier=tier)
