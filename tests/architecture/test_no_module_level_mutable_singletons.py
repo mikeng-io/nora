@@ -46,6 +46,11 @@ _ALLOWED = frozenset({
     # A logger IS the module-level object the stdlib intends; `getLogger` is
     # idempotent and returns the same instance to every caller.
     "log", "logger",
+    # `nora/subject/obtain.py`'s UNRESOLVED is an immutable sentinel —
+    # `_Unresolved` defines only `__repr__` and identity comparison is the
+    # contract. Nothing per-request accumulates in it; DEC-13's mutable
+    # state never arrives.
+    "UNRESOLVED",
 })
 
 
