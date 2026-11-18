@@ -40,7 +40,8 @@ def test_the_portal_browser_job_runs_the_named_module_on_pr_heads():
     images = next(s for s in steps if "docker pull" in (s.get("run") or ""))
     assert names.index(install["name"]) < names.index(journey["name"])
     assert names.index(images["name"]) < names.index(journey["name"])
-    for image in ("pgvector/pgvector:pg18", "oryd/kratos:v26.2.0", "oryd/keto:v26.2.0"):
+    assert "$(cat deploy/postgres/image)" in images["run"]
+    for image in ("oryd/kratos:v26.2.0", "oryd/keto:v26.2.0"):
         assert image in images["run"]
     node = next(s for s in steps if s.get("uses", "").startswith("actions/setup-node@"))
     assert node["with"]["node-version"] == "24.22.1"

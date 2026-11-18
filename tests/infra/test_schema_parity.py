@@ -336,7 +336,7 @@ def test_the_test_container_tracks_the_deployment():
     compose = (Path(__file__).resolve().parents[2] / "docker-compose.yml").read_text(
         encoding="utf-8"
     )
-    # Matches `postgres:18-alpine` AND `pgvector/pgvector:pg18`: a regex that
+    # Matches `postgres:18-alpine` AND the pgvector image line: a regex that
     # only knew the first would fail OPEN, asserting nothing while looking like
     # a gate. The major version is the group either way.
     deployed = re.search(
