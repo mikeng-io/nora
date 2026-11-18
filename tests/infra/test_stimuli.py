@@ -175,10 +175,10 @@ async def test_crossing_references_the_registered_aggregate_without_an_intention
     stays = await stay_store.stays_for_subject(subject_id=row["subject_id"])
     stimuli = SqlGraphStimuli(engine)
     producer = SqlAggregateCrossings(engine)
-    await producer.publish(build, ())
+    await producer.publish_crossings(build, ())
     assert await stimuli.read(_UNITS[0]) == ()
-    await producer.publish(build, stays)
-    await producer.publish(build, stays)
+    await producer.publish_crossings(build, stays)
+    await producer.publish_crossings(build, stays)
     at = epoch_ms(row["ended_ts"])
     assert at is not None
     assert await stimuli.read(_UNITS[0]) == (

@@ -55,7 +55,7 @@ class SqlDueSchedules:
         published = (await conn.execute(sa.select(sa.func.count()).where(
             _S.unit == row["unit"], _S.graph_id == row["id"], _S.kind == "intention_due",
         ))).scalar_one()
-        for at in trigger.due(tick, published):
+        for at in trigger.due_occurrences(tick, published):
             await _publish(conn, row, "intention_due", at)
 
     async def _expiries(self, conn: AsyncConnection, boundary: datetime) -> None:

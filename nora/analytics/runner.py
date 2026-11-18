@@ -134,7 +134,7 @@ class RollupRunner:
             anomalous=anomalous, raise_stimuli=raise_stimuli,
         )
         if raise_stimuli and self._crossings is not None:
-            await self._crossings.publish(
+            await self._crossings.publish_crossings(
                 build_id, (stay for stays in anomalous.values() for stay in stays),
             )
         if not failed:

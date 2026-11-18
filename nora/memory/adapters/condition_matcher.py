@@ -42,7 +42,7 @@ class SqlConditionMatcher:
 
     async def run_once(self) -> None:
         async with self._engine.begin() as conn:
-            await self._matcher.observe(_Batch(conn, self._graph))
+            await self._matcher.observe(batch=_Batch(conn, self._graph))
 
 
 class _Batch:

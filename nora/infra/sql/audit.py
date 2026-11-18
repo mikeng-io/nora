@@ -54,7 +54,7 @@ from nora.infra.sql.item_registration import (
     touch_planes,
 )
 from nora.infra.sql.migrations_runner import head_revision
-from nora.infra.sql.record_insert import record_insert
+from nora.infra.sql.record_insert import record_insert_values
 from nora.infra.sql.schema import (
     MESSAGE_DELETE,
     MESSAGE_EDIT,
@@ -446,9 +446,9 @@ class SqlRecordStore:
         tx_hook: Any = None,
     ) -> int:
         registration = self._registration
-        stmt = record_insert(
+        stmt = sa.insert(MESSAGES).values(**record_insert_values(
             message, is_nora, delivery_status, person_id, self._resolved_mentions_json(message),
-        )
+        )).returning(MESSAGES.c.id)
         async with self._engine.begin() as conn:
             if registration is not None:
                 stmt = stmt.values(**await registration.planes(

@@ -16,7 +16,7 @@ class SqlAggregateCrossings:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
-    async def publish(self, build: int, crossings: Iterable[Stay]) -> None:
+    async def publish_crossings(self, build: int, crossings: Iterable[Stay]) -> None:
         stays = tuple(crossings)
         if not stays:
             return

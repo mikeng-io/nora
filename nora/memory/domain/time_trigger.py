@@ -25,7 +25,7 @@ class TimeTrigger:
     zone: str
     recurrence: RecurrenceRule | None = None
 
-    def due(self, tick: int, start: int) -> Iterator[datetime]:
+    def due_occurrences(self, tick: int, start: int) -> Iterator[datetime]:
         rule = self.recurrence
         for index in range(start, rule.count if rule else 1):
             try:

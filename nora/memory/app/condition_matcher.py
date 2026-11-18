@@ -40,7 +40,7 @@ class IntentionBatch(Protocol):
 
 
 class ConditionMatcher:
-    async def observe(self, batch: IntentionBatch) -> None:
+    async def observe(self, *, batch: IntentionBatch) -> None:
         for intention in await batch.open():
             done = await self._evaluate(batch, intention, "done_when")
             holds = await self._evaluate(batch, intention, "holds_while")
