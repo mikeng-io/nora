@@ -42,10 +42,13 @@ from tests.infra.pg_baseline import PgBaseline
 
 pytest_plugins = ["scripts.pytest_gate"]
 
-# MUST track `docker-compose.yml`'s `db` image, and
-# `test_the_test_container_tracks_the_deployment` is what pins the two
-# together. A test container on a different major version than production
-# makes `tests/infra/test_schema_parity.py` — the gate every migration passes
+# The deployment's Postgres image, read from `deploy/postgres/image` — the one
+# place the digest-pinned reference is stated. `docker-compose.yml`'s `db`
+# service names the same literal and
+# `tests/architecture/test_postgres_image_is_pinned.py` is what proves they
+# agree; `test_the_test_container_tracks_the_deployment` still checks the
+# MAJOR. A test container on a different major version than production makes
+# `tests/infra/test_schema_parity.py` — the gate every migration passes
 # through — validate against a version other than the one it guards, and makes
 # `scripts/gen_pg_baseline.py` generate its oracle there too.
 #
@@ -57,7 +60,9 @@ pytest_plugins = ["scripts.pytest_gate"]
 # extension available here at all: `postgres:18-alpine` does not carry it, so
 # every migration touching a vector column would fail in CI while working in
 # production.
-PG_IMAGE = "pgvector/pgvector:pg18"
+PG_IMAGE = (
+    Path(__file__).resolve().parents[1] / "deploy/postgres/image"
+).read_text(encoding="utf-8").strip()
 
 # The runtime_context values the shipped doctrine is read with in tests. They
 # are module constants rather than inline literals because

@@ -141,7 +141,7 @@ jobs:
         run: npm exec --prefix app -- playwright install --with-deps chromium
       - name: Pull the pinned journey images
         run: |
-          docker pull pgvector/pgvector:pg18
+          docker pull "$(cat deploy/postgres/image)"
           docker pull oryd/kratos:v26.2.0@sha256:2a13bb8d362c7a7ae33bd7c0f5168aee46921f15c916a06346db91c06dc76643
           docker pull oryd/keto:v26.2.0@sha256:bfdb8b9e283aedbd9e1d005c44eb1bbefd2096b2cb5b5aa0b7360b6e39c178d2
       - name: Managed portal browser journey
