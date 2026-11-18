@@ -534,3 +534,26 @@ async def test_social_batch_excludes_disallowed_items_and_source_revisions_but_k
     assert await BackgroundIdentity(case.access).social_batch(person, batch) == batch
     case.registry.identities[person]["traits"]["social"] = False
     assert await BackgroundIdentity(case.access).social_batch(person, batch) == [message]
+
+
+async def test_the_selected_population_carries_no_key_for_a_sibling_unit_member():
+    """A member only of a sibling unit is enumerated under their own unit
+    and denied everywhere this unit reads its members: no population key,
+    no `<room_members>` ref, no `members_of` row for this room."""
+    from nora.domain.culture import character_key
+    from nora.domain.managed import room_scope_id
+    from nora.domain.management import Scope, ScopeKind
+
+    case = await _background_identity_case()
+    person, peer, outsider = case.people
+    other_unit = Scope(ScopeKind.UNIT, "generated-profile-other")
+    other_room = Scope(ScopeKind.ROOM, room_scope_id("signal", "g3"))
+    # The outsider's membership is real — on the sibling unit's room only.
+    assert [m.person_id for m in await case.access.members_of(other_room)] == [outsider]
+    # This unit's population holds one key per own member — never theirs.
+    assert set(case.keys) == {
+        character_key(_M_UNIT.id, person), character_key(_M_UNIT.id, peer),
+        character_key(other_unit.id, outsider)}
+    # This room's member view — the one `<room_members>` renders — admits
+    # only this room's members.
+    assert [r.person_id for r in await case.access.room_refs("signal", "g1")] == [person, peer]

@@ -124,5 +124,47 @@
   "old": "            \"tests/integration/test_managed_routes.py\",\n",
   "new": "",
   "target": "tests/architecture/test_ory_ci.py::test_managed_identity_changes_require_the_real_ory_job[tests/integration/test_managed_routes.py]"
+ },
+ {
+  "name": "room membership confers in that room alone",
+  "file": "nora/testing/managed.py",
+  "old": "            and (namespace, obj, \"member\", person) in self.tuples",
+  "new": "            and any(rel == \"member\" and sub == person for _, _, rel, sub in self.tuples)",
+  "target": "tests/integration/test_managed_ingest_authority.py::test_a_member_only_of_a_sibling_unit_is_refused_at_the_same_entry"
+ },
+ {
+  "name": "membership reads stay inside their own scope",
+  "file": "nora/testing/managed.py",
+  "old": "            if s == scope and m.state is MembershipState.MEMBER",
+  "new": "            if m.state is MembershipState.MEMBER",
+  "target": "tests/unit/test_managed_reminders.py::test_a_member_only_of_a_sibling_unit_is_denied_this_rooms_reminders"
+ },
+ {
+  "name": "unit population reads only its own memberships",
+  "file": "nora/testing/managed.py",
+  "old": "            if s == scope and m.state is MembershipState.MEMBER",
+  "new": "            if m.state is MembershipState.MEMBER",
+  "target": "tests/unit/test_managed_background_access.py::test_the_selected_population_carries_no_key_for_a_sibling_unit_member"
+ },
+ {
+  "name": "memory hits place only in the reading unit's rooms",
+  "file": "nora/domain/memory_index.py",
+  "old": "        or (node.origin_room is not None and node.origin_room in scope.rooms)",
+  "new": "        or node.origin_room is not None",
+  "target": "tests/unit/test_managed_memory_scope.py::test_memory_search_reads_its_unit_and_refuses_matching_sibling_unit_content"
+ },
+ {
+  "name": "admin on a scope confers no manage_members in a sibling scope",
+  "file": "nora/testing/managed.py",
+  "old": "            if (ns, ob, f\"grant_{permit}\", person) in self.tuples or (\n                ns, ob, \"admin\", person\n            ) in self.tuples:\n                return True",
+  "new": "            if any(rel in (f\"grant_{permit}\", \"admin\") and sub == person\n                   for _ns, _ob, rel, sub in self.tuples):\n                return True",
+  "target": "tests/unit/test_scoped_profile.py::test_the_gate_refuses_honestly_before_any_effect[sibling-scope]"
+ },
+ {
+  "name": "unit membership rows are scoped to the asked scope",
+  "file": "nora/infra/sql/managed_identity.py",
+  "old": "                        MANAGED_MEMBERSHIP.c.scope_kind == scope.kind.value,\n                        MANAGED_MEMBERSHIP.c.scope_id == scope.id,\n                        MANAGED_MEMBERSHIP.c.state == MembershipState.MEMBER.value,",
+  "new": "                        MANAGED_MEMBERSHIP.c.state == MembershipState.MEMBER.value,",
+  "target": "tests/integration/test_managed_analytics.py::test_selected_analytics_folds_recorded_circles_without_file_authority"
  }
 ]

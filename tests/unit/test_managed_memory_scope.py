@@ -131,6 +131,10 @@ async def test_memory_search_reads_its_unit_and_refuses_matching_sibling_unit_co
                                  now_ms=NOW, social_off=())
     assert result.status in {"ok", "partial"}
     assert {hit.node.key for hit in result.hits} == {("message", "generated-visible")}
+    # The sibling unit's room is denied to this reader — its matching node
+    # never places inside the scope the selected authority built.
+    assert all(
+        hit.node.origin_room == "signal:generated-room-a" for hit in result.hits)
 
 
 async def test_memory_store_outage_is_unavailable_and_recovery_restores_the_positive_read():

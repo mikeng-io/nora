@@ -39,6 +39,13 @@ MESSAGE = NormalizedMessage(
     "signal", ROOM_ID, "group", ACCOUNT.value, "Generated person",
     1_790_000_000_000, "nora.000 hello", {},
 )
+SIBLING = "generated-sibling-person"
+SIBLING_ACCOUNT = Identifier("signal", "uuid", "generated-sibling-account")
+SIBLING_ROOM = Scope(ScopeKind.ROOM, "signal/generated-sibling-room")
+SIBLING_MESSAGE = NormalizedMessage(
+    "signal", ROOM_ID, "group", SIBLING_ACCOUNT.value, "Generated sibling person",
+    1_790_000_000_000, "nora.000 hello", {},
+)
 
 
 @pytest.fixture
@@ -54,17 +61,23 @@ async def _pipeline(engine):
     bindings = SqlBindingStore(engine)
     backend = FakeAuthorityBackend()
     topology = FakeTopologySource(
-        rooms={ROOM.id: ("generated-unit", False)},
-        units={"generated-unit": "generated-workspace"}, workspaces={"generated-workspace"},
+        rooms={ROOM.id: ("generated-unit", False),
+               SIBLING_ROOM.id: ("generated-sibling-unit", False)},
+        units={"generated-unit": "generated-workspace",
+               "generated-sibling-unit": "generated-workspace"},
+        workspaces={"generated-workspace"},
     )
-    assert (await bindings.register(
-        person=ManagedPerson(PERSON, PersonLifecycle.ACTIVE),
-        account=ManagedAccount(
-            str(uuid4()), PERSON, "signal", frozenset({ACCOUNT}), AccountState.BOUND
-        ), membership=None,
-    )).status is OutcomeStatus.COMPLETE
-    assert (await backend.put_relation(scope=ROOM, relation="member", person_id=PERSON)
-            ).status is OutcomeStatus.COMPLETE
+    for person, account, member_scope in (
+            (PERSON, ACCOUNT, ROOM), (SIBLING, SIBLING_ACCOUNT, SIBLING_ROOM)):
+        assert (await bindings.register(
+            person=ManagedPerson(person, PersonLifecycle.ACTIVE),
+            account=ManagedAccount(
+                str(uuid4()), person, "signal", frozenset({account}), AccountState.BOUND
+            ), membership=None,
+        )).status is OutcomeStatus.COMPLETE
+        assert (await backend.put_relation(
+            scope=member_scope, relation="member", person_id=person)
+        ).status is OutcomeStatus.COMPLETE
     access = IdentityAccess(
         bindings=bindings, authority=AuthorityService(bindings, backend, topology),
         topology=topology, registry=FakeIdentityRegistry(),
@@ -113,6 +126,28 @@ async def test_inline_authority_outage_is_unavailable_instead_of_recorded_silenc
     assert result.decision.reason == "sender_unavailable"
     assert not result.decision.engage
     assert await _message_count(engine) == 1
+
+
+async def test_a_member_only_of_a_sibling_unit_is_refused_at_the_same_entry(engine):
+    """Admitted in the sibling unit's room, nothing here: `member` confers
+    on its own Room scope alone, so the sender bound to a real sibling-unit
+    membership is refused at the same ingest entry that admits this room's
+    member — and no handoff commits."""
+    pipeline, _ = await _pipeline(engine)
+    handoffs = []
+
+    async def handoff(_conn, row_id, context):
+        handoffs.append((row_id, context["decision"]))
+
+    refused = await pipeline.run(message=SIBLING_MESSAGE, tx_hook=handoff, durable=True)
+    assert not refused.decision.engage
+    assert refused.decision.reason == "sender_not_allowed"
+    assert [decision.engage for _, decision in handoffs] == [False]
+
+    admitted = await pipeline.run(message=MESSAGE, tx_hook=handoff, durable=True)
+    assert admitted.decision.engage
+    assert admitted.person.person_id == PERSON
+    assert [decision.engage for _, decision in handoffs] == [False, True]
 
 
 async def test_current_revocation_refuses_managed_ingest_after_a_positive_admission(engine):
