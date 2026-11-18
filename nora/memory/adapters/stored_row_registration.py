@@ -1,0 +1,159 @@
+"""Register existing source rows in bounded Postgres transactions."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator, Mapping, Sequence
+from typing import Any
+from uuid import uuid4
+
+import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+
+from nora.infra.sql.aggregate_writes import AggregateWrites
+from nora.infra.sql.cognitive_graph_schema import REGISTRY
+from nora.infra.sql.cognitive_graph_store import RowData, SqlCognitiveGraph
+from nora.infra.sql.item_registration import RegistrationScope
+from nora.infra.sql.schema import METADATA, PRESENCE_PLACES
+from nora.memory.adapters.stored_aggregate_planes import AggregatePlanes
+from nora.memory.adapters.stored_item_planes import ItemPlanes
+from nora.memory.app.register_stored_rows import TableRegistration
+from nora.memory.domain.registration import AGGREGATE_FAMILIES, ITEM_SOURCES
+
+Rows = Sequence[RowData]
+
+
+def _key(table: sa.Table) -> tuple[str, ...]:
+    return ("circle_id", "place_id") if table is PRESENCE_PLACES else tuple(
+        col.name for col in table.primary_key
+    )
+
+
+def _update(
+    table: sa.Table, keys: tuple[str, ...], rows: Sequence[Mapping[str, Any]],
+) -> Any:
+    stmt = sa.update(table).where(
+        *(table.c[name] == sa.bindparam(f"_source_{name}") for name in keys),
+    )
+    if table is PRESENCE_PLACES:
+        stmt = stmt.where(table.c.unit.is_(None))
+    columns = set(rows[0]) - {f"_source_{name}" for name in keys}
+    return stmt.values({name: sa.bindparam(name) for name in columns})
+
+
+async def _ids(conn: AsyncConnection, table: sa.Table, count: int) -> Iterator[Any]:
+    if count == 0:
+        return iter(())
+    if table.autoincrement_column is None:
+        return iter(str(uuid4()) for _ in range(count))
+    sequence = sa.func.pg_get_serial_sequence(table.name, "id")
+    values = await conn.scalars(sa.select(sa.func.nextval(sequence)).select_from(
+        sa.func.generate_series(1, count).table_valued(),
+    ))
+    return iter(values)
+
+
+class SqlStoredRows:
+    def __init__(self, engine: AsyncEngine, scope: RegistrationScope) -> None:
+        self._engine = engine
+        graph = SqlCognitiveGraph(engine)
+        self._items = ItemPlanes(scope)
+        self._aggregates = AggregatePlanes(AggregateWrites(graph, None), scope)
+
+    async def register_table(self, name: str, *, batch_size: int) -> TableRegistration:
+        table = METADATA.tables[name]
+        keys = _key(table)
+        key = sa.tuple_(*(table.c[key] for key in keys))
+        stmt = (
+            sa.select(table).where(table.c.graph_id.is_(None))
+            .order_by(*(table.c[name] for name in keys)).limit(batch_size)
+            .with_for_update()
+        )
+        cursor = None
+        registered = unscoped = 0
+        while True:
+            async with self._engine.begin() as conn:
+                batch = (await conn.execute(
+                    stmt if cursor is None else stmt.where(key > cursor),
+                )).mappings().all()
+                if not batch:
+                    return TableRegistration(registered, unscoped)
+                cursor = tuple(batch[-1][name] for name in keys)
+                if name in ITEM_SOURCES:
+                    n, outside = await self._register_items(conn, table, keys, batch)
+                else:
+                    n, outside = await self._register_aggregates(conn, table, keys, batch)
+                registered += n
+                unscoped += outside
+
+    async def _register_items(
+        self, conn: AsyncConnection, table: sa.Table, keys: tuple[str, ...], batch: Rows,
+    ) -> tuple[int, int]:
+        name = table.name
+        parents = await self._items.dependencies(conn, name, batch)
+        inputs = [(row, self._items.scope_for(name, row, parents)) for row in batch]
+        count = sum(max(len(unit_info[0]) - 1, 0) for _, unit_info in inputs)
+        ids = await _ids(conn, table, count)
+        registry, changes, copies = [], [], []
+        unscoped = 0
+        for row, (units, origin, persons) in inputs:
+            if not units:
+                unscoped += 1
+                continue
+            original = tuple(row[name] for name in keys)
+            for index, unit in enumerate(units):
+                key = original if index == 0 else (next(ids),)
+                values = self._items.values(
+                    name, row, unit=unit, key=key, origin=origin, persons=persons,
+                )
+                registry.append({"id": values["graph_id"], "unit": unit, "kind": "item"})
+                if index == 0:
+                    changes.append({**values, **{
+                        f"_source_{name}": value for name, value in zip(keys, key, strict=True)
+                    }})
+                else:
+                    copies.append({**row, **values, "id": key[0]})
+        if registry:
+            await conn.execute(pg_insert(REGISTRY).on_conflict_do_nothing(
+                index_elements=["id", "unit"],
+            ), registry)
+            await conn.execute(_update(table, keys, changes), changes)
+        if copies:
+            await conn.execute(sa.insert(table), copies)
+        return len(registry), unscoped
+
+    async def _register_aggregates(
+        self, conn: AsyncConnection, table: sa.Table, keys: tuple[str, ...], batch: Rows,
+    ) -> tuple[int, int]:
+        registered = unscoped = 0
+        for row in batch:
+            units = self._aggregates.units_for(table, row)
+            if not units:
+                unscoped += 1
+                continue
+            if table is PRESENCE_PLACES:
+                await conn.execute(PRESENCE_PLACES.delete().where(
+                    PRESENCE_PLACES.c.unit.is_(None),
+                    PRESENCE_PLACES.c.circle_id == row["circle_id"],
+                    PRESENCE_PLACES.c.place_id == row["place_id"],
+                ))
+            for index, unit in enumerate(units):
+                planes = await self._aggregates.values(conn, table, row, unit)
+                if index == 0 and table is not PRESENCE_PLACES:
+                    await conn.execute(sa.update(table).where(
+                        *(table.c[name] == row[name] for name in keys),
+                    ).values(planes))
+                else:
+                    copy = {**row, **planes}
+                    copy.pop("id", None)
+                    await conn.execute(sa.insert(table).values(copy))
+                registered += 1
+        return registered, unscoped
+
+    async def validate_pairs(self) -> None:
+        async with self._engine.begin() as conn:
+            for name in (*ITEM_SOURCES, *AGGREGATE_FAMILIES):
+                ident = conn.dialect.identifier_preparer.quote_identifier
+                check = ident(f"ck_{name}_graph_pair")
+                stmt = sa.text(f"ALTER TABLE {ident(name)} VALIDATE CONSTRAINT {check}")
+                await conn.execute(stmt)

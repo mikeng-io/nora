@@ -373,7 +373,7 @@ def _attach_registration_planes() -> None:
         for field in _registration_planes(name, kind, basis, writer, exposure):
             if isinstance(field, sa.Column):
                 table.append_column(field)
-            else:
+            elif isinstance(field, sa.Constraint):
                 table.append_constraint(field)
 
 

@@ -182,9 +182,9 @@ def _rename_source_column(table: str, old: str, new: str) -> None:
 
 
 def upgrade() -> None:
-    for table, fields in _RENAMES.items():
+    for table_name, fields in _RENAMES.items():
         for old, new in fields:
-            _rename_source_column(table, old, new)
+            _rename_source_column(table_name, old, new)
     metadata = sa.MetaData()
     sa.Table("registry", metadata, *(sa.Column(x, sa.Text) for x in ("id", "unit", "kind")))
     for name, kind, basis, writer, exposure in _observed_tables():
@@ -197,7 +197,7 @@ def upgrade() -> None:
             if column.name == "unit" and name.startswith("rollup_"):
                 continue
             op.add_column(name, column)
-        for constraint in sorted(table.constraints, key=lambda c: c.name or ""):
+        for constraint in sorted(table.constraints, key=lambda c: str(c.name or "")):
             if constraint.name is not None:
                 op.execute(sa.schema.AddConstraint(constraint))
 
@@ -207,7 +207,7 @@ def downgrade() -> None:
         for field in reversed(list(_registration_planes(name, kind, basis, writer, exposure))):
             if isinstance(field, sa.Column):
                 op.drop_column(name, field.name)
-            else:
+            elif isinstance(field, sa.Constraint) and isinstance(field.name, str):
                 op.drop_constraint(field.name, name)
     for table, fields in _RENAMES.items():
         for old, new in fields:

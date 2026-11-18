@@ -70,6 +70,15 @@ _VARIABLE_TARGETS: dict[str, frozenset[str]] = {
         "rollup_colocation", "rollup_outing", "rollup_daybook", "rollup_tie",
         "rollup_response",
     }),
+    "nora/memory/adapters/stored_row_registration.py": frozenset({
+        "messages", "message_edit", "message_reaction", "message_delete",
+        "presence_fixes", "fetched_pages", "social_item", "social_item_count",
+        "social_item_state", "social_poll", "platform_observation", "source_health",
+        "presence_stays", "presence_trips", "presence_derived_places", "presence_corridors",
+        "presence_occupancy", "presence_place_rhythm",
+        "rollup_colocation", "rollup_outing", "rollup_daybook", "rollup_tie",
+        "rollup_response", "platform_object_state",
+    }),
 }
 #: How far above an `on_conflict_do_update` its `insert(T)` may be. The
 #: widest current reach (`media_objects.py`) is well under this, and

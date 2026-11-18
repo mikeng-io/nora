@@ -28,6 +28,9 @@ from nora.infra.sql.cognitive_graph_schema import (
     REGISTRY,
 )
 
+RowData = Mapping[str, Any] | sa.RowMapping
+
+
 #: The content a tombstone clears per kind; identity, basis, scope,
 #: provenance, times and lifecycle stay.
 _CONTENT: dict[sa.Table, tuple[str, ...]] = {
@@ -202,7 +205,7 @@ class SqlCognitiveGraph:
         room: str | None = None,
         minimum: Exposure = "external",
         build_lineage: Any = None,
-        inputs: Iterable[Mapping[str, Any]] = (),
+        inputs: Iterable[RowData] = (),
         revisions: Mapping[str, Any] | None = None,
         existing_id: str | None = None,
     ) -> dict[str, Any]:

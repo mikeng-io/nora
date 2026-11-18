@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
 import sqlalchemy as sa
@@ -13,6 +12,7 @@ from nora.domain.mobility import Stay, Trip
 from nora.domain.rollup import FoldState, episode_key, lineage_json, presence_lineage, stay_to_json
 from nora.infra.sql import memory_index
 from nora.infra.sql.aggregate_writes import AggregateWrites
+from nora.infra.sql.cognitive_graph_store import RowData
 from nora.infra.sql.schema import (
     PRESENCE_CORRIDORS,
     PRESENCE_DERIVED_PLACES,
@@ -350,7 +350,7 @@ class MobilityWrites:
         self,
         conn: AsyncConnection,
         table: sa.Table,
-        place: Mapping[str, Any],
+        place: RowData,
         values: dict[str, Any],
         conflict: str,
     ) -> None:

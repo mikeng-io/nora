@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from typing import Any
 
 import sqlalchemy as sa
@@ -16,7 +16,7 @@ from nora.domain.observations import (
     fold_observation,
 )
 from nora.infra.sql.aggregate_writes import content_hash
-from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
+from nora.infra.sql.cognitive_graph_store import RowData, SqlCognitiveGraph
 from nora.infra.sql.item_registration import SqlItemRegistration, epoch_ms
 from nora.infra.sql.schema import PLATFORM_OBJECT_STATE, PLATFORM_OBSERVATION
 
@@ -160,7 +160,7 @@ class SqlObservationHeadWriter:
         stored: StoredObservation,
         head: ObservationHead,
         prior: sa.RowMapping | None = None,
-        sources: Iterable[Mapping[str, Any]] = (),
+        sources: Iterable[RowData] = (),
     ) -> dict[str, Any]:
         values = _head_to_row(head)
         if (reg := self._registration) is None:
@@ -170,10 +170,10 @@ class SqlObservationHeadWriter:
         evidence = (
             (await conn.execute(sa.select(OBS).where(OBS.c.id == stored.id))).mappings().one()
         )
-        inputs = [*sources, evidence]
+        inputs: list[RowData] = [*sources, evidence]
         if prior is not None and prior["unit"] == evidence["unit"] and prior["state"] == "live":
             inputs.append(prior)
-        asserted = await conn.scalar(sa.select(sa.func.clock_timestamp()))
+        asserted = (await conn.execute(sa.select(sa.func.clock_timestamp()))).scalar_one()
         return {
             **values,
             "updated_at": asserted,
@@ -202,7 +202,7 @@ class SqlObservationHeadWriter:
 
     async def restore(
         self, conn: AsyncConnection, stored: StoredObservation,
-        head: ObservationHead, inputs: list[Mapping[str, Any]],
+        head: ObservationHead, inputs: list[RowData],
     ) -> None:
         obs = stored.observation
         values = await self._head_values(conn, stored, head, sources=inputs)

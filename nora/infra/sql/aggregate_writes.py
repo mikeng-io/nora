@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from datetime import datetime
 from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from nora.domain.graph_registration import Exposure
 from nora.domain.lineage import ROW, Lineage, split_room
-from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
+from nora.infra.sql.cognitive_graph_store import RowData, SqlCognitiveGraph
 from nora.infra.sql.item_registration import SqlItemRegistration, epoch_ms
 from nora.infra.sql.schema import (
     MESSAGES,
@@ -40,11 +41,11 @@ _POSITIONS = {
 }
 
 
-def content_hash(row: Mapping[str, Any]) -> str:
+def content_hash(row: RowData) -> str:
     return hashlib.sha256(json.dumps(dict(row), sort_keys=True, default=str).encode()).hexdigest()
 
 
-def _interval(row: Mapping[str, Any], table: str) -> tuple[datetime, datetime] | None:
+def _interval(row: RowData, table: str) -> tuple[datetime, datetime] | None:
     if table.startswith("rollup_"):
         lo, hi = row["valid_from_ms"], row["valid_to_ms"]
     elif table in {"presence_stays", "presence_trips"}:
@@ -59,9 +60,9 @@ def _interval(row: Mapping[str, Any], table: str) -> tuple[datetime, datetime] |
     return start, end
 
 
-def _participants(row: Mapping[str, Any]) -> Iterable[str]:
+def _participants(row: RowData) -> Iterable[str]:
     if persons := row.get("persons"):
-        return persons
+        return tuple(persons)
     if "person_a" in row:
         return (row["person_a"], row["person_b"])
     if "responders" in row:
@@ -82,11 +83,11 @@ class AggregateWrites:
         self,
         conn: AsyncConnection,
         table: sa.Table,
-        row: Mapping[str, Any],
+        row: RowData,
         *,
         key: tuple[Any, ...],
         unit: str | None,
-        inputs: Iterable[Mapping[str, Any]] = (),
+        inputs: Iterable[RowData] = (),
         asserted_at: datetime | None = None,
         existing_id: str | None = None,
         live: bool = True,
@@ -95,9 +96,9 @@ class AggregateWrites:
         occurred_at = interval[0] if interval else epoch_ms(row["updated_ts"])
         recorded_at = asserted_at or row.get("recorded_at")
         if recorded_at is None:
-            recorded_at = await conn.scalar(sa.select(sa.func.clock_timestamp()))
+            recorded_at = (await conn.execute(sa.select(sa.func.clock_timestamp()))).scalar_one()
         build_lineage = Lineage.from_json(row.get("build_lineage"))
-        minimum = (
+        minimum: Exposure = (
             "internal"
             if table.name.startswith("presence_")
             or any(source.kind == "presence" for source in build_lineage.section(ROW))
@@ -125,9 +126,9 @@ class AggregateWrites:
         self,
         conn: AsyncConnection,
         table: sa.Table,
-        row: Mapping[str, Any],
+        row: RowData,
         build: int,
-    ) -> list[Mapping[str, Any]]:
+    ) -> list[RowData]:
         unit = row["unit"]
         entries = Lineage.from_json(row["build_lineage"]).section(ROW)
         low, high = row["valid_from_ms"], row["valid_to_ms"]
@@ -181,7 +182,7 @@ class AggregateWrites:
                     s.taken_at.between(epoch_ms(low), epoch_ms(high)),
                 )
             )
-        rows: list[Mapping[str, Any]] = []
+        rows: list[RowData] = []
         for source in sources:
             rows.extend((await conn.execute(source)).mappings().all())
         return rows
@@ -190,7 +191,7 @@ class AggregateWrites:
         self,
         conn: AsyncConnection,
         table: sa.Table,
-        rows: Iterable[Mapping[str, Any]],
+        rows: Iterable[RowData],
     ) -> None:
         for row in rows:
             if row["graph_id"] is not None:
@@ -202,17 +203,17 @@ class AggregateWrites:
                     content_hash=content_hash(row),
                 )
 
-    def span_key(self, table: sa.Table, row: Mapping[str, Any]) -> tuple[Any, ...]:
+    def span_key(self, table: sa.Table, row: RowData) -> tuple[Any, ...]:
         return tuple(row[c] for c in _POSITIONS[table.name])
 
     async def presence_planes(
         self,
         conn: AsyncConnection,
         table: sa.Table,
-        row: Mapping[str, Any],
+        row: RowData,
         *,
         unit: str | None,
-        existing: Mapping[str, Any] | None = None,
+        existing: RowData | None = None,
         graph_id: str | None = None,
     ) -> dict[str, Any]:
         from nora.infra.sql.schema import PRESENCE_FIXES, PRESENCE_TRIPS
@@ -295,9 +296,9 @@ class AggregateWrites:
         self,
         conn: AsyncConnection,
         table: sa.Table,
-        values: Mapping[str, Any],
+        values: RowData,
         *,
-        old: Mapping[str, Any] | None = None,
+        old: RowData | None = None,
     ) -> int | None:
         reg = self.registration
         units = reg.scope.person_units(values["subject_id"]) if reg else ()
@@ -356,7 +357,7 @@ class AggregateWrites:
 
     async def _current_span_identity(
         self, conn: AsyncConnection, table: sa.Table,
-        row: Mapping[str, Any], unit: str | None,
+        row: RowData, unit: str | None,
     ) -> str | None:
         if unit is None or table.name not in ("presence_derived_places", "presence_corridors"):
             return None
@@ -376,7 +377,7 @@ class AggregateWrites:
         conn: AsyncConnection,
         table: sa.Table,
         row_id: int,
-    ) -> list[Mapping[str, Any]]:
+    ) -> list[RowData]:
         first = (
             (await conn.execute(sa.select(table).where(table.c.id == row_id))).mappings().first()
         )

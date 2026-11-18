@@ -124,6 +124,7 @@ class SocialItemWrites:
     async def _append_item_state(
         self, conn: AsyncConnection, network: str, item_id: str, values: dict[str, Any],
     ) -> None:
+        rows: Sequence[tuple[str | None, str | None]]
         if self._registration is None:
             rows = [(None, None)]
         else:
