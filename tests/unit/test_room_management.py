@@ -577,12 +577,14 @@ async def test_an_edited_or_touched_command_is_refused_before_any_effect():
 
 
 async def test_a_quoted_or_forged_instruction_reaches_the_invocation_and_writes_nothing():
-    """A command's words outside the verified fresh body mutate nothing:
-    a quoted `!!!member` stays metadata, an edit carrying the same words
-    and a non-operator's own forged command reach `invoke` and die at
-    authentication — no membership moves, no journal row is born. The
-    identical words from the verified operator DO apply (control), so
-    each denial is the forged carrier's, not a dead request's."""
+    """A command's words outside the verified fresh body mutate nothing.
+    Every carrier here names the SAME resolvable target the verified
+    operator's identical instruction applies (the control below): the
+    quote carries the full command as metadata, the edit carries it in a
+    not-fresh body, the forged carrier is a fresh body from a sender with
+    no standing. So the only thing between each carrier and a write is the
+    guard under test — a mutated guard lets the write THROUGH, and the
+    no-write assertions are what go red."""
     bindings, backend, _, registry, services = _services()
     await _operator(bindings, backend, registry)
     await _person(bindings, registry, TARGET_PERSON, TARGET_ID)
@@ -602,11 +604,15 @@ async def test_a_quoted_or_forged_instruction_reaches_the_invocation_and_writes_
     assert added.status is OutcomeStatus.COMPLETE
     assert await _member_phone(bindings, TARGET_PERSON)
 
-    # Quoted: the instruction rides in `quote`, never the body — no
-    # invocation can even be built from it.
+    # Quoted: the identical instruction — resolvable target and all —
+    # rides in `quote`, never the body; nothing reads a quote as an
+    # instruction, so it is inert by construction.
     quoted = _message(
         "sounds good",
-        quote=Quote(author_id=OP_ID, text="!!!member remove", quoted_ts=3),
+        quote=Quote(
+            author_id=OP_ID, text=f"!!!member remove @{TARGET_ID}",
+            quoted_ts=3,
+        ),
         message_id="m-quoted",
     )
     assert management.parse(quoted) is None
@@ -615,26 +621,37 @@ async def test_a_quoted_or_forged_instruction_reaches_the_invocation_and_writes_
     tool = await _tool(_tool_deps(management, quoted), action="remove")
     assert tool["status"] in ("ambiguous", "nothing_found")
 
-    # Forged: the same words arriving not-as-a-fresh-message, and a fresh
-    # command from an account that holds no permit, both meet the real
-    # invocation and are refused before any write.
-    edited = _message(
-        "!!!member remove",
-        edit_of=EditTarget(sent_ts=5),
-        message_id="m-edit",
-    )
-    forged = _message(
-        "!!!member remove", sender=ALICE_ID, message_id="m-forged"
-    )
-    for message in (edited, forged):
-        outcome = await management.invoke(
+    # Edited and forged: the same instruction with the same resolvable
+    # target the control applies — refused only because one is not a
+    # fresh message and the other's sender holds no standing.
+    outcomes = {}
+    for key, message in {
+        "m-edit": _message(
+            "!!!member remove",
+            mentions=frozenset({TARGET_ID}),
+            edit_of=EditTarget(sent_ts=5),
+            message_id="m-edit",
+        ),
+        "m-forged": _message(
+            "!!!member remove",
+            sender=ALICE_ID,
+            mentions=frozenset({TARGET_ID}),
+            message_id="m-forged",
+        ),
+    }.items():
+        outcomes[key] = await management.invoke(
             message, RoomRequest(kind="remove")
         )
-        assert outcome.status is OutcomeStatus.DENIED
 
+    # The clause assertion first: nothing wrote — the member survives and
+    # no journal row exists. A guard mutation lets the write through HERE.
     assert await _member_phone(bindings, TARGET_PERSON)
     for key in ("m-quoted", "m-edit", "m-forged"):
         assert await bindings.operation(f"room:signal:conv-1:{key}") is None
+    assert outcomes["m-edit"].status is OutcomeStatus.DENIED
+    assert outcomes["m-edit"].detail == "not-a-fresh-message"
+    assert outcomes["m-forged"].status is OutcomeStatus.DENIED
+    assert outcomes["m-forged"].detail == "operator-not-authorized"
 
     # Control: the identical words from the verified operator apply —
     # the refusals above are authority, not a broken request.
@@ -646,6 +663,51 @@ async def test_a_quoted_or_forged_instruction_reaches_the_invocation_and_writes_
         ),
         RoomRequest(kind="remove"),
     )
+    assert control.status is OutcomeStatus.COMPLETE
+    assert not await _member_phone(bindings, TARGET_PERSON)
+
+
+async def test_a_consequential_command_without_a_target_asks_instead_of_guessing():
+    """`!!!member remove` is a consequential write: with no resolvable
+    target the real entry (`parse` -> `invoke`) answers `Clarify` — the
+    `_person_target` no-single-target branch, whose contract is that a
+    consequential scope/target never gets guessed at — and writes
+    nothing: no journal row, the member stays. The same command naming
+    the target proceeds (control)."""
+    bindings, backend, _, registry, services = _services()
+    await _operator(bindings, backend, registry)
+    await _person(bindings, registry, TARGET_PERSON, TARGET_ID)
+    management = RoomManagement(services)
+
+    # The member the bare command must not move is added through the same
+    # verified entry — removal drops only the operation's own support.
+    added = await management.invoke(
+        _message(
+            "!!!member add",
+            mentions=frozenset({TARGET_ID}),
+            message_id="m-setup",
+        ),
+        RoomRequest(kind="add"),
+    )
+    assert added.status is OutcomeStatus.COMPLETE
+
+    message = _message("!!!member remove", message_id="m-bare")
+    request = management.parse(message)
+    assert request == RoomRequest(kind="remove")
+    result = await management.invoke(message, request)
+    assert isinstance(result, Clarify)
+    assert result.status == "nothing_found"
+
+    assert await _member_phone(bindings, TARGET_PERSON)
+    assert await bindings.operation("room:signal:conv-1:m-bare") is None
+
+    # Control: the same consequential command with the target named applies.
+    named = _message(
+        "!!!member remove",
+        mentions=frozenset({TARGET_ID}),
+        message_id="m-named",
+    )
+    control = await management.invoke(named, management.parse(named))
     assert control.status is OutcomeStatus.COMPLETE
     assert not await _member_phone(bindings, TARGET_PERSON)
 

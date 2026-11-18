@@ -72,6 +72,7 @@ from tests.integration.test_managed_identity_journey import (
     CHECK,
     CREDENTIAL,
     DOCUMENTS,
+    EXCHANGE,
     GATEWAY,
     OTP_TOKEN,
     ROOM_A,
@@ -92,7 +93,13 @@ from tests.web.test_api import NO_SKILLS_DIR, _fake_events
 
 SIG_A = Identifier("signal", "phone", "+85290000101")
 WA_B = Identifier("whatsapp", "phone", "+85290000103")
+WA_C = Identifier("whatsapp", "phone", "+85290000104")
+SIG_C = Identifier("signal", "phone", "+85290000105")
+DISC_D = Identifier("discord", "user_id", "generated-discord-portal")
 ROOM_W = Scope(ScopeKind.ROOM, room_scope_id("whatsapp", "generated-room-w"))
+
+_METHOD = {"signal": "signal_code", "whatsapp": "whatsapp_code",
+           "discord": "discord_oauth"}  # discord has no `*_code` (DIRECT_PLATFORMS)
 
 POLICY_TOML = _POLICY_BASE + """
 [[conversations]]
@@ -164,7 +171,7 @@ class _PortalWorld:
     def session_headers(self, account: Identifier, *, binding, path, body=b"",
                         http="POST"):
         return auth(claims(account=account, purpose="session",
-                           method=f"{account.platform}_code",
+                           method=_METHOD[account.platform],
                            path=path, body=body, http=http, binding=binding))
 
 
@@ -648,38 +655,37 @@ async def _server_portal_boundaries(browser, world, base, person_a, person_b, bi
 
 
 
-async def _unlink_browser(browser, world, base, person_a, person_b, binding):
+async def _revoke_binding(world, account, person, *, wrong_person):
+    # Holder-exact: only the exact selected binding dies.
     client, services = world.client, world.services
-    # ---- exact unlink kills the same browser session; B is unaffected ----
+    binding = await world.binding(account)
     other = json.dumps({"operation_id": f"op-{uuid4()}",
-                        "expected_person": person_b}).encode()
+                        "expected_person": wrong_person}).encode()
     assert (await client.post(UNLINK, data=other, headers=world.session_headers(
-        SIG_A, binding=binding, path=UNLINK, body=other))).status == 403
+        account, binding=binding, path=UNLINK, body=other))).status == 403
     exact = json.dumps({"operation_id": f"op-{uuid4()}",
-                        "expected_person": person_a}).encode()
+                        "expected_person": person}).encode()
     assert (await client.post(UNLINK, data=exact, headers=world.session_headers(
-        SIG_A, binding=binding, path=UNLINK, body=exact))).status == 200
-    assert await services.bindings.record_for(account=SIG_A) is None
+        account, binding=binding, path=UNLINK, body=exact))).status == 200
+    assert await services.bindings.record_for(account=account) is None
 
-    await browser.cmd(cmd="goto", name="a", url=f"{base}/en/documents")
-    dead = await browser.cmd(cmd="wait_url", name="a", regex=r"/en/login\?denied=1")
+
+async def _browser_denied(browser, name, base):
+    await browser.cmd(cmd="goto", name=name, url=f"{base}/en/documents")
+    dead = await browser.cmd(cmd="wait_url", name=name, regex=r"/en/login\?denied=1")
     assert dead["matched"], f"revoked session landed at {dead['url']}"
-    assert (await browser.cmd(cmd="wait_text", name="a",
+    assert (await browser.cmd(cmd="wait_text", name=name,
                               text="not on the list"))["visible"]
-    assert (await browser.cmd(cmd="api", name="a",
+    assert (await browser.cmd(cmd="api", name=name,
                               url=f"{base}/api/v1/documents"))["status"] == 401
-    await browser.cmd(cmd="screenshot", name="a",
-                      path=str(EVIDENCE / "after-unlink.png"))
+    await browser.cmd(cmd="screenshot", name=name,
+                      path=str(EVIDENCE / f"after-unlink-{name}.png"))
 
-    await browser.cmd(cmd="goto", name="b", url=f"{base}/en/documents")
-    assert (await browser.cmd(cmd="wait_text", name="b", text="B note"))["visible"]
-    alive = json.loads((await browser.cmd(
-        cmd="api", name="b", url=f"{base}/api/auth/session"))["body"])
-    assert alive["user"]["managedIdentity"]["binding"] == await world.binding(WA_B)
-    assert (await client.post(CHECK, data=b"", headers=world.session_headers(
-        WA_B, binding=await world.binding(WA_B), path=CHECK))).status == 200
-    world.note("revocation", unlinked=SIG_A.value, browser_denied=True,
-               unaffected=WA_B.value)
+
+def _revision(title):
+    return RevisionIn(title=title, spec={"version": 1, "root": {
+        "type": "Page", "props": {"title": title}, "children": []}},
+        text=title, sha256="e" * 64, media=(), written_by="generated")
 
 
 async def test_managed_portal_browser_lifecycle(portal_world, tmp_path):
@@ -691,7 +697,8 @@ async def test_managed_portal_browser_lifecycle(portal_world, tmp_path):
     assert (await client.post(ROSTERS, headers=BEARER, json=roster(
         "op-portal-sig", ROOM_A, [(SIG_A, "person")], platform="signal"))).status == 200
     assert (await client.post(ROSTERS, headers=BEARER_WA, json=roster(
-        "op-portal-wa", ROOM_W, [(WA_B, "person")], platform="whatsapp"))).status == 200
+        "op-portal-wa", ROOM_W, [(WA_B, "person"), (WA_C, "person")],
+        platform="whatsapp"))).status == 200
     person_a = await world.person_id(SIG_A)
     person_b = await world.person_id(WA_B)
     assert person_a != person_b
@@ -701,20 +708,13 @@ async def test_managed_portal_browser_lifecycle(portal_world, tmp_path):
         assert not (await services.authority.check(
             scope=scope, person_id=person, permit="manage_members")).allowed
 
-    sha = "e" * 64
-
-    def revision(title):
-        return RevisionIn(title=title, spec={"version": 1, "root": {
-            "type": "Page", "props": {"title": title}, "children": []}},
-            text=title, sha256=sha, media=(), written_by="generated")
-
     await world.documents.create(document_id=uuid4(), platform="signal",
         conversation_id="generated-room-a", created_by="generated",
-        revision=revision("A note"))
+        revision=_revision("A note"))
     await world.documents.create(document_id=uuid4(), platform="whatsapp",
         conversation_id="generated-room-w", created_by="generated",
-        revision=revision("B note"))
-    world.note("registration", persons=2, implicit_admin="none")
+        revision=_revision("B note"))
+    world.note("registration", persons=3, implicit_admin="none")
 
     api_base = str(client.make_url("")).rstrip("/")
     proc, base, next_log = await _start_portal(api_base, tmp_path)
@@ -723,9 +723,78 @@ async def test_managed_portal_browser_lifecycle(portal_world, tmp_path):
         binding = await _signal_portal(browser, world, base, person_a, person_b)
         await _whatsapp_portal(browser, world, base)
         await _server_portal_boundaries(browser, world, base, person_a, person_b, binding)
-        await _unlink_browser(browser, world, base, person_a, person_b, binding)
+
+        # WhatsApp's own selected binding dies; its browser session is
+        # denied while the Signal browser and WA_C's session stay alive.
+        await _revoke_binding(world, WA_B, person_b, wrong_person=person_a)
+        await _browser_denied(browser, "b", base)
+        await browser.cmd(cmd="goto", name="a", url=f"{base}/en/documents")
+        assert (await browser.cmd(cmd="wait_text", name="a",
+                                  text="A note"))["visible"]
+        binding_c = await world.binding(WA_C)
+        assert (await client.post(CHECK, data=b"", headers=world.session_headers(
+            WA_C, binding=binding_c, path=CHECK))).status == 200
+
+        # Signal's binding dies; its browser is denied, WA_C stays alive.
+        await _revoke_binding(world, SIG_A, person_a, wrong_person=person_b)
+        await _browser_denied(browser, "a", base)
+        assert (await client.post(CHECK, data=b"", headers=world.session_headers(
+            WA_C, binding=binding_c, path=CHECK))).status == 200
+        world.note("revocation", unlinked=[WA_B.value, SIG_A.value],
+                   browsers_denied=2, unaffected=WA_C.value)
     finally:
         browser.close()
         _stop_process(proc)
         next_log.close()
+    _write_receipt(world.evidence)
+
+
+async def test_managed_portal_discord_sign_in_scopes_and_revokes(portal_world):
+    # Discord has no `*_code` and a real OAuth callback is a live provider
+    # call, so its leg runs at this adjacent boundary over the same routes.
+    world = portal_world
+    client, services = world.client, world.services
+
+    assert (await client.post(ROSTERS, headers=BEARER, json=roster(
+        "op-portal-dis", ROOM_A, [(DISC_D, "person")],
+        platform="discord"))).status == 200
+    assert (await client.post(ROSTERS, headers=BEARER, json=roster(
+        "op-portal-sig-c", ROOM_B, [(SIG_C, "person")],
+        platform="signal"))).status == 200
+    person_d = await world.person_id(DISC_D)
+    await world.documents.create(document_id=uuid4(), platform="signal",
+        conversation_id="generated-room-a", created_by="generated",
+        revision=_revision("D note"))
+
+    exchange = await client.post(EXCHANGE, data=b"{}", headers=auth(claims(
+        account=DISC_D, purpose="sign_in", method="discord_oauth",
+        path=EXCHANGE, body=b"{}")))
+    assert exchange.status == 200, await exchange.text()
+    binding_d = (await exchange.json())["binding"]
+
+    path = f"{DOCUMENTS}?personId={person_d}"
+    own = await client.get(path, headers=world.session_headers(
+        DISC_D, binding=binding_d, path=path, http="GET"))
+    assert own.status == 200
+    assert {d["title"] for d in (await own.json())["documents"]} == {"D note"}
+
+    # The exact selected binding — a session cannot unlink another person's.
+    wrong = json.dumps({"operation_id": f"op-{uuid4()}",
+                        "expected_person": await world.person_id(SIG_C)}).encode()
+    assert (await client.post(UNLINK, data=wrong, headers=world.session_headers(
+        DISC_D, binding=binding_d, path=UNLINK, body=wrong))).status == 403
+    exact = json.dumps({"operation_id": f"op-{uuid4()}",
+                        "expected_person": person_d}).encode()
+    assert (await client.post(UNLINK, data=exact, headers=world.session_headers(
+        DISC_D, binding=binding_d, path=UNLINK, body=exact))).status == 200
+    assert await services.bindings.record_for(account=DISC_D) is None
+
+    assert (await client.post(CHECK, data=b"", headers=world.session_headers(
+        DISC_D, binding=binding_d, path=CHECK))).status == 403
+    assert (await client.get(path, headers=world.session_headers(
+        DISC_D, binding=binding_d, path=path, http="GET"))).status == 403
+    assert (await client.post(CHECK, data=b"", headers=world.session_headers(
+        SIG_C, binding=await world.binding(SIG_C), path=CHECK))).status == 200
+    world.note("discord-revocation", unlinked=DISC_D.value, session_denied=True,
+               unaffected=SIG_C.value)
     _write_receipt(world.evidence)

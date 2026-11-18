@@ -7,11 +7,18 @@
     "target": "tests/web/test_management_sessions.py -k revalidate_live_facts"
   },
   {
-    "name": "the browser journey's portal session survives an exact unlink — same binding guard, browser leg",
+    "name": "the browser journey's Signal and WhatsApp portal sessions survive the exact unlinks — an absent binding must deny, not degrade",
     "file": "nora/people/app/authentication.py",
-    "old": "        if authentication.binding is not None and authentication.binding != binding:\n            return AuthenticationResult(Verdict.DENIED)",
-    "new": "        if authentication.binding is not None and False:\n            return AuthenticationResult(Verdict.DENIED)",
+    "old": "        account = await self._bindings.record_for(account=authentication.account)\n        if account is None:\n            return AuthenticationResult(Verdict.DENIED)",
+    "new": "        account = await self._bindings.record_for(account=authentication.account)\n        if account is None:\n            return AuthenticationResult(Verdict.UNAVAILABLE)",
     "target": "tests/integration/test_managed_portal_browser.py"
+  },
+  {
+    "name": "the Discord boundary leg's retained session survives its exact unlink — an absent binding must deny, not degrade",
+    "file": "nora/people/app/authentication.py",
+    "old": "        account = await self._bindings.record_for(account=authentication.account)\n        if account is None:\n            return AuthenticationResult(Verdict.DENIED)",
+    "new": "        account = await self._bindings.record_for(account=authentication.account)\n        if account is None:\n            return AuthenticationResult(Verdict.UNAVAILABLE)",
+    "target": "tests/integration/test_managed_portal_browser.py -k discord_sign_in_scopes"
   },
   {
     "name": "each link side reads only its own consent challenge",
@@ -28,6 +35,13 @@
     "target": "tests/web/test_management_operator.py -k share_one_typed_actor"
   },
   {
+    "name": "the in-room entry pins the actor to the transport-verified sender's person",
+    "file": "nora/people/app/room_invocation.py",
+    "old": "        actor = Actor(ActorKind.OPERATOR, person_id=person_id, scope=scope)",
+    "new": "        actor = Actor(ActorKind.OPERATOR, person_id=\"forged-person\", scope=scope)",
+    "target": "tests/web/test_management_operator.py -k share_one_typed_actor"
+  },
+  {
     "name": "several resolved candidates ask instead of the first being picked",
     "file": "nora/people/app/room_invocation.py",
     "old": "        if len(people) > 1:\n            return Clarify(\n                \"that refers to more than one person — one at a time, please\"\n            )",
@@ -35,10 +49,24 @@
     "target": "tests/unit/test_room_management.py -k ambiguous_mention"
   },
   {
+    "name": "a consequential command with no resolvable target asks instead of guessing a member",
+    "file": "nora/people/app/room_invocation.py",
+    "old": "        if not people:\n            return Clarify(\n                \"I couldn't find every account you named — @-mention \"\n                \"them or give their exact platform id (if the account \"\n                \"is new here, register it first)\",\n                status=\"nothing_found\",\n            )",
+    "new": "        if not people:\n            named = await services.access.room_refs(\n                message.platform, message.conversation_id\n            )\n            people.add(named[0].person_id)",
+    "target": "tests/unit/test_room_management.py -k consequential_command"
+  },
+  {
     "name": "only a fresh message's own body can invoke — edits and touches never mutate",
     "file": "nora/people/app/room_invocation.py",
     "old": "        if message.edit_of is not None or message.touch is not None:\n            return denied(\"not-a-fresh-message\")",
     "new": "        if False:\n            return denied(\"not-a-fresh-message\")",
+    "target": "tests/unit/test_room_management.py -k quoted_or_forged"
+  },
+  {
+    "name": "the standing checked is the transport-verified sender's — a forged sender cannot borrow the operator's",
+    "file": "nora/people/app/room_invocation.py",
+    "old": "        person_id = verified.principal.binding.person_id",
+    "new": "        person_id = \"person_op\"",
     "target": "tests/unit/test_room_management.py -k quoted_or_forged"
   },
   {
