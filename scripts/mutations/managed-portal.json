@@ -1,0 +1,58 @@
+[
+  {
+    "name": "a retained session is denied once its exact binding moved — revocation through the selected binding",
+    "file": "nora/people/app/authentication.py",
+    "old": "        if authentication.binding is not None and authentication.binding != binding:\n            return AuthenticationResult(Verdict.DENIED)",
+    "new": "        if authentication.binding is not None and False:\n            return AuthenticationResult(Verdict.DENIED)",
+    "target": "tests/web/test_management_sessions.py -k revalidate_live_facts"
+  },
+  {
+    "name": "the browser journey's portal session survives an exact unlink — same binding guard, browser leg",
+    "file": "nora/people/app/authentication.py",
+    "old": "        if authentication.binding is not None and authentication.binding != binding:\n            return AuthenticationResult(Verdict.DENIED)",
+    "new": "        if authentication.binding is not None and False:\n            return AuthenticationResult(Verdict.DENIED)",
+    "target": "tests/integration/test_managed_portal_browser.py"
+  },
+  {
+    "name": "each link side reads only its own consent challenge",
+    "file": "nora/people/app/holder_link.py",
+    "old": "        try:\n            nonce = await self._links.challenge(link.request_id, side=side)\n        except Exception:  # noqa: BLE001 — an unreadable store is unavailable",
+    "new": "        try:\n            nonce = await self._links.challenge(link.request_id, side=LinkSide.INITIATING)\n        except Exception:  # noqa: BLE001 — an unreadable store is unavailable",
+    "target": "tests/web/test_holder_links.py -k per_side_views"
+  },
+  {
+    "name": "the Web App decoder pins the actor to the session's verified person",
+    "file": "nora/web/management_request.py",
+    "old": "            actor = Actor(ActorKind.OPERATOR, person_id=operator_person, scope=scope)",
+    "new": "            actor = Actor(ActorKind.OPERATOR, person_id=\"forged-person\", scope=scope)",
+    "target": "tests/web/test_management_operator.py -k share_one_typed_actor"
+  },
+  {
+    "name": "several resolved candidates ask instead of the first being picked",
+    "file": "nora/people/app/room_invocation.py",
+    "old": "        if len(people) > 1:\n            return Clarify(\n                \"that refers to more than one person — one at a time, please\"\n            )",
+    "new": "        if len(people) > 99:\n            return Clarify(\n                \"that refers to more than one person — one at a time, please\"\n            )",
+    "target": "tests/unit/test_room_management.py -k ambiguous_mention"
+  },
+  {
+    "name": "only a fresh message's own body can invoke — edits and touches never mutate",
+    "file": "nora/people/app/room_invocation.py",
+    "old": "        if message.edit_of is not None or message.touch is not None:\n            return denied(\"not-a-fresh-message\")",
+    "new": "        if False:\n            return denied(\"not-a-fresh-message\")",
+    "target": "tests/unit/test_room_management.py -k quoted_or_forged"
+  },
+  {
+    "name": "an unmatched bearer is no actor — a direct API call cannot adopt a credential",
+    "file": "nora/web/management_api.py",
+    "old": "        return next((\n            c for c in self._credentials\n            if hmac.compare_digest(authorization, f\"Bearer {c.token}\".encode())\n        ), None)",
+    "new": "        return next((\n            c for c in self._credentials\n            if hmac.compare_digest(authorization, f\"Bearer {c.token}\".encode())\n        ), self._credentials[0])",
+    "target": "tests/web/test_management_api.py -k valid_effect_without_credentials"
+  },
+  {
+    "name": "file mode is an authoritative denial before any service call — never a pretend apply",
+    "file": "nora/people/app/room_invocation.py",
+    "old": "        if (\n            services is None\n            or self._human is None\n            or services.access.is_file_backend\n        ):",
+    "new": "        if (\n            services is None\n            or self._human is None\n        ):",
+    "target": "tests/unit/test_room_management.py -k file_mode_never_writes"
+  }
+]

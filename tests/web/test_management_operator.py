@@ -14,10 +14,13 @@ from nora.domain.managed import (
     AuthorityBlock,
     ManagedAccount,
     ManagedPerson,
+    OutcomeStatus,
     PersonLifecycle,
+    room_scope_id,
 )
-from nora.domain.management import Scope, ScopeKind
-from nora.people import AccountSessions
+from nora.domain.management import Actor, ActorKind, Scope, ScopeKind
+from nora.domain.models import NormalizedMessage
+from nora.people import AccountSessions, RoomManagement, RoomRequest
 from nora.people.app.managed import ManagedServices
 from nora.testing.managed import (
     FakeAuthorityBackend,
@@ -28,6 +31,7 @@ from nora.testing.managed import (
 )
 from nora.web.management_api import register_management_routes
 from nora.web.management_auth import AuthenticationVerifier
+from nora.web.management_request import decode_management_request
 from nora.web.management_sessions import register_session_routes
 from tests.unit.test_management_authentication import ISSUER, claims, signed
 from tests.unit.test_management_authentication import PATH as EXCHANGE
@@ -284,3 +288,50 @@ async def test_a_session_cannot_mint_installation_authority(surface):
         "payload": {"reason": "generated-reason"},
         "observed_revisions": {"identity": "r-1", "authority": "r-1"}}
     assert (await send(surface, body)).status == 400
+
+
+async def test_in_room_and_web_app_share_one_typed_actor_and_scope(surface):
+    """One membership change through the in-room command and the Web App
+    session lands as the same typed `Operation`: `Actor(OPERATOR,
+    <verified person>, <the room the caller is actually in>)`, committed
+    by the same `HumanManagement` gate — so both journaled effects are
+    identical. Neither ingress can supply actor, room or credential: the
+    session's binding claim and the message's verified provenance fill
+    them."""
+    _, services, proof = surface
+    person = proof["binding"]["person_id"]  # generated-operator
+    room = Scope(ScopeKind.ROOM, room_scope_id("discord", "generated-conv"))
+    services.topology.rooms[room.id] = ("generated-unit", False)
+    await services.backend.put_relation(
+        scope=room, relation="admin", person_id=person)
+
+    # Web App ingress: the session's binding claim types the actor and
+    # the body's target types the scope — the decoder accepts neither.
+    body = {**operation(room), "operation_id": "generated-shared-web-op"}
+    typed = decode_management_request(
+        json.dumps(body).encode(), operator_person=person)
+    assert typed.actor == Actor(
+        ActorKind.OPERATOR, person_id=person, scope=room)
+    assert (await send(surface, body)).status == 200
+
+    # In-room ingress: the verified message types the same actor/scope.
+    message = NormalizedMessage(
+        platform="discord", conversation_id="generated-conv",
+        conversation_type="group", sender_id=ACCOUNT.value,
+        sender_name=None, timestamp=1_700_000_000_000,
+        body="!!!member add @other-account", raw={},
+        mentions=frozenset({"other-account"}), quote=None,
+        message_id="generated-shared-msg", edit_of=None, touch=None)
+    management = RoomManagement(services)
+    request = management.parse(message)
+    assert request == RoomRequest(
+        kind="add", reference="other-account", reference_kind="mention")
+    outcome = await management.invoke(message, request)
+    assert outcome.status is OutcomeStatus.COMPLETE
+
+    web_record = await services.bindings.operation("generated-shared-web-op")
+    room_record = await services.bindings.operation(
+        "room:discord:generated-conv:generated-shared-msg")
+    assert web_record is not None and room_record is not None
+    assert web_record.kind == room_record.kind == "set_membership"
+    assert dict(web_record.snapshot) == dict(room_record.snapshot)

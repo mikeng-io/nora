@@ -576,6 +576,80 @@ async def test_an_edited_or_touched_command_is_refused_before_any_effect():
         assert outcome.detail == "not-a-fresh-message"
 
 
+async def test_a_quoted_or_forged_instruction_reaches_the_invocation_and_writes_nothing():
+    """A command's words outside the verified fresh body mutate nothing:
+    a quoted `!!!member` stays metadata, an edit carrying the same words
+    and a non-operator's own forged command reach `invoke` and die at
+    authentication — no membership moves, no journal row is born. The
+    identical words from the verified operator DO apply (control), so
+    each denial is the forged carrier's, not a dead request's."""
+    bindings, backend, _, registry, services = _services()
+    await _operator(bindings, backend, registry)
+    await _person(bindings, registry, TARGET_PERSON, TARGET_ID)
+    await _person(bindings, registry, ALICE_PERSON, ALICE_ID)
+    management = RoomManagement(services)
+
+    # The positive control first: the verified operator's add writes the
+    # membership the forged carriers must then fail to move.
+    added = await management.invoke(
+        _message(
+            "!!!member add",
+            mentions=frozenset({TARGET_ID}),
+            message_id="m-setup",
+        ),
+        RoomRequest(kind="add"),
+    )
+    assert added.status is OutcomeStatus.COMPLETE
+    assert await _member_phone(bindings, TARGET_PERSON)
+
+    # Quoted: the instruction rides in `quote`, never the body — no
+    # invocation can even be built from it.
+    quoted = _message(
+        "sounds good",
+        quote=Quote(author_id=OP_ID, text="!!!member remove", quoted_ts=3),
+        message_id="m-quoted",
+    )
+    assert management.parse(quoted) is None
+    # Even driven at the model's tool entry, the quoting message carries
+    # no instruction — the request asks, it cannot mutate.
+    tool = await _tool(_tool_deps(management, quoted), action="remove")
+    assert tool["status"] in ("ambiguous", "nothing_found")
+
+    # Forged: the same words arriving not-as-a-fresh-message, and a fresh
+    # command from an account that holds no permit, both meet the real
+    # invocation and are refused before any write.
+    edited = _message(
+        "!!!member remove",
+        edit_of=EditTarget(sent_ts=5),
+        message_id="m-edit",
+    )
+    forged = _message(
+        "!!!member remove", sender=ALICE_ID, message_id="m-forged"
+    )
+    for message in (edited, forged):
+        outcome = await management.invoke(
+            message, RoomRequest(kind="remove")
+        )
+        assert outcome.status is OutcomeStatus.DENIED
+
+    assert await _member_phone(bindings, TARGET_PERSON)
+    for key in ("m-quoted", "m-edit", "m-forged"):
+        assert await bindings.operation(f"room:signal:conv-1:{key}") is None
+
+    # Control: the identical words from the verified operator apply —
+    # the refusals above are authority, not a broken request.
+    control = await management.invoke(
+        _message(
+            "!!!member remove",
+            mentions=frozenset({TARGET_ID}),
+            message_id="m-real",
+        ),
+        RoomRequest(kind="remove"),
+    )
+    assert control.status is OutcomeStatus.COMPLETE
+    assert not await _member_phone(bindings, TARGET_PERSON)
+
+
 # -- scope and targets ----------------------------------------------------
 
 
@@ -695,6 +769,62 @@ async def test_file_mode_is_an_authoritative_denial_not_a_pretend_apply():
     )
     assert outcome.status is OutcomeStatus.DENIED
     assert outcome.detail == "file-mode"
+
+
+def _toml_pair(tmp_path: Path) -> tuple[Path, Path]:
+    return tmp_path / "identity.toml", tmp_path / "policy.toml"
+
+
+def _toml_bytes(tmp_path: Path) -> tuple[bytes, bytes]:
+    identity, policy_path = _toml_pair(tmp_path)
+    return identity.read_bytes(), policy_path.read_bytes()
+
+
+def _seed_toml(tmp_path: Path) -> tuple[bytes, bytes]:
+    identity, policy_path = _toml_pair(tmp_path)
+    identity.write_bytes(Path("identity.example.toml").read_bytes())
+    policy_path.write_bytes(Path("policy.example.toml").read_bytes())
+    return _toml_bytes(tmp_path)
+
+
+async def test_file_mode_never_writes_the_toml_files(tmp_path):
+    """The file deployment's real management entry answers every shape of
+    ask with the operator-maintained denial — and the TOML the file
+    backend was built from is byte-identical afterwards: management does
+    not exist as a file write, only as an operator edit."""
+    identity, policy_path = _toml_pair(tmp_path)
+    before = _seed_toml(tmp_path)
+    services = file_services(load_persons(identity), load_policy(policy_path))
+    management = RoomManagement(services)
+
+    for kind in ("register", "add", "remove"):
+        outcome = await management.invoke(
+            _message(
+                f"!!!member {kind}",
+                mentions=frozenset({TARGET_ID}),
+                message_id=f"m-file-{kind}",
+            ),
+            RoomRequest(kind=kind),
+        )
+        assert outcome.status is OutcomeStatus.DENIED
+        assert outcome.detail == "file-mode"
+        assert management.render(outcome) == (
+            "I can't do that here — this room isn't on managed identity"
+        )
+    tool = await _tool(
+        _tool_deps(
+            management,
+            _message("@nora remove them", mentions=frozenset({TARGET_ID})),
+        ),
+        action="remove",
+    )
+    assert tool["status"] == "refused"
+
+    assert _toml_bytes(tmp_path) == before
+    for kind in ("register", "add", "remove"):
+        assert await services.bindings.operation(
+            f"room:signal:conv-1:m-file-{kind}"
+        ) is None
 
 
 async def test_a_down_backend_is_unavailable_never_denied():
