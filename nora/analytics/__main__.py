@@ -4,7 +4,7 @@ The Rollup daemon — the same codebase as `python -m nora`, a DIFFERENT
 command and a SEPARATE process. Mirrors `nora.presence.__main__`: load
 config, build the object graph through `nora.analytics.composition.
 build_rollup`, serve a metrics/health endpoint, and every tick run the whole
-Rollup on the current build to the watermark `now - grace_seconds`. On start,
+Rollup on the current build to the earliest observed input frontier. On start,
 and whenever the pointer names a build of other code or parameters, it
 rebuilds first.
 
@@ -22,6 +22,7 @@ import asyncio
 import logging
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from aiohttp import web
@@ -78,13 +79,9 @@ def _metrics_app(deps: AnalyticsDependencies) -> web.Application:
 
 async def _tick(
     deps: AnalyticsDependencies, last_success: _LastSuccessAt,
-    first_seen: _LastSuccessAt,
+    first_seen: _LastSuccessAt, *, clock: Callable[[], float] | None = None,
 ) -> None:
-    """One tick: run the whole Rollup on the current build to the watermark
-    `now - grace_seconds` (`RollupRunner.run`). The wall clock chooses WHICH
-    watermark to build to, never what is computed at it: the grace keeps a
-    row whose transaction committed a moment late inside the watermark
-    rather than behind it forever.
+    """Run the Rollup to the earliest reported input frontier.
 
     `ensure_build` first: a rebuild started elsewhere (`python -m
     nora.analytics rebuild`) may have switched the pointer, and a build of
@@ -97,8 +94,7 @@ async def _tick(
     runner = deps.runner
     if runner is None:
         return  # `_run` only loops here once it has confirmed the runner is set
-    now_s = time.time()
-    through_ms = int((now_s - deps.grace_seconds) * 1000)
+    now_s = (clock or time.time)()
     if deps.refresh_identity is not None:
         try:
             await deps.refresh_identity()
@@ -110,9 +106,11 @@ async def _tick(
             return
     failed: set[str] = {s.subject_id for s in deps.subjects}
     try:
-        build_id = await runner.ensure_build(through_ms=through_ms)
-        report = await runner.run(build_id=build_id, through_ms=through_ms)
-        failed = set(report.failed)
+        through_ms = await runner.projection_time()
+        if through_ms is not None:
+            build_id = await runner.ensure_build(through_ms=through_ms)
+            report = await runner.run(build_id=build_id, through_ms=through_ms)
+            failed = set(report.failed)
     except Exception:
         log.exception("analytics rollup run failed — retried next tick")
     for subject in deps.subjects:
@@ -179,7 +177,12 @@ async def _run_built(deps: AnalyticsDependencies, *, rebuild: bool = False) -> N
         if deps.runner is None:
             log.info("analytics disabled — nothing to rebuild")
             return
-        through_ms = int((time.time() - deps.grace_seconds) * 1000)
+        if deps.refresh_identity is not None:
+            await deps.refresh_identity()
+        through_ms = await deps.runner.projection_time()
+        if through_ms is None:
+            log.info("no rollup input has reported yet")
+            return
         build_id = await deps.runner.rebuild(through_ms=through_ms)
         log.info("rebuilt the Rollup as build %d to %d and switched to it", build_id, through_ms)
         return

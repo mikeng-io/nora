@@ -21,6 +21,7 @@ from nora.domain.graph_registration import (
     inherited_scope,
 )
 from nora.domain.lineage import Lineage
+from nora.domain.memory_graph import pointer_entity
 from nora.infra.sql.cognitive_graph_schema import (
     CLAIM,
     EDGE,
@@ -35,7 +36,9 @@ RowData = Mapping[str, Any] | sa.RowMapping
 #: The content a tombstone clears per kind; identity, basis, scope,
 #: provenance, times and lifecycle stay.
 _CONTENT: dict[sa.Table, tuple[str, ...]] = {
-    ENTITY: ("name", "aliases", "pointer_kind", "pointer_ref"),
+    ENTITY: (
+        "name", "aliases", "pointer_kind", "pointer_ref", "source_ref_kind", "source_ref_value",
+    ),
     CLAIM: ("content", "prediction", "window_end"),
     INTENTION: (
         "done_when_form",
@@ -154,6 +157,28 @@ class SqlCognitiveGraph:
         """The registry row and the kind row in one transaction."""
         async with self._engine.begin() as conn:
             await self._insert(conn, table, row)
+
+    @staticmethod
+    async def person_pointer_in(conn: AsyncConnection, unit: str, person: str) -> str | None:
+        entity = ENTITY.c
+        query = sa.select(entity.id).where(
+            entity.unit == unit, entity.pointer_kind == "person", entity.pointer_ref == person,
+            entity.state == "admitted",
+        ).order_by(entity.id).limit(1)
+        if existing := await conn.scalar(query):
+            return existing
+        pointer = pointer_entity("person", unit, person, person)
+        created = await conn.scalar(pg_insert(REGISTRY).values(
+            id=pointer.id, unit=unit, kind="entity",
+        ).on_conflict_do_nothing().returning(REGISTRY.c.id))
+        if created is not None:
+            await conn.execute(sa.insert(ENTITY).values(
+                id=pointer.id, unit=unit, kind="entity", basis="computed", state="admitted",
+                name=pointer.name, pointer_kind="person", pointer_ref=person, persons=[person],
+                exposure="internal", writer="SqlRollupStore",
+            ))
+            return pointer.id
+        return await conn.scalar(query)
 
     @staticmethod
     async def _insert(
