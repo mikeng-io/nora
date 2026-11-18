@@ -17,7 +17,7 @@ _REPLY_ORDINAL = "nora.act.command_reply.ordinal"
 def command_event(command):
     @wraps(command)
     async def run(owner, interaction, *args, **kwargs):
-        async with owner._command_acts.event(interaction):
+        async with owner._command_acts.interaction_event(interaction):
             return await command(owner, interaction, *args, **kwargs)
 
     run.__signature__ = signature(command, eval_str=True)
@@ -72,17 +72,22 @@ class DiscordCommandActs:
         return f"{guild}/{channel_id}" if guild and channel_id else None
 
     @asynccontextmanager
-    async def event(self, interaction: Any):
+    async def interaction_event(self, interaction: Any):
         with act_event(
             str(getattr(interaction, "id", "") or ""),
             await self._authority(interaction, self._room(interaction)),
         ):
             yield
 
-    async def denied(self, interaction: Any, line: str, *, room: str | None = None) -> None:
+    async def denied(
+        self, interaction: Any, line: str, *, room: str | None = None, admitted: bool = False,
+    ) -> None:
+        authority = (
+            await self._authority(interaction, room) if admitted else ActAuthority(None, room=room)
+        )
         await self._execute(
             "discord.command_denial", f"discord:{room or 'dm'}",
-            str(getattr(interaction, "id", "") or ""), await self._authority(interaction, room),
+            str(getattr(interaction, "id", "") or ""), authority,
             lambda: interaction.response.send_message(line, ephemeral=True),
         )
 

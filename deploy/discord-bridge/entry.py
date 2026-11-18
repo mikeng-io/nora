@@ -62,6 +62,7 @@ from nora.infra.voice.http_controller import VoiceControllerClient
 from nora.infra.voice.hub import VoiceControllerHub
 from nora.obs.metrics import Metrics
 from nora.platform.bridge.journal import Journal
+from nora.platform.bridge.projection import projected_room_unit
 from nora.platform.bridge.queue import StreamProducer
 from nora.platform.bridge.service import (
     DurableActionService,
@@ -199,8 +200,9 @@ async def main() -> None:
     engine = create_sql_engine(DATABASE_URL)
     envelope = memory.wire.bridge_act_envelope(engine)
     effects = memory.EffectRecorder(envelope)
+
     def room_unit(room: str) -> str | None:
-        return (load_projection().get("room_units") or {}).get(room)
+        return projected_room_unit(PROJ_DIR / f"{PLATFORM}.json", load_projection(), room)
 
     command_acts = DiscordCommandActs(envelope, room_unit=room_unit)
     hub, manager, consumer = _voice_graph(cfg, engine, effects)

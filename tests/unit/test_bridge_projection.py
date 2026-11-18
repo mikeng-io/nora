@@ -629,11 +629,11 @@ async def test_write_is_temp_fsync_rename_dirsync(example_config_path: Path, mon
 
     await pub.tick()
 
-    assert len(replaces) == 1
-    tmp, dst = replaces[0]
-    assert Path(tmp).parent == pub.out_dir
-    assert Path(dst) == pub.target
-    assert len(fsyncs) >= 2                     # file fsync + directory fsync
+    assert [Path(dst) for _, dst in replaces] == [
+        pub.target.with_suffix(".room-units.json"), pub.target,
+    ]
+    assert all(Path(tmp).parent == pub.out_dir for tmp, _ in replaces)
+    assert len(fsyncs) >= 4
     # no temp litter, and the landed file parses to the contract shape
     assert not [p for p in pub.out_dir.iterdir() if p.suffix == ".tmp"]
     assert set(_read(pub)) == CONTRACT_KEYS

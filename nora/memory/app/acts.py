@@ -48,7 +48,7 @@ class ActEnvelope:
     async def by_destination(self, executor: str, destination: str) -> Act | None:
         return await self._store.by_destination(executor, destination)
 
-    async def record_outcome(self, act: Act, outcome: Outcome) -> None:
+    async def record_act_outcome(self, act: Act, outcome: Outcome) -> None:
         await self._store.observe(act, outcome)
 
     async def record_expression(self, authority: ActAuthority, raw: object) -> None:

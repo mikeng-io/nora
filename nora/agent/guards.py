@@ -154,7 +154,7 @@ class Deliverer:
         self._content_checks = content_checks
         self._intent = intent
         self._store = store
-        self._delivery_acts = getattr(store, "delivery_acts", None)
+        self._delivery_acts = getattr(store, "delivery_acts", None) if send_permitted else None
         self._adapter = adapter
         self._target = target
         self._tag_id = tag_id

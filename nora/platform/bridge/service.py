@@ -45,6 +45,7 @@ from nora.platform.bridge import telemetry as bt
 from nora.platform.bridge.actions import stored_request, validate_owner
 from nora.platform.bridge.envelope import Envelope, canonical_digest
 from nora.platform.bridge.journal import Journal
+from nora.platform.bridge.projection import BridgePlacementError
 from nora.platform.bridge.queue import StreamProducer
 
 log = logging.getLogger("nora.bridge.service")
@@ -434,7 +435,10 @@ class DurableActionService:
         if self._effects is None:
             return await self._execute(action)
         room = str((action["request"].get("target") or {}).get("id") or "")
-        unit = self._room_unit(room) if self._room_unit is not None else None
+        try:
+            unit = self._room_unit(room) if self._room_unit is not None else None
+        except BridgePlacementError:
+            return ActionReply("rejected", kind="placement", message="room units unavailable")
         executor = "bridge.typing" if action["op"] == "typing" else "bridge.delivery"
         return await self._effects.invoke(
             executor, f"{self._platform}:{room}", str(action["action_id"]),

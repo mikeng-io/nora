@@ -171,7 +171,7 @@ class SubagentBackend:
         else:
             outcome = Outcome("uncertain")
         try:
-            await self._acts.record_outcome(job.act, outcome)
+            await self._acts.record_act_outcome(job.act, outcome)
         except Exception:
             log.exception("sub-agent act outcome could not be recorded (job=%s)", job.id)
 
@@ -280,7 +280,7 @@ class SubagentBackend:
             if self._acts is not None:
                 act = await self._acts.by_destination("subagent.launch", f"subagent:{job_id}")
                 if act is not None:
-                    await self._acts.record_outcome(act, Outcome("uncertain"))
+                    await self._acts.record_act_outcome(act, Outcome("uncertain"))
             return JobResult(
                 status=JobStatus.FAILED, error="unknown job_id", failure_reason="lost",
             )

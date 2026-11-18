@@ -44,6 +44,7 @@ from nora.platform.bridge.envelope import (
     event_id,
 )
 from nora.platform.bridge.journal import Journal, JournalError
+from nora.platform.bridge.projection import projected_room_unit
 from nora.platform.bridge.queue import StreamProducer
 from nora.platform.bridge.rehydrate import (
     message_from_dict,
@@ -319,11 +320,8 @@ class Bridge:
             account_key=self.cfg.account_key, execute=self._executor,
             receipt_intents=self._receipt_intent_ids,
             ops=frozenset({"send", "react"}), metrics=metrics,
-            effects=effects,
-            room_unit=lambda room: (self.load_projection().get("room_units") or {}).get(room),
+            effects=effects, room_unit=self._projected_unit,
         )
-        # Kept as the object tests poke (`bridge._dirty.set()` is "_handle
-        # appended"): it IS the publisher's wake flag.
         self._dirty = self._publisher._dirty
 
     @property
@@ -347,17 +345,19 @@ class Bridge:
         except (OSError, json.JSONDecodeError):
             return {"revision": 0, "enabled": False}
 
+    def _projected_unit(self, room: str) -> str | None:
+        return projected_room_unit(
+            self.cfg.projection_dir / f"{PLATFORM}.json", self.load_projection(), room,
+        )
+
     # ---- capture ----------------------------------------------------------
 
     async def capture(self) -> None:
         self.journal.probe()  # preflight before every receive window
         url = f"{self.cfg.signal_http}/api/v1/events"
         timeout = aiohttp.ClientTimeout(total=None, sock_read=None)
-        # The wrapper owns the LOCAL reconnect to signal-cli's HTTP — the
-        # daemon binds it a beat after launch and drops it on a restart, and
-        # neither may take the journal or the /v1 site down with it. Journal
-        # failures still propagate: capture without a durable spool must stop
-        # upstream (`supervise`'s JournalError branch), not reconnect.
+        # The journal and action API survive a signal-cli reconnect.
+        # A journal failure propagates to supervise, which stops capture.
         backoff = 1.0
         while True:
             try:
