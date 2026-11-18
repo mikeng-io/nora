@@ -1928,7 +1928,7 @@ CREATE UNIQUE INDEX uq_reminders_proactive_open_note ON public.reminders USING b
 CREATE UNIQUE INDEX uq_reminders_proactive_open_subject ON public.reminders USING btree (((payload ->> 'subject_kind'::text)), ((payload ->> 'subject_id'::text)), COALESCE((payload ->> 'action'::text), ''::text), platform, conversation_id) WHERE ((kind = 'proactive'::text) AND (state = ANY (ARRAY['pending'::text, 'firing'::text])));
 CREATE UNIQUE INDEX uq_rollup_build_current ON public.rollup_build USING btree (status) WHERE (status = 'current'::text);
 CREATE UNIQUE INDEX uq_row_history_open ON public.row_history USING btree (table_name, row_key) WHERE (superseded_at IS NULL);
-CREATE UNIQUE INDEX uq_social_item_key ON public.social_item USING btree (network, item_id);
+CREATE UNIQUE INDEX uq_social_item_key ON public.social_item USING btree (network, item_id, unit) NULLS NOT DISTINCT;
 CREATE UNIQUE INDEX uq_stimulus_pending ON public.stimulus_pending USING btree (unit, mode, stimulus_id);
 CREATE UNIQUE INDEX uq_stimulus_retraction_stimulus ON public.stimulus_retraction USING btree (stimulus_id);
 CREATE UNIQUE INDEX uq_stimulus_rollup_ref ON public.stimulus USING btree (unit, ref) WHERE (kind = 'rollup'::text);

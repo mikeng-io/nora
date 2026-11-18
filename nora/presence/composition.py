@@ -26,10 +26,16 @@ from nora.config_reload import FileReload, LivePersons, RestartRequiredError
 from nora.domain.live import LiveSequence
 from nora.infra.life360 import Life360Client
 from nora.infra.sql import create_sql_engine, run_migrations
+from nora.infra.sql.item_registration import (
+    RegistrationScope,
+    RuntimeRevisions,
+    SqlItemRegistration,
+)
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.source_health import SqlSourceHealthLog
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
+from nora.policy import PolicyError, load_policy
 from nora.presence.collector import CircleSpec, PresenceCollector
 
 log = logging.getLogger("nora.presence.composition")
@@ -100,8 +106,9 @@ def build_collector(cfg: Config) -> PresenceDependencies:
 
     try:
         persons = LivePersons(load_persons(cfg.identity_file))
-    except PersonsError as exc:
-        raise PresenceStartupError(f"identity.toml error: {exc}") from exc
+        policy = load_policy(cfg.policy_file)
+    except (PersonsError, PolicyError) as exc:
+        raise PresenceStartupError(f"identity/policy error: {exc}") from exc
     boot_bindings = persons.honcho_workspaces
 
     def validate_persons(candidate: Persons) -> None:
@@ -154,10 +161,14 @@ def build_collector(cfg: Config) -> PresenceDependencies:
         raise PresenceStartupError(f"migration error: {exc}") from exc
 
     engine = create_sql_engine(database_url)
+    registration = SqlItemRegistration(
+        RegistrationScope(policy, persons), RuntimeRevisions(cfg.model_dump(), policy, persons),
+    )
     store = PresenceStore(
         engine,
         retention_days=presence.retention_days,
         metrics=metrics,
+        registration=registration,
     )
     client = Life360Client(
         client_credential=credential,
@@ -179,7 +190,7 @@ def build_collector(cfg: Config) -> PresenceDependencies:
         metrics=metrics,
         # Every poll's outcome, as Record: what
         # lets a later step prove «the collector was healthy for the span».
-        health_log=SqlSourceHealthLog(engine),
+        health_log=SqlSourceHealthLog(engine, registration=registration),
     )
     log.info(
         "presence collector wired: %d circle(s), cadence %.0f-%.0fs, retention %dd",

@@ -4919,8 +4919,7 @@ MEMORY_INDEX_STATE = sa.Table(
 # showed, one row per story frame, post or reel; one row per probe and per read;
 # and a frame gone or hidden. ALL THREE APPEND-ONLY: nothing is updated after
 # insert, and what changes about an item is a `social_item_state` row. No
-# foreign keys, for the reason `documents` gives. `social_item` is unique on
-# `(network, item_id)` and has no unit column: a person in two units is one row.
+# source-table foreign keys; the graph registry holds the identity.
 SOCIAL_ITEM = sa.Table(
     "social_item",
     METADATA,
@@ -4955,10 +4954,6 @@ SOCIAL_ITEM = sa.Table(
         name="ck_social_item_story_frame_expires",
     ),
     sa.CheckConstraint("length(btrim(item_id)) > 0", name="ck_social_item_has_an_id"),
-)
-# The dedupe: a frame, post or reel already recorded is not written again.
-UQ_SOCIAL_ITEM_KEY = sa.Index(
-    "uq_social_item_key", SOCIAL_ITEM.c.network, SOCIAL_ITEM.c.item_id, unique=True,
 )
 IDX_SOCIAL_ITEM_PERSON = sa.Index(
     "idx_social_item_person", SOCIAL_ITEM.c.network, SOCIAL_ITEM.c.person,

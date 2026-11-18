@@ -29,6 +29,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.presence import PresenceFix, SavedPlace, WireState
+from nora.infra.sql.item_registration import SqlItemRegistration, epoch_ms
 from nora.infra.sql.schema import PRESENCE_FIXES, PRESENCE_PLACES
 
 log = logging.getLogger("nora.presence.store")
@@ -51,6 +52,7 @@ class PresenceStore:
         *,
         retention_days: int = DEFAULT_RETENTION_DAYS,
         metrics: Any = None,
+        registration: SqlItemRegistration | None = None,
     ) -> None:
         """`metrics` is INJECTED, never imported, for the reason
         `SqlRecordStore` documents: `nora.infra` sits below `nora.obs` in the
@@ -60,6 +62,7 @@ class PresenceStore:
         self._engine = engine
         self._retention_days = retention_days
         self._metrics = metrics
+        self._registration = registration
 
     async def record_fix(self, *, fix: PresenceFix) -> bool:
         """Insert `fix` iff its `ts` advances past the member's last stored `ts`.
@@ -90,12 +93,23 @@ class PresenceStore:
             wire_state=fix.wire_state.value,
             recorded_at=fix.recorded_at,
         )
+        registration = self._registration
+        units = registration.scope.person_units(fix.person_id) if registration else ()
+        written = False
         async with self._engine.begin() as conn:
-            last_ts = (await conn.execute(latest)).scalar_one_or_none()
-            if last_ts is not None and fix.ts <= last_ts:
-                return False
-            await conn.execute(insert)
-        return True
+            for unit in units or (None,):
+                last_ts = (await conn.execute(
+                    latest.where(PRESENCE_FIXES.c.unit.is_not_distinct_from(unit)),
+                )).scalar_one_or_none()
+                if last_ts is not None and fix.ts <= last_ts:
+                    continue
+                values = await registration.planes(
+                    conn, PRESENCE_FIXES, unit=unit, occurred_at=epoch_ms(fix.ts),
+                    persons=(fix.person_id,),
+                ) if registration else {}
+                await conn.execute(insert.values(**values))
+                written = True
+        return written
 
     async def latest_fix(
         self, *, circle_id: str, person_id: str

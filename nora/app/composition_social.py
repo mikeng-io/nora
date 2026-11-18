@@ -132,7 +132,10 @@ def poller(
 
         # ONE store for the poller and every reader, holding who opted out:
         # the read-side exclusion lives in the store's reads (§2).
-        social_store = readable_social_store(engine, persons, metrics=metrics)
+        social_store = readable_social_store(
+            engine, persons, metrics=metrics,
+            registration=engine.get_execution_options().get("item_registration"),
+        )
         social_poller = SocialPoller(
             source=InstagramSocialSource(
                 base_url=cfg.social.instagram.base_url,

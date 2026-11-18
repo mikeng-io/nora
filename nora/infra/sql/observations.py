@@ -53,6 +53,7 @@ from nora.domain.observations import (
 )
 
 from .audit import REACTION_STATES_MAX
+from .item_registration import SqlItemRegistration, epoch_ms
 from .schema import (
     MESSAGE_EDIT,
     MESSAGE_REACTION,
@@ -64,8 +65,7 @@ from .schema import (
 OBS = PLATFORM_OBSERVATION
 ST = PLATFORM_OBJECT_STATE
 
-#: The head-shape version the fold writes — bumped when a stored `state`
-#: shape changes so an old head can be rebuilt rather than misread.
+#: Version of the folded source payload.
 PROJECTION_REV = 1
 
 
@@ -379,8 +379,11 @@ _HANDLE_DIGEST = sa.func.substr(
 
 
 class SqlObservationStore:
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(
+        self, engine: AsyncEngine, *, registration: SqlItemRegistration | None = None,
+    ) -> None:
         self._engine = engine
+        self._registration = registration
 
     async def append(
         self, *, observation: Observation, event_id: str, source_digest: str,
@@ -390,31 +393,43 @@ class SqlObservationStore:
         obs = observation
         scope = obs.scope
         async with self._engine.begin() as conn:
-            ins = await conn.execute(
-                pg_insert(OBS).values(
-                    contract=OBSERVATION_CONTRACT, source_kind=obs.object_kind,
-                    event_id=event_id, source_digest=source_digest,
-                    **_scope_columns(scope),
-                    object_ref=obs.object_ref, operation=obs.operation,
-                    target_key=target_key(obs.target, author_id=obs.target_author_id),
-                    target_author_id=obs.target_author_id or None,
-                    target_message_id=target_message_id,
-                    delivered_message_id=delivered_message_id,
-                    actor_id=obs.actor_id or None,
-                    actor_status=obs.actor_status,
-                    subject_ref=obs.subject_ref or None,
-                    occurred_ms=obs.occurred_ms,
-                    received_ms=obs.received_ms,
-                    time_quality=obs.time_quality,
-                    source_revision=obs.source_revision,
-                    source_position=obs.source_position,
-                    revision_scope=obs.revision_scope or None,
-                    payload=obs.payload.to_dict(),
-                    coverage=obs.coverage.to_dict(),
-                ).on_conflict_do_nothing(
-                    constraint="uq_platform_observation_source",
-                ).returning(OBS.c.id))
-            row_id = ins.scalar_one_or_none()
+            stmt = pg_insert(OBS).values(
+                contract=OBSERVATION_CONTRACT, source_kind=obs.object_kind,
+                event_id=event_id, source_digest=source_digest,
+                **_scope_columns(scope),
+                object_ref=obs.object_ref, operation=obs.operation,
+                target_key=target_key(obs.target, author_id=obs.target_author_id),
+                target_author_id=obs.target_author_id or None,
+                target_message_id=target_message_id,
+                delivered_message_id=delivered_message_id,
+                actor_id=obs.actor_id or None,
+                actor_status=obs.actor_status,
+                subject_ref=obs.subject_ref or None,
+                occurred_ms=obs.occurred_ms,
+                received_ms=obs.received_ms,
+                time_quality=obs.time_quality,
+                source_revision=obs.source_revision,
+                source_position=obs.source_position,
+                revision_scope=obs.revision_scope or None,
+                payload=obs.payload.to_dict(),
+                coverage=obs.coverage.to_dict(),
+            ).on_conflict_do_nothing(
+                constraint="uq_platform_observation_source",
+            )
+            if (registration := self._registration) is None:
+                row_id = (await conn.execute(stmt.returning(OBS.c.id))).scalar()
+            else:
+                row_id = await registration.insert_once(
+                    conn, OBS, stmt,
+                    unit=registration.scope.room_unit(scope.platform, scope.conversation_id),
+                    room=scope.conversation_id,
+                    occurred_at=epoch_ms(obs.received_ms if obs.occurred_ms is None
+                                         else obs.occurred_ms),
+                    persons=(
+                        registration.scope.person_id(scope.platform, obs.actor_id),
+                        registration.scope.person_id(scope.platform, obs.target_author_id),
+                    ),
+                )
             if row_id is None:
                 return None  # replay of an admitted source event: no effect
             stored = StoredObservation(

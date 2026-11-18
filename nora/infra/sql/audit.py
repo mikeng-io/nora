@@ -49,6 +49,7 @@ from nora.domain.observations import (
 )
 from nora.domain.ports import RoomActivity
 from nora.infra.sql import memory_index
+from nora.infra.sql.item_registration import SqlItemRegistration, epoch_ms, touch_planes
 from nora.infra.sql.migrations_runner import head_revision
 from nora.infra.sql.schema import (
     MESSAGE_DELETE,
@@ -407,28 +408,14 @@ class SqlRecordStore:
         max_per_conversation: int = DEFAULT_MAX_PER_CONVERSATION,
         metrics: Any = None,
         mention_persons: Any = None,
+        registration: SqlItemRegistration | None = None,
     ) -> None:
-        """`metrics` is INJECTED, never imported.
-
-        `nora.infra` sits below `nora.obs` in import-linter's layers contract,
-        so importing `nora.obs.metrics` here — at module level or lazily inside
-        this function, which import-linter detects either way — breaks contract
-        2. Injection is also what the project's test-seam policy requires:
-        collaborators come through `__init__`, never a module-level mutable
-        singleton. The composition root passes `METRICS`; `None` means this
-        store simply does not count, which is correct for unit tests.
-
-        `mention_persons` resolves one @-mentioned platform account id to its
-        person id (`Persons.resolve`'s answer, without the ref), so the row
-        stores `mention_persons_json` beside `mentions_json` and the
-        memory-index projector — pure SQL, `identity.toml` not its to read —
-        can draw `mentions` edges (25 §2). `None` stores NULL («unknown») and
-        no edges are drawn.
-        """
+        """Wire the record engine, metrics, mention resolution and registration."""
         self._engine = engine
         self._max_per_conversation = max_per_conversation
         self._metrics = metrics
         self._mention_persons = mention_persons
+        self._registration = registration
 
     def _resolved_mentions_json(self, message: NormalizedMessage) -> str | None:
         """`mention_persons_json` for one message or edit: the sorted person
@@ -453,6 +440,7 @@ class SqlRecordStore:
         person_id: str | None = None,
         tx_hook: Any = None,
     ) -> int:
+        registration = self._registration
         stmt = sa.insert(MESSAGES).values(
             platform=message.platform,
             conversation_id=message.conversation_id,
@@ -465,29 +453,21 @@ class SqlRecordStore:
             is_nora=int(is_nora),
             delivery_status=delivery_status.value,
             raw_json=json.dumps(message.raw),
-            # Same INSERT, no extra parameter: the parser already extracted it
-            # onto the message (as for `person_id`, DEC-15).
             quoted_ts=message.quote.quoted_ts if message.quote else None,
-            # Same INSERT (DEC-43). Custody is resolved BEFORE this write —
-            # `nora.ingest.stages.media` runs ahead of the audit stage — so the
-            # row that claims a handle and the blob that backs it are committed
-            # together. An UPDATE afterwards would open a window in which the
-            # record says `[image a3f2c1]` while nothing can produce `a3f2c1`.
             media_json=media_json(message.media_blobs),
-            # Same INSERT: the file links ingest recognised.
             external_files_json=external_files_json(message.external_files),
-            # Same INSERT, both: the handle an edit names its target by, and
-            # the mentions the gate compares an edit against. "" is the parsers'
-            # «no handle» and stores as NULL.
             platform_message_id=message.message_id or None,
             mentions_json=mentions_json(message.mentions),
             mention_persons_json=self._resolved_mentions_json(message),
         ).returning(MESSAGES.c.id)
-        # `RETURNING id` + `scalar_one`, not `lastrowid`: asyncpg has no
-        # `lastrowid` (it is always `None`), so the id the row was assigned is
-        # read back from the statement itself. `scalar_one` also asserts exactly
-        # one row came back, which a bare INSERT always produces.
         async with self._engine.begin() as conn:
+            if registration is not None:
+                stmt = stmt.values(**await registration.planes(
+                    conn, MESSAGES,
+                    unit=registration.scope.message_unit(message),
+                    room=message.conversation_id, occurred_at=epoch_ms(message.timestamp),
+                    persons=(person_id,),
+                ))
             row_id = int((await conn.execute(stmt)).scalar_one())
             # `tx_hook(conn, row_id)` runs INSIDE this transaction — the
             # platform-bridge seam that makes source mapping + message +
@@ -873,12 +853,21 @@ class SqlRecordStore:
             mention_persons_json=self._resolved_mentions_json(message),
         )
         async with self._engine.begin() as conn:
-            await conn.execute(stmt)
             from nora.infra.sql.observations import relink_arriving_targets
 
             original = (await conn.execute(sa.select(
                 MESSAGES.c.platform, MESSAGES.c.conversation_id, MESSAGES.c.sender_id,
+                MESSAGES.c.person_id,
             ).where(MESSAGES.c.id == message_id))).one()
+            registration = self._registration
+            if registration is not None:
+                stmt = stmt.values(**await registration.planes(
+                    conn, MESSAGE_EDIT,
+                    unit=registration.scope.message_unit(message),
+                    room=original.conversation_id, occurred_at=epoch_ms(message.timestamp),
+                    persons=(original.person_id,),
+                ))
+            await conn.execute(stmt)
             await relink_arriving_targets(
                 conn, scope=SourceScope(
                     platform=original.platform, account_key="",
@@ -904,6 +893,9 @@ class SqlRecordStore:
             created_at=sa.func.clock_timestamp(),
         ).returning(MESSAGE_REACTION.c.id)
         async with self._engine.begin() as conn:
+            stmt = stmt.values(**await touch_planes(
+                self._registration, conn, MESSAGE_REACTION, message_id, message, person_id,
+            ))
             result = await conn.execute(stmt)
             row_id = int(result.scalar_one())
             target_link = sa.exists().where(
@@ -931,6 +923,9 @@ class SqlRecordStore:
             raw_json=json.dumps(message.raw),
         ).returning(MESSAGE_DELETE.c.id)
         async with self._engine.begin() as conn:
+            stmt = stmt.values(**await touch_planes(
+                self._registration, conn, MESSAGE_DELETE, message_id, message, person_id,
+            ))
             result = await conn.execute(stmt)
         return int(result.scalar_one())
 

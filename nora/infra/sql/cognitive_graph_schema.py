@@ -377,3 +377,9 @@ def _attach_registration_planes() -> None:
 
 
 _attach_registration_planes()
+
+sa.Index(
+    "uq_social_item_key", METADATA.tables["social_item"].c.network,
+    METADATA.tables["social_item"].c.item_id, METADATA.tables["social_item"].c.unit,
+    unique=True, postgresql_nulls_not_distinct=True,
+)

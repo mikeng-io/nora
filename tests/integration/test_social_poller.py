@@ -155,14 +155,12 @@ class World:
                 .where(p.c.person == person).order_by(p.c.recorded_at, p.c.id),
             )).all()
         return [tuple(r) for r in rows]  # type: ignore[misc]
-
     async def items(self) -> dict[str, str | None]:
         async with self.engine.connect() as conn:
             rows = (await conn.execute(
                 sa.select(SOCIAL_ITEM.c.item_id, SOCIAL_ITEM.c.media_ref),
             )).all()
         return {r.item_id: r.media_ref for r in rows}
-
     async def states(self) -> list[tuple[str, str]]:
         s = SOCIAL_ITEM_STATE
         async with self.engine.connect() as conn:

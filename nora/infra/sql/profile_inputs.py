@@ -399,7 +399,6 @@ class SqlProfileInputs:
                 "pending_cached": int(row[1]), "unattempted_cached": int(row[2]),
                 "missing_cache": int(row[3]), "hidden_or_deleted": int(row[4]),
                 "complete": boundary is not None and row[1] == 0}
-
     async def social(
         self, *, key: str, persons: Sequence[str], limit: int, citations: Sequence[str] = (),
         since_ms: int | None = None, until_ms: int | None = None,

@@ -223,7 +223,6 @@ async def test_message_checks_reuse_media_lookups_per_attachment_value(
         assert sum(n['Actual Rows'] * n['Actual Loops'] for n in plan
                    if n.get('Relation Name') == 'messages') <= 2
 
-
 @pytest.mark.parametrize('kind', ['post', 'reel', 'story_frame'])
 async def test_social_late_media_counts_and_restrictions_are_rechecked(env, kind):
     sha = 'b' * 64

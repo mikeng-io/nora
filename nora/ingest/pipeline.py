@@ -340,10 +340,9 @@ class IngestPipeline:
         # and keeps its transcript without either side effect.
         room = self._allowlist.conversation(message.platform, message.conversation_id)
         absorbed = room is not None and room.absorbed
+        message = dataclasses.replace(message, admitted_unit=room.unit if room else "")
 
-        # AN EDIT takes its own path from here: it is recorded beside the
-        # message it changes, never as a message of its own — and an edit of
-        # nothing on record is dropped, not ingested.
+        # Edits belong beside their existing target.
         if message.edit_of is not None:
             with span("ingest.edit_target"):
                 found = await edit_target_stage.run(

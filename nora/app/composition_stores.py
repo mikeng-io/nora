@@ -23,6 +23,11 @@ from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.decision_log import SqlDecisionLogStore
+from nora.infra.sql.item_registration import (
+    RegistrationScope,
+    RuntimeRevisions,
+    SqlItemRegistration,
+)
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.observations import SqlObservationStore
@@ -97,6 +102,10 @@ def database(allowlist: Any, cfg: Any, metrics: Any, persons: Any)-> DatabaseWir
     # `PresenceStore`'s own docstring asks for. `audit.aclose()` (in
     # `nora.__main__.App.shutdown`) disposes it for both; `PresenceStore.aclose` is…
     engine = create_sql_engine(database_url)
+    engine.update_execution_options(item_registration=SqlItemRegistration(
+        RegistrationScope(allowlist, persons),
+        RuntimeRevisions(cfg.model_dump(), allowlist, persons),
+    ))
     if cfg.memory.graph.enabled:
         from nora.app.graph_project import projection_context
 
@@ -124,6 +133,7 @@ def build_audit(cfg: Any, engine: Any, metrics: Any)-> AuditWiring:
         engine,
         max_per_conversation=cfg.store.max_per_conversation,
         metrics=metrics,
+        registration=engine.get_execution_options().get("item_registration"),
     )
     return AuditWiring(audit=audit)
 
@@ -175,7 +185,9 @@ def observation(engine: Any)-> ObservationWiring:
     # The typed platform-observation Record (design/platform-observations 02): persisted
     # whenever a bridge ingests typed source evidence. Cognition OFF still retains the rows
     # — they simply wake no session (the obligation enqueued in the append's transaction is…
-    observation_store = SqlObservationStore(engine)
+    observation_store = SqlObservationStore(
+        engine, registration=engine.get_execution_options().get("item_registration"),
+    )
     return ObservationWiring(observation_store=observation_store)
 
 
