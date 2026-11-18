@@ -5,21 +5,15 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from nora.infra.sql.aggregate_writes import AggregateWrites
+from nora.infra.sql.aggregate_writes import AggregateWrites, rollup_key
 from nora.infra.sql.cognitive_graph_store import RowData
-from nora.infra.sql.item_registration import RegistrationScope, epoch_ms, item_graph_id
+from nora.infra.sql.item_registration import RegistrationScope, epoch_ms
 from nora.infra.sql.schema import (
     PLATFORM_OBSERVATION,
     PRESENCE_CORRIDORS,
     PRESENCE_DERIVED_PLACES,
 )
 
-_UNIT_ROLLUP_KEYS = {
-    "rollup_colocation": ("persons", "valid_from_ms", "valid_to_ms"),
-    "rollup_outing": ("persons", "valid_from_ms", "valid_to_ms"),
-    "rollup_daybook": ("person_id", "local_date", "valid_from_ms", "valid_to_ms"),
-    "rollup_tie": ("person_a", "person_b", "iso_week", "valid_from_ms", "valid_to_ms"),
-}
 _HEAD_KEY = ("platform", "account_key", "conversation_id", "thread", "source_kind", "object_ref")
 
 
@@ -60,13 +54,9 @@ class AggregatePlanes:
                 persons=self.scope.circle_persons(row["circle_id"], unit=unit),
             )
         if family.startswith("rollup_"):
-            if family == "rollup_response":
-                key = (item_graph_id("messages", (row["message_id"],), unit),)
-            else:
-                key = tuple(row[name] for name in _UNIT_ROLLUP_KEYS[family])
             inputs = await self.writes.rollup_inputs(conn, table, row, row["build_id"])
             return await self.writes.annotate(
-                conn, table, row, unit=unit, key=key, inputs=inputs, live=False,
+                conn, table, row, unit=unit, key=rollup_key(table, row), inputs=inputs, live=False,
             )
         copies = {}
         if row.get("place_id") is not None:

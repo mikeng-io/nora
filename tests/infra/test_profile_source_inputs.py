@@ -620,9 +620,8 @@ async def test_unavailable_social_is_explicit_and_does_not_block_or_ack_other_do
             W.c.consolidator_name == 'profile-person:source:social'))).scalar_one() == 0
         await conn.execute(sa.text('ALTER TABLE unavailable_social_item RENAME TO social_item'))
         await conn.execute(sa.insert(SOCIAL_ITEM).values(
-            network='synthetic', item_id='retry', person=PERSON,
-            account='author', source_kind='post',
-            taken_at=AT, seen_at=AT, origin='poll', caption='recovered source',
+            network='synthetic', item_id='retry', person=PERSON, account='author',
+            source_kind='post', taken_at=AT, seen_at=AT, origin='poll', caption='recovered source',
         ))
     [retry] = await source_inputs(env).social(key=KEY, persons=[PERSON], limit=6)
     assert retry.social.caption == 'recovered source'

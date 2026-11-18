@@ -80,6 +80,8 @@ import sqlalchemy as sa
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from nora.infra.sql.aggregate_writes import AggregateWrites, rollup_key
+from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.history import (
     APPEND_ONLY,
     CAPTURE_SETTING,
@@ -628,6 +630,7 @@ async def seed(source: AsyncEngine, target: AsyncEngine, at: datetime) -> SeedRe
             )
         await dst.execute(sa.text(f"SET LOCAL {CAPTURE_SETTING} = 'off'"))
         await _refuse_a_target_that_holds_rows(dst)
+        computed = AggregateWrites(SqlCognitiveGraph(target), None)
         for table in copied_tables():
             if table in APPEND_ONLY and not await _has_table(src, table):
                 continue
@@ -641,6 +644,8 @@ async def seed(source: AsyncEngine, target: AsyncEngine, at: datetime) -> SeedRe
             offered = inserted = 0
             async for rows in reader:
                 offered += len(rows)
+                if table.startswith("rollup_") and "graph_id" in METADATA.tables[table].c:
+                    await _register_old_rollup_images(dst, computed, METADATA.tables[table], rows)
                 result = await dst.execute(sql, {"rows": json.dumps(rows, default=str)})
                 inserted += int(result.rowcount or 0)
             copied[table] = inserted
@@ -650,6 +655,17 @@ async def seed(source: AsyncEngine, target: AsyncEngine, at: datetime) -> SeedRe
         history_rows = await _copy_history(src, dst, at)
         await _rebuild_derived(dst)
     return SeedReport(at=at, copied=copied, orphaned=orphaned, history_rows=history_rows)
+
+
+async def _register_old_rollup_images(
+    dst: AsyncConnection, computed: AggregateWrites, table: sa.Table, rows: list[dict[str, Any]],
+) -> None:
+    for row in rows:
+        if row.get("graph_id") is None and row.get("unit") is not None:
+            row.update(await computed.annotate(
+                dst, table, row, unit=row["unit"], key=rollup_key(table, row),
+                asserted_at=datetime.fromisoformat(row["recorded_at"]), live=False,
+            ))
 
 
 async def _rebuild_derived(dst: AsyncConnection) -> None:

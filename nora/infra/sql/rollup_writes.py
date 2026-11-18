@@ -8,9 +8,7 @@ from typing import Any
 import sqlalchemy as sa
 
 from nora.domain.rollup import Colocation, Daybook, Outing, Response, Tie, episode_key, lineage_json
-from nora.infra.sql.aggregate_writes import AggregateWrites
-from nora.infra.sql.item_registration import item_graph_id
-from nora.infra.sql.schema import ROLLUP_RESPONSE
+from nora.infra.sql.aggregate_writes import AggregateWrites, rollup_key
 
 
 def plain(value: Any) -> Any:
@@ -123,16 +121,12 @@ async def diff_apply(
     changed = len(doomed)
     for k, row in wanted.items():
         prior = stored.get(k)
-        semantic_key = k
-        if table is ROLLUP_RESPONSE:
-            send = item_graph_id("messages", (row["message_id"],), unit)
-            semantic_key = (send,)
         inputs = await computed.rollup_inputs(conn, table, row, build_id)
         planes = await computed.annotate(
             conn,
             table,
             row,
-            key=semantic_key,
+            key=rollup_key(table, row),
             unit=unit,
             inputs=inputs,
             asserted_at=prior["recorded_at"] if prior else None,

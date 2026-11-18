@@ -234,12 +234,13 @@ _END = _UPDATED + 5_000
 
 
 async def _record(
-    engine: AsyncEngine, registration: SqlItemRegistration, *, restricted: bool
+    engine: AsyncEngine, registration: SqlItemRegistration, *,
+    restricted: bool, reaction: bool = False,
 ) -> int:
     from nora.domain.models import NormalizedMessage
     from nora.domain.presence import PresenceFix, WireState
     from nora.infra.sql.audit import SqlRecordStore
-    from nora.infra.sql.schema import MESSAGES, PRESENCE_FIXES
+    from nora.infra.sql.schema import MESSAGE_REACTION, MESSAGES, PRESENCE_FIXES
 
     await PresenceStore(engine, registration=registration).record_fix(
         fix=PresenceFix(
@@ -252,22 +253,17 @@ async def _record(
             _UPDATED,
         )
     )
-    message = await SqlRecordStore(engine, registration=registration).append(
-        message=NormalizedMessage(
-            "signal",
-            f"room-{_UNITS[0]}",
-            "group",
-            "test-author",
-            None,
-            _UPDATED,
-            "Generated",
-            {},
-        ),
-        person_id=_PERSON,
+    store = SqlRecordStore(engine, registration=registration)
+    source = NormalizedMessage(
+        "signal", f"room-{_UNITS[0]}", "group", "test-author", None, _UPDATED, "Generated", {},
     )
+    message = await store.append(message=source, person_id=_PERSON)
+    if reaction:
+        await store.append_reaction(message_id=message, message=source, person_id=_PERSON)
     if restricted:
+        inputs = (MESSAGE_REACTION,) if reaction else (MESSAGES, PRESENCE_FIXES)
         async with engine.begin() as conn:
-            for tab in (MESSAGES, PRESENCE_FIXES):
+            for tab in inputs:
                 await conn.execute(
                     sa.update(tab).values(
                         exposure="operator",
@@ -336,6 +332,7 @@ async def _build_rollup(
     message_id: int,
     *,
     empty: bool = False,
+    reaction: bool = False,
 ) -> int:
     from nora.domain.rollup import Colocation, Daybook, Outing, Response, Tie
     from nora.infra.sql.rollups import SqlRollupStore
@@ -415,8 +412,8 @@ async def _build_rollup(
                     platform="signal",
                     conversation_id=room,
                     sent_ts=_UPDATED,
-                    replies=1,
-                    reactions=0,
+                    replies=int(not reaction),
+                    reactions=int(reaction),
                     edits=0,
                     responders=(_PERSON,),
                     named_persons=(),
@@ -453,8 +450,9 @@ async def test_rollup_registers_and_inherits_actual_input_scope(
     from nora.infra.sql.schema import METADATA
 
     registration = _rollup_registration()
-    message = await _record(engine, registration, restricted=restricted)
-    build = await _build_rollup(engine, registration, message)
+    reaction = family == "rollup_response"
+    message = await _record(engine, registration, restricted=restricted, reaction=reaction)
+    build = await _build_rollup(engine, registration, message, reaction=reaction)
     table = METADATA.tables[family]
     async with engine.connect() as conn:
         row = (

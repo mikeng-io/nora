@@ -14,8 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from nora.domain.graph_registration import Exposure
 from nora.domain.lineage import ROW, Lineage, split_room
 from nora.infra.sql.cognitive_graph_store import RowData, SqlCognitiveGraph
-from nora.infra.sql.item_registration import SqlItemRegistration, epoch_ms
+from nora.infra.sql.item_registration import SqlItemRegistration, epoch_ms, item_graph_id
 from nora.infra.sql.schema import (
+    MESSAGE_REACTION,
     MESSAGES,
     METADATA,
     PRESENCE_DERIVED_PLACES,
@@ -39,6 +40,20 @@ _POSITIONS = {
     "presence_derived_places": ("subject_id", "circle_id", "first_seen_ts"),
     "presence_corridors": ("subject_id", "sequence"),
 }
+
+
+_ROLLUP_KEYS = {
+    "rollup_colocation": ("persons",),
+    "rollup_outing": ("persons",),
+    "rollup_daybook": ("person_id", "local_date"),
+    "rollup_tie": ("person_a", "person_b", "iso_week"),
+}
+
+
+def rollup_key(table: sa.Table, row: RowData) -> tuple[Any, ...]:
+    if table is ROLLUP_RESPONSE:
+        return (item_graph_id("messages", (row["message_id"],), row["unit"]),)
+    return tuple(row[name] for name in (*_ROLLUP_KEYS[table.name], "valid_from_ms", "valid_to_ms"))
 
 
 def content_hash(row: RowData) -> str:
@@ -172,6 +187,13 @@ class AggregateWrites:
             )
         elif table is ROLLUP_RESPONSE:
             sources.append(sa.select(MESSAGES).where(MESSAGES.c.id == row["message_id"]))
+        if table is ROLLUP_RESPONSE and row["reactions"]:
+            reactions = MESSAGE_REACTION.c
+            sources.append(sa.select(MESSAGE_REACTION).where(
+                reactions.unit == unit, reactions.state == "live",
+                reactions.removed == 0, reactions.message_id == row["message_id"],
+                reactions.ts.between(low, high),
+            ))
         if people := {e.subject for e in entries if e.kind == "social"}:
             s = SOCIAL_ITEM.c
             sources.append(

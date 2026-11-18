@@ -750,7 +750,7 @@
  },
  "nora/domain/models.py": {
   "comment_blocks": 43,
-  "file_lines": 971
+  "file_lines": 968
  },
  "nora/domain/music.py": {
   "comment_blocks": 2
@@ -1016,7 +1016,6 @@
   "internal_docstrings": 2
  },
  "nora/infra/life360/places.py": {
-  "comment_blocks": 1,
   "internal_docstrings": 2
  },
  "nora/infra/music/ytdlp_source.py": {
@@ -1118,8 +1117,8 @@
   "comment_blocks": 1
  },
  "nora/infra/sql/audit.py": {
-  "comment_blocks": 10,
-  "file_lines": 1176,
+  "comment_blocks": 8,
+  "file_lines": 1174,
   "functions": {
    "reaction_states": 184
   },
@@ -1346,7 +1345,6 @@
  },
  "nora/infra/sql/mobility.py": {
   "comment_blocks": 1,
-  "file_lines": 1057,
   "internal_docstrings": 7
  },
  "nora/infra/sql/music_queue.py": {
@@ -1362,11 +1360,8 @@
   "internal_docstrings": 14
  },
  "nora/infra/sql/observations.py": {
-  "comment_blocks": 3,
-  "internal_docstrings": 6
- },
- "nora/infra/sql/presence.py": {
-  "comment_blocks": 1
+  "comment_blocks": 2,
+  "internal_docstrings": 5
  },
  "nora/infra/sql/profile_inputs.py": {
   "comment_blocks": 2,
@@ -1387,11 +1382,11 @@
   "functions": {
    "SqlRollupStore.message_facts": 179
   },
-  "internal_docstrings": 3
+  "internal_docstrings": 1
  },
  "nora/infra/sql/schema.py": {
   "comment_blocks": 190,
-  "file_lines": 5926,
+  "file_lines": 5918,
   "internal_docstrings": 4
  },
  "nora/infra/sql/snapshot.py": {
@@ -1404,8 +1399,8 @@
  },
  "nora/infra/sql/social_stream.py": {
   "comment_blocks": 1,
-  "file_lines": 1147,
-  "internal_docstrings": 3
+  "file_lines": 1008,
+  "internal_docstrings": 2
  },
  "nora/infra/sql/standing.py": {
   "comment_blocks": 7,
@@ -1504,7 +1499,7 @@
  "nora/ingest/pipeline.py": {
   "comment_blocks": 14,
   "functions": {
-   "IngestPipeline._run": 153
+   "IngestPipeline._run": 152
   },
   "internal_docstrings": 5
  },
@@ -2359,7 +2354,7 @@
   "internal_docstrings": 1
  },
  "tests/contract/test_memory_graph_contract.py": {
-  "file_lines": 1156
+  "file_lines": 1155
  },
  "tests/contract/test_memory_index_contract.py": {
   "comment_blocks": 1

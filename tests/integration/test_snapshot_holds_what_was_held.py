@@ -232,3 +232,37 @@ async def test_a_history_version_missing_a_later_column_restores_it_as_null(
             await restored_engine.dispose()
     assert report.orphaned == {}
     assert hidden_at is None
+
+
+async def test_snapshot_restores_scoped_rollup_written_before_graph_planes(
+    clean_pg_url: str, pg_template: str,
+) -> None:
+    engine = create_sql_engine(clean_pg_url)
+    try:
+        async with engine.begin() as conn:
+            await _write(conn, "rollup_build", 0)
+            await _write(conn, "rollup_tie", 0)
+            await conn.execute(sa.text(
+                "DELETE FROM row_history WHERE table_name = 'registry'"
+            ))
+            await conn.execute(sa.text(
+                "UPDATE row_history SET image = image - 'graph_id' "
+                "WHERE table_name = 'rollup_tie'"
+            ))
+        at = await _clock(engine)
+        async with sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, report):
+            target = create_sql_engine(url)
+            try:
+                async with target.connect() as conn:
+                    tie, registry = _table("rollup_tie"), _table("registry")
+                    pair = await conn.execute(sa.select(
+                        tie.c.unit, tie.c.person_a, tie.c.graph_id, registry.c.kind,
+                    ).select_from(tie.join(registry, (
+                        tie.c.graph_id == registry.c.id
+                    ) & (tie.c.unit == registry.c.unit))))
+                    assert pair.one()[:2] == ("u", "a")
+                assert report.orphaned == {}
+            finally:
+                await target.dispose()
+    finally:
+        await engine.dispose()
