@@ -187,7 +187,9 @@ def expiry(blobs: Any, cfg: Any, engine: Any, metrics: Any)-> ExpiryWiring:
     # poller is off; it reads every person's frames, opted out or not.
     story_expiry = (
         StoryMediaExpiry(
-            store=SqlSocialStreamStore(engine),
+            store=SqlSocialStreamStore(
+                engine, registration=engine.get_execution_options().get("item_registration"),
+            ),
             blobs=blobs,
             keep_days=cfg.social.story_media_keep_days,
             max_days=cfg.social.story_media_keep_max_days,

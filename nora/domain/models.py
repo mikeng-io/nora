@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Collection, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
 
@@ -224,7 +224,7 @@ class NormalizedMessage:
     # reply land back inside the same thread. See `ConversationTarget.thread`.
     thread: str = ""
     # None before admission, empty when admission found no enclosing unit.
-    admitted_unit: str | None = None
+    admitted_unit: str | None = field(default=None, compare=False, repr=False)
 
     def target(self) -> ConversationTarget:
         return ConversationTarget(

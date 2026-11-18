@@ -37,7 +37,7 @@ class SocialItemWrites:
         self._engine = engine
         self._opted_out = opted_out
         self._metrics = metrics
-        self._registration = registration or engine.get_execution_options().get("item_registration")
+        self._registration = registration
 
     async def insert_item(
         self, item: SocialItem, *, person: str, origin: Origin, seen_at: datetime,
