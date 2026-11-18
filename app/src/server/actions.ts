@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AuthError } from "next-auth";
-import { auth, DEV_LOGIN_ENABLED, signIn, signOut } from "@/auth";
+import { auth, DEV_LOGIN_ENABLED, TELEGRAM_LOGIN_ENABLED, signIn, signOut } from "@/auth";
 import { routing } from "@/i18n/routing";
 import { fullNumber, safeRegion } from "@/lib/dial-codes";
 import { CODE_PLATFORMS, type CodePlatform, SendThrottle, clientKey, requestCode } from "./otp";
@@ -30,6 +30,11 @@ export async function signInAsDev(locale: string, discordId: string, next?: stri
   if (!DEV_LOGIN_ENABLED) throw new Error("development sign-in is off");
   const l = safeLocale(locale);
   await signIn("dev", { discordId, redirectTo: safeNext(l, next) });
+}
+
+export async function signInWithTelegram(locale: string, next?: string | null) {
+  if (!TELEGRAM_LOGIN_ENABLED) throw new Error("Telegram sign-in is unavailable");
+  await signIn("telegram", { redirectTo: safeNext(safeLocale(locale), next) });
 }
 
 export async function signOutAction(locale: string, expectedSessionId?: string) {

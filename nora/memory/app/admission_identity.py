@@ -1,8 +1,10 @@
-"""Resolve graph references against one snapshot of authored identity and policy."""
+"""Resolve graph references through the selected identity backend and room topology."""
 
 from collections.abc import Collection, Iterable
 
+from nora.access import IdentityAccess
 from nora.domain.lineage import room_key, split_room
+from nora.memory.domain.admission_ports import AdmissionUnavailableError
 from nora.memory.domain.admission_proposals import RoomReference
 from nora.persons import Persons
 from nora.policy import Policy
@@ -11,24 +13,27 @@ from nora.policy import Policy
 class AdmissionIdentity:
     def __init__(
         self,
-        persons: Persons,
+        persons: Persons | None,
         policy: Policy,
         *,
+        access: IdentityAccess | None = None,
         nora_accounts: Iterable[tuple[str, str]] = (),
     ) -> None:
-        self._persons = persons
+        if access is None:
+            if persons is None:
+                raise ValueError("admission requires a selected identity backend")
+            access = IdentityAccess.for_files(persons, policy)
+        self._access = access
         self._units = frozenset(policy.unit_workspaces())
         self._rooms = policy.rooms()
         self._nora_accounts = frozenset(nora_accounts)
-        self._direct = {
-            platform: persons.direct_addresses(platform)
-            for platform in {room.platform for room in self._rooms}
-        }
 
     def resolve_admission_unit(self, ref: str) -> str | None:
         return ref if ref in self._units else None
 
-    def room(self, ref: str, unit: str, *, platform: str | None = None) -> RoomReference | None:
+    async def room(
+        self, ref: str, unit: str, *, platform: str | None = None,
+    ) -> RoomReference | None:
         named_platform, room_id = split_room(ref)
         platform = named_platform or platform
         matches = [
@@ -41,25 +46,29 @@ class AdmissionIdentity:
         if len(focus) != 1:
             return None
         selected = focus[0]
+        try:
+            direct = await self._access.direct_addresses(selected.platform)
+        except Exception as exc:
+            raise AdmissionUnavailableError(commit_uncertain=False) from exc
         return RoomReference(
             room_key(selected.platform, selected.primary_id),
             selected.unit,
-            not selected.ids.isdisjoint(self._direct[selected.platform]),
+            not selected.ids.isdisjoint(direct),
         )
 
-    def person(self, ref: str) -> str | None:
-        person_id = self._persons.subject_id_for(ref)
-        return person_id if person_id in self._persons.by_person else None
-
-    def principal(self, ref: str) -> str | None:
-        return "nora" if ref == "nora" else self.person(ref)
+    async def person(self, ref: str) -> str | None:
+        try:
+            person = await self._access.person(ref)
+        except Exception as exc:
+            raise AdmissionUnavailableError(commit_uncertain=False) from exc
+        return person.person_id if person is not None else None
 
     def is_nora(self, platform: str | None, sender: str | None) -> bool:
         if platform is None or not sender:
             return False
         return (platform, sender) in self._nora_accounts
 
-    def references(
+    async def references(
         self,
         unit: str,
         *,
@@ -67,7 +76,8 @@ class AdmissionIdentity:
         persons: Collection[str],
         principals: Collection[str],
     ) -> tuple[dict[str, RoomReference | None], dict[str, str | None]]:
-        room_refs = {ref: self.room(ref, unit) for ref in rooms}
-        person_refs = {ref: self.person(ref) for ref in persons}
-        person_refs.update((ref, self.principal(ref)) for ref in principals)
+        room_refs = {ref: await self.room(ref, unit) for ref in rooms}
+        person_refs = {ref: await self.person(ref) for ref in set(persons)}
+        for ref in set(principals):
+            person_refs[ref] = "nora" if ref == "nora" else await self.person(ref)
         return room_refs, person_refs

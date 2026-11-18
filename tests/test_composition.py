@@ -1412,7 +1412,7 @@ async def test_the_heartbeat_screens_proactive_rows_and_the_fire_path_can_stay_s
     try:
         (loop,) = _spawned(deps, "HeartbeatLoop.run")
         assert isinstance(loop._proactive, ProactiveScreen)
-        assert loop._proactive._policy is loop._policy
+        assert loop._proactive._policy is loop._access._policy
         path = loop._fire.__self__
         assert isinstance(path, FirePath)
         assert "proactive" in path._event_registry

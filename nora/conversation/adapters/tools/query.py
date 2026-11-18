@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from nora.agent.toolkit.clock import _HKT
 from nora.agent.toolkit.results import _memory_result, _record
-from nora.agent.toolkit.rooms import _readable_rooms, _speaker
+from nora.agent.toolkit.rooms import _name_rows, _readable_rooms, _speaker
 from nora.agent.toolkit.transcript import (
     _DISCOVERY_LIMIT,
     _HISTORY_LIMIT,
@@ -102,10 +102,11 @@ def _make__resolve_targets(deps):
                 ids=wanted[:_TARGET_MAX],
                 as_of_ms=as_of_ms,
             )
+            named = await _name_rows(persons, deps.room, list(found.values()),
+                                     platform=platform, conversation_id=conversation_id)
         except Exception:
             log.exception("record target read failed")
             return {}
-        named = persons.name_transcript(list(found.values()), platform=platform)
         return {
             mid: target_context(row, deleted=mid in gone, author=_speaker(row, display_name))
             for mid, row in zip(found, named, strict=True)
@@ -381,6 +382,8 @@ def _make__record_messages(deps):
                     )
                 )
             if hit.deleted:
+                if on_rows is not None:
+                    on_rows((replace(row, body=None),))
                 item["body"] = None
                 item.pop("was", None)
                 item["deleted"] = True
@@ -697,6 +700,8 @@ async def _record_query__run(c):
             ),
             as_of_ms=c.as_of_ms,
         )
+        c.rows = [(await _name_rows(c.persons, c.room, [h.row], platform=h.platform,
+                                   conversation_id=h.conversation_id))[0] for h in c.hits]
     except Exception:
         log.exception("record_query failed")
         _record(c.metrics, "record_query", "unavailable")
@@ -711,7 +716,6 @@ async def _record_query__run(c):
                 "note": _RECORD_QUERY_NONE + (_RECORD_QUERY_WITHHELD if c.withheld else ("")),
             },
         )
-    c.rows = [c.persons.name_transcript([h.row], platform=h.platform)[0] for h in c.hits]
     if c.media_join is not None:
         c.rows = list(await c.media_join.enrich(c.rows, path="load_transcript"))
     c.out = c._record_messages(c.hits, c.rows, rooms=c.rooms, near=c.near, now=c.now)

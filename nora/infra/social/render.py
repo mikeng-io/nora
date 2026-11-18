@@ -444,10 +444,8 @@ def _post_blocks(view: PostView, now: int) -> list[_Block]:
 
 
 def _post_note(view: PostView) -> str:
-    # A `code` means custody survived the look — even a failed one — so the
-    # note can offer the held handle instead of only the link that failed.
-    # Only the failure framings change: seen and never-looked reads have no
-    # failed item to explain.
+    # Failed-look framing can offer a verified custody code instead of the failed link.
+    # Seen and never-looked framing remain unchanged.
     kept = any(
         item.reading is not None and item.reading.code for item in view.items
     )

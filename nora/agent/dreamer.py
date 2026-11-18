@@ -885,7 +885,7 @@ class RegistryToolSource:
 
     def __init__(
         self, *, registry: ToolRegistry, store: Any, persons: Any, honcho: Any,
-        metrics: Metrics, ai_peer: str = "nora",
+        metrics: Metrics, ai_peer: str = "nora", access: Any = None,
         home_rooms: Mapping[str, HomeRoom] | None = None,
         scope_rooms: Mapping[str, HomeRoom] | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
@@ -893,12 +893,12 @@ class RegistryToolSource:
     ) -> None:
         self._registry = registry
         self._store = store
-        self._persons = persons
+        self._access = access
+        self._persons = access.persons_view() if access is not None else persons
         self._honcho = honcho
         self._metrics = metrics
         self._ai_peer = ai_peer
-        # Unit -> home room, from `Policy.home_rooms()`. Empty for every
-        # composition that names none.
+        # Unit -> home room from `Policy.home_rooms()`; empty when none is declared.
         self._home_rooms = home_rooms if home_rooms is not None else {}
         # Conversation id -> that room, for a SCOPE-keyed adaptor's home-room
         # grant. The same value type as `home_rooms` because it answers the same
@@ -987,7 +987,7 @@ class RegistryToolSource:
             room = Room(
                 platform=home.platform, conversation_id=home.conversation_id,
                 roster_source=self._rosters.get(home.platform),
-                persons=self._persons,
+                persons=self._persons, access=self._access,
                 # No tagger: the run is owed to nobody. `Room.scope()`'s degraded
                 # branch therefore narrows to nothing when the roster cannot be
                 # read, and `where_is` answers `unavailable` there.
@@ -996,7 +996,7 @@ class RegistryToolSource:
         else:
             room = Room(
                 platform="", conversation_id=key, roster_source=None,
-                persons=self._persons,
+                persons=self._persons, access=self._access,
             )
         registry = (
             self._registry if clock is None else self._registry.with_clock(clock)

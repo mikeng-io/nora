@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { personById } from "./allowlist";
 
 // Every way in ends as ONE identity.toml person (DEC-287), re-read on every
@@ -10,6 +10,11 @@ import { personById } from "./allowlist";
 vi.mock("server-only", () => ({}));
 const session = vi.hoisted(() => ({ current: null as null | { user: Record<string, unknown> } }));
 vi.mock("@/auth", () => ({ auth: async () => session.current }));
+const authority = vi.hoisted(() => ({ check: vi.fn() }));
+vi.mock("./management-session", async (original) => ({
+  ...await original<typeof import("./management-session")>(),
+  checkManagedSession: authority.check,
+}));
 
 const TOML = `
 [persons.miles]
@@ -24,7 +29,8 @@ name = "Sam"
 const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "identity-")), "identity.toml");
 fs.writeFileSync(file, TOML);
 process.env.IDENTITY_TOML_PATH = file;
-const { checkSession } = await import("./session");
+const { checkSession, sessionFailure } = await import("./session");
+afterEach(() => vi.unstubAllEnvs());
 
 describe("personById", () => {
   it("finds a person in the file, and nothing on the object's prototype", () => {
@@ -38,6 +44,8 @@ describe("personById", () => {
 describe("checkSession", () => {
   beforeEach(() => {
     session.current = null;
+    vi.stubEnv("NORA_IDENTITY_BACKEND", "file");
+    authority.check.mockReset();
   });
 
   it("a code session and a Discord session are the same person", async () => {
@@ -59,5 +67,31 @@ describe("checkSession", () => {
     expect(await checkSession()).toMatchObject({ status: "denied", via: "discord", name: "Stranger" });
     session.current = { user: {} };
     expect(await checkSession()).toEqual({ status: "no-session" });
+  });
+
+  it("managed mode refuses legacy sessions instead of consulting the TOML", async () => {
+    vi.stubEnv("NORA_IDENTITY_BACKEND", "managed");
+    session.current = { user: { personId: "miles", discordId: "100000000000000001" } };
+    expect(await checkSession()).toMatchObject({ status: "denied" });
+    expect(authority.check).not.toHaveBeenCalled();
+  });
+
+  it("uses the currently verified managed binding and preserves outages", async () => {
+    vi.stubEnv("NORA_IDENTITY_BACKEND", "managed");
+    session.current = { user: { managedIdentity: { authentication: { method: "telegram_oidc" } } } };
+    authority.check.mockResolvedValueOnce({ status: "ok", displayName: "Managed person",
+      binding: { person_id: "generated-managed-person" } });
+    expect(await checkSession()).toMatchObject({ status: "ok", via: "telegram",
+      personId: "generated-managed-person", displayName: "Managed person" });
+    authority.check.mockResolvedValueOnce({ status: "unavailable" });
+    const unavailable = await checkSession();
+    expect(unavailable).toEqual({ status: "unavailable" });
+    if (unavailable.status !== "ok") {
+      const response = sessionFailure(unavailable);
+      expect(response.status).toBe(503);
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    }
+    authority.check.mockResolvedValueOnce({ status: "denied" });
+    expect(await checkSession()).toMatchObject({ status: "denied", via: "telegram" });
   });
 });

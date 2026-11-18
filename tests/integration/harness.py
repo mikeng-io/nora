@@ -27,6 +27,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from nora.access import IdentityAccess
 from nora.app.dispatch import Dispatcher
 from nora.app.participation import ParticipationTrigger
 from nora.app.runtime import BackgroundTasks
@@ -44,7 +45,7 @@ from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.ingest.policy import RelevanceGatePolicy
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
-from nora.policy import load_policy
+from nora.policy import load_policy, permissive_policy
 from nora.testing import FakeAgentRunner, FakeMemoryStore, ScriptedTurn
 from tests.builders import load_example_config, override_config
 from tests.fakes import SinkSender
@@ -307,7 +308,7 @@ async def build_handler(
     tool_registry=None,
     participation_script=None,
     participation_rooms: tuple[str, ...] = ("g1",),
-    participation_clock: Callable[[], float] | None = None,
+    participation_clock: Callable[[], float] | None = None, room_commands=None,
 ) -> Harness:
     """Assemble real pipelines wired to a tmp db + a tmp COPY of the real doctrine dir +
     fakes.
@@ -482,14 +483,10 @@ async def build_handler(
             else FakeAgentRunner(participation_script, on_call=calls.append)
         )
     dispatcher, engagement, background, participation_trigger = build_offline_pipeline(
-        cfg, adapter=adapter, audit=store, memory=honcho_double, persons=persons,
+        cfg, adapter=adapter, audit=store, memory=honcho_double,
+        access=IdentityAccess.for_files(persons, permissive_policy()),
         doctrine_store=doctrine_store, runner=runner, metrics=metrics,
-        # None by default, which is what a scenario with no roster needs:
-        # `Room` reports an absent source as UNAVAILABLE, never as an empty room,
-        # so the room-scoped tools degrade honestly. A scenario that needs Nora
-        # to TAG somebody has to say who is actually in the group — and the
-        # roster gate means a scenario that forgets gets no mention at all,
-        # which is the fail-closed behaviour rather than a broken test.
+        # Missing roster data is unavailable; generated membership is required for mentions.
         roster_source=roster,
         tool_registry=tool_registry,
         tag_trace_store=tag_trace_store,
@@ -504,7 +501,7 @@ async def build_handler(
         # a scenario that appends typed source evidence sees it where production
         # would (transcript events, the standing slot, `record_query`'s kind
         # branch). No scenario's ingest writes it today, so it reads empty.
-        observations=SqlObservationStore(engine),
+        observations=SqlObservationStore(engine), room_commands=room_commands,
     )
     handler = _HandlerView(dispatcher=dispatcher, engagement=engagement, adapter=adapter)
 

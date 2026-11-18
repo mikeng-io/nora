@@ -168,7 +168,7 @@ class SubagentRunner:
         progress.title = job_title({"title": brief.title}, brief.objective)
         progress.clock = self._clock
         try:
-            tools = self._tools.build(job_id=job_id, checkpoint_sink=progress, **room)
+            tools = await self._tools.build(job_id=job_id, checkpoint_sink=progress, **room)
         except SubagentToolsError:
             log.exception("sub-agent %s: its tools could not be built", job_id)
             return SubagentOutcome(failure_reason="tools")

@@ -30,7 +30,7 @@
   {
     "name": "capture and export code belong to the fixed instrument",
     "file": "evals/grading_contract.py",
-    "old": "            \"nora/agent/telemetry.py\",\n            \"nora/obs/tracing.py\",\n            \"nora/subject/eval_evidence.py\",\n",
+    "old": "            \"nora/agent/telemetry.py\",\n            \"nora/app/raw_clients.py\",\n            \"nora/obs/tracing.py\",\n            \"nora/subject/eval_evidence.py\",\n",
     "new": "",
     "target": "tests/integration/test_grading_contract.py::test_capture_or_export_change_invalidates_the_fixed_measurement"
   },
@@ -50,15 +50,15 @@
   },
   {
     "name": "bounded SDK-owned judge client disables automatic retries",
-    "file": "nora/agent/structured.py",
-    "old": "            client_args[\"max_retries\"] = 0\n",
-    "new": "            client_args[\"max_retries\"] = 2\n",
+    "file": "nora/agent/punctuation.py",
+    "old": "            args[\"max_retries\"] = 0\n",
+    "new": "            args[\"max_retries\"] = 2\n",
     "target": "tests/integration/test_eval_run_budget_wired.py::test_sdk_owned_client_retry_setting_matches_the_run_boundary"
   },
   {
     "name": "direct reply judges keep the exact formatted request in capture",
     "file": "evals/rebuilt/grading.py",
-    "old": "                    record_eval_model_request(request)\n",
+    "old": "                record_eval_model_request(request)\n",
     "new": "",
     "target": "tests/integration/test_grading_contract.py::test_raw_reply_judge_captures_its_request_response_and_model_span"
   },

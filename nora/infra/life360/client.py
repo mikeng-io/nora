@@ -369,6 +369,10 @@ class Life360Client:
             # JSON, but not the members shape — an error envelope or a changed
             # schema. Unavailable rather than a spurious empty circle.
             return CircleRead(ReadStatus.UNAVAILABLE, detail="unexpected JSON shape")
+        ids = [row.get("id") if isinstance(row, dict) else None for row in body["members"]]
+        if (any(not isinstance(value, str) or not value.strip() for value in ids)
+                or len(set(ids)) != len(ids)):
+            return CircleRead(ReadStatus.UNAVAILABLE, detail="invalid member identifiers")
         members = tuple(parse_members(body, now_ms=now_ms))
         self._auth_failures = 0
         return CircleRead(ReadStatus.OK, members=members)

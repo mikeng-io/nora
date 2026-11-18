@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.access import IdentityAccess
 from nora.agent.dream_screen import text_offence
 from nora.agent.egress import LeakGuard
 from nora.agent.memory_search import MemorySearch
@@ -101,7 +102,7 @@ class HonchoWiring:
     memory: Any
 
 
-async def honcho(allowlist, cfg, persons) -> HonchoWiring:
+async def honcho(allowlist, cfg, persons, owner=None) -> HonchoWiring:
     # workspace > unit > room (DEC-214): every Honcho call is routed from its room or unit
     # to the Honcho workspace its Nora workspace is bound to, and to the unit's named scope
     # inside it. Resolved ONCE, here, from the three files that each hold one part of it…
@@ -119,6 +120,10 @@ async def honcho(allowlist, cfg, persons) -> HonchoWiring:
         ai_peer=cfg.honcho.ai_peer,
         workspace_router=router,
     )
+    if owner is not None:
+        # Owned before `ensure_workspace` and the foreign-workspaces refusal
+        # below can strand it — the client exists from here on.
+        owner.own_memory(memory)
     # Best-effort, never fatal — no try/except. Every bound Honcho workspace,
     # the Nora aiPeer in each (her replies feed under it to build her
     # self-model; peers are per Honcho workspace), and every unit's scope.
@@ -143,7 +148,7 @@ class SearchWiring:
     memory_search: Any
 
 
-def search(cfg, engine, metrics) -> SearchWiring:
+def search(cfg, engine, metrics, access=None) -> SearchWiring:
 
     # `[memory.index] read` (ships off): the one retrieval service, held by the tag path's
     # pre-fetch (`<recalled>`) and by the tool registry's `memory_search` below, one
@@ -168,6 +173,7 @@ def search(cfg, engine, metrics) -> SearchWiring:
             model=(
                 fingerprint(cfg.memory.index.embedder_model) if cfg.memory.index.embed else None
             ),
+            access=access,
             # The embedding worker's tick: a node waiting less than a
             # few of them is fresh, not a backlog that answers `partial`.
             drain_seconds=cfg.memory.index.refresh_seconds,
@@ -181,6 +187,23 @@ def search(cfg, engine, metrics) -> SearchWiring:
 @dataclass(frozen=True)
 class GraphWiring:
     cognition_memory: Any
+
+
+def _private_names(persons: Any, access: Any) -> tuple[str, ...]:
+    """File names/handles; managed source names resolve before each screened read."""
+    if access is not None and not access.is_file_backend:
+        return ()
+    return tuple(
+        {
+            name
+            for p in persons.by_person.values()
+            for name in (p.person_id, p.name, p.first_name, p.last_name, *p.aliases)
+            if name
+        }
+        | {value for (_, value) in persons.index}
+        | set(persons._instagram_handles.values())
+        | set(persons._instagram_usernames)
+    )
 
 
 def graph(
@@ -198,6 +221,7 @@ def graph(
     route_model,
     tier,
     unit_scopes,
+    access=None,
 ) -> GraphWiring:
     cognition_memory = None
     if cfg.memory.graph.enabled and cfg.memory.graph.comprehend.enabled:
@@ -228,7 +252,8 @@ def graph(
                     for u in unit_scopes()
                 }
             ),
-            social_off_ids=persons.social_off_ids(),
+            access=access,
+            social_off_ids=persons.social_off_ids() if access is None else frozenset(),
             can_release_place=place_release(
                 rooms_of=lambda u: [
                     (c.platform, c.primary_id, c.location)
@@ -240,6 +265,7 @@ def graph(
                     conversation_id=conversation_id,
                     roster_source=rosters.get(platform),
                     persons=persons,
+                    access=access,
                     self_ids=registry.self_aliases(),
                 ).members(),
                 circles=presence_circles,
@@ -282,26 +308,17 @@ def graph(
             content_checks=content_checks,
             profile=wake_profile_store,
             listed_rooms=(lambda u, p: wake_listed_rooms.get((u, p))),
-            private_names=tuple(
-                {
-                    name
-                    for p in persons.by_person.values()
-                    for name in (p.person_id, p.name, p.first_name, p.last_name, *p.aliases)
-                    if name
-                }
-                | {value for (_, value) in persons.index}
-                | set(persons._instagram_handles.values())
-                | set(persons._instagram_usernames)
-            ),
+            private_names=_private_names(persons, access),
         )
     return GraphWiring(cognition_memory=cognition_memory)
 
 
 
 def admission(
-    engine: AsyncEngine, persons: Persons, policy: Policy, leak_guard: LeakGuard, *,
+    engine: AsyncEngine, persons: Persons | None, policy: Policy, leak_guard: LeakGuard, *,
     content_checks: bool, nora_accounts: Iterable[tuple[str, str]] = (),
+    access: IdentityAccess | None = None,
 ) -> AdmissionService:
-    identity = AdmissionIdentity(persons, policy, nora_accounts=nora_accounts)
+    identity = AdmissionIdentity(persons, policy, access=access, nora_accounts=nora_accounts)
     store = SqlAdmissionStore(SqlAdmissionRows(engine, identity), SqlCognitiveGraph(engine))
     return AdmissionService(store, identity, leak_guard, content_checks=content_checks)

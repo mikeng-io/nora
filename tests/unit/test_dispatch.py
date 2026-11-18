@@ -107,6 +107,26 @@ async def test_an_ordinary_ambient_message_is_never_noted() -> None:
     assert background.spawned == []
 
 
+async def test_a_room_command_spawns_the_command_occasion_before_the_engage_gate() -> None:
+    """The direct-ingress half of the one-command rule: whatever predicate
+    composition hands `room_command` runs BEFORE the engage decision is
+    consulted, and the spawned request carries `room_command` — the same
+    occasion durable ingress reconstructs off the same predicate."""
+    engagement, background = _Engagement(), _Background()
+    dispatcher = Dispatcher(
+        ingest=_Ingest(EngageDecision(engage=False, reason="no_trigger")),
+        engagement=engagement, background=background,
+        room_command=lambda message: message.body.startswith("!!!member"),
+    )
+
+    await dispatcher.on_message(_msg(body="!!!member add @who"))
+
+    assert len(background.spawned) == 1
+    await background.spawned[0]
+    assert len(engagement.requests) == 1
+    assert engagement.requests[0].occasion == "room_command"
+
+
 async def test_a_tag_still_spawns_the_engagement_turn() -> None:
     """The control: the room-verdict branch must not disturb the one path
     that existed before it."""

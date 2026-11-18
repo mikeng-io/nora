@@ -1,0 +1,16 @@
+[
+  {
+    "name": "an unbudgeted URL-mount transport dispatches uncounted while the default is bounded",
+    "file": "nora/subject/model_gateway.py",
+    "old": "        # `_send_single_request` dispatches through the transport selected\n        # for this URL — a matching mount, not the client's default.\n        select = getattr(client, \"_transport_for_url\", None)\n        transport = (select(request.url) if select is not None\n                     else getattr(client, \"_transport\", None))\n        if budget is None or getattr(transport, \"_budget\", None) is not budget:",
+    "new": "        if budget is None or getattr(\n                getattr(client, \"_transport\", None), \"_budget\", None) is not budget:",
+    "target": "tests/integration/subject/test_model_gateway.py::test_a_mounted_unbudgeted_transport_is_refused_before_the_upstream"
+  },
+  {
+    "name": "a redirect-built second attempt is admitted as if caller-declared",
+    "file": "nora/subject/model_gateway.py",
+    "old": "        if request.extensions.get(_ADMITTED_DISPATCH):\n            return \"model_dispatch_replayed\"\n        return None",
+    "new": "        return None",
+    "target": "tests/integration/subject/test_model_gateway.py::test_a_post_preserving_redirect_creates_no_second_attempt"
+  }
+]

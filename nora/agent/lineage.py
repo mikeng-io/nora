@@ -51,8 +51,8 @@ accounts, and a room whose live roster could not be read or holds one of them.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
-from typing import Protocol, TypeVar
+from dataclasses import dataclass, field, replace
+from typing import Any, Protocol, TypeVar
 
 from ..domain.culture import CultureRevision
 from ..domain.entries import Entry
@@ -75,6 +75,8 @@ from ..domain.lineage import (
     room_key,
 )
 from ..domain.live import LiveMapping, LiveSequence
+from ..domain.managed import room_scope_id
+from ..domain.management import Scope, ScopeKind
 from ..domain.memo import MemoRevision
 from ..domain.notes import Note
 from ..domain.standing import Standing
@@ -198,6 +200,8 @@ def entry_permits(entry: LineageEntry, target: RenderRoom, *, origin: str | None
     row carrying it was written in: the only room an unknown kind is shown in."""
     if excluded(entry.exclude_persons, target):
         return False
+    if entry.subject is not None:
+        entry = replace(entry, subject=target.canonical(entry.subject))
     predicate = PREDICATES.get(entry.kind)
     if predicate is None:
         return target.room is not None and target.room.is_room(origin)
@@ -237,7 +241,7 @@ def excluded(exclude_persons: Iterable[str], target: RenderRoom) -> bool:
     """True when a row naming `exclude_persons` may NOT be shown in B: B lists
     one of them or anyone (`*`), or B's live roster holds one of them, holds
     an account Nora cannot name, or could not be read. Empty: never excluded."""
-    names = frozenset(exclude_persons)
+    names = frozenset(target.canonical(p) for p in exclude_persons)
     if not names:
         return False
     b, live = target.room, target.live
@@ -273,6 +277,7 @@ class LineagePolicy:
     circles: Sequence[frozenset[str]] = ()
     mode: LineageMode = "off"
     content_checks: bool = True
+    _access: Any = field(default=None, repr=False, compare=False)
     _by_id: Mapping[tuple[str, str], RoomFacts] = field(
         default_factory=dict, repr=False, compare=False,
     )
@@ -281,12 +286,13 @@ class LineagePolicy:
     def from_policy(
         cls, policy: Policy, *, circles: Sequence[Circle] = (),
         mode: LineageMode = "off",
-        content_checks: bool = True,
+        content_checks: bool = True, access: Any = None,
     ) -> LineagePolicy:
         rooms = LiveSequence(lambda: tuple(
             RoomFacts(
                 platform=c.platform, ids=c.ids, unit=c.unit,
-                persons=c.persons, location=c.location, label=c.label,
+                persons=None if access is not None and not access.is_file_backend else c.persons,
+                location=c.location, label=c.label,
                 primary_id=c.primary_id,
             )
             for c in policy.rooms()
@@ -294,7 +300,7 @@ class LineagePolicy:
         return cls(
             rooms=rooms, circles=LiveSequence(lambda: tuple(c.person_ids for c in circles)),
             mode=mode,
-            content_checks=content_checks,
+            content_checks=content_checks, _access=access,
             _by_id=LiveMapping(lambda: {(r.platform, cid): r for r in rooms for cid in r.ids}),
         )
 
@@ -304,11 +310,34 @@ class LineagePolicy:
         return RenderRoom(
             room=self._by_id.get((platform, conversation_id)),
             rooms=tuple(self.rooms),
-            circles=tuple(self.circles),
+            circles=(tuple(self.circles)
+                     if self._access is None or self._access.is_file_backend else ()),
             live=live,
             mode=self.mode,
             content_checks=self.content_checks,
         )
+
+
+    async def read_room(
+        self, *, platform: str, conversation_id: str, live: LiveRoom | None = None,
+    ) -> RenderRoom:
+        if self._access is None or self._access.is_file_backend or self.mode == "off":
+            return self.render_room(platform=platform, conversation_id=conversation_id, live=live)
+        rooms = tuple(self.rooms)
+        target = next((r for r in rooms
+                       if r.platform == platform and conversation_id in r.ids), None)
+        if target is None:
+            return RenderRoom(None, mode=self.mode, content_checks=self.content_checks)
+        mine = tuple(r for r in rooms if r.unit == target.unit)
+        scopes = tuple(Scope(ScopeKind.ROOM, room_scope_id(r.platform, r.primary_id)) for r in mine)
+        snapshot = await self._access.lineage_snapshot(scopes)
+        selected = tuple(replace(r, persons=snapshot.members[scope.id])
+                         for r, scope in zip(mine, scopes, strict=True))
+        room = next(r for r in selected if r.platform == platform and conversation_id in r.ids)
+        result = RenderRoom(room, rooms=selected, circles=snapshot.circles,
+                            aliases=snapshot.aliases,
+                            mode=self.mode, content_checks=self.content_checks)
+        return result.with_live(live)
 
 
 @dataclass(frozen=True)

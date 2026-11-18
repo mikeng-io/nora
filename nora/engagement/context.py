@@ -26,6 +26,7 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Any, NamedTuple, Protocol
 
+from nora.access import IdentityAccess
 from nora.agent.clock import local_now
 from nora.agent.egress import scan_identifiers
 from nora.agent.lineage import (
@@ -60,6 +61,8 @@ from nora.domain.lineage import (
     WORKING_SET,
     RenderRoom,
 )
+from nora.domain.managed import room_scope_id
+from nora.domain.management import Scope, ScopeKind
 from nora.domain.media_join import MediaJoin
 from nora.domain.memo import Memo, MemoStore
 from nora.domain.memory_graph import Subgraph, WorkItem
@@ -208,7 +211,7 @@ class TranscriptInjection:
         profile: ProfileHeads | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
         self_ids: frozenset[str] = frozenset(),
-        observations: Any = None,
+        observations: Any = None, access: Any = None,
     ) -> None:
         self._rosters = rosters or {}
         self._self_ids = self_ids
@@ -236,7 +239,7 @@ class TranscriptInjection:
         # none — which renders no `<standing>` block.
         self._shared_reader = shared
         self._memory = memory
-        self._persons = persons
+        self._access = access or IdentityAccess.for_files(persons, policy)
         self._context_window = context_window
         # `None` renders everything that was read (every harness that predates
         # `[store] prompt_window`); a number renders at most that many rows,
@@ -315,33 +318,20 @@ class TranscriptInjection:
         # `nora_errors_total` (R-27), never a quiet fall back to the old block.
         self._profile_reader = profile
 
+    @staticmethod
+    def _room_scope(msg: NormalizedMessage) -> Scope:
+        """The message's trusted room scope."""
+        return Scope(ScopeKind.ROOM, room_scope_id(msg.platform, msg.conversation_id))
+
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
-        # Resolved BEFORE the gather because reads in it are keyed on it, and it
-        # is a pure dict lookup — no reason for it to be a step.
-        ref = self._persons.resolve(msg.platform, msg.sender_id)
+        # Resolved BEFORE the gather because reads in it are keyed on it.
+        ref = await self._access.resolve_ref(
+            msg.platform, msg.sender_id, scope=self._room_scope(msg))
 
-        # CONCURRENT: the reads are independent, so gathering hides each behind
-        # the slowest instead of stacking their round trips (transcript, Honcho)
-        # end to end at the FRONT of every tag, before the first model call.
-        #
-        # Every helper is written not to raise, which is what makes `gather` safe
-        # here: one exception would otherwise cancel its siblings and take the
-        # turn down with it. That is the same property `MemoryStore`'s "never
-        # load-bearing" rule claims; this does not rely on the adapter to
-        # honour it.
-        #
-        # The gather is nested because `asyncio.gather`'s stub types only six
-        # positional awaitables distinctly; a seventh falls through to the
-        # homogeneous overload where mypy joins every return type down to
-        # `object`. Each inner gather stays within the typed overloads.
-        #
-        # `_notes` is the one read scoped by UNIT rather than by room, and it is
-        # gathered beside the rest anyway — where a read is scheduled says
-        # nothing about what it is keyed on.
-        #
-        # `<presence>` is on the front of the turn like the rest because adapter
-        # health must be read now, not remembered.
+        # Helpers contain their failures; independent reads overlap. Nested gathers
+        # preserve distinct result types within asyncio's six-awaitable overload.
+        # Scheduling unit-keyed notes beside room reads does not widen their scope.
         async def transcript_and_prefetch() -> Any:
             transcript, character, profiles = await self._recent_with_character(msg, ref)
             prefetch = await self._prefetch(msg, ref, transcript)
@@ -380,7 +370,8 @@ class TranscriptInjection:
         )
 
         # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
-        transcript = self._persons.name_transcript(transcript, platform=msg.platform)
+        transcript = await self._access.name_transcript(
+            transcript, platform=msg.platform, scope=self._room_scope(msg))
         # THEN the media join, after the transcript read and before the context
         # is frozen. It is a second round trip, so it is NOT in the gather above:
         # it needs the rows the gather returns. ONE bounded query per
@@ -440,9 +431,9 @@ class TranscriptInjection:
             and prefetch.found["status"] == "partial",
             # A pure lookup (policy.toml, identity.toml), no read: the room's
             # listed persons and their aliases for `<room_members>`.
-            room_members=self._room_members(msg),
+            room_members=await self._room_members(msg),
             lineage_room=(
-                self._lineage.render_room(
+                await self._lineage.read_room(
                     platform=msg.platform, conversation_id=msg.conversation_id,
                 )
                 if self._lineage is not None else None
@@ -456,15 +447,14 @@ class TranscriptInjection:
         """Read the tools' scoped graph from structural anchors and index hits."""
         if self._memory_search is None or self._lineage is None:
             return None
-        target = self._lineage.render_room(
-            platform=msg.platform, conversation_id=msg.conversation_id,
-        )
+        target = await self._render_room(msg)
         if target.room is None:
             return None
         listed = target.room.persons
         mentioned = [
             r.person_id for v in sorted(msg.mentions)
-            if (r := self._persons.resolve(msg.platform, v)) is not None
+            if (r := await self._access.resolve_ref(
+                    msg.platform, v, scope=self._room_scope(msg))) is not None
         ]
         about = list(dict.fromkeys(
             ([ref.person_id] if ref is not None else []) + mentioned,
@@ -488,8 +478,8 @@ class TranscriptInjection:
             found = await asyncio.wait_for(traced_read(
                 "memory_index", "prefetch", self._memory_search.read(
                     query=query, depth=2, person_id=None, target=target,
-                    now_ms=int(now.timestamp() * 1000), people=self._room_members(msg),
-                    social_off=self._persons.social_off_ids(listed or ()),
+                    now_ms=int(now.timestamp() * 1000), people=await self._room_members(msg),
+                    social_off=await self._access.social_off_ids(listed or ()),
                     about=about, media=media,
                     anchors=preview_seeds(item, {}), cache=cache,
                     content_checks=target.content_checks,
@@ -552,13 +542,12 @@ class TranscriptInjection:
             prefetch.found["status"] = "partial"
         return ({"text": text},)
 
-    def _room_members(self, msg: NormalizedMessage) -> tuple[PersonRef, ...]:
+    async def _room_members(self, msg: NormalizedMessage) -> tuple[PersonRef, ...]:
         """This room's listed persons, for `<room_members>`; empty for a room
         outside the policy or a `persons = "*"` room (`Persons.room_members`)."""
-        if self._policy is None:
+        if self._policy is None and self._access.is_file_backend:
             return ()
-        conv = self._policy.conversation(msg.platform, msg.conversation_id)
-        return self._persons.room_members(conv.persons) if conv is not None else ()
+        return await self._access.room_refs(msg.platform, msg.conversation_id)
 
     async def _culture(self, msg: NormalizedMessage) -> CultureRevision | None:
         """This room's account, or `None` (DEC-207).
@@ -618,16 +607,34 @@ class TranscriptInjection:
             return read, (), await self._profiles(msg, ref, shown)
         return read, await self._character(msg, ref, shown), ()
 
-    def _platforms_of(self, person_id: str) -> tuple[str, ...]:
+    async def _platforms_of(self, person_id: str) -> tuple[str, ...]:
         """The display names of the networks one person is reachable on, for
         their authored identity lines — "Signal", "Discord", never a handle or
         a number (R-18). Read off the identity index, so a renamed platform
         cannot drift from what `resolve` matches."""
         return tuple(sorted({
-            platform_name(platform)
-            for (platform, _), pid in self._persons.index.items()
-            if pid == person_id
+            platform_name(a.platform)
+            for a in await self._access.accounts_for(person_id)
         }))
+
+    def _obs_actor_name(
+        self, platform: str, actor: str | None, *, known: bool = True
+    ) -> str | None:
+        """The name a sync summary renders — file mode only, `None` under managed."""
+        if not (self._access.is_file_backend and actor and known):
+            return None
+        return getattr(
+            self._access.persons_view().resolve(platform, actor), "name", None)
+
+    async def _render_room(self, msg: NormalizedMessage) -> Any:
+        """The lineage policy's room view — configured lineage or policy-derived."""
+        lineage = self._lineage
+        if lineage is None:
+            if self._policy is None:
+                raise ValueError("a room view requires lineage or policy")
+            lineage = LineagePolicy.from_policy(self._policy, access=self._access)
+        return await lineage.read_room(
+            platform=msg.platform, conversation_id=msg.conversation_id)
 
     async def _profiles(
         self, msg: NormalizedMessage, ref: PersonRef | None,
@@ -651,13 +658,11 @@ class TranscriptInjection:
         convo = self._policy.conversation(msg.platform, msg.conversation_id)
         if convo is None or not convo.unit:
             return ()
-        members = self._room_members(msg)
-        target = (self._lineage or LineagePolicy.from_policy(self._policy)).render_room(
-            platform=msg.platform, conversation_id=msg.conversation_id,
-        )
+        members = await self._room_members(msg)
+        target = await self._render_room(msg)
         room = Room(
             platform=msg.platform, conversation_id=msg.conversation_id,
-            roster_source=self._rosters.get(msg.platform), persons=self._persons,
+            roster_source=self._rosters.get(msg.platform), access=self._access,
             tagger=ref, self_ids=self._self_ids,
         )
 
@@ -703,8 +708,8 @@ class TranscriptInjection:
             views.append(view)
         # THEIRS: every listed person this turn is about, with their authored
         # identity lines (45 §3: rendered, never written).
-        for person in tag_character_people(
-            members, persons=self._persons, message=msg,
+        for person in await tag_character_people(
+            members, access=self._access, message=msg,
             tagger=ref, transcript=transcript,
         ):
             view = await one(
@@ -712,7 +717,7 @@ class TranscriptInjection:
                 entity="person", of=person.person_id, stage="tag_profile_person",
                 authored=authored_identity(
                     name=person.name, aliases=person.aliases,
-                    platforms=self._platforms_of(person.person_id),
+                    platforms=await self._platforms_of(person.person_id),
                 ),
             )
             if view is not None:
@@ -756,9 +761,9 @@ class TranscriptInjection:
             return ()
         return await read_character(
             self._culture_reader, unit=convo.unit,
-            members=tag_character_people(
-                self._room_members(msg), persons=self._persons, message=msg,
-                tagger=ref, transcript=transcript,
+            members=await tag_character_people(
+                await self._room_members(msg), access=self._access,
+                message=msg, tagger=ref, transcript=transcript,
             ),
             stage="tag_character", platform=msg.platform, metrics=self._metrics,
         )
@@ -1036,10 +1041,9 @@ class TranscriptInjection:
             room = Room(
                 platform=msg.platform, conversation_id=msg.conversation_id,
                 roster_source=self._rosters.get(msg.platform),
-                persons=self._persons, tagger=ref, self_ids=self._self_ids,
+                tagger=ref, self_ids=self._self_ids, access=self._access,
             )
-            target = self._lineage.render_room(
-                platform=msg.platform, conversation_id=msg.conversation_id)
+            target = await self._render_room(msg)
             try:
                 narrowed = await ledger_target(target, room)
             except Exception:
@@ -1148,22 +1152,14 @@ class TranscriptInjection:
                 "nora_errors_total", stage="observations", platform=msg.platform)
             return (), (), True, 0, 0
 
-        def actor_of(obs: Any) -> str | None:
-            if not obs.actor_id or obs.actor_status != "known":
-                return None
-            ref = self._persons.resolve(obs.scope.platform, obs.actor_id)
-            return ref.name if ref is not None else None
-
-        def name_of(platform: str, ref: str) -> str | None:
-            found = self._persons.resolve(platform, ref)
-            return found.name if found is not None else None
+        # `observation_summary`/`head_summary` are sync renderers — file-mode
+        # names only, never a stale managed answer (`_obs_actor_name`).
 
         # A vote's option ref resolves to the definition's label through
         # the object's OWN head (matched on ref + its account/thread —
         # two accounts' same-named polls never lend each other labels).
-        poll_heads = {
-            (h.object_ref, h.account_key, h.thread): h
-            for h in heads if h.kind == "poll"}
+        poll_heads = {(h.object_ref, h.account_key, h.thread): h
+                      for h in heads if h.kind == "poll"}
 
         def option_label(r: Any, ref: str) -> str | None:
             h = poll_heads.get((
@@ -1180,7 +1176,9 @@ class TranscriptInjection:
                        if r.observation.occurred_ms is not None
                        else r.observation.received_ms),
                 time_quality=r.observation.time_quality,
-                actor=actor_of(r.observation),
+                actor=self._obs_actor_name(
+                    r.observation.scope.platform, r.observation.actor_id,
+                    known=r.observation.actor_status == "known"),
                 actor_status=r.observation.actor_status,
                 handle=object_handle(
                     r.observation.object_kind, r.observation.object_ref,
@@ -1188,7 +1186,7 @@ class TranscriptInjection:
                     thread=r.observation.scope.thread),
                 summary=observation_summary(
                     r.observation,
-                    name_of=lambda ref, o=r.observation: name_of(
+                    name_of=lambda ref, o=r.observation: self._obs_actor_name(
                         o.scope.platform, ref),
                     option_label=lambda ref, r=r: option_label(r, ref)),
                 target_message_id=r.target_message_id,
@@ -1243,7 +1241,7 @@ class TranscriptInjection:
                 handle=handle_of(h),
                 summary="", ordering=h.ordering,
                 state=head_summary(
-                    h, name_of=lambda ref: name_of(msg.platform, ref)),
+                    h, name_of=lambda ref: self._obs_actor_name(msg.platform, ref)),
                 received_ms=h.received_ms,
                 revision=revision_label(h.position, h.scope),
                 coverage=coverage_label(h.coverage),
@@ -1278,14 +1276,13 @@ class TranscriptInjection:
         if self._lineage is not None and self._lineage.mode == "on":
             notes = derived_view(
                 notes=notes, standing=None, culture=None,
-                target=self._lineage.render_room(
-                    platform=msg.platform, conversation_id=msg.conversation_id)).notes
+                target=await self._render_room(msg)).notes
         out: list[RetainedSource] = []
         more = 0
         seen: set[str] = set(shown_handles)
+
         def name_of(person_ref: str) -> str | None:
-            found = self._persons.resolve(msg.platform, person_ref)
-            return found.name if found is not None else None
+            return self._obs_actor_name(msg.platform, person_ref)
 
         for note in notes:
             for ref in note.object_refs:
@@ -1362,8 +1359,9 @@ class TranscriptInjection:
                 self._audit.by_ids(
                     platform=msg.platform, conversation_id=msg.conversation_id,
                     ids=tuple(sorted(wanted))[:_OBSERVATION_TARGET_MAX]))
-            named = self._persons.name_transcript(
-                list(found.values()), platform=msg.platform)
+            named = await self._access.name_transcript(
+                list(found.values()), platform=msg.platform,
+                scope=self._room_scope(msg))
             targets = {
                 mid: target_context(
                     row, deleted=mid in gone,

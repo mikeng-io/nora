@@ -1,0 +1,44 @@
+[
+  {
+    "name": "subject room authority comes from the composed policy",
+    "file": "nora/subject/obtain.py",
+    "old": "        convo = _conversation_for(spec, deps.config_reload.policy)",
+    "new": "        convo = _conversation_for(spec, __import__(\"nora.policy\", fromlist=[\"load_policy\"]).load_policy(spec.workdir / \"policy.toml\"))",
+    "target": "tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[obtain-True] tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[replay-True]"
+  },
+  {
+    "name": "a failed room resolution closes composed dependencies",
+    "file": "nora/subject/obtain.py",
+    "old": "            await close_dependencies(deps)",
+    "new": "            pass  # leak graph after admission failure",
+    "target": "tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[False]"
+  },
+  {
+    "name": "the composition retains its directory control owner",
+    "file": "nora/app/composition.py",
+    "old": "        config_reload=reload_files, discord_control=discord_control,",
+    "new": "        config_reload=reload_files, discord_control=None,",
+    "target": "tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[obtain-True] tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[replay-True]"
+  },
+  {
+    "name": "shared shutdown closes the bridge directory client",
+    "file": "nora/app/lifecycle.py",
+    "old": "        stack.push_async_callback(discord_control.close)",
+    "new": "        pass  # leave reader connection open",
+    "target": "tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[obtain-True] tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[replay-True]"
+  },
+  {
+    "name": "isolated subject teardown uses the shared lifecycle",
+    "file": "nora/subject/environment.py",
+    "old": "        await close_dependencies(subject.deps)",
+    "new": "        pass  # skip subject resource owners",
+    "target": "tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[obtain-True] tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory[replay-True]"
+  },
+  {
+    "name": "a close failure still unwinds downstream resources",
+    "file": "nora/app/lifecycle.py",
+    "old": "async def close_dependencies(deps: Any, *, health_runner: Any = None) -> None:\n    \"\"\"Close in dependency order, unwinding remaining owners after a failure.\"\"\"\n    async with AsyncExitStack() as closing:\n        _push_close_order(\n            closing,\n            audit=deps.audit,\n            managed_session=getattr(deps, \"managed_session\", None),\n            blobs=getattr(deps, \"blobs\", None),\n            memory=getattr(deps, \"memory\", None),\n            model_clients=deps.model_clients,\n            client=deps.client,\n            computer_close=(\n                deps.computer_lifecycle.close\n                if deps.computer_lifecycle is not None\n                else None\n            ),\n            discord_control=getattr(deps, \"discord_control\", None),\n            adapter_closes=tuple(\n                close\n                for adapter in deps.registry.adapters.values()\n                if (close := getattr(adapter, \"close\", None)) is not None\n            ),\n            bridge_redis=(\n                deps.bridge_runtime.redis if deps.bridge_runtime is not None else None\n            ),\n            bridge_stop=(\n                deps.bridge_runtime.stop if deps.bridge_runtime is not None else None\n            ),\n            health_runner=health_runner,\n            background=deps.background,\n            subagent_backend=deps.subagent_backend,\n            cognition_shutdown=deps.cognition_shutdown,\n        )",
+    "new": "async def close_dependencies(deps: Any, *, health_runner: Any = None) -> None:\n    if deps.cognition_shutdown is not None:\n        await deps.cognition_shutdown()\n    if deps.subagent_backend is not None:\n        await deps.subagent_backend.shutdown()\n    await deps.background.cancel_all()\n    if health_runner is not None:\n        await health_runner.cleanup()\n    if deps.bridge_runtime is not None:\n        deps.bridge_runtime.stop()\n        await deps.bridge_runtime.redis.aclose()\n    for adapter in deps.registry.adapters.values():\n        close = getattr(adapter, \"close\", None)\n        if close is not None:\n            await close()\n    if getattr(deps, \"discord_control\", None) is not None:\n        await deps.discord_control.close()\n    if deps.computer_lifecycle is not None:\n        await deps.computer_lifecycle.close()\n    await deps.client.close()\n    for client in deps.model_clients:\n        await client.close()\n    if getattr(deps, \"managed_session\", None) is not None:\n        await deps.managed_session.close()\n    await deps.audit.aclose()",
+    "target": "tests/unit/test_cognition_wiring.py::test_the_app_stops_the_cognition_sessions_before_it_closes_the_client_and_the_audit"
+  }
+]

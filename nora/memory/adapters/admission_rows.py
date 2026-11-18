@@ -94,7 +94,7 @@ class SqlAdmissionRows:
                     )
                 )
                 for row in values.mappings():
-                    found[row["id"]] = self._facts(name, row)
+                    found[row["id"]] = await self._facts(name, row)
                     keys.discard(row["id"])
             if keys:
                 raise AdmissionUnavailableError(commit_uncertain=False)
@@ -119,17 +119,17 @@ class SqlAdmissionRows:
             result.setdefault(source, []).append(target)
         return result
 
-    def _facts(self, table: str, row: sa.RowMapping) -> RowFacts:
+    async def _facts(self, table: str, row: sa.RowMapping) -> RowFacts:
         origin, unit = row["origin_room"], row["unit"]
         platform = row.get("source_platform")
-        room = self._identity.room(origin, unit, platform=platform) if origin else None
+        room = await self._identity.room(origin, unit, platform=platform) if origin else None
         author: PersonAuthor | Literal["nora"] | None = None
         if table in _SPEECH:
             sender = row["sender"]
             if row.get("source_is_nora") or self._identity.is_nora(platform, sender):
                 author = "nora"
             elif sender and row["sender_person"]:
-                person = self._identity.person(row["sender_person"])
+                person = await self._identity.person(row["sender_person"])
                 if person is not None:
                     author = PersonAuthor(person)
         is_dm = row.get("source_room_type") == "dm" or bool(room and room.is_dm)

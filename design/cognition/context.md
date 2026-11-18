@@ -41,7 +41,7 @@ holds; Standing and related last.
 
 | | called, ambient | proactive | debrief | wake | review |
 |---|---|---|---|---|---|
-| floor | doctrine; the message and what it quotes, or the room window; transcript; members; clock and presence; spoken-turn framing; the tool catalogue; the room's computer, documents and sub-agent state | doctrine; the due intention, what it rests on and serves, and why now; transcript; members; clock and presence | the pass's items and recorded outcome; the room's messages since the last debrief | doctrine; the agenda; clock; members; transcript; rooms; read scope; the agenda rooms' document index; lesson evidence: corrections and closed response episodes past the lessons cursor | the rows due for verification or grading, their current revisions, later evidence and source health |
+| floor | doctrine; the message and what it quotes, or the room window; transcript; members; clock and presence; spoken-turn framing; the tool catalogue; the room's computer, documents and sub-agent state | doctrine; the due intention, what it rests on and serves, and why now; transcript; members; clock and presence | the pass's items and recorded outcome; the room's messages since the last debrief | doctrine; the agenda; clock; members and their presence; transcript; rooms; read scope; the agenda rooms' document index; lesson evidence: corrections and closed response episodes past the lessons cursor | the rows due for verification or grading, their current revisions, later evidence and source health |
 | presentations | profile per subject, Standing, lessons, related | profile per subject, Standing, lessons, related | Standing | profile per subject, Standing, lessons with their handles, related | none |
 | pull | read tools | read tools | none | read tools | read tools |
 | settles on | its reply outcome; then the debrief | its reply outcome; then the debrief | its admitted operations | its own commits | its grades and verdicts |
@@ -49,8 +49,11 @@ holds; Standing and related last.
 ## Choosing what is shown
 
 Code prefetches from anchors it can resolve without interpreting meaning: the
-message, what it quotes, its people, its room. A reference code cannot resolve
-— "that place we went last month" — is the model's to pull. No separate model
+message, what it quotes, its people, its room. Presence in the floor is the
+[presence](observation.md#aggregates) head of each person the pass concerns,
+so a pass can relate a request to where they are without being asked to
+look. A reference code cannot resolve — "that place we went last month" — is
+the model's to pull. No separate model
 chooses what is retrieved, and no pass begins with a mandatory query round.
 Context assembly's optional exposure filter may still act after retrieval,
 under its own rules; it never owns retrieval.

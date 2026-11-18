@@ -1,99 +1,12 @@
-"""The no-delivery inversion, tested at its four seams:
-
-the reserved config keeps every delivery loop out of the composed
-subject; the landed transports keep every adapter's sends and reacts
-real-but-grounded; the egress guard is the backstop that enumerates
-what composed; and everything after composition — the refusal itself
-included — still closes the subject, inside one Honcho draw per case.
-
-Offline: the only composition is `obtain`'s, monkeypatched to a fake
-subject; the transports, composition steps and background shapes are
-the production classes.
-"""
+"""Transport helper protocols and case-owned replay scope failure paths."""
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
-from nora.subject.eval_evidence import EvidenceError
-
-
-def _subject(**deps):
-    registry = SimpleNamespace(adapters=deps.pop("adapters", {}))
-    base = {"bridge_runtime": None, "fire_path": None, "dispatcher": None,
-            "social_poller": None, "computer_lifecycle": None,
-            "background": SimpleNamespace(_tasks=set())}
-    base.update(deps)
-    return SimpleNamespace(deps=SimpleNamespace(registry=registry, **base))
-
-
-# --------------------------------------------------------------------------
-# the subject is composed so it cannot deliver
-# --------------------------------------------------------------------------
-
-
-def test_the_reserved_overrides_remove_every_delivery_path():
-    from scripts.cognition_loop.run import reserved_overrides
-
-    overrides = reserved_overrides("nora-eval-run-case-x")
-    for key in ("computer.enabled", "computer.scoped.enabled",
-                "heartbeat.enabled", "compute.enabled",
-                "participation.enabled", "relevance_gate.enabled",
-                "presence.enabled", "social.instagram.enabled",
-                "social.instagram.summons.enabled", "social.poll.enabled"):
-        assert overrides[key] is False, key
-    for platform in ("signal", "discord", "whatsapp", "instagram"):
-        assert overrides[f"platforms.{platform}.mode"] == "direct"
-    assert overrides["honcho.workspace_id"] == "nora-eval-run-case-x"
-
-
-async def test_an_arm_override_cannot_set_a_reserved_key(monkeypatch, tmp_path):
-    from scripts.cognition_loop import run as run_mod
-
-    async def obtain_never(spec):
-        raise AssertionError("obtain ran on a refused arm")
-
-    monkeypatch.setattr(run_mod, "obtain", obtain_never)
-    room = SimpleNamespace(platform="signal", primary_id="room-1")
-    for key in ("honcho.workspace_id", "social.poll.enabled",
-                "heartbeat.enabled", "platforms.signal.mode"):
-        args = SimpleNamespace(workdir=str(tmp_path), overrides={key: "x"})
-        with pytest.raises(ValueError, match="reserved"):
-            await run_mod._compose(
-                args, "postgresql+asyncpg://x", 1_700_000_000_000, room,
-                "policy", "identity", workspace="nora-eval-run-case-x")
-
-
-async def test_an_arm_override_cannot_select_the_shared_eval_workspace(
-    monkeypatch, tmp_path,
-):
-    """The shared `<deployment>-eval` workspace is a RESERVED key: naming
-    it in an arm override refuses before `obtain` runs."""
-    from scripts.cognition_loop import run as run_mod
-
-    async def obtain_never(spec):
-        raise AssertionError("obtain ran on a refused arm")
-
-    monkeypatch.setattr(run_mod, "obtain", obtain_never)
-    args = SimpleNamespace(
-        workdir=str(tmp_path),
-        overrides={"honcho.workspace_id": "nora-eval"},
-    )
-    with pytest.raises(ValueError, match="reserved"):
-        await run_mod._compose(
-            args, "postgresql+asyncpg://x", 1_700_000_000_000,
-            SimpleNamespace(platform="signal", primary_id="room-1"),
-            "policy", "identity", workspace="nora-eval-run-case-x")
-
-
-# --------------------------------------------------------------------------
-# every person-visible transport lands
-# --------------------------------------------------------------------------
 
 
 async def test_the_direct_signal_adapter_lands_every_send_and_react(
@@ -149,15 +62,10 @@ async def test_every_platform_adapter_is_patched():
         assert getattr(importlib.import_module(module_name), attr) is original
 
 
-# --------------------------------------------------------------------------
-# the loops the reserved config keeps unborn
-# --------------------------------------------------------------------------
-
-
 def test_a_queued_summons_card_causes_no_network_call(monkeypatch):
     """A card awaiting flush does not resurrect its consumer: the
     composition step builds no consumer and no Instagram client when the
-    reserved gates are off — even with a runner and subjects to use."""
+    feature is explicitly off — even with a runner and subjects to use."""
     from nora.app import composition_social
 
     cfg = SimpleNamespace(social=SimpleNamespace(instagram=SimpleNamespace(
@@ -184,173 +92,42 @@ def test_a_queued_summons_card_causes_no_network_call(monkeypatch):
 
 def test_a_lost_compute_job_cannot_reach_speak():
     """Recovery of a lost compute job reaches `speak` only through a fire
-    path — which the reserved config never composes — so the job stays
-    unsaid and no task is spawned."""
+    path; a missing fire path leaves the job unsaid and spawns no task."""
     from nora.app.composition_fire import _path_lost_jobs
 
     spawned: list[Any] = []
     background = SimpleNamespace(spawn=spawned.append)
     _path_lost_jobs(
         metrics=None, background=background, lost_jobs=[object()],
-        slots=None, allowlist=None, fire_path=None)
+        slots=None, allowlist=None, fire_path=None, access=None)
     assert spawned == []
 
     # Positive control: the same job DOES spawn recovery with a fire path.
     _path_lost_jobs(
         metrics=None, background=background, lost_jobs=[object()],
-        slots=None, allowlist=None, fire_path=SimpleNamespace(speak=None))
+        slots=None, allowlist=None, fire_path=SimpleNamespace(speak=None), access=None)
     assert len(spawned) == 1
     spawned.pop().close()
 
 
-# --------------------------------------------------------------------------
-# the guard is a backstop, and it is fail-closed
-# --------------------------------------------------------------------------
 
-
-def _task(qualname_owner: type, method: str):
-    task = asyncio.ensure_future(getattr(qualname_owner(), method)())
-    return task
-
-
-class SummonsConsumer:
-    async def run(self):
-        await asyncio.sleep(0)
-
-
-class ReloadFiles:
-    async def run(self):
-        await asyncio.sleep(0)
-
-
-async def test_the_guard_refuses_a_summons_consumer_task():
-    from scripts.cognition_loop.egress import assert_no_egress
-
-    task = _task(SummonsConsumer, "run")
-    try:
-        subject = _subject(background=SimpleNamespace(_tasks={task}))
-        with pytest.raises(EvidenceError, match=r"SummonsConsumer\.run"):
-            assert_no_egress(subject)
-    finally:
-        task.cancel()
-        await asyncio.sleep(0)
-
-
-async def test_the_guard_refuses_an_unknown_background_task():
-    from scripts.cognition_loop.egress import assert_no_egress
-
-    class Heartbeat:
-        async def run(self):
-            await asyncio.sleep(0)
-
-    task = _task(Heartbeat, "run")
-    try:
-        subject = _subject(background=SimpleNamespace(_tasks={task}))
-        with pytest.raises(EvidenceError, match=r"Heartbeat\.run"):
-            assert_no_egress(subject)
-    finally:
-        task.cancel()
-        await asyncio.sleep(0)
-
-
-async def test_the_guard_accepts_the_config_watcher_task():
-    from scripts.cognition_loop.egress import assert_no_egress
-
-    task = _task(ReloadFiles, "run")
-    try:
-        subject = _subject(background=SimpleNamespace(_tasks={task}))
-        report = assert_no_egress(subject)
-        assert report["background"] == ["ReloadFiles.run"]
-    finally:
-        task.cancel()
-        await asyncio.sleep(0)
-
-
-def test_the_guard_refuses_when_background_cannot_be_enumerated():
-    from scripts.cognition_loop.egress import assert_no_egress
-
-    with pytest.raises(EvidenceError, match="cannot be enumerated"):
-        assert_no_egress(_subject(background=None))
-    with pytest.raises(EvidenceError, match="cannot be enumerated"):
-        assert_no_egress(_subject(background=SimpleNamespace(_tasks=[])))
-
-
-def test_a_live_reactor_is_a_refusal():
-    from scripts.cognition_loop.egress import assert_no_egress
-
-    class LiveSignalReactor:
-        pass
-
-    subject = _subject(adapters={
-        "signal": SimpleNamespace(_reactor=LiveSignalReactor())})
-    with pytest.raises(EvidenceError, match="real platform transports"):
-        assert_no_egress(subject)
-
-
-# --------------------------------------------------------------------------
-# teardown on every exit
-# --------------------------------------------------------------------------
-
-
-async def test_a_refusal_still_closes_the_subject(monkeypatch, tmp_path):
-    """The egress refusal happens INSIDE the wake's try/finally: the
-    subject's teardown runs even when the guard stops the wake."""
-    from scripts.cognition_loop import run as run_mod
-
-    class RealSender:
-        pass
-
-    closed: list[str] = []
-
-    async def cancel_all():
-        closed.append("background cancelled")
-
-    subject = _subject(
-        adapters={"signal": SimpleNamespace(_sender=RealSender())})
-    subject.deps.background = SimpleNamespace(
-        _tasks=set(), cancel_all=cancel_all)
-    subject.deps.audit = None
-    subject.deps.client = None
-    subject.deps.model_clients = []
-
-    async def fake_obtain(spec):
-        return subject
-
-    monkeypatch.setattr(run_mod, "obtain", fake_obtain)
-    args = SimpleNamespace(workdir=str(tmp_path), overrides={},
-                           policy=tmp_path / "p", identity=tmp_path / "i")
-    (tmp_path / "p").write_text("")
-    (tmp_path / "i").write_text("")
-    report = await run_mod._run_wake(
-        args, case=SimpleNamespace(unit="u"), index=0, wake_id=1,
-        at_ms=1, url="postgresql+asyncpg://x", reason="user_message",
-        judges=None, evidence=None, output=tmp_path,
-        room=SimpleNamespace(platform="signal", primary_id="r"),
-        workspace="nora-eval-run-case-x")
-    assert report["status"] == "ERROR" and report["step"] == "compose"
-    assert "real platform transports" in report["error"]
-    assert closed == ["background cancelled"]
-
-
-# --------------------------------------------------------------------------
-# one Honcho draw per case
-# --------------------------------------------------------------------------
-
-
-def _run_stubs(monkeypatch, workspaces: list[str], wake_error=None,
+def _run_stubs(monkeypatch, environments: list, wake_error=None,
                advance_error=None):
     from scripts.cognition_loop import run as run_mod
 
     created, deleted = [], []
 
     @contextlib.asynccontextmanager
-    async def fake_draw(case, *, run_id, admin=None):
-        draw = SimpleNamespace(id=f"{run_id}-draw")
-        created.append(draw.id)
+    async def services(url, *, redis):
+        environment = SimpleNamespace(active=True)
+        created.append(environment)
         try:
-            yield draw
+            yield environment
         finally:
-            deleted.append(draw.id)
+            environment.active = False
+            deleted.append(environment)
+
+    recording = SimpleNamespace(open=services)
 
     async def fake_recorded_wake(source, wake_id):
         return (1_700_000_000_000 + wake_id,
@@ -377,7 +154,6 @@ def _run_stubs(monkeypatch, workspaces: list[str], wake_error=None,
     async def dispose():
         return None
 
-    monkeypatch.setattr(run_mod, "draw_workspace", fake_draw)
     monkeypatch.setattr(run_mod, "recorded_wake", fake_recorded_wake)
     monkeypatch.setattr(run_mod, "_wake_reason", fake_reason)
     monkeypatch.setattr(run_mod, "_recorded_session", fake_session)
@@ -388,51 +164,53 @@ def _run_stubs(monkeypatch, workspaces: list[str], wake_error=None,
                         lambda url: SimpleNamespace(dispose=dispose))
 
     async def fake_run_wake(*a, **k):
-        workspaces.append(a[-1])
+        environments.append(a[0].environment)
         if wake_error is not None:
             raise wake_error
-        return {"status": "pass", "expectations": []}
+        return {"status": "PASS", "expectations": []}
 
     monkeypatch.setattr(run_mod, "_run_wake", fake_run_wake)
-    return created, deleted
+    return created, deleted, recording
 
 
-def _case_args(tmp_path):
+def _case_args(tmp_path, recording):
     case = SimpleNamespace(name="c", unit="u", wakes=[1, 2], expectations=[])
     policy = SimpleNamespace(rooms=lambda: [
         SimpleNamespace(unit="u", platform="signal", primary_id="r")])
     evidence = SimpleNamespace(
         case=lambda *a, **k: contextlib.nullcontext())
     args = SimpleNamespace(
-        database_url="postgresql+asyncpg://source", run_id="r1")
+        database_url="postgresql+asyncpg://source", run_id="r1",
+        service_inputs=SimpleNamespace(corpora={"cognition-loop": {"c": recording}}))
     return args, case, policy, evidence
 
 
-async def test_the_case_lives_inside_one_honcho_draw(monkeypatch, tmp_path):
-    """Both wakes see the SAME draw id, the draw is made before the first
-    wake composes, and it is deleted when the case exits."""
+async def test_the_case_lives_inside_one_service_scope(monkeypatch, tmp_path):
+    """Both wakes use one scope, closed after the case on every exit."""
     from scripts.cognition_loop import run as run_mod
 
-    workspaces: list[str] = []
-    created, deleted = _run_stubs(monkeypatch, workspaces)
-    args, case, policy, evidence = _case_args(tmp_path)
+    environments: list = []
+    created, deleted, recording = _run_stubs(monkeypatch, environments)
+    args, case, policy, evidence = _case_args(tmp_path, recording)
     await run_mod.run_case(args, case, source=None, judges=None,
                            policy=policy, evidence=evidence, output=tmp_path)
-    assert created == ["r1-draw"] and deleted == ["r1-draw"]
-    assert workspaces == ["r1-draw", "r1-draw"]
+    assert len(created) == 1 and deleted == created
+    assert environments == [created[0], created[0]]
+    assert not created[0].active and args.environment is None
 
 
-async def test_the_draw_is_deleted_when_a_wake_fails(monkeypatch, tmp_path):
+async def test_the_service_scope_closes_when_a_wake_fails(monkeypatch, tmp_path):
     from scripts.cognition_loop import run as run_mod
 
-    workspaces: list[str] = []
-    _created, deleted = _run_stubs(
-        monkeypatch, workspaces, wake_error=RuntimeError("wake blew up"))
-    args, case, policy, evidence = _case_args(tmp_path)
+    environments: list = []
+    created, deleted, recording = _run_stubs(
+        monkeypatch, environments, wake_error=RuntimeError("wake blew up"))
+    args, case, policy, evidence = _case_args(tmp_path, recording)
     report = await run_mod.run_case(
         args, case, source=None, judges=None,
         policy=policy, evidence=evidence, output=tmp_path)
-    assert deleted == ["r1-draw"]
+    assert deleted == created and not created[0].active
+    assert args.environment is None
     assert report["status"] == "ERROR"
 
 
@@ -445,8 +223,8 @@ async def test_an_advance_failure_freezes_the_wakes_error(
 
     from scripts.cognition_loop import run as run_mod
 
-    _run_stubs(monkeypatch, [], advance_error=RuntimeError("pg gone"))
-    args, case, policy, evidence = _case_args(tmp_path)
+    _, _, recording = _run_stubs(monkeypatch, [], advance_error=RuntimeError("pg gone"))
+    args, case, policy, evidence = _case_args(tmp_path, recording)
     report = await run_mod.run_case(
         args, case, source=None, judges=None,
         policy=policy, evidence=evidence, output=tmp_path)
@@ -457,3 +235,17 @@ async def test_an_advance_failure_freezes_the_wakes_error(
     frozen = json.loads((tmp_path / "wake-1-2.json").read_text())
     assert frozen["error"]["step"] == "advance"
     assert "pg gone" in frozen["error"]["message"]
+
+
+async def test_replay_rejects_a_room_resolved_into_another_unit(monkeypatch, tmp_path):
+    from tests.unit.test_cognition_loop_run_wake import _runner_subject, _wake_args, _wake_seam
+
+    subject = _runner_subject()
+    subject.unit = "another-unit"
+    module = _wake_seam(monkeypatch, tmp_path, subject)
+    args, evidence = _wake_args(tmp_path)
+    result = await module._run_wake(
+        args, SimpleNamespace(unit="u", expectations=()), 0, 11, 1_800_000_000_000,
+        "postgresql+asyncpg://x", "time", None, evidence, tmp_path, ("signal", "r"))
+    assert result["status"] == "ERROR" and result["step"] == "compose"
+    assert "another unit" in result["error"]

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hmac
 import logging
 import sys
 import time
@@ -28,7 +29,7 @@ from ..config import ConfigError
 from ..obs.health import config_staleness, serve
 from ..obs.logging import setup_logging
 from ..obs.metrics import Metrics
-from .composition import PresenceStartupError, build_collector
+from .composition import PresenceStartupError, open_collector
 
 log = logging.getLogger("nora.presence.__main__")
 
@@ -38,7 +39,7 @@ __all__ = ["build_parser", "main"]
 def _metrics_app(
     metrics: Metrics, collector: Any = None, refresh_timeout_seconds: float = 8.0,
     identity_file: str | None = None, started_at: float | None = None,
-    identity_status: Any = None,
+    identity_status: Any = None, directory_key: str | None = None,
 ) -> web.Application:
     """A minimal /metrics + /health app for the collector process — it has no
     adapter or record store to report on, only its own metrics registry (which
@@ -77,6 +78,8 @@ def _metrics_app(
         body: dict[str, object] = {"status": "ok"}
         if collector is not None:
             body["circles"] = collector.circle_summary()
+            if not collector.collection_ready(now_ms=int(time.time() * 1000)):
+                body["status"] = "unavailable"
         if identity_file is not None:
             config_state = config_staleness(
                 {"identity": identity_file}, started_at or 0.0
@@ -84,9 +87,29 @@ def _metrics_app(
             if identity_status is not None:
                 config_state["identity"].update(identity_status())
             body["config"] = config_state
-        return web.json_response(body)
+        return web.json_response(body, status=200 if body["status"] == "ok" else 503)
+
+    def authorized(request: web.Request) -> bool:
+        return bool(directory_key) and hmac.compare_digest(
+            request.headers.get("Authorization", "").encode(),
+            ("Bearer " + (directory_key or "")).encode())
+
+    async def memberships(request: web.Request) -> web.Response:
+        if not directory_key or collector is None or not collector.managed:
+            return web.json_response({"status": "unavailable"}, status=503)
+        if not authorized(request):
+            return web.json_response({"status": "denied"}, status=403)
+        try:
+            from dataclasses import asdict
+
+            return web.json_response({"circles": [asdict(row)
+                for row in collector.observations(now_ms=int(time.time() * 1000))]})
+        except Exception:  # noqa: BLE001 — failed inventory carries no provider identifiers
+            return web.json_response({"status": "unavailable"}, status=503)
 
     async def refresh(request: web.Request) -> web.Response:
+        if collector is not None and collector.managed and not authorized(request):
+            return web.json_response({"status": "denied"}, status=403)
         person_id = request.query.get("person_id", "")
         if collector is None:
             return web.json_response({"status": "unavailable"}, status=503)
@@ -106,6 +129,7 @@ def _metrics_app(
     app.router.add_get("/metrics", metrics_endpoint)
     app.router.add_get("/health", health)
     app.router.add_post("/refresh", refresh)
+    app.router.add_get("/memberships", memberships)
     # Application-HTTP coverage (ADR 0034); /health + /metrics polls excluded.
     try:
         from nora.obs.tracing import instrument_aiohttp_app
@@ -132,6 +156,7 @@ async def _run(config_path: Path) -> None:
                 cfg.credentials.get(cfg.presence.username_env, ""),
                 cfg.credentials.get(cfg.presence.password_env, ""),
                 cfg.credentials.get(cfg.presence.auth_token_env, ""),
+                cfg.credentials.get(cfg.presence.directory_key_env, ""),
                 cfg.credentials.get(cfg.presence.geocode_api_key_env, ""),
                 # The HK-gov token rides the query string (the leakiest position),
                 # so the scrub safety net must cover it too.
@@ -176,28 +201,29 @@ async def _run(config_path: Path) -> None:
             )
         except Exception:
             log.warning("tracing setup failed; continuing without tracing", exc_info=True)
-    deps = build_collector(cfg)
-    runner = await serve(
-        _metrics_app(
-            deps.metrics, deps.collector, cfg.presence.refresh_timeout_seconds,
-            identity_file=str(cfg.identity_file), started_at=time.time(),
-            identity_status=deps.identity_reload.status if deps.identity_reload else None,
-        ),
-        deps.metrics_port,
-    )
-    reload_task = asyncio.create_task(deps.identity_reload.run()) if deps.identity_reload else None
-    try:
-        if deps.collector is None:
-            log.info("presence disabled — nothing to collect; exiting")
-            return
-        await deps.collector.run()
-    finally:
-        if reload_task is not None:
-            reload_task.cancel()
-            await asyncio.gather(reload_task, return_exceptions=True)
-        await runner.cleanup()
-        if deps.store is not None:
-            await deps.store.aclose()
+    async with open_collector(cfg) as deps:
+        runner = await serve(
+            _metrics_app(
+                deps.metrics, deps.collector, cfg.presence.refresh_timeout_seconds,
+                identity_file=str(cfg.identity_file) if cfg.identity.backend == "file" else None,
+                started_at=time.time(),
+                directory_key=cfg.credentials.get(cfg.presence.directory_key_env) or None,
+                identity_status=deps.identity_reload.status if deps.identity_reload else None,
+            ),
+            deps.metrics_port,
+        )
+        reload_task = (asyncio.create_task(deps.identity_reload.run())
+                       if deps.identity_reload else None)
+        try:
+            if deps.collector is None:
+                log.info("presence disabled — nothing to collect; exiting")
+                return
+            await deps.collector.run()
+        finally:
+            if reload_task is not None:
+                reload_task.cancel()
+                await asyncio.gather(reload_task, return_exceptions=True)
+            await runner.cleanup()
 
 
 def build_parser() -> argparse.ArgumentParser:

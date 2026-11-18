@@ -213,7 +213,7 @@ async def test_observation_only_records_row_head_and_one_stimulus_then_acks(
     reader = _reader(redis_client, store, stream)
     runner = _obs_runner(
         store, redis_client, harness, stimulus=_wiring(store),
-        persons=harness.handler._dispatcher._ingest._persons)
+        access=harness.handler._dispatcher._ingest._access)
     await _register(reader, env, sid)
     assert await _pending(redis_client, stream) == 1  # registered, not acked
     await _claim_run(store, runner)
@@ -325,7 +325,7 @@ async def test_message_sidecar_is_one_source_obligation_with_both_refs(
     reader = _reader(redis_client, store, stream)
     runner = _obs_runner(
         store, redis_client, harness, stimulus=_wiring(store),
-        persons=harness.handler._dispatcher._ingest._persons)
+        access=harness.handler._dispatcher._ingest._access)
     await _register(reader, env, sid)
     await _claim_run(store, runner)
 
@@ -762,7 +762,7 @@ async def test_ambiguous_timestamp_target_stays_unresolved(
     reader = _reader(redis_client, store, stream)
     runner = _obs_runner(
         store, redis_client, harness,
-        persons=harness.handler._dispatcher._ingest._persons)
+        access=harness.handler._dispatcher._ingest._access)
 
     async def message_at(body, ts, sender, upstream):
         m = _msg(body, ts)
@@ -956,7 +956,7 @@ async def test_delayed_sidecar_obligation_survives_prior_consumption(
     reader = _reader(redis_client, store, stream)
     runner = _obs_runner(
         store, redis_client, harness, stimulus=_wiring(store),
-        persons=harness.handler._dispatcher._ingest._persons)
+        access=harness.handler._dispatcher._ingest._access)
 
     # 1. The merged event ingests; its ONE obligation is claimed and held —
     #    durable, unexecuted: the delayed sidecar of the contract.

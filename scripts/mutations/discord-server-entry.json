@@ -149,8 +149,8 @@
   {
     "name": "self-profile targets enumerate rooms()",
     "file": "nora/app/cognition_grounding.py",
-    "old": "                        for c in policy.rooms() if c.unit == unit and c.primary_id)",
-    "new": "                        for c in policy.conversations if c.unit == unit and c.primary_id)",
+    "old": "        rooms = tuple(c for c in policy.rooms() if c.unit == unit and c.primary_id)",
+    "new": "        rooms = tuple(c for c in policy.conversations if c.unit == unit and c.primary_id)",
     "target": "tests/unit/test_discord_guild_entry.py::test_the_self_profile_read_renders_discovered_rooms_as_targets"
   },
   {

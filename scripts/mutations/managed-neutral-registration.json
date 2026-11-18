@@ -1,0 +1,30 @@
+[
+  {
+    "name": "bot labels do not exclude valid observed identities",
+    "file": "nora/people/app/roster_provisioning.py",
+    "old": "        groups = tuple(frozenset(member.identifiers) for member in roster)",
+    "new": "        groups = tuple(frozenset(member.identifiers) for member in roster\n                       if member.classification == \"person\")",
+    "target": "tests/web/test_roster_provisioning.py::test_private_roster_registers_without_requiring_account_nature[bot]"
+  },
+  {
+    "name": "unknown nature does not make a proven account unavailable",
+    "file": "nora/people/app/roster_provisioning.py",
+    "old": "        if any(not group for group in groups):\n            return unavailable(\"unproven-account\")",
+    "new": "        if complete_roster and any(\n                member.classification == \"unknown\" for member in roster):\n            return unavailable(\"unclassified-member\")",
+    "target": "tests/web/test_roster_provisioning.py::test_private_roster_registers_without_requiring_account_nature[unknown]"
+  },
+  {
+    "name": "private roster accepts identifiers without a nature declaration",
+    "file": "nora/web/management_roster_request.py",
+    "old": "    classification: Literal[\"person\", \"bot\", \"unknown\"] = \"unknown\"",
+    "new": "    classification: Literal[\"person\", \"bot\", \"unknown\"]",
+    "target": "tests/web/test_roster_provisioning.py::test_private_roster_registers_without_requiring_account_nature[None]"
+  },
+  {
+    "name": "missing identifiers remain an explicit unavailable observation",
+    "file": "nora/people/app/roster_provisioning.py",
+    "old": "        if any(not group for group in groups):\n            return unavailable(\"unproven-account\")",
+    "new": "        if False:\n            return unavailable(\"unproven-account\")",
+    "target": "tests/unit/test_onboarding_sender_enrichment.py::test_an_unproven_account_is_unavailable_before_any_write"
+  }
+]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 from collections.abc import Iterable, Mapping, Sequence, Set
 from dataclasses import fields, is_dataclass
@@ -16,12 +17,17 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.sql.dml import Insert
 
+from nora.domain.managed import room_scope_id
+from nora.domain.management import Scope, ScopeKind
 from nora.infra.sql.cognitive_graph_schema import REGISTRY
 from nora.infra.sql.schema import MESSAGES
 from nora.infra.version import DEFAULT_MANIFEST_PATH
 
 if TYPE_CHECKING:
+    from nora.access import IdentityAccess
     from nora.domain.models import NormalizedMessage, PersonRef
+
+log = logging.getLogger(__name__)
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _PER_UNIT_SOURCES = frozenset({
@@ -83,9 +89,13 @@ class RegistrationPersons(Protocol):
 class RegistrationScope:
     """The current process's policy and identity snapshot at a source write."""
 
-    def __init__(self, policy: RegistrationPolicy, persons: RegistrationPersons) -> None:
+    def __init__(
+        self, policy: RegistrationPolicy, persons: RegistrationPersons | None, *,
+        access: IdentityAccess | None = None,
+    ) -> None:
         self._policy = policy
         self._persons = persons
+        self._managed = access if access is not None and not access.is_file_backend else None
 
     def room_unit(self, platform: str, room: str) -> str | None:
         conversation = self._policy.conversation(platform, room)
@@ -100,49 +110,94 @@ class RegistrationScope:
         units = {c.unit for c in self._policy.rooms() if room in c.ids and c.unit}
         return units.pop() if len(units) == 1 else None
 
-    def person_id(self, platform: str, account: str | None) -> str | None:
-        person = self._persons.resolve(platform, account) if account else None
+    async def person_id(self, platform: str, account: str | None) -> str | None:
+        if not account:
+            return None
+        if self._managed is not None:
+            try:
+                bound = await self._managed.resolve_account(platform, account)
+                return await self._managed.canonical_person(bound.person_id) if bound else None
+            except Exception:  # noqa: BLE001 — retain the source with unresolved identity
+                log.warning("graph registration identity unavailable")
+                return None
+        person = self._persons.resolve(platform, account) if self._persons is not None else None
         return person.person_id if person else None
 
-    def person_units(self, person: str) -> tuple[str, ...]:
-        subject = self._persons.subject_id_for(person)
+    async def person_units(self, person: str) -> tuple[str, ...]:
+        if self._managed is not None:
+            try:
+                return await self._managed.member_units(person)
+            except Exception:  # noqa: BLE001 — retain the source without unit placement
+                log.warning("graph registration membership unavailable")
+                return ()
+        return self._file_person_units(person)
+
+    def _file_person_units(self, person: str) -> tuple[str, ...]:
+        persons = self._persons
+        if persons is None:
+            return ()
+        subject = persons.subject_id_for(person)
         return tuple(sorted({
             c.unit for c in self._policy.conversations
             if c.unit and any(
-                self._persons.subject_id_for(member) == subject for member in c.persons or ()
+                persons.subject_id_for(member) == subject for member in c.persons or ()
             )
         }))
 
-    def circle_persons(self, circle: str, *, unit: str | None) -> tuple[str, ...]:
-        return tuple(
-            sorted(
-                {
-                    member.person_id
-                    for member in self._persons.life360
-                    if member.circle_id == circle
-                    and (unit in self.person_units(member.person_id) if unit is not None else True)
-                }
-            )
-        )
+    async def circle_placements(
+        self, circle: str, *, observed_persons: Iterable[str] | None = None,
+    ) -> dict[str | None, tuple[str, ...]] | None:
+        """Map units to the circle members they contain, or None if unavailable."""
+        try:
+            access = self._managed
+            if observed_persons is None:
+                memberships = await access.life360_memberships() if access else (
+                    self._persons.life360 if self._persons is not None else ()
+                )
+                observed_persons = (
+                    member.person_id for member in memberships if member.circle_id == circle
+                )
+            people = tuple(sorted(set(observed_persons)))
+            placements: dict[str | None, list[str]] = {}
+            for person in people:
+                units = (
+                    await access.member_units(person) if access else self._file_person_units(person)
+                )
+                for unit in units:
+                    placements.setdefault(unit, []).append(person)
+            return {unit: tuple(ids) for unit, ids in placements.items()} or {None: people}
+        except Exception:  # noqa: BLE001 — unknown membership must stay unscoped
+            log.warning("graph registration circle membership unavailable")
+            return None
 
-    def circle_units(self, circle: str) -> tuple[str, ...]:
-        return tuple(sorted({
-            unit for member in self._persons.life360 if member.circle_id == circle
-            for unit in self.person_units(member.person_id)
-        }))
-
-    def health_units(self, source: str, scope: str) -> tuple[str, ...]:
+    async def health_units(self, source: str, scope: str) -> tuple[str, ...]:
         if source == "presence":
-            return self.circle_units(scope)
+            placements = await self.circle_placements(scope)
+            return tuple(unit for unit in placements or {} if unit is not None)
         if source.startswith("social."):
-            return self._member_units()
+            access = self._managed
+            if access is None:
+                return tuple(sorted({
+                    c.unit for c in self._policy.conversations if c.unit and c.persons
+                }))
+            try:
+                units = set()
+                for c in self._policy.conversations:
+                    if not c.unit or c.unit in units:
+                        continue
+                    if await access.members_of(Scope(ScopeKind.UNIT, c.unit)) or any([
+                        await access.members_of(
+                            Scope(ScopeKind.ROOM, room_scope_id(c.platform, room))
+                        )
+                        for room in c.ids
+                    ]):
+                        units.add(c.unit)
+                return tuple(sorted(units))
+            except Exception:  # noqa: BLE001 — retain health evidence without guessed placement
+                log.warning("graph registration health membership unavailable")
+                return ()
         return tuple(sorted({
             c.unit for c in self._policy.conversations if c.platform == source and c.unit
-        }))
-
-    def _member_units(self) -> tuple[str, ...]:
-        return tuple(sorted({
-            c.unit for c in self._policy.conversations if c.unit and c.persons
         }))
 
 
@@ -184,7 +239,8 @@ class RuntimeRevisions:
     """Content identifiers of the config and admitted policy/identity snapshots."""
 
     def __init__(
-        self, config: Mapping[str, Any], policy: RegistrationPolicy, persons: RegistrationPersons
+        self, config: Mapping[str, Any], policy: RegistrationPolicy,
+        persons: RegistrationPersons | None,
     ) -> None:
         self._config = _revision(config)
         self._code = _running_code()
@@ -204,7 +260,7 @@ class RuntimeRevisions:
         return {
             "rev_code": self._code,
             "rev_config": self._config,
-            "rev_identity": self._loaded("identity", self._persons),
+            "rev_identity": self._loaded("identity", self._persons) if self._persons else None,
             "rev_policy": self._loaded("policy", self._policy),
         }
 

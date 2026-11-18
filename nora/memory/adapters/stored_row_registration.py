@@ -115,7 +115,7 @@ class SqlStoredRows:
     ) -> tuple[int, int]:
         name = table.name
         parents = await self._items.dependencies(conn, name, batch)
-        inputs = [(row, self._items.scope_for(name, row, parents)) for row in batch]
+        inputs = [(row, await self._items.scope_for(name, row, parents)) for row in batch]
         count = sum(max(len(unit_info[0]) - 1, 0) for _, unit_info in inputs)
         ids = await _ids(conn, table, count)
         changes, copies = [], []
@@ -147,7 +147,7 @@ class SqlStoredRows:
     ) -> tuple[int, int]:
         registered = unscoped = 0
         for row in batch:
-            units = self._aggregates.units_for(table, row)
+            units = await self._aggregates.units_for(table, row)
             if not units:
                 unscoped += 1
                 continue

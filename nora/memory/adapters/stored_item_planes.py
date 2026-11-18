@@ -29,9 +29,9 @@ class ItemPlanes:
         self._probes: dict[tuple[str, str], tuple[str, ...]] = {}
         self._rooms: dict[tuple[str, str], str | None] = {}
 
-    def _person(self, person: str) -> tuple[str, ...]:
+    async def _person(self, person: str) -> tuple[str, ...]:
         if person not in self._person_units:
-            self._person_units[person] = self.scope.person_units(person)
+            self._person_units[person] = await self.scope.person_units(person)
         return self._person_units[person]
 
     def _room(self, platform: str, room: str) -> tuple[str, ...]:
@@ -61,7 +61,7 @@ class ItemPlanes:
             return {(r.network, r.item_id): r.person for r in rows}
         return {}
 
-    def scope_for(
+    async def scope_for(
         self, name: str, row: RowData, parents: Mapping[Any, Any],
     ) -> tuple[tuple[str, ...], str | None, list[str]]:
         origin = None
@@ -81,7 +81,7 @@ class ItemPlanes:
             platform, origin = row["platform"], row["conversation_id"]
             units = self._room(platform, origin)
             persons = [
-                self.scope.person_id(platform, row[name])
+                await self.scope.person_id(platform, row[name])
                 for name in ("actor_id", "target_author_id")
             ]
         elif name == "fetched_pages":
@@ -91,7 +91,7 @@ class ItemPlanes:
         elif name == "source_health":
             key = row["source"], row["scope"]
             if key not in self._probes:
-                self._probes[key] = self.scope.health_units(*key)
+                self._probes[key] = await self.scope.health_units(*key)
             units = self._probes[key]
         else:
             if name == "presence_fixes":
@@ -101,7 +101,7 @@ class ItemPlanes:
             else:
                 person = row["person"]
             persons = [person] if person else []
-            units = self._person(person) if person else ()
+            units = await self._person(person) if person else ()
         return units, origin, sorted({person for person in persons if person})
 
     @staticmethod

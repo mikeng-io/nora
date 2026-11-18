@@ -45,4 +45,15 @@ TOOLS = {
         output_contract="three_state",
         level=2,
     ),
+    "member_update": NativeTool(
+        4,
+        source_tier="confirmed",
+        cacheable=False,
+        read_only=False,
+        side_effect_state="confirmed",
+        idempotency="idempotent",
+        retry="safe",
+        output_contract="three_state",
+        level=3,
+    ),
 }

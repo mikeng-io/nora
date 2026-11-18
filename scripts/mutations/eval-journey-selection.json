@@ -1,0 +1,86 @@
+[
+  {
+    "name": "a cohort file must carry its own declared version",
+    "file": "evals/journey_cohort.py",
+    "old": "or data[\"version\"] != COHORT_VERSION):",
+    "new": "or data[\"version\"] == COHORT_VERSION):",
+    "target": "tests/unit/test_eval_journey_cohort.py::test_a_cohort_refuses_malformed_legacy_and_undeclared_input"
+  },
+  {
+    "name": "a cohort case must be a version-2 behavior case, not the legacy kind-bound measure",
+    "file": "evals/journey_cohort.py",
+    "old": "if plan.get(\"version\") != MEASURE_VERSION:",
+    "new": "if plan.get(\"version\") == MEASURE_VERSION:",
+    "target": "tests/unit/test_eval_journey_cohort.py::test_a_cohort_refuses_malformed_legacy_and_undeclared_input"
+  },
+  {
+    "name": "a case's plan judges must be the cohort's declared aliases",
+    "file": "evals/journey_cohort.py",
+    "old": "if list(plan[\"judges\"]) != list(judges):",
+    "new": "if list(plan[\"judges\"]) == list(judges):",
+    "target": "tests/unit/test_eval_journey_cohort.py::test_a_cohort_refuses_malformed_legacy_and_undeclared_input"
+  },
+  {
+    "name": "a journey case's services plan must be a finite world, not a positional recording",
+    "file": "evals/journey_cohort.py",
+    "old": "        if not isinstance(plan, JourneyServices):",
+    "new": "        if isinstance(plan, JourneyServices):",
+    "target": "tests/unit/test_eval_journey_cohort.py::test_experiment_for_the_journey_corpus_constructs_the_live_clock_pair"
+  },
+  {
+    "name": "a journey world's judge aliases must be the cohort's declared ones",
+    "file": "evals/journey_cohort.py",
+    "old": "        if tuple(plan.judge_models) != tuple(judges):",
+    "new": "        if tuple(plan.judge_models) == tuple(judges):",
+    "target": "tests/unit/test_eval_journey_cohort.py::test_the_journey_experiment_refuses_undeclared_judge_aliases"
+  },
+  {
+    "name": "the journey corpus requires --journey-cohort",
+    "file": "evals/journey_cohort.py",
+    "old": "    if not args.journey_cohort:\n        raise ValueError(\n            f\"{journey} select the declared cohort — pass --journey-cohort\")",
+    "new": "",
+    "target": "tests/unit/test_eval_main.py::test_a_journey_selection_refuses_an_absent_or_promoting_input"
+  },
+  {
+    "name": "the journey corpus requires an explicit --run-budget",
+    "file": "evals/journey_cohort.py",
+    "old": "    if args.run_budget is None:\n        raise ValueError(f\"{journey} require an explicit --run-budget\")",
+    "new": "",
+    "target": "tests/unit/test_eval_main.py::test_a_journey_selection_refuses_an_absent_or_promoting_input"
+  },
+  {
+    "name": "--judge must not promote the journey's declared judge aliases",
+    "file": "evals/journey_cohort.py",
+    "old": "if args.judge and len(names) == len(journey):",
+    "new": "if args.judge and len(names) != len(journey):",
+    "target": "tests/unit/test_eval_main.py::test_a_journey_selection_refuses_an_absent_or_promoting_input"
+  },
+  {
+    "name": "an entry without kind stays the positional recording",
+    "file": "evals/services.py",
+    "old": "    if kind == \"recorded\":",
+    "new": "    if kind == \"never-a-kind\":",
+    "target": "tests/unit/test_eval_service_manifest.py::test_service_manifest_keeps_full_draw_names_and_rejects_bad_inputs"
+  },
+  {
+    "name": "a journey_world entry constructs the declarative finite world",
+    "file": "evals/services.py",
+    "old": "    if kind == JOURNEY_KIND:\n        return _journey_plan(name, entry)\n    raise ValueError(f\"unknown service kind {kind!r} for {name!r}\")",
+    "new": "    raise ValueError(f\"unknown service kind {kind!r} for {name!r}\")",
+    "target": "tests/unit/test_eval_service_manifest.py::test_a_journey_world_plan_constructs_the_declared_finite_world"
+  },
+  {
+    "name": "the journey corpus loads only its declared cohort, never a yaml corpus",
+    "file": "evals/scenarios.py",
+    "old": "        if cohort is None:\n            raise ValueError(\n                f\"{name}: the live-clock corpus loads only its declared \"\n                \"journey cohort (--journey-cohort), never evals/corpora/\"\n            )",
+    "new": "",
+    "target": "tests/unit/test_eval_journey_cohort.py::test_the_journey_corpus_loads_only_its_declared_cohort"
+  },
+  {
+    "name": "a live-clock journey refuses a sampled re-draw",
+    "file": "evals/scenarios.py",
+    "old": "        if sample != 1:\n            raise ValueError(",
+    "new": "        if sample == 1:\n            raise ValueError(",
+    "target": "tests/unit/test_eval_journey_cohort.py::test_the_journey_experiment_refuses_a_sampled_redraw"
+  }
+]

@@ -2,6 +2,7 @@ import "server-only";
 import fs from "node:fs";
 import { auth } from "@/auth";
 import { personById, resolveDiscordPerson, type Person } from "./allowlist";
+import { checkManagedSession, identityBackend } from "./management-session";
 
 // identity.toml is bind-mounted read-only into this container
 // (docker-compose.yml's `app` service): the SAME bytes Nora's own process
@@ -9,9 +10,19 @@ import { personById, resolveDiscordPerson, type Person } from "./allowlist";
 export const IDENTITY_TOML_PATH = process.env.IDENTITY_TOML_PATH ?? "/app/identity.toml";
 
 export type SessionCheck =
-  | ({ status: "ok"; image: string | null; via: "discord" | "code"; sessionId?: string } & Person)
+  | ({ status: "ok"; image: string | null; via: "discord" | "telegram" | "code";
+    sessionId?: string } & Person)
   | { status: "no-session" }
-  | { status: "denied"; name: string | null; image: string | null; via: "discord" | "code" };
+  | { status: "unavailable" }
+  | { status: "denied"; name: string | null; image: string | null;
+    via: "discord" | "telegram" | "code" };
+
+export function sessionFailure(check: Exclude<SessionCheck, { status: "ok" }>): Response {
+  const unavailable = check.status === "unavailable";
+  return Response.json({ error: unavailable ? "unavailable" : "unauthorized" }, {
+    status: unavailable ? 503 : 401, headers: { "Cache-Control": "private, no-store" },
+  });
+}
 
 let cached: { mtimeMs: number; text: string } | null = null;
 
@@ -41,6 +52,24 @@ export async function checkSession(): Promise<SessionCheck> {
   const session = await auth();
   const user = session?.user;
   const image = user?.image ?? null;
+  let managed: boolean;
+  try { managed = identityBackend() === "managed"; }
+  catch { return { status: "unavailable" }; }
+  if (managed) {
+    if (!user) return { status: "no-session" };
+    const identity = user.managedIdentity;
+    const via = identity?.authentication?.method === "telegram_oidc" ? "telegram"
+      : identity?.authentication?.method === "discord_oauth" ? "discord" : "code";
+    if (!identity) return { status: "denied", name: user.name ?? null, image, via };
+    const result = await checkManagedSession(identity);
+    if (result.status === "unavailable") return { status: "unavailable" };
+    if (result.status === "denied") {
+      return { status: "denied", name: user.name ?? null, image, via };
+    }
+    return { status: "ok", personId: result.binding.person_id,
+      displayName: result.displayName || user.name || result.binding.person_id,
+      image, via, sessionId: user.sessionId };
+  }
   if (user?.personId) {
     const person = personById(readIdentityToml(), user.personId);
     return person

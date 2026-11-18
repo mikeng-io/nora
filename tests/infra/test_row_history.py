@@ -38,6 +38,7 @@ from nora.infra.sql.history import (
     DEFERRED,
     HISTORY_TABLES,
     NOT_RESTORED,
+    append_only_as_of,
     as_of,
 )
 from nora.infra.sql.migrations_runner import (
@@ -337,3 +338,123 @@ async def test_a_truncate_is_refused_unless_capture_is_off(engine: Any) -> None:
     async with engine.begin() as conn:
         await conn.execute(sa.text(f"SET LOCAL {CAPTURE_SETTING} = 'off'"))
         await conn.execute(sa.text("TRUNCATE tag_debounce_state"))
+
+
+_MANAGED_ROWS = {
+    "managed_person": {"person_id": "generated-history-person", "display_name": "Generated Name"},
+    "managed_account": {"account_id": "11111111-1111-4111-8111-111111111199",
+                        "person_id": "generated-history-person", "platform": "telegram"},
+    "managed_identifier": {"platform": "telegram", "kind": "user_id", "value": "generated-id",
+                           "account_id": "11111111-1111-4111-8111-111111111199"},
+    "managed_alias": {"former_person_id": "generated-former",
+                      "person_id": "generated-history-person"},
+    "managed_membership": {"person_id": "generated-history-person", "scope_kind": "room",
+                           "scope_id": "generated-room", "state": "member", "source": "generated"},
+    "managed_membership_support": {"person_id": "generated-history-person", "scope_kind": "room",
+                                   "scope_id": "generated-room", "source": "generated"},
+    "managed_operation": {"operation_id": "generated-op", "kind": "generated", "state": "pending"},
+    "managed_authority_block": {"person_id": "generated-history-person", "scope_kind": "room",
+                                "scope_id": "generated-room", "reason": "generated",
+                                "operation_id": "generated-op"},
+    "managed_identity_hold": {"person_id": "generated-history-person",
+                              "operation_id": "generated-op"},
+    "managed_link_request": {"request_id": "generated-request", "snapshot": {"state": "pending"}},
+    "managed_observation": {"service": "generated", "collection": "generated",
+                            "scope_kind": "room", "scope_id": "generated-room", "observed_ms": 1,
+                            "operation_id": "generated-op", "effect": "generated"},
+    "managed_scoped_name": {"person_id": "generated-history-person", "scope_kind": "room",
+                            "scope_id": "generated-room", "nickname": "Generated Nick",
+                            "operation_id": "generated-op"},
+}
+
+
+@pytest.mark.parametrize("table", list(_MANAGED_ROWS))
+async def test_managed_state_remains_readable_at_its_original_instant(engine, table):
+    async with engine.begin() as conn:
+        if table != "managed_person":
+            await conn.execute(METADATA.tables["managed_person"].insert().values(
+                **_MANAGED_ROWS["managed_person"]))
+        if table == "managed_identifier":
+            await conn.execute(METADATA.tables["managed_account"].insert().values(
+                **_MANAGED_ROWS["managed_account"]))
+        if table == "managed_scoped_name":
+            await conn.execute(METADATA.tables["managed_operation"].insert().values(
+                **_MANAGED_ROWS["managed_operation"]))
+        await conn.execute(METADATA.tables[table].insert().values(**_MANAGED_ROWS[table]))
+    before = await _now(engine)
+    async with engine.begin() as conn:
+        await conn.execute(METADATA.tables[table].delete())
+    held = await _held(engine, table, before)
+    assert len(held) == 1
+    assert all(held[0][k] == v for k, v in _MANAGED_ROWS[table].items())
+    assert await _held(engine, table, await _now(engine)) == []
+    assert [r.op for r in await _chain(engine, table)] == ["insert", "delete"]
+
+
+async def test_link_approval_history_keeps_provenance_without_copying_private_nonces(engine):
+    from nora.infra.sql.account_links import SqlLinkRequests, _snapshot
+    from tests.unit.test_account_linking_state import LEFT, NONCES, NOW, decision, pending, proof
+
+    store = SqlLinkRequests(engine)
+    link = pending()
+    await store.create(link, nonces=NONCES)
+    before = await _now(engine)
+    await store.decide(decision(link, LEFT), proof(LEFT), now=NOW + timedelta(seconds=2))
+    [prior] = await _held(engine, "managed_link_request", before)
+    assert prior["snapshot"] == _snapshot(link)
+    current = await store.get(link.request_id)
+    assert current is not None and LEFT in current.approved
+    [after] = await _held(engine, "managed_link_request", await _now(engine))
+    assert after["snapshot"] == _snapshot(current)
+    async with engine.connect() as conn:
+        history = (await conn.execute(sa.text(
+            "SELECT table_name, image FROM row_history WHERE table_name LIKE 'managed_%'"
+        ))).all()
+        deliveries = (await conn.execute(sa.select(METADATA.tables["managed_link_delivery"]))).all()
+        recorded = await conn.scalar(sa.select(
+            METADATA.tables["managed_link_decision"].c.recorded_at))
+    assert len(deliveries) == 2 and recorded is not None
+    async with engine.connect() as conn:
+        prior_decisions = [row async for part in append_only_as_of(
+            conn, "managed_link_decision", before) for row in part]
+        decisions = [row async for part in append_only_as_of(
+            conn, "managed_link_decision", await _now(engine)) for row in part]
+        sent = [row async for part in append_only_as_of(
+            conn, "managed_link_delivery", before) for row in part]
+    assert prior_decisions == [] and len(decisions) == 1
+    assert {r["nonce"] for r in sent} == set(NONCES.values())
+    assert all(nonce not in json.dumps([r.image for r in history]) for nonce in NONCES.values())
+    assert not any(r.table_name == "managed_link_delivery" for r in history)
+
+
+@pytest.mark.fresh_database
+async def test_managed_history_upgrade_backfills_only_the_state_it_can_establish(
+    clean_pg_url, engine,
+):
+    cfg = alembic_config(clean_pg_url)
+    command.downgrade(cfg, "0162_scoped_names")
+    async with engine.begin() as conn:
+        await conn.execute(METADATA.tables["managed_person"].insert().values(
+            **_MANAGED_ROWS["managed_person"]))
+        await conn.execute(METADATA.tables["managed_link_request"].insert().values(
+            **_MANAGED_ROWS["managed_link_request"]))
+        await conn.execute(sa.text(
+            "INSERT INTO managed_link_decision (operation_id,request_id,effect_id,evidence) "
+            "VALUES ('generated-decision','generated-request','generated-effect','{}')"))
+    before = await _now(engine)
+    run_migrations(clean_pg_url)
+    assert await _held(engine, "managed_person", before) == []
+    known = await _held(engine, "managed_person", await _now(engine))
+    assert len(known) == 1
+    assert known[0]["display_name"] == "Generated Name"
+    assert [r.op for r in await _chain(engine, "managed_person")] == ["backfill"]
+    async with engine.connect() as conn:
+        prior = [r async for part in append_only_as_of(
+            conn, "managed_link_decision", before) for r in part]
+        known_decisions = [r async for part in append_only_as_of(
+            conn, "managed_link_decision", await _now(engine)) for r in part]
+    assert prior == [] and len(known_decisions) == 1
+    async with engine.begin() as conn:
+        await conn.execute(METADATA.tables["managed_person"].update().values(
+            display_name="Renamed"))
+    assert [r.op for r in await _chain(engine, "managed_person")] == ["backfill", "update"]

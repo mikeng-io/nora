@@ -169,9 +169,9 @@
   },
   {
     "name": "existing circle permissions cover a collective source without widening listed nodes",
-    "file": "nora/agent/memory_search.py",
-    "old": "p for p in candidates",
-    "new": "p for p in listed",
+    "file": "nora/agent/memory_scope.py",
+    "old": "    presence = frozenset(\n        p for p in candidates\n        if section_permits((LineageEntry(PRESENCE, subject=p),), target, origin=None)\n    )\n    return MemoryScope(",
+    "new": "    presence = frozenset(\n        p for p in listed\n        if section_permits((LineageEntry(PRESENCE, subject=p),), target, origin=None)\n    )\n    return MemoryScope(",
     "target": "tests/unit/test_character_card.py::test_collective_location_uses_cited_subjects_not_the_viewer_roster"
   },
   {

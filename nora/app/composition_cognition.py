@@ -76,7 +76,7 @@ async def cognition_session(
     registry: Any, reminder_caps: Any, reminders: Any, rosters: Any,
     session_guidance: Any, shared: Any, standing_fold: Any, standing_store: Any,
     stimulus_store: Any, tag_trace_store: Any, tier: Any, tool_registry: Any,
-    unit_rooms: Any, unit_scopes: Any,
+    unit_rooms: Any, unit_scopes: Any, access: Any = None,
 ) -> CognitionSessionWiring:
     """A Cognition session per unit with a home room, hosted on the Dreamer."""
     cognition_upcoming = None
@@ -119,7 +119,7 @@ async def cognition_session(
         persons=persons, presence_circles=presence_circles,
         presence_reader=presence_reader, profile_reader=profile_reader,
         readers=readers, registry=registry, reminders=reminders,
-        rosters=rosters, unit_rooms=unit_rooms,
+        rosters=rosters, unit_rooms=unit_rooms, access=access,
     )
     cognition_runner = _session_runner(
         allowlist=allowlist, cfg=cfg, clock=clock,
@@ -269,7 +269,7 @@ def _session_grounder(
     memo_store: Any, metrics: Any, mobility: Any, observation_store: Any,
     persons: Any, presence_circles: Any, presence_reader: Any, profile_reader: Any,
     readers: Any, registry: Any, reminders: Any, rosters: Any,
-    unit_rooms: Any,
+    unit_rooms: Any, access: Any = None,
 ) -> Any:
     """The grounding read a session is built on."""
     cognition_context = cognition_context_reader(
@@ -333,10 +333,10 @@ def _session_grounder(
                 platform=platform,
                 conversation_id=conversation_id,
                 roster_source=rosters.get(platform),
-                persons=persons,
+                persons=persons, access=access,
                 self_ids=registry.self_aliases(),
             ).members(),
-            circles=presence_circles,
+            circles=presence_circles, access=access,
             content_checks=content_checks,
         ),
         # Her own account in the unit, under `[culture] enabled` like every Character rea…

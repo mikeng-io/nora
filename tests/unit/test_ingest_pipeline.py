@@ -15,6 +15,7 @@ import hashlib
 
 import pytest
 
+from nora.access import IdentityAccess
 from nora.domain.media import MediaRef
 from nora.domain.models import EditTarget, NormalizedMessage, PersonRef
 from nora.domain.ports import MemoryHealth
@@ -25,6 +26,7 @@ from nora.persons import Persons
 from nora.platform.registry import MediaSourceRegistry
 from nora.policy import permissive_policy
 from nora.testing import FakeBlobStore, FakeMediaSource, FakeRecordStore, FakeTranscriber
+from nora.testing.managed import UnavailableAccess
 
 
 def _msg(sender_id: str = "+852111", body: str = "hello") -> NormalizedMessage:
@@ -61,15 +63,16 @@ class FakeMemory:
 
 def _pipeline(*, memory, persons, policy, spawn, audit=None, allowlist=None,
               media_sources=None, blobs=None, metrics=None,
-              transcriber=None, language=""):
+              transcriber=None, language="", access=None):
     return IngestPipeline(
         audit=audit if audit is not None else FakeRecordStore(),
         memory=memory,
-        persons=persons,
         policy=policy,
         # These tests are about stage sequencing, not the allowlist; the room
         # gate has its own tests in tests/unit/test_ingest_scope.py.
         allowlist=allowlist if allowlist is not None else permissive_policy(),
+        access=(access or IdentityAccess.for_files(
+            persons=persons, policy=allowlist or permissive_policy())),
         metrics=metrics if metrics is not None else Metrics(),
         spawn=spawn,
         media_sources=media_sources,
@@ -96,8 +99,7 @@ async def test_when_the_audit_write_fails_the_pipeline_stops_before_identity_and
     pipeline = _pipeline(
         audit=store, memory=memory,
         persons=Persons(by_person={}, index={}),
-        policy=TriggerTextPolicy("nora.000"), spawn=spawned.append,
-    )
+        policy=TriggerTextPolicy("nora.000"), spawn=spawned.append)
 
     result = await pipeline.run(message=msg)
 
@@ -115,8 +117,7 @@ async def test_an_unmapped_sender_still_reaches_the_gate():
     memory = FakeMemory()
     pipeline = _pipeline(
         memory=memory, persons=Persons(by_person={}, index={}),
-        policy=TriggerTextPolicy("nora.000"), spawn=spawned.append,
-    )
+        policy=TriggerTextPolicy("nora.000"), spawn=spawned.append)
 
     result = await pipeline.run(message=msg)
 
@@ -133,15 +134,13 @@ async def test_a_mapped_trigger_message_engages_and_feeds_memory_off_path():
     msg = _msg(sender_id="+852111", body="nora.000 what's up")
     persons = Persons(
         by_person={"miles": PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")},
-        index={("signal", "+852111"): "miles"},
-    )
+        index={("signal", "+852111"): "miles"})
     spawned: list = []
     memory = FakeMemory()
     store = FakeRecordStore()
     pipeline = _pipeline(
         audit=store, memory=memory, persons=persons,
-        policy=TriggerTextPolicy("nora.000"), spawn=spawned.append,
-    )
+        policy=TriggerTextPolicy("nora.000"), spawn=spawned.append)
 
     result = await pipeline.run(message=msg)
 
@@ -176,8 +175,7 @@ async def test_a_denied_conversation_is_never_recorded():
     pipeline = _pipeline(
         memory=FakeMemory(), persons=Persons(by_person={}, index={}),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        audit=store, allowlist=load_policy(p),
-    )
+        audit=store, allowlist=load_policy(p))
     msg = dataclasses.replace(_msg(body="nora.000 hi"), conversation_id="not-allowed")
     result = await pipeline.run(message=msg)
     assert store.rows == [], "a denied conversation must leave no audit row"
@@ -202,8 +200,7 @@ async def test_a_denied_sender_is_recorded_but_not_answered():
     pipeline = _pipeline(
         memory=FakeMemory(), persons=Persons(by_person={}, index={}),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        audit=store, allowlist=load_policy(p),
-    )
+        audit=store, allowlist=load_policy(p))
     result = await pipeline.run(
         message=dataclasses.replace(_msg(body="nora.000 hi"), conversation_id="g1")
     )
@@ -230,8 +227,7 @@ async def test_custody_runs_before_the_audit_write_so_one_row_carries_both():
     blobs = FakeBlobStore()
     msg = dataclasses.replace(
         _msg(body="睇下 [image]"),
-        media=(MediaRef(platform_id="att1", media_type="image/jpeg", filename="a.jpg"),),
-    )
+        media=(MediaRef(platform_id="att1", media_type="image/jpeg", filename="a.jpg"),))
     pipeline = _pipeline(
         memory=FakeMemory(), persons=Persons(by_person={}, index={}),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
@@ -260,8 +256,7 @@ async def test_with_custody_unwired_the_row_is_recorded_and_the_loss_is_counted(
     metrics = Metrics()
     msg = dataclasses.replace(
         _msg(body="[voice note]"),
-        media=(MediaRef(platform_id="att1", media_type="audio/aac", voice_note=True),),
-    )
+        media=(MediaRef(platform_id="att1", media_type="audio/aac", voice_note=True),))
     pipeline = _pipeline(
         memory=FakeMemory(), persons=Persons(by_person={}, index={}),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
@@ -299,8 +294,7 @@ async def test_a_voice_note_is_transcribed_at_custody_and_the_row_keeps_the_hand
     transcriber = FakeTranscriber()
     msg = dataclasses.replace(
         _msg(body="[voice note]"),
-        media=(MediaRef(platform_id="att1", media_type="audio/aac", voice_note=True),),
-    )
+        media=(MediaRef(platform_id="att1", media_type="audio/aac", voice_note=True),))
     pipeline = _pipeline(
         memory=FakeMemory(), persons=Persons(by_person={}, index={}),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
@@ -330,8 +324,7 @@ async def test_a_failed_transcription_still_records_the_voice_note_with_a_bare_h
     transcriber = FakeTranscriber(available=False, reason="error")
     msg = dataclasses.replace(
         _msg(body="[voice note]"),
-        media=(MediaRef(platform_id="att1", media_type="audio/aac", voice_note=True),),
-    )
+        media=(MediaRef(platform_id="att1", media_type="audio/aac", voice_note=True),))
     pipeline = _pipeline(
         memory=FakeMemory(), persons=Persons(by_person={}, index={}),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
@@ -361,8 +354,7 @@ async def test_a_song_is_never_transcribed_even_when_a_transcriber_is_wired():
     transcriber = FakeTranscriber()
     msg = dataclasses.replace(
         _msg(body="[audio]"),
-        media=(MediaRef(platform_id="att1", media_type="audio/mpeg", voice_note=False),),
-    )
+        media=(MediaRef(platform_id="att1", media_type="audio/mpeg", voice_note=False),))
     pipeline = _pipeline(
         memory=FakeMemory(), persons=Persons(by_person={}, index={}),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
@@ -397,8 +389,7 @@ async def test_a_voice_note_transcribes_even_when_the_blob_store_cannot_be_read_
     transcriber = FakeTranscriber()
     msg = dataclasses.replace(
         _msg(body="[voice note]"),
-        media=(MediaRef(platform_id="att1", media_type="audio/aac", voice_note=True),),
-    )
+        media=(MediaRef(platform_id="att1", media_type="audio/aac", voice_note=True),))
     pipeline = _pipeline(
         memory=FakeMemory(), persons=Persons(by_person={}, index={}),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
@@ -527,8 +518,7 @@ def _policy_of(*, room: str = "g1", persons: str = '"*"'):
 def _known_persons() -> Persons:
     return Persons(
         by_person={"miles": PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")},
-        index={("signal", "+852111"): "miles"},
-    )
+        index={("signal", "+852111"): "miles"})
 
 
 async def _drive_recorded(metrics=None):
@@ -537,8 +527,7 @@ async def _drive_recorded(metrics=None):
     pipeline = _pipeline(
         memory=FakeMemory(), persons=_known_persons(),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(), metrics=metrics,
-    )
+        allowlist=_policy_of(), metrics=metrics)
     return await pipeline.run(message=_msg(body="just chatting"))
 
 
@@ -546,8 +535,7 @@ async def _drive_engaged(metrics=None):
     pipeline = _pipeline(
         memory=FakeMemory(), persons=_known_persons(),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(), metrics=metrics,
-    )
+        allowlist=_policy_of(), metrics=metrics)
     return await pipeline.run(message=_msg(body="nora.000 what's up"))
 
 
@@ -555,8 +543,7 @@ async def _drive_scope_refused(metrics=None):
     pipeline = _pipeline(
         memory=FakeMemory(), persons=_known_persons(),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(room="some-other-room"), metrics=metrics,
-    )
+        allowlist=_policy_of(room="some-other-room"), metrics=metrics)
     return await pipeline.run(message=_msg(body="nora.000 hi"))
 
 
@@ -570,8 +557,7 @@ async def _drive_audit_refused(monkeypatch, metrics=None):
     pipeline = _pipeline(
         audit=store, memory=FakeMemory(), persons=_known_persons(),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(), metrics=metrics,
-    )
+        allowlist=_policy_of(), metrics=metrics)
     return await pipeline.run(message=_msg(body="nora.000 hi"))
 
 
@@ -579,8 +565,17 @@ async def _drive_sender_not_allowed(metrics=None):
     pipeline = _pipeline(
         memory=FakeMemory(), persons=_known_persons(),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(persons='["someone-else"]'), metrics=metrics,
-    )
+        allowlist=_policy_of(persons='["someone-else"]'), metrics=metrics)
+    return await pipeline.run(message=_msg(body="nora.000 hi"))
+
+
+async def _drive_sender_unavailable(metrics=None):
+    pipeline = _pipeline(
+        memory=FakeMemory(), persons=_known_persons(),
+        policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
+        allowlist=_policy_of(), metrics=metrics,
+        access=UnavailableAccess(IdentityAccess.for_files(
+            persons=_known_persons(), policy=_policy_of())))
     return await pipeline.run(message=_msg(body="nora.000 hi"))
 
 
@@ -603,12 +598,10 @@ async def _drive_edit(metrics, *, edit_body: str, original_is_nora: bool = False
     pipeline = _pipeline(
         audit=store, memory=FakeMemory(), persons=_known_persons(),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(), metrics=metrics,
-    )
+        allowlist=_policy_of(), metrics=metrics)
     edit = dataclasses.replace(
         _msg(sender_id=sender_id, body=edit_body), timestamp=5,
-        edit_of=EditTarget(sent_ts=1),
-    )
+        edit_of=EditTarget(sent_ts=1))
     return await pipeline.run(message=edit)
 
 
@@ -624,8 +617,7 @@ async def _drive_touch(metrics, *, kind: str, recorded: bool = True,
     pipeline = _pipeline(
         audit=store, memory=FakeMemory(), persons=_known_persons(),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(), metrics=metrics,
-    )
+        allowlist=_policy_of(), metrics=metrics)
     touch = dataclasses.replace(
         _msg(sender_id=sender_id, body=""), timestamp=5,
         touch=Touch(kind=kind, target=EditTarget(sent_ts=1), emoji="👍"),  # type: ignore[arg-type]
@@ -643,6 +635,7 @@ def _all_drivers(monkeypatch, metrics):
         "engaged": lambda: _drive_engaged(metrics),
         "scope_refused": lambda: _drive_scope_refused(metrics),
         "sender_not_allowed": lambda: _drive_sender_not_allowed(metrics),
+        "sender_unavailable": lambda: _drive_sender_unavailable(metrics),
         "audit_refused": lambda: _drive_audit_refused(monkeypatch, metrics),
         "edit_recorded": lambda: _drive_edit(metrics, edit_body="dinner at 8"),
         "edit_engaged": lambda: _drive_edit(metrics, edit_body="nora.000 dinner at 8?"),
@@ -731,8 +724,7 @@ async def test_the_root_declares_itself_plumbing_at_span_start(unfiltered_spans)
     from nora.obs.tracing import TRACE_KIND, _EveryRootIsRecorded
 
     verdict = _EveryRootIsRecorded().should_sample(
-        None, 1, "ingest", attributes=dict(root.attributes),
-    )
+        None, 1, "ingest", attributes=dict(root.attributes))
     assert verdict.decision is Decision.RECORD_AND_SAMPLE, \
         "every root is recorded now — retention moved to the collector"
     assert root.attributes[TRACE_KIND] == "plumbing"
@@ -860,8 +852,7 @@ async def test_the_outcome_counter_carries_no_identifier():
     pipeline = _pipeline(
         memory=FakeMemory(), persons=Persons(by_person={}, index={}),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(room=room), metrics=metrics,
-    )
+        allowlist=_policy_of(room=room), metrics=metrics)
     await pipeline.run(message=dataclasses.replace(
         _msg(sender_id=sender, body="nora.000 my number is " + sender),
         conversation_id=room,
@@ -923,8 +914,7 @@ async def test_a_broken_tracer_never_stops_an_ingest(monkeypatch):
     pipeline = _pipeline(
         audit=store, memory=FakeMemory(), persons=_known_persons(),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(), metrics=metrics,
-    )
+        allowlist=_policy_of(), metrics=metrics)
 
     result = await pipeline.run(message=_msg(body="nora.000 hi"))
 
@@ -952,8 +942,7 @@ async def test_a_broken_counter_never_stops_an_ingest(monkeypatch):
     pipeline = _pipeline(
         audit=store, memory=FakeMemory(), persons=_known_persons(),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(), metrics=_BrokenMetrics(),
-    )
+        allowlist=_policy_of(), metrics=_BrokenMetrics())
 
     result = await pipeline.run(message=_msg(body="nora.000 hi"))
 
@@ -982,8 +971,7 @@ async def test_an_ingest_that_crashes_still_ends_on_its_own_root(unfiltered_span
         pipeline = _pipeline(
             memory=FakeMemory(), persons=_known_persons(),
             policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-            allowlist=_policy_of(), metrics=monkeypatch_free_metrics,
-        )
+            allowlist=_policy_of(), metrics=monkeypatch_free_metrics)
         with pytest.raises(RuntimeError):
             await pipeline.run(message=_msg(body="hi"))
     finally:
@@ -1034,8 +1022,7 @@ async def test_a_shared_file_link_is_recorded_beside_its_message_and_fed_as_a_ha
     pipeline = _pipeline(
         audit=audit, memory=memory, persons=_known_persons(),
         policy=TriggerTextPolicy("nora.000"), spawn=fed.append,
-        allowlist=_policy_of(),
-    )
+        allowlist=_policy_of())
     await pipeline.run(message=_msg(body=f"plan here {_DOC_URL} ok"))
     for coro in fed:
         await coro
@@ -1054,8 +1041,7 @@ async def test_a_message_without_a_file_link_stores_no_refs():
     pipeline = _pipeline(
         audit=audit, memory=FakeMemory(), persons=_known_persons(),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
-        allowlist=_policy_of(),
-    )
+        allowlist=_policy_of())
     await pipeline.run(message=_msg(body="https://drive.google.com/drive/folders/x and hi"))
     assert audit.rows[-1]["external_files_json"] is None
 
@@ -1089,8 +1075,7 @@ async def _relevance_candidate(*, listed: str):
     pipeline = _pipeline(
         memory=FakeMemory(), persons=_known_persons(),
         policy=CompositePolicy((RelevanceGatePolicy(allowlist),)),
-        spawn=lambda c: c.close(), allowlist=allowlist,
-    )
+        spawn=lambda c: c.close(), allowlist=allowlist)
     return await pipeline.run(
         message=dataclasses.replace(_msg(body="anyone know a good dentist"), conversation_id="g1")
     )

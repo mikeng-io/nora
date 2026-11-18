@@ -378,7 +378,40 @@ async def test_merge_stores_relation_and_evidence_without_replacing_either_entit
     )
 
 
-async def test_reads_registered_edit_and_reaction_authors_and_preserves_dm_origin(engine) -> None:
+@pytest.mark.parametrize("managed", [False, True], ids=["file", "managed"])
+async def test_reads_registered_edit_and_reaction_authors_and_preserves_dm_origin(
+    engine, managed,
+) -> None:
+    persons, policy, guard = _authority()
+    access = None
+    if managed:
+        from nora.domain.identity import Identifier
+        from nora.domain.managed import AccountState, ManagedAccount, ManagedPerson, PersonLifecycle
+        from nora.infra.sql.managed_identity import SqlBindingStore
+        from nora.people.app.managed import ManagedServices
+        from nora.testing.managed import (
+            FakeAuthorityBackend,
+            FakeIdentityRegistry,
+            FakeLinkRequests,
+            FakeTopologySource,
+        )
+
+        bindings = SqlBindingStore(engine)
+        await bindings.register(
+            person=ManagedPerson(PERSON.person_id, PersonLifecycle.ACTIVE),
+            account=ManagedAccount(
+                ACCOUNT, PERSON.person_id, "signal",
+                frozenset({Identifier("signal", "uuid", ACCOUNT)}), AccountState.BOUND,
+            ),
+        )
+        access = ManagedServices(
+            bindings, FakeAuthorityBackend(), FakeTopologySource(),
+            FakeIdentityRegistry(), FakeLinkRequests(),
+        ).access
+    service = admission(
+        engine, None if managed else persons, policy, guard, content_checks=False,
+        nora_accounts=(("signal", SELF_ACCOUNT),), access=access,
+    )
     async with engine.begin() as conn:
         source_id = await conn.scalar(
             sa.select(MESSAGES.c.id).where(MESSAGES.c.graph_id == "item-1")
@@ -418,12 +451,12 @@ async def test_reads_registered_edit_and_reaction_authors_and_preserves_dm_origi
     basis = replace(CLAIM_PROPOSAL, reasoning="told", scope=Scope("u", persons=("unknown",)))
     edit = replace(basis, id="by-edit", citations=("edit",))
     reaction = replace(basis, id="by-reaction", citations=("reaction",))
-    result = await _service(engine).admit((edit, reaction), PASS, ("edit", "reaction"))
+    result = await service.admit((edit, reaction), PASS, ("edit", "reaction"))
     assert result.outcomes == (Stored("by-edit"), Refusal("told_without_person", "citations"))
     row = (await _rows(engine, CLAIM))["by-edit"]
     assert row["origin_room"] == f"signal:{ACCOUNT}" and row["persons"] == [None]
     other = replace(edit, id="affiliate", scope=Scope("affiliate"))
-    result = await _service(engine).admit(
+    result = await service.admit(
         (other,),
         replace(PASS, unit="affiliate", room="room-2"),
         ("edit",),

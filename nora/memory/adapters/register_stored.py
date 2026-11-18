@@ -8,13 +8,15 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora import config
+from nora.access import EmptyPersons
+from nora.app.composition_stores import managed_identity
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.item_registration import RegistrationScope
 from nora.memory.adapters.stored_row_registration import SqlStoredRows
 from nora.memory.app.register_stored_rows import RegisterStoredRows, TableRegistration
 from nora.persons import Persons, load_persons
 from nora.platform.discord.channels import StaticChannelDirectory
-from nora.policy import load_policy
+from nora.policy import Policy, load_policy
 
 
 def _directory(path: Path | None) -> StaticChannelDirectory:
@@ -35,9 +37,7 @@ def _directory(path: Path | None) -> StaticChannelDirectory:
     return StaticChannelDirectory(channels=snapshot)
 
 
-async def register_with_policy(
-    engine: AsyncEngine, *, policy_path: Path, persons: Persons, channel_directory: Path | None,
-) -> dict[str, TableRegistration]:
+def _registration_policy(policy_path: Path, channel_directory: Path | None) -> Policy:
     directory = _directory(channel_directory)
     policy = load_policy(policy_path, channels=directory)
     missing = sorted({
@@ -48,8 +48,14 @@ async def register_with_policy(
     if missing:
         names = ", ".join(missing)
         raise SystemExit(f"unavailable: Discord channel-directory missing guilds {names}")
-    scope = RegistrationScope(policy, persons)
-    return await RegisterStoredRows(SqlStoredRows(engine, scope)).run()
+    return policy
+
+
+async def register_with_policy(
+    engine: AsyncEngine, *, policy_path: Path, persons: Persons, channel_directory: Path | None,
+) -> dict[str, TableRegistration]:
+    policy = _registration_policy(policy_path, channel_directory)
+    return await RegisterStoredRows(SqlStoredRows(engine, RegistrationScope(policy, persons))).run()
 
 
 async def _register(path: Path, channel_directory: Path | None) -> None:
@@ -57,13 +63,22 @@ async def _register(path: Path, channel_directory: Path | None) -> None:
     url = cfg.credentials.get(cfg.store.database_url_env)
     if not url:
         raise SystemExit(f"Postgres URL is missing ({cfg.store.database_url_env})")
-    persons = load_persons(cfg.identity_file)
     engine = create_sql_engine(url)
     try:
-        counts = await register_with_policy(
-            engine, policy_path=cfg.policy_file, persons=persons,
-            channel_directory=channel_directory,
-        )
+        if cfg.identity.backend == "managed":
+            policy = _registration_policy(cfg.policy_file, channel_directory)
+            managed = await managed_identity(cfg, EmptyPersons(), policy, engine)
+            try:
+                scope = RegistrationScope(policy, None, access=managed.services.access)
+                counts = await RegisterStoredRows(SqlStoredRows(engine, scope)).run()
+            finally:
+                if managed.session is not None:
+                    await managed.session.close()
+        else:
+            counts = await register_with_policy(
+                engine, policy_path=cfg.policy_file, persons=load_persons(cfg.identity_file),
+                channel_directory=channel_directory,
+            )
     finally:
         await engine.dispose()
     for family, report in counts.items():

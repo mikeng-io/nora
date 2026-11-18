@@ -25,6 +25,7 @@ from pydantic import (
     model_validator,
 )
 
+from nora.config_identity import IdentityBackendConfig
 from nora.domain.external_files import PROVIDERS as EXTERNAL_FILE_PROVIDERS
 from nora.domain.ports import (
     DEFAULT_DREAM_STORE_TIMEOUT_SECONDS,
@@ -1046,88 +1047,37 @@ class PreviewConfig(BaseModel):
 
 
 class PresenceConfig(BaseModel):
-    """The presence collector, DEC-54/DEC-55.
-
-    **The whole section is optional and every field defaults, and `enabled`
-    defaults to False**, like `[route]`: presence ships INERT. A `config.toml`
-    without a `[presence]` section loads unchanged, and while off nothing
-    constructs a collector or a Life360 client; `whereis` answers `unavailable`,
-    exactly as `route` does keyless.
-
-    Credentials are named, never inlined (DEC-8): `client_credential_env` names
-    the env var holding the Basic client credential, and
-    `username_env`/`password_env` the account login. The collector reads the
-    VALUES from the environment; a committed file never carries them.
-    `auth_token_env` names an OPTIONAL static bearer (the `LIFE360_AUTH_TOKEN`
-    cookie from a life360.com browser login) for an account Life360 refuses the
-    password grant to; when its value is set the client runs in token mode and
-    the three login vars are not required (nora/infra/life360/client.py).
-
-    `cadence_seconds` is the per-circle poll interval, roughly what the Life360
-    app itself does (~60-120 s). `retention_days` is the prune window; see the
-    field's own comment for the sizing.
-    """
+    """Presence collection, cadence, private refresh and geocoder settings."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-
     enabled: bool = False
     client_credential_env: str = "LIFE360_CLIENT_CREDENTIAL"
     username_env: str = "LIFE360_USERNAME"
     password_env: str = "LIFE360_PASSWORD"  # noqa: S105 — names an env var, not a secret
     auth_token_env: str = "LIFE360_AUTH_TOKEN"  # noqa: S105 — names an env var, not a secret
-    # ~60-120 s. `ge=1` guards a zero/negative that would busy-loop; the 60-120
-    # band is guidance in config.example.toml, not a hard clamp, so an operator
-    # can widen it deliberately without editing code.
     cadence_seconds: float = Field(default=90.0, ge=1.0)
-    # Adaptive cadence. The poll interval is not fixed: it drops to
-    # `cadence_moving_seconds` for a circle where ANYONE is driving, so `whereis`
-    # stays fresh through a commute, and grows back toward `cadence_still_seconds`
-    # as the circle sits still, so a parked circle is not polled every 20 s all
-    # night. `cadence_seconds` remains the base for the auth-failure back-off, which
-    # ALWAYS wins over the adaptive floor (a 429 lengthens the sleep regardless of
-    # who is moving: ban safety is never traded for freshness). Both `ge`-guarded
-    # against a busy-loop; a deployment that wants a fixed cadence sets moving ==
-    # still == cadence_seconds.
     cadence_moving_seconds: float = Field(default=20.0, ge=1.0)
     cadence_still_seconds: float = Field(default=300.0, ge=1.0)
-    # Sizing: 378 B/row x ~1,800 fixes/day x 720d ~= 490MB, which is cheap and keeps
-    # Tier-4 forecasting training data from being pruned before it is usable.
     retention_days: int = Field(default=720, ge=1)
-    # The collector's own metrics/health endpoint (liveness lives in the daemon). A
-    # separate process, so a separate port from `obs.metrics.port`.
     metrics_port: int = 9101
-    # How long the on-demand LIVE refresh (DEC-67) waits for a member's phone to
-    # report a fresh position before `where_is` falls back to the stored fix. A
-    # ceiling on the user's wait: the phone ping takes a few seconds, so ~8 s covers
-    # a normal response without hanging the tag on an unreachable phone.
     refresh_timeout_seconds: float = Field(default=8.0, ge=0.5)
-    # The collector's HTTP base URL, as NORA reaches it, for the on-demand LIVE
-    # refresh (DEC-67). In compose that is the presence service by name, e.g.
-    # "http://presence:9101". EMPTY (default) leaves `where_is` read-only (the
-    # offline/eval shape). Nora reads this same `[presence]` block; the collector
-    # serves the endpoint on `metrics_port`.
     refresh_url: str = ""
-    # Names the env var holding the Google Maps key used to reverse-geocode a fix
-    # Life360 returned WITHOUT an address, the same key the `route` tool uses.
-    # OPTIONAL like everything else here: unset means no geocoder, and an
-    # address-less fix stores the coordinate (never a crash). The value lives in the
-    # env, never in this file (DEC-8).
     geocode_api_key_env: str = "GOOGLE_MAPS_API_KEY"
-    # Which reverse-geocode backend to use: "google" (default) or "hkgov" (the
-    # HK-gov ArcGIS locator, a switchable OPTION, never replacing Google). Both sit
-    # behind the `ReverseGeocoder` port; the collector is unchanged by the choice.
     geocode_provider: Literal["google", "hkgov"] = "google"
-    # HK-gov backend (only read when `geocode_provider = "hkgov"`). The full
-    # `.../reverseGeocode` service URL from the operator's LANDSD Map API portal
-    # account, and the env var holding its access token (DEC-8: the token is an
-    # env value, never inlined). `hkgov_lang_zh`/`_en` are the langCode strings
-    # the deployment's locator honours (portal-specific; tune if the default
-    # returns the wrong language). Live-verifying these needs the operator's key.
     hkgov_geocode_url: str = ""
     hkgov_token_env: str = "HKGOV_MAPS_TOKEN"  # noqa: S105 — names an env var, not a secret
     hkgov_lang_zh: str = "zh"
     hkgov_lang_en: str = "en"
 
+    managed_circle_ids: tuple[str, ...] = ()
+    directory_key_env: str = "NORA_PRESENCE_DIRECTORY_KEY"
+
+    @field_validator("managed_circle_ids")
+    @classmethod
+    def unique_circles(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not v.strip() or v != v.strip() for v in value) or len(set(value)) != len(value):
+            raise ValueError("managed circles must be distinct nonblank identifiers")
+        return value
 
 class OnlineConfig(BaseModel):
     """The `online_now` tool's Steam half.
@@ -2823,13 +2773,12 @@ class XaiImageGenConfig(BaseModel):
     `keepalive` / `refresh_interval_hours`: the daemon refreshes this login
     on a schedule whenever `[image_gen] enabled` and the token is set,
     whichever provider is selected (DEC-308, `nora.app.oauth_keepalive`).
-    The interval is bounded to 1-72 h: shorter re-asks a refused login
-    every few minutes, longer delays the staleness alert (twice the
-    interval) that flags a dead login.
+    The 1-72 h interval bounds retries and alert delay (twice the interval).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    issuer_url: str = "https://auth.x.ai"
     model: str = "grok-imagine-image"
     quality_model: str = "grok-imagine-image-quality"
     timeout_seconds: float = 90.0
@@ -2845,8 +2794,7 @@ _GptImageQuality = Literal["low", "medium", "high", "auto"]
 
 
 class OpenAICodexImageGenConfig(BaseModel):
-    """`[image_gen.openai_codex]`: gpt-image through the ChatGPT (Codex)
-    subscription lane (DEC-304).
+    """`[image_gen.openai_codex]`: gpt-image via a ChatGPT subscription (DEC-304).
 
     `model` is the image renderer called directly;
     `responses_model` is retained for old config files but unused by the
@@ -2859,6 +2807,7 @@ class OpenAICodexImageGenConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    issuer_url: str = "https://auth.openai.com"
     model: str = Field(default="gpt-image-2.6-flare", min_length=1)
     responses_model: str = Field(default="gpt-5.5", min_length=1)
     standard_quality: _GptImageQuality = "medium"
@@ -2900,6 +2849,7 @@ class ImageGenConfig(BaseModel):
 
     enabled: bool = False
     provider: str = "xai"
+    state_dir: str = "/app/state"
     allow_reference_images: bool = False
 
     xai: XaiImageGenConfig = XaiImageGenConfig()
@@ -3849,9 +3799,7 @@ class TracingConfig(BaseModel):
     @model_validator(mode="after")
     def _check_otlp_endpoint(self) -> TracingConfig:
         if self.exporter == "otlp_http" and not self.endpoint:
-            raise ValueError(
-                "obs.tracing.endpoint is required when exporter is 'otlp_http'"
-            )
+            raise ValueError("obs.tracing.endpoint is required when exporter is 'otlp_http'")
         return self
 
 
@@ -4112,9 +4060,7 @@ class Config(BaseModel):
         memory = data.get("memory", {})
         if isinstance(memory, dict):
             if "extraction" in memory:
-                raise ValueError(
-                    "[memory.extraction] has been removed; delete the section"
-                )
+                raise ValueError("[memory.extraction] has been removed; delete the section")
             for key in HonchoConfig.model_fields:
                 if key in memory:
                     raise ValueError(f"[memory] {key} has been renamed to [honcho] {key}")
@@ -4276,6 +4222,9 @@ class Config(BaseModel):
     google: GoogleConfig = GoogleConfig()
     identity_file: Path
     policy_file: Path
+    # `[identity]` — backend selection: `file` (default, unchanged
+    # identity.toml/policy.toml) or `managed` (Kratos+Keto+PostgreSQL).
+    identity: IdentityBackendConfig = IdentityBackendConfig()
     obs: ObsConfig
     evals: EvalsConfig
 
@@ -4367,9 +4316,7 @@ class Config(BaseModel):
             *(b.timeout_seconds for b in self.dreamer.budgets.values()),
         ])
         model_budget = max_timeout + DEFAULT_WRITE_TIMEOUT_SECONDS
-        store_budget = (
-            2 * DREAM_MAX_STORE_CALLS_PER_TICK * self.dreamer.store_timeout_seconds
-        )
+        store_budget = (2 * DREAM_MAX_STORE_CALLS_PER_TICK * self.dreamer.store_timeout_seconds)
         media_budget = self.media.join_timeout_seconds
         return model_budget + store_budget + media_budget
 

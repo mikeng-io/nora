@@ -1,0 +1,107 @@
+# Disposable local/CI self-hosted Ory, pinned to the verified v26.2.0
+# manifests (digests recorded in deploy/ory/README.md). Loopback listeners
+# only; sqlite persistence under named volumes so `down -v` wipes state.
+#
+#   docker compose -f deploy/ory/compose.yaml up -d --wait
+#   docker compose -f deploy/ory/compose.yaml down -v
+#
+# Two container-side adjustments, both by environment (the committed
+# *.dev.yaml files stay host-side correct):
+#   - the configs bind 127.0.0.1, which inside a container is the
+#     container's own loopback — SERVE_*_HOST=0.0.0.0 keeps private host
+#     ports while letting the port mapping reach the listener.
+#   - the configs' sqlite paths live under /var/lib, which the images do
+#     not create — DSN overrides point at the mounted data dirs.
+# Migrations run once per `up` through the -migrate services; `serve`
+# waits on them.
+
+services:
+  keto-data:
+    image: oryd/keto:v26.2.0@sha256:bfdb8b9e283aedbd9e1d005c44eb1bbefd2096b2cb5b5aa0b7360b6e39c178d2
+    user: "0:0"
+    volumes:
+      - keto-data:/home/ory/data
+    entrypoint: ["chown", "ory:ory", "/home/ory/data"]
+    restart: "no"
+
+  keto-migrate:
+    image: oryd/keto:v26.2.0@sha256:bfdb8b9e283aedbd9e1d005c44eb1bbefd2096b2cb5b5aa0b7360b6e39c178d2
+    depends_on:
+      keto-data:
+        condition: service_completed_successfully
+    volumes:
+      - ./keto:/etc/keto:ro
+      - keto-data:/home/ory/data
+    environment:
+      DSN: sqlite:///home/ory/data/keto.db?_fk=true
+    entrypoint: ["keto", "migrate", "up", "-c", "/etc/keto/keto.dev.yaml", "--yes"]
+    restart: "no"
+
+  keto:
+    image: oryd/keto:v26.2.0@sha256:bfdb8b9e283aedbd9e1d005c44eb1bbefd2096b2cb5b5aa0b7360b6e39c178d2
+    depends_on:
+      keto-migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./keto:/etc/keto:ro
+      - keto-data:/home/ory/data
+    environment:
+      DSN: sqlite:///home/ory/data/keto.db?_fk=true
+      SERVE_READ_HOST: 0.0.0.0
+      SERVE_WRITE_HOST: 0.0.0.0
+    command: ["serve", "-c", "/etc/keto/keto.dev.yaml"]
+    ports:
+      - "127.0.0.1:4466:4466"
+      - "127.0.0.1:4467:4467"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:4466/health/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  kratos-data:
+    image: oryd/kratos:v26.2.0@sha256:2a13bb8d362c7a7ae33bd7c0f5168aee46921f15c916a06346db91c06dc76643
+    user: "0:0"
+    volumes:
+      - kratos-data:/home/ory/data
+    entrypoint: ["chown", "ory:ory", "/home/ory/data"]
+    restart: "no"
+
+  kratos-migrate:
+    image: oryd/kratos:v26.2.0@sha256:2a13bb8d362c7a7ae33bd7c0f5168aee46921f15c916a06346db91c06dc76643
+    depends_on:
+      kratos-data:
+        condition: service_completed_successfully
+    volumes:
+      - ./kratos:/etc/kratos:ro
+      - kratos-data:/home/ory/data
+    environment:
+      DSN: sqlite:///home/ory/data/kratos.db?_fk=true
+    entrypoint: ["kratos", "migrate", "sql", "-e", "--yes"]
+    restart: "no"
+
+  kratos:
+    image: oryd/kratos:v26.2.0@sha256:2a13bb8d362c7a7ae33bd7c0f5168aee46921f15c916a06346db91c06dc76643
+    depends_on:
+      kratos-migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./kratos:/etc/kratos:ro
+      - kratos-data:/home/ory/data
+    environment:
+      DSN: sqlite:///home/ory/data/kratos.db?_fk=true
+      SERVE_PUBLIC_HOST: 0.0.0.0
+      SERVE_ADMIN_HOST: 0.0.0.0
+    command: ["serve", "--dev", "-c", "/etc/kratos/kratos.dev.yaml"]
+    ports:
+      - "127.0.0.1:4433:4433"
+      - "127.0.0.1:4434:4434"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:4434/admin/health/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  keto-data:
+  kratos-data:

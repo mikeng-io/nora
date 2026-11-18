@@ -59,9 +59,9 @@ class _Clock:
 
 
 @pytest.fixture
-def parts(tmp_path, store):
+def parts(tmp_path, store, request):
     identity = tmp_path / "identity.toml"
-    identity.write_text(IDENTITY)
+    identity.write_text(getattr(request, "param", IDENTITY))
     doctrine = tmp_path / "doctrine"
     doctrine.mkdir()
     write(doctrine, "constraints.md", name="guardrails", order=40, body="# Guardrails\n\nBe kind.")
@@ -184,3 +184,26 @@ async def test_a_code_with_anything_but_six_ascii_digits_is_refused_unread(parts
         assert await service.verify(challenge_id=challenge, code=bad, purpose="sign_in") is None
     # None of those used up an attempt: the right code still works.
     assert await service.verify(challenge_id=challenge, code=code, purpose="sign_in") == "miles"
+
+
+@pytest.mark.parametrize("parts", ['''
+[persons.generated_person]
+name = "Generated Person"
+[[persons.generated_person.signal]]
+label = "personal"
+phone = "+85290000101"
+uuid = "a1000001-0000-4000-8000-000000000001"
+[[persons.generated_person.signal]]
+label = "work"
+phone = "+85290000102"
+uuid = "a1000002-0000-4000-8000-000000000002"
+'''], indirect=True, ids=["two-accounts"])
+async def test_a_code_for_the_second_account_is_not_sent_to_the_owners_first_account(parts):
+    service, adapter, _, _, _ = parts
+    challenge = await service.request(identifier="+852 9000 0102", platform="signal",
+                                      purpose="sign_in")
+    target, _ = adapter.sent[-1]
+    assert target.conversation_id == "a1000002-0000-4000-8000-000000000002"
+    assert target.conversation_type == "dm"
+    assert await service.verify(challenge_id=challenge, code=_code(adapter),
+                                purpose="sign_in") == "generated_person"

@@ -4,7 +4,7 @@ import * as Menu from "@radix-ui/react-dropdown-menu";
 import { Drawer } from "vaul";
 import { useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
-import { Check, ChevronsUpDown, Download, LogOut, Monitor, Moon, Share, Sun, UserRound } from "lucide-react";
+import { Check, ChevronsUpDown, Download, Link2, LogOut, Monitor, Moon, Share, Sun, UserRound } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { Segmented } from "@/components/ui/tabs";
@@ -21,6 +21,7 @@ const THEME_ICON = { light: Sun, dark: Moon, system: Monitor } as const;
 /** Desktop: the viewer's chip at the foot of the rail opens this menu. */
 export function AccountMenu() {
   const t = useTranslations("account");
+  const tNav = useTranslations("nav");
   const viewer = useViewer();
   const { choice, setChoice, options } = useThemeLabels();
   const { current, switchTo } = useLanguageSwitch();
@@ -36,7 +37,8 @@ export function AccountMenu() {
         <PersonAvatar id={viewer.personId} name={viewer.displayName} size={32} />
         <span className="grid min-w-0 flex-1">
           <span className="truncate text-[0.875rem] font-semibold text-ink">{viewer.displayName}</span>
-          <span className="truncate text-label text-ink-muted">{t(viewer.via === "code" ? "signedInCode" : "signedIn")}</span>
+          <span className="truncate text-label text-ink-muted">{t(viewer.via === "code" ? "signedInCode"
+              : viewer.via === "telegram" ? "signedInTelegram" : "signedIn")}</span>
         </span>
         <ChevronsUpDown className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
       </Menu.Trigger>
@@ -53,6 +55,14 @@ export function AccountMenu() {
               {t("yourPage")}
             </Link>
           </Menu.Item>
+          {viewer.managed ? (
+            <Menu.Item asChild className={itemClass}>
+              <Link href="/account">
+                <Link2 aria-hidden="true" />
+                {tNav("account")}
+              </Link>
+            </Menu.Item>
+          ) : null}
           <Menu.Separator className="my-1.5 h-px bg-hairline" />
           <Menu.Label className="px-2.5 pt-1 pb-1.5 text-label font-medium text-ink-muted">
             {t("lighting")}
@@ -108,6 +118,7 @@ export function AccountMenu() {
 /** Phone: the avatar in the top bar opens this sheet. */
 export function AccountSheet({ trigger }: { trigger: ReactNode }) {
   const t = useTranslations("account");
+  const tNav = useTranslations("nav");
   const viewer = useViewer();
   const [open, setOpen] = useState(false);
   const { choice, setChoice, options } = useThemeLabels();
@@ -132,7 +143,8 @@ export function AccountSheet({ trigger }: { trigger: ReactNode }) {
                 <Drawer.Title className="truncate text-[1.0625rem] font-semibold text-ink">
                   {viewer.displayName}
                 </Drawer.Title>
-                <p className="text-meta text-ink-muted">{t(viewer.via === "code" ? "signedInCode" : "signedIn")}</p>
+                <p className="text-meta text-ink-muted">{t(viewer.via === "code" ? "signedInCode"
+              : viewer.via === "telegram" ? "signedInTelegram" : "signedIn")}</p>
               </div>
             </div>
 
@@ -144,6 +156,16 @@ export function AccountSheet({ trigger }: { trigger: ReactNode }) {
               <UserRound className="size-5 text-ink-muted" aria-hidden="true" />
               {t("yourPage")}
             </Link>
+            {viewer.managed ? (
+              <Link
+                href="/account"
+                onClick={() => setOpen(false)}
+                className="flex h-12 items-center gap-3 rounded-control px-1 text-[0.9375rem] font-medium text-ink active:bg-hoodie"
+              >
+                <Link2 className="size-5 text-ink-muted" aria-hidden="true" />
+                {tNav("account")}
+              </Link>
+            ) : null}
 
             <SheetRow label={t("lighting")}>
               <Segmented

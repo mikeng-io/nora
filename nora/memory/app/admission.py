@@ -65,7 +65,14 @@ class AdmissionService:
         """Process each proposal once, with only confirmed writes visible to its siblings."""
         proposals = tuple(proposals)
         screened = [self._protect(proposal) for proposal in proposals]
-        context_or_refusal = self._context(context)
+        try:
+            context_or_refusal = await self._context(context)
+        except AdmissionUnavailableError as exc:
+            outcomes = tuple(
+                refusal or Unavailable(fields(proposal).id, exc.commit_uncertain)
+                for proposal, refusal in zip(proposals, screened, strict=True)
+            )
+            return AdmissionResult(outcomes, (), ())
         if isinstance(context_or_refusal, Refusal):
             outcomes = tuple(refusal or context_or_refusal for refusal in screened)
             return AdmissionResult(outcomes, (), ())
@@ -92,12 +99,12 @@ class AdmissionService:
                     retirements.append(outcome)
         return AdmissionResult(tuple(outcomes_list), tuple(revisions), tuple(retirements))
 
-    def _context(self, context: PassContext) -> PassContext | Refusal:
+    async def _context(self, context: PassContext) -> PassContext | Refusal:
         if self._identity.resolve_admission_unit(context.unit) is None:
             return Refusal("wrong_unit", "unit")
         if context.room is None:
             return context
-        room = self._identity.room(context.room, context.unit)
+        room = await self._identity.room(context.room, context.unit)
         if room is None:
             return Refusal("unresolved_room", "origin_room")
         if room.unit != context.unit:
@@ -119,13 +126,13 @@ class AdmissionService:
             return Unavailable(data.id, commit_uncertain=False)
         # IDs supplied by the model grant no additional reads.
         readable = ids & shown
-        rooms, persons = self._identity.references(
-            context.unit,
-            rooms=(data.scope.origin_room,) if data.scope.origin_room is not None else (),
-            persons=(*data.scope.persons, *data.scope.excluded_persons),
-            principals=(data.owner, data.owed_to) if isinstance(data, CreateIntention) else (),
-        )
         try:
+            rooms, persons = await self._identity.references(
+                context.unit,
+                rooms=(data.scope.origin_room,) if data.scope.origin_room is not None else (),
+                persons=(*data.scope.persons, *data.scope.excluded_persons),
+                principals=(data.owner, data.owed_to) if isinstance(data, CreateIntention) else (),
+            )
             rows = await self._store.read(context.unit, frozenset(readable))
             (choice,) = admit_batch(
                 (proposal,),

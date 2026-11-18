@@ -71,6 +71,18 @@ class PresenceStore:
         self._registration = registration
         self._aggregate_graph = aggregate_graph
 
+    async def recorded_circles(self, person_ids: Sequence[str]) -> dict[str, tuple[str, ...]]:
+        """Observed Record circles, not current provider membership or collection authority."""
+        stmt = sa.select(PRESENCE_FIXES.c.person_id, PRESENCE_FIXES.c.circle_id).where(
+            PRESENCE_FIXES.c.person_id.in_(person_ids)).distinct().order_by(
+                PRESENCE_FIXES.c.person_id, PRESENCE_FIXES.c.circle_id)
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        out: dict[str, list[str]] = {}
+        for person, circle in rows:
+            out.setdefault(person, []).append(circle)
+        return {person: tuple(circles) for person, circles in out.items()}
+
     async def record_fix(self, *, fix: PresenceFix) -> bool:
         """Insert `fix` iff its `ts` advances past the member's last stored `ts`.
 
@@ -101,7 +113,7 @@ class PresenceStore:
             recorded_at=fix.recorded_at,
         )
         registration = self._registration
-        units = registration.scope.person_units(fix.person_id) if registration else ()
+        units = await registration.scope.person_units(fix.person_id) if registration else ()
         written = False
         async with self._engine.begin() as conn:
             for unit in units or (None,):
@@ -167,15 +179,20 @@ class PresenceStore:
     async def replace_places(
         self, *, circle_id: str, places: list[SavedPlace], partial: bool = False,
         inputs: Sequence[Mapping[str, Any]] = (),
+        observed_persons: Sequence[str] | None = None,
     ) -> None:
         """Apply one circle's saved-place snapshot in each observing unit."""
         scope = self._registration.scope if self._registration else None
-        units = scope.circle_units(circle_id) if scope else ()
+        placements = await scope.circle_placements(
+            circle_id, observed_persons=observed_persons,
+        ) if scope else {None: ()}
         by_id = {place.place_id: place for place in places}
         async with self._engine.begin() as conn:
-            for unit in units or (None,):
-                await self._write_place_heads(conn, circle_id, unit, by_id, partial, inputs)
-            if not partial:
+            for unit, persons in (placements or {None: ()}).items():
+                await self._write_place_heads(
+                    conn, circle_id, unit, by_id, partial, inputs, persons,
+                )
+            if not partial and placements is not None:
                 table = PRESENCE_PLACES
                 prior_units = (
                     await conn.scalars(sa.select(table.c.unit).where(
@@ -183,12 +200,13 @@ class PresenceStore:
                     ).distinct())
                 ).all()
                 for unit in prior_units:
-                    if unit not in (units or (None,)):
-                        await self._write_place_heads(conn, circle_id, unit, {}, False, ())
+                    if unit not in placements:
+                        await self._write_place_heads(conn, circle_id, unit, {}, False, (), ())
 
     async def _write_place_heads(
         self, conn: AsyncConnection, circle_id: str, unit: str | None,
         by_id: dict[str, SavedPlace], partial: bool, inputs: Sequence[Mapping[str, Any]],
+        persons: tuple[str, ...],
     ) -> None:
         table = PRESENCE_PLACES
         scope = (table.c.circle_id == circle_id, table.c.unit.is_not_distinct_from(unit))
@@ -208,11 +226,11 @@ class PresenceStore:
                         *scope, table.c.place_id == prior["place_id"],
                     ))
         for place in by_id.values():
-            await self._write_place_head(conn, circle_id, unit, place, inputs)
+            await self._write_place_head(conn, circle_id, unit, place, inputs, persons)
 
     async def _write_place_head(
         self, conn: AsyncConnection, circle_id: str, unit: str | None, place: SavedPlace,
-        inputs: Sequence[Mapping[str, Any]],
+        inputs: Sequence[Mapping[str, Any]], persons: tuple[str, ...],
     ) -> None:
         planes: dict[str, Any] = {}
         registration = self._registration
@@ -221,7 +239,7 @@ class PresenceStore:
             planes = await self._aggregate_graph.aggregate_planes(
                 conn, PRESENCE_PLACES, unit=unit, key=(circle_id, place.place_id, unit),
                 occurred_at=at, asserted_at=at, minimum="internal",
-                persons=registration.scope.circle_persons(circle_id, unit=unit),
+                persons=persons,
                 inputs=(source for source in inputs if source.get("unit") == unit),
                 revisions=registration.revisions(),
             )

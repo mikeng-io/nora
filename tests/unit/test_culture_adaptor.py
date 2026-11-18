@@ -798,13 +798,13 @@ def test_the_character_to_token_bridge_is_the_MEASURED_one():
             >= ACCOUNT_CHARS_OBSERVED_MAX * OUTPUT_TOKENS_PER_CHAR)
 
 
-def test_the_declared_store_calls_cover_the_two_inputs_and_the_two_writes():
+def test_the_declared_store_calls_cover_names_inputs_and_commit():
     """`DreamerRuntime` bounds `inputs` and `commit` at this number x
     `[dreamer] store_timeout_seconds`, so a bound derived from a stale constant
     is a hold that is too wide — and a hold that is too wide looks exactly like
     a healthy one until something wedges. The architecture gate counts the
     awaits off the AST; this states what they ARE."""
-    assert STORE_CALLS_PER_TICK == 4  # two reads in `inputs`, two in `commit`
+    assert STORE_CALLS_PER_TICK == 5  # three reads in `inputs`, two calls in `commit`
     assert CultureAdaptor.store_calls_per_tick == STORE_CALLS_PER_TICK
 
 

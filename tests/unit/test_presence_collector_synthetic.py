@@ -109,6 +109,7 @@ class FakeStore:
 
     async def replace_places(
         self, *, circle_id: str, places: list[SavedPlace], partial: bool = False,
+        observed_persons: tuple[str, ...] | None = None,
     ) -> None:
         self.place_writes += 1
         covered = {place.place_id for place in places}
