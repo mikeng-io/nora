@@ -48,6 +48,9 @@ _OWN_INJECTOR = {
     "nora/doctrine/loader.py": "`render_section` — doctrine's own injector",
     "nora/language/cognition_parse.py":
         "the `<root>` shim that parses a rendered agenda back; never prompt-bound",
+    "nora/testing/causal_protocol.py":
+        "the `<m>` regex that reads markers out of a rendered agenda; "
+        "a finite world parses model output and never emits a block",
 }
 
 #: Tags a module NAMES without BUILDING, with the reason. The discriminator
