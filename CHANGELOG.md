@@ -1,5 +1,26 @@
 # Changelog
 
+## [7.19.9](https://github.com/mikeng-io/nora/compare/v7.19.8...v7.19.9) (2026-11-18)
+
+
+### Features
+
+* **eval:** measure production journeys with canonical evidence ([d343361](https://github.com/mikeng-io/nora/commit/d3433614e1b7c2329542694a165e68aba3220d3a))
+
+
+### Bug Fixes
+
+* **eval:** bind computer Redis to the isolated journey service ([eca8796](https://github.com/mikeng-io/nora/commit/eca879655d294751739773a01e8bad32c935a142))
+* **eval:** close blob custody during composition teardown ([8aaf61a](https://github.com/mikeng-io/nora/commit/8aaf61a9772f6fbcb03e2b1b3ad2f22c9d7cae8f))
+* **eval:** cover declared subject occasions and repeatable reads ([3e0f3d7](https://github.com/mikeng-io/nora/commit/3e0f3d7558c96c0949243f831ea8db3d71ff56e4))
+* **evals:** bind discovered OAuth token endpoints to playback ([249f492](https://github.com/mikeng-io/nora/commit/249f492495c1fa1bb66f48ebd803b77153a20c0e))
+* **evals:** bind generated adaptor answers at the subject boundary ([16fff07](https://github.com/mikeng-io/nora/commit/16fff070e80c531e3daa0d3b9cfb33b5110ecfa9))
+* **evals:** defer OTLP export until isolation closes ([a3337d4](https://github.com/mikeng-io/nora/commit/a3337d4deb529b0e4850058606a640c946bbd89d))
+* **evals:** print scoped journey accounting and satisfy size gates ([e50f252](https://github.com/mikeng-io/nora/commit/e50f2527f3dd5a20d5bb5d88d280547ee8afb4c7))
+* **evals:** retain explicitly declared generated services beside recordings ([9459b71](https://github.com/mikeng-io/nora/commit/9459b71456eb3b118c606f1e7c36d6bc5dcad6f9))
+* **evals:** type the finite protocol request census ([106ee1c](https://github.com/mikeng-io/nora/commit/106ee1cc1ef3402d7df0466e5d43773ee8043284))
+* **image-gen:** isolate OAuth issuers and rotating state ([acb8aa3](https://github.com/mikeng-io/nora/commit/acb8aa378a6a1664a95b40d2a043fc1176e2c72f))
+
 ## [7.19.8](https://github.com/mikeng-io/nora/compare/v7.19.7...v7.19.8) (2026-11-18)
 
 
