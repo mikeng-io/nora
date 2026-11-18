@@ -34,7 +34,6 @@ import sqlalchemy as sa
 import evals.__main__ as cli
 from nora.agent import factory
 from nora.subject import sandbox
-from tests.fakes import FakeHoncho
 from tests.integration.test_grading_contract import eval_contract_flags
 from tests.integration.test_spike_visibility import configured_sink, exported_spans
 from tests.integration.test_spike_visibility import otlp_wire as otlp_wire
@@ -163,25 +162,8 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
     # --- a generated deployment config (never the deployment's own) ---
     deploy_dir = tmp_path / "deploy"
     deploy_dir.mkdir()
-    # Honcho: the generated subject's memory traffic and the per-draw
-    # workspace must reach a REAL workspace server, not the deploy host's
-    # — the existing FakeHoncho served on its own loop in a thread.
-    import asyncio
     import importlib
-    import threading
     _obtain_mod = importlib.import_module("nora.subject.obtain")
-    fake = FakeHoncho()
-    honcho_loop = asyncio.new_event_loop()
-    ready = threading.Event()
-    def _serve():
-        asyncio.set_event_loop(honcho_loop)
-        url = honcho_loop.run_until_complete(fake.start())
-        ready.url = url
-        ready.set()
-        honcho_loop.run_forever()
-    threading.Thread(target=_serve, daemon=True).start()
-    ready.wait(timeout=10)
-    monkeypatch.setattr(_obtain_mod, "memory_endpoint", lambda: (ready.url, "nora"))
 
     example = example_config_path.read_text()
     assert 'database_url_env = "DATABASE_URL"' in example
@@ -189,9 +171,7 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
         'database_url_env = "DATABASE_URL"',
         'database_url_env = "GEN_DB_URL"', 1).replace(
         'model_path = "/app/models/喂Nora.onnx"',
-        f'model_path = "{tmp_path}/wake.onnx"').replace(
-        'base_url = "http://127.0.0.1:8000"',
-        f'base_url = "{ready.url}"'))
+        f'model_path = "{tmp_path}/wake.onnx"'))
     configured_sink(deploy_dir / "config.toml", deploy_dir / "config.toml")
     # The subject's policy/identity are the deployment's OWN files — the
     # generated deployment carries a generated room and generated identity,
@@ -201,6 +181,11 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
     (deploy_dir / "identity.toml").write_text(_DEFAULT_IDENTITY)
     import evals.backbone as bb
     monkeypatch.setattr(bb, "_DEPLOYMENT_DIR", deploy_dir)
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (checkout / "config.example.toml").write_text(example)
+    monkeypatch.setattr(cli, "_REPO_ROOT", checkout)
+    monkeypatch.setattr(_obtain_mod, "_TEMPLATE", checkout / "config.evaluation.toml")
     monkeypatch.setenv("GEN_DB_URL", source_url)
 
     # --- private evidence + the run's own lock, on the synthetic source ---
@@ -235,7 +220,6 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
     # The same injected transport covers SDK-owned provider clients a
     # bounded run reaches (the declared seam on run_budget).
     from nora.subject.run_budget_transport import injected_transport_client
-    injected_transport_client.set(httpx.AsyncClient(transport=transport))
 
     if break_evidence_write:
         import os as _os
@@ -253,12 +237,30 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
             return original_write(fd, data)
         monkeypatch.setattr(_os, "write", fail_model_request)
 
+    # This test supplies the external world. The CLI still binds the plan,
+    # captures it and runs the real draw through the isolation boundary.
+    from evals.services import ServiceInputs
+    from tests.sandbox_fixtures import OfflineSubjectServices
+
+    case_name = "route_computer_browse_a_page"
+    services = tmp_path / "services.json"
+    services.write_text(json.dumps({"tool_selection": {case_name: "offline-subject-test"}}))
+
+    def load_fixture_services(path):
+        assert path == services
+        return ServiceInputs(
+            {"tool_selection": {case_name: OfflineSubjectServices()}}, path.read_bytes(),
+        )
+
+    monkeypatch.setattr(cli, "load_services", load_fixture_services)
+
     # --- the REAL official entry ---
     contract_flags = eval_contract_flags(
-        tmp_path, names=["tool_selection"], only=["route_computer_browse_a_page"])
+        tmp_path, names=["tool_selection"], only=[case_name])
     monkeypatch.setattr("sys.argv", [
         "python -m evals", "tool_selection",
-        "--case", "route_computer_browse_a_page",
+        "--case", case_name,
+        "--services", str(services),
         "--deployment-config", str(deploy_dir / "config.toml"),
         "--source-url", source_url,
         "--subject-overrides", str(fixture),
@@ -268,7 +270,13 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
     # `main()` owns its asyncio.run + SIGTERM handler — it must run on the
     # main thread with no running loop, which is exactly what a
     # synchronous test gives it.
-    rc = cli.main()
+    client = httpx.AsyncClient(transport=transport)
+    token = injected_transport_client.set(client)
+    try:
+        rc = cli.main()
+    finally:
+        injected_transport_client.reset(token)
+        asyncio.run(client.aclose())
     return rc, evidence_root, requests, want_sha
 
 
