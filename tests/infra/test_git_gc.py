@@ -115,7 +115,8 @@ def repo(tmp_path: Path) -> Repo:
     r.git("remote", "add", "origin", str(origin))
     r.git("push", "-qu", "origin", "master")
 
-    for branch in ("chore/merged", "deployments", "dependabot/pip/x"):
+    # feat/stack-base equals master: a fresh stack base whose first layer is open.
+    for branch in ("chore/merged", "deployments", "dependabot/pip/x", "feat/stack-base"):
         r.git("branch", branch)
         r.git("push", "-qu", "origin", branch)
 
@@ -161,11 +162,11 @@ def repo(tmp_path: Path) -> Repo:
 
     open_prs = [
         {"headRefName": "feat/pr-head",
-         "headRefOid": r.head("feat/pr-head")},
+         "headRefOid": r.head("feat/pr-head"), "baseRefName": "feat/stack-base"},
         {"headRefName": "integ",
-         "headRefOid": r.head("origin/integ")},
+         "headRefOid": r.head("origin/integ"), "baseRefName": "master"},
         {"headRefName": "feat/restacked",
-         "headRefOid": r.head("feat/restacked")},
+         "headRefOid": r.head("feat/restacked"), "baseRefName": "master"},
     ]
     merged_prs = [
         {"number": 5, "headRefOid": r.head("feat/squashed")},
@@ -299,6 +300,14 @@ def test_open_pr_heads_are_kept(repo: Repo) -> None:
     for name in ("feat/pr-head", "integ"):
         assert "head of an open PR" in _line(out, "local branch", name)
         assert repo.git("branch", "--list", name).stdout.strip()
+
+
+def test_an_open_pr_base_equal_to_master_is_kept(repo: Repo) -> None:
+    out = _gc(repo, "--apply")
+    assert "base of an open PR" in _line(out, "local branch", "feat/stack-base")
+    assert "base of an open PR" in _line(out, "remote branch", "origin/feat/stack-base")
+    assert repo.git("ls-remote", "origin", "refs/heads/feat/stack-base").stdout.strip()
+    assert repo.git("branch", "--list", "feat/stack-base").stdout.strip()
 
 
 def test_open_pr_head_wins_over_merged_head_custody(repo: Repo) -> None:
