@@ -14,7 +14,7 @@ class ItemSource:
     writer: str
 
 
-ITEM_SOURCES = MappingProxyType({
+BACKFILL_ITEM_SOURCES = MappingProxyType({
     "messages": ItemSource(("person_id",), "external", "SqlRecordStore"),
     "message_edit": ItemSource(("messages.person_id",), "external", "SqlRecordStore"),
     "message_reaction": ItemSource(("person_id",), "external", "SqlRecordStore"),
@@ -28,6 +28,10 @@ ITEM_SOURCES = MappingProxyType({
     "platform_observation": ItemSource(("actor_id", "target_author_id"), "external",
                                        "SqlObservationStore"),
     "source_health": ItemSource((), "internal", "SqlSourceHealthLog"),
+})
+
+ITEM_SOURCES = MappingProxyType({
+    **BACKFILL_ITEM_SOURCES,
     "nora_act": ItemSource(("authority_person",), "internal", "SqlActStore"),
     "nora_act_outcome": ItemSource(("nora_act.authority_person",), "internal", "SqlActStore"),
     "nora_pass_output": ItemSource((), "internal", "SqlActStore"),
