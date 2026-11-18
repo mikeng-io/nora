@@ -105,6 +105,7 @@ DISC = Identifier("discord", "user_id", "generated-discord-1")
 TG = Identifier("telegram", "user_id", "generated-telegram-1")
 OP = Identifier("discord", "user_id", "generated-operator-1")
 FOREIGN_ACI = "a1000099-0000-4000-8000-000000000099"
+A2_ACI = "a2000099-0000-4000-8000-000000000099"
 RECEIPT = Path("/tmp/nora-managed-intake/nor5-journey-proof/receipt.json")  # noqa: S108 -- proof artifact outside the repo
 
 
@@ -421,15 +422,15 @@ async def _register_accounts(world):
     assert len(await services.bindings.persons()) == 5
 
     # What the credential does not admit refuses: no bearer, a collection
-    # audience claiming a room, a scope outside its grant.
+    # audience claiming a room, a real scope outside its grant — topology
+    # would admit the unit, so only the credential guard can deny this.
     assert (await client.post(ROSTERS, json=roster(
         "op-x0", ROOM_A, members_a, platform="signal"))).status == 401
     assert (await client.post(ROSTERS, headers=BEARER, json=roster(
         "op-x1", ROOM_A, members_a, platform="signal",
         audience="collection"))).status == 403
-    outside = Scope(ScopeKind.ROOM, room_scope_id("signal", "generated-outside"))
     assert (await client.post(ROSTERS, headers=BEARER, json=roster(
-        "op-x2", outside, members_a, platform="signal"))).status == 403
+        "op-x2", UNIT_SCOPE_A, members_a, platform="signal"))).status == 403
 
     # Membership is exactly what the rosters said: no admin, no sibling reach,
     # and a "bot"/"unknown" classification never changed admission.
@@ -480,6 +481,26 @@ async def _link_first_pair(world, a1, a2, disc, tg, op):
     await world.exchange(TG, method="telegram_oidc")
     await world.exchange(OP, method="discord_oauth")
     assert await world.check(SIG_A1) == 200
+
+    # The assertion binds the exact request and the account's own method: a
+    # proof minted for another platform's method, another path or another
+    # body is refused at the verifier before it reaches sign-in.
+    body = b"{}"
+    assert (await client.post(
+        EXCHANGE, data=body,
+        headers=auth(claims(account=DISC, purpose="sign_in",
+                            method="telegram_oidc", path=EXCHANGE,
+                            body=body)))).status == 401
+    assert (await client.post(
+        EXCHANGE, data=b'{"forged":true}',
+        headers=auth(claims(account=DISC, purpose="sign_in",
+                            method="discord_oauth", path=EXCHANGE,
+                            body=body)))).status == 401
+    assert (await client.post(
+        EXCHANGE, data=body,
+        headers=auth(claims(account=DISC, purpose="sign_in",
+                            method="discord_oauth", path=CHECK,
+                            body=body)))).status == 401
 
     request_id = f"generated-link-{uuid4().hex[:8]}"
     body = json.dumps({"request_id": request_id, "receiving": ident_json(DISC),
@@ -536,14 +557,33 @@ async def _link_first_pair(world, a1, a2, disc, tg, op):
                                              f"{initiating_nonce}",
                                   "groupInfo": {"groupId": "generated-group"}})
     assert await world.consent.dispatch(group) is False
+
+    # A registered account outside the named pair forwards the receiving
+    # nonce: the seam answers that sender's own proven alias with the
+    # refusal — not an acceptance, not an unavailable — and the pending
+    # request is untouched. The valid private approval below is the control.
     foreign = envelope(sender_number=SIG_A2.value, request_id=request_id,
-                       nonce=receiving_nonce)
+                       nonce=receiving_nonce, sender_uuid=A2_ACI)
+    pending = (await (await client.get(
+        view_path, headers=world.session_headers(
+            SIG_A1, path=view_path, http="GET"))).json())["request"]["approved"]
+    replies = len(world.sender.sent)
     assert await world.consent.dispatch(foreign) is True
+    assert [(target.conversation_id, text)
+            for target, text in world.sender.sent[replies:]] == [
+        (A2_ACI, f"Link request {request_id} refused: not-a-party.")]
+    assert (await (await client.get(
+        view_path, headers=world.session_headers(
+            SIG_A1, path=view_path, http="GET"))).json()
+            )["request"]["approved"] == pending == []
 
     # Signal consents through the private parser and exact sender binding.
     assert await world.consent.dispatch(
         envelope(sender_number=SIG_A1.value, request_id=request_id,
                  nonce=initiating_nonce)) is True
+    target, text = world.sender.sent[-1]
+    assert (target.conversation_id, text) == (
+        FOREIGN_ACI, f"Approval recorded for link request {request_id}.")
     view = (await (await client.get(
         view_path, headers=world.session_headers(SIG_A1, path=view_path,
                                                  http="GET"))).json())
