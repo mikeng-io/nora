@@ -221,6 +221,7 @@ async def test_registered_web_browse_journey(tmp_path, aiohttp_server):
         async def script(request):
             body = json.loads(request.content)
             prompt = body["messages"][1]["content"]
+            assert "<web_retrieval " in prompt
             requests.append(prompt)
             assert re.search(r'": "Click Commit purchase"', prompt) is None
             if len(requests) == 1:
