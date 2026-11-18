@@ -22,7 +22,7 @@ from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.schema import METADATA
 from nora.infra.sql.social_stream import SqlSocialStreamStore
 from nora.infra.sql.source_health import SqlSourceHealthLog
-from nora.memory.domain.registration import AGGREGATE_FAMILIES, ITEM_SOURCES
+from nora.memory.domain.registration import AGGREGATE_FAMILIES, BACKFILL_ITEM_SOURCES, ITEM_SOURCES
 from nora.persons import Life360Membership, Persons
 from nora.policy import Conversation, Policy
 
@@ -72,7 +72,7 @@ _ROOM_SOURCES = frozenset({
     "messages", "message_edit", "message_reaction", "message_delete",
     "fetched_pages", "platform_observation",
 })
-_FANOUT_SOURCES = tuple(source for source in ITEM_SOURCES if source not in _ROOM_SOURCES)
+_FANOUT_SOURCES = tuple(source for source in BACKFILL_ITEM_SOURCES if source not in _ROOM_SOURCES)
 
 
 class _FixedRevisions:
@@ -182,7 +182,7 @@ class _Writer:
             raise AssertionError(f"Missing writer fixture for {table}")
 
 
-@pytest.mark.parametrize("name", ITEM_SOURCES)
+@pytest.mark.parametrize("name", BACKFILL_ITEM_SOURCES)
 async def test_item_writer_registers_with_its_planes(engine: AsyncEngine, name: str) -> None:
     before = datetime.now(UTC)
     await _Writer(engine, _registration()).write(name)
@@ -217,7 +217,7 @@ async def test_item_writer_registers_with_its_planes(engine: AsyncEngine, name: 
 
 
 @pytest.mark.fresh_database
-@pytest.mark.parametrize("name", ITEM_SOURCES)
+@pytest.mark.parametrize("name", BACKFILL_ITEM_SOURCES)
 async def test_item_writer_rolls_back_after_registry_insert(
     engine: AsyncEngine, name: str, caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -255,7 +255,7 @@ async def test_item_writer_rolls_back_after_registry_insert(
     assert registered == prerequisites
 
 
-@pytest.mark.parametrize("name", ITEM_SOURCES)
+@pytest.mark.parametrize("name", BACKFILL_ITEM_SOURCES)
 async def test_item_insert_with_unit_and_no_registry_is_refused(
     engine: AsyncEngine, name: str,
 ) -> None:

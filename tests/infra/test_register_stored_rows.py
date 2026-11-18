@@ -11,7 +11,7 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import MESSAGES, METADATA, SOURCE_HEALTH
 from nora.memory.adapters.stored_row_registration import SqlStoredRows
 from nora.memory.app.register_stored_rows import RegisterStoredRows
-from nora.memory.domain.registration import AGGREGATE_FAMILIES, ITEM_SOURCES
+from nora.memory.domain.registration import AGGREGATE_FAMILIES, BACKFILL_ITEM_SOURCES
 from tests.infra.test_aggregate_registration import (
     _CIRCLE,
     _UNITS,
@@ -25,7 +25,7 @@ from tests.infra.test_item_registration import _SECOND, _UNIT, _registration, _W
 
 pytestmark = pytest.mark.fresh_database
 
-TABLES = (*ITEM_SOURCES, *AGGREGATE_FAMILIES)
+TABLES = (*BACKFILL_ITEM_SOURCES, *AGGREGATE_FAMILIES)
 PLANES = (set(ENTITY.c.keys()) - {"id", "name", "aliases", "pointer_kind", "pointer_ref"}) | {
     "graph_id",
 }
@@ -58,7 +58,7 @@ async def _legacy_fixture(engine):
     reg = _rollup_registration()
     message = await _record(engine, reg, restricted=False)
     writer = _Writer(engine, reg, room=ROOM)
-    for name in ITEM_SOURCES:
+    for name in BACKFILL_ITEM_SOURCES:
         if name not in ("messages", "presence_fixes"):
             await writer.write(name)
     await _build_rollup(engine, reg, message)
@@ -307,3 +307,27 @@ async def test_discord_backfill_uses_the_offline_directory_and_refuses_missing_g
         rows = await conn.execute(sa.select(MESSAGES.c.conversation_id, MESSAGES.c.unit))
         assert dict(rows.all()) == {f"{guild}/{admitted}": unit, f"{guild}/{ignored}": None}
         assert all((await _validated(conn)).values())
+
+
+async def test_backfill_registers_probes_and_keeps_unscoped_acts(engine):
+    from nora.infra.sql.cognitive_graph_schema import NORA_ACT, NORA_ACT_OUTCOME
+    from nora.memory.adapters.act_store import SqlActStore
+    from nora.memory.domain.acts import Act, ActAuthority, ActIdentity, Outcome
+
+    registration = _rollup_registration()
+    store = SqlActStore(engine, registration)
+    act = Act(ActIdentity("fixture", "generated-act", 0), "effect",
+              "generated-destination", ActAuthority(None), "unknown")
+    assert await store.reserve(act)
+    await store.observe(act, Outcome("done"))
+    await _probes(engine, 1)
+
+    report = await RegisterStoredRows(SqlStoredRows(engine, registration.scope)).run()
+    assert report["source_health"].registered == 1
+    assert not {"nora_act", "nora_act_outcome"} & report.keys()
+    async with engine.connect() as conn:
+        for table in (NORA_ACT, NORA_ACT_OUTCOME):
+            row = (await conn.execute(sa.select(table.c.unit, table.c.graph_id))).one()
+            assert row == (None, None)
+        registered = await conn.scalar(sa.select(sa.func.count()).select_from(REGISTRY))
+    assert registered == 1
