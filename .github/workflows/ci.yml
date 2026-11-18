@@ -360,55 +360,27 @@ jobs:
         if: github.event_name != 'workflow_dispatch'
         run: >-
           uv run python -m scripts.pytest_gate
+          --junit-dir backend-results
           tests/contract/test_binding_store_contract.py
           tests/contract/test_authority_backend_contract.py
           tests/contract/test_admission_identity_contract.py
           tests/contract/test_admission_probe_contract.py
           tests/infra/test_managed_admission_sql.py
           tests/integration/test_managed_admission_ory.py
-          tests/integration/test_managed_export_ory.py
           tests/integration/test_managed_identity_journey.py
-          tests/integration/test_managed_identity_restore.py
           tests/integration/test_managed_runtime_recovery.py
           tests/integration/test_managed_community_cost.py
-          tests/integration/test_managed_analytics.py
-          tests/integration/test_managed_circle_cost.py
-          tests/integration/test_managed_collective_identity.py
-          tests/integration/test_managed_ingest_authority.py
           tests/integration/test_managed_lineage.py
           tests/integration/test_managed_presence.py
           tests/integration/test_managed_routes.py
-          tests/integration/test_platform_observation_ingest.py
           tests/contract/test_binding_store_scoped_contract.py
           tests/infra/test_account_link_requests.py
           tests/infra/test_link_publication_sql.py
           tests/infra/test_managed_otp.py
           tests/infra/test_managed_mutation_gate.py
           tests/infra/test_kratos_identity_contract.py
-          tests/web/test_management_bootstrap.py
-          tests/web/test_management_auth_bootstrap.py
-          tests/web/test_management_sessions.py
-          tests/web/test_management_operator.py
-          tests/web/test_managed_viewer.py
-          tests/web/test_managed_otp_flow.py
-          tests/web/test_managed_ory_credentials.py
-          tests/web/test_roster_provisioning.py
-          tests/web/test_holder_links.py
           tests/infra/test_roster_provisioning_sql.py
-          tests/unit/test_roster_sources.py
           tests/infra/test_otp.py
-          tests/web/test_otp.py
-          tests/web/test_management_api.py
-          tests/unit/test_managed_authority.py
-          tests/unit/test_managed_identity_handoff.py
-          tests/unit/test_managed_registration.py
-          tests/unit/test_account_linking_state.py
-          tests/unit/test_holder_link.py
-          tests/unit/test_grouped_account_observation.py
-          tests/unit/test_link_publication.py
-          tests/domain/test_management.py
-          tests/unit/test_management_request.py
-          tests/unit/test_management_authentication.py
           tests/architecture/test_port_fakes_live_in_nora_testing.py
           tests/architecture/test_ory_ci.py
       - name: Selected backend acceptance
@@ -502,10 +474,119 @@ jobs:
         if: always() && steps.ory.outcome != 'skipped' && steps.ory.outcome != ''
         run: docker compose -p nora-ory-contract -f deploy/ory/compose.yaml down -v
 
+  ory-journey:
+    needs: classify
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || needs.classify.result != 'success' || fromJSON(needs.classify.outputs.plan)['ory-journey']) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 90 || 5 }}
+    permissions:
+      contents: read
+      actions: read
+    env:
+      NORA_TEST_MAX_WORKERS: '4'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.13.4'
+          python-version: '3.12'
+          enable-cache: false
+      - run: uv sync --frozen --extra evals
+      - name: Match the audited Periphery Compose CLI
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          mkdir -p "$HOME/.docker/cli-plugins"
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/docker/compose/releases/download/v5.5.0/docker-compose-linux-x86_64 \
+            -o "$RUNNER_TEMP/docker-compose"
+          echo "c57ab918abd5b05ca7e7d0f275875dd1330a695074f309dc9eab1b49efafcd4b  $RUNNER_TEMP/docker-compose" | sha256sum --check
+          install -m 755 "$RUNNER_TEMP/docker-compose" "$HOME/.docker/cli-plugins/docker-compose"
+          docker compose version
+      - id: ory
+        name: Start disposable pinned Ory services
+        run: docker compose -p nora-ory-contract -f deploy/ory/compose.yaml up -d --wait --wait-timeout 90
+      - name: Execute policy and production-client contracts
+        run: |
+          uv run python -m scripts.check_ory_policy --read-url http://127.0.0.1:4466 --write-url http://127.0.0.1:4467
+          uv run python -m scripts.check_ory_clients --kratos-url http://127.0.0.1:4434 --keto-read-url http://127.0.0.1:4466 --keto-write-url http://127.0.0.1:4467
+      - name: Managed identity contracts
+        if: github.event_name != 'workflow_dispatch'
+        run: >-
+          uv run python -m scripts.pytest_gate
+          --junit-dir backend-results
+          tests/integration/test_managed_export_ory.py
+          tests/integration/test_managed_identity_restore.py
+          tests/integration/test_managed_analytics.py
+          tests/integration/test_managed_circle_cost.py
+          tests/integration/test_managed_collective_identity.py
+          tests/integration/test_managed_ingest_authority.py
+          tests/integration/test_platform_observation_ingest.py
+          tests/web/test_management_bootstrap.py
+          tests/web/test_management_auth_bootstrap.py
+          tests/web/test_management_sessions.py
+          tests/web/test_management_operator.py
+          tests/web/test_managed_viewer.py
+          tests/web/test_managed_otp_flow.py
+          tests/web/test_managed_ory_credentials.py
+          tests/web/test_roster_provisioning.py
+          tests/web/test_holder_links.py
+          tests/web/test_otp.py
+          tests/web/test_management_api.py
+          tests/unit/test_roster_sources.py
+          tests/unit/test_managed_authority.py
+          tests/unit/test_managed_identity_handoff.py
+          tests/unit/test_managed_registration.py
+          tests/unit/test_account_linking_state.py
+          tests/unit/test_holder_link.py
+          tests/unit/test_grouped_account_observation.py
+          tests/unit/test_link_publication.py
+          tests/unit/test_management_request.py
+          tests/unit/test_management_authentication.py
+          tests/domain/test_management.py
+      - name: Per-file durations
+        if: ${{ !cancelled() }}
+        run: |
+          uv run python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, shutil, xml.etree.ElementTree as ET
+          from collections import Counter
+          from pathlib import Path
+          for receipt in Path(".git").glob("nora-test-cost-*.json"):
+              Path("backend-results").mkdir(exist_ok=True)
+              shutil.copyfile(receipt, Path("backend-results") / receipt.name)
+          files, outcomes = Counter(), Counter()
+          for report in sorted(Path("backend-results").glob("*.xml")):
+              for case in ET.parse(report).iter("testcase"):
+                  files[case.get("file") or "<no file>"] += float(case.get("time") or 0)
+                  outcomes[next((c.tag for c in case if c.tag in ("failure", "error", "skipped")), "passed")] += 1
+          Path("test-durations.json").write_text(json.dumps(dict(sorted(files.items())), indent=1))
+          total = sum(files.values())
+          print(f"Outcomes: {dict(outcomes)}  \nFiles: {len(files)}  \nSummed test time: {total/60:.1f} min\n")
+          print("| seconds | file |\n|---:|---|")
+          for name, seconds in files.most_common(30):
+              print(f"| {seconds:.1f} | {name} |")
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: backend-acceptance-ory-journey
+          path: |
+            backend-results/*
+            test-durations.json
+
+      - name: Read disposable service failures
+        if: failure() && steps.ory.outcome != 'skipped' && steps.ory.outcome != ''
+        run: docker compose -p nora-ory-contract -f deploy/ory/compose.yaml logs --no-color
+      - name: Remove disposable services and data
+        if: always() && steps.ory.outcome != 'skipped' && steps.ory.outcome != ''
+        run: docker compose -p nora-ory-contract -f deploy/ory/compose.yaml down -v
+
   checks:
     timeout-minutes: 1
     if: always()
-    needs: [classify, python, contracts, ory, portal, portal-browser, go, site, dependency-review, codeql-python, codeql-javascript, codeql-go, codeql-actions]
+    needs: [classify, python, contracts, ory, ory-journey, portal, portal-browser, go, site, dependency-review, codeql-python, codeql-javascript, codeql-go, codeql-actions]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
