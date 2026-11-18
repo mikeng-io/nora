@@ -87,6 +87,11 @@ Missing provider-returned reasoning is recorded as missing, never invented.
 It invalidates only a claim that needs it; observable calls and state outcomes
 can establish other properties without access to private model reasoning.
 
+Anchored tool-routing comparisons declare the behavioral claim, finite
+case selection and model gateway together. Non-model calls stay inside
+the case-owned service boundary. The routing grader reads executed tool
+evidence. Gateway or evidence failure leaves the claim unestablished.
+
 ## Comparison and cost
 
 The experiment binds subject and grader identities separately: scenario,

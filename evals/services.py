@@ -1,4 +1,4 @@
-"""Private per-corpus, per-draw external recordings for protocol rehearsal."""
+"""Private per-case service plans for isolated evaluations."""
 
 from __future__ import annotations
 
@@ -8,11 +8,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from nora.subject.eval_evidence import EvidenceError
 from nora.subject.recorded_services import RecordedServices
 
 #: A manifest entry without `kind` stays the positional recording;
 #: `journey_world` is the declarative plan the live-clock drive opens.
 JOURNEY_KIND = "journey_world"
+ROUTING_KIND = "routing_recording"
+ROUTING_CORPUS = "tool_selection"
 _JOURNEY_KEYS = frozenset({
     "kind", "policy", "room", "identity", "overrides", "judges",
     "model_gateway", "external", "generated_bindings",
@@ -39,24 +42,24 @@ def _gateway(name: str, entry: dict[str, Any], judges: list) -> Any:
         return None
     if not isinstance(declared, dict) or set(declared) != {"upstream", "models"}:
         raise ValueError(
-            f"journey service plan for {name!r} declares a malformed "
+            f"service plan for {name!r} declares a malformed "
             "model gateway")
     models = declared["models"]
     if (not isinstance(models, list) or not models
             or not all(isinstance(m, str) and m for m in models)):
         raise ValueError(
-            f"journey service plan for {name!r} declares no model "
+            f"service plan for {name!r} declares no model "
             "identities for its model gateway")
     if not set(judges) <= set(models):
         raise ValueError(
-            f"journey service plan for {name!r} declares a model gateway "
+            f"service plan for {name!r} declares a model gateway "
             "whose identities omit a declared judge alias")
     try:
         return ModelGateway(
             upstream=declared["upstream"], models=frozenset(models))
     except (TypeError, ValueError) as exc:
         raise ValueError(
-            f"journey service plan for {name!r} declares an invalid model "
+            f"service plan for {name!r} declares an invalid model "
             f"gateway: {exc}") from None
 
 
@@ -114,13 +117,20 @@ def _journey_plan(name: str, entry: dict[str, Any]) -> Any:
             f"journey service plan for {name!r}: {exc}") from None
 
 
-def _plan_for(name: str, entry: Any) -> Any:
+def _plan_for(corpus: str, name: str, entry: Any) -> Any:
     """One case's services plan: the recording it always was, or a declared kind."""
     if not isinstance(entry, dict):
         raise ValueError(f"service plan for {name!r} is malformed")
     kind = entry.get("kind", "recorded")
     if kind == "recorded":
         return RecordedServices({k: v for k, v in entry.items() if k != "kind"})
+    if kind == ROUTING_KIND:
+        if corpus != ROUTING_CORPUS or set(entry) != {"kind", "model_gateway", "external"}:
+            raise ValueError(f"invalid routing service plan for {corpus}:{name}")
+        gateway = _gateway(name, entry, [])
+        if gateway is None:
+            raise ValueError(f"routing service plan for {name!r} requires a model gateway")
+        return RecordedServices(entry["external"], model_gateway=gateway)
     if kind == JOURNEY_KIND:
         return _journey_plan(name, entry)
     raise ValueError(f"unknown service kind {kind!r} for {name!r}")
@@ -138,5 +148,20 @@ def load_services(path: Path) -> ServiceInputs:
         if (not isinstance(corpus, str) or not corpus or not isinstance(cases, dict)
                 or not cases or any(not isinstance(name, str) or not name for name in cases)):
             raise ValueError("invalid case service names")
-        result[corpus] = {name: _plan_for(name, entry) for name, entry in cases.items()}
+        result[corpus] = {name: _plan_for(corpus, name, entry) for name, entry in cases.items()}
     return ServiceInputs(result, raw)
+
+
+def recording_for(case: Any, plans: Any, measurement: Any) -> Any:
+    name = case.name or "unnamed"
+    recording = (plans or {}).get(name)
+    if recording is None:
+        raise EvidenceError("external_responses_missing: " + name)
+    if isinstance(recording, RecordedServices):
+        corpus = (case.metadata or {}).get("corpus")
+        routing = measurement.behavioral and corpus == ROUTING_CORPUS
+        if routing != (recording.model_gateway is not None):
+            raise EvidenceError(
+                "routing gateway and behavioral measurement must be declared together"
+            )
+    return recording

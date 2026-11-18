@@ -15,6 +15,7 @@ from aiohttp import web
 
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import EvidenceError
+from nora.subject.model_gateway import ModelGateway
 
 
 def _object(value: Any, required: set[str], allowed: set[str]) -> dict[str, Any]:
@@ -212,9 +213,17 @@ class Playback:
 class RecordedServices:
     """A validated snapshot, reusable for independent isolated cases."""
 
-    def __init__(self, data: dict[str, Any]) -> None:
+    def __init__(
+        self, data: dict[str, Any], *, model_gateway: ModelGateway | None = None,
+    ) -> None:
         _validate(data)
+        if model_gateway is not None and any(
+            path == "llm.base_url" or (path.startswith("providers.") and path.endswith(".base_url"))
+            for path in data["bindings"]
+        ):
+            raise ValueError("recorded model bindings cannot shadow a declared model gateway")
         self._data = json.loads(json.dumps(data, allow_nan=False))
+        self.model_gateway = model_gateway
 
     @property
     def bindings(self) -> dict[str, str]:
@@ -240,6 +249,7 @@ class RecordedServices:
         environment = IsolatedServices(
             database_url=database_url,
             redis=redis,
+            model_gateway=self.model_gateway,
             applications={
                 binding: applications[name] for binding, name in playback.bindings.items()
             },

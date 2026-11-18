@@ -37,7 +37,7 @@ from evals.backbone import (
 )
 from evals.cli import BUDGET_MINUTES, eval_parser, run_budget_for
 from evals.grading_contract import GradingContract
-from evals.journey_cohort import bound_selection
+from evals.journey_cohort import bound_selection, grading_selection
 from evals.measurement import PROTOCOL, Measurement
 from evals.reading import base_name, read, sample_read
 from evals.rebuilt.grading import DEFAULT_SAMPLES, Judge
@@ -652,11 +652,7 @@ def _main(*, lock_fd: int = -1) -> int:
         args, entrypoint="eval",
         judges=((args.judge,) if args.judge else ()) + (
             args.bound_cohort.judges if args.bound_cohort else ()),
-        selection={"corpora": names, "only": sorted(only or ()),
-                   "sample": args.sample, "judge_samples": args.judge_samples,
-                   **({"journey_cohort": args.bound_cohort.sha256,
-                       "measurement": args.bound_measurement.mode}
-                      if args.bound_cohort else {})},
+        selection=grading_selection(args, names, only),
     )
     from opentelemetry import trace
 

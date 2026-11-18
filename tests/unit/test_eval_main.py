@@ -513,3 +513,69 @@ def test_no_run_input_bytes_leaves_the_wire_bound_unset():
     assert _parsed_budget("tool_selection", "--run-budget", "10") \
         .max_input_bytes is None
     assert _parsed_budget("tool_selection") is None
+
+
+def test_tool_selection_behavioral_preflight_requires_bound_cases_and_budget(
+    tmp_path, monkeypatch, capsys,
+):
+    import json
+    import sys
+    from types import SimpleNamespace
+
+    from evals.journey_cohort import bound_selection
+    from evals.services import load_services
+
+    case = "generated-route"
+    monkeypatch.setattr("evals.scenarios.selected_cases", lambda *a, **k: [
+        SimpleNamespace(name=case),
+    ])
+    path = tmp_path / "routing-services.json"
+    plan = {
+        "kind": "routing_recording",
+        "model_gateway": {"upstream": "http://127.0.0.1:8000/v1", "models": ["generated"]},
+        "external": {
+            "version": 1, "bindings": {"honcho.base_url": "memory"},
+            "services": {"memory": []},
+        },
+    }
+
+    def load(cases):
+        path.write_text(json.dumps({"version": 1, "corpora": {"tool_selection": cases}}))
+        return load_services(path)
+
+    args = _args(measure="behavioral", journey_cohort=None, judge=None, memory_index=False,
+                 print_input=None, run_budget="1", service_inputs=load({case: plan}))
+    only = frozenset({case})
+    assert bound_selection(args, ["tool_selection"], only) is None
+    assert args.bound_measurement.behavioral
+
+    from evals.__main__ import main
+
+    monkeypatch.delenv("NORA_EVAL_GRADING_CONTRACT", raising=False)
+    monkeypatch.delenv("NORA_EVAL_GRADING_CONTRACT_SHA256", raising=False)
+    monkeypatch.setattr(sys, "argv", [
+        "evals", "tool_selection", "--measure", "behavioral", "--case", case,
+        "--run-budget", "1", "--services", str(path),
+    ])
+    assert main() == 2
+    assert "paid evaluation requires --grading-contract" in capsys.readouterr().err
+    for names, selection, budget, claim, expected in (
+        (["tool_selection"], None, "1", "behavioral", "explicit cases"),
+        (["tool_selection"], only, None, "behavioral", "run-budget"),
+        (["standing", "tool_selection"], only, "1", "behavioral", "require a behavioral"),
+        (["tool_selection"], only, "1", "protocol", "require a behavioral"),
+    ):
+        args.run_budget, args.measure = budget, claim
+        with pytest.raises(ValueError, match=expected):
+            bound_selection(args, names, selection)
+    args.measure = "behavioral"
+    args.service_inputs = load({"different-case": plan})
+    with pytest.raises(ValueError, match="one gateway recording per selected case"):
+        bound_selection(args, ["tool_selection"], only)
+    plan["external"]["bindings"] = {"llm.base_url": "memory"}
+    with pytest.raises(ValueError, match="cannot shadow"):
+        load({case: plan})
+    plan["external"]["bindings"] = {"honcho.base_url": "memory"}
+    plan["model_gateway"]["models"] = []
+    with pytest.raises(ValueError, match="no model identities"):
+        load({case: plan})
