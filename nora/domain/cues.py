@@ -41,7 +41,7 @@ from typing import Literal, get_args
 #: vocabulary of `nora_stimulus_total{cue}` is this plus `none`, DERIVED here.
 Cue = Literal[
     "datetime", "amount", "keep", "rsvp", "place_link", "surprise",
-    "addresses_nora", "self_reference",
+    "addresses_nora", "self_reference", "baseline_crossed",
 ]
 CUES: tuple[str, ...] = get_args(Cue)
 

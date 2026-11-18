@@ -103,7 +103,7 @@ class _Batch:
         if row["verdict"] == "uncertain":
             return Evaluation("unknown")
         if row["verdict"] != "done":
-            return Evaluation("false")
+            return Evaluation("false", _witness(row, row["asserted_at"]))
         return Evaluation("true", _witness(row, row["asserted_at"]))
 
     async def _person(self, intention: Mapping[str, Any], condition: PersonEvent) -> Evaluation:

@@ -98,6 +98,29 @@ async def test_only_the_named_done_act_closes_its_intention(engine, verdict):
     )
 
 
+async def test_failed_act_ends_maintain_intention_with_its_outcome_as_witness(engine):
+    act = _act(context=None)
+    act = replace(act, authority=replace(act.authority, unit=_UNIT, intention="maintaining"))
+    store = SqlActStore(engine, _registration())
+    await _intention(
+        engine, "maintaining", "act_event", {"act_id": act.identity.id}, mode="maintain",
+    )
+    await _health(engine, act.identity.executor, "up")
+    assert await store.reserve(act)
+    matcher = condition_matcher(engine)
+    await matcher.run_once()
+    assert await _endings(engine) == {"maintaining": None}
+
+    await store.observe(act, Outcome("failed"))
+    await matcher.run_once()
+
+    assert await _endings(engine) == {"maintaining": "ceased"}
+    (outcome,) = (await _rows(engine, NORA_ACT_OUTCOME)).values()
+    closed_by = await _edges(engine)
+    assert set(closed_by) == {"maintaining"}
+    assert closed_by["maintaining"]["dst_id"] == outcome["graph_id"]
+
+
 async def test_the_explicit_message_must_come_from_the_awaited_person(engine):
     text = "I accept the generated option."
     await _intention(engine, "waiting", "person_event", {
