@@ -311,35 +311,38 @@ links the PR — no commit IDs, receipt paths or review ledgers. The builder's
 delegation prompt (skills to read, selectors, lease rules) belongs in the
 delegation message, not the issue.
 
-Done when describes observable outcomes under relevant inputs/preconditions,
-including must-not-happen boundaries where material, and the evidence that can
-establish them. "Add a function" or "tests green" alone is not acceptance. For
-example: "an authorized caller can complete X; a caller outside the unit cannot
-read it", with the relevant journey/check. The orchestrator derives checks from
-the agreed outcome; a reviewer cannot silently expand it.
+Done when is a finite checklist (`.agents/skills/nora-dispatch/references/brief.md`):
+at most 6 yes/no items, each naming the check that decides it, with a threshold
+for any measurement and must-not-happen boundaries where material. "Add a
+function" or "tests green" alone is not acceptance. For example: "an authorized
+caller can complete X; a caller outside the unit cannot read it", with the named
+test. On the standard and full routes a brief review round with no BLOCKER
+locks the list before dispatch. Only the operator changes the locked list.
 
-Create a parent only for work needing several separately owned/verifiable units;
-otherwise use one issue. Children state their own delta and link parent intent.
-Add blocks relations for real ordering; parent-child alone does not imply order.
-Reserve integration and whole-outcome acceptance for the parent owner. No child
-is created merely because a session, test command or PR layer exists.
+An outcome that needs several separately owned and verifiable issues (the split
+route) is a Linear **project**: its description holds the Intent, each phase is a
+milestone, and each child brief is an issue in it. Otherwise use one issue. Add
+blocks relations for real ordering. Integration and whole-outcome acceptance
+belong to the project owner. No issue is created merely because a session, test
+command or PR layer exists. Only the orchestrator writes Linear; builders and
+reviewers get the brief as a packet (`nora-dispatch/references/brief.md`).
 
 | property | convention |
 |---|---|
 | team | use the owning domain; Nora execution uses the existing `nora` / `NOR` team |
 | owner | one accountable assignee; a delegate or T3 thread is the executor |
 | status | Backlog: deferred; Todo: bounded/ready; In Progress: executing, reviewing or blocked with cause; Done: evidenced completion; Canceled/Duplicate: reason/canonical link |
-| priority | native urgency, distinct from roadmap horizon; No priority is valid when undecided |
-| type | at most one existing Bug, Feature or Improvement when applicable; investigation may have none |
-| area | optional, only when useful for retrieval/routing; reuse an existing area label rather than creating a taxonomy upfront |
-| relations | parent for decomposition; blocks for dependencies; project only for a bounded multi-issue delivery |
+| priority | set on every open issue (Urgent, High, Medium or Low), distinct from roadmap horizon |
+| type | one label from the **Type** group on every issue: Bug, Feature or Improvement |
+| area | one label from the **Area** group, one per code area in `ARCHITECTURE.md` «Code map» (`cognition` covers `design/cognition/` and its loops); a new Area label only with a new code area |
+| relations | a project, with a milestone per phase, for a split outcome; blocks for dependencies |
 | references | roadmap item and GitHub report when applicable; repository/base, T3 thread, PR and evidence as execution produces them |
 
 Do not duplicate team, status, priority, worker or roadmap horizon as labels.
 The current Nora team has no separate review/blocked state; use its existing
 workflow and a concise next action/blocker, not an invented state or label.
-Sub-issues have independently verifiable outcomes; do not ticket every test,
-commit or review finding. Update the parent outcome after accepting results.
+Issues in a project have independently verifiable outcomes; do not ticket every
+test, commit or review finding. Update the project after accepting results.
 
 Deferred review work needs an accountable owner, a next action and a concrete
 revisit trigger (for example, before the linked dependent task starts). That

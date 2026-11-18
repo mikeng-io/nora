@@ -16,9 +16,10 @@ the removal log. A branch also counts as merged when an annotated
 `archive/<branch>` tag exists on origin as the same object, and its target
 commit and recorded source tip both equal the branch's tip — the tag is the
 durable copy — and the tag name goes to the removal log as `archive=<tag>`.
-The open-PR list comes from `gh pr list`; when gh cannot
-answer, branch verdicts are `unknown` (open-PR-head protection cannot be
-verified) and nothing remote or local is removed.
+The open-PR list comes from `gh pr list`; a branch that is an open PR's head
+or base is kept, since a stack base can equal master until its first layer
+merges. When gh cannot answer, branch verdicts are `unknown` (that protection
+cannot be verified) and nothing remote or local is removed.
 
 A worktree leaves only when it is clean (`git status --porcelain` empty),
 merged, and its HEAD reflog shows no activity in the last 24 hours. The
@@ -59,6 +60,7 @@ GIT_TIMEOUT = 120
 class OpenPr:
     head_name: str
     head_sha: str
+    base_name: str
 
 
 @dataclass
@@ -160,17 +162,20 @@ def _gh(repo: Path, state: str, fields: str) -> tuple[str | None, str]:
 
 
 def _open_prs(repo: Path) -> tuple[list[OpenPr] | None, str]:
-    raw, err = _gh(repo, "open", "headRefName,headRefOid")
+    raw, err = _gh(repo, "open", "headRefName,headRefOid,baseRefName")
     if raw is None:
         return None, err
     try:
         rows = json.loads(raw)
-        return [
-            OpenPr(str(r["headRefName"]), str(r["headRefOid"]))
+        prs = [
+            OpenPr(str(r["headRefName"]), str(r["headRefOid"]), str(r["baseRefName"]))
             for r in rows
-        ], ""
+        ]
     except (KeyError, TypeError, ValueError) as exc:
         return None, f"unparseable gh output: {exc}"
+    if len(prs) >= int(GH_PR_LIMIT):
+        return None, f"open PR list may be truncated at {GH_PR_LIMIT}"
+    return prs, ""
 
 
 def _merged_pr_heads(repo: Path) -> tuple[dict[str, int] | None, str]:
@@ -258,6 +263,11 @@ def _is_pr_head(ctx: Context, name: str, sha: str) -> bool:
     )
 
 
+def _is_pr_base(ctx: Context, name: str) -> bool:
+    # A stack base can equal master until its first layer merges into it.
+    return any(pr.base_name == name for pr in ctx.open_prs or [])
+
+
 def _classify_local_branch(ctx: Context, name: str, sha: str) -> Item:
     item = Item("local branch", name, sha)
     if _protected(name):
@@ -268,6 +278,8 @@ def _classify_local_branch(ctx: Context, name: str, sha: str) -> Item:
         item.reason = f"open PR list unavailable ({ctx.gh_open_error})"
     elif _is_pr_head(ctx, name, sha):
         item.verdict, item.reason = "keep", "head of an open PR"
+    elif _is_pr_base(ctx, name):
+        item.verdict, item.reason = "keep", "base of an open PR"
     else:
         merged, pr, archive = _merged(ctx, name, sha)
         if merged:
@@ -291,6 +303,8 @@ def _classify_remote_branch(ctx: Context, name: str, sha: str) -> Item:
         item.verdict, item.reason = "keep", "protected"
     elif _is_pr_head(ctx, short, sha):
         item.verdict, item.reason = "keep", "head of an open PR"
+    elif _is_pr_base(ctx, short):
+        item.verdict, item.reason = "keep", "base of an open PR"
     elif short in ctx.checked_out:
         item.verdict, item.reason = "keep", "checked out in a worktree"
     else:
@@ -329,6 +343,8 @@ def _classify_worktree(ctx: Context, wt: Worktree, current: Path) -> Item:
         item.verdict, item.reason = "keep", "locked"
     elif wt.bare:
         item.verdict, item.reason = "keep", "bare"
+    elif ctx.open_prs is None:
+        item.reason = f"open PR list unavailable ({ctx.gh_open_error})"
     elif wt.prunable:
         item.verdict, item.reason = "remove", "registration is stale"
     else:

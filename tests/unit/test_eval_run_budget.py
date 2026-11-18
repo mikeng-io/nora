@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 
 import httpx
+import httpx2
 import openai
 import pytest
 
@@ -531,3 +532,95 @@ async def test_the_reply_judge_declares_its_output_ceiling_on_the_final_wire(mon
         budget.finished()
     finally:
         active_run_budget.reset(token)
+
+
+def _default_client_with_mock(requests, *, chunks=None):
+    """`factory.create_client` with no injected client, wrapped transport mocked."""
+    client = factory.create_client(
+        base_url="http://127.0.0.1:1/v1", api_key="generated-key")
+
+    async def respond(request):
+        requests.append(json.loads(request.content))
+        return httpx2.Response(
+            200, headers={"content-type": "text/event-stream"},
+            content=_sse(chunks))
+
+    native = client._client
+    native._transport._inner = httpx2.MockTransport(respond)
+    native._mounts = {}
+    return client
+
+
+async def test_the_sdk_default_client_streams_through_the_budget():
+    """The SDK's own client speaks httpx2: a bounded SSE answer must
+    reach it as an httpx2 response, or the client's stream-type
+    assertion kills the call before any chunk lands."""
+    requests: list[dict] = []
+    chunks = [_chunk(content="ok"), _chunk(finish="stop"),
+              _chunk(usage={"prompt_tokens": 3, "completion_tokens": 1,
+                            "total_tokens": 4})]
+    budget = RunBudget(max_requests=2, max_input_bytes=10_000,
+                       max_output_tokens=100)
+    token = active_run_budget.set(budget)
+    try:
+        client = _default_client_with_mock(requests, chunks=chunks)
+        stream = await client.chat.completions.create(
+            model="m", max_tokens=50, stream=True,
+            stream_options={"include_usage": True},
+            messages=[{"role": "user", "content": "hi"}])
+        seen = [c.choices[0].delta.content async for c in stream]
+        assert "ok" in seen
+        assert len(requests) == 1
+        assert budget.requests == 1
+        assert budget.input_tokens == 3 and budget.output_tokens == 1
+        assert budget._reserved_out == 0
+        budget.finished()
+    finally:
+        active_run_budget.reset(token)
+
+
+async def test_the_sdk_default_client_refuses_a_spent_budget_before_dispatch():
+    """Same construction, exhausted budget: refusal lands before the
+    mock transport is ever called."""
+    requests: list[dict] = []
+    budget = RunBudget(max_requests=0, max_input_bytes=10_000,
+                       max_output_tokens=100)
+    token = active_run_budget.set(budget)
+    try:
+        client = _default_client_with_mock(
+            requests, chunks=[_chunk(content="unreachable")])
+        with pytest.raises(RunBudgetError):
+            await client.chat.completions.create(
+                model="m", max_tokens=50, stream=True,
+                stream_options={"include_usage": True},
+                messages=[{"role": "user", "content": "hi"}])
+    finally:
+        active_run_budget.reset(token)
+    assert requests == []
+    assert budget.requests == 0
+
+
+def test_finished_refuses_over_an_unreleased_reservation():
+    """An admitted attempt whose response never settled leaves its
+    output reservation standing; `finished` cannot report the run clean
+    over a measure that never landed, and the latch holds — a later
+    release does not reopen admission."""
+    budget = RunBudget(max_requests=10, max_output_tokens=100)
+    reservation = budget.admit(input_bytes=10, declared_output_tokens=10)
+    with pytest.raises(RunBudgetError):
+        budget.finished()
+    assert budget.spent is not None
+    budget.release(reservation)
+    with pytest.raises(RunBudgetError):     # latched, not a transient fail
+        budget.admit(input_bytes=10, declared_output_tokens=10)
+    with pytest.raises(RunBudgetError):
+        budget.finished()
+
+
+def test_finished_passes_after_a_reconciled_reservation():
+    """Positive control: release returns the reservation and the run
+    closes clean — the latch only binds what never settled."""
+    budget = RunBudget(max_requests=10, max_output_tokens=100)
+    budget.release(budget.admit(input_bytes=10, declared_output_tokens=10))
+    budget.finished()
+    assert budget.spent is None

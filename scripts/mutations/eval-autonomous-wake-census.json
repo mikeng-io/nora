@@ -1,0 +1,26 @@
+[
+  {
+    "name": "the wait binds every observed wake, not a slice",
+    "file": "evals/rebuilt/journey_wakes.py",
+    "old": "    new = wakes[seen_wakes:]",
+    "new": "    new = wakes[seen_wakes:wanted]",
+    "target": "tests/integration/subject/test_autonomous_wake_census.py::test_extra_wake_at_the_wait_fails_the_census",
+    "comment": "The wait must name an extra wake before judging; the later census remains a separate protection."
+  },
+  {
+    "name": "an unreported produced wake freezes as a visible ungraded row",
+    "file": "evals/rebuilt/autonomous_journey.py",
+    "old": "    for wake in unaccounted:",
+    "new": "    for wake in []:",
+    "target": "tests/integration/subject/test_autonomous_wake_census.py::test_extra_wake_during_finalization_fails_the_census",
+    "comment": "The decisive caller clause: without the freeze, a produced-but-unreported wake disappears from the report rows \u2014 the review's extra-wake blocker. (The produced/report-ids binding is a proven no-op once these rows exist; the freeze is what binds the denominator.)"
+  },
+  {
+    "name": "the census records its own population",
+    "file": "evals/rebuilt/autonomous_journey.py",
+    "old": "    evidence.record(\"journey_wake_census\", observed=observed,\n                    reported=reported, declared=expected_wakes)",
+    "new": "    observed = list(observed)",
+    "target": "tests/integration/subject/test_autonomous_wake_census.py::test_census_exact_population_passes",
+    "comment": "Dropping the census record must be caught by the named assertion in _census_record, not a bare IndexError."
+  }
+]

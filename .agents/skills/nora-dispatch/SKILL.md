@@ -1,6 +1,6 @@
 ---
 name: nora-dispatch
-description: Shape a bounded Nora work brief, do or delegate execution, reconcile results, and hand over or close the outcome. Load for work refinement, dispatch, result intake or session handoff; nora-work routes the lifecycle.
+description: Write a bounded Nora work brief and plan, pass them through the propose and plan gates, do or delegate execution, reconcile results, and hand over or close the outcome. Load for briefs, plans, dispatch, result intake or session handoff; nora-work routes the lifecycle.
 ---
 
 # Dispatch and execution
@@ -11,16 +11,15 @@ resume from current evidence rather than restarting the whole procedure.
 ## 1. Read or refine the work
 
 For new Linear work, use the [execution convention](../../../docs/maintainers/conventions.md#linear-execution).
-Read the current description, parent outcome and unresolved blockers. Capture
+Read the current description, its project's Intent and unresolved blockers. Capture
 only what the next actor needs; follow design and evidence links on demand.
 
-| work brief | contains |
-|---|---|
-| Intent | the outcome and why |
-| Done when | observable completion conditions and the shared stop conditions |
-| Boundaries | non-goals, holds and relevant design constraints |
-| References | necessary sources and evidence links |
-| Current state | where it stands now — replaced, never appended; links the PR |
+Write or revise the brief to [references/brief.md](references/brief.md): its
+template, the finite Done-when checklist, review and the lock. On the standard
+and full routes, attach the plan ([references/plan.md](references/plan.md)),
+run the author's pre-flight («Before review»), and send both to the reviewer
+by rule (`nora-review`). A round with no BLOCKER passes propose → plan and
+locks Done-when. Only Mike changes the locked list.
 
 Every Goal and every brief derived from it carries the same stop conditions:
 the agent stops and hands back when every Done-when item is marked met, unmet
@@ -43,17 +42,19 @@ Check: a fresh agent can state the outcome, completion conditions and known gap.
 
 ## 2. Choose the next unit
 
-Do small work directly. Split only independently assignable/verifiable outcomes
-or real dependencies into sub-issues; each states its delta and links its parent.
+Do small work directly. Split only independently assignable/verifiable outcomes,
+real dependencies, or an outcome over 6 Done-when items (the split route) into
+issues of one Linear project; each child has its own brief and states its delta.
 Use native ownership and blocking relations instead of a copied task table.
 Sequence shared write ownership. For an integrated change, units are review
 slices on its integration branch, not separate master releases. Use
-`nora-land`'s stacked-delivery path when dependent PR layers are useful; a child
-work item, PR layer and T3 worker need not have one-to-one identities. A child
-issue exists only for an outcome with its own owner and acceptance: a proof,
-measurement or review of the parent's acceptance is a check on a PR, never a
-Linear child issue.
-Check: the remaining completion conditions, including integration, have owners.
+`nora-land`'s stacked-delivery path when dependent PR layers are useful; an
+issue, PR layer and T3 worker need not have one-to-one identities. An issue in a
+project exists only for an outcome with its own owner and acceptance: a proof,
+measurement or review of the project's acceptance is a check on a PR, never an
+issue of its own.
+Check: every Done-when item maps to a unit with a write set, and units whose
+write sets overlap are sequenced (`references/plan.md`).
 
 For cross-session work, first follow linked related work/threads; use T3's
 project thread search/list (or the host's equivalent session store) to find
@@ -67,6 +68,11 @@ and notify affected sessions within the task's authority; read acknowledgments
 before dependent writes. Unavailable coordination blocks that seam, not all work.
 
 ## 3. Execute or delegate
+
+**Gate:** on the standard and full routes, launch nothing without a link to
+a brief review that the reviewer by rule closes with no BLOCKER. If the
+review is missing or blocked, halt and report. Ask Mike only under
+`nora-work/references/lifecycle.md` «When Mike is asked».
 
 For direct work, load `nora-land` and the relevant specialist procedure.
 For delegation, follow the policy's worker selection. Link the work brief and
@@ -83,15 +89,16 @@ integration branch. Related handoffs stack, each based on the previous
 handoff's branch (nora-land/reference.md), so they progress in parallel
 without waiting for each other's merge; independent handoffs branch from the
 integration head. A handoff PR ends when it merges into its base; a repair
-after merge is a new handoff PR off the current base. The receipt goes in the
-handoff PR as a comment.
+after merge is a new handoff PR off the current base. The execution receipt
+(`references/plan.md`) goes in the handoff PR as a comment.
 Check: the execution has started on the intended input, with a finite boundary.
 
 ## 4. Reconcile and continue
 
-Read the actual diff and named checks with exit codes. Mark required results
-met, unmet or unavailable, with evidence locators and their limits. Before the
-next dispatch, reconcile each result against the original parent outcome in the
+Read the actual diff, the execution receipt and the named checks with exit
+codes. The reviewer marks each item met, unmet or unavailable; the orchestrator
+reconciles those marks and never marks its own or its builder's work. Before the
+next dispatch, reconcile each result against the original whole outcome in the
 current brief: what is now evidenced at the integrated/candidate head, what
 remains, and which condition the next action advances. Repair findings and review
 rounds never replace that outcome. Carry forward still-valid evidence; do not
@@ -126,8 +133,8 @@ Close only when the agreed results, including delivery where required, have
 actual evidence and the artifact's outcome is settled — merged or archived.
 Update the
 owning Linear item: current status, outcome/evidence,
-remaining work and next owner/action if any; read back the write. Update parent
-acceptance separately. Report the result, material limits and next action to the
+remaining work and next owner/action if any; read back the write. Update the
+project's acceptance separately. Report the result, material limits and next action to the
 operator. Link receipts instead of copying logs into Linear.
 
 At pause, blocker or session replacement, update a short current handoff:

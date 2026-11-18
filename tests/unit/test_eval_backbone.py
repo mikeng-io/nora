@@ -26,6 +26,7 @@ from strands_evals.types.evaluation import EnvironmentState, EvaluationData, Eva
 from strands_evals.types.trace import Session
 
 import evals.backbone as backbone
+import evals.reading as reading
 from evals.backbone import (
     ERROR,
     FAIL,
@@ -44,37 +45,22 @@ from evals.backbone import (
     NORA_WRITTEN_2,
     PASS,
     SNAPSHOT_KEYS,
-    UNSTABLE,
     AbsenceGrader,
     ContextGrader,
     IdempotenceGrader,
     MeetsGrader,
-    SampleReading,
     Spec,
     SubstringGrader,
     render_transcript_at,
-    sample_read,
-    sampled,
     state_of,
     traced_nora_task,
 )
+from evals.reading import UNSTABLE, SampleReading, sample_read, sampled
 from evals.rebuilt.domain import Outcome
 from evals.rebuilt.entry import ENTRY_POINTS, EntryPoint
-from nora.subject import DrawWorkspace, Sandboxed
-
-
-@contextlib.asynccontextmanager
-async def _fake_draw_workspace(case: str, *, run_id: str):
-    """The draw's Honcho workspace, with no Honcho: this file drives `_drive()`
-    with no network. The real lifecycle is
-    `tests/integration/test_eval_draws_isolate_honcho.py`'s."""
-    yield DrawWorkspace(id=f"nora-eval-{run_id}-{case.replace('#', '-')}-fake", create_ms=0.0)
-
-
-@pytest.fixture(autouse=True)
-def _no_honcho(monkeypatch):
-    monkeypatch.setattr(backbone, "draw_workspace", _fake_draw_workspace)
-
+from nora.subject import Sandboxed
+from tests.unit.eval_dispatch_capture import JudgeBindings
+from tests.unit.eval_dispatch_capture import unit_dispatch_capture as unit_dispatch_capture
 
 grader = AbsenceGrader()
 context_grader = ContextGrader()
@@ -374,6 +360,8 @@ class _FakeSubject:
     room = ("signal", "the-real-group")
     cfg = _FAKE_CFG
 
+    async def aclose(self):
+        pass
 
 #: A real room at a real instant — the anchor every case states.
 _SHOT = {
@@ -410,8 +398,22 @@ async def _fake_sandbox(_subject: object, **kwargs: Any) -> Sandboxed:
 
 
 @pytest.fixture
-def one_path(monkeypatch):
+def one_path(monkeypatch, unit_dispatch_capture):
     """The three seams faked; `_drive()` itself is real."""
+    monkeypatch.setattr(_FakeSubject, "cfg", unit_dispatch_capture.config)
+    original = backbone._drive_uncaptured
+
+    @contextlib.asynccontextmanager
+    async def environment(*args, **kwargs):
+        yield SimpleNamespace(check=lambda: None)
+
+    async def recorded(case, spec):
+        import dataclasses
+
+        return await original(case, dataclasses.replace(spec, services={
+            case.name: SimpleNamespace(open=environment)}))
+
+    monkeypatch.setattr(backbone, "_drive_uncaptured", recorded)
     monkeypatch.setattr(backbone, "sandbox_database", _fake_sandbox_database)
     monkeypatch.setattr(backbone, "obtain", _fake_obtain)
     monkeypatch.setattr(backbone, "sandbox_from_snapshot", _fake_sandbox)
@@ -505,12 +507,12 @@ async def test_a_case_with_no_anchor_is_unanchored_and_an_error(monkeypatch, one
         await backbone._drive(case, _spec("dreamer"))
 
 
-def test_nora_task_reports_an_unanchored_case_as_an_error_not_a_verdict(monkeypatch):
-    """`nora_task` (sync, its own `asyncio.run`) turns the UNANCHORED raise
-    into `NORA_ERROR` — a third answer, never `test_pass=False` dressed as a
-    considered FAIL. No seam is reached, so nothing needs faking."""
+def test_nora_task_reports_an_unanchored_case_as_an_error_not_a_verdict(
+    monkeypatch, unit_dispatch_capture,
+):
+    """An unanchored native task stays ERROR before subject composition."""
     case = Case(name="no-anchor", input="x", metadata={"expect": "none"})
-    result = backbone.nora_task(_spec("dreamer"))(case)
+    result = backbone.nora_task(_spec("dreamer", services={"no-anchor": SimpleNamespace()}))(case)
     data = EvaluationData(input="x", actual_environment_state=result["environment_state"])
     assert "UNANCHORED" in str(state_of(data, NORA_ERROR))
     assert meets_grader.evaluate(
@@ -578,14 +580,12 @@ async def test_drive_composes_the_real_room_at_its_own_instant(monkeypatch, one_
     assert spec.policy == 'default = "deny"\n'
     assert spec.overrides["llm.base_url"] == "http://127.0.0.1:9/v1"
     assert spec.database_url.endswith("_sb"), "composed against the SANDBOX, not the source"
-    assert spec.overrides["honcho.workspace_id"].startswith(
-        f"nora-eval-{backbone.RUN_ID}-compose-probe-"
-    ), "every draw composes against a Honcho workspace of its own (#462)"
+    assert "honcho.workspace_id" not in spec.overrides
+    assert spec.environment is not None
 
 
-async def test_a_spec_override_cannot_redirect_the_draws_workspace(monkeypatch, one_path):
-    """The draw's workspace is applied LAST: a `Spec.overrides` naming
-    `honcho.workspace_id` (the shared sibling, say) does not win over it."""
+async def test_only_explicit_subject_overrides_are_applied(monkeypatch, one_path):
+    """Only the explicitly declared overrides reach composition."""
     captured: dict[str, Any] = {}
 
     async def capturing_obtain(spec: Any) -> _FakeSubject:
@@ -600,9 +600,7 @@ async def test_a_spec_override_cannot_redirect_the_draws_workspace(monkeypatch, 
     await backbone._drive(
         _case("redirect-probe"), _spec("dreamer", overrides={"honcho.workspace_id": "nora-eval"}),
     )
-    assert captured["spec"].overrides["honcho.workspace_id"].startswith(
-        f"nora-eval-{backbone.RUN_ID}-redirect-probe-"
-    )
+    assert captured["spec"].overrides == {"honcho.workspace_id": "nora-eval"}
 
 
 async def test_drive_reads_the_deployments_own_files_when_spec_states_none(
@@ -945,13 +943,13 @@ def test_sampled_draws_are_uniquely_named_off_the_base_case():
 
 
 def testbase_name_reverses_a_sampled_suffix():
-    assert backbone.base_name("speak-1#1") == "speak-1"
-    assert backbone.base_name("speak-1#12") == "speak-1"
+    assert reading.base_name("speak-1#1") == "speak-1"
+    assert reading.base_name("speak-1#12") == "speak-1"
 
 
 def testbase_name_is_unchanged_for_a_name_sampled_never_drew():
-    assert backbone.base_name("speak-1") == "speak-1"
-    assert backbone.base_name("room#general") == "room#general", (
+    assert reading.base_name("speak-1") == "speak-1"
+    assert reading.base_name("room#general") == "room#general", (
         "a '#' not followed by a digit is not a sampled() suffix"
     )
 
@@ -1014,7 +1012,7 @@ class _FakeJudgement:
         self.error = error
 
 
-class _FakeJudge:
+class _FakeJudge(JudgeBindings):
     """Stands in for `evals.rebuilt.grading.Judge` — no network."""
 
     def __init__(self, verdict: str = "PASS", error: str | None = None) -> None:

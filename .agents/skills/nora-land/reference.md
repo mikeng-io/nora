@@ -51,6 +51,25 @@ findings reported only in comments or check annotations.
   enable auto-merge while actionable findings remain, or bypass required checks.
 
 
+## Resolve
+
+Resolve closes the lifecycle (`nora-work/references/lifecycle.md`). The
+orchestrator does it after merge, or when an outcome will not merge:
+
+1. **Settle the artifact.** Merged work's record is its merged PR. Work that
+   will not merge is archived once: `make archive BRANCH=<b> REASON="..."`.
+   The work's owner commits any dirty work first.
+2. **Retire the checkouts.** Run `make gc APPLY=1` from a detached checkout of
+   `origin/master`. Its totals go in the PR or the handoff, and an `unknown`
+   entry is resolved, never left.
+3. **Update the work.** The Linear item records the outcome and evidence, and
+   moves to Done or Canceled with its reason.
+4. **Record a lesson, when the process failed.** When the failure came from the
+   process (a brief, a route, a gate, a skill) rather than the code, the PR
+   records one lesson line. That line names the skill edit that fixes the
+   process, made in the same PR or filed as a follow-up. A failure in the code
+   gets no lesson line.
+
 ## Stacked delivery
 
 Use this path for dependent PR layers. GitHub and the session host manage
@@ -60,7 +79,7 @@ stack extension, configure checks or prove repository readiness.
 1. **Choose delivery.** For one integrated feature, use its integration branch
    as trunk, layer branches chained above it, and a final integration → master
    PR. Independently releasable layers may use master as trunk. Record the trunk,
-   PR order and parent work link in the existing PR/brief. Verify actual trunk
+   PR order and project link in the existing PR/brief. Verify actual trunk
    protections/checks first; master-only workflows may not run on integration.
 2. **Prepare and link.** Each worker keeps its assigned T3 worktree/base. Build
    the next layer from the required lower head without waiting for its merge;
@@ -76,8 +95,8 @@ stack extension, configure checks or prove repository readiness.
 4. **Link work and evidence.** Relate each PR to its actual Linear work; use
    `Related to NOR-123` until status rules are verified. Link all contributing
    issues on the final master PR too; do not assume nested PR links propagate.
-   Linear can display a stack but does not create or restack it. Parent/child
-   completion remains an evidence decision, not a PR-count automation.
+   Linear can display a stack but does not create or restack it. Issue and
+   project completion remain an evidence decision, not a PR-count automation.
 5. **Merge the authorized group.** Compare every included layer's current
    base/head with its reviewed candidate; read checks, findings and independence
    evidence. Native merge of a selected layer includes
@@ -88,7 +107,7 @@ stack extension, configure checks or prove repository readiness.
 6. **Complete integration.** After landing on the integration trunk, verify the
    whole candidate on the required path; open the final master PR and follow
    nora-land's standalone steps. Keep layer Done, source landed, released and
-   runtime accepted distinct. Close the parent only at its agreed boundary.
+   runtime accepted distinct. Close the project only at its agreed boundary.
 
 If stack tooling, trunk checks or write coordination are unavailable, report the
 specific gap and continue independent work. Do not claim stack support or remove

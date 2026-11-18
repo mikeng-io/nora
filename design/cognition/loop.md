@@ -183,7 +183,7 @@ Together the loops take in any stimulus, keep concerns that never finish,
 reach outward and take their results back in.
 
 **Stimuli**: a platform item; a watched source changing; an aggregate crossing
-its baseline; the clock (an intention due, a review time, a valid-to time
+its baseline; a presence change; the clock (an intention due, a review time, a valid-to time
 ending, a deadline passing); a verdict; a person's correction. Code surfaces a
 stimulus; the model decides whether it means anything. Nothing calls a model
 because a clock advanced.

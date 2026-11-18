@@ -1,0 +1,9 @@
+[
+ {
+  "name": "run-input-bytes binds max_input_bytes on the run budget",
+  "file": "evals/cli.py",
+  "old": "        max_input_bytes=input_bytes,",
+  "new": "        max_input_bytes=None,",
+  "target": "tests/unit/test_eval_main.py::test_run_input_bytes_reaches_the_run_budget"
+ }
+]

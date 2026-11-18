@@ -82,6 +82,8 @@ class ReplayHooks(HookProvider):
         self.invocation = uuid.uuid4().hex
         self.call = 0
         self.attempt = 0
+        self.parent: str | None = None
+        self.parent_attempt: str | None = None
 
     def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
         for event in (
@@ -95,10 +97,15 @@ class ReplayHooks(HookProvider):
             registry.add_callback(event, self.capture)
 
     def capture(self, event: Any) -> None:
+        if isinstance(event, BeforeInvocationEvent):
+            self.parent = _INVOCATION.get()
+            self.parent_attempt = _ATTEMPT.get()
+            self.invocation = uuid.uuid4().hex
+            self.call = self.attempt = 0
         _INVOCATION.set(self.invocation)
         if isinstance(event, BeforeInvocationEvent):
             _ATTEMPT.set(None)
-            record("invocation_started")
+            record("invocation_started", parent_invocation_id=self.parent)
         elif isinstance(event, BeforeModelCallEvent):
             self.attempt += 1
             _ATTEMPT.set(f"{self.invocation}:{self.call}:{self.attempt}")
@@ -136,6 +143,8 @@ class ReplayHooks(HookProvider):
                 "invocation_finished",
                 outcome=str(getattr(event.result, "stop_reason", "unavailable")),
             )
+            _INVOCATION.set(self.parent)
+            _ATTEMPT.set(self.parent_attempt)
 
 
 def hooks() -> list[HookProvider | HookCallback[Any]]:
@@ -183,7 +192,7 @@ class _Completions:
                 )
                 record("transport_finished", reasoning_availability=availability)
                 return response
-            return _Stream(response, headers, started)
+            return _Stream(response, headers, started, self.role)
         except BaseException as exc:
             record(
                 "transport_finished",
@@ -194,9 +203,11 @@ class _Completions:
 
 
 class _Stream:
-    def __init__(self, stream: Any, headers: dict[str, Any], started: int) -> None:
+    def __init__(self, stream: Any, headers: dict[str, Any], started: int,
+                 role: str | None = None) -> None:
         self.stream, self.headers, self.started = stream, headers, started
         self.reasoning = "absent"
+        self.role = role
 
     def __aiter__(self) -> _Stream:
         return self
@@ -224,6 +235,7 @@ class _Stream:
         record(
             "transport_response",
             response=chunk,
+            **({"model_role": self.role} if self.role else {}),
             headers=self.headers,
             identity_availability="observed" if all(self.headers.values()) else "unavailable",
             latency_ns=time.time_ns() - self.started,

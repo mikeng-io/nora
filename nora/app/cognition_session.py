@@ -2,12 +2,8 @@
 background writer of the notebook, the events, a room's Standing and Nora's own
 reminders.
 
-**What this module wires.** `[cognition] enabled` governs it
-(`nora.config.CognitionConfig`): off, the composition root never registers
-`CognitionSessionRunner.wake_hook`, so no session runs and no model call is
-made. On, one session runs per wake the evaluator (`nora.app.wake.WakeEvaluator`)
-records.
-
+The composition root registers `wake_hook` only when cognition is enabled.
+The production WakeEvaluator records the wakes this runner consumes.
 **A wake has one fate, and the brakes read it** (DEC-242;
 `nora.domain.stimuli`'s state machine). The evaluator writes the wake row
 `tracked`; from then until its ONE `cognition_wake_outcome` row the wake is
@@ -18,9 +14,8 @@ session row exists (a missing home room, `build_situation` or
 `record_session` raising, a cancel before the first step) is recorded
 `failed`/`cancelled` like any other; a kill, or an outcome write that itself
 fails, leaves the wake OPEN until it expires, which is the same fate, later.
-It ends exactly one way: `closed` (the model ended its turn; observed stimuli are consumed
-and unseen ones deferred), written in ONE
-transaction with those carry rows, or `failed` / `timeout` / `cancelled`,
+It ends `closed` (observed stimuli consumed, unseen ones deferred) in one
+transaction with the carry rows, or `failed` / `timeout` / `cancelled`,
 with none. Only `closed` advances the unit's watermark; the others leave their
 stimuli pending («a failed session does not advance it»), and a failure is
 RAISED after it is recorded, never returned as if it were a session that ran.
@@ -1206,6 +1201,11 @@ class CognitionSessionRunner:
             return None
         if recorded.written:
             self._inc("nora_cognition_session_ended_total", outcome=recorded.outcome)
+        if eval_capture_enabled():
+            record_eval_event("nora.session.settled", {"body": json.dumps({
+                "session_id": session_id, "wake_id": wake_id, "unit": unit,
+                "outcome": recorded.outcome, "written": recorded.written,
+            })})
         return recorded
 
     async def _session_input(

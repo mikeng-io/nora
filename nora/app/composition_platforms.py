@@ -211,7 +211,7 @@ class AdaptersWiring:
 async def adapters(
     cfg: Any, discord_box: Any, discord_token: Any, metrics: Any,
     music_manager: Any, persons: Any, resolve_music_channel: Any, speaker: Any,
-    summons_inbox: Any, voice_guild_ids: Any, voice_hub: Any,
+    summons_inbox: Any, voice_guild_ids: Any, voice_hub: Any, owner: Any = None,
     signal_consent: Any = None,
     access: Any = None,
 ) -> AdaptersWiring:
@@ -227,6 +227,7 @@ async def adapters(
             resolve_music_channel=resolve_music_channel,
             instagram_summons=summons_inbox,
             bridge_token=cfg.credentials.get(cfg.bridges.token_env, ""),
+            owner=owner,
             # A 1:1 message goes only to somebody the identity backend knows;
             # the senders refuse the rest. `dm_gates` is the managed backend's
             # live per-send version of this set, never a file snapshot.

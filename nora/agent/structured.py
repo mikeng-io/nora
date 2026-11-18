@@ -123,17 +123,8 @@ def build_structured_model(
     """
     client_args: dict[str, Any] = {"api_key": api_key, "base_url": base_url,
                    **({"default_headers": default_headers} if default_headers else {})}
-    # A bounded run gates the SDK-owned client too: `bounded_http_client`
-    # wraps whatever transport is present (a real one when unset) so the
-    # AsyncOpenAI `_get_client` builds inside the provider admits through
-    # the same budget. None with no budget installed — the SDK default.
-    from nora.agent.run_budget_transport import bounded_http_client
-    bounded = bounded_http_client(http_client)
-    if bounded is not None:
-        client_args["http_client"] = bounded
-        from ..domain.run_budget import active_run_budget
-        if active_run_budget.get() is not None:
-            client_args["max_retries"] = 0
+    if http_client is not None:
+        client_args["http_client"] = http_client
     return DashFreeOpenAIModel(
         client_args=client_args,
         model_id=model_id,

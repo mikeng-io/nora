@@ -16,8 +16,8 @@
   {
     "name": "full corpus report persists before console reduction",
     "file": "evals/__main__.py",
-    "old": "        evidence.record(\"corpus_report\", corpus=name, report=report.model_dump())",
-    "new": "        pass  # discard complete report",
+    "old": "        evidence.record(\"corpus_report\", **retained)",
+    "new": "        pass  # discard complete event report",
     "target": "tests/integration/test_eval_observability.py::test_real_case_request_tools_results_logs_and_report_are_durable"
   },
   {

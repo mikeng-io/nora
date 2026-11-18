@@ -63,8 +63,8 @@ file links to it.
 
 **The architecture anchor.** [`design/cognition/`](../../../design/cognition/README.md)
 defines how Nora works: one Cognitive Graph (basis, scope, five kinds) worked
-by one open Cognition Loop (OODAS stages, passes, executors). Every bundle
-uses its vocabulary. A bundle that adds its own classifying axis, store, loop
+by engagement and reflection loops sharing OODAS stages, passes and executors.
+Every bundle uses its vocabulary. A bundle that adds its own classifying axis, store, loop
 or engine for one capability fails Coherence: extend the anchor's form for
 every capability, or express the capability in its kinds and stages.
 

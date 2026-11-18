@@ -245,11 +245,11 @@ class Judges:
         self.served: dict[str, list[dict[str, Any]]] = {}
         self.effective_models = [self._endpoint(m)[2] for m in models]
 
+    def bind(self, cfg: Any) -> Judges:
+        return type(self)(cfg, self.models, self.config, max_tokens=self.max_tokens)
+
     def _endpoint(self, model_id: str) -> tuple[str, str, str]:
-        # The measurer dials the route the deployment configured, rewritten for
-        # where it runs — `cfg.endpoint` names a container-only host on the host
-        # OS, which reads as an NXDOMAIN, never as a judge verdict.
-        return model_endpoint(self.config, "eval_judge", model_id)
+        return model_endpoint(self.cfg, "eval_judge", model_id)
 
     async def call(self, model_id: str, instruction: str, payload: Any,
                    *, response_format: dict | None = None) -> str:
@@ -680,6 +680,7 @@ async def index_replay_sandbox(subject: Any, *, source_url: str) -> SandboxIndex
         source_url=source_url,
         model_id=subject.cfg.memory.index.embedder_model,
         graph=graph,
+        require_vectors=index.read or subject.cfg.memory.graph.enabled,
     )
 
 

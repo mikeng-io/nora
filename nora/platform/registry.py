@@ -142,61 +142,24 @@ async def _resolve_bridge_identity(
         return identity
 
 
-async def _signal_adapter(
+async def _resolve_or_refuse(
+    adapter: PlatformAdapter,
+    platform: str,
     *,
-    signal_cfg: _SignalPlatformConfig,
-    bridge_token: str,
-    dm_recipients: Set[str] | frozenset[str],
-    dm_gate: Callable[[str], Awaitable[bool]] | None,
-    signal_consent: Callable[
-        [str], Callable[[dict], Awaitable[bool]] | None
-    ] | None,
-    metrics: MetricsSink,
+    bridge: bool,
     sleep: Callable[[float], Awaitable[None]],
     clock: Callable[[], float],
-) -> tuple[PlatformAdapter, PlatformIdentity] | None:
-    """The signal adapter in its enabled mode, identity resolved; `None` when disabled."""
-    if signal_cfg.enabled and getattr(signal_cfg, "mode", "direct") == "bridge":
-        # Bridge mode: the standalone signal-bridge holds the daemon; the
-        # app is a client of its action API + Redis consumer. `account` is
-        # the wire's account_key — no derive_account against signal-cli.
-        adapter: PlatformAdapter = BridgeAdapter(
-            "signal", BridgeEndpoint(signal_cfg.base_url, bridge_token),
-            dm_recipients=dm_recipients,
-            dm_gate=dm_gate)
-        try:
-            identity = await _resolve_bridge_identity(
-                adapter, sleep=sleep, clock=clock)
-        except Exception as exc:
-            raise AdapterRegistryError(
-                f"signal bridge could not resolve its own identity: {exc}"
-            ) from exc
-        return adapter, identity
-    if not signal_cfg.enabled:
-        return None
+) -> PlatformIdentity:
+    """Resolve one adapter's identity, refusing startup when it cannot."""
     try:
-        account = await derive_account(
-            signal_cfg.base_url, override=signal_cfg.account,
-        )
-    except AccountError as exc:
-        raise AdapterRegistryError(f"signal account error: {exc}") from exc
-    adapter = SignalAdapter(
-        signal_cfg.base_url, account, metrics=metrics,
-        dm_recipients=dm_recipients,
-        # The private consent seam is bound to the DERIVED daemon
-        # account (never the configured claim), so provenance the
-        # parser checks is the account signal-cli actually serves.
-        on_consent=(
-            signal_consent(account) if signal_consent else None),
-        dm_gate=dm_gate,
-    )
-    try:
-        identity = await adapter.resolve_identity()
+        if bridge:
+            return await _resolve_bridge_identity(adapter, sleep=sleep, clock=clock)
+        return await adapter.resolve_identity()
     except Exception as exc:
+        kind = "bridge" if bridge else "adapter"
         raise AdapterRegistryError(
-            f"signal adapter could not resolve its own identity: {exc}"
+            f"{platform} {kind} could not resolve its own identity: {exc}"
         ) from exc
-    return adapter, identity
 
 
 class _SignalPlatformConfig(Protocol):
@@ -300,6 +263,7 @@ class AdapterRegistry:
         ] | None = None,
         dm_gates: Mapping[str, Callable[[str], Awaitable[bool]]] | None = None,
         bridge_token: str = "",
+        owner: Any = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], float] = time.monotonic,
     ) -> AdapterRegistry:
@@ -351,6 +315,11 @@ class AdapterRegistry:
         and WhatsApp's senders refuse a 1:1 message to any other address; a
         platform missing from it refuses every 1:1 message.
 
+        `owner` is the startup's acquisition register (structural — this
+        layer does not import `nora.app`): each adapter is owned the moment
+        it exists, BEFORE the `resolve_identity` await that can strand its
+        session; a raise unwinds every adapter built so far.
+
         `sleep`/`clock` are the time seam for `_resolve_bridge_identity`'s
         bounded wait — collaborators through construction, so a test can
         drive the bound without waiting in real time."""
@@ -359,13 +328,51 @@ class AdapterRegistry:
         adapters: dict[str, PlatformAdapter] = {}
         identities: dict[str, PlatformIdentity] = {}
 
-        signal_result = await _signal_adapter(
-            signal_cfg=platforms.signal, bridge_token=bridge_token,
-            dm_recipients=dms.get("signal", frozenset()),
-            dm_gate=gates.get("signal"), signal_consent=signal_consent,
-            metrics=metrics, sleep=sleep, clock=clock)
-        if signal_result is not None:
-            adapters["signal"], identities["signal"] = signal_result
+        def _register(adapter: Any) -> None:
+            if owner is None:
+                return
+            close = getattr(adapter, "close", None)
+            if close is not None:
+                owner.own_adapter(close)
+
+        signal_cfg = platforms.signal
+        if signal_cfg.enabled and getattr(signal_cfg, "mode", "direct") == "bridge":
+            # Bridge mode: the standalone signal-bridge holds the daemon; the
+            # app is a client of its action API + Redis consumer. `account` is
+            # the wire's account_key — no derive_account against signal-cli.
+            adapter: PlatformAdapter = BridgeAdapter(
+                "signal", BridgeEndpoint(signal_cfg.base_url, bridge_token),
+                dm_recipients=dms.get("signal", frozenset()),
+                dm_gate=gates.get("signal"))
+            _register(adapter)
+            identity = await _resolve_or_refuse(
+                adapter, "signal", bridge=True, sleep=sleep, clock=clock)
+            adapters["signal"] = adapter
+            identities["signal"] = identity
+        elif signal_cfg.enabled:
+            try:
+                account = await derive_account(
+                    signal_cfg.base_url, override=signal_cfg.account,
+                )
+            except AccountError as exc:
+                raise AdapterRegistryError(f"signal account error: {exc}") from exc
+
+            adapter = SignalAdapter(
+                signal_cfg.base_url, account, metrics=metrics,
+                dm_recipients=dms.get("signal", frozenset()),
+                # The private consent seam is bound to the DERIVED daemon
+                # account (never the configured claim), so provenance the
+                # parser checks is the account signal-cli actually serves.
+                on_consent=(
+                    signal_consent(account) if signal_consent else None),
+                dm_gate=gates.get("signal"),
+            )
+            _register(adapter)
+            identity = await _resolve_or_refuse(
+                adapter, "signal", bridge=False, sleep=sleep, clock=clock)
+
+            adapters["signal"] = adapter
+            identities["signal"] = identity
 
         discord_cfg = platforms.discord
         if discord_cfg.enabled and getattr(discord_cfg, "mode", "direct") == "bridge":
@@ -380,13 +387,9 @@ class AdapterRegistry:
                 delegate=BridgeAdapter("discord", endpoint),
                 control=BridgeControlClient(endpoint),
                 speaker=discord_speaker)
-            try:
-                discord_identity = await _resolve_bridge_identity(
-                    discord_adapter, sleep=sleep, clock=clock)
-            except Exception as exc:
-                raise AdapterRegistryError(
-                    f"discord bridge could not resolve its own identity: {exc}"
-                ) from exc
+            _register(discord_adapter)
+            discord_identity = await _resolve_or_refuse(
+                discord_adapter, "discord", bridge=True, sleep=sleep, clock=clock)
             adapters["discord"] = discord_adapter
             identities["discord"] = discord_identity
         elif discord_cfg.enabled:
@@ -403,12 +406,9 @@ class AdapterRegistry:
                 voice_guild_ids=voice_guild_ids,
                 resolve_music_channel=resolve_music_channel,
             )
-            try:
-                discord_identity = await discord_adapter.resolve_identity()
-            except Exception as exc:
-                raise AdapterRegistryError(
-                    f"discord adapter could not resolve its own identity: {exc}"
-                ) from exc
+            _register(discord_adapter)
+            discord_identity = await _resolve_or_refuse(
+                discord_adapter, "discord", bridge=False, sleep=sleep, clock=clock)
 
             adapters["discord"] = discord_adapter
             identities["discord"] = discord_identity
@@ -419,13 +419,9 @@ class AdapterRegistry:
                 "whatsapp", BridgeEndpoint(whatsapp_cfg.base_url, bridge_token),
                 dm_recipients=dms.get("whatsapp", frozenset()),
                 dm_gate=gates.get("whatsapp"))
-            try:
-                whatsapp_identity = await _resolve_bridge_identity(
-                    whatsapp_adapter, sleep=sleep, clock=clock)
-            except Exception as exc:
-                raise AdapterRegistryError(
-                    f"whatsapp bridge could not resolve its own identity: {exc}"
-                ) from exc
+            _register(whatsapp_adapter)
+            whatsapp_identity = await _resolve_or_refuse(
+                whatsapp_adapter, "whatsapp", bridge=True, sleep=sleep, clock=clock)
             adapters["whatsapp"] = whatsapp_adapter
             identities["whatsapp"] = whatsapp_identity
         elif whatsapp_cfg.enabled:
@@ -438,12 +434,9 @@ class AdapterRegistry:
                 whatsapp_cfg.base_url, dm_recipients=dms.get("whatsapp", frozenset()),
                 dm_gate=gates.get("whatsapp"),
             )
-            try:
-                whatsapp_identity = await whatsapp_adapter.resolve_identity()
-            except Exception as exc:
-                raise AdapterRegistryError(
-                    f"whatsapp adapter could not resolve its own identity: {exc}"
-                ) from exc
+            _register(whatsapp_adapter)
+            whatsapp_identity = await _resolve_or_refuse(
+                whatsapp_adapter, "whatsapp", bridge=False, sleep=sleep, clock=clock)
 
             adapters["whatsapp"] = whatsapp_adapter
             identities["whatsapp"] = whatsapp_identity
@@ -452,6 +445,7 @@ class AdapterRegistry:
         if instagram_cfg.enabled and getattr(instagram_cfg, "mode", "direct") == "bridge":
             instagram_adapter: BridgeAdapter | InstagramAdapter = BridgeAdapter(
                 "instagram", BridgeEndpoint(instagram_cfg.base_url, bridge_token))
+            _register(instagram_adapter)
             try:
                 instagram_identity = await instagram_adapter.resolve_identity()
             except Exception as exc:  # noqa: BLE001 — degrade, never refuse to start
@@ -467,6 +461,7 @@ class AdapterRegistry:
             instagram_adapter = InstagramAdapter(
                 instagram_cfg.base_url, summons=instagram_summons,
             )
+            _register(instagram_adapter)
             try:
                 instagram_identity = await instagram_adapter.resolve_identity()
             except Exception as exc:  # noqa: BLE001 — degrade, never refuse to start

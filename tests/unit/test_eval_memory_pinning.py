@@ -1,12 +1,14 @@
-"""An eval subject can reach no Honcho workspace outside the eval namespace,
-whatever the policy and identity it is composed with bind (DEC-214).
+"""An eval subject preserves the deployment's configured workspace routing,
+and isolation lives at the case-owned service boundary, not in a renamed
+namespace (DEC-214).
 
 With `[units]` a unit routes to the Honcho workspace its Nora workspace is
-BOUND to, and the eval suite composes against the deployment's own files by
-default, whose binding names production's live workspace; rewriting
-`honcho.workspace_id` alone is not the guarantee. This builds a subject's
-config from files shaped like that and asks the production router where it can
-reach. Placeholder ids; the workspace names are the operator's own mapping.
+BOUND to. The eval subject keeps the deployment's `identity.toml`/`policy.toml`
+verbatim — every binding reaches the wire exactly as production would route
+it, against a server the case owns. These tests build a subject's config and
+router from files shaped like a multi-workspace deployment and ask the
+production router where each binding lands. Placeholder ids; the workspace
+names are the operator's own mapping.
 """
 
 from __future__ import annotations
@@ -59,8 +61,8 @@ honcho_workspace = "nora"
 
 def test_the_files_as_written_would_reach_live_workspaces(tmp_path):
     """The positive control: composed as written, these files DO route to
-    `nora` and `ridgeline` — so the next test's result is the pinning's doing,
-    not an input that could never have escaped."""
+    `nora` and `ridgeline` — so the next tests' assertions are about real
+    routing, not an input that could never have escaped."""
     (tmp_path / "policy.toml").write_text(_POLICY)
     (tmp_path / "identity.toml").write_text(_IDENTITY)
     router = build_workspace_router(
@@ -71,31 +73,43 @@ def test_the_files_as_written_would_reach_live_workspaces(tmp_path):
     assert set(router.workspaces()) == {"nora", "ridgeline"}
 
 
-def test_a_subject_reaches_only_the_eval_workspace_across_every_binding(
+def test_a_subject_preserves_the_deployed_routing_across_every_binding(
     tmp_path, monkeypatch,
 ):
+    """The subject's workspace is the deployment's configured one — never
+    renamed — and every `[units]` binding routes where the deployment's own
+    files put it. What isolates a case is the case-owned server its
+    `honcho.base_url` binds to (`IsolatedServices.bind_config`), not a
+    rewritten namespace."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    deployment = obtain_module._load_config(obtain_module._TEMPLATE).honcho.workspace_id
     cfg = obtain_module.build_config(SubjectSpec(
         database_url="postgresql+asyncpg://x/x", workdir=tmp_path,
         identity=_IDENTITY, policy=_POLICY, room=_ROOM,
     ))
-    eval_workspace = cfg.honcho.workspace_id
-    assert eval_workspace.endswith("-eval")
+    assert cfg.honcho.workspace_id == deployment == "nora"
     router = build_workspace_router(
         policy=load_policy(tmp_path / "policy.toml"),
         bindings=load_persons(tmp_path / "identity.toml").honcho_workspaces,
-        default_workspace=eval_workspace,
+        default_workspace=cfg.honcho.workspace_id,
     )
-    assert router.workspaces() == (eval_workspace,)
-    # Still STRICT, as production reads with `[units]`: every room routes to
-    # its own unit's scope, inside the one eval workspace.
+    assert set(router.workspaces()) == {"nora", "ridgeline"}, (
+        "every deployment binding is routed as declared — pinning all of "
+        "them into one namespace would lose the deployment's memory split"
+    )
     assert router.strict is True
-    assert router.for_conversation("g-friends").workspace == eval_workspace
+    assert router.for_conversation("g-friends").workspace == "nora"
+    assert router.for_conversation("g-ridgeline").workspace == "ridgeline"
     assert router.for_conversation("g-ridgeline").scope == "ridgeline"
+    assert (tmp_path / "policy.toml").read_text() == _POLICY
+    assert (tmp_path / "identity.toml").read_text() == _IDENTITY
 
 
-def test_a_draw_workspace_override_is_what_every_unit_reaches(tmp_path, monkeypatch):
-    """A draw names its workspace through an override; the pinning follows it."""
+def test_a_workspace_override_changes_only_the_default_route(tmp_path, monkeypatch):
+    """An explicit `honcho.workspace_id` override is honored as declared
+    config — but it changes the DEFAULT route only: units bound through
+    `[workspaces]` keep their bound workspace. Nothing flattens every
+    binding into one name."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     deployment = obtain_module._load_config(obtain_module._TEMPLATE).honcho.workspace_id
     draw = f"{deployment}-eval-run-case-1-abcd"
@@ -108,6 +122,17 @@ def test_a_draw_workspace_override_is_what_every_unit_reaches(tmp_path, monkeypa
     router = build_workspace_router(
         policy=load_policy(tmp_path / "policy.toml"),
         bindings=load_persons(tmp_path / "identity.toml").honcho_workspaces,
-        default_workspace=draw,
+        default_workspace=cfg.honcho.workspace_id,
     )
-    assert router.workspaces() == (draw,)
+    assert set(router.workspaces()) == {"nora", "ridgeline"}, (
+        "bound units keep their declared workspaces even under an override"
+    )
+    assert router.for_conversation("g-friends").workspace == "nora"
+    assert router.for_conversation("g-ridgeline").workspace == "ridgeline"
+    assert router.default == draw, (
+        "the override becomes the router's default — what an unscoped call "
+        "and the ownership check name — as production resolves it"
+    )
+    assert router.unrouted() is None, (
+        "under declared [units] an unrouted call fails closed, never widened"
+    )
