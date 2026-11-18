@@ -227,7 +227,8 @@ async def bind_identifiers(
                 )
         owners = await _identifier_owners(conn, wanted)
         if any(
-            owner is not None and str(owner.account_id) != account_id
+            owner is not None and owner.state == AccountState.BOUND.value
+            and str(owner.account_id) != account_id
             for owner in owners.values()
         ):
             raise IdentifierConflictError(
