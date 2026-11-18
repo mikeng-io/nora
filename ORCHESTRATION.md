@@ -129,9 +129,8 @@ never relabelled as a run on a new tree.
 - Read the current brief, project Intent and actual blockers before launch,
   intake and handoff, and record the revision read. Comments hold discussion
   and precise evidence, never the only current acceptance.
-- After the operator approves a brief, its Done-when list is locked; expanding or
-  softening it needs his amendment, and a reviewer suggestion is not a
-  requirement. An invalid plan returns to propose; a defect returns to repair.
+- A brief review round with no BLOCKER locks Done-when on standard and full
+  routes. Only the operator amends it. Invalid plans return to propose, defects to repair.
 - Each item is met, unmet or unavailable against the real source or runtime,
   marked by the reviewer; missing evidence is unavailable, not missing
   implementation. Tests, review, merge and deployment prove different things.
@@ -185,7 +184,8 @@ ones go into one PR summary comment, at most six classes, and open no round.
   for evidence is not a round. One re-check covers
   `git diff <reviewed-sha>..HEAD`, unresolved findings and previously
   unavailable required evidence. Rounds continue while each closes a blocker
-  class; one that closes none, or a repair-made class, goes to the operator.
+  class. A re-check that leaves blockers open and closes none, or a repair
+  that introduces a new blocker class, goes to the operator.
 - A class is one remedy fixing all its instances: first report names the
   structural remedy and every sibling instance in that round, then no new
   input shapes. A repair-induced finding names its origin; same class unless

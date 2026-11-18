@@ -316,8 +316,8 @@ at most 6 yes/no items, each naming the check that decides it, with a threshold
 for any measurement and must-not-happen boundaries where material. "Add a
 function" or "tests green" alone is not acceptance. For example: "an authorized
 caller can complete X; a caller outside the unit cannot read it", with the named
-test. On the standard and full routes the operator approves it before dispatch,
-and after that only the operator changes it.
+test. On the standard and full routes a brief review round with no BLOCKER
+locks the list before dispatch. Only the operator changes the locked list.
 
 An outcome that needs several separately owned and verifiable issues (the split
 route) is a Linear **project**: its description holds the Intent, each phase is a

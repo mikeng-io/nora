@@ -15,11 +15,11 @@ Read the current description, its project's Intent and unresolved blockers. Capt
 only what the next actor needs; follow design and evidence links on demand.
 
 Write or revise the brief to [references/brief.md](references/brief.md): its
-template, the finite Done-when checklist, approval and the lock. On the standard
-and full routes, attach the plan ([references/plan.md](references/plan.md))
-run the author's pre-flight («Before review»), and send both to brief review
-(`nora-review`); then Mike approves the Done-when
-list. An approved Done-when list is locked: only Mike changes it.
+template, the finite Done-when checklist, review and the lock. On the standard
+and full routes, attach the plan ([references/plan.md](references/plan.md)),
+run the author's pre-flight («Before review»), and send both to the reviewer
+by rule (`nora-review`). A round with no BLOCKER passes propose → plan and
+locks Done-when. Only Mike changes the locked list.
 
 Every Goal and every brief derived from it carries the same stop conditions:
 the agent stops and hands back when every Done-when item is marked met, unmet
@@ -70,8 +70,9 @@ before dependent writes. Unavailable coordination blocks that seam, not all work
 ## 3. Execute or delegate
 
 **Gate:** on the standard and full routes, launch nothing without a link to
-a brief review with no BLOCKER and Mike's recorded approval of Done-when. When either is missing, halt and
-report; do not approve or narrow the brief yourself.
+a brief review that the reviewer by rule closes with no BLOCKER. If the
+review is missing or blocked, halt and report. Ask Mike only under
+`nora-work/references/lifecycle.md` «When Mike is asked».
 
 For direct work, load `nora-land` and the relevant specialist procedure.
 For delegation, follow the policy's worker selection. Link the work brief and

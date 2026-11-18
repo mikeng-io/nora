@@ -19,7 +19,7 @@ direct and light work.
 |---|---|---|
 | **direct** | at most two files, no behaviour change, no full trigger | the PR review at its tier, and CI |
 | **light** | a bounded change with no full trigger | the brief in the PR body; the reviewer at verify reads it with the diff; Mike's merge approves |
-| **standard** | a change that needs dispatch or more than one unit | brief and plan, reviewed by rule before the first dispatch; Mike approves the Done-when list |
+| **standard** | a change that needs dispatch or more than one unit | the reviewer by rule closes brief review of the brief and plan with no BLOCKER before the first dispatch |
 | **full** | any full trigger | as standard, with the full review tier |
 | **split** | more than 6 Done-when items | a Linear project holding the Intent, a milestone per phase, and one issue per child brief of at most 6 items, each taking its own route |
 | **clarify** | intent, authority or acceptance cannot be stated | stop and ask Mike |
@@ -34,7 +34,7 @@ triggers give is a finding against the work, not a judgement call.
 | transition | routes | input | checker | pass | block | escalation |
 |---|---|---|---|---|---|---|
 | triage → propose | all | the request and the route the orchestrator recorded | the first independent reviewer the route has: the brief reviewer on standard and full, the PR reviewer on direct and light | the reviewer confirms the route against the triggers | a lower route than the triggers give: the work returns to triage | Mike |
-| propose → plan | standard, full | the brief and its attached plan (`nora-dispatch/references/brief.md`, `plan.md`) | the reviewer by rule, in brief review; then Mike approves the Done-when list | no BLOCKER, and Mike's approval of Done-when recorded on the brief | a BLOCKER, returned to the author; no approval | Mike when a round closes no blocker class |
+| propose → plan | standard, full | the brief and its attached plan (`nora-dispatch/references/brief.md`, `plan.md`) | the reviewer by rule, in brief review | the round closes with no BLOCKER and locks Done-when | a BLOCKER, returned to the author | Mike for intent, authority or redesign («When Mike is asked») |
 | plan → execute | standard, full | the plan, validated in that brief review | the reviewer by rule | the plan passed brief review's «Mapped» check | a plan BLOCKER: nothing is dispatched | — |
 | execute → verify | standard, full | the handoff PR with its execution receipt | the reviewer by rule | the receipt names evidence for each item addressed | a missing receipt or missing evidence, returned to the builder | the orchestrator |
 | execute → verify | light, direct | the PR, with its brief in the body on light | the PR reviewer at the route's tier | the brief (light) and the diff are present | no brief on light | the orchestrator |
@@ -51,22 +51,23 @@ review confirms it.
 
 Mike is asked only when one of these appears («When Mike is asked»):
 
-- **Intent:** a Done-when item that the locked list does not contain.
+- **Intent:** a disputed brief item or a Done-when item the locked list does not contain.
 - **Authority:** a missing authority, or a side effect beyond what the brief grants.
-- **Redesign:** a review round that closes no blocker class, or a repair that introduces a new class.
+- **Redesign:** a re-check leaves blockers open and closes no class, or a repair introduces a new blocker class.
 
-After Mike approves it, a brief's Done-when list is locked: only Mike changes
-it. A finding outside the locked items is a follow-up, never a blocker.
+When a brief review round closes with no BLOCKER, the Done-when list locks.
+Only Mike changes it. A finding outside the locked items is a follow-up, never
+a blocker.
 
 ## When Mike is asked
 
 Mike is asked only for what only he holds. Everything else proceeds without him.
 
-- **Intent:** approving a Done-when list once, amending a locked one, and `clarify`.
+- **Intent:** a disputed brief item, amending a locked Done-when list, or `clarify`.
 - **Authority:** merge, deploy, paid probes or evals, live accounts, and a side
   effect beyond what the brief grants.
-- **Redesign:** a review round that closes no blocker class, or a repair that
-  introduces a new class.
+- **Redesign:** a re-check leaves blockers open and closes no class, or a repair
+  introduces a new blocker class.
 
 He is never asked to continue. Moving from one Done-when item to the next,
 starting another review round while each round closes blocker classes, and
@@ -78,11 +79,12 @@ a request; the work goes on unless he stops it.
 
 These gates are policy-level stops held by skills. A cooperative agent halts
 at them; they cannot prevent an agent from skipping one, for example by
-choosing a lower route or executing before the plan is approved. A skipped gate
-leaves its route's required artifact missing. The reviewer at verify and Mike
-at merge then refuse:
+choosing a lower route or executing before the plan passes brief review. A
+skipped gate leaves its route's required artifact missing. The reviewer at
+verify and Mike at merge then refuse:
 
-- standard and full: without a brief review of the brief and plan with no BLOCKER, Mike's recorded approval of Done-when, and the execution receipt;
+- standard and full: without a brief review that closes with no BLOCKER and
+  an execution receipt;
 - light: without a brief in the PR body;
 - direct: nothing beyond its PR review and CI.
 

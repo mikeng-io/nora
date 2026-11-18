@@ -18,9 +18,9 @@ instead of steps 2–3; item marking, severity and follow-through are there too.
    re-checks and name the selected subset. State any inferred scope.
    Check: the requested result is understandable without deriving intent from
    the candidate. On the standard and full routes, the brief and plan passed
-   brief review, Done-when carries the operator's approval, and the candidate arrives with its execution
-   receipt; a missing one is returned unreviewed. On the light route, the PR body
-   carries a brief. On every route, confirm the recorded route against the
+   brief review with no BLOCKER and the candidate arrives with its execution
+   receipt. Return a candidate with missing gate evidence unreviewed. On light,
+   the PR body carries a brief. On every route, confirm the recorded route against the
    triggers in `nora-work/references/lifecycle.md`; a lower route is a finding.
    Missing material requirements return to scoping.
 2. **Inspect the candidate.** Verify checkout/head/status; read
