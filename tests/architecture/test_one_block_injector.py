@@ -48,9 +48,6 @@ _OWN_INJECTOR = {
     "nora/doctrine/loader.py": "`render_section` — doctrine's own injector",
     "nora/language/cognition_parse.py":
         "the `<root>` shim that parses a rendered agenda back; never prompt-bound",
-    "nora/testing/causal_protocol.py":
-        "the `<m>` regex that reads markers out of a rendered agenda; "
-        "a finite world parses model output and never emits a block",
 }
 
 #: Tags a module NAMES without BUILDING, with the reason. The discriminator
@@ -77,6 +74,23 @@ _QUOTED_SAMPLES: dict[str, dict[str, frozenset[str]]] = {
         "_WORKED_EXAMPLES": frozenset({"clock", "m"}),
     },
 }
+
+#: (module, tag) -> why a tag spelled out inside an `re.*` call argument is
+#: a reader, not a builder.
+_RE_READERS = {
+    ("nora/testing/causal_protocol.py", "m"):
+        "the `re.findall` pattern in `source` parses `<m>` markers out of a "
+        "rendered agenda; a finite world never emits a block",
+}
+
+_RE_FUNCS = frozenset({
+    "compile", "search", "match", "fullmatch",
+    "findall", "finditer", "sub", "subn", "split",
+})
+
+#: The exemption binds to the string nodes handed to the regex call, so the
+#: same tag emitted anywhere else in the module — and every other tag — is
+#: still caught by the census.
 
 def _docstring_nodes(tree: ast.AST) -> set[int]:
     """Every Constant that is a DOCSTRING — prose about a tag, not a tag.
@@ -182,12 +196,33 @@ def _sample_sites(tree: ast.Module, rel: str, tag: str) -> set[int]:
     return sites
 
 
+def _reader_sites(tree: ast.Module, rel: str, tag: str) -> set[int]:
+    """String nodes a pinned (module, tag) pair hands to an `re.*` call."""
+    if (rel, tag) not in _RE_READERS:
+        return set()
+    sites: set[int] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in _RE_FUNCS
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "re"
+        ):
+            for arg in node.args:
+                for sub in ast.walk(arg):
+                    if isinstance(sub, (ast.Constant, ast.JoinedStr)):
+                        sites.add(id(sub))
+    return sites
+
+
 def _built(tree: ast.Module, rel: str) -> tuple[str, ...]:
-    """The tags a module OPENS AND CLOSES outside its quoted samples."""
+    """The tags a module OPENS AND CLOSES outside quoted samples and pinned reader sites."""
     opens, closes = _tag_sites(tree)
     return tuple(sorted(
         tag for tag in set(opens) & set(closes)
-        if (opens[tag] - (allowed := _sample_sites(tree, rel, tag)))
+        if (opens[tag] - (allowed := _sample_sites(tree, rel, tag)
+                          | _reader_sites(tree, rel, tag)))
         and (closes[tag] - allowed)))
 
 
@@ -253,6 +288,32 @@ def test_a_quoted_sample_constant_exempts_only_itself():
     assert "m" in _built(ast.parse(sneaky), rel)
     reassigned = quoted + '_WORKED_EXAMPLES = _WORKED_EXAMPLES + "<m>x</m>"\n'
     assert "m" in _built(ast.parse(reassigned), rel)
+
+
+def test_a_regex_reader_occurrence_exempts_only_that_site() -> None:
+    """The (module, tag) `_RE_READERS` pin exempts the pattern string handed
+    to `re.*` and nothing else: the same tag emitted anywhere else in the
+    module, the same reader in another module, and every other tag are all
+    still caught by the census."""
+    rel = "nora/testing/causal_protocol.py"
+    reader = (
+        "import re\n"
+        "def source(text):\n"
+        "    return re.findall(r'<m n=\"(\\d+)\"[^>]*>(.*?)</m>', text)\n"
+    )
+    assert _built(ast.parse(reader), rel) == ()
+
+    emitted = reader + "def build(v):\n    return f'<m n=\"9\">{v}</m>'\n"
+    assert "m" in _built(ast.parse(emitted), rel)
+
+    other_tag = (
+        "import re\n"
+        "def p(t):\n"
+        "    return re.findall(r'<facts>(.*?)</facts>', t)\n"
+    )
+    assert "facts" in _built(ast.parse(other_tag), rel)
+
+    assert _built(ast.parse(reader), "nora/scratch.py") == ("m",)
 
 
 def test_a_module_that_writes_a_tag_by_hand_is_caught():
