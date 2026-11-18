@@ -81,6 +81,16 @@ TOOLS = {
         output_contract="three_state",
         level=3,
     ),
+    "web_browse": NativeTool(
+        2,
+        read_only=False,
+        side_effect_state="confirmed",
+        idempotency="non_idempotent",
+        retry="never",
+        source_tier="web",
+        output_contract="three_state",
+        level=3,
+    ),
     "computer_capture": NativeTool(
         2,
         side_effect_state="confirmed",

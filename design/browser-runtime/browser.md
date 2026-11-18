@@ -29,15 +29,17 @@ The shared executor validates references and performs actions through
 authenticated computerd/CDP. Scope and task tab are checked on reconnect and by
 ID. No unauthenticated debugging listener or cross-scope relay exists.
 
-A task-level browser runner reasons over the objective and proposes steps while
-code owns admission, execution, audit and outcome. Another decision backend can
-implement the same contract later, but the first version needs no fallback
-cascade, model tier or second agent loop. Selection is recorded and does not
-change silently on failure.
+The task-level runner reasons over an objective while code owns admission,
+execution, audit and outcome. Public web retrieval uses a single page
+observation per decision, with a bounded list of snapshot action IDs. The
+configured browse model selects one ID through the model gateway. The runner
+validates it against that observation and acts only on the matching live
+control. It refreshes page evidence after a mutation or stale reference.
 
-A typed decision model may choose among prepared candidates, including
-abstention. It does not execute a click, synthesize every answer or remove the
-cost of the remaining model calls. Its confidence is not task success.
+Retrieval uses task-owned tabs and anonymous, non-submitting controls. Its
+report cites observed page evidence and keeps facts the page does not publish
+unconfirmed. The model receives no executable browser controls or endpoint
+configuration.
 
 ## Capture and export
 

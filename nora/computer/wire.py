@@ -483,6 +483,7 @@ def context(
 @dataclass(frozen=True)
 class BrowseWiring:
     browser: Any
+    web_browser: Any = None
 
 
 def browse(
@@ -494,13 +495,24 @@ def browse(
     # source of its own (one model per task, the tag path's reason above). `None` unless
     # `[computer]` AND `[computer.browse]` are on, so the registry withholds the tool.
     browser: BrowseAgentRunner | None = None
+    web_browser = None
     if computer is not None and cfg.computer.browse.enabled:
         browse_cfg = cfg.computer.browse
+        settings = BrowseSettings(
+            max_steps=browse_cfg.max_steps,
+            timeout_seconds=browse_cfg.timeout_seconds,
+            read_chars=browse_cfg.read_chars,
+            turns=browse_cfg.turns,
+            output_tokens=browse_cfg.output_tokens,
+            total_tokens=browse_cfg.total_tokens,
+            )
+        client = model_client_for("browse")
+        model = route_model("browse", browse_cfg.model)
         browser = BrowseAgentRunner(
             model_source=factory.ModelSource(
-                client=model_client_for("browse"),
+                client=client,
                 spec=factory.ModelSpec(
-                    model=route_model("browse", browse_cfg.model),
+                    model=model,
                     max_tokens=browse_cfg.max_tokens,
                     temperature=browse_cfg.temperature,
                     tool_choice=tool_choice.AFTER_SPEAKING,
@@ -513,16 +525,16 @@ def browse(
             # own target on the scope's VM; `base_url` is only the shared-VM
             # fallback used when no manager is wired.
             manager=browser_manager,
-            settings=BrowseSettings(
-                max_steps=browse_cfg.max_steps,
-                timeout_seconds=browse_cfg.timeout_seconds,
-                read_chars=browse_cfg.read_chars,
-                turns=browse_cfg.turns,
-                output_tokens=browse_cfg.output_tokens,
-                total_tokens=browse_cfg.total_tokens,
-            ),
+            settings=settings,
         )
-    return BrowseWiring(browser=browser)
+        if browser_manager is not None:
+            from nora.agent.web_browse import WebBrowseRunner
+
+            web_browser = WebBrowseRunner(
+                client=client, model=model, max_tokens=browse_cfg.max_tokens,
+                settings=settings, manager=browser_manager,
+            )
+    return BrowseWiring(browser=browser, web_browser=web_browser)
 
 
 @dataclass(frozen=True)

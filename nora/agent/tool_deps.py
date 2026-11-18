@@ -178,6 +178,7 @@ class ToolDeps:
     computer_leases: ComputerLeases | None = None
     computer_exports: ComputerExportStore | None = None
     browser: BrowserRunner | None = None
+    web_browser: BrowserRunner | None = None
     computer_admission: Any = None
     browser_manager: Any = None
     computer_dm_scope_for: Callable[[str, str], str | None] | None = None

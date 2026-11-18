@@ -37,6 +37,9 @@ def build(deps):
     from nora.computer.adapters.tools.sessions import _make_computer_cancel
 
     computer_cancel = _make_computer_cancel(deps)
+    from nora.computer.adapters.tools.web_browse import _make_web_browse
+
+    web_browse = _make_web_browse(deps)
     return (
         _spec("file_fetch", file_fetch),
         _spec("computer_run", computer_run),
@@ -47,6 +50,7 @@ def build(deps):
         _spec("computer_import", computer_import),
         _spec("computer_session_list", computer_session_list),
         _spec("computer_browse", computer_browse),
+        _spec("web_browse", web_browse),
         _spec("computer_capture", computer_capture),
         _spec("computer_cancel", computer_cancel),
     )

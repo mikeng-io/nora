@@ -365,7 +365,15 @@ cases:
     expect: reply
     mention: true
     input: 睇下呢頁講咩，簡單講俾我知 https://en.wikipedia.org/wiki/Victoria_Harbour
-    metadata: {tools: [web_fetch], not_tools: [computer_run, computer_browse]}
+    metadata: {tools: [web_fetch], not_tools: [computer_run, computer_browse, web_browse]}
+    snapshot: *room_a
+
+  - name: route_web_browse_interactive_evidence
+    entry: tag
+    expect: reply
+    mention: true
+    input: On https://offers.example.org/item, select the Wan Chai branch and check whether the page publishes stock.
+    metadata: {tools: [web_browse], not_tools: [web_fetch, web_search, computer_browse, computer_run]}
     snapshot: *room_a
 
   # file_fetch (design/external-files/00-design.md §3, S3): a shared document, sheet or
@@ -748,7 +756,7 @@ cases:
     expect: reply
     mention: true
     input: 幫我search下iPhone 17 Pro香港幾錢
-    metadata: {tools: [web_search]}
+    metadata: {tools: [web_search], not_tools: [web_browse]}
     snapshot: *room_a
 
   # --- per-network social reads (design/instagram-adoption/social.md) -------

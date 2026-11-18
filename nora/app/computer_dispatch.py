@@ -38,7 +38,7 @@ __all__ = ["ComputerToolDispatch"]
 #: The tools a durable row may name — exactly the tools the queue wraps.
 EXECUTABLE = frozenset({
     "computer_run", "computer_write", "computer_edit", "computer_import",
-    "computer_browse", "computer_capture",
+    "computer_browse", "web_browse", "computer_capture",
 })
 
 

@@ -245,26 +245,7 @@ def _make_computer_browse(deps):
             task: A task's tab to continue on; from a reply or the computer
                 block. Empty opens a new tab.
         """
-        c = SimpleNamespace(
-            objective=objective,
-            start_url=start_url,
-            task=task,
-            browser=deps.browser,
-            computer=deps.computer,
-            computer_events=deps.computer_events,
-            _computer_begin=deps.computer_ctx._computer_begin,
-            _computer_blob=deps.computer_ctx._computer_blob,
-            _computer_finish=deps.computer_ctx._computer_finish,
-            _computer_lease=deps.computer_ctx._computer_lease,
-            _computer_off=deps.computer_ctx._computer_off,
-            _computer_row=deps.computer_ctx._computer_row,
-            _computer_session=deps.computer_ctx._computer_session,
-            _queued_browse=deps.computer_ctx._queued_browse,
-            bound_computer_scope=deps.computer_ctx.bound_computer_scope,
-            computer_bounds=deps.computer_ctx.computer_bounds,
-            computer_ready=deps.computer_ctx.computer_ready,
-            now_fn=deps.now_fn,
-        )
+        c = _browse_context(deps, objective, start_url, task, deps.browser, "computer_browse")
         k_, _, v_ = await _computer_browse__prepare(c)
         if k_:
             return v_
@@ -274,6 +255,30 @@ def _make_computer_browse(deps):
         return None  # type: ignore[return-value]
 
     return computer_browse
+
+
+def _browse_context(deps, objective, start_url, task, runner, tool_name):
+    return SimpleNamespace(
+        objective=objective,
+        start_url=start_url,
+        task=task,
+        browser=runner,
+        tool_name=tool_name,
+        computer=deps.computer,
+        computer_events=deps.computer_events,
+        _computer_begin=deps.computer_ctx._computer_begin,
+        _computer_blob=deps.computer_ctx._computer_blob,
+        _computer_finish=deps.computer_ctx._computer_finish,
+        _computer_lease=deps.computer_ctx._computer_lease,
+        _computer_off=deps.computer_ctx._computer_off,
+        _computer_row=deps.computer_ctx._computer_row,
+        _computer_session=deps.computer_ctx._computer_session,
+        _queued_browse=deps.computer_ctx._queued_browse,
+        bound_computer_scope=deps.computer_ctx.bound_computer_scope,
+        computer_bounds=deps.computer_ctx.computer_bounds,
+        computer_ready=deps.computer_ctx.computer_ready,
+        now_fn=deps.now_fn,
+    )
 
 
 def _computer_capture_answer(status: str, result: dict, got) -> dict:
@@ -552,18 +557,18 @@ async def _computer_browse__prepare(c):
     }
     if not c.computer_ready or c.computer is None or c.browser is None:
         await c._computer_off(
-            "computer_browse", c.operation_id, started=c.started, request=c.request
+            c.tool_name, c.operation_id, started=c.started, request=c.request
         )
         return (True, None, dict(_COMPUTER_OFF))
-    c.session_id = await c._computer_session("computer_browse")
+    c.session_id = await c._computer_session(c.tool_name)
     c.runner = c.browser
-    async with c._computer_lease("computer_browse", c.operation_id, c.session_id) as c.busy:
+    async with c._computer_lease(c.tool_name, c.operation_id, c.session_id) as c.busy:
         if c.busy == "live":
             return (True, None, dict(_COMPUTER_BUSY_LIVE))
         if c.busy == "background":
             return (True, None, dict(_COMPUTER_BUSY_BACKGROUND))
         if not await c._computer_begin(
-            "computer_browse",
+            c.tool_name,
             c.operation_id,
             started=c.started,
             request=c.request,
@@ -582,7 +587,7 @@ async def _computer_browse__prepare(c):
                 return
             await c.computer_events.append(
                 c._computer_row(
-                    "computer_browse.action",
+                    f"{c.tool_name}.action",
                     uuid.uuid4(),
                     ("finished"),
                     outcome or "recorded",
@@ -617,7 +622,7 @@ async def _computer_browse__prepare(c):
                 "answer_chars": len(c.got.answer),
             }
             if c.got.answer:
-                c.output_ref = {"answer": await c._computer_blob("computer_browse", c.got.answer)}
+                c.output_ref = {"answer": await c._computer_blob(c.tool_name, c.got.answer)}
             c.status = c.got.status if c.got.status in ("ok", "nothing_found") else "unavailable"
         except BaseException as _w1:
             c.exc = _w1
@@ -626,7 +631,7 @@ async def _computer_browse__prepare(c):
             raise
         finally:
             await c._computer_finish(
-                "computer_browse",
+                c.tool_name,
                 c.operation_id,
                 c.status,
                 started=c.started,

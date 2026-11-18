@@ -117,11 +117,13 @@ def build_registry(
     standing_store: Any,
     steam_client: Any, subagent_desk: Any, tool_call_log_store: Any, version_manifest: Any,
     video_desk: Any, vision_client: Any, voice_presence: Any, weather_client: Any,
+    web_browser: Any = None,
 ) -> RegistryWiring:
     return RegistryWiring(
         tool_registry=_build_tool_registry(
         room_management=room_management,
         allowlist=allowlist, blobs=blobs, browser=browser, browser_manager=browser_manager,
+        web_browser=web_browser,
         cfg=cfg, clock=clock, computer=computer, computer_admission=computer_admission,
         computer_context=computer_context, computer_dm_scope_for=computer_dm_scope_for,
         computer_events=computer_events, computer_exports=computer_exports,
@@ -167,6 +169,7 @@ def _build_tool_registry(
     document_service: Any, lineage: Any, blobs: Any, standing_store: Any,
     reminders: Any, reminder_caps: Any, tool_call_log_store: Any, social_client: Any,
     computer_exports: Any, mobility: Any, computer_events: Any, room_management: Any = None,
+    web_browser: Any = None,
 ) -> Any:
     """The native tool surface's collaborator registry."""
     return ToolRegistry(
@@ -211,7 +214,7 @@ def _build_tool_registry(
             media_objects=media_objects, video_desk=video_desk,
         ),
         **_computer_tool_args(
-            browser=browser, browser_manager=browser_manager, cfg=cfg,
+            browser=browser, browser_manager=browser_manager, cfg=cfg, web_browser=web_browser,
             computer=computer, computer_admission=computer_admission,
             computer_context=computer_context,
             computer_dm_scope_for=computer_dm_scope_for,
@@ -350,7 +353,7 @@ def _computer_tool_args(
     browser: Any, browser_manager: Any, cfg: Any, computer: Any,
     computer_admission: Any, computer_context: Any, computer_dm_scope_for: Any,
     computer_events: Any, computer_exports: Any, computer_leases: Any,
-    computer_sessions: Any, computer_settings: Any,
+    computer_sessions: Any, computer_settings: Any, web_browser: Any = None,
 ) -> Any:
     """The computer tier's tools: runtime, queues, sessions, exports."""
     return {
@@ -364,6 +367,7 @@ def _computer_tool_args(
         "computer_exports": computer_exports,
         "artifact_link_base": cfg.documents.public_url,
         "browser": browser,
+        "web_browser": web_browser,
         # The scoped computer ([computer.scoped]): the per-scope FIFO the
         # write-path tools queue through, and the task-owned tab manager
         # `computer_capture` calls. Both `None` in the shared-VM shape.

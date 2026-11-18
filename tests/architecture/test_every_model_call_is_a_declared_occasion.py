@@ -159,6 +159,7 @@ RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
     # ONE formatter that walks the declared `browse_task` block through
     # `ContextBlock`; the authored SYSTEM_PROMPT is the occasion's
     # instruction, like the worker's doctrine-loaded system text.
+    "nora/agent/web_browse.py": (("nora/language/web_browse_render.py",), "imports"),
     "nora/agent/browse.py": (("nora/language/browse_render.py",), "imports"),
     # The eval arm's context selector: the system text, the clock/window line
     # and the candidate blocks it posts are all built by ONE declared
