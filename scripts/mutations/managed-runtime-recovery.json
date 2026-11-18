@@ -1,0 +1,37 @@
+[
+  {
+    "name": "global profile recovery is scheduled",
+    "file": "nora/people/app/managed.py",
+    "old": "for service in (self.publication, self.authority, self.profile, self.scoped_profile):",
+    "new": "for service in (self.publication, self.authority, self.scoped_profile):",
+    "target": "tests/unit/test_managed_profile.py::test_a_kratos_outage_leaves_an_incomplete_journal_reconcile_finishes"
+  },
+  {
+    "name": "scoped profile recovery is scheduled",
+    "file": "nora/people/app/managed.py",
+    "old": "for service in (self.publication, self.authority, self.profile, self.scoped_profile):",
+    "new": "for service in (self.publication, self.authority, self.profile):",
+    "target": "tests/unit/test_scoped_profile.py::test_reconcile_finishes_exactly_the_journaled_scoped_effect"
+  },
+  {
+    "name": "link publication recovery is scheduled",
+    "file": "nora/people/app/managed.py",
+    "old": "for service in (self.publication, self.authority, self.profile, self.scoped_profile):",
+    "new": "for service in (self.authority, self.profile, self.scoped_profile):",
+    "target": "tests/unit/test_link_publication.py::test_kratos_outage_mid_commit_stays_incomplete_held_and_resumable"
+  },
+  {
+    "name": "one journal owner outage does not starve other owners",
+    "file": "nora/people/app/managed.py",
+    "old": "                log.error(\"managed recovery unavailable (%s)\", type(error).__name__)",
+    "new": "                return tuple(finished)",
+    "target": "tests/unit/test_managed_profile.py::test_an_unreadable_recovery_owner_does_not_starve_the_other_owners"
+  },
+  {
+    "name": "the production process starts recovery without collection rules",
+    "file": "nora/__main__.py",
+    "old": "        if self.cfg.identity.backend == \"managed\":\n            deps.background.spawn(deps.managed_services.run_reconciliation(",
+    "new": "        if False:\n            deps.background.spawn(deps.managed_services.run_reconciliation(",
+    "target": "tests/integration/test_managed_runtime_recovery.py::test_a_restarted_process_recovers_a_profile_without_roster_collections"
+  }
+]

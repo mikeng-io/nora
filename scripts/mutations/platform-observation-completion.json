@@ -29,9 +29,9 @@
   },
   {
     "name": "message and sidecar own one durable stimulus obligation",
-    "file": "nora/app/bridge_queue.py",
-    "old": "                        and not source_owned):",
-    "new": "                        and True):",
+    "file": "nora/app/bridge_obligations.py",
+    "old": "    if stimulus is not None and row_id is not None and not source_owned:",
+    "new": "    if stimulus is not None and row_id is not None and True:",
     "target": "tests/integration/test_platform_observation_ingest.py::test_message_sidecar_is_one_source_obligation_with_both_refs"
   },
   {
@@ -64,7 +64,7 @@
   },
   {
     "name": "Discord roster result does not claim channel audience",
-    "file": "nora/people/adapters/tools.py",
+    "file": "nora/people/adapters/tools/__init__.py",
     "old": "if room.platform == \"discord\"\n                else \"this conversation\"",
     "new": "                if False else \"this conversation\"",
     "target": "tests/test_room_tools.py::test_group_members_on_discord_labels_the_guild_scope_not_the_channel"

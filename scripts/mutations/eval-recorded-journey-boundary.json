@@ -18,7 +18,7 @@
   {
     "name": "keep the action seam when the recording binds no signal reads",
     "file": "nora/subject/journey_world.py",
-    "old": "            if signal is None:",
+    "old": "            if signal is None and \"platforms.signal.base_url\" not in self.generated_bindings:",
     "new": "            if False:",
     "target": "tests/integration/subject/test_journey_recorded_boundary.py::test_a_missing_response_fails_closed_never_a_generated_fill",
     "comment": "Without the writes-only app the signal binding is unowned: no recorded read, no generated fill."

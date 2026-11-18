@@ -136,7 +136,7 @@ class SearchWiring:
     memory_search: Any
 
 
-def search(cfg, engine, metrics) -> SearchWiring:
+def search(cfg, engine, metrics, access=None) -> SearchWiring:
 
     # `[memory.index] read` (ships off): the one retrieval service, held by the tag path's
     # pre-fetch (`<recalled>`) and by the tool registry's `memory_search` below, one
@@ -161,6 +161,7 @@ def search(cfg, engine, metrics) -> SearchWiring:
             model=(
                 fingerprint(cfg.memory.index.embedder_model) if cfg.memory.index.embed else None
             ),
+            access=access,
             # The embedding worker's tick: a node waiting less than a
             # few of them is fresh, not a backlog that answers `partial`.
             drain_seconds=cfg.memory.index.refresh_seconds,
@@ -174,6 +175,23 @@ def search(cfg, engine, metrics) -> SearchWiring:
 @dataclass(frozen=True)
 class GraphWiring:
     cognition_memory: Any
+
+
+def _private_names(persons: Any, access: Any) -> tuple[str, ...]:
+    """File names/handles; managed source names resolve before each screened read."""
+    if access is not None and not access.is_file_backend:
+        return ()
+    return tuple(
+        {
+            name
+            for p in persons.by_person.values()
+            for name in (p.person_id, p.name, p.first_name, p.last_name, *p.aliases)
+            if name
+        }
+        | {value for (_, value) in persons.index}
+        | set(persons._instagram_handles.values())
+        | set(persons._instagram_usernames)
+    )
 
 
 def graph(
@@ -191,6 +209,7 @@ def graph(
     route_model,
     tier,
     unit_scopes,
+    access=None,
 ) -> GraphWiring:
     cognition_memory = None
     if cfg.memory.graph.enabled and cfg.memory.graph.comprehend.enabled:
@@ -221,7 +240,8 @@ def graph(
                     for u in unit_scopes()
                 }
             ),
-            social_off_ids=persons.social_off_ids(),
+            access=access,
+            social_off_ids=persons.social_off_ids() if access is None else frozenset(),
             can_release_place=place_release(
                 rooms_of=lambda u: [
                     (c.platform, c.primary_id, c.location)
@@ -233,6 +253,7 @@ def graph(
                     conversation_id=conversation_id,
                     roster_source=rosters.get(platform),
                     persons=persons,
+                    access=access,
                     self_ids=registry.self_aliases(),
                 ).members(),
                 circles=presence_circles,
@@ -275,16 +296,6 @@ def graph(
             content_checks=content_checks,
             profile=wake_profile_store,
             listed_rooms=(lambda u, p: wake_listed_rooms.get((u, p))),
-            private_names=tuple(
-                {
-                    name
-                    for p in persons.by_person.values()
-                    for name in (p.person_id, p.name, p.first_name, p.last_name, *p.aliases)
-                    if name
-                }
-                | {value for (_, value) in persons.index}
-                | set(persons._instagram_handles.values())
-                | set(persons._instagram_usernames)
-            ),
+            private_names=_private_names(persons, access),
         )
     return GraphWiring(cognition_memory=cognition_memory)

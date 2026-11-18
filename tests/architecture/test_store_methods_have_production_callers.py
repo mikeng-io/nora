@@ -259,6 +259,22 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
 # `tests/unit/test_media_join.py` and by the store's own contract suite.
 _AMBIGUOUS: frozenset[str] = frozenset(
     {
+        # Binding adapters and holder services share these verbs; this AST gate
+        # cannot attribute them to one implementation and reports them unchecked.
+        "account_for", "account_record", "accounts_for",
+        "add_alias", "authority_blocks", "begin_commit",
+        "bind_identifiers", "block_authority", "canonical_person",
+        "challenge", "clear_block", "consolidate",
+        "correlate_kratos", "decide", "drop_membership_support",
+        "expire", "former_persons", "hold_identity",
+        "identity_held", "incomplete_operations", "latest_profile_operation",
+        "mark_committed", "members_of", "memberships_for",
+        "mutation", "observation_for", "operation",
+        "person", "person_lifecycle", "persons",
+        "record_for", "record_observation", "record_operation",
+        "release_identity_hold", "revoke_binding", "scoped_name_for",
+        "set_display_name", "set_lifecycle", "set_membership",
+        "set_scoped_name", "update_operation",
         "aclose", "append", "claim", "create", "delete", "fail",
         # Message targets and observation grounding have distinct by-id stores.
         "by_ids",
@@ -319,6 +335,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 # other files and define no public methods, so they are simply not here.
 _STORE_MODULES: frozenset[str] = frozenset(
     {
+        "account_links.py", "managed_identity.py",
         "assess.py", "audit.py", "bridge_store.py", "cognition_store.py",
         "comprehend.py", "lessons.py", "tension.py", "entries.py",
         "compute_jobs.py", "computer_events.py", "computer_exports.py",

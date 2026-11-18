@@ -213,6 +213,9 @@ class ToolDeps:
     video: VideoDesk | None = None
     video_ref_kinds: frozenset[str] = frozenset()
     external_files: ExternalFilesSource | None = None
+    # Both the shared management invocation and verified trigger message are required.
+    room_management: Any = None
+    message: Any = None
     # `[google] account`: Nora's own Google mailbox, named in the NOT_SHARED
     # note so the owner knows who to share with. "" → a generic phrasing.
     google_account: str = ""
@@ -447,7 +450,7 @@ class ToolDeps:
         if self.lineage is None:
             _record(self.metrics, tool, "unavailable", reason="unwired")
             return None
-        target = self.lineage.render_room(
+        target = await self.lineage.read_room(
             platform=self.room.platform, conversation_id=self.bound_conversation_id
         )
         if target.room is None:

@@ -22,7 +22,7 @@ def service(
     allowlist: Any, audit: Any, cfg: Any, clock: Any,
     cognition_context_screen: Any, cognition_shared_document_room: Any, content_checks: Any,
     documents_store: Any, media_objects: Any, metrics: Any, persons: Any,
-    route_client: Any,
+    route_client: Any, access: Any = None,
 ) -> ServiceWiring:
 
     document_service = DocumentService(
@@ -31,7 +31,14 @@ def service(
         media=media_objects,
         media_window=cfg.store.context_window + LOAD_TRANSCRIPT_MAX,
         room_ids=_room_ids_of(allowlist),
-        is_person=lambda person: person in persons.by_person,
+        # Sync surface: the managed backend's person read is async, so under
+        # managed `is_person` refuses every id rather than trusting a stale
+        # file roster — document authority stays deny-first.
+        is_person=(
+            (lambda person: person in persons.by_person)
+            if access is None or access.is_file_backend
+            else (lambda person: False)
+        ),
         public_url=cfg.documents.public_url,
         # A Map names its places and the service looks them up. The same
         # client `route` and `place_info` use, so `[route]` off means a Map is `unavailable`.

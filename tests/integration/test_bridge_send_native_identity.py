@@ -17,6 +17,7 @@ import pytest
 from aiohttp import ClientSession, web
 from aiohttp.test_utils import TestServer
 
+from nora.access import IdentityAccess
 from nora.agent.guards import Deliverer
 from nora.doctrine.loader import Doctrine
 from nora.domain.actions import ActionOwner
@@ -32,6 +33,7 @@ from nora.ingest.stages import touch as touch_stage
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint
+from nora.policy import permissive_policy
 from nora.testing import FakeRecordStore
 
 ROOM = "synthetic-ig-thread"
@@ -166,7 +168,7 @@ async def test_a_confirmed_send_lands_its_native_id_for_a_later_reaction():
     message, touch = _reaction(REF)
     result = await touch_stage.run(
         message=message, touch=touch, audit=store,
-        persons=_persons(), metrics=Metrics())
+        access=IdentityAccess.for_files(_persons(), permissive_policy()), metrics=Metrics())
     assert result.ending == "reaction_recorded"
     assert store.reactions[-1]["message_id"] == found.id
 
@@ -224,7 +226,7 @@ async def test_a_multi_post_send_lands_every_native_id_for_a_later_reaction():
     message, touch = _reaction(refs[0])
     result = await touch_stage.run(
         message=message, touch=touch, audit=store,
-        persons=_persons(), metrics=Metrics())
+        access=IdentityAccess.for_files(_persons(), permissive_policy()), metrics=Metrics())
     assert result.ending == "reaction_recorded"
     assert store.reactions[-1]["message_id"] == row.id
 

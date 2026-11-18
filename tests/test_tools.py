@@ -139,7 +139,7 @@ def test_every_declared_tool_is_built(wiring):
         "send_gif", "send_to",
         # The room tools.
         "room_list",
-        "room_read",
+        "room_read", "member_update",
         # The Record under lineage.
         "record_query",
         # The observation Record's task reads (design/platform-observations

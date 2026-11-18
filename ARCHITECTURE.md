@@ -107,8 +107,9 @@ The shared runtime: `platform/`, `ingest/`, `engagement/`,
 `agent/` (Strands, tool registry, context assembly), `app/` (dispatch,
 lifecycle, composition root), `language/`, `doctrine/`, `instructions/`,
 `skills/`, `dreamer/`, `subagent/`, `web/` (portal API), `obs/`, `infra/`,
-`presence/`, `analytics/`, `subject/`, `testing/`, `config.py`, `secret.py`,
-`config_reload.py`, `memory_routing.py`, `tag.py`, and `domain/`, the shared
+`presence/`, `analytics/`, `subject/`, `testing/`, `config.py`, `config_identity.py`,
+`secret.py`, `config_reload.py`, `access.py` (selected identity/access facade),
+`memory_routing.py`, `tag.py`, and `domain/`, the shared
 kernel. `documents/` and `persons.py`, `persons_file.py`, `policy.py` (`people`)
 are area code still to move.
 
@@ -124,8 +125,7 @@ consent, freshness and unavailable/error handling remain independent. See
 [the decision](docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
 
 PostgreSQL is the record store, with Alembic migrations applied at startup.
-Honcho supplies durable interpreted memory; it is not the authoritative record.
-Media custody uses the configured blob store, with RustFS supplied in Compose.
+Honcho is interpreted, non-authoritative memory; media custody uses configured storage (RustFS in Compose).
 The SQL memory index and embedding server support graph/vector retrieval.
 Honcho is still wired while the unified-memory migration proceeds; its planned
 retirement is not a completed cutover. Records and derived context

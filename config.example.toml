@@ -624,6 +624,9 @@ enabled = false
 reasoning_effort = "low"
 
 [presence]
+# Managed backend polls only these provider circles; bindings stay in managed identity.
+managed_circle_ids = []
+directory_key_env = "NORA_PRESENCE_DIRECTORY_KEY"
 enabled = false
 client_credential_env = "LIFE360_CLIENT_CREDENTIAL"
 username_env = "LIFE360_USERNAME"
@@ -727,3 +730,51 @@ journey_samples = 3                   # `--suite journeys` runs each journey thi
 enabled = false                       # opt-in: also requires `--export-langfuse` on the CLI
 host = "http://127.0.0.1:3100"
 headers_env = ""                      # env var NAME holding auth headers; reuses the obs.tracing.headers_env credential, never the value
+
+# [identity] — which backend owns person binding and scoped grants.
+# "file" (default) is identity.toml + policy.toml exactly as today;
+# "managed" selects self-hosted Ory Kratos + Keto + PostgreSQL under the
+# same ports (design/managed-identity-access/). A backend change is a
+# boot-time decision — it builds a different object graph, so it is a
+# restart, never a hot reload.
+# backend = "file"
+# [identity.managed] — required when backend = "managed"; every URL names
+# the service's PRIVATE listener (write/admin sides are never reachable
+# from a browser), and URLs never carry credentials — a gated deployment
+# names the env var holding the key instead. Deploy/ory/compose.yaml brings
+# up a pinned local pair whose listeners match these defaults.
+# kratos_admin_url = "http://127.0.0.1:4434"
+# kratos_public_url = "http://127.0.0.1:4433"   # recorded for session-facing flows
+# keto_read_url = "http://127.0.0.1:4466"
+# keto_write_url = "http://127.0.0.1:4467"
+# kratos_admin_key_env = ""      # env var NAME holding a bearer key, never the value
+# keto_key_env = ""
+# timeout_seconds = 5.0
+# [identity.provisioning.community_bridge]
+# token_env = "NORA_COMMUNITY_PROVISIONING_TOKEN"  # private secret reference
+# sources = ["discord"]
+# scopes = [{ kind = "room", id = "discord/guild/channel" }]  # exact policy room
+# [identity.onboarding] — automatic collection discovery for managed mode
+# Each [[identity.onboarding.collections]] rule feeds
+# ONE platform collection's member set into ONE scope, under a provisioning
+# service's own identity — its `service`/`platform`/`scope` must already be
+# admitted by [identity.provisioning.<service>] above. Nothing onboards
+# implicitly: no collections means no discovery runs at all, and every
+# rule is operator-declared. Only platforms that can enumerate a member
+# set can carry a rule (discord guilds, signal groups); a platform that
+# cannot is refused at boot rather than fabricating a roster.
+# interval_seconds = 300   # full reconciliation cadence per collection
+# retry_seconds = 60       # linear backoff base after a failed/unavailable read
+# [[identity.onboarding.collections]]
+# name = "community-guild"
+# service = "community_bridge"
+# platform = "discord"
+# collection = "123456789012345678"   # the guild id, not a channel
+# scope = { kind = "unit", id = "generated-unit" }
+# audience = "collection"             # a collection roster can never name a room
+# [identity.authentication.portal]
+# key_env = "NORA_AUTHENTICATION_KEY"  # distinct private key, at least 32 bytes
+# methods = { discord_oauth = "your-discord-client-id", telegram_oidc = "your-telegram-client-id" }
+# Add signal_code = "nora-otp" / whatsapp_code = "nora-otp" for enabled managed code login.
+# Only enable methods whose provider authentication the gateway verifies.
+# This key authenticates account-exact requests; it grants no scoped permissions.

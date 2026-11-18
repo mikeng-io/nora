@@ -7,7 +7,6 @@ from types import SimpleNamespace
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from nora.agent.toolkit.results import _record
 from nora.agent.whereis import (
     STALE_AFTER_MS,
 )
@@ -20,6 +19,8 @@ from nora.location.adapters.tools.presence import (
     _make__been_iso,
     _make__presence_audience,
 )
+from nora.location.app.circles import reader_for
+from nora.location.app.circles import record_result as _record
 
 log = logging.getLogger("nora.tools")
 
@@ -68,7 +69,7 @@ def _make_where_been(deps):
             metrics=deps.metrics,
             mobility=deps.mobility,
             persons=deps.persons,
-            presence_circles=deps.presence_circles,
+            presence_circles=await reader_for(deps).read(),
             presence_source=deps.presence_source,
             _been_anomaly_min_samples=deps._been_anomaly_min_samples,
             _been_anomaly_z=deps._been_anomaly_z,

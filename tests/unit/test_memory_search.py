@@ -666,7 +666,7 @@ async def test_an_about_seed_said_in_a_room_not_listing_the_person_is_not_kept()
 
 
 async def test_a_scope_that_raises_is_unavailable_and_counted(monkeypatch) -> None:
-    import nora.agent.memory_search as ms
+    import nora.agent.memory_scope as ms
 
     def boom(target: RenderRoom, **_: object) -> None:
         raise RuntimeError("policy")

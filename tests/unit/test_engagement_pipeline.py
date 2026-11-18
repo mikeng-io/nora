@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from nora.access import IdentityAccess
 from nora.agent.mcp import McpToolGroup
 from nora.agent.registry import ToolRegistry
 from nora.app.runtime import BackgroundTasks
@@ -316,7 +317,7 @@ def _build_pipeline(
     debrief_wiring=None,
     decisions=None,
     defer_tools: bool = False,
-    turn_clock=None,
+    turn_clock=None, room_commands=None,
 ):
     # Always a real (fake) store, never `None`: every scenario below can read
     # `pipeline._tag_trace_store.saved` (mirroring how `pipeline._slots` is
@@ -333,12 +334,10 @@ def _build_pipeline(
     if adapters is None:
         the_adapter = adapter or _FakeAdapter()
         adapters = {the_adapter.platform: the_adapter}
-    extra = {}
+    extra, pol = {}, policy if policy is not None else permissive_policy()
     pipeline = EngagementPipeline(
         adapters=adapters,
-        audit=audit,
-        memory=memory,
-        persons=PERSONS,
+        audit=audit, memory=memory, persons=PERSONS,
         doctrine_store=_FakeDoctrineStore(),
         context_assembler=context_assembler,
         runner=runner or ScriptedRunner(_reply_turns()),
@@ -357,11 +356,11 @@ def _build_pipeline(
         reactions=reactions,
         rosters={"signal": roster_source} if roster_source else {},
         slots=ConversationSlots(maxlen=queue_max, spawn=background.spawn),
-        policy=policy if policy is not None else permissive_policy(),
+        policy=pol, access=IdentityAccess.for_files(persons=PERSONS, policy=pol),
         tag_trace_store=tag_trace_store,
         debrief_wiring=debrief_wiring,
         decisions=decisions,
-        clock=turn_clock,
+        clock=turn_clock, room_commands=room_commands,
         **extra,
     )
     return pipeline, metrics, audit, memory, background

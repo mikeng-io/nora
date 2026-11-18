@@ -572,6 +572,7 @@ def dispatch(
     allowlist: Any, audit: Any, compute_backends: Any, computer_queue_runner: Any,
     computer_scope_for: Any, computer_task_backend: Any, memory: Any, metrics: Any,
     persons: Any, registry: Any, rosters: Any, tool_registry: Any,
+    access: Any = None,
 ) -> DispatchWiring:
     if computer_queue_runner is not None:
         # The queue's executor for durable `native`/`browse`/`capture` rows: each is re-entered
@@ -591,6 +592,7 @@ def dispatch(
             # the live scope resolver, never the queue-time row's word.
             policy=allowlist,
             scope_for=computer_scope_for,
+            access=access,
         )
         for _kind in ("native", "browse", "capture"):
             computer_queue_runner.set_dispatch(_kind, _computer_dispatch)

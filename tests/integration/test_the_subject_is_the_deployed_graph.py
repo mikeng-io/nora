@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
+import os
 import shlex
 import socket
 import sys
@@ -18,11 +20,15 @@ import pytest
 import redis.asyncio as redis
 from aiohttp import web
 
+from nora.app.composition import Dependencies
 from nora.domain.actions import ActionOwner
 from nora.domain.models import ConversationTarget
 from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint, BridgeUnavailableError
+from nora.subject import SubjectSpec, obtain
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import EvidenceError
+from nora.subject.obtain import build_config, default_policy
+from nora.testing.signal_daemon import FakeSignalDaemon
 from scripts.cognition_loop.egress import assert_no_egress
 
 
@@ -90,6 +96,41 @@ async def test_bridge_roster_decodes_accounts_once_and_keeps_unknown_unavailable
         else:
             assert known.members == ()
         environment.check()
+
+
+@pytest.fixture
+def spec(tmp_path, clean_pg_url, monkeypatch, evaluation_config) -> SubjectSpec:
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    # No identity.toml or policy.toml written here, deliberately: `obtain` owns
+    # them, because a caller writing them by hand is how every caller ends up
+    # with a slightly different Nora.
+    return SubjectSpec(
+        database_url=os.environ["DATABASE_URL"], workdir=tmp_path,
+        room=("signal", "g1"),
+        policy=default_policy(("signal", "g1"), unit="generated-unit"))
+
+
+@pytest.mark.asyncio
+async def test_obtain_returns_the_production_graph(spec, clean_pg_url) -> None:
+    """Same type, same builder, same field count as `nora/__main__.py` gets."""
+    requests: list[dict] = []
+    daemon = FakeSignalDaemon()
+    applications = {
+        "platforms.signal.base_url": daemon.app(),
+        "honcho.base_url": _empty_honcho_app(),
+        "llm.base_url": _model_app(requests),
+        **{f"providers.{name}.base_url": _model_app(requests)
+           for name in build_config(spec).providers},
+    }
+    environment = IsolatedServices(
+        database_url=clean_pg_url, applications=applications)
+    async with environment:
+        subject = await obtain(replace(spec, environment=environment))
+    assert isinstance(subject.deps, Dependencies)
+    fields = {f.name for f in dataclasses.fields(Dependencies)}
+    assert len(fields) == 85, "Dependency shape changed; reconcile the production subject."
+    assert {"access", "managed_services", "managed_session"} <= fields
+    assert subject.deps.access is subject.deps.ingest._access
 
 
 @pytest.mark.asyncio

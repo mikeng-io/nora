@@ -99,6 +99,7 @@ import httpx
 import openai
 import pytest
 
+from nora.access import IdentityAccess
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import DeliveryStatus
 from nora.engagement.stages import debrief
@@ -107,7 +108,7 @@ from nora.ingest.relevance_gate import Completion as GateCompletion
 from nora.ingest.relevance_gate import RelevanceGate
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
-from nora.policy import load_policy
+from nora.policy import load_policy, permissive_policy
 from nora.testing import (
     FakeAdapter,
     FakeAgentRunner,
@@ -346,8 +347,7 @@ async def _drive(tmp_path: Path) -> _Journey:
         f'[[conversations]]\nplatform = "signal"\nid = "{THREAD_ROOM}"\n'
         f'label = "{THREAD_ROOM}"\npersons = "*"\nrelevance_gate = true\n'
         f'unit = "{UNIT}"\n'
-        # The home room is on ANOTHER platform, served by its own adapter;
-        # a thread plus a home room are two rooms of one unit.
+        # Thread and cross-platform home room belong to the same unit.
         f'[[conversations]]\nplatform = "telegram"\nid = "{HOME_ROOM}"\n'
         f'label = "{HOME_ROOM}"\npersons = "*"\n'
         f'unit = "{UNIT}"\nhome_room = true\n'
@@ -413,7 +413,8 @@ async def _drive(tmp_path: Path) -> _Journey:
     )
 
     dispatcher, _engagement, background, trigger = build_offline_pipeline(
-        cfg, adapter=adapter, audit=audit, memory=memory, persons=persons,
+        cfg, adapter=adapter, audit=audit, memory=memory,
+        access=IdentityAccess.for_files(persons, permissive_policy()),
         doctrine_store=doctrine_store, runner=tag_runner, metrics=metrics,
         notes=note_store, standing=standing_store,
         debrief_wiring=debrief_wiring,

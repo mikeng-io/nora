@@ -95,6 +95,24 @@ def _direct_address(platform: str, id_value: str) -> str | None:
     return None
 
 
+def _target_from_ids(platform: str, values: Iterable[str]) -> ConversationTarget | None:
+    ids = sorted(values)
+    if platform == "signal":
+        ranked = [i for i in ids if _UUID.match(i)] + [i for i in ids if _E164.match(i)]
+    else:
+        ranked = [i for i in ids if _E164.match(i)] + [i for i in ids if _DIGITS.match(i)]
+    for value in ranked:
+        if address := _direct_address(platform, value):
+            return ConversationTarget(platform=platform, conversation_id=address,
+                                      conversation_type="dm")
+    return None
+
+
+def direct_account_target(account: BoundAccount) -> ConversationTarget | None:
+    """Address this exact verified account, never another account of its owner."""
+    return _target_from_ids(account.platform, (ident.value for ident in account.identifiers))
+
+
 @dataclass(frozen=True)
 class Persons:
     by_person: dict[str, PersonRef]
@@ -272,17 +290,7 @@ class Persons:
         WhatsApp prefers the phone JID, the form an inbound 1:1 chat is
         recorded under, then the LID. Sorted within each kind, so a person with
         two accounts gets the same answer on every call."""
-        ids = sorted(self.platform_ids(platform, person_id))
-        if platform == "signal":
-            ranked = [i for i in ids if _UUID.match(i)] + [i for i in ids if _E164.match(i)]
-        else:
-            ranked = [i for i in ids if _E164.match(i)] + [i for i in ids if _DIGITS.match(i)]
-        for value in ranked:
-            if address := _direct_address(platform, value):
-                return ConversationTarget(
-                    platform=platform, conversation_id=address, conversation_type="dm",
-                )
-        return None
+        return _target_from_ids(platform, self.platform_ids(platform, person_id))
 
     def instagram_handle(self, fbid: str) -> str | None:
         """The Instagram `username` the operator recorded beside `fbid`, or

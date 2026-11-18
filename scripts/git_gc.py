@@ -202,14 +202,9 @@ def _is_ancestor(repo: Path, commit: str, base: str) -> bool | None:
 
 
 def _archive_tip(repo: Path, branch: str) -> str | None:
-    """The tip an archive tag proves custody of, else None.
-
-    Custody needs all of: an annotated local tag, the same tag object on
-    origin (`make archive` pushed and verified it), and a recorded
-    source-tip equal to the tag's target commit — the caller then checks it
-    against the branch's tip. A failed read, a lightweight or unpushed tag
-    and a mismatched record all grant nothing.
-    """
+    """The archived source tip with verified annotated custody on origin, else None."""
+    # Local and origin must agree on the annotated tag object and recorded source tip.
+    # The caller compares the branch tip; unreadable or mismatched records grant nothing.
     ref = f"refs/tags/archive/{branch}"
     kind = _git(repo, "cat-file", "-t", ref)
     if kind.returncode != 0 or kind.stdout.strip() != "tag":

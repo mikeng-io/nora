@@ -32,7 +32,7 @@
   "file": "nora/domain/media.py",
   "old": "            **({\"role\": blob.role} if blob.role else {}),\n",
   "new": "",
-  "target": "tests/unit/test_media_cover_label.py::test_the_role_round_trips_through_media_json tests/test_media_fetch.py::test_a_shared_items_thumbnail_is_looked_at_only_when_asked tests/test_media_fetch.py::test_a_cover_served_from_a_fresh_look_says_it_is_only_the_cover"
+  "target": "tests/unit/test_media_cover_label.py::test_the_role_round_trips_through_media_json tests/test_media_fetch.py::test_a_shared_items_thumbnail_is_looked_at_only_when_asked tests/integration/test_media_fetch_covers.py::test_a_cover_served_from_a_fresh_look_says_it_is_only_the_cover"
  },
  {
   "name": "media_json always writes a role key, changing every ordinary row",
@@ -53,42 +53,42 @@
   "file": "nora/media/adapters/tools/create.py",
   "old": "        if cover:\n            served[\"note\"] = f\"{served['note']} {_COVER_NOTE}\"\n",
   "new": "",
-  "target": "tests/test_media_fetch.py::test_a_cover_served_from_a_fresh_look_says_it_is_only_the_cover tests/test_media_fetch.py::test_a_shared_items_thumbnail_is_looked_at_only_when_asked"
+  "target": "tests/integration/test_media_fetch_covers.py::test_a_cover_served_from_a_fresh_look_says_it_is_only_the_cover tests/test_media_fetch.py::test_a_shared_items_thumbnail_is_looked_at_only_when_asked"
  },
  {
   "name": "the withheld path drops the cover sentence",
   "file": "nora/media/adapters/tools/create.py",
   "old": "                \"note\": f\"{withheld} {_COVER_NOTE}\" if cover else withheld,",
   "new": "                \"note\": withheld,",
-  "target": "tests/test_media_fetch.py -k withheld_cover"
+  "target": "tests/integration/test_media_fetch_covers.py -k withheld_cover"
  },
  {
   "name": "the stored-reading path does not pass the cover flag",
   "file": "nora/media/adapters/tools/fetch.py",
-  "old": "_stored_reading(c.stored),\n                    cached=True,\n                    code=c.serve_code,\n                    cover=c.is_cover,",
-  "new": "                    _stored_reading(c.stored),\n                    cached=True, code=c.serve_code,",
-  "target": "tests/test_media_fetch.py -k stored_reading_says_so"
+  "old": "_stored_reading(c.stored),\n                    cached=True,\n                    code=c.answer_code,\n                    cover=c.is_cover,\n                    kept=c.kept_note,",
+  "new": "_stored_reading(c.stored),\n                    cached=True,\n                    code=c.answer_code,\n                    kept=c.kept_note,",
+  "target": "tests/integration/test_media_fetch_covers.py::test_a_cover_served_from_the_stored_reading_says_so_too"
  },
  {
   "name": "a newer cover sighting does not take back the earlier photo's: the handle is a cover only if EVERY sighting was",
   "file": "nora/domain/media.py",
   "old": "            elif old.cover and not is_cover:\n                seen[blob.sha256] = replace(old, cover=False, cover_body=\"\")",
   "new": "            elif False:\n                seen[blob.sha256] = replace(old, cover=False, cover_body=\"\")",
-  "target": "tests/test_media_fetch.py -k sent_as_a_photo"
+  "target": "tests/integration/test_media_fetch_covers.py -k sent_as_a_photo"
  },
  {
   "name": "an older cover sighting marks the handle although a newer photo of the same bytes is in view",
   "file": "nora/domain/media.py",
   "old": "            elif old.cover and is_cover and not old.cover_body:\n                seen[blob.sha256] = replace(old, cover_body=row.body or \"\")",
   "new": "            elif is_cover:\n                seen[blob.sha256] = replace(old, cover=True, cover_body=row.body or \"\")",
-  "target": "tests/test_media_fetch.py -k sent_as_a_photo"
+  "target": "tests/integration/test_media_fetch_covers.py -k sent_as_a_photo"
  },
  {
   "name": "an ordinary photo is called a cover (role check dropped)",
   "file": "nora/domain/media.py",
   "old": "            is_cover = blob.role == COVER_ROLE",
   "new": "            is_cover = True",
-  "target": "tests/test_media_fetch.py -k ordinary_photo_carries_no_cover_note"
+  "target": "tests/integration/test_media_fetch_covers.py -k ordinary_photo_carries_no_cover_note"
  },
  {
   "name": "the outbound marker strip is a hand-written list again, without cover image",
@@ -114,23 +114,23 @@
  {
   "name": "the vision-cache hit does not pass the cover flag",
   "file": "nora/media/adapters/tools/fetch.py",
-  "old": "c.sha256,\n                c.cached_description,\n                cached=True,\n                code=c.serve_code,\n                kept=c.kept_image,\n                cover=c.is_cover,",
-  "new": "                c.sha256, c.cached_description, cached=True, code=c.serve_code, kept=c.kept_image,",
-  "target": "tests/test_media_fetch.py::test_a_cover_served_from_a_vision_cache_hit_says_so_too"
+  "old": "c.sha256,\n                c.cached_description,\n                cached=True,\n                code=c.answer_code,\n                kept=c.kept_note,\n                cover=c.is_cover,",
+  "new": "c.sha256,\n                c.cached_description,\n                cached=True,\n                code=c.answer_code,\n                kept=c.kept_note,\n",
+  "target": "tests/integration/test_media_fetch_covers.py::test_a_cover_served_from_a_vision_cache_hit_says_so_too"
  },
  {
   "name": "the question path does not pass the cover flag",
   "file": "nora/media/adapters/tools/fetch.py",
-  "old": "return (\n            True,\n            None,\n            c._serve_media(\n                c.sha256,\n                c.description,\n                cached=False,\n                code=c.serve_code,\n                kept=c.kept_image,\n                cover=c.is_cover,\n            )",
-  "new": "            return c._serve_media(\n                c.sha256, c.description, cached=False, code=c.serve_code, kept=c.kept_image,\n            )\n        # A STORY frame read by",
-  "target": "tests/test_media_fetch.py::test_a_cover_asked_a_question_says_so_too"
+  "old": "async def _media_fetch__answer(c):\n    if c.question:\n        return (\n            True,\n            None,\n            c._serve_media(\n                c.sha256,\n                c.description,\n                cached=False,\n                code=c.answer_code,\n                kept=c.kept_note,\n                cover=c.is_cover,\n            ),\n        )\n",
+  "new": "async def _media_fetch__answer(c):\n    if c.question:\n        return (\n            True,\n            None,\n            c._serve_media(\n                c.sha256,\n                c.description,\n                cached=False,\n                code=c.answer_code,\n                kept=c.kept_note,\n            ),\n        )\n",
+  "target": "tests/integration/test_media_fetch_covers.py::test_a_cover_asked_a_question_says_so_too"
  },
  {
   "name": "the note promises a link that may be missing",
   "file": "nora/agent/toolkit/files.py",
   "old": "    \"picture, not the item itself. What the item shows or says is behind the \"\n    \"item's link, if that line carries one.\"",
   "new": "    \"picture, not the item itself. What the item shows or says is behind the \"\n    \"link in that same line of the conversation.\"",
-  "target": "tests/test_media_fetch.py::test_a_cover_served_from_a_fresh_look_says_it_is_only_the_cover"
+  "target": "tests/integration/test_media_fetch_covers.py::test_a_cover_served_from_a_fresh_look_says_it_is_only_the_cover"
  },
  {
   "name": "a send_gif caption is not stripped of media markers",

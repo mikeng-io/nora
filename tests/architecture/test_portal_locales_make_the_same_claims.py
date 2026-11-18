@@ -1,7 +1,7 @@
 """The portal's two locales must make the SAME claims, not just carry the same keys.
 
 A one-locale correction reads as done and ships the bug: `app/src/i18n/routing.ts`
-sets `defaultLocale: "zh-Hant"`, so a falsehood left standing in `zh-Hant` is the
+takes its `zh-Hant` default from `locales.ts`, so a falsehood in `zh-Hant` is the
 copy the site serves by default, while a corrected English is the fallback
 nobody sees first. A claim about a backend capability must change in both files.
 
@@ -131,11 +131,11 @@ def test_the_default_locale_is_the_one_this_guard_assumes_is_at_risk() -> None:
     reasoning has to be re-read rather than silently kept.
     """
     source = _ROUTING.read_text("utf-8")
-    assert 'defaultLocale: "zh-Hant"' in source, (
-        "app/src/i18n/routing.ts no longer declares zh-Hant as the default "
-        "locale. This guard's docstring argues from that fact; re-read it "
-        "before changing this assertion."
-    )
+    assert "defaultLocale: DEFAULT_LOCALE" in source
+    assert re.search(r"import\s*\{[^}]*\bDEFAULT_LOCALE\b[^}]*\}\s*from\s*"
+                     r"[\"']\./locales[\"']", source)
+    assert 'export const DEFAULT_LOCALE = "zh-Hant";' in (
+        _ROUTING.parent / "locales.ts").read_text("utf-8")
 
 
 def test_every_locale_carries_exactly_the_same_keys() -> None:

@@ -1,41 +1,13 @@
-"""The Profile adaptor, in shadow: one Dreamer session per (unit, person),
-writing typed lines through `profile_write` (design/unified-memory/profiles.md).
+"""One Profile session per canonical identity and unit.
 
-**Shadow** (45 §6, ): it writes `profile_line` and
-nothing reads it. The Character head, `peer_card` and `peer_history` keep
-rendering, Honcho's feed keeps running, and no prompt changes until the
-switch (step 8). `[memory.profile] write` turns the sessions on.
+The selected unit view names its sources; social evidence obeys current opt-out.
+Recent messages, mentions, episodes, social items, ties, disputes and room culture
+provide bounded evidence. Durable Record/source cursors recover older history;
+legacy Character prose is a gap checklist, never an uncited fact source.
 
-**The wake** is the person's Character rule, counted over the rooms that
-list them (35 §3): `[memory.profile.person] update_every_messages` of their messages since the
-key's watermark, or `stale_seconds` with any. **Plus the stimulus wake** (45
-§4 prerequisite 4): a `told` line a turn wrote about them (`remember` on the
-graph surface) or a dispute of one of its lines (`profile_dispute` on the
-same surface) since the account's last session counts as a full batch, so
-the session weighs it at once.
-
-**Historical recovery** (75): a separate durable, frozen Record boundary
-and oldest-first own/mention union cursor recover the complete history in
-bounded sessions. Normal recent updates keep their existing runtime watermark.
-The first settled session still receives the legacy Character head as a gap
-checklist, never as an uncited source of typed facts. `memory profile-history`
-reports coverage and explicitly restarts an old incomplete shadow pass.
-
-**What it reads** (45 §4): its own held lines by handle (`P1`, ...), the
-person's new messages, the messages that MENTION them (the index's `mentions`
-edges, written from the resolved `messages.mention_persons_json`), the
-response episodes they answered, their social items (at most
-`SOCIAL_ITEMS_MAX` a wake, with a post's or reel's latest counts, cited
-`social:<network>:<item id>` — evidence about its author alone), their Rollup
-ties and named-place presence Rollup observations, the
-disputes of its lines raised since it last settled (35 §2), and the unit's
-room cultures.
-
-**One atomic write settles the session**: `profile_write(ops)` is judged
-whole by `nora.domain.profile.plan_write` (one refused op refuses the call,
-with every reason), lands at once, and applies the 60-day trait decay;
-`profile_no_change(why)` settles with nothing added and applies the decay.
-A session that does neither retains its source revisions without abandonment (45 §4a).
+`profile_write` validates the whole operation and commits atomically with trait
+decay; `profile_no_change` settles without additions. Unsettled source revisions
+remain pending. Account reads and writes retain their original provenance.
 """
 
 from __future__ import annotations
@@ -44,9 +16,9 @@ import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from nora.domain.blocks import (
     BlockKey,
@@ -64,6 +36,7 @@ from nora.domain.culture import (
     RoomMessage,
 )
 from nora.domain.errors import AccountNotRecordableError
+from nora.domain.live import AsyncLiveMapping
 from nora.domain.media import placeholders_in
 from nora.domain.media_join import MediaJoin, body_with_custody_slots, shas_in
 from nora.domain.ports import Proposal
@@ -86,6 +59,7 @@ from nora.domain.profile import (
 from nora.domain.profile_inputs import PersonSourceRevision
 from nora.domain.prompt import age, escape
 from nora.domain.social_stream import PersonSocialItem, RecordedCounts, to_us
+from nora.language.background_identity import BackgroundIdentity
 from nora.language.character import (
     CHARACTER_PERSON_TOOLS,
     SOCIAL_ITEMS_MAX,
@@ -97,6 +71,9 @@ from nora.language.character import (
     room_cultures_block,
 )
 from nora.obs.metrics import Metrics
+
+if TYPE_CHECKING:
+    from nora.access import IdentityAccess
 
 log = logging.getLogger(__name__)
 
@@ -124,12 +101,8 @@ DISPUTES_MAX = 10
 # Whole-source input bound; larger roots remain pending, never partly citable.
 SOURCE_BLOCK_CHARS = 20_000
 
-#: `inputs` holds ten sites (the account's revision, lines, pending `told`
-#: lines and open disputes, the Character head, cited rows in one read, the
-#: ties, the rooms' cultures in one gather, the handed items' counts, the
-#: cached media join);
-#: `commit` one write.
-PROFILE_STORE_CALLS_PER_TICK = 12
+#: Twelve profile read/write sites plus three selected-identity operations.
+PROFILE_STORE_CALLS_PER_TICK = 15
 
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("about_person", 5, "turn"),
@@ -355,10 +328,10 @@ class ProfileEvidence:
         source_inputs: _SourceInputs | None = None,
         source_timeout_seconds: float = 3.0,
         social: _PersonSocial | None = None,
+        access: IdentityAccess | None = None,
         former_ids: Callable[[str], Sequence[str]] = lambda _person: (),
     ) -> None:
-        """`former_ids` is `Persons.former_ids_for`: an item recorded under a
-        person's retired id is theirs too."""
+        """Historical ids when no selected identity reader is supplied."""
         self._store = store
         self._profile = profile
         self._keys = keys
@@ -368,6 +341,7 @@ class ProfileEvidence:
         self._source_handed: dict[str, list[PersonSourceRevision]] = {}
         self._source_selected: dict[str, list[PersonSourceRevision]] = {}
         self._social = social
+        self._access = access
         self._former_ids = former_ids
         self._held: dict[str, int] = {}
         self._history: dict[str, int] = {}
@@ -377,8 +351,12 @@ class ProfileEvidence:
         """The watermark the last `newest` for `key` started after."""
         return self._held.get(key)
 
-    def _ids(self, person_id: str) -> tuple[str, ...]:
-        """Every id their social items may be recorded under."""
+    async def _ids(self, person_id: str) -> tuple[str, ...]:
+        if self._access is not None:
+            ids = await self._access.identity_ids(person_id)
+            if ids is None:
+                raise RuntimeError("identity family is unavailable")
+            return ids
         return (person_id, *self._former_ids(person_id))
 
     async def _sources(
@@ -390,10 +368,11 @@ class ProfileEvidence:
         pk = self._keys[key]
         args: dict[str, Any] = {"key": key, "rooms": _listed(pk), "person": pk.person.person_id}
         out: list[PersonSourceRevision] = []
+        family = await self._ids(pk.person.person_id)
         readers: tuple[tuple[str, Callable[[], Awaitable[list[PersonSourceRevision]]]], ...] = (
             ("message", lambda: source.messages(
                 **args, limit=limit, after=after, discover=discover)),
-            ("social", lambda: source.social(key=key, persons=self._ids(pk.person.person_id),
+            ("social", lambda: source.social(key=key, persons=family,
                                              limit=SOCIAL_ITEMS_MAX)),
             ("register", lambda: source.register(**args, unit=pk.unit, limit=SOCIAL_ITEMS_MAX)),
             ("rollup", lambda: source.rollup(
@@ -401,10 +380,12 @@ class ProfileEvidence:
         )
         for domain, read in readers:
             try:
+                if domain == "social" and self._access is not None and (
+                        await self._access.social_off(pk.person.person_id)):
+                    continue
                 out.extend(await asyncio.wait_for(read(), timeout=self._source_timeout))
             except Exception:
-                # A failed domain remains pending; other readable domains can
-                # still settle. No absence token is fabricated for this read.
+                # Failed domains remain pending, never fabricated as absence.
                 log.exception("profile source unavailable: %s", domain)
                 out.append(PersonSourceRevision(
                     domain=cast(Any, domain), source=f"{domain}:unavailable", revision="",
@@ -420,9 +401,7 @@ class ProfileEvidence:
             if await asyncio.wait_for(self._source_inputs.recovery_requested(key=key),
                                       timeout=self._source_timeout):
                 return self._wake_batch
-            # Read up to a whole batch: the wake rule is `new >= wake_batch`,
-            # so a probe of one could never reach it (the person woke only
-            # on the stale rule).
+            # Probe a whole batch so evidence can reach the wake threshold.
             n = len(await self._sources(key, self._wake_batch, max(after, boundary), discover=True))
             try:
                 recovery = await asyncio.wait_for(self._source_inputs.media_recovery(
@@ -447,12 +426,13 @@ class ProfileEvidence:
             return self._wake_batch
         if await self._profile.pending_disputes(key=key):
             return self._wake_batch
-        if self._social is None:
+        if self._social is None or (self._access is not None and
+                await self._access.social_off(pk.person.person_id)):
             return n
         cursor, read_at = await self._store.social_cursor(
             adaptor=PROFILE_PERSON_ADAPTOR_NAME, key=key)
         polled = await self._social.polled_count(
-            persons=self._ids(pk.person.person_id), after_us=max(cursor, read_at))
+            persons=await self._ids(pk.person.person_id), after_us=max(cursor, read_at))
         return n + min(polled, SOCIAL_ITEMS_MAX)
 
     async def newest(
@@ -517,7 +497,8 @@ class ProfileEvidence:
                   and any(r.person_id == pk.person.person_id for r in e.replies)]
         batch: list[RoomMessage | Episode | Mention | PersonSocialItem] = [
             *messages, *(Mention(message=m) for m in mentioned), *theirs[-EPISODES_MAX:]]
-        if self._social is None:
+        if self._social is None or (self._access is not None and
+                await self._access.social_off(pk.person.person_id)):
             return batch, max(cursor, mention_cursor)
         start, _read_at = await self._store.social_cursor(
             adaptor=PROFILE_PERSON_ADAPTOR_NAME, key=key)
@@ -525,7 +506,7 @@ class ProfileEvidence:
         # not in this batch, so it counts toward the next wake.
         at = to_us(await self._social.now())
         items = await self._social.person_items(
-            persons=self._ids(pk.person.person_id), limit=SOCIAL_ITEMS_MAX,
+            persons=await self._ids(pk.person.person_id), limit=SOCIAL_ITEMS_MAX,
             after_us=start,
         )
         self._reads[key] = _Read(start=start, at=at, reach=start)
@@ -665,18 +646,16 @@ class ProfilePersonAdaptor:
         render: bool = False,
         media_join: MediaJoin | None = None,
         social: _PersonSocial | None = None,
+        identity: BackgroundIdentity | None = None,
         screen: Callable[[str], str | None] | None = None,
         render_chars: int = 0,
         handle_owners: Callable[[str], frozenset[str]] = lambda _handle: frozenset(),
         coordinate_screen: Callable[[str], bool] | None = None,
     ) -> None:
-        """`social` is the readable social store the session's items and their
-        counts come from (45 §4: the person account's alone); `screen` is
-        `nora.agent.egress.scan_identifiers`, injected because this layer may
-        not import it, and `render_chars` bounds each medium's reading
-        (`[media] comprehension_render_chars`). A session built with `social`
-        but no `screen` withholds every item's `shows` — fail-closed, as a
-        withheld reading in `character._shows`. `handle_owners` says whose
+        """`social` supplies readable items/counts; `screen` checks egress.
+        `render_chars` bounds each medium's reading
+        (`[media] comprehension_render_chars`). With social but no screen,
+        every item's shows is withheld. `handle_owners` says whose
         Instagram username a handle is (by default nobody's, so every handle
         in a caption is redacted)."""
         self._coordinate_screen = coordinate_screen
@@ -688,17 +667,21 @@ class ProfilePersonAdaptor:
         self.evidence = evidence
         self._reads = reads
         self._keys = keys
+        self._live_keys = keys if isinstance(keys, AsyncLiveMapping) else None
         self._name_of = name_of
         self._clock_ms = clock_ms
         self._metrics = metrics
         self._clock = clock or (lambda: datetime.now().astimezone())
         self._social = social
+        self._identity = identity
         self._screen = screen
         self._render_chars = render_chars
         self._handle_owners = handle_owners
         self._runs: dict[str, _Run] = {}
 
-    def keys(self) -> Sequence[str]:
+    def keys(self) -> Sequence[str] | Awaitable[Sequence[str]]:
+        if self._live_keys is not None:
+            return self._live_keys.refresh()
         return tuple(sorted(self._keys.keys()))
 
     def tool_room(self, key: str) -> str | None:
@@ -715,16 +698,14 @@ class ProfilePersonAdaptor:
     # -- inputs ------------------------------------------------------------
 
     async def inputs(self, *, key: str, batch: Sequence[Any]) -> str:
-        """Who this is, the lines the account holds (by handle), the Character
-        head until a session first settles the account, the rooms' cultures, their messages,
-        the messages that mention them, the episodes they answered, their social
-        items with a post's or reel's counts, their ties and the disputes
-        awaiting weighing. `""` when nothing is new and no turn wrote a line or
-        a dispute: no model call."""
+        """Current unit identity, source evidence and held lines; empty when nothing is new."""
         pk = self._keys.get(key)
+        if pk is None:
+            return ""
+        if self._identity is not None:
+            batch = await self._identity.social_batch(pk.person.person_id, batch)
         revisions = [r for r in batch if isinstance(r, PersonSourceRevision)]
-        # Never cut the interior of an input: trimmed revisions stay pending.
-        # Social retains its existing smaller block budget below.
+        # Whole revisions fit the input budget or remain pending.
         selected: list[PersonSourceRevision] = []
         used: dict[str, int] = {}
         for item_revision in revisions:
@@ -745,8 +726,6 @@ class ProfilePersonAdaptor:
         episodes.extend(r.episode for r in selected if r.episode is not None)
         social = [m for m in batch if isinstance(m, PersonSocialItem)]
         social.extend(r.social for r in selected if r.social is not None)
-        if pk is None:
-            return ""
         # The revision before the lines: a write landing between the two reads
         # makes this session's write a `conflict`, never a write on shifted handles.
         revision, settled_at = await self._profile.account_state(key=key)
@@ -904,12 +883,13 @@ class ProfilePersonAdaptor:
                 caption = caption.replace(f"[{label} {handle}]", "")
             if shas_in(message.row.media_json) and not caption.strip():
                 interpretation_only.add(message.row.id)
+        pk, name_of = await self._input_names(pk, visible, heads, disputes, ties, selected)
         tellers: dict[str, str] = {}
         ambiguous: set[str] = set()
         for author in {person, *(m.row.person_id for m in visible.values()
                                  if m.row.person_id is not None), *(o for o, *_ in ties)}:
             for name in ((pk.person.name, *pk.person.aliases) if author == person
-                         else (self._name_of(author),)):
+                         else (name_of(author),)):
                 normalized = name.casefold()
                 if normalized == "someone" or normalized in ambiguous:
                     continue
@@ -918,6 +898,9 @@ class ProfilePersonAdaptor:
                     tellers.pop(normalized)
                 else:
                     tellers[normalized] = author
+        if self._identity is not None:
+            await self._identity.require_social(person,
+                social or [r for r in selected if r.domain == "social"])
         self._runs[key] = _Run(
             account=account,
             citable=ProfileCitable(
@@ -953,7 +936,7 @@ class ProfilePersonAdaptor:
                      if len(values) == 1}
         identity_names = {k.person.person_id for k in self._keys.values() if k.unit == pk.unit}
         def identity_name(pid: str) -> str:
-            return self._name_of(pid) if pid in identity_names else "someone"
+            return name_of(pid) if pid in identity_names else "someone"
         handles = handles_for(heads)
         handle_of = {i: h for h, i in handles.items()}
         # A dispute names the line as it was when it matched; a state change
@@ -982,7 +965,7 @@ class ProfilePersonAdaptor:
                 body=legacy_composed(render_elements(
                     held,
                     tag="line",
-                    attrs=lambda x, _i: _line_attrs(x, handle_of[x.id], now, self._name_of),
+                    attrs=lambda x, _i: _line_attrs(x, handle_of[x.id], now, name_of),
                     body=lambda x: (
                         identity_text(x, name_of=identity_name) or "legacy untyped: " + x.text
                     ),
@@ -1007,7 +990,7 @@ class ProfilePersonAdaptor:
                     disputes,
                     tag="dispute",
                     attrs=lambda d, _i: (
-                        ("by", self._name_of(d.disputed_by)),
+                        ("by", name_of(d.disputed_by)),
                         ("kind", d.kind),
                         ("age", age(d.written_at, now)),
                         ("said", str(d.message_id)),
@@ -1045,7 +1028,7 @@ class ProfilePersonAdaptor:
                     attrs=lambda m: (
                         ("room", labels.get(m.room) or "unnamed room"),
                         ("platform", platforms.get(m.room)),
-                        ("by", self._name_of(m.row.person_id)),
+                        ("by", name_of(m.row.person_id)),
                         ("age", age(m.row.ts, now)),
                         ("source_at", datetime.fromtimestamp(
                             _said(m).ts / 1000, PROFILE_HKT).isoformat()),
@@ -1059,7 +1042,7 @@ class ProfilePersonAdaptor:
                 name="profile_episodes",
                 **_at("profile_episodes"),
                 body=legacy_composed("\n".join(
-                    self._episode(e, person, labels, bodies)
+                    self._episode(e, person, labels, bodies, name_of)
                     for e in episodes if e.send_id in replies
                 )),
             ),
@@ -1077,7 +1060,7 @@ class ProfilePersonAdaptor:
                     tag="tie",
                     attrs=lambda t, _i: (
                         ("cite", tie_keys[t[0]]),
-                        ("with", self._name_of(t[0])),
+                        ("with", name_of(t[0])),
                         ("replies_to", str(t[1])),
                         ("replied_by", str(t[2])),
                         ("mentions", str(t[3])),
@@ -1094,7 +1077,7 @@ class ProfilePersonAdaptor:
                 name="profile_source_revisions", **_at("profile_source_revisions"),
                 body=legacy_composed(render_elements(selected, tag="source", attrs=lambda r, _i: (
                     ("domain", r.domain), ("handle", r.source), ("state", r.state),
-                    ("subject", self._name_of(r.subject) if r.subject else None),
+                    ("subject", name_of(r.subject) if r.subject else None),
                     ("revision", r.revision), ("recorded", r.recorded_at),
                     ("cite", r.citable),
                 ), body=lambda r: json.dumps({
@@ -1109,6 +1092,22 @@ class ProfilePersonAdaptor:
             ))
         return self._checked_input(key, assemble([p for p in parts if p is not None], sep="\n\n"))
 
+    async def _input_names(
+        self, pk: PersonKey, visible: Mapping[int, RoomMessage],
+        heads: Sequence[ProfileLine], disputes: Sequence[ProfileDispute],
+        ties: Sequence[tuple[Any, ...]], selected: Sequence[PersonSourceRevision],
+    ) -> tuple[PersonKey, Callable[[str | None], str]]:
+        if self._identity is None or not self._identity.managed:
+            return pk, self._name_of
+        current, name_of = await self._identity.names(
+            unit=pk.unit, subject=pk.person.person_id,
+            people=[*(m.row.person_id for m in visible.values()), *(h.told_by for h in heads),
+                    *(d.disputed_by for d in disputes), *(other for other, *_ in ties),
+                    *(r.subject for r in selected)])
+        if current is not None:
+            pk = replace(pk, person=current)
+        return pk, name_of
+
     def _checked_input(self, key: str, text: str) -> str:
         if self._coordinate_screen is not None and self._coordinate_screen(text):
             self.evidence.forget(key)
@@ -1117,11 +1116,12 @@ class ProfilePersonAdaptor:
 
     def _episode(
         self, e: Episode, person: str, labels: Mapping[str, str], bodies: Mapping[int, str],
+        name_of: Callable[[str | None], str],
     ) -> str:
         """One `<episode>`: her send and their replies to it, each with its id."""
         rows = render_row_window(
             [(e.send_id, "you", e.text, None), *(
-                (r.id, self._name_of(r.person_id), bodies.get(r.id, r.body or ""),
+                (r.id, name_of(r.person_id), bodies.get(r.id, r.body or ""),
                  r.ts if shas_in(r.media_json) else None)
                 for r in e.replies if r.person_id == person)],
             row_id=lambda m: m[0],

@@ -39,6 +39,7 @@ class FakeSignalDaemon:
         self.reactions: list[dict[str, Any]] = []
         self.attachment_reads: list[str] = []
         self.rpc_calls: list[str] = []
+        self.groups: list[dict[str, Any]] = []
         # `drop_next_rpc` severs the connection that many times — the real
         # "answer lost" window. `rpc_errors` answers a named method with a
         # JSON-RPC error instead of a result.
@@ -116,7 +117,7 @@ class FakeSignalDaemon:
                 {"jsonrpc": "2.0", "id": request_id, "result": result})
         if method == "listGroups":
             return web.json_response(
-                {"jsonrpc": "2.0", "id": request_id, "result": []})
+                {"jsonrpc": "2.0", "id": request_id, "result": self.groups})
         if method == "getUserStatus":
             return web.json_response(
                 {"jsonrpc": "2.0", "id": request_id,

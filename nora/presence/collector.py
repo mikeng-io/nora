@@ -1,29 +1,7 @@
-"""`PresenceCollector` — the change-recorder daemon (DEC-55).
+"""Record selected provider observations under the active identity backend.
 
-A SEPARATE process from Nora (`python -m nora.presence`). It shares the `nora`
-database and the Life360 client library, nothing else, and either can be down
-without the other: if the collector is down, `whereis` degrades to
-`unavailable`; if Nora is down, the collector keeps recording.
-
-The per-circle loop:
-  1. read the circle (the client ensures the token, re-auths only on 403);
-  2. classify each member's `wire_state` and count it, so «sharing off» is a
-     KNOWN state, not a gap;
-  3. write a fix ONLY when the member's `ts` advanced — the change-recorder
-     dedup lives in `PresenceStore.record_fix`, and this loop just hands it
-     every located member;
-  4. publish a liveness heartbeat (the age of this circle's last success);
-  5. sleep the cadence — LONGER when the client reports auth failures, the
-     exponential back-off that keeps a 403 from becoming a ban.
-
-**The canary lives here, not in Nora:** a non-JSON body and an
-unexpectedly-empty circle are the app-update breakage, alarmed
-via `nora_presence_canary_total`. Nora never sees this fragility — she reads the
-local table.
-
-`collect_once` is separated from the infinite loop so the loop is a thin
-sleep-and-repeat and every behaviour (dedup, classification, canary, heartbeat)
-is unit-testable against one cycle without a running daemon.
+File collection uses operator mappings; managed collection resolves current
+verified accounts under the managed mutation boundary before each fix write.
 """
 
 from __future__ import annotations
@@ -37,8 +15,10 @@ from typing import Any
 
 from nora.domain.ports import SourceHealthLog
 from nora.domain.presence import PresenceFix
+from nora.domain.presence_circles import CircleObservation, checked_observations
 from nora.infra.life360 import CircleRead, Life360Client, Member, ReadStatus
 from nora.infra.sql.presence import PresenceStore
+from nora.people import ManagedPresenceAccounts
 
 log = logging.getLogger("nora.presence.collector")
 
@@ -68,9 +48,7 @@ HEALTH_WRITE_TIMEOUT_SECONDS = 5.0
 
 @dataclass(frozen=True)
 class CircleSpec:
-    """One circle to collect, and how its Life360 member ids map to `person_id`s
-    (from `PresenceConfig`). `member_person_ids` values ARE the disclosure roster
-    the R-21 seam checks against."""
+    """A selected circle, with operator member mappings for the file backend."""
 
     circle_id: str
     members: Mapping[str, str]   # life360_member_id -> person_id
@@ -93,8 +71,11 @@ class PresenceCollector:
         cadence_still_seconds: float | None = None,
         metrics: Any = None,
         health_log: SourceHealthLog | None = None,
+        managed_accounts: ManagedPresenceAccounts | None = None,
     ) -> None:
         self._client = client
+        self._managed_accounts = managed_accounts
+        self._observed_members: dict[str, tuple[int, tuple[str, ...]]] = {}
         # Every background poll's outcome, one append-only row each
         # «the collector's recorded polls succeeded» is how a later step proves
         # presence was healthy for an interval before reading an absence as a
@@ -137,15 +118,36 @@ class PresenceCollector:
         # interval from the moving floor toward the still ceiling.
         self._still_cycles: dict[str, int] = {}
 
+    def _fresh_members(self, now_ms: int) -> dict[str, tuple[str, ...]]:
+        ttl_ms = int(max(self._cadence_seconds, self._cadence_still_seconds) * 2000)
+        return {cid: ids for cid, (observed, ids) in self._observed_members.items()
+                if 0 <= now_ms - observed <= ttl_ms}
+
+    def collection_ready(self, *, now_ms: int) -> bool:
+        if self._managed_accounts is None:
+            return True
+        fresh = self._fresh_members(now_ms)
+        return bool(self._circles) and all(c.circle_id in fresh for c in self._circles)
+
+    @property
+    def managed(self) -> bool:
+        return self._managed_accounts is not None
+
+    def observations(self, *, now_ms: int) -> tuple[CircleObservation, ...]:
+        rows = tuple(CircleObservation(cid, observed, members)
+                     for cid, (observed, members) in self._observed_members.items())
+        return checked_observations(rows, expected=tuple(c.circle_id for c in self._circles),
+            now_ms=now_ms,
+            ttl_ms=int(max(self._cadence_seconds, self._cadence_still_seconds) * 2000))
+
     def circle_summary(self) -> list[dict[str, object]]:
-        """The circles this collector is configured to poll, with the count of
-        member→person mappings each carries — for the `/health` endpoint. The
-        diagnostic that makes a stale identity.toml obvious:
-        `1 circle, 1 member` is instantly wrong for a 10-person circle."""
-        return [
-            {"circle_id": c.circle_id, "members": len(c.members)}
-            for c in self._circles
-        ]
+        """File mapping counts or fresh provider observation counts; unknown stays unknown."""
+        if self._managed_accounts is None:
+            return [{"circle_id": c.circle_id, "members": len(c.members)} for c in self._circles]
+        fresh = self._fresh_members(int(time.time() * 1000))
+        return [{"circle_id": c.circle_id,
+                 "observed_members": len(fresh[c.circle_id]) if c.circle_id in fresh else None}
+                for c in self._circles]
 
     async def collect_once(self, circle: CircleSpec, *, now_ms: int) -> CircleRead:
         """One collection cycle for one circle. NEVER raises.
@@ -159,6 +161,7 @@ class PresenceCollector:
         read = await self._client.read_circle(circle_id=circle.circle_id, now_ms=now_ms)
         self._count("nora_presence_reads_total", circle=circle.circle_id, status=read.status.value)
 
+        self._observe(circle, read, now_ms=now_ms)
         if read.status is ReadStatus.CHALLENGE:
             # The client already alarmed `nora_presence_auth_alarms_total`; the
             # canary is the collector's own view of the same breakage.
@@ -187,7 +190,12 @@ class PresenceCollector:
             self._count("nora_presence_member_states_total", wire_state=member.wire_state.value)
             if member.is_driving:
                 moving = True
-            await self._record(circle, member, now_ms=now_ms)
+            try:
+                await self._record(circle, member, now_ms=now_ms)
+            except Exception:  # noqa: BLE001 — bounded source failure, no identifiers in logs
+                self._observed_members.pop(circle.circle_id, None)
+                await self._record_poll(circle.circle_id, "unavailable", now_ms)
+                return CircleRead(ReadStatus.UNAVAILABLE, detail="identity unavailable")
         # Adaptive cadence signal: a circle with any driver polls at the
         # moving floor next cycle; one where all fixes are stationary lets the
         # still-counter grow so the interval ramps toward the ceiling. Driving is
@@ -267,15 +275,28 @@ class PresenceCollector:
         self._places_fetched_ms[cid] = now_ms + int(PLACES_REFRESH_SECONDS * 1000)
         log.info("places refreshed: %d for circle", len(read.places))
 
+    def _observe(self, circle: CircleSpec, read: CircleRead, *, now_ms: int) -> None:
+        ids = tuple(m.life360_id for m in read.members)
+        if (read.status is not ReadStatus.OK or not ids
+                or any(not i.strip() for i in ids) or len(set(ids)) != len(ids)):
+            self._observed_members.pop(circle.circle_id, None)
+            return
+        previous = self._observed_members.get(circle.circle_id)
+        if previous is not None and now_ms < previous[0]:
+            return
+        self._observed_members[circle.circle_id] = (now_ms, ids)
+
     async def _record(self, circle: CircleSpec, member: Member, *, now_ms: int) -> bool:
-        """Write the member's fix if its `ts` advanced. Returns whether a row was
-        written — the background loop ignores it, but `refresh_member` reads it to
-        know the on-demand fresh fix has landed."""
-        person_id = circle.person_id_for(member.life360_id)
+        if self._managed_accounts is not None:
+            async with self._managed_accounts.recording(member.life360_id) as person_id:
+                return await self._write(circle, member, person_id=person_id, now_ms=now_ms)
+        return await self._write(circle, member,
+            person_id=circle.person_id_for(member.life360_id), now_ms=now_ms)
+
+    async def _write(
+        self, circle: CircleSpec, member: Member, *, person_id: str | None, now_ms: int,
+    ) -> bool:
         if person_id is None:
-            # A circle member Nora has no person for — recorded as nothing (the
-            # config mapping is the operator's). Its state was already
-            # counted above; there is no fix to write without a person key.
             return False
         if not member.has_fix:
             # sharing_off / disconnected / no_fix: a KNOWN state, already counted.
@@ -312,6 +333,8 @@ class PresenceCollector:
         try:
             written = await self._store.record_fix(fix=fix)
         except Exception:
+            if self._managed_accounts is not None:
+                raise RuntimeError("managed presence write is unavailable") from None
             # A store failure must not take the loop down; the next cycle retries.
             log.exception("presence record failed for %s", person_id)
             return False
@@ -331,6 +354,25 @@ class PresenceCollector:
                 if pid == person_id:
                     return circle, life360_id
         return None
+
+    async def _request_refresh(
+        self, person_id: str, *, now_ms: int,
+    ) -> tuple[CircleSpec, str] | None:
+        if self._managed_accounts is None:
+            target = self._member_for(person_id)
+            if target is not None:
+                circle, member = target
+                await self._client.request_location(circle_id=circle.circle_id, member_id=member)
+            return target
+        fresh = self._fresh_members(now_ms)
+        members = tuple((circle.circle_id, member) for circle in self._circles
+                        for member in fresh.get(circle.circle_id, ()))
+        async with self._managed_accounts.refreshing(person_id, members) as current:
+            if current is None:
+                return None
+            circle_id, member_id = current
+            await self._client.request_location(circle_id=circle_id, member_id=member_id)
+            return next(c for c in self._circles if c.circle_id == circle_id), member_id
 
     async def refresh_member(
         self, *, person_id: str, timeout_seconds: float, poll_interval: float = 2.0
@@ -352,15 +394,15 @@ class PresenceCollector:
         the loop's back-off does the waiting."""
         if self._client.auth_failures > 0:
             return False
-        located = self._member_for(person_id)
+        located = await self._request_refresh(person_id, now_ms=int(time.time() * 1000))
         if located is None:
             return False
         circle, member_id = located
-        await self._client.request_location(circle_id=circle.circle_id, member_id=member_id)
         deadline = time.time() + timeout_seconds
         while True:
             now_ms = int(time.time() * 1000)
             read = await self._client.read_circle(circle_id=circle.circle_id, now_ms=now_ms)
+            self._observe(circle, read, now_ms=now_ms)
             if read.status is not ReadStatus.OK:
                 # A ban/challenge that began DURING the refresh: stop polling
                 # immediately rather than fire more unpaced reads at a refusing

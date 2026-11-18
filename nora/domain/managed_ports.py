@@ -1,0 +1,603 @@
+"""Managed identity and scoped access ports (`design/managed-identity-access/`).
+
+The file backend and the managed backend implement the SAME ports — the
+contract suites in tests/contract/ hold both to one behaviour, and the file
+backend answers managed mutations `denied` rather than pretending it can
+apply them: TOML is operator-maintained, a write it cannot take is an
+authoritative refusal, not a failure.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Protocol, runtime_checkable
+
+from nora.domain.account_linking import ConsentProof, PendingLink
+from nora.domain.identity import BoundAccount, Identifier
+from nora.domain.managed import (
+    AuthorityBlock,
+    CheckResult,
+    CollectionSnapshot,
+    DiscoveryCapabilities,
+    ManagedAccount,
+    ManagedMembership,
+    ManagedPerson,
+    OperationRecord,
+    Outcome,
+    PersonLifecycle,
+    SourceObservation,
+)
+from nora.domain.management import LinkSide, Operation, Scope
+
+
+@runtime_checkable
+class PersonDirectory(Protocol):
+    """Which person does this account belong to — the read half of binding.
+
+    Both backends answer it. `resolve` is the flat `(platform, value)` lookup
+    a sender arrives as; `account_for` names the exact typed identifier;
+    `canonical_person` folds a retired id through the alias chain so
+    historical `person_id` references keep resolving after a merge
+    (`identity.md`). `None` is a first-class answer — an unmapped account —
+    never an error; implementations raise on a genuine store failure.
+    """
+
+    async def resolve(self, platform: str, value: str) -> BoundAccount | None:
+        """The bound account any matchable identifier `(platform, value)`
+        names, or `None`."""
+        ...
+
+    async def account_for(
+        self, platform: str, kind: str, value: str
+    ) -> BoundAccount | None:
+        """The bound account the exact `Identifier` names, or `None`."""
+        ...
+
+    async def accounts_for(self, person_id: str) -> tuple[BoundAccount, ...]:
+        """Every active binding on the canonical person — empty for an
+        unknown person, and aliases resolve before the read."""
+        ...
+
+    async def canonical_person(self, person_id: str) -> str | None:
+        """The surviving person id `person_id` resolves to through the alias
+        chain, or `None` when no such person exists."""
+        ...
+
+    async def identity_ids(self, person_id: str) -> tuple[str, ...] | None:
+        """One snapshot: canonical id first, then sorted former ids; None when unknown."""
+        ...
+
+    async def former_persons(self, person_id: str) -> tuple[str, ...]:
+        """The reverse of `canonical_person`: every RETIRED id the alias
+        chain folds into this person — the read a fold of historical
+        references (analytics subjects, retained rows) needs. A retired id
+        answers for the survivor it now names; an unknown person is empty."""
+        ...
+
+    async def persons(self) -> tuple[ManagedPerson, ...]:
+        """The ACTIVE canonical-person roster — the enumeration a roster view
+        (room members, known names, direct addresses) reads. Suspended
+        people stay resolvable by id (`person`) but are not enumerated."""
+        ...
+
+    async def person(self, person_id: str) -> ManagedPerson | None:
+        """The person's record including lifecycle and Kratos correlation."""
+        ...
+
+    async def person_lifecycle(self, person_id: str) -> PersonLifecycle | None:
+        """The canonical person's global state, or `None` when unknown.
+        File mode has no lifecycle and answers `ACTIVE` for mapped persons."""
+        ...
+
+    async def identity_held(self, person_id: str) -> bool:
+        """An unfinished publication blocks the canonical identity across all scopes."""
+        ...
+
+    async def members_of(self, scope: Scope) -> tuple[ManagedMembership, ...]:
+        """Current MEMBER standings only; memberships_for retains departed
+        provenance. The roster comes from managed records, never a file fallback."""
+        ...
+
+    async def aclose(self) -> None:
+        ...
+
+
+@runtime_checkable
+class BindingStore(PersonDirectory, Protocol):
+    """The managed write half: registrations, lifecycle, membership,
+    aliases and the operation journal.
+
+    A registration establishes an INDEPENDENT person per unclaimed account —
+    grouping is decided by the bilateral link service, never inferred from a
+    name or a claimed number. Identifier ownership is enforced at the write
+    boundary: inserting an identifier another account already owns raises
+    `IdentifierConflictError`, it does not merge.
+
+    Implementations raise on a genuine store failure; the service maps that
+    to `unavailable`. Every mutator returns an `Outcome` so the file backend
+    can refuse honestly.
+    """
+
+    def mutation(self) -> AbstractAsyncContextManager[None]:
+        """Serialize managed orchestration while preserving individually committed saga steps."""
+        ...
+
+    async def hold_identity(self, *, person_id: str, operation_id: str) -> Outcome:
+        """Persist the owning operation's publication hold before changing dependent stores."""
+        ...
+
+    async def release_identity_hold(self, *, person_id: str, operation_id: str) -> Outcome:
+        """Release this operation's hold without clearing another operation's hold."""
+        ...
+
+    async def account_record(self, account_id: str) -> ManagedAccount | None:
+        """One account by its surrogate id — the stable handle a revocation
+        names."""
+        ...
+
+    async def record_for(self, *, account: Identifier) -> ManagedAccount | None:
+        """The binding an exact identifier resolves to, WITH its revision —
+        the record an `ownership` observed-revision compares against."""
+        ...
+
+    async def register(
+        self, *, person: ManagedPerson, account: ManagedAccount,
+        membership: ManagedMembership | None = None,
+    ) -> Outcome:
+        """Atomically register the person, the account and (when given) its
+        onboarding membership — one transaction, so a partial registration
+        is never visible.
+
+        Idempotent: replaying the same effect returns `complete` with the
+        recorded state; an identifier owned by a DIFFERENT account raises
+        `IdentifierConflictError`.
+        """
+        ...
+
+    async def bind_identifiers(
+        self, *, account_id: str, identifiers: frozenset[Identifier]
+    ) -> Outcome:
+        """Atomically bind matchable identifiers onto ONE existing bound
+        account — the grouped-observation enrichment: a provider proved
+        these identifiers name ONE account, so an identifier the account
+        does not yet hold joins it (`identity.md` «several identifiers of
+        one account», never several accounts folded together).
+
+        Idempotent: an identifier the account already owns is a no-op. An
+        identifier owned by a DIFFERENT account raises
+        `IdentifierConflictError`, whether that owner is bound or revoked —
+        a revoked binding keeps its ownership reserved and is never
+        re-pointed here. `denied` when the named account is absent or not
+        bound. Creates no person, account or membership, and removes
+        nothing the account already holds."""
+        ...
+
+    async def correlate_kratos(
+        self, *, person_id: str, kratos_identity_id: str
+    ) -> Outcome:
+        """Record the person↔Kratos correlation read back after create —
+        `denied` when the person already correlates to a DIFFERENT identity."""
+        ...
+
+    async def set_lifecycle(
+        self, *, person_id: str, lifecycle: PersonLifecycle
+    ) -> Outcome:
+        """Global suspension or reinstatement — bumps the person revision."""
+        ...
+
+    async def revoke_binding(self, *, account: Identifier) -> Outcome:
+        """End one account's binding — `denied` when the identifier is not
+        bound. Other accounts and the person are untouched."""
+        ...
+
+    async def set_membership(
+        self, *, person_id: str, scope: Scope,
+        member: bool, source: str,
+    ) -> Outcome:
+        """The (person, scope) standing — leaving is a state, not a delete,
+        so provenance survives a rejoin. `member=True` adds `source` to the
+        row's supports; `member=False` ends the standing, clearing every
+        support (an operator removal is never a per-source correction)."""
+        ...
+
+    async def drop_membership_support(
+        self, *, person_id: str, scope: Scope, source: str,
+    ) -> Outcome:
+        """Retract ONE source's support for the membership — the roster-
+        departure verb: a sync withdrawal cannot erase an independently
+        established standing. The row goes `left` only when its last
+        support is gone."""
+        ...
+
+    async def set_display_name(
+        self, *, person_id: str, display_name: str
+    ) -> Outcome:
+        """Update the managed person's projected display name — the SQL
+        copy consumers read (`identity.md`: Kratos stays authoritative;
+        this row is the projection that follows it). Descriptive, not
+        identity evidence, so it does not bump the person revision.
+        `denied` when the person is absent; idempotent on replay."""
+        ...
+
+    async def memberships_for(
+        self, person_id: str
+    ) -> tuple[ManagedMembership, ...]:
+        ...
+
+    async def consolidate(self, *, survivor: str, former: str) -> Outcome:
+        """Retire `former` into `survivor` atomically (`identity.md`
+        consolidation): accounts move keeping their ownership records,
+        membership supports merge per scope, authority blocks follow the
+        canonical person, the former id becomes an alias and its row
+        retires. History is preserved, never rewritten — the survivor's
+        revision and the moved accounts' revisions bump so observers see
+        the identity change. `denied` when either side is inactive or the
+        former id is not a live person; idempotent on replay."""
+        ...
+
+    async def add_alias(self, *, former_id: str, person_id: str) -> Outcome:
+        """Record a retired id for a surviving person — `denied` when the
+        former id is a LIVE person or already aliases a different one."""
+        ...
+
+    # --- the operation journal ------------------------------------------------
+
+    async def record_operation(self, record: OperationRecord) -> Outcome:
+        """Journal the intended effect before the first store write —
+        `denied` when `operation_id` already records a DIFFERENT effect."""
+        ...
+
+    async def operation(self, operation_id: str) -> OperationRecord | None:
+        ...
+
+    async def update_operation(
+        self, record: OperationRecord
+    ) -> Outcome:
+        """Persist the record's new state/steps — the caller passes the whole
+        revised record so step transitions are explicit."""
+        ...
+
+    async def incomplete_operations(self) -> tuple[OperationRecord, ...]:
+        """Every `pending`/`incomplete`/`blocked` operation — the
+        reconciler's queue, and the restart recovery set."""
+        ...
+
+    async def latest_profile_operation(
+        self, person_id: str, *, scope: Scope | None = None
+    ) -> OperationRecord | None:
+        """The newest journaled `update_profile` for this person, whatever
+        its state, scoped to one profile target: `scope=None` reads the
+        holder's GLOBAL display name, an explicit `Scope` reads exactly
+        that (person, scope) nickname — a local edit never orders against
+        the global name or a sibling scope. The journal's order is the
+        intents' order: a replay may re-apply its recorded name ONLY
+        while it is still the newest — anything later owns the name and
+        the replay closes superseded."""
+        ...
+
+    async def set_scoped_name(
+        self, *, person_id: str, scope: Scope, nickname: str,
+        operation_id: str
+    ) -> Outcome:
+        """Set the canonical person's descriptive nickname inside the
+        EXACT scope — Nora-owned metadata (`authorization.md` «Scoped
+        authority»), never an identifier, grant, linkage proof or the
+        global Kratos trait.
+
+        `person_id` folds through the alias chain before the write, so a
+        retired id lands on the survivor; an absent or suspended person
+        is `denied`. `operation_id` binds the row to its owning journal
+        for provenance. Idempotent: the newest committed write wins."""
+        ...
+
+    async def scoped_name_for(
+        self, *, person_id: str, scope: Scope
+    ) -> str | None:
+        """The nickname this exact (person, scope) holds — `None` when
+        none is set. `person_id` folds through the alias chain, so a
+        retired id resolves through its survivor and never selects
+        another person's stale label."""
+        ...
+
+    # --- per-source observation ordering ------------------------------------
+
+    async def observation_for(
+        self, *, service: str, collection: str, scope: Scope
+    ) -> SourceObservation | None:
+        """The newest roster observation this (service, collection, scope)
+        accepted — the durable ordering mark every sync re-validates
+        against. `None` means none recorded."""
+        ...
+
+    async def record_observation(self, observation: SourceObservation) -> Outcome:
+        """Persist `observation` as this source's newest accepted mark —
+        ordering is decided by the caller under `mutation()`; this write
+        is the durable half of that decision."""
+        ...
+
+    # --- revocation-first authority blocks -------------------------------------
+
+    async def block_authority(self, block: AuthorityBlock) -> Outcome:
+        """Raise a local block on (person, scope) — persists across restart
+        until reconciliation clears it."""
+        ...
+
+    async def authority_blocks(self) -> tuple[AuthorityBlock, ...]:
+        """Every standing block — check() consults this first."""
+        ...
+
+    async def clear_block(self, *, person_id: str, scope: Scope) -> Outcome:
+        """Remove the block once reconciliation confirms the revocation —
+        not before."""
+        ...
+
+
+@runtime_checkable
+class TopologySource(Protocol):
+    """Where scopes and their containment come from — Nora's own
+    configuration (`authorization.md`), never Keto and never a caller's
+    claim. Implementations raise on a genuine read failure; the caller maps
+    that to `unavailable`, distinct from a scope that provably does not
+    exist."""
+
+    async def scope_exists(self, scope: Scope) -> bool:
+        """The scope is a real workspace, unit or room in the topology."""
+        ...
+
+    async def parent_of(self, scope: Scope) -> Scope | None:
+        """The one parent this scope sits inside — a room's declared unit, a
+        unit's workspace; `None` for a workspace and for an unknown scope."""
+        ...
+
+    async def is_open_room(self, scope: Scope) -> bool:
+        """The room's explicit open-admission flag (file mode's `persons =
+        "*"`). `False` for non-room scopes and unknown rooms."""
+        ...
+
+    async def scopes(self) -> tuple[Scope, ...]:
+        """Every canonical scope the topology declares — workspaces, units
+        and rooms under every admitted id form. The enumeration a
+        person-scoped authority read uses; Keto object existence is never
+        evidence, so the set comes from Nora's own topology only."""
+        ...
+
+
+@dataclass(frozen=True)
+class ScopedRelation:
+    """One asserted relation on a scope with its TYPED subject — a
+    `person_id` string, or the parent `Scope` a containment subject-set
+    names. The complete shape `scope_relations_on` returns."""
+
+    relation: str
+    subject: str | Scope
+
+
+@runtime_checkable
+class AuthorityBackend(Protocol):
+    """The scoped-grant engine behind `check` — Keto in the managed
+    deployment, the file adapter answering the same verdicts from
+    `policy.toml`.
+
+    Semantics are the committed OPL's: `grant_<permit>` and `deny_<permit>`
+    are the write relations, deny wins at every scope and down every
+    ancestor, `restricted` denies everything on its scope, `member` confers
+    speak+view on a ROOM only, and management permits inherit downward while
+    parent membership confers nothing. A direct tuple named like a permit
+    never authorizes (strict mode).
+
+    Answers are VALUES, not exceptions: a transport failure, malformed
+    verdict or unreachable engine is `unavailable` — the port's whole job is
+    that distinction. `relations_on` is the read-back a mutation verifies
+    itself against before reporting `complete`.
+    """
+
+    async def check(
+        self, *, scope: Scope, person_id: str, permit: str
+    ) -> CheckResult:
+        ...
+
+    async def put_relation(
+        self, *, scope: Scope, relation: str, person_id: str
+    ) -> Outcome:
+        ...
+
+    async def drop_relation(
+        self, *, scope: Scope, relation: str, person_id: str
+    ) -> Outcome:
+        ...
+
+    async def publish_containment(self, *, scope: Scope, parent: Scope) -> Outcome:
+        """Write `parent` as this scope's containment link — only called
+        after the topology source verified the pairing is real."""
+        ...
+
+    async def relations_on(
+        self, *, scope: Scope
+    ) -> CheckResult | frozenset[tuple[str, str]]:
+        """The (relation, person_id) pairs currently asserted on the scope —
+        the mutation read-back. `CheckResult` carries `unavailable` when the
+        read itself cannot answer."""
+        ...
+
+    async def scope_relations_on(
+        self, *, scope: Scope
+    ) -> CheckResult | frozenset[ScopedRelation]:
+        """EVERY asserted relation on the scope with its typed subject —
+        person rows AND subject-set (containment) rows. `relations_on`'s
+        person-only view cannot see a foreign parent; this is the complete
+        read an empty-or-owned target proof needs. A row the supported
+        scope vocabulary cannot represent is `unavailable`, never silently
+        dropped."""
+        ...
+
+    async def aclose(self) -> None:
+        ...
+
+
+@runtime_checkable
+class IdentityRegistry(Protocol):
+    """The managed identity record Kratos owns (`identity.md`): creation
+    keyed by `external_id`, lifecycle state, session teardown. It never
+    decides account ownership — that is the binding store's job — and it
+    never holds platform identifiers in traits."""
+
+    async def ensure_identity(
+        self, *, external_id: str, traits: dict[str, Any]
+    ) -> tuple[Outcome, str | None]:
+        """Create (or read back) the identity for `external_id` — returns
+        the kratos identity id. `unavailable` when the service cannot
+        answer; a conflict on an external id resolves by read-back, never by
+        trusting the create."""
+        ...
+
+    async def identity_state(self, *, external_id: str) -> CheckResult:
+        """`allowed` while the identity is active, `denied` when inactive
+        (state=inactive gates real session checks in v26.2.0), `unknown` —
+        `CheckResult(UNKNOWN_SCOPE)` — when absent."""
+        ...
+
+    async def identity_traits(
+        self, *, external_id: str
+    ) -> tuple[Outcome, dict[str, Any] | None]:
+        """The identity's descriptive traits — `complete` with the traits
+        dict, `denied` when the identity is absent, `unavailable` on a
+        service or malformed-body failure. A RETIRED (inactive) identity's
+        traits read the same: a retained preference never requires
+        reactivation, and a reader must not infer a missing or malformed
+        value as its default."""
+        ...
+
+    async def set_state(
+        self, *, external_id: str, active: bool
+    ) -> Outcome:
+        ...
+
+    async def set_display_name(
+        self, *, external_id: str, display_name: str
+    ) -> Outcome:
+        """Patch the identity's `traits/display_name` in place — one
+        descriptive trait; every other trait, credential and the identity
+        record itself is preserved. `denied` when the identity is absent,
+        `unavailable` when the service cannot answer or read back."""
+        ...
+
+    async def drop_sessions(self, *, external_id: str) -> Outcome:
+        """End every derived session for the identity — absent sessions are
+        a completed effect, not an error."""
+        ...
+
+    async def aclose(self) -> None:
+        ...
+
+
+@runtime_checkable
+class LinkChallengeDelivery(Protocol):
+    """Private challenge delivery to one exact bound account (`account-linking.md`).
+
+    Delivery is separate from consent: it carries the holder's own
+    challenge to the exact bound identifier, never to a room and never
+    to the other holder. A `False` answer means the transport could not
+    confirm the send — the holder can still retrieve the same challenge
+    through their authenticated view.
+    """
+
+    async def deliver(self, *, account: Identifier, text: str) -> bool:
+        ...
+
+
+@runtime_checkable
+class CollectionDiscovery(Protocol):
+    """A platform's roster/proof capability for managed onboarding
+    (`identity.md` «Platform discovery and membership»).
+
+    One adapter per platform, capability-declared — platforms do NOT share
+    one discovery API, so what each can prove is explicit on the adapter,
+    never assumed. `members` is the complete-or-unavailable read: an
+    error, a partial page, an empty member list, or a capability the
+    platform lacks is `available=False`, never an empty roster that would
+    read as mass departure. `collection_of`/`collection_ref` map the
+    platform's own id shapes to the collection a rule names — a guild's
+    member set is a different object than a channel's audience and can
+    never stand in for it. `sender_identifiers` types one observed
+    sender's platform value into matchable identifiers — `None` when the
+    platform cannot prove the value's kind; a sender is never guessed.
+    """
+
+    platform: str
+    capabilities: DiscoveryCapabilities
+
+    def collection_of(self, *, conversation_id: str) -> str | None:
+        """The collection a conversation belongs to (a Discord room's
+        guild), or `None` when the id names no collection."""
+        ...
+
+    def collection_ref(self, *, object_ref: str) -> str | None:
+        """The collection an observation's `object_ref` names
+        (`guild:G` → `G`), or `None` when it is not a member-set object."""
+        ...
+
+    async def members(self, *, collection: str) -> CollectionSnapshot:
+        """The collection's current member set — `available=False` when the
+        read cannot complete."""
+        ...
+
+    async def sender_identifiers(
+        self, *, collection: str, value: str
+    ) -> frozenset[Identifier] | None:
+        """The matchable identifiers the account `value` presents inside
+        `collection`, or `None` when the platform cannot prove them."""
+        ...
+
+
+@runtime_checkable
+class LinkRequestStore(Protocol):
+    """Durable bilateral link consent (`account-linking.md`) — the request
+    row and its decision evidence, serialized under the request's lock.
+    The store records consent; it never publishes ownership."""
+
+    async def create(
+        self, link: PendingLink, *, nonces: Mapping[LinkSide, str]
+    ) -> PendingLink:
+        """Persist a new request AND the private challenge material its
+        holders were sent — one transaction, so a request can never exist
+        whose challenge text was lost to a crash or restart.
+        `LinkStateError` when the id already names a different effect or a
+        recorded decision, or the nonces disagree with the recorded
+        digests."""
+        ...
+
+    async def get(self, request_id: str) -> PendingLink | None:
+        ...
+
+    async def challenge(self, request_id: str, *, side: LinkSide) -> str | None:
+        """The private nonce ONE side was sent — read per side, so a
+        holder's own view can never return the other holder's challenge."""
+        ...
+
+    async def decide(
+        self, operation: Operation, proof: ConsentProof, *, now: datetime
+    ) -> PendingLink:
+        """Record one holder decision — `LinkStateError` when the proof
+        does not authenticate it, and idempotent on a true retry."""
+        ...
+
+    async def begin_commit(
+        self, request_id: str, *, owners: Mapping[Identifier, str],
+        active_people: frozenset[str], revisions: Mapping[str, str],
+        now: datetime,
+    ) -> PendingLink:
+        """Atomically move a fully-approved request to `COMMITTING`,
+        revalidating the recorded owners/lifecycle/revisions against these
+        live reads. `LinkStateError` on any drift."""
+        ...
+
+    async def mark_committed(self, request_id: str) -> PendingLink:
+        """Terminal publication marker — a `COMMITTING` request becomes
+        `COMMITTED`; already-committed replays return the same row."""
+        ...
+
+    async def aclose(self) -> None:
+        ...

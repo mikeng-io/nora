@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 from aiohttp import web
 
+from nora.access import IdentityAccess
 from nora.app.runtime import BackgroundTasks
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
@@ -103,7 +104,8 @@ async def client(tmp_path, monkeypatch, clean_pg_url, aiohttp_client):
         adapter=SinkSender(),
         audit=store,
         memory=memory,
-        persons=load_persons(persons_path),
+        access=IdentityAccess.for_files(
+            persons=load_persons(persons_path), policy=load_policy(policy_path)),
         doctrine_store=build_test_doctrine_store(),
         runner=FakeAgentRunner([]),
         metrics=Metrics(),
@@ -198,7 +200,8 @@ async def test_an_utterance_from_an_unmarked_guild_records_nothing(
     background = BackgroundTasks()
     ingest = IngestPipeline(
         audit=store, memory=memory,
-        persons=load_persons(persons_path),
+        access=IdentityAccess.for_files(
+            load_persons(persons_path), load_policy(policy_path)),
         policy=TriggerTextPolicy(cfg.engagement.trigger.text),
         allowlist=load_policy(policy_path),
         metrics=Metrics(), spawn=background.spawn,

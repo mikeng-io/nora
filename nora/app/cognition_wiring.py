@@ -540,10 +540,15 @@ def context_screen(
 
 
 def shared_document_room(
-    *, allowlist: Any, persons: Any,
+    *, allowlist: Any, persons: Any, access: Any = None,
 ) -> Callable[[str, str, str], bool]:
     """A room the unit's own identified persons share, for document reads."""
     def shared(unit: str, platform: str, cid: str) -> bool:
+        if access is not None and not access.is_file_backend:
+            # Known-person containment needs the selected backend's async
+            # read; this is a sync surface, so managed mode refuses rather
+            # than trusting a stale file roster.
+            return False
         c = allowlist.conversation(platform, cid)
         return bool(c is not None and c.unit == unit and c.persons
                     and c.persons <= persons.by_person.keys())

@@ -10,11 +10,13 @@ than joining `nora.testing`.
 
 from __future__ import annotations
 
+from nora.access import IdentityAccess
 from nora.domain.models import NormalizedMessage, PersonRef
 from nora.domain.ports import EngageDecision, MemoryHealth
 from nora.ingest.stages import audit, gate, identity, memory_feed
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
+from nora.policy import permissive_policy
 from nora.testing import FakeRecordStore
 
 
@@ -109,7 +111,8 @@ async def test_an_unmapped_sender_is_audited_but_never_fed():
     spawned: list = []
     msg = _msg(sender_id="+85299999999")
 
-    person = await identity.run(message=msg, persons=persons, metrics=metrics)
+    person = await identity.run(message=msg, metrics=metrics, access=IdentityAccess.for_files(
+        persons=persons, policy=permissive_policy()))
     assert person is None
 
     recorded = await audit.run(

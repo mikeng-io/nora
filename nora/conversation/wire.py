@@ -82,7 +82,7 @@ class RelayWiring:
 
 
 async def relay(
-    allowlist, content_checks, metrics, presence_reader, slots, fire_path
+    access, allowlist, content_checks, metrics, presence_reader, slots, fire_path
 ) -> RelayWiring:
     # DEC-105: the cross-room relay. It does NOT send — it occasions a fire turn into the
     # destination (DEC-99's ruling), so R-1b's three links hold and the relayed message is
@@ -99,6 +99,7 @@ async def relay(
 
     relay = Relay(
         policy=allowlist,
+        access=access,
         speak=_relay_speak,
         slots=slots,
         occasion_for=relay_occasion,

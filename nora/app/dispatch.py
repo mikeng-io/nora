@@ -13,6 +13,7 @@ dependencies only, never `Config`.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 
 from nora.domain.models import NormalizedMessage
 from nora.domain.ports import EngagementRequest
@@ -53,10 +54,13 @@ class Dispatcher:
         engagement: EngagementPipeline,
         background: BackgroundTasks,
         participation: ParticipationTrigger | None = None,
+        room_command: Callable[[NormalizedMessage], bool] | None = None,
     ) -> None:
         self._ingest = ingest
         self._engagement = engagement
         self._background = background
+        # After ingest, explicit commands bypass engagement selection; no predicate means unwired.
+        self._room_command = room_command
         # The participation occasion's trigger, None unless
         # `[participation] enabled`. It is NOT a third pipeline: it only NOTES
         # a candidate message; the quiescence window owns every later
@@ -67,6 +71,14 @@ class Dispatcher:
     async def on_message(self, message: NormalizedMessage) -> None:
         result = await self._ingest.run(message=message)
         if result.message is None or result.decision is None:
+            return
+        if self._room_command is not None and self._room_command(result.message):
+            # The explicit room command never waits on the engage gate —
+            # its authority comes from the verified message, not a mention.
+            self._background.spawn(self._engagement.run(EngagementRequest(
+                message=result.message, decision=result.decision,
+                tag_id=uuid.uuid4().hex, occasion="room_command",
+            )))
             return
         if not result.decision.engage:
             # The room verdict (EngageDecision.relevance_gate): an untagged message in an opted-in

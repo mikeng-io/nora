@@ -26,6 +26,8 @@ from nora.domain.ports import (
     VoiceChannelRef,
 )
 
+from .membership import _make_member_update as _make_member_update
+
 log = logging.getLogger("nora.tools")
 
 
@@ -62,8 +64,7 @@ def _make_group_members(deps):
             "status": "ok",
             "members": [p.name for p in view.people],
             # A count, never the ids: the only thing Nora holds for these
-            # accounts is a phone number or an ACI, and those are what R-18
-            # exists to keep off the wire.
+            # accounts is a phone number or an ACI, kept off the wire.
             "members_i_have_no_name_for": view.unnamed,
             # What the platform's roster actually IS. Discord has no "who is in
             # this channel" endpoint — `nora.platform.discord. roster` reads the
@@ -107,7 +108,7 @@ def _make_lookup_person(deps):
                 "note": "I can't check who is in this group right now, so I can't "
                 "tell you who that is. Say so rather than guessing.",
             }
-        matches = room.find(view, name)
+        matches = await room.find(view, name)
         # `name` is never in the line. It is the one MODEL-SUPPLIED string
         # these tools take, and `_asked_about` exists because a model does put
         # phone numbers in it.
@@ -563,7 +564,7 @@ async def _online_now__states(c):
     c._discord_fields = _discord_fields
 
     def _online_ok_note(out: dict) -> str:
-        """How to report an `ok` (ADR 0015 §3): the honesty rules, each"""
+        """Report only the live state actually checked."""
         entries = out["people"]
         parts = [
             "This is live, so report it as right now and do not repeat it later as still true."
@@ -736,9 +737,11 @@ def build(deps):
     group_members = _make_group_members(deps)
     lookup_person = _make_lookup_person(deps)
     about = _make_about(deps)
+    member_update = _make_member_update(deps)
     return (
         _spec("online_now", online_now),
         _spec("group_members", group_members),
         _spec("lookup_person", lookup_person),
         _spec("about", about),
+        _spec("member_update", member_update),
     )

@@ -54,7 +54,9 @@ def main() -> int:
         *targets, "tests/domain",
         *PLUMBING_GUARDS,
         "tests/architecture/test_ci_plan.py",
+        "tests/architecture/test_ci_backend_acceptance.py",
         "tests/architecture/test_ci_runs_the_plumbing_guards.py",
+        "tests/architecture/test_portal_browser_ci.py",
     ]
     print("Fast baseline only; full backend acceptance: dispatch CI manually.", flush=True)
     # GNU timeout signals the process group; the runner forwards INT and cleans

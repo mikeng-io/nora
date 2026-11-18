@@ -587,15 +587,17 @@ async def test_the_app_stops_the_cognition_sessions_before_it_closes_the_client_
         registry=SimpleNamespace(
             adapters={"signal": _Closable("adapter")}),
         client=_Closable("client"), model_clients=[], audit=_Closable("audit"),
+        managed_session=_Closable("managed_session"),
     )
     app = App(cfg=None, deps=deps)              # type: ignore[arg-type]
     await app.shutdown()
     assert order == [
         "cognition", "background", "bridge_stop", "bridge_redis", "adapter",
-        "directory", "computer", "client", "audit",
+        "directory", "computer", "client", "managed_session", "audit",
     ]
     deps.cognition_shutdown = None              # sessions off: nothing to stop, nothing breaks
     deps.computer_lifecycle = None
+    deps.managed_session = None
     order.clear()
     await app.shutdown()
     assert order == ["background", "bridge_stop", "bridge_redis", "adapter",

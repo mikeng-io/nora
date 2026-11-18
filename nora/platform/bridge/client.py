@@ -76,11 +76,13 @@ class BridgeAdapter:
 
     def __init__(self, platform: str, endpoint: BridgeEndpoint,
                  owner: ActionOwner | None = None,
-                 dm_recipients: Set[str] = frozenset()) -> None:
+                 dm_recipients: Set[str] = frozenset(),
+                 dm_gate: Callable[[str], Awaitable[bool]] | None = None) -> None:
         self.platform = platform
         self._endpoint = endpoint
         self._owner = owner
         self._dm_recipients = dm_recipients
+        self._dm_gate = dm_gate
         self._degraded_reason = ""
         self._session: aiohttp.ClientSession | None = None
         self._transport_owner: BridgeAdapter | None = None
@@ -90,7 +92,8 @@ class BridgeAdapter:
         """A facade with a durable action owner — how a fenced work identity
         reaches its sends. Owns its ordinal; borrows the root's transport."""
         bound = BridgeAdapter(self.platform, self._endpoint, owner,
-                              dm_recipients=self._dm_recipients)
+                              dm_recipients=self._dm_recipients,
+                              dm_gate=self._dm_gate)
         bound._transport_owner = self._transport_owner or self
         return bound
 
@@ -230,9 +233,13 @@ class BridgeAdapter:
         # The same DM-recipient guard `SignalSender`/`WhatsAppSender` run
         # app-side: a 1:1 to an address `identity.toml` does not know is
         # refused here, not delegated to the bridge (it has no policy file).
-        if target.conversation_type == "dm" and self._dm_recipients \
-                and target.conversation_id not in self._dm_recipients:
-            return SendResult(ok=False)
+        if target.conversation_type == "dm":
+            if self._dm_gate is not None:
+                if not await self._dm_gate(target.conversation_id):
+                    return SendResult(ok=False)
+            elif self._dm_recipients \
+                    and target.conversation_id not in self._dm_recipients:
+                return SendResult(ok=False)
         # Attachment bytes ride through custody first — the action request
         # references keys, never inline bytes. Each key consumes a `send`
         # ordinal BEFORE the action's own id is minted below, so a key

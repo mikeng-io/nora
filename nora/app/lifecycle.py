@@ -17,6 +17,7 @@ def _push_close_order(
     stack: AsyncExitStack,
     *,
     audit: Any = None,
+    managed_session: Any = None,
     memory: Any = None,
     blobs: Any = None,
     model_clients: Iterable[Any] = (),
@@ -34,6 +35,8 @@ def _push_close_order(
     """Push every closable onto `stack` in the one close order (see `StartupOwner`)."""
     if audit is not None:
         stack.push_async_callback(audit.aclose)
+    if managed_session is not None:
+        stack.push_async_callback(managed_session.close)
     blob_close = getattr(blobs, "aclose", None)
     if blob_close is not None:
         stack.push_async_callback(blob_close)
@@ -70,6 +73,7 @@ async def close_dependencies(deps: Any, *, health_runner: Any = None) -> None:
         _push_close_order(
             closing,
             audit=deps.audit,
+            managed_session=getattr(deps, "managed_session", None),
             blobs=getattr(deps, "blobs", None),
             memory=getattr(deps, "memory", None),
             model_clients=deps.model_clients,
@@ -141,6 +145,7 @@ class StartupOwner:
 
     def __init__(self) -> None:
         self._audit: Any = None
+        self._managed_session: Any = None
         self._memory: Any = None
         self._blobs: Any = None
         self._model_clients: list[Any] | None = None
@@ -156,6 +161,9 @@ class StartupOwner:
 
     def own_audit(self, audit: Any) -> None:
         self._audit = audit
+
+    def own_managed(self, session: Any) -> None:
+        self._managed_session = session
 
     def own_blobs(self, blobs: Any) -> None:
         self._blobs = blobs
@@ -199,6 +207,7 @@ class StartupOwner:
             _push_close_order(
                 closing,
                 audit=self._audit,
+                managed_session=self._managed_session,
                 blobs=self._blobs,
                 memory=self._memory,
                 model_clients=self._model_clients or (),
