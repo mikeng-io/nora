@@ -487,7 +487,7 @@ class IngestPipeline:
             if (decision.engage or decision.relevance_gate)
             else None
         )
-        if verdict is not None and not verdict.allowed:
+        if verdict is not None and verdict.allowed:
             unavailable = verdict.verdict is Verdict.UNAVAILABLE
             m.inc("nora_denied_senders_total", platform=message.platform)
             log.warning(
