@@ -167,15 +167,6 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     # `assess.py`'s `recent` needs no pin: `recent` is already ambiguous
     # (audit.py/decision_log.py/tag_traces.py/tool_call_log.py all define one),
     # so `_ambiguous` skips it before the pin table is ever consulted.
-    ("rollups.py", "rows"): _Pin(
-        "read_back_affordance",
-        "Every row of one unit rollup table in a build, surrogate ids and "
-        "system time stripped: what the step-2 determinism gate compares "
-        "between an incremental build and a rebuild "
-        "(tests/integration/test_rollup_builds.py). Its consumer at runtime is "
-        "`rollup_read` (design/cognition-loop/session.md), not built "
-        "in step 2a.",
-    ),
     ("computer_events.py", "orphaned_starts"): _Pin(
         "read_back_affordance",
         "The computer audit's crash marker (design/sandbox-runtime §12): "
@@ -258,6 +249,8 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
 # cannot be attributed: defined on more than one store class, or also defined on
 # a non-Protocol class elsewhere under `nora/`. One method KNOWN to have no
 # production caller hides in here and cannot be proven so: `tag_traces.recent`.
+# A second, `rollups.rows` — the unit rollup table's raw read-back — joined it
+# when `JourneyDriver.rows` (nora/subject/journey.py) made the name a namesake.
 #
 # `lookup` is here because `MediaObjectStore.lookup` shares the name:
 # `nora/infra/version.py` and `nora/infra/transit/catalogue.py` each define an
@@ -327,6 +320,27 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         # `nora/instructions/reload.py`) — a `.current(...)` call cannot be
         # attributed.
         "current",
+        # `SqlBrowserTabStore.bind` shares the name with the playback's
+        # `Playback.bind` (nora/subject/recorded_services.py).
+        "bind",
+        # `SqlBindingStore.identity_ids` shares the name with
+        # `IdentityAccess.identity_ids` (nora/access.py) and
+        # `FileBindingStore.identity_ids` (nora/people/adapters/file_backend.py).
+        "identity_ids",
+        # `PresenceStore.latest_fix` and `.window` share their names with
+        # `SelectedPresenceStore` (nora/location/adapters/selected_presence.py).
+        "latest_fix", "window",
+        # `SqlComprehendRecords.load` shares the name with
+        # `RecordedServices.load` (nora/subject/recorded_services.py).
+        "load",
+        # `SqlRollupStore.rows` shares the name with `JourneyDriver.rows`
+        # (nora/subject/journey.py): `self.rows(...)` calls there cannot be
+        # attributed to the store, which is also why the `rollups.py::rows`
+        # pin row was retired — the name reads unchecked, never clean.
+        "rows",
+        # `SqlRecordStore.since` shares the name with `RunEvidence.since`
+        # (nora/subject/eval_evidence.py).
+        "since",
     }
 )
 
