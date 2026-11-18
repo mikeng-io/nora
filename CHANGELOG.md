@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.19.11](https://github.com/mikeng-io/nora/compare/v7.19.10...v7.19.11) (2026-11-18)
+
+
+### Maintenance
+
+* origin/master into feat/watch-source-reference, managed identity and release 7.19.10 ([8c968a3](https://github.com/mikeng-io/nora/commit/8c968a37d9ae38cbfeeacbf903c63c9f62beb6e2))
+
 ## [7.19.10](https://github.com/mikeng-io/nora/compare/v7.19.9...v7.19.10) (2026-11-18)
 
 
