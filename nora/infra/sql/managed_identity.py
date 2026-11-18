@@ -564,8 +564,6 @@ class SqlBindingStore:
             rows = (
                 await conn.execute(
                     sa.select(MANAGED_MEMBERSHIP).where(
-                        MANAGED_MEMBERSHIP.c.scope_kind == scope.kind.value,
-                        MANAGED_MEMBERSHIP.c.scope_id == scope.id,
                         MANAGED_MEMBERSHIP.c.state == MembershipState.MEMBER.value,
                     )
                 )
