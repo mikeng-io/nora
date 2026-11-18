@@ -163,6 +163,18 @@ async def test_pass_expression_and_silence_are_unique_and_carry_no_hidden_reason
     assert len(await _rows(engine, REGISTRY)) == 2
 
 
+async def test_raw_redacted_thinking_never_reaches_the_pass_table(acts):
+    envelope, engine = acts
+    authority = ActAuthority(PASS.unit, room=PASS.room, pass_context=PASS)
+    await envelope.record_expression(authority, [{"role": "assistant", "content": [
+        {"type": "redacted_thinking", "text": "PRIVATE_REDACTED", "data": "opaque"},
+        {"type": "text", "text": "Visible conclusion."},
+    ]}])
+
+    row, = await _rows(engine, NORA_PASS_OUTPUT)
+    assert row["content"] == ["Visible conclusion."]
+
+
 @pytest.mark.parametrize("kind", ["denial", "sync"])
 async def test_unscoped_discord_writes_still_go_out_through_the_envelope(acts, kind, monkeypatch):
     envelope, engine = acts

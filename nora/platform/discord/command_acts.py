@@ -11,6 +11,7 @@ from typing import Any, TypeVar
 from nora.memory import ActAuthority, ActEnvelope, ActInvocation, Outcome, act_event, declare_act
 
 T = TypeVar("T")
+_REPLY_ORDINAL = "nora.act.command_reply.ordinal"
 
 
 def command_event(command):
@@ -35,11 +36,15 @@ class DiscordCommandActs:
 
     async def _execute(
         self, executor: str, destination: str, event: str, authority: ActAuthority,
-        call: Callable[[], Awaitable[T]], *, ordinal: int = 0,
+        call: Callable[[], Awaitable[T]], *, interaction: Any = None,
     ) -> T | None:
         if self._envelope is None:
             return await call()
 
+        ordinal = 0
+        if interaction is not None:
+            ordinal = interaction.extras.get(_REPLY_ORDINAL, 0)
+            interaction.extras[_REPLY_ORDINAL] = ordinal + 1
         act = declare_act(
             executor, destination, event=event, authority=authority, from_pass=False,
             ordinal=ordinal,
@@ -92,7 +97,7 @@ class DiscordCommandActs:
         await self._execute(
             "discord.command_reply", f"discord:{room or 'dm'}",
             str(getattr(interaction, "id", "") or ""), await self._authority(interaction, room),
-            call, ordinal=int(op == "followup"),
+            call, interaction=interaction,
         )
 
     async def sync(
@@ -109,7 +114,7 @@ class DiscordCommandActs:
         await self._execute(
             "discord.command_reply", f"discord:{room or 'dm'}",
             str(getattr(interaction, "id", "") or ""), await self._authority(interaction, room),
-            lambda: message.edit(view=view), ordinal=2,
+            lambda: message.edit(view=view), interaction=interaction,
         )
 
     async def notice(
