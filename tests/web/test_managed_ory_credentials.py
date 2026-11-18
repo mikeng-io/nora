@@ -4,7 +4,6 @@ reach a result the browser or a model-facing surface could serialize
 (`authorization.md`: every URL names a private listener; credentials
 never appear inside a URL or a reply)."""
 
-import hashlib
 import time
 from types import SimpleNamespace
 
@@ -22,8 +21,8 @@ from nora.domain.managed import (
 from nora.domain.management import Actor, ActorKind, Scope, ScopeKind
 from nora.obs.metrics import Metrics
 from nora.people import AccountSessions
-from nora.people.app.managed import ManagedServices
 from nora.people.adapters.tools import _make_member_update
+from nora.people.app.managed import ManagedServices
 from nora.people.wire import managed_services
 from nora.policy import load_policy
 from nora.testing.managed import FakeBindingStore
@@ -35,7 +34,7 @@ from tests.unit.test_management_authentication import ISSUER, claims, signed
 
 KETO_KEY = "generated-keto-admin-4c1d9b"
 KRATOS_KEY = "generated-kratos-admin-77e2af"
-PROVISION = "generated-provisioning-credential"  # noqa: S105
+PROVISION = "generated-provisioning-credential"
 SENTINELS = (KETO_KEY, KRATOS_KEY)
 ROOM = Scope(ScopeKind.ROOM, "signal/generated-room-a")
 CHECK = "/app/v1/management/auth/check"
@@ -221,9 +220,9 @@ async def test_ory_admin_keys_never_reach_a_reply_body(tmp_path, aiohttp_client)
                             "account_revision": "1"}))})
     assert session.status == 503
     assert await session.json() == {"status": "unavailable"}
-    for response in (response, resolve, session):
-        text = await response.text()
-        headers = str(response.headers)
+    for emitted in (response, resolve, session):
+        text = await emitted.text()
+        headers = str(emitted.headers)
         for sentinel in (*SENTINELS, PROVISION):
             assert sentinel not in text
             assert sentinel not in headers
