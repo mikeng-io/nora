@@ -16,6 +16,7 @@ from nora.app.composition_helpers import _unified_profile_writers_retired
 from nora.app.memory_routing import MemoryRoutingError, build_workspace_router
 from nora.app.startup import StartupError
 from nora.domain.live import LiveMapping
+from nora.domain.ports import SearchProvider
 from nora.infra.embedder import QUERY_TIMEOUT_SECONDS, LlamaEmbedder, fingerprint, model_file
 from nora.infra.honcho import HonchoClient
 from nora.infra.sql import SqlEntryStore
@@ -40,10 +41,13 @@ from nora.memory.adapters.graph_store import SqlCognitiveGraph
 from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
 from nora.memory.adapters.tools.session import session_verbs as _session_verbs
+from nora.memory.adapters.watch_page import WATCH_ADAPTERS
+from nora.memory.adapters.watch_results import SqlWatchResults
 from nora.memory.app.acts import ActEnvelope
 from nora.memory.app.admission import AdmissionService
 from nora.memory.app.admission_identity import AdmissionIdentity
 from nora.memory.app.graph_clock import GraphClock
+from nora.memory.app.watches import WatchPoller
 from nora.persons import Persons
 from nora.policy import Policy
 
@@ -346,7 +350,10 @@ def admission(
 ) -> AdmissionService:
     identity = AdmissionIdentity(persons, policy, access=access, nora_accounts=nora_accounts)
     store = SqlAdmissionStore(SqlAdmissionRows(engine, identity), SqlCognitiveGraph(engine))
-    return AdmissionService(store, identity, leak_guard, content_checks=content_checks)
+    return AdmissionService(
+        store, identity, leak_guard, content_checks=content_checks,
+        watch_kinds=WATCH_ADAPTERS.keys(),
+    )
 
 
 def condition_matcher(engine: AsyncEngine) -> SqlConditionMatcher:
@@ -355,3 +362,13 @@ def condition_matcher(engine: AsyncEngine) -> SqlConditionMatcher:
 
 def graph_clock(engine: AsyncEngine, clock: Callable[[], datetime]) -> GraphClock:
     return GraphClock(SqlDueSchedules(engine), clock)
+
+
+def watch_poller(
+    engine: AsyncEngine, clock: Callable[[], datetime], provider: SearchProvider,
+) -> WatchPoller:
+    registration = engine.get_execution_options()["item_registration"]
+    return WatchPoller(
+        SqlWatchResults(engine, registration, WATCH_ADAPTERS.keys()),
+        {kind: adapter(provider) for kind, adapter in WATCH_ADAPTERS.items()}, clock,
+    )

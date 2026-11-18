@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass, replace
 from typing import Literal, cast, get_args
 
@@ -10,6 +10,7 @@ from nora.domain.graph_registration import Exposure, InputScope, inherited_scope
 from nora.domain.lineage import ROW, Lineage, unresolved
 from nora.memory.domain import graph
 from nora.memory.domain.admission_proposals import (
+    SOURCE_KINDS,
     AddEdge,
     CreateClaim,
     CreateEntity,
@@ -25,6 +26,7 @@ from nora.memory.domain.admission_proposals import (
     Retire,
     Revise,
     RowFacts,
+    SourceReference,
 )
 
 FormRefusal = Literal[
@@ -49,8 +51,10 @@ FormRefusal = Literal[
     "trigger_without_evidence",
     "occasion_basis",
     "invalid_field",
+    "unbacked_page_reference",
+    "unpollable_watch_target",
 ]
-WriteRefusal = Literal["stale_base", "credential", "doctrine", "content"]
+WriteRefusal = Literal["stale_base", "credential", "doctrine", "content", "unsafe_page_reference"]
 RefusalReason = Literal[FormRefusal, WriteRefusal]
 
 
@@ -142,6 +146,8 @@ def admit_batch(
     shown: Iterable[str],
     rows: Mapping[str, RowFacts],
     refs: ResolvedReferences,
+    *,
+    watch_kinds: Collection[str] = (),
 ) -> tuple[Admitted | Refusal, ...]:
     """Decide in proposal order, using only the pass snapshot and earlier admissions."""
     facts = dict(rows)
@@ -149,7 +155,7 @@ def admit_batch(
     decisions: list[Admitted | Refusal] = []
     for proposal in proposals:
         try:
-            choice = _Admission(context, available, facts, refs).decide(proposal)
+            choice = _Admission(context, available, facts, refs, watch_kinds).decide(proposal)
         except _RefusalError as exc:
             decisions.append(exc.refusal)
         else:
@@ -179,11 +185,13 @@ class _Admission:
         shown: set[str],
         rows: Mapping[str, RowFacts],
         refs: ResolvedReferences,
+        watch_kinds: Collection[str],
     ) -> None:
         self.context = context
         self.shown = shown
         self.rows = rows
         self.refs = refs
+        self.watch_kinds = watch_kinds
 
     def decide(self, proposal: Proposal) -> Admitted:
         data = fields(proposal)
@@ -227,7 +235,11 @@ class _Admission:
             self._reasoning(data.basis, data.reasoning, data.confidence, evidence)
         owner, owed_to = self._shape(data)
         state = self._state(proposal, kind)
-        candidate = RowFacts(data.id, kind, data.basis, state, self.context.unit)
+        source_ref = _source_reference(data, evidence)
+        candidate = RowFacts(
+            data.id, kind, data.basis, state, self.context.unit, source_ref=source_ref,
+            form=data.form if isinstance(data, CreateIntention) else None,
+        )
         links, endpoints = self._relations(data, candidate, evidence, base, survivor)
         if isinstance(data, CreateEntity) and (
             not evidence or not any(link.type != "cites" for link in links)
@@ -236,6 +248,7 @@ class _Admission:
         row = self._scope(data, kind, state, (*evidence, *endpoints), base)
         row = replace(
             row,
+            source_ref=source_ref,
             dependencies=tuple(
                 link.target
                 for link in links
@@ -534,6 +547,12 @@ class _Admission:
         )
         if not graph.endpoints_legal(link.type, source.kind, target.kind):
             raise _RefusalError("illegal_endpoints", "target")
+        if link.type == "watches":
+            if source.form != "maintain" or source.state != "open":
+                raise _RefusalError("illegal_endpoints", "source")
+            if (target.state != "admitted" or target.source_ref is None
+                    or target.source_ref.kind not in self.watch_kinds):
+                raise _RefusalError("unpollable_watch_target", "target")
         if not graph.basis_legal(link.type, link.basis):
             raise _RefusalError("illegal_basis", "basis")
         if link.basis not in _OCCASIONS.get(self.context.occasion, ()):
@@ -554,6 +573,24 @@ class _Admission:
             raise _RefusalError("illegal_basis", "source")
         self._reasoning(link.basis, link.reasoning, link.confidence, evidence)
         return source, target
+
+
+def _source_reference(
+    data: ProposalFields, evidence: tuple[RowFacts, ...],
+) -> SourceReference | None:
+    if not isinstance(data, CreateEntity) or data.source_ref is None:
+        return None
+    reference = data.source_ref
+    if reference.kind not in SOURCE_KINDS or not reference.value.strip():
+        raise _RefusalError("invalid_field", "source_ref")
+    if reference.kind != "page":
+        return reference
+    # ponytail: a previously fetched URL can contain private text. The watch
+    # only repeats the URL that web_fetch already sent.
+    for item in evidence:
+        if item.state == "live" and item.fetched_url == reference.value:
+            return SourceReference("page", item.fetched_url)
+    raise _RefusalError("unbacked_page_reference", "source_ref")
 
 
 def _lineage(row: RowFacts) -> Lineage:

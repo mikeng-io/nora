@@ -13,11 +13,11 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.ports import HealthRow, SourceHealthEvent
 from nora.infra.sql.item_registration import SqlItemRegistration, epoch_ms
@@ -41,24 +41,37 @@ class SqlSourceHealthLog:
         self, *, source: str, scope: str, event: SourceHealthEvent, outcome: str,
         at_ms: int, detail: str = "",
     ) -> bool:
-        stmt = sa.insert(SOURCE_HEALTH).values(
-            source=source, scope=scope, event=event, outcome=outcome,
-            detail=detail, at_ms=at_ms,
-            recorded_at=datetime.fromtimestamp(self._clock(), tz=UTC),
-        )
         try:
             registration = self._registration
             units = await registration.scope.health_units(source, scope) if registration else ()
             async with self._engine.begin() as conn:
                 for unit in units or (None,):
-                    values = await registration.planes(
-                        conn, SOURCE_HEALTH, unit=unit, occurred_at=epoch_ms(at_ms),
-                    ) if registration else {}
-                    await conn.execute(stmt.values(**values))
+                    await self.record_in(
+                        conn, source=source, scope=scope, event=event, outcome=outcome,
+                        at_ms=at_ms, detail=detail, unit=unit,
+                    )
         except Exception:
             log.exception("source health row not written (%s %s %s)", source, event, outcome)
             return False
         return True
+
+    async def record_in(
+        self, conn: AsyncConnection, *, source: str, scope: str, event: SourceHealthEvent,
+        outcome: str, at_ms: int, unit: str | None, detail: str = "",
+        silent_scope: Mapping[str, object] | None = None,
+    ) -> None:
+        registration = self._registration
+        values = await registration.planes(
+            conn, SOURCE_HEALTH, unit=unit, occurred_at=epoch_ms(at_ms),
+            own=silent_scope is not None,
+        ) if registration else {}
+        if silent_scope is not None:
+            values.update(silent_scope)
+        await conn.execute(sa.insert(SOURCE_HEALTH).values(
+            source=source, scope=scope, event=event, outcome=outcome,
+            detail=detail, at_ms=at_ms,
+            recorded_at=datetime.fromtimestamp(self._clock(), tz=UTC), **values,
+        ))
 
     async def transitions(
         self, *, source: str, since_ms: int,

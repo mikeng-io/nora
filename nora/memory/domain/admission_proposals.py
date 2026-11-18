@@ -5,13 +5,21 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, get_args
 
 from nora.domain.lineage import Lineage
 from nora.memory.domain.graph import Kind
 
 ExposureOrder = ("external", "internal", "operator")
 Occasion = Literal["called", "ambient", "proactive", "debrief", "wake", "review"]
+SourceKind = Literal["page", "account", "place"]
+SOURCE_KINDS = get_args(SourceKind)
+
+
+@dataclass(frozen=True, slots=True)
+class SourceReference:
+    kind: SourceKind
+    value: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +87,8 @@ class RowFacts:
     source: str | None = None
     author: PersonAuthor | Literal["nora"] | None = None
     dependencies: tuple[str, ...] = ()
+    source_ref: SourceReference | None = None
+    fetched_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +141,7 @@ class CreateEntity(ProposalFields):
     pointer_kind: str | None = None
     pointer_ref: str | None = None
     links: tuple[Link, ...] = ()
+    source_ref: SourceReference | None = None
 
 
 @dataclass(frozen=True, slots=True)

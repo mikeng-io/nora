@@ -14,7 +14,7 @@ from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, ENTITY, INTENTION
 from nora.infra.sql.schema import MESSAGES, METADATA
 from nora.memory.app.admission_identity import AdmissionIdentity
 from nora.memory.domain.admission_ports import AdmissionUnavailableError
-from nora.memory.domain.admission_proposals import PersonAuthor, RowFacts
+from nora.memory.domain.admission_proposals import PersonAuthor, RowFacts, SourceReference
 from nora.memory.domain.graph import Kind
 from nora.memory.domain.registration import AGGREGATE_FAMILIES, ITEM_SOURCES
 
@@ -152,6 +152,9 @@ class SqlAdmissionRows:
             pointer_kind=row.get("pointer_kind"),
             source=table if table in ITEM_SOURCES else AGGREGATE_FAMILIES.get(table),
             author=author,
+            source_ref=SourceReference(row["source_ref_kind"], row["source_ref_value"])
+            if row.get("source_ref_kind") is not None else None,
+            fetched_url=row.get("fetched_url"),
         )
 
 
@@ -159,9 +162,12 @@ def _select(table: sa.Table, id_column: str) -> sa.Select:
     needed = [table.c[id_column].label("id"), *(table.c[name] for name in _PLANES)]
     needed.extend(
         table.c[name]
-        for name in ("form", "trigger", "delivery_mode", "pointer_kind")
+        for name in ("form", "trigger", "delivery_mode", "pointer_kind",
+                     "source_ref_kind", "source_ref_value")
         if name in table.c
     )
+    if table.name == "fetched_pages":
+        needed.append(table.c.url.label("fetched_url"))
     if table.name not in _SPEECH:
         return sa.select(*needed)
     parent = MESSAGES

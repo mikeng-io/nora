@@ -136,6 +136,10 @@ def _serialize(
         )
     elif isinstance(proposal, CreateEntity):
         planes.update(name=proposal.name, aliases=list(proposal.aliases))
+        if row.source_ref is not None:
+            planes.update(
+                source_ref_kind=row.source_ref.kind, source_ref_value=row.source_ref.value,
+            )
     elif isinstance(proposal, CreateIntention):
         planes.update(_intention(decision, proposal))
     elif isinstance(proposal, Retire) and row.kind == "intention":
