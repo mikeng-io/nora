@@ -138,7 +138,7 @@ async def test_current_reads_measure_real_requests_and_recheck_remote_lifecycle(
             if population == 128:
                 # Provisional regression budget measured at cbc71af — upper bound, not a target.
                 for label, key, bound in (
-                        ("first-scoped-read", "SELECT", 2433),
+                        ("first-scoped-read", "SELECT", 0),
                         ("first-scoped-read", "kratos:GET", 128),
                         ("lineage", "SELECT", 2051),
                         ("lineage", "kratos:GET", 128),
