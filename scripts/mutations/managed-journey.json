@@ -56,6 +56,13 @@
     "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
   },
   {
+    "name": "a private consent from outside the named pair is refused",
+    "file": "nora/people/app/holder_link.py",
+    "old": "            if bound is not None and bound.account_id == record.account_id:\n                side = candidate\n        if side is None:\n            return denied(\"not-a-party\")",
+    "new": "            if bound is not None and bound.account_id == record.account_id:\n                side = candidate\n        if side is None:\n            side = LinkSide.RECEIVING",
+    "target": "tests/integration/test_managed_identity_journey.py::test_managed_identity_journey"
+  },
+  {
     "name": "room and quoted text is never a consent decision",
     "file": "nora/platform/signal/consent.py",
     "old": "        key in data for key in (\n            \"groupInfo\", \"quote\", \"reaction\", \"remoteDelete\", \"editMessage\",\n        )",
