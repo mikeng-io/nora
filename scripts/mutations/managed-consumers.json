@@ -1,0 +1,128 @@
+[
+ {
+  "name": "reminder owner is the resolved canonical person",
+  "file": "nora/agenda/adapters/tools/reminders.py",
+  "old": "    c.owner = c.tagger.person_id",
+  "new": "    c.owner = c.tagger.name",
+  "target": "tests/unit/test_managed_reminders.py::test_the_reminder_owner_is_the_canonical_person_the_room_scope_names"
+ },
+ {
+  "name": "reminder tagger carries the room scoped name",
+  "file": "nora/access.py",
+  "old": "        scoped = await self._scoped_name(person.person_id, scope)",
+  "new": "        scoped = None",
+  "target": "tests/unit/test_managed_reminders.py::test_the_reminder_owner_is_the_canonical_person_the_room_scope_names"
+ },
+ {
+  "name": "an unmapped tagger is refused before the owner is read",
+  "file": "nora/agenda/adapters/tools/reminders.py",
+  "old": "    if c.tagger is None:",
+  "new": "    if False and c.tagger is None:",
+  "target": "tests/unit/test_managed_reminders.py::test_an_unmapped_sender_names_nobody_and_sets_no_reminder"
+ },
+ {
+  "name": "unmapped roster accounts count as unnamed",
+  "file": "nora/agent/room.py",
+  "old": "                unnamed += 1",
+  "new": "                unnamed += 0",
+  "target": "tests/unit/test_managed_reminders.py::test_an_unmapped_sender_names_nobody_and_sets_no_reminder"
+ },
+ {
+  "name": "scoped refs SELECT budget compares the real count",
+  "file": "tests/integration/test_managed_circle_cost.py",
+  "old": "                        (\"first-scoped-read\", \"SELECT\", 2433),",
+  "new": "                        (\"first-scoped-read\", \"SELECT\", 0),",
+  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+ },
+ {
+  "name": "scoped refs Kratos GET budget compares the real count",
+  "file": "tests/integration/test_managed_circle_cost.py",
+  "old": "                        (\"first-scoped-read\", \"kratos:GET\", 128),",
+  "new": "                        (\"first-scoped-read\", \"kratos:GET\", 0),",
+  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+ },
+ {
+  "name": "lineage SELECT budget compares the real count",
+  "file": "tests/integration/test_managed_circle_cost.py",
+  "old": "                        (\"lineage\", \"SELECT\", 2051),",
+  "new": "                        (\"lineage\", \"SELECT\", 0),",
+  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+ },
+ {
+  "name": "lineage Kratos GET budget compares the real count",
+  "file": "tests/integration/test_managed_circle_cost.py",
+  "old": "                        (\"lineage\", \"kratos:GET\", 128),",
+  "new": "                        (\"lineage\", \"kratos:GET\", 0),",
+  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+ },
+ {
+  "name": "lineage Keto GET budget compares the real count",
+  "file": "tests/integration/test_managed_circle_cost.py",
+  "old": "                        (\"lineage\", \"keto:GET\", 128),",
+  "new": "                        (\"lineage\", \"keto:GET\", 0),",
+  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+ },
+ {
+  "name": "where_is SELECT budget compares the real count",
+  "file": "tests/integration/test_managed_circle_cost.py",
+  "old": "                        (\"where-is-tool\", \"SELECT\", 6678),",
+  "new": "                        (\"where-is-tool\", \"SELECT\", 0),",
+  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+ },
+ {
+  "name": "where_is Kratos GET budget compares the real count",
+  "file": "tests/integration/test_managed_circle_cost.py",
+  "old": "                        (\"where-is-tool\", \"kratos:GET\", 512)):",
+  "new": "                        (\"where-is-tool\", \"kratos:GET\", 0)):",
+  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+ },
+ {
+  "name": "analytics stays Ory-selected",
+  "file": "scripts/ci_plan.py",
+  "old": "            \"tests/integration/test_managed_analytics.py\",\n",
+  "new": "",
+  "target": "tests/architecture/test_ory_ci.py::test_managed_identity_changes_require_the_real_ory_job[tests/integration/test_managed_analytics.py]"
+ },
+ {
+  "name": "circle cost stays Ory-selected",
+  "file": "scripts/ci_plan.py",
+  "old": "            \"tests/integration/test_managed_circle_cost.py\",\n",
+  "new": "",
+  "target": "tests/architecture/test_ory_ci.py::test_managed_identity_changes_require_the_real_ory_job[tests/integration/test_managed_circle_cost.py]"
+ },
+ {
+  "name": "collective identity stays Ory-selected",
+  "file": "scripts/ci_plan.py",
+  "old": "            \"tests/integration/test_managed_collective_identity.py\",\n",
+  "new": "",
+  "target": "tests/architecture/test_ory_ci.py::test_managed_identity_changes_require_the_real_ory_job[tests/integration/test_managed_collective_identity.py]"
+ },
+ {
+  "name": "ingest authority stays Ory-selected",
+  "file": "scripts/ci_plan.py",
+  "old": "            \"tests/integration/test_managed_ingest_authority.py\",\n",
+  "new": "",
+  "target": "tests/architecture/test_ory_ci.py::test_managed_identity_changes_require_the_real_ory_job[tests/integration/test_managed_ingest_authority.py]"
+ },
+ {
+  "name": "lineage stays Ory-selected",
+  "file": "scripts/ci_plan.py",
+  "old": "            \"tests/integration/test_managed_lineage.py\",\n",
+  "new": "",
+  "target": "tests/architecture/test_ory_ci.py::test_managed_identity_changes_require_the_real_ory_job[tests/integration/test_managed_lineage.py]"
+ },
+ {
+  "name": "presence stays Ory-selected",
+  "file": "scripts/ci_plan.py",
+  "old": "            \"tests/integration/test_managed_presence.py\",\n",
+  "new": "",
+  "target": "tests/architecture/test_ory_ci.py::test_managed_identity_changes_require_the_real_ory_job[tests/integration/test_managed_presence.py]"
+ },
+ {
+  "name": "routes stays Ory-selected",
+  "file": "scripts/ci_plan.py",
+  "old": "            \"tests/integration/test_managed_routes.py\",\n",
+  "new": "",
+  "target": "tests/architecture/test_ory_ci.py::test_managed_identity_changes_require_the_real_ory_job[tests/integration/test_managed_routes.py]"
+ }
+]

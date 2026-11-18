@@ -135,6 +135,19 @@ async def test_current_reads_measure_real_requests_and_recheck_remote_lifecycle(
                 return await tools["where_is"]("Generated Global Presence")
 
             assert (await measure("where-is-tool", where_is))["status"] == "ok"
+            if population == 128:
+                # Provisional regression budget measured at cbc71af — upper bound, not a target.
+                for label, key, bound in (
+                        ("first-scoped-read", "SELECT", 2433),
+                        ("first-scoped-read", "kratos:GET", 128),
+                        ("lineage", "SELECT", 2051),
+                        ("lineage", "kratos:GET", 128),
+                        ("lineage", "keto:GET", 128),
+                        ("where-is-tool", "SELECT", 6678),
+                        ("where-is-tool", "kratos:GET", 512)):
+                    bucket = "sql" if key == "SELECT" else "ory_http"
+                    actual = measurements[label][bucket].get(key, 0)
+                    assert actual <= bound, (label, key, actual, bound)
             entered, release = asyncio.Event(), asyncio.Event()
 
             class ParkedFix(SelectedPresenceStore):
