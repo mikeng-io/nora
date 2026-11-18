@@ -1,0 +1,114 @@
+[
+ {
+  "name": "a signal bridge adapter is owned before its identity await",
+  "file": "nora/platform/registry.py",
+  "old": "                dm_recipients=dms.get(\"signal\", frozenset()))\n            _register(adapter)\n            identity = await _resolve_or_refuse(\n                adapter, \"signal\", bridge=True, sleep=sleep, clock=clock)",
+  "new": "                dm_recipients=dms.get(\"signal\", frozenset()))\n            identity = await _resolve_or_refuse(\n                adapter, \"signal\", bridge=True, sleep=sleep, clock=clock)",
+  "target": "tests/integration/test_composition_unwind.py::test_a_later_bridge_failure_closes_the_adapters_already_built"
+ },
+ {
+  "name": "a discord bridge adapter is owned before its identity await",
+  "file": "nora/platform/registry.py",
+  "old": "                speaker=discord_speaker)\n            _register(discord_adapter)\n            discord_identity = await _resolve_or_refuse(\n                discord_adapter, \"discord\", bridge=True, sleep=sleep, clock=clock)",
+  "new": "                speaker=discord_speaker)\n            discord_identity = await _resolve_or_refuse(\n                discord_adapter, \"discord\", bridge=True, sleep=sleep, clock=clock)",
+  "target": "tests/integration/test_composition_unwind.py::test_a_later_bridge_failure_closes_the_adapters_already_built"
+ },
+ {
+  "name": "a failed build unwinds what it acquired",
+  "file": "nora/app/lifecycle.py",
+  "old": "        except BaseException:\n            try:\n                await owner.aclose()\n            except BaseException:\n                log.exception(\"startup unwind failed alongside the build failure\")\n            raise",
+  "new": "        except BaseException:\n            raise",
+  "target": "tests/integration/test_composition_unwind.py::test_a_mid_build_failure_unwinds_everything_acquired"
+ },
+ {
+  "name": "a cleanup failure never replaces the build failure",
+  "file": "nora/app/lifecycle.py",
+  "old": "            try:\n                await owner.aclose()\n            except BaseException:\n                log.exception(\"startup unwind failed alongside the build failure\")",
+  "new": "            try:\n                await owner.aclose()\n            except Exception:\n                log.exception(\"startup unwind failed alongside the build failure\")",
+  "target": "tests/integration/test_composition_unwind.py::test_a_cleanup_cancellation_preserves_the_build_error"
+ },
+ {
+  "name": "a cleanup failure never replaces a build cancellation",
+  "file": "nora/app/lifecycle.py",
+  "old": "            try:\n                await owner.aclose()\n            except BaseException:\n                log.exception(\"startup unwind failed alongside the build failure\")",
+  "new": "            await owner.aclose()",
+  "target": "tests/integration/test_composition_unwind.py::test_a_close_failure_during_cancellation_keeps_the_cancellation"
+ },
+ {
+  "name": "the audit store is owned when it is built",
+  "file": "nora/app/composition.py",
+  "old": "    audit = _stores_audit.audit\n    owner.own_audit(audit)",
+  "new": "    audit = _stores_audit.audit",
+  "target": "tests/integration/test_composition_unwind.py::test_a_mid_build_failure_unwinds_everything_acquired"
+ },
+ {
+  "name": "the model clients are owned when the lane builds them",
+  "file": "nora/app/composition.py",
+  "old": "    owner.own_client(client)\n    owner.own_model_clients(extra_model_clients)",
+  "new": "",
+  "target": "tests/integration/test_composition_unwind.py::test_a_late_build_failure_unwinds_bridge_and_model_resources"
+ },
+ {
+  "name": "the honcho client is owned before ensure_workspace",
+  "file": "nora/memory/wire.py",
+  "old": "    if owner is not None:\n        # Owned before `ensure_workspace` and the foreign-workspaces refusal\n        # below can strand it — the client exists from here on.\n        owner.own_memory(memory)",
+  "new": "",
+  "target": "tests/integration/test_composition_unwind.py::test_a_mid_build_failure_unwinds_everything_acquired"
+ },
+ {
+  "name": "background tasks are owned before the first spawn",
+  "file": "nora/app/composition_runtime.py",
+  "old": "    if owner is not None:\n        # Owned before the first spawn — a failing `hydrate` below must\n        # still cancel what is already running.\n        owner.own_background(background)",
+  "new": "",
+  "target": "tests/integration/test_composition_unwind.py::test_a_mid_build_failure_unwinds_everything_acquired"
+ },
+ {
+  "name": "the bridge redis is owned at creation, before the runtime awaits",
+  "file": "nora/app/composition_bridge.py",
+  "old": "        bridge_redis = aioredis.from_url(redis_url)\n        if owner is not None:\n            # Owned before the runtime pieces below can fail — the client\n            # exists from here on.\n            owner.own_bridge(redis=bridge_redis)",
+  "new": "        bridge_redis = aioredis.from_url(redis_url)",
+  "target": "tests/integration/test_composition_unwind.py::test_a_failure_inside_bridge_wiring_still_closes_its_redis"
+ },
+ {
+  "name": "the scoped computer is wired to the owner at composition",
+  "file": "nora/app/composition.py",
+  "old": "        engine=engine, metrics=metrics, op_clock=op_clock, owner=owner,\n    )",
+  "new": "        engine=engine, metrics=metrics, op_clock=op_clock,\n    )",
+  "target": "tests/integration/test_composition_unwind.py::test_a_scoped_computer_acquisition_unwinds_redis_and_journal"
+ },
+ {
+  "name": "the scoped computer close keeps unwinding through a failing close",
+  "file": "nora/computer/wire.py",
+  "old": "        async with contextlib.AsyncExitStack() as closing:\n            if queues is not None:\n                closing.push_async_callback(queues.computer_queue_runner.close)\n                closing.push_async_callback(queues.browser_manager.aclose)\n                await queues.computer_queue_runner.stop()\n            else:\n                closing.callback(rt.computer_segments.close)\n                closing.push_async_callback(rt.computer_redis.aclose)",
+  "new": "        if queues is not None:\n            await queues.computer_queue_runner.stop()\n            await queues.browser_manager.aclose()\n            await queues.computer_queue_runner.close()\n        else:\n            await rt.computer_redis.aclose()\n            rt.computer_segments.close()",
+  "target": "tests/integration/test_composition_unwind.py::test_a_scoped_computer_close_unwinds_past_a_failing_manager_close tests/integration/test_composition_unwind.py::test_a_scoped_computer_early_close_releases_the_journal_past_a_redis_failure"
+ },
+ {
+  "name": "direct describer clients are owned with the model clients",
+  "file": "nora/media/wire.py",
+  "old": "        extra_model_clients.extend(direct_clients.values())",
+  "new": "        pass",
+  "target": "tests/integration/test_composition_unwind.py::test_a_late_build_failure_unwinds_direct_describer_clients"
+ },
+ {
+  "name": "the rustfs client closes on an ensure_bucket failure",
+  "file": "nora/app/composition_media.py",
+  "old": "        s3.close()\n        log.exception(\n            \"media.rustfs is configured but the bucket could not be reached \"",
+  "new": "        log.exception(\n            \"media.rustfs is configured but the bucket could not be reached \"",
+  "target": "tests/unit/test_composition_media.py::test_a_failed_ensure_bucket_closes_the_s3_client"
+ },
+ {
+  "name": "the rustfs client closes on an ensure_bucket cancellation",
+  "file": "nora/app/composition_media.py",
+  "old": "    except BaseException:\n        # Cancellation inside `ensure_bucket` must not strand the pool.\n        s3.close()\n        raise",
+  "new": "    except BaseException:\n        # Cancellation inside `ensure_bucket` must not strand the pool.\n        raise",
+  "target": "tests/unit/test_composition_media.py::test_a_cancelled_ensure_bucket_closes_the_s3_client"
+ },
+ {
+  "name": "the memory handle closes on normal shutdown too",
+  "file": "nora/app/lifecycle.py",
+  "old": "            audit=deps.audit,\n            blobs=getattr(deps, \"blobs\", None),\n            memory=getattr(deps, \"memory\", None),\n            model_clients=deps.model_clients,",
+  "new": "            audit=deps.audit,\n            blobs=getattr(deps, \"blobs\", None),\n            model_clients=deps.model_clients,",
+  "target": "tests/integration/test_composition_unwind.py::test_a_successful_build_transfers_each_resource_once"
+ }
+]

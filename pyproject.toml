@@ -195,6 +195,9 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "BLE", "ASYNC", "S", "C4", "SIM", 
 #           Scoped to tests/ on purpose — in `nora/` lowercase function names ARE the rule.
 "tests/**" = ["S101", "S104", "S311", "S607", "RUF001", "N802", "N803", "N818"]
 "evals/**" = ["S101"]
+# nora/testing/** is the test doubles' home — same assertion style as tests/,
+# and its generated corpora carry the same punctuation test data does.
+"nora/testing/**" = ["S101", "RUF001"]
 
 [tool.importlinter]
 root_packages = ["nora", "evals"]

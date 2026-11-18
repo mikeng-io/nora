@@ -23,7 +23,7 @@ from typing import Protocol
 
 from . import config
 from .agent.telemetry import setup_agent_tracing
-from .app import adoption, cli, runtime, wake
+from .app import adoption, cli, lifecycle, runtime, wake
 from .app.composition import Dependencies, StartupError, build_dependencies
 from .app.revisions import RevisionRecorder
 from .config import ConfigError
@@ -480,40 +480,7 @@ class App:
         await recorder.watch()
 
     async def shutdown(self) -> None:
-        # The shadow Cognition sessions first: they hold the model client and
-        # the database this method closes below, and a session cancelled here
-        # records itself `cancelled` (its stimuli stay pending) instead of
-        # vanishing with its wake reading «in flight». The evaluator's loop was
-        # already cancelled by `run`; `CognitionShutdown` is idempotent.
-        if self.deps.cognition_shutdown is not None:
-            await self.deps.cognition_shutdown()
-        # Sub-agent jobs in flight: cancelled before the client and the database close. Their
-        # rows are failed by the next boot's recovery and the room is told.
-        if self.deps.subagent_backend is not None:
-            await self.deps.subagent_backend.shutdown()
-        if self._health_runner is not None:
-            await self._health_runner.cleanup()
-        # Bridge-mode collaborators: stop the runtime (readers + lanes +
-        # inspector loop share its _stop), then close its Redis client and
-        # every adapter's bridge control/session clients. `close()` is
-        # present on the bridge adapters and absent on direct-mode ones, so
-        # getattr-guarded rather than asserted.
-        if self.deps.bridge_runtime is not None:
-            self.deps.bridge_runtime.stop()
-            await self.deps.bridge_runtime.redis.aclose()
-        for adapter in self.deps.registry.adapters.values():
-            close = getattr(adapter, "close", None)
-            if close is not None:
-                await close()
-        # The scoped computer's own close: admission stops, shielded
-        # executors unwind, and the dedicated Redis client and journal
-        # lock release — BEFORE the SQL client and audit store close.
-        if self.deps.computer_lifecycle is not None:
-            await self.deps.computer_lifecycle.close()
-        await self.deps.client.close()
-        for client in self.deps.model_clients:
-            await client.close()
-        await self.deps.audit.aclose()
+        await lifecycle.close_dependencies(self.deps, health_runner=self._health_runner)
 
 
 def build_parser() -> argparse.ArgumentParser:

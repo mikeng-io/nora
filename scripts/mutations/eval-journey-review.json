@@ -1,0 +1,44 @@
+[
+  {
+    "name": "the native journey grader preserves REVIEW",
+    "file": "evals/backbone.py",
+    "old": "label=status if status in (PASS, FAIL, REVIEW, ERROR) else ERROR,",
+    "new": "label=status if status in (PASS, FAIL, ERROR) else ERROR,",
+    "target": "tests/unit/test_eval_report_accounting.py::test_journey_grader_preserves_the_retained_judgment"
+  },
+  {
+    "name": "unknown journey status stays ERROR",
+    "file": "evals/backbone.py",
+    "old": "label=status if status in (PASS, FAIL, REVIEW, ERROR) else ERROR,",
+    "new": "label=status if status in (PASS, FAIL, REVIEW, ERROR) else FAIL,",
+    "target": "tests/unit/test_eval_report_accounting.py::test_journey_grader_preserves_the_retained_judgment"
+  },
+  {
+    "name": "flat reading retains the REVIEW count",
+    "file": "evals/reading.py",
+    "old": "                   reviewed=counts[REVIEW])",
+    "new": "                   reviewed=0)",
+    "target": "tests/unit/test_eval_report_accounting.py::test_journey_review_is_counted_without_changing_the_execution_axes"
+  },
+  {
+    "name": "a mixture of PASS and REVIEW cannot be accepted",
+    "file": "evals/reading.py",
+    "old": "return self.passed > 0 and not (self.failed or self.errored or self.reviewed)",
+    "new": "return self.passed > 0 and not (self.failed or self.errored)",
+    "target": "tests/unit/test_eval_report_accounting.py::test_sampled_review_is_unresolved_and_a_mixed_judgment_stays_unstable"
+  },
+  {
+    "name": "sampled REVIEW stays distinct from execution ERROR",
+    "file": "evals/reading.py",
+    "old": "label if label in (PASS, FAIL, REVIEW, ERROR) else ERROR)",
+    "new": "label if label in (PASS, FAIL, ERROR) else ERROR)",
+    "target": "tests/unit/test_eval_report_accounting.py::test_sampled_review_is_unresolved_and_a_mixed_judgment_stays_unstable"
+  },
+  {
+    "name": "retained behavioral census counts REVIEW separately",
+    "file": "evals/accounting.py",
+    "old": "    verdicts = {PASS: 0, FAIL: 0, REVIEW: 0, ERROR: 0}",
+    "new": "    verdicts = {PASS: 0, FAIL: 0, ERROR: 0}",
+    "target": "tests/unit/test_eval_report_accounting.py::test_journey_review_is_counted_without_changing_the_execution_axes"
+  }
+]

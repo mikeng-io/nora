@@ -1,0 +1,37 @@
+[
+  {
+    "name": "both judges require current and earlier instruction custody",
+    "file": "scripts/cognition_loop/judges.py",
+    "old": "    if subject_instructions(trajectory)[\"status\"] != \"observed\":\n        causes.append(\"subject_instructions_unobserved\")\n",
+    "new": "    if False and subject_instructions(trajectory)[\"status\"] != \"observed\":\n        causes.append(\"subject_instructions_unobserved\")\n",
+    "target": "tests/unit/test_evaluation_instruction_custody.py::test_missing_instruction_custody_stops_before_both_judges"
+  },
+  {
+    "name": "judge receives actual transmitted instruction roles",
+    "file": "scripts/cognition_loop/judges.py",
+    "old": "\"subject_instructions\": subject_instructions(trajectory),",
+    "new": "\"subject_instructions\": {\"status\": \"observed\", \"messages\": []},",
+    "target": "tests/integration/subject/test_recorded_wake_runtime.py::test_real_recorded_wake_settles_and_both_judges_receive_terminal_evidence"
+  },
+  {
+    "name": "no-session receipt must belong to the same wake",
+    "file": "nora/subject/request_evidence.py",
+    "old": "and type(row.get(\"wake_id\")) is int and row[\"wake_id\"] == wake_id",
+    "new": "and type(row.get(\"wake_id\")) is int",
+    "target": "tests/unit/test_evaluation_instruction_custody.py::test_only_matching_closed_no_session_receipt_establishes_instruction_absence[foreign]"
+  },
+  {
+    "name": "no-session receipt must belong to the same unit",
+    "file": "nora/subject/request_evidence.py",
+    "old": "and row.get(\"unit\") == unit",
+    "new": "and True",
+    "target": "tests/unit/test_evaluation_instruction_custody.py::test_only_matching_closed_no_session_receipt_establishes_instruction_absence[row_unit]"
+  },
+  {
+    "name": "no-session absence requires successful settlement",
+    "file": "nora/subject/request_evidence.py",
+    "old": "and row.get(\"outcome\") == \"closed\"",
+    "new": "and True",
+    "target": "tests/unit/test_evaluation_instruction_custody.py::test_only_matching_closed_no_session_receipt_establishes_instruction_absence[outcome]"
+  }
+]

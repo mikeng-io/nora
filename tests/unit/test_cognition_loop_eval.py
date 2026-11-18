@@ -7,6 +7,7 @@ contract suite binds to the real SQL stores.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -16,7 +17,10 @@ from nora.domain.stimuli import Stimulus, UnitView, Verdict
 from nora.subject.eval_evidence import EvidenceError
 from scripts.cognition_loop.__main__ import token_budget
 from scripts.cognition_loop.cases import (
+    Case,
+    DeclaredTurn,
     Expectation,
+    generated_behavior_case,
     generated_case,
     load_case,
     write_case,
@@ -38,6 +42,7 @@ from tests.unit.test_cognition_session_runner import (
     _pending,
     _runner,
 )
+from tests.unit.test_journey_inputs import ACTOR, SENT, _fields
 
 NOW = 1_800_000_000_000
 
@@ -128,6 +133,102 @@ def test_expectation_polarity_and_kind_are_checked():
         Expectation(wake=0, polarity="should", kind="note", text="t")
     with pytest.raises(EvidenceError):
         Expectation(wake=0, polarity="must", kind="vibes", text="t")
+
+
+def test_the_generated_behavior_case_round_trips(tmp_path):
+    path = tmp_path / "generated-v2.json"
+    write_case(generated_behavior_case(), path)
+    loaded = load_case(path)
+    assert loaded == generated_behavior_case()
+    assert loaded.version == 2 and loaded.wakes == ()
+    (expectation,) = loaded.expectations
+    assert expectation.turn == 1 and expectation.wake is None
+    assert expectation.kind == "behavior" and expectation.check == "Cedar Hall"
+
+
+@pytest.mark.parametrize("raw", [
+    # no version — an ambiguous measurement never silently becomes one
+    {"name": "x", "unit": "u", "wakes": [1], "expectations": []},
+    {"version": 3, "name": "x", "unit": "u", "turns": ["t"]},
+    {"version": "2", "name": "x", "unit": "u", "turns": ["t"]},
+])
+def test_a_missing_or_unknown_version_is_refused(tmp_path, raw):
+    path = tmp_path / "case.json"
+    path.write_text(json.dumps(raw))
+    with pytest.raises(EvidenceError):
+        load_case(path)
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda e: dict(e, kind="note"),          # a store kind is not a claim
+    lambda e: dict(e, wake=0),               # a wake anchor is a v1 claim
+    lambda e: dict(e, turn=4),               # outside the declared turns
+    lambda e: dict(e, turn="1"),             # untyped anchor
+    lambda e: dict(e, check=5),              # the check token is text
+])
+def test_a_version2_expectation_declares_only_a_turn_behavior_claim(
+        tmp_path, mutate):
+    raw = {
+        "version": 2, "name": "x", "unit": "u",
+        "turns": ["generated first", "generated second"],
+        "expectations": [mutate({"turn": 1, "polarity": "must",
+                                "kind": "behavior",
+                                "text": "a generated claim"})],
+    }
+    path = tmp_path / "case.json"
+    path.write_text(json.dumps(raw))
+    with pytest.raises(EvidenceError):
+        load_case(path)
+
+
+def test_a_version1_case_declares_no_turns_and_no_behavior():
+    from scripts.cognition_loop.cases import Case
+    with pytest.raises(EvidenceError):
+        Case(name="x", unit="u", wakes=(1,), turns=("generated",))
+    with pytest.raises(EvidenceError):
+        Case(name="x", unit="u", wakes=(1,), expectations=(
+            Expectation(wake=0, polarity="must", kind="behavior",
+                        text="t"),))
+
+
+def test_a_declared_turn_round_trips_its_envelope(tmp_path):
+    """The case file's declared turn keeps the original `Envelope`'s actor,
+    source identity and source clock — never the derived body text."""
+    case = Case(name="generated-declared", unit="u", wakes=(), version=2,
+                turns=(DeclaredTurn(envelope=_fields()),))
+    path = tmp_path / "declared.json"
+    write_case(case, path)
+    loaded = load_case(path)
+    assert loaded == case
+    (turn,) = loaded.turns
+    assert isinstance(turn, DeclaredTurn)
+    projection = turn.declared_input()
+    assert projection["source"]["actor"] == ACTOR
+    assert projection["source"]["event_id"] == "v1:declared-42"
+    assert projection["at_ms"] == SENT
+
+
+def test_a_version2_case_turn_is_typed():
+    """The case's own turns are generated text or a `DeclaredTurn` — an
+    untyped later input never silently becomes a declaration."""
+    with pytest.raises(EvidenceError):
+        Case(name="x", unit="u", wakes=(), turns=(42,), version=2)
+
+
+@pytest.mark.parametrize("raw_turn", [
+    42,                        # neither text nor a declared envelope
+    {"not_envelope": {}},      # an untyped dict is not a declaration
+    {"envelope": {"v": 99}},   # a declaration that is not an Envelope
+    {"envelope": "text"},      # an envelope that is not a field object
+])
+def test_a_version2_turn_is_generated_text_or_a_declared_envelope(
+        tmp_path, raw_turn):
+    raw = {"version": 2, "name": "x", "unit": "u",
+           "turns": [raw_turn], "expectations": []}
+    path = tmp_path / "case.json"
+    path.write_text(json.dumps(raw))
+    with pytest.raises(EvidenceError):
+        load_case(path)
 
 
 # --------------------------------------------------------------------------
@@ -316,43 +417,14 @@ def test_wrote_only_record_refuses_derived_state():
 # --------------------------------------------------------------------------
 
 
-def _subject(**deps):
+def test_egress_requires_an_active_case_owned_boundary():
     from types import SimpleNamespace
-    registry = SimpleNamespace(adapters=deps.pop("adapters", {}))
-    base = {"bridge_runtime": None, "fire_path": None, "dispatcher": None,
-            "social_poller": None, "computer_lifecycle": None,
-            "background": SimpleNamespace(_tasks=set())}
-    base.update(deps)
-    return SimpleNamespace(deps=SimpleNamespace(registry=registry, **base))
-
-
-def test_a_live_sender_is_a_refusal():
-    from types import SimpleNamespace
-
-    class RealSignalSender:
-        pass
 
     from scripts.cognition_loop.egress import assert_no_egress
-    subject = _subject(
-        adapters={"signal": SimpleNamespace(_sender=RealSignalSender())})
-    with pytest.raises(EvidenceError, match="real platform transports"):
+
+    subject = SimpleNamespace(deps=SimpleNamespace())
+    with pytest.raises(EvidenceError, match="no active case-owned network/storage boundary"):
         assert_no_egress(subject)
-
-
-def test_a_bridge_runtime_is_a_refusal():
-    from scripts.cognition_loop.egress import assert_no_egress
-    with pytest.raises(EvidenceError, match="bridge_runtime"):
-        assert_no_egress(_subject(bridge_runtime=object()))
-
-
-def test_the_landed_sender_passes():
-    from types import SimpleNamespace
-    class LandedSignalSender:
-        pass
-    from scripts.cognition_loop.egress import assert_no_egress
-    report = assert_no_egress(_subject(
-        adapters={"signal": SimpleNamespace(_sender=LandedSignalSender())}))
-    assert report["transports"]["signal"] == {"_sender": "LandedSignalSender"}
 
 
 # --------------------------------------------------------------------------
@@ -383,87 +455,6 @@ async def test_over_budget_refuses_before_starting(monkeypatch, tmp_path):
     )
     with pytest.raises(ValueError, match="refuse rather than start"):
         await cli.run(args)
-
-
-# --------------------------------------------------------------------------
-# no-egress guard is fail-closed
-# --------------------------------------------------------------------------
-
-
-def test_the_egress_guard_refuses_every_delivery_worker():
-    from scripts.cognition_loop.egress import assert_no_egress
-
-    for worker in ("fire_path", "social_poller",
-                   "computer_lifecycle", "bridge_runtime"):
-        subject = _subject(**{worker: object()})
-        with pytest.raises(EvidenceError, match=worker):
-            assert_no_egress(subject)
-
-
-def test_the_egress_guard_refuses_a_real_sender_on_any_platform():
-    from types import SimpleNamespace
-
-    from scripts.cognition_loop.egress import assert_no_egress
-
-    class RealSender:
-        pass
-
-    for platform in ("signal", "discord", "instagram", "whatsapp", "anychat"):
-        subject = _subject(
-            adapters={platform: SimpleNamespace(_sender=RealSender())})
-        with pytest.raises(EvidenceError, match="real platform transports"):
-            assert_no_egress(subject)
-
-
-def test_an_adapter_whose_sender_cannot_be_identified_is_a_refusal():
-    from types import SimpleNamespace
-
-    from scripts.cognition_loop.egress import assert_no_egress
-
-    class BridgeLikeClient:
-        pass
-
-    subject = _subject(adapters={
-        "signal": SimpleNamespace(_endpoint=object(), _client=BridgeLikeClient()),
-    })
-    with pytest.raises(EvidenceError, match="cannot be identified"):
-        assert_no_egress(subject)
-
-    subject = _subject()
-    subject.deps.registry = SimpleNamespace()  # no `adapters`
-    with pytest.raises(EvidenceError, match="cannot be enumerated"):
-        assert_no_egress(subject)
-
-
-def test_a_sender_under_another_attribute_name_is_still_found():
-    from types import SimpleNamespace
-
-    from scripts.cognition_loop.egress import assert_no_egress
-
-    class BridgeSender:
-        pass
-
-    subject = _subject(adapters={
-        "discord": SimpleNamespace(transport=BridgeSender()),
-    })
-    with pytest.raises(EvidenceError, match="real platform transports"):
-        assert_no_egress(subject)
-
-
-def test_the_egress_guard_passes_only_when_everything_is_landed():
-    from types import SimpleNamespace
-
-    from scripts.cognition_loop.egress import assert_no_egress
-
-    class LandedSignalSender:
-        pass
-
-    # A dispatcher is a required inbound entry point on every composed
-    # subject — present, and not a delivery worker.
-    subject = _subject(dispatcher=object(),
-        adapters={"signal": SimpleNamespace(_sender=LandedSignalSender())})
-    report = assert_no_egress(subject)
-    assert not any(report["workers"].values())
 
 
 # --------------------------------------------------------------------------
@@ -541,7 +532,7 @@ def test_overrides_parse_key_value_pairs_with_toml_types():
         parse_overrides(["not-a-pair"])
 
 
-async def test_compose_binds_arm_overrides_and_disables_delivery(
+async def test_compose_preserves_declared_arm_and_active_service_boundary(
     monkeypatch, tmp_path,
 ):
     from types import SimpleNamespace
@@ -557,18 +548,17 @@ async def test_compose_binds_arm_overrides_and_disables_delivery(
     monkeypatch.setattr(run_mod, "obtain", fake_obtain)
     args = SimpleNamespace(
         workdir=str(tmp_path),
-        overrides={"llm.model": "claude-arm"},
+        overrides={"llm.model": "claude-arm"}, environment=object(),
     )
     room = SimpleNamespace(platform="signal", primary_id="room-1")
     await run_mod._compose(
         args, "postgresql+asyncpg://x", 1_700_000_000_000, room,
-        "policy", "identity", workspace="nora-eval-run-case-abc",
+        "policy", "identity",
     )
     overrides = captured["spec"].overrides
     assert overrides["llm.model"] == "claude-arm"
-    assert overrides["computer.enabled"] is False
-    assert overrides["computer.scoped.enabled"] is False
-    assert overrides["honcho.workspace_id"] == "nora-eval-run-case-abc"
+    assert overrides == {"llm.model": "claude-arm"}
+    assert captured["spec"].environment is args.environment
 
 
 # --------------------------------------------------------------------------
@@ -704,7 +694,10 @@ async def test_two_judges_served_by_one_model_are_not_independent():
     )
     exp = Expectation(wake=0, polarity="must", kind="note", text="x")
     verdict = await judge_expectation(
-        judges, ("a", "b"), exp, StateDiff({}), UnitState(kinds={}), {})
+        judges, ("a", "b"), exp, StateDiff({}), UnitState(kinds={}),
+        {"model_calls": [{"messages": [
+            {"role": "system", "content": "generated instructions"}]}],
+         "effects": {"status": "observed", "items": [], "tools": []}})
     assert verdict.verdict == ERROR
     assert all("not independent" in a.reason for a in verdict.answers)
 

@@ -253,6 +253,18 @@ The subject uses the corpus's canonical assembly rather than a bespoke
 per-case dependency graph (`design/evaluation/subject.md`
 «Production owns the subject» and «Input and causal scope»).
 
+SDK execution uses private `--services FILE` HTTP recordings keyed by corpus
+and exact draw name. It reports protocol rehearsal with model behavior
+unmeasured. Each draw owns its services and preserves workspace identities;
+an unrecorded response is an instrument error, never known empty history.
+Recorded cognition replay uses `cognition-loop` keyed by case name; one service
+scope encloses every wake and candidate SQL state survives Record advances. It
+reports recorded-wake protocol evidence, not autonomous scheduling. Historical
+channel and roster responses use the real bridge adapters.
+Frozen cognition rejudge uses the same file format under `cognition-rejudge`,
+keyed by case name. It retains the source receipt and a separate rejudge capture
+and budget in its private measurement version; scripted verdicts remain protocol evidence.
+
 ```bash
 # on the deploy host, in a checkout of the branch under test (NOT the deploy checkout)
 make eval-source                 # refresh nora_eval (pg_dump); ONLY when no run is in flight:
@@ -262,9 +274,10 @@ export NORA_EVAL_PSEUDONYM_MAP=~/.config/nora/eval-pseudonyms.txt   # resolves t
 GRADING=(--grading-contract "$GRADING_CONTRACT" --grading-contract-sha256 "$GRADING_CONTRACT_SHA256")
 uv run python -m evals --list    # corpora, entry points, classes
 # Alternative selections: each needs its matching reviewed contract/hash, not one file for all three.
-uv run python -m evals --all "${GRADING[@]}"
-uv run python -m evals relevance_gate --sample 3 "${GRADING[@]}"
-uv run python -m evals injections identity_grounding --judge "${GRADING[@]}"
+uv run python -m evals --all --services "$SERVICE_RECORDINGS" "${GRADING[@]}"
+uv run python -m evals relevance_gate --sample 3 --services "$SERVICE_RECORDINGS" "${GRADING[@]}"
+uv run python -m evals injections identity_grounding --judge \
+  --services "$SERVICE_RECORDINGS" "${GRADING[@]}"
 ```
 
 - `--source-url` defaults to the clone on the deploy host (from its `.env`);
@@ -295,9 +308,8 @@ uv run python -m evals injections identity_grounding --judge "${GRADING[@]}"
   `make eval-source` drops every sandbox, so it kills a run in flight.
 - A case reads PASS or FAIL only when every draw agrees, otherwise UNSTABLE.
   Report the draw count with the verdict; n=3 is not a rate. Each draw gets a
-  private Honcho workspace, created and cleaned up by
-  `nora/subject/memory_workspace.py`; model draws still do not establish a
-  population error rate.
+  set of private external services, closed with the subject's production dependencies.
+  Rehearsal verdicts do not establish model behavior or a population error rate.
 - Every run prints its own spend; put it in the PR with the command.
 
 ## Durable run evidence
@@ -364,10 +376,11 @@ uv run python -m scripts.find_cognition_anchors \
   --source-url "$EVAL_SOURCE_URL" > /tmp/cognition-candidates.jsonl
 uv run python -m scripts.confirm_cognition_anchors \
   --source-url "$EVAL_SOURCE_URL" --config ~/workspace/nora/config.toml \
-  --candidates /tmp/cognition-candidates.jsonl > /tmp/cognition-confirmed.jsonl
+  --candidates /tmp/cognition-candidates.jsonl \
+  --services "$CONFIRM_SERVICE_RECORDINGS" > /tmp/cognition-confirmed.jsonl
 uv run python -m scripts.write_cognition_anchors \
   --source-url "$EVAL_SOURCE_URL" --confirmed /tmp/cognition-confirmed.jsonl
-uv run python -m evals cognition_session --sample 3 \
+uv run python -m evals cognition_session --sample 3 --services "$SERVICE_RECORDINGS" \
   --grading-contract "$GRADING_CONTRACT" --grading-contract-sha256 "$GRADING_CONTRACT_SHA256" \
   > /tmp/cognition-eval.log 2>&1
 echo "RC=$?" > /tmp/cognition-eval.rc
@@ -375,7 +388,9 @@ echo "RC=$?" > /tmp/cognition-eval.rc
 
 `--config` is the deployment's own `config.toml`, verbatim: the confirmer
 rebuilds `config.evaluation.toml` against it (the same drift-checked
-`materialise` `python -m evals` runs) and resolves the `eval_judge` route
+`materialise` `python -m evals` runs) into its own private run directory —
+never the checkout's shared file — and binds it to each subject through
+`SubjectSpec.config`. It resolves the `eval_judge` route
 through `nora.subject.obtain.model_endpoint`, so a `host.docker.internal` or
 `honcho` name is rewritten to loopback exactly as a subject's own endpoints
 are. The production route gets one plain POST at temperature zero, without
@@ -401,8 +416,12 @@ see, plus open notes (including their then-current bodies), open events/plans
 (staged, proposed and confirmed) and current/disputed profile lines
 from the restored unit, with the wake time and room explicit. Today's state
 is never substituted. `match` confirms the input situation, not a successful
-session trajectory. Errors, missing state, refusals and truncated/wrong-shape
-answers are `unavailable`, never `no_match`.
+session trajectory. `--services` is a JSON object mapping each candidate wake
+id to its recorded-services document (the same finite `RecordedServices`
+schema the eval harness uses); every external call the composed subject and
+the bound judge make must be a recorded response, and a wake without a
+recording confirms nothing. Errors, missing state, refusals and
+truncated/wrong-shape answers are `unavailable`, never `no_match`.
 
 The writer refuses outside the Linux deploy-host layout, revalidates each
 confirmed wake/room, then replaces `parked` with top-level `snapshot` and

@@ -25,13 +25,15 @@ Two properties it does not get to lose:
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from openai import AsyncOpenAI
 
 from evals.grading_contract import GradingContract
+from nora.subject.effects import observed_effects
 from nora.subject.obtain import resolve_credentials
 
 from .judge import (
@@ -45,6 +47,10 @@ from .judge import (
     majority_verdict,
 )
 from .rubric import OPTIONAL_CRITERIA, Criterion
+
+if TYPE_CHECKING:
+    from nora.subject.environment import IsolatedServices
+    from nora.subject.obtain import Config
 
 #: The judge alias the DEPLOYMENT uses: `[evals] judge_model = "nora-judge"`.
 #:
@@ -102,7 +108,7 @@ class Judgement:
 
 @dataclass(frozen=True, slots=True)
 class Judge:
-    """A model that grades. Built once per run, not per case."""
+    """A model that grades using the case's bound routes and credentials."""
 
     base_url: str
     api_key_env: str = "OMNIROUTE_API_KEY"
@@ -112,8 +118,48 @@ class Judge:
     config_path: Path | None = None
     contract: GradingContract | None = None
     max_tokens: int = JUDGE_MAX_TOKENS
+    config: Config | None = None
+    lifecycle: str | None = None
+
+    def bind(self, config: Config) -> Judge:
+        return replace(self, config=config)
+
+    def bind_evidence(self, effects: dict) -> Judge:
+        if not observed_effects(effects):
+            raise ValueError("canonical lifecycle evidence unavailable to judge")
+        from nora.domain.external_files import render_file_links
+
+        # The judge is a MODEL sink: effect rows carry stored message bodies,
+        # whose shared file links must reach it as handles (R-18). The raw
+        # canonical artifact is the capture's; only the bound projection renders.
+        lifecycle = json.dumps(effects, ensure_ascii=False, sort_keys=True)
+        return replace(self, lifecycle=render_file_links(lifecycle))
+
+    def _with_effects(self, prompt: str) -> str:
+        if self.lifecycle is None:
+            return prompt
+        from scripts.memory_graph_spike import prompt as evidence_prompt
+
+        return prompt + "\n" + evidence_prompt({
+            "evidence_role": "post_execution_effects",
+            "subject_visibility": "not established by this observation",
+            "effects": json.loads(self.lifecycle),
+        })
+
+    def bind_services(self, environment: IsolatedServices) -> Judge:
+        from nora.subject.obtain import _load_config
+
+        cfg = self.config
+        if cfg is None:
+            if self.config_path is None:
+                raise ValueError("judge configuration is required for isolated routing")
+            cfg = _load_config(self.config_path, require_secrets=False)
+        return self.bind(environment.bind_config(cfg))
 
     def _endpoint(self) -> tuple[str, str, str]:
+        if self.config is not None:
+            from nora.subject.obtain import model_endpoint
+            return model_endpoint(self.config, "eval_judge", self.model)
         if self.config_path is not None:
             from nora.subject.obtain import model_endpoint
             return model_endpoint(self.config_path, "eval_judge", self.model)
@@ -150,6 +196,7 @@ class Judge:
             _prefill_capture,
         )
         _prefill_capture()
+        prompt = self._with_effects(prompt)
         client = self._client()
         spent = {NORA_CALLS: 1, NORA_INPUT_TOKENS: 0,
                  NORA_OUTPUT_TOKENS: 0, NORA_CACHED_TOKENS: 0, NORA_STOPS: ""}
@@ -161,12 +208,11 @@ class Judge:
                 trace_name,
             ) as span:
                 batch_trace = format(span.get_span_context().trace_id, "032x")
-                span.set_attribute("gen_ai.request.model", self._endpoint()[2])
-                answer = await asyncio.wait_for(client.chat.completions.create(
-                    model=self._endpoint()[2], messages=[{"role": "user", "content": prompt}],
-                    temperature=0, max_tokens=COVERAGE_MAX_TOKENS,
-                    reasoning_effort=COVERAGE_REASONING_EFFORT,
-                ), self.timeout_seconds)
+                answer = await self._complete(client, {
+                    "model": self._endpoint()[2], "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0, "max_tokens": COVERAGE_MAX_TOKENS,
+                    "reasoning_effort": COVERAGE_REASONING_EFFORT,
+                })
                 response = {"actual_model": answer.model, "response_id": answer.id}
                 if answer.choices:
                     response["raw"] = answer.choices[0].message.content or ""
@@ -178,7 +224,6 @@ class Judge:
                     details = usage.prompt_tokens_details
                     spent[NORA_CACHED_TOKENS] = (details.cached_tokens or 0) if details else 0
                 spent[NORA_STOPS] = answer.choices[0].finish_reason
-                span.set_attribute("gen_ai.response.model", answer.model)
                 if answer.choices[0].finish_reason != "stop":
                     raise ValueError("coverage response truncated or refused")
                 return {**response,
@@ -307,53 +352,54 @@ class Judge:
         )
         return await self._draw(prompt, (POSITION_CRITERION,))
 
+    async def _complete(self, client: AsyncOpenAI, request: dict[str, Any]) -> Any:
+        from opentelemetry import trace
+
+        from nora.subject.eval_evidence import EvidenceError, current
+        from nora.subject.raw_model import (
+            client_capture,
+            end_raw_model_span,
+            end_raw_model_span_with_error,
+            record_eval_model_request,
+            start_raw_model_span,
+        )
+
+        span = start_raw_model_span(model_id=request["model"], messages=[{
+            "role": message["role"], "content": [{"text": message["content"]}]
+        } for message in request["messages"]])
+        try:
+            if current() is not None and (span is None or not span.is_recording()):
+                raise EvidenceError("judge model trace unavailable before dispatch")
+            with trace.use_span(span or trace.INVALID_SPAN, end_on_exit=False):
+                record_eval_model_request(request)
+                async with client_capture(client, role="judge") as observed:
+                    answer = await asyncio.wait_for(
+                        observed.chat.completions.create(**request), self.timeout_seconds)
+                usage = answer.usage
+                end_raw_model_span(span=span,
+                    content=answer.choices[0].message.content or "" if answer.choices else "",
+                    finish_reason=(answer.choices[0].finish_reason
+                                   if answer.choices else "unavailable"),
+                    input_tokens=usage.prompt_tokens if usage else None,
+                    output_tokens=usage.completion_tokens if usage else None,
+                    total_tokens=usage.total_tokens if usage else None,
+                    response_model=answer.model)
+                return answer
+        except BaseException as exc:
+            end_raw_model_span_with_error(span=span, error_message=str(exc),
+                exception=exc if isinstance(exc, Exception) else None)
+            raise
+
     async def _draw(self, prompt: str, bound: tuple[str, ...]) -> Judgement:
+        prompt = self._with_effects(prompt)
         client = self._client()
 
         async def one_sample() -> str:
-            from opentelemetry import trace
-
-            from nora.subject.eval_evidence import EvidenceError, current
-            from nora.subject.raw_model import (
-                client_capture,
-                end_raw_model_span,
-                end_raw_model_span_with_error,
-                record_eval_model_request,
-                start_raw_model_span,
-            )
-
-            request = {"model": self._endpoint()[2],
-                       "messages": [{"role": "user", "content": prompt}],
-                       "temperature": 0, "max_tokens": self.max_tokens}
-            span = start_raw_model_span(
-                model_id=request["model"], messages=[
-                    {"role": "user", "content": [{"text": prompt}]}])
-            if current() is not None and (span is None or not span.is_recording()):
-                raise EvidenceError("judge model trace unavailable before dispatch")
-            # A WALL-CLOCK bound on the whole call, not only the client's.
-            # The client's `timeout` is httpx's, which bounds each phase
-            # (connect, the gap between two reads) rather than the request, so
-            # a gateway that trickles bytes would never trip it. A
-            # `TimeoutError` here becomes REVIEW: an ERROR about the
-            # instrument, never a verdict about her.
-            try:
-                with trace.use_span(span or trace.INVALID_SPAN, end_on_exit=False):
-                    record_eval_model_request(request)
-                    async with client_capture(client, role="judge") as observed:
-                        answer = await asyncio.wait_for(
-                            observed.chat.completions.create(**request), self.timeout_seconds)
-                    usage = answer.usage
-                    end_raw_model_span(span=span,
-                        content=answer.choices[0].message.content or "",
-                        finish_reason=answer.choices[0].finish_reason,
-                        input_tokens=usage.prompt_tokens if usage else None,
-                        output_tokens=usage.completion_tokens if usage else None,
-                        total_tokens=usage.total_tokens if usage else None,
-                        response_model=answer.model)
-            except BaseException as exc:
-                end_raw_model_span_with_error(span=span, error_message=str(exc),
-                    exception=exc if isinstance(exc, Exception) else None)
-                raise
+            answer = await self._complete(client, {
+                "model": self._endpoint()[2],
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0, "max_tokens": self.max_tokens,
+            })
             if answer.choices[0].finish_reason != "stop":
                 raise ValueError("judge response truncated or refused")
             return answer.choices[0].message.content or ""

@@ -32,7 +32,9 @@ class FakeSignalDaemon:
     """signal-cli daemon-mode double: `/api/v1/events` SSE + `/api/v1/rpc`."""
 
     def __init__(self, *, attachments: dict[str, bytes] | None = None,
-                 attachment_result_shape: str = "object") -> None:
+                 attachment_result_shape: str = "object",
+                 sent_at_ms: int = 1700000000001) -> None:
+        self.sent_at_ms = sent_at_ms
         self.sent: list[dict[str, Any]] = []
         self.reactions: list[dict[str, Any]] = []
         self.attachment_reads: list[str] = []
@@ -99,7 +101,7 @@ class FakeSignalDaemon:
             self.sent.append({"params": params, "id": request_id})
             return web.json_response(
                 {"jsonrpc": "2.0", "id": request_id,
-                 "result": {"timestamp": 1700000000001}})
+                 "result": {"timestamp": self.sent_at_ms}})
         if method == "sendReaction":
             self.reactions.append({"params": params, "id": request_id})
             return web.json_response(

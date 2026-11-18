@@ -90,7 +90,7 @@ class HonchoWiring:
     memory: Any
 
 
-async def honcho(allowlist, cfg, persons) -> HonchoWiring:
+async def honcho(allowlist, cfg, persons, owner=None) -> HonchoWiring:
     # workspace > unit > room (DEC-214): every Honcho call is routed from its room or unit
     # to the Honcho workspace its Nora workspace is bound to, and to the unit's named scope
     # inside it. Resolved ONCE, here, from the three files that each hold one part of it…
@@ -108,6 +108,10 @@ async def honcho(allowlist, cfg, persons) -> HonchoWiring:
         ai_peer=cfg.honcho.ai_peer,
         workspace_router=router,
     )
+    if owner is not None:
+        # Owned before `ensure_workspace` and the foreign-workspaces refusal
+        # below can strand it — the client exists from here on.
+        owner.own_memory(memory)
     # Best-effort, never fatal — no try/except. Every bound Honcho workspace,
     # the Nora aiPeer in each (her replies feed under it to build her
     # self-model; peers are per Honcho workspace), and every unit's scope.

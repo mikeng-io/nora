@@ -57,6 +57,9 @@ class RustfsBlobStore:
         self._cipher = cipher
         self._clock = clock
 
+    async def aclose(self) -> None:
+        self._s3.close()
+
     def ensure_bucket(self) -> None:
         """Idempotent bucket creation, called once at startup by the
         composition root — RustFS, like S3, has no implicit bucket. Blocking;
