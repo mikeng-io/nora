@@ -70,6 +70,6 @@ def test_manual_full_backend_runs_with_its_pinned_ory_dependencies():
     assert full["if"] == "github.event_name == 'workflow_dispatch'"
     assert "if targets == 'ALL'" in full["run"]
     assert "--ignore" not in full["run"] and "continue-on-error" not in full
-    assert "&& 90 || 4" in job["timeout-minutes"]
+    assert "&& 90 || 5" in job["timeout-minutes"]
     assert job["env"]["NORA_TEST_MAX_WORKERS"] == "4"
     assert not any(s.get("name") == full["name"] for s in jobs["contracts"]["steps"])
