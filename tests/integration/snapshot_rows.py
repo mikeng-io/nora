@@ -318,7 +318,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
     "notebook_entry": lambda i: {"id": f"generated-entry-{i}", "kind": "topic",
         "unit": "u", "subject": f"generated-subject-{i}", "retired": False,
         "recorded_at": T0},
-    # 0117_persona: an account's head, its revision bumped by each write.
+    # The Profile account head advances on each write.
     "profile": lambda i: {
         "key": f"u#character:p{i}", "entity_kind": "human", "unit": "u",
         "revision": 1, "updated_at": MS0 + i,
@@ -530,14 +530,14 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "citations": [str(n + 1)], "state": "active", "written_at": MS0 + n,
         "established_by": "test",
     },
-    # 0117_persona: one told line.
+    # One told Profile line.
     "profile_line": lambda n: {
         "id": _uuid("pl", n), "profile_key": f"u#character:p{n}", "part": "facts",
         "kind": "attribute", "text": f"fact {n}", "mode": "told", "citations": [str(n + 1)],
         "told_by": f"p{n}", "state": "current", "support_count": 1, "unit": "u",
         "written_at": MS0 + n, "written_by_session": "test",
     },
-    # 0121_persona_dispute: one dispute of a Profile line.
+    # One dispute of a Profile line.
     "profile_dispute": lambda n: {
         "id": _uuid("pd", n), "profile_key": f"u#character:p{n}", "line_id": None,
         "disputed_by": f"p{n}", "kind": "dispute", "claim": f"not so {n}",

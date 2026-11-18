@@ -498,13 +498,6 @@
    "persona_line": 7
   }
  },
- "tests/integration/test_snapshot_holds_what_was_held.py": {
-  "reason": "Historical applied migration revision ids remain resolvable.",
-  "matches": {
-   "_persona": 2,
-   "_persona_dispute": 1
-  }
- },
  "tests/test_config.py": {
   "reason": "Retired config spellings are tested only to prove startup refusal and the new destination.",
   "matches": {
