@@ -163,10 +163,14 @@ def test_manual_full_backend_runs_with_its_pinned_ory_dependencies():
     names = [s.get("name") for s in steps]
     full = next(s for s in steps if s.get("name") == "Selected backend acceptance")
     startup = next(s for s in steps if s.get("name") == "Start disposable pinned Ory services")
+    redis = next(s for s in steps if s.get("name") == "Install Redis for isolated eval subjects")
     assert "docker compose -p nora-ory-contract -f deploy/ory/compose.yaml up" in startup["run"]
     assert names.index(startup["name"]) < names.index(full["name"])
     assert names.index(full["name"]) < names.index("Remove disposable services and data")
     assert full["if"] == "github.event_name == 'workflow_dispatch'"
+    assert redis["if"] == full["if"]
+    assert names.index(redis["name"]) < names.index(full["name"])
+    assert "apt-get install -y redis-server" in redis["run"]
     assert "if targets == 'ALL'" in full["run"]
     assert "--ignore" not in full["run"] and "continue-on-error" not in full
     assert "&& 90 || 5" in job["timeout-minutes"]
