@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import sqlalchemy as sa
@@ -165,7 +165,7 @@ class SqlCognitiveGraph:
             entity.unit == unit, entity.pointer_kind == "person", entity.pointer_ref == person,
             entity.state == "admitted",
         ).order_by(entity.id).limit(1)
-        if existing := await conn.scalar(query):
+        if existing := cast(str | None, await conn.scalar(query)):
             return existing
         pointer = pointer_entity("person", unit, person, person)
         created = await conn.scalar(pg_insert(REGISTRY).values(
@@ -178,7 +178,7 @@ class SqlCognitiveGraph:
                 exposure="internal", writer="SqlRollupStore",
             ))
             return pointer.id
-        return await conn.scalar(query)
+        return cast(str | None, await conn.scalar(query))
 
     @staticmethod
     async def _insert(

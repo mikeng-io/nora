@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -37,7 +37,7 @@ def _healthy(unit: str, source: str, scope: str, outcome: str) -> Any:
     ).scalar_subquery()
 
 
-def _presence_frontier(unit: str, circle: str, people: tuple[str, ...]) -> sa.Select:
+def _presence_frontier(unit: str, circle: str, people: tuple[str, ...]) -> sa.Select[Any]:
     fix = PRESENCE_FIXES.c
     fixes = sa.select(sa.func.max(fix.recorded_at)).where(
         sa.or_(fix.unit == unit, fix.unit.is_(None)), fix.state == "live",
@@ -47,7 +47,7 @@ def _presence_frontier(unit: str, circle: str, people: tuple[str, ...]) -> sa.Se
     return sa.select(frontier.label("frontier"))
 
 
-def _platform_frontier(unit: str, platform: str, rooms: tuple[str, ...]) -> sa.Select:
+def _platform_frontier(unit: str, platform: str, rooms: tuple[str, ...]) -> sa.Select[Any]:
     m, obs = MESSAGES.c, PLATFORM_OBSERVATION.c
     scoped = (m.platform == platform, m.conversation_id.in_(rooms),
               sa.or_(m.unit == unit, m.unit.is_(None)), m.state == "live")
@@ -71,7 +71,7 @@ def _platform_frontier(unit: str, platform: str, rooms: tuple[str, ...]) -> sa.S
 
 
 async def projection_time(conn: AsyncConnection, inputs: Sequence[ProjectionInputs]) -> int | None:
-    frontiers: list[sa.Select] = []
+    frontiers: list[sa.Select[Any]] = []
     for scope in inputs:
         frontiers.extend(_presence_frontier(scope.unit, circle, people)
                          for circle, people in scope.presence)
@@ -81,4 +81,4 @@ async def projection_time(conn: AsyncConnection, inputs: Sequence[ProjectionInpu
     if not frontiers:
         return None
     sources = sa.union_all(*frontiers).subquery()
-    return await conn.scalar(sa.select(sa.func.min(sources.c.frontier)))
+    return cast(int | None, await conn.scalar(sa.select(sa.func.min(sources.c.frontier))))
