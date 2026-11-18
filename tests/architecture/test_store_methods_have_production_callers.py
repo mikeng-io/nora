@@ -239,6 +239,13 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "lane reads it this stage: the context and grounding reads take "
         "recent/heads/by_ids/head_for_handle only.",
     ),
+    ("reminders.py", "in_rooms"): _Pin(
+        "operator_script",
+        "Every reminder row in the unit's rooms, every state — the ledger "
+        "half of the unit state dump `scripts/cognition_loop/state.py` "
+        "builds, which is the operator's tool outside `nora/` and outside "
+        "`_call_sites`' scan. `all_pending` serves the pending work queue.",
+    ),
 }
 
 # Names this file CANNOT resolve, pinned so the set cannot grow in silence.
@@ -633,7 +640,7 @@ def _scripts_call_sites() -> dict[str, list[_Site]]:
     `operator_script` pin's claim — "a real caller exists, just not where this
     file scans" — rather than leaving it unfalsifiable by the other tests."""
     calls: dict[str, list[_Site]] = defaultdict(list)
-    for path in sorted((ROOT / "scripts").glob("*.py")):
+    for path in sorted((ROOT / "scripts").rglob("*.py")):
         for node in ast.walk(_parse(path)):
             if (
                 isinstance(node, ast.Call)
