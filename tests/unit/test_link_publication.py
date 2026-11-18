@@ -16,6 +16,7 @@ from nora.domain.account_linking import (
     ConsentProof,
     ConsentSurface,
     LinkState,
+    LinkStateError,
     PendingLink,
 )
 from nora.domain.identity import Identifier
@@ -31,8 +32,11 @@ from nora.domain.managed import (
     Verdict,
 )
 from nora.domain.management import (
+    AccessChange,
+    AccessDirection,
     Actor,
     ActorKind,
+    LifecycleAction,
     LinkApproval,
     LinkRequest,
     LinkSide,
@@ -56,12 +60,15 @@ from nora.testing.managed import (
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 PERSON_A = "synthetic-person-a"
 PERSON_B = "synthetic-person-b"
+PERSON_C = "synthetic-person-c"
 ACCT_I = Identifier("discord", "user_id", "synthetic-initiating")
 ACCT_R = Identifier("signal", "uuid", "synthetic-receiving")
+ACCT_C = Identifier("telegram", "user_id", "synthetic-third")
 NONCE = {LinkSide.INITIATING: "gen-init-nonce", LinkSide.RECEIVING: "gen-recv-nonce"}
 ISSUER = {LinkSide.INITIATING: "gen-discord-surface", LinkSide.RECEIVING: "gen-signal-surface"}
-SURFACE = {LinkSide.INITIATING: ConsentSurface.DISCORD_REAUTH,
-           LinkSide.RECEIVING: ConsentSurface.SIGNAL_PRIVATE}
+_SURFACE_FOR = {"discord": ConsentSurface.DISCORD_REAUTH,
+                "signal": ConsentSurface.SIGNAL_PRIVATE,
+                "telegram": ConsentSurface.TELEGRAM_REAUTH}
 ROOM = Scope(ScopeKind.ROOM, "signal/synthetic-room")
 UNIT = Scope(ScopeKind.UNIT, "synthetic-unit")
 WS = Scope(ScopeKind.WORKSPACE, "synthetic-workspace")
@@ -106,37 +113,78 @@ def _actor(side, person):
                  account=account, proof_issuer=ISSUER[side])
 
 
+async def _requested(svc, links, *, initiating=ACCT_I, receiving=ACCT_R,
+                     initiating_person=PERSON_A, surviving_person=PERSON_A,
+                     request_id="synthetic-request", nonces=None, now=NOW):
+    """Observe -> request through the REAL store, on any overlapping pair."""
+    nonces = NONCE if nonces is None else nonces
+    observation = await svc.observe(
+        initiating=initiating, receiving=receiving,
+        surviving_person=surviving_person)
+    op = Operation(
+        request_id, "request_link",
+        Actor(ActorKind.HOLDER, person_id=initiating_person, account=initiating,
+              proof_issuer=ISSUER[LinkSide.INITIATING]),
+        Target(TargetKind.ACCOUNT, account=receiving),
+        LinkRequest(surviving_person), dict(observation.revisions),
+    )
+    return await links.create(PendingLink.request(
+        op, receiving_person=observation.receiving_person,
+        initiating_nonce=nonces[LinkSide.INITIATING],
+        receiving_nonce=nonces[LinkSide.RECEIVING],
+        created_at=now, expires_at=now + timedelta(minutes=5),
+    ), nonces=nonces)
+
+
+async def _approve(links, link, side, *, person, account, surviving_person,
+                   request_id, operation_id, now=NOW, nonce=None):
+    decision = Operation(
+        operation_id, "approve_link",
+        Actor(ActorKind.HOLDER, person_id=person, account=account,
+              proof_issuer=ISSUER[side]),
+        Target(TargetKind.ACCOUNT, account=link.pair.account(LinkSide.RECEIVING)),
+        LinkApproval(request_id=request_id, side=side, pair=link.pair,
+                     surviving_person=surviving_person),
+        dict(link.revisions),
+    )
+    proof = ConsentProof(
+        account=account, issuer=ISSUER[side],
+        surface=_SURFACE_FOR[account.platform],
+        authenticated_at=now + timedelta(seconds=1),
+        request_id=request_id,
+        nonce=NONCE[side] if nonce is None else nonce,
+    )
+    return await links.decide(decision, proof, now=now + timedelta(seconds=2))
+
+
 async def _approved(svc, links, *, request_id="synthetic-request", now=NOW):
     """Observe -> request -> both holder decisions through the REAL store."""
-    observation = await svc.observe(
-        initiating=ACCT_I, receiving=ACCT_R, surviving_person=PERSON_A)
-    op = Operation(
-        request_id, "request_link", _actor(LinkSide.INITIATING, PERSON_A),
-        Target(TargetKind.ACCOUNT, account=ACCT_R), LinkRequest(PERSON_A),
-        dict(observation.revisions),
-    )
-    link = await links.create(PendingLink.request(
-        op, receiving_person=observation.receiving_person,
-        initiating_nonce=NONCE[LinkSide.INITIATING],
-        receiving_nonce=NONCE[LinkSide.RECEIVING],
-        created_at=now, expires_at=now + timedelta(minutes=5),
-    ), nonces=NONCE)
-    for side, person in ((LinkSide.INITIATING, PERSON_A), (LinkSide.RECEIVING, PERSON_B)):
-        decision = Operation(
-            f"gen-approve-{side.value}", "approve_link", _actor(side, person),
-            Target(TargetKind.ACCOUNT, account=ACCT_R),
-            LinkApproval(request_id=request_id, side=side, pair=link.pair,
-                         surviving_person=PERSON_A),
-            dict(link.revisions),
-        )
-        proof = ConsentProof(
-            account=ACCT_I if side is LinkSide.INITIATING else ACCT_R,
-            issuer=ISSUER[side], surface=SURFACE[side],
-            authenticated_at=now + timedelta(seconds=1),
-            request_id=request_id, nonce=NONCE[side],
-        )
-        link = await links.decide(decision, proof, now=now + timedelta(seconds=2))
-    return link
+    link = await _requested(svc, links, request_id=request_id, now=now)
+    link = await _approve(links, link, LinkSide.INITIATING, person=PERSON_A,
+                          account=ACCT_I, surviving_person=PERSON_A,
+                          request_id=request_id,
+                          operation_id="gen-approve-initiating", now=now)
+    return await _approve(links, link, LinkSide.RECEIVING, person=PERSON_B,
+                          account=ACCT_R, surviving_person=PERSON_A,
+                          request_id=request_id,
+                          operation_id="gen-approve-receiving", now=now)
+
+
+async def _approved_competing(svc, links, *, request_id="competing-request", now=NOW):
+    """A second fully-approved request whose receiving account is the SAME
+    bound account the first request names — valid while it was approved."""
+    link = await _requested(
+        svc, links, initiating=ACCT_C, receiving=ACCT_R,
+        initiating_person=PERSON_C, surviving_person=PERSON_C,
+        request_id=request_id, now=now)
+    link = await _approve(links, link, LinkSide.INITIATING, person=PERSON_C,
+                          account=ACCT_C, surviving_person=PERSON_C,
+                          request_id=request_id,
+                          operation_id="gen-approve-competing-init", now=now)
+    return await _approve(links, link, LinkSide.RECEIVING, person=PERSON_B,
+                          account=ACCT_R, surviving_person=PERSON_C,
+                          request_id=request_id,
+                          operation_id="gen-approve-competing-recv", now=now)
 
 
 async def _linked_world():
@@ -336,7 +384,8 @@ async def test_member_supports_merge_and_a_later_roster_departure_keeps_grant():
 
 
 async def test_unlink_is_holder_exact_and_drops_derived_sessions():
-    store, _backend, _topology, registry, links, svc = await _linked_world()
+    store, backend, _topology, registry, links, svc = await _linked_world()
+    await backend.put_relation(scope=ROOM, relation="grant_view", person_id=PERSON_B)
     await _approved(svc, links)
     outcome = await svc.commit("synthetic-request", now=NOW + timedelta(seconds=3))
     assert outcome.status is OutcomeStatus.COMPLETE
@@ -376,6 +425,64 @@ async def test_unlink_is_holder_exact_and_drops_derived_sessions():
     assert await store.record_for(account=ACCT_I) is not None  # other account kept
     assert PERSON_A not in registry.sessions
     assert (await store.person(PERSON_A)) is not None  # history and person stay
+    # The canonical alias remains, and the consolidated grant stays the
+    # survivor's: unlink restores no pre-link permission snapshot.
+    assert await store.canonical_person(PERSON_B) == PERSON_A
+    rows = await backend.relations_on(scope=ROOM)
+    assert ("grant_view", PERSON_A) in rows and ("grant_view", PERSON_B) not in rows
+
+
+async def test_suspending_the_survivor_restores_no_loser_grants():
+    """Suspension is a global hold, not a rewind: the consolidated grant
+    stays exactly where the link put it, the alias stands and the retired
+    person gains nothing back."""
+    store, backend, topology, registry, links, svc = await _linked_world()
+    await backend.put_relation(scope=ROOM, relation="grant_view", person_id=PERSON_B)
+    await _approved(svc, links)
+    outcome = await svc.commit("synthetic-request", now=NOW + timedelta(seconds=3))
+    assert outcome.status is OutcomeStatus.COMPLETE
+    person = await store.person(PERSON_A)
+    op = Operation(
+        "gen-suspend", "suspend_identity",
+        Actor(ActorKind.INSTALLATION, person_id="synthetic-installer"),
+        Target(TargetKind.PERSON, person_id=PERSON_A),
+        LifecycleAction(reason="moderation"),
+        {"identity": str(person.revision), "authority": "observed"},
+    )
+    services = ManagedServices(store, backend, topology, registry, links)
+    outcome = await services.registration.apply(op)
+    assert outcome.status is OutcomeStatus.COMPLETE
+    person = await store.person(PERSON_A)
+    assert person.lifecycle is PersonLifecycle.SUSPENDED
+    assert await store.canonical_person(PERSON_B) == PERSON_A
+    assert await backend.relations_on(scope=ROOM) == {("grant_view", PERSON_A)}
+
+
+async def test_revoking_the_survivors_grant_restores_no_loser_grants():
+    """Revocation removes the consolidated grant outright — it is not a
+    rollback to the pre-link snapshot, so the retired person's original
+    grant never comes back."""
+    store, backend, topology, registry, links, svc = await _linked_world()
+    await backend.put_relation(scope=ROOM, relation="grant_view", person_id=PERSON_B)
+    await _approved(svc, links)
+    outcome = await svc.commit("synthetic-request", now=NOW + timedelta(seconds=3))
+    assert outcome.status is OutcomeStatus.COMPLETE
+    services = ManagedServices(store, backend, topology, registry, links)
+    op = Operation(
+        "gen-revoke", "revoke_access",
+        Actor(ActorKind.INSTALLATION, person_id="synthetic-installer"),
+        Target(TargetKind.SCOPE, scope=ROOM),
+        AccessChange(direction=AccessDirection.GRANT, grantee=PERSON_A,
+                     permits=frozenset({"view"})),
+        {"authority": "observed"},
+    )
+    outcome = await services.authority.apply(op)
+    assert outcome.status is OutcomeStatus.COMPLETE
+    assert not await backend.relations_on(scope=ROOM)
+    assert await store.canonical_person(PERSON_B) == PERSON_A
+    check = await services.authority.check(
+        scope=ROOM, person_id=PERSON_B, permit="view")
+    assert check.verdict is Verdict.DENIED
 
 
 async def test_concurrent_commits_on_one_request_publish_once():
@@ -388,6 +495,10 @@ async def test_concurrent_commits_on_one_request_publish_once():
     assert all(o.status is OutcomeStatus.COMPLETE for o in outcomes)
     assert await store.canonical_person(PERSON_B) == PERSON_A
     assert len(store.people) == 1
+    # A replayed commit answers the recorded outcome — nothing publishes twice.
+    again = await svc.commit("synthetic-request", now=NOW + timedelta(seconds=3))
+    assert again.status is OutcomeStatus.COMPLETE
+    assert len(store.people) == 1 and len(store.aliases) == 1
 
 
 async def test_commit_of_an_unapproved_request_never_uses_live_state_to_skip_approval():
@@ -443,6 +554,114 @@ async def test_interruption_after_holds_before_transition_remains_recoverable(re
     assert (await links.get("synthetic-request")).state is LinkState.COMMITTED
     assert not await store.identity_held(PERSON_A)
     assert not await store.identity_held(PERSON_B)
+
+
+async def test_a_retried_commit_whose_recorded_effect_changed_is_refused():
+    """A crash left a journaled publish; the retry recomputes the loser's
+    fact set and finds it changed — the journaled effect refuses the new
+    plan rather than silently publishing a different consolidation."""
+    store, backend, topology, registry, links, svc = await _linked_world()
+    now = datetime.now(UTC)
+    await _approved(svc, links, now=now - timedelta(seconds=3))
+    interrupted = LinkPublicationService(store, backend, topology, registry,
+                                          _CrashBeforeTransition(links))
+    result = await interrupted.commit("synthetic-request", now=now)
+    assert result.status is OutcomeStatus.UNAVAILABLE
+    await backend.put_relation(scope=ROOM, relation="grant_view", person_id=PERSON_B)
+    outcome = await svc.commit("synthetic-request", now=now)
+    assert outcome.status is OutcomeStatus.DENIED
+    assert outcome.detail == "effect-conflict"
+    assert await store.canonical_person(PERSON_B) == PERSON_B
+    rows = await backend.relations_on(scope=ROOM)
+    assert ("grant_view", PERSON_B) in rows and ("grant_view", PERSON_A) not in rows
+
+
+async def test_a_replayed_approval_or_proof_never_authorizes_a_commit():
+    """One decision identity names one request and one effect: a consumed
+    approval replayed under a second pending request is refused by the
+    store, and commit revalidation still refuses the never-approved
+    request — the legitimate approvals alongside stay valid."""
+    _store, _backend, _topology, _registry, links, svc = await _linked_world()
+    await _approved(svc, links)
+    link = await _requested(
+        svc, links, surviving_person=PERSON_B, request_id="replayed-target",
+        nonces={LinkSide.INITIATING: "gen-init-b",
+                LinkSide.RECEIVING: "gen-recv-b"})
+    replayed = Operation(
+        "gen-approve-initiating", "approve_link",
+        _actor(LinkSide.INITIATING, PERSON_A),
+        Target(TargetKind.ACCOUNT, account=ACCT_R),
+        LinkApproval(request_id="replayed-target", side=LinkSide.INITIATING,
+                     pair=link.pair, surviving_person=PERSON_B),
+        dict(link.revisions),
+    )
+    proof = ConsentProof(
+        account=ACCT_I, issuer=ISSUER[LinkSide.INITIATING],
+        surface=_SURFACE_FOR[ACCT_I.platform],
+        authenticated_at=NOW + timedelta(seconds=1),
+        request_id="replayed-target", nonce="gen-init-b",
+    )
+    with pytest.raises(LinkStateError):
+        await links.decide(replayed, proof, now=NOW + timedelta(seconds=2))
+    # A fresh decision id replaying the FIRST request's consumed proof
+    # dies too: this request recorded a different challenge.
+    replayed = replace(replayed, operation_id="gen-approve-replay")
+    proof = replace(proof, nonce=NONCE[LinkSide.INITIATING])
+    with pytest.raises(LinkStateError):
+        await links.decide(replayed, proof, now=NOW + timedelta(seconds=2))
+    outcome = await svc.commit("replayed-target", now=NOW + timedelta(seconds=3))
+    assert outcome.status is OutcomeStatus.DENIED
+    assert outcome.detail == "awaiting-approvals"
+    assert not (await links.get("replayed-target")).approved
+    assert (await svc.commit(
+        "synthetic-request", now=NOW + timedelta(seconds=3))
+    ).status is OutcomeStatus.COMPLETE
+
+
+async def test_a_competing_link_request_is_refused_by_commit_revalidation():
+    """Two fully-approved requests name the same account: the first commit
+    consolidates it, and the loser's commit re-reads an owner that no
+    longer matches its approved state — refused, never published."""
+    store, backend, _topology, registry, links, svc = await _linked_world()
+    await _person(store, registry, PERSON_C, ACCT_C)
+    await backend.put_relation(scope=ROOM, relation="grant_view", person_id=PERSON_B)
+    await _approved(svc, links)
+    await _approved_competing(svc, links)
+    outcome = await svc.commit("synthetic-request", now=NOW + timedelta(seconds=3))
+    assert outcome.status is OutcomeStatus.COMPLETE
+    outcome = await svc.commit("competing-request", now=NOW + timedelta(seconds=4))
+    assert outcome.status is OutcomeStatus.DENIED
+    assert outcome.detail == "a holder's current ownership or lifecycle changed"
+    assert await store.canonical_person(PERSON_B) == PERSON_A
+    assert (await store.record_for(account=ACCT_C)).person_id == PERSON_C
+    assert await backend.relations_on(scope=ROOM) == {("grant_view", PERSON_A)}
+    assert (await links.get("competing-request")).state is LinkState.PENDING
+
+
+async def test_concurrent_competing_link_commits_resolve_to_one_winner():
+    """The mutation gate serializes the two first-commitments: whichever
+    publishes first owns the shared account, and the other's revalidation
+    then fails — exactly one consolidation and one refusal, no partial."""
+    store, backend, _topology, registry, links, svc = await _linked_world()
+    await _person(store, registry, PERSON_C, ACCT_C)
+    await backend.put_relation(scope=ROOM, relation="grant_view", person_id=PERSON_B)
+    await _approved(svc, links)
+    await _approved_competing(svc, links)
+    outcomes = await asyncio.gather(
+        svc.commit("synthetic-request", now=NOW + timedelta(seconds=3)),
+        svc.commit("competing-request", now=NOW + timedelta(seconds=3)),
+    )
+    assert {o.status for o in outcomes} == {
+        OutcomeStatus.COMPLETE, OutcomeStatus.DENIED}
+    assert len(store.people) == 2 and len(store.aliases) == 1
+    winner = await store.canonical_person(PERSON_B)
+    assert winner in {PERSON_A, PERSON_C}
+    assert await backend.relations_on(scope=ROOM) == {("grant_view", winner)}
+    states = [
+        (await links.get("synthetic-request")).state,
+        (await links.get("competing-request")).state,
+    ]
+    assert states.count(LinkState.COMMITTED) == 1
 
 
 async def test_missing_retiring_kratos_identity_never_counts_as_confirmed_revocation():
