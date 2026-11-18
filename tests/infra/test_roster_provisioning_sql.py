@@ -198,14 +198,19 @@ async def test_independent_stores_arbitrate_observations_with_the_postgres_lock(
         old_task = asyncio.create_task(older.authority.apply(_sync("two-store-old", now - 1)))
         await asyncio.wait_for(attempted.wait(), timeout=10)
         async with engine.connect() as observer:
-            for _ in range(100):
+            started = time.monotonic()
+            blocked = False
+            while not blocked and time.monotonic() - started < 15:
                 blocked = await observer.scalar(sa.text(
                     "SELECT EXISTS (SELECT 1 FROM pg_locks "
                     "WHERE pid = :pid AND locktype = 'advisory' AND NOT granted)"
                 ), {"pid": waiter_pids[0]})
-                if blocked:
-                    break
-            assert blocked, "the independent store never contended on the database lock"
+                if not blocked:
+                    await asyncio.sleep(0.02)
+            assert blocked, (
+                "the independent store never contended on the database lock"
+                f" (pid {waiter_pids[0]},"
+                f" waited {time.monotonic() - started:.1f}s)")
         assert not old_task.done()
         release.set()
         assert (await new_task).status is OutcomeStatus.COMPLETE
