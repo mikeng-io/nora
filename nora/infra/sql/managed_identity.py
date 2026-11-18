@@ -134,7 +134,6 @@ class SqlBindingStore:
         conditions = [
             MANAGED_IDENTIFIER.c.platform == platform,
             MANAGED_IDENTIFIER.c.value == value,
-            MANAGED_ACCOUNT.c.state == AccountState.BOUND.value,
         ]
         if kind is not None:
             conditions.append(MANAGED_IDENTIFIER.c.kind == kind)
