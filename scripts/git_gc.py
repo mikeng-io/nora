@@ -167,12 +167,15 @@ def _open_prs(repo: Path) -> tuple[list[OpenPr] | None, str]:
         return None, err
     try:
         rows = json.loads(raw)
-        return [
+        prs = [
             OpenPr(str(r["headRefName"]), str(r["headRefOid"]), str(r["baseRefName"]))
             for r in rows
-        ], ""
+        ]
     except (KeyError, TypeError, ValueError) as exc:
         return None, f"unparseable gh output: {exc}"
+    if len(prs) >= int(GH_PR_LIMIT):
+        return None, f"open PR list may be truncated at {GH_PR_LIMIT}"
+    return prs, ""
 
 
 def _merged_pr_heads(repo: Path) -> tuple[dict[str, int] | None, str]:
@@ -345,6 +348,8 @@ def _classify_worktree(ctx: Context, wt: Worktree, current: Path) -> Item:
         item.verdict, item.reason = "keep", "locked"
     elif wt.bare:
         item.verdict, item.reason = "keep", "bare"
+    elif ctx.open_prs is None:
+        item.reason = f"open PR list unavailable ({ctx.gh_open_error})"
     elif wt.prunable:
         item.verdict, item.reason = "remove", "registration is stale"
     else:

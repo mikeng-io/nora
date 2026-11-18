@@ -333,6 +333,23 @@ def test_gh_failure_makes_remote_branches_unknown_and_removes_nothing(repo: Repo
     assert all(ln.startswith("unknown") for ln in remote_lines)
     assert repo.git("ls-remote", "origin").stdout == remote_before
     assert repo.git("branch", "--list", "chore/merged").stdout.strip()
+    stale = str((repo.tmp / "wt" / "stale").resolve())
+    assert _line(out, "worktree", stale).startswith("unknown")
+    assert (repo.tmp / "wt" / "stale").exists()
+
+
+def test_a_full_page_of_open_prs_is_treated_as_unknown(repo: Repo) -> None:
+    rows = [{"headRefName": f"x/{i}", "headRefOid": "0" * 40, "baseRefName": "master"}
+            for i in range(1000)]
+    (repo.tmp / "bin" / "gh").write_text(
+        "#!/bin/sh\ncase \"$*\" in\n"
+        f"  *\"--state open\"*) printf '%s' '{json.dumps(rows)}' ;;\n"
+        "  *) printf '[]' ;;\nesac\n")
+    remote_before = repo.git("ls-remote", "origin").stdout
+    out = _gc(repo, "--apply")
+    assert out.returncode != 0
+    assert "may be truncated" in _line(out, "remote branch", "origin/chore/merged")
+    assert repo.git("ls-remote", "origin").stdout == remote_before
 
 
 def test_fetch_failure_makes_merge_verdicts_unknown(repo: Repo) -> None:
