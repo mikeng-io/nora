@@ -30,7 +30,11 @@ def _claim(row: RetrievedRow, now: datetime) -> tuple[str, ...]:
         "support=unknown" if support is None else
         f"support={support.count}, last evidenced={_age(support.last_evidenced_at, now)}"
     )
-    return (f"part={row.part}", evidence, _content(row.content))
+    staleness = ""
+    if row.part == "situation":
+        count = row.items_since if row.items_since is not None else "unknown"
+        staleness = f"items_since={count}"
+    return (f"part={row.part}", evidence, staleness, _content(row.content))
 
 
 def _intention(row: RetrievedRow, _now: datetime) -> tuple[str, ...]:

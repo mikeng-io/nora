@@ -43,7 +43,7 @@ class SqlRetrieval:
     @asynccontextmanager
     async def open_retrieval(
         self, room: ReadingRoom, concerns: frozenset[str], as_of: datetime | None,
-        bounds: RetrievalBounds,
+        bounds: RetrievalBounds, now: datetime,
     ) -> AsyncIterator[ScopedGraph]:
         target, scope, dm_rooms = await self._authority.authority(room, concerns, as_of)
         try:
@@ -52,7 +52,9 @@ class SqlRetrieval:
                 opted_out = await self._authority.social_opt_outs(conn, scope)
                 scope = replace(scope, social_off=opted_out)
                 rows = await scoped_rows(conn, scope, target, dm_rooms)
-                yield _ScopedQueries(conn, rows, scope, bounds, self._model, self._authority.access)
+                yield _ScopedQueries(
+                    conn, rows, scope, bounds, self._model, self._authority.access, now, dm_rooms,
+                )
         except sa.exc.SQLAlchemyError as exc:
             raise RetrievalUnavailableError("statement_failed") from exc
 
@@ -61,6 +63,7 @@ class _ScopedQueries:
     def __init__(
         self, conn: AsyncConnection, rows: FromClause, scope: RetrievalScope,
         bounds: RetrievalBounds, model: str | None, access: IdentityAccess,
+        now: datetime, dm_rooms: frozenset[str],
     ) -> None:
         self.conn = conn
         self.rows = rows
@@ -68,6 +71,8 @@ class _ScopedQueries:
         self.bounds = bounds
         self.model = model
         self.access = access
+        self.now = now
+        self.dm_rooms = dm_rooms
 
     def _window(self, at: Any) -> sa.ColumnElement[bool]:
         return at.between(self.bounds.since, self.bounds.until)
@@ -194,6 +199,7 @@ class _ScopedQueries:
     ) -> tuple[RetrievedRow, ...]:
         return await load_rows(
             self.conn, self.rows, distances, already_shown, self.scope, self.access,
+            self.now, self.dm_rooms,
         )
 
 

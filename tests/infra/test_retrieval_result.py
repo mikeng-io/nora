@@ -122,6 +122,7 @@ async def test_rows_explain_their_identity_scope_time_people_evidence_and_ending
     assert intention.close_when == {
         "done_when": {"act": "fixture"}, "drop_when": {"at": later.isoformat()},
         "deadline": later.isoformat(), "review_time": later.isoformat(),
+        "trigger": None, "ending": None, "ended_at": None,
     }
     assert intention.evidence == (EvidenceHandle("cited-item"),)
 

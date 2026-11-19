@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.sql import FromClause
 
 from nora.access import IdentityAccess
+from nora.infra.sql.cognitive_graph_schema import GRAPH_STIMULUS
+from nora.infra.sql.cognitive_graph_store import visible_to_reads
 from nora.memory.adapters.retrieval_rows import tombstoned_ids
 from nora.memory.domain.graph import ClaimPart, Kind, PointerKind
 from nora.memory.domain.registration import ITEM_SOURCES, SEARCHABLE_SOURCES
@@ -33,7 +35,9 @@ _ROLE = {
     "requester_person_id": "author",
     "author": "author",
 }
-_CONDITION_FIELDS = ("done_when", "drop_when", "deadline", "review_time")
+_CONDITION_FIELDS = (
+    "done_when", "drop_when", "deadline", "review_time", "trigger", "ending", "ended_at",
+)
 _VALIDITY_FIELDS = ("valid_to", "window_end")
 
 
@@ -91,27 +95,29 @@ async def _people(
 
 async def _relations(
     conn: AsyncConnection, rows: FromClause, selected: Mapping[str, int],
-    scope: RetrievalScope,
+    scope: RetrievalScope, about_sources: tuple[str, ...],
 ) -> tuple[dict[str, list[RetrievedEdge]], dict[str, list[EvidenceHandle]]]:
     edge = rows.alias("result_edge").c
     target = rows.alias("citation_target").c
     image = edge.image
     src, dst, typ = (image[key].astext for key in ("src_id", "dst_id", "type"))
     deleted = dst.in_(tombstoned_ids(scope.unit))
-    evidence = (typ == "cites") & sa.or_(deleted, sa.exists(sa.select(1).where(
+    visible = sa.exists(sa.select(1).where(
         target.graph_id == dst,
-    )))
+    ))
+    evidence = (typ == "cites") & (deleted | visible)
+    outgoing = typ.in_(("serves", "closed_by")) | ((typ == "about") & src.in_(about_sources))
     links = await conn.execute(sa.select(src, dst, typ, deleted).where(
         edge.source == "edge", edge.state == "live", src.in_(selected),
-        sa.or_(dst.in_(selected), evidence),
+        sa.or_(dst.in_(selected), evidence, outgoing & visible),
     ).order_by(src, dst, typ))
     by_graph: dict[str, list[RetrievedEdge]] = {}
     handles: dict[str, list[EvidenceHandle]] = {}
     for source, destination, kind, tombstoned in links:
-        if destination in selected:
+        if destination in selected or kind != "cites":
             relation = RetrievedEdge(kind, source, destination)
             by_graph.setdefault(source, []).append(relation)
-            if destination != source:
+            if destination in selected and destination != source:
                 by_graph.setdefault(destination, []).append(relation)
         if kind == "cites":
             handles.setdefault(source, []).append(EvidenceHandle(destination, tombstoned))
@@ -141,9 +147,71 @@ async def _support(
     return {key: RetrievedSupport(total, at) for key, total, at in heads}
 
 
+async def _optional_counts(
+    conn: AsyncConnection, statement: sa.Select[Any],
+) -> dict[str, int] | None:
+    try:
+        async with conn.begin_nested():
+            return dict((await conn.execute(statement)).tuples().all())
+    except sa.exc.SQLAlchemyError:
+        return None
+
+
+async def _items_since(
+    conn: AsyncConnection, rows: FromClause, claims: tuple[str, ...],
+    scope: RetrievalScope, now: datetime,
+) -> dict[str, int] | None:
+    if not claims:
+        return {}
+    claim = rows.alias("situation_claim").c
+    item = rows.alias("items_since_claim").c
+    claim_room: sa.ColumnElement[Any] = claim.origin_room
+    item_room: sa.ColumnElement[Any] = item.origin_room
+    if scope.room_keys:
+        claim_room = sa.case(dict(scope.room_keys), value=claim_room, else_=claim_room)
+        item_room = sa.case(dict(scope.room_keys), value=item_room, else_=item_room)
+    until = min(now, scope.as_of) if scope.as_of is not None else now
+    statement = sa.select(claim.graph_id, sa.func.count(item.graph_id)).where(
+        claim.graph_id.in_(claims), item.kind == "item", item_room == claim_room,
+        item.event_time > claim.asserted_at, item.event_time <= until,
+    ).group_by(claim.graph_id)
+    return await _optional_counts(conn, statement)
+
+
+async def _published_occurrences(
+    conn: AsyncConnection, intentions: tuple[str, ...], scope: RetrievalScope,
+) -> dict[str, int] | None:
+    if not intentions:
+        return {}
+    stimulus = GRAPH_STIMULUS.c
+    statement = sa.select(stimulus.graph_id, sa.func.count()).where(
+        stimulus.unit == scope.unit, stimulus.kind == "intention_due",
+        stimulus.graph_id.in_(intentions), visible_to_reads(GRAPH_STIMULUS),
+    ).group_by(stimulus.graph_id)
+    if scope.as_of is not None:
+        statement = statement.where(stimulus.recorded_at <= scope.as_of)
+    return await _optional_counts(conn, statement)
+
+
+def _staleness_cause(
+    origin: str | None, scope: RetrievalScope, dm_rooms: frozenset[str],
+) -> str | None:
+    if origin is None:
+        return "items_since_unavailable"
+    if origin in dm_rooms and scope.room_keys.get(origin, origin) != scope.room:
+        return "items_since_out_of_scope"
+    return None
+
+
+def _has_time_trigger(image: Mapping[str, Any]) -> bool:
+    trigger = image.get("trigger")
+    return isinstance(trigger, dict) and trigger.get("kind") == "time"
+
+
 async def load_rows(
     conn: AsyncConnection, rows: FromClause, distances: Mapping[str, int],
     already_shown: frozenset[str], scope: RetrievalScope, access: IdentityAccess,
+    now: datetime, dm_rooms: frozenset[str],
 ) -> tuple[RetrievedRow, ...]:
     """Read the chosen revisions and serialize their visible relations."""
     row = rows.c
@@ -160,10 +228,26 @@ async def load_rows(
         tombstoned = frozenset(await conn.scalars(
             sa.select(removed.c.id).where(removed.c.id.in_(distances)),
         ))
-    edges, handles = await _relations(conn, rows, distances, scope)
+    edges, handles = await _relations(conn, rows, distances, scope, tuple(
+        key for key, entry in found.items() if entry["kind"] in ("claim", "intention")
+    ))
     support = await _support(conn, rows, tuple(
         key for key, entry in found.items() if entry["kind"] == "claim"
     ))
+    situations = {
+        key: _staleness_cause(entry["origin_room"], scope, dm_rooms)
+        for key, entry in found.items()
+        if entry["source"] == "claim" and entry["image"]["part"] == "situation"
+        and key not in tombstoned
+    }
+    counts = await _items_since(
+        conn, rows, tuple(key for key, cause in situations.items() if cause is None), scope, now,
+    )
+    scheduled = tuple(
+        key for key, entry in found.items() if entry["source"] == "intention"
+        and key not in tombstoned and _has_time_trigger(entry["image"])
+    )
+    published = await _published_occurrences(conn, scheduled, scope)
     result = []
     for graph_id, distance in distances.items():
         entry = found[graph_id]
@@ -173,6 +257,18 @@ async def load_rows(
         keys = {
             "intention": _CONDITION_FIELDS, "claim": _VALIDITY_FIELDS,
         }.get(source, ())
+        close_when = {} if unavailable else {key: image.get(key) for key in keys}
+        if graph_id in scheduled:
+            close_when["published_occurrences"] = (
+                published.get(graph_id, 0) if published is not None else None
+            )
+        staleness_cause = situations.get(graph_id)
+        items_since = None
+        if graph_id in situations and staleness_cause is None:
+            if counts is None:
+                staleness_cause = "items_since_unavailable"
+            else:
+                items_since = counts.get(graph_id, 0)
         result.append(RetrievedRow(
             graph_id=graph_id, kind=cast(Kind, kind), source=source if kind == "item" else None,
             basis=image["basis"], reasoning=image.get("reasoning"),
@@ -183,12 +279,13 @@ async def load_rows(
             persons=() if unavailable else await _people(conn, rows, access, source, image),
             edges=tuple(edges.get(graph_id, ())), evidence=tuple(handles.get(graph_id, ())),
             content=None if unavailable else _content(source, image),
-            close_when={} if unavailable else {key: image.get(key) for key in keys},
+            close_when=close_when,
             distance=distance, already_shown=graph_id in already_shown,
             unavailable="tombstoned_since" if unavailable else None,
             part=cast(ClaimPart, image["part"]) if kind == "claim" else None,
             pointer_kind=cast(PointerKind | None, image["pointer_kind"])
             if kind == "entity" else None,
             support=support.get(graph_id),
+            items_since=items_since, items_since_cause=staleness_cause,
         ))
     return tuple(result)
