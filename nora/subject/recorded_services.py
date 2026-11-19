@@ -19,6 +19,11 @@ from nora.subject.eval_evidence import EvidenceError
 from nora.subject.model_gateway import ModelGateway
 from nora.subject.routing_browser_fixture import BROWSER_BINDING, RoutingBrowserFixture
 
+_OPTIONAL_WEB_BINDINGS = frozenset({
+    "search.exa.url", "search.exa.contents_url",
+    "search.tavily.url", "search.tavily.extract_url",
+})
+
 
 def _object(value: Any, required: set[str], allowed: set[str]) -> dict[str, Any]:
     if not isinstance(value, dict) or not required <= value.keys() or value.keys() - allowed:
@@ -113,10 +118,13 @@ class Playback:
     routes.
     """
 
-    def __init__(self, data: dict[str, Any]) -> None:
+    def __init__(
+        self, data: dict[str, Any], *, optional_services: frozenset[str] = frozenset(),
+    ) -> None:
         #: The declared config-path -> service-name map.
         self.bindings: dict[str, str] = dict(data["bindings"])
         self._services = data["services"]
+        self._optional_services = optional_services
         self._positions = dict.fromkeys(self._services, 0)
         self._reads: dict[str, dict[str, Any]] = {name: {} for name in self._services}
         self._locks = {name: asyncio.Lock() for name in self._services}
@@ -147,9 +155,12 @@ class Playback:
         return apps
 
     def check(self) -> None:
-        """Every declared response reached in order, with repeatable reads seen at least once."""
-        if any(self._positions[name] != len(rows)
-               for name, rows in self._services.items()):
+        """Require full consumption of required services and any optional service used."""
+        if any(
+            self._positions[name] != len(rows)
+            and (name not in self._optional_services or self._positions[name] != 0)
+            for name, rows in self._services.items()
+        ):
             raise EvidenceError("external_response_not_consumed")
 
     def _handler(self, name: str, rows: list[Any]) -> Any:
@@ -218,6 +229,7 @@ class RecordedServices:
     def __init__(
         self, data: dict[str, Any], *, model_gateway: ModelGateway | None = None,
         browser_fixture: bool = False,
+        optional_services: frozenset[str] = frozenset(),
     ) -> None:
         _validate(data)
         if model_gateway is not None and any(
@@ -227,6 +239,13 @@ class RecordedServices:
             raise ValueError("recorded model bindings cannot shadow a declared model gateway")
         if browser_fixture and BROWSER_BINDING in data["bindings"]:
             raise ValueError("recorded computer binding conflicts with routing browser fixture")
+        for service in optional_services:
+            bindings = [path for path, name in data["bindings"].items() if name == service]
+            if (model_gateway is None or len(bindings) != 1
+                    or bindings[0] not in _OPTIONAL_WEB_BINDINGS
+                    or not data["services"].get(service)):
+                raise ValueError("optional service requires one recorded web provider binding")
+        self._optional_services = optional_services
         self._data = json.loads(json.dumps(data, allow_nan=False))
         self.model_gateway = model_gateway
         self.browser_fixture = browser_fixture
@@ -246,7 +265,7 @@ class RecordedServices:
 
     def playback(self) -> Playback:
         """One open of this snapshot: its apps, bindings and consumption check."""
-        return Playback(self._data)
+        return Playback(self._data, optional_services=self._optional_services)
 
     @asynccontextmanager
     async def open(self, database_url: str, redis: bool = False) -> AsyncIterator[IsolatedServices]:

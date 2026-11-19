@@ -93,6 +93,11 @@ Every selected case has a `routing_recording` entry in the private services
 manifest. Its `external` field holds the existing recording with non-model
 bindings. Its `model_gateway` declares the configured gateway upstream and
 allowed model aliases. Model bindings in the recording are refused.
+For model-selected search and fetch routes, `optional_services` lists separate
+recorded web-provider services that the draw may leave unused. Each named
+service has one Exa or Tavily search or fetch URL binding and a nonempty
+recording. If the draw uses the service, the full sequence must be consumed.
+Unmatched requests and incomplete used sequences remain evidence errors.
 For the generated offer-lookup case, set `browser_fixture` to `"offer_lookup"`.
 The case binds a loopback computerd endpoint and a temporary scope registry
 for the anchored room's unit, resolved by its policy. The fixture answers browser requests for

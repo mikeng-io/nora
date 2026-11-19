@@ -260,3 +260,47 @@ def test_reject_invalid_schema(tmp_path, change):
     path.write_text(json.dumps(data))
     with pytest.raises(ValueError):
         RecordedServices.load(path)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("paths", "expected_error"), [
+    ((), None),
+    (("/search", "/search"), None),
+    (("/search",), "external_response_not_consumed"),
+    (("/other",), "external_response_not_recorded"),
+    (("/search", "/search", "/search"), "external_response_not_recorded"),
+    (None, "external_response_not_consumed"),
+])
+async def test_routing_optional_provider_can_be_skipped_without_hiding_a_mismatch(
+    tmp_path, paths, expected_error,
+):
+    from contextlib import nullcontext
+
+    from evals.services import load_services
+
+    plan = {
+        "kind": "routing_recording",
+        "model_gateway": {"upstream": "http://127.0.0.1:9/v1", "models": ["generated"]},
+        "external": {
+            "version": 1,
+            "bindings": {"search.exa.url": "provider"},
+            "services": {"provider": [row(path="/search", status=200)] * 2},
+        },
+    }
+    if paths is not None:
+        plan["optional_services"] = ["provider"]
+    manifest = tmp_path / "services.json"
+    manifest.write_text(json.dumps({"version": 1, "corpora": {
+        "tool_selection": {"generated": plan},
+    }}))
+    recorded = load_services(manifest).corpora["tool_selection"]["generated"]
+    expectation = (
+        pytest.raises(EvidenceError, match=expected_error) if expected_error else nullcontext()
+    )
+    with expectation:
+        async with recorded.open("sqlite://") as env:
+            async with aiohttp.ClientSession() as client:
+                endpoint = env.urls["search.exa.url"]
+                for i, path in enumerate(paths or ()):
+                    async with client.post(endpoint + path, json={"id": "generated"}) as response:
+                        assert response.status == (200 if path == "/search" and i < 2 else 500)

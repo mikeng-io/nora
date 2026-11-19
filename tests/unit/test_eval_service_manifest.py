@@ -217,3 +217,51 @@ def test_routing_browser_fixture_declaration_is_closed(tmp_path, fixture, confli
     else:
         with pytest.raises(ValueError, match="routing browser fixture"):
             load_services(path)
+
+
+@pytest.mark.parametrize("variant", [
+    "valid", "unknown", "duplicate", "non-provider", "shared", "empty",
+    "not-a-list", "non-string", "recorded", "journey-world",
+])
+def test_routing_optional_services_are_limited_to_web_providers(tmp_path, variant):
+    bindings = {"search.exa.url": "provider"}
+    services = {"provider": [
+        {"method": "POST", "path": "/search", "response": {"status": 200}},
+    ]}
+    optional = ["provider"]
+    if variant == "unknown":
+        optional = ["other"]
+    if variant == "duplicate":
+        optional = ["provider", "provider"]
+    if variant == "not-a-list":
+        optional = "provider"
+    if variant == "non-string":
+        optional = [{}]
+    if variant == "non-provider":
+        bindings = {"honcho.base_url": "provider"}
+    if variant == "shared":
+        bindings["honcho.base_url"] = "provider"
+    if variant == "empty":
+        services["provider"] = []
+    external = {"version": 1, "bindings": bindings, "services": services}
+    corpus = "tool_selection"
+    if variant == "recorded":
+        plan = {**external, "optional_services": optional}
+    elif variant == "journey-world":
+        corpus = "autonomous_journey"
+        plan = {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
+                "optional_services": optional}
+    else:
+        plan = {
+            "kind": "routing_recording",
+            "model_gateway": {"upstream": "https://gateway.example.org/v1", "models": ["test"]},
+            "external": external,
+            "optional_services": optional,
+        }
+    path = tmp_path / "services.json"
+    path.write_text(json.dumps({"version": 1, "corpora": {corpus: {"generated": plan}}}))
+    if variant == "valid":
+        assert load_services(path).corpora[corpus]["generated"].bindings == bindings
+    else:
+        with pytest.raises(ValueError):
+            load_services(path)
