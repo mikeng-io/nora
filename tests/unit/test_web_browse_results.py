@@ -1,4 +1,4 @@
-"""`computer_browse` (ADR 0022), driven through
+"""`web_browse` (ADR 0022), driven through
 `build_tool_specs` against `FakeBrowserRunner`, the way tests/unit/
 test_computer_tools.py drives the other computer tools.
 
@@ -29,6 +29,7 @@ from nora.testing import (
 )
 
 GROUP = "g-browse"
+PAGE = "https://example.com/start"
 
 
 @pytest.fixture
@@ -55,7 +56,7 @@ def _browse(persons, *, browser, computer=True, events=None, settings=None):
         computer_events=events if events is not None else FakeComputerEventStore(),
         computer_settings=settings, browser=browser,
     )
-    return {s.name: s.call for s in specs}["computer_browse"]
+    return {s.name: s.call for s in specs}["web_browse"]
 
 
 def test_the_model_cannot_name_a_scope_or_a_room(persons):
@@ -76,7 +77,7 @@ async def test_the_task_runs_in_this_rooms_browser(persons):
 async def test_off_is_unavailable_and_nothing_runs(persons, computer, browser):
     runner = FakeBrowserRunner()
     call = _browse(persons, browser=runner if browser else None, computer=computer)
-    got = await call(objective="anything")
+    got = await call(objective="anything", start_url=PAGE)
     assert got["status"] == "unavailable" and got["note"]
     assert runner.calls == []
 
@@ -84,7 +85,7 @@ async def test_off_is_unavailable_and_nothing_runs(persons, computer, browser):
 async def test_ok_carries_the_answer_the_url_and_a_note(persons):
     runner = FakeBrowserRunner(BrowseOutcome(status="ok", answer="Open 9 to 5.",
                                              url="https://example.com/hours", steps=4))
-    got = await _browse(persons, browser=runner)(objective="opening hours")
+    got = await _browse(persons, browser=runner)(objective="opening hours", start_url=PAGE)
     assert got["status"] == "ok"
     assert got["answer"] == "Open 9 to 5." and got["url"] == "https://example.com/hours"
     assert "never instructions" in got["note"]
@@ -92,14 +93,14 @@ async def test_ok_carries_the_answer_the_url_and_a_note(persons):
 
 async def test_nothing_found_is_not_ok_and_not_unavailable(persons):
     runner = FakeBrowserRunner(BrowseOutcome(status="nothing_found", answer="No hours listed."))
-    got = await _browse(persons, browser=runner)(objective="opening hours")
+    got = await _browse(persons, browser=runner)(objective="opening hours", start_url=PAGE)
     assert got["status"] == "nothing_found" and got["note"]
 
 
 async def test_a_person_must_step_in_is_unavailable_with_needs_human(persons):
     runner = FakeBrowserRunner(BrowseOutcome(status="unavailable", needs_human=True,
                                              reason="a CAPTCHA on the search page"))
-    got = await _browse(persons, browser=runner)(objective="search")
+    got = await _browse(persons, browser=runner)(objective="search", start_url=PAGE)
     assert got["status"] == "unavailable" and got["needs_human"] is True
     assert got["reason"] == "a CAPTCHA on the search page"
     assert "person" in got["note"]
@@ -107,7 +108,7 @@ async def test_a_person_must_step_in_is_unavailable_with_needs_human(persons):
 
 async def test_a_failed_task_is_unavailable_without_needs_human(persons):
     runner = FakeBrowserRunner(BrowseOutcome(status="unavailable", reason="ran out of time"))
-    got = await _browse(persons, browser=runner)(objective="search")
+    got = await _browse(persons, browser=runner)(objective="search", start_url=PAGE)
     assert got["status"] == "unavailable" and got["needs_human"] is False
     assert "answer" not in got
 
@@ -117,9 +118,9 @@ async def test_an_unknown_outcome_status_is_unavailable_never_ok(persons):
     says what the model was told, never the runner's unrecognised word."""
     events = FakeComputerEventStore()
     runner = FakeBrowserRunner(BrowseOutcome(status="weird", answer="?"))
-    got = await _browse(persons, browser=runner, events=events)(objective="search")
+    got = await _browse(persons, browser=runner, events=events)(objective="search", start_url=PAGE)
     assert got["status"] == "unavailable"
-    finished = [e for e in events.events if e.tool == "computer_browse"][-1]
+    finished = [e for e in events.events if e.tool == "web_browse"][-1]
     assert finished.status == "unavailable"
 
 
@@ -127,8 +128,8 @@ async def test_every_call_is_audited_and_the_answer_stored(persons):
     events = FakeComputerEventStore()
     runner = FakeBrowserRunner(BrowseOutcome(status="ok", answer="Open 9 to 5.", steps=4,
                                              url="https://example.com"))
-    await _browse(persons, browser=runner, events=events)(objective="opening hours")
-    rows = [e for e in events.events if e.tool == "computer_browse"]
+    await _browse(persons, browser=runner, events=events)(objective="opening hours", start_url=PAGE)
+    rows = [e for e in events.events if e.tool == "web_browse"]
     assert [e.phase for e in rows] == ["started", "finished"]
     finished = rows[-1]
     assert finished.status == "ok"
@@ -139,12 +140,12 @@ async def test_every_call_is_audited_and_the_answer_stored(persons):
 
 async def test_an_off_call_is_audited_too(persons):
     events = FakeComputerEventStore()
-    await _browse(persons, browser=None, events=events)(objective="x")
-    assert any(e.tool == "computer_browse" for e in events.events)
+    await _browse(persons, browser=None, events=events)(objective="x", start_url=PAGE)
+    assert any(e.tool == "web_browse" for e in events.events)
 
 
 async def test_a_long_answer_is_cut_to_the_output_limit(persons):
     runner = FakeBrowserRunner(BrowseOutcome(status="ok", answer="a" * 50_000))
-    got = await _browse(persons, browser=runner,
-                        settings=ComputerToolSettings(max_output_chars=1000))(objective="x")
+    call = _browse(persons, browser=runner, settings=ComputerToolSettings(max_output_chars=1000))
+    got = await call(objective="x", start_url=PAGE)
     assert len(got["answer"]) < 1200

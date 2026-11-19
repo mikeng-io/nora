@@ -53,3 +53,18 @@ no command, `gh stack` was not installed, and the plan's `base` field read as
 a branch chain. PR #827 added the `gh api` commands and the stack field.
 
 **Seen:** 2026-11-19.
+
+### A brief's pre-flight names tests by full id and finds its write set by search
+
+Confirm every existing test a Done-when item names with an exact `def <name>(`
+search, never a prefix, and build a unit's write set from `git grep` for the
+names it removes or renames, run against the unit's own list. The reviewer
+repeats both searches; a gap there is the author's miss.
+
+**Evidence:** the first brief review of the browser replacement (NOR-21,
+PR #806) returned three blockers that the author's own searches would have
+caught: two revocation tests named by prefix did not exist, ten files naming the
+removed tool sat outside every unit's write set, and one clause of an item had no
+check.
+
+**Seen:** 2026-11-19.

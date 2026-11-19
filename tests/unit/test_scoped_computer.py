@@ -455,7 +455,7 @@ async def test_idle_expiry_sweeps_and_context_reports_it(monkeypatch) -> None:
         created_at=NOW, started_at=NOW, finished_at=NOW,
         actor="tag", requester_person_id="p1", platform="signal",
         conversation_id="room-a", conversation_type="group", tag_id="",
-        scope=UNIT_SCOPE, tool="computer_browse", path="direct",
+        scope=UNIT_SCOPE, tool="web_browse", path="direct",
         trace_id="", span_id="", status="ok",
         result={"note": "browse ended"}))
     tasks = FakeComputerTaskStore()
@@ -1080,7 +1080,7 @@ async def test_context_marks_a_dead_instances_tab_expired(monkeypatch) -> None:
         created_at=NOW, started_at=NOW, finished_at=NOW,
         actor="tag", requester_person_id="p1", platform="signal",
         conversation_id="room-a", conversation_type="group", tag_id="",
-        scope=UNIT_SCOPE, tool="computer_browse", path="direct",
+        scope=UNIT_SCOPE, tool="web_browse", path="direct",
         trace_id="", span_id="", status="ok", result={"note": "ran"}))
     reader = ComputerContextReader(
         sessions=sessions, events=events, runtime=rig.runtime,

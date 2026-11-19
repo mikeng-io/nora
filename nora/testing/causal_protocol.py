@@ -367,23 +367,6 @@ class CausalProtocol:
                     '{"id":""}' if "<gif_candidates " in user else '{"mode":"none","query":""}'
                 )
                 return "reaction", completion(model, content, stream=True)["response"]
-            if (
-                model == endpoint("browse", self.cfg.computer.browse.model)[2]
-                and "<browse_task " in user
-                and "browse_done" in tools
-            ):
-                if body["messages"][-1].get("role") == "tool":
-                    return "browse", completion(model, "Generated browse complete.", stream=True)[
-                        "response"
-                    ]
-                return "browse", self.tool(
-                    body,
-                    "browse_done",
-                    {
-                        "answer": "No result in the generated browser.",
-                        "found": False,
-                    },
-                )
             if model == endpoint("summons", self.cfg.llm.model)[2] and "<social_post " in user:
                 return "summons", completion(model, "", stream=True)["response"]
             if "<subagent_brief " in user and model == self.subagent_model:

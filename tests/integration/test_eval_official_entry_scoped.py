@@ -89,13 +89,13 @@ def _scripted_respond(evidence_root: Path, requests: list[dict]):
         step = len(requests)
         if step == 1:
             assert "load_tools" in names
-            assert "computer_browse" not in names
-            assert "computer_browse" in str(body["messages"])
+            assert "web_browse" not in names
+            assert "web_browse" in str(body["messages"])
             tool = {"name": "load_tools",
-                    "arguments": json.dumps({"names": ["computer_browse"]})}
+                    "arguments": json.dumps({"names": ["web_browse"]})}
         elif step == 2:
-            assert "computer_browse" in names
-            tool = {"name": "computer_browse",
+            assert "web_browse" in names
+            tool = {"name": "web_browse",
                     "arguments": json.dumps(
                         {"objective": "open the page",
                          "start_url": "https://example.com"})}
@@ -250,7 +250,7 @@ def _run_one_case(tmp_path, monkeypatch, pg_admin, pg_template,
     from evals.services import ServiceInputs
     from tests.sandbox_fixtures import OfflineSubjectServices
 
-    case_name = "route_computer_browse_a_page"
+    case_name = "route_web_browse_a_page"
     services = tmp_path / "services.json"
     services.write_text(json.dumps({"tool_selection": {case_name: "offline-subject-test"}}))
 

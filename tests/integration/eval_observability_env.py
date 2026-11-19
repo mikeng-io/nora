@@ -7,11 +7,30 @@ import json
 
 import httpx
 import pytest
-from strands import tool
+from strands import Agent, ModelRetryStrategy, tool
+from strands.agent.conversation_manager import SlidingWindowConversationManager
+from strands.tools.executors import SequentialToolExecutor
 
 import evals.backbone as backbone
 from nora.agent import factory
 from nora.subject.eval_evidence import RunEvidence
+
+
+def tool_agent(*, model, system_prompt, tools, trace_attributes, retry):
+    """A plain Strands agent over a generated model: one tool at a time, a short window."""
+    return Agent(
+        model=model, hooks=factory.replay_hooks(), name="generated", agent_id="generated",
+        retry_strategy=ModelRetryStrategy(
+            max_attempts=retry.max_attempts, initial_delay=retry.initial_delay,
+            max_delay=retry.max_delay,
+        ),
+        system_prompt=system_prompt, tools=tools,
+        conversation_manager=SlidingWindowConversationManager(
+            window_size=24, per_turn=True, pin_first=1,
+        ),
+        tool_executor=SequentialToolExecutor(), session_manager=None, callback_handler=None,
+        load_tools_from_directory=False, trace_attributes=trace_attributes,
+    )
 
 
 @pytest.fixture
@@ -98,7 +117,7 @@ async def model_round_trip(requests, *, sentinel="", rounds=2, reasoning_prefill
                                        http_client=transport)
         model = factory.create_model_provider(model="generated-model", max_tokens=100,
                                               temperature=0, client=client, tool_choice="auto")
-        agent = factory.create_browse_agent(
+        agent = tool_agent(
             model=model, system_prompt=(
                 "Judge the generated answer; return a score and reason." if judge
                 else "Increment the supplied integer."),
@@ -154,7 +173,7 @@ async def nested_or_reused(nested):
                                               temperature=0, client=client, tool_choice="auto")
         model.update_config(stream=False)
         def agent(tools):
-            return factory.create_browse_agent(model=model, system_prompt="Generated task",
+            return tool_agent(model=model, system_prompt="Generated task",
                                                tools=tools, trace_attributes={},
                                                retry=factory.build_retry_policy(timeout_seconds=5))
         child = agent([])
