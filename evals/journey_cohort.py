@@ -169,6 +169,28 @@ def bound_journey_services(
     return bound
 
 
+def _bind_routing_measurement(args: Any, only: Any) -> None:
+    from evals.scenarios import selected_cases
+    from evals.services import ROUTING_CORPUS
+    from nora.subject.recorded_services import RecordedServices
+
+    if not only or args.run_budget is None or args.judge or args.print_input:
+        raise ValueError(
+            "behavioral tool_selection requires explicit cases and --run-budget, "
+            "without a judge or render-only mode"
+        )
+    cases = selected_cases(ROUTING_CORPUS, only=only, memory_index=args.memory_index)
+    selected = {case.name for case in cases}
+    plans = args.service_inputs.corpora.get(ROUTING_CORPUS, {}) if args.service_inputs else {}
+    if selected != set(only) or set(plans) != selected or any(
+        not isinstance(plan, RecordedServices) or plan.model_gateway is None
+        for plan in plans.values()
+    ):
+        raise ValueError(
+            "behavioral tool_selection requires one gateway recording per selected case"
+        )
+
+
 def bound_selection(
     args: Any, names: list[str], only: Any,
 ) -> JourneyCohort | None:
@@ -186,17 +208,31 @@ def bound_selection(
     """
     from evals.measurement import for_measure
     from evals.scenarios import JOURNEY_CORPORA, selected_cases
+    from evals.services import ROUTING_CORPUS
 
     measurement = args.bound_measurement = for_measure(
         getattr(args, "measure", "protocol"))
     journey = [n for n in names if n in JOURNEY_CORPORA]
     if args.journey_cohort and not journey:
         raise ValueError("--journey-cohort applies to no selected corpus")
+    routing_plans = (args.service_inputs.corpora.get(ROUTING_CORPUS, {})
+                     if args.service_inputs else {})
+    from nora.subject.recorded_services import RecordedServices
+
+    has_routing_gateway = any(
+        isinstance(plan, RecordedServices) and plan.model_gateway is not None
+        for plan in routing_plans.values()
+    )
+    if measurement.behavioral and names == [ROUTING_CORPUS]:
+        _bind_routing_measurement(args, only)
+        return None
+    if has_routing_gateway:
+        raise ValueError("routing model gateways require a behavioral tool_selection run")
     if not journey:
         if measurement.behavioral:
             raise ValueError(
-                f"--measure behavioral binds {sorted(JOURNEY_CORPORA)} "
-                "only; no journey corpus is selected")
+                "--measure behavioral requires a declared journey or tool_selection run; "
+                "no journey corpus is selected")
         return None
     if len(journey) > 1:
         raise ValueError("each journey corpus declares its own cohort")
@@ -228,3 +264,21 @@ def bound_selection(
     bound_journey_services(journey[0], cases, plans, judges=cohort.judges,
                            measurement=args.bound_measurement)
     return cohort
+
+
+def grading_selection(args: Any, names: list[str], only: Any) -> dict[str, Any]:
+    selection: dict[str, Any] = {
+        "corpora": names, "only": sorted(only or ()),
+        "sample": args.sample, "judge_samples": args.judge_samples,
+    }
+    if args.bound_cohort:
+        selection.update(journey_cohort=args.bound_cohort.sha256,
+                         measurement=args.bound_measurement.mode)
+    elif args.bound_measurement.behavioral:
+        selection.update(
+            measurement=args.bound_measurement.mode,
+            routing_services_sha256=hashlib.sha256(args.service_inputs.raw).hexdigest(),
+            routing_budget=args.run_budget,
+            routing_input_bytes=args.run_input_bytes,
+        )
+    return selection

@@ -100,7 +100,7 @@ def eval_parser() -> argparse.ArgumentParser:
     ap.add_argument("--measure", choices=MEASURES, default="protocol",
                     help="the bound claim: `protocol` rehearsal (behavior "
                          "UNMEASURED, including declared gateway fixtures) or "
-                         "`behavioral` — journeys with a declared gateway")
+                         "`behavioral` — declared journeys or tool selection with a model gateway")
     ap.add_argument(
         "--case", action="append", dest="cases", metavar="NAME",
         help="run only these cases of the named corpus; repeatable. A "
