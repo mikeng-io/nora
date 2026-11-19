@@ -35,6 +35,7 @@ from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.catalog.groups import (
     COMPUTER_TOOLS,
     DOCUMENT_TOOLS,
+    GRAPH_PASS_TOOLS,
     HONCHO_MEMORY_TOOLS,
     HOT_TOOLS,
     LOADER_TOOL,
@@ -434,7 +435,7 @@ class ToolRegistry:
             | ({"memory_search", "memory_read"} if graph_retrieval is None else set())
             | (HONCHO_MEMORY_TOOLS
                if graph_retrieval is not None or memory_search is not None else set())
-            | {"intention_commit"}
+            | GRAPH_PASS_TOOLS
         )
         self._subagent = subagent
         self._video = video

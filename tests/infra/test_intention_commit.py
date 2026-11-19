@@ -223,3 +223,16 @@ async def test_revise_stores_the_replacement_and_close_refuses_the_stale_base(en
     rows = await _rows(engine, INTENTION)
     assert (rows[current]["replaces"], rows[base]["state"]) == (base, "superseded")
     assert closed["operations"][0]["reason"] == "stale_base"
+
+
+async def test_a_later_commit_can_revise_an_intention_opened_in_the_same_pass(engine):
+    tool = _tool(engine)
+    with _pass("item-1"):
+        opened = await tool([_open()])
+        assert opened["status"] == "ok", opened
+        base = opened["operations"][0]["id"]
+        revised = await tool([_open(op="revise", base=base)])
+    assert revised["status"] == "ok", revised
+    current = revised["operations"][0]["id"]
+    rows = await _rows(engine, INTENTION)
+    assert (rows[current]["replaces"], rows[base]["state"]) == (base, "superseded")

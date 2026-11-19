@@ -12,7 +12,7 @@ from __future__ import annotations
 import tiktoken
 
 from nora.agent.catalog.entries import NATIVE_TOOLS
-from nora.agent.catalog.groups import HOT_TOOLS, LOADER_TOOL
+from nora.agent.catalog.groups import GRAPH_PASS_TOOLS, HOT_TOOLS, LOADER_TOOL
 from nora.agent.catalog.surface import on_memory_surface
 from nora.agent.registry import ToolRegistry
 from nora.agent.surface import DREAMER_ONLY_TOOLS, ToolScope
@@ -69,12 +69,13 @@ def _lines() -> list[str]:
 
 def _tag_catalogue(platform: str, *, graph: bool = False) -> list[str]:
     """The catalogue lines a TAG turn on `platform` is shown: every registered
-    tool its scope admits, never a Dreamer-only one, on ONE memory surface
+    tool its scope admits, excluding tools wired only in graph passes, on ONE memory surface
     (DEC-316: `graph` is `[memory.index] read`)."""
     scope = ToolScope(platform=platform, dreamer=False)
     return [
         line for line in _lines()
         if scope.admits(name := line.split(" — ")[0][2:])
+        and name not in GRAPH_PASS_TOOLS
         and on_memory_surface(name, graph=graph)
     ]
 

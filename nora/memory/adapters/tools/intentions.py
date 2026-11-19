@@ -80,7 +80,9 @@ def _make_intention_commit(deps):
         parsed = [parse_intention_operation(raw, context) for raw in operations]
         proposals = tuple(entry for entry in parsed if not isinstance(entry, Refusal))
         admitted = await admission.admit(proposals, context, shown) if proposals else None
-        stored = iter(admitted.outcomes if admitted is not None else ())
+        admission_outcomes = admitted.outcomes if admitted is not None else ()
+        shown.update(outcome.id for outcome in admission_outcomes if isinstance(outcome, Stored))
+        stored = iter(admission_outcomes)
         outcomes = [
             _entry(entry if isinstance(entry, Refusal) else next(stored)) for entry in parsed
         ]
