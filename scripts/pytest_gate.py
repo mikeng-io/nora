@@ -29,6 +29,8 @@ TIMING_TESTS = (
     "tests/integration/test_latency.py",
     "tests/unit/test_engagement_pipeline.py",
     "tests/integration/test_bridge_queue_telemetry.py",
+    "tests/integration/subject/test_autonomous_journey_sdk.py",
+    "tests/integration/test_managed_circle_cost.py",
 )
 
 
