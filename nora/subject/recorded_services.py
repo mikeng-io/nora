@@ -270,8 +270,6 @@ class RecordedServices:
             )
             playback.bind(environment)
             async with environment:
-                if fixture is not None:
-                    fixture.provision(environment.urls[BROWSER_BINDING])
                 yield environment
                 environment.check()
                 playback.check()

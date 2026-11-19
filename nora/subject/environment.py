@@ -32,7 +32,7 @@ from nora.subject.model_gateway import (
     ModelGateway,
     ResolvedGateway,
 )
-from nora.subject.routing_browser_fixture import RoutingBrowserFixture
+from nora.subject.routing_browser_fixture import BROWSER_BINDING, RoutingBrowserFixture
 
 #: The declared model upstream reachable for an in-flight admitted dispatch
 #: on this task — the only non-owned destination the process guard opens,
@@ -129,6 +129,16 @@ class IsolatedServices:
             url == self.redis_url or any(
                 origin.scheme == "http" and origin.netloc == urlsplit(owned).netloc
                 for owned in self.urls.values()))
+
+    @property
+    def has_routing_browser(self) -> bool:
+        return self._routing_browser is not None
+
+    def provision_routing_browser(self, unit: str) -> None:
+        if self._routing_browser is None:
+            raise RuntimeError("routing browser fixture is unavailable")
+        self.check()
+        self._routing_browser.provision(self.urls[BROWSER_BINDING], unit)
 
     def bind_config(self, cfg: Any) -> Any:
         """Change resource addresses, retaining behavior and API base paths."""

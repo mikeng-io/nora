@@ -95,12 +95,13 @@ bindings. Its `model_gateway` declares the configured gateway upstream and
 allowed model aliases. Model bindings in the recording are refused.
 For the generated offer-lookup case, set `browser_fixture` to `"offer_lookup"`.
 The case binds a loopback computerd endpoint and a temporary scope registry
-for the default Nora unit. The fixture answers browser requests for
+for the anchored room's unit, resolved by its policy. The fixture answers browser requests for
 `https://offers.example.org/item` with a fixed branch offer and unpublished
 stock. Keep the ordinary computer settings for the measured tool surface.
 The fixture owns its endpoint and registry, so the manifest supplies neither
 and cannot also declare a recorded `computer.base_url` binding.
-The contract selection binds the behavioral mode, manifest fingerprint
+For sampled routing, declare one service plan per selected case. Each draw
+opens its own playback and fixture from that plan. The contract selection binds the behavioral mode, manifest fingerprint
 and request budget to the roster. The existing gateway fence and budget apply to every
 model dispatch. The evidence retains routing verdicts alongside execution
 and validity.
