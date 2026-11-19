@@ -15,6 +15,7 @@ from nora.domain.graph_stimuli import GraphStimulus
 from nora.domain.lineage import Lineage
 from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY, REGISTRY
 from nora.infra.sql.cognitive_graph_store import (
+    AdmissionTopic,
     GraphWriteError,
     SqlCognitiveGraph,
     dependent_claims,
@@ -48,6 +49,10 @@ class SqlAdmissionStore:
         self, decision: Admitted, context: PassContext, stored: Stored,
     ) -> None:
         row, edges = _serialize(decision, context)
+        topics = tuple(
+            AdmissionTopic(*_serialize(topic, context), topic.base.state if topic.base else None)
+            for topic in decision.topics
+        )
         base, survivor = decision.base, decision.survivor
         derive_about = isinstance(fields(decision.proposal), (CreateClaim, CreateIntention))
         revisions = isinstance(decision.proposal, (Revise, Retire))
@@ -66,6 +71,7 @@ class SqlAdmissionStore:
                 base_state=base.state if base is not None and survivor is None else None,
                 retire=isinstance(decision.proposal, Retire),
                 merge=(base.id, survivor.id) if base is not None and survivor is not None else None,
+                topics=topics,
                 after_write=after_write if derive_about or revisions else None,
             )
         except GraphWriteError as exc:

@@ -72,6 +72,7 @@ class Admitted:
     survivor: RowFacts | None = None
     owner: str | None = None
     owed_to: str | None = None
+    topics: tuple[Admitted, ...] = ()
 
 
 class _RefusalError(Exception):
@@ -139,6 +140,60 @@ def row_references(proposal: Proposal) -> frozenset[str]:
     return frozenset(ids)
 
 
+def topic_targets(proposal: Proposal) -> tuple[str, ...]:
+    data = fields(proposal)
+    if not isinstance(data, (CreateClaim, CreateIntention)) or not data.citations:
+        return ()
+    return tuple(dict.fromkeys(
+        link.target for link in data.links if link.type == "about" and link.source == data.id
+    ))
+
+
+def pending_topics(proposals: Mapping[int, Proposal]) -> dict[str, int]:
+    targets = {target for proposal in proposals.values() for target in topic_targets(proposal)}
+    return {
+        data.id: index
+        for index, proposal in proposals.items()
+        if isinstance(data := fields(proposal), CreateEntity)
+        and not data.links and data.id in targets
+    }
+
+
+def decide_admission(
+    proposal: Proposal,
+    context: PassContext,
+    shown: Collection[str],
+    rows: Mapping[str, RowFacts],
+    refs: ResolvedReferences,
+    *,
+    watch_kinds: Collection[str] = (),
+    topics: Iterable[Proposal] = (),
+) -> Admitted | Refusal:
+    """Decide a proposal with the evidenced topics it can bring into existence."""
+    facts = dict(rows)
+    available = set(shown)
+    admission = _Admission(context, available, facts, refs, watch_kinds)
+    try:
+        data = fields(proposal)
+        targets = frozenset(topic_targets(proposal))
+        choices = []
+        for topic in topics:
+            topic_data = fields(topic)
+            if not isinstance(data, (CreateClaim, CreateIntention)) or (
+                not isinstance(topic_data, CreateEntity) or topic_data.id not in targets
+                or topic_data.id in available
+            ):
+                continue
+            evidence = admission._citations(data, data.kind)
+            choice = admission.decide(topic, topic_evidence=evidence)
+            choices.append(choice)
+            available.add(choice.row.id)
+            facts[choice.row.id] = choice.row
+        return replace(admission.decide(proposal), topics=tuple(choices))
+    except _RefusalError as exc:
+        return exc.refusal
+
+
 def admit_batch(
     proposals: Iterable[Proposal],
     context: PassContext,
@@ -148,33 +203,49 @@ def admit_batch(
     *,
     watch_kinds: Collection[str] = (),
 ) -> tuple[Admitted | Refusal, ...]:
-    """Decide in proposal order, using only the pass snapshot and earlier admissions."""
+    """Decide in order, including the new topics linked by an evidenced sibling."""
+    indexed = dict(enumerate(proposals))
+    pending = pending_topics(indexed)
+    deferred = set(pending.values())
     facts = dict(rows)
     available = set(shown)
-    decisions: list[Admitted | Refusal] = []
-    for proposal in proposals:
-        try:
-            choice = _Admission(context, available, facts, refs, watch_kinds).decide(proposal)
-        except _RefusalError as exc:
-            decisions.append(exc.refusal)
-        else:
-            decisions.append(choice)
-            facts[choice.row.id] = choice.row
-            if choice.base is not None:
-                if choice.survivor is not None:
-                    facts[choice.base.id] = replace(
-                        choice.base,
-                        state="merged",
-                        origin_room=choice.row.origin_room,
-                        room_is_dm=choice.row.room_is_dm,
-                        exposure=choice.row.exposure,
-                        excluded_persons=choice.row.excluded_persons,
-                        lineage=choice.row.lineage,
-                    )
-                elif choice.base.kind != "entity":
-                    facts[choice.base.id] = replace(choice.base, state="superseded")
-            available.add(choice.row.id)
-    return tuple(decisions)
+    decisions: dict[int, Admitted | Refusal] = {}
+    for index, proposal in indexed.items():
+        if index in deferred:
+            continue
+        choice = decide_admission(
+            proposal, context, available, facts, refs, watch_kinds=watch_kinds,
+            topics=(
+                indexed[pending[target]] for target in topic_targets(proposal) if target in pending
+            ),
+        )
+        decisions[index] = choice
+        if isinstance(choice, Refusal):
+            continue
+        for topic in choice.topics:
+            decisions[pending.pop(topic.row.id)] = topic
+            facts[topic.row.id] = topic.row
+            available.add(topic.row.id)
+        facts[choice.row.id] = choice.row
+        if choice.base is not None:
+            if choice.survivor is not None:
+                facts[choice.base.id] = replace(
+                    choice.base,
+                    state="merged",
+                    origin_room=choice.row.origin_room,
+                    room_is_dm=choice.row.room_is_dm,
+                    exposure=choice.row.exposure,
+                    excluded_persons=choice.row.excluded_persons,
+                    lineage=choice.row.lineage,
+                )
+            elif choice.base.kind != "entity":
+                facts[choice.base.id] = replace(choice.base, state="superseded")
+        available.add(choice.row.id)
+    for index in pending.values():
+        decisions[index] = decide_admission(
+            indexed[index], context, available, facts, refs, watch_kinds=watch_kinds,
+        )
+    return tuple(decisions[index] for index in indexed)
 
 
 class _Admission:
@@ -192,7 +263,7 @@ class _Admission:
         self.refs = refs
         self.watch_kinds = watch_kinds
 
-    def decide(self, proposal: Proposal) -> Admitted:
+    def decide(self, proposal: Proposal, *, topic_evidence: tuple[RowFacts, ...] = ()) -> Admitted:
         data = fields(proposal)
         if not isinstance(
             data, (CreateClaim, CreateEntity, CreateIntention, AddEdge, Retire, MergeEntities)
@@ -230,21 +301,22 @@ class _Admission:
             and not evidence
         ):
             raise _RefusalError("trigger_without_evidence", "citations")
+        grounding = (*evidence, *topic_evidence)
         if not isinstance(data, AddEdge):
-            self._reasoning(data.basis, data.reasoning, data.confidence, evidence)
+            self._reasoning(data.basis, data.reasoning, data.confidence, grounding)
         owner, owed_to = self._shape(data)
         state = self._state(proposal, kind)
-        source_ref = _source_reference(data, evidence)
+        source_ref = _source_reference(data, grounding)
         candidate = RowFacts(
             data.id, kind, data.basis, state, self.context.unit, source_ref=source_ref,
             form=data.form if isinstance(data, CreateIntention) else None,
         )
         links, endpoints = self._relations(data, candidate, evidence, base, survivor)
-        if isinstance(data, CreateEntity) and (
+        if isinstance(data, CreateEntity) and not topic_evidence and (
             not evidence or not any(link.type != "cites" for link in links)
         ):
             raise _RefusalError("orphan_entity", "links")
-        row = self._scope(data, kind, state, (*evidence, *endpoints), base)
+        row = self._scope(data, kind, state, (*grounding, *endpoints), base)
         row = replace(
             row,
             source_ref=source_ref,
