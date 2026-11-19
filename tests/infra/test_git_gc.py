@@ -262,7 +262,7 @@ def test_merged_local_and_remote_branches_are_removed(repo: Repo) -> None:
 
 
 def test_branch_whose_tip_is_a_merged_pr_head_is_removed(repo: Repo) -> None:
-    """A squash-merged branch tip is absent from master's ancestry."""
+    """feat/squashed is no ancestor of master; its tip is the head of merged PR 5."""
     sha = repo.head("feat/squashed")
     assert repo.git("merge-base", "--is-ancestor",
                     "feat/squashed", "master").returncode == 1
@@ -311,7 +311,7 @@ def test_an_open_pr_base_equal_to_master_is_kept(repo: Repo) -> None:
 
 
 def test_open_pr_head_wins_over_merged_head_custody(repo: Repo) -> None:
-    """The cleanup keeps a merged branch tip that is also an open PR head."""
+    """feat/restacked's tip is the head of merged PR 7 AND an open head: kept by the guard."""
     out = _gc(repo, "--apply")
     assert "head of an open PR" in _line(out, "local branch", "feat/restacked")
     assert "head of an open PR" in _line(out, "remote branch", "origin/feat/restacked")

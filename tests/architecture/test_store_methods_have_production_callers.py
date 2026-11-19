@@ -167,11 +167,6 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     # `assess.py`'s `recent` needs no pin: `recent` is already ambiguous
     # (audit.py/decision_log.py/tag_traces.py/tool_call_log.py all define one),
     # so `_ambiguous` skips it before the pin table is ever consulted.
-    ("reminders.py", "in_rooms"): _Pin(
-        "operator_script",
-        "The cognition replay reader in scripts/cognition_loop/state.py reads all "
-        "reminder states in the declared rooms to compare before and after a turn.",
-    ),
     ("computer_events.py", "orphaned_starts"): _Pin(
         "read_back_affordance",
         "The computer audit's crash marker (design/sandbox-runtime §12): "
@@ -235,6 +230,13 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "lane reads it this stage: the context and grounding reads take "
         "recent/heads/by_ids/head_for_handle only.",
     ),
+    ("reminders.py", "in_rooms"): _Pin(
+        "operator_script",
+        "Every reminder row in the unit's rooms, every state — the ledger "
+        "half of the unit state dump `scripts/cognition_loop/state.py` "
+        "builds, which is the operator's tool outside `nora/` and outside "
+        "`_call_sites`' scan. `all_pending` serves the pending work queue.",
+    ),
 }
 
 # Names this file CANNOT resolve, pinned so the set cannot grow in silence.
@@ -247,6 +249,8 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
 # cannot be attributed: defined on more than one store class, or also defined on
 # a non-Protocol class elsewhere under `nora/`. One method KNOWN to have no
 # production caller hides in here and cannot be proven so: `tag_traces.recent`.
+# A second, `rollups.rows` — the unit rollup table's raw read-back — joined it
+# when `JourneyDriver.rows` (nora/subject/journey.py) made the name a namesake.
 #
 # `lookup` is here because `MediaObjectStore.lookup` shares the name:
 # `nora/infra/version.py` and `nora/infra/transit/catalogue.py` each define an
@@ -272,8 +276,6 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         "set_display_name", "set_lifecycle", "set_membership",
         "set_scoped_name", "update_operation",
         "aclose", "append", "claim", "create", "delete", "fail",
-        # Replay and selected identity adapters also declare these store verbs.
-        "bind", "identity_ids", "latest_fix", "load", "rows", "since", "window",
         # Message targets and observation grounding have distinct by-id stores.
         "by_ids",
         # The historical observation facade withholds the SQL store's current heads.
@@ -318,6 +320,26 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         # `nora/instructions/reload.py`) — a `.current(...)` call cannot be
         # attributed.
         "current",
+        # `SqlBrowserTabStore.bind` shares the name with the playback's
+        # `Playback.bind` (nora/subject/recorded_services.py).
+        "bind",
+        # `SqlBindingStore.identity_ids` shares the name with
+        # `IdentityAccess.identity_ids` (nora/access.py) and
+        # `FileBindingStore.identity_ids` (nora/people/adapters/file_backend.py).
+        "identity_ids",
+        # `PresenceStore.latest_fix` and `.window` share their names with
+        # `SelectedPresenceStore` (nora/location/adapters/selected_presence.py).
+        "latest_fix", "window",
+        # `SqlComprehendRecords.load` shares the name with
+        # `RecordedServices.load` (nora/subject/recorded_services.py).
+        "load",
+        # `SqlRollupStore.rows` shares the name with `JourneyDriver.rows`
+        # (nora/subject/journey.py); `self.rows(...)` calls cannot be
+        # attributed, which is why its pin row was retired.
+        "rows",
+        # `SqlRecordStore.since` shares the name with `RunEvidence.since`
+        # (nora/subject/eval_evidence.py).
+        "since",
     }
 )
 

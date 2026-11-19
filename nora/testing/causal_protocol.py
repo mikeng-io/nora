@@ -181,9 +181,7 @@ class CausalProtocol:
         return result
 
     def source(self, text, words):
-        matches = re.findall(
-            r'<m n="(\d+)"[^>]*>(.*?)</m\s*>', html.unescape(text), re.DOTALL,
-        )
+        matches = re.findall(r'<m n="(\d+)"[^>]*>(.*?)</m>', html.unescape(text), re.DOTALL)
         return next(int(mid) for mid, body in matches if words in html.unescape(body))
 
     def _fold(self, request, text):
