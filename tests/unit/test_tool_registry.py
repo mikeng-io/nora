@@ -242,7 +242,7 @@ def test_the_registry_exposes_every_declared_tool():
         # Nora's computer (DEC-243).
         "computer_run", "computer_read", "computer_write", "computer_edit", "computer_export",
         "computer_import", "computer_session_list",
-        # a whole browser task, by a sub-agent.
+        # a whole browser task: a page that needs clicking, choosing or searching.
         "web_browse",
         # the scoped pair: a picture of a task's own tab; a queued or
         # running task stopped.
@@ -942,7 +942,7 @@ ACT_VERBS = frozenset({"document_revise",
     # a command, a file write and a file edit all
     # change the room's workspace.
     "computer_run", "computer_write", "computer_edit",
-    # the sub-agent clicks and types in a page.
+    # the browser clicks, types and scrolls in a page.
     "web_browse",
     # S3a: an export publishes (a Drop link, an attachment) or stores, and an
     # import writes into the workspace.
