@@ -40,7 +40,9 @@ def older_than(table: sa.Table, now: datetime, days: int) -> sa.ColumnElement[bo
     return sa.func.coalesce(table.c.occurred_at, table.c.asserted_at) < now - timedelta(days=days)
 
 
-def _key_match(columns: Sequence[Any], rows: Sequence[sa.RowMapping]) -> sa.ColumnElement[bool]:
+def _key_match(
+    columns: Sequence[sa.Column[Any]], rows: Sequence[sa.RowMapping],
+) -> sa.ColumnElement[bool]:
     if len(columns) == 1:
         return columns[0].in_([row[columns[0].key] for row in rows])
     return sa.tuple_(*columns).in_([tuple(row[c.key] for c in columns) for row in rows])
@@ -59,17 +61,19 @@ async def _lock_candidates(
     # the expiry predicate in case the source was refreshed while we waited.
     registry = REGISTRY.c
     keys = sorted({(row["graph_id"], row["unit"]) for row in candidates if row["graph_id"]})
-    for group in batched(keys, _BATCH):
+    for key_group in batched(keys, _BATCH):
         await conn.execute(sa.select(registry.id).where(
-            sa.tuple_(registry.id, registry.unit).in_(group),
+            sa.tuple_(registry.id, registry.unit).in_(key_group),
         ).order_by(registry.id, registry.unit).with_for_update(key_share=True))
-    rows = []
-    for group in batched(candidates, _BATCH):
+    rows: list[sa.RowMapping] = []
+    for candidate_group in batched(candidates, _BATCH):
         identities = {
-            tuple(row[col.key] for col in pk): (row["graph_id"], row["unit"]) for row in group
+            tuple(row[col.key] for col in pk): (row["graph_id"], row["unit"])
+            for row in candidate_group
         }
         locked = (await conn.execute(
-            sa.select(table).where(*where, _key_match(pk, group)).order_by(*pk).with_for_update(),
+            sa.select(table).where(*where, _key_match(pk, candidate_group))
+            .order_by(*pk).with_for_update(),
         )).mappings()
         rows.extend(row for row in locked if identities[
             tuple(row[col.key] for col in pk)
@@ -170,7 +174,8 @@ async def tombstone_items(
         except sa.exc.IntegrityError as exc:
             if not skip_blocked or getattr(exc.orig, "sqlstate", None) != "23503":
                 raise
-            log.warning("prune skipped %s item because of a foreign key", table.name)
+            key = tuple(row[column.key] for column in primary_key)
+            log.warning("prune skipped %s item key=%r because of a foreign key", table.name, key)
             if metrics is not None:
                 metrics.inc("nora_errors_total", stage="prune")
             continue

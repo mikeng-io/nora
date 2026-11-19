@@ -167,7 +167,7 @@ def visible_to_reads(table: FromClause) -> sa.ColumnElement[bool]:
     registry = REGISTRY.alias().c
     claim = CLAIM.alias().c
     request = FORGET_REQUEST.alias().c
-    targets = [identity]
+    targets: list[sa.ColumnElement[str]] = [identity]
     if "support_count" in c:
         targets.append(c.claim_id)
     return sa.and_(
@@ -179,7 +179,7 @@ def visible_to_reads(table: FromClause) -> sa.ColumnElement[bool]:
         ),
         ~sa.exists().where(
             request.unit == c.unit, request.state == "live",
-            request.targets.overlap(array(targets, type_=sa.Text)),
+            request.targets.overlap(array(targets)),
         ),
     )
 

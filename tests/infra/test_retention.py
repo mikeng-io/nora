@@ -209,7 +209,9 @@ async def test_prune_skips_a_referenced_message_and_finishes_both_sweeps(engine,
         ("messages", _PERSON, epoch_ms(_MS + day + 1), epoch_ms(_MS + day + 1)),
     }
     assert metrics.get("nora_errors_total", stage="prune") == 2
-    assert caplog.messages.count("prune skipped messages item because of a foreign key") == 2
+    assert caplog.messages.count(
+        f"prune skipped messages item key={(blocked,)!r} because of a foreign key"
+    ) == 2
 
 
 async def test_message_count_prune_tombstones_all_three_cascade_children(engine):
