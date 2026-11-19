@@ -94,9 +94,9 @@ from nora.agent.prefill import (
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room, trigger_message_ids
 from nora.domain import audience as audience_names
-from nora.domain.culture import CultureRevision
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.external_files import render_file_links
+from nora.domain.models import TagContext
 from nora.domain.ports import (
     EngagementRequest,
     LinkPreviewSource,
@@ -104,10 +104,9 @@ from nora.domain.ports import (
     RecordStore,
     RosterSource,
 )
-from nora.domain.profile import ProfileView
 from nora.domain.tag_trace import VALID_OUTCOMES, TagTrace
 from nora.domain.tool_call_log import ToolCallLogStore
-from nora.memory import record_pass_silence
+from nora.memory import ActAuthority, active_act_authority, record_pass_silence
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.obs.tracing import (
     TRACE_KIND,
@@ -125,7 +124,7 @@ from nora.tag import Debounce
 
 from .mentions import MentionRenderer
 from .slots import ConversationSlots
-from .stages import admission, command, debrief, deliver, feedback, indicate, invoke
+from .stages import admission, command, debrief, deliver, feedback, graph_debrief, indicate, invoke
 from .stages.admission import Admission
 from .stages.indicate import Indicator
 from .stages.invoke import AgentRunner
@@ -219,7 +218,8 @@ class EngagementPipeline:
         tool_call_log_store: ToolCallLogStore | None = None,
         reasoning_strip_store: Any = None,
         tag_trace_store: Any = None,
-        debrief_wiring: debrief.Wiring | None = None,
+        debrief_wiring: graph_debrief.Wiring | None = None,
+        standing_replay_wiring: debrief.Wiring | None = None,
         decisions: DecisionLogRecorder | None = None,
         clock: Callable[[], datetime] | None = None,
         room_commands: Any = None,
@@ -290,7 +290,7 @@ class EngagementPipeline:
         self._reasoning_strip_store = reasoning_strip_store
         # Production retention is unconditional; absent offline stores skip writes in finally.
         self._tag_trace_store = tag_trace_store
-        # debrief.Wiring is flag-gated; absence runs no fold or extra await, unlike retention.
+        self._standing_replay_wiring = standing_replay_wiring
         self._debrief_wiring = debrief_wiring
         # R-10/R-30: shared with FirePath, keyed by platform/room; every exit releases and drains.
         self._slots = slots
@@ -513,83 +513,9 @@ class EngagementPipeline:
                 request.message.platform).resolve_identity()
             await self._run_admitted(request, identity, indicator)
 
-    def _profile_name_of(self, person_id: str) -> str:
-        """A told-by person id as a NAME for the fold's `<profile>` block
-        (45 §5): the identity index's name, "someone" when it has none (R-18 —
-        never the id itself)."""
-        # Managed names need the async read surface — a sync fold gets the
-        # same honest "someone" an unmapped file id gets.
-        ref = (self._persons.by_person.get(person_id)
-               if self._access.is_file_backend else None)
-        return ref.name if ref is not None else "someone"
-
-    async def _debrief(
-        self, *, trace: TagTrace | None, platform: str,
-        culture: CultureRevision | None = None,
-        profile_room: ProfileView | None = None,
-    ) -> None:
-        """Hand this finished turn to the debrief stage, or do nothing at all.
-
-        Two guards, and they are different questions rather than one written
-        twice. **No wiring** is `[standing] enabled = false` — the shipped
-        default and every offline/eval composition — and it must cost nothing:
-        this returns without awaiting, so the slot is held for exactly as long
-        as it was before the stage existed. **No trace** is the case where
-        `invoke.run` never returned at all, or where the outer
-        `except BaseException` cleared it deliberately because a crashed turn's
-        placeholder outcome would have been a false label. There is nothing to
-        review in either, and reviewing a turn under a label that is a guess is
-        worse than not reviewing it — the fold would write that guess into a
-        row injected into every later turn.
-
-        `now_ms` is stamped HERE rather than inside the stage, following
-        `DreamSink.propose`'s reason: the clock belongs to the
-        caller that knows when the work happened, and a stage that reads its
-        own clock cannot be tested for what it writes without freezing time.
-
-        This is a method rather than inlined in the `finally`, the most crowded
-        block in this class, so the two guards above cannot be quietly widened as
-        one more `and` on a line of conditions.
-        """
-        wiring = self._debrief_wiring
-        if wiring is None or trace is None:
-            return
-        # The fold is otherwise untraced: Strands instruments the agent loop, and
-        # the debrief's own model call is not in it. Standing
-        # writes a row injected into every later turn with no record of the
-        # prompt that produced it — counters say a fold took 3s, nothing says
-        # what it saw or wrote. Inside the guarded region by construction: this
-        # never wraps `release_and_dispatch`, and `span` cannot raise on entry
-        # or exit, which matters because this block runs in the `finally` AFTER
-        # the outer `except BaseException` has already run.
-        with span(
-            "engagement.debrief",
-            **{"nora.tag_id": trace.tag_id,
-               "nora.conversation_id": trace.conversation_id,
-               "nora.outcome_reviewed": trace.outcome},
-        ):
-            await debrief.run(
-                trace=trace,
-                platform=platform,
-                store=wiring.store,
-                client=wiring.client,
-                objective=wiring.objective,
-                metrics=self._metrics,
-                display_name=self._display_name,
-                record_store=wiring.record_store,
-                media_join=wiring.media_join,
-                max_chars=wiring.max_chars,
-                fold_batch=wiring.fold_batch,
-                timeout_seconds=wiring.timeout_seconds,
-                store_timeout_seconds=wiring.store_timeout_seconds,
-                working_set_max_items=wiring.working_set_max_items,
-                working_set_max_chars=wiring.working_set_max_chars,
-                content_checks=wiring.content_checks,
-                now_ms=int(time.time() * 1000),
-                culture=culture,
-                profile_room=profile_room,
-                profile_name_of=self._profile_name_of,
-            )
+    async def _debrief(self, authority: ActAuthority | None, ctx: TagContext | None) -> None:
+        if self._debrief_wiring is not None and ctx is not None and authority is not None:
+            await graph_debrief.run(self._debrief_wiring, authority, ctx.message, ctx.transcript)
 
     async def _run_admitted(
         self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
@@ -616,6 +542,13 @@ class EngagementPipeline:
                "nora.occasion": request.occasion,
                "nora.conversation_id": request.message.conversation_id},
         ):
+            if self._debrief_wiring is not None:
+                msg = request.message
+                room = self._policy.conversation(msg.platform, msg.conversation_id)
+                await graph_debrief.retry(
+                    self._debrief_wiring, msg.admitted_unit or (room.unit if room else None),
+                    msg.platform, msg.conversation_id,
+                )
             if request.occasion == "room_command":
                 await self._run_room_command(request, identity, indicator,
                                              adapter=adapter,
@@ -669,16 +602,12 @@ class EngagementPipeline:
         # Bound BEFORE the `try` for the same reason `handle` is: the
         # Save a trace when invocation returns one, even on refusal or failure.
         trace: TagTrace | None = None
-        # The debrief uses the same culture and profile revisions as the turn.
-        culture: CultureRevision | None = None
-        profiles: tuple[ProfileView, ...] = ()
+        ctx: TagContext | None = None
         bind_tag_id(request.tag_id)
         # `run` places the indicator at admission, including while a tag waits in the queue.
         act_scope = ExitStack()
         try:
             ctx = await self._context.assemble(request=request)
-            culture = ctx.culture
-            profiles = ctx.profiles
             # An @-mention is a placeholder plus a parallel array; left alone,
             # every name in the transcript — including Nora's own — would reach the
             # model as U+FFFC (DEC-34). Rehydrated HERE rather than at
@@ -1204,11 +1133,12 @@ class EngagementPipeline:
             trace = None
         finally:
             try:
-                if completed and handle is not None and not handle.deliverer.called:
+                if handle is not None and not handle.deliverer.called:
                     await record_pass_silence()
-            except Exception:
+            except (Exception, asyncio.CancelledError):
                 log.exception("engagement silence write failed (tag=%s)", request.tag_id)
             finally:
+                authority = active_act_authority()
                 act_scope.close()
             # Resolved here, not after `check_outcome`, so that EVERY exit path
             # a tag has — timeout, llm_error, guard veto, no_send_call, and the
@@ -1227,70 +1157,12 @@ class EngagementPipeline:
             # has its own series, `nora_debrief_seconds`, and the two answer
             # two different questions.
             total = time.perf_counter() - started
-            # THE DEBRIEF. Four things about this
-            # placement are load-bearing and none of them is obvious:
-            # 1. **It is in the `finally`, not at the end of the `try`.** It
-            #    runs on EVERY completed turn, and three of them — `not ok`
-            #    (timeout/llm_error), `not delivered` (an R-5 silence or a
-            #    guard veto), and the outer `except` — leave the `try`
-            #    before `completed = True` is ever reached. A debrief hung off
-            #    the happy path would review only the turns that already work,
-            #    and R-5 silence is the decision most likely to be wrong in a
-            #    way nobody complains about.
-            #
-            # 2. **It is BEFORE `release_and_dispatch`, so it holds the
-            #    slot** — deliberately. That is what makes it a stage rather
-            #    than a background job, and it is why its cost lands on the
-            #    SECOND person queued behind a busy conversation rather than
-            #    on the person it is reviewing, who already has their reply.
-            #    The worst-case hold is asserted at STARTUP by
-            #    `Config._the_standing_slot_hold_fits_its_budget`, and this
-            #    comment deliberately does NOT restate the arithmetic. The
-            #    validator and `STANDING_STORE_CALLS_PER_FOLD` are the single
-            #    place that number lives.
-            #
-            # 3. **`completed` is already final by the time this runs**, which
-            #    is the same requirement as «mark the turn completed BEFORE
-            #    awaiting the debrief» expressed by placement instead of
-            #    by ordering two statements. An escape here must not be able to
-            #    leave `completed` False, because `deliver.truncation_reason`
-            #    reads it and would report a partial reply — and a false
-            #    `nora_partial_replies_total` — on a turn that sent a complete
-            #    one.
-            #
-            # 4. **`debrief.run` never raises**, by construction: its whole
-            #    body is inside one `try` whose `except` is `BaseException`
-            #    (a cancellation is not an `Exception`). The `try/except/
-            #    finally` around the call here is therefore belt-and-braces,
-            #    and it stays anyway because what it protects is
-            #    unrecoverable. An exception raised inside a `finally` skips
-            #    the REST of that `finally` — and the statement immediately
-            #    below is the one that releases R-10's per-conversation lock
-            #    and dispatches R-30's queue, so a wedged conversation would
-            #    answer nobody, forever, with no error anywhere. The `except`
-            #    is the second half: this block is inside the `finally`, so a
-            #    fault here is past the outer handler and would propagate
-            #    straight out of `run` — an outage far wider than one tag,
-            #    caused by a stage reviewing a turn that already finished.
+            # The reply is settled. This stage still owns the room slot.
             try:
-                await self._debrief(
-                    trace=trace, platform=msg.platform, culture=culture,
-                    profile_room=next(
-                        (v for v in profiles if v.entity == "room"), None),
-                )
+                await self._debrief(authority, ctx)
             except BaseException:
-                # ABSORBED, not re-raised, and `BaseException` rather than
-                # `Exception` for `debrief.run`'s own reason one level down:
-                # this is inside the `finally`, so a fault escaping here does
-                # not reach the outer `except BaseException` above (that block
-                # has already run) — it propagates straight out of `run`,
-                # crashing whatever awaited or spawned this tag. That is an
-                # outage far wider than one tag, and it would be caused by a
-                # stage reviewing a turn that already finished.
-                log.exception(
-                    "debrief stage faulted (tag=%s); the turn is unaffected",
-                    request.tag_id,
-                )
+                log.exception("debrief stage faulted (tag=%s); the turn is unaffected",
+                              request.tag_id)
             finally:
                 # R-10 released, and in the SAME synchronous step R-30 hands
                 # the conversation's next waiting tag into the slot this turn

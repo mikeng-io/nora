@@ -10,7 +10,7 @@ from nora.memory.adapters.pass_anchors import AnchorRead, SqlPassAnchors
 from nora.memory.adapters.presentation_blocks import GraphPresentationBlocks
 from nora.memory.app.retrieval import RetrievalService
 from nora.memory.domain.pass_declarations import PassDeclaration, PassName, declaration
-from nora.memory.domain.pass_inputs import PassInput, PassScope
+from nora.memory.domain.pass_inputs import DebriefInput, PassInput, PassScope
 from nora.memory.domain.presentations import lessons, related
 from nora.memory.domain.retrieval import RetrievalResult, RetrievalStatus
 
@@ -45,13 +45,15 @@ class PassAssembler:
                 scope.room, seeds.anchors, bounds, concerns=seeds.concerns,
                 as_of=scope.as_of, now=now,
             )
-        blocks, shown = _presentation_order(choice, seeds, result, floor, now)
+        blocks, shown = _presentation_order(
+            choice, seeds, result, floor, now, open_room_and_unit=isinstance(data, DebriefInput),
+        )
         return AssembledPass(blocks, result.status, result.cause, shown)
 
 
 def _presentation_order(
     choice: PassDeclaration, seeds: AnchorRead, result: RetrievalResult,
-    floor: Sequence[ContextBlock], now: datetime,
+    floor: Sequence[ContextBlock], now: datetime, *, open_room_and_unit: bool = False,
 ) -> tuple[tuple[ContextBlock, ...], frozenset[str]]:
     builder = GraphPresentationBlocks(now, seeds.room, seeds.dm_rooms)
     early: list[ContextBlock] = []
@@ -72,7 +74,9 @@ def _presentation_order(
         early.insert(1, builder.lessons_block(result, rows))
         shown.update(row.graph_id for row in rows)
     if "graph_standing" in chosen:
-        block, ids = builder.standing_block(result, seeds.room_ref, seeds.room_entity)
+        block, ids = builder.standing_block(
+            result, seeds.room_ref, seeds.room_entity, open_room_and_unit=open_room_and_unit,
+        )
         late.append(block)
         shown.update(ids)
     if "related" in chosen:

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
-from typing import Generic, Protocol, TypeVar
+from datetime import datetime
+from typing import Any, Generic, Protocol, TypeVar
 
 from nora.memory.domain.acts import Act, ActAuthority, Outcome
-from nora.memory.domain.authored_output import authored_text
+from nora.memory.domain.authored_output import authored_text, without_reasoning
 
 T = TypeVar("T")
 T_co = TypeVar("T_co", covariant=True)
@@ -27,9 +29,19 @@ class ActStore(Protocol):
 
     async def append_pass(
         self, authority: ActAuthority, kind: str, content: list[str] | None,
+        *, ordinal: int | None = None,
     ) -> None: ...
 
     async def read_pass(self, unit: str, pass_id: str) -> dict[str, list[str] | None]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class PassItem:
+    id: str
+    kind: str
+    at: datetime
+    who: str
+    content: object
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +67,29 @@ class ActEnvelope:
         content = authored_text(raw)
         if content:
             await self._store.append_pass(authority, "expression", content)
+
+    async def record_tool(
+        self, authority: ActAuthority, ordinal: int,
+        tool_use: dict[str, Any], status: str, result: object,
+    ) -> None:
+        content = {
+            "tool": tool_use.get("name", ""),
+            "arguments": without_reasoning(tool_use.get("input", {})),
+            "status": status,
+            "result": [self._tool_text(text) for text in authored_text(without_reasoning(result))],
+        }
+        await self._store.append_pass(
+            authority, "tool_call", [json.dumps(content, ensure_ascii=False, default=str)],
+            ordinal=ordinal,
+        )
+
+    @staticmethod
+    def _tool_text(text: str) -> str:
+        try:
+            value = json.loads(text)
+        except ValueError:
+            return text
+        return json.dumps(without_reasoning(value), ensure_ascii=False)
 
     async def record_silence(self, authority: ActAuthority) -> None:
         await self._store.append_pass(authority, "silence", None)

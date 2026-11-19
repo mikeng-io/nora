@@ -47,7 +47,7 @@ from nora.domain.models import TagContext
 from nora.domain.tag_trace import TagTrace
 from nora.domain.turn_deadline import seconds_left
 from nora.domain.turn_record import retain_exchange
-from nora.memory import record_pass_expression
+from nora.memory import record_interrupted_pass_tools, record_pass_expression
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger(__name__)
@@ -143,6 +143,17 @@ async def repair_unsent_reply(
             model.update_config(params=previous)
         except Exception:  # noqa: BLE001 — the agent is discarded with this turn anyway
             log.warning("reply repair: could not restore tool_choice")
+
+
+async def _record_pass_output(messages: object, tag_id: str) -> None:
+    try:
+        await record_interrupted_pass_tools()
+    except Exception:
+        log.exception("engagement interrupted tool write failed (tag=%s)", tag_id)
+    try:
+        await record_pass_expression(messages)
+    except Exception:
+        log.exception("engagement expression write failed (tag=%s)", tag_id)
 
 
 class LiveAgentRunner:
@@ -317,10 +328,7 @@ class LiveAgentRunner:
                     reason=stop_reason,
                 )
         finally:
-            try:
-                await record_pass_expression(agent.messages[baseline:])
-            except Exception:
-                log.exception("engagement expression write failed (tag=%s)", ctx.tag_id)
+            await _record_pass_output(agent.messages[baseline:], ctx.tag_id)
             trace = extract_tag_trace(
                 agent, baseline=baseline, tag_id=ctx.tag_id,
                 conversation_id=ctx.message.conversation_id, transcript=(),

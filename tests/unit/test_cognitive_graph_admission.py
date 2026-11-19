@@ -465,4 +465,7 @@ def test_refusal_literal_covers_all_reachable_form_and_write_reasons() -> None:
         "not_open",
         "witness_not_met",
         "untyped_condition",
+        "not_this_delivery",
+        "citation_outside_pass",
+        "not_a_commit",
     }

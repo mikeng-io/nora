@@ -55,6 +55,10 @@ def _ledger_row(kind: str, i: int) -> dict[str, Any]:
 #: A valid row per in-place table, for key `i`.
 ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
     **managed_rows.ROWS,
+    "debrief_obligation": lambda n: {
+        "unit": "u", "room": "signal:generated-room", "pass_id": f"generated-pass-{n}",
+        "occasion": "called", "created": T0,
+    },
     "watch_result": lambda n: {
         "id": 93000 + n, "unit": "u", "graph_id": f"generated-watch-item-{n}",
         "watch_edge": f"generated-watch-edge-{n}", "content_hash": f"generated-watch-hash-{n}",
@@ -388,6 +392,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
 
 #: The column each revision moves, and to what.
 REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
+    "debrief_obligation": ("attempts", lambda n: n + 1),
     "tool_call_log": ("tool_result", lambda i: {"revised": i}),
     "watch_result": ("content_hash", lambda i: f"generated-watch-hash-revised-{i}"),
     "claim_support": ("support_count", lambda i: i + 2),

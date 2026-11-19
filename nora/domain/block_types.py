@@ -73,17 +73,11 @@ _SHARED: dict[str, str] = {
 }
 
 
-#: Every kind of context block in the tree, and what it IS.
-#:
-#: A description is per type, so it says what the BLOCK is (a room's messages);
-#: what a pass is doing with a block belongs to that pass's objective. A
-#: field's meaning («`n` is the message id to cite in `message_ids`») is an
-#: annotation, not part of the description.
+#: The block type describes its data and fields. An occasion owns how it uses them.
 def _profile_types() -> dict[str, BlockType]:
     from nora.domain.block_types_profile import PROFILE_TYPES
 
     return {t.name: t for t in PROFILE_TYPES}
-
 
 BLOCK_TYPES: dict[str, BlockType] = {
     **_profile_types(),
@@ -95,6 +89,12 @@ BLOCK_TYPES: dict[str, BlockType] = {
        "A missing block says nothing about the subject, and a claim can still be wrong.",
        "cause", "limit", store="cognitive_graph.profile", of="the subject's id",
        name="the subject's name from the identity view"),
+    _t("debrief_items", "This pass's recorded evidence, with ids, times and authors.",
+       store="cognitive_graph.pass_items", occasion="the finished pass's occasion",
+       room="the platform-qualified room",
+       began="the original debrief's start", delivered_intention="the intention delivered"),
+    _t("debrief_messages", "Room messages in the debrief window, with ids, times and authors.",
+       store="messages"),
     _t("graph_standing",
        "Your open and recently settled commitments and your claims about this room. "
        "An empty result found none in this read. A missing block says nothing about the room, "

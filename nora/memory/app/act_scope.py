@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from typing import Any
 
 from nora.memory.app.acts import ActEnvelope
 from nora.memory.domain.act_executors import EXECUTORS
@@ -21,6 +22,7 @@ class ActPass:
     ordinals: Counter[str] = field(default_factory=Counter)
     requests: dict[tuple[str, str], int] = field(default_factory=dict)
     shown: set[str] = field(default_factory=set)
+    running_tools: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 _active_pass: ContextVar[ActPass | None] = ContextVar("act_pass", default=None)
@@ -52,6 +54,31 @@ def pass_shown() -> set[str] | None:
     """Return the graph IDs the active pass has seen."""
     active = _active_pass.get()
     return active.shown if active is not None else None
+
+
+def begin_pass_tool(tool_use: dict[str, Any]) -> None:
+    active = _active_pass.get()
+    if active is not None and active.envelope is not None:
+        active.running_tools[tool_use["toolUseId"]] = tool_use
+
+
+async def record_pass_tool(
+    tool_use: dict[str, Any], status: str, result: object,
+) -> None:
+    active = _active_pass.get()
+    if active is None or active.envelope is None:
+        return
+    active.running_tools.pop(tool_use.get("toolUseId", ""), None)
+    ordinal = active.ordinals["tool_call"]
+    active.ordinals["tool_call"] += 1
+    await active.envelope.record_tool(active.authority, ordinal, tool_use, status, result)
+
+
+async def record_interrupted_pass_tools() -> None:
+    active = _active_pass.get()
+    if active is not None:
+        for tool_use in tuple(active.running_tools.values()):
+            await record_pass_tool(tool_use, "cancelled", None)
 
 
 async def record_pass_expression(raw: object) -> None:

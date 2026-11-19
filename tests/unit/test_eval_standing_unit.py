@@ -85,7 +85,7 @@ async def _setup(monkeypatch, *, trace_changes=None, outcome_code="written", kee
         deps=SimpleNamespace(
             cognition_runner=runner, metrics=metrics,
             fire_path=SimpleNamespace(_read_shared=destination, destinations=destinations),
-            engagement=SimpleNamespace(_debrief_wiring=SimpleNamespace(objective=shipped_objectives())),
+            engagement=SimpleNamespace(_standing_replay_wiring=SimpleNamespace(objective=shipped_objectives())),
         ),
     )
     case = Case(name="generated-unit-fold", entry="standing_unit", expect="fold",

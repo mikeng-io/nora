@@ -1066,7 +1066,7 @@ async def test_standing_enabled_wires_the_same_store_to_both_halves(cfg, tmp_pat
 
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, {"standing.enabled": True}))
-    wiring = deps.engagement._debrief_wiring
+    wiring = deps.engagement._standing_replay_wiring
     assert wiring is not None
     await wiring.store.write(standing=Standing(
         platform="signal", conversation_id="g1", body="generated open decision",
@@ -1099,12 +1099,10 @@ async def test_the_debrief_reads_its_objective_from_the_instruction_substrate(cf
     actually resolving the objective, because a `Wiring` holding an object with
     the right method name and no such objective behind it would look identical
     here and fail on the first fold."""
-    from nora.engagement.stages.debrief import OBJECTIVE
-
     deps = await build_dependencies(override_config(cfg, {"standing.enabled": True}))
-    body = deps.engagement._debrief_wiring.objective.objective_body(OBJECTIVE)
-    assert "ONE short paragraph for a room fold" in body
-    assert "<standing_ledger_prior>" in body
+    body = deps.engagement._debrief_wiring.objective.objective_body("debrief")
+    assert "Re-judge each open intention" in body
+    assert "pass's recorded items" in body
 
 
 def _effort_of(client: object) -> str:

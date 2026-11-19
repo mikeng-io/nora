@@ -62,6 +62,7 @@ from nora.app.composition_onboarding import onboarding
 from nora.app.composition_pipelines import (
     build_dispatcher,
     build_engagement,
+    build_graph_debrief,
     build_ingest,
     build_shared,
     standing,
@@ -1022,19 +1023,12 @@ async def _compose_dependencies(
         access=access,
     )
     _pipelines_standing = await standing(
-        audit=audit,
-        cfg=cfg,
-        clock=clock,
-        content_checks=content_checks,
-        dreamer_instructions=dreamer_instructions,
-        ledger_store=ledger_store,
-        lineage=lineage,
-        media_join=media_join,
-        metrics=metrics,
-        standing_store=standing_store,
-        tag_trace_store=tag_trace_store,
+        audit=audit, cfg=cfg, clock=clock, content_checks=content_checks,
+        dreamer_instructions=dreamer_instructions, ledger_store=ledger_store,
+        lineage=lineage, media_join=media_join, metrics=metrics,
+        standing_store=standing_store, tag_trace_store=tag_trace_store,
     )
-    debrief_wiring = _pipelines_standing.debrief_wiring
+    standing_replay_wiring = _pipelines_standing.debrief_wiring
     standing_fold = _pipelines_standing.standing_fold
     _pipelines_engagement = build_engagement(
         access=access,
@@ -1045,7 +1039,11 @@ async def _compose_dependencies(
         cfg=cfg,
         clock=clock,
         debounce=debounce,
-        debrief_wiring=debrief_wiring,
+        debrief_wiring=build_graph_debrief(
+            _memory_wire, standing_replay_wiring, cfg, engine, access, lineage,
+            persons_view, allowlist, doctrine_store, content_checks, clock, metrics,
+        ),
+        standing_replay_wiring=standing_replay_wiring,
         decision_log=decision_log,
         doctrine_store=doctrine_store,
         limits=limits,

@@ -67,6 +67,7 @@ _TRACE = "a log of what a turn or session was shown; nothing reads bytes through
 #: Columns that look like a key, or are JSON that could hold one under
 #: another name, and name no blob that must stay, and why.
 NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
+    ("debrief_obligation", "proposal_ids"): "graph identifiers of attempted operations",
     ("nora_act_outcome", "result"): "copies of executor evidence; the source retains bytes",
     ("nora_pass_output", "content"): "authored text values, without media custody",
     ("managed_link_request", "snapshot"): "typed account/consent state and nonce digests, no media",
