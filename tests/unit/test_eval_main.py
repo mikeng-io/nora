@@ -579,3 +579,35 @@ def test_tool_selection_behavioral_preflight_requires_bound_cases_and_budget(
     plan["model_gateway"]["models"] = []
     with pytest.raises(ValueError, match="no model identities"):
         load({case: plan})
+
+
+def test_tool_selection_behavioral_experiment_reaches_the_measured_draw(monkeypatch):
+    from evals import backbone
+    from evals.measurement import BEHAVIORAL
+    from evals.route_grader import ToolRouteGrader
+    from evals.scenarios import experiment_for
+    from evals.services import recording_for
+    from nora.subject.model_gateway import ModelGateway
+    from nora.subject.recorded_services import RecordedServices
+
+    name = "route_web_search_control"
+    recording = RecordedServices(
+        {"version": 1, "bindings": {"honcho.base_url": "memory"}, "services": {"memory": []}},
+        model_gateway=ModelGateway("http://127.0.0.1:8000/v1", frozenset({"generated"})),
+    )
+    calls = []
+
+    async def capture_draw(case, spec):
+        calls.append((case.name, spec.entry, spec.measurement))
+        return {"recording": recording_for(case, spec.services, spec.measurement)}
+
+    monkeypatch.setattr(backbone, "_drive", capture_draw)
+    experiment, task = experiment_for(
+        "tool_selection", source_url="sqlite://", only=frozenset({name}),
+        services={name: recording}, measurement=BEHAVIORAL,
+    )
+    assert len(experiment.evaluators) == 1
+    assert isinstance(experiment.evaluators[0], ToolRouteGrader)
+    [case] = experiment.cases
+    assert task(case) == {"recording": recording}
+    assert calls == [(name, "tag", BEHAVIORAL)]
