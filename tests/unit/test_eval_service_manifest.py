@@ -265,3 +265,47 @@ def test_routing_optional_services_are_limited_to_web_providers(tmp_path, varian
     else:
         with pytest.raises(ValueError):
             load_services(path)
+
+
+@pytest.mark.parametrize("variant", [
+    "valid", "foreground", "wrong-op", "bad-params", "duplicate", "collision",
+    "wildcard-collision", "wrong-binding", "shared-binding", "null", "protocol",
+])
+def test_routing_background_discord_reads_require_exact_dedicated_binding(tmp_path, variant):
+    body = {"op": "channels", "params": {"guild_id": "one"}}
+    response = {"status": 200, "json": {"available": False}}
+    binding = "platforms.discord.base_url" if variant != "wrong-binding" else "honcho.base_url"
+    bindings = {binding: "bridge"}
+    sequential = []
+    background = [{"request_json": body, "response": response}]
+    if variant == "shared-binding":
+        bindings["honcho.base_url"] = "bridge"
+    if variant == "wrong-op":
+        body["op"] = "voice_presence"
+    if variant == "bad-params":
+        body["params"]["other"] = True
+    if variant == "duplicate":
+        background *= 2
+    if variant in {"collision", "wildcard-collision", "foreground"}:
+        row = {"method": "POST", "path": "/v1/reads", "response": response}
+        if variant != "wildcard-collision":
+            row["request_json"] = body if variant == "collision" else {"op": "roster"}
+        sequential = [row]
+    external = {"version": 1, "bindings": bindings, "services": {"bridge": sequential}}
+    plan = {
+        "kind": "routing_recording",
+        "model_gateway": {"upstream": "http://127.0.0.1:9/v1", "models": ["generated"]},
+        "external": external,
+        "background_discord_reads": None if variant == "null" else background,
+    }
+    if variant == "protocol":
+        plan = {**external, "background_discord_reads": background}
+    manifest = tmp_path / "services.json"
+    manifest.write_text(json.dumps({"version": 1, "corpora": {
+        "tool_selection": {"generated": plan},
+    }}))
+    if variant in {"valid", "foreground"}:
+        assert load_services(manifest).corpora["tool_selection"]["generated"].bindings == bindings
+    else:
+        with pytest.raises(ValueError):
+            load_services(manifest)

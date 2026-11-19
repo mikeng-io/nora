@@ -107,6 +107,45 @@ def _same(left: Any, right: Any) -> bool:
     return bool(left == right)
 
 
+def _discord_guild(body: Any) -> str | None:
+    if not isinstance(body, dict) or set(body) != {"op", "params"} or body["op"] != "channels":
+        return None
+    params = body["params"]
+    if not isinstance(params, dict) or set(params) != {"guild_id"}:
+        return None
+    guild = params["guild_id"]
+    return guild if isinstance(guild, str) and guild.strip() else None
+
+
+def _background_discord(
+    data: dict[str, Any], rows: Any, *, routing: bool,
+) -> tuple[str | None, dict[str, Any]]:
+    if not isinstance(rows, list):
+        raise ValueError("background Discord reads must be a list")
+    if not rows:
+        return None, {}
+    bindings = data["bindings"]
+    service = bindings.get("platforms.discord.base_url")
+    if not routing or service is None or list(bindings.values()).count(service) != 1:
+        raise ValueError("background Discord reads require a dedicated routing bridge")
+    responses = {}
+    for raw in rows:
+        row = _object(raw, {"request_json", "response"}, {"request_json", "response"})
+        guild = _discord_guild(row["request_json"])
+        response = _object(row["response"], {"status", "json"}, {"status", "json"})
+        if (guild is None or guild in responses
+                or type(response["status"]) is not int
+                or not 200 <= response["status"] <= 599):
+            raise ValueError("invalid or duplicate background Discord channel read")
+        responses[guild] = response
+    for row in data["services"][service]:
+        if (row["method"] == "POST" and row["path"] == "/v1/reads"
+                and ("request_json" not in row
+                     or _discord_guild(row["request_json"]) in responses)):
+            raise ValueError("background Discord read collides with sequential playback")
+    return service, json.loads(json.dumps(responses, allow_nan=False))
+
+
 class Playback:
     """One open of a snapshot: fresh consumption state and the environment
     unrecorded requests report to.
@@ -120,11 +159,13 @@ class Playback:
 
     def __init__(
         self, data: dict[str, Any], *, optional_services: frozenset[str] = frozenset(),
+        background_discord: tuple[str | None, dict[str, Any]] | None = None,
     ) -> None:
         #: The declared config-path -> service-name map.
         self.bindings: dict[str, str] = dict(data["bindings"])
         self._services = data["services"]
         self._optional_services = optional_services
+        self._background_discord = background_discord
         self._positions = dict.fromkeys(self._services, 0)
         self._reads: dict[str, dict[str, Any]] = {name: {} for name in self._services}
         self._locks = {name: asyncio.Lock() for name in self._services}
@@ -165,6 +206,14 @@ class Playback:
 
     def _handler(self, name: str, rows: list[Any]) -> Any:
         async def handle(request: web.Request) -> web.StreamResponse:
+            if (self._background_discord and name == self._background_discord[0]
+                    and request.method == "POST" and request.raw_path == "/v1/reads"):
+                try:
+                    guild = _discord_guild(await request.json())
+                except (ValueError, UnicodeDecodeError):
+                    guild = None
+                if guild is not None and (response := self._background_discord[1].get(guild)):
+                    return web.json_response(response["json"], status=response["status"])
             async with self._locks[name]:
                 position = self._positions[name]
                 row = rows[position] if position < len(rows) else None
@@ -230,6 +279,7 @@ class RecordedServices:
         self, data: dict[str, Any], *, model_gateway: ModelGateway | None = None,
         browser_fixture: bool = False,
         optional_services: frozenset[str] = frozenset(),
+        background_discord_reads: Any = None,
     ) -> None:
         _validate(data)
         if model_gateway is not None and any(
@@ -246,6 +296,10 @@ class RecordedServices:
                     or not data["services"].get(service)):
                 raise ValueError("optional service requires one recorded web provider binding")
         self._optional_services = optional_services
+        self._background_discord = _background_discord(
+            data, [] if background_discord_reads is None else background_discord_reads,
+            routing=model_gateway is not None,
+        )
         self._data = json.loads(json.dumps(data, allow_nan=False))
         self.model_gateway = model_gateway
         self.browser_fixture = browser_fixture
@@ -265,7 +319,8 @@ class RecordedServices:
 
     def playback(self) -> Playback:
         """One open of this snapshot: its apps, bindings and consumption check."""
-        return Playback(self._data, optional_services=self._optional_services)
+        return Playback(self._data, optional_services=self._optional_services,
+                        background_discord=self._background_discord)
 
     @asynccontextmanager
     async def open(self, database_url: str, redis: bool = False) -> AsyncIterator[IsolatedServices]:
