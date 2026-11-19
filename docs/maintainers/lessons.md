@@ -1,0 +1,41 @@
+# Lessons from merged work
+
+What merged work got wrong, and the rule that would have caught it. Read it
+before changing code, next to the [code standards](../code-standards.md).
+
+## How a lesson is kept
+
+A **lesson** is one rule, then why, then the evidence: the PRs or commits
+where it bit and the one that fixed it. **Seen** is the dates a review found
+it, one per separate day.
+
+- **When.** A lesson is written when a PR fixes something an earlier merge got
+  wrong, or when a process failure causes the work to stall. That is the
+  lesson line the lifecycle asks for at resolve. A review of recent merges,
+  started by the operator or the orchestrator, adds the ones that were missed.
+  No scheduled job writes here.
+- **Seen again.** A repeat sighting adds its date and evidence to the
+  existing lesson, never a second lesson for the same rule.
+- **Promotion.** A lesson seen on three separate days becomes a row in the
+  code standards, in the section of the axis it belongs to: cross-cutting, or
+  the stack it is about. The row names what holds it: a test if one can, else
+  *review*. Its evidence moves to the
+  [conventions rationale](conventions-rationale.md), and the lesson leaves
+  this file in the same PR.
+- **Retirement.** A lesson is removed when a test now enforces its rule and
+  that test is cited in the code standards.
+
+## Open lessons
+
+### Search every lane before filing or building
+
+Before opening an issue, a brief or a PR, search the open PRs, every Linear
+project and the running orchestrator threads for an owner of the same
+subject. Two lanes fixing one gate set means one of them rebases onto the
+other's reconciliation.
+
+**Evidence:** PR #815 (manual full-suite acceptance) overlapped PR #818
+(architecture-gate fixes, NOR-16) and PR #819 (`REVIEW.md` consolidation) in
+five files. It merged after a rebase to reconcile them.
+
+**Seen:** 2026-11-19.
