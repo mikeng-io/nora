@@ -81,13 +81,13 @@ def areas(path: str) -> set[str]:
         found.add("runtime")
     if path.startswith("app/"):
         found.add("portal")
-    if path.startswith(("site/", "docs-site/")):
+    if path.startswith("site/"):
         found.add("site")
     if path.startswith(("deploy/",)) or path in {"Dockerfile", "docker-compose.yml", "compose.yml"}:
         found.add("deploy")
     if path.startswith((".github/", "scripts/", ".githooks/")) or path == "Makefile":
         found.add("ci")
-    if path.startswith(("docs/", "design/", "assets/", "openwiki/")) or (
+    if path.startswith(("docs/", "design/", "assets/")) or (
         "/" not in path and path.endswith(".md")
     ):
         found.add("docs")

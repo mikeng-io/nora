@@ -99,8 +99,8 @@ def test_workflow_join_and_trust_boundary():
     jobs = ci["jobs"]
     assert ci["name"] == "CI"
     assert ci[True]["pull_request"] is None
-    wiki = yaml.safe_load((root / ".github/workflows/wiki.yml").read_text())
-    for workflow in (ci, wiki):
+    site = yaml.safe_load((root / ".github/workflows/site.yml").read_text())
+    for workflow in (ci, site):
         assert workflow["concurrency"]["cancel-in-progress"] == (
             "${{ github.event_name == 'pull_request' }}"
         )
