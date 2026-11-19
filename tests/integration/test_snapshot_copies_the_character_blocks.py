@@ -19,7 +19,6 @@ from typing import Any
 
 import pytest
 
-from evals.backbone import _close
 from nora.domain.culture import character_key, nora_character_key, unit_culture_key
 from nora.domain.models import NormalizedMessage
 from nora.infra.sql import create_sql_engine
@@ -29,12 +28,11 @@ from nora.subject import (
     Message,
     Subject,
     SubjectSpec,
-    obtain,
     sandbox_database,
     sandbox_from_snapshot,
 )
 from nora.subject.as_of import render_tag_blocks
-from tests.sandbox_fixtures import ROOM, Source, seed_source
+from tests.sandbox_fixtures import ROOM, Source, offline_subject, seed_source
 
 BEFORE_MS = 1_752_000_000_000
 NOW = datetime.fromtimestamp(BEFORE_MS / 1000, tz=UTC)
@@ -93,16 +91,15 @@ async def source(clean_pg_url: str, pg_template: str, tmp_path: Any, monkeypatch
 
 @pytest.fixture
 async def sandbox(source: Source, pg_template: str, tmp_path: Any) -> AsyncIterator[Subject]:
-    async with sandbox_database(source.url, template=pg_template) as url:
-        subject = await obtain(SubjectSpec(
+    async with (
+        sandbox_database(source.url, template=pg_template) as url,
+        offline_subject(SubjectSpec(
             database_url=url, workdir=tmp_path / "sandbox", room=source.room,
             policy=source.policy, identity=source.identity, now=NOW,
             overrides=dict(OVERRIDES),
-        ))
-        try:
-            yield subject
-        finally:
-            await _close(subject)
+        )) as subject,
+    ):
+        yield subject
 
 
 async def test_an_eval_turn_carries_the_unit_and_person_accounts_as_of_then(
