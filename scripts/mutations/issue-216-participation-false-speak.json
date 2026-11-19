@@ -45,7 +45,7 @@
     "name": "#216 the rule stays OFF on the tag path",
     "file": "nora/agent/guards.py",
     "old": "        self._lookups = frozenset(lookups) if lookups is not None else None",
-    "new": "        self._lookups = frozenset(lookups) if lookups is not None else frozenset({\"who_said\"})",
+    "new": "        self._lookups = frozenset(lookups) if lookups is not None else frozenset({\"lookup_person\"})",
     "target": "tests/unit/test_participation_false_speak.py -k tag_turn_that_found_nothing_still_answers"
   }
 ]

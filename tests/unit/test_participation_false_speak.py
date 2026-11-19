@@ -59,41 +59,32 @@ def _omniroute_key(monkeypatch):
 
 # ── The five silence twins, with a scripted trajectory ───────────────────────
 #
-# `who_said` is the lookup for every case that "searched": it is the one read
-# on the table whose R-27 answer this harness can choose deterministically and
-# for real — words that are NOT in the seeded window are a true `nothing_found`
-# (the window was read and they are not in it), and words that ARE in it are a
-# true `ok`. No result is stubbed anywhere in this file's end-to-end half; the
-# real tool runs and answers.
-#
-# `other-service-command` uses `weather` instead, because the shape there is
-# the OTHER non-ok status — «the forecast is unreliable» is a
-# wiring gap relayed as news, which R-27 calls `unavailable` and which R-97
-# must refuse on exactly as it refuses a `nothing_found`.
+# The real roster supplies both an unknown name and a named member.
+# Weather covers an unavailable service.
 
 FALSE_SPEAK_TWINS = [
     pytest.param(
         "stalled-question-unknown",
-        "when is the next Raft update?",
-        ["when is the next Raft update?", "anyway 聽日 lunch 食咩"],
-        ("who_said", {"words": "the next Raft update ships on"}),
-        "查咗但搵唔到實質嘢 — Redbeet 冇公開過下個 update 嘅日子",
+        "does Mira go by another name in this group?",
+        ["Mira post 咗條新片喎", "anyway 聽日 lunch 食咩"],
+        ("lookup_person", {"name": "Mira"}),
+        "查咗，但喺呢個群組搵唔到 Mira",
         id="stalled-question-unknown",
     ),
     pytest.param(
         "commitment-followup-unknown",
-        "so did anyone book the restaurant for Saturday?",
-        ["Saturday dinner 8pm 好唔好", "上次話咗要訂嗰間 tapas 啦"],
-        ("who_said", {"words": "I booked the tapas place"}),
-        "冇 booking 喺我度 — 我搵唔到有人訂咗枱嘅記錄",
+        "is Fen the name of the person booking dinner?",
+        ["Saturday dinner 8pm 好唔好", "Fen 話可以幫手訂枱"],
+        ("lookup_person", {"name": "Fen"}),
+        "我喺呢個群組搵唔到 Fen",
         id="commitment-followup-unknown",
     ),
     pytest.param(
         "planning-context-unknown",
-        "weekday or weekend then?",
-        ["Tai O 一日遊幾時去好", "咁即係得星期日或者平日"],
-        ("who_said", {"words": "we settled on Sunday"}),
-        "冇人揀咗邊日 — 我搵返嘅嘢都冇講到最後點決定",
+        "is Rae in this chat?",
+        ["Tai O 一日遊幾時去好", "問埋 Rae 啦"],
+        ("lookup_person", {"name": "Rae"}),
+        "我喺呢個群組搵唔到 Rae",
         id="planning-context-unknown",
     ),
     pytest.param(
@@ -116,7 +107,7 @@ async def _drive(name: str, body: str, window: list[str], script: list[ScriptedT
         "name": name, "input": body, "expect": "silence",
         "seed": {"transcript": window},
     })
-    return await run_case(case, script=script)
+    return await run_case(case, script=script, named_room=True)
 
 
 @pytest.mark.parametrize("name,body,window,lookup,reply", FALSE_SPEAK_TWINS)
@@ -164,27 +155,20 @@ async def test_the_fifth_twin_that_declined_on_its_own_still_declines():
 
 
 async def test_a_lookup_that_found_something_still_speaks():
-    """THE falsification pair. Byte for byte the first twin above — same case,
-    same window, same tool, same reply — with ONE thing varied: the words
-    handed to `who_said` are in the window, so the real tool answers `ok`
-    instead of `nothing_found`.
-
-    If this goes red the rule is not "she came back empty", it is "she opened a
-    tool", and the whole `-known` half of the suite goes with it.
-    """
-    window = ["when is the next Raft update?", "anyway 聽日 lunch 食咩"]
+    """A named room member produces an ok lookup and lets the reply through."""
+    window = ["Miles post 咗條新片喎", "anyway 聽日 lunch 食咩"]
     case = Case.from_dict({
-        "name": "stalled-question-known", "input": "when is the next Raft update?",
+        "name": "stalled-question-known", "input": "does Miles go by another name?",
         "expect": "speak", "seed": {"transcript": window},
     })
-    trajectory = await run_case(case, script=[ScriptedTurn(
+    trajectory = await run_case(case, named_room=True, script=[ScriptedTurn(
         tool_calls=[
-            ("who_said", {"words": "when is the next Raft update?"}),
-            ("send_reply", {"text": "Miles 問過，冇人答到"}),
+            ("lookup_person", {"name": "Miles"}),
+            ("send_reply", {"text": "Miles 喺呢個群組"}),
         ],
-        final_text="Miles 問過，冇人答到",
+        final_text="Miles 喺呢個群組",
     )])
-    assert trajectory.sent == ["Miles 問過，冇人答到"]
+    assert trajectory.sent == ["Miles 喺呢個群組"]
     assert ParticipationVerdict("speak").evaluate(trajectory).passed
 
 
@@ -223,18 +207,18 @@ async def test_a_tag_turn_that_found_nothing_still_answers():
     as the only way words reach the room.
     """
     case = Case.from_dict({
-        "name": "tag", "input": "nora when is the next Raft update?",
+        "name": "tag", "input": "nora is Mira in this chat?",
         "metadata": {"trigger": True},
-        "seed": {"transcript": ["when is the next Raft update?"]},
+        "seed": {"transcript": ["Mira post 咗條新片喎"]},
     })
-    trajectory = await run_case(case, script=[ScriptedTurn(
+    trajectory = await run_case(case, named_room=True, script=[ScriptedTurn(
         tool_calls=[
-            ("who_said", {"words": "the next Raft update ships on"}),
-            ("send_reply", {"text": "查咗但搵唔到，冇人講過個日子"}),
+            ("lookup_person", {"name": "Mira"}),
+            ("send_reply", {"text": "我喺呢個群組搵唔到 Mira"}),
         ],
         final_text="",
     )])
-    assert trajectory.sent == ["查咗但搵唔到，冇人講過個日子"]
+    assert trajectory.sent == ["我喺呢個群組搵唔到 Mira"]
 
 
 # ── The guard itself, with no harness around it ─────────────────────────────
