@@ -27,6 +27,7 @@ _REFUSALS = {
     "unresolved_person": "Use a known person ID for the named field.",
     "illegal_transition": "Read the intention and check which operations it permits.",
     "pointer_entity": "Use an intention ID for the base.",
+    "duplicate_delivery": "Read the conflicting intention before scheduling another delivery.",
     "stale_base": "Read the current intention and use its current ID.",
     "trigger_without_evidence": "Cite what warrants changing the trigger.",
     "scope_widening": "Use evidence and links that share the intended scope.",
@@ -82,7 +83,10 @@ def _make_intention_commit(deps):
         proposals = tuple(entry for entry in parsed if not isinstance(entry, Refusal))
         admitted = await admission.admit(proposals, context, shown) if proposals else None
         admission_outcomes = admitted.outcomes if admitted is not None else ()
-        shown.update(outcome.id for outcome in admission_outcomes if isinstance(outcome, Stored))
+        shown.update(
+            key for outcome in admission_outcomes if isinstance(outcome, Stored)
+            for key in (outcome.id, *outcome.other_deliveries)
+        )
         stored = iter(admission_outcomes)
         outcomes = [
             _entry(entry if isinstance(entry, Refusal) else next(stored)) for entry in parsed
@@ -118,4 +122,7 @@ def _entry(outcome: Stored | Refusal | Unavailable) -> dict:
             "status": "unavailable", "commit_uncertain": outcome.commit_uncertain,
             "note": _ENTRY_NOTES[reason],
         }
-    return {"status": "admitted", "id": outcome.id, "note": _ENTRY_NOTES["admitted"]}
+    admitted = {"status": "admitted", "id": outcome.id, "note": _ENTRY_NOTES["admitted"]}
+    if outcome.other_deliveries:
+        return {**admitted, "ids": [outcome.id, *outcome.other_deliveries]}
+    return admitted

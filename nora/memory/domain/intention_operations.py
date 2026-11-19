@@ -106,6 +106,7 @@ class IntentionFields(TypedDict):
 
 class OpenOperation(IntentionFields):
     op: Literal["open"]
+    rooms: NotRequired[list[str]]
 
 
 class ReviseOperation(IntentionFields):
@@ -202,6 +203,9 @@ def _intention(raw: Mapping[str, object], context: PassContext) -> CreateIntenti
         mode == "when_it_comes_up" and "trigger" in raw
     ):
         raise _InvalidFieldError("trigger")
+    rooms = _ids(raw, "rooms")
+    if "rooms" in raw and (not rooms or mode != "choose_moment"):
+        raise _InvalidFieldError("rooms")
     owner, owed_to = _string(raw, "owner"), _string(raw, "owed_to")
     graph_id = _id()
     people = tuple(dict.fromkeys(person for person in (owner, owed_to) if person != "nora"))
@@ -214,6 +218,7 @@ def _intention(raw: Mapping[str, object], context: PassContext) -> CreateIntenti
         owner=owner, owed_to=owed_to, form=str(form), condition=condition, drop_when=drop,
         deadline=deadline, review_time=_instant(raw, "review_time"),
         delivery_mode=str(mode), trigger=trigger, citations=_ids(raw, "citations"), links=links,
+        rooms=rooms,
     )
 
 

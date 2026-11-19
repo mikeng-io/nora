@@ -40,6 +40,7 @@ from nora.memory.adapters.admission_store import SqlAdmissionStore
 from nora.memory.adapters.claim_support import SqlClaimSupport
 from nora.memory.adapters.condition_matcher import SqlConditionMatcher
 from nora.memory.adapters.debrief_store import SqlDebriefStore
+from nora.memory.adapters.delivery_arbitration import SqlDeliveryHistory
 from nora.memory.adapters.graph_clock import SqlDueSchedules
 from nora.memory.adapters.graph_store import SqlCognitiveGraph
 from nora.memory.adapters.memory_intake import SqlMemoryIntake
@@ -56,6 +57,7 @@ from nora.memory.adapters.watch_results import SqlWatchResults
 from nora.memory.app.acts import ActEnvelope
 from nora.memory.app.admission import AdmissionService
 from nora.memory.app.admission_identity import AdmissionIdentity
+from nora.memory.app.delivery_arbitration import DeliveryArbitration
 from nora.memory.app.graph_clock import GraphClock
 from nora.memory.app.retrieval import RetrievalService
 from nora.memory.app.watches import WatchPoller
@@ -71,6 +73,10 @@ def tool_specs(deps):
 
 def session_verbs(deps):
     return _session_verbs(deps)
+
+
+def delivery_arbitration(engine: AsyncEngine, policy: Policy) -> DeliveryArbitration:
+    return DeliveryArbitration(SqlDeliveryHistory(engine), policy)
 
 
 def make_resolve(deps):
