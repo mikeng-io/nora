@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from contextlib import suppress
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -46,6 +48,22 @@ def _evidence_failure(evidence, report=None) -> str:
     reasons = [reason for reason in getattr(report, "reasons", None) or [] if reason]
     detail = f"causes={receipt['causes']} interrupted={interrupted}"
     return detail + (f" evaluator_reasons={reasons}" if reasons else "")
+
+
+def _note_evidence_failure(error: EvidenceError, evidence, report=None) -> None:
+    with suppress(Exception):
+        error.add_note(_evidence_failure(evidence, report))
+
+
+def test_routing_diagnostic_preserves_the_error_when_the_record_is_unreadable(tmp_path):
+    error = EvidenceError("incomplete_record")
+    with pytest.raises(EvidenceError, match="incomplete_record") as caught:
+        try:
+            raise error
+        except EvidenceError as exc:
+            _note_evidence_failure(exc, SimpleNamespace(path=tmp_path))
+            raise
+    assert caught.value is error
 
 
 def routing_plan(tmp_path, upstream, *, name, bindings, services):
@@ -289,7 +307,8 @@ async def test_tool_selection_behavioral_route_crosses_the_bound_gateway(
                 ).run_evaluations_async(task=backbone.nora_task(spec), max_workers=1)
                 evidence.exit_code = 0
         except EvidenceError as exc:
-            raise EvidenceError(f"{exc}: {_evidence_failure(evidence, report)}") from exc
+            _note_evidence_failure(exc, evidence, report)
+            raise
         finally:
             active_run_budget.reset(token)
     verdict = report.detailed_results[0][0]
@@ -388,7 +407,8 @@ def test_tool_selection_behavioral_receipt_preserves_route_verdicts(
                 )
                 evidence.exit_code = 0 if ok else 1
         except EvidenceError as exc:
-            raise EvidenceError(f"{exc}: {_evidence_failure(evidence)}") from exc
+            _note_evidence_failure(exc, evidence)
+            raise
 
     receipt = json.loads((evidence.path / "corpus-tool_selection.json").read_text())
     assert receipt["mode"] == "behavioral-evaluation"
