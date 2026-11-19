@@ -383,6 +383,20 @@ jobs:
           tests/infra/test_otp.py
           tests/architecture/test_port_fakes_live_in_nora_testing.py
           tests/architecture/test_ory_ci.py
+      - name: Install Redis for isolated eval subjects
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y redis-server
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          node-version: '24.22.1'
+      - name: Install portal browser test dependencies
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          npm ci --prefix app
+          npm exec --prefix app -- playwright install --with-deps chromium
       - name: Selected backend acceptance
         if: github.event_name == 'workflow_dispatch'
         env:

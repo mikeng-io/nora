@@ -34,6 +34,9 @@ class ManagedAnalyticsInputs:
             raise RuntimeError("analytics identity projection is unavailable")
         return self._current
 
+    def social_off_ids(self) -> frozenset[str]:
+        return self.current.opted_out
+
     async def refresh(self) -> None:
         self._current = None
         access = self._access

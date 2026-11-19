@@ -2526,7 +2526,7 @@
   }
  },
  "tests/integration/test_a_real_snapshot_seeds_an_isolated_subject.py": {
-  "file_lines": 876,
+  "file_lines": 871,
   "internal_docstrings": 1
  },
  "tests/integration/test_ambient.py": {
@@ -2579,10 +2579,7 @@
   "internal_docstrings": 1
  },
  "tests/integration/test_eval_official_entry_scoped.py": {
-  "functions": {
-   "_run_one_case": 151
-  },
-  "internal_docstrings": 2
+  "internal_docstrings": 1
  },
  "tests/integration/test_eval_sandbox_index_reuse.py": {
   "internal_docstrings": 2
@@ -2694,7 +2691,7 @@
   "internal_docstrings": 2
  },
  "tests/integration/test_two_entry_points_one_runner.py": {
-  "comment_blocks": 2
+  "comment_blocks": 1
  },
  "tests/integration/test_version.py": {
   "internal_docstrings": 1
@@ -2991,7 +2988,7 @@
  },
  "tests/test_vision.py": {
   "comment_blocks": 8,
-  "file_lines": 1024,
+  "file_lines": 1023,
   "internal_docstrings": 2
  },
  "tests/test_web_fetch_tool.py": {
@@ -3237,7 +3234,7 @@
  },
  "tests/unit/test_heartbeat_loop.py": {
   "comment_blocks": 5,
-  "file_lines": 1021,
+  "file_lines": 1019,
   "internal_docstrings": 1
  },
  "tests/unit/test_ingest_pipeline.py": {

@@ -515,6 +515,7 @@ services:
       #   LIFE360_USERNAME/PASSWORD — the presence collector's observer account
       #   LIFE360_AUTH_TOKEN  — its browser-issued bearer, when Life360 refuses the password
       - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
+      - NORA_PRESENCE_DIRECTORY_KEY=${NORA_PRESENCE_DIRECTORY_KEY:-}
       - MEDIA_ENCRYPTION_KEY=${MEDIA_ENCRYPTION_KEY:-}
       - LIFE360_USERNAME=${LIFE360_USERNAME:-}
       - LIFE360_PASSWORD=${LIFE360_PASSWORD:-}
