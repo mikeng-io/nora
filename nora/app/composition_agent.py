@@ -114,7 +114,7 @@ def build_registry(
     presence_store: Any, profile_index: Any, profile_reader: Any, reaction_picker: Any,
     refresher: Any, relay: Any, reminder_caps: Any, reminders: Any,
     route_client: Any, room_management: Any, search_client: Any, social_client: Any,
-    standing_store: Any,
+    standing_store: Any, graph_retrieval: Any,
     steam_client: Any, subagent_desk: Any, tool_call_log_store: Any, version_manifest: Any,
     video_desk: Any, vision_client: Any, voice_presence: Any, weather_client: Any,
 ) -> RegistryWiring:
@@ -134,6 +134,7 @@ def build_registry(
         ledger_store=ledger_store, lineage=lineage, mcp_tool_groups=mcp_tool_groups,
         media_descriptions=media_descriptions, media_join=media_join,
         media_objects=media_objects, memo_store=memo_store, memory_search=memory_search,
+        graph_retrieval=graph_retrieval,
         metrics=metrics, mobility=mobility, music_bridge=music_bridge,
         note_store=note_store, observation_store=observation_store, persons=persons,
         presence_circles=presence_circles, presence_reader=presence_reader,
@@ -160,6 +161,7 @@ def _build_tool_registry(
     subagent_desk: Any, giphy_client: Any, discord_presence: Any, computer: Any,
     presence_store: Any, mcp_tool_groups: Any, image_generator: Any, ledger_store: Any,
     memo_store: Any, memory_search: Any, profile_reader: Any, observation_store: Any,
+    graph_retrieval: Any,
     browser: Any, computer_context: Any, computer_settings: Any, presence_reader: Any,
     search_client: Any, engine: Any, events: Any, version_manifest: Any,
     allowlist: Any, voice_presence: Any, relay: Any, weather_client: Any,
@@ -199,7 +201,7 @@ def _build_tool_registry(
         **_memory_tool_args(
             cfg=cfg, content_checks=content_checks, culture_reader=culture_reader,
             engine=engine, ledger_store=ledger_store, lineage=lineage,
-            memo_store=memo_store, memory_search=memory_search,
+            memo_store=memo_store, memory_search=memory_search, graph_retrieval=graph_retrieval,
             profile_index=profile_index, profile_reader=profile_reader,
             standing_store=standing_store,
         ),
@@ -246,14 +248,12 @@ def _build_tool_registry(
 def _memory_tool_args(
     cfg: Any, content_checks: Any, culture_reader: Any, engine: Any,
     ledger_store: Any, lineage: Any, memo_store: Any, memory_search: Any,
-    profile_index: Any, profile_reader: Any, standing_store: Any,
+    profile_index: Any, profile_reader: Any, standing_store: Any, graph_retrieval: Any,
 ) -> Any:
     """The memory tier's tools: index search, graph verbs, standing, ledger."""
     return {
-        # `[memory.index] read` (ships off): one memory surface: `memory_search` over the index;
-        # off, the Honcho verbs as before (DEC-316, `nora.agent.tools.GRAPH_MEMORY_TOOLS`).
-        # Built once above: the assembler's pre-fetch holds the same one.
         "memory_search": memory_search,
+        "graph_retrieval": graph_retrieval,
         # The graph surface's `remember` writes a Profile `told` line
         # (design/unified-memory/profiles.md); wired with `memory_search`, never alone.
         "profile": (

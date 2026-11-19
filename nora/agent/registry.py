@@ -35,7 +35,6 @@ from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.catalog.groups import (
     COMPUTER_TOOLS,
     DOCUMENT_TOOLS,
-    GRAPH_MEMORY_TOOLS,
     HONCHO_MEMORY_TOOLS,
     HOT_TOOLS,
     LOADER_TOOL,
@@ -378,6 +377,7 @@ class ToolRegistry:
         # surface.
         # Process-lifetime like `record`.
         memory_search: MemorySearch | None = None,
+        graph_retrieval: Any = None,
         # The Profile write the graph surface's `remember` makes (a `told`
         # line, design/unified-memory/profiles.md). Wired with `memory_search`.
         profile: ProfileWriter | None = None,
@@ -401,6 +401,7 @@ class ToolRegistry:
         self._profile_read = profile_read
         self._external_files, self._google_account = external_files, google_account
         self._memory_search = memory_search
+        self._graph_retrieval = graph_retrieval
         self._record = record
         self._documents = documents
         self._lineage = lineage
@@ -434,12 +435,9 @@ class ToolRegistry:
             | (frozenset() if documents is not None else DOCUMENT_TOOLS)
             | (frozenset() if subagent is not None else SUBAGENT_TOOLS)
             | (frozenset() if video is not None else VIDEO_TOOLS)
-            # The memory surface not selected (DEC-316): with no index wired
-            # the graph's `memory_search`, with one every Honcho tool.
-            # `build_tool_specs` never builds them; withholding them here
-            # keeps the digest and `withheld_tools()` (Cognition's read
-            # surface) true to the same one choice.
-            | (GRAPH_MEMORY_TOOLS if memory_search is None else HONCHO_MEMORY_TOOLS)
+            | ({"profile_dispute"} if memory_search is None else HONCHO_MEMORY_TOOLS)
+            | ({"memory_search", "memory_read"} if graph_retrieval is None else set())
+            | {"intention_commit"}
         )
         self._subagent = subagent
         self._video = video
@@ -787,7 +785,7 @@ class ToolRegistry:
 
         scoped = copy(self)
         scoped._memory_search = search
-        scoped._withheld = (self._withheld - GRAPH_MEMORY_TOOLS) | HONCHO_MEMORY_TOOLS
+        scoped._withheld = (self._withheld - {"profile_dispute"}) | HONCHO_MEMORY_TOOLS
         return scoped
 
     def with_clock(self, clock: Callable[[], datetime]) -> ToolRegistry:
@@ -1179,7 +1177,7 @@ class ToolRegistry:
             rooms=self._rooms,
             record=self._record,
             observations=self._observations,
-            memory_retrieval=self._memory_search,
+            memory_retrieval=self._memory_search, graph_retrieval=self._graph_retrieval,
             profile=self._profile,
             lineage=self._lineage,
             rollup=self._rollup,

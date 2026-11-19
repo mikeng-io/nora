@@ -2086,10 +2086,8 @@ async def test_the_senders_hold_identity_toml_as_their_direct_message_allowlist(
     assert deps.registry.adapters["signal"]._sender._dm_recipients == frozenset({"+852111"})
 
 
-async def test_memory_search_holds_a_fresh_line_for_the_configured_worker_tick(cfg):
-    """`memory_search` takes the embedding worker's tick from `[memory.index]
-    drain_seconds`: a node waiting under `BACKLOG_TICKS` of them is fresh,
-    not a backlog. Unwired, every wait would read as a backlog."""
+async def test_legacy_prefetch_index_uses_the_configured_worker_tick(cfg):
+    """The legacy prefetch waits for the configured index worker tick."""
     from nora.agent.memory_search import BACKLOG_TICKS
 
     deps = await build_dependencies(override_config(
@@ -2101,17 +2099,15 @@ async def test_memory_search_holds_a_fresh_line_for_the_configured_worker_tick(c
 
 
 @pytest.mark.parametrize("graph", [False, True])
-async def test_the_prefetch_holds_the_tools_search_only_on_the_graph_surface(cfg, graph):
-    """`<recalled>` (design/unified-memory/README.md): the tag path's
-    assembler holds the SAME `MemorySearch` the registry's `memory_search`
-    does under `[memory.index] read`, and none off it, so the Honcho
-    surface runs no pre-fetch."""
+async def test_legacy_prefetch_and_graph_reads_are_wired_on_the_graph_surface(cfg, graph):
+    """Cognition uses the graph read service while legacy prefetch keeps its index."""
     deps = await build_dependencies(override_config(
         cfg, {"memory.index.read": graph},
     ))
     search = deps.engagement._tool_registry._memory_search
     assert deps.engagement._context._memory_search is search
     assert (search is not None) is graph
+    assert (deps.engagement._tool_registry._graph_retrieval is not None) is graph
     from nora.agent.prefill import build_prefill
     from nora.domain.models import TagContext
 

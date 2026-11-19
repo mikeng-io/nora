@@ -96,7 +96,8 @@ class Scope:
     origin_room: str | None = None
     persons: tuple[str, ...] = ()
     excluded_persons: tuple[str, ...] = ()
-    exposure: str = "external"
+    # None inherits the restrictions of the base and the evidence.
+    exposure: str | None = "external"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -188,9 +189,14 @@ class Retire(ProposalFields):
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class CloseIntention(ProposalFields):
+    witness: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class MergeEntities(ProposalFields):
     source: str
     survivor: str
 
 
-Proposal = Create | Revise | Retire | MergeEntities
+Proposal = Create | Revise | Retire | MergeEntities | CloseIntention

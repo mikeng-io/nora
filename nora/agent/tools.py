@@ -116,6 +116,7 @@ from nora.infra.vision.preprocess import (
     VIDEO_MAX_CHUNKS,
 )
 from nora.language.profile_render import ProfileHeads
+from nora.memory import PassScope
 
 _AREAS = (
     "nora.location",
@@ -162,6 +163,7 @@ _ORDER = [
     "search_memory",
     "memory_search",
     "memory_read",
+    "intention_commit",
     "recall_lookups",
     "media_fetch",
     "file_fetch",
@@ -436,6 +438,9 @@ def build_tool_specs(
     # service `ask_memory` answers from instead of Honcho. `None` (the
     # shipped default, offline, eval) is the Honcho path.
     memory_retrieval: MemorySearch | None = None,
+    graph_retrieval: Any = None,
+    pass_scope: PassScope | None = None,
+    intention_admission: Any = None,
     all_memory_surfaces: bool = False,
     # The Profile write (design/unified-memory/profiles.md): the graph surface's
     # `remember` writes a `told` line through it. `None` answers `unavailable`.
@@ -567,7 +572,8 @@ def build_tool_specs(
         video_ref_kinds=video_ref_kinds,
         external_files=external_files,
         google_account=google_account,
-        memory_retrieval=memory_retrieval,
+        memory_retrieval=memory_retrieval, graph_retrieval=graph_retrieval,
+        pass_scope=pass_scope, intention_admission=intention_admission,
         all_memory_surfaces=all_memory_surfaces,
         profile=profile,
         profile_read=profile_read,
@@ -598,15 +604,19 @@ def build_tool_specs(
                 else spec
             )
             for spec in specs
-            if on_memory_surface(
-                spec.name,
-                graph=deps.memory_retrieval is not None,
-                everything=deps.all_memory_surfaces,
-            )
+            if _on_surface(spec.name, deps)
         ),
         metrics=deps.metrics,
         unwired=deps.unwired_owners,
     )
+
+
+def _on_surface(name: str, deps: ToolDeps) -> bool:
+    if name == "intention_commit":
+        return deps.all_memory_surfaces or deps.intention_admission is not None
+    reads = {"memory_read", "memory_search"}
+    graph = deps.graph_retrieval if name in reads else deps.memory_retrieval
+    return on_memory_surface(name, graph=graph is not None, everything=deps.all_memory_surfaces)
 
 
 def build_tools(
@@ -698,6 +708,9 @@ def build_tools(
     video: VideoDesk | None = None,
     video_ref_kinds: frozenset[str] = frozenset(),
     memory_retrieval: MemorySearch | None = None,
+    graph_retrieval: Any = None,
+    pass_scope: PassScope | None = None,
+    intention_admission: Any = None,
     profile: ProfileWriter | None = None,
     profile_read: ProfileHeads | None = None,
     relay: Relay | None = None,
@@ -726,17 +739,13 @@ def build_tools(
         image_generator=image_generator, image_refs_allowed=image_refs_allowed,
         media_store=media_store, documents=documents, online_source=online_source,
         voice_source=voice_source, presence=presence, on_rows=on_rows,
-        # FORWARDED: `build_tools` declares every parameter `build_tool_specs`
-        # does and hands them on by name, so one accepted and dropped here is a
-        # caller configuring something that silently keeps its default.
-        # `tests/architecture/test_tool_builders_forward_everything.py` compares
-        # this call's keywords against `build_tools`' own parameters, so a
-        # dropped one is red.
         describe_max_bytes=describe_max_bytes, video_chunk_seconds=video_chunk_seconds,
         video_max_chunks=video_max_chunks, media_join=media_join, rooms=rooms, clock=clock,
         record=record, lineage=lineage, rollup=rollup, standing_head=standing_head, ledger=ledger,
         culture=culture, observations=observations, social_items=social_items, subagent=subagent,
         video=video, video_ref_kinds=video_ref_kinds, memory_retrieval=memory_retrieval,
+        graph_retrieval=graph_retrieval, pass_scope=pass_scope,
+        intention_admission=intention_admission,
         profile=profile, profile_read=profile_read, relay=relay, relay_turn=relay_turn,
         room_management=room_management, message=message,
         content_checks=content_checks

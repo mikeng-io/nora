@@ -55,7 +55,7 @@ TOOLS = {
         idempotency="idempotent",
         retry="safe",
         output_contract="three_state",
-        level=2,
+        level=3,
     ),
     "ask_memory": NativeTool(
         4,

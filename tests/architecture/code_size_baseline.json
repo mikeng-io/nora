@@ -261,10 +261,10 @@
   "internal_docstrings": 4
  },
  "nora/agent/registry.py": {
-  "comment_blocks": 39,
-  "file_lines": 1374,
+  "comment_blocks": 36,
+  "file_lines": 1369,
   "functions": {
-   "ToolRegistry.__init__": 452
+   "ToolRegistry.__init__": 444
   },
   "internal_docstrings": 5
  },
@@ -325,10 +325,10 @@
   "internal_docstrings": 1
  },
  "nora/agent/tools.py": {
-  "comment_blocks": 15,
+  "comment_blocks": 14,
   "functions": {
    "build_tool_specs": 372,
-   "build_tools": 133
+   "build_tools": 132
   }
  },
  "nora/agent/video_desk.py": {
@@ -437,9 +437,9 @@
  },
  "nora/app/composition.py": {
   "comment_blocks": 22,
-  "file_lines": 1504,
+  "file_lines": 1494,
   "functions": {
-   "_compose_dependencies": 980
+   "_compose_dependencies": 979
   },
   "internal_docstrings": 1
  },
@@ -2748,7 +2748,7 @@
  },
  "tests/test_composition.py": {
   "comment_blocks": 9,
-  "file_lines": 2201,
+  "file_lines": 2197,
   "internal_docstrings": 2
  },
  "tests/test_config.py": {
@@ -3319,12 +3319,8 @@
   "file_lines": 1038,
   "internal_docstrings": 2
  },
- "tests/unit/test_memory_search_tool.py": {
-  "internal_docstrings": 1
- },
  "tests/unit/test_memory_surfaces.py": {
-  "comment_blocks": 2,
-  "internal_docstrings": 1
+  "comment_blocks": 2
  },
  "tests/unit/test_mobility_forecast.py": {
   "internal_docstrings": 2

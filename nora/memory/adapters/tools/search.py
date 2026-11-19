@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from dataclasses import replace
+from datetime import datetime
+from typing import Literal, cast
 
-from nora.agent.catalog.groups import ROOM_ONLY_MEMORY_ADAPTORS
-from nora.agent.memory_search import MemorySearch, room_label, scope_for_async
-from nora.agent.room import RoomView
+import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from nora.access import IdentityAccess
+from nora.agent.lineage import LineagePolicy
+from nora.agent.room import Room
 from nora.agent.security import scan_identifiers
 from nora.agent.toolkit.results import (
     _memory_day,
@@ -15,306 +20,203 @@ from nora.agent.toolkit.results import (
     _with_note,
 )
 from nora.agent.toolkit.rooms import _asked_about, _miss
-from nora.domain.external_files import (
-    render_file_links,
-)
-from nora.domain.lineage import (
-    LiveRoom,
-)
-from nora.domain.memory_index import KINDS_BY_CATEGORY, MemoryKind
-from nora.domain.models import (
-    PersonRef,
-)
-from nora.domain.ports import (
-    MessageHits,
-)
-from nora.memory.adapters.tools.shared import (
-    _GRAPH_READ_NOTES,
-    _INDEX_UNAVAILABLE,
-    _MEMORY_BAD_DATE,
-    _MEMORY_BAD_KIND,
-    _MEMORY_BAD_SPAN,
-    _MEMORY_UNLISTED,
-    _REASONING_LEVELS,
-)
+from nora.domain.external_files import render_file_links
+from nora.domain.lineage import LiveRoom
+from nora.domain.ports import MessageHits
+from nora.memory.adapters.graph_row_render import render_graph_rows
+from nora.memory.adapters.retrieval_scope import RetrievalAccess, scoped_rows
+from nora.memory.adapters.tools.shared import _REASONING_LEVELS
+from nora.memory.app.act_scope import active_act_authority, pass_shown
+from nora.memory.app.retrieval import RetrievalService
+from nora.memory.domain.pass_declarations import declaration
+from nora.memory.domain.pass_inputs import PassScope
+from nora.memory.domain.retrieval import ReadingRoom, RetrievalAnchors, RetrievalUnavailableError
 
 log = logging.getLogger("nora.tools")
 
 
-def _make__index_room_label(deps):
-    lineage = deps.lineage
+class GraphReadTools:
+    def __init__(
+        self, retrieval: RetrievalService, engine: AsyncEngine, access: IdentityAccess,
+        lineage: LineagePolicy,
+    ) -> None:
+        self._retrieval = retrieval
+        self._engine = engine
+        self._access = RetrievalAccess(access, lineage)
 
-    def _index_room_label(key: str) -> str:
-        """A room key as she reads it: its policy label, else its network."""
-        return room_label(lineage.rooms if lineage is not None else (), key)
-
-    return _index_room_label
-
-
-def _make__memory_search_index(deps):
-    content_checks = deps.content_checks
-    dream_adaptor = deps.dream_adaptor
-    lineage = deps.lineage
-    metrics = deps.metrics
-    persons = deps.persons
-    room = deps.room
-    bound_conversation_id = deps.bound_conversation_id
-    graph_reads = deps.graph_reads
-    now_fn = deps.now_fn
-
-    async def _memory_search_index(
-        search: MemorySearch,
-        text: str,
-        ref: PersonRef | None,
-        view: RoomView,
-        kinds: tuple[str, ...],
-        since_ms: int | None,
-        until_ms: int | None,
-        depth: int = 2,
-        seed: tuple[str, str] | None = None,
+    async def read(
+        self, room: Room, conversation_id: str, scope: PassScope | None, now: datetime, *,
+        anchors: RetrievalAnchors, depth: int, person: str | None = None,
+        since: datetime | None = None, until: datetime | None = None, content_checks: bool = True,
     ) -> dict:
-        """`memory_search` while `[memory.index] read`: the one retrieval"""
-        asked: dict = {"person": ref.name} if ref is not None else {}
-        if lineage is None:
-            _record_room(metrics, "memory_search", "unavailable", reason="unwired")
-            return {"status": "unavailable", **asked, "note": _INDEX_UNAVAILABLE}
-        # Fail closed (R-27): anything that raises on the way, the policy's
-        # render of this room, the search, or the packet, is a counted
-        # `unavailable` with its note, never an exception out of the tool.
+        authority = active_act_authority()
+        context = authority.pass_context if authority is not None else None
+        historical = scope.as_of if scope is not None else None
+        bounds = declaration(context.occasion if context else "called").bounds(historical or now)
+        start = max(bounds.since, since) if since is not None else bounds.since
+        end = min(bounds.until, until) if until is not None else bounds.until
+        if start > end:
+            return {"status": "nothing_found", "note": "No time in that window is in scope."}
+        bounds = replace(bounds, since=start, until=end, depth=min(max(depth, 0), bounds.depth))
+        view = await room.scope()
+        reading = scope.room if scope is not None else ReadingRoom(
+            room.platform, conversation_id,
+            LiveRoom(frozenset(p.person_id for p in view.people), view.unnamed,
+                     view.available, view.degraded),
+        )
+        concerns = scope.concerns if scope is not None else frozenset()
+        subject_note = ""
         try:
-            target = lineage.render_room(
-                platform=room.platform,
-                conversation_id=bound_conversation_id,
-                live=LiveRoom(
-                    person_ids=frozenset(p.person_id for p in view.people),
-                    unnamed=view.unnamed,
-                    available=view.available,
-                    degraded=view.degraded,
-                ),
+            target, resolved, dm_rooms = await self._access.authority(reading, concerns, historical)
+            if target.room is None or (scope is not None and resolved.unit != scope.unit) or (
+                context is not None and (
+                    resolved.unit != context.unit
+                    or (context.room is not None and not target.room.is_room(context.room))
+                )
+            ):
+                raise RetrievalUnavailableError("reading_room_unavailable")
+            if target.room.persons is None and not self._access.access.is_file_backend:
+                raise RetrievalUnavailableError("access_view_unavailable")
+            if person is not None:
+                if (room.platform != reading.platform
+                        or not target.room.is_room(conversation_id)
+                        or not view.available):
+                    raise RetrievalUnavailableError("person_lookup_unavailable")
+                matches = view.find(person)
+                if target.room.persons is not None:
+                    members = {target.canonical(member) for member in target.room.persons}
+                    matches = tuple(p for p in matches if target.canonical(p.person_id) in members)
+                if not matches:
+                    return {"status": "nothing_found", "note": "No one by that name is known here."}
+                if len(matches) != 1:
+                    return {
+                        "status": "nothing_found",
+                        "note": "More than one person goes by that name here. Ask which one.",
+                    }
+                person_id = matches[0].person_id
+                concerns |= {person_id}
+                pointer = await self._pointer(reading, concerns, historical, person_id)
+                if pointer is None:
+                    subject_note = " Nothing is remembered about them as a subject."
+                else:
+                    anchors = replace(anchors, graph_ids=(pointer,))
+            shown = pass_shown()
+            result = await self._retrieval.retrieve(
+                reading, anchors, bounds, concerns=concerns, as_of=historical,
+                already_shown=frozenset(shown or ()), now=now,
             )
-            own_room = dream_adaptor in ROOM_ONLY_MEMORY_ADAPTORS
-            # Membership and preference come from the selected backend: under
-            # managed, `scope_for_async` reads live room membership and opt-outs;
-            # a backend that cannot answer raises and lands as `unavailable`.
-            scope = await scope_for_async(
-                target,
-                own_room=own_room,
-                social_off=persons.social_off_ids(
-                    target.room.persons or () if target.room is not None else ()
-                ),
-                access=room.access,
+            if result.status == "unavailable":
+                return {"status": "unavailable", "note": f"Graph read unavailable: {result.cause}."}
+            rows = render_graph_rows(
+                result.rows, now=now, reading_room=target.room, dm_rooms=dm_rooms,
             )
-            listed = scope.listed_here if scope is not None else None
-            if ref is not None and (listed is None or ref.person_id not in listed):
-                # The live roster resolved them, but they are not a member of
-                # this room: the index's person filter would read false
-                # everywhere and answer
-                _record_room(metrics, "memory_search", "unavailable", reason="unlisted")
-                return {**_MEMORY_UNLISTED, **asked}
-            now = now_fn()
-            result = await search.read(
-                query=text[:500],
-                seed=seed,
-                depth=depth,
-                person_id=ref.person_id if ref else None,
-                target=target,
-                now_ms=int(now.timestamp() * 1000),
-                people=view.people,
-                kinds=kinds,
-                since_ms=since_ms,
-                until_ms=until_ms,
-                own_room=own_room,
-                social_off=scope.social_off if scope is not None else frozenset(),
-                cache=graph_reads,
-                content_checks=content_checks,
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.warning("memory graph tool failed (%s)", type(exc).__name__)
-            result = {"status": "unavailable", "note": _INDEX_UNAVAILABLE}
-        _record_room(metrics, "memory_read" if seed else "memory_search", result["status"])
-        return _memory_result(result) if result["status"] in {"ok", "partial"} else result
+            if scan_identifiers(rows, content_checks=content_checks) is not None:
+                return {"status": "unavailable", "note": "The graph read contains protected data."}
+            if shown is not None:
+                shown.update(row.graph_id for row in result.rows)
+        except (RetrievalUnavailableError, sa.exc.SQLAlchemyError, OSError) as exc:
+            cause = str(exc) if isinstance(exc, RetrievalUnavailableError) else "statement_failed"
+            return {"status": "unavailable", "note": f"Graph read unavailable: {cause}."}
 
-    return _memory_search_index
+        if result.status == "partial":
+            reasons = ", ".join((*result.limits, *((result.cause,) if result.cause else ())))
+            note = f"Graph read is partial: {reasons}."
+        elif result.status == "nothing_found":
+            note = "No graph rows matched in this scope."
+        else:
+            note = "These graph rows matched in this scope."
+        payload = {
+            "status": result.status, "note": note + subject_note, "rows": rows,
+            "keys": [[row.kind, row.graph_id] for row in result.rows],
+        }
+        return _memory_result(payload) if result.rows else payload
+
+    async def _pointer(
+        self, reading: ReadingRoom, concerns: frozenset[str], historical: datetime | None,
+        person: str,
+    ) -> str | None:
+        target, scope, dm_rooms = await self._access.authority(reading, concerns, historical)
+        async with self._engine.connect() as raw:
+            conn = await raw.execution_options(isolation_level="REPEATABLE READ")
+            rows = (await scoped_rows(conn, scope, target, dm_rooms)).c
+            return cast(str | None, await conn.scalar(sa.select(rows.graph_id).where(
+                rows.kind == "entity", rows.state == "admitted",
+                rows.image["pointer_kind"].astext == "person",
+                rows.image["pointer_ref"].astext == person,
+            ).order_by(rows.graph_id).limit(1)))
 
 
-def _make_memory_read(deps):
-    content_checks = deps.content_checks
-    dream_adaptor = deps.dream_adaptor
-    lineage = deps.lineage
-    memory_retrieval = deps.memory_retrieval
-    metrics = deps.metrics
-    persons = deps.persons
-    room = deps.room
-    bound_conversation_id = deps.bound_conversation_id
-    graph_reads = deps.graph_reads
-    now_fn = deps.now_fn
-
-    async def memory_read(kind: str, id: str, depth: int = 1) -> dict:
-        """Read one memory node and its connections. Call this when a graph node
-        needs closer inspection.
-
-        Returns `status` with a note:
-        `ok`: scoped node and evidence.
-        `partial`: more memory is available.
-        `nothing_found`: no node matched in scope.
-        `unavailable`: the read could not finish.
-        Depth zero returns full fields and relation evidence.
-        Use it to check an entity or statement the graph may already hold
-        before proposing it as new.
-
-        Args:
-            kind: The node kind shown in the graph.
-            id: The node id shown in the graph.
-            depth: Hops from this node, zero to four.
-        """
-        if memory_retrieval is None:
-            _record_room(metrics, "memory_read", "unavailable", reason="unwired")
-            return {"status": "unavailable", "note": "The graph could not be read."}
-        if lineage is None:
-            _record_room(metrics, "memory_read", "unavailable", reason="unwired")
-            return {"status": "unavailable", "note": "The read scope is unavailable."}
-        try:
-            view = await room.scope()
-            target = lineage.render_room(
-                platform=room.platform,
-                conversation_id=bound_conversation_id,
-                live=LiveRoom(
-                    person_ids=frozenset(p.person_id for p in view.people),
-                    unnamed=view.unnamed,
-                    available=view.available,
-                    degraded=view.degraded,
-                ),
-            )
-            listed = target.room.persons if target.room else ()
-            result = await memory_retrieval.read(
-                seed=(kind, id),
-                depth=depth,
-                target=target,
-                now_ms=int(now_fn().timestamp() * 1000),
-                own_room=dream_adaptor in ROOM_ONLY_MEMORY_ADAPTORS,
-                social_off=persons.social_off_ids(listed or ()),
-                cache=graph_reads,
-                content_checks=content_checks,
-            )
-            _record_room(metrics, "memory_read", result["status"])
-            if result["status"] in {"ok", "partial"}:
-                result.update(_memory_result(result))
-            return _with_note(result, _GRAPH_READ_NOTES)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("memory_read failed (%s)", type(exc).__name__)
-            _record_room(metrics, "memory_read", "unavailable", reason="error")
-            return {"status": "unavailable", "note": "The graph could not be read."}
-
-    return memory_read
+_GRAPH_NOTES = {
+    "ok": "These graph rows matched in this scope.",
+    "partial": "The graph read reached a limit.",
+    "nothing_found": "No graph rows matched in this scope.",
+    "unavailable": "The graph could not be read.",
+}
 
 
 def _make_memory_search(deps):
-    content_checks = deps.content_checks
-    memory_retrieval = deps.memory_retrieval
-    metrics = deps.metrics
-    question = deps.question
-    room = deps.room
-    _memory_search_index = _make__memory_search_index(deps)
+    graph, metrics, room, scope = deps.graph_retrieval, deps.metrics, deps.room, deps.pass_scope
 
     async def memory_search(
-        query: str,
-        person: str | None = None,
-        since: str | None = None,
-        until: str | None = None,
-        kinds: list[MemoryKind] | None = None,
-        depth: int = 2,
+        query: str, person: str | None = None, since: str | None = None,
+        until: str | None = None, depth: int = 2,
     ) -> dict:
-        """Search what this group said, shared, kept, planned and where people
-        went. Call this when an answer needs something older than what you see.
+        """Search the scoped graph for related rows. Call this when an answer
+        needs a fact, item or intention beyond the current context.
 
-        It returns matches as an aged, linked graph. Narrow by person, dates or
-        kind; set `person` for what you know about someone. For everything said
-        on a day or span with no topic, use `record_query`. Check the graph for
-        an entity or statement before proposing it as new.
-
-        SHOULD: write `query` yourself, as what you are looking for, not the raw
-        tag message.
-
-        Returns `status`: ok, partial, nothing_found, unavailable, not_found or
-        ambiguous, with a `note` on how to report it.
+        Returns `status`: ok, partial, nothing_found or unavailable, with a `note`.
 
         Args:
-            query: What you are looking for: a topic, a phrase or a question.
-            person: Only what is about this person or said by them: the name
-                or nickname the message used. Leave it out for everyone.
-            since: The first day to include, as YYYY-MM-DD.
-            until: The last day to include, as YYYY-MM-DD.
-            kinds: Only these kinds of memory. `media` is pictures and videos
-                sent in a chat; a shared link is a message. Leave it out to
-                search them all.
-            depth: Links out from each match, 0 to 4; default 2.
+            query: Topic or phrase to find.
+            person: Name of a person to use as an additional graph anchor.
+            since: First day to include, as an ISO calendar date.
+            until: Last day to include, as an ISO calendar date.
+            depth: Maximum hops from each match.
         """
-        # The model writes the dates, so a bad one is an ordinary event, never
-        # an exception (R-5) and never silently dropped: `unavailable` with
-        # how to fix the call.
-        since_at = _memory_day(since, end=False) if since and since.strip() else None
-        until_at = _memory_day(until, end=True) if until and until.strip() else None
-        if (since and since.strip() and since_at is None) or (
-            until and until.strip() and until_at is None
-        ):
+        since_at = _memory_day(since, end=False) if since is not None else None
+        until_at = _memory_day(until, end=True) if until is not None else None
+        if (since is not None and since_at is None) or (until is not None and until_at is None):
             _record_room(metrics, "memory_search", "unavailable", reason="bad_date")
-            return dict(_MEMORY_BAD_DATE)
-        if since_at is not None and until_at is not None and until_at < since_at:
-            _record_room(metrics, "memory_search", "unavailable", reason="bad_span")
-            return dict(_MEMORY_BAD_SPAN)
-        wanted = tuple(dict.fromkeys(kinds or ()))
-        if any(k not in KINDS_BY_CATEGORY for k in wanted):
-            _record_room(metrics, "memory_search", "unavailable", reason="bad_kind")
-            return dict(_MEMORY_BAD_KIND)
-        node_kinds = tuple(n for k in wanted for n in KINDS_BY_CATEGORY[k])
-        # An empty `query` falls back to the tag message (`question`), as `ask_memory`
-        # does, kept on purpose: the docstring asks the model to write its own, and a
-        # blank one is still a search for what was asked, never an error.
-        text = query.strip() or question
-        view: RoomView | None = None
-        ref: PersonRef | None = None
-        if person is not None and person.strip():
-            view = await room.scope()
-            if not view.available:
-                _record_room(metrics, "memory_search", "unavailable")
-                return {
-                    "status": "unavailable",
-                    "note": "I can't work out who that is right now. Say you can't "
-                    "check, and do not say you don't know them.",
-                }
-            matches = view.find(person)
-            if not matches:
-                miss = _miss(person, view, content_checks=content_checks)
-                _record_room(metrics, "memory_search", miss["status"], candidates=0)
-                return miss
-            if len(matches) > 1:
-                _record_room(metrics, "memory_search", "ambiguous", candidates=len(matches))
-                return {
-                    "status": "ambiguous",
-                    **_asked_about(person, content_checks=content_checks),
-                    "could_be": [p.name for p in matches],
-                    "note": "More than one person here goes by that. Ask which one.",
-                }
-            ref = matches[0]
-            text = text or ref.name
-        if memory_retrieval is None:
-            # Not reachable through `build_tool_specs`, which offers this verb
-            # only with the index wired (`GRAPH_MEMORY_TOOLS`). Said, not raised,
-            # if a caller builds it some other way: there is no Honcho behind it
+            return {"status": "unavailable", "note": "Use ISO dates for since and until."}
+        if graph is None or room is None:
             _record_room(metrics, "memory_search", "unavailable", reason="unwired")
-            return {"status": "unavailable", "note": _INDEX_UNAVAILABLE}
-        return await _memory_search_index(
-            memory_retrieval,
-            text,
-            ref,
-            view if view is not None else await room.scope(),
-            node_kinds,
-            int(since_at.timestamp() * 1000) if since_at is not None else None,
-            int(until_at.timestamp() * 1000) if until_at is not None else None,
-            depth,
+            return {"status": "unavailable", "note": "The graph reader is unavailable."}
+        result = await graph.read(
+            room, deps.bound_conversation_id, scope, deps.now_fn(),
+            anchors=RetrievalAnchors(query=query), depth=depth,
+            person=person, since=since_at, until=until_at, content_checks=deps.content_checks,
         )
+        _record_room(metrics, "memory_search", result["status"])
+        return _with_note(result, _GRAPH_NOTES)
 
     return memory_search
+
+
+def _make_memory_read(deps):
+    graph, metrics, room, scope = deps.graph_retrieval, deps.metrics, deps.room, deps.pass_scope
+
+    async def memory_read(id: str, depth: int = 1) -> dict:
+        """Read a graph row and its neighbours. Call this when you have a graph
+        ID and need to inspect it or its connections.
+
+        Returns `status`: ok, partial, nothing_found or unavailable, with a `note`.
+
+        Args:
+            id: The graph ID shown on a row.
+            depth: Maximum hops from the requested row.
+        """
+        if graph is None or room is None:
+            _record_room(metrics, "memory_read", "unavailable", reason="unwired")
+            return {"status": "unavailable", "note": "The graph reader is unavailable."}
+        result = await graph.read(
+            room, deps.bound_conversation_id, scope, deps.now_fn(),
+            anchors=RetrievalAnchors(graph_ids=(id,)), depth=depth,
+            content_checks=deps.content_checks,
+        )
+        _record_room(metrics, "memory_read", result["status"])
+        return _with_note(result, _GRAPH_NOTES)
+
+    return memory_read
 
 
 def _make_ask_memory(deps):

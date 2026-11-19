@@ -57,6 +57,7 @@ _KEY_ORDER = [
     "member_update",
     "memory_read",
     "memory_search",
+    "intention_commit",
     "ask_memory",
     "search_memory",
     "recall_lookups",
