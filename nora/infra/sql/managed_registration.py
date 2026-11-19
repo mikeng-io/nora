@@ -40,6 +40,11 @@ _OwnerRow = Row[Any, Any, Any]
 _PG_UNIQUE_VIOLATION = "23505"
 
 
+def is_unique_violation(exc: IntegrityError) -> bool:
+    """Whether the driver reports SQLSTATE 23505; asyncpg's message omits the code."""
+    return getattr(exc.orig, "sqlstate", None) == _PG_UNIQUE_VIOLATION
+
+
 async def _insert_person(conn: AsyncConnection, person: ManagedPerson) -> None:
     # Idempotent insert — a replay never touches an existing person's
     # lifecycle (a suspension is not undone by re-registration) or its
@@ -187,7 +192,7 @@ async def _bind_account(
     try:
         await _insert_account(conn, account, owners)
     except IntegrityError as exc:
-        if _PG_UNIQUE_VIOLATION in str(getattr(exc, "orig", exc)):
+        if is_unique_violation(exc):
             raise IdentifierConflictError(
                 "an identifier is owned by another account"
             ) from exc
@@ -248,7 +253,7 @@ async def bind_identifiers(
                 )
                 added = True
         except IntegrityError as exc:
-            if getattr(exc.orig, "sqlstate", getattr(exc.orig, "pgcode", None)) == "23505":
+            if is_unique_violation(exc):
                 raise IdentifierConflictError(
                     "an identifier is owned by another account"
                 ) from exc
