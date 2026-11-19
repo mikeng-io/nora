@@ -35,6 +35,7 @@ from tests.integration.test_eval_routing_behavioral import (
 )
 
 _CASE = "route_web_browse_interactive_evidence"
+_UNIT = "generated-routing"
 
 
 def _services(tmp_path, upstream, *, rows=None):
@@ -166,7 +167,7 @@ async def browser_upstream(aiohttp_server):
 def generated_deployment(tmp_path, monkeypatch):
     identity = IDENTITY + '[[persons.generated.signal]]\nphone = "+852111"\n'
     (tmp_path / "identity.toml").write_text(identity)
-    (tmp_path / "policy.toml").write_text(default_policy(("signal", "g1")))
+    (tmp_path / "policy.toml").write_text(default_policy(("signal", "g1"), unit=_UNIT))
     monkeypatch.setattr(backbone, "_DEPLOYMENT_DIR", tmp_path)
     backbone._deployment_identity.cache_clear()
     backbone._deployment_policy.cache_clear()
@@ -259,6 +260,7 @@ async def test_anchored_browser_fixture_executes_web_browse(
     assert not any(event["kind"] == "external_service_mismatch" for event in events)
     state = {field["name"]: field["state"] for field in outcomes[0]["result"]["environment_state"]}
     assert state["nora.error"] is None
+    assert state["nora.effects"]["drives"][0]["unit"] == _UNIT
     results = dict(state["nora.tool_results"])
     result = json.loads(json.loads(results["web_browse"])[0]["text"])
     assert result["status"] == "ok"
@@ -281,16 +283,18 @@ async def test_routing_browser_fixture_is_case_owned(tmp_path, aiohttp_server, a
             overrides={"llm.base_url": upstream_url},
         )
     )
-    scope = computer_unit_scope("nora")
+    scope = computer_unit_scope(_UNIT)
     abort_scope = computer_unit_scope("different-unit")
 
     async def exercise():
         nonlocal endpoint, registry
         async with recording.open("sqlite://") as environment:
+            environment.provision_routing_browser(_UNIT)
             bound = environment.bind_config(cfg)
             registry = Path(bound.computer.scoped.registry)
             endpoints = FileScopeEndpoints(registry)
             assert await endpoints.registered() == (scope,)
+            assert await endpoints.resolve(computer_unit_scope("nora")) is None
             record = await endpoints.resolve(scope)
             assert record is not None
             assert record.base_url == environment.urls[BROWSER_BINDING]

@@ -650,7 +650,14 @@ def experiment_for(
     if contract is not None:
         cases = [contract.bind_case(name, case) for case in cases]
     if sample > 1:
-        cases = [draw for base in cases for draw in sampled(base, sample)]
+        draws = [(base.name, sampled(base, sample)) for base in cases]
+        if measurement.behavioral and name == ROUTING_CORPUS and services is not None:
+            services = {
+                draw.name: services[base_name]
+                for base_name, samples in draws
+                for draw in samples
+            }
+        cases = [draw for _, samples in draws for draw in samples]
     spec = Spec(
         source_url=source_url,
         services=services,

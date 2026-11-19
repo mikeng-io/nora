@@ -217,3 +217,95 @@ def test_routing_browser_fixture_declaration_is_closed(tmp_path, fixture, confli
     else:
         with pytest.raises(ValueError, match="routing browser fixture"):
             load_services(path)
+
+
+@pytest.mark.parametrize("variant", [
+    "valid", "unknown", "duplicate", "non-provider", "shared", "empty",
+    "not-a-list", "non-string", "recorded", "journey-world",
+])
+def test_routing_optional_services_are_limited_to_web_providers(tmp_path, variant):
+    bindings = {"search.exa.url": "provider"}
+    services = {"provider": [
+        {"method": "POST", "path": "/search", "response": {"status": 200}},
+    ]}
+    optional = ["provider"]
+    if variant == "unknown":
+        optional = ["other"]
+    if variant == "duplicate":
+        optional = ["provider", "provider"]
+    if variant == "not-a-list":
+        optional = "provider"
+    if variant == "non-string":
+        optional = [{}]
+    if variant == "non-provider":
+        bindings = {"honcho.base_url": "provider"}
+    if variant == "shared":
+        bindings["honcho.base_url"] = "provider"
+    if variant == "empty":
+        services["provider"] = []
+    external = {"version": 1, "bindings": bindings, "services": services}
+    corpus = "tool_selection"
+    if variant == "recorded":
+        plan = {**external, "optional_services": optional}
+    elif variant == "journey-world":
+        corpus = "autonomous_journey"
+        plan = {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
+                "optional_services": optional}
+    else:
+        plan = {
+            "kind": "routing_recording",
+            "model_gateway": {"upstream": "https://gateway.example.org/v1", "models": ["test"]},
+            "external": external,
+            "optional_services": optional,
+        }
+    path = tmp_path / "services.json"
+    path.write_text(json.dumps({"version": 1, "corpora": {corpus: {"generated": plan}}}))
+    if variant == "valid":
+        assert load_services(path).corpora[corpus]["generated"].bindings == bindings
+    else:
+        with pytest.raises(ValueError):
+            load_services(path)
+
+
+@pytest.mark.parametrize("variant", [
+    "valid", "foreground", "wrong-op", "bad-params", "duplicate", "collision",
+    "wildcard-collision", "wrong-binding", "shared-binding", "null", "protocol",
+])
+def test_routing_background_discord_reads_require_exact_dedicated_binding(tmp_path, variant):
+    body = {"op": "channels", "params": {"guild_id": "one"}}
+    response = {"status": 200, "json": {"available": False}}
+    binding = "platforms.discord.base_url" if variant != "wrong-binding" else "honcho.base_url"
+    bindings = {binding: "bridge"}
+    sequential = []
+    background = [{"request_json": body, "response": response}]
+    if variant == "shared-binding":
+        bindings["honcho.base_url"] = "bridge"
+    if variant == "wrong-op":
+        body["op"] = "voice_presence"
+    if variant == "bad-params":
+        body["params"]["other"] = True
+    if variant == "duplicate":
+        background *= 2
+    if variant in {"collision", "wildcard-collision", "foreground"}:
+        row = {"method": "POST", "path": "/v1/reads", "response": response}
+        if variant != "wildcard-collision":
+            row["request_json"] = body if variant == "collision" else {"op": "roster"}
+        sequential = [row]
+    external = {"version": 1, "bindings": bindings, "services": {"bridge": sequential}}
+    plan = {
+        "kind": "routing_recording",
+        "model_gateway": {"upstream": "http://127.0.0.1:9/v1", "models": ["generated"]},
+        "external": external,
+        "background_discord_reads": None if variant == "null" else background,
+    }
+    if variant == "protocol":
+        plan = {**external, "background_discord_reads": background}
+    manifest = tmp_path / "services.json"
+    manifest.write_text(json.dumps({"version": 1, "corpora": {
+        "tool_selection": {"generated": plan},
+    }}))
+    if variant in {"valid", "foreground"}:
+        assert load_services(manifest).corpora["tool_selection"]["generated"].bindings == bindings
+    else:
+        with pytest.raises(ValueError):
+            load_services(manifest)

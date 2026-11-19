@@ -260,3 +260,93 @@ def test_reject_invalid_schema(tmp_path, change):
     path.write_text(json.dumps(data))
     with pytest.raises(ValueError):
         RecordedServices.load(path)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("paths", "expected_error"), [
+    ((), None),
+    (("/search", "/search"), None),
+    (("/search",), "external_response_not_consumed"),
+    (("/other",), "external_response_not_recorded"),
+    (("/search", "/search", "/search"), "external_response_not_recorded"),
+    (None, "external_response_not_consumed"),
+])
+async def test_routing_optional_provider_can_be_skipped_without_hiding_a_mismatch(
+    tmp_path, paths, expected_error,
+):
+    from contextlib import nullcontext
+
+    from evals.services import load_services
+
+    plan = {
+        "kind": "routing_recording",
+        "model_gateway": {"upstream": "http://127.0.0.1:9/v1", "models": ["generated"]},
+        "external": {
+            "version": 1,
+            "bindings": {"search.exa.url": "provider"},
+            "services": {"provider": [row(path="/search", status=200)] * 2},
+        },
+    }
+    if paths is not None:
+        plan["optional_services"] = ["provider"]
+    manifest = tmp_path / "services.json"
+    manifest.write_text(json.dumps({"version": 1, "corpora": {
+        "tool_selection": {"generated": plan},
+    }}))
+    recorded = load_services(manifest).corpora["tool_selection"]["generated"]
+    expectation = (
+        pytest.raises(EvidenceError, match=expected_error) if expected_error else nullcontext()
+    )
+    with expectation:
+        async with recorded.open("sqlite://") as env:
+            async with aiohttp.ClientSession() as client:
+                endpoint = env.urls["search.exa.url"]
+                for i, path in enumerate(paths or ()):
+                    async with client.post(endpoint + path, json={"id": "generated"}) as response:
+                        assert response.status == (200 if path == "/search" and i < 2 else 500)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("guilds", "ordinary", "error"), [
+    ((), True, None),
+    (("two", "one", "two", "two"), True, None),
+    (("unknown",), True, "external_response_not_recorded"),
+    (("wrong-op",), True, "external_response_not_recorded"),
+    (("one",), False, "external_response_not_consumed"),
+])
+async def test_routing_discord_channel_reads_do_not_advance_recording(guilds, ordinary, error):
+    from contextlib import nullcontext
+
+    from nora.subject.model_gateway import ModelGateway
+
+    binding = "platforms.discord.base_url"
+    plan = RecordedServices(
+        {"version": 1, "bindings": {binding: "bridge"}, "services": {
+            "bridge": [row(path="/ordinary", status=200)],
+        }},
+        model_gateway=ModelGateway(
+            upstream="http://127.0.0.1:9/v1", models=frozenset({"generated"}),
+        ),
+        background_discord_reads=[
+            {"request_json": {"op": "channels", "params": {"guild_id": guild}},
+             "response": {"status": 200, "json": {"available": False, "fixture": guild}}}
+            for guild in ("one", "two")
+        ],
+    )
+    with pytest.raises(EvidenceError, match=error) if error else nullcontext():
+        async with plan.open("sqlite://") as env, aiohttp.ClientSession() as client:
+            endpoint = env.urls[binding]
+            for guild in guilds:
+                op = "roster" if guild == "wrong-op" else "channels"
+                params = {"guild_id": "one" if guild == "wrong-op" else guild}
+                async with client.post(endpoint + "/v1/reads", json={
+                    "op": op, "params": params,
+                }) as response:
+                    if guild in {"one", "two"}:
+                        assert response.status == 200
+                        assert (await response.json())["fixture"] == guild
+                    else:
+                        assert response.status == 500
+            if ordinary:
+                async with client.post(endpoint + "/ordinary", json={"id": "generated"}) as result:
+                    assert result.status == 200

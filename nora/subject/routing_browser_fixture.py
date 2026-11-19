@@ -38,11 +38,11 @@ _TEXT = (
 
 
 class RoutingBrowserFixture:
-    """One generated browser for an anchored eval using the default Nora unit."""
+    """One generated browser for one anchored evaluation scope."""
 
     def __init__(self, registry: Path) -> None:
         self.registry = registry
-        self.scope = computer_unit_scope("nora")
+        self.scope: str | None = None
         self.instance = uuid4().hex
         self.token_env = f"NORA_SUBJECT_COMPUTER_TOKEN_{self.instance}"
         self.token = token_urlsafe()
@@ -52,7 +52,10 @@ class RoutingBrowserFixture:
         self._world = 0
         self._stage = 0
 
-    def provision(self, endpoint: str) -> None:
+    def provision(self, endpoint: str, unit: str) -> None:
+        if self.scope is not None:
+            raise RuntimeError("routing browser scope already provisioned")
+        self.scope = computer_unit_scope(unit)
         (self.registry / f"{self.scope}.json").write_text(
             json.dumps(
                 {
@@ -72,7 +75,7 @@ class RoutingBrowserFixture:
         return app
 
     def _authorize(self, request: web.Request) -> dict[str, str]:
-        if request.headers.get("Authorization") != f"Bearer {self.token}":
+        if self.scope is None or request.headers.get("Authorization") != f"Bearer {self.token}":
             raise web.HTTPUnauthorized()
         return {"X-Computerd-Instance": self.instance}
 

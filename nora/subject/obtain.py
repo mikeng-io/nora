@@ -25,7 +25,7 @@ from pydantic import BaseModel, TypeAdapter
 from nora.app.composition import Dependencies, build_dependencies, wall_clock
 from nora.config import Config
 from nora.config import load as _load_config
-from nora.policy import Conversation, Policy
+from nora.policy import Conversation, Policy, load_policy
 
 from .circle import CircleMemory, CircleOverlay
 from .environment import IsolatedServices
@@ -510,7 +510,11 @@ async def obtain(spec: SubjectSpec) -> Subject:
             spec.circle.memory, spec.circle.reaction, spec.circle.gif))):
         raise ValueError("scenario responses require case-owned service bindings; "
                          "composition substitutions are not production equivalence")
-    cfg = environment.bind_config(build_config(spec))
+    cfg = build_config(spec)
+    if environment.has_routing_browser:
+        convo = _conversation_for(spec, load_policy(spec.workdir / "policy.toml"))
+        environment.provision_routing_browser(convo.unit)
+    cfg = environment.bind_config(cfg)
     if spec.now is None:
         clock: Callable[[], datetime] = wall_clock
     else:

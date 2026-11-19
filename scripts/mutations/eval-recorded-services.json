@@ -23,7 +23,7 @@
   {
     "name": "require remaining recorded responses",
     "file": "nora/subject/recorded_services.py",
-    "old": "if any(self._positions[name] != len(rows)\n               for name, rows in self._services.items()):",
+    "old": "if any(\n            self._positions[name] != len(rows)\n            and (name not in self._optional_services or self._positions[name] != 0)\n            for name, rows in self._services.items()\n        ):",
     "new": "if False:",
     "target": "tests/integration/subject/test_recorded_services.py::test_missing_response_and_exception_cleanup"
   }

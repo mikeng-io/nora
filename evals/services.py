@@ -127,16 +127,26 @@ def _plan_for(corpus: str, name: str, entry: Any) -> Any:
         return RecordedServices({k: v for k, v in entry.items() if k != "kind"})
     if kind == ROUTING_KIND:
         required = {"kind", "model_gateway", "external"}
-        if (corpus != ROUTING_CORPUS
-                or not required <= entry.keys() <= required | {"browser_fixture"}):
+        allowed = required | {"browser_fixture", "optional_services", "background_discord_reads"}
+        if corpus != ROUTING_CORPUS or not required <= entry.keys() <= allowed:
             raise ValueError(f"invalid routing service plan for {corpus}:{name}")
         gateway = _gateway(name, entry, [])
         if gateway is None:
             raise ValueError(f"routing service plan for {name!r} requires a model gateway")
         if "browser_fixture" in entry and entry["browser_fixture"] != OFFER_LOOKUP:
             raise ValueError("unknown routing browser fixture")
+        optional = entry.get("optional_services", [])
+        if (not isinstance(optional, list)
+                or not all(isinstance(service, str) for service in optional)
+                or len(set(optional)) != len(optional)):
+            raise ValueError("optional_services must be a list of unique service names")
+        background_reads = entry.get("background_discord_reads", [])
+        if not isinstance(background_reads, list):
+            raise ValueError("background Discord reads must be a list")
         return RecordedServices(
             entry["external"], model_gateway=gateway,
+            optional_services=frozenset(optional),
+            background_discord_reads=background_reads,
             browser_fixture="browser_fixture" in entry,
         )
     if kind == JOURNEY_KIND:

@@ -611,3 +611,57 @@ def test_tool_selection_behavioral_experiment_reaches_the_measured_draw(monkeypa
     [case] = experiment.cases
     assert task(case) == {"recording": recording}
     assert calls == [(name, "tag", BEHAVIORAL)]
+
+
+def test_behavioral_routing_samples_bind_the_validated_case_plan(tmp_path, monkeypatch):
+    import json
+
+    from evals import backbone
+    from evals.journey_cohort import bound_selection
+    from evals.measurement import PROTOCOL
+    from evals.scenarios import experiment_for
+    from evals.services import load_services, recording_for
+    from nora.subject.recorded_services import RecordedServices
+
+    corpus = "tool_selection"
+    only = frozenset({"route_web_search_control", "route_calculate_not_the_computer"})
+    external = {"version": 1, "bindings": {"honcho.base_url": "memory"},
+                "services": {"memory": []}}
+    entries = {name: {
+        "kind": "routing_recording",
+        "model_gateway": {"upstream": "https://gateway.example.org/v1", "models": [name]},
+        "external": external,
+    } for name in only}
+    path = tmp_path / "routing-services.json"
+
+    def load(plans):
+        path.write_text(json.dumps({"version": 1, "corpora": {corpus: plans}}))
+        return load_services(path)
+
+    args = _args(measure="behavioral", journey_cohort=None, judge=None, memory_index=False,
+                 print_input=None, run_budget="10",
+                 service_inputs=load({**entries, "unselected": next(iter(entries.values()))}))
+    with pytest.raises(ValueError, match="one gateway recording per selected case"):
+        bound_selection(args, [corpus], only)
+    args.service_inputs = load(entries)
+    assert bound_selection(args, [corpus], only) is None
+    base_plans = args.service_inputs.corpora[corpus]
+
+    async def resolve(case, spec):
+        return {"recording": recording_for(case, spec.services, spec.measurement)}
+
+    monkeypatch.setattr(backbone, "_drive", resolve)
+    for sample in (1, 5):
+        experiment, task = experiment_for(
+            corpus, source_url="", sample=sample, only=only,
+            services=base_plans, measurement=args.bound_measurement,
+        )
+        expected = {name if sample == 1 else f"{name}#{index}": plan
+                    for name, plan in base_plans.items() for index in range(1, sample + 1)}
+        assert len(experiment.cases) == 2 * sample
+        assert {case.name: task(case).get("recording") for case in experiment.cases} == expected
+    protocol_plans = {name: RecordedServices(external) for name in expected}
+    experiment, task = experiment_for(
+        corpus, source_url="", sample=5, only=only, services=protocol_plans, measurement=PROTOCOL,
+    )
+    assert {case.name: task(case).get("recording") for case in experiment.cases} == protocol_plans
