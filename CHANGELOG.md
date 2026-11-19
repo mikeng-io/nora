@@ -1,5 +1,20 @@
 # Changelog
 
+## [7.19.14](https://github.com/mikeng-io/nora/compare/v7.19.13...v7.19.14) (2026-11-19)
+
+
+### Bug Fixes
+
+* **architecture:** restore the comment, metric, store and guide checks ([781c2bb](https://github.com/mikeng-io/nora/commit/781c2bb4f8479804e6d55fa12dbc69175c230c81))
+* **ci:** equip manual acceptance for the managed portal browser ([2728906](https://github.com/mikeng-io/nora/commit/272890684dc507fd5bebeb5f22fa60145e8f2b55))
+* **deploy:** pass the presence directory key to Nora ([706781b](https://github.com/mikeng-io/nora/commit/706781bb522c1a6a2dca2771f75a8ca69268a449))
+* **evals:** align journey worlds and harness fixtures with the current protocol ([756ddfd](https://github.com/mikeng-io/nora/commit/756ddfdb6f2c066df56bef37bb7ac4bdf65d577d))
+* **evals:** allocate journey metrics ports at bind time ([b314f52](https://github.com/mikeng-io/nora/commit/b314f52f6c9407af7abc000d3ab21b2ac61c6973))
+* **evals:** keep the teardown caller out of the leak sweep ([bc16f6d](https://github.com/mikeng-io/nora/commit/bc16f6d1d5f21f9eac56888c8e5630bc5447499c))
+* **evals:** seed journey stimuli before starting the scheduler ([59edc4e](https://github.com/mikeng-io/nora/commit/59edc4e21f516c8fa2c95d18c989746d96c129a4))
+* **heartbeat:** restore the unit-wide proactive delivery recheck ([6bfc7f0](https://github.com/mikeng-io/nora/commit/6bfc7f03ad55e93386bc1a34c4ff8ccd98f65a4b))
+* **privacy:** build every social reader through the opt-out helper ([8819384](https://github.com/mikeng-io/nora/commit/881938438bc891de6bc7cd860476e1f1b2d63613))
+
 ## [7.19.13](https://github.com/mikeng-io/nora/compare/v7.19.12...v7.19.13) (2026-11-19)
 
 
