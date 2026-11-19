@@ -614,7 +614,7 @@
  },
  "nora/domain/block_types.py": {
   "comment_blocks": 19,
-  "file_lines": 1102,
+  "file_lines": 1095,
   "internal_docstrings": 1
  },
  "nora/domain/blocks.py": {
@@ -925,7 +925,7 @@
   "internal_docstrings": 1
  },
  "nora/infra/computer/browser.py": {
-  "internal_docstrings": 5
+  "internal_docstrings": 4
  },
  "nora/infra/computer/client.py": {
   "comment_blocks": 1,

@@ -222,7 +222,6 @@ async def test_registered_web_browse_journey(tmp_path, aiohttp_server):
             prompt = body["messages"][1]["content"]
             assert "<web_retrieval " in prompt
             requests.append(prompt)
-            assert re.search(r'": "Click Commit purchase"', prompt) is None
             if len(requests) == 1:
                 await _redraw(http, endpoint, tabs, scope)
                 return gateway_reply(_decision(prompt, "Click Show offers"))
@@ -277,3 +276,87 @@ async def test_registered_web_browse_journey(tmp_path, aiohttp_server):
             assert connections == [scope] and visits == ["/offer"] and len(requests) == 6
             assert await tabs.open_for_scope(other_scope, instance="generated-instance") == []
             assert await tabs.open_for_scope(scope, instance="generated-instance") == [tab]
+
+
+FORM_PAGES = {
+    "/get": """<!doctype html><title>Search</title><main>
+      <form method="get" action="/results">
+        <input type="search" name="q" aria-label="Search the site"><button>Search</button>
+      </form></main>""",
+    "/post": """<!doctype html><title>Offers</title><main>
+      <form method="post" action="/find">
+        <input type="hidden" name="q" value="ex4"><button>Find offers</button>
+      </form></main>""",
+}
+RESULTS = "<!doctype html><title>Results</title><h1>Results: EX4 HKD 399</h1>"
+
+
+async def test_web_browse_submits_search_forms(tmp_path, aiohttp_server):
+    """Typing into a search box and pressing Enter, and a form's own Search button (GET and POST),
+    each reach the page: the server sees the request."""
+    scope = computer_unit_scope(UNIT)
+    seen = []
+
+    async def page(request):
+        return web.Response(text=FORM_PAGES[request.path], content_type="text/html")
+
+    async def results(request):
+        seen.append(("GET", request.path_qs))
+        return web.Response(text=RESULTS, content_type="text/html")
+
+    async def find(request):
+        seen.append(("POST", request.path, await request.text()))
+        return web.Response(text=RESULTS, content_type="text/html")
+
+    async with _chromium(tmp_path) as endpoint, aiohttp.ClientSession() as http:
+        app = web.Application()
+        for path in FORM_PAGES:
+            app.router.add_get(path, page)
+        app.router.add_get("/results", results)
+        app.router.add_post("/find", find)
+        token = uuid4().hex
+        app.router.add_get("/v1/browser", _relay(http, endpoint, scope, token, []))
+        server = await aiohttp_server(app)
+
+        async def browse(path, first):
+            calls = []
+
+            def script(request):
+                body = json.loads(request.content)
+                prompt = body["messages"][1]["content"]
+                calls.append(prompt)
+                if "Return a JSON object" in body["messages"][0]["content"]:
+                    return gateway_reply(json.dumps({"answer": "EX4 is HKD 399.", "found": True}))
+                if len(calls) == 1:
+                    return gateway_reply(first(prompt))
+                return gateway_reply(re.search(r'"(\d+-finish)"', prompt)[1])
+
+            manager = ScopeBrowserManager(
+                runtime=SimpleNamespace(binding=AsyncMock(return_value=SimpleNamespace(
+                    endpoint=SimpleNamespace(base_url=str(server.make_url("/"))),
+                    instance="generated-instance",
+                ))),
+                tabs=FakeBrowserTabStore(), token=token, clock=lambda: datetime.now(UTC),
+                idle_after=timedelta(minutes=5),
+            )
+            async with AsyncOpenAI(base_url="http://gateway.invalid/v1", api_key="local",
+                                   http_client=httpx.AsyncClient(
+                                       transport=httpx.MockTransport(script),
+                                   )) as client:
+                runner = WebBrowseRunner(client=client, model=ALIAS, max_tokens=512,
+                                         settings=BrowseSettings(), manager=manager)
+                return await runner.browse(
+                    scope=scope, objective="Find the EX4 offer.",
+                    start_url=str(server.make_url(path)),
+                )
+
+        typed = await browse(
+            "/get", lambda p: _decision(p, "Type into Search the site and press Enter") + " ex4",
+        )
+        clicked = await browse("/get", lambda p: _decision(p, "Click Search"))
+        posted = await browse("/post", lambda p: _decision(p, "Click Find offers"))
+    assert [r.status for r in (typed, clicked, posted)] == ["ok", "ok", "ok"]
+    assert seen == [
+        ("GET", "/results?q=ex4"), ("GET", "/results?q="), ("POST", "/find", "q=ex4"),
+    ]
+

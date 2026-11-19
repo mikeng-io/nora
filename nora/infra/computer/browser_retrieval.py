@@ -13,9 +13,8 @@ MAX_ACTIONS = 64
 _OFFERED = MAX_ACTIONS - 4
 _MAX_LABEL = 80
 
-# ponytail: a click runs the page's own script, which can already POST on load; only
-# native submit controls are refused here. Against page scripts the boundary is the
-# anonymous tab and scoped egress.
+# ponytail: a click runs the page's own script, as loading the page does; the boundary
+# against page scripts is the anonymous tab and scoped egress, not this check.
 
 # The same isolated DOM world serves observation and dispatch: the live control and its
 # options are compared before acting, in the same evaluation.
@@ -23,7 +22,6 @@ _CONTROL = """function(expected, action, option) {
     if (!this.isConnected || !this.getClientRects().length ||
         getComputedStyle(this).visibility !== 'visible' ||
         this.matches(':disabled,[aria-disabled="true"],[readonly]')) return null;
-    if (this.form && ['submit', 'image'].includes(this.type)) return null;
     let label = (this.getAttribute('aria-label') || this.innerText ||
                  this.value || '').slice(0, 80);
     let kind, target = '', options = [];
@@ -51,10 +49,10 @@ _CONTROL = """function(expected, action, option) {
             '[type=button],[type=image]),textarea,select').length : 0;
         target = (this.type === 'search' || fields === 1) ? 'enter' : '';
     } else if ((this instanceof HTMLButtonElement || this instanceof HTMLInputElement) &&
-               (this.type === 'button' || (this.type === 'submit' && !this.form))) {
+               ['button', 'submit'].includes(this.type)) {
         kind = 'button';
     } else if (this instanceof HTMLDetailsElement || this.tagName === 'SUMMARY' ||
-               (this.matches('[role="tab"],[role="button"]') && !this.closest('form'))) {
+               this.matches('[role="tab"],[role="button"]')) {
         kind = 'button';
     } else {
         return null;
@@ -165,7 +163,7 @@ async def dispatch(page: BrowserPage, action: RetrievalAction, text: str = "") -
     except BrowserError:
         # Resolving the old node cannot cause a page effect.
         return False
-    page.policy.check(action.kind)
+    page.policy.live(action.kind)
     result = await page._page("Runtime.callFunctionOn", {
         "objectId": object_id,
         "functionDeclaration": _CONTROL,
