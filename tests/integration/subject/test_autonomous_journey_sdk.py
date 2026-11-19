@@ -302,7 +302,7 @@ async def test_sdk_autonomous_journey_version2_turns_through_real_app(
     experiment = Experiment(cases=[draw], evaluators=[JourneyGrader()])
     # Retain failures too: pytest rotates its temporary evidence directories.
     with socket.socket() as competing_listener:
-        # Another listener can claim a port between selection and App startup.
+        # Hold a listener during startup to expose any preselected port.
         competing_listener.bind(("0.0.0.0", plan.overrides()["obs.metrics.port"]))
         competing_listener.listen()
         try:
