@@ -84,7 +84,7 @@ def build(deps):
         _spec("note_create", note_create),
         _spec("note_revise", note_revise),
         _spec("remember", remember_told)
-        if deps.memory_retrieval is not None
+        if deps.graph_retrieval is not None or deps.memory_retrieval is not None
         else _spec("remember", remember),
         _spec("profile_dispute", profile_dispute),
         _spec("version_list", version_list),

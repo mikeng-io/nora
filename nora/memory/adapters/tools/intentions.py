@@ -8,7 +8,15 @@ from nora.agent.toolkit.results import _record
 from nora.memory.app.act_scope import active_act_authority, pass_shown
 from nora.memory.app.admission import Unavailable
 from nora.memory.domain.admission import Refusal
+from nora.memory.domain.admission_ports import Stored
 from nora.memory.domain.intention_operations import IntentionOperation, parse_intention_operation
+
+_ENTRY_NOTES = {
+    "admitted": "The operation was admitted.",
+    "inactive": "The operation could not be submitted.",
+    "unavailable": "The operation could not be recorded.",
+    "commit_uncertain": "Read back the intention before retrying.",
+}
 
 _REFUSALS = {
     "invalid_field": "Fix the named field and submit that operation again.",
@@ -18,6 +26,7 @@ _REFUSALS = {
     "illegal_basis": "Use a row that supports the requested relation.",
     "unresolved_person": "Use a known person ID for the named field.",
     "illegal_transition": "Read the intention and check which operations it permits.",
+    "pointer_entity": "Use an intention ID for the base.",
     "stale_base": "Read the current intention and use its current ID.",
     "trigger_without_evidence": "Cite what warrants changing the trigger.",
     "scope_widening": "Use evidence and links that share the intended scope.",
@@ -57,8 +66,13 @@ def _make_intention_commit(deps):
             _record(metrics, "intention_commit", "unavailable")
             return {
                 "status": "unavailable",
-                "operations": [{"status": "unavailable", "commit_uncertain": False}
-                               for _ in operations],
+                "operations": [
+                    {
+                        "status": "unavailable", "commit_uncertain": False,
+                        "note": _ENTRY_NOTES["inactive"],
+                    }
+                    for _ in operations
+                ],
                 "note": ("The intention store is unavailable." if admission is None
                          else "No active pass can commit intentions."),
             }
@@ -89,12 +103,16 @@ def _make_intention_commit(deps):
     return intention_commit
 
 
-def _entry(outcome) -> dict:
+def _entry(outcome: Stored | Refusal | Unavailable) -> dict:
     if isinstance(outcome, Refusal):
         return {
             "status": "refused", "reason": outcome.reason, "field": outcome.field,
             "note": _REFUSALS.get(outcome.reason, "This operation was refused."),
         }
     if isinstance(outcome, Unavailable):
-        return {"status": "unavailable", "commit_uncertain": outcome.commit_uncertain}
-    return {"status": "admitted", "id": outcome.id}
+        reason = "commit_uncertain" if outcome.commit_uncertain else "unavailable"
+        return {
+            "status": "unavailable", "commit_uncertain": outcome.commit_uncertain,
+            "note": _ENTRY_NOTES[reason],
+        }
+    return {"status": "admitted", "id": outcome.id, "note": _ENTRY_NOTES["admitted"]}

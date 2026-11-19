@@ -369,13 +369,8 @@ class ToolRegistry:
         # link is opened through; `None` answers the open `unavailable`. Its
         # `google_account` names who the NOT_SHARED note says to share with.
         external_files: ExternalFilesSource | None = None, google_account: str = "",
-        # `[memory.index] read` (ships off): the retrieval service
-        # `memory_search` answers from, and the switch between the two memory
-        # surfaces (DEC-316): wired, every build offers `memory_search` and no
-        # Honcho tool (`about` included; `remember` is on both surfaces, a
-        # Profile write here and Honcho's there); `None` keeps the Honcho
-        # surface.
-        # Process-lifetime like `record`.
+        # The legacy dependency still selects the Profile writes.
+        # Graph reads need the Cognitive Graph reader.
         memory_search: MemorySearch | None = None,
         graph_retrieval: Any = None,
         # The Profile write the graph surface's `remember` makes (a `told`
@@ -435,8 +430,10 @@ class ToolRegistry:
             | (frozenset() if documents is not None else DOCUMENT_TOOLS)
             | (frozenset() if subagent is not None else SUBAGENT_TOOLS)
             | (frozenset() if video is not None else VIDEO_TOOLS)
-            | ({"profile_dispute"} if memory_search is None else HONCHO_MEMORY_TOOLS)
+            | ({"profile_dispute"} if memory_search is None else set())
             | ({"memory_search", "memory_read"} if graph_retrieval is None else set())
+            | (HONCHO_MEMORY_TOOLS
+               if graph_retrieval is not None or memory_search is not None else set())
             | {"intention_commit"}
         )
         self._subagent = subagent

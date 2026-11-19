@@ -9,6 +9,7 @@ import pytest
 import sqlalchemy as sa
 
 from nora.access import IdentityAccess
+from nora.agent.catalog.groups import HONCHO_MEMORY_TOOLS
 from nora.agent.lineage import LineagePolicy
 from nora.agent.room import Room
 from nora.agent.tools import build_tool_specs
@@ -65,7 +66,9 @@ async def test_search_reads_claim_text_and_never_returns_another_units_row(scena
     phrase = "Generated telescope alignment"
     await scenario.claim("claim:here", content={"text": phrase})
     await scenario.claim("claim:outside", content={"text": phrase}, unit="other-unit")
-    result = await specs(scenario)["memory_search"](phrase)
+    tools = specs(scenario)
+    assert tools.keys().isdisjoint(HONCHO_MEMORY_TOOLS)
+    result = await tools["memory_search"](phrase)
     assert result["status"] == "ok"
     assert phrase in result["rows"]
     assert result["keys"] == [["claim", "claim:here"]]

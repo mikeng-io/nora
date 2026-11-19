@@ -614,9 +614,13 @@ def build_tool_specs(
 def _on_surface(name: str, deps: ToolDeps) -> bool:
     if name == "intention_commit":
         return deps.all_memory_surfaces or deps.intention_admission is not None
-    reads = {"memory_read", "memory_search"}
-    graph = deps.graph_retrieval if name in reads else deps.memory_retrieval
-    return on_memory_surface(name, graph=graph is not None, everything=deps.all_memory_surfaces)
+    graph = deps.graph_retrieval is not None
+    legacy = deps.memory_retrieval is not None
+    if name == "profile_dispute":
+        graph = legacy
+    elif name not in {"memory_read", "memory_search"}:
+        graph = graph or legacy
+    return on_memory_surface(name, graph=graph, everything=deps.all_memory_surfaces)
 
 
 def build_tools(

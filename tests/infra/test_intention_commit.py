@@ -116,6 +116,7 @@ async def test_a_malformed_operation_leaves_its_valid_sibling_admitted(engine):
     refused, admitted = result["operations"]
     assert (refused["reason"], refused["field"]) == ("invalid_field", "about")
     assert admitted["status"] == "admitted"
+    assert refused.get("note") and admitted.get("note")
     assert set(await _rows(engine, INTENTION)) == {admitted["id"]}
 
 
@@ -144,6 +145,10 @@ async def test_drop_refuses_any_other_model_supplied_ending(engine, ending):
 async def test_no_active_pass_cannot_commit(engine):
     result = await _tool(engine)([_open()])
     assert result["status"] == "unavailable"
+    assert result["operations"] == [{
+        "status": "unavailable", "commit_uncertain": False,
+        "note": "The operation could not be submitted.",
+    }]
     assert await _rows(engine, INTENTION) == {}
 
 
@@ -160,7 +165,10 @@ async def test_commit_uncertainty_is_reported_as_unavailable(engine):
     finally:
         sa.event.remove(engine.sync_engine, "commit", fail_commit)
     assert result["status"] == "unavailable"
-    assert result["operations"] == [{"status": "unavailable", "commit_uncertain": True}]
+    assert result["operations"] == [{
+        "status": "unavailable", "commit_uncertain": True,
+        "note": "Read back the intention before retrying.",
+    }]
 
 
 async def test_close_uses_the_named_message_and_writes_one_closed_by_edge(engine):
