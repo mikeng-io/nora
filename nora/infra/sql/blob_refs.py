@@ -117,6 +117,7 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
     ("document_revision", "sha256"): "the hash of the revision's own text",
     ("document_revision", "spec"): "a document's layout; its pictures are `media`",
     ("video_readings", "sha256"): "a reading cached by the bytes it read; it needs no bytes",
+    ("graph_search", "text"): "lexical text only; the source tables own blob custody",
     ("memory_node", "sha256"): "the index, derived from the rows above and rebuilt from them",
     ("memory_node", "lineage"): _LINEAGE,
     ("blob_tombstone", "sha256"): "bytes already deleted",

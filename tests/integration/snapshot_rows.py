@@ -692,3 +692,10 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "unit": "u", "stimulus_id": n, "wake_id": n,
     },
 }
+
+#: Rebuilt from restored sources, never copied from the snapshot source.
+DERIVED = {
+    "graph_search": lambda i: {
+        "graph_id": ROWS["registry"](i)["id"], "unit": "u", "text": f"Derived text {i}",
+    },
+}

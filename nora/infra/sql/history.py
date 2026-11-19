@@ -302,6 +302,7 @@ NOT_RESTORED: dict[str, str] = {
     "stimulus_pending": "derived; snapshot_at.seed rebuilds it",
     # 0105_memory_index: a projection of the stores above, so a restore leaves
     # it empty and `memory_index_state` reads `never` until a rebuild.
+    "graph_search": "derived; rebuild_graph_search from the restored graph",
     "memory_node": "derived; nora memory rebuild",
     "memory_edge": "derived; nora memory rebuild",
     "memory_projection_queue": "derived; nora memory rebuild",
