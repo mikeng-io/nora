@@ -152,7 +152,7 @@ async def _optional_counts(
 ) -> dict[str, int] | None:
     try:
         async with conn.begin_nested():
-            return dict((await conn.execute(statement)).tuples().all())
+            return dict((await conn.execute(statement)).all())
     except sa.exc.SQLAlchemyError:
         return None
 
