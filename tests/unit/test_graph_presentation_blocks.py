@@ -6,7 +6,7 @@ from xml.etree import ElementTree
 import pytest
 
 from nora.domain.block_types import BLOCK_TYPES
-from nora.domain.blocks import BlockDeclaration, assemble_declared
+from nora.domain.blocks import BlockDeclaration, assemble, assemble_declared
 from nora.domain.profile import ProfileView
 from nora.language.profile_render import render_profile
 from nora.memory.adapters.presentation_blocks import GraphPresentationBlocks
@@ -45,15 +45,17 @@ def test_graph_blocks_render_retrieval_status(status) -> None:
     declaration = tuple(
         BlockDeclaration(name, i, "Read a graph presentation") for i, name in enumerate(KINDS)
     )
+    rendered = assemble_declared(declaration, instances)
+    assert assemble(instances, sep="\n\n") == rendered
     elements = ElementTree.fromstring(  # noqa: S314 - rendered test fixtures
-        "<context>" + assemble_declared(declaration, instances) + "</context>",
+        "<context>" + rendered + "</context>",
     )
     assert tuple(element.tag for element in elements) == KINDS
-    assert {element.attrib["status"] for element in elements} == {status}
+    assert {element.get("status") for element in elements} == {status}
     if status == "unavailable":
-        assert {element.attrib["cause"] for element in elements} == {result.cause}
+        assert {element.get("cause") for element in elements} == {result.cause}
     if status == "partial":
-        assert {element.attrib["limit"] for element in elements} == {"rows"}
+        assert {element.get("limit") for element in elements} == {"rows"}
         assert all(row.graph_id in (elements[i].text or "") for i in (0, 2, 3))
     else:
         assert all(element.text is None for element in elements)
@@ -70,7 +72,7 @@ def test_profile_blocks_identify_each_subject_by_id_and_identity_name() -> None:
     ]
     rendered = assemble_declared((BlockDeclaration("graph_profile", 0, "Read claims"),), selected)
     elements = ElementTree.fromstring("<context>" + rendered + "</context>")  # noqa: S314
-    assert [(row.attrib["of"], row.attrib["name"]) for row in elements] == [
+    assert [(row.get("of"), row.get("name")) for row in elements] == [
         ("fixture-entity", "Fixture <name>"), ("fixture-other-entity", "Another fixture name"),
     ]
 

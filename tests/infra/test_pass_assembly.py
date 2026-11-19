@@ -68,7 +68,7 @@ async def test_called_renders_steady_blocks_floor_people_standing_and_related_in
 ) -> None:
     data = await _called(scenario)
     await intention(scenario, "local-intention")
-    await write_edge(scenario, "local-intention", "called-item", "rests_on")
+    await write_edge(scenario, "local-intention", "called-item", "cites")
     floor = _floor()
     context = await _assembler(scenario).assemble("called", data, floor, SCOPE, NOW)
     elements = _elements(context)
@@ -92,6 +92,7 @@ async def test_called_retrieves_once_and_excludes_presented_claims_from_related(
     await write_edge(scenario, "related-claim", "called-item", "cites")
     assembler, adapter = _counted(scenario)
     context = await assembler.assemble("called", data, _floor(), SCOPE, NOW)
+    assert len(adapter.reads) == 1
     (read,) = adapter.reads
     assert read[0] == SCOPE.room
     assert read[1] == frozenset({PERSON, OTHER})

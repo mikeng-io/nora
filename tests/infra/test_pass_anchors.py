@@ -84,7 +84,7 @@ async def test_proactive_anchors_intention_basis_parent_room_and_people(scenario
     await pointers(scenario)
     await intention(scenario, "due", persons=[OTHER], origin_room=OTHER_ROOM)
     await intention(scenario, "parent")
-    await scenario.item("basis")
+    await scenario.claim("basis")
     await write_edge(scenario, "due", "basis", "rests_on")
     await serves(scenario, "due", "parent")
     result = await reader(scenario).build(
@@ -99,6 +99,8 @@ async def test_wake_anchors_claimed_stimuli_items_rooms_people_and_intentions(sc
     await pointers(scenario)
     await scenario.item("stimulus-item")
     await intention(scenario, "dependent")
+    await intention(scenario, "touched")
+    await write_edge(scenario, "touched", "stimulus-item", "cites")
     await scenario.claim("non-intention")
     data = WakeInput((
         GraphStimulus(UNIT, "new_item", "stimulus-item", AT, "fixture", ROOM, PERSON,
@@ -107,7 +109,8 @@ async def test_wake_anchors_claimed_stimuli_items_rooms_people_and_intentions(sc
     ))
     result = await reader(scenario).build(declaration("wake"), data, SCOPE, NOW)
     assert result.anchors == RetrievalAnchors((
-        "stimulus-item", "dependent", "room-here", "room-other", "person-other", "person-here",
+        "stimulus-item", "dependent", "touched", "room-here", "room-other",
+        "person-other", "person-here",
     ))
 
 

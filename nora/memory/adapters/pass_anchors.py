@@ -147,6 +147,7 @@ def _collective(
 class _AnchorQueries:
     def __init__(self, conn: AsyncConnection, rows: FromClause, scope: RetrievalScope) -> None:
         self._conn = conn
+        self._graph = rows
         self._rows = rows.c
         self._scope = scope
 
@@ -194,18 +195,37 @@ class _AnchorQueries:
     async def wake(self, data: WakeInput) -> _Seeds:
         stimuli = tuple(row for row in data.stimuli if row.unit == self._scope.unit)
         refs = tuple(dict.fromkeys(
-            ref for row in stimuli for ref in (row.graph_id, *row.dependents)
+            ref for row in stimuli for ref in (row.graph_id, row.revision_id, *row.dependents)
+            if ref is not None
         ))
         r = self._rows
-        ids = await self._conn.scalars(sa.select(r.graph_id).where(
-            r.graph_id.in_(refs), r.kind.in_(("item", "intention")),
-        ))
-        visible = set(ids)
-        return _Seeds(
-            tuple(ref for ref in refs if ref in visible),
-            tuple(row.room for row in stimuli if row.room is not None),
-            tuple(row.person for row in stimuli if row.person is not None),
+        rows = await self._conn.execute(sa.select(
+            r.graph_id, r.kind, r.origin_room, r.image["persons"],
+        ).where(r.graph_id.in_(refs)))
+        visible = {graph_id: (kind, room, people) for graph_id, kind, room, people in rows}
+        ids = tuple(
+            ref for ref in refs if ref in visible and visible[ref][0] in ("item", "intention")
         )
+        links = await self._touched_intentions(tuple(visible))
+        return _Seeds(
+            tuple(dict.fromkeys((*ids, *links))),
+            (*tuple(row.room for row in stimuli if row.room is not None),
+             *tuple(visible[ref][1] for ref in ids if visible[ref][1] is not None)),
+            (*tuple(row.person for row in stimuli if row.person is not None),
+             *tuple(person for ref in ids for person in (visible[ref][2] or ()) if person)),
+        )
+
+    async def _touched_intentions(self, refs: tuple[str, ...]) -> tuple[str, ...]:
+        r = self._rows
+        link = self._graph.alias("stimulus_links").c
+        src, dst = link.image["src_id"].astext, link.image["dst_id"].astext
+        return tuple(await self._conn.scalars(sa.select(r.graph_id).where(
+            r.kind == "intention", sa.exists(sa.select(1).where(
+                link.kind == "edge", link.state == "live",
+                sa.or_(sa.and_(src == r.graph_id, dst.in_(refs)),
+                       sa.and_(dst == r.graph_id, src.in_(refs))),
+            )),
+        ).order_by(r.graph_id)))
 
     async def debrief(self, data: DebriefInput) -> _Seeds:
         r = self._rows

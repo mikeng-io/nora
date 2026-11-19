@@ -48,7 +48,8 @@ class GraphPresentationBlocks:
         self, result: RetrievalResult, subject: EntityAnchor, names: Mapping[str, str],
     ) -> tuple[ContextBlock, tuple[str, ...]]:
         selected = profile(result, subject, names)
-        attrs: tuple[tuple[str, str], ...] = (("of", subject.graph_id or subject.pointer_ref or ""),)
+        subject_id = subject.graph_id or subject.pointer_ref or ""
+        attrs: tuple[tuple[str, str], ...] = (("of", subject_id),)
         if selected.name is not None:
             attrs += (("name", selected.name),)
         sections = [(part, rows) for part, rows in selected.parts if rows]
