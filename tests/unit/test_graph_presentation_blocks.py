@@ -21,9 +21,15 @@ KINDS = ("graph_profile", "graph_standing", "graph_lessons", "related")
 
 
 def test_graph_types_describe_their_owning_store() -> None:
-    for name in KINDS:
+    stores = {
+        "graph_profile": "cognitive_graph.profile",
+        "graph_standing": "cognitive_graph.standing",
+        "graph_lessons": "cognitive_graph.lessons",
+        "related": "cognitive_graph.related",
+    }
+    for name, store in stores.items():
         assert BLOCK_TYPES[name].description
-        assert BLOCK_TYPES[name].store == "cognitive_graph"
+        assert BLOCK_TYPES[name].store == store
 
 
 @pytest.mark.parametrize("status", ["empty", "unavailable", "partial"])

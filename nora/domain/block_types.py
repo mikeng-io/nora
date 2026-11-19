@@ -93,23 +93,23 @@ BLOCK_TYPES: dict[str, BlockType] = {
        "Claims about one subject, organized as facts, traits and guesses from the graph. "
        "They are your accounts of the evidence. An empty result found no claims in this read. "
        "A missing block says nothing about the subject, and a claim can still be wrong.",
-       "cause", "limit", store="cognitive_graph", of="the subject's id",
+       "cause", "limit", store="cognitive_graph.profile", of="the subject's id",
        name="the subject's name from the identity view"),
     _t("graph_standing",
        "Your open and recently settled commitments and your claims about this room. "
        "An empty result found none in this read. A missing block says nothing about the room, "
        "and your claims may no longer describe the current situation.",
-       "cause", "limit", store="cognitive_graph"),
+       "cause", "limit", store="cognitive_graph.standing"),
     _t("graph_lessons",
        "Claims you recorded about your practice in this unit, with the evidence they cite. "
        "An empty result found none in this read. A missing block says nothing about what "
        "you learned, and a lesson can still be wrong.",
-       "cause", "limit", store="cognitive_graph"),
+       "cause", "limit", store="cognitive_graph.lessons"),
     _t("related",
        "Messages and claims reached from the starting references. They carry the original "
        "speakers' words or your earlier judgments. An empty result found no additional rows. "
        "A missing block says nothing about what exists, and closeness does not establish truth.",
-       "cause", "limit", store="cognitive_graph"),
+       "cause", "limit", store="cognitive_graph.related"),
     _t("cognition_orient", "How to keep each kind of memory with the tools this session offers. "
        "These are instructions, not evidence."),
     _t("cognition_act", "How to carry out a decision with the tools this session offers. "
