@@ -29,6 +29,7 @@ TIMING_TESTS = (
     "tests/integration/test_latency.py",
     "tests/unit/test_engagement_pipeline.py",
     "tests/integration/test_bridge_queue_telemetry.py",
+    "tests/infra/test_register_stored_rows.py",
 )
 
 
