@@ -542,7 +542,7 @@ async def _computer_browse__prepare(c):
                     "status": "unavailable",
                     "reason": "task is not a task id",
                     "note": (
-                        "Pass the task id a computer_browse reply or the computer block gives, or "
+                        f"Pass the task id a {c.tool_name} reply or the computer block gives, or "
                         "leave "
                         "it out for a new tab."
                     ),

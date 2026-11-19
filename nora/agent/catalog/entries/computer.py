@@ -84,7 +84,7 @@ TOOLS = {
     "web_browse": NativeTool(
         2,
         read_only=False,
-        side_effect_state="confirmed",
+        side_effect_state="unknown",
         idempotency="non_idempotent",
         retry="never",
         source_tier="web",

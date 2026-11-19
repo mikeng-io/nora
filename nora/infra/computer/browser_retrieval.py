@@ -11,6 +11,9 @@ from nora.infra.computer.browser import BrowserError, BrowserPage
 MAX_ACTIONS = 64
 _MAX_LABEL = 80
 
+# ponytail: a click runs the page's own script, which can already POST on load; only
+# native submit controls are refused here. Against page scripts the boundary is the
+# anonymous tab and scoped egress.
 # Use the same isolated DOM world for observation and dispatch. Compare the
 # live control and option set before acting, in the same evaluation.
 _CONTROL = """function(expected, action, option) {

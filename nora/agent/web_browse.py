@@ -219,8 +219,8 @@ def _outcome(
         or not value["answer"].strip() or type(value.get("found")) is not bool
     ):
         raise RetrievalError("the gateway did not return an evidence report")
-    if stopped and not value["found"]:
-        # Nothing shown after a cut-off is not nothing there: the range was not covered.
+    if stopped:
+        # A cut-off run has not covered its range, so even a found fact may be partial.
         return BrowseOutcome(
             "unavailable", answer=value["answer"].strip(), url=url, steps=steps,
             reason="stopped at its limit before the pages were covered",

@@ -146,7 +146,7 @@ async def test_web_browse_rejects_invalid_action(tmp_path, decision):
     assert page._page.await_count == 0 and page.revoked
 
 
-async def _scripted_run(tmp_path, replies, settings):
+async def _scripted_run(tmp_path, replies, settings, **kwargs):
     page = Page()
     manager = Manager(page)
     requests = []
@@ -161,16 +161,18 @@ async def _scripted_run(tmp_path, replies, settings):
                            )) as c:
         runner = WebBrowseRunner(client=c, model=ALIAS, max_tokens=512,
                                  settings=settings, manager=manager)
-        result = await call_registered(tmp_path, runner, manager)
+        result = await call_registered(tmp_path, runner, manager, **kwargs)
     return result, requests, page
 
 
 _NOT_SHOWN = json.dumps({"answer": "The offer table was not reached.", "found": False})
 
 
-async def test_a_run_cut_at_its_limit_reports_what_it_read_not_nothing_found(tmp_path):
+@pytest.mark.parametrize("found", [False, True])
+async def test_a_run_cut_at_its_limit_reports_what_it_read_not_nothing_found(tmp_path, found):
+    read = json.dumps({"answer": "The offer table was not reached.", "found": found})
     result, requests, page = await _scripted_run(
-        tmp_path, ["1-1", "2-finish", _NOT_SHOWN], BrowseSettings(max_steps=2),
+        tmp_path, ["1-1", "2-finish", read], BrowseSettings(max_steps=2),
     )
     assert result["status"] == "unavailable"
     assert result["answer"] == "The offer table was not reached."
@@ -207,6 +209,12 @@ async def test_a_later_decision_is_told_which_actions_were_already_taken(tmp_pat
     assert 'is="done"' not in prompts[0]
     assert 'is="done"' in prompts[1] and "Click Show offers" in prompts[1].split('is="done"')[1]
     assert 'is="done"' not in prompts[2]
+
+
+async def test_a_malformed_task_note_names_this_tool(tmp_path):
+    result, requests, _ = await _scripted_run(tmp_path, [], BrowseSettings(), task="not-a-task")
+    assert result["status"] == "unavailable" and requests == []
+    assert "web_browse reply" in result["note"] and "computer_browse" not in result["note"]
 
 
 async def test_web_browse_requires_owned_scope(tmp_path):
@@ -267,7 +275,7 @@ async def test_web_browse_obeys_budget_and_cancellation(mode):
                 await work
         else:
             result = await work
-            assert result.status == ("ok" if mode in {"steps", "output"} else "unavailable")
+            assert result.status == ("ok" if mode == "output" else "unavailable")
     assert len(requests) == {"total": 0, "steps": 2, "output": 2}.get(mode, 1)
     assert page._page.await_count == 0
     assert page.revoked
