@@ -199,8 +199,8 @@ class Harness:
         return len(self._calls)
 
     @property
-    def last_prefill(self):
-        return self._calls[-1]["pre_fill"] if self._calls else None
+    def last_model_input(self):
+        return self._calls[-1]["tag_message"] if self._calls else None
 
     @property
     def last_limits(self):

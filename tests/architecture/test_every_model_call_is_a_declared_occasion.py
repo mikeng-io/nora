@@ -142,7 +142,7 @@ RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
     ), "dispatched"),
     "nora/app/agent_runner.py": (("nora/agent/prefill.py",), "dispatched"),
     "nora/engagement/stages/invoke.py": (("nora/agent/prefill.py",), "dispatched"),
-    "nora/engagement/pipeline.py": (("nora/agent/prefill.py",), "imports"),
+    "nora/engagement/pipeline.py": (("nora/engagement/graph_context.py",), "imports"),
     "nora/app/fire.py": (("nora/agent/prefill.py",), "imports"),
     "nora/app/summons.py": (("nora/domain/summons.py",), "imports"),
     "nora/app/cognition_agent_runner.py": (

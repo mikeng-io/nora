@@ -259,9 +259,6 @@ async def test_source_objects_and_shared_state_render_in_one_standing_block():
 
 
 async def test_vote_and_close_with_no_new_human_message_still_render():
-    """A later vote/close arrives with NO new message: the transcript's
-    `<m>` set is unchanged and the events still render, with their source
-    revision visible."""
     audit, store = FakeRecordStore(), FakeObservationStore()
     await _seed(store)
     await _say(audit, 3)
@@ -273,8 +270,6 @@ async def test_vote_and_close_with_no_new_human_message_still_render():
     assert ("poll", "add") in ops and ("poll", "revise") in ops
     close = next(e for e in ctx.source_events
                  if e.operation == "revise" and e.kind == "poll")
-    # The revision label is the shared opaque projection — the raw
-    # `revision_scope` value never renders, the position does.
     assert close.revision == revision_label(3, "rev")
     assert "rev" not in close.revision.split(":")[0]
 
@@ -325,7 +320,6 @@ async def test_record_query_and_the_task_reads_share_the_one_projection():
     assert detail["poll"]["question"] == "Dinner Friday?"
     assert "ramen" in json.dumps(detail) and "p1" not in json.dumps(detail)
 
-    # The handle resolves EXACTLY — the 25 newer pins never hide it.
     rq = await _call(tools, "record_query", kind="poll", object=handle)
     assert rq["status"] == "ok" and rq["detail"]["question"] == "Dinner Friday?"
 
@@ -336,7 +330,6 @@ async def test_record_query_and_the_task_reads_share_the_one_projection():
                         at_id=ids["vote"])
     assert as_of["status"] == "ok" and "closed" not in as_of["state"]
 
-    # A pin's handle with kind omitted routes by its own prefix, never to poll.
     pin_q = await _call(tools, "record_query",
                         object=object_handle("pin", "pins-0",
                                              account_key="acct"))
@@ -404,7 +397,6 @@ async def test_the_artifact_delta_reads_the_same_in_every_surface():
     assert "going" in body and "Ada" in body and "Breakfast" in body
     assert "e9" not in body and "acct" not in body
 
-    # Current state: the retracted response leaves NO stale attendee.
     detail = await _call(tools, "record_query", kind="artifact", object=handle)
     assert detail["status"] == "ok", detail
     assert "going" not in json.dumps(detail)
@@ -586,7 +578,6 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
     delivered = next(ln for ln in prompt.splitlines() if ln.startswith('<m n="9"'))
     assert "target=" not in delivered
 
-    # Consumed exactly once: a second tick with nothing new wakes nothing.
     clock_ms[0] += 120_000
     await ev.tick()
     await ev.drain()
@@ -647,7 +638,6 @@ async def test_revision_and_head_ref_agree_across_prompt_and_tools():
     deduplicate on it."""
     audit, store = FakeRecordStore(), FakeObservationStore()
     ids = await _seed(store)
-    # A raw revision scope that must NEVER render — digest only.
     for i in range(3):
         await store.append(
             observation=_obs(
@@ -663,7 +653,6 @@ async def test_revision_and_head_ref_agree_across_prompt_and_tools():
     pin_head = next(o for o in ctx.source_objects if o.kind == "pin")
     poll_head = next(o for o in ctx.source_objects if o.kind == "poll")
     assert pin_head.revision == revision_label(12, "discord-sess-9f8c")
-    # The current view points at the event that produced it.
     assert poll_head.ref == f"platform_observation:{ids['close']}"
     assert close.ref == poll_head.ref
 
@@ -786,7 +775,6 @@ async def test_mixed_share_member_pin_poll_journey_all_surfaces():
     prompt = _prompt(ctx)
     assert 'kind="artifact"' in prompt and 'kind="membership"' in prompt
     assert "private-artifact-origin" not in prompt and "+999000" not in prompt
-    # The join names nobody — the subject isn't on the roster.
     member_ev = next(e for e in ctx.source_events if e.kind == "membership")
     assert "+999000" not in member_ev.summary
 
@@ -888,8 +876,6 @@ async def test_source_event_links_to_its_shown_transcript_row():
     want = index_of[rid]
     pin_lines = [ln for ln in prompt.splitlines()
                  if ln.startswith("<source_event") and 'kind="pin"' in ln]
-    # Both pins name the same object handle; exactly ONE carries `on=`,
-    # and it points at the shown message's own `#n` index.
     with_on = [ln for ln in pin_lines if "on=" in ln]
     assert len(pin_lines) == 2 and len(with_on) == 1
     assert f'on="{want}"' in with_on[0]
@@ -950,11 +936,8 @@ async def test_unsupported_platform_kind_is_unavailable_never_empty():
     assert read["status"] == "unavailable"
     rq = await _call(ig_tools, "record_query", kind="poll")
     assert rq["status"] == "unavailable"
-    # A kind the same source CAN carry reads normally — not unavailable.
     rq = await _call(ig_tools, "record_query", kind="pin")
     assert rq["status"] == "ok" and len(rq["objects"]) == 1
-    # And a signal-bound read in the same room still says nothing_found,
-    # not unavailable — the matrix marks Instagram's polls, not polls.
     sig_tools = _tools(FakeRecordStore(), store)
     rq = await _call(sig_tools, "record_query", kind="poll")
     assert rq["status"] == "nothing_found"
@@ -1245,28 +1228,33 @@ async def _newer_heads(
         ) is not None
 
 
-def _assembler_with_notes(
-    audit: FakeRecordStore, observations: Any, notes: Any,
-    lineage: LineagePolicy | None = None,
-) -> TranscriptInjection:
-    return TranscriptInjection(
+async def _retained_source_view(
+    audit: FakeRecordStore, observations: Any, notes: Any, lineage: LineagePolicy | None = None,
+):
+    assembler = TranscriptInjection(
         audit=audit, memory=FakeMemoryStore(), persons=PERSONS,
         context_window=40, metrics=Metrics(), observations=observations,
-        notes=notes, policy=_policy(), lineage=lineage)
+        notes=notes, policy=_policy(), lineage=lineage,
+    )
+    ctx = await assembler.assemble(request=_request())
+    msg = ctx.message
+    kept = await assembler._notes(msg)
+    retained, more = await assembler._retained_sources(
+        msg, kept, frozenset(obj.handle for obj in ctx.source_objects),
+    )
+    return dataclasses.replace(ctx, notes=kept, retained_sources=retained,
+                               retained_sources_more=more,
+                               lineage_room=await assembler._render_room(msg))
 
 
 async def test_a_retained_poll_survives_newer_unrelated_objects_in_the_assembler():
-    """blocker5's shape: the tracked poll falls off the recency page but
-    stays in view through the note's ref — resolved NOW, marked `matter`,
-    shown exactly once."""
     audit, store = FakeRecordStore(), FakeObservationStore()
-    await _seed(store)  # the poll, closed at position 3
+    await _seed(store)
     await _newer_heads(store, _SOURCE_OBJECT_MAX + 1)
     notes = InMemoryNoteStore()
     await _note_with_ref(notes, _POLL_HANDLE)
 
-    ctx = await _assembler_with_notes(audit, store, notes).assemble(
-        request=_request())
+    ctx = await _retained_source_view(audit, store, notes)
 
     assert len(ctx.source_objects) == _SOURCE_OBJECT_MAX
     assert _POLL_HANDLE not in {o.handle for o in ctx.source_objects}
@@ -1296,8 +1284,7 @@ async def test_a_late_vote_refreshes_the_retained_polls_current_state():
         event_id="late-vote", source_digest="late-vote") is not None
     await _newer_heads(store, _SOURCE_OBJECT_MAX + 1, prefix="after-vote")
 
-    ctx = await _assembler_with_notes(audit, store, notes).assemble(
-        request=_request())
+    ctx = await _retained_source_view(audit, store, notes)
 
     retained = next(r for r in ctx.retained_sources
                     if r.ref.handle == _POLL_HANDLE)
@@ -1314,8 +1301,7 @@ async def test_closing_the_poll_does_not_retire_the_matter():
     notes = InMemoryNoteStore()
     note = await _note_with_ref(notes, _POLL_HANDLE)
 
-    ctx = await _assembler_with_notes(audit, store, notes).assemble(
-        request=_request())
+    ctx = await _retained_source_view(audit, store, notes)
 
     assert note.id in {n.id for n in ctx.notes}
     assert any(r.ref.handle == _POLL_HANDLE and r.head is not None
@@ -1337,8 +1323,7 @@ async def test_retiring_the_matter_retires_its_reference_but_keeps_history():
         expected_head=None)
 
     assert retired == 1
-    ctx = await _assembler_with_notes(audit, store, notes).assemble(
-        request=_request())
+    ctx = await _retained_source_view(audit, store, notes)
     assert ctx.retained_sources == ()
     assert note.id not in {n.id for n in ctx.notes}
     found = await notes.read(unit="u1", note_id=note.id)
@@ -1357,8 +1342,7 @@ async def test_scope_invalid_and_unresolvable_refs_are_explicit_never_dropped():
     ghost = object_handle("poll", "p-ghost", account_key="acct", thread="")
     await _note_with_ref(notes, ghost)
 
-    ctx = await _assembler_with_notes(audit, store, notes).assemble(
-        request=_request())
+    ctx = await _retained_source_view(audit, store, notes)
 
     assert not [r for r in ctx.retained_sources if r.ref.conversation_id == "room-b"]
     unresolved = [r for r in ctx.retained_sources if r.head is None]
@@ -1513,7 +1497,7 @@ async def test_retained_sources_report_the_bound_and_never_read_another_room():
             object_refs=tuple(SourceRef("signal", CID, h)
                               for h in handles[i:i+NOTE_OBJECT_REFS_MAX]))
     await _newer_heads(store, 14)
-    ctx = await _assembler_with_notes(audit, store, notes).assemble(request=_request())
+    ctx = await _retained_source_view(audit, store, notes)
     assert len(ctx.retained_sources) == 12 and ctx.retained_sources_more == 2
     assert '<source_objects_more count="2"' in _prompt(ctx)
     async def index(unit):
@@ -1548,11 +1532,11 @@ async def test_a_withheld_note_does_not_leak_its_title_through_retained_sources(
     await _newer_heads(store, 14)
     note = await _note_with_ref(notes, _POLL_HANDLE)
     notes.notes[note.id] = dataclasses.replace(note, established_in="another-room")
-    ctx = await _assembler_with_notes(
+    ctx = await _retained_source_view(
         audit, store, notes,
-        lineage=LineagePolicy.from_policy(_policy(), mode="on")).assemble(request=_request())
+        lineage=LineagePolicy.from_policy(_policy(), mode="on"))
     prompt = _prompt(ctx)
-    assert "Dinner Friday?" in prompt  # This room's source evidence still surfaces.
+    assert "Dinner Friday?" in prompt
     assert "Dinner venue still open" not in prompt
     assert not ctx.retained_sources
 
@@ -1634,7 +1618,7 @@ async def test_a_retained_signal_contact_keeps_top_level_values():
     handle = object_handle("artifact", "shared-contact", account_key="acct")
     notes = InMemoryNoteStore()
     await _note_with_ref(notes, handle)
-    ctx = await _assembler_with_notes(audit, store, notes).assemble(request=_request())
+    ctx = await _retained_source_view(audit, store, notes)
     retained = next(r for r in ctx.retained_sources if r.ref.handle == handle)
     assert retained.head is not None
     for value in ("Example Org", "extension 42", "shared@example.invalid"):

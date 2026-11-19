@@ -147,13 +147,6 @@
     "target": "tests/test_prefill.py::test_the_tag_memos_block_is_capped_newest_first_and_counts_the_rest"
   },
   {
-    "name": "review: an unscoped memo read is silent",
-    "file": "nora/engagement/context.py",
-    "old": "            self._metrics.inc(\"nora_errors_total\", stage=\"memos\", platform=msg.platform)\n            return ()\n        try:",
-    "new": "            return ()\n        try:",
-    "target": "tests/unit/test_engagement_context.py::test_a_room_the_policy_does_not_know_reads_no_memos_and_is_counted"
-  },
-  {
     "name": "review: the egress note reads the head only",
     "file": "nora/memory/adapters/tools/memos.py",
     "old": "for t in (memo.head.body, *superseded)",
@@ -161,17 +154,17 @@
     "target": "tests/unit/test_memo_read.py::test_a_value_only_an_earlier_revision_held_still_comes_with_the_note"
   },
   {
-    "name": "review: \u8a18\u4f4f is no keep cue",
+    "name": "review: 記住 is no keep cue",
     "file": "nora/domain/cues.py",
-    "old": "        r\"(?<!\u5514)\u8a18\u4f4f(?!\u5566\u4f60|\u56c9\u4f60|\u5440\u4f60|\u5497|\u569f)\",\n",
+    "old": "        r\"(?<!唔)記住(?!啦你|囉你|呀你|咗|嚟)\",\n",
     "new": "",
     "target": "tests/unit/test_cues.py::test_keep_instructions_carry_the_keep_cue"
   },
   {
-    "name": "review: \u8a18\u4f4f\u5566\u4f60 banter wakes a session",
+    "name": "review: 記住啦你 banter wakes a session",
     "file": "nora/domain/cues.py",
-    "old": "(?<!\u5514)\u8a18\u4f4f(?!\u5566\u4f60|\u56c9\u4f60|\u5440\u4f60|\u5497|\u569f)",
-    "new": "\u8a18\u4f4f",
+    "old": "(?<!唔)記住(?!啦你|囉你|呀你|咗|嚟)",
+    "new": "記住",
     "target": "tests/unit/test_cues.py::test_banter_and_reminiscing_carry_no_keep_cue"
   }
 ]

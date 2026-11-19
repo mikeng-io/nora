@@ -6,9 +6,8 @@ transcript deduplication, fail-closed statuses and the prefetch budget.
 
 from __future__ import annotations
 
-import json
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 from nora.agent.lineage import LineagePolicy
@@ -33,7 +32,6 @@ from nora.domain.memory_index import IndexedNode
 from nora.domain.models import NormalizedMessage, PersonRef, TagContext
 from nora.domain.ports import EngageDecision, EngagementRequest
 from nora.engagement.context import TranscriptInjection
-from nora.language.computer_render import estimate_tokens
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import Conversation, Policy
@@ -134,64 +132,6 @@ def _texts(ctx: TagContext) -> list[str]:
 # --- the tag path ---------------------------------------------------------------
 
 
-async def test_the_message_seeds_one_block_of_what_memory_holds() -> None:
-    index = FakeMemoryIndex(
-        [IndexedNode("message", "1", "ramen crawl in mong kok", OLD, origin_room=ROOM),
-         IndexedNode("message", "2", "landlord wants the rent", OLD, origin_room=ROOM)],
-        embed_model=MODEL,
-    )
-    ctx = await _assemble(index, _msg())
-    assert _texts(ctx) == ["ramen crawl in mong kok"]
-    assert not ctx.recalled_partial
-    assert "<recalled" in build_prefill(ctx, display_name="Nora", context_window=10)[1][
-        "content"][0]["text"]
-
-
-async def test_the_speaker_and_the_mentioned_seed_without_narrowing() -> None:
-    """Who sent it and who it @-mentions seed what is about them, and the
-    words still reach what is about nobody: neither person narrows the read."""
-    index = FakeMemoryIndex(
-        [IndexedNode("note", "n1", "Miles is vegetarian", OLD, unit="u1"),
-         IndexedNode("note", "n2", "Kit moved to Sai Kung", OLD, unit="u1"),
-         IndexedNode("message", "1", "ramen crawl in mong kok", OLD, origin_room=ROOM)],
-        [("note", "n1", "about", "person", "miles"),
-         ("note", "n2", "about", "person", "kit")],
-        embed_model=MODEL,
-    )
-    ctx = await _assemble(index, _msg(mentions=frozenset({"kit-uuid"})))
-    assert set(_texts(ctx)) == {
-        "Miles is vegetarian", "Kit moved to Sai Kung", "ramen crawl in mong kok",
-    }
-
-
-
-async def test_an_attached_picture_seeds_by_its_bytes_ahead_of_everything() -> None:
-    index = FakeMemoryIndex(
-        [IndexedNode("media", "a1", "a poster for the lantern fair", OLD,
-                     origin_room="signal:g2", sha256=SHA),
-         IndexedNode("message", "1", "what is this poster", OLD, origin_room=ROOM)],
-        embed_model=MODEL,
-    )
-    ctx = await _assemble(index, _msg(
-        "nora.000 what is this poster", media=(MediaBlob(SHA, "image/jpeg", 1),),
-    ))
-    assert "a poster for the lantern fair" in ctx.recalled[0]["text"]
-
-
-async def test_what_the_transcript_shows_is_not_recalled_again() -> None:
-    audit = FakeRecordStore()
-    for ts in (4_000, 4_500):
-        await audit.append(message=_msg(f"ramen crawl {ts}", ts=ts))
-    index = FakeMemoryIndex(
-        [IndexedNode("message", "shown", "ramen crawl shown", 4_000, origin_room=ROOM),
-         IndexedNode("message", "older", "ramen crawl older", 3_000, origin_room=ROOM),
-         IndexedNode("message", "side", "ramen crawl side", 4_500, origin_room="signal:g2")],
-        embed_model=MODEL,
-    )
-    ctx = await _assemble(index, _msg(), audit=audit)
-    assert set(_texts(ctx)) == {"ramen crawl older", "ramen crawl side"}
-
-
 async def test_the_honcho_surface_reads_nothing_and_renders_no_block() -> None:
     ctx = await _assemble(None, _msg())
     assert ctx.recalled == () and not ctx.recalled_partial
@@ -203,28 +143,6 @@ async def test_a_room_outside_the_policy_is_never_searched() -> None:
     index = FakeMemoryIndex([IndexedNode("message", "1", "ramen", OLD, origin_room=ROOM)])
     ctx = await _assemble(index, _msg(conversation_id="elsewhere"))
     assert ctx.recalled == () and index.calls == []
-
-
-async def test_a_failed_search_renders_unavailable_and_is_counted() -> None:
-    """R-27: failed retrieval is visible to the model, never an empty success."""
-    metrics = Metrics()
-    index = FakeMemoryIndex(fail=RuntimeError("index down"))
-    ctx = await _assemble(index, _msg(), metrics=metrics)
-    assert ctx.recalled == ({"status": "unavailable", "text": "Memory could not be checked."},)
-    body = build_prefill(ctx, display_name="Nora", context_window=10)[1]["content"][0]["text"]
-    assert "unavailable" in body and "nothing_found" not in body
-    assert metrics.get("nora_errors_total", stage="tag_prefetch") == 1
-    assert metrics.get("nora_memory_search_total", status="unavailable") == 1
-
-
-async def test_an_unfinished_index_says_so_on_the_block() -> None:
-    index = FakeMemoryIndex(
-        [IndexedNode("message", "1", "ramen crawl in mong kok", OLD, origin_room=ROOM)],
-    )  # no vectors: the lexical fallback, `partial`
-    ctx = await _assemble(index, _msg())
-    assert ctx.recalled and ctx.recalled_partial
-    body = build_prefill(ctx, display_name="Nora", context_window=10)[1]["content"][0]["text"]
-    assert '<recalled partial="yes"' in body
 
 
 def test_the_block_escapes_what_it_carries() -> None:
@@ -295,18 +213,6 @@ async def test_picture_pins_share_the_literal_pins_limit() -> None:
     assert [h.node.kind for h in pinned[:3]] == ["media"] * 3
 
 
-async def test_the_tag_path_cuts_at_the_prefetch_budget() -> None:
-    index = FakeMemoryIndex(
-        [IndexedNode("message", str(i), "ramen crawl " + "noodles " * 70, OLD - i,
-                     origin_room=ROOM) for i in range(30)],
-        embed_model=MODEL,
-    )
-    ctx = await _assemble(index, _msg())
-    spent = sum(estimate_tokens(json.dumps(i, ensure_ascii=False)) for i in ctx.recalled)
-    assert ctx.recalled and ctx.recalled_partial
-    assert PREFETCH_TOKENS - 300 < spent <= PREFETCH_TOKENS
-
-
 async def test_more_sharings_of_a_picture_than_pins_never_outrank_the_rest() -> None:
     """A picture's earlier sharings carry no cosine; one past the pins would
     rank at 1.0 above every scored hit. So only as many are read as there
@@ -327,25 +233,6 @@ async def test_more_sharings_of_a_picture_than_pins_never_outrank_the_rest() -> 
     assert len(hits) == PINNED_LIMIT and all(h.pin for h in hits)
 
 
-async def test_an_opted_out_persons_social_items_stay_out() -> None:
-    """`social = false` (identity.toml) holds for the pre-fetch as for the
-    tool: their social items are never read."""
-    node = IndexedNode("social", "instagram:1", "Instagram post\nramen crawl pics", OLD,
-                       persons=("kit",))
-    index = FakeMemoryIndex([node], embed_model=MODEL)
-    assert _texts(await _assemble(index, _msg())) == ["Instagram post ramen crawl pics"]
-    off = replace(_PERSONS, _social_off=frozenset({"kit"}))
-    assert _texts(await _assemble(index, _msg(), persons=off)) == []
-
-
-async def test_a_listed_persons_name_in_the_message_pins_what_names_them() -> None:
-    index = FakeMemoryIndex(
-        [IndexedNode("note", "n1", "Kit owes the deposit", OLD, unit="u1")],
-    )
-    ctx = await _assemble(index, _msg("nora.000 what about Kit"))
-    assert "note:n1" in ctx.recalled[0]["text"]
-
-
 async def test_an_unlisted_mention_does_not_seed_person_facts() -> None:
     persons = replace(
         _PERSONS,
@@ -360,176 +247,3 @@ async def test_an_unlisted_mention_does_not_seed_person_facts() -> None:
     ctx = await _assemble(index, _msg("nora.000 hm", mentions=frozenset({"rin-uuid"})),
                           persons=persons)
     assert "Rin" not in "".join(_texts(ctx))
-
-
-async def test_the_messages_own_attachment_is_not_recalled() -> None:
-    index = FakeMemoryIndex(
-        [IndexedNode("media", "own", "the one just sent", 5_000, origin_room=ROOM,
-                     sha256=SHA),
-         IndexedNode("media", "before", "shared before", OLD, origin_room=ROOM, sha256=SHA)],
-    )
-    ctx = await _assemble(index, _msg(
-        "nora.000 this", media=(MediaBlob(SHA, "image/jpeg", 1),),
-    ))
-    assert _texts(ctx) == ["shared before"]
-
-
-async def test_a_graph_that_is_unavailable_is_counted_not_a_dead_turn() -> None:
-    metrics = Metrics()
-    index = FakeMemoryIndex(
-        [IndexedNode("message", "1", "ramen crawl", 10**16, origin_room="signal:g2")],
-        embed_model=MODEL,
-    )
-    search = _search(index, metrics)
-    search._graph.available = False
-    assembler = TranscriptInjection(audit=FakeRecordStore(), memory=_Memory(),
-        persons=_PERSONS, context_window=10, metrics=metrics, policy=_policy(),
-        lineage=LineagePolicy.from_policy(_policy()), memory_search=search)
-    ctx = await assembler.assemble(request=_request(_msg()))
-    assert ctx.recalled == ({"status": "unavailable", "text": "Memory could not be checked."},)
-    body = build_prefill(ctx, display_name="Nora", context_window=10)[1]["content"][0]["text"]
-    assert "unavailable" in body and "nothing_found" not in body
-    assert metrics.get("nora_errors_total", stage="tag_prefetch") == 1
-
-
-async def test_the_prefetch_preview_keeps_the_sources_time() -> None:
-    """The graph preview carries the source timestamp rather than a guessed age."""
-    at = datetime(2026, 1, 1, tzinfo=UTC)
-    index = FakeMemoryIndex(
-        [IndexedNode("message", "1", "ramen crawl", int((at - timedelta(days=2)).timestamp()
-                                                          * 1000), origin_room="signal:g2")],
-        embed_model=MODEL,
-    )
-    ctx = await _assemble(index, _msg(), clock=lambda: at)
-    assert str(int((at - timedelta(days=2)).timestamp() * 1000)) in ctx.recalled[0]["text"]
-
-
-async def test_a_search_past_its_bound_is_unavailable_and_counted(monkeypatch: Any) -> None:
-    import asyncio
-
-    from nora.engagement import context
-
-    class _Stuck(FakeMemoryIndex):
-        async def index_state(self, **_: Any) -> Any:
-            await asyncio.sleep(60)
-
-    monkeypatch.setattr(context, "PREFETCH_TIMEOUT_SECONDS", 0.05)
-    metrics = Metrics()
-    ctx = await _assemble(_Stuck([]), _msg(), metrics=metrics)
-    assert ctx.recalled == ({"status": "unavailable", "text": "Memory could not be checked."},)
-    body = build_prefill(ctx, display_name="Nora", context_window=10)[1]["content"][0]["text"]
-    assert "unavailable" in body and "nothing_found" not in body
-    assert metrics.get("nora_errors_total", stage="tag_prefetch") == 1
-
-
-async def test_prefetch_injects_new_graph_about_without_shared_words() -> None:
-    from nora.domain.memory_graph import Entity, Relation
-
-    metrics = Metrics()
-    index = FakeMemoryIndex([IndexedNode("reading", "breakfast", "breakfast poll", OLD,
-        origin_room=ROOM, persons=("miles",))], embed_model=MODEL)
-    search = _search(index, metrics)
-    graph = search._graph
-    search = MemorySearch(index, metrics, graph=graph)
-    event = Entity("generated-event", "event", "u1", "Generated stargazing expedition")
-    foreign = Entity("foreign-event", "event", "outside", "Forbidden expedition")
-    await graph.upsert_entity(event)
-    await graph.upsert_entity(foreign)
-    at = datetime(2026, 1, 1, tzinfo=UTC)
-    for ident, dst, unit in (("about", event.key, "u1"), ("foreign", foreign.key, "outside")):
-        graph.relations[ident] = Relation(ident, ("reading", "breakfast"), "about", dst,
-            "notebook", unit, ("miles",), asserted_at=at)
-    hidden = IndexedNode("reading", "hidden", "Forbidden room reading", OLD,
-                         origin_room="signal:outside", persons=("miles",))
-    graph.indexed[hidden.key] = hidden
-    graph.relations["hidden"] = Relation("hidden", hidden.key, "about", event.key,
-        "notebook", "u1", ("miles",), asserted_at=at)
-    target = LineagePolicy.from_policy(_policy()).render_room(
-        platform="signal", conversation_id="g1")
-    legacy = await search.search(query="breakfast", person_id=None, target=target,
-                                 now_ms=int(at.timestamp() * 1000), social_off=())
-    assert {hit.node.key for hit in legacy.hits} == {("reading", "breakfast")}
-    assembler = TranscriptInjection(audit=FakeRecordStore(), memory=_Memory(),
-        persons=_PERSONS, context_window=10, metrics=metrics, policy=_policy(),
-        lineage=LineagePolicy.from_policy(_policy()), memory_search=search)
-    ctx = await assembler.assemble(request=_request(_msg("breakfast")))
-    block = build_prefill(ctx, display_name="Nora", context_window=10)[1]["content"][0]["text"]
-    assert "Forbidden expedition" not in block
-    assert "Forbidden room reading" not in block
-    assert "Generated stargazing expedition" in block
-    assert "judgement" in block
-    assert sum(estimate_tokens(json.dumps(i)) for i in ctx.recalled) <= PREFETCH_TOKENS
-
-
-async def test_slow_documents_do_not_delay_prefetch_start(monkeypatch: Any) -> None:
-    import asyncio
-    from contextlib import suppress
-
-    started = asyncio.Event()
-    order: list[str] = []
-    original = TranscriptInjection._prefetch
-
-    async def prefetch(self: Any, *args: Any) -> Any:
-        order.append("prefetch")
-        started.set()
-        return await original(self, *args)
-
-    async def documents(self: Any, *args: Any) -> Any:
-        # The timeout only bounds a regression; ordering is driven by the event.
-        with suppress(TimeoutError):
-            await asyncio.wait_for(started.wait(), timeout=1)
-        order.append("documents done")
-        return None
-
-    monkeypatch.setattr(TranscriptInjection, "_prefetch", prefetch)
-    monkeypatch.setattr(TranscriptInjection, "_documents", documents)
-    ctx = await _assemble(None, _msg())
-    assert ctx.message == _msg()
-    assert order == ["prefetch", "documents done"]
-
-
-async def test_graph_prefetch_and_shared_state_reach_the_same_turn() -> None:
-    from uuid import uuid4
-
-    from nora.agent.shared_state import shared_reader
-    from nora.domain.reminders import Reminder, ReminderState
-    from nora.testing.reminders import FakeReminderStore
-
-    now = datetime(2026, 1, 1, tzinfo=UTC)
-    reminders = FakeReminderStore()
-    await reminders.create(Reminder(
-        id=uuid4(), requester_person_id="nora", platform="signal",
-        conversation_id="g1", conversation_type="group",
-        text="generated pending follow-up", created_at=now,
-        due_at=now + timedelta(hours=1), state=ReminderState.PENDING,
-        fired_at=None, outcome=None,
-        kind="proactive", payload={
-            "subject_kind": "note", "subject_id": "generated-plan",
-            "action": "ask-time"},
-    ))
-    index = FakeMemoryIndex([
-        IndexedNode("message", "1", "ramen crawl graph evidence", OLD,
-                    origin_room=ROOM)], embed_model=MODEL)
-    ctx = await _assemble(index, _msg(), clock=lambda: now, shared=shared_reader(
-        ai_peer="nora", reminders=reminders,
-        rooms_of_unit=lambda unit: [("signal", "g1"), ("signal", "g2")]
-        if unit == "u1" else [],
-    ))
-    assert ctx.shared is not None and ctx.shared.status == "ok"
-    body = build_prefill(ctx, display_name="Nora", context_window=10)[1]["content"][0]["text"]
-    assert "ramen crawl graph evidence" in body
-    assert "generated pending follow-up" in body
-    assert "<recalled" in body and "<standing" in body
-
-
-async def test_a_preview_render_failure_is_unavailable(monkeypatch: Any) -> None:
-    from nora.engagement import context
-
-    def broken_preview(*args: Any, **kwargs: Any) -> str:
-        raise ValueError("generated render failure")
-
-    monkeypatch.setattr(context, "preview_text", broken_preview)
-    index = FakeMemoryIndex([
-        IndexedNode("message", "1", "ramen crawl", OLD, origin_room=ROOM)], embed_model=MODEL)
-    ctx = await _assemble(index, _msg())
-    assert ctx.recalled == ({"status": "unavailable", "text": "Memory could not be checked."},)

@@ -115,6 +115,7 @@ def build_registry(
     refresher: Any, relay: Any, reminder_caps: Any, reminders: Any,
     route_client: Any, room_management: Any, search_client: Any, social_client: Any,
     standing_store: Any, graph_retrieval: Any,
+    engagement_graph_retrieval: Any, intention_admission: Any,
     steam_client: Any, subagent_desk: Any, tool_call_log_store: Any, version_manifest: Any,
     video_desk: Any, vision_client: Any, voice_presence: Any, weather_client: Any,
 ) -> RegistryWiring:
@@ -135,6 +136,8 @@ def build_registry(
         media_descriptions=media_descriptions, media_join=media_join,
         media_objects=media_objects, memo_store=memo_store, memory_search=memory_search,
         graph_retrieval=graph_retrieval,
+        engagement_graph_retrieval=engagement_graph_retrieval,
+        intention_admission=intention_admission,
         metrics=metrics, mobility=mobility, music_bridge=music_bridge,
         note_store=note_store, observation_store=observation_store, persons=persons,
         presence_circles=presence_circles, presence_reader=presence_reader,
@@ -161,7 +164,7 @@ def _build_tool_registry(
     subagent_desk: Any, giphy_client: Any, discord_presence: Any, computer: Any,
     presence_store: Any, mcp_tool_groups: Any, image_generator: Any, ledger_store: Any,
     memo_store: Any, memory_search: Any, profile_reader: Any, observation_store: Any,
-    graph_retrieval: Any,
+    graph_retrieval: Any, engagement_graph_retrieval: Any, intention_admission: Any,
     browser: Any, computer_context: Any, computer_settings: Any, presence_reader: Any,
     search_client: Any, engine: Any, events: Any, version_manifest: Any,
     allowlist: Any, voice_presence: Any, relay: Any, weather_client: Any,
@@ -175,6 +178,8 @@ def _build_tool_registry(
 
     return ToolRegistry(
         room_management=room_management,
+        engagement_graph_retrieval=engagement_graph_retrieval,
+        intention_admission=intention_admission,
         display_name=cfg.doctrine.display_name,
         # `[external_files]` (ships off): the source a shared file link is
         # opened through; None answers the open `unavailable`.

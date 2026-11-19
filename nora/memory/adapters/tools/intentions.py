@@ -53,6 +53,7 @@ def _make_intention_commit(deps):
         """Commit intentions and return a result for each operation. Call this
         when a commitment needs to be opened, revised, dropped or closed.
 
+        On a call or an offered floor, commit only what your reply promises.
         Returns `status`: ok, refused or unavailable, with a `note`.
 
         Args:

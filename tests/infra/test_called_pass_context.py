@@ -1,0 +1,141 @@
+"""The called room floor and its graph IDs through the real Record and retrieval."""
+
+from dataclasses import replace
+from datetime import timedelta
+from xml.etree import ElementTree
+
+import pytest
+
+from nora.access import IdentityAccess
+from nora.domain.framing import TAG_HEADER
+from nora.domain.models import Quote
+from nora.engagement.context import TranscriptInjection
+from nora.engagement.graph_context import EngagementGraph
+from nora.infra.sql.audit import SqlRecordStore
+from nora.infra.sql.item_registration import (
+    RegistrationScope,
+    RuntimeRevisions,
+    SqlItemRegistration,
+    item_graph_id,
+)
+from nora.memory import wire
+from nora.obs.metrics import Metrics
+from nora.testing.fakes import FakeMemoryStore
+from tests.infra.test_pass_anchors import pointers
+from tests.infra.test_pass_assembly import _counted
+from tests.infra.test_retrieval_scope import PERSON, ROOM, UNIT, write_edge
+from tests.infra.test_retrieval_scope import scenario as scope_scenario
+from tests.unit.test_engagement_pipeline import _msg, _request
+
+scenario = scope_scenario
+
+
+def elements(rendered):
+    return ElementTree.fromstring(f"<context>{rendered}</context>")  # noqa: S314
+
+
+@pytest.fixture
+async def called(scenario):
+    await pointers(scenario)
+    await scenario.claim("sender-claim", content={"text": "Generated sender fact"})
+    await scenario.claim("room-claim", content={"text": "Generated room fact"})
+    await write_edge(scenario, "sender-claim", "person-here", "about")
+    await write_edge(scenario, "room-claim", "room-here", "about")
+    inbound = _msg(ROOM)
+    index = {**scenario.persons.index, ("signal", inbound.sender_id): PERSON}
+    persons = replace(scenario.persons, index=index)
+    access = IdentityAccess.for_files(persons, scenario.policy)
+    registration = SqlItemRegistration(
+        RegistrationScope(scenario.policy, persons),
+        RuntimeRevisions({}, scenario.policy, persons),
+    )
+    records = SqlRecordStore(scenario.engine, registration=registration)
+    now = await scenario.now()
+    timestamp = int((now - timedelta(seconds=3)).timestamp() * 1000)
+    parent = replace(inbound, timestamp=timestamp, body="A recorded question")
+    await records.append(message=parent, person_id=PERSON)
+    msg = replace(inbound, timestamp=timestamp + 1, body="An addressing message",
+                  quote=Quote(quoted_ts=timestamp, author_id=parent.sender_id,
+                              text="Untrusted quoted copy"))
+    row = await records.append(message=msg, person_id=PERSON)
+    assembler = TranscriptInjection(
+        audit=records, memory=FakeMemoryStore(), persons=persons, context_window=10,
+        metrics=Metrics(), policy=scenario.policy, access=access,
+    )
+    ctx = await assembler.assemble(request=_request(msg))
+    return access, ctx, row, await scenario.now()
+
+
+async def test_called_presents_the_floor_and_scoped_profiles_in_assembled_order(scenario, called):
+    access, ctx, row, now = called
+    assembler, retrieval = _counted(scenario)
+    graph = EngagementGraph(access, wire.message_graph_ids(scenario.engine), assembler)
+
+    _, rendered, shown = await graph.prompt(
+        "called", ctx, unit=UNIT, display_name="Nora", tagger_name="Fixture reader",
+        context_window=10, now=now, catalogue="- memory_read: Read a row.",
+        header=TAG_HEADER, row_id=row,
+    )
+
+    blocks = elements(rendered)
+    assert [b.tag for b in blocks] == [
+        "graph_profile", "graph_lessons", "graph_profile", "graph_profile",
+        "members", "clock", "presence", "tool_catalogue", "transcript",
+        "replying_to", "tag_message", "graph_profile", "graph_standing", "related",
+    ]
+    assert blocks[2].get("of") == "room-here"
+    assert "Generated room fact" in (blocks[2].text or "")
+    assert blocks[11].get("of") == "person-here"
+    assert "Generated sender fact" in (blocks[11].text or "")
+    assert {"sender-claim", "room-claim", item_graph_id("messages", (row,), UNIT)} <= shown
+    assert blocks[9].text.strip() == "A recorded question"
+    assert len(retrieval.reads) == 1
+
+
+async def test_called_anchor_failure_leaves_the_floor_and_names_the_cause(scenario, called):
+    access, ctx, row, now = called
+    assembler, retrieval = _counted(scenario)
+    ids = wire.message_graph_ids(scenario.engine)
+
+    class BrokenIds:
+        async def read(self, room, unit, wanted):
+            if row in wanted:
+                raise OSError("Generated anchor read failure")
+            return await ids.read(room, unit, wanted)
+
+    _, rendered, shown = await EngagementGraph(access, BrokenIds(), assembler).prompt(
+        "called", ctx, unit=UNIT, display_name="Nora", tagger_name="Fixture reader",
+        context_window=10, now=now, catalogue="", header=TAG_HEADER, row_id=row,
+    )
+
+    blocks = elements(rendered)
+    assert blocks.find("tag_message").text.strip() == "An addressing message"
+    assert "A recorded question" in blocks.find("replying_to").text
+    presentations = [b for b in blocks if b.tag.startswith("graph_") or b.tag == "related"]
+    assert presentations
+    assert all(b.get("status") == "unavailable"
+               and b.get("cause") == "message_anchor_read_failed" for b in presentations)
+    assert not shown
+    assert retrieval.reads == []
+
+
+async def test_a_room_without_a_unit_does_not_read_message_graph_ids(scenario, called):
+    access, ctx, row, now = called
+    assembler, retrieval = _counted(scenario)
+    reads = []
+    real_ids = wire.message_graph_ids(scenario.engine)
+
+    class CountedIds:
+        async def read(self, room, unit, ids):
+            reads.append((room, unit, ids))
+            return await real_ids.read(room, unit, ids)
+
+    _, rendered, shown = await EngagementGraph(access, CountedIds(), assembler).prompt(
+        "called", ctx, unit=None, display_name="Nora", tagger_name="Fixture reader",
+        context_window=10, now=now, catalogue="", header=TAG_HEADER, row_id=row,
+    )
+
+    blocks = elements(rendered)
+    assert blocks.find("graph_standing").get("cause") == "reading_room_unavailable"
+    assert blocks.find("tag_message").text.strip() == "An addressing message"
+    assert not shown and not reads and not retrieval.reads

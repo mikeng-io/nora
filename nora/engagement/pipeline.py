@@ -85,17 +85,15 @@ from typing import Any
 
 from nora.access import IdentityAccess
 from nora.agent.catalog.model import turn_occasion
+from nora.agent.clock import local_now
 from nora.agent.intent_router import route_intent
 from nora.agent.outbound import OutboundComposer
-from nora.agent.prefill import (
-    build_prefill,
-    build_tag_message,
-)
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room, trigger_message_ids
 from nora.domain import audience as audience_names
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.external_files import render_file_links
+from nora.domain.framing import TAG_HEADER
 from nora.domain.models import TagContext
 from nora.domain.ports import (
     EngagementRequest,
@@ -106,7 +104,7 @@ from nora.domain.ports import (
 )
 from nora.domain.tag_trace import VALID_OUTCOMES, TagTrace
 from nora.domain.tool_call_log import ToolCallLogStore
-from nora.memory import ActAuthority, active_act_authority, record_pass_silence
+from nora.memory import ActAuthority, active_act_authority, record_pass_silence, seed_pass_shown
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.obs.tracing import (
     TRACE_KIND,
@@ -122,6 +120,7 @@ from nora.platform.bridge import telemetry as _bridge_telemetry
 from nora.policy import Policy
 from nora.tag import Debounce
 
+from .graph_context import EngagementGraph
 from .mentions import MentionRenderer
 from .slots import ConversationSlots
 from .stages import admission, command, debrief, deliver, feedback, graph_debrief, indicate, invoke
@@ -197,6 +196,7 @@ class EngagementPipeline:
         persons: Persons,
         doctrine_store: Any,
         context_assembler: Any,
+        graph: EngagementGraph | None = None,
         runner: AgentRunner,
         tool_registry: ToolRegistry,
         policy: Policy,
@@ -246,11 +246,8 @@ class EngagementPipeline:
         # The Nora aiPeer id (Honcho): her replies feed under it.
         self._ai_peer = ai_peer
         self._context_window = context_window
-        # The turn's clock, read for the clock line the way the fire path reads
-        # it (`self._clock().astimezone()`), so the line and the `now` tool
-        # (which reads the same injected clock) state one instant. `None`
-        # falls back to the wall, which is what production's clock is.
         self._clock = clock
+        self._graph = graph or EngagementGraph(self._access)
         self._timeout_seconds, self._limits = timeout_seconds, limits
         self._defer_tools = defer_tools
         self._metrics = metrics
@@ -698,13 +695,6 @@ class EngagementPipeline:
                 platform=msg.platform, conversation_id=msg.conversation_id,
                 roster_source=self._rosters.get(msg.platform), access=self._access,
                 tagger=ctx.tagger, self_ids=frozenset(getattr(identity, "aliases", ())),
-                # From the ASSEMBLED context, not from config: the block is
-                # absent when Honcho could not answer as well as when it is
-                # switched off, and `about` must do the real lookup in both.
-                tagger_card_injected=bool(ctx.tagger_card),
-                # The Record row(s) this turn answers: what an event it writes
-                # cites (`GatheringService._tag_evidence`), so the withdrawal
-                # cascade can reach the event if that message is withdrawn.
                 trigger_message_ids=trigger_message_ids(
                     ctx.transcript, sender_id=msg.sender_id, timestamp=msg.timestamp,
                 ),
@@ -722,19 +712,7 @@ class EngagementPipeline:
                 honcho=self._memory, deliverer=handle.deliverer,
                 room=room, question=render_file_links(msg.body), message=msg,
                 context_window=self._context_window, metrics=self._metrics,
-                # DEC-146: the SAME tuple `build_prefill` below renders
-                # `<group_transcript>` from. `who_said` answers out of the window
-                # the model is looking at, so it is passed rather than re-read —
-                # a second store call here would be a second interpretation of
-                # the same messages, and the two would drift the first time one
-                # side's limit or naming pass changed.
-                # `transcript` is the SHOWN rows: `send_reply(reply_to=n)` and
-                # note `[#n]` citations index them. `lookup_window` is the
-                # deeper read, for `who_said` ONLY: a lookup must not shrink
-                # with the prompt, or «nobody said it» turns into «not in the
-                # 20 you were shown».
-                transcript=ctx.transcript,
-                lookup_window=ctx.lookup_transcript or None,
+                transcript=ctx.transcript, engagement=True,
                 allowed_mcp=allowed_mcp, location_trusted=location_trusted,
                 # DEC-89: the SAME carrier the `Deliverer` above holds. The
                 # tools mint links into it and the sender puts back the ones the
@@ -743,23 +721,14 @@ class EngagementPipeline:
                 links=handle.links)
             tagger_name = (ctx.tagger.name if ctx.tagger is not None
                            else msg.sender_name or sanitize_unmapped(msg.sender_id))
-            # NO ROSTER IN THE PROMPT; there is a tool instead.
-            # `identity.toml` is Nora's address book across EVERY room; handing
-            # all of it to one room discloses the existence and names of people
-            # who are not in it — a real leak, not just a wrong answer.
-            # `group_members` answers that question from the PLATFORM's
-            # membership list for this conversation, so the scope is the room
-            # itself rather than the address book, and it costs a tool call
-            # only when somebody actually asks. The tagger's own aliases still
-            # reach the model via `build_tag_message`, scoped by construction.
-            pre_fill = build_prefill(
-                ctx, display_name=self._display_name, context_window=self._context_window,
-                catalogue=surface.prompt_catalogue,
-                now=self._clock().astimezone() if self._clock is not None else None,
+            pre_fill, tag_message, shown = await self._graph.prompt(
+                "called", ctx, unit=convo.unit if convo else None,
+                display_name=self._display_name, tagger_name=tagger_name,
+                context_window=self._context_window, catalogue=surface.prompt_catalogue,
+                now=(self._clock or local_now)().astimezone(), header=TAG_HEADER,
+                row_id=request.message_row_id, room=room,
             )
-            tag_message = build_tag_message(
-                ctx, tagger_name=tagger_name, display_name=self._display_name,
-            )
+            seed_pass_shown(shown)
 
             # `invoke.run` hands back a `TagTrace` with a PROVISIONAL
             # `outcome` — `LiveAgentRunner`'s own docstring calls it out as a
@@ -773,8 +742,7 @@ class EngagementPipeline:
             with span(
                 "engagement.invoke",
                 **{"nora.tag_id": request.tag_id,
-                   "nora.doctrine_sha256": doctrine.sha256,
-                   "nora.note_index_entries": len(ctx.notes)},
+                   "nora.doctrine_sha256": doctrine.sha256},
             ):
                 ok, llm_elapsed, stop_reason, final_text, trace = await invoke.run(
                     runner=self._runner, doctrine=doctrine, tools=surface.tools, pre_fill=pre_fill,

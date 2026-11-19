@@ -44,7 +44,7 @@
   {
     "name": "the selector runner joins rendered blocks by hand again",
     "file": "nora/subject/context_filter.py",
-    "old": "                plan = selector(\n                    selector_prompt(ctx, blocks, now, display_name), window, receipt\n                )",
+    "old": "                plan = selector(\n                    selector_prompt(ctx, blocks, now, scope.nora_name), window, receipt\n                )",
     "new": "                plan = selector(\n                    f\"Clock: {now.isoformat()}\\nfull_transcript_window: {len(ctx.transcript)}\\n\"\n                    + \"\\n\".join(b.render() for b in blocks), window, receipt\n                )",
     "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
   },

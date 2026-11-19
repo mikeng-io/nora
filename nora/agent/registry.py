@@ -374,6 +374,8 @@ class ToolRegistry:
         # Graph reads need the Cognitive Graph reader.
         memory_search: MemorySearch | None = None,
         graph_retrieval: Any = None,
+        engagement_graph_retrieval: Any = None,
+        intention_admission: Any = None,
         # The Profile write the graph surface's `remember` makes (a `told`
         # line, design/unified-memory/profiles.md). Wired with `memory_search`.
         profile: ProfileWriter | None = None,
@@ -398,6 +400,8 @@ class ToolRegistry:
         self._external_files, self._google_account = external_files, google_account
         self._memory_search = memory_search
         self._graph_retrieval = graph_retrieval
+        self._engagement_graph_retrieval = engagement_graph_retrieval
+        self._intention_admission = intention_admission
         self._record = record
         self._documents = documents
         self._lineage = lineage
@@ -406,14 +410,7 @@ class ToolRegistry:
         self._ledger = ledger
         self._culture = culture
         self._social_items = social_items
-        # Tools no turn is offered in this process: `record_query` without its
-        # Record read (`[record_query] enabled = false`, the shipped default).
-        # Withheld from every surface and from the gate's digest, so an
-        # unconfigured tool costs no prompt and cannot be routed to.
-        # The computer tools likewise without a runtime (`[computer]
-        # enabled = false`, the shipped default): they could only answer
-        # `unavailable`, so offering them would spend prompt on a tool the
-        # model can route to and never use.
+        # Withhold tools whose runtime dependency is disabled.
         self._withheld: frozenset[str] = (
             (frozenset() if record is not None else frozenset({"record_query"}))
             | (frozenset() if rollup is not None else frozenset({"rollup_read"}))
@@ -1124,17 +1121,9 @@ class ToolRegistry:
         shelf: ToolShelf | None = None,
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
         message: Any = None,
+        engagement: bool = False,
     ) -> tuple[ToolSpec, ...]:
-        """Build per-turn ToolSpecs before Strands adaptation.
-
-        Service clients, caches, reminder caps/clock and versions belong to this registry.
-        The verified message, question, fire_turn and dream_adaptor belong to this call.
-        Use the exact prefill transcript and lookup window; never re-read or retain them.
-        The turn's links come from its DeliveryHandle and must not become registry state.
-        supplied_unit is the unit-keyed Dreamer adaptor's explicit unit; tag calls leave
-        it unset and derive the unit from the actual room. Never retain a global unit.
-        dream_adaptor names that adaptor, or is empty for tag/fire calls; fire_turn
-        marks heartbeat provenance so reminders cannot recursively schedule reminders."""
+        """Build room-bound tool specs before Strands adaptation."""
         return build_tool_specs(
             display_name=self._display_name,
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
@@ -1175,7 +1164,10 @@ class ToolRegistry:
             rooms=self._rooms,
             record=self._record,
             observations=self._observations,
-            memory_retrieval=self._memory_search, graph_retrieval=self._graph_retrieval,
+            memory_retrieval=self._memory_search,
+            graph_retrieval=(self._engagement_graph_retrieval if engagement
+                             else self._graph_retrieval),
+            intention_admission=self._intention_admission if engagement else None,
             profile=self._profile,
             lineage=self._lineage,
             rollup=self._rollup,
@@ -1286,34 +1278,9 @@ class ToolRegistry:
         defer: bool = False,
         occasion: str | None = None,
         message: Any = None,
+        engagement: bool = False,
     ) -> ToolSurface:
-        """The ONE builder every loop takes its tools from.
-
-        A tag (`EngagementPipeline`), a fire turn (`FirePath`: participation,
-        proactive act, reminders) and every Dreamer adaptor
-        (`RegistryToolSource`) all call this, and nothing else decides which
-        tools an occasion sees. `ToolScope` (`nora.agent.surface`) admits by
-        platform, by whether the Dreamer built the set, and by `grant`, the
-        Dreamer's per-adaptor ceiling.
-
-        `defer`: False keeps every admitted tool resident. True keeps only
-        `HOT_TOOLS` resident, puts the rest on a per-turn `ToolShelf`, and adds
-        `load_tools` so the model can register what it names. `load_tools` is
-        in `tools` only when the shelf holds something, so a turn with nothing
-        deferred pays nothing for it.
-
-        `occasion` (DEC-256) is the turn's kind, from `turn_occasion` (`None`
-        for a text turn). Under `defer` the resident set is
-        `hot_tools(occasion)`: `HOT_TOOLS` plus every tool whose
-        `NativeTool.hot_on` names the occasion, still cut by the scope, so a
-        voice turn keeps the music verbs resident and a text turn keeps
-        `HOT_TOOLS`. Without `defer` everything admitted is resident anyway and
-        the occasion changes nothing.
-
-        `allowed_mcp` groups are appended resident, after the native tools,
-        for `build()`'s reason: they are already Strands objects, and
-        `adapt()` must not run on them. Every other parameter is `specs()`'s.
-        """
+        """Build the resident tools, deferred shelf and catalogue from one admitted set."""
         scope = ToolScope(
             platform=None if room is None else room.platform,
             dreamer=bool(dream_adaptor),
@@ -1321,6 +1288,7 @@ class ToolRegistry:
             tag_turn=not (fire_turn or dream_adaptor or subagent_job),
             relay=relay_turn,
             worker=bool(subagent_job),
+            engagement=engagement,
         )
         shelf = ToolShelf()
         specs = self.specs(
@@ -1332,13 +1300,19 @@ class ToolRegistry:
             location_trusted=location_trusted, links=links,
             supplied_unit=supplied_unit, dream_adaptor=dream_adaptor,
             subagent_job=subagent_job, checkpoint_sink=checkpoint_sink,
-            grant=grant, shelf=shelf, on_rows=on_rows, message=message,
+            grant=grant, shelf=shelf, on_rows=on_rows, message=message, engagement=engagement,
         )
+        withheld = self._withheld
+        if engagement:
+            if self._engagement_graph_retrieval is not None:
+                withheld = withheld - {"memory_search", "memory_read"}
+            if self._intention_admission is not None:
+                withheld = withheld - GRAPH_PASS_TOOLS
         loader = next(spec for spec in specs if spec.name == LOADER_TOOL)
         admitted = [
             spec for spec in specs
             if spec.name != LOADER_TOOL and scope.admits(spec.name)
-            and spec.name not in self._withheld
+            and spec.name not in withheld
         ]
         hot = hot_tools(occasion)
         resident = [spec for spec in admitted if not defer or spec.name in hot]

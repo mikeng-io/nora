@@ -56,6 +56,12 @@ def pass_shown() -> set[str] | None:
     return active.shown if active is not None else None
 
 
+def seed_pass_shown(ids: frozenset[str]) -> None:
+    shown = pass_shown()
+    if shown is not None:
+        shown.update(ids)
+
+
 def begin_pass_tool(tool_use: dict[str, Any]) -> None:
     active = _active_pass.get()
     if active is not None and active.envelope is not None:

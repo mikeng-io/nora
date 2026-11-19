@@ -18,6 +18,7 @@ HOT_TOOLS: frozenset[str] = frozenset(
         "now",
         "search_memory",
         "memory_search",
+        "intention_commit",
     }
 )
 
@@ -91,5 +92,14 @@ GRAPH_MEMORY_TOOLS: frozenset[str] = frozenset({"memory_search", "memory_read", 
 
 # These tools are offered by a graph pass through its own dependencies.
 GRAPH_PASS_TOOLS: frozenset[str] = frozenset({"intention_commit"})
+
+# Legacy stores behind engagement's retired memory and agenda tools.
+LEGACY_ENGAGEMENT_TOOLS: frozenset[str] = frozenset({
+    "about", "ask_memory", "cancel_reminder", "character_read", "checkpoint_update",
+    "event_propose", "event_revise", "event_rsvp", "event_search", "event_set_status",
+    "list_reminders", "memo_read", "note_create", "note_read", "note_revise", "note_search",
+    "profile_dispute", "recall_lookups", "remember", "remind", "search_memory",
+    "search_memory_workspace", "standing_read", "suggest_venue", "who_said",
+})
 
 ROOM_ONLY_MEMORY_ADAPTORS: frozenset[str] = frozenset({CULTURE_ADAPTOR_NAME})

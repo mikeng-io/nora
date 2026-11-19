@@ -8,6 +8,7 @@ from nora.app.composition_helpers import _reasoning_effort
 from nora.app.compute_poller import ComputeJobPoller
 from nora.app.compute_poller import recover as compute_poller_recover
 from nora.app.fire import FirePath, proactive_occasion, reminder_occasion
+from nora.app.fire_engagement import AmbientEngagement
 from nora.app.heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from nora.app.participation import ParticipationTrigger
 from nora.app.proactive_screen import ProactiveScreen
@@ -118,7 +119,7 @@ def path(
     proactive_runner: Any, profile_reader: Any, quote_window: Any,
     reasoning_strip_store: Any, registry: Any, rosters: Any, runner: Any,
     shared: Any, slots: Any, tag_trace_store: Any, tool_call_log_store: Any,
-    tool_registry: Any,
+    tool_registry: Any, ambient: AmbientEngagement | None = None,
 ) -> PathWiring:
     # Three occasions need a fire turn: a reminder coming due, a compute job
     # that has finished and needs delivering, and a participation decision.
@@ -156,7 +157,7 @@ def path(
         proactive_runner,
         memory,
         culture_reader,
-        tool_call_log_store,
+        tool_call_log_store, ambient=ambient,
     )
     _path_lost_jobs(
         metrics, background, lost_jobs, slots, allowlist, fire_path, access)
@@ -308,7 +309,7 @@ def _wire_fire_path(
     cfg: Any, media_join: Any, decision_log: Any, clock: Any,
     tool_registry: Any, preview_source: Any, shared: Any, runner: Any,
     persons: Any, proactive_runner: Any, memory: Any, culture_reader: Any,
-    tool_call_log_store: Any,
+    tool_call_log_store: Any, ambient: AmbientEngagement | None = None,
 ) -> Any:
     """The real fire turn, built only when some occasion can fire one."""
     if not (
@@ -351,6 +352,7 @@ def _wire_fire_path(
         "access": access,
     }
     return FirePath(
+        ambient=ambient,
         **_fire_turn_args(**shared_kwargs),
         **_fire_grounding_args(
             allowlist=allowlist,

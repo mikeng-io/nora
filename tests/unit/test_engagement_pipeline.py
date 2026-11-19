@@ -441,10 +441,7 @@ async def test_authorized_conversation_receives_demo_tools():
 
 
 def _prompt_text(call: dict) -> str:
-    return "\n".join(
-        block.get("text", "")
-        for message in call["pre_fill"] for block in message["content"]
-    )
+    return call["tag_message"]
 
 
 
@@ -468,15 +465,17 @@ async def test_deferring_ships_the_hot_set_the_loader_and_the_catalogue():
     hot tools plus `load_tools`, the prompt carries `<tool_catalogue>`, and
     the loop gets one more turn for the load. All three come from ONE
     `ToolSurface`, so they cannot disagree about what was deferred."""
-    from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HOT_TOOLS, LOADER_TOOL
+    from nora.agent.catalog.groups import HOT_TOOLS, LEGACY_ENGAGEMENT_TOOLS, LOADER_TOOL
 
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(defer_tools=True)
+    registry = ToolRegistry(engagement_graph_retrieval=object(), intention_admission=object())
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        defer_tools=True, tool_registry=registry,
+    )
     await pipeline.run(_request())
     await _drain(background)
     call = pipeline._runner.calls[-1]
     names = {t.tool_name for t in call["tools"]}
-    # no index wired: the Honcho memory surface (DEC-316)
-    assert names == ((HOT_TOOLS - GRAPH_MEMORY_TOOLS) | {LOADER_TOOL})
+    assert names == ((HOT_TOOLS - LEGACY_ENGAGEMENT_TOOLS) | {LOADER_TOOL})
     assert "<tool_catalogue" in _prompt_text(call)
     assert "weather" in _prompt_text(call)  # a shelved tool is still NAMED
     assert call["limits"]["turns"] == LIMITS["turns"] + 1

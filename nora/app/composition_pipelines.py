@@ -155,24 +155,7 @@ async def standing(
         debrief_wiring = DebriefWiring(
             store=standing_store,
             media_join=media_join,
-            client=_DebriefModelClient(
-                base_url=cfg.endpoint("standing")[0],
-                api_key=cfg.endpoint("standing")[1],
-                max_tokens=cfg.llm.max_tokens,
-                temperature=cfg.llm.temperature,
-                model=cfg.endpoint("standing", cfg.standing.model or cfg.llm.model)[2],
-                timeout_seconds=cfg.standing.timeout_seconds,
-                # Empty means inherit `[llm] reasoning_effort` — the same
-                # defaulting `model` above uses.
-                reasoning_effort=_reasoning_effort(
-                    cfg.standing.reasoning_effort or cfg.llm.reasoning_effort,
-                    source=(
-                        "[standing] reasoning_effort"
-                        if cfg.standing.reasoning_effort
-                        else "[llm] reasoning_effort (inherited)"
-                    ),
-                ),
-            ),
+            client=_debrief_client(cfg),
             objective=dreamer_instructions,
             record_store=audit,
             max_chars=cfg.standing.max_chars,
@@ -216,13 +199,32 @@ async def standing(
     return StandingWiring(debrief_wiring=debrief_wiring, standing_fold=standing_fold)
 
 
+def _debrief_client(cfg: Any) -> _DebriefModelClient:
+    return _DebriefModelClient(
+        base_url=cfg.endpoint("standing")[0],
+        api_key=cfg.endpoint("standing")[1],
+        max_tokens=cfg.llm.max_tokens,
+        temperature=cfg.llm.temperature,
+        model=cfg.endpoint("standing", cfg.standing.model or cfg.llm.model)[2],
+        timeout_seconds=cfg.standing.timeout_seconds,
+        # Empty means inherit `[llm] reasoning_effort` — the same
+        # defaulting `model` above uses.
+        reasoning_effort=_reasoning_effort(
+            cfg.standing.reasoning_effort or cfg.llm.reasoning_effort,
+            source=(
+                "[standing] reasoning_effort"
+                if cfg.standing.reasoning_effort
+                else "[llm] reasoning_effort (inherited)"
+            ),
+        ),
+    )
+
+
 def build_graph_debrief(
-    memory_wire: Any, standing: DebriefWiring | None, cfg: Any, engine: Any,
+    memory_wire: Any, objective: Any, cfg: Any, engine: Any,
     access: Any, lineage: Any,
     persons: Any, policy: Any, doctrine_store: Any, content_checks: bool, clock: Any, metrics: Any,
-) -> GraphDebriefWiring | None:
-    if standing is None:
-        return None
+) -> GraphDebriefWiring:
     return GraphDebriefWiring(
         store=memory_wire.debrief_store(engine),
         admission=memory_wire.admission(
@@ -231,10 +233,10 @@ def build_graph_debrief(
             content_checks=content_checks, access=access,
         ),
         assembler=memory_wire.pass_assembler(engine, access, lineage, None, None),
-        client=standing.client, objective=standing.objective, clock=clock,
+        client=_debrief_client(cfg), objective=objective, clock=clock,
         revisions=engine.get_execution_options()["item_registration"].revisions,
-        metrics=metrics, timeout_seconds=standing.timeout_seconds,
-        store_timeout_seconds=standing.store_timeout_seconds,
+        metrics=metrics, timeout_seconds=cfg.standing.timeout_seconds,
+        store_timeout_seconds=cfg.standing.store_timeout_seconds,
     )
 
 
@@ -251,7 +253,7 @@ def build_engagement(
     reasoning_strip_store: Any, registry: Any, room_commands: Any,
     rosters: Any, runner: Any,
     slots: Any, tag_trace_store: Any, tier: Any, tool_call_log_store: Any,
-    tool_registry: Any, standing_replay_wiring: DebriefWiring | None = None,
+    tool_registry: Any, graph: Any, standing_replay_wiring: DebriefWiring | None = None,
 ) -> EngagementWiring:
 
     engagement = EngagementPipeline(
@@ -264,7 +266,7 @@ def build_engagement(
         memory=memory,
         persons=persons,
         doctrine_store=doctrine_store,
-        context_assembler=assembler,
+        context_assembler=assembler, graph=graph,
         runner=runner,
         tool_registry=tool_registry,
         # `allowlist` — policy.toml, the SAME instance the ingest pipeline already checked this

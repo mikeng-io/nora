@@ -1,10 +1,12 @@
 """Resolved input references and the reading scope of a cognition pass."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
+from nora.domain.blocks import ContextBlock
+from nora.domain.blocks import assemble as render_blocks
 from nora.domain.graph_stimuli import GraphStimulus
-from nora.memory.domain.retrieval import ReadingRoom
+from nora.memory.domain.retrieval import ReadingRoom, RetrievalStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,11 +17,12 @@ class PassScope:
     concerns: frozenset[str] = frozenset()
     nora_name: str = "Nora"
     unit_name: str | None = None
+    anchor_failure: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class AnchorItem:
-    id: str
+    id: str | None
     text: str
     people: tuple[str, ...] = ()
 
@@ -56,3 +59,14 @@ class ReviewInput:
 
 
 PassInput = CalledInput | AmbientInput | ProactiveInput | WakeInput | DebriefInput | ReviewInput
+
+
+@dataclass(frozen=True, slots=True)
+class AssembledPass:
+    blocks: tuple[ContextBlock, ...]
+    status: RetrievalStatus
+    cause: str | None
+    shown: frozenset[str] = frozenset()
+
+    def render(self) -> str:
+        return render_blocks(tuple(replace(block, order=i) for i, block in enumerate(self.blocks)))
