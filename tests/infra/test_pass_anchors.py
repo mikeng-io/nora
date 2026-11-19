@@ -152,7 +152,7 @@ async def test_a_failed_anchor_statement_returns_an_unavailable_cause(scenario) 
     data = CalledInput(AnchorItem("addressing", "Own question", (PERSON,)))
     anchors = reader(scenario)
     assert (await anchors.build(declaration("called"), data, SCOPE, NOW)).anchors.graph_ids
-    with refuse_count(scenario.engine, "pointer_kind"):
+    with refuse_count(scenario.engine, "AS pointer_kind"):
         result = await anchors.build(declaration("called"), data, SCOPE, NOW)
     assert result.cause == "anchor_read_failed"
     assert result.anchors == RetrievalAnchors()

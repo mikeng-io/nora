@@ -107,7 +107,7 @@ async def test_failed_anchors_mark_every_presentation_unavailable_and_keep_floor
     floor = _floor()
     assembler, adapter = _counted(scenario)
     assert (await assembler.assemble("called", data, floor, SCOPE, NOW)).status == "ok"
-    with refuse_count(scenario.engine, "pointer_kind"):
+    with refuse_count(scenario.engine, "AS pointer_kind"):
         context = await assembler.assemble("called", data, floor, SCOPE, NOW)
     assert (context.status, context.cause) == (
         "unavailable", "anchor_read_failed",

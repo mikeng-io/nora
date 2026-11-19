@@ -266,7 +266,9 @@ class _AnchorQueries:
         r = self._rows
         kind = r.image["pointer_kind"].astext
         ref = r.image["pointer_ref"].astext
-        rows = await self._conn.execute(sa.select(kind, ref, r.graph_id).where(
+        rows = await self._conn.execute(sa.select(
+            kind.label("pointer_kind"), ref.label("pointer_ref"), r.graph_id,
+        ).where(
             r.kind == "entity", r.state == "admitted", sa.or_(
                 sa.and_(kind == "person", ref.in_(people)),
                 sa.and_(kind == "room", ref.in_((*rooms, self._scope.room))),
