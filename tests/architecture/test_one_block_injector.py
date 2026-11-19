@@ -75,22 +75,18 @@ _QUOTED_SAMPLES: dict[str, dict[str, frozenset[str]]] = {
     },
 }
 
-#: (module, tag) -> why a tag spelled out inside an `re.*` call argument is
-#: a reader, not a builder.
+#: (module, tag) -> the exact `ast.unparse` text of the one `re.*` call
+#: whose PATTERN argument may name the tag without the module counting as
+#: its builder.
 _RE_READERS = {
     ("nora/testing/causal_protocol.py", "m"):
-        "the `re.findall` pattern in `source` parses `<m>` markers out of a "
-        "rendered agenda; a finite world never emits a block",
+        "re.findall('<m n=\"(\\\\d+)\"[^>]*>(.*?)</m>', "
+        "html.unescape(text), re.DOTALL)",
 }
 
-_RE_FUNCS = frozenset({
-    "compile", "search", "match", "fullmatch",
-    "findall", "finditer", "sub", "subn", "split",
-})
-
-#: The exemption binds to the string nodes handed to the regex call, so the
-#: same tag emitted anywhere else in the module — and every other tag — is
-#: still caught by the census.
+#: No shape analysis: any edit to the pinned call — a different pattern, an
+#: added or changed argument — changes the unparsed text, and every other
+#: occurrence of the tag (a `re.sub` replacement, an f-string) is flagged.
 
 def _docstring_nodes(tree: ast.AST) -> set[int]:
     """Every Constant that is a DOCSTRING — prose about a tag, not a tag.
@@ -197,19 +193,17 @@ def _sample_sites(tree: ast.Module, rel: str, tag: str) -> set[int]:
 
 
 def _reader_sites(tree: ast.Module, rel: str, tag: str) -> set[int]:
-    """String nodes a pinned (module, tag) pair hands to an `re.*` call."""
-    if (rel, tag) not in _RE_READERS:
+    """String nodes that are the pattern argument of the pinned `re.*` call."""
+    pin = _RE_READERS.get((rel, tag))
+    if pin is None:
         return set()
     sites: set[int] = set()
     for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr in _RE_FUNCS
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "re"
-        ):
-            for arg in node.args:
+        if isinstance(node, ast.Call) and ast.unparse(node) == pin:
+            candidates = ([node.args[0]] if node.args else []) + [
+                kw.value for kw in node.keywords if kw.arg == "pattern"
+            ]
+            for arg in candidates:
                 for sub in ast.walk(arg):
                     if isinstance(sub, (ast.Constant, ast.JoinedStr)):
                         sites.add(id(sub))
@@ -290,26 +284,37 @@ def test_a_quoted_sample_constant_exempts_only_itself():
     assert "m" in _built(ast.parse(reassigned), rel)
 
 
-def test_a_regex_reader_occurrence_exempts_only_that_site() -> None:
-    """The (module, tag) `_RE_READERS` pin exempts the pattern string handed
-    to `re.*` and nothing else: the same tag emitted anywhere else in the
-    module, the same reader in another module, and every other tag are all
-    still caught by the census."""
+def test_a_regex_reader_occurrence_exempts_only_that_call() -> None:
+    """The (module, tag) `_RE_READERS` pin exempts the pattern argument of
+    the one pinned `re.*` call and nothing else: a replacement-argument or
+    f-string occurrence in the same module, the same call under another
+    module, the call with any argument changed, and every other tag are all
+    still caught."""
     rel = "nora/testing/causal_protocol.py"
     reader = (
         "import re\n"
         "def source(text):\n"
-        "    return re.findall(r'<m n=\"(\\d+)\"[^>]*>(.*?)</m>', text)\n"
+        "    return re.findall('<m n=\"(\\\\d+)\"[^>]*>(.*?)</m>', "
+        "html.unescape(text), re.DOTALL)\n"
     )
     assert _built(ast.parse(reader), rel) == ()
 
     emitted = reader + "def build(v):\n    return f'<m n=\"9\">{v}</m>'\n"
     assert "m" in _built(ast.parse(emitted), rel)
 
+    replacement = reader + (
+        "def p(t):\n    return re.sub('x', '<m>value</m>', t)\n"
+    )
+    assert "m" in _built(ast.parse(replacement), rel)
+
+    changed_arg = reader.replace("re.DOTALL", "0")
+    assert changed_arg != reader
+    assert "m" in _built(ast.parse(changed_arg), rel)
+
     other_tag = (
         "import re\n"
         "def p(t):\n"
-        "    return re.findall(r'<facts>(.*?)</facts>', t)\n"
+        "    return re.findall('<facts>(.*?)</facts>', t)\n"
     )
     assert "facts" in _built(ast.parse(other_tag), rel)
 
