@@ -85,6 +85,7 @@ class NativeTool:
     # resident under `[llm] defer_tools`, on top of `HOT_TOOLS`. Empty (the default) means
     # the tool is resident only if `HOT_TOOLS` names it, which is every turn's set and is
     hot_on: frozenset[str] = frozenset()
+    outside: bool = False
 
 
 SIDE_EFFECT_STATES: frozenset[str] = frozenset({"none", "confirmed", "unknown"})

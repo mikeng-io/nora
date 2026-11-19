@@ -18,6 +18,7 @@ TOOLS = {
     ),
     "web_search": NativeTool(
         4,
+        outside=True,
         source_tier="web",
         cacheable=True,
         read_only=True,
@@ -29,6 +30,7 @@ TOOLS = {
     ),
     "web_fetch": NativeTool(
         5,
+        outside=True,
         source_tier="web",
         cacheable=True,
         read_only=True,
@@ -41,6 +43,7 @@ TOOLS = {
     ),
     "x_read": NativeTool(
         3,
+        outside=True,
         source_tier="web",
         cacheable=True,
         read_only=True,
@@ -52,6 +55,7 @@ TOOLS = {
     ),
     "x_search": NativeTool(
         2,
+        outside=True,
         source_tier="web",
         cacheable=True,
         read_only=True,
@@ -63,6 +67,7 @@ TOOLS = {
     ),
     "linkedin_read": NativeTool(
         2,
+        outside=True,
         time_shiftable=False,
         source_tier="web",
         cacheable=False,
@@ -75,6 +80,7 @@ TOOLS = {
     ),
     "linkedin_search": NativeTool(
         1,
+        outside=True,
         time_shiftable=False,
         source_tier="web",
         cacheable=False,
@@ -87,6 +93,7 @@ TOOLS = {
     ),
     "instagram_read": NativeTool(
         2,
+        outside=True,
         time_shiftable=False,
         source_tier="web",
         cacheable=False,
@@ -99,6 +106,7 @@ TOOLS = {
     ),
     "instagram_search": NativeTool(
         2,
+        outside=True,
         time_shiftable=False,
         source_tier="web",
         cacheable=True,

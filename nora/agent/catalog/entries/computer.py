@@ -6,6 +6,7 @@ from nora.agent.link_owners import LinkInput
 TOOLS = {
     "file_fetch": NativeTool(
         4,
+        outside=True,
         read_only=True,
         side_effect_state="none",
         idempotency="idempotent",
@@ -57,6 +58,7 @@ TOOLS = {
     ),
     "computer_import": NativeTool(
         3,
+        outside=True,
         side_effect_state="confirmed",
         idempotency="idempotent",
         retry="never",

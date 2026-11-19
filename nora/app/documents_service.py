@@ -44,6 +44,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal, TypeVar, cast
 from uuid import UUID, uuid4
 
+from nora.agent.egress import internal_span, text_fragments
 from nora.agent.security import PlaceLocator
 from nora.app.documents_media import document_maps, ground_maps, resolve_media
 from nora.documents import catalog_prompt
@@ -636,6 +637,9 @@ class DocumentService:
             )
         if not checked.ok or checked.document is None:
             return PublishResult("refused", findings=checked.findings)
+        if any(map(internal_span, (checked.text, *text_fragments(checked.document)))):
+            finding = Finding("", "internal_exposure", "Remove the quoted internal material.")
+            return PublishResult("refused", findings=(finding,))
 
         rewritten, media, findings, down = await resolve_media(
             records=self._records, media=self._media, room_ids=self._room_ids,
@@ -649,7 +653,6 @@ class DocumentService:
         if findings:
             return PublishResult("refused", findings=tuple(findings))
         if document_maps(rewritten):
-            # Refuse stale or inaccessible targets before a billed lookup.
             early = await self._target_problem(
                 platform, conversation_id, document_id, base_revision, person_id)
             if early is not None:
@@ -665,9 +668,8 @@ class DocumentService:
         if findings:
             return PublishResult("refused", findings=tuple(findings))
         final: Checked = check_document(rewritten)
+        # Grounding can add enough data to exceed the document limits.
         if final.status == "refused":
-            # What grounding added (a pair per place) can push a document that passed the first
-            # check past a limit; that is the writer's to fix, not «could not be re-checked».
             return PublishResult("refused", findings=final.findings)
         if not final.ok or final.document is None:
             return PublishResult(
@@ -681,7 +683,6 @@ class DocumentService:
             media=media,
             written_by=written_by,
         )
-
         try:
             if document_id is None:
                 if not isinstance(person_id, str):

@@ -48,9 +48,11 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
+from collections.abc import Iterable, Iterator, Mapping
 
 from ..doctrine.loader import Doctrine
 from ..domain.prompt import escape_attr
+from ..memory import internal_corpus
 from .markdown import strip_markdown
 from .punctuation import undash
 
@@ -149,16 +151,13 @@ _COORD_HEMISPHERE = re.compile(rf"(?:北緯|南緯|東經|西經)\s*{_DEC}")
 # The reply scan is the identifier scan PLUS the coordinate forms: identifiers
 # are the floor at every exit, and coordinates are a reply-only exposure
 # because DEC-156 puts lat/lng into the model's context.
-_REPLY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    *_IDENTIFIER_PATTERNS,
-    ("coordinate", _COORD_PAIR),
-    ("coordinate", _COORD_PAIR_TWO),
-    ("coordinate", _COORD_BEARING_PAIR),
-    ("coordinate", _COORD_BEARING_SINGLE),
-    ("coordinate", _COORD_LABELLED),
-    ("coordinate", _COORD_LONG),
-    ("coordinate", _COORD_HEMISPHERE),
+_COORD_PATTERNS = (
+    _COORD_PAIR, _COORD_PAIR_TWO, _COORD_BEARING_PAIR, _COORD_BEARING_SINGLE,
+    _COORD_LABELLED, _COORD_LONG, _COORD_HEMISPHERE,
 )
+_REPLY_PATTERNS = (*_IDENTIFIER_PATTERNS, *(("coordinate", p) for p in _COORD_PATTERNS))
+LOCATION_WITHHELD = "[location withheld]"
+_MIN_SPAN = 40
 
 #: Variation selectors (U+FE00..U+FE0F and U+E0100..U+E01EF): they change how a
 #: glyph is drawn, never what it says.
@@ -231,6 +230,54 @@ def _normalize(text: str) -> str:
     return _WS.sub(" ", text).strip()
 
 
+def mask_coordinates(text: str) -> str:
+    """Withhold the coordinate forms recognized by the reply scan."""
+    for pattern in _COORD_PATTERNS:
+        text = pattern.sub(LOCATION_WITHHELD, text)
+    canonical = _canonical(text)
+    if any(pattern.search(canonical) for pattern in _COORD_PATTERNS):
+        for pattern in _COORD_PATTERNS:
+            canonical = pattern.sub(LOCATION_WITHHELD, canonical)
+        return canonical
+    return text
+
+
+def text_fragments(value: object) -> Iterator[str]:
+    """Yield text from JSON-shaped content without its serialization escapes."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, Mapping):
+        for key, member in value.items():
+            yield from text_fragments(key)
+            yield from text_fragments(member)
+    elif isinstance(value, (list, tuple)):
+        for member in value:
+            yield from text_fragments(member)
+
+
+def internal_span(text: str) -> str | None:
+    """Recognize a verbatim span of internal graph content from this pass."""
+    if not text:
+        return None
+    corpus = internal_corpus()
+    if not corpus:
+        return None
+    haystacks = tuple(
+        _normalize(_canonical(undash(form), split=True))
+        for row in corpus for form in (row, strip_markdown(row))
+    )
+    for form in (text, strip_markdown(text)):
+        candidate = _normalize(_canonical(undash(form), split=True))
+        if _verbatim_span(candidate, haystacks, _MIN_SPAN) is not None:
+            return "internal_exposure"
+    return None
+
+
+def scan_outside(text: str, *, content_checks: bool = True) -> str | None:
+    """Screen model-written text before handing it to an outside client."""
+    return internal_span(text) or scan_identifiers(text, content_checks=content_checks)
+
+
 #: The transcript element's opening tag, `<m n="38" ...>` (`nora.domain.blocks`,
 #: `render_row_window` / `render_messages`). A member's body is XML-escaped when
 #: rendered, so a literal `<m n=` in her draft can only have come from the
@@ -250,7 +297,7 @@ class LeakGuard:
     different exposure, guarded separately by `nora.agent.egress` (R-18).
     """
 
-    def __init__(self, doctrine: Doctrine, canary: str, min_span: int = 40) -> None:
+    def __init__(self, doctrine: Doctrine, canary: str, min_span: int = _MIN_SPAN) -> None:
         self._canary = canary
         self._canon_canary = _canonical(canary, split=True)
         self._min_span = min_span
@@ -306,7 +353,7 @@ class LeakGuard:
         return None
 
 
-def _verbatim_span(candidate: str, haystacks: tuple[str, str], min_span: int) -> str | None:
+def _verbatim_span(candidate: str, haystacks: Iterable[str], min_span: int) -> str | None:
     """The first `min_span` window of `candidate` that a haystack holds verbatim."""
     if len(candidate) < min_span:
         return None

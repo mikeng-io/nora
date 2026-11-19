@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Literal, get_args, get_type_hints
 
-from nora.agent.security import scan_identifiers
+from nora.agent.egress import scan_identifiers, scan_outside
 from nora.agent.toolkit.files import (
     _COVER_NOTE,
     _MEDIA_READING_NOTE,
@@ -211,6 +211,7 @@ def _make_generate_image(deps):
         """
         c = SimpleNamespace(
             prompt=prompt,
+            content_checks=deps.content_checks,
             reference_images=reference_images,
             size=size,
             aspect=aspect,
@@ -368,6 +369,10 @@ async def _generate_image__prepare(c):
 
 
 async def _generate_image__generate(c):
+    if scan_outside(c.prompt, content_checks=c.content_checks):
+        return (True, None, {
+            "status": "nothing_found", "note": "Remove private material from the prompt."
+        })
     try:
         c.result = await c.image_generator.generate(
             prompt=c.prompt,
