@@ -6,8 +6,9 @@ import asyncio
 import json
 import re
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -16,6 +17,7 @@ from aiohttp import web
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import EvidenceError
 from nora.subject.model_gateway import ModelGateway
+from nora.subject.routing_browser_fixture import BROWSER_BINDING, RoutingBrowserFixture
 
 
 def _object(value: Any, required: set[str], allowed: set[str]) -> dict[str, Any]:
@@ -215,6 +217,7 @@ class RecordedServices:
 
     def __init__(
         self, data: dict[str, Any], *, model_gateway: ModelGateway | None = None,
+        browser_fixture: bool = False,
     ) -> None:
         _validate(data)
         if model_gateway is not None and any(
@@ -222,8 +225,11 @@ class RecordedServices:
             for path in data["bindings"]
         ):
             raise ValueError("recorded model bindings cannot shadow a declared model gateway")
+        if browser_fixture and BROWSER_BINDING in data["bindings"]:
+            raise ValueError("recorded computer binding conflicts with routing browser fixture")
         self._data = json.loads(json.dumps(data, allow_nan=False))
         self.model_gateway = model_gateway
+        self.browser_fixture = browser_fixture
 
     @property
     def bindings(self) -> dict[str, str]:
@@ -246,16 +252,26 @@ class RecordedServices:
     async def open(self, database_url: str, redis: bool = False) -> AsyncIterator[IsolatedServices]:
         playback = self.playback()
         applications = playback.applications()
-        environment = IsolatedServices(
-            database_url=database_url,
-            redis=redis,
-            model_gateway=self.model_gateway,
-            applications={
-                binding: applications[name] for binding, name in playback.bindings.items()
-            },
-        )
-        playback.bind(environment)
-        async with environment:
-            yield environment
-            environment.check()
-            playback.check()
+        bindings = {binding: applications[name] for binding, name in playback.bindings.items()}
+        with ExitStack() as resources:
+            fixture = None
+            if self.browser_fixture:
+                registry = Path(
+                    resources.enter_context(TemporaryDirectory(prefix="nora-routing-browser-"))
+                )
+                fixture = RoutingBrowserFixture(registry)
+                bindings[BROWSER_BINDING] = fixture.application()
+            environment = IsolatedServices(
+                database_url=database_url,
+                redis=redis,
+                model_gateway=self.model_gateway,
+                applications=bindings,
+                routing_browser=fixture,
+            )
+            playback.bind(environment)
+            async with environment:
+                if fixture is not None:
+                    fixture.provision(environment.urls[BROWSER_BINDING])
+                yield environment
+                environment.check()
+                playback.check()

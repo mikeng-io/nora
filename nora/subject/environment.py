@@ -32,6 +32,7 @@ from nora.subject.model_gateway import (
     ModelGateway,
     ResolvedGateway,
 )
+from nora.subject.routing_browser_fixture import RoutingBrowserFixture
 
 #: The declared model upstream reachable for an in-flight admitted dispatch
 #: on this task — the only non-owned destination the process guard opens,
@@ -55,11 +56,13 @@ class IsolatedServices:
     def __init__(self, *, database_url: str,
                  applications: Mapping[str, web.Application],
                  redis: bool = False,
-                 model_gateway: ModelGateway | None = None) -> None:
+                 model_gateway: ModelGateway | None = None,
+                 routing_browser: RoutingBrowserFixture | None = None) -> None:
         self.database_url = database_url
         self._applications = dict(applications)
         self._redis = redis
         self._gateway = model_gateway
+        self._routing_browser = routing_browser
         self._egress: ResolvedGateway | None = None
         self.urls: dict[str, str] = {}
         self.redis_url = ""
@@ -163,6 +166,10 @@ class IsolatedServices:
         if any(url and not self.owns(url) and not self._declared_endpoint(url)
                for url in model_urls):
             raise ValueError("model dispatch requires a case-owned service boundary")
+        if (fixture := self._routing_browser) is not None:
+            cfg = _with(cfg, "computer.scoped.registry", str(fixture.registry))
+            cfg = _with(cfg, "computer.token_env", fixture.token_env)
+            cfg._credentials = {**cfg.credentials, fixture.token_env: fixture.token}
         variable = f"NORA_SUBJECT_DATABASE_URL_{uuid.uuid4().hex}"
         cfg = _with(cfg, "store.database_url_env", variable)
         cfg._credentials = {**cfg.credentials, variable: self.database_url}
