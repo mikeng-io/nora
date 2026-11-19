@@ -1,5 +1,14 @@
 # Changelog
 
+## [7.19.13](https://github.com/mikeng-io/nora/compare/v7.19.12...v7.19.13) (2026-11-19)
+
+
+### Maintenance
+
+* **architecture:** reshrink the log-marker baseline to the current tree ([d3e2f34](https://github.com/mikeng-io/nora/commit/d3e2f34ea6b8ce530711f8bdc97218019c9e420d))
+* **architecture:** scope the causal_protocol exemption to its reader site ([fad1c30](https://github.com/mikeng-io/nora/commit/fad1c30cd069d15e7a20f05073cfd6ea908e0c63))
+* **contracts:** drop the 170s wall-clock wrapping the fast baseline ([82338ea](https://github.com/mikeng-io/nora/commit/82338ea1359446209e5f4a222bbc57515293ae35))
+
 ## [7.19.12](https://github.com/mikeng-io/nora/compare/v7.19.11...v7.19.12) (2026-11-18)
 
 
