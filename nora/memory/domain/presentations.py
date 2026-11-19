@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from nora.domain.lineage import split_room
 from nora.domain.ticks import due_tick_of_at
@@ -19,6 +19,24 @@ from nora.memory.domain.time_trigger import aware_instant, decode_time_trigger
 
 _PROFILE_PARTS: tuple[ClaimPart, ...] = ("fact", "trait", "guess")
 _INFERENCE_ORDER: Mapping[str | None, int] = {"deduced": 2, "induced": 3, "abduced": 4}
+_CLOSED = frozenset({"ended", "retired", "superseded", "tombstoned"})
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def _recency(row: RetrievedRow) -> timedelta:
+    return _EPOCH - (row.occurred_at or row.asserted_at)
+
+
+def order_rows(
+    rows: Iterable[RetrievedRow], *, due: Collection[str] = (),
+) -> tuple[RetrievedRow, ...]:
+    """Order presentation rows by their distance, lifecycle, event time and id."""
+    def key(row: RetrievedRow) -> tuple[int, int, timedelta, str]:
+        is_due = row.kind == "intention" and row.state == "open" and row.graph_id in due
+        bucket = 2 if row.state in _CLOSED else 0 if is_due else 1
+        return row.distance, bucket, _recency(row), row.graph_id
+
+    return tuple(sorted(rows, key=key))
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,7 +211,7 @@ def _in_room(row: RetrievedRow, room: str) -> bool:
 
 
 def _open_intentions(
-    intentions: tuple[RetrievedRow, ...], now: datetime,
+    intentions: tuple[RetrievedRow, ...], due: Collection[str],
 ) -> tuple[OpenIntention, ...]:
     open_ids = {row.graph_id for row in intentions if row.state == "open"}
     children: dict[str, list[RetrievedRow]] = {}
@@ -213,22 +231,27 @@ def _open_intentions(
             branch(child, path) for child in children.get(row.graph_id, ())
             if child.graph_id not in path
         )
-        return OpenIntention(row, intention_is_due(row, now), nested)
+        return OpenIntention(row, row.graph_id in due, nested)
 
     groups = [branch(row, frozenset()) for row in roots]
     for row in intentions:
         if row.graph_id in open_ids and row.graph_id not in shown:
             groups.append(branch(row, frozenset()))
-    return tuple(groups)
+    roots_by_id = {group.row.graph_id: group for group in groups}
+    return tuple(
+        roots_by_id[row.graph_id] for row in intentions if row.graph_id in roots_by_id
+    )
 
 
 def standing(
     result: RetrievalResult, room: str, room_entity: str, now: datetime,
 ) -> Standing:
     """Read the room's open intentions, recent endings and situation claims."""
-    intentions = tuple(
+    room_intentions = tuple(
         row for row in result.rows if row.kind == "intention" and _in_room(row, room)
     )
+    due = {row.graph_id for row in room_intentions if intention_is_due(row, now)}
+    intentions = order_rows(room_intentions, due=due)
     settled = []
     for row in intentions:
         ended_at = aware_instant(row.close_when.get("ended_at"))
@@ -240,25 +263,34 @@ def standing(
             ))
     situations = tuple(
         Situation(row, now - row.asserted_at, row.items_since)
-        for row in result.rows if row.kind == "claim" and row.part == "situation"
-        and room_entity in _about(row)
+        for row in order_rows(
+            row for row in result.rows if row.kind == "claim" and row.part == "situation"
+            and room_entity in _about(row)
+        )
     )
     return Standing(
-        _open_intentions(intentions, now), tuple(settled), situations,
+        _open_intentions(intentions, due), tuple(settled), situations,
         result.status, result.limits, result.cause,
     )
 
 
 def lessons(result: RetrievalResult) -> tuple[RetrievedRow, ...]:
     """Read the unit's lesson claims, including exact references to retired lessons."""
-    return tuple(
+    rows = (
         row for row in result.rows if row.kind == "claim" and row.part == "lesson"
         and row.state in ("live", "retired")
     )
+    def key(row: RetrievedRow) -> tuple[bool, int, timedelta, str]:
+        return (
+            row.support is None, -row.support.count if row.support is not None else 0,
+            _recency(row), row.graph_id,
+        )
+
+    return tuple(sorted(rows, key=key))
 
 
 def related(result: RetrievalResult, shown: Collection[str]) -> tuple[RetrievedRow, ...]:
     """Read reached items and claims outside this pass's other presentations."""
-    return tuple(
+    return order_rows(
         row for row in result.rows if row.kind in ("item", "claim") and row.graph_id not in shown
     )
