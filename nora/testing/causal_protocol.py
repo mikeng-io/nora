@@ -143,7 +143,7 @@ class CausalProtocol:
             for purpose in ("tag", "participation", "proactive")
         }
         #: The served-request census by occasion: `scenario`, `fold_unit`,
-        #: `fold_room`, `culture`, `character-*`. Served, not inferred —
+        #: `fold_room`, `debrief`, `culture`, `character-*`. Served, not inferred —
         #: unmatched requests are in `errors`, never here.
         self.occasions: dict[str, int] = {}
 
@@ -194,7 +194,7 @@ class CausalProtocol:
     def result(self, request):
         """One scenario call -> `(occasion, response)`. The occasion names
         what the request's own shape served — a `cognition` or `turn` model
-        call, a `fold_unit`/`fold_room` fold — and every served scenario call
+        call or a unit fold — and every served scenario call
         advances `phase`, while a shape its phase does not expect is a
         recorded error that advances nothing."""
         text = "\n".join(texts(request["messages"]))
@@ -244,7 +244,7 @@ class CausalProtocol:
             return "cognition", completion(
                 request["model"], "Generated question is retained.", stream=True
             )["response"]
-        if self.phase in {3, 8, 10}:
+        if self.phase in {3, 8}:
             assert not tools and request["model"] == self.standing_model
             return self._fold(request, text)
         if self.phase == 4:
@@ -329,6 +329,8 @@ class CausalProtocol:
         tools = {tool["function"]["name"] for tool in body.get("tools", [])}
         endpoint = self.cfg.endpoint
         if stream:
+            if model == self.standing_model and not tools and re.search(r"<debrief_items\b", user):
+                return "debrief", completion(model, '{"operations":[]}', stream=True)["response"]
             if (
                 model == self.standing_model
                 and not tools
@@ -418,7 +420,10 @@ class CausalProtocol:
                 return False, tagged.group(1), self._background(body, tagged.group(1))
         if other := self._other_occasion(body):
             occasion, response = other
-            scenario = occasion in {"fold_unit", "fold_room"} and self.phase in {3, 8, 10}
+            scenario = (
+                (occasion in {"fold_unit", "fold_room"} and self.phase in {3, 8})
+                or (occasion == "debrief" and self.phase == 10)
+            )
             return scenario, occasion, response
         if model in self.turn_models | {self.dream_model, self.standing_model}:
             if body.get("stream") is not True:

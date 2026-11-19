@@ -93,8 +93,8 @@ BLOCK_TYPES: dict[str, BlockType] = {
        store="cognitive_graph.pass_items", occasion="the finished pass's occasion",
        room="the platform-qualified room",
        began="the original debrief's start", delivered_intention="the intention delivered"),
-    _t("debrief_messages", "Room messages in the debrief window, with ids, times and authors.",
-       store="messages"),
+    _t("debrief_messages", "Room messages with ids, times, authors and Nora delivery states.",
+       store="cognitive_graph.debrief_message_window"),
     _t("graph_standing",
        "Your open and recently settled commitments and your claims about this room. "
        "An empty result found none in this read. A missing block says nothing about the room, "

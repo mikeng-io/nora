@@ -42,6 +42,7 @@ class PassItem:
     at: datetime
     who: str
     content: object
+    delivery: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

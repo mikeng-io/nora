@@ -206,7 +206,8 @@ async def _input(
 def _evidence_body(rows: Sequence[PassItem]) -> Composed:
     lines = [
         json.dumps({"id": row.id, "kind": row.kind, "at": row.at.isoformat(),
-                    "who": row.who, "content": without_reasoning(row.content)},
+                    "who": row.who, "content": without_reasoning(row.content),
+                    **({"delivery": row.delivery} if row.delivery is not None else {})},
                    ensure_ascii=False, default=str)
         for row in rows
     ]

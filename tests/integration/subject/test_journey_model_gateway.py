@@ -93,6 +93,13 @@ def _foreground_declarations(cfg, request, tool_spec):
                 {"items": []},
             ),
         ],
+        "nora/engagement/stages/graph_debrief.py": [
+            (
+                request("standing", cfg.standing.model, '<debrief_items occasion="called"/>'),
+                "debrief",
+                {"operations": []},
+            ),
+        ],
         "nora/ingest/relevance_gate.py": [
             (
                 request(

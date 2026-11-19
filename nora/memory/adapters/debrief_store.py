@@ -125,6 +125,7 @@ class SqlDebriefStore:
                     "nora" if item["is_nora"] else item["person_id"] or "unidentified person",
                     without_reasoning(item["edit_body"] if item["edit_ts"] is not None
                                       else item["body"]),
+                    item["delivery_status"] if item["is_nora"] else None,
                 )
                 for item in rows
             )
