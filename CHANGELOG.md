@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.19.15](https://github.com/mikeng-io/nora/compare/v7.19.14...v7.19.15) (2026-11-19)
+
+
+### Changes
+
+* **site:** retire the OpenWiki wiki and redirect /wiki to the homepage ([2959279](https://github.com/mikeng-io/nora/commit/2959279cac76a25726901aca08a0a88cb99c91c9))
+
 ## [7.19.14](https://github.com/mikeng-io/nora/compare/v7.19.13...v7.19.14) (2026-11-19)
 
 
