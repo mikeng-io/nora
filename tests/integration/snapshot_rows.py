@@ -84,6 +84,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
         "id": f"cg-entity-{i}", "kind": "entity", "basis": "computed", "unit": "u",
         "exposure": "internal", "writer": "generated", "state": "admitted",
         "name": f"Generated entity {i}",
+        "source_ref_kind": "page", "source_ref_value": f"https://example.invalid/entity-{i}",
     },
     "claim": lambda i: {
         "id": f"cg-claim-{i}", "kind": "claim", "basis": "inferred",
@@ -443,6 +444,11 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
 #: One append-only row, number `n`, citing the stable key-0 parents.
 APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     **managed_rows.APPEND,
+    "watch_result": lambda n: {
+        "unit": "u", "graph_id": f"generated-watch-item-{n}",
+        "watch_edge": f"generated-watch-edge-{n}", "content_hash": f"generated-watch-hash-{n}",
+        "occurred_at": T0 + timedelta(seconds=n), "valid_from": T0 + timedelta(seconds=n),
+    },
     "graph_stimulus": lambda n: {
         "unit": "u", "kind": "new_item", "graph_id": f"generated-stimulus-item-{n}",
         "eligible_at": T0, "source": "message",
