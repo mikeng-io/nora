@@ -30,6 +30,7 @@ from nora.infra.sql.item_retention import tombstone_items
 from nora.infra.sql.observations import SqlObservationStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.schema import (
+    BRIDGE_ACTION,
     FETCHED_PAGES,
     MEMORY_NODE,
     MESSAGE_DELETE,
@@ -46,6 +47,7 @@ from nora.memory.domain.acts import ActAuthority
 from nora.memory.domain.conditions import decode_condition
 from nora.memory.domain.registration import ITEM_SOURCES, PROTECTED_ITEM_SOURCES
 from nora.memory.wire import condition_matcher
+from nora.obs.metrics import Metrics
 from tests.infra.rollup_fixtures import RollupFixture
 from tests.infra.test_absence import _END, _SIX_HOURS, _START, _silent_span
 from tests.infra.test_act_envelope import PASS
@@ -164,6 +166,50 @@ async def test_configured_horizon_tombstones_only_old_rows_and_keeps_citation(en
             MEMORY_NODE.c.kind == "message",
         ))).all()
         assert nodes == [str(fresh)]
+
+
+async def test_prune_skips_a_referenced_message_and_finishes_both_sweeps(engine, caplog):
+    registration = _registration()
+    metrics = Metrics()
+    store = SqlRecordStore(
+        engine, registration=registration, max_per_conversation=2,
+        horizons={"messages": 1}, metrics=metrics,
+    )
+    message = _Writer(engine, registration)._message()
+    day = 86_400_000
+    blocked, expired_a, expired_b, count_only, fresh_a, fresh_b = [
+        await store.append(message=replace(message, timestamp=_MS + offset), person_id=_PERSON)
+        for offset in (0, 1, 2, day + 1, day + 2, day + 3)
+    ]
+    await store.append_edit(message_id=blocked, message=message)
+    rows = await _rows(engine, MESSAGES)
+    (edit,) = (await _rows(engine, MESSAGE_EDIT)).values()
+    async with engine.begin() as conn:
+        await conn.execute(sa.insert(BRIDGE_ACTION).values(
+            action_id="generated-blocker", platform="signal",
+            account_key="generated-account", owner_kind="live_invocation", owner_id="fixture",
+            op="send", request={}, request_hash="fixture", message_id=blocked,
+        ))
+
+    assert await store.prune_all(now=_AT + timedelta(days=2)) == 3
+    remaining = await _rows(engine, MESSAGES)
+    assert set(remaining) == {blocked, fresh_a, fresh_b}
+    assert remaining[blocked] == rows[blocked]
+    assert (await _rows(engine, MESSAGE_EDIT))[edit["id"]] == edit
+    registry = await _rows(engine, REGISTRY)
+    for message_id in (expired_a, expired_b, count_only):
+        assert registry[rows[message_id]["graph_id"]]["state"] == "tombstoned"
+    for graph_id in (rows[blocked]["graph_id"], edit["graph_id"]):
+        endpoint = registry[graph_id]
+        assert endpoint["state"] == "live"
+        assert endpoint["content_hash"] is endpoint["tombstoned_at"] is None
+    coverage = (await _rows(engine, EXPIRED_COVERAGE)).values()
+    assert {(r["source"], r["person"], r["from"], r["to"]) for r in coverage} == {
+        ("messages", _PERSON, epoch_ms(_MS + 1), epoch_ms(_MS + 2)),
+        ("messages", _PERSON, epoch_ms(_MS + day + 1), epoch_ms(_MS + day + 1)),
+    }
+    assert metrics.get("nora_errors_total", stage="prune") == 2
+    assert caplog.messages.count("prune skipped messages item because of a foreign key") == 2
 
 
 async def test_message_count_prune_tombstones_all_three_cascade_children(engine):
