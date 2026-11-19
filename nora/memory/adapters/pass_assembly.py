@@ -8,7 +8,13 @@ from nora.memory.adapters.pass_anchors import AnchorRead, SqlPassAnchors
 from nora.memory.adapters.presentation_blocks import GraphPresentationBlocks
 from nora.memory.app.retrieval import RetrievalService
 from nora.memory.domain.pass_declarations import PassDeclaration, PassName, declaration
-from nora.memory.domain.pass_inputs import AssembledPass, DebriefInput, PassInput, PassScope
+from nora.memory.domain.pass_inputs import (
+    AssembledPass,
+    DebriefInput,
+    PassInput,
+    PassScope,
+    ProactiveInput,
+)
 from nora.memory.domain.presentations import lessons, related
 from nora.memory.domain.retrieval import RetrievalResult
 
@@ -32,20 +38,31 @@ class PassAssembler:
                 scope.room, seeds.anchors, bounds, concerns=seeds.concerns,
                 as_of=scope.as_of, now=now,
             )
+        if isinstance(data, ProactiveInput):
+            builder = GraphPresentationBlocks(now, seeds.room, seeds.dm_rooms)
+            due, due_ids = builder.due_intention(result, data.intention)
+            floor = (due, *floor)
+        else:
+            due_ids = frozenset()
         blocks, shown = _presentation_order(
             choice, seeds, result, floor, now, open_room_and_unit=isinstance(data, DebriefInput),
+            floor_ids=due_ids,
         )
-        return AssembledPass(blocks, result.status, result.cause, shown)
+        return AssembledPass(
+            blocks, result.status, result.cause, shown,
+            not isinstance(data, ProactiveInput) or data.intention in due_ids,
+        )
 
 
 def _presentation_order(
     choice: PassDeclaration, seeds: AnchorRead, result: RetrievalResult,
     floor: Sequence[ContextBlock], now: datetime, *, open_room_and_unit: bool = False,
+    floor_ids: frozenset[str] = frozenset(),
 ) -> tuple[tuple[ContextBlock, ...], frozenset[str]]:
     builder = GraphPresentationBlocks(now, seeds.room, seeds.dm_rooms)
     early: list[ContextBlock] = []
     late: list[ContextBlock] = []
-    shown: set[str] = set()
+    shown: set[str] = set(floor_ids)
     chosen = choice.presentations
     if "graph_profile" in chosen:
         for subject in seeds.collective:

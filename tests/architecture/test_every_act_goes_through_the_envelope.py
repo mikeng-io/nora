@@ -348,6 +348,8 @@ KNOWN_CALLS = {'agent/comprehend_tools.py': {'ComprehendRead.stream self._inner.
  'ingest/stickers.py': {'StickerReader._read self._blobs.put': 1},
  'media/adapters/tools/create.py': {'_generate_image__store_blob c.blob_store.put': 1},
  'media/adapters/tools/fetch.py': {'_media_fetch__answer c.video_readings.put': 1},
+ # Released claims discard their unrun internal journal rows in the settlement transaction.
+ 'memory/adapters/proactive_claims.py': {'_settle_claims sa.delete DEBRIEF_OBLIGATION': 1},
  'memory/adapters/stored_row_registration.py': {'SqlStoredRows._register_aggregates PRESENCE_PLACES.delete': 1},
  'platform/bridge/client.py': {"BridgeAdapter._post session.post f'{self._endpoint.base_url}{path}'": 1,
                                "BridgeAdapter._put_bytes session.put f'{self._endpoint.base_url}{path}'": 1},

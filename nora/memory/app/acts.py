@@ -29,7 +29,7 @@ class ActStore(Protocol):
 
     async def append_pass(
         self, authority: ActAuthority, kind: str, content: list[str] | None,
-        *, ordinal: int | None = None,
+        *, ordinal: int | None = None, silence_reason: str | None = None,
     ) -> None: ...
 
     async def read_pass(self, unit: str, pass_id: str) -> dict[str, list[str] | None]: ...
@@ -92,8 +92,11 @@ class ActEnvelope:
             return text
         return json.dumps(without_reasoning(value), ensure_ascii=False)
 
-    async def record_silence(self, authority: ActAuthority) -> None:
-        await self._store.append_pass(authority, "silence", None)
+    async def record_silence(self, authority: ActAuthority, *, reason: str | None = None) -> None:
+        if reason is None:
+            await self._store.append_pass(authority, "silence", None)
+        else:
+            await self._store.append_pass(authority, "silence", None, silence_reason=reason)
 
     async def read_pass(self, unit: str, pass_id: str) -> dict[str, list[str] | None]:
         return await self._store.read_pass(unit, pass_id)

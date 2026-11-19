@@ -84,6 +84,14 @@ async def _write(conn: Any, table: str, i: int) -> None:
             id=claim["id"], unit=claim["unit"], kind="claim",
         ))
         await conn.execute(sa.insert(_table("claim")).values(claim))
+    if table == "graph_stimulus_claim":
+        await conn.execute(sa.insert(_table("registry")).values(
+            id=row["graph_id"], unit=row["unit"], kind="intention",
+        ))
+        await conn.execute(sa.insert(_table("graph_stimulus")).values(
+            **{key: row[key] for key in ("unit", "kind", "graph_id", "occurrence")},
+            source="clock", eligible_at=row["claimed"],
+        ))
     if table == "watch_result":
         await _seed_watch(conn, row["watch_edge"], i)
     if table in {"forget_request", "dispute", "claim_support", "watch_result"}:

@@ -51,7 +51,9 @@ log = logging.getLogger(__name__)
 
 class Store(Protocol):
     async def begin(self, row: DebriefObligation) -> bool: ...
-    async def take_oldest(self, unit: str, room: str) -> DebriefObligation | None: ...
+    async def take_oldest(
+        self, unit: str, room: str, *, pass_id: str | None = None,
+    ) -> DebriefObligation | None: ...
     async def record_proposal_ids(
         self, row: DebriefObligation, proposal_ids: tuple[ProposalId, ...],
     ) -> None: ...
@@ -126,7 +128,11 @@ async def retry(wiring: Wiring | None, unit: str | None, platform: str, room: st
         await _run(wiring, unit=unit, room=f"{platform}:{room}")
 
 
-def _obligation(
+async def run_finished(wiring: Wiring, row: DebriefObligation) -> None:
+    await _run(wiring, unit=row.unit, room=row.room, pass_id=row.pass_id)
+
+
+def obligation(
     authority: ActAuthority, message: NormalizedMessage, transcript: Sequence[TranscriptRow],
     began: datetime,
 ) -> DebriefObligation:
@@ -141,7 +147,7 @@ def _obligation(
 
 
 async def _run(
-    wiring: Wiring, *, unit: str = "", room: str = "",
+    wiring: Wiring, *, unit: str = "", room: str = "", pass_id: str | None = None,
     finished: tuple[ActAuthority, NormalizedMessage, Sequence[TranscriptRow]] | None = None,
 ) -> None:
     started = time.perf_counter()
@@ -149,12 +155,14 @@ async def _run(
     with span("engagement.debrief"):
         try:
             if finished is None:
-                row = await _bounded(wiring, wiring.store.take_oldest(unit, room))
+                pending = (wiring.store.take_oldest(unit, room) if pass_id is None
+                           else wiring.store.take_oldest(unit, room, pass_id=pass_id))
+                row = await _bounded(wiring, pending)
                 if row is None:
                     outcome = None
                     return
             else:
-                row = _obligation(*finished, wiring.clock())
+                row = obligation(*finished, wiring.clock())
                 if not await _bounded(wiring, wiring.store.begin(row)):
                     outcome = None
                     return

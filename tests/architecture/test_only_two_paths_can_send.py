@@ -59,6 +59,7 @@ CALLERS = {
     # The typed command stage is the tag pipeline's authenticated command branch.
     "nora/engagement/stages/command.py",
     "nora/app/fire.py",
+    "nora/app/proactive_fire.py",
     # DEC-212 amends R-1b: a public summons is a third sending path,
     # delivering only through the instagram-bridge's guarded comment write.
     # Its deliverer is a STAGING one (`send_permitted=False`): every guard
