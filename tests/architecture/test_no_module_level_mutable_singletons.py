@@ -116,7 +116,7 @@ def _is_mutable_construction(value: ast.Call) -> bool:
 
 
 def _singleton_offenders(tree: ast.Module, rel: str) -> list[str]:
-    """One module's module-level names bound to per-process state; extracted so a synthetic module can be checked."""
+    """One module's names bound to per-process state; synthetic-checkable."""
     local_classes = {n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
     mutated = _mutated_names(tree)
     offenders: list[str] = []
