@@ -15,7 +15,7 @@ other fail-soft stages (`fire_peer_card`, `fire_notes`, `fire_standing`,
 `fire_unit`, `fire_context`, `tagger_card`, `proactive_self_card`,
 `proactive_standing`, `fire_feedback`) must stay legal. What the reverse check
 asks is that a declared stage is one some call site actually RAISES — because a declaration nothing
-increments is the mirror lie `AGENTS.md` already names ("a declared metric with
+increments is the mirror lie `docs/code-standards.md` already names ("a declared metric with
 no call site is a lie").
 """
 

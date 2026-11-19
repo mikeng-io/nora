@@ -1,11 +1,10 @@
 # Conventions & operational detail
 
-The long-form behind `AGENTS.md`'s rules. `AGENTS.md` carries the terse rules an
-agent must not violate; this file carries the *reasoning*, the war-stories, and
-the specific values. Read it when a rule needs its "why" — every mistake recorded
-here cost an afternoon, and the terse rule is only safe because the story is
-preserved. Nothing here is optional context; it is the load-bearing detail moved
-out of `AGENTS.md` so that file can stay scannable.
+The long-form behind the [code standards](../code-standards.md). The standards
+carry the rule, what a reviewer checks and what holds it; this file carries the
+*reasoning*, the war-stories, and the specific values. Read it when a rule needs
+its "why": the terse rule is only safe because the story is preserved. A lesson
+promoted from [lessons](lessons.md) brings its evidence here.
 
 ## Gate commands — the detail
 
