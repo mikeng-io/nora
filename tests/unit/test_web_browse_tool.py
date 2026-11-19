@@ -146,6 +146,69 @@ async def test_web_browse_rejects_invalid_action(tmp_path, decision):
     assert page._page.await_count == 0 and page.revoked
 
 
+async def _scripted_run(tmp_path, replies, settings):
+    page = Page()
+    manager = Manager(page)
+    requests = []
+
+    def handler(request):
+        requests.append(json.loads(request.content))
+        return gateway_reply(replies[len(requests) - 1], used=1)
+
+    async with AsyncOpenAI(base_url="http://gateway.invalid/v1", api_key="local",
+                           http_client=httpx.AsyncClient(
+                               transport=httpx.MockTransport(handler),
+                           )) as c:
+        runner = WebBrowseRunner(client=c, model=ALIAS, max_tokens=512,
+                                 settings=settings, manager=manager)
+        result = await call_registered(tmp_path, runner, manager)
+    return result, requests, page
+
+
+_NOT_SHOWN = json.dumps({"answer": "The offer table was not reached.", "found": False})
+
+
+async def test_a_run_cut_at_its_limit_reports_what_it_read_not_nothing_found(tmp_path):
+    result, requests, page = await _scripted_run(
+        tmp_path, ["1-1", "2-finish", _NOT_SHOWN], BrowseSettings(max_steps=2),
+    )
+    assert result["status"] == "unavailable"
+    assert result["answer"] == "The offer table was not reached."
+    assert result["task"] and result["tab"] == "generated-target"
+    assert "stopped early at its limit" in requests[2]["messages"][1]["content"]
+    assert page._page.await_count == 1
+
+
+async def test_a_covered_page_without_the_fact_is_still_nothing_found(tmp_path):
+    result, requests, _ = await _scripted_run(
+        tmp_path, ["1-finish", _NOT_SHOWN], BrowseSettings(),
+    )
+    assert result["status"] == "nothing_found"
+    assert "stopped early" not in requests[1]["messages"][1]["content"]
+
+
+async def test_a_reply_with_no_id_reports_from_the_evidence_without_acting(tmp_path):
+    answer = json.dumps({"answer": "HKD 399, stock unconfirmed.", "found": True})
+    result, requests, page = await _scripted_run(
+        tmp_path, ["The published offer is HKD 399", answer], BrowseSettings(),
+    )
+    assert result["status"] == "ok" and result["answer"] == "HKD 399, stock unconfirmed."
+    assert len(requests) == 2 and page._page.await_count == 0
+    assert "The published offer is HKD 399" not in requests[1]["messages"][1]["content"]
+
+
+async def test_a_later_decision_is_told_which_actions_were_already_taken(tmp_path):
+    answer = json.dumps({"answer": "HKD 399.", "found": True})
+    result, requests, _ = await _scripted_run(
+        tmp_path, ["1-1", "2-finish", answer], BrowseSettings(),
+    )
+    prompts = [req["messages"][1]["content"] for req in requests]
+    assert result["status"] == "ok"
+    assert 'is="done"' not in prompts[0]
+    assert 'is="done"' in prompts[1] and "Click Show offers" in prompts[1].split('is="done"')[1]
+    assert 'is="done"' not in prompts[2]
+
+
 async def test_web_browse_requires_owned_scope(tmp_path):
     page = Page()
     manager = Manager(page)

@@ -5,6 +5,7 @@ from urllib.parse import unquote
 from nora.agent.security import looks_like_coordinate, scan_identifiers
 from nora.agent.toolkit.results import _record
 from nora.computer.adapters.tools.sessions import _browse_context, _computer_browse__prepare
+from nora.computer.adapters.tools.shared import _clip
 from nora.infra.computer.browser_retrieval import http_url
 
 
@@ -21,7 +22,8 @@ def _make_web_browse(deps):
         - ok: evidence answers all or part of the question.
         - nothing_found: the pages read did not show the requested fact.
         - queued: the browser task is waiting its turn.
-        - unavailable: the browser could not complete the check.
+        - unavailable: the browser could not complete the check; `answer`, when
+          present, is only what it read before stopping.
 
         Args:
             objective: The public facts to check on the page.
@@ -73,6 +75,15 @@ def _make_retrieve(deps):
         _, _, result = await _computer_browse__prepare(context)
         if result is None:
             got = context.got
+            if got.answer:
+                # A run cut at its limit still owns its tab and holds what it read.
+                text, _ = _clip(got.answer, context.computer_bounds.max_output_chars)
+                return {
+                    "status": "unavailable", "reason": got.reason, "answer": text,
+                    "url": got.url, "task": got.task_id, "tab": got.tab,
+                    "note": "Stopped before every page was read. The answer is what it read; "
+                    "the rest is unconfirmed. Pass `task` to continue.",
+                }
             return {
                 "status": "unavailable", "reason": got.reason,
                 "uncertain": bool(got.uncertain),

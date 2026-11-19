@@ -7,12 +7,14 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (("web_retrieval", 10, "turn"),
 _ROW = {name: (order, key) for name, order, key in _BLOCKS}
 
 
-def render_retrieval(objective: str, evidence: str, actions: str) -> str:
-    parts = (("objective", objective), ("page_evidence", evidence), ("actions", actions))
+def render_retrieval(objective: str, evidence: str, actions: str, done: str = "") -> str:
+    parts = [("objective", objective), ("page_evidence", evidence), ("actions", actions)]
+    if done:
+        parts.append(("done", done))
     return assemble([restamp(ContextBlock(
         name="web_retrieval",
         body=compose_body(render_elements(
-            parts, tag="part", attrs=lambda part, _i: (("is", part[0]),),
+            tuple(parts), tag="part", attrs=lambda part, _i: (("is", part[0]),),
             body=lambda part: part[1],
         )),
     ), _ROW)])
