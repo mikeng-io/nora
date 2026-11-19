@@ -7,8 +7,10 @@
 
 ## Architecture
 
-<!-- The design bundle this change edits (nora-design), or `none` and why: a
-     code-level change (hotfix, refactor, threshold, prompt wording, eval). -->
+<!-- Each design bundle this change edits (nora-design): the trigger, the
+     behaviour before and after, and the test or read-back that shows it.
+     Or `none` and why: a code-level change (hotfix, refactor, threshold,
+     prompt wording, eval). -->
 
 ## Also
 

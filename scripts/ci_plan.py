@@ -98,7 +98,7 @@ def classify(
         }
         if dependency:
             plan["dependency-review"] = True
-        if path.startswith(("site/", "docs-site/", "openwiki/", "assets/")):
+        if path.startswith(("site/", "assets/")):
             plan["site"] = True
             if (
                 suffix in {".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".astro", ".mdx"}

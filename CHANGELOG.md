@@ -1,5 +1,27 @@
 # Changelog
 
+## [7.19.17](https://github.com/mikeng-io/nora/compare/v7.19.16...v7.19.17) (2026-11-19)
+
+
+### Maintenance
+
+* origin/master into native-stack-commands, the #826 lessons loop and the #825 wiki retirement ([6a47ad7](https://github.com/mikeng-io/nora/commit/6a47ad7125bba56e5e6ed903753f0102538f0747))
+* origin/master into native-stack-commands, the v7.19.16 release metadata ([8c99f31](https://github.com/mikeng-io/nora/commit/8c99f31eda8e88447b288e511011a5c2071ffeed))
+
+## [7.19.16](https://github.com/mikeng-io/nora/compare/v7.19.15...v7.19.16) (2026-11-19)
+
+
+### Maintenance
+
+* make nora-land and nora-dispatch write lessons where the lifecycle does ([ae53a6f](https://github.com/mikeng-io/nora/commit/ae53a6f4e21193a6fb61ee1d343a20243bd02db1))
+
+## [7.19.15](https://github.com/mikeng-io/nora/compare/v7.19.14...v7.19.15) (2026-11-19)
+
+
+### Changes
+
+* **site:** retire the OpenWiki wiki and redirect /wiki to the homepage ([2959279](https://github.com/mikeng-io/nora/commit/2959279cac76a25726901aca08a0a88cb99c91c9))
+
 ## [7.19.14](https://github.com/mikeng-io/nora/compare/v7.19.13...v7.19.14) (2026-11-19)
 
 

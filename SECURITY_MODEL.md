@@ -7,7 +7,7 @@ from the code. Security scans and finding triage start from this file. Vulnerabi
 reporting is in [`SECURITY.md`](SECURITY.md).
 
 Scope: runtime code only: `nora/`, `app/`, `deploy/`, `docker-compose.yml`,
-`Dockerfile`. Not `evals/`, `tests/`, `docs-site/`, `site/`, `showreel/`,
+`Dockerfile`. Not `evals/`, `tests/`, `site/`, `showreel/`,
 `voice-lab/`, `docs/`, `design/`. Infrastructure is the in-repo
 `docker-compose.yml`, `Dockerfile` and `deploy/`; there is no separate
 infrastructure repository.
@@ -29,7 +29,7 @@ Nora is a self-hosted, single-operator social AI agent. Platform adapters receiv
 | **Data stores** | `nora/infra/sql/` (+ Alembic), `nora/infra/honcho/`, `nora/infra/blobs/`, `nora/infra/embedder.py`, `nora/documents/`, `nora/infra/external_files/` | Postgres (:5435 loopback), Honcho (no auth, private network only), RustFS, embedder |
 | **Presence** | `nora/presence/`, `nora/analytics/`, `nora/infra/life360/`, `nora/infra/presence_refresh.py`, `nora/agent/whereis.py` | Life360 credentials → live GPS fixes → location history; `/refresh` on :9101 (loopback) |
 | **Deployment** | `docker-compose.yml`, `Dockerfile`, `deploy/` (komodo, prometheus, alertmanager, alert-bridge, postgres, install.sh), `.github/workflows/`, `scripts/` | Host, Docker networks, CI/release pipeline, secrets in host `.env` |
-| **Public site** | `site/` (Astro + Caddy), `docs-site/`, `openwiki/` (outside scan scope) | Internet, static content only |
+| **Public site** | `site/` (Astro + Caddy) (outside scan scope) | Internet, static content only |
 
 ## Entry points and who can reach them
 

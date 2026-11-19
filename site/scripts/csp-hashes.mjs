@@ -1,22 +1,21 @@
-// Build-time Content-Security-Policy hashes for the static site and the wiki.
+// Build-time Content-Security-Policy hashes for the static site.
 //
 // 'unsafe-inline' in script-src lets ANY injected inline script run, which is what a CSP
-// exists to stop. Both sites are static: every inline <script> is known at build time, so its
+// exists to stop. The site is static: every inline <script> is known at build time, so its
 // SHA-256 can be listed in the header instead. This reads the built HTML, hashes each inline
 // executable script, and writes a Caddyfile whose @@CSP_SCRIPT_HASHES@@ token is replaced by
-// the list. Run it in the image build, after both sites are built:
+// the list. Run it in the image build, after the site is built:
 //
 //   node scripts/csp-hashes.mjs <Caddyfile> <out> <dist-dir> [<dist-dir> ...]
 //
 // It FAILS (exit 1) rather than guess when the build holds something a hash cannot cover: an
-// inline event handler (onclick=...) or a javascript: URL. The OpenWiki graph export is skipped
-// because it serves its own, deliberately wider policy (see the Caddyfile).
+// inline event handler (onclick=...) or a javascript: URL.
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const TOKEN = '@@CSP_SCRIPT_HASHES@@';
-const SKIP_DIRS = new Set(['graph', 'node_modules']);
+const SKIP_DIRS = new Set(['node_modules']);
 // JSON-LD, import maps and speculation rules are data blocks, not executed scripts.
 const DATA_TYPES = /type\s*=\s*["']?(?:application\/(?:ld\+)?json|importmap|speculationrules)/i;
 
