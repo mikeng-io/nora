@@ -118,7 +118,6 @@ deploy/voice-wake/tests/fixtures/seam_frames.bin
 # EMBEDDER_MODELS_DIR): gigabytes of GGUF, never committed.
 /models/
 
-
 /secret.toml
 .secret-delivery/
 /secret-migration-*/

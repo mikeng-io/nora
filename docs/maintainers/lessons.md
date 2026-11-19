@@ -10,8 +10,8 @@ where it bit and the one that fixed it. **Seen** is the dates a review found
 it, one per separate day.
 
 - **When.** A lesson is written when a PR fixes something an earlier merge got
-  wrong, or when a process failure causes the work to stall. That is the
-  lesson line the lifecycle asks for at resolve. A review of recent merges,
+  wrong, or when a process failure causes the work to stall. The PR
+  writes it at resolve (`nora-work/references/lifecycle.md`). A review of recent merges,
   started by the operator or the orchestrator, adds the ones that were missed.
   No scheduled job writes here.
 - **Seen again.** A repeat sighting adds its date and evidence to the
