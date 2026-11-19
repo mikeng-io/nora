@@ -204,8 +204,8 @@ async def test_a_revocation_during_a_click_stops_the_mouse_events():
 
 
 async def test_a_revoked_page_dispatches_nothing_at_all():
-    """`browse_needs_human` and `browse_done` revoke the page: even an action that would be
-    allowed is refused, so no later call can act on the page."""
+    """The runner revokes the page when the task ends: even an action that would be allowed
+    is refused, so no later call can act on the page."""
     cdp = FakeCdp(nodes=[_node("link", "More", 3)])
     page = _page(cdp)
     await page.snapshot()

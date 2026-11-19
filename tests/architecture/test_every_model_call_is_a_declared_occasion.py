@@ -155,10 +155,9 @@ RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
     # formatter that walks the declared `subagent_*` blocks through
     # `ContextBlock`.
     "nora/app/subagent_runner.py": (("nora/language/subagent_render.py",), "imports"),
-    # The browse occasion ([computer.scoped], B2): its brief is built by
-    # ONE formatter that walks the declared `browse_task` block through
-    # `ContextBlock`; the authored SYSTEM_PROMPT is the occasion's
-    # instruction, like the worker's doctrine-loaded system text.
+    # The browse occasion ([computer.scoped]): each decision and the answer are built by
+    # ONE formatter that walks the declared `web_retrieval` block through `ContextBlock`;
+    # the authored decision and answer instructions are the occasion's system text.
     "nora/agent/web_browse.py": (("nora/language/web_browse_render.py",), "imports"),
     # The eval arm's context selector: the system text, the clock/window line
     # and the candidate blocks it posts are all built by ONE declared

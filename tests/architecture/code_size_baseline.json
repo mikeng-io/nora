@@ -2159,7 +2159,7 @@
   "internal_docstrings": 3
  },
  "tests/architecture/test_every_model_call_is_a_declared_occasion.py": {
-  "comment_blocks": 5,
+  "comment_blocks": 4,
   "internal_docstrings": 2
  },
  "tests/architecture/test_every_recorded_metric_is_declared.py": {
@@ -2865,7 +2865,7 @@
   "file_lines": 859
  },
  "tests/test_output_contracts.py": {
-  "comment_blocks": 3,
+  "comment_blocks": 2,
   "internal_docstrings": 1
  },
  "tests/test_persons.py": {

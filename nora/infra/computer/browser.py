@@ -16,7 +16,7 @@ renumbers them, and an action on a ref the last snapshot did not give is
 refused.
 
 Everything here returns or raises plainly; the statuses the model is told are
-decided by the caller (`nora.agent.browse`). No credential path exists.
+decided by the caller (`nora.agent.web_browse`). No credential path exists.
 """
 
 from __future__ import annotations
