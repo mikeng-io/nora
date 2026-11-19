@@ -11,7 +11,8 @@ from typing import Protocol, TypeVar
 from xml.sax.saxutils import escape
 
 from nora.domain.blocks import BlockDeclaration, ContextBlock, assemble_declared
-from nora.domain.composed import compose_body
+from nora.domain.composed import Composed, compose_body
+from nora.domain.external_files import render_file_links
 from nora.domain.models import NormalizedMessage, TranscriptRow
 from nora.engagement.stages.debrief import ModelClient, ObjectiveSource
 from nora.memory import (
@@ -51,13 +52,13 @@ log = logging.getLogger(__name__)
 class Store(Protocol):
     async def begin(self, row: DebriefObligation) -> bool: ...
     async def take_oldest(self, unit: str, room: str) -> DebriefObligation | None: ...
-    async def remember(
+    async def record_proposal_ids(
         self, row: DebriefObligation, proposal_ids: tuple[ProposalId, ...],
     ) -> None: ...
     async def settle(self, row: DebriefObligation, now: datetime) -> None: ...
     async def confirmed(self, row: DebriefObligation) -> bool: ...
     async def items(self, row: DebriefObligation) -> tuple[PassItem, ...]: ...
-    async def messages(self, row: DebriefObligation) -> tuple[PassItem, ...]: ...
+    async def room_messages(self, row: DebriefObligation) -> tuple[PassItem, ...]: ...
 
 
 class Assembled(Protocol):
@@ -184,7 +185,7 @@ async def _input(
     wiring: Wiring, row: DebriefObligation, now: datetime,
 ) -> tuple[DebriefInput, Assembled]:
     items = await wiring.store.items(row)
-    messages = await wiring.store.messages(row)
+    messages = await wiring.store.room_messages(row)
     data = DebriefInput(tuple(item.id for item in items))
     platform, _, room = row.room.partition(":")
     attrs: tuple[tuple[str, str], ...] = (
@@ -192,24 +193,24 @@ async def _input(
     )
     if row.intention is not None:
         attrs += (("delivered_intention", row.intention),)
-    floor = (_block("debrief_items", items, attrs), _block("debrief_messages", messages))
+    floor = (
+        ContextBlock(name="debrief_items", body=_evidence_body(items), attrs=attrs),
+        ContextBlock(name="debrief_messages", body=_evidence_body(messages)),
+    )
     assembled = await wiring.assembler.assemble(
         "debrief", data, floor, PassScope(ReadingRoom(platform, room), row.unit), now,
     )
     return data, assembled
 
 
-def _block(
-    name: str, rows: Sequence[PassItem], attrs: tuple[tuple[str, str], ...] = (),
-) -> ContextBlock:
+def _evidence_body(rows: Sequence[PassItem]) -> Composed:
     lines = [
         json.dumps({"id": row.id, "kind": row.kind, "at": row.at.isoformat(),
                     "who": row.who, "content": without_reasoning(row.content)},
                    ensure_ascii=False, default=str)
         for row in rows
     ]
-    return ContextBlock(name, compose_body(escape("\n".join(lines))),
-                        attrs=attrs, when_empty="self_close")
+    return compose_body(escape(render_file_links("\n".join(lines))))
 
 
 async def _judge(wiring: Wiring, row: DebriefObligation) -> str:
@@ -236,14 +237,14 @@ async def _judge(wiring: Wiring, row: DebriefObligation) -> str:
     if not proposals:
         return "written"
     refs = tuple(_proposal_id(proposal) for proposal in proposals)
-    await _bounded(wiring, wiring.store.remember(row, refs))
+    await _bounded(wiring, wiring.store.record_proposal_ids(row, refs))
     result = await _bounded(
         wiring, wiring.admission.admit(proposals, context, items | assembled.shown),
     )
     unresolved = tuple(ref for ref, value in zip(refs, result.outcomes, strict=True)
                        if isinstance(value, Unavailable))
     if unresolved:
-        await _bounded(wiring, wiring.store.remember(row, unresolved))
+        await _bounded(wiring, wiring.store.record_proposal_ids(row, unresolved))
         return "unavailable"
     return "written"
 

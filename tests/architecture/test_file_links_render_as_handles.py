@@ -245,6 +245,8 @@ def test_the_operator_review_channel_keeps_the_link_clickable():
 #: call `render_file_links` (or the tools' `_file_handles` wrapper) INSIDE
 #: that function, because it builds text without `render_elements`.
 HAND_BUILT = {
+    ("nora/engagement/stages/graph_debrief.py", "_evidence_body"):
+        "graph debrief evidence and room messages",
     ("nora/agent/prefill.py", "build_tag_message"): "<tag_message>, the message she answers",
     ("nora/agent/prefill.py", "_replying_to_block"): "<replying_to>, the quoted parent",
     ("nora/subject/context_selector_render.py", "selector_prompt"):
@@ -322,6 +324,7 @@ BUILDERS: dict[str, str | tuple[str, ...]] = {
     "nora/app/cognition_context.py": "blocks: shared context_render through render_messages",
     "nora/app/runtime.py": "blocks: the Dreamer's rows reach its adaptors' render_row_window",
     "nora/engagement/stages/debrief.py": "blocks: debrief_render.render_elements",
+    "nora/memory/adapters/debrief_store.py": "graph_debrief._evidence_body (HAND_BUILT)",
     "nora/ingest/relevance_gate.py": "blocks: render_messages",
     "nora/subject/dreaming.py": "blocks: the same adaptors as runtime.py",
     "nora/subject/sandbox.py": "blocks: prefill.render_transcript (render_messages)",

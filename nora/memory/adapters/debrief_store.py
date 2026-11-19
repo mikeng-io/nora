@@ -1,4 +1,7 @@
-"""The debrief journal, scoped pass evidence and commit readback."""
+"""The debrief journal, scoped pass evidence and commit readback.
+
+Room messages keep attachment handles such as [image a3f2c1].
+"""
 
 from datetime import datetime
 from typing import cast
@@ -54,7 +57,7 @@ class SqlDebriefStore:
             None if row["proposal_ids"] is None else tuple(row["proposal_ids"]),
         )
 
-    async def remember(
+    async def record_proposal_ids(
         self, row: DebriefObligation, proposal_ids: tuple[ProposalId, ...],
     ) -> None:
         await self._update(row, proposal_ids=list(proposal_ids))
@@ -88,7 +91,7 @@ class SqlDebriefStore:
     async def items(self, row: DebriefObligation) -> tuple[PassItem, ...]:
         return await self._acts.read_pass_items(row.unit, row.pass_id)
 
-    async def messages(self, row: DebriefObligation) -> tuple[PassItem, ...]:
+    async def room_messages(self, row: DebriefObligation) -> tuple[PassItem, ...]:
         platform, _, room = row.room.partition(":")
         m = MESSAGES.c
         async with self._engine.connect() as conn:
@@ -110,7 +113,7 @@ class SqlDebriefStore:
                 window = m.ts > int(since.timestamp() * 1000)
             transcript = transcript_select(
                 edits_before=int(row.created.timestamp() * 1000),
-            ).add_columns(m.graph_id).where(
+            ).add_columns(MESSAGES.c.graph_id).where(
                 *scope, m.state == "live", m.exposure != "operator",
                 m.asserted_at <= row.created, window,
             ).order_by(m.ts, m.id)
