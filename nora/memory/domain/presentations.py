@@ -1,8 +1,13 @@
-"""Select profiles and likes from an already scoped graph read."""
+"""Select presentations from an already scoped graph read."""
+
+from __future__ import annotations
 
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
+from nora.domain.lineage import split_room
+from nora.domain.ticks import due_tick_of_at
 from nora.memory.domain.graph import ClaimPart
 from nora.memory.domain.retrieval import (
     RetrievalLimit,
@@ -10,6 +15,7 @@ from nora.memory.domain.retrieval import (
     RetrievalStatus,
     RetrievedRow,
 )
+from nora.memory.domain.time_trigger import aware_instant, decode_time_trigger
 
 _PROFILE_PARTS: tuple[ClaimPart, ...] = ("fact", "trait", "guess")
 _INFERENCE_ORDER: Mapping[str | None, int] = {"deduced": 2, "induced": 3, "abduced": 4}
@@ -41,8 +47,12 @@ class Like:
 
 
 def _about(row: RetrievedRow) -> tuple[str, ...]:
+    return _outgoing(row, "about")
+
+
+def _outgoing(row: RetrievedRow, kind: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(
-        edge.target for edge in row.edges if edge.type == "about" and edge.source == row.graph_id
+        edge.target for edge in row.edges if edge.type == kind and edge.source == row.graph_id
     ))
 
 
@@ -125,3 +135,130 @@ def likes(result: RetrievalResult, person: EntityAnchor) -> tuple[Like, ...]:
         own = _own_statement(row, evidence, subject)
         entries.extend(Like(row, topics[key], sources, own) for key in about if key in topics)
     return tuple(entries)
+
+
+@dataclass(frozen=True, slots=True)
+class OpenIntention:
+    row: RetrievedRow
+    due: bool
+    children: tuple[OpenIntention, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SettledIntention:
+    row: RetrievedRow
+    ending: str | None
+    closed_by: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class Situation:
+    row: RetrievedRow
+    age: timedelta
+    items_since: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class Standing:
+    open: tuple[OpenIntention, ...]
+    settled: tuple[SettledIntention, ...]
+    situation: tuple[Situation, ...]
+    status: RetrievalStatus
+    limits: tuple[RetrievalLimit, ...]
+    cause: str | None
+
+
+def intention_is_due(row: RetrievedRow, now: datetime) -> bool:
+    """Evaluate the intention's next unpublished occurrence against the pass clock."""
+    if row.kind != "intention" or row.state != "open":
+        return False
+    for key in ("deadline", "review_time"):
+        at = aware_instant(row.close_when.get(key))
+        if at is not None and at <= now:
+            return True
+    published = row.close_when.get("published_occurrences")
+    trigger = decode_time_trigger(row.close_when.get("trigger"))
+    if not isinstance(published, int) or trigger is None:
+        return False
+    occurrence = next(trigger.due_occurrences(due_tick_of_at(now), published), None)
+    return occurrence is not None and occurrence <= now
+
+
+def _in_room(row: RetrievedRow, room: str) -> bool:
+    if row.origin_room is None:
+        return False
+    platform, key = split_room(room)
+    origin_platform, origin_key = split_room(row.origin_room)
+    return key == origin_key and origin_platform in (None, platform)
+
+
+def _open_intentions(
+    intentions: tuple[RetrievedRow, ...], now: datetime,
+) -> tuple[OpenIntention, ...]:
+    open_ids = {row.graph_id for row in intentions if row.state == "open"}
+    children: dict[str, list[RetrievedRow]] = {}
+    roots = []
+    for row in intentions:
+        parents = open_ids.intersection(_outgoing(row, "serves"))
+        for parent in parents:
+            children.setdefault(parent, []).append(row)
+        if not parents and row.graph_id in open_ids:
+            roots.append(row)
+    shown: set[str] = set()
+
+    def branch(row: RetrievedRow, path: frozenset[str]) -> OpenIntention:
+        shown.add(row.graph_id)
+        path = path | {row.graph_id}
+        nested = tuple(
+            branch(child, path) for child in children.get(row.graph_id, ())
+            if child.graph_id not in path
+        )
+        return OpenIntention(row, intention_is_due(row, now), nested)
+
+    groups = [branch(row, frozenset()) for row in roots]
+    for row in intentions:
+        if row.graph_id in open_ids and row.graph_id not in shown:
+            groups.append(branch(row, frozenset()))
+    return tuple(groups)
+
+
+def standing(
+    result: RetrievalResult, room: str, room_entity: str, now: datetime,
+) -> Standing:
+    """Read the room's open intentions, recent endings and situation claims."""
+    intentions = tuple(
+        row for row in result.rows if row.kind == "intention" and _in_room(row, room)
+    )
+    settled = []
+    for row in intentions:
+        ended_at = aware_instant(row.close_when.get("ended_at"))
+        if ended_at is not None and result.bounds.since <= ended_at <= result.bounds.until:
+            ending = row.close_when.get("ending")
+            witness = next(iter(_outgoing(row, "closed_by")), None)
+            settled.append(SettledIntention(
+                row, ending if isinstance(ending, str) else None, witness,
+            ))
+    situations = tuple(
+        Situation(row, now - row.asserted_at, row.items_since)
+        for row in result.rows if row.kind == "claim" and row.part == "situation"
+        and room_entity in _about(row)
+    )
+    return Standing(
+        _open_intentions(intentions, now), tuple(settled), situations,
+        result.status, result.limits, result.cause,
+    )
+
+
+def lessons(result: RetrievalResult) -> tuple[RetrievedRow, ...]:
+    """Read the unit's lesson claims, including exact references to retired lessons."""
+    return tuple(
+        row for row in result.rows if row.kind == "claim" and row.part == "lesson"
+        and row.state in ("live", "retired")
+    )
+
+
+def related(result: RetrievalResult, shown: Collection[str]) -> tuple[RetrievedRow, ...]:
+    """Read reached items and claims outside this pass's other presentations."""
+    return tuple(
+        row for row in result.rows if row.kind in ("item", "claim") and row.graph_id not in shown
+    )
