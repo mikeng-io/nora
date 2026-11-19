@@ -74,14 +74,14 @@ class AdmissionService:
         try:
             context_or_refusal = await self._context(context)
         except AdmissionUnavailableError as exc:
-            outcomes = tuple(
+            unavailable = tuple(
                 refusal or Unavailable(fields(proposal).id, exc.commit_uncertain)
                 for proposal, refusal in zip(proposals, screened, strict=True)
             )
-            return AdmissionResult(outcomes, (), ())
+            return AdmissionResult(unavailable, (), ())
         if isinstance(context_or_refusal, Refusal):
-            outcomes = tuple(refusal or context_or_refusal for refusal in screened)
-            return AdmissionResult(outcomes, (), ())
+            refused = tuple(refusal or context_or_refusal for refusal in screened)
+            return AdmissionResult(refused, (), ())
         context = context_or_refusal
         shown_ids = set(shown)
         unknown: set[str] = set()
