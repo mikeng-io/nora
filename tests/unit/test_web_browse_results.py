@@ -146,6 +146,6 @@ async def test_an_off_call_is_audited_too(persons):
 
 async def test_a_long_answer_is_cut_to_the_output_limit(persons):
     runner = FakeBrowserRunner(BrowseOutcome(status="ok", answer="a" * 50_000))
-    got = await _browse(persons, browser=runner,
-                        settings=ComputerToolSettings(max_output_chars=1000))(objective="x", start_url=PAGE)
+    call = _browse(persons, browser=runner, settings=ComputerToolSettings(max_output_chars=1000))
+    got = await call(objective="x", start_url=PAGE)
     assert len(got["answer"]) < 1200
