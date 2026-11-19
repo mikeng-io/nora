@@ -3183,7 +3183,7 @@
  },
  "tests/unit/test_engagement_pipeline.py": {
   "comment_blocks": 20,
-  "file_lines": 3202,
+  "file_lines": 3173,
   "internal_docstrings": 5
  },
  "tests/unit/test_eval_backbone.py": {
