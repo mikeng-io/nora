@@ -84,10 +84,19 @@ stack extension, configure checks or prove repository readiness.
    protections/checks first; master-only workflows may not run on integration.
 2. **Prepare and link.** Each worker keeps its assigned T3 worktree/base. Build
    the next layer from the required lower head without waiting for its merge;
-   review each layer's own delta. Create/link a GitHub-native stack through a
-   supported UI/API or the installed `gh stack` extension. Read back the actual
-   stack/trunk/base/head; branch-chain links alone are not native stack metadata.
-   Do not switch branches occupied by other worktrees or install tools implicitly.
+   review each layer's own delta. Create or extend the GitHub-native stack
+   yourself with `gh api`; `gh stack` is optional and never installed implicitly.
+   Read back the stack's trunk and order; a base branch alone is not membership.
+   Do not switch branches occupied by other worktrees.
+
+   ```bash
+   gh api repos/{owner}/{repo}/pulls/<N> --jq .stack          # null: not in a stack
+   gh api -X POST repos/{owner}/{repo}/stacks --input - <<<'{"pull_requests":[<bottom>,…,<top>]}'
+   gh api -X POST repos/{owner}/{repo}/stacks/<S>/add --input - <<<'{"pull_requests":[<new top>]}'
+   gh api repos/{owner}/{repo}/stacks/<S> --jq '{base:.base.ref,open,prs:[.pull_requests[].number]}'
+   ```
+   `add` appends above the current top only (409 while another write runs, 422
+   if the PR cannot follow); `unstack` removes every unmerged layer.
 3. **Repair and restack.** Fix the owning layer; have the stack owner coordinate
    with affected writers before rebasing/restacking upper layers. Preserve dirty
    work and active T3 bindings; workers fetch and reconcile rewritten remote heads
@@ -102,8 +111,9 @@ stack extension, configure checks or prove repository readiness.
    base/head with its reviewed candidate; read checks, findings and independence
    evidence. Native merge of a selected layer includes
    its unmerged lower layers; name the exact group before acting. Use merge
-   commits and a stack-aware client/UI or GitHub's asynchronous merge API, not
-   the standalone synchronous merge command. An accepted request or queue entry
+   commits and a stack-aware client/UI or GitHub's asynchronous merge API
+   (`PUT …/pulls/<N>/merge-async`, then `GET …/merge-async/<uuid>`), not the
+   standalone synchronous merge command. An accepted request or queue entry
    is not a merge: read back each merge result and target ancestry.
 6. **Complete integration.** After landing on the integration trunk, verify the
    whole candidate on the required path; open the final master PR and follow
@@ -115,5 +125,6 @@ specific gap and continue independent work. Do not claim stack support or remove
 checks to make it ready. CI cost optimization is a separate explicit change.
 
 References: [GitHub stacks](https://docs.github.com/en/pull-requests/reference/stacked-pull-requests),
+[stacks REST API](https://docs.github.com/en/rest/pulls/stacks),
 [stack merge API](https://docs.github.com/en/pull-requests/reference/stacked-pull-requests-apis-and-webhooks),
 [Linear stack display](https://linear.app/docs/diffs).
