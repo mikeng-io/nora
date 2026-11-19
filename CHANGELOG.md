@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.19.16](https://github.com/mikeng-io/nora/compare/v7.19.15...v7.19.16) (2026-11-19)
+
+
+### Maintenance
+
+* make nora-land and nora-dispatch write lessons where the lifecycle does ([ae53a6f](https://github.com/mikeng-io/nora/commit/ae53a6f4e21193a6fb61ee1d343a20243bd02db1))
+
 ## [7.19.15](https://github.com/mikeng-io/nora/compare/v7.19.14...v7.19.15) (2026-11-19)
 
 
