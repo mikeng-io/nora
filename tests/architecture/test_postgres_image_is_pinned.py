@@ -11,7 +11,7 @@ just as an unpinned tag does, and it asserts the known literals are still
 there to be compared — a sweep that finds nothing fails.
 
 Skipped on purpose (`NOT_PULL_INSTRUCTIONS`): `evals/retrieval_bakeoff/results/`
-is recorded history of what ran, `openwiki/` is generated output, and this
+is recorded history of what ran, and this
 file names the pattern it enforces, so it would flag itself.
 """
 
@@ -32,7 +32,6 @@ DIGEST = re.compile(r"@sha256:([0-9a-f]{64})$")
 COMPOSE_FILES = ("docker-compose.yml", "deploy/memory-graph-spike/compose.yaml")
 NOT_PULL_INSTRUCTIONS = (
     "evals/retrieval_bakeoff/results/",
-    "openwiki/",
     "tests/architecture/test_postgres_image_is_pinned.py",
 )
 # The literals the sweep must see to be non-vacuous. The CI pull and Python

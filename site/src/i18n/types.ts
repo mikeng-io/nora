@@ -53,7 +53,6 @@ export interface Dict {
     memory: string;
     form: string;
     signIn: string;
-    wiki: string;
     menu: string;
     theme: string;
     studio: string;

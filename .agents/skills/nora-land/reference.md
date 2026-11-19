@@ -64,11 +64,12 @@ orchestrator does it after merge, or when an outcome will not merge:
    entry is resolved, never left.
 3. **Update the work.** The Linear item records the outcome and evidence, and
    moves to Done or Canceled with its reason.
-4. **Record a lesson, when the process failed.** When the failure came from the
-   process (a brief, a route, a gate, a skill) rather than the code, the PR
-   records one lesson line. That line names the skill edit that fixes the
-   process, made in the same PR or filed as a follow-up. A failure in the code
-   gets no lesson line.
+4. **Record a lesson.** When the work fixed something an earlier merge got
+   wrong, or the process (a brief, a route, a gate, a skill) stalled it, the
+   PR adds or extends one lesson in `docs/maintainers/lessons.md`
+   (`nora-work/references/lifecycle.md` «Resolve and lessons»). A process
+   lesson also names the skill edit that fixes the process, made in the same
+   PR or filed as a follow-up.
 
 ## Stacked delivery
 

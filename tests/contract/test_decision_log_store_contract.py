@@ -3,7 +3,7 @@ test.
 
 `nora.infra.sql.decision_log.SqlDecisionLogStore` over real Postgres, and
 `nora.testing.InMemoryDecisionLogStore` built from `nora.domain.decision_log`
-alone. AGENTS.md's rule is why this exists at all — a port never gains a second
+alone. docs/code-standards.md's rule is why this exists at all — a port never gains a second
 implementation, *including a test fake*, without a suite both pass.
 
 **The properties this suite is really about:**
@@ -26,7 +26,7 @@ writer, because the CHECKs exist for a writer that got a value some other way
 and a fake without them is MORE PERMISSIVE than Postgres.
 
 Database and migrations built ONCE per module, table truncated between tests —
-AGENTS.md's contract-suite rule; the isolation needed is "no rows from the last
+docs/code-standards.md's contract-suite rule; the isolation needed is "no rows from the last
 test", not "no schema".
 """
 

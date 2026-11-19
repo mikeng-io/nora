@@ -5,8 +5,8 @@ real regression could it introduce?** It returns a scoped judgment and
 evidence — not another design, a task list or merge permission.
 
 [ORCHESTRATION.md](ORCHESTRATION.md) owns tiers, independence, dispositions
-and convergence, [AGENTS.md](AGENTS.md) engineering constraints and
-[nora-review](.agents/skills/nora-review/SKILL.md) the procedure. All
+and convergence, the [code standards](docs/code-standards.md) the rules a
+finding names, and [nora-review](.agents/skills/nora-review/SKILL.md) the procedure. All
 reviewers share this contract — shaping behavior, never enforcement or paid-review admission.
 
 ## Scope and inputs
