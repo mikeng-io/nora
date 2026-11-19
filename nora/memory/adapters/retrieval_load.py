@@ -121,6 +121,8 @@ async def _relations(
 def _content(source: str, image: Mapping[str, Any]) -> object:
     if source in ("claim", "nora_pass_output"):
         return image.get("content")
+    if source == "edge":
+        return {field: image[field] for field in ("type", "src_id", "dst_id")}
     return {name: image[name] for name in SEARCHABLE_SOURCES.get(source, ()) if name in image}
 
 
@@ -185,7 +187,8 @@ async def load_rows(
             distance=distance, already_shown=graph_id in already_shown,
             unavailable="tombstoned_since" if unavailable else None,
             part=cast(ClaimPart, image["part"]) if kind == "claim" else None,
-            pointer_kind=cast(PointerKind | None, image["pointer_kind"]) if kind == "entity" else None,
+            pointer_kind=cast(PointerKind | None, image["pointer_kind"])
+            if kind == "entity" else None,
             support=support.get(graph_id),
         ))
     return tuple(result)
