@@ -39,3 +39,17 @@ other's reconciliation.
 five files. It merged after a rebase to reconcile them.
 
 **Seen:** 2026-11-19.
+
+### A layer joins its native stack, and the procedure names the command
+
+A dependent PR of an integrated outcome joins the outcome's GitHub-native
+stack through the REST stacks API (`nora-land/reference.md` «Stacked
+delivery»). A base branch pointing at the layer below is not stack
+membership. Read the stack back after every create or extend.
+
+**Evidence:** the Cognitive Graph layers #764–#821 form stack #824, and the
+operator linked it by hand. The procedure required a native stack but named
+no command, `gh stack` was not installed, and the plan's `base` field read as
+a branch chain. PR #827 added the `gh api` commands and the stack field.
+
+**Seen:** 2026-11-19.
