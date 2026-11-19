@@ -225,11 +225,8 @@ class App:
         # message it cannot audit. Nothing awaits it; a slow or failing
         # backfill must not delay the adapters coming up.
         deps.background.spawn(self._adopt_pending())
-        # Conditional, unlike its neighbours: `store.prune_enabled = false` means
-        # the record is kept in full, and the sweep is not merely widened but
-        # never started — `prune_all` scans the whole `messages` table per tick,
-        # so a huge window would pay for that forever to delete nothing.
-        if self.cfg.store.prune_enabled:
+        horizons = self.cfg.memory.retention.horizon_days.keys() - {"fetched_pages"}
+        if self.cfg.store.prune_enabled or horizons:
             deps.background.spawn(runtime.prune_loop(
                 deps.audit, deps.metrics, interval_seconds=PRUNE_INTERVAL_SECONDS,
             ))

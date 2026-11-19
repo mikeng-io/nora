@@ -53,6 +53,7 @@ from nora.infra.sql.item_registration import (
     message_graph_cues,
     touch_planes,
 )
+from nora.infra.sql.item_retention import prune_sources
 from nora.infra.sql.migrations_runner import head_revision
 from nora.infra.sql.record_insert import record_insert_values
 from nora.infra.sql.schema import (
@@ -409,7 +410,8 @@ class SqlRecordStore:
         self,
         engine: AsyncEngine,
         *,
-        max_per_conversation: int = DEFAULT_MAX_PER_CONVERSATION,
+        max_per_conversation: int | None = DEFAULT_MAX_PER_CONVERSATION,
+        horizons: Mapping[str, int] | None = None,
         metrics: Any = None,
         mention_persons: Any = None,
         registration: SqlItemRegistration | None = None,
@@ -418,6 +420,7 @@ class SqlRecordStore:
     ) -> None:
         self._engine = engine
         self._max_per_conversation = max_per_conversation
+        self._horizons = {k: v for k, v in (horizons or {}).items() if k != "fetched_pages"}
         self._metrics = metrics
         self._mention_persons = mention_persons
         self._registration = registration
@@ -1147,23 +1150,9 @@ class SqlRecordStore:
         async with self._engine.begin() as conn:
             return await memory_index.drain_queue(conn, limit=limit, metrics=self._metrics)
 
-    async def prune_all(self) -> int:
-        """Trim every conversation to the retention window. Called periodically
-        by the runtime, never on the write path — see this module's docstring."""
-        keep = self._max_per_conversation
-        ranked = sa.select(
-            MESSAGES.c.id,
-            sa.func.row_number()
-            .over(
-                partition_by=MESSAGES.c.conversation_id,
-                order_by=[MESSAGES.c.ts.desc(), MESSAGES.c.id.desc()],
-            )
-            .label("rank"),
-        ).subquery()
-        doomed = sa.select(ranked.c.id).where(ranked.c.rank > keep)
-        stmt = sa.delete(MESSAGES).where(MESSAGES.c.id.in_(doomed)).returning(MESSAGES.c.id)
-        async with self._engine.begin() as conn:
-            pruned = list((await conn.execute(stmt)).scalars())
-            # A pruned message's node goes with it.
-            await memory_index.drop(conn, "message", pruned, metrics=self._metrics)
-        return len(pruned)
+    async def prune_all(self, *, now: datetime | None = None) -> int:
+        """Sweep configured horizons and trim each conversation to its count bound."""
+        return await prune_sources(
+            self._engine, self._horizons, self._max_per_conversation,
+            now=now or datetime.now(UTC), metrics=self._metrics,
+        )

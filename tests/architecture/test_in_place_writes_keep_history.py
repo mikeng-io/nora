@@ -33,6 +33,7 @@ from pathlib import Path
 
 from nora.infra.sql import schema
 from nora.infra.sql.history import CAPTURE_SETTING, DEFERRED, HISTORY_TABLES, NOT_RESTORED
+from nora.memory.domain.registration import AGGREGATE_FAMILIES, ITEM_SOURCES, PROTECTED_ITEM_SOURCES
 
 ROOT = Path(__file__).resolve().parents[2]
 _DIRECT = re.compile(
@@ -52,6 +53,9 @@ _VARIABLE_TARGETS: dict[str, frozenset[str]] = {
         "standing_decision", "standing_commitment", "standing_thread",
     }),
     "nora/infra/sql/presence.py": frozenset({"presence_places"}),
+    "nora/infra/sql/item_retention.py": frozenset(
+        (ITEM_SOURCES.keys() - PROTECTED_ITEM_SOURCES) | AGGREGATE_FAMILIES.keys()
+    ),
     "nora/infra/sql/aggregate_writes.py": frozenset({
         "presence_stays", "presence_trips", "presence_derived_places", "presence_corridors",
         "presence_occupancy", "presence_place_rhythm",

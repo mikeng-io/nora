@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.presence import PresenceFix, SavedPlace, WireState
 from nora.infra.sql.item_registration import SqlItemRegistration, epoch_ms
+from nora.infra.sql.item_retention import tombstone_items
 from nora.infra.sql.schema import PRESENCE_FIXES, PRESENCE_PLACES
 
 log = logging.getLogger("nora.presence.store")
@@ -285,10 +286,9 @@ class PresenceStore:
         Called by the collector's periodic sweep, never on the write path.
         """
         cutoff = now_ms - self._retention_days * _MS_PER_DAY
-        stmt = sa.delete(PRESENCE_FIXES).where(PRESENCE_FIXES.c.ts < cutoff)
         async with self._engine.begin() as conn:
-            result = await conn.execute(stmt)
-        return int(result.rowcount or 0)
+            rows = await tombstone_items(conn, PRESENCE_FIXES, PRESENCE_FIXES.c.ts < cutoff)
+        return len(rows)
 
     async def aclose(self) -> None:
         await self._engine.dispose()

@@ -55,6 +55,31 @@ def _ledger_row(kind: str, i: int) -> dict[str, Any]:
 #: A valid row per in-place table, for key `i`.
 ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
     **managed_rows.ROWS,
+    "watch_result": lambda n: {
+        "id": 93000 + n, "unit": "u", "graph_id": f"generated-watch-item-{n}",
+        "watch_edge": f"generated-watch-edge-{n}", "content_hash": f"generated-watch-hash-{n}",
+        "occurred_at": T0 + timedelta(seconds=n), "valid_from": T0 + timedelta(seconds=n),
+    },
+    "tool_call_log": lambda n: {
+        "id": _uuid("tc", n), "conversation_id": "g1", "conversation_type": "group",
+        "tag_id": f"t{n}", "tool_name": "now", "tool_input": {}, "tool_result": {"n": n},
+    },
+    "claim_support": lambda i: {
+        "claim_id": f"cg-tally-parent-{i}", "unit": "u", "graph_id": f"generated-tally-{i}",
+        "support_count": 1, "last_evidenced_at": T0,
+    },
+    "forget_request": lambda i: {
+        "id": 91000 + i, "unit": "u", "author": "generated-person",
+        "graph_id": f"generated-forget-{i}", "targets": ["cg-claim-0"], "delete_now": True,
+    },
+    "dispute": lambda i: {
+        "id": 92000 + i, "unit": "u", "author": "generated-person",
+        "graph_id": f"generated-dispute-{i}", "claim_id": "cg-claim-0",
+    },
+    "expired_coverage": lambda i: {
+        "id": 90000 + i, "unit": "u", "source": "messages",
+        "person": "generated-person", "from": T0, "to": T0 + timedelta(hours=1),
+    },
     "legacy_graph_arrival": lambda i: {
         "unit": "u", "message_id": 1000+i, "revision": f"generated-{i}", "room": "signal:g1",
     },
@@ -363,6 +388,12 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
 
 #: The column each revision moves, and to what.
 REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
+    "tool_call_log": ("tool_result", lambda i: {"revised": i}),
+    "watch_result": ("content_hash", lambda i: f"generated-watch-hash-revised-{i}"),
+    "claim_support": ("support_count", lambda i: i + 2),
+    "forget_request": ("blocked", lambda i: [{"graph_id": "cg-claim-0", "table": "fixture"}]),
+    "dispute": ("author", lambda i: f"generated-revised-person-{i}"),
+    "expired_coverage": ("to", lambda i: T0 + timedelta(hours=2 + i)),
     **managed_rows.REVISE,
     "legacy_graph_arrival": ("batched", lambda i: True),
     "legacy_entity": ("name", lambda i: f"Revised generated event {i}"),
@@ -444,11 +475,6 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
 #: One append-only row, number `n`, citing the stable key-0 parents.
 APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     **managed_rows.APPEND,
-    "watch_result": lambda n: {
-        "unit": "u", "graph_id": f"generated-watch-item-{n}",
-        "watch_edge": f"generated-watch-edge-{n}", "content_hash": f"generated-watch-hash-{n}",
-        "occurred_at": T0 + timedelta(seconds=n), "valid_from": T0 + timedelta(seconds=n),
-    },
     "graph_stimulus": lambda n: {
         "unit": "u", "kind": "new_item", "graph_id": f"generated-stimulus-item-{n}",
         "eligible_at": T0, "source": "message",
@@ -510,10 +536,6 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "id": _uuid("nm", n), "unit": "u", "mode": "shadow", "outcome": "would_merge",
         "survivor_id": _uuid("note", 0), "duplicate_id": _uuid("note", 0),
         "survivor_title": "a", "duplicate_title": "b", "established_by": "t", "ts": MS0 + n,
-    },
-    "tool_call_log": lambda n: {
-        "id": _uuid("tc", n), "conversation_id": "g1", "conversation_type": "group",
-        "tag_id": f"t{n}", "tool_name": "now", "tool_input": {}, "tool_result": {"n": n},
     },
     "computer_events": lambda n: {
         "id": _uuid("ce", n), "operation_id": _uuid("ce-op", n), "phase": "finished",

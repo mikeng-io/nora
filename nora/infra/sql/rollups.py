@@ -66,6 +66,7 @@ from nora.infra.sql.aggregate_writes import AggregateWrites
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.infra.sql.item_registration import SqlItemRegistration
+from nora.infra.sql.item_retention import expired_between
 from nora.infra.sql.mobility import current_build_id
 from nora.infra.sql.projection_time import ProjectionInputs, projection_time
 from nora.infra.sql.rollup_writes import (
@@ -159,6 +160,11 @@ class SqlRollupStore:
 
     async def append_absence(self, deviation: Deviation) -> None:
         async with self._engine.begin() as conn:
+            if await conn.scalar(sa.select(expired_between(
+                deviation.unit, _at(deviation.start_ms), _at(deviation.end_ms),
+                persons=(deviation.person_id,),
+            ))):
+                return
             person = await self._graph.person_pointer_in(conn, deviation.unit, deviation.person_id)
             if person is None:
                 return

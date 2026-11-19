@@ -4,14 +4,18 @@ tombstone — each in a single transaction, so no half-write exists."""
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, cast
 from uuid import uuid4
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import array
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+from sqlalchemy.sql import FromClause
 
 from nora.domain.graph_registration import (
     Exposure,
@@ -26,11 +30,14 @@ from nora.infra.sql.cognitive_graph_schema import (
     CLAIM,
     EDGE,
     ENTITY,
+    FORGET_REQUEST,
     INTENTION,
     REGISTRY,
 )
 
 RowData = Mapping[str, Any] | sa.RowMapping
+# person_pointer_in, _admission_base and _merge support writes and use raw identities.
+GRAPH_READERS = ("nora.memory.adapters.claim_support",)
 
 
 #: The content a tombstone clears per kind; identity, basis, scope,
@@ -52,7 +59,7 @@ _CONTENT: dict[sa.Table, tuple[str, ...]] = {
     EDGE: (),
 }
 
-_SOURCE_CONTENT: dict[str, tuple[str, ...]] = {
+_IN_PLACE_CONTENT: dict[str, tuple[str, ...]] = {
     "presence_places": ("name", "lat", "lng", "radius_m", "address"),
     "platform_object_state": ("source_state", "source_position", "coverage", "head_observation_id"),
     "messages": ("body", "raw_json", "media_json", "external_files_json"),
@@ -127,6 +134,61 @@ _SOURCE_CONTENT: dict[str, tuple[str, ...]] = {
         "outcome",
     ),
 }
+
+
+_SOURCE_CONTENT = {
+    **_IN_PLACE_CONTENT,
+    "nora_act": ("act_kind", "destination"),
+    "nora_act_outcome": ("verdict", "result"),
+    "nora_pass_output": ("output_kind", "content"),
+    "computer_events": ("phase", "tool", "path", "status", "request", "result", "output_ref"),
+    "tool_call_log": ("tool_name", "tool_input", "tool_result"),
+    "watch_result": ("content_hash",),
+    "forget_request": ("targets", "delete_now"),
+    "dispute": ("claim_id",),
+    "claim_support": ("support_count", "last_evidenced_at"),
+}
+
+def content_digest(source: str, row: RowData) -> str:
+    columns = _SOURCE_CONTENT.get(source)
+    if columns is None:
+        columns = next(fields for table, fields in _CONTENT.items() if table.name == source)
+    content = {name: row[name] for name in columns}
+    encoded = json.dumps(
+        content, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str,
+    )
+    return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def visible_to_reads(table: FromClause) -> sa.ColumnElement[bool]:
+    """Visibility for a registered row on a subject-facing read or tally."""
+    c = table.c
+    identity = c.graph_id if "graph_id" in c else c.id
+    registry = REGISTRY.alias().c
+    claim = CLAIM.alias().c
+    request = FORGET_REQUEST.alias().c
+    targets = [identity]
+    if "support_count" in c:
+        targets.append(c.claim_id)
+    return sa.and_(
+        sa.exists().where(
+            registry.id == identity, registry.unit == c.unit, registry.state == "live",
+        ),
+        ~sa.exists().where(
+            claim.id.in_(targets), claim.unit == c.unit, claim.state.in_(("hidden", "tombstoned")),
+        ),
+        ~sa.exists().where(
+            request.unit == c.unit, request.state == "live",
+            request.targets.overlap(array(targets, type_=sa.Text)),
+        ),
+    )
+
+
+async def dependent_claims(conn: AsyncConnection, unit: str, base: str) -> tuple[str, ...]:
+    return tuple(await conn.scalars(sa.select(EDGE.c.src_id).distinct().where(
+        EDGE.c.unit == unit, EDGE.c.dst_id == base, EDGE.c.state == "live",
+        EDGE.c.type.in_(("draws_on", "rests_on")),
+    ).order_by(EDGE.c.src_id)))
 
 
 #: The state a revision stamps on its base. An entity's lifecycle has no
@@ -208,9 +270,16 @@ class SqlCognitiveGraph:
     async def _revise(
         self, conn: AsyncConnection, table: sa.Table, row: Mapping[str, Any],
     ) -> None:
+        hidden = False
+        if table is CLAIM:
+            hidden = await conn.scalar(sa.select(CLAIM.c.state).where(
+                CLAIM.c.id == row["replaces"], CLAIM.c.unit == row["unit"],
+            ).with_for_update()) == "hidden"
+            if hidden and row["state"] == "live":
+                row = dict(row, state="hidden")
         await self._insert(conn, table, row)
         successor = _SUCCESSOR[table]
-        if successor is not None:
+        if successor is not None and not hidden:
             await conn.execute(
                 sa.update(table)
                 .where(table.c.id == row["replaces"], table.c.unit == row["unit"])
@@ -365,7 +434,10 @@ class SqlCognitiveGraph:
             await conn.execute(
                 stmt.on_conflict_do_update(
                     index_elements=["id", "unit"],
-                    set_={"state": "live", "content_hash": None, "tombstoned_at": None},
+                    set_={
+                        "state": "live", "content_hash": None,
+                        "tombstoned_at": None, "occurred_at": None,
+                    },
                     where=(REGISTRY.c.kind == "aggregate") & (REGISTRY.c.state == "tombstoned"),
                 )
             )
@@ -416,9 +488,9 @@ class SqlCognitiveGraph:
         if table in _CONTENT:
             identity = table.c.id
             clear = dict.fromkeys(_CONTENT[table], sa.null())
-        elif "graph_id" in table.c and table.name in _SOURCE_CONTENT:
+        elif "graph_id" in table.c and table.name in _IN_PLACE_CONTENT:
             identity = table.c.graph_id
-            clear = dict.fromkeys(_SOURCE_CONTENT[table.name], sa.null())
+            clear = dict.fromkeys(_IN_PLACE_CONTENT[table.name], sa.null())
         else:
             raise ValueError(f"cannot tombstone {table.name}")
         await conn.execute(
@@ -428,6 +500,9 @@ class SqlCognitiveGraph:
                 state="tombstoned",
                 content_hash=content_hash,
                 tombstoned_at=sa.func.now(),
+                occurred_at=sa.select(table.c.occurred_at).where(
+                    identity == row_id, table.c.unit == unit,
+                ).limit(1).scalar_subquery(),
             )
         )
         await conn.execute(

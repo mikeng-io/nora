@@ -279,13 +279,14 @@ _METRIC = "nora_memory_projection_total"
 
 
 async def project(
-    conn: AsyncConnection, kind: str, source_id: str | int, *, metrics: Any = None,
+    conn: AsyncConnection, kind: str, source_id: str | int, *,
+    metrics: Any = None, strict: bool = False,
 ) -> None:
     """Upsert `kind`'s node for `source_id` and its column edges, or drop
     them when the source is hidden or gone. A message brings its attachments
     with it, so an attachment is never projected on its own."""
     sid = str(source_id)
-    await _guarded(conn, kind, [sid], lambda: _PROJECTORS[kind](conn, sid), metrics)
+    await _guarded(conn, kind, [sid], lambda: _PROJECTORS[kind](conn, sid), metrics, strict=strict)
 
 
 async def reproject_media(
@@ -298,25 +299,22 @@ async def reproject_media(
 
 
 async def drop(
-    conn: AsyncConnection, kind: str, ids: Iterable[str | int], *, metrics: Any = None,
+    conn: AsyncConnection, kind: str, ids: Iterable[str | int], *,
+    metrics: Any = None, strict: bool = False,
 ) -> None:
     """Remove `kind`'s nodes for `ids` and the edges they own (`_delete`); a
     message takes its attachments with it."""
     sids = [str(i) for i in ids]
     if not sids:
         return
-    await _guarded(conn, kind, sids, lambda: _drop(conn, kind, sids), metrics)
+    await _guarded(conn, kind, sids, lambda: _drop(conn, kind, sids), metrics, strict=strict)
 
 
 async def _guarded(
     conn: AsyncConnection, kind: str, source_ids: list[str],
-    work: Callable[[], Awaitable[None]], metrics: Any,
+    work: Callable[[], Awaitable[None]], metrics: Any, *, strict: bool = False,
 ) -> None:
-    """The savepoint every projection runs in. `begin_nested` rolls
-    back the projection alone; the caller's transaction, and the store write
-    in it, carry on. A projection that lands clears any queue row its source
-    left behind, in the same savepoint, so the queue holds only what is still
-    unprojected (its length is the index's health)."""
+    """Apply a projection in a savepoint, clearing its queue entry on success."""
     from nora.infra.sql.graph_projection import context
     graph_context = context(conn)
     if metrics is None and graph_context is not None:
@@ -334,7 +332,9 @@ async def _guarded(
                 MEMORY_PROJECTION_QUEUE.c.kind == kind,
                 _among(MEMORY_PROJECTION_QUEUE.c.source_id, source_ids),
             ))
-    except Exception as exc:  # noqa: BLE001 — any failure queues; the store write stands
+    except Exception as exc:
+        if strict:
+            raise
         log.warning(
             "memory projection failed (%s, %s); queued for the next pass",
             kind, type(exc).__name__,

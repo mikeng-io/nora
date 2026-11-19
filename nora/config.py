@@ -11,7 +11,7 @@ import re
 import tomllib
 from functools import cached_property
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from pydantic import (
@@ -652,13 +652,7 @@ class StoreConfig(BaseModel):
     data_dir: Path
     max_per_conversation: int
     context_window: int
-    # How far PAST `context_window` a reply's quote may pull the transcript back,
-    # when the quoted row would otherwise fall outside it. `recent(limit=...)` is
-    # re-sized to `depth_to(quoted_ts) + quote_margin`, capped at
-    # `context_window * quote_window_multiplier`; beyond the cap the reply renders
-    # unthreaded. `quote_margin` is its own key rather than a literal because it is
-    # a judgement about how much SURROUNDING context a resolved quote deserves, not
-    # a mechanism constant.
+    # A quoted parent can pull the transcript back by a bounded read depth.
     quote_margin: int = 10
     quote_window_multiplier: int = 3
     # How many of those rows the TAG prompt's `<group_transcript>` renders.
@@ -678,21 +672,7 @@ class StoreConfig(BaseModel):
         `context_window` is refused at load."""
         return min(20 if self.prompt_window is None else self.prompt_window,
                    self.context_window)
-    # Whether the retention sweep runs AT ALL. `max_per_conversation` is the
-    # window when it does; this is the switch, and the two are separate keys on
-    # purpose: «keep everything» is not expressible as a number. Widening the
-    # window to fake it keeps `prune_all`'s `row_number()` scan over the whole
-    # `messages` table running every tick in order to delete nothing, and leaves a
-    # figure in the file that reads like a policy nobody holds.
-    #
-    # Defaults TRUE, this file's convention that an absent key keeps the prior
-    # behaviour, NOT a recommendation: with a small `max_per_conversation` a busy
-    # group evicts its oldest message every time a new one lands. Anything that
-    # wants to read history needs this OFF.
-    #
-    # `SqlRecordStore.prune_all` and the `_PrunableStore` port stay wired either
-    # way; only the spawn in `__main__` is conditional, so toggling this is a
-    # restart rather than a code change.
+    # Enable the count-based message prune independently of source horizons.
     prune_enabled: bool = True
 
     @model_validator(mode="after")
@@ -2678,6 +2658,21 @@ class GraphConfig(BaseModel):
     comprehend: ComprehendConfig = ComprehendConfig()
 
 
+class RetentionConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    horizon_days: dict[str, Annotated[int, Field(strict=True, ge=1)]] = Field(default_factory=dict)
+
+    @field_validator("horizon_days")
+    @classmethod
+    def _known_sources(cls, values: dict[str, int]) -> dict[str, int]:
+        from nora.memory import ITEM_SOURCES, PROTECTED_ITEM_SOURCES
+
+        allowed = ITEM_SOURCES.keys() - PROTECTED_ITEM_SOURCES - {"presence_fixes"}
+        if unsupported := values.keys() - allowed:
+            raise ValueError(f"unsupported retention sources: {', '.join(sorted(unsupported))}")
+        return values
+
+
 class MemoryConfig(BaseModel):
     """Nora's memory graph, index and Profile settings."""
 
@@ -2685,6 +2680,7 @@ class MemoryConfig(BaseModel):
     graph: GraphConfig = GraphConfig()
     index: MemoryIndexConfig = MemoryIndexConfig()
     profile: ProfileConfig = ProfileConfig()
+    retention: RetentionConfig = RetentionConfig()
 
 
 class LessonsConfig(BaseModel):

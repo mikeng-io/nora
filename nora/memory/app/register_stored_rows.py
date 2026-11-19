@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Protocol
 
-from nora.memory.domain.registration import AGGREGATE_FAMILIES, BACKFILL_ITEM_SOURCES
+from nora.memory.domain.registration import BACKFILL_AGGREGATE_FAMILIES, BACKFILL_ITEM_SOURCES
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +37,10 @@ class RegisterStoredRows:
             "rollup_response", "rollup_tie", "rollup_daybook", "presence_places",
             "platform_object_state",
         )
-        if set(items) != set(BACKFILL_ITEM_SOURCES) or set(aggregates) != set(AGGREGATE_FAMILIES):
+        if (
+            set(items) != set(BACKFILL_ITEM_SOURCES)
+            or set(aggregates) != set(BACKFILL_AGGREGATE_FAMILIES)
+        ):
             raise RuntimeError("stored-row registration order does not cover its declared tables")
         counts = {
             name: await self._store.register_table(name, batch_size=self._batch_size)
