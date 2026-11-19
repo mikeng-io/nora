@@ -19,7 +19,12 @@ from nora.domain.models import NormalizedMessage
 from nora.domain.run_budget import RunBudget, RunBudgetError, active_run_budget
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.subject.eval_evidence import EvidenceError, RunEvidence
+from nora.subject.eval_evidence import (
+    EvidenceError,
+    RunEvidence,
+    read_events,
+    validate_events,
+)
 from nora.subject.obtain import default_policy
 from nora.subject.recorded_services import Playback
 from nora.subject.sandbox import eval_host_lock
@@ -27,6 +32,20 @@ from nora.subject.sandbox import eval_host_lock
 NOW = 2_000_000_000_000
 MODEL = "generated-routing-model"
 IDENTITY = '[persons.generated]\nname = "Generated"\n'
+
+
+def _evidence_failure(evidence, report=None) -> str:
+    """Why a captured run is invalid: the record's causes and the verdict's reason."""
+    events = read_events(evidence.path)
+    receipt = validate_events(events, require_terminal=False)
+    interrupted = [
+        f"{event['kind']}:{event.get('error_type')}"
+        for event in events
+        if event["kind"] in {"case_failed", "run_failed", "transport_failed", "judge_error"}
+    ]
+    reasons = [reason for reason in getattr(report, "reasons", None) or [] if reason]
+    detail = f"causes={receipt['causes']} interrupted={interrupted}"
+    return detail + (f" evaluator_reasons={reasons}" if reasons else "")
 
 
 def routing_plan(tmp_path, upstream, *, name, bindings, services):
@@ -262,12 +281,15 @@ async def test_tool_selection_behavioral_route_crosses_the_bound_gateway(
         )
         budget = RunBudget(max_requests=3, max_output_tokens=50000)
         token = active_run_budget.set(budget)
+        report = None
         try:
             with evidence.capture(trace.get_tracer_provider()):
                 report = await Experiment(
                     cases=[case], evaluators=[ToolRouteGrader()]
                 ).run_evaluations_async(task=backbone.nora_task(spec), max_workers=1)
                 evidence.exit_code = 0
+        except EvidenceError as exc:
+            raise EvidenceError(f"{exc}: {_evidence_failure(evidence, report)}") from exc
         finally:
             active_run_budget.reset(token)
     verdict = report.detailed_results[0][0]
@@ -359,11 +381,14 @@ def test_tool_selection_behavioral_receipt_preserves_route_verdicts(
             private_root=tmp_path / "evidence",
             metadata={},
         )
-        with evidence.capture(trace.get_tracer_provider()):
-            ok = cli._run_one(
-                "tool_selection", source_url="", judge=None, sample=1, measurement=BEHAVIORAL
-            )
-            evidence.exit_code = 0 if ok else 1
+        try:
+            with evidence.capture(trace.get_tracer_provider()):
+                ok = cli._run_one(
+                    "tool_selection", source_url="", judge=None, sample=1, measurement=BEHAVIORAL
+                )
+                evidence.exit_code = 0 if ok else 1
+        except EvidenceError as exc:
+            raise EvidenceError(f"{exc}: {_evidence_failure(evidence)}") from exc
 
     receipt = json.loads((evidence.path / "corpus-tool_selection.json").read_text())
     assert receipt["mode"] == "behavioral-evaluation"
