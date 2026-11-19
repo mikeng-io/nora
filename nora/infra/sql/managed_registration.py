@@ -248,7 +248,7 @@ async def bind_identifiers(
                 )
                 added = True
         except IntegrityError as exc:
-            if "23505" in str(getattr(exc, "orig", exc)):
+            if getattr(exc.orig, "sqlstate", getattr(exc.orig, "pgcode", None)) == "23505":
                 raise IdentifierConflictError(
                     "an identifier is owned by another account"
                 ) from exc
