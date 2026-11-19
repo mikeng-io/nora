@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.19.17](https://github.com/mikeng-io/nora/compare/v7.19.16...v7.19.17) (2026-11-19)
+
+
+### Maintenance
+
+* origin/master into native-stack-commands, the #826 lessons loop and the #825 wiki retirement ([6a47ad7](https://github.com/mikeng-io/nora/commit/6a47ad7125bba56e5e6ed903753f0102538f0747))
+* origin/master into native-stack-commands, the v7.19.16 release metadata ([8c99f31](https://github.com/mikeng-io/nora/commit/8c99f31eda8e88447b288e511011a5c2071ffeed))
+
 ## [7.19.16](https://github.com/mikeng-io/nora/compare/v7.19.15...v7.19.16) (2026-11-19)
 
 
