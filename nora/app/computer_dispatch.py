@@ -38,8 +38,23 @@ __all__ = ["ComputerToolDispatch"]
 #: The tools a durable row may name — exactly the tools the queue wraps.
 EXECUTABLE = frozenset({
     "computer_run", "computer_write", "computer_edit", "computer_import",
-    "computer_browse", "web_browse", "computer_capture",
+    "web_browse", "computer_capture",
 })
+
+
+#: A tool name a queued row may still carry, mapped to the tool that replaced it.
+_RENAMED = {"computer_browse": "web_browse"}
+
+
+def _stored_authority(task: ComputerTask) -> tuple[str, frozenset[str] | None]:
+    """The tool a row names now and its stored grant, carried to a renamed tool, never widened."""
+    old = str(task.payload.get("tool") or "")
+    tool = _RENAMED.get(old, old)
+    raw = (task.origin or {}).get("grant")
+    grant = None if raw is None else frozenset(str(g) for g in raw)
+    if grant is not None and old != tool and old in grant:
+        grant = (grant - {old}) | {tool}
+    return tool, grant
 
 
 def _refused(reason: str, note: str) -> dict[str, Any]:
@@ -112,7 +127,7 @@ class ComputerToolDispatch:
         """Run the row's durable request: the named tool, its stored args,
         its origin room — under the CURRENT admission, never the one the
         row was written under. The reply is the segment's result."""
-        tool = str(task.payload.get("tool") or "")
+        tool, grant = _stored_authority(task)
         if tool not in EXECUTABLE:
             return _refused(
                 f"the task names no runnable tool ({tool or 'empty'})",
@@ -130,8 +145,6 @@ class ComputerToolDispatch:
         dream_adaptor = (actor[len(DREAMER_ACTOR_PREFIX):]
                          if actor.startswith(DREAMER_ACTOR_PREFIX) else "")
         worker = str(origin.get("worker") or "")
-        raw_grant = origin.get("grant")
-        grant = None if raw_grant is None else frozenset(str(g) for g in raw_grant)
         if dream_adaptor:
             current_grant = self._registry.read_only_tools()
             grant = current_grant if grant is None else grant & current_grant

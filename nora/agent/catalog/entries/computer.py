@@ -73,14 +73,6 @@ TOOLS = {
         output_contract="three_state",
         level=2,
     ),
-    "computer_browse": NativeTool(
-        2,
-        side_effect_state="unknown",
-        idempotency="non_idempotent",
-        retry="never",
-        output_contract="three_state",
-        level=3,
-    ),
     "web_browse": NativeTool(
         2,
         read_only=False,

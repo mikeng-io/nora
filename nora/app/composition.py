@@ -764,14 +764,14 @@ async def _compose_dependencies(
     unit_scopes = _people_unit_scopes.unit_scopes
     _models_source = source(client=client, route_model=route_model, tier=tier)
     models = _models_source.models
-    _computer_browse = _computer_wire.browse(
+    _browse_wiring = _computer_wire.browse(
         browser_manager=browser_manager,
         cfg=cfg,
         computer=computer,
         model_client_for=model_client_for,
         route_model=route_model,
     )
-    browser = _computer_browse.browser
+    browser = _browse_wiring.browser
     _models_runner = build_runner(cfg=cfg, metrics=metrics, models=models, tier=tier)
     runner = _models_runner.runner
     _people_homes = _people_wire.homes(allowlist=allowlist)
@@ -919,7 +919,7 @@ async def _compose_dependencies(
     subagent_desk = _agent_desk.subagent_desk
     _agent_registry = build_registry(
         allowlist=allowlist, blobs=blobs,
-        browser=browser, web_browser=_computer_browse.web_browser,
+        browser=browser,
         browser_manager=browser_manager,
         cfg=cfg,
         clock=clock,

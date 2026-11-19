@@ -206,7 +206,7 @@ def test_every_declared_tool_is_built(wiring):
         "computer_write",
         "computer_edit", "computer_export", "computer_import", "computer_session_list",
         # Built here; offered only with a browser runner.
-        "computer_browse", "web_browse",
+        "web_browse",
         # Scoped-computer pair: built here like every closure; offered only
         # with `[computer.scoped]` wiring (the queue and the browser manager).
         "computer_capture", "computer_cancel",

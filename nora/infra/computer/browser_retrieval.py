@@ -1,4 +1,4 @@
-"""Evidence and snapshot-bound controls for anonymous web retrieval."""
+"""The page's text and numbered actions for one decision, and the dispatch of the chosen one."""
 
 from __future__ import annotations
 
@@ -8,21 +8,24 @@ from urllib.parse import urlsplit
 
 from nora.infra.computer.browser import BrowserError, BrowserPage
 
+# Every decision offers at most this many IDs: elements, two scrolls, finish and the person ID.
 MAX_ACTIONS = 64
+_OFFERED = MAX_ACTIONS - 4
 _MAX_LABEL = 80
 
 # ponytail: a click runs the page's own script, which can already POST on load; only
 # native submit controls are refused here. Against page scripts the boundary is the
 # anonymous tab and scoped egress.
-# Use the same isolated DOM world for observation and dispatch. Compare the
-# live control and option set before acting, in the same evaluation.
+
+# The same isolated DOM world serves observation and dispatch: the live control and its
+# options are compared before acting, in the same evaluation.
 _CONTROL = """function(expected, action, option) {
     if (!this.isConnected || !this.getClientRects().length ||
         getComputedStyle(this).visibility !== 'visible' ||
         this.matches(':disabled,[aria-disabled="true"],[readonly]')) return null;
     if (this.form && ['submit', 'image'].includes(this.type)) return null;
-    const label = (this.getAttribute('aria-label') || this.innerText ||
-                   this.value || '').slice(0, 80);
+    let label = (this.getAttribute('aria-label') || this.innerText ||
+                 this.value || '').slice(0, 80);
     let kind, target = '', options = [];
     if (this instanceof HTMLSelectElement && !this.multiple) {
         kind = 'select';
@@ -36,6 +39,17 @@ _CONTROL = """function(expected, action, option) {
             this.username || this.password || this.href.length > 2048) return null;
         kind = 'link';
         target = this.href;
+    } else if (this instanceof HTMLTextAreaElement ||
+               (this instanceof HTMLInputElement &&
+                ['text', 'search', 'email', 'url', 'tel', 'number'].includes(this.type))) {
+        kind = 'type';
+        label = (this.getAttribute('aria-label') || this.placeholder || this.name ||
+                 this.id || '').slice(0, 80);
+        // Enter submits a lone field or a search box; in a longer form it would submit early.
+        const fields = this.form ? this.form.querySelectorAll(
+            'input:not([type=hidden],[type=checkbox],[type=radio],[type=submit],' +
+            '[type=button],[type=image]),textarea,select').length : 0;
+        target = (this.type === 'search' || fields === 1) ? 'enter' : '';
     } else if ((this instanceof HTMLButtonElement || this instanceof HTMLInputElement) &&
                (this.type === 'button' || (this.type === 'submit' && !this.form))) {
         kind = 'button';
@@ -49,6 +63,7 @@ _CONTROL = """function(expected, action, option) {
     if (expected === null) return control;
     if (JSON.stringify(control) !== JSON.stringify(expected)) return null;
     if (kind === 'link') return target;
+    if (kind === 'type') return true;
     if (action === 'select') {
         if (!options.some(item => item[0] === option && !item[3])) return null;
         this.selectedIndex = option;
@@ -59,6 +74,9 @@ _CONTROL = """function(expected, action, option) {
     }
     return true;
 }"""
+_ROLES = {
+    "link", "button", "tab", "combobox", "listbox", "DisclosureTriangle", "textbox", "searchbox",
+}
 
 
 def http_url(url: str) -> bool:
@@ -78,11 +96,9 @@ class RetrievalAction:
     ref: str
     label: str
     control: list[Any]
+    kind: str = "click"  # click, select, type or scroll
     option: int | None = None
-
-    @property
-    def kind(self) -> str:
-        return "select" if self.option is not None else "click"
+    direction: str = ""
 
 
 @dataclass(frozen=True)
@@ -93,14 +109,18 @@ class RetrievalObservation:
     actions: tuple[RetrievalAction, ...]
 
 
+_SCROLLS = (
+    RetrievalAction("", "Scroll down", [], kind="scroll", direction="down"),
+    RetrievalAction("", "Scroll up", [], kind="scroll", direction="up"),
+)
+
+
 async def observe(page: BrowserPage, read_chars: int) -> RetrievalObservation:
     snapshot = await page.snapshot()
     text, _ = await page.read_text(read_chars)
     actions: list[RetrievalAction] = []
     for element in snapshot.elements:
-        if element.disabled or element.role not in {
-            "link", "button", "tab", "combobox", "listbox", "DisclosureTriangle",
-        }:
+        if element.disabled or element.role not in _ROLES:
             continue
         try:
             control = await page._call_on(element.ref, _CONTROL, None, None, None)
@@ -113,21 +133,32 @@ async def observe(page: BrowserPage, read_chars: int) -> RetrievalObservation:
         name = (element.name or label)[:_MAX_LABEL]
         if kind == "select":
             actions.extend(
-                RetrievalAction(element.ref, f"Select {label} in {name}", control, index)
+                RetrievalAction(
+                    element.ref, f"Select {label} in {name}", control, "select", index,
+                )
                 for index, label, _, selected in options if label and not selected
             )
+        elif kind == "type":
+            if name:
+                enter = " and press Enter" if target == "enter" else ""
+                actions.append(
+                    RetrievalAction(element.ref, f"Type into {name}{enter}", control, "type")
+                )
         elif name:
             description = f"Open {name} ({target[:160]})" if kind == "link" else f"Click {name}"
             actions.append(RetrievalAction(element.ref, description, control))
-        if len(actions) >= MAX_ACTIONS - 1:
+        if len(actions) >= _OFFERED:
             break
     return RetrievalObservation(
-        snapshot.url, snapshot.title[:_MAX_LABEL], text, tuple(actions[:MAX_ACTIONS - 1]),
+        snapshot.url, snapshot.title[:_MAX_LABEL], text, (*actions[:_OFFERED], *_SCROLLS),
     )
 
 
-async def dispatch(page: BrowserPage, action: RetrievalAction) -> bool:
+async def dispatch(page: BrowserPage, action: RetrievalAction, text: str = "") -> bool:
     page.policy.live(action.kind)
+    if action.kind == "scroll":
+        await page.scroll(action.direction)
+        return True
     before = await page._loader()
     try:
         object_id = await page._object(action.ref)
@@ -149,5 +180,8 @@ async def dispatch(page: BrowserPage, action: RetrievalAction) -> bool:
         return True
     if applied is not True:
         return False
+    if action.kind == "type":
+        await page.type_text(action.ref, text, submit=action.control[2] == "enter")
+        return True
     await page.settle(before)
     return True

@@ -6,8 +6,11 @@ import uuid
 from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any, Literal
+from urllib.parse import unquote
 from uuid import UUID
 
+from nora.agent.security import looks_like_coordinate, scan_identifiers
+from nora.agent.toolkit.results import _record
 from nora.computer.adapters.tools.shared import (
     _COMPUTER_BUSY_BACKGROUND,
     _COMPUTER_BUSY_LIVE,
@@ -31,6 +34,7 @@ from nora.domain.computer_sessions import (
     progress_text,
     shown_status,
 )
+from nora.infra.computer.browser_retrieval import http_url
 
 log = logging.getLogger("nora.tools")
 
@@ -211,50 +215,73 @@ def _make__session_events(deps):
     return _session_events
 
 
-def _make_computer_browse(deps):
-    _queued_browse = deps.computer_ctx._queued_browse
+def _make_web_browse(deps):
+    retrieve = _make_retrieve(deps)
 
-    @_queued_browse
-    async def computer_browse(
-        objective: str, start_url: str | None = None, task: str | None = None
+    async def web_browse(
+        objective: str, start_url: str | None = None, task: str | None = None,
     ) -> dict:
-        """Do a task in a web browser on your computer and report back. Call this
-        when a page needs clicking, searching or filling in, or only renders in
-        a browser.
+        """Call this when a page shows its data only after you click, choose or search;
+        pass a known page as `start_url`.
 
-        It can submit forms on the pages it visits, and those pages see what it
-        types: put nobody's personal details in the objective.
+        Ordinary pages read with `web_fetch`. Pages see what it types: put nobody's personal
+        details in the objective. A finished job keeps its tab: pass `task` (the task id a
+        reply or the computer block gives) to continue on the same page.
 
-        A finished job keeps its tab on this scope's browser: pass `task`
-        (the task id the reply or the computer block gives) to continue on the
-        same page instead of opening a new one.
-
-        Returns `status`: ok, nothing_found, queued or unavailable, with a
-        `note` on how to read it.
-        - ok: `answer`, what the pages showed, the `url` it ended on, and the
-          `task` id that owns the tab.
+        Returns `status`: ok, nothing_found, queued or unavailable, with a `note`.
+        - ok: `answer`, what the pages showed, the `url` it ended on, and the `task` id that
+          owns the tab.
         - nothing_found: the pages were read and do not have it.
-        - queued: the task waits behind the scope's running work; `task` is
-          its id and the result arrives on its own.
-        - unavailable: the browser could not finish; `needs_human` is true when
-          a person must step in (a CAPTCHA, a sign-in, a payment).
+        - queued: the task waits behind the scope's running work; `task` is its id and the
+          result arrives on its own.
+        - unavailable: the browser could not finish; `answer`, when present, is only what it
+          read before stopping; `needs_human` is true when a person must step in (a CAPTCHA,
+          a sign-in, a payment).
 
         Args:
-            objective: The whole task: what to find or do, and what to report.
-            start_url: The page to start on, when known.
-            task: A task's tab to continue on; from a reply or the computer
-                block. Empty opens a new tab.
+            objective: The whole task: what to find, and what to report.
+            start_url: The page to open. Required unless `task` continues an open tab.
+            task: A task's tab to continue on; from a reply or the computer block. Empty
+                opens a new tab.
         """
-        c = _browse_context(deps, objective, start_url, task, deps.browser, "computer_browse")
-        k_, _, v_ = await _computer_browse__prepare(c)
-        if k_:
-            return v_
-        k_, _, v_ = await _computer_browse__needs_human(c)
-        if k_:
-            return v_
-        return None  # type: ignore[return-value]
+        if (
+            not objective.strip() or not (start_url or task)
+            or (start_url and not http_url(start_url))
+            or any(
+                scan_identifiers(value, content_checks=deps.content_checks) is not None
+                or (deps.content_checks and looks_like_coordinate(value))
+                for value in (objective, unquote(start_url or ""))
+            )
+        ):
+            _record(deps.metrics, "web_browse", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "Use a public web link and leave out personal details.",
+            }
+        result = await retrieve(objective=objective, start_url=start_url, task=task)
+        _record(deps.metrics, "web_browse", result["status"])
+        reply = {
+            "status": result["status"],
+            "note": result.get("note") or "Report only what the browser verified.",
+        }
+        # Fields a status does not carry stay absent, so a result never lists an empty answer.
+        reply.update({k: v for k, v in result.items() if k not in reply})
+        return reply
 
-    return computer_browse
+    return web_browse
+
+
+def _make_retrieve(deps):
+    @deps.computer_ctx._queued_browse
+    async def web_browse(objective: str, start_url: str | None, task: str | None) -> dict:
+        c = _browse_context(deps, objective, start_url, task, deps.browser, "web_browse")
+        k_, _, v_ = await _web_browse__prepare(c)
+        if k_:
+            return v_
+        _, _, v_ = await _web_browse__needs_human(c)
+        return v_
+
+    return web_browse
 
 
 def _browse_context(deps, objective, start_url, task, runner, tool_name):
@@ -334,7 +361,7 @@ def _make_computer_capture(deps):
         """Take a picture of a task's browser tab into your workspace. Call
         this when the room needs a browsed page shown.
 
-        `task` is the id a computer_browse reply or the computer block gives:
+        `task` is the id a web_browse reply or the computer block gives:
         the tab that job owned. The picture goes to a file; no model looks at
         it. `full_page` takes the whole page; a taller one comes back
         `partial`. Send it with computer_export; saving is not sending.
@@ -356,7 +383,7 @@ def _make_computer_capture(deps):
             return {
                 "status": "unavailable",
                 "reason": "task is not a task id",
-                "note": "Pass the task id a computer_browse reply or the computer block gives.",
+                "note": "Pass the task id a web_browse reply or the computer block gives.",
             }
         session_id = await _computer_session("computer_capture")
         async with _computer_lease("computer_capture", operation_id, session_id) as busy:
@@ -529,7 +556,7 @@ def _make_computer_cancel(deps):
     return computer_cancel
 
 
-async def _computer_browse__prepare(c):
+async def _web_browse__prepare(c):
     c.task_uuid: UUID | None = None
     if c.task:
         try:
@@ -640,10 +667,10 @@ async def _computer_browse__prepare(c):
                 session_id=c.session_id,
                 output_ref=c.output_ref,
             )
-    return await _computer_browse__answer(c)
+    return await _web_browse__answer(c)
 
 
-async def _computer_browse__answer(c):
+async def _web_browse__answer(c):
     c.answer, c._ = _clip(c.got.answer, c.computer_bounds.max_output_chars)
     if c.status == "ok":
         return (
@@ -679,7 +706,7 @@ async def _computer_browse__answer(c):
     return (False, None, None)
 
 
-async def _computer_browse__needs_human(c):
+async def _web_browse__needs_human(c):
     if c.got.needs_human:
         return (
             True,
@@ -689,9 +716,29 @@ async def _computer_browse__needs_human(c):
                 "needs_human": True,
                 "reason": c.got.reason,
                 ("url"): c.got.url,
+                "task": c.got.task_id,
+                "tab": c.got.tab,
                 "note": "The page needs a person (a CAPTCHA, a sign-in or a "
                 "payment). Say what is needed and that someone has to do it; nothing past that "
-                "point was done.",
+                "point was done. Pass `task` to continue once they have.",
+            },
+        )
+    if c.got.answer:
+        # A run cut off at its limit still owns its tab and holds what it read.
+        text, _ = _clip(c.got.answer, c.computer_bounds.max_output_chars)
+        return (
+            True,
+            None,
+            {
+                "status": "unavailable",
+                "needs_human": False,
+                "reason": c.got.reason,
+                "answer": text,
+                "url": c.got.url,
+                "task": c.got.task_id,
+                "tab": c.got.tab,
+                "note": "Stopped before every page was read. The answer is what it read; "
+                "the rest is unconfirmed. Pass `task` to continue.",
             },
         )
     return (

@@ -15,17 +15,18 @@ import pytest
 import yaml
 from openai import AsyncOpenAI
 
-from nora.agent.browse import BrowseSettings
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.agent.web_browse import WebBrowseRunner
-from nora.app.computer_queue import ComputerAdmission, SegmentRegistry
+from nora.agent.web_browse import BrowseSettings, WebBrowseRunner
+from nora.app.computer_dispatch import ComputerToolDispatch
+from nora.app.computer_queue import ComputerAdmission, SegmentRegistry, current_segment
 from nora.computer.wire import browse
-from nora.domain.computer import BrowseOutcome
+from nora.domain.computer import BrowseOutcome, computer_unit_scope
 from nora.infra.computer.browser import ActionPolicy, Element, Snapshot
 from nora.infra.computer.manager import TabUnavailable
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
+from nora.policy import Conversation, Policy
 from nora.testing import (
     FakeBlobStore,
     FakeBrowserRunner,
@@ -41,11 +42,11 @@ ROOM = "generated-room"
 UNIT = "generated-unit"
 
 
-def registry_for(web_browser, manager, admission, *, unit=UNIT, **kwargs):
+def registry_for(browser, manager, admission, *, unit=UNIT, **kwargs):
     return ToolRegistry(
         unit_for=lambda *_: unit, computer=FakeSandboxRuntime(),
         blobs=FakeBlobStore(), computer_events=FakeComputerEventStore(),
-        computer_admission=admission, browser_manager=manager, web_browser=web_browser,
+        computer_admission=admission, browser_manager=manager, browser=browser,
         **kwargs,
     )
 
@@ -94,6 +95,8 @@ class Page:
         self._loader = AsyncMock(return_value="loader")
         self._page = AsyncMock(return_value={"result": {"value": True}})
         self.settle = AsyncMock()
+        self.scroll = AsyncMock()
+        self.type_text = AsyncMock()
         self.revoked = False
         self.policy = ActionPolicy()
 
@@ -313,7 +316,7 @@ async def test_web_browse_uses_configured_gateway(tmp_path):
         )
         wired = browse(manager, cfg, FakeSandboxRuntime(),
                        {"browse": client}.__getitem__, lambda purpose, model: model)
-        result = await call_registered(tmp_path, wired.web_browser, manager)
+        result = await call_registered(tmp_path, wired.browser, manager)
     assert result["status"] == "ok" and result["url"] == SITE
     assert result["answer"] == "Price HKD 399. Stock unconfirmed."
     assert page.snapshot.await_count == page.read_text.await_count == 1
@@ -326,9 +329,9 @@ async def test_web_browse_uses_configured_gateway(tmp_path):
 
 async def test_web_browse_registered_siblings_keep_contracts(tmp_path):
     browser = FakeBrowserRunner(outcome=BrowseOutcome("ok", answer="Observed", url=SITE))
-    registry = registry_for(None, None, None, browser=browser)
+    registry = registry_for(browser, None, None)
     specs = {s.name: s for s in registry.specs(**bindings_for(tmp_path))}
-    got = await specs["computer_browse"].call(objective="Read offers", start_url=SITE)
+    got = await specs["web_browse"].call(objective="Read offers", start_url=SITE)
     fetched = await specs["web_fetch"].call(url=SITE)
     searched = await specs["web_search"].call(query="generated fixture offer")
     assert got["status"] == "ok" and got["answer"] == "Observed" and got["url"] == SITE
@@ -341,7 +344,7 @@ def test_web_browse_routing_cases_pin_siblings():
     cases = {case["name"]: case["metadata"] for case in yaml.safe_load(path.read_text())["cases"]
              if "metadata" in case}
     assert cases["route_web_browse_interactive_evidence"]["tools"] == ["web_browse"]
-    assert {"web_fetch", "web_search", "computer_browse", "computer_run"} <= set(
+    assert {"web_fetch", "web_search", "computer_run"} <= set(
         cases["route_web_browse_interactive_evidence"]["not_tools"],
     )
     for name in ("route_web_fetch_not_the_computer", "route_web_search_control"):
@@ -384,3 +387,117 @@ async def test_web_browse_enforces_retrieval_boundary(tmp_path):
     assert "1-1" in requests[0]["messages"][1]["content"]
     assert "2-1" in requests[1]["messages"][1]["content"]
     assert len(requests) == 2 and page._page.await_count == 1
+
+
+async def _queued_row(tmp_path, tool, grant):
+    browser = FakeBrowserRunner(outcome=BrowseOutcome("ok", answer="Observed", url=SITE))
+    admission = admission_for_tests(tmp_path)
+    registry = registry_for(browser, Manager(Page()), admission)
+    bindings = bindings_for(tmp_path)
+    scope = computer_unit_scope(UNIT)
+    origin = {"actor": "tag", "platform": "signal", "conversation_id": ROOM,
+              "conversation_type": "group", "requester_person_id": "generated"}
+    if grant is not None:
+        origin["grant"] = grant
+    args = {"objective": "Read offers", "start_url": SITE}
+    row = (await admission.submit(
+        scope=scope, kind="browse", payload={"tool": tool, "args": args}, origin=origin,
+    )).task
+    conversation = Conversation(
+        platform="signal", ids=frozenset({ROOM}), persons=frozenset({"generated"}),
+        label="Generated", unit=UNIT,
+    )
+    policy = Policy(conversations=(conversation,), _by_id={("signal", ROOM): conversation})
+    dispatch = ComputerToolDispatch(
+        registry=registry, store=None, persons=bindings["persons"], honcho=None,
+        metrics=bindings["metrics"], policy=policy, scope_for=lambda *_: scope,
+    )
+    task = asyncio.current_task()
+    admission.executors.register(row.id, task)
+    token = current_segment.set(row.id)
+    try:
+        return await dispatch(row), browser
+    finally:
+        current_segment.reset(token)
+        admission.executors.unregister(row.id, task)
+
+
+@pytest.mark.parametrize("grant", [None, ["computer_browse"], ["web_browse"]])
+async def test_a_queued_computer_browse_row_runs_as_web_browse(tmp_path, grant):
+    result, browser = await _queued_row(tmp_path, "computer_browse", grant)
+    assert result["status"] == "ok" and result["answer"] == "Observed"
+    assert len(browser.calls) == 1
+
+
+@pytest.mark.parametrize("tool, grant", [
+    ("computer_browse", ["computer_run"]),
+    ("computer_not_a_tool", None),
+])
+async def test_a_queued_row_the_alias_does_not_cover_is_refused(tmp_path, tool, grant):
+    result, browser = await _queued_row(tmp_path, tool, grant)
+    assert result["status"] == "unavailable" and result["no_guest_effect"] is True
+    assert browser.calls == []
+
+
+class _TypingPage(Page):
+    def __init__(self):
+        super().__init__()
+        self.snapshot = AsyncMock(return_value=Snapshot(
+            SITE, "Offers", (Element("e1", "searchbox", "Search"),),
+        ))
+        self._call_on = AsyncMock(return_value=["type", "Search", "enter", []])
+
+
+async def _loop(tmp_path, replies, page):
+    manager = Manager(page)
+    requests = []
+
+    def handler(request):
+        requests.append(json.loads(request.content))
+        return gateway_reply(replies[len(requests) - 1], used=1)
+
+    async with AsyncOpenAI(base_url="http://gateway.invalid/v1", api_key="local",
+                           http_client=httpx.AsyncClient(
+                               transport=httpx.MockTransport(handler),
+                           )) as c:
+        runner = WebBrowseRunner(client=c, model=ALIAS, max_tokens=512,
+                                 settings=BrowseSettings(), manager=manager)
+        result = await call_registered(tmp_path, runner, manager)
+    return result, requests
+
+
+async def test_a_typed_reply_types_the_text_and_presses_enter(tmp_path):
+    page = _TypingPage()
+    done = json.dumps({"answer": "HKD 399.", "found": True})
+    result, requests = await _loop(tmp_path, ["1-1 ex4 wan chai", "2-finish", done], page)
+    assert result["status"] == "ok"
+    page.type_text.assert_awaited_once_with("e1", "ex4 wan chai", submit=True)
+    assert "Type into Search and press Enter" in requests[0]["messages"][1]["content"]
+    assert "Type into Search and press Enter: ex4 wan chai" in requests[1]["messages"][1]["content"]
+
+
+async def test_a_type_action_without_text_is_refused(tmp_path):
+    page = _TypingPage()
+    result, _ = await _loop(tmp_path, ["1-1"], page)
+    assert result["status"] == "unavailable"
+    assert result["reason"] == "the model did not select a current action"
+    page.type_text.assert_not_awaited()
+
+
+async def test_a_scroll_reply_scrolls_the_page(tmp_path):
+    page = Page()
+    done = json.dumps({"answer": "HKD 399.", "found": True})
+    result, requests = await _loop(tmp_path, ["1-2", "2-finish", done], page)
+    assert result["status"] == "ok"
+    assert '"1-2": "Scroll down"' in requests[0]["messages"][1]["content"]
+    page.scroll.assert_awaited_once_with("down")
+    assert page._page.await_count == 0
+
+
+async def test_a_page_that_needs_a_person_is_unavailable_with_needs_human(tmp_path):
+    page = Page()
+    result, requests = await _loop(tmp_path, ["1-person"], page)
+    assert result["status"] == "unavailable" and result["needs_human"] is True
+    assert result["task"] and "person" in result["note"] and len(requests) == 1
+    assert page._page.await_count == 0 and page.scroll.await_count == 0
+

@@ -215,7 +215,6 @@ _ORDER = [
     "computer_export",
     "computer_import",
     "computer_session_list",
-    "computer_browse",
     "web_browse",
     "computer_capture",
     "computer_cancel",
@@ -340,7 +339,6 @@ def build_tool_specs(
     computer_exports: ComputerExportStore | None = None,
     # Browser runners are withheld by the registry when unwired.
     browser: BrowserRunner | None = None,
-    web_browser: BrowserRunner | None = None,
     # The scoped-computer runtime: `ComputerAdmission` (per-scope FIFO,
     # `nora.app.computer_queue`) and `ScopeBrowserManager` (task-owned tabs,
     # `nora.infra.computer.manager`). `None` — the shared-VM shape — runs
@@ -531,7 +529,6 @@ def build_tool_specs(
         computer_leases=computer_leases,
         computer_exports=computer_exports,
         browser=browser,
-        web_browser=web_browser,
         computer_admission=computer_admission,
         browser_manager=browser_manager,
         computer_dm_scope_for=computer_dm_scope_for,

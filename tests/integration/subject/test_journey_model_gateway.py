@@ -105,18 +105,6 @@ def _foreground_declarations(cfg, request, tool_spec):
                 {"verdict": "no_go", "relevance_score": 0},
             ),
         ],
-        "nora/language/browse_render.py": [
-            (
-                request(
-                    "browse",
-                    cfg.computer.browse.model,
-                    '<browse_task scope="turn"/>',
-                    tools=(tool_spec("browse_done", "answer", "string"),),
-                ),
-                "browse",
-                ("browse_done", {"answer": "No result in the generated browser.", "found": False}),
-            ),
-        ],
     }
 
 

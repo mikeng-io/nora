@@ -48,7 +48,7 @@ from nora.testing import (
 NOW = datetime(2026, 2, 1, 12, 0, tzinfo=UTC)
 CID = "g-computer"
 UNIT = "unit-x"
-SCOPED_ONLY = {"computer_browse", "computer_capture", "computer_export", "computer_cancel"}
+SCOPED_ONLY = {"web_browse", "computer_capture", "computer_export", "computer_cancel"}
 
 
 @pytest.fixture
@@ -85,7 +85,6 @@ class _Rig:
             computer_leases=ComputerLeases(),
             computer_exports=self.exports,
             browser=FakeBrowserRunner(),
-            web_browser=FakeBrowserRunner(),
             computer_admission=self.admission,
             browser_manager=object(),
             computer_dm_scope_for=lambda platform, cid: "dm-anchor-1",
@@ -132,11 +131,11 @@ def test_scoped_surface_defers_and_loads_the_computer_verbs(persons):
 
     agent = _Agent()
     load = load_onto(agent, surface.shelf,
-                     ["computer_browse", "computer_write",
+                     ["web_browse", "computer_write",
                       "computer_capture", "computer_export"])
     assert load["status"] == "ok"
     assert set(agent.tool_registry.dynamic_tools) == {
-        "computer_browse", "computer_write", "computer_capture", "computer_export"}
+        "web_browse", "computer_write", "computer_capture", "computer_export"}
     assert LOADER_TOOL not in surface.shelf.names()
     bad = load_onto(agent, surface.shelf, ["computer_wrong"])
     assert bad["status"] == "nothing_found"

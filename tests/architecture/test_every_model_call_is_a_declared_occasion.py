@@ -80,7 +80,7 @@ _EXTRA_DOORS = (
 #: delegate (`DreamerAgentRunner`) and every adaptor's `_sample` reach the
 #: model through it.
 _MODEL_CALLS = {
-    "create_agent", "create_dream_agent", "create_browse_agent",
+    "create_agent", "create_dream_agent",
     "ask_text", "ask_structured", "invoke_async", "run_agent",
 }
 #: Agent methods that send a prompt, matched on the trailing name alone.
@@ -160,7 +160,6 @@ RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
     # `ContextBlock`; the authored SYSTEM_PROMPT is the occasion's
     # instruction, like the worker's doctrine-loaded system text.
     "nora/agent/web_browse.py": (("nora/language/web_browse_render.py",), "imports"),
-    "nora/agent/browse.py": (("nora/language/browse_render.py",), "imports"),
     # The eval arm's context selector: the system text, the clock/window line
     # and the candidate blocks it posts are all built by ONE declared
     # occasion it imports; it only dispatches the POST and records receipts.

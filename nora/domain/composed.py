@@ -33,7 +33,6 @@ COMPOSERS = frozenset(
         "nora.engagement.debrief_render:_standing_prior",
         "nora.engagement.debrief_render:_standing_working_set_prior",
         "nora.engagement.debrief_render:_turn_block",
-        "nora.language.browse_render:render_browse_brief",
         "nora.language.web_browse_render:render_retrieval",
         "nora.language.checkpoint_render:render_checkpoint",
         "nora.language.comprehend_render:memory_result_text",

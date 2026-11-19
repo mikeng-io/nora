@@ -19,8 +19,7 @@ import pytest
 from aiohttp import web
 from openai import AsyncOpenAI
 
-from nora.agent.browse import BrowseSettings
-from nora.agent.web_browse import WebBrowseRunner
+from nora.agent.web_browse import BrowseSettings, WebBrowseRunner
 from nora.app.computer_dispatch import ComputerToolDispatch
 from nora.app.computer_queue import current_segment
 from nora.domain.computer import computer_unit_scope

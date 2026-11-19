@@ -22,7 +22,6 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 from PIL import Image
 
-from nora.agent.factory import RetryPolicy, create_browse_agent
 from nora.infra.computer.browser import (
     ActionRefusedError,
     BrowserError,
@@ -471,17 +470,6 @@ async def test_a_cdp_error_answer_raises_and_close_fails_what_is_pending():
     with pytest.raises(BrowserError):
         await conn.call("Page.navigate", {"url": "x"}, wait_s=0.5)
     await conn.close()
-
-
-def test_the_sub_agent_runs_one_tool_at_a_time():
-    from strands.tools.executors import SequentialToolExecutor
-
-    from nora.agent import factory
-    client = factory.create_client(base_url="http://localhost:1/v1", api_key="k")
-    model = factory.create_model_provider(model="m", max_tokens=10, temperature=0, client=client)
-    agent = create_browse_agent(model=model, system_prompt="p", tools=[], trace_attributes={},
-                                retry=RetryPolicy(max_attempts=1, initial_delay=1, max_delay=1))
-    assert isinstance(agent.tool_executor, SequentialToolExecutor)
 
 
 @pytest.mark.parametrize("owned", [False, True])

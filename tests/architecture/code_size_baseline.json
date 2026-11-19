@@ -149,12 +149,6 @@
   "comment_blocks": 9,
   "internal_docstrings": 3
  },
- "nora/agent/browse.py": {
-  "comment_blocks": 2,
-  "functions": {
-   "_tools": 177
-  }
- },
  "nora/agent/cognition_pace.py": {
   "comment_blocks": 1,
   "internal_docstrings": 3
@@ -184,7 +178,7 @@
  },
  "nora/agent/factory.py": {
   "comment_blocks": 12,
-  "file_lines": 968
+  "file_lines": 921
  },
  "nora/agent/fetch_watch.py": {
   "internal_docstrings": 1
@@ -261,10 +255,10 @@
   "internal_docstrings": 4
  },
  "nora/agent/registry.py": {
-  "comment_blocks": 39,
-  "file_lines": 1374,
+  "comment_blocks": 38,
+  "file_lines": 1369,
   "functions": {
-   "ToolRegistry.__init__": 452
+   "ToolRegistry.__init__": 447
   },
   "internal_docstrings": 5
  },
@@ -327,7 +321,7 @@
  "nora/agent/tools.py": {
   "comment_blocks": 15,
   "functions": {
-   "build_tool_specs": 372,
+   "build_tool_specs": 370,
    "build_tools": 133
   }
  },

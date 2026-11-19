@@ -139,19 +139,19 @@ def test_the_computer_tools_are_offered_only_when_a_computer_is_wired(defer):
     assert COMPUTER_TOOLS.isdisjoint(set(off.shelf.names()))
     assert "computer_read" not in ToolRegistry().capability_digest()
     # A shared VM (`[computer]` on, `[computer.scoped]` off) has no queue and
-    # no browser manager, so `computer_browse`, `computer_capture` and
+    # no browser manager, so `web_browse`, `computer_capture` and
     # `computer_cancel` would only answer `unavailable` and stay withheld.
     no_browser = _surface(ToolRegistry(computer=FakeSandboxRuntime()), defer=defer)
     assert no_browser.admitted >= COMPUTER_TOOLS - {
-        "computer_browse", "web_browse", "computer_capture", "computer_cancel"}
-    assert {"computer_browse", "web_browse", "computer_capture", "computer_cancel"}.isdisjoint(
+        "web_browse", "computer_capture", "computer_cancel"}
+    assert {"web_browse", "computer_capture", "computer_cancel"}.isdisjoint(
         no_browser.admitted | catalogued(no_browser))
     # Scoped wiring (`[computer.scoped]`): the admission queue and the
     # browser manager are real, so capture and cancel are offered;
-    # `computer_browse` still waits on a BrowserRunner.
+    # `web_browse` still waits on a BrowserRunner.
     scoped_registry = ToolRegistry(
         computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(),
-        computer_admission=object(), browser_manager=object(), web_browser=FakeBrowserRunner())
+        computer_admission=object(), browser_manager=object())
     on = _surface(scoped_registry, defer=defer)
     assert on.admitted >= COMPUTER_TOOLS
     assert catalogued(on) >= COMPUTER_TOOLS
@@ -182,7 +182,7 @@ def test_the_registry_exposes_every_declared_tool():
         social_items=_SOCIAL_ITEMS,
         memos=_MEMOS,
         computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(), documents=_DOCUMENTS,
-        computer_admission=object(), browser_manager=object(), web_browser=FakeBrowserRunner(),
+        computer_admission=object(), browser_manager=object(),
     ))
     assert {t.tool_name for t in tools} == {
         # DEC-146: the window-scoped rung below `load_transcript`.
@@ -243,7 +243,7 @@ def test_the_registry_exposes_every_declared_tool():
         "computer_run", "computer_read", "computer_write", "computer_edit", "computer_export",
         "computer_import", "computer_session_list",
         # a whole browser task, by a sub-agent.
-        "computer_browse", "web_browse",
+        "web_browse",
         # the scoped pair: a picture of a task's own tab; a queued or
         # running task stopped.
         "computer_capture",
@@ -359,7 +359,7 @@ def test_budgets_match_todays_table():
         # one session tool reads. One call answers «what were you doing»; a
         # second is a different status filter.
         "computer_session_list": 2,
-        "computer_browse": 2, "web_browse": 2,
+        "web_browse": 2,
         # one capture of a task's own tab, one retry with a fresh look; one
         # stop of a queued or running task, a second to read the row back.
         "computer_capture": 2, "computer_cancel": 2,
@@ -581,7 +581,7 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
         social_items=_SOCIAL_ITEMS,
         memos=_MEMOS,
         computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(), documents=_DOCUMENTS,
-        computer_admission=object(), browser_manager=object(), web_browser=FakeBrowserRunner(),
+        computer_admission=object(), browser_manager=object(),
     ))
     agent = factory.create_agent(
         model=model, system_prompt="p", tools=tools, pre_fill=[],
@@ -943,7 +943,7 @@ ACT_VERBS = frozenset({"document_revise",
     # change the room's workspace.
     "computer_run", "computer_write", "computer_edit",
     # the sub-agent clicks and types in a page.
-    "computer_browse", "web_browse",
+    "web_browse",
     # S3a: an export publishes (a Drop link, an attachment) or stores, and an
     # import writes into the workspace.
     "computer_export", "computer_import",
