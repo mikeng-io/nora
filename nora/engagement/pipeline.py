@@ -88,6 +88,7 @@ from nora.agent.catalog.model import turn_occasion
 from nora.agent.clock import local_now
 from nora.agent.intent_router import route_intent
 from nora.agent.outbound import OutboundComposer
+from nora.agent.prefill import engagement_floor
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room, trigger_message_ids
 from nora.domain import audience as audience_names
@@ -721,11 +722,14 @@ class EngagementPipeline:
                 links=handle.links)
             tagger_name = (ctx.tagger.name if ctx.tagger is not None
                            else msg.sender_name or sanitize_unmapped(msg.sender_id))
-            pre_fill, tag_message, shown = await self._graph.prompt(
-                "called", ctx, unit=convo.unit if convo else None,
-                display_name=self._display_name, tagger_name=tagger_name,
+            now = (self._clock or local_now)().astimezone()
+            floor = engagement_floor(
+                ctx, display_name=self._display_name, tagger_name=tagger_name, now=now,
                 context_window=self._context_window, catalogue=surface.prompt_catalogue,
-                now=(self._clock or local_now)().astimezone(), header=TAG_HEADER,
+            )
+            pre_fill, tag_message, shown = await self._graph.prompt(
+                "called", ctx, floor=floor, unit=convo.unit if convo else None,
+                display_name=self._display_name, now=now, header=TAG_HEADER,
                 row_id=request.message_row_id, room=room,
             )
             seed_pass_shown(shown)

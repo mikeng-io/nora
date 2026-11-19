@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any, Literal, Protocol
 
 from nora.access import IdentityAccess
-from nora.agent.prefill import engagement_floor, engagement_prefill
+from nora.agent.prefill import engagement_prefill
 from nora.agent.room import Room, trigger_message_ids
 from nora.domain.blocks import ContextBlock
 from nora.domain.composed import compose_body
@@ -59,17 +59,13 @@ class EngagementGraph:
         self._assembler = assembler
 
     async def prompt(
-        self, pass_name: EngagementPass, ctx: TagContext, *, unit: str | None,
-        display_name: str, tagger_name: str, context_window: int, now: datetime,
-        catalogue: str, header: str, row_id: int | None = None, room: Room | None = None,
+        self, pass_name: EngagementPass, ctx: TagContext, *, floor: Sequence[ContextBlock],
+        unit: str | None, display_name: str, now: datetime, header: str,
+        row_id: int | None = None, room: Room | None = None,
     ) -> tuple[list[dict[str, Any]], str, frozenset[str]]:
         msg = ctx.message
         scope = PassScope(ReadingRoom(msg.platform, msg.conversation_id), unit or "",
                           nora_name=display_name)
-        floor = engagement_floor(
-            ctx, display_name=display_name, tagger_name=tagger_name,
-            context_window=context_window, now=now, catalogue=catalogue,
-        )
         with span("agent.prefill", **{"nora.tag_id": ctx.tag_id}):
             assembled = await self._assemble(pass_name, ctx, floor, scope, now, row_id, room)
             annotate(**{

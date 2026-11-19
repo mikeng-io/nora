@@ -1558,16 +1558,19 @@ def test_room_members_is_escaped_one_line_each_and_sits_before_presence():
 
 async def _called_prompt(ctx):
     from nora.access import IdentityAccess
+    from nora.agent.prefill import engagement_floor
     from nora.domain.framing import TAG_HEADER
     from nora.engagement.graph_context import EngagementGraph
     from nora.persons import Persons
     from nora.policy import permissive_policy
 
     graph = EngagementGraph(IdentityAccess.for_files(Persons({}, {}), permissive_policy()))
+    now = datetime(2026, 10, 7, tzinfo=UTC)
+    floor = engagement_floor(
+        ctx, display_name="Nora", tagger_name="Ada", context_window=40, now=now, catalogue="",
+    )
     _, rendered, _ = await graph.prompt(
-        "called", ctx, unit=None, display_name="Nora", tagger_name="Ada",
-        context_window=40, now=datetime(2026, 10, 7, tzinfo=UTC), catalogue="",
-        header=TAG_HEADER,
+        "called", ctx, floor=floor, unit=None, display_name="Nora", now=now, header=TAG_HEADER,
     )
     return rendered
 

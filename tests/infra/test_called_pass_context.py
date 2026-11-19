@@ -7,6 +7,7 @@ from xml.etree import ElementTree
 import pytest
 
 from nora.access import IdentityAccess
+from nora.agent.prefill import engagement_floor
 from nora.domain.framing import TAG_HEADER
 from nora.domain.models import Quote
 from nora.engagement.context import TranscriptInjection
@@ -32,6 +33,17 @@ scenario = scope_scenario
 
 def elements(rendered):
     return ElementTree.fromstring(f"<context>{rendered}</context>")  # noqa: S314
+
+
+async def _prompt(graph, ctx, row, now, *, unit=UNIT, catalogue=""):
+    floor = engagement_floor(
+        ctx, display_name="Nora", tagger_name="Fixture reader",
+        context_window=10, now=now, catalogue=catalogue,
+    )
+    return await graph.prompt(
+        "called", ctx, floor=floor, unit=unit, display_name="Nora",
+        now=now, header=TAG_HEADER, row_id=row,
+    )
 
 
 @pytest.fixture
@@ -71,10 +83,8 @@ async def test_called_presents_the_floor_and_scoped_profiles_in_assembled_order(
     assembler, retrieval = _counted(scenario)
     graph = EngagementGraph(access, wire.message_graph_ids(scenario.engine), assembler)
 
-    _, rendered, shown = await graph.prompt(
-        "called", ctx, unit=UNIT, display_name="Nora", tagger_name="Fixture reader",
-        context_window=10, now=now, catalogue="- memory_read: Read a row.",
-        header=TAG_HEADER, row_id=row,
+    _, rendered, shown = await _prompt(
+        graph, ctx, row, now, catalogue="- memory_read: Read a row.",
     )
 
     blocks = elements(rendered)
@@ -103,9 +113,8 @@ async def test_called_anchor_failure_leaves_the_floor_and_names_the_cause(scenar
                 raise OSError("Generated anchor read failure")
             return await ids.read(room, unit, wanted)
 
-    _, rendered, shown = await EngagementGraph(access, BrokenIds(), assembler).prompt(
-        "called", ctx, unit=UNIT, display_name="Nora", tagger_name="Fixture reader",
-        context_window=10, now=now, catalogue="", header=TAG_HEADER, row_id=row,
+    _, rendered, shown = await _prompt(
+        EngagementGraph(access, BrokenIds(), assembler), ctx, row, now,
     )
 
     blocks = elements(rendered)
@@ -130,9 +139,8 @@ async def test_a_room_without_a_unit_does_not_read_message_graph_ids(scenario, c
             reads.append((room, unit, ids))
             return await real_ids.read(room, unit, ids)
 
-    _, rendered, shown = await EngagementGraph(access, CountedIds(), assembler).prompt(
-        "called", ctx, unit=None, display_name="Nora", tagger_name="Fixture reader",
-        context_window=10, now=now, catalogue="", header=TAG_HEADER, row_id=row,
+    _, rendered, shown = await _prompt(
+        EngagementGraph(access, CountedIds(), assembler), ctx, row, now, unit=None,
     )
 
     blocks = elements(rendered)

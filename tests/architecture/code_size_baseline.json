@@ -621,7 +621,7 @@
   "comment_blocks": 3
  },
  "nora/domain/block_types.py": {
-  "comment_blocks": 18,
+  "comment_blocks": 17,
   "file_lines": 1101,
   "internal_docstrings": 1
  },
@@ -883,9 +883,9 @@
  },
  "nora/engagement/pipeline.py": {
   "comment_blocks": 42,
-  "file_lines": 1241,
+  "file_lines": 1245,
   "functions": {
-   "EngagementPipeline._run_turn": 667
+   "EngagementPipeline._run_turn": 670
   },
   "internal_docstrings": 6
  },
@@ -2881,7 +2881,7 @@
  },
  "tests/test_prefill.py": {
   "comment_blocks": 6,
-  "file_lines": 1694,
+  "file_lines": 1697,
   "internal_docstrings": 7
  },
  "tests/test_relay.py": {

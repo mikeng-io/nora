@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any
 
+from nora.agent.prefill import engagement_floor
 from nora.agent.room import Room
 from nora.domain.computer_context import ComputerView
 from nora.domain.documents_context import DocumentsView
@@ -48,9 +49,13 @@ class AmbientEngagement:
         self, ctx: TagContext, *, unit: str | None, display_name: str, speaker: str,
         context_window: int, now: datetime, catalogue: str, header: str, room: Room,
     ) -> tuple[list[dict[str, Any]], str]:
+        floor = engagement_floor(
+            ctx, display_name=display_name, tagger_name=speaker,
+            context_window=context_window, now=now, catalogue=catalogue,
+        )
         prefill, message, shown = await self.graph.prompt(
-            "ambient", ctx, unit=unit, display_name=display_name, tagger_name=speaker,
-            context_window=context_window, now=now, catalogue=catalogue, header=header, room=room,
+            "ambient", ctx, floor=floor, unit=unit, display_name=display_name,
+            now=now, header=header, room=room,
         )
         seed_pass_shown(shown)
         return prefill, message
