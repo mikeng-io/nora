@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import socket
 import tempfile
 import uuid
 from pathlib import Path
@@ -300,19 +301,27 @@ async def test_sdk_autonomous_journey_version2_turns_through_real_app(
                 services={draw.name: plan})
     experiment = Experiment(cases=[draw], evaluators=[JourneyGrader()])
     # Retain failures too: pytest rotates its temporary evidence directories.
-    try:
-        report = await experiment.run_evaluations_async(
-            task=nora_task(spec), max_workers=1)
-        _assert_v2_report(
-            draw, report, experiment, sdk_evidence, plan)
-    finally:
-        _durable_mirror(sdk_evidence)
+    with socket.socket() as competing_listener:
+        # Another listener can claim a port between selection and App startup.
+        competing_listener.bind(("0.0.0.0", plan.overrides()["obs.metrics.port"]))
+        competing_listener.listen()
+        try:
+            report = await experiment.run_evaluations_async(
+                task=nora_task(spec), max_workers=1)
+            report_path = sdk_evidence.path / f"journey-{draw.name}" / "report.json"
+            assert [rows[0].label for rows in report.detailed_results] == ["PASS"], (
+                json.loads(report_path.read_text())["errors"]
+                if report_path.is_file() else report.detailed_results
+            )
+            _assert_v2_report(
+                draw, report, experiment, sdk_evidence, plan)
+        finally:
+            _durable_mirror(sdk_evidence)
 
 
 def _assert_v2_report(draw: Any, report: Any, experiment: Any,
                       sdk_evidence: Any, plan: Any) -> None:
     events = read_events(sdk_evidence.path)
-    assert [rows[0].label for rows in report.detailed_results] == ["PASS"]
     coverage, outcome = accounted(
         report, experiment, evidence=evidence_outcome(sdk_evidence))
     assert accepted(coverage, outcome), (coverage, outcome)
