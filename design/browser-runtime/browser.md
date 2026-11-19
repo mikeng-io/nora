@@ -31,15 +31,17 @@ ID. No unauthenticated debugging listener or cross-scope relay exists.
 
 The task-level runner reasons over an objective while code owns admission,
 execution, audit and outcome. Public web retrieval uses a single page
-observation per decision, with a bounded list of snapshot action IDs. The
-configured browse model selects one ID through the model gateway. The runner
-validates it against that observation and acts only on the matching live
-control. It refreshes page evidence after a mutation or stale reference.
+observation per decision, with a bounded list of snapshot action IDs and the
+actions already taken. The configured browse model selects one ID through the
+model gateway. The runner validates it against that observation and acts only on
+the matching live control. It refreshes page evidence after a mutation or stale
+reference. A reply that names no ID finishes from the evidence in hand.
 
 Retrieval uses task-owned tabs and anonymous, non-submitting controls. Its
 report cites observed page evidence and keeps facts the page does not publish
-unconfirmed. The model receives no executable browser controls or endpoint
-configuration.
+unconfirmed. A run cut off at a limit has not covered its range: it reports what
+it read as unavailable, never as nothing found, and keeps its task. The model
+receives no executable browser controls or endpoint configuration.
 
 ## Capture and export
 
