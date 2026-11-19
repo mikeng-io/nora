@@ -48,43 +48,35 @@ _ALLOWED = frozenset({
     "log", "logger",
 })
 
-#: (module, name) -> the locally-defined class the binding must construct.
-#: `obtain.py`'s UNRESOLVED is an immutable identity sentinel: `_Unresolved`
-#: defines only `__repr__`, holds nothing and is compared with `is`.
+#: (module, name) -> the exact `ast.unparse` text of the class definition
+#: and of the assignment the exemption covers, verbatim.
 _PINNED_SENTINELS = {
-    ("nora/subject/obtain.py", "UNRESOLVED"): "_Unresolved",
+    ("nora/subject/obtain.py", "UNRESOLVED"): (
+        "class _Unresolved:\n"
+        '    """A config path the schema cannot give a concrete default for."""\n'
+        "\n"
+        "    def __repr__(self) -> str:\n"
+        "        return 'UNRESOLVED'",
+        "UNRESOLVED = _Unresolved()",
+    ),
 }
 
-#: The pin exempts ONLY that exact binding — a `UNRESOLVED` in any other
-#: module, or a different value under the same name here, is scanned like
-#: everything else.
-
-#: Methods an identity sentinel may define — read-only dunders only. No
-#: `__init__`: an instance that takes or holds state is exactly the mutable
-#: singleton this rule forbids.
-_SENTINEL_DUNDERS = frozenset({
-    "__repr__", "__str__", "__bool__", "__hash__",
-    "__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__",
-})
+#: No shape analysis: any edit to the pinned source — a stateful dunder
+#: body, an added base, a renamed method — changes the unparsed text and the
+#: normal rule flags the binding again, forcing a deliberate re-pin.
 
 
-def _is_identity_sentinel(tree: ast.Module, class_name: str) -> bool:
-    """The class is defined here and is a pure identity sentinel."""
-
-    # Docstring, `pass` or a read-only dunder only — the moment `_Unresolved`
-    # grows an `__init__` or an attribute, the pin's exemption lapses and the
-    # binding is flagged again.
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef) and node.name == class_name:
-            return all(
-                (isinstance(stmt, ast.Expr)
-                 and isinstance(stmt.value, ast.Constant))
-                or isinstance(stmt, ast.Pass)
-                or (isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef))
-                    and stmt.name in _SENTINEL_DUNDERS)
-                for stmt in node.body
-            )
-    return False
+def _matches_pinned_sentinel(
+    tree: ast.Module, node: ast.Assign | ast.AnnAssign, rel: str, name: str
+) -> bool:
+    """The binding is exactly the pinned source, in the pinned module."""
+    pin = _PINNED_SENTINELS.get((rel, name))
+    if pin is None or ast.unparse(node) != pin[1]:
+        return False
+    return any(
+        isinstance(top, ast.ClassDef) and ast.unparse(top) == pin[0]
+        for top in tree.body
+    )
 
 
 def _mutated_names(tree: ast.Module) -> set[str]:
@@ -154,14 +146,7 @@ def _singleton_offenders(tree: ast.Module, rel: str) -> list[str]:
         for target in targets:
             if not isinstance(target, ast.Name) or target.id in _ALLOWED:
                 continue
-            pin = _PINNED_SENTINELS.get((rel, target.id))
-            if (
-                pin is not None
-                and isinstance(value, ast.Call)
-                and isinstance(value.func, ast.Name)
-                and value.func.id == pin
-                and _is_identity_sentinel(tree, pin)
-            ):
+            if _matches_pinned_sentinel(tree, node, rel, target.id):
                 continue
             offenders.append(f"{rel}:{node.lineno}: {target.id} = {kind}")
     return offenders
@@ -179,38 +164,68 @@ def test_no_module_level_instantiation_of_a_locally_defined_class() -> None:
     )
 
 
-def test_the_sentinel_pin_is_scoped_to_its_module_and_shape() -> None:
-    """The exemption admits only `obtain.py`'s UNRESOLVED, and only while the
-    name binds the immutable `_Unresolved` sentinel — a `UNRESOLVED` in any
-    other module, or a mutable value at the pinned place, is flagged."""
+def test_the_sentinel_pin_is_scoped_to_exact_source() -> None:
+    """The exemption admits only `obtain.py`'s UNRESOLVED, and only while
+    both the class and the assignment unparse to the pinned source — every
+    edit, and the same binding in any other module, is flagged."""
+    rel = "nora/subject/obtain.py"
     real = ast.parse(
         (ROOT / "nora/subject/obtain.py").read_text(encoding="utf-8"))
-    assert _singleton_offenders(real, "nora/subject/obtain.py") == []
+    assert _singleton_offenders(real, rel) == []
 
     sentinel = (
         "class _Unresolved:\n"
-        "    def __repr__(self):\n"
+        '    """A config path the schema cannot give a concrete default for."""\n'
+        "\n"
+        "    def __repr__(self) -> str:\n"
         "        return 'UNRESOLVED'\n"
         "UNRESOLVED = _Unresolved()\n"
     )
     assert _singleton_offenders(ast.parse(sentinel), "nora/scratch.py")
 
-    stateful = (
+    stateful_repr = (
         "class _Unresolved:\n"
-        "    def __init__(self):\n"
+        "    def __repr__(self) -> str:\n"
         "        self.items = []\n"
-        "    def __repr__(self):\n"
         "        return 'UNRESOLVED'\n"
         "UNRESOLVED = _Unresolved()\n"
     )
-    assert _singleton_offenders(ast.parse(stateful), "nora/subject/obtain.py")
+    assert _singleton_offenders(ast.parse(stateful_repr), rel)
+
+    added_base = (
+        "class Base:\n"
+        "    pass\n"
+        "class _Unresolved(Base):\n"
+        "    def __repr__(self) -> str:\n"
+        "        return 'UNRESOLVED'\n"
+        "UNRESOLVED = _Unresolved()\n"
+    )
+    assert _singleton_offenders(ast.parse(added_base), rel)
+
+    extra_method = (
+        "class _Unresolved:\n"
+        "    def __repr__(self) -> str:\n"
+        "        return 'UNRESOLVED'\n"
+        "    def reset(self):\n"
+        "        pass\n"
+        "UNRESOLVED = _Unresolved()\n"
+    )
+    assert _singleton_offenders(ast.parse(extra_method), rel)
+
+    renamed = (
+        "class _Unres:\n"
+        "    def __repr__(self) -> str:\n"
+        "        return 'UNRESOLVED'\n"
+        "UNRESOLVED = _Unres()\n"
+    )
+    assert _singleton_offenders(ast.parse(renamed), rel)
 
     mutated_here = ast.parse(
         "UNRESOLVED = []\n"
         "def f():\n"
         "    UNRESOLVED.append(1)\n"
     )
-    assert _singleton_offenders(mutated_here, "nora/subject/obtain.py")
+    assert _singleton_offenders(mutated_here, rel)
 
 
 def test_no_global_statements_in_production_code() -> None:
