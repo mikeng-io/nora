@@ -10,6 +10,7 @@ from typing import Any
 
 from nora.subject.eval_evidence import EvidenceError
 from nora.subject.recorded_services import RecordedServices
+from nora.subject.routing_browser_fixture import OFFER_LOOKUP
 
 #: A manifest entry without `kind` stays the positional recording;
 #: `journey_world` is the declarative plan the live-clock drive opens.
@@ -125,12 +126,19 @@ def _plan_for(corpus: str, name: str, entry: Any) -> Any:
     if kind == "recorded":
         return RecordedServices({k: v for k, v in entry.items() if k != "kind"})
     if kind == ROUTING_KIND:
-        if corpus != ROUTING_CORPUS or set(entry) != {"kind", "model_gateway", "external"}:
+        required = {"kind", "model_gateway", "external"}
+        if (corpus != ROUTING_CORPUS
+                or not required <= entry.keys() <= required | {"browser_fixture"}):
             raise ValueError(f"invalid routing service plan for {corpus}:{name}")
         gateway = _gateway(name, entry, [])
         if gateway is None:
             raise ValueError(f"routing service plan for {name!r} requires a model gateway")
-        return RecordedServices(entry["external"], model_gateway=gateway)
+        if "browser_fixture" in entry and entry["browser_fixture"] != OFFER_LOOKUP:
+            raise ValueError("unknown routing browser fixture")
+        return RecordedServices(
+            entry["external"], model_gateway=gateway,
+            browser_fixture="browser_fixture" in entry,
+        )
     if kind == JOURNEY_KIND:
         return _journey_plan(name, entry)
     raise ValueError(f"unknown service kind {kind!r} for {name!r}")

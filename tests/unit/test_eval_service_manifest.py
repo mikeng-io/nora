@@ -182,3 +182,38 @@ def test_malformed_and_unknown_service_plans_are_refused(tmp_path, plan):
         {"version": 1, "corpora": {"autonomous_journey": {"the_outing": plan}}}))
     with pytest.raises(ValueError):
         load_services(path)
+
+
+@pytest.mark.parametrize(
+    "fixture, conflicting, accepted",
+    [
+        ("offer_lookup", False, True),
+        ("other", False, False),
+        ("os.system", False, False),
+        ("https://example.org", False, False),
+        ("/generated/registry", False, False),
+        ({"id": "offer_lookup"}, False, False),
+        (None, False, False),
+        ("offer_lookup", True, False),
+    ],
+)
+def test_routing_browser_fixture_declaration_is_closed(tmp_path, fixture, conflicting, accepted):
+    external = {
+        "version": 1,
+        "bindings": {"honcho.base_url": "memory"},
+        "services": {"memory": []},
+    }
+    if conflicting:
+        external["bindings"]["computer.base_url"] = "memory"
+    path = tmp_path / "services.json"
+    path.write_text(json.dumps({"version": 1, "corpora": {"tool_selection": {"generated": {
+        "kind": "routing_recording",
+        "browser_fixture": fixture,
+        "model_gateway": {"upstream": "https://gateway.example.org/v1", "models": ["generated"]},
+        "external": external,
+    }}}}))
+    if accepted:
+        assert load_services(path).corpora["tool_selection"]["generated"].browser_fixture is True
+    else:
+        with pytest.raises(ValueError, match="routing browser fixture"):
+            load_services(path)
