@@ -54,7 +54,7 @@ class _Batch:
             end = drop if drops else deadline
             if end is not None and end <= now:
                 self._intentions[row["unit"], row["id"]] = dict(row)
-                due.append(DueIntention(row["unit"], row["id"], end, drops))
+                due.append(DueIntention(row["unit"], row["id"], end, drops, row["origin_room"]))
         return due
 
     async def window(self, due: DueIntention) -> tuple[datetime, set[Source]]:

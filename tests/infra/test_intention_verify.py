@@ -18,6 +18,7 @@ from nora.memory.adapters.act_store import SqlActStore
 from nora.memory.adapters.verify import SqlIntentionVerification
 from nora.memory.app.verify import IntentionVerifier
 from nora.memory.wire import intention_verifier
+from nora.testing.room_slots import FakeRoomSlots
 from tests.infra.test_cognitive_graph_admission import _rows
 from tests.infra.test_condition_matcher import _edges, _health, _intention, _platform_act
 from tests.infra.test_item_registration import (
@@ -40,7 +41,9 @@ _PERSON_EVENT = {
 
 
 async def _tick(engine):
-    await intention_verifier(engine, lambda: _NOW, max_poll_gap_seconds=900).run_once()
+    await intention_verifier(
+        engine, lambda: _NOW, max_poll_gap_seconds=900, room_slots=FakeRoomSlots({}),
+    ).run_once()
 
 
 @pytest.mark.parametrize(("form", "mode", "deadline", "drop_at", "ending", "ended_at"), [
@@ -176,6 +179,7 @@ async def test_a_witness_recorded_before_the_deadline_wins_on_the_observe_tick(e
     errors = _Errors()
     observe = graph_observe(
         engine, lambda: deadline + timedelta(minutes=1), errors, analytics=AnalyticsConfig(),
+        room_slots=FakeRoomSlots({}),
     )
 
     await observe.tick()
@@ -210,7 +214,7 @@ async def test_a_head_revised_during_health_read_is_left_for_the_next_tick(engin
     await _health(engine, "signal", "up", at=_INSIDE)
     verifier = IntentionVerifier(
         SqlIntentionVerification(engine, graph), _ReviseDuringHealth(engine, graph, first),
-        lambda: _NOW, max_poll_gap_ms=900_000,
+        lambda: _NOW, max_poll_gap_ms=900_000, room_slots=FakeRoomSlots({}),
     )
 
     await verifier.run_once()

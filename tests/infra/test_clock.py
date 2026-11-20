@@ -17,6 +17,7 @@ from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.infra.sql.schema import COGNITION_SESSION, STIMULUS
 from nora.memory.wire import graph_clock
 from nora.obs.metrics import Metrics
+from nora.testing.room_slots import FakeRoomSlots
 from tests.fakes import FakeClock
 from tests.infra.test_cognitive_graph_admission import _rows
 from tests.infra.test_condition_matcher import _intention
@@ -113,7 +114,10 @@ async def test_due_detection_runs_without_a_model_pass_or_legacy_time_stimulus(e
     deadline = _INSTANT + timedelta(seconds=TICK_SECONDS // 2)
     await _schedule(engine, "deadline", deadline)
     clock = FakeClock(_INSTANT.timestamp())
-    observe = graph_observe(engine, lambda: datetime.fromtimestamp(clock(), UTC), Metrics())
+    observe = graph_observe(
+        engine, lambda: datetime.fromtimestamp(clock(), UTC), Metrics(),
+        room_slots=FakeRoomSlots({}),
+    )
     await observe.tick()
     assert await SqlGraphStimuli(engine).read(_UNIT) == ()
     clock.advance(TICK_SECONDS)

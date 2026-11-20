@@ -35,6 +35,7 @@ from nora.memory.adapters.proactive_claims import SqlProactiveClaims
 from nora.memory.adapters.tools.intentions import _make_intention_commit
 from nora.obs.metrics import Metrics
 from nora.policy import Policy
+from nora.testing.room_slots import FakeRoomSlots
 from tests.fakes import SinkSender
 from tests.infra.test_cognitive_graph_admission import _rows
 from tests.infra.test_condition_matcher import _health
@@ -300,7 +301,7 @@ async def test_observe_and_the_proactive_poller_deliver_a_condition_trigger_once
     await scenario.item("witness", _TEXT, at=AT)
     runner = ScriptedRunner((_SEND,))
     poller, sender, _ = setup(scenario, runner, [])
-    observe = graph_observe(scenario.engine, lambda: AT, Metrics())
+    observe = graph_observe(scenario.engine, lambda: AT, Metrics(), room_slots=FakeRoomSlots({}))
 
     await observe.tick()
     await poller.poll()

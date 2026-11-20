@@ -42,7 +42,7 @@ _BLOCKS: tuple[BlockDeclaration, ...] = (
     BlockDeclaration("rooms", 5, "Locate the conversation in its unit."),
     BlockDeclaration("reads", 6, "Know where the read tools look."),
     BlockDeclaration("documents", 7, "Find documents available in the reading room."),
-    BlockDeclaration("lesson_corrections", 8, "Read the corrections in the claimed set."),
+    BlockDeclaration("lesson_evidence", 8, "Read claimed verdicts and corrections."),
     BlockDeclaration("tool_catalogue", 9, "Choose from the offered tools."),
 )
 

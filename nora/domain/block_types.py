@@ -73,13 +73,13 @@ _SHARED: dict[str, str] = {
 }
 
 
-def _profile_types() -> dict[str, BlockType]:
+def _extended_types() -> dict[str, BlockType]:
+    from nora.domain.block_types_graph import GRAPH_TYPES
     from nora.domain.block_types_profile import PROFILE_TYPES
-
-    return {t.name: t for t in PROFILE_TYPES}
+    return {t.name: t for t in (*GRAPH_TYPES, *PROFILE_TYPES)}
 
 BLOCK_TYPES: dict[str, BlockType] = {
-    **_profile_types(),
+    **_extended_types(),
     **{t.name: t for t in (
     # ponytail: phase 6 renames the first three types to profile, standing and lessons.
     _t("graph_profile",

@@ -12,6 +12,7 @@ from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.memory.adapters.learning_reads import SqlLearningReads
 from nora.memory.domain.learning import Efficacy, IntentionClass, LearningMissing, LearningValue
 from nora.memory.wire import intention_verifier
+from nora.testing.room_slots import FakeRoomSlots
 from tests.infra.test_cognitive_graph_admission import _rows
 from tests.infra.test_condition_matcher import _intention
 from tests.infra.test_intention_verify import _DEADLINE, _NOW, _PERSON_EVENT
@@ -69,7 +70,9 @@ async def _seed(engine):
     await _lesson(engine, "unproven")
     await _lesson(engine, "revised")
     await _lesson(engine, "without-lesson", state="retired")
-    await intention_verifier(engine, lambda: _NOW, max_poll_gap_seconds=900).run_once()
+    await intention_verifier(
+        engine, lambda: _NOW, max_poll_gap_seconds=900, room_slots=FakeRoomSlots({}),
+    ).run_once()
 
 
 async def test_all_learning_reads_use_one_unit_interval_and_their_own_denominator(engine):

@@ -389,10 +389,11 @@ def condition_matcher(engine: AsyncEngine) -> SqlConditionMatcher:
 
 def intention_verifier(
     engine: AsyncEngine, clock: Callable[[], datetime], *, max_poll_gap_seconds: float,
+    room_slots: RoomSlots,
 ) -> IntentionVerifier:
     return IntentionVerifier(
         SqlIntentionVerification(engine, SqlCognitiveGraph(engine)), SqlRollupStore(engine), clock,
-        max_poll_gap_ms=int(max_poll_gap_seconds * 1000),
+        max_poll_gap_ms=int(max_poll_gap_seconds * 1000), room_slots=room_slots,
     )
 
 

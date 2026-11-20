@@ -25,6 +25,7 @@ from nora.memory.domain.acts import Outcome as Outcome
 from nora.memory.domain.admission import Refusal as Refusal
 from nora.memory.domain.admission import fields as fields
 from nora.memory.domain.admission_ports import AdmissionResult as AdmissionResult
+from nora.memory.domain.admission_ports import RoomSlots as RoomSlots
 from nora.memory.domain.admission_ports import Unavailable as Unavailable
 from nora.memory.domain.admission_proposals import CloseIntention as CloseIntention
 from nora.memory.domain.admission_proposals import Occasion as Occasion

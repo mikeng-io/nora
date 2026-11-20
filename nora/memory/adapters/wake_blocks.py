@@ -23,12 +23,13 @@ def wake_blocks(
     def stimulus_rows(stimulus: GraphStimulus) -> str:
         return builder.graph_rows((rows[stimulus.graph_id],))
 
-    agenda = render_elements(
-        stimuli, tag="item",
-        attrs=lambda stimulus, _: (
+    def stimulus_attrs(stimulus: GraphStimulus, _: int) -> tuple[tuple[str, str], ...]:
+        return (
             ("kind", stimulus.kind), ("time", stimulus.eligible_at.isoformat()),
-        ),
-        body=stimulus_rows,
+        )
+
+    agenda = render_elements(
+        stimuli, tag="item", attrs=stimulus_attrs, body=stimulus_rows,
     )
     if open_intentions:
         agenda += "\nOpen intentions touched by these changes:\n"
@@ -38,17 +39,19 @@ def wake_blocks(
         if s.kind == "strong_cue" and "addresses_nora" in s.cues
         and s.person not in (None, "nora") and rows[s.graph_id].kind == "item"
     )
-    verdict_ids = tuple(s.graph_id for s in data.stimuli if s.kind == "verdict")
-    # PENDING-RESTACK: join verdict_ids to 5a's scoped verdict rows before rendering.
-    evidence_state = (("status", "partial"),) if verdict_ids else ()
+    verdicts = tuple(
+        s for s in stimuli
+        if s.kind == "verdict" and rows[s.graph_id].source == "intention_verdict"
+    )
+    evidence = render_elements(
+        (*verdicts, *corrections), tag="item", attrs=stimulus_attrs, body=stimulus_rows,
+    )
     blocks = (
         ContextBlock(
             name="agenda", body=compose_body(agenda), when_empty="self_close",
         ),
         ContextBlock(
-            name="lesson_corrections", body=compose_body(builder.graph_rows(
-                tuple(rows[s.graph_id] for s in corrections),
-            )), attrs=evidence_state, when_empty="self_close",
+            name="lesson_evidence", body=compose_body(evidence), when_empty="self_close",
         ),
     )
     shown = {s.graph_id for s in stimuli} | {row.graph_id for row in open_intentions}

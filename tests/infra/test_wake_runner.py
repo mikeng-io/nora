@@ -16,6 +16,7 @@ from nora.app.cognition_agent_runner import DreamerAgentRunner
 from nora.app.cognition_session import AdaptorBudget
 from nora.app.wake_floor import WakeRoomFloor
 from nora.app.wake_pass import WakePassRunner
+from nora.app.wake_rooms import WakeRoomSlots
 from nora.domain.graph_stimuli import GraphStimulus
 from nora.domain.models import NormalizedMessage
 from nora.engagement.self_presence import PresenceReader
@@ -175,7 +176,7 @@ async def test_wake_act_pass_refuses_an_act(scenario):
     assert await runner(scenario, model).run(claim(observation("claimed-row"))) == WakeClosed()
 
 
-async def test_registered_corrections_are_lesson_evidence_but_own_items_are_not(scenario):
+async def test_claimed_verdict_and_registered_correction_are_lesson_evidence(scenario):
     self_id = "fixture-wake-bot"
     registration = SqlItemRegistration(
         RegistrationScope(scenario.policy, scenario.persons),
@@ -201,15 +202,37 @@ async def test_registered_corrections_are_lesson_evidence_but_own_items_are_not(
         "previous-room-unit", unit="other-unit", body="A different unit's transcript.",
         at=AT + timedelta(seconds=2),
     )
+    deadline = AT + timedelta(minutes=1)
+    await intention(scenario, "claimed-deadline", origin_room=ORIGIN, deadline=deadline)
+    await intention(scenario, "unclaimed-deadline", origin_room=ORIGIN,
+                    deadline=deadline + timedelta(seconds=1))
+    room_slots = WakeRoomSlots(scenario.policy, slots(scenario))
+    verifier = wire.intention_verifier(
+        scenario.engine, lambda: deadline, max_poll_gap_seconds=900, room_slots=room_slots,
+    )
+    await verifier.run_once()
     stimuli = await SqlGraphStimuli(scenario.engine).read(UNIT)
+    verdict, = (s for s in stimuli if s.kind == "verdict")
+    await wire.intention_verifier(
+        scenario.engine, lambda: deadline + timedelta(seconds=1), max_poll_gap_seconds=900,
+        room_slots=room_slots,
+    ).run_once()
+    assert sum(s.kind == "verdict" for s in await SqlGraphStimuli(scenario.engine).read(UNIT)) == 2
     assert any(s.cues == ("self_reference",) for s in stimuli)
-    assert {s.kind for s in stimuli} == {"strong_cue", "new_item"}
+    assert {s.kind for s in stimuli} == {"strong_cue", "new_item", "verdict"}
     model = WakeModel([])
     latest = await scenario.now()
     assert await runner(scenario, model).run(
         WakeClaim(GROUP, ORIGIN, stimuli, latest, "settled"),
     ) == WakeClosed()
-    evidence = model.prompt().split("<lesson_corrections", 1)[1].split("</lesson_corrections>")[0]
+    evidence = model.prompt().split("<lesson_evidence", 1)[1].split("</lesson_evidence>")[0]
+    assert "Intention verdicts and possible corrections" in evidence
+    assert verdict.graph_id in evidence and 'kind="verdict"' in evidence
+    assert '"intention_id": "claimed-deadline"' in evidence
+    assert '"ending": "unknown"' in evidence
+    assert f'"ended_at": "{deadline.isoformat()}"' in evidence
+    assert f"owed_to={PERSON}" in evidence
+    assert "unclaimed-deadline" not in evidence
     assert "Please use the original title next time." in evidence
     assert "Please use my own title next time." not in evidence
     assert "I prefer the third title." not in evidence

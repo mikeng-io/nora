@@ -120,6 +120,7 @@ from nora.app.startup import StartupError  # noqa: F401 — boot surface for __m
 from nora.app.subagent_backend import SubagentBackend
 from nora.app.voice_events import VoiceEventConsumer
 from nora.app.wake_poller import WakePoller
+from nora.app.wake_rooms import WakeRoomSlots
 from nora.config import Config
 from nora.config_reload import ReloadFiles
 from nora.doctrine.loader import Doctrine, DoctrineStore
@@ -1446,9 +1447,8 @@ async def _compose_dependencies(
         social_poller=social_poller,
         social_perception=social_perception,
         story_expiry=story_expiry,
-        graph_observe=graph_observe(
-            engine, op_clock, metrics, fetch_client or search_client, analytics=cfg.analytics,
-        ),
+        graph_observe=graph_observe(engine, op_clock, metrics, fetch_client or search_client,
+            analytics=cfg.analytics, room_slots=WakeRoomSlots(policy, slots)),
         graph_batches=(
             GraphBatchProducer(engine, metrics=metrics) if cfg.memory.graph.enabled else None
         ),
