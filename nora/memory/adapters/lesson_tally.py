@@ -1,7 +1,7 @@
 """Rebuild a lesson head's tally from the verdicts on its dependencies."""
 
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert
@@ -89,18 +89,25 @@ async def _write(
     unit, claim_id = lesson["unit"], lesson["id"]
     support = sum(row["ending"] == "achieved" for row in verdicts)
     contradiction = len(verdicts) - support
+    row = LESSON_TALLY.c
+    prior = (await conn.execute(sa.select(row.support, row.contradiction, row.asserted_at).where(
+        row.unit == unit, row.claim_id == claim_id, visible_to_reads(LESSON_TALLY),
+    ))).one_or_none()
+    if prior is not None and (prior.support, prior.contradiction) == (support, contradiction):
+        return
+    asserted_at = (await conn.execute(sa.select(sa.func.clock_timestamp()))).scalar_one()
+    if prior is not None:
+        asserted_at = max(asserted_at, prior.asserted_at + timedelta(microseconds=1))
     evidence_at = verdicts[-1]["ended_at"] if verdicts else lesson["asserted_at"]
     planes = await graph.aggregate_planes(
         conn, LESSON_TALLY, unit=unit, key=(claim_id,), occurred_at=evidence_at,
-        asserted_at=evidence_at, persons=lesson["persons"], room=lesson["origin_room"],
+        asserted_at=asserted_at, persons=lesson["persons"], room=lesson["origin_room"],
         inputs=(lesson, *verdicts, *edges), minimum="internal",
     )
     values = {**planes, "support": support, "contradiction": contradiction}
-    row = LESSON_TALLY.c
     stmt = insert(LESSON_TALLY).values(**values, claim_id=claim_id)
     await conn.execute(stmt.on_conflict_do_update(
         constraint="pk_lesson_tally", set_=values,
-        where=sa.or_(*(row[key].is_distinct_from(stmt.excluded[key]) for key in values)),
     ))
     if lesson["state"] == "live" and contradiction > support:
         await SqlGraphStimuli.append_in(conn, GraphStimulus(

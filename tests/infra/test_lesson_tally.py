@@ -5,8 +5,9 @@ from datetime import timedelta
 import pytest
 import sqlalchemy as sa
 
-from nora.infra.sql.cognitive_graph_schema import EDGE, LESSON_TALLY
+from nora.infra.sql.cognitive_graph_schema import EDGE, INTENTION_VERDICT, LESSON_TALLY
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
+from nora.infra.sql.schema import ROW_HISTORY
 from nora.memory.adapters.lesson_tally import rebuild_lesson_tally
 from nora.memory.adapters.wake_claims import SqlWakeClaims
 from nora.memory.app.admission import Stored
@@ -92,7 +93,10 @@ async def test_lesson_tallies_resting_verdicts_and_renders_counts(scenario, held
     async with scenario.engine.begin() as conn:
         await conn.execute(sa.delete(LESSON_TALLY))
     await rebuild(scenario, lesson)
-    assert await tally_rows(scenario) == before
+    [rebuilt] = (await tally_rows(scenario)).values()
+    before[lesson].pop("asserted_at")
+    rebuilt.pop("asserted_at")
+    assert rebuilt == before[lesson]
 
     now = await scenario.now()
     view = await _assembler(scenario).assemble("wake", WakeInput(()), (), SCOPE, now)
@@ -173,3 +177,39 @@ async def test_tally_inherits_restrictions_from_the_resting_verdict(scenario, he
     view = await _assembler(scenario).assemble("wake", WakeInput(()), (), SCOPE, now)
     assert lesson in view.shown
     assert "support=0, contradiction=1" not in view.render()
+
+
+async def test_rebuilding_unchanged_counts_preserves_assertion_time_and_history(
+    scenario, held_lesson,
+):
+    _, lesson = held_lesson
+    initial = (await tally_rows(scenario))[lesson]["asserted_at"]
+    await ended(scenario, "overdue", "leaked", lesson=lesson)
+    await _tick(scenario.engine, NOW)
+    before = (await tally_rows(scenario))[lesson]
+    assert (before["support"], before["contradiction"]) == (0, 1)
+    assert before["asserted_at"] > initial
+
+    history = ROW_HISTORY.c
+    statement = sa.select(ROW_HISTORY).where(
+        history.table_name == "lesson_tally",
+        history.image["claim_id"].astext == lesson,
+        history.image["unit"].astext == UNIT,
+    ).order_by(history.id)
+    async with scenario.engine.connect() as conn:
+        history_before = (await conn.execute(statement)).all()
+    assert [version.op for version in history_before] == ["insert", "update"]
+    stimuli_before = await dependencies(scenario)
+    assert stimuli_before == ((lesson, "0:1"),)
+
+    verdict = INTENTION_VERDICT.c
+    async with scenario.engine.begin() as conn:
+        await conn.execute(sa.update(INTENTION_VERDICT).where(
+            verdict.unit == UNIT, verdict.intention_id == "overdue",
+        ).values(ended_at=AT + timedelta(seconds=1)))
+    await rebuild(scenario, lesson)
+
+    assert (await tally_rows(scenario))[lesson]["asserted_at"] == before["asserted_at"]
+    async with scenario.engine.connect() as conn:
+        assert (await conn.execute(statement)).all() == history_before
+    assert await dependencies(scenario) == stimuli_before
