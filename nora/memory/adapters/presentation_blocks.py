@@ -39,7 +39,7 @@ class GraphPresentationBlocks:
         self._room = room
         self._dm_rooms = dm_rooms
 
-    def _rows(self, rows: Sequence[RetrievedRow]) -> str:
+    def graph_rows(self, rows: Sequence[RetrievedRow]) -> str:
         return render_graph_rows(
             rows, now=self._now, reading_room=self._room, dm_rooms=self._dm_rooms,
         )
@@ -54,7 +54,7 @@ class GraphPresentationBlocks:
         rows = () if head is None else (head, *(
             row for row in result.rows if row.graph_id in related and row.unavailable is None
         ))
-        block = _graph_block(result, self._rows(rows), name="due_intention")
+        block = _graph_block(result, self.graph_rows(rows), name="due_intention")
         return block, frozenset(row.graph_id for row in rows)
 
     def profile_block(
@@ -66,7 +66,7 @@ class GraphPresentationBlocks:
         if selected.name is not None:
             attrs += (("name", selected.name),)
         sections = [(part, rows) for part, rows in selected.parts if rows]
-        body = "\n".join(f"{part}:\n{self._rows(rows)}" for part, rows in sections)
+        body = "\n".join(f"{part}:\n{self.graph_rows(rows)}" for part, rows in sections)
         block = _graph_block(result, body, name="graph_profile", attrs=attrs)
         return block, tuple(row.graph_id for _, rows in sections for row in rows)
 
@@ -95,14 +95,14 @@ class GraphPresentationBlocks:
         ):
             if group:
                 rows.extend(group)
-                lines.extend((heading + ":", self._rows(group)))
+                lines.extend((heading + ":", self.graph_rows(group)))
         return (
             _graph_block(result, "\n".join(lines), name="graph_standing"),
             tuple(row.graph_id for row in rows),
         )
 
     def lessons_block(self, result: RetrievalResult, rows: Sequence[RetrievedRow]) -> ContextBlock:
-        return _graph_block(result, self._rows(rows), name="graph_lessons")
+        return _graph_block(result, self.graph_rows(rows), name="graph_lessons")
 
     def related_block(self, result: RetrievalResult, rows: Sequence[RetrievedRow]) -> ContextBlock:
         return _graph_block(

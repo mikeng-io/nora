@@ -78,6 +78,7 @@ CONVERTED = {
 #: happening. Inverted, a new caller appears in the discovered set and has to be
 #: classified — converted, or exempted here with a sentence.
 _NOT_A_TRANSCRIPT = {
+    "nora/memory/adapters/wake_blocks.py": "renders scoped stimuli and intentions",
     # The NOTE INDEX, not a transcript — one element per standing note, through the same
     # `render_elements` the transcripts use. It appears in this discovery because "calls
     # an element renderer" is the net; it is exempt from the transcript rule because it

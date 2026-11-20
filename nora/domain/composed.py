@@ -33,6 +33,8 @@ COMPOSERS = frozenset(
         "nora.domain.blocks:wrap_outside_text",
         "nora.domain.blocks_declared:assemble_declared",
         "nora.domain.decision_log:render_decisions",
+        "nora.app.wake_floor:_unavailable",
+        "nora.memory.adapters.wake_blocks:wake_blocks",
         "nora.domain.summons:_social_post",
         "nora.engagement.debrief_render:_standing_ledger_prior",
         "nora.engagement.debrief_render:_standing_prior",

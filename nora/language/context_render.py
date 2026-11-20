@@ -159,20 +159,22 @@ def render_transcript(
     )
 
 
-def render_clock(*, now: datetime, last_session_ms: int | None) -> ContextBlock:
+def render_clock(
+    *, now: datetime, last_session_ms: int | None, report_first_look: bool = True,
+) -> ContextBlock:
     from nora.domain.prompt import escape
 
     since = (
-        "This is your first look at this group."
+        (" This is your first look at this group." if report_first_look else "")
         if last_session_ms is None
-        else f"You last looked at this group {ago(int(now.timestamp() * 1000) - last_session_ms)}."
+        else f" You last looked at this group {ago(int(now.timestamp() * 1000) - last_session_ms)}."
     )
     return ContextBlock(
         name="clock",
         body=compose_body(
             escape(
                 f"It is {now:%A %-d %B %Y, %H:%M} "
-                f"({getattr(now.tzinfo, 'key', None) or now.tzname()}). {since}"
+                f"({getattr(now.tzinfo, 'key', None) or now.tzname()}).{since}"
             )
         ),
         attrs=(("as_of", now.isoformat()),),
