@@ -209,10 +209,7 @@ def test_a_book_takes_the_check_and_the_tension_store_together():
 
 
 def test_no_model_surface_reads_a_tension_row():
-    """A tension rendered into her turns becomes an argument with the
-    law. No read tool can return one, no block type names one, and only the
-    composition root (which hands the store to the book's write path) and the
-    operator's CLI import the store."""
+    """Tensions go to the operator CLI. Composition wires the lesson writers."""
     from nora.agent.registry import ToolRegistry
     from nora.domain.block_types import BLOCK_TYPES
 
