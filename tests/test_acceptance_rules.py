@@ -42,6 +42,11 @@ RULE_TESTS = {
     "verify-clock": "test_the_first_clock_ending_has_the_deadline_and_no_witness",
     "verify-health": "test_every_source_must_be_healthy_over_the_whole_lineage_window",
     "computed-verdict": "test_every_ended_achieve_head_has_one_verdict_and_stimulus",
+    "wake-history-admission": "test_history_admits_understanding_and_stamps_its_evidence_clock",
+    "wake-history-clock": "test_source_ceiling_hides_future_items_without_marking_a_limit",
+    "wake-history-receipt": (
+        "test_a_closed_replay_records_the_exact_inputs_and_a_failed_replay_records_none"
+    ),
     "proactive-claim": "test_a_due_intention_delivers_once_and_closes_only_on_a_reply_outcome",
     "debrief-pass-items": "test_debrief_writes_only_commit_operations_citing_its_pass_items",
     "DEC-97": "test_running_identity_is_independent_of_the_latest_release",
