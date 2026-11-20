@@ -325,15 +325,17 @@ class UncertainSender(SinkSender):
 
 async def test_an_uncertain_proactive_send_cannot_be_repeated(scenario):
     scheduled = await seed_due(scenario, done_when={"own_delivery": True})
-    calls = ScriptedRunner((_SEND, _SEND))
+    calls = ScriptedRunner((_SEND,), (_SEND,))
     worker, sender, _ = setup(scenario, calls, [], sender=UncertainSender())
     await worker.poll()
-    await worker.poll()
-    await wire.condition_matcher(scenario.engine).run_once()
     [claim] = await claim_rows(scenario)
+    assert claim["state"] == "closed"
+    await worker.poll()
+    assert await claim_rows(scenario) == [claim]
+    await wire.condition_matcher(scenario.engine).run_once()
     async with scenario.engine.connect() as conn:
         verdicts = list(await conn.scalars(sa.select(NORA_ACT_OUTCOME.c.verdict)))
-    assert claim["state"] == "closed" and verdicts == ["uncertain"]
+    assert verdicts == ["uncertain"]
     assert len(sender.sent) == len(calls.calls) == 1
     assert (await _rows(scenario.engine, INTENTION))[scheduled]["state"] == "open"
 
