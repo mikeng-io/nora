@@ -1,5 +1,7 @@
 """A route override cannot make the wake review its own lessons."""
 
+from pathlib import Path
+
 import pytest
 
 from nora.app.composition_lesson_check import build_graph_lesson_check
@@ -26,8 +28,9 @@ def test_graph_wake_refuses_the_same_resolved_model_with_legacy_lessons_on_or_of
     })
 
     metrics = Metrics()
-    doctrine = DoctrineStore(cfg.doctrine.dir, metrics=metrics)
-    instructions = DreamerInstructions(cfg.dreamer.dir, metrics=metrics)
+    source = Path(__file__).resolve().parents[2] / "nora"
+    doctrine = DoctrineStore(source / "doctrine", metrics=metrics)
+    instructions = DreamerInstructions(source / "dreamer", metrics=metrics)
 
     def client(purpose):
         assert purpose == "lesson_check"
