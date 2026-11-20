@@ -45,13 +45,15 @@ class SqlRetrieval:
         self, room: ReadingRoom, concerns: frozenset[str], as_of: datetime | None,
         bounds: RetrievalBounds, now: datetime,
     ) -> AsyncIterator[ScopedGraph]:
+        if bounds.ceiling is not None:
+            as_of, now = None, bounds.ceiling
         target, scope, dm_rooms = await self._authority.authority(room, concerns, as_of)
         try:
             async with self._engine.connect() as raw:
                 conn = await raw.execution_options(isolation_level="REPEATABLE READ")
                 opted_out = await self._authority.social_opt_outs(conn, scope)
                 scope = replace(scope, social_off=opted_out)
-                rows = await scoped_rows(conn, scope, target, dm_rooms)
+                rows = await scoped_rows(conn, scope, target, dm_rooms, ceiling=bounds.ceiling)
                 yield _ScopedQueries(
                     conn, rows, scope, bounds, self._model, self._authority.access, now, dm_rooms,
                 )
@@ -75,7 +77,10 @@ class _ScopedQueries:
         self.dm_rooms = dm_rooms
 
     def _window(self, at: Any) -> sa.ColumnElement[bool]:
-        return at.between(self.bounds.since, self.bounds.until)
+        end = self.bounds.until
+        if self.bounds.ceiling is not None:
+            end = min(end, self.bounds.ceiling)
+        return at.between(self.bounds.since, end)
 
     async def resolve_exact_seeds(self, graph_ids: tuple[str, ...]) -> Candidates:
         row = self.rows.c
@@ -199,7 +204,7 @@ class _ScopedQueries:
     ) -> tuple[RetrievedRow, ...]:
         return await load_rows(
             self.conn, self.rows, distances, already_shown, self.scope, self.access,
-            self.now, self.dm_rooms,
+            self.now, self.dm_rooms, ceiling=self.bounds.ceiling,
         )
 
 

@@ -26,9 +26,10 @@ class PassDeclaration:
     pull: tuple[Literal["read"], ...]
     window: tuple[int, int, int, timedelta]
 
-    def bounds(self, at: datetime) -> RetrievalBounds:
+    def bounds(self, at: datetime, *, clock: datetime | None = None) -> RetrievalBounds:
         depth, fan_out, rows, age = self.window
-        return RetrievalBounds(depth, fan_out, rows, at - age, at)
+        at = clock if clock is not None else at
+        return RetrievalBounds(depth, fan_out, rows, at - age, at, ceiling=clock)
 
 
 # Provisional bounds, measured in phase 8.

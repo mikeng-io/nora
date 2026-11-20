@@ -65,6 +65,7 @@ def _image_source(
 
 def _projection(
     name: str, unit: str, as_of: datetime | None, registry_at: FromClause | None,
+    source_clock: datetime | None,
 ) -> sa.Select[Any]:
     rows = _image_source(name, unit, as_of, registry_at).subquery()
     image = rows.c.image
@@ -72,9 +73,10 @@ def _projection(
     state = image["state"].astext
     valid_to = image["valid_to"].astext.cast(sa.DateTime(timezone=True))
     if name == "claim":
+        at = source_clock or as_of
         state = sa.case((
             state.in_(("live", "awaiting_weighing"))
-            & (valid_to <= (sa.literal(as_of) if as_of is not None else sa.func.now())),
+            & (valid_to <= (sa.literal(at) if at is not None else sa.func.now())),
             "ended",
         ), else_=state)
     return sa.select(
@@ -97,11 +99,12 @@ def _projection(
 
 def graph_rows(
     unit: str, as_of: datetime | None, *, sources: tuple[str, ...] = SOURCES,
+    source_clock: datetime | None = None,
 ) -> FromClause:
     """Graph rows before room and audience restrictions are added."""
     registry = _registry_at(unit, as_of) if as_of is not None else None
     return sa.union_all(*(
-        _projection(name, unit, as_of, registry) for name in sources
+        _projection(name, unit, as_of, registry, source_clock) for name in sources
     )).cte("graph_rows")
 
 

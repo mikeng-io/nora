@@ -96,3 +96,26 @@ async def test_history_surface_refuses_acts_and_offers_only_reads_and_proposal(s
     replay = runner(scenario, model, occasion="wake_history", offered=WAKE_HISTORY_TOOLS)
     assert await replay.run(claim(observation("observed"))) == WakeClosed()
     assert model.tools == {"graph_propose", "memory_read", "memory_search"}
+
+
+async def test_source_ceiling_hides_future_items_without_marking_a_limit(scenario):
+    from datetime import timedelta
+
+    from nora.memory.domain.pass_declarations import declaration
+    from nora.memory.domain.retrieval import RetrievalAnchors
+    from tests.infra.test_retrieval_scope import AT, READ
+
+    await scenario.item("before", at=AT - timedelta(seconds=1))
+    await scenario.item("at")
+    await scenario.item("after", at=AT + timedelta(seconds=1))
+    service = scenario.service()
+    anchors = RetrievalAnchors(graph_ids=("before", "at", "after"))
+    live = await service.retrieve(READ, anchors, declaration("wake").bounds(AT))
+    replay = await service.retrieve(
+        READ, anchors, declaration("wake_history").bounds(AT, clock=AT),
+    )
+
+    assert tuple(row.graph_id for row in live.rows) == ("before", "at")
+    assert (live.status, live.limits) == ("partial", ("time_window",))
+    assert tuple(row.graph_id for row in replay.rows) == ("before", "at")
+    assert (replay.status, replay.limits) == ("ok", ())

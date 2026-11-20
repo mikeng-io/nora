@@ -180,7 +180,7 @@ async def _optional_counts(
 
 async def _items_since(
     conn: AsyncConnection, rows: FromClause, claims: tuple[str, ...],
-    scope: RetrievalScope, now: datetime,
+    scope: RetrievalScope, now: datetime, ceiling: datetime | None,
 ) -> dict[str, int] | None:
     if not claims:
         return {}
@@ -191,7 +191,7 @@ async def _items_since(
     if scope.room_keys:
         claim_room = sa.case(dict(scope.room_keys), value=claim_room, else_=claim_room)
         item_room = sa.case(dict(scope.room_keys), value=item_room, else_=item_room)
-    until = min(now, scope.as_of) if scope.as_of is not None else now
+    until = ceiling or (min(now, scope.as_of) if scope.as_of is not None else now)
     statement = sa.select(claim.graph_id, sa.func.count(item.graph_id)).where(
         claim.graph_id.in_(claims), item.kind == "item", item_room == claim_room,
         item.event_time > claim.asserted_at, item.event_time <= until,
@@ -201,6 +201,7 @@ async def _items_since(
 
 async def _published_occurrences(
     conn: AsyncConnection, intentions: tuple[str, ...], scope: RetrievalScope,
+    ceiling: datetime | None,
 ) -> dict[str, int] | None:
     if not intentions:
         return {}
@@ -209,8 +210,9 @@ async def _published_occurrences(
         stimulus.unit == scope.unit, stimulus.kind == "intention_due",
         stimulus.graph_id.in_(intentions), visible_to_reads(GRAPH_STIMULUS),
     ).group_by(stimulus.graph_id)
-    if scope.as_of is not None:
-        statement = statement.where(stimulus.recorded_at <= scope.as_of)
+    as_of = ceiling or scope.as_of
+    if as_of is not None:
+        statement = statement.where(stimulus.recorded_at <= as_of)
     return await _optional_counts(conn, statement)
 
 
@@ -232,7 +234,7 @@ def _has_time_trigger(image: Mapping[str, Any]) -> bool:
 async def load_rows(
     conn: AsyncConnection, rows: FromClause, distances: Mapping[str, int],
     already_shown: frozenset[str], scope: RetrievalScope, access: IdentityAccess,
-    now: datetime, dm_rooms: frozenset[str],
+    now: datetime, dm_rooms: frozenset[str], *, ceiling: datetime | None = None,
 ) -> tuple[RetrievedRow, ...]:
     """Read the chosen revisions and serialize their visible relations."""
     row = rows.c
@@ -266,13 +268,14 @@ async def load_rows(
         and key not in tombstoned
     }
     counts = await _items_since(
-        conn, rows, tuple(key for key, cause in situations.items() if cause is None), scope, now,
+        conn, rows, tuple(key for key, cause in situations.items() if cause is None),
+        scope, now, ceiling,
     )
     scheduled = tuple(
         key for key, entry in found.items() if entry["source"] == "intention"
         and key not in tombstoned and _has_time_trigger(entry["image"])
     )
-    published = await _published_occurrences(conn, scheduled, scope)
+    published = await _published_occurrences(conn, scheduled, scope, ceiling)
     result = []
     for graph_id, distance in distances.items():
         entry = found[graph_id]
