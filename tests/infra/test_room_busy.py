@@ -13,6 +13,7 @@ from nora.engagement.slots import ConversationSlots
 from nora.engagement.stages import admission as engagement
 from nora.memory import Refusal, WakeFailed, parse_intention_operation
 from nora.memory.domain.admission_ports import Stored
+from nora.memory.domain.admission_proposals import AddEdge, CreateIntention, Link, Scope
 from nora.memory.wire import admission
 from nora.obs.metrics import Metrics
 from nora.tag import Debounce
@@ -123,8 +124,6 @@ async def test_all_intention_mutations_yield_to_the_held_origin_room(scenario, o
     room_slots = slots(scenario)
     room_slots.acquire(KEY)
     if operation == "edge":
-        from nora.memory.domain.admission_proposals import AddEdge, Scope
-
         proposal = AddEdge(
             id="generated-edge", scope=Scope(WAKE.unit), basis="committed", type="cites",
             source=SUBJECT, target="generated-witness",
@@ -139,6 +138,23 @@ async def test_all_intention_mutations_yield_to_the_held_origin_room(scenario, o
         (proposal,), WAKE, (SUBJECT, "generated-witness"),
     )
     assert result.outcomes == (Refusal("room_busy", "origin_room"),)
+
+
+async def test_an_inline_edge_cannot_write_from_a_held_intention(scenario):
+    await intention(scenario, SUBJECT, origin_room=ORIGIN)
+    room_slots = slots(scenario)
+    room_slots.acquire(KEY)
+    admitter = service(scenario, room_slots)
+    created = parse_intention_operation(opening(), WAKE)
+    assert isinstance(created, CreateIntention)
+    proposal = replace(created, links=(
+        Link(type="serves", source=SUBJECT, target=created.id, basis="committed"),
+    ))
+    refused = await admitter.admit((proposal,), WAKE, (SUBJECT,))
+    assert refused.outcomes == (Refusal("room_busy", "origin_room"),)
+    room_slots.release_and_dispatch(KEY)
+    admitted = await admitter.admit((proposal,), WAKE, (SUBJECT,))
+    assert isinstance(admitted.outcomes[0], Stored)
 
 
 async def test_a_room_busy_wake_releases_without_counting(scenario):

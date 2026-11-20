@@ -188,6 +188,13 @@ class AdmissionService:
             )
             if isinstance(choice, Refusal):
                 return choice, ()
+            if context.occasion == "wake":
+                for entry in (choice, *choice.topics, *choice.deliveries):
+                    for link in entry.links:
+                        if link.source != entry.row.id and (
+                            refusal := self._wake_room(rows.get(link.source))
+                        ):
+                            return refusal, ()
             references = [part.row.source_ref for part in (choice, *choice.topics)]
             references.extend(
                 rows[link.target].source_ref
