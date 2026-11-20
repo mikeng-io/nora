@@ -53,11 +53,12 @@ async def _record(
         INTENTION_VERDICT.c.graph_id,
     )
     graph_id = await conn.scalar(stmt)
-    if graph_id is None or planes["exposure"] == "operator":
+    if graph_id is None:
         return
     at = clock()
-    await SqlGraphStimuli.append_in(conn, GraphStimulus(
-        unit, "verdict", graph_id, at, "verify",
-        intention["origin_room"], intention["owed_to"],
-    ))
+    if planes["exposure"] != "operator":
+        await SqlGraphStimuli.append_in(conn, GraphStimulus(
+            unit, "verdict", graph_id, at, "verify",
+            intention["origin_room"], intention["owed_to"],
+        ))
     await rebuild_lessons_for_verdict(conn, graph, unit=unit, intention_id=id_, at=at)
