@@ -612,8 +612,7 @@ class WorkRunner:
         if work.kind == "ingest":
             await self._run_ingest(work)
         elif work.kind == "turn":
-            # Both halves: the shared in-memory slot (fires and admissions
-            # see it) and the DB lock (zombie/recreate peers see that).
+            key = self._slots.key(key)
             if not self._slots.try_acquire(key):
                 await self._repark(work, seconds=2, reason="speaking_slot_busy")
                 return
@@ -624,7 +623,7 @@ class WorkRunner:
             try:
                 if not await self._db_locks.lock_alive(key):
                     raise RuntimeError("speaking lock lost before turn")
-                await self._run_turn(work)
+                await self._run_turn(work, key)
             finally:
                 await self._db_locks.release(key)
                 self._slots.release_and_dispatch(key)
@@ -1291,7 +1290,7 @@ class WorkRunner:
 
     # ---- turn --------------------------------------------------------------
 
-    async def _run_turn(self, work: Any) -> None:
+    async def _run_turn(self, work: Any, slot_key: tuple[str, str]) -> None:
         payload = work.payload
         owner = ActionOwner(kind="work", id=f"w-{work.id}",
                             generation=work.generation)
@@ -1338,7 +1337,7 @@ class WorkRunner:
             }
         disposition = await self._engagement.run_durable(
             request, bound_adapter=bound, persisted_admission=persisted,
-            admission_sink=sink, queue_link=queue_link)
+            admission_sink=sink, queue_link=queue_link, slot_key=slot_key)
         # A vetoed turn is terminal the same way a silent one is — the guards
         # refused, and a re-run would pay a model call to refuse again.
         if disposition in ("send_reply", "recovered", "silent", "vetoed"):

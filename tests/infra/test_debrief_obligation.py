@@ -1,5 +1,6 @@
 """Debrief retries resume from durable evidence and recorded operation identities."""
 
+import asyncio
 from dataclasses import replace
 from datetime import timedelta
 
@@ -7,6 +8,7 @@ import sqlalchemy as sa
 
 from nora.agent.egress import LeakGuard
 from nora.doctrine.loader import Doctrine
+from nora.engagement.slots import ConversationSlots
 from nora.engagement.stages import graph_debrief
 from nora.infra.sql.cognitive_graph_schema import DEBRIEF_OBLIGATION, INTENTION
 from nora.infra.sql.cognitive_graph_store import GraphWriteError, SqlCognitiveGraph
@@ -16,10 +18,12 @@ from nora.memory.adapters.admission_rows import SqlAdmissionRows
 from nora.memory.adapters.admission_store import SqlAdmissionStore
 from nora.memory.app.admission import AdmissionService
 from nora.memory.app.admission_identity import AdmissionIdentity
+from nora.testing.room_slots import FakeRoomSlots
 from tests.infra.test_cognitive_graph_admission import _rows
 from tests.infra.test_graph_debrief import CONTEXT, WALL, opening, run, send, wiring
-from tests.infra.test_retrieval_scope import AT, ROOM, UNIT
+from tests.infra.test_retrieval_scope import AT, OTHER_ROOM, ROOM, UNIT
 from tests.infra.test_retrieval_scope import scenario as scenario
+from tests.infra.test_wake_pass import tick, worker
 from tests.integration.snapshot_rows import REVISE, ROWS
 
 JOURNAL = DEBRIEF_OBLIGATION
@@ -80,7 +84,7 @@ async def test_an_uncertain_commit_is_read_back_by_id_before_a_retry(scenario):
                               engine)
     service = AdmissionService(
         store, identity, LeakGuard(Doctrine((), "", "", "", "", 0), "fixture-canary"),
-        content_checks=False,
+        content_checks=False, room_slots=FakeRoomSlots({}),
     )
     w, _ = wiring(scenario, [opening()], service=service)
 
@@ -159,3 +163,88 @@ async def test_snapshot_fixture_registers_the_debrief_journal(scenario):
             "SELECT count(*) FROM row_history WHERE table_name = 'debrief_obligation'",
         ))
     assert captured == 2
+
+
+async def pending(scenario, pass_id=CONTEXT.pass_id, room=KEY, *,
+                  state="pending", at=AT, attempts=3):
+    async with scenario.engine.begin() as conn:
+        await conn.execute(sa.insert(JOURNAL).values(
+            unit=UNIT, room=room, pass_id=pass_id, occasion="called", created=at,
+            state=state, attempts=attempts,
+        ))
+
+
+async def test_the_wake_retries_only_the_oldest_pending_debrief_in_a_room(scenario):
+    await pending(scenario)
+    await pending(scenario, "later-pass", at=AT + timedelta(seconds=1))
+    w, acts = wiring(scenario, [])
+    witness = await send(acts)
+    poller, _ = worker(scenario, {}, debrief_wiring=w)
+
+    await tick(poller)
+
+    assert (await journal(scenario))["state"] == "settled"
+    assert (await journal(scenario, "later-pass"))["state"] == "pending"
+    assert len(w.client.prompts) == 1
+    assert [item.id for item in await acts.read_pass_items(UNIT, CONTEXT.pass_id)
+            if item.kind == "send_outcome"] == [witness]
+
+
+async def test_a_held_room_defers_only_its_own_pending_debrief(scenario):
+    await pending(scenario)
+    await pending(scenario, "other-pass", f"signal:{OTHER_ROOM}")
+    room_slots = ConversationSlots(maxlen=2, spawn=asyncio.create_task)
+    room_slots.acquire(("signal", ROOM))
+    w, _ = wiring(scenario, [], [])
+    poller, _ = worker(scenario, {}, room_slots=room_slots, debrief_wiring=w)
+
+    await tick(poller)
+    held = await journal(scenario)
+    assert (held["state"], held["attempts"]) == ("pending", 3)
+    assert (await journal(scenario, "other-pass"))["state"] == "settled"
+    assert not room_slots.held(("signal", OTHER_ROOM))
+
+    room_slots.release_and_dispatch(("signal", ROOM))
+    await tick(poller)
+    assert (await journal(scenario))["state"] == "settled"
+    assert len(w.client.prompts) == 2
+
+
+async def test_an_unresolved_room_counts_towards_parking(scenario):
+    await pending(scenario, room="signal:unlisted-generated-room", attempts=5)
+    w, _ = wiring(scenario, [])
+    poller, _ = worker(scenario, {}, debrief_wiring=w)
+
+    await tick(poller)
+
+    row = await journal(scenario)
+    assert (row["state"], row["attempts"]) == ("parked", 6)
+    assert w.client.prompts == []
+
+
+async def test_repeated_debrief_failure_parks_the_obligation(scenario):
+    await pending(scenario)
+    w, _ = wiring(scenario, TimeoutError(), RuntimeError("fixture failure"), TimeoutError())
+    poller, _ = worker(scenario, {}, debrief_wiring=w)
+
+    for attempts in (4, 5, 6):
+        await tick(poller)
+        row = await journal(scenario)
+        assert (row["state"], row["attempts"]) == (
+            "pending" if attempts < 6 else "parked", attempts,
+        )
+    assert len(w.client.prompts) == 3
+
+
+async def test_a_parked_debrief_is_never_taken_again(scenario):
+    await pending(scenario, state="parked", attempts=6)
+    await pending(scenario, "active-pass", at=AT + timedelta(seconds=1))
+    w, _ = wiring(scenario, [])
+    poller, _ = worker(scenario, {}, debrief_wiring=w)
+
+    await tick(poller)
+
+    row = await journal(scenario)
+    assert (row["state"], row["attempts"]) == ("parked", 6)
+    assert (await journal(scenario, "active-pass"))["state"] == "settled"
+    assert len(w.client.prompts) == 1

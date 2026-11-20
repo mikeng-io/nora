@@ -37,6 +37,7 @@ from nora.domain.ports import EngagementRequest
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.obs.tracing import annotate
 
+from ..slots import Key
 from . import deliver, indicate
 from .indicate import Indicator
 
@@ -56,11 +57,12 @@ async def run(
     doctrine_store: Any, canary: str, tool_registry: Any, metrics: Any,
     access: Any, rosters: Any, preview_source: Any, spawn: Any,
     reasoning_strip_store: Any, tool_call_log_store: Any, slots: Any,
+    slot_key: Key | None = None,
 ) -> None:
     """Parse, invoke, reply — no model, no tools, the same audit-first
     `Deliverer` a tag's reply takes."""
     msg = request.message
-    key = (msg.platform, msg.conversation_id)
+    key = slot_key if slot_key is not None else (msg.platform, msg.conversation_id)
     started = time.perf_counter()
     delivered = False
     outcome = "unavailable"

@@ -1237,7 +1237,7 @@ CONSTRAINT ck_computer_tasks_status CHECK ((status = ANY (ARRAY['cancelled'::tex
 CONSTRAINT ck_corridor_speed_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
 CONSTRAINT ck_debrief_obligation_attempts CHECK ((attempts >= 0)),
 CONSTRAINT ck_debrief_obligation_settled CHECK (((state = 'settled'::text) = (settled IS NOT NULL))),
-CONSTRAINT ck_debrief_obligation_state CHECK ((state = ANY (ARRAY['pending'::text, 'settled'::text]))),
+CONSTRAINT ck_debrief_obligation_state CHECK ((state = ANY (ARRAY['pending'::text, 'settled'::text, 'parked'::text]))),
 CONSTRAINT ck_debrief_obligation_window CHECK (((first_message_id IS NULL) = (last_message_id IS NULL)))
 CONSTRAINT ck_derived_places_kind CHECK ((source_kind = ANY (ARRAY['home'::text, 'work'::text, 'unlabeled'::text]))),
 CONSTRAINT ck_dispute_graph_basis CHECK ((basis = 'observed'::text)),

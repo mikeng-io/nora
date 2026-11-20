@@ -41,6 +41,7 @@ from nora.memory.domain.graph import StaleBaseError
 from nora.memory.wire import admission
 from nora.persons import Persons
 from nora.policy import Conversation, Policy
+from nora.testing.room_slots import FakeRoomSlots
 
 PASS = PassContext(
     "u",
@@ -113,6 +114,7 @@ def _service(engine: AsyncEngine, *, content_checks: bool = False) -> AdmissionS
         policy,
         guard,
         content_checks=content_checks,
+        room_slots=FakeRoomSlots({}),
         nora_accounts=(("signal", SELF_ACCOUNT),),
     )
 
@@ -121,7 +123,9 @@ def _fault_service(engine: AsyncEngine, writer: SqlCognitiveGraph) -> AdmissionS
     persons, policy, guard = _authority()
     identity = AdmissionIdentity(persons, policy)
     store = SqlAdmissionStore(SqlAdmissionRows(engine, identity), writer, engine)
-    return AdmissionService(store, identity, guard, content_checks=False)
+    return AdmissionService(
+        store, identity, guard, content_checks=False, room_slots=FakeRoomSlots({}),
+    )
 
 
 @pytest.fixture
@@ -464,6 +468,7 @@ async def test_reads_registered_edit_and_reaction_authors_and_preserves_dm_origi
         ).access
     service = admission(
         engine, None if managed else persons, policy, guard, content_checks=False,
+        room_slots=FakeRoomSlots({}),
         nora_accounts=(("signal", SELF_ACCOUNT),), access=access,
     )
     async with engine.begin() as conn:

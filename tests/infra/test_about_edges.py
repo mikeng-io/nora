@@ -12,6 +12,7 @@ from nora.memory.app.admission import AdmissionService, Stored
 from nora.memory.domain.admission import Refusal
 from nora.memory.domain.admission_proposals import AddEdge, Link, Revise, Scope
 from nora.memory.wire import admission
+from nora.testing.room_slots import FakeRoomSlots
 from tests.infra.test_cognitive_graph_admission import (
     CLAIM_PROPOSAL,
     PASS,
@@ -29,7 +30,9 @@ OTHER = PersonRef("other-fixture-person", "Other Fixture Person", "other-fixture
 def _service(engine: AsyncEngine) -> AdmissionService:
     persons, policy, guard = _authority()
     persons = replace(persons, by_person={**persons.by_person, OTHER.person_id: OTHER})
-    return admission(engine, persons, policy, guard, content_checks=False)
+    return admission(
+        engine, persons, policy, guard, content_checks=False, room_slots=FakeRoomSlots({}),
+    )
 
 
 async def _pointer(engine: AsyncEngine, person: PersonRef) -> str:

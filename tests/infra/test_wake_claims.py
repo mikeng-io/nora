@@ -36,8 +36,11 @@ async def stimulus(scenario, graph_id, *, kind="new_item", room=ORIGIN, age=5, u
 async def test_two_evaluators_claim_one_set_once(scenario):
     await stimulus(scenario, "first")
     await stimulus(scenario, "second")
-    claims = await asyncio.gather(*(SqlWakeClaims(scenario.engine).claim(GROUP, ORIGIN, AT, POLICY)
-                                   for _ in range(2)))
+    claims = await asyncio.gather(
+        *(SqlWakeClaims(scenario.engine).claim(GROUP, ORIGIN, AT, POLICY) for _ in range(2)),
+        return_exceptions=True,
+    )
+    assert all(not isinstance(claim, BaseException) for claim in claims), claims
     [claimed] = [claim for claim in claims if claim is not None]
     rows = await claim_rows(scenario)
     assert {(row["graph_id"], row["claimant"], row["pass_id"]) for row in rows} == {

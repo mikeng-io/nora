@@ -55,6 +55,7 @@ from nora.memory.adapters.tools.notes import _make__resolve
 from nora.memory.adapters.tools.search import GraphReadTools
 from nora.memory.adapters.tools.session import session_verbs as _session_verbs
 from nora.memory.adapters.verify import SqlIntentionVerification
+from nora.memory.adapters.wake_claims import SqlWakeClaims
 from nora.memory.adapters.watch_page import WATCH_ADAPTERS
 from nora.memory.adapters.watch_results import SqlWatchResults
 from nora.memory.app.acts import ActEnvelope
@@ -65,6 +66,7 @@ from nora.memory.app.graph_clock import GraphClock
 from nora.memory.app.retrieval import RetrievalService
 from nora.memory.app.verify import IntentionVerifier
 from nora.memory.app.watches import WatchPoller
+from nora.memory.domain.admission_ports import RoomSlots
 from nora.persons import Persons
 from nora.policy import Policy
 
@@ -366,13 +368,14 @@ def graph(
 
 def admission(
     engine: AsyncEngine, persons: Persons | None, policy: Policy, leak_guard: LeakGuard, *,
-    content_checks: bool, nora_accounts: Iterable[tuple[str, str]] = (),
+    content_checks: bool, room_slots: RoomSlots,
+    nora_accounts: Iterable[tuple[str, str]] = (),
     access: IdentityAccess | None = None,
 ) -> AdmissionService:
     identity = AdmissionIdentity(persons, policy, access=access, nora_accounts=nora_accounts)
     store = SqlAdmissionStore(SqlAdmissionRows(engine, identity), SqlCognitiveGraph(engine), engine)
     return AdmissionService(
-        store, identity, leak_guard, content_checks=content_checks,
+        store, identity, leak_guard, content_checks=content_checks, room_slots=room_slots,
         watch_kinds=WATCH_ADAPTERS.keys(),
     )
 
@@ -467,3 +470,7 @@ def pass_assembler(
 
 def proactive_claims(engine: AsyncEngine) -> SqlProactiveClaims:
     return SqlProactiveClaims(engine)
+
+
+def wake_claims(engine: AsyncEngine) -> SqlWakeClaims:
+    return SqlWakeClaims(engine)

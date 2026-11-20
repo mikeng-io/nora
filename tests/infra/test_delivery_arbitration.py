@@ -33,6 +33,7 @@ from nora.memory.wire import admission, delivery_arbitration
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import Conversation, Policy
+from nora.testing.room_slots import FakeRoomSlots
 from tests.infra.test_act_envelope import _Revisions
 from tests.infra.test_cognitive_graph_admission import (
     ACCOUNT,
@@ -76,12 +77,15 @@ def _tool(engine, graph=None):
     _, _, guard = _authority()
     policy, people = _policy(), _people()
     if graph is None:
-        service = admission(engine, people, policy, guard, content_checks=False)
+        service = admission(
+            engine, people, policy, guard, content_checks=False, room_slots=FakeRoomSlots({}),
+        )
     else:
         identity = AdmissionIdentity(people, policy)
         service = AdmissionService(
             SqlAdmissionStore(SqlAdmissionRows(engine, identity), graph, engine),
             identity, guard, content_checks=False,
+            room_slots=FakeRoomSlots({}),
         )
     return _make_intention_commit(SimpleNamespace(intention_admission=service, metrics=Metrics()))
 
@@ -405,7 +409,9 @@ async def test_recheck_reports_a_failed_read_as_unavailable(engine):
 
 async def test_merged_entities_and_revised_parents_keep_one_live_subject(engine):
     _, policy, guard = _authority()
-    service = admission(engine, _people(), policy, guard, content_checks=False)
+    service = admission(
+        engine, _people(), policy, guard, content_checks=False, room_slots=FakeRoomSlots({}),
+    )
     tool = _tool(engine)
     parent = await _opened(tool)
     new_parent = await _opened(tool, _open(op="revise", base=parent), shown=(parent,))

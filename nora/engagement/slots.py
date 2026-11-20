@@ -29,7 +29,11 @@ from __future__ import annotations
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from nora.domain.lineage import room_key
+from nora.policy import Policy
+
 from .queue import ConversationQueues
+from .slot_keys import resolve_slot_room
 
 Key = tuple[str, str]
 Factory = Callable[[], Coroutine[Any, Any, None]]
@@ -38,10 +42,18 @@ Factory = Callable[[], Coroutine[Any, Any, None]]
 class ConversationSlots:
     def __init__(
         self, *, maxlen: int, spawn: Callable[[Coroutine[Any, Any, None]], Any],
+        policy: Policy | None = None,
     ) -> None:
         self._in_flight: set[Key] = set()
         self._queues: ConversationQueues[Key, Factory] = ConversationQueues(maxlen=maxlen)
         self._spawn = spawn
+        self._policy = policy
+
+    def key(self, key: Key) -> Key:
+        if self._policy is None:
+            return key
+        candidate = resolve_slot_room(self._policy.rooms(), room_key(*key))
+        return key if candidate is None else (candidate.platform, candidate.primary_id)
 
     @property
     def maxlen(self) -> int:

@@ -813,7 +813,7 @@ async def _compose_dependencies(
     sticker_reader = _media_describers.sticker_reader
     transcriber = _media_describers.transcriber
     vision_client = _media_describers.vision_client
-    _runtime_slots = build_slots(background=background, cfg=cfg)
+    _runtime_slots = build_slots(background=background, cfg=cfg, policy=allowlist)
     slots = _runtime_slots.slots
     _runtime_stimulus = stimulus(allowlist=allowlist, cfg=cfg, engine=engine, registry=registry)
     stimulus_store = _runtime_stimulus.stimulus_store
@@ -909,7 +909,7 @@ async def _compose_dependencies(
     subagent_desk = _agent_desk.subagent_desk
     graph_debrief = build_graph_debrief(
         _memory_wire, dreamer_instructions, cfg, engine, access, lineage,
-        persons_view, allowlist, doctrine_store, content_checks, clock, metrics,
+        persons_view, allowlist, doctrine_store, content_checks, clock, metrics, slots,
     )
     engagement_graph = EngagementGraph(
         access, _memory_wire.message_graph_ids(engine),

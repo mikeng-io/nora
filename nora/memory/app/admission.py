@@ -26,12 +26,14 @@ from nora.memory.domain.admission_ports import (
 from nora.memory.domain.admission_ports import (
     AdmissionStore,
     AdmissionUnavailableError,
+    RoomSlots,
     Stored,
 )
 from nora.memory.domain.admission_ports import (
     Unavailable as Unavailable,
 )
 from nora.memory.domain.admission_proposals import (
+    AddEdge,
     CloseIntention,
     CreateIntention,
     MergeEntities,
@@ -56,12 +58,14 @@ class AdmissionService:
         leak_guard: LeakGuard,
         *,
         content_checks: bool,
+        room_slots: RoomSlots,
         watch_kinds: Collection[str] = (),
     ) -> None:
         self._store = store
         self._identity = identity
         self._leak_guard = leak_guard
         self._content_checks = content_checks
+        self._room_slots = room_slots
         self._watch_kinds = watch_kinds
 
     async def admit(
@@ -174,6 +178,11 @@ class AdmissionService:
                 principals=(data.owner, data.owed_to) if isinstance(data, CreateIntention) else (),
             )
             rows = await self._store.read(context.unit, frozenset(readable))
+            if context.occasion == "wake":
+                subject = (proposal.base if isinstance(proposal, (Revise, Retire))
+                           else data.source if isinstance(data, AddEdge) else None)
+                if subject is not None and (refusal := self._wake_room(rows.get(subject))):
+                    return refusal, ()
             choice = self._choose(
                 proposal, context, shown, rows, ResolvedReferences(rooms, persons), topics,
             )
@@ -236,9 +245,23 @@ class AdmissionService:
         if proposal.id not in shown:
             return Refusal("stale_base", "base")
         try:
+            if context.occasion == "wake":
+                rows = await self._store.read(context.unit, frozenset({proposal.id}))
+                if refusal := self._wake_room(rows.get(proposal.id)):
+                    return refusal
             return await self._store.close(proposal.id, proposal.witness, context)
         except AdmissionUnavailableError as exc:
             return Unavailable(proposal.id, exc.commit_uncertain)
+
+    def _wake_room(self, row: RowFacts | None) -> Refusal | None:
+        if row is None or row.kind != "intention" or row.origin_room is None:
+            return None
+        room = self._room_slots.resolve(row.origin_room, row.unit)
+        if room is None:
+            return Refusal("unresolved_room", "origin_room")
+        if self._room_slots.held(room):
+            return Refusal("room_busy", "origin_room")
+        return None
 
     def _protect(self, proposal: Proposal) -> Refusal | None:
         for field, text in _text(proposal):
