@@ -248,3 +248,25 @@ async def test_a_parked_debrief_is_never_taken_again(scenario):
     assert (row["state"], row["attempts"]) == ("parked", 6)
     assert (await journal(scenario, "active-pass"))["state"] == "settled"
     assert len(w.client.prompts) == 1
+
+
+async def test_a_debrief_settled_after_selection_is_not_repeated(scenario):
+    from nora.memory.adapters.debrief_store import SqlDebriefStore
+
+    await pending(scenario)
+    await pending(scenario, "other-pass", f"signal:{OTHER_ROOM}")
+    w, acts = wiring(scenario, [])
+
+    class ConcurrentSettlement(SqlDebriefStore):
+        async def pending_retries(self):
+            selected = await super().pending_retries()
+            finished = next(row for row in selected if row.pass_id == CONTEXT.pass_id)
+            await self.settle(finished, AT)
+            return selected
+
+    w = replace(w, store=ConcurrentSettlement(scenario.engine, acts))
+    poller, _ = worker(scenario, {}, debrief_wiring=w)
+    await tick(poller)
+    assert (await journal(scenario, "other-pass"))["state"] == "settled"
+    assert len(w.client.prompts) == 1
+    assert OTHER_ROOM in w.client.prompts[0]

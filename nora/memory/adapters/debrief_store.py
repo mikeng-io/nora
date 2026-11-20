@@ -72,6 +72,14 @@ class SqlDebriefStore:
         async with self._engine.connect() as conn:
             return tuple(_obligation(row) for row in (await conn.execute(oldest)).mappings())
 
+    async def pending_retry(self, row: DebriefObligation) -> DebriefObligation | None:
+        async with self._engine.connect() as conn:
+            current = (await conn.execute(sa.select(*_C).where(
+                _C.unit == row.unit, _C.pass_id == row.pass_id, _C.state == "pending",
+                _C.attempts >= MAX_SLOT_ATTEMPTS,
+            ))).mappings().one_or_none()
+        return _obligation(current) if current is not None else None
+
     async def record_retry_failure(self, row: DebriefObligation) -> None:
         attempts = _C.attempts + 1
         async with self._engine.begin() as conn:

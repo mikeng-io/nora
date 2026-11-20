@@ -13,6 +13,7 @@ log = logging.getLogger(__name__)
 
 class RetryStore(Protocol):
     async def pending_retries(self) -> tuple[DebriefObligation, ...]: ...
+    async def pending_retry(self, row: DebriefObligation) -> DebriefObligation | None: ...
     async def record_retry_failure(self, row: DebriefObligation) -> None: ...
 
 
@@ -41,7 +42,9 @@ class WakeDebriefRetry:
         if not self._slots.try_acquire(key):
             return
         try:
-            await graph_debrief.run_retry(self._wiring, row)
-            await self._store.record_retry_failure(row)
+            current = await self._store.pending_retry(row)
+            if current is not None:
+                await graph_debrief.run_retry(self._wiring, current)
+                await self._store.record_retry_failure(current)
         finally:
             self._slots.release_and_dispatch(key)
