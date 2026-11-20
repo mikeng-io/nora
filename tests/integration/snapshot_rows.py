@@ -497,6 +497,10 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
 #: One append-only row, number `n`, citing the stable key-0 parents.
 APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     **managed_rows.APPEND,
+    "graph_replay_receipt": lambda n: {
+        "unit": "u", "pass_id": f"generated-replay-{n}", "clock": T0,
+        "inputs": {f"generated-item-{n}": "generated-digest"},
+    },
     "graph_stimulus": lambda n: {
         "unit": "u", "kind": "new_item", "graph_id": f"generated-stimulus-item-{n}",
         "eligible_at": T0, "source": "message",

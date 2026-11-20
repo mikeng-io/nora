@@ -49,6 +49,7 @@ from nora.memory.adapters.message_graph_ids import SqlMessageGraphIds
 from nora.memory.adapters.pass_anchors import SqlPassAnchors
 from nora.memory.adapters.pass_assembly import PassAssembler
 from nora.memory.adapters.proactive_claims import SqlProactiveClaims
+from nora.memory.adapters.replay_receipts import SqlReplayReceipts
 from nora.memory.adapters.retrieval_store import SqlRetrieval
 from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
@@ -484,3 +485,9 @@ def proactive_claims(engine: AsyncEngine) -> SqlProactiveClaims:
 
 def wake_claims(engine: AsyncEngine) -> SqlWakeClaims:
     return SqlWakeClaims(engine)
+
+
+def replay_receipts(
+    engine: AsyncEngine, access: IdentityAccess, lineage: LineagePolicy, policy: Policy,
+) -> SqlReplayReceipts:
+    return SqlReplayReceipts(engine, access, lineage, policy)

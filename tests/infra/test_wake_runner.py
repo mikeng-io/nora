@@ -69,7 +69,10 @@ class WakeModel(_ScriptedModel):
         return self.seen[0][0]["content"][0]["text"]
 
 
-def runner(scenario, model, *, turns=4, offered=wire.WAKE_TOOLS, admission=None, occasion="wake"):
+def runner(
+    scenario, model, *, turns=4, offered=wire.WAKE_TOOLS, admission=None, occasion="wake",
+    rooms=None,
+):
     access = IdentityAccess(file_persons=scenario.persons, file_policy=scenario.policy)
     lineage = LineagePolicy.from_policy(scenario.policy, access=access)
     metrics = Metrics()
@@ -98,7 +101,8 @@ def runner(scenario, model, *, turns=4, offered=wire.WAKE_TOOLS, admission=None,
         retry=RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
     )
     return WakePassRunner(
-        rooms=floor, assembler=wire.pass_assembler(scenario.engine, access, lineage, None, None),
+        rooms=rooms if rooms is not None else floor,
+        assembler=wire.pass_assembler(scenario.engine, access, lineage, None, None),
         surface=surface, agent=DreamerAgentRunner(
             runtime=runtime, metrics=metrics, bound_tool_arguments=True,
         ),

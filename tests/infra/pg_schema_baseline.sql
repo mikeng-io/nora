@@ -512,6 +512,7 @@ ADD CONSTRAINT pk_claim PRIMARY KEY (id, unit);
 ADD CONSTRAINT pk_document_revision PRIMARY KEY (document_id, revision);
 ADD CONSTRAINT pk_edge PRIMARY KEY (id, unit);
 ADD CONSTRAINT pk_entity PRIMARY KEY (id, unit);
+ADD CONSTRAINT pk_graph_replay_receipt PRIMARY KEY (unit, pass_id);
 ADD CONSTRAINT pk_graph_search PRIMARY KEY (graph_id, unit);
 ADD CONSTRAINT pk_graph_stimulus PRIMARY KEY (unit, kind, graph_id, occurrence);
 ADD CONSTRAINT pk_graph_stimulus_claim PRIMARY KEY (unit, kind, graph_id, occurrence, claimant);
@@ -760,6 +761,7 @@ ALTER TABLE ONLY public.forget_request
 ALTER TABLE ONLY public.forget_request
 ALTER TABLE ONLY public.forget_request
 ALTER TABLE ONLY public.geocode_cache
+ALTER TABLE ONLY public.graph_replay_receipt
 ALTER TABLE ONLY public.graph_search
 ALTER TABLE ONLY public.graph_search
 ALTER TABLE ONLY public.graph_stimulus
@@ -2086,6 +2088,7 @@ CREATE TABLE public.fact_premise (
 CREATE TABLE public.fetched_pages (
 CREATE TABLE public.forget_request (
 CREATE TABLE public.geocode_cache (
+CREATE TABLE public.graph_replay_receipt (
 CREATE TABLE public.graph_search (
 CREATE TABLE public.graph_stimulus (
 CREATE TABLE public.graph_stimulus_claim (
@@ -2215,6 +2218,7 @@ CREATE TRIGGER graph_search_sync AFTER INSERT OR DELETE OR UPDATE ON public.nora
 CREATE TRIGGER graph_search_sync AFTER INSERT OR DELETE OR UPDATE ON public.social_item FOR EACH ROW EXECUTE FUNCTION public.nora_graph_search_sync('graph_id', 'caption', 'alt_text');
 CREATE TRIGGER nora_act_append_only BEFORE DELETE OR UPDATE ON public.nora_act FOR EACH ROW EXECUTE FUNCTION public.nora_refuse_act_mutation();
 CREATE TRIGGER nora_act_outcome_append_only BEFORE DELETE OR UPDATE ON public.nora_act_outcome FOR EACH ROW EXECUTE FUNCTION public.nora_refuse_act_mutation();
+CREATE TRIGGER nora_graph_replay_receipt_append_only BEFORE DELETE OR UPDATE ON public.graph_replay_receipt FOR EACH ROW EXECUTE FUNCTION public.nora_refuse_act_mutation();
 CREATE TRIGGER nora_pass_output_append_only BEFORE DELETE OR UPDATE ON public.nora_pass_output FOR EACH ROW EXECUTE FUNCTION public.nora_refuse_act_mutation();
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.analytics_watermark FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('deriver_name', 'subject_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.claim FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id', 'unit');
@@ -2325,6 +2329,7 @@ CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.extraction_cl
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.extraction_queue FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.forget_request FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.geocode_cache FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.graph_replay_receipt FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.graph_stimulus_claim FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.instagram_summons FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.intention FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
@@ -3074,6 +3079,7 @@ claim_id text NOT NULL,
 claim_id text NOT NULL,
 claimant text NOT NULL,
 claimed timestamp with time zone NOT NULL,
+clock timestamp with time zone NOT NULL,
 closed_at bigint,
 closed_at bigint,
 closed_at bigint,
@@ -3726,6 +3732,7 @@ image_id text,
 input_hash text CONSTRAINT memory_work_item_input_hash_not_null NOT NULL,
 input_hash text NOT NULL,
 input_tokens bigint,
+inputs jsonb NOT NULL,
 instance text NOT NULL,
 instruction_sha256 text NOT NULL,
 instruction_sha256 text NOT NULL,
@@ -4356,6 +4363,7 @@ pass text,
 pass text,
 pass_id text NOT NULL,
 pass_id text NOT NULL,
+pass_id text NOT NULL,
 path text NOT NULL,
 path text NOT NULL,
 path text NOT NULL,
@@ -4664,6 +4672,7 @@ recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+recorded_at timestamp with time zone DEFAULT now() NOT NULL
 recorded_at timestamp with time zone DEFAULT now() NOT NULL
 recorded_at timestamp with time zone DEFAULT now() NOT NULL,
 recorded_at timestamp with time zone DEFAULT now() NOT NULL,

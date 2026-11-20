@@ -29,7 +29,9 @@ async def test_history_admits_understanding_and_stamps_its_evidence_clock(engine
         "name": PERSON.name, "pointer_kind": "person", "pointer_ref": PERSON.person_id,
     })
     [outcome] = (await _service(engine).admit(
-        (CLAIM_PROPOSAL,), HISTORICAL, ("item-1",),
+        (replace(CLAIM_PROPOSAL, scope=replace(CLAIM_PROPOSAL.scope,
+                                               persons=(PERSON.person_id,))),),
+        HISTORICAL, ("item-1",),
     )).outcomes
     assert outcome == Stored(CLAIM_PROPOSAL.id)
     row = (await _rows(engine, CLAIM))[CLAIM_PROPOSAL.id]
@@ -71,6 +73,7 @@ async def test_only_live_admission_queues_dependents(engine, context, queued):
     await graph.create(EDGE, {
         "id": "dependent-edge", "unit": context.unit, "kind": "edge", "basis": "inferred",
         "state": "live", "writer": "fixture", "type": "draws_on",
+        "exposure": "internal", "reasoning": "deduced", "confidence": "high",
         "src_id": dependent.id, "dst_id": CLAIM_PROPOSAL.id,
     })
     revision = Revise(base=CLAIM_PROPOSAL.id, replacement=replace(CLAIM_PROPOSAL, id="revision"))
@@ -94,7 +97,7 @@ async def test_history_surface_refuses_acts_and_offers_only_reads_and_proposal(s
 
     model = WakeModel([], observe)
     replay = runner(scenario, model, occasion="wake_history", offered=WAKE_HISTORY_TOOLS)
-    assert await replay.run(claim(observation("observed"))) == WakeClosed()
+    assert isinstance(await replay.run(claim(observation("observed"))), WakeClosed)
     assert model.tools == {"graph_propose", "memory_read", "memory_search"}
 
 
@@ -119,3 +122,95 @@ async def test_source_ceiling_hides_future_items_without_marking_a_limit(scenari
     assert (live.status, live.limits) == ("partial", ("time_window",))
     assert tuple(row.graph_id for row in replay.rows) == ("before", "at")
     assert (replay.status, replay.limits) == ("ok", ())
+
+
+async def test_replay_runs_in_source_time_and_reads_earlier_understanding_only(scenario):
+    from datetime import timedelta
+
+    from nora.app.graph_replay import GraphReplay
+    from nora.infra.sql.cognitive_graph_schema import GRAPH_STIMULUS_CLAIM, INTENTION, NORA_ACT
+    from nora.testing.scripted_agent import ScriptedTurn
+    from tests.infra.test_graph_propose import claim_payload
+    from tests.infra.test_replay_receipt import ScriptedReplay, receipts
+    from tests.infra.test_retrieval_scope import AT, UNIT
+
+    later = AT + timedelta(seconds=4)
+    await scenario.item("later", at=later)
+    await scenario.item("observed-source")
+    await scenario.item("future", at=later + timedelta(seconds=1))
+    proposal = ScriptedTurn(tool_calls=[
+        ("graph_propose", {"operations": [claim_payload()]}),
+    ])
+    check = ScriptedTurn(tool_calls=[
+        ("memory_read", {"id": "observed-source"}),
+        ("memory_read", {"id": "future"}),
+    ])
+    model = ScriptedReplay(scenario, [([proposal], 4), ([check], 5)])
+    report = await GraphReplay(receipts(scenario), 1).run(UNIT, later, model)
+    assert report.closed == 2 and report.failed is None
+    assert [batch.claimed for batch in model.calls] == [AT, later]
+    assert [batch.stimuli[0].graph_id for batch in model.calls] == ["observed-source", "later"]
+
+    async with scenario.engine.connect() as conn:
+        [(claim_id, part, asserted)] = (await conn.execute(sa.select(
+            CLAIM.c.id, CLAIM.c.part, CLAIM.c.asserted_at,
+        ).where(CLAIM.c.occasion == "wake_history"))).all()
+        for table in (GRAPH_STIMULUS, GRAPH_STIMULUS_CLAIM, INTENTION, NORA_ACT):
+            assert await conn.scalar(sa.select(sa.func.count()).select_from(table)) == 0
+    assert part == "fact" and asserted == AT
+    results = [
+        part["toolResult"] for message in model.models[1].seen[-1]
+        for part in message["content"] if "toolResult" in part
+    ]
+    assert len(results) == 2
+    assert claim_id in str(results[0])
+    assert "nothing_found" in str(results[1])
+
+
+async def test_replay_ties_batch_by_id_and_a_complete_rerun_is_empty(scenario):
+    from nora.app.graph_replay import GraphReplay
+    from tests.infra.test_replay_receipt import ScriptedReplay, receipt_rows, receipts
+    from tests.infra.test_retrieval_scope import AT, UNIT
+
+    for id_ in ("c", "a", "b"):
+        await scenario.item(f"tied-{id_}")
+    replay = GraphReplay(receipts(scenario), 2)
+    scripted = ScriptedReplay(scenario, [([], 4), ([], 4)])
+    report = await replay.run(UNIT, AT, scripted)
+    assert report.closed == 2
+    assert [tuple(s.graph_id for s in batch.stimuli) for batch in scripted.calls] == [
+        ("tied-a", "tied-b"), ("tied-c",),
+    ]
+    assert all(batch.claimed == AT for batch in scripted.calls)
+    before = await receipt_rows(scenario)
+    no_calls = ScriptedReplay(scenario, [])
+    report = await replay.run(UNIT, AT, no_calls)
+    assert report.batches == () and report.closed == 0 and report.coverage.pending == ()
+    assert no_calls.calls == []
+    assert await receipt_rows(scenario) == before
+
+
+async def test_inspect_lists_batches_without_building_a_model(scenario, monkeypatch, capsys):
+    import json
+    from contextlib import asynccontextmanager
+
+    from nora.app import composition_wake_history
+    from nora.app.graph_replay import _entry
+    from tests.infra.test_replay_receipt import receipt_rows, receipts
+    from tests.infra.test_retrieval_scope import AT, UNIT
+
+    await scenario.item("queued")
+
+    @asynccontextmanager
+    async def dependencies(cfg, *, inspect):
+        assert inspect
+        yield receipts(scenario), None, 2
+
+    monkeypatch.setattr(composition_wake_history, "replay_dependencies", dependencies)
+    assert await _entry([
+        "--config", "config.example.toml", "--unit", UNIT, "--until", AT.isoformat(), "--inspect",
+    ]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["batches"] == [{"clock": AT.isoformat(), "items": 1}]
+    assert result["pending"] == 1
+    assert not await receipt_rows(scenario)

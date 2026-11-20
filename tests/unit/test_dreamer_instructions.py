@@ -465,6 +465,7 @@ def test_no_shipped_description_reaches_the_model():
 NATIVELY_AUTHORED = {
     "debrief",
     "wake",
+    "wake-history",
     "standing-debrief",
     # The culture tier's only pass (DEC-182).
     "culture",

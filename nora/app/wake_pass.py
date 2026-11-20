@@ -128,6 +128,10 @@ class WakePassRunner:
             )
             if assembled.status == "unavailable":
                 return WakeFailed("error")
+            if context.clock is not None and tuple(id_ for id_, _ in assembled.observed) != tuple(
+                stimulus.graph_id for stimulus in claimed.stimuli
+            ):
+                return WakeFailed("error")
             seed_pass_shown(assembled.shown)
             tools = as_strands_tools(self._surface.bind(scope, now, room_busy))
             surface = deferred_surface(tools, resident=(tool.tool_name for tool in tools))
@@ -158,4 +162,6 @@ class WakePassRunner:
             return WakeFailed("room_busy")
         if result.stop_reason in LIMIT_STOP_REASONS:
             return WakeFailed("bound")
-        return WakeClosed() if result.stop_reason == "end_turn" else WakeFailed("error")
+        if result.stop_reason == "end_turn":
+            return WakeClosed(observed=assembled.observed)
+        return WakeFailed("error")

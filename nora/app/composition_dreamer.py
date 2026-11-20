@@ -234,22 +234,14 @@ class DreamerRuntimeWiring:
     dreamer_runtime: Any
 
 
-def _dreamer_runtime(
-    allowlist: Any, audit: Any, cfg: Any, content_checks: Any,
-    dream_adaptors: Any, dream_schedules: Any, dreamer_instructions: Any, memory: Any,
-    metrics: Any, model_client_for: Any, persons: Any, proactive_homes: Any,
-    reasoning_strip_store: Any, registry: Any, rosters: Any, route_model: Any,
-    tier: Any, tool_registry: Any, access: Any,
-) -> DreamerRuntimeWiring:
-    """The DreamerRuntime the loop hosts every adaptor on."""
-    dream_model = route_model("dreamer", cfg.dreamer_model())
+def dreamer_model_source(cfg: Any, tier: Any, dream_model: str, client: Any) -> factory.ModelSource:
     dream_effort = cfg.dreamer.reasoning_effort or tier.reasoning_effort
     _reasoning_effort(
         dream_effort,
         source="[dreamer] reasoning_effort (or [llm]'s, inherited)",
     )
-    dream_models = factory.ModelSource(
-        client=model_client_for("dreamer"),
+    return factory.ModelSource(
+        client=client,
         spec=factory.ModelSpec(
             # `cfg.dreamer_max_tokens()` and NOT `tier.max_tokens`. The tier's number is size…
             # TAG TURN; a batch pass whose objective asks for one verdict per message has an…
@@ -264,6 +256,18 @@ def _dreamer_runtime(
             tool_choice=tool_choice.AFTER_SPEAKING,
         ),
     )
+
+
+def _dreamer_runtime(
+    allowlist: Any, audit: Any, cfg: Any, content_checks: Any,
+    dream_adaptors: Any, dream_schedules: Any, dreamer_instructions: Any, memory: Any,
+    metrics: Any, model_client_for: Any, persons: Any, proactive_homes: Any,
+    reasoning_strip_store: Any, registry: Any, rosters: Any, route_model: Any,
+    tier: Any, tool_registry: Any, access: Any,
+) -> DreamerRuntimeWiring:
+    """The DreamerRuntime the loop hosts every adaptor on."""
+    dream_model = route_model("dreamer", cfg.dreamer_model())
+    dream_models = dreamer_model_source(cfg, tier, dream_model, model_client_for("dreamer"))
     dream_tools = _dream_tool_source(
         allowlist=allowlist, audit=audit, cfg=cfg, memory=memory,
         metrics=metrics, persons=persons, proactive_homes=proactive_homes,

@@ -10,7 +10,7 @@ from sqlalchemy.sql import FromClause
 
 from nora.access import IdentityAccess
 from nora.infra.sql.cognitive_graph_schema import GRAPH_STIMULUS
-from nora.infra.sql.cognitive_graph_store import visible_to_reads
+from nora.infra.sql.cognitive_graph_store import content_digest, visible_to_reads
 from nora.memory.adapters.retrieval_rows import tombstoned_ids
 from nora.memory.domain.graph import ClaimPart, Kind, PointerKind
 from nora.memory.domain.registration import ITEM_SOURCES, SEARCHABLE_SOURCES
@@ -316,5 +316,8 @@ async def load_rows(
             if kind == "entity" else None,
             support=support.get(graph_id), lesson_tally=lesson_tallies.get(graph_id),
             items_since=items_since, items_since_cause=staleness_cause,
+            input_digest=(
+                content_digest(source, image) if ceiling is not None and kind == "item" else None
+            ),
         ))
     return tuple(result)

@@ -19,6 +19,7 @@ from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy.dialects import postgresql as pg
 
 from nora.domain.graph_registration import SourceKind
+from nora.infra.sql.graph_replay_schema import GRAPH_REPLAY_RECEIPT as GRAPH_REPLAY_RECEIPT
 from nora.infra.sql.graph_stimulus_schema import graph_stimulus_claim_table, graph_stimulus_table
 from nora.infra.sql.intention_verdict_schema import (
     attach_verdict_constraints,

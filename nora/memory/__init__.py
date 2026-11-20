@@ -76,6 +76,9 @@ from nora.memory.domain.registration import (
     PROTECTED_ITEM_SOURCES as PROTECTED_ITEM_SOURCES,
 )
 from nora.memory.domain.retrieval import ReadingRoom as ReadingRoom
+from nora.memory.domain.retrieval import RetrievalUnavailableError as RetrievalUnavailableError
+from nora.memory.domain.wake import ReplayCoverage as ReplayCoverage
+from nora.memory.domain.wake import ReplayItem as ReplayItem
 from nora.memory.domain.wake import WakeClaim as WakeClaim
 from nora.memory.domain.wake import WakeClosed as WakeClosed
 from nora.memory.domain.wake import WakeFailed as WakeFailed

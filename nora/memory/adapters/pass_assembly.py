@@ -68,9 +68,16 @@ class PassAssembler:
             choice, seeds, result, floor, now, open_room_and_unit=isinstance(data, DebriefInput),
             floor_ids=due_ids,
         )
+        observed: tuple[tuple[str, str], ...] = ()
+        if clock is not None and isinstance(data, WakeInput):
+            digests = {row.graph_id: row.input_digest for row in result.rows}
+            observed = tuple(
+                (stimulus.graph_id, digest) for stimulus in data.stimuli
+                if stimulus.graph_id in due_ids and (digest := digests.get(stimulus.graph_id))
+            )
         return AssembledPass(
             blocks, result.status, result.cause, shown,
-            not isinstance(data, ProactiveInput) or data.intention in due_ids,
+            not isinstance(data, ProactiveInput) or data.intention in due_ids, observed,
         )
 
 
