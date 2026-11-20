@@ -455,7 +455,7 @@ def test_refusal_literal_covers_all_reachable_form_and_write_reasons() -> None:
     assert all(isinstance(result, Refusal) and result.field for result in decisions)
     observed = {result.reason for result in decisions if isinstance(result, Refusal)}
     assert observed == set(get_args(FormRefusal))
-    # The remaining outcomes depend on protections or SQL, exercised in infra.
+    # The remaining outcomes depend on the write path, exercised in infra.
     assert set(get_args(RefusalReason)) == observed | {
         "stale_base",
         "credential",
@@ -469,4 +469,5 @@ def test_refusal_literal_covers_all_reachable_form_and_write_reasons() -> None:
         "not_this_delivery",
         "citation_outside_pass",
         "not_a_commit",
+        "room_busy",
     }
