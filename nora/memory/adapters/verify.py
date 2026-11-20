@@ -80,9 +80,12 @@ class _Batch:
             sources.update(resolved)
         return opened, sources
 
-    async def end(self, due: DueIntention, ending: ClockEnding) -> None:
+    async def end(
+        self, due: DueIntention, ending: ClockEnding, *, room_busy: Callable[[], bool],
+    ) -> None:
         await self._graph.end_intention_by_clock_in(
             self._conn, self._intentions[due.unit, due.id], ending, ended_at=due.deadline,
+            room_busy=room_busy,
         )
 
     async def record_verdicts(self, clock: Callable[[], datetime]) -> None:

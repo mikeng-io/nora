@@ -129,19 +129,23 @@ async def test_verdict_is_citable_as_an_aggregate_in_admission(engine):
     assert [(e["type"], e["dst_id"]) for e in edges] == [("cites", verdict["graph_id"])]
 
 
-async def test_verdict_rebuild_uses_the_ended_head_and_preserves_its_disclosure(engine):
-    await _clock_end(engine, exposure="operator", excluded_persons=["generated-exclusion"])
+async def test_operator_verdict_is_rebuilt_without_publishing_a_stimulus(engine):
+    await _clock_end(
+        engine, id_="operator-only", exposure="operator", excluded_persons=["generated-exclusion"],
+    )
+    await _clock_end(engine)
     await _tick(engine, datetime.now(UTC))
     expected = await _verdicts(engine)
-    assert expected["due"]["exposure"] == "operator"
-    assert expected["due"]["excluded_persons"] == ["generated-exclusion"]
+    assert expected["operator-only"]["exposure"] == "operator"
+    assert expected["operator-only"]["excluded_persons"] == ["generated-exclusion"]
+    assert {s.graph_id for s in await _stimuli(engine)} == {expected["due"]["graph_id"]}
     async with engine.begin() as conn:
         await conn.execute(sa.delete(INTENTION_VERDICT))
 
     await _tick(engine, datetime.now(UTC) + timedelta(minutes=1))
 
     assert await _verdicts(engine) == expected
-    assert len(await _stimuli(engine)) == 1
+    assert {s.graph_id for s in await _stimuli(engine)} == {expected["due"]["graph_id"]}
 
 
 @pytest.mark.fresh_database

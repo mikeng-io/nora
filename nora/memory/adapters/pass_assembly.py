@@ -58,11 +58,14 @@ class PassAssembler:
             )
         builder = GraphPresentationBlocks(now, seeds.room, seeds.dm_rooms)
         due_ids: frozenset[str] = frozenset()
+        agenda_stimuli: tuple[str, ...] = ()
         if isinstance(data, ProactiveInput):
             due, due_ids = builder.due_intention(result, data.intention)
             floor = (due, *floor)
         elif isinstance(data, WakeInput):
-            agenda, due_ids = wake_blocks(data, result, builder, seeds.anchors.graph_ids)
+            agenda, due_ids, agenda_stimuli = wake_blocks(
+                data, result, builder, seeds.anchors.graph_ids,
+            )
             floor = (*agenda, *floor)
         blocks, shown = _presentation_order(
             choice, seeds, result, floor, now, open_room_and_unit=isinstance(data, DebriefInput),
@@ -72,12 +75,12 @@ class PassAssembler:
         if clock is not None and isinstance(data, WakeInput):
             digests = {row.graph_id: row.input_digest for row in result.rows}
             observed = tuple(
-                (stimulus.graph_id, digest) for stimulus in data.stimuli
-                if stimulus.graph_id in due_ids and (digest := digests.get(stimulus.graph_id))
+                (id_, digest) for id_ in agenda_stimuli if (digest := digests.get(id_))
             )
         return AssembledPass(
             blocks, result.status, result.cause, shown,
             not isinstance(data, ProactiveInput) or data.intention in due_ids, observed,
+            agenda_stimuli,
         )
 
 

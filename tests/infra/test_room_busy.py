@@ -5,8 +5,11 @@ from dataclasses import replace
 from datetime import timedelta
 
 import pytest
+import sqlalchemy as sa
 
+from nora.access import IdentityAccess
 from nora.agent.egress import LeakGuard
+from nora.app.composition_fire import _tell_about_lost_jobs
 from nora.app.graph_observe import graph_observe
 from nora.app.wake_rooms import WakeRoomSlots
 from nora.doctrine.loader import Doctrine
@@ -24,11 +27,12 @@ from tests.infra.test_cognitive_graph_admission import _rows
 from tests.infra.test_debrief_obligation import journal, pending
 from tests.infra.test_graph_debrief import CONTEXT, MESSAGE, opening, wiring
 from tests.infra.test_proactive_claims import claim_rows
-from tests.infra.test_retrieval_scope import AT, ROOM
+from tests.infra.test_retrieval_scope import AT, PERSON, ROOM
 from tests.infra.test_retrieval_scope import scenario as scenario
 from tests.infra.test_situation_staleness import intention
 from tests.infra.test_wake_claims import ORIGIN, stimulus
 from tests.infra.test_wake_pass import tick, worker
+from tests.unit.test_compute_poller import _pending_job
 
 ALIAS = "generated-non-primary-room-id"
 SUBJECT = "generated-intention"
@@ -89,6 +93,28 @@ async def test_an_intention_stored_under_an_alias_resolves_to_the_held_primary_s
     assert await revise(service(scenario, room_slots)) == Refusal("room_busy", "origin_room")
 
 
+async def test_a_fire_holder_using_a_room_alias_blocks_a_wake_write(scenario):
+    with_alias(scenario)
+    await intention(scenario, SUBJECT, origin_room=ORIGIN)
+    room_slots = slots(scenario)
+    admitter = service(scenario, room_slots)
+    job = _pending_job(conversation_id=ALIAS, requester_person_id=PERSON)
+    access = IdentityAccess.for_files(persons=scenario.persons, policy=scenario.policy)
+    outcomes = []
+
+    async def speak(occasion):
+        assert occasion.conversation_id == ALIAS
+        outcomes.append(await revise(admitter))
+        return "sent"
+
+    await _tell_about_lost_jobs(
+        [job], speak, room_slots, Metrics(), scenario.policy, access,
+    )
+
+    assert outcomes == [Refusal("room_busy", "origin_room")]
+    assert isinstance(await revise(admitter), Stored)
+
+
 async def test_an_unresolved_intention_room_is_refused(scenario):
     await intention(scenario, SUBJECT, origin_room="signal:unknown-fixture-room")
     room_slots = slots(scenario)
@@ -118,6 +144,39 @@ async def test_verify_ends_a_due_intention_on_the_first_tick_after_its_room_rele
 
     row = (await _rows(scenario.engine, INTENTION))[SUBJECT]
     assert (row["state"], row["ending"], row["ended_at"]) == ("ended", "unknown", deadline)
+
+
+async def test_verify_defers_a_drop_when_the_room_becomes_busy_at_the_row_lock(scenario):
+    deadline = AT + timedelta(minutes=1)
+    await intention(
+        scenario, SUBJECT, origin_room=ORIGIN, drop_when_form="deadline",
+        drop_when={"at": deadline.isoformat()},
+    )
+    room_slots = slots(scenario)
+    observe = graph_observe(
+        scenario.engine, lambda: deadline, Metrics(),
+        room_slots=WakeRoomSlots(scenario.policy, room_slots),
+    )
+
+    def acquire_after_lock(conn, cursor, statement, parameters, context, executemany):
+        if "SELECT intention.id" in statement and "FOR UPDATE SKIP LOCKED" in statement:
+            assert room_slots.try_acquire(KEY)
+
+    engine = scenario.engine.sync_engine
+    sa.event.listen(engine, "after_cursor_execute", acquire_after_lock)
+    try:
+        await observe.tick()
+    finally:
+        sa.event.remove(engine, "after_cursor_execute", acquire_after_lock)
+
+    assert room_slots.held(KEY)
+    row = (await _rows(scenario.engine, INTENTION))[SUBJECT]
+    assert (row["state"], row["ending"]) == ("open", None)
+
+    room_slots.release_and_dispatch(KEY)
+    await observe.tick()
+    row = (await _rows(scenario.engine, INTENTION))[SUBJECT]
+    assert (row["state"], row["ending"], row["ended_at"]) == ("ended", "dropped", deadline)
 
 
 async def test_engagement_alias_acquisition_blocks_a_wake_write_and_defers_debrief(scenario):

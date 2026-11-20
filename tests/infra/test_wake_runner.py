@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import AsyncIterable, Callable
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -14,9 +15,12 @@ from nora.agent.lineage import LineagePolicy
 from nora.agent.room import Room
 from nora.app.cognition_agent_runner import DreamerAgentRunner
 from nora.app.cognition_session import AdaptorBudget
+from nora.app.wake_debrief import WakeDebriefRetry
 from nora.app.wake_floor import WakeRoomFloor
 from nora.app.wake_pass import WakePassRunner
+from nora.app.wake_poller import WakePoller
 from nora.app.wake_rooms import WakeRoomSlots
+from nora.config import CognitionConfig
 from nora.domain.graph_stimuli import GraphStimulus
 from nora.domain.models import NormalizedMessage
 from nora.engagement.self_presence import PresenceReader
@@ -30,18 +34,21 @@ from nora.infra.sql.item_registration import (
 from nora.infra.sql.record_query import SqlRecordQuery
 from nora.instructions.dreamer import DreamerInstructions
 from nora.memory import ActRefused, WakeClaim, WakeClosed, WakeFailed, declare_act, wire
+from nora.memory.adapters.wake_claims import SqlWakeClaims
 from nora.memory.app.act_scope import active_act_authority, pass_shown
 from nora.obs.metrics import Metrics
 from nora.testing.fakes import FakeRosterSource
 from nora.testing.scripted_agent import ScriptedTurn
 from tests.fakes import dreamer_runtime_for
-from tests.infra.test_graph_debrief import opening
+from tests.infra.test_graph_debrief import opening, wiring
 from tests.infra.test_pass_anchors import NOW, pointers
+from tests.infra.test_proactive_claims import claim_rows
 from tests.infra.test_retrieval_scope import AT, PERSON, ROOM, UNIT, write_edge
 from tests.infra.test_retrieval_scope import scenario as scenario
 from tests.infra.test_room_busy import KEY, SUBJECT, service, slots
 from tests.infra.test_situation_staleness import intention
-from tests.infra.test_wake_claims import GROUP, ORIGIN
+from tests.infra.test_wake_claims import GROUP, ORIGIN, stimulus
+from tests.infra.test_wake_pass import tick
 from tests.unit.test_dream_memory_budget import _ScriptedModel
 
 
@@ -134,6 +141,36 @@ async def test_claimed_items_and_touched_open_intentions_are_in_the_wake_agenda(
     agenda = model.prompt().split("<agenda", 1)[1].split("</agenda>", 1)[0]
     assert "claimed-row" in agenda and "touched-open" in agenda
     assert {"claimed-row", "touched-open"} <= shown
+
+
+async def test_an_unreadable_claim_releases_then_parks_in_a_live_wake(scenario):
+    await stimulus(scenario, "visible")
+    await scenario.item("operator-only", exposure="operator")
+    hidden = replace(observation("operator-only"), room=ORIGIN)
+    await SqlGraphStimuli(scenario.engine).append(hidden)
+    now = AT + timedelta(seconds=2)
+    model = WakeModel([])
+    room_slots = slots(scenario)
+    debrief, _ = wiring(scenario)
+    retry = WakeDebriefRetry(
+        debrief, debrief.store, WakeRoomSlots(scenario.policy, room_slots), room_slots,
+    )
+    metrics = Metrics()
+    poller = WakePoller(
+        SqlWakeClaims(scenario.engine), runner(scenario, model), retry, scenario.policy,
+        metrics, lambda: now, config=CognitionConfig(quiet_seconds=1, cooldown_seconds=0),
+    )
+
+    for attempts in range(1, 4):
+        await tick(poller)
+        state = "released" if attempts < 3 else "parked"
+        rows = await claim_rows(scenario)
+        assert {(row["graph_id"], row["state"], row["attempts"]) for row in rows} == {
+            (id_, state, attempts) for id_ in ("visible", "operator-only")
+        }
+
+    assert model.seen == []
+    assert metrics.get("nora_wake_stimulus_parked_total") == 2
 
 
 async def test_wake_reports_a_reached_turn_bound(scenario):

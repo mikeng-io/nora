@@ -87,7 +87,7 @@ class ProactivePoller:
 
     async def _process(self, due: DueIntention) -> None:
         target = await self._landing.resolve(due)
-        key = self._slots.key((target.platform, target.conversation_id)) if target else None
+        key = (target.platform, target.conversation_id) if target else None
         if key is not None and not self._slots.try_acquire(key):
             return
         try:

@@ -60,32 +60,34 @@ class ConversationSlots:
         return self._queues.maxlen
 
     def depth(self, key: Key) -> int:
-        return self._queues.depth(key)
+        return self._queues.depth(self.key(key))
 
     def held(self, key: Key) -> bool:
-        return key in self._in_flight
+        return self.key(key) in self._in_flight
 
     def acquire(self, key: Key) -> None:
         """R-10 acquire. The caller owns the matching `release_and_dispatch`."""
-        self._in_flight.add(key)
+        self._in_flight.add(self.key(key))
 
     def try_acquire(self, key: Key) -> bool:
         """Acquire iff free. The heartbeat's entry point: it never queues and
         never waits — a tick that cannot get the slot leaves its rows `pending`
         and retries next tick."""
+        key = self.key(key)
         if key in self._in_flight:
             return False
         self._in_flight.add(key)
         return True
 
     def enqueue(self, key: Key, factory: Factory) -> None:
-        self._queues.enqueue(key, factory)
+        self._queues.enqueue(self.key(key), factory)
 
     def release_and_dispatch(self, key: Key) -> None:
         """Release the slot, then immediately start the next queued turn if
         there is one — re-acquiring the slot for it. Both operations are
         synchronous with no await between them, so no arriving tag can slip
         into the run-now path in the gap."""
+        key = self.key(key)
         self._in_flight.discard(key)
         factory = self._queues.dequeue(key)
         if factory is None:

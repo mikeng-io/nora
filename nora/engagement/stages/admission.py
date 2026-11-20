@@ -93,7 +93,7 @@ def run(
         metrics.inc("nora_tags_debounced_total")
         return Admission.REJECTED
 
-    key = slot_key if slot_key is not None else slots.key(key)
+    key = slot_key if slot_key is not None else key
     if slots.held(key):                                     # R-10: a turn is running
         depth, maximum = slots.depth(key), slots.maxlen
         if depth >= maximum:                                # R-30: flood guard

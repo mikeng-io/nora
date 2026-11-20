@@ -53,7 +53,7 @@ async def _record(
         INTENTION_VERDICT.c.graph_id,
     )
     graph_id = await conn.scalar(stmt)
-    if graph_id is None:
+    if graph_id is None or planes["exposure"] == "operator":
         return
     at = clock()
     await SqlGraphStimuli.append_in(conn, GraphStimulus(
