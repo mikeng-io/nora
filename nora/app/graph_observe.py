@@ -45,10 +45,11 @@ class GraphObserve:
 
 def graph_observe(
     engine: AsyncEngine, clock: Callable[[], datetime], metrics: Any,
-    provider: SearchProvider | None = None, *, analytics: AnalyticsConfig,
+    provider: SearchProvider | None = None, *, analytics: AnalyticsConfig | None = None,
 ) -> GraphObserve:
     import nora.memory as memory
 
+    analytics = analytics if analytics is not None else AnalyticsConfig()
     return GraphObserve(
         clock=memory.wire.graph_clock(engine, clock),
         matcher=memory.wire.condition_matcher(engine),

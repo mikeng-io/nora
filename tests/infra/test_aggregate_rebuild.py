@@ -19,15 +19,17 @@ from nora.analytics.runner import CODE_VERSION
 from nora.domain.observations import Observation, PollPayload, SourceScope
 from nora.domain.presence import SavedPlace
 from nora.infra.sql import create_sql_engine
-from nora.infra.sql.cognitive_graph_schema import REGISTRY
+from nora.infra.sql.cognitive_graph_schema import GRAPH_STIMULUS, REGISTRY
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
+from nora.infra.sql.item_registration import epoch_ms
 from nora.infra.sql.item_retention import tombstone_items
 from nora.infra.sql.observations import SqlObservationStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.schema import MESSAGES, METADATA, PRESENCE_CORRIDORS, PRESENCE_DERIVED_PLACES
 from nora.memory.domain.registration import AGGREGATE_FAMILIES
-from nora.memory.wire import claim_support
+from nora.memory.wire import claim_support, intention_verifier
 from tests.infra.rollup_fixtures import RollupFixture
+from tests.infra.test_condition_matcher import _intention
 from tests.infra.test_support import _evidence
 
 pytestmark = pytest.mark.asyncio(loop_scope="module")
@@ -48,6 +50,7 @@ _SYSTEM_COLUMNS = {
     "presence_places": set(),
     "platform_object_state": {"id", "asserted_at", "created_at", "updated_at"},
     "claim_support": set(),
+    "intention_verdict": set(),
 }
 _REFERENCE_COLUMNS = {
     "presence_stays": {"place_id": PRESENCE_DERIVED_PLACES},
@@ -279,6 +282,25 @@ async def _support_head(record, table):
     return folded, await _snapshot(record.engine, table)
 
 
+async def _verdict_head(record, table):
+    at = epoch_ms(_WATERMARK)
+    await _intention(
+        record.engine, "generated-verdict-intention", "untyped", "Generated condition",
+        unit=record.unit, asserted_at=epoch_ms(_START), deadline=at,
+        origin_room=f"signal:{dict(record.rooms)['signal']}",
+    )
+    verifier = intention_verifier(record.engine, lambda: at, max_poll_gap_seconds=900)
+    await verifier.run_once()
+    folded = await _snapshot(record.engine, table)
+    async with record.engine.begin() as conn:
+        await conn.execute(sa.delete(GRAPH_STIMULUS).where(
+            GRAPH_STIMULUS.c.unit == record.unit, GRAPH_STIMULUS.c.kind == "verdict",
+        ))
+    await _reset_head(record.engine, table)
+    await verifier.run_once()
+    return folded, await _snapshot(record.engine, table)
+
+
 @pytest.fixture
 def aggregate_db(request, family):
     fixture = "clean_pg_url" if AGGREGATE_FAMILIES[family] == "head" else "builds"
@@ -303,6 +325,7 @@ async def test_each_aggregate_rebuilds_the_same_live_rows_and_registry(family, a
                 "platform_object_state": _platform_heads,
                 "presence_places": _saved_places,
                 "claim_support": _support_head,
+                "intention_verdict": _verdict_head,
             }
             incremental, rebuilt = await builders[family](record, table)
             assert incremental == rebuilt
