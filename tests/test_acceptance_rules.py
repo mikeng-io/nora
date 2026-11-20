@@ -463,6 +463,9 @@ RULE_TESTS = {
     "R-100": "test_a_reply_with_a_made_up_link_is_sent_without_it_and_counted",
     # Nobody outside identity.toml is sent, or recorded from, a direct message.
     "R-101": "test_a_dm_to_an_address_not_in_identity_toml_is_refused",
+    "wake-claims-close": "test_a_closed_wake_closes_its_whole_set",
+    "wake-room-busy": "test_engagement_alias_acquisition_blocks_a_wake_write_and_defers_debrief",
+    "wake-parks-failures": "test_the_third_counted_failure_parks_the_set",
 }
 
 
