@@ -1,6 +1,7 @@
 """Run the scheduled judge through its real tools and scoped Postgres reads."""
 
 import re
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -16,16 +17,17 @@ from nora.app.composition_review import build_review_runner
 from nora.app.review_pass import REVIEW_RETRY_SECONDS, ReviewPass
 from nora.app.startup import StartupError
 from nora.config import ModelRoute
+from nora.domain.lineage import LiveRoom
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.instructions.dreamer import DreamerInstructions
-from nora.memory import ReviewInput, wire
+from nora.memory import ReadingRoom, ReviewInput, wire
 from nora.memory.domain.pass_declarations import declaration
 from nora.obs.metrics import Metrics
 from nora.testing.scripted_agent import ScriptedTurn
 from tests.fakes import dreamer_runtime_for
 from tests.infra.test_graph_propose import BASIS
 from tests.infra.test_pass_anchors import NOW, SCOPE, reader
-from tests.infra.test_retrieval_scope import AT, ROOM, UNIT, write_edge
+from tests.infra.test_retrieval_scope import AT, OTHER, OTHER_ROOM, ROOM, UNIT, write_edge
 from tests.infra.test_retrieval_scope import scenario as scenario
 from tests.infra.test_review_admission import grade_rows, guess, lesson
 from tests.infra.test_room_busy import service, slots
@@ -35,8 +37,12 @@ from tests.unit.test_dream_memory_budget import _tool_results
 
 class _Room:
     async def scope_for(self, unit, room):
-        assert (unit, room) == (UNIT, f"signal:{ROOM}")
-        return SCOPE, False
+        assert unit == UNIT
+        if room == f"signal:{ROOM}":
+            return SCOPE, False
+        assert room == f"signal:{OTHER_ROOM}"
+        reading = ReadingRoom("signal", OTHER_ROOM, LiveRoom(frozenset({OTHER})))
+        return replace(SCOPE, room=reading), False
 
 
 class _TruncatedReview(WakeModel):
@@ -164,6 +170,24 @@ async def test_scheduled_review_uses_claim_room_in_unit_without_home(scenario):
     review.poll(NOW + timedelta(seconds=REVIEW_RETRY_SECONDS))
     await review.drain()
     assert model.turn == 2
+
+
+async def test_review_retry_bound_holds_across_rooms_in_one_unit(scenario):
+    await guess(scenario)
+    await scenario.claim("other-guess", part="guess", prediction="Other room prediction",
+                         window_end=AT, origin_room=OTHER_ROOM)
+    model = WakeModel([])
+    review = _review(scenario, model)
+    review.poll(NOW)
+    await review.drain()
+    assert model.turn == 1 and "Other room prediction" in model.prompt()
+    assert "Generated prediction" not in model.prompt()
+    review.poll(NOW + timedelta(seconds=1))
+    await review.drain()
+    assert model.turn == 1
+    review.poll(NOW + timedelta(seconds=REVIEW_RETRY_SECONDS))
+    await review.drain()
+    assert model.turn == 2 and "Generated prediction" in model.seen[1][0]["content"][0]["text"]
 
 
 async def test_guess_profile_renders_its_refuted_grade(scenario):

@@ -134,7 +134,13 @@ class ReviewPass:
     async def _tick(self, unit: str, now: datetime) -> None:
         try:
             rooms = await self._due_rooms(unit, now)
-            start = bisect_right(rooms, self._last_room.get(unit, ""))
+            last = self._last_room.get(unit, "")
+            if last in rooms:
+                previous = self._attempts.get((unit, last))
+                if previous is not None and now < previous.retry_at:
+                    await self.run_once(unit, last, now)
+                    return
+            start = bisect_right(rooms, last)
             for room in (*rooms[start:], *rooms[:start]):
                 self._last_room[unit] = room
                 if await self.run_once(unit, room, now):
