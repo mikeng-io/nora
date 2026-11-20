@@ -62,14 +62,17 @@ async def receipt_rows(scenario):
 async def test_a_closed_replay_records_the_exact_inputs_and_a_failed_replay_records_none(scenario):
     await scenario.item("first")
     await scenario.item("second", at=LATER)
+    last = LATER + timedelta(seconds=1)
+    await scenario.item("third", at=last)
     store = receipts(scenario)
     replay = GraphReplay(store, 1)
     refused_to_finish = ScriptedTurn(tool_calls=[("memory_read", {"id": "second"})])
-    model = ScriptedReplay(scenario, [([], 4), ([refused_to_finish], 1)])
+    model = ScriptedReplay(scenario, [([], 4), ([refused_to_finish], 1), ([], 4)])
 
-    interrupted = await replay.run(UNIT, LATER, model)
+    interrupted = await replay.run(UNIT, last, model)
     assert interrupted.closed == 1 and interrupted.failed == "bound"
-    assert [item.graph_id for item, _ in interrupted.coverage.pending] == ["second"]
+    assert len(model.calls) == 2
+    assert [item.graph_id for item, _ in interrupted.coverage.pending] == ["second", "third"]
     [saved] = await receipt_rows(scenario)
     assert (saved["unit"], saved["pass_id"], saved["clock"]) == (UNIT, model.calls[0].pass_id, AT)
     async with scenario.engine.connect() as conn:
@@ -78,12 +81,12 @@ async def test_a_closed_replay_records_the_exact_inputs_and_a_failed_replay_reco
         ))).mappings().one()
     assert saved["inputs"] == {"first": content_digest("messages", row)}
 
-    resumed = ScriptedReplay(scenario, [([], 4)])
-    complete = await replay.run(UNIT, LATER, resumed)
-    assert complete.closed == 1 and complete.failed is None
+    resumed = ScriptedReplay(scenario, [([], 4), ([], 4)])
+    complete = await replay.run(UNIT, last, resumed)
+    assert complete.closed == 2 and complete.failed is None
     assert complete.coverage.pending == ()
     assert [tuple(saved["inputs"]) for saved in await receipt_rows(scenario)] == [
-        ("first",), ("second",),
+        ("first",), ("second",), ("third",),
     ]
 
 
