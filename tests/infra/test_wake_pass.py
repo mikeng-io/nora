@@ -1,7 +1,6 @@
 """A wake only consumes a durable set of claims when its runner closes."""
 
 import asyncio
-from dataclasses import replace
 from datetime import timedelta
 
 import pytest
@@ -17,7 +16,7 @@ from nora.obs.metrics import Metrics
 from nora.testing.scripted_wake_pass import ScriptedWakePass
 from tests.infra.test_graph_debrief import wiring
 from tests.infra.test_proactive_claims import claim_rows
-from tests.infra.test_retrieval_scope import AT, ROOM
+from tests.infra.test_retrieval_scope import AT
 from tests.infra.test_retrieval_scope import scenario as scenario
 from tests.infra.test_wake_claims import GROUP, ORIGIN, POLICY, stimulus
 
@@ -153,24 +152,3 @@ async def test_running_wakes_never_block_the_next_tick_or_exceed_capacity(scenar
     finally:
         finish.set()
         await poller.drain()
-
-
-async def test_roomless_input_waits_and_counts_when_its_unit_has_no_home(scenario):
-    await stimulus(scenario, "roomless", room=None)
-    await stimulus(scenario, "room-bearing")
-    script = {("room-bearing",): WakeClosed(), ("roomless",): WakeClosed()}
-    poller, (runner, metrics) = worker(scenario, script)
-    for _ in range(2):
-        await tick(poller)
-    assert [claim.reading_room for claim in runner.seen] == [ORIGIN]
-    assert [row["graph_id"] for row in await claim_rows(scenario)] == ["room-bearing"]
-    assert metrics.get("nora_errors_total", stage="wake_no_home_room") == 2
-
-    scenario.policy = replace(scenario.policy, conversations=tuple(
-        replace(room, home_room=True) if room.primary_id == ROOM else room
-        for room in scenario.policy.conversations
-    ))
-    poller, (runner, _) = worker(scenario, script)
-    await tick(poller)
-    [claimed] = runner.seen
-    assert claimed.group.room is None and claimed.reading_room == ORIGIN

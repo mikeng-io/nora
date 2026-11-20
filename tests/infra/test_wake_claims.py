@@ -131,3 +131,25 @@ async def test_two_rooms_form_separate_claim_sets(scenario):
     second = await store.claim(WakeGroup(UNIT, OTHER_ORIGIN), OTHER_ORIGIN, AT, POLICY)
     assert second is not None
     assert [s.graph_id for s in second.stimuli] == ["second"]
+
+async def test_roomless_input_waits_and_counts_when_its_unit_has_no_home(scenario):
+    from tests.infra.test_wake_pass import tick, worker
+
+    await stimulus(scenario, "roomless", room=None)
+    await stimulus(scenario, "room-bearing")
+    script = {("room-bearing",): WakeClosed(), ("roomless",): WakeClosed()}
+    poller, (runner, metrics) = worker(scenario, script)
+    for _ in range(2):
+        await tick(poller)
+    assert [claim.reading_room for claim in runner.seen] == [ORIGIN]
+    assert [row["graph_id"] for row in await claim_rows(scenario)] == ["room-bearing"]
+    assert metrics.get("nora_errors_total", stage="wake_no_home_room") == 2
+
+    scenario.policy = replace(scenario.policy, conversations=tuple(
+        replace(room, home_room=True) if room.primary_id == ROOM else room
+        for room in scenario.policy.conversations
+    ))
+    poller, (runner, _) = worker(scenario, script)
+    await tick(poller)
+    [claimed] = runner.seen
+    assert claimed.group.room is None and claimed.reading_room == ORIGIN
