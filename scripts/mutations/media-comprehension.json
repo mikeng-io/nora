@@ -109,7 +109,7 @@
   "file": "nora/media/adapters/tools/fetch.py",
   "old": "\n    if c.question:\n        c.kind = scan_outside(c.question, content_checks=c.content_checks)",
   "new": "\n    if False:\n        c.kind = scan_outside(c.question, content_checks=c.content_checks)",
-  "target": "tests/test_media_fetch.py -k carrying_an_identifier_never_reaches"
+  "target": "tests/test_media_fetch.py::test_a_question_carrying_an_identifier_never_reaches_the_provider"
  },
  {
   "name": "R3 video excluded from the vision cache",

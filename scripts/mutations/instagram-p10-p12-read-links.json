@@ -95,7 +95,7 @@
   "file": "nora/social/adapters/tools/instagram.py",
   "old": "if (\n        scan_outside(urllib.parse.unquote(c.link or \"\"), content_checks=c.content_checks)\n        or scan_outside(c.target, content_checks=c.content_checks)\n    ):",
   "new": "if c.source == \"handle\" and scan_outside(c.target, content_checks=c.content_checks):",
-  "target": "tests/unit/test_instagram_read_links.py -k key_shaped"
+  "target": "tests/unit/test_instagram_read_links.py::test_a_key_shaped_username_is_refused_however_it_arrived"
  },
  {
   "name": "review 2: the roster check is dropped (a story reaches anyone listed in any room)",
