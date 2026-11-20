@@ -69,12 +69,13 @@ def build_wake(
         debrief.admission, graph, room_for, metrics, content_checks=content_checks,
         offered=memory.wire.WAKE_TOOLS, allowed_operations=memory.wire.WAKE_OPERATIONS, clock=clock,
     )
+    _, _, model = cfg.endpoint("dreamer", cfg.dreamer_model())
     runner = WakePassRunner(
         rooms=floor, assembler=debrief.assembler, surface=surface, instructions=instructions,
         agent=DreamerAgentRunner(runtime=runtime, metrics=metrics, agent_name="wake",
                                  result_caps=TOOL_RESULT_CAPS, bound_tool_arguments=True),
         budget=cognition_budget(cfg.dreamer.budget_for("cognition")),
-        model=cfg.endpoint("dreamer")[1], revisions=debrief.revisions,
+        model=model, revisions=debrief.revisions,
         clock=lambda: clock().astimezone(zone),
     )
     room_slots = WakeRoomSlots(policy, slots)
