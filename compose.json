@@ -311,7 +311,7 @@
       }
     },
     "nora": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:ee4257c0188f9bc5e556691bc8e26bbcb239c08b6a4c44c0a85b2ef0563a2e79",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:2b091dea5b64dcdfad1d0255ff18599db2e9ebf2787d757e9207a1ae06709477",
       "container_name": "nora",
       "restart": "unless-stopped",
       "stop_grace_period": "75s",
@@ -396,7 +396,7 @@
       }
     },
     "http-egress": {
-      "image": "ghcr.io/mikeng-io/nora-http-egress@sha256:b6cbd990a7a30f40bd613e70a07fc53a294df216084c75acac26d14ff152516d",
+      "image": "ghcr.io/mikeng-io/nora-http-egress@sha256:41f21e38e8cf9ff9533b5c32a1c50f1e119f1412ebac3c5ca059c470f9e3b866",
       "restart": "unless-stopped",
       "networks": [
         "nora"
@@ -447,7 +447,7 @@
       ]
     },
     "site": {
-      "image": "ghcr.io/mikeng-io/nora-site@sha256:7d7438131ac8e7b95411d72a16bbea406283b1260e6a0f77d82a9d86cb95ccfb",
+      "image": "ghcr.io/mikeng-io/nora-site@sha256:d09cf784ba9f60c16d7971bfa87f10da41f171503d2c269d6bc0eb6eacaa1215",
       "container_name": "nora-site",
       "profiles": [
         "site"
@@ -458,7 +458,7 @@
       ]
     },
     "presence": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:ee4257c0188f9bc5e556691bc8e26bbcb239c08b6a4c44c0a85b2ef0563a2e79",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:2b091dea5b64dcdfad1d0255ff18599db2e9ebf2787d757e9207a1ae06709477",
       "container_name": "presence",
       "restart": "unless-stopped",
       "entrypoint": [
@@ -510,7 +510,7 @@
       }
     },
     "analytics": {
-      "image": "ghcr.io/mikeng-io/nora-nora@sha256:ee4257c0188f9bc5e556691bc8e26bbcb239c08b6a4c44c0a85b2ef0563a2e79",
+      "image": "ghcr.io/mikeng-io/nora-nora@sha256:2b091dea5b64dcdfad1d0255ff18599db2e9ebf2787d757e9207a1ae06709477",
       "container_name": "analytics",
       "restart": "unless-stopped",
       "entrypoint": [
@@ -687,7 +687,7 @@
           "max-file": "3"
         }
       },
-      "image": "ghcr.io/mikeng-io/nora-stt@sha256:7ffb9617d76c3175fc2ecc57bd702eb3fd7373c47827c3bae9f7c0d89b664147",
+      "image": "ghcr.io/mikeng-io/nora-stt@sha256:7709f3ee940a0afc0d46f9b21f3a9f5ef703b01916e332848825c4cb78e96240",
       "container_name": "stt",
       "restart": "unless-stopped",
       "networks": [
