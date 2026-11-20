@@ -77,7 +77,7 @@ async def rebuild_lesson_tally(
     verdicts = tuple({path["intention_id"]: path for path in paths}.values())
     edge_ids = {path[key] for path in paths for key in ("rest_id", "serve_id") if path[key]}
     edges = (await conn.execute(sa.select(EDGE).where(
-        EDGE.c.unit == unit, EDGE.c.id.in_(edge_ids),
+        EDGE.c.unit == unit, EDGE.c.id.in_(edge_ids), visible_to_reads(EDGE),
     ).order_by(EDGE.c.id))).mappings().all() if edge_ids else ()
     await _write(conn, graph, lesson, verdicts, edges, at)
 
