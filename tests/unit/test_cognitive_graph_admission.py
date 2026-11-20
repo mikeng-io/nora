@@ -1,6 +1,7 @@
 """Form and scope of model proposals, using generated rows."""
 
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from typing import cast, get_args
 
 import pytest
@@ -275,6 +276,8 @@ def test_pass_occasion_limits_proposed_bases(occasion: Occasion) -> None:
     )
     if occasion == "wake":
         assert isinstance(claim, Admitted)
+    elif occasion == "review":
+        assert claim == Refusal("occasion_part", "part")
     else:
         assert claim == Refusal("occasion_basis", "basis")
     if occasion == "review":
@@ -421,7 +424,20 @@ def test_refusal_literal_covers_all_reachable_form_and_write_reasons() -> None:
         NEW_CLAIM, part="lesson", content="Check the plan before committing.",
         links=(replace(ENTITY_LINK, source=NEW_CLAIM.id, target=nora.id),),
     )
+    now = datetime(2026, 11, 1, tzinfo=UTC)
+    guess = replace(CLAIM, part="guess", asserted_at=now, window_end=now + timedelta(hours=1))
+    grade = replace(
+        NEW_CLAIM, part="grade", grade="confirmed",
+        links=(replace(ENTITY_LINK, source=NEW_CLAIM.id, type="grades", target=guess.id),),
+    )
+    review = replace(PASS, occasion="review")
+    grade_cases = {"context": review, "extra": (guess, replace(ITEM, evidence_at=now))}
+    nora_evidence = replace(ITEM, evidence_at=now, author="nora")
     cases = (
+        (replace(grade, links=()), grade_cases),
+        (replace(grade, grade="holds"), grade_cases),
+        (grade, {"context": review, "extra": (guess,)}),
+        (grade, {"context": review, "extra": (guess, nora_evidence)}),
         (replace(lesson, links=()), {}),
         (lesson, {"extra": (nora,)}),
         (lesson, {"extra": (nora, replace(ITEM, author="nora"))}),
@@ -488,4 +504,5 @@ def test_refusal_literal_covers_all_reachable_form_and_write_reasons() -> None:
         "loosens_law",
         "check_unavailable",
         "occasion_part",
+        "already_graded",
     }

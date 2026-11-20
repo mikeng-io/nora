@@ -136,6 +136,7 @@ class CausalProtocol:
         self.first_id = None
         self.background = 0
         self.dream_model = cfg.endpoint("dreamer", cfg.dreamer_model())[2]
+        self.judge_model = cfg.endpoint("lesson_check", cfg.lessons.check_model)[2]
         self.standing_model = cfg.endpoint("standing", cfg.standing.model)[2]
         self.subagent_model = cfg.endpoint("subagent", cfg.llm.model)[2]
         self.turn_models = {
@@ -419,12 +420,16 @@ class CausalProtocol:
         checks, so the caller records the failure rather than hiding it
         behind a canned answer."""
         model = body.get("model")
-        if model == self.dream_model and body.get("stream") is True:
+        if model in {self.dream_model, self.judge_model} and body.get("stream") is True:
             tagged = self.objective_tag.search(
                 html.unescape("\n".join(texts(body.get("messages", []))))
             )
             if tagged is not None:
-                return False, tagged.group(1), self._background(body, tagged.group(1))
+                objective = tagged.group(1)
+                expected = self.judge_model if objective == "review" else self.dream_model
+                if model != expected:
+                    raise UnmatchedError("wrong_model", objective)
+                return False, objective, self._background(body, objective)
         if other := self._other_occasion(body):
             occasion, response = other
             scenario = (

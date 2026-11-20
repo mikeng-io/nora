@@ -133,12 +133,12 @@ async def test_debrief_holds_only_standing_after_the_floor(scenario) -> None:
     assert "open-for-debrief" in elements[-1].text
 
 
-async def test_review_retrieves_due_rows_and_renders_only_the_floor(scenario) -> None:
+async def test_review_skips_intentions_and_renders_only_the_floor_when_nothing_is_due(scenario):
     await intention(scenario, "due-for-review", deadline=NOW)
     floor = _floor()
     assembler, adapter = _counted(scenario)
     context = await assembler.assemble("review", ReviewInput(), floor, SCOPE, NOW)
-    assert context.status == "ok"
+    assert context.status == "nothing_found"
     assert len(adapter.reads) == 1
     assert context.blocks == floor
     assert [element.tag for element in _elements(context)] == ["members", "transcript"]

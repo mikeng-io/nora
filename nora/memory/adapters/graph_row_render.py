@@ -60,7 +60,10 @@ def _claim(row: RetrievedRow, now: datetime) -> tuple[str, ...]:
     if row.part == "situation":
         count = row.items_since if row.items_since is not None else "unknown"
         staleness = f"items_since={count}"
-    return (f"part={row.part}", evidence, staleness, _content(row.content))
+    grade = f"grade={row.grade}" if (
+        row.part == "grade" or (row.part == "guess" and row.grade in ("refuted", "expired"))
+    ) else ""
+    return (f"part={row.part}", evidence, staleness, grade, _content(row.content))
 
 
 def _intention(row: RetrievedRow, _now: datetime) -> tuple[str, ...]:

@@ -7,6 +7,7 @@ from datetime import datetime
 from nora.domain.blocks import ContextBlock
 from nora.memory.adapters.pass_anchors import AnchorRead, SqlPassAnchors
 from nora.memory.adapters.presentation_blocks import GraphPresentationBlocks
+from nora.memory.adapters.review_blocks import review_block
 from nora.memory.adapters.wake_blocks import wake_blocks
 from nora.memory.app.act_scope import active_act_authority
 from nora.memory.app.retrieval import RetrievalService
@@ -17,6 +18,7 @@ from nora.memory.domain.pass_inputs import (
     PassInput,
     PassScope,
     ProactiveInput,
+    ReviewInput,
     WakeInput,
 )
 from nora.memory.domain.presentations import lessons, related
@@ -59,6 +61,7 @@ class PassAssembler:
         builder = GraphPresentationBlocks(now, seeds.room, seeds.dm_rooms)
         due_ids: frozenset[str] = frozenset()
         agenda_stimuli: tuple[str, ...] = ()
+        review_due: tuple[tuple[str, datetime], ...] = ()
         if isinstance(data, ProactiveInput):
             due, due_ids = builder.due_intention(result, data.intention)
             floor = (due, *floor)
@@ -67,6 +70,11 @@ class PassAssembler:
                 data, result, builder, seeds.anchors.graph_ids,
             )
             floor = (*agenda, *floor)
+        elif isinstance(data, ReviewInput) and seeds.review_due:
+            docket, due_ids, review_due = review_block(
+                result, builder, seeds.review_due, seeds.review_evidence,
+            )
+            floor = (docket, *floor)
         blocks, shown = _presentation_order(
             choice, seeds, result, floor, now, open_room_and_unit=isinstance(data, DebriefInput),
             floor_ids=due_ids,
@@ -80,7 +88,7 @@ class PassAssembler:
         return AssembledPass(
             blocks, result.status, result.cause, shown,
             not isinstance(data, ProactiveInput) or data.intention in due_ids, observed,
-            agenda_stimuli,
+            agenda_stimuli, review_due,
         )
 
 

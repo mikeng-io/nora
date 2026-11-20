@@ -123,6 +123,7 @@ class RetrievedRow:
     items_since_cause: str | None = None
     lesson_tally: RetrievedLessonTally | None = None
     input_digest: str | None = None
+    grade: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

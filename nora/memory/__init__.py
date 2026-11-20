@@ -8,6 +8,7 @@ from nora.memory.app.act_scope import active_act_authority as active_act_authori
 from nora.memory.app.act_scope import begin_pass_tool as begin_pass_tool
 from nora.memory.app.act_scope import declare_act as declare_act
 from nora.memory.app.act_scope import internal_corpus as internal_corpus
+from nora.memory.app.act_scope import pass_shown as pass_shown
 from nora.memory.app.act_scope import record_interrupted_pass_tools as record_interrupted_pass_tools
 from nora.memory.app.act_scope import record_pass_expression as record_pass_expression
 from nora.memory.app.act_scope import record_pass_silence as record_pass_silence
@@ -28,8 +29,10 @@ from nora.memory.domain.admission_ports import AdmissionResult as AdmissionResul
 from nora.memory.domain.admission_ports import RoomSlots as RoomSlots
 from nora.memory.domain.admission_ports import Unavailable as Unavailable
 from nora.memory.domain.admission_proposals import CloseIntention as CloseIntention
+from nora.memory.domain.admission_proposals import CreateClaim as CreateClaim
 from nora.memory.domain.admission_proposals import Occasion as Occasion
 from nora.memory.domain.admission_proposals import PassContext as PassContext
+from nora.memory.domain.admission_proposals import Proposal as Proposal
 from nora.memory.domain.admission_proposals import Retire as Retire
 from nora.memory.domain.admission_proposals import Revise as Revise
 from nora.memory.domain.admission_proposals import Scope as Scope
@@ -77,6 +80,7 @@ from nora.memory.domain.registration import (
 )
 from nora.memory.domain.retrieval import ReadingRoom as ReadingRoom
 from nora.memory.domain.retrieval import RetrievalUnavailableError as RetrievalUnavailableError
+from nora.memory.domain.review_admission import grade_target as grade_target
 from nora.memory.domain.wake import ReplayCoverage as ReplayCoverage
 from nora.memory.domain.wake import ReplayItem as ReplayItem
 from nora.memory.domain.wake import WakeClaim as WakeClaim

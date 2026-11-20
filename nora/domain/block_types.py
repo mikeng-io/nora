@@ -121,13 +121,13 @@ BLOCK_TYPES: dict[str, BlockType] = {
        "said, computed, judgement and found; evidence counts are not proof. "
        "Validity and state determine whether a relation is current. more=available "
        "means the result is partial; node identifiers are handles for memory_read."),
-    _t(
-        "graph",
+    _t("review_docket", "Due guesses and lessons with the later evidence the judge can cite.",
+       "cause", "limit", store="cognitive_graph.review"),
+    _t("graph",
         "The graph around this wake and its shown reading sources. "
         "Layers distinguish said, computed, judgement and found. Counts are evidence, "
         "not certainty; times and state determine what remains open.",
-        store="graph",
-        source="provenance of graph evidence",
+        store="graph", source="provenance of graph evidence",
     ),
     _t("trait_check", "a proposed trait being independently checked, not established truth. "
        "Its reasoning mode, evidence interval and qualifications are part of the claim.",

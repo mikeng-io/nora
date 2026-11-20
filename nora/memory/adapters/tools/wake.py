@@ -11,15 +11,18 @@ from nora.agent.catalog.entries.agenda import TOOLS as AGENDA_TOOLS
 from nora.agent.catalog.model import NativeTool
 from nora.agent.ports import adapt
 from nora.agent.room import Room
+from nora.agent.toolkit.results import _record
 from nora.agent.toolkit.spec import _spec
 from nora.memory.adapters.tools.intentions import submit_operations
 from nora.memory.adapters.tools.search import GraphReadTools, _make_memory_read, _make_memory_search
-from nora.memory.app.act_scope import active_act_authority
+from nora.memory.app.act_scope import active_act_authority, pass_shown
 from nora.memory.app.admission import AdmissionService
 from nora.memory.domain.admission import Refusal
 from nora.memory.domain.admission_proposals import PassContext, Proposal
 from nora.memory.domain.graph_operations import (
+    WAKE_PARTS,
     EntityInput,
+    GradeInput,
     GraphOperation,
     GraphOperationName,
     parse_graph_operation,
@@ -48,6 +51,10 @@ _ProposalInput = Annotated[
     GraphOperation, WrapValidator(lambda raw, _validate: raw),
     PlainSerializer(lambda operation: operation, return_type=Any),
 ]
+_GradeInput = Annotated[
+    GradeInput, WrapValidator(lambda raw, _validate: raw),
+    PlainSerializer(lambda operation: operation, return_type=Any),
+]
 _TOPIC_OPERATION: tuple[GraphOperationName, ...] = ("create_entity",)
 _CommitInput = Annotated[
     WakeIntentionOperation | EntityInput, WrapValidator(lambda raw, _validate: raw),
@@ -61,6 +68,7 @@ class WakeToolSurface:
         room_for: Callable[[str, str], Room], metrics: Metrics, *,
         content_checks: bool, offered: Collection[str],
         allowed_operations: Collection[GraphOperationName],
+        allowed_parts: Collection[str] = WAKE_PARTS,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         if not set(offered).issubset(WAKE_TOOLS):
@@ -73,9 +81,11 @@ class WakeToolSurface:
         self._offered = frozenset(offered)
         self._clock = clock
         self._allowed_operations = frozenset(allowed_operations)
+        self._allowed_parts = tuple(allowed_parts)
 
     def bind(
-        self, scope: PassScope, now: datetime, room_busy: Callable[[], None],
+        self, scope: PassScope, now: datetime, room_busy: Callable[[], None], *,
+        stage: Callable[[list[Proposal | Refusal], set[str]], bool] | None = None,
     ) -> list[Any]:
         reading = scope.room
         room = self._room_for(reading.platform, reading.conversation_id)
@@ -135,10 +145,34 @@ class WakeToolSurface:
                 rediscover=rediscover, room_busy=room_busy,
             )
 
+        async def propose_grade(operations: list[_GradeInput]) -> dict:
+            """Propose grades for the review docket. Call this when later
+            evidence supports a guess or lesson grade.
+
+            Use the target's shown ID and cite the later evidence. Returns
+            `status`: ok, refused or unavailable, with a `note`.
+
+            Args:
+                operations: Grade proposals with evidence rows shown in this pass.
+            """
+            authority = active_act_authority()
+            context = authority.pass_context if authority is not None else None
+            shown = pass_shown()
+            if stage is None or context is None or shown is None:
+                _record(self._metrics, "graph_propose", "unavailable")
+                return {"status": "unavailable", "note": "The review pass is unavailable."}
+            if not stage(self._parse_graph(operations, context), shown):
+                _record(self._metrics, "graph_propose", "refused")
+                return {
+                    "status": "refused", "note": "Use due targets and evidence shown in this pass.",
+                }
+            _record(self._metrics, "graph_propose", "ok")
+            return {"status": "ok", "note": "Proposals staged for admission after the review ends."}
+
         calls = {
             "memory_read": _make_memory_read(deps),
             "memory_search": _make_memory_search(deps),
-            "graph_propose": graph_propose,
+            "graph_propose": propose_grade if stage is not None else graph_propose,
             "intention_commit": intention_commit,
         }
         tools = {
@@ -154,7 +188,8 @@ class WakeToolSurface:
     def _parse_graph(self, operations: list, context: PassContext) -> list[Proposal | Refusal]:
         topics = topic_refs(operations)
         return [
-            parse_graph_operation(raw, context, self._allowed_operations, topics)
+            parse_graph_operation(raw, context, self._allowed_operations, topics,
+                                  parts=self._allowed_parts)
             for raw in operations
         ]
 

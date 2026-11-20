@@ -31,10 +31,17 @@ class DebriefRetry(Protocol):
     async def poll(self) -> None: ...
 
 
+class ScheduledReview(Protocol):
+    def poll(self, now: datetime) -> None: ...
+    def cancel(self) -> None: ...
+    async def drain(self) -> None: ...
+
+
 class WakePoller:
     def __init__(
         self, store: WakeClaimStore, runner: WakePass, debrief: DebriefRetry, policy: Policy,
         metrics: Metrics, clock: Callable[[], datetime], *, config: CognitionConfig,
+        review: ScheduledReview | None = None,
     ) -> None:
         self._store = store
         self._runner = runner
@@ -42,6 +49,7 @@ class WakePoller:
         self._policy = policy
         self._metrics = metrics
         self._clock = clock
+        self._review = review
         self._tick_seconds = config.tick_seconds
         self._timeout = config.session_timeout_seconds
         self._admission = WakePolicy(
@@ -60,12 +68,16 @@ class WakePoller:
                     log.exception("Wake poll failed")
                 await asyncio.sleep(self._tick_seconds)
         finally:
+            if self._review is not None:
+                self._review.cancel()
             for task in self._running.values():
                 task.cancel()
             await self.drain()
 
     async def drain(self) -> None:
         await asyncio.gather(*self._running.values(), return_exceptions=True)
+        if self._review is not None:
+            await self._review.drain()
 
     async def recover(self) -> None:
         await self._recover_at(self._clock())
@@ -75,6 +87,8 @@ class WakePoller:
 
     async def poll(self) -> None:
         now = self._clock()
+        if self._review is not None:
+            self._review.poll(now)
         await self._recover_at(now)
         homes = self._policy.home_rooms()
         for group in await self._store.groups(now):

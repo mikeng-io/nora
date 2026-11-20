@@ -19,7 +19,7 @@ from nora.infra.sql.cognitive_graph_store import RowData, SqlCognitiveGraph, vis
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 
 
-def _resting(unit: str, claim_id: str | None = None) -> sa.Subquery:
+def resting_verdict_paths(unit: str, claim_id: str | None = None) -> sa.Subquery:
     rest, serve = EDGE.alias("lesson_rest"), EDGE.alias("maintain_child")
     lesson, parent = CLAIM.c, INTENTION.c
     by_claim = (lesson.id == claim_id,) if claim_id is not None else ()
@@ -48,7 +48,7 @@ async def rebuild_lessons_for_verdict(
     conn: AsyncConnection, graph: SqlCognitiveGraph,
     *, unit: str, intention_id: str, at: datetime,
 ) -> None:
-    resting = _resting(unit)
+    resting = resting_verdict_paths(unit)
     claims = tuple(await conn.scalars(sa.select(resting.c.claim_id).where(
         resting.c.intention_id == intention_id,
     ).distinct().order_by(resting.c.claim_id)))
@@ -66,7 +66,7 @@ async def rebuild_lesson_tally(
     ).with_for_update())).mappings().one_or_none()
     if lesson is None:
         return
-    resting = _resting(unit, claim_id)
+    resting = resting_verdict_paths(unit, claim_id)
     paths = (await conn.execute(sa.select(INTENTION_VERDICT, resting.c.rest_id,
                                           resting.c.serve_id).join(
         resting, resting.c.intention_id == v.intention_id,

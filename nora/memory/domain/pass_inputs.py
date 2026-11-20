@@ -70,6 +70,7 @@ class AssembledPass:
     intention_visible: bool = True
     observed: tuple[tuple[str, str], ...] = ()
     agenda_stimuli: tuple[str, ...] = ()
+    review_due: tuple[tuple[str, datetime], ...] = ()
 
     def render(self) -> str:
         return render_blocks(tuple(replace(block, order=i) for i, block in enumerate(self.blocks)))

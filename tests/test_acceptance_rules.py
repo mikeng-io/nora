@@ -39,6 +39,8 @@ _R90_PERSONS = Persons(
 
 ROOT = Path(__file__).resolve().parents[1]
 RULE_TESTS = {
+    "review-grade": "test_review_grades_due_guess_once_and_removes_it_from_anchors",
+    "review-independent": "test_review_fails_startup_when_the_resolved_judge_is_the_writer",
     "verify-clock": "test_the_first_clock_ending_has_the_deadline_and_no_witness",
     "verify-health": "test_every_source_must_be_healthy_over_the_whole_lineage_window",
     "computed-verdict": "test_every_ended_achieve_head_has_one_verdict_and_stimulus",
@@ -52,9 +54,7 @@ RULE_TESTS = {
     "DEC-324": "test_a_server_entry_admits_a_discovered_channel_by_guild_id",
     "DEC-323": "test_policy_reload_admits_the_next_message_from_a_new_room",
     "DEC-329": "test_cognition_is_the_live_topic_writer",
-    # R-1: participation evaluates one quiescence-closed window in an opted-in room.
     "R-1": "test_ambient_reaches_the_agent_only_through_participation_gating",
-    # R-1b pins the tag pipeline and FirePath.speak as the only callers of deliver.build.
     "R-1b": "test_only_the_tag_path_and_the_fire_path_can_send",
     "R-2": "test_a_reaction_and_a_text_reply_share_the_message_cap",
     "R-2b": "test_deliverer_latch_is_single_shot",

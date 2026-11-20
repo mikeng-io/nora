@@ -1321,6 +1321,7 @@ async def _compose_dependencies(
         cfg, dreamer_runtime, dreamer_instructions, engine, access, lineage, allowlist,
         graph_debrief, slots, audit, presence_reader, documents_context, cognition_context_screen,
         graph_reads, metrics, clock, rosters, registry, content_checks, media_join,
+        review=_dreamer_enabled.review,
     )
     cognition_shutdown = legacy_cognition_shutdown(cfg, cognition_runner)
     if cognition_shutdown is not None:
