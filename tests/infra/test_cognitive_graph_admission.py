@@ -114,7 +114,7 @@ def _service(engine: AsyncEngine, *, content_checks: bool = False) -> AdmissionS
         policy,
         guard,
         content_checks=content_checks,
-        room_slots=FakeRoomSlots({}),
+        room_slots=FakeRoomSlots({("u", "signal:room-1"): "signal:room-1"}),
         nora_accounts=(("signal", SELF_ACCOUNT),),
     )
 
