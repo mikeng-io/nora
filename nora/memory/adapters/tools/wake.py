@@ -40,7 +40,7 @@ WAKE_VERB_NAMES = {
     "intention_commit": AGENDA_TOOLS["intention_commit"],
 }
 WAKE_READ_TOOLS = frozenset({"memory_search", "memory_read"})
-WAKE_TOOLS = WAKE_READ_TOOLS | WAKE_VERB_NAMES.keys()
+WAKE_TOOLS = WAKE_READ_TOOLS | frozenset(WAKE_VERB_NAMES)
 
 _ProposalInput = Annotated[
     GraphOperation, WrapValidator(lambda raw, _validate: raw),

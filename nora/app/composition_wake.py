@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+import nora.memory as memory
 from nora.access import IdentityAccess
 from nora.agent.dreamer import TOOL_RESULT_CAPS, DreamerRuntime
 from nora.agent.lineage import LineagePolicy
@@ -26,7 +27,6 @@ from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.record_query import SqlRecordQuery
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
-from nora.memory import wire
 from nora.obs.metrics import Metrics
 from nora.policy import Policy
 
@@ -62,10 +62,10 @@ def build_wake(
         policy, access, room_for, SqlRecordQuery(engine), audit, presence, documents, screen,
         display_name=cfg.doctrine.display_name, record_chars=cfg.cognition.record_chars,
     )
-    graph = graph_reads or wire.graph_read_tools(engine, access, lineage, None, None)
-    surface = wire.WakeToolSurface(
+    graph = graph_reads or memory.wire.graph_read_tools(engine, access, lineage, None, None)
+    surface = memory.wire.WakeToolSurface(
         debrief.admission, graph, room_for, metrics, content_checks=content_checks,
-        offered=wire.WAKE_TOOLS, allowed_operations=wire.WAKE_OPERATIONS, clock=clock,
+        offered=memory.wire.WAKE_TOOLS, allowed_operations=memory.wire.WAKE_OPERATIONS, clock=clock,
     )
     runner = WakePassRunner(
         rooms=floor, assembler=debrief.assembler, surface=surface, instructions=instructions,
@@ -77,5 +77,5 @@ def build_wake(
     )
     room_slots = WakeRoomSlots(policy, slots)
     retry = WakeDebriefRetry(debrief, debrief.store, room_slots, slots)
-    return WakePoller(wire.wake_claims(engine), runner, retry, policy, metrics, clock,
+    return WakePoller(memory.wire.wake_claims(engine), runner, retry, policy, metrics, clock,
                       config=cfg.cognition)

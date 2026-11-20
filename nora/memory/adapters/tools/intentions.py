@@ -119,10 +119,11 @@ async def submit_operations(
     proposals = tuple(entry for entry in parsed if not isinstance(entry, Refusal))
     admitted = await admission.admit(proposals, context, shown) if proposals else None
     admission_outcomes = admitted.outcomes if admitted is not None else ()
-    shown.update(
-        key for outcome in admission_outcomes if isinstance(outcome, Stored)
-        for key in (outcome.id, *outcome.other_deliveries)
-    )
+    if rediscover is None:
+        shown.update(
+            key for outcome in admission_outcomes if isinstance(outcome, Stored)
+            for key in (outcome.id, *outcome.other_deliveries)
+        )
     stored = iter(admission_outcomes)
     outcomes = []
     for entry in parsed:

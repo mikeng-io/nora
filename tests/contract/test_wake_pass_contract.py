@@ -10,18 +10,15 @@ from tests.infra.test_wake_runner import WakeModel, claim, observation, runner
 
 
 @pytest.mark.parametrize("implementation", ("runner", "scripted"))
-@pytest.mark.parametrize("bounded", (False, True), ids=("closed", "bound"))
-async def test_wake_pass_returns_the_outcome_of_the_claimed_set(
-    scenario, implementation, bounded,
-):
-    graph_id = "fixture-claimed-set"
-    await scenario.item(graph_id)
-    claimed = claim(observation(graph_id))
-    expected = WakeFailed("bound") if bounded else WakeClosed()
+async def test_wake_pass_returns_the_outcome_of_each_claimed_set(scenario, implementation):
+    first, second = "fixture-claimed-first", "fixture-claimed-second"
+    await scenario.item(first)
+    await scenario.item(second)
     port: WakePass
     if implementation == "runner":
-        script = [ScriptedTurn(tool_calls=[("memory_read", {"id": graph_id})])] if bounded else []
+        script = [ScriptedTurn(tool_calls=[("memory_read", {"id": first})])]
         port = runner(scenario, WakeModel(script), turns=1)
     else:
-        port = ScriptedWakePass({(graph_id,): expected})
-    assert await port.run(claimed) == expected
+        port = ScriptedWakePass({(first,): WakeFailed("bound"), (second,): WakeClosed()})
+    assert await port.run(claim(observation(first))) == WakeFailed("bound")
+    assert await port.run(claim(observation(second))) == WakeClosed()

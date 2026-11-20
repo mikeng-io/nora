@@ -116,6 +116,8 @@ def parse_graph_operation(
         return Refusal("invalid_field", str(unexpected))
 
     try:
+        if "citations" not in raw:
+            raise InvalidFieldError("citations")
         shared: ProposalEvidence = {
             "basis": "inferred",
             "scope": Scope(context.unit, exposure=None),

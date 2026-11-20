@@ -98,3 +98,28 @@ async def test_graph_propose_refuses_lessons_and_unknown_fields_independently(sc
     assert (lesson["reason"], lesson["field"]) == ("invalid_field", "part")
     assert (unknown["reason"], unknown["field"]) == ("invalid_field", "typo")
     assert admitted["status"] == "admitted"
+
+
+async def test_an_inferred_edge_keeps_its_own_observed_citation(scenario):
+    import sqlalchemy as sa
+
+    from nora.infra.sql.cognitive_graph_schema import EDGE
+
+    await scenario.item("observed-source")
+    await scenario.item("observed-evidence")
+    await scenario.entity("observed-topic")
+    with wake_scope("observed-source", "observed-evidence", "observed-topic"):
+        result = await propose(scenario, [{
+            "op": "add_edge", "type": "about", "source": "observed-source",
+            "target": "observed-topic", "citations": ["observed-evidence"], **BASIS,
+        }])
+    [edge] = result["operations"]
+    assert edge["status"] == "admitted", result
+    async with scenario.engine.connect() as conn:
+        links = (await conn.execute(sa.select(
+            EDGE.c.type, EDGE.c.src_id, EDGE.c.dst_id,
+        ).order_by(EDGE.c.type))).all()
+    assert links == [
+        ("about", "observed-source", "observed-topic"),
+        ("cites", edge["id"], "observed-evidence"),
+    ]
