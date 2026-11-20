@@ -633,6 +633,8 @@ class SqlMemoryGraph:
                 await conn.execute(
                     sa.text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
                 )
+                # Compiling scoped probes can exhaust this short read.
+                await conn.execute(sa.text("SET LOCAL jit = off"))
                 await conn.execute(
                     sa.text(f"SET LOCAL statement_timeout = {int(self.statement_timeout_ms)}"),
                 )
@@ -740,11 +742,8 @@ class SqlMemoryGraph:
                 for key, fields in state.fields.items():
                     if key in state.indexed:
                         revision = fields.get("revision")
-                        body = (
-                            revision.get("body")
-                            if isinstance(revision, dict)
-                            else fields.get("body") or fields.get("text")
-                        )
+                        body = (revision.get("body") if isinstance(revision, dict)
+                                else fields.get("body") or fields.get("text"))
                         if isinstance(body, str):
                             state.indexed[key] = replace(state.indexed[key], text=body)
                 result = await state._walk(seeds, query)

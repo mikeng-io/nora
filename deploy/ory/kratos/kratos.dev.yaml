@@ -1,0 +1,26 @@
+# Development Kratos (v26.2.0) — `kratos serve --dev -c kratos.dev.yaml`,
+# sqlite DSN and the mounted Nora person schema; admin API on a private
+# listener only.
+# Prerequisite: `kratos migrate sql -e --yes` (DSN env or this config) before
+# the first serve.
+dsn: sqlite:///var/lib/kratos/kratos.db?_fk=true
+serve:
+  public:
+    host: 127.0.0.1
+    port: 4433
+  admin:
+    host: 127.0.0.1
+    port: 4434
+identity:
+  default_schema_id: nora_person
+  schemas:
+    - id: nora_person
+      url: file:///etc/kratos/person.schema.json
+# v26.2.0 refuses to serve without a selfservice section — Kratos validates
+# browser flows at startup even though Nora's person schema carries no
+# credentials and no browser flow ever runs against this listener. Loopback
+# placeholders only; nothing here is reachable from a browser.
+selfservice:
+  default_browser_return_url: http://127.0.0.1:4455/return
+  allowed_return_urls:
+    - http://127.0.0.1:4455/return

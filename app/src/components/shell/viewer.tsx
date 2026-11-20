@@ -8,7 +8,10 @@ export interface Viewer {
   image: string | null;
   // How they signed in, for the account chip: the person is the same either
   // way (DEC-287).
-  via: "discord" | "code";
+  via: "discord" | "telegram" | "code";
+  // The managed-identity backend is on: the account surface offers link
+  // requests and unlink. In file mode nothing managed is ever rendered.
+  managed: boolean;
 }
 
 const ViewerContext = createContext<Viewer | null>(null);

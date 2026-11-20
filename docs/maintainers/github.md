@@ -6,7 +6,7 @@ secret scanning/push protection, private vulnerability reports, branch protectio
 and tag rules. No paid Advanced Security subscription, larger runner, external
 scanner subscription or deployment runner is required. Standard public runner
 minutes are free; Actions artifacts/cache and larger runners have separate billing.
-The site build retains its combined site/wiki artifact for seven days; no custom
+The site build retains its artifact for seven days; no custom
 dependency caches are uploaded. GitGuardian is an existing
 optional integration, not a required paid dependency.
 
@@ -43,8 +43,8 @@ required names; engineering dispatch still consumes the CI workflow.
 Ordinary docs use `scripts/affected_tests.py` to discover actual test readers,
 without Python static checks or CodeQL. Runtime Markdown under `nora/` selects
 Python checks; scanning runs when source or analysis inputs change. Executable
-MDX follows its component. Site/wiki share
-the existing combined artifact build. Portal runs npm check/build; the Go bridge
+MDX follows its component. The site has its own
+artifact build. Portal runs npm check/build; the Go bridge
 runs vet/test with its module toolchain. Manifest changes also require dependency
 review, blocking high/critical vulnerable dependency introductions on PRs.
 

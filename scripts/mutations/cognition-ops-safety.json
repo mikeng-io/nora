@@ -37,7 +37,7 @@
  {
   "name": "App.run never calls the reclaim",
   "file": "nora/__main__.py",
-  "old": "            await deps.wake_evaluator.reclaim_orphans(\n                process_started_ms=int(started_at * 1000),\n            )\n",
+  "old": "            await deps.wake_evaluator.reclaim_orphans(process_started_ms=int(started_at * 1000))\n",
   "new": "",
   "target": "tests/test_main.py::test_app_run_releases_what_a_previous_process_left_before_the_wake_loop_starts"
  },

@@ -130,7 +130,8 @@ POST_READ_FRAMING = (
     "shows line as how it looks, not as fact. Whoever shared or linked the "
     "post has usually seen it. An item with no shows line says why, and "
     "where it can be read; every item's link is in items, in the same order, "
-    "for media_fetch(url=...)."
+    "for media_fetch(url=...), and an item that carries a `code` opens the "
+    "same media with media_fetch(code=...) instead."
 )
 
 #: No item was seen because none was read HERE: a reel longer than one
@@ -163,6 +164,28 @@ POST_UNSEEN_FRAMING = (
     "One Instagram post. None of its items was seen (each says why), so the "
     "caption is all there is, and it is only what the poster wrote. Say you "
     "couldn't see the post; don't describe it from the caption."
+)
+
+#: Every look failed — but at least one item's media was HELD, so its `code`
+#: re-opens it without the expiring url. The note still says nothing was
+#: seen, and offers the held handle rather than the link that just failed.
+POST_UNSEEN_KEPT_FRAMING = (
+    "One Instagram post. None of its items was seen (each says why), so the "
+    "caption is all there is, and it is only what the poster wrote. Say you "
+    "couldn't see the post; don't describe it from the caption. An item that "
+    "carries a `code` in items is held here — media_fetch(code=...) opens it "
+    "again without its link."
+)
+
+#: `POST_MIXED_FRAMING` with a held item: the looks that ran all failed, but
+#: one item's media is held, so its `code` is offered beside the not-read
+#: links instead of being lost with the failure.
+POST_MIXED_KEPT_FRAMING = (
+    "One Instagram post. None of its items was seen: the ones that were "
+    "looked at could not be seen just now — an item that carries a `code` in "
+    "items is held here, media_fetch(code=...) — and only the ones marked "
+    "not read here open with media_fetch(url=...) on their link. The caption "
+    "is only what the poster wrote; don't describe the post from it alone."
 )
 
 #: The framing for an `ok` search (ADR 0015: the result explains the status).
@@ -421,11 +444,21 @@ def _post_blocks(view: PostView, now: int) -> list[_Block]:
 
 
 def _post_note(view: PostView) -> str:
+    # Failed-look framing can offer a verified custody code instead of the failed link.
+    # Seen and never-looked framing remain unchanged.
+    kept = any(
+        item.reading is not None and item.reading.code for item in view.items
+    )
+    key = _outcome(view.items)
+    if kept and key in ("mixed", "unseen"):
+        key = f"{key}_kept"
     return {
         "none": POST_FRAMING, "read": POST_READ_FRAMING,
         "not_read": POST_NOT_READ_FRAMING, "mixed": POST_MIXED_FRAMING,
         "unseen": POST_UNSEEN_FRAMING,
-    }[_outcome(view.items)]
+        "mixed_kept": POST_MIXED_KEPT_FRAMING,
+        "unseen_kept": POST_UNSEEN_KEPT_FRAMING,
+    }[key]
 
 
 def _looked(items: tuple[ItemView, ...]) -> bool:
@@ -512,8 +545,12 @@ def _story_note(view: StoryView) -> str:
 
 def _item_ref(item: ItemView) -> dict[str, Any]:
     """The machine-usable reference: kind and url, a video's length, a story
-    frame's time. No prose and no reading: those are wrapped, in `text`."""
+    frame's time, and — once a look held the item's media — the `code`
+    `media_fetch(code=...)` re-opens it by. No prose and no reading: those
+    are wrapped, in `text`."""
     ref: dict[str, Any] = {"kind": item.kind, "url": item.url}
+    if item.reading is not None and item.reading.code:
+        ref["code"] = item.reading.code
     if item.duration_seconds is not None:
         ref["duration_seconds"] = item.duration_seconds
     if item.taken_at is not None:

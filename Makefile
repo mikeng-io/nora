@@ -10,7 +10,7 @@
         setup hooks schema-parity heads decision-numbers \
         eval-participation eval-adversarial-corpora eval-gate \
         build \
-        branches
+        branches gc archive
 
 # --- setup (AGENTS.md: a fresh worktree needs this once, or pytest dies at
 # COLLECTION on the eval modules — `strands-agents-evals` is an optional extra
@@ -178,7 +178,23 @@ branches:
 	@git branch -r --no-merged origin/master || echo "  none"
 	@echo; echo "Delete with: git branch -d <b> ; git push origin --delete <b>"
 
-# --- merge-time checks (AGENTS.md "Never"; each of these has a dated incident
+# Artifact retirement (ORCHESTRATION.md «Artifact lifecycle»). Dry run by
+# default — it classifies every remote branch, local branch and registered
+# worktree as remove/keep/unknown and exits nonzero while anything is unknown.
+# APPLY=1 performs the removals and logs each removed ref with its SHA.
+gc:
+	uv run python scripts/git_gc.py $(if $(APPLY),--apply)
+
+# Archive a finished artifact that did not merge (ORCHESTRATION.md «Artifact
+# lifecycle»): an annotated archive/<branch> tag on the committed tip records
+# the reason, source tip and worktree, pushed and verified; a dirty worktree
+# is refused. Merged work's record is its merged PR; `gc` retires worktree
+# and branch, counting the tag as custody.
+archive:
+	@test -n "$(BRANCH)" && test -n "$(REASON)" || { echo 'usage: make archive BRANCH=<b> REASON="..."'; exit 2; }
+	uv run python scripts/git_archive.py "$(BRANCH)" --reason "$(REASON)"
+
+# --- merge-time checks (docs/code-standards.md and AGENTS.md "Never"; each of these has a dated incident
 # behind it, and until now each existed only as a command to retype by hand).
 # Reports, not assertions: `uniq -d` exits 0 with no output, so read the output
 # rather than trusting the exit code — that noisy-gate trap is why the real

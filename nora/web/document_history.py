@@ -48,6 +48,7 @@ from aiohttp import web
 from nora.documents.check import check_document
 from nora.domain.documents import DocumentStore, RevisionIn, RoomKey, StoredDocument
 from nora.persons import Persons
+from nora.web.data_context import data_context as _ctx
 from nora.web.documents import RoomLabel, _room_label
 
 log = logging.getLogger(__name__)
@@ -246,7 +247,7 @@ def register_document_history_routes(app: web.Application) -> None:
 
     def _viewer(request: web.Request) -> str | None:
         person_id = request.query.get("personId")
-        if not person_id or request.app["web_persons"].by_person.get(person_id) is None:
+        if not person_id or _ctx(request)["web_persons"].by_person.get(person_id) is None:
             return None
         return person_id
 
@@ -257,7 +258,7 @@ def register_document_history_routes(app: web.Application) -> None:
             return None
 
     async def revisions(request: web.Request) -> web.Response:
-        a = request.app
+        a = _ctx(request)
         if a["web_documents"] is None or a["web_rooms_of"] is None:
             return _unavailable()
         person_id = _viewer(request)
@@ -278,7 +279,7 @@ def register_document_history_routes(app: web.Application) -> None:
         return _not_found() if body is None else web.json_response(body)
 
     async def one_revision(request: web.Request) -> web.Response:
-        a = request.app
+        a = _ctx(request)
         if a["web_documents"] is None or a["web_rooms_of"] is None:
             return _unavailable()
         person_id = _viewer(request)
@@ -300,7 +301,7 @@ def register_document_history_routes(app: web.Application) -> None:
         return _not_found() if body is None else web.json_response(body)
 
     async def restore(request: web.Request) -> web.Response:
-        a = request.app
+        a = _ctx(request)
         if a["web_documents"] is None or a["web_rooms_of"] is None:
             return _unavailable()
         person_id = _viewer(request)

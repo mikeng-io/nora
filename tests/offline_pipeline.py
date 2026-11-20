@@ -19,6 +19,7 @@ from collections.abc import Callable, Coroutine, Mapping
 from datetime import UTC, datetime
 from typing import Any
 
+from nora.access import IdentityAccess
 from nora.agent import factory
 from nora.agent.registry import ToolRegistry
 from nora.app.assembler import build_assembler, lineage_policy
@@ -46,7 +47,6 @@ from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import CompositePolicy, RelevanceGatePolicy, TriggerTextPolicy
 from nora.ingest.relevance_gate import RelevanceGate
 from nora.obs.metrics import Metrics
-from nora.persons import Persons
 from nora.policy import permissive_policy
 from nora.tag import Debounce
 
@@ -57,7 +57,7 @@ def build_offline_pipeline(
     adapter: Any,
     audit: RecordStore,
     memory: MemoryStore,
-    persons: Persons,
+    access: IdentityAccess,
     doctrine_store: DoctrineStore,
     runner: Any,
     metrics: Metrics | None = None,
@@ -79,38 +79,18 @@ def build_offline_pipeline(
     participation_runner: Any = None,
     proactive_runner: Any = None,
     participation_clock: Callable[[], float] | None = None,
-    participation_opt_in: bool = False,
-    participation_gate: RelevanceGate | None = None,
-    extra_adapters: Mapping[str, Any] | None = None,
+    participation_opt_in: bool = False, participation_gate: RelevanceGate | None = None,
+    extra_adapters: Mapping[str, Any] | None = None, room_commands: Any = None,
 ) -> tuple[Dispatcher, EngagementPipeline, BackgroundTasks, ParticipationTrigger | None]:
-    """Wire ingest+engagement+dispatcher from already-built collaborators.
+    """Wire both pipelines around the explicitly selected identity/access backend.
 
-    Mirrors `build_dependencies`'s own pipeline-wiring tail exactly (same stages, same
-    scalar fields read off `cfg`) but takes `adapter`/`memory`/`runner` as parameters
-    instead of constructing the real, networked ones — the split `build_dependencies`
-    doesn't need since production always wants the real collaborators. The same is true of
-    the assembler's own collaborators above: this module builds none of them (module
-    docstring), so a caller that wants `<notes>`/`<standing>` to render passes its own
-    `nora.testing` in-memory doubles.
-
-    `participation_runner` is the participation occasion's eval seam: when given, this
-    builds a REAL `FirePath` — same `deliver.build`, guards and accounting as production —
-    plus the quiescence `ParticipationTrigger`, and wires the trigger into the dispatcher,
-    so an eval drives the participation path exactly as deployed. The trigger is the
-    fourth return value (`None` when neither `participation` nor `participation_runner`
-    was given); the caller drives `close_due_windows` on it, with `participation_clock`
-    injecting the clock the settle/cooldown durations are measured against, and
-    `participation_gate` optionally putting a REAL `RelevanceGate` in front of it (see the
-    `gate=` comment at the trigger's construction).
-
-    `extra_adapters` serves rooms on other platforms, keyed by platform. A caller that
-    asserts nothing was sent into such a room needs one: with no adapter for its
-    platform, a send there raises instead of being recorded, and the assertion passes
-    vacuously.
+    Supplied collaborators own their stores and transports. Tag and fire
+    contexts share the same access object and background task owner.
     """
     if adapter.platform in (extra_adapters or {}):
         raise ValueError(f"extra_adapters may not replace the {adapter.platform!r} adapter")
     adapters = {adapter.platform: adapter, **(extra_adapters or {})}
+    persons = access.persons_view()
     metrics = metrics or Metrics()
     background = BackgroundTasks()
     debounce = Debounce(cfg.engagement.trigger.min_interval_seconds)
@@ -155,7 +135,7 @@ def build_offline_pipeline(
         if standing is not None or ledger is not None else None
     )
     assembler = build_assembler(
-        cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
+        cfg, audit=audit, memory=memory, persons=persons, access=access, metrics=metrics,
         policy=harness_policy,
         notes=notes,
         shared=shared,
@@ -210,7 +190,7 @@ def build_offline_pipeline(
         background.spawn(coro)
 
     ingest = IngestPipeline(
-        audit=audit, memory=memory, persons=persons,
+        audit=audit, memory=memory, access=access,
         policy=policy, allowlist=permissive_policy(), metrics=metrics, spawn=_spawn,
     )
 
@@ -233,8 +213,7 @@ def build_offline_pipeline(
     # participation trigger below must hold the SAME instance — two slot maps
     # would be two locks and no serialisation at all.
     slots = ConversationSlots(
-        maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn,
-    )
+        maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn)
     engagement = EngagementPipeline(
         # Keyed by the platform each adapter declares itself to be: the
         # replayed platform's adapter plus any `extra_adapters`.
@@ -248,7 +227,7 @@ def build_offline_pipeline(
         # (`ToolRegistry()` above takes no `mcp_tools`), so the allowlist this
         # resolves to is never disclosed to anything real. A caller that wants
         # to exercise MCP scoping supplies its own `EngagementPipeline`.
-        policy=permissive_policy(),
+        policy=permissive_policy(), access=access,
         debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         ai_peer=cfg.honcho.ai_peer,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
@@ -272,7 +251,7 @@ def build_offline_pipeline(
         # inside the reply slot, and an eval measuring a tag's trajectory must not have a
         # second, unrelated completion added to its budget. A caller that wants to
         # exercise the stage passes its own.
-        debrief_wiring=debrief_wiring,
+        debrief_wiring=debrief_wiring, room_commands=room_commands,
     )
     participation_trigger = participation
     if participation_trigger is None and participation_runner is not None:
@@ -285,7 +264,7 @@ def build_offline_pipeline(
         # instead of letting the eval prompt drift from production's.
         fire_path = FirePath(
             tag_trace_store=None,
-            persons=persons, records=audit, memory=memory,
+            persons=persons, access=access, records=audit, memory=memory,
             # The shared-state reader (design/notebook-memory-types/20-standing.md):
             # `None` in the harness, the assembler's reason above — which
             # also means an eval's proactive occasion never withholds on an
@@ -434,5 +413,6 @@ def build_offline_pipeline(
     dispatcher = Dispatcher(
         ingest=ingest, engagement=engagement, background=background,
         participation=participation_trigger,
+        room_command=(room_commands.is_command if room_commands else None),
     )
     return dispatcher, engagement, background, participation_trigger

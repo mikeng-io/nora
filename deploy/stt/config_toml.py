@@ -32,3 +32,18 @@ def preload_model(path: Path = DEFAULT_PATH) -> str:
     model = ((data.get("speech") or {}).get("wake") or {}).get("stt_model") or FALLBACK_MODEL
     log.info("config.toml %s: pre-loading [speech.wake].stt_model=%s", path, model)
     return str(model)
+
+
+def qwen_settings(path: Path = DEFAULT_PATH) -> tuple[str, float, bool]:
+    """Device/deadline and whether either independent role selects Qwen."""
+    data = tomllib.loads(path.read_text()) if path.is_file() else {}
+    speech = data.get("speech", {})
+    stt, wake = speech.get("stt", {}), speech.get("wake", {})
+    device = stt.get("qwen", {}).get("device", "cpu")
+    if device not in ("cpu", "vulkan"):
+        raise ValueError("speech.stt.qwen.device must be cpu or vulkan")
+    timeout = float(stt.get("timeout_seconds", 30))
+    if not 0 < timeout < float("inf"):
+        raise ValueError("invalid STT deadline")
+    selected = "qwen3-asr-hk-0.6b" in (stt.get("model"), wake.get("stt_model"))
+    return device, timeout, selected

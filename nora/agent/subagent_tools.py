@@ -101,11 +101,15 @@ class SubagentToolSource:
     def __init__(
         self, *, registry: ToolRegistry, store: Any, persons: Any, honcho: Any,
         metrics: Metrics, rosters: Mapping[str, Any] | None = None,
-        self_ids: frozenset[str] = frozenset(),
+        self_ids: frozenset[str] = frozenset(), access: Any = None,
     ) -> None:
         self._registry = registry
         self._store = store
         self._persons = persons
+        self._access = access
+        # The descriptive `Persons` the built tools close over: the selected
+        # backend's view — absent under managed, never a stale file answer.
+        self._view = access.persons_view() if access is not None else persons
         self._honcho = honcho
         self._metrics = metrics
         self._rosters = dict(rosters or {})
@@ -115,16 +119,21 @@ class SubagentToolSource:
         """R-99's table, for the guard."""
         return self._registry.tool_param_names()
 
-    def _room(self, *, platform: str, conversation_id: str, requester_person_id: str) -> Room:
-        tagger: PersonRef | None = self._persons.by_person.get(requester_person_id)
+    async def _room(self, *, platform: str, conversation_id: str, requester_person_id: str) -> Room:
+        tagger: PersonRef | None = (
+            await self._access.person_ref(requester_person_id)
+            if self._access is not None
+            else self._persons.by_person.get(requester_person_id)
+        )
         if tagger is None:
             raise SubagentToolsError(
-                f"requester {requester_person_id!r} is not in identity.toml: the worker "
+                f"requester {requester_person_id!r} is not in the identity backend: the worker "
                 "would hold no requester and document_publish would refuse every call"
             )
         return Room(
             platform=platform, conversation_id=conversation_id,
-            roster_source=self._rosters.get(platform), persons=self._persons,
+            roster_source=self._rosters.get(platform), persons=self._view,
+            access=self._access,
             tagger=tagger, self_ids=self._self_ids,
         )
 
@@ -135,32 +144,32 @@ class SubagentToolSource:
         """One `computer_run` call as the worker's own actor: the runner's way to create the
         job's folder and copy its inputs in, audited like any call the worker makes (actor
         `subagent`, path `subagent`, the job's lease key). Not a model-facing tool."""
-        room = self._room(
+        room = await self._room(
             platform=platform, conversation_id=conversation_id,
             requester_person_id=requester_person_id,
         )
         specs = self._registry.specs(
             store=self._store, conversation_id=conversation_id,
-            conversation_type=conversation_type, persons=self._persons, honcho=self._honcho,
+            conversation_type=conversation_type, persons=self._view, honcho=self._honcho,
             deliverer=None, metrics=self._metrics, room=room, subagent_job=job_id,
         )
         spec = next(s for s in specs if s.name == "computer_run")
         return await spec.call(command=command)
 
-    def build(
+    async def build(
         self, *, job_id: str, platform: str, conversation_id: str, conversation_type: str,
         requester_person_id: str, checkpoint_sink: Any = None,
     ) -> list[Any]:
         """The worker's tools for one job, from the job's recorded room facts.
         `checkpoint_sink` is the job's `SubagentProgress`, where `checkpoint_update` writes."""
-        room = self._room(
+        room = await self._room(
             platform=platform, conversation_id=conversation_id,
             requester_person_id=requester_person_id,
         )
         grant = granted_names(self._registry)
         surface = self._registry.surface(
             grant=grant, store=self._store, conversation_id=conversation_id,
-            conversation_type=conversation_type, persons=self._persons,
+            conversation_type=conversation_type, persons=self._view,
             honcho=self._honcho,
             # No deliverer, ever: nothing the worker holds speaks to anybody.
             deliverer=None, metrics=self._metrics, room=room,

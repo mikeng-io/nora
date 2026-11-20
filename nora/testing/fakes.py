@@ -2264,7 +2264,7 @@ class FakeInstagramAccountLookup:
 
 class FakeBrowserRunner:
     """`BrowserRunner` that answers a set outcome and records every call
-    (scope, objective, start_url), for the `computer_browse` tool's tests."""
+    (scope, objective, start_url), for the `web_browse` tool's tests."""
 
     def __init__(self, outcome: BrowseOutcome | None = None) -> None:
         self.outcome = outcome or BrowseOutcome(status="ok", answer="done", steps=1)

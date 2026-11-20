@@ -1,6 +1,6 @@
 [project]
 name = "nora"
-version = "7.18.12"
+version = "7.20.2"
 description = "A self-hosted, sessionless social AI agent with memory and background cognition"
 requires-python = ">=3.11"
 dependencies = [
@@ -47,6 +47,7 @@ dependencies = [
     "pypdf>=7.0.0",
     "redis>=5.0",
     "opentelemetry-instrumentation-aiohttp-server>=0.66b2",
+    "pyjwt==2.15.1",
 ]
 
 [project.optional-dependencies]
@@ -147,7 +148,7 @@ warn_unused_ignores = true
 # imported module and inflate the count (see the issue).
 [[tool.mypy.overrides]]
 module = [
-    "nora.domain.*", "nora.config", "nora.app.*", "nora.infra.*", "nora.presence.*",
+    "nora.domain.*", "nora.config", "nora.config_identity", "nora.app.*", "nora.infra.*", "nora.presence.*",
     "nora.ingest.*", "nora.analytics.*", "nora.doctrine.*", "nora.language.*",
     "nora.skills.*", "nora.instructions.*", "nora.engagement.*", "nora.web.*",
 ]
@@ -195,6 +196,9 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "BLE", "ASYNC", "S", "C4", "SIM", 
 #           Scoped to tests/ on purpose — in `nora/` lowercase function names ARE the rule.
 "tests/**" = ["S101", "S104", "S311", "S607", "RUF001", "N802", "N803", "N818"]
 "evals/**" = ["S101"]
+# nora/testing/** is the test doubles' home — same assertion style as tests/,
+# and its generated corpora carry the same punctuation test data does.
+"nora/testing/**" = ["S101", "RUF001"]
 
 [tool.importlinter]
 root_packages = ["nora", "evals"]
@@ -306,7 +310,8 @@ type = "forbidden"
 # PR 648, 2026-10-01). Every other top-level name is forbidden here instead.
 source_modules = ["nora.documents.check"]
 forbidden_modules = [
-    "nora.agent", "nora.analytics", "nora.app", "nora.config",
+    "nora.access", "nora.agent", "nora.analytics", "nora.app", "nora.config",
+    "nora.config_identity",
     "nora.doctrine", "nora.domain", "nora.dreamer", "nora.engagement", "nora.infra",
     "nora.ingest", "nora.instructions", "nora.language", "nora.obs", "nora.persons",
     "nora.persons_file", "nora.platform",
@@ -333,7 +338,7 @@ source_modules = [
     "nora.infra", "nora.testing", "nora.ingest", "nora.engagement",
     "nora.skills", "nora.instructions", "nora.documents",
 ]
-forbidden_modules = ["nora.config"]
+forbidden_modules = ["nora.config", "nora.config_identity"]
 
 [[tool.importlinter.contracts]]
 name = "the nora package's own __init__ does not read config either"
@@ -346,7 +351,7 @@ type = "forbidden"
 # `as_packages = false` treats both sides as single literal modules instead of
 # packages, which sidesteps that overlap rule and actually checks nora/__init__.py.
 source_modules = ["nora"]
-forbidden_modules = ["nora.config"]
+forbidden_modules = ["nora.config", "nora.config_identity"]
 as_packages = false
 
 [[tool.importlinter.contracts]]

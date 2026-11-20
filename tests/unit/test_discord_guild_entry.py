@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from nora.access import IdentityAccess
 from nora.platform.discord.channels import StaticChannelDirectory
 from nora.policy import PolicyError, load_policy
 
@@ -312,8 +313,9 @@ def _pipeline(allowlist, memory, spawned, stimulus_calls, monkeypatch, audit=Non
 
     monkeypatch.setattr(stimulus_stage, "run", _spy)
     return IngestPipeline(
-        audit=audit or FakeRecordStore(), memory=memory, persons=_persons(),
+        audit=audit or FakeRecordStore(), memory=memory,
         policy=TriggerTextPolicy("nora.000"), allowlist=allowlist,
+        access=IdentityAccess.for_files(persons=_persons(), policy=allowlist),
         metrics=Metrics(), spawn=spawned.append,
         stimulus_wiring=object(),
     )

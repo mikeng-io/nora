@@ -20,7 +20,7 @@ export const codeSignInEnabled = () => token().length > 0;
 
 type Fetch = typeof fetch;
 
-async function post(path: string, body: unknown, fetchImpl: Fetch): Promise<Response | null> {
+export async function postOtp(path: string, body: unknown, fetchImpl: Fetch): Promise<Response | null> {
   if (!codeSignInEnabled()) return null;
   try {
     return await fetchImpl(`${base()}${path}`, {
@@ -28,6 +28,7 @@ async function post(path: string, body: unknown, fetchImpl: Fetch): Promise<Resp
       headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       cache: "no-store",
+      redirect: "error",
       signal: AbortSignal.timeout(15_000),
     });
   } catch {
@@ -42,7 +43,7 @@ export async function requestCode(
   { identifier, platform }: { identifier: string; platform: CodePlatform },
   fetchImpl: Fetch = fetch,
 ): Promise<string | null> {
-  const res = await post(
+  const res = await postOtp(
     "/app/v1/otp/request", { identifier, platform, purpose: "sign_in" }, fetchImpl,
   );
   if (!res || res.status !== 202) return null;
@@ -56,7 +57,7 @@ export async function verifyCode(
   { challengeId, code }: { challengeId: string; code: string },
   fetchImpl: Fetch = fetch,
 ): Promise<string | null> {
-  const res = await post(
+  const res = await postOtp(
     "/app/v1/otp/verify", { challengeId, code, purpose: "sign_in" }, fetchImpl,
   );
   if (!res || res.status !== 200) return null;

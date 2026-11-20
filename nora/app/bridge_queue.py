@@ -26,7 +26,6 @@ import asyncio
 import contextlib
 import json
 import logging
-import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -35,6 +34,16 @@ import redis.asyncio as aioredis
 import sqlalchemy as sa
 from opentelemetry.trace import Link
 
+from nora.access import IdentityAccess
+from nora.app.bridge_obligations import enqueue_downstream
+from nora.app.bridge_payloads import (
+    _decision_dict,
+    _link,
+    _now_ms,
+    _payload_trace,
+    _person_dict,
+    _queue_wait_ms,
+)
 from nora.domain.actions import ActionOwner
 from nora.domain.observations import SourceScope
 from nora.domain.ports import EngageDecision, EngagementRequest
@@ -64,7 +73,9 @@ SILENT_OUTCOMES = frozenset({
     "scope_refused", "edit_orphaned", "edit_absorbed", "reaction_recorded",
     "delete_recorded", "sender_not_allowed", "recorded",
 })
-FAILURE_OUTCOMES = frozenset({"audit_refused", "extraction_refused"})
+# `sender_unavailable`: the authority could not answer — a transient outage, so retry.
+FAILURE_OUTCOMES = frozenset({
+    "audit_refused", "extraction_refused", "sender_unavailable"})
 
 
 class _LeaseLostError(Exception):
@@ -101,62 +112,6 @@ _LANES: tuple[tuple[frozenset[str], int], ...] = (
     (_COMPREHEND_KINDS, 2),
     (_SPEAK_KINDS, 2),
 )
-
-
-def _now_ms() -> int:
-    return int(time.time() * 1000)
-
-
-def _person_dict(person: Any) -> dict[str, Any] | None:
-    """The handoff shape for a resolved sender — the field set a `PersonRef`
-    is rebuilt from on the far side of a work row or an event snapshot."""
-    if person is None:
-        return None
-    return {"person_id": person.person_id, "name": person.name,
-            "honcho_peer_id": person.honcho_peer_id,
-            "first_name": person.first_name, "last_name": person.last_name,
-            "aliases": list(person.aliases)}
-
-
-def _decision_dict(decision: Any) -> dict[str, Any] | None:
-    """The admitted-facts shape for an `EngageDecision` — what a turn
-    payload and the ingest handoff snapshot both persist."""
-    if decision is None:
-        return None
-    return {"engage": decision.engage, "reason": decision.reason,
-            "rationale": decision.rationale,
-            "confidence": decision.confidence,
-            "threshold": decision.threshold,
-            "allow_episode": decision.allow_episode,
-            "relevance_gate": decision.relevance_gate}
-
-
-def _payload_trace(payload: dict[str, Any]) -> dict[str, Any]:
-    """The producer's W3C carrier, wherever this work kind carries it —
-    `envelope.trace` for ingest, propagated `trace` for the kinds ingest
-    enqueued downstream."""
-    env = payload.get("envelope")
-    trace = env.get("trace") if isinstance(env, dict) else payload.get("trace")
-    return dict(trace) if isinstance(trace, dict) else {}
-
-
-def _queue_wait_ms(payload: dict[str, Any]) -> int | None:
-    """Enqueue→claim latency in ms: the envelope's `queued_ms` for ingest,
-    the `enqueued_ms` ingest stamps on downstream obligations for the rest.
-    A missing stamp is absent data (None), never a fabricated zero."""
-    env = payload.get("envelope")
-    ref: Any = None
-    if isinstance(env, dict):
-        ref = env.get("queued_ms")
-    if ref is None:
-        ref = payload.get("enqueued_ms")
-    if ref is None:
-        return None
-    return max(0, _now_ms() - int(ref))
-
-
-def _link(ctx: Any) -> list[Link]:
-    return [Link(ctx)] if ctx is not None else []
 
 
 class DbSpeakingLocks:
@@ -451,11 +406,13 @@ class WorkRunner:
                  instance: str | None = None, lease_seconds: int = 300,
                  allowlist: Any = None, persons: Any = None,
                  fire_speak: Any = None, participation_state: Any = None,
-                 observations: Any = None) -> None:
+                 observations: Any = None, onboarding: Any = None, access: Any = None,
+                 room_command: Any = None) -> None:
         self._store = store
         self._redis = redis
         self._ingest = ingest
         self._engagement = engagement
+        self._room_command = room_command  # the SAME predicate the dispatcher holds
         self._slots = slots            # the SHARED in-memory ConversationSlots
         self._db_locks = db_locks      # the cross-process speaking half
         self._adapters = adapters
@@ -469,13 +426,16 @@ class WorkRunner:
         # an obligation enqueued under a policy that has since moved must fail
         # closed, never run under the snapshot's stale permission alone.
         self._allowlist = allowlist        # Policy | None
-        self._persons = persons            # Persons | None
+        self._access = access or (         # IdentityAccess: managed live, file facade
+            IdentityAccess.for_files(persons, allowlist)
+            if persons is not None else None)
         self._fire_speak = fire_speak      # FirePath.speak bound method | None
         self._participation_state = participation_state  # cursor store | None
         # The typed platform-observation Record (`ObservationStore`): where
         # v2 envelope sidecars and observation-only events persist. `None`
         # retains an observation as a failure, never drops it silently.
         self._observations = observations
+        self._onboarding = onboarding
         self._owner = instance or f"nora-{uuid.uuid4().hex[:8]}"
         self._lease = lease_seconds
         self._stop = asyncio.Event()
@@ -900,8 +860,7 @@ class WorkRunner:
                     await conn.execute(sa.text(
                         "UPDATE bridge_event SET payload = payload || :patch,"
                         " updated_at = now() WHERE id = :eid"),
-                        {"patch": json.dumps(
-                            {"message_row_id": row_id, "handoff": handoff}),
+                        {"patch": json.dumps({"message_row_id": row_id, "handoff": handoff}),
                          "eid": envelope.event_id})
                     # Observations retained BEFORE their target existed
                     # re-link inside the row's own commit — the link lands
@@ -916,14 +875,12 @@ class WorkRunner:
                         platform_message_id=arrived.message_id or None,
                         sent_ts=arrived.timestamp or None,
                         sender_id=arrived.sender_id or None)
-                result = await self._ingest.run(message=message, tx_hook=hook,
-                                                durable=True)
+                result = await self._ingest.run(message=message, tx_hook=hook, durable=True)
                 if result.outcome in FAILURE_OUTCOMES:
                     # A swallowed audit failure is a typed failure, never a skip.
                     state = ("retryable_failure" if work.attempts < 5
                              else "failed_retained")
-                    ok = await self._finish(
-                        work, state, {"outcome": result.outcome})
+                    ok = await self._finish(work, state, {"outcome": result.outcome})
                     if ok and state == "failed_retained":
                         # Terminal AND nothing downstream owns the event —
                         # discharge the entry now, not on a 30s reclaim.
@@ -955,6 +912,7 @@ class WorkRunner:
                 absorbed = result.absorbed
                 unit = result.unit
                 row_id = result.row_id
+            self._maybe_observe_sender(work, envelope)
             observation_status: str | None = None
             if envelope.observation is not None:
                 # Message + observation sidecar on ONE envelope: ONE
@@ -976,8 +934,7 @@ class WorkRunner:
                         work, envelope, unit=unit,
                         sibling_message=result_message,
                         sibling_row_id=row_id,
-                        sibling_person_id=(
-                            person.person_id if person else None))
+                        sibling_person_id=person.person_id if person else None)
                     if status is None:
                         return
                     observation_status = status
@@ -1011,85 +968,17 @@ class WorkRunner:
                         ordinal=91, platform=work.platform,
                         account_key=work.account_key,
                         conversation_id=work.conversation_id,
-                        payload=self._obligation_payload(
-                            work, envelope, part="observation"),
+                        payload=self._obligation_payload(work, envelope, part="observation"),
                         result={"reason": observation_status})
-                ordinal = 1
-                if decision.engage:
-                    tag_id = uuid.uuid4().hex[:12]
-                    await self._store.set_event_state(
-                        conn, envelope.event_id, "done", tag_id=tag_id)
-                    await self._store.enqueue_work(
-                        conn, event_id=envelope.event_id, kind="turn",
-                        ordinal=ordinal, platform=work.platform,
-                        account_key=work.account_key,
-                        conversation_id=work.conversation_id,
-                        payload={
-                            "tag_id": tag_id,
-                            "stream": work.payload.get("stream"),
-                            "stream_id": work.payload.get("stream_id"),
-                            "message": message_to_dict(result_message),
-                            "decision": {
-                                "engage": decision.engage,
-                                "reason": decision.reason,
-                                "rationale": decision.rationale,
-                                "confidence": decision.confidence,
-                                "threshold": decision.threshold,
-                                "allow_episode": decision.allow_episode,
-                                "relevance_gate": decision.relevance_gate,
-                            },
-                            "admission": None,
-                            **downstream,
-                        })
-                    ordinal += 1
-                if decision.relevance_gate and self._participation is not None:
-                    # The dispatcher's `note_message` never fires under bridge
-                    # mode (no live listener), so the durable obligation owns it.
-                    await self._store.enqueue_work(
-                        conn, event_id=envelope.event_id,
-                        kind="participation", ordinal=ordinal,
-                        platform=work.platform,
-                        account_key=work.account_key,
-                        conversation_id=work.conversation_id,
-                        payload={"note_message": message_to_dict(result_message),
-                                 **downstream})
-                    ordinal += 1
-                if self._memory_feed is not None and person is not None:
-                    await self._store.enqueue_work(
-                        conn, event_id=envelope.event_id,
-                        kind="memory_feed", ordinal=ordinal,
-                        platform=work.platform,
-                        account_key=work.account_key,
-                        conversation_id=work.conversation_id,
-                        payload={"message": message_to_dict(result_message),
-                                 "person": _person_dict(person),
-                                 "absorbed": absorbed, "unit": unit,
-                                 **downstream})
-                    ordinal += 1
-                # A committed sidecar made its ordinal-90 obligation the ONE
-                # stimulus obligation for the whole source event — the hook
-                # enqueued it inside the observation's own transaction with
-                # both refs — so raising a second, ordinary message stimulus
-                # here would give one source event two independent wakes. A
-                # refused or unscoped sidecar committed no merged
-                # obligation: the utterance's own stimulus is enqueued as
-                # always.
-                source_owned = observation_status == "ok" and bool(unit)
-                if (self._stimulus is not None and row_id is not None
-                        and not source_owned):
-                    await self._store.enqueue_work(
-                        conn, event_id=envelope.event_id,
-                        kind="stimulus", ordinal=ordinal,
-                        platform=work.platform,
-                        account_key=work.account_key,
-                        conversation_id=work.conversation_id,
-                        payload={"message": message_to_dict(result_message),
-                                 "row_id": row_id,
-                                 "person_id": person.person_id
-                                 if person else None,
-                                 "absorbed": absorbed, "unit": unit,
-                                 **downstream})
-                    ordinal += 1
+                command = await enqueue_downstream(
+                    conn, store=self._store, work=work, envelope=envelope,
+                    message=result_message, decision=decision, person=person,
+                    row_id=row_id, absorbed=absorbed, unit=unit,
+                    observation_status=observation_status,
+                    room_command=self._room_command,
+                    participation=self._participation,
+                    memory_feed=self._memory_feed, stimulus=self._stimulus,
+                    downstream=downstream)
                 # The queued receipt is BRIDGE-owned: the producer emits it
                 # once per canonical event at enqueue, so the app never
                 # enqueues a second receipt workflow. A terminal-phase
@@ -1099,7 +988,8 @@ class WorkRunner:
                 ok = await self._store.finish_work(
                     conn, work.id, generation=work.generation,
                     state="done", result=self._attempt_patch(work, "done", {
-                        "outcome": "engaged" if decision.engage else "recorded",
+                        "outcome": ("command" if command else "engaged"
+                                    if decision.engage else "recorded"),
                         "reason": decision.reason,
                         "observation": observation_status}))
         if ok:
@@ -1114,6 +1004,12 @@ class WorkRunner:
                              outcome="observation_refused",
                              trace=attempt[1] if attempt else None)
             await self._ack(work)
+
+    def _maybe_observe_sender(self, work: Any, envelope: Any) -> None:
+        if self._onboarding is not None and envelope.sender_id:
+            self._onboarding.notify_sender(
+                platform=work.platform, conversation_id=work.conversation_id,
+                sender_id=envelope.sender_id)
 
     async def _stamp_ingest_ended(
         self, event_id: str, *, outcome: str,
@@ -1166,8 +1062,7 @@ class WorkRunner:
                 # legitimate non-admission, not a retained failure.
                 observation_status = "refused:scope_refused"
             else:
-                status = await self._append_observation(
-                    work, envelope, unit=unit)
+                status = await self._append_observation(work, envelope, unit=unit)
                 if status is None:
                     return  # the append's failure already finished the work
                 observation_status = status
@@ -1185,8 +1080,7 @@ class WorkRunner:
                     ordinal=91, platform=work.platform,
                     account_key=work.account_key,
                     conversation_id=work.conversation_id,
-                    payload=self._obligation_payload(
-                        work, envelope, part="observation"),
+                    payload=self._obligation_payload(work, envelope, part="observation"),
                     result={"reason": observation_status})
             ok = await self._store.finish_work(
                 conn, work.id, generation=work.generation, state=state,
@@ -1228,8 +1122,7 @@ class WorkRunner:
                 await self._ack(work)
 
         if self._observations is None:
-            await finish("failed_retained", {},
-                         reason="observation store unwired")
+            await finish("failed_retained", {}, reason="observation store unwired")
             return
         room = (self._allowlist.conversation(
                     work.platform, work.conversation_id)
@@ -1322,6 +1215,8 @@ class WorkRunner:
                 expect_scope=self._observation_scope(work))
         except (ValueError, KeyError, TypeError) as exc:
             return f"refused:malformed observation: {exc}"
+        if self._onboarding is not None:
+            self._onboarding.notify_observation(obs)
         if envelope.kind not in V1_KINDS and envelope.kind != obs.object_kind:
             # Payload-kind consistency: a typed envelope names the object
             # kind it carries; a mismatch is a malformed source event.
@@ -1332,8 +1227,8 @@ class WorkRunner:
             conversation_id=work.conversation_id, target=obs.target,
             target_author_id=obs.target_author_id)
         actor_pid = None
-        if obs.actor_id and obs.actor_status == "known" and self._persons:
-            ref = self._persons.resolve(work.platform, obs.actor_id)
+        if obs.actor_id and obs.actor_status == "known" and self._access is not None:
+            ref = await self._access.resolve_ref(work.platform, obs.actor_id)
             actor_pid = ref.person_id if ref is not None else None
         at_ms = obs.occurred_ms if obs.occurred_ms is not None else obs.received_ms
         enqueued_ms = _now_ms()
@@ -1415,6 +1310,9 @@ class WorkRunner:
             message=message_from_dict(payload["message"]),
             decision=EngageDecision(**payload["decision"]),
             tag_id=payload["tag_id"],
+            # The explicit-command occasion survives durable rehydration —
+            # older rows carry no key and are the tag turns they always were.
+            occasion=payload.get("occasion", "tag"),
         )
         adapter = self._adapters.get(work.platform)
         bound = (adapter.bind_owner(owner)
@@ -1532,9 +1430,9 @@ class WorkRunner:
         if room is None:
             await self._finish(work, "intentional_skip", {"reason": refuse})
             return
-        current = (self._persons.resolve(
+        current = (await self._access.resolve_ref(
             work.platform, work.payload["message"].get("sender_id", ""))
-                   if self._persons is not None else None)
+            if self._access is not None else None)
         if (current is None or current.person_id != person.person_id
                 or current.honcho_peer_id != person.honcho_peer_id):
             await self._finish(work, "intentional_skip",
@@ -1736,8 +1634,7 @@ class WorkRunner:
                     platform=work.platform, conversation_id=work.conversation_id,
                     conversation_type=work.payload.get("conversation_type",
                                                        "group"),
-                    relevance_score=score,
-                ),
+                    relevance_score=score),
                 send_permitted=send_permitted,
                 gate_verdict=verdict, gate_score=score,
                 adapter=bound)

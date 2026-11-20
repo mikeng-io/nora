@@ -21,13 +21,32 @@ from redis.backoff import NoBackoff
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from nora.app.bridge_queue import DbSpeakingLocks, StreamReader, WorkRunner, stream_name
-from nora.domain.models import NormalizedMessage
+from nora.domain.identity import Identifier
+from nora.domain.managed import (
+    AccountState,
+    ManagedAccount,
+    ManagedPerson,
+    MembershipState,
+    PersonLifecycle,
+    room_scope_id,
+)
+from nora.domain.management import Scope, ScopeKind
+from nora.domain.models import EditTarget, NormalizedMessage
 from nora.infra.sql.bridge_store import SqlBridgeStore
 from nora.infra.sql.schema import BRIDGE_WORK, MESSAGES
+from nora.people import RoomManagement
+from nora.people.app.managed import ManagedServices
 from nora.platform.bridge.envelope import Envelope, canonical_source_key, event_id
 from nora.platform.bridge.queue import CONSUMER_GROUP, StreamProducer, ensure_group
 from nora.platform.bridge.rehydrate import message_to_dict
 from nora.testing import ScriptedTurn
+from nora.testing.managed import (
+    FakeAuthorityBackend,
+    FakeBindingStore,
+    FakeIdentityRegistry,
+    FakeLinkRequests,
+    FakeTopologySource,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -35,15 +54,19 @@ KEY = b"test-correlation-key"
 PLATFORM, ACCOUNT, CONV = "signal", "+00000000001", "g-bridge"
 
 
-def _msg(body: str, ts: int) -> dict:
+def _msg(body: str, ts: int, *, mentions: frozenset[str] = frozenset(),
+         edit_of: EditTarget | None = None) -> dict:
     return message_to_dict(NormalizedMessage(
         platform=PLATFORM, conversation_id=CONV, conversation_type="group",
         sender_id="+00000000002", sender_name="Sender", timestamp=ts,
-        body=body, raw={"dataMessage": {"message": body}}, message_id=f"m{ts}"))
+        body=body, raw={"dataMessage": {"message": body}}, message_id=f"m{ts}",
+        mentions=mentions, edit_of=edit_of))
 
 
 def _envelope(body: str, ts: int, *, dedupe_suffix: str | None = None,
-              receipt: dict | None = None, key_version: int = 1) -> Envelope:
+              receipt: dict | None = None, key_version: int = 1,
+              mentions: frozenset[str] = frozenset(),
+              edit_of: EditTarget | None = None) -> Envelope:
     sk = canonical_source_key(
         PLATFORM, ACCOUNT, CONV, "message", dedupe_suffix or f"{ts}")
     return Envelope(
@@ -52,7 +75,8 @@ def _envelope(body: str, ts: int, *, dedupe_suffix: str | None = None,
         conversation_id=CONV, conversation_type="group",
         sender_id="+00000000002", sender_name="Sender", sent_ms=ts,
         received_ms=ts + 1, queued_ms=ts + 2, time_quality="upstream",
-        message=_msg(body, ts), receipt=receipt, admission_rev=1)
+        message=_msg(body, ts, mentions=mentions, edit_of=edit_of),
+        receipt=receipt, admission_rev=1)
 
 
 @pytest.fixture
@@ -588,3 +612,162 @@ async def test_reserve_action_rejects_stale_generation_and_foreign_owner(
             account_key=ACCOUNT, owner_kind="otp_challenge", owner_id="o-1",
             owner_generation=None, op="send", request=req)
     assert verdict == "conflict"
+
+
+# `!!!member` over durable ingress: the explicit-command occasion survives
+# the bridge — enqueued off the VERIFIED message (never the engage gate),
+# rehydrated as `room_command`, ending in a supported terminal disposition.
+CMD_ROOM = Scope(ScopeKind.ROOM, room_scope_id(PLATFORM, CONV))
+
+
+async def _managed_room() -> tuple[RoomManagement, FakeBindingStore]:
+    """Real `RoomManagement` over the managed fakes; the sender is the room's operator."""
+    bindings = FakeBindingStore()
+    backend = FakeAuthorityBackend()
+    topology = FakeTopologySource(
+        rooms={room_scope_id(PLATFORM, CONV): ("unit-a", False)},
+        units={"unit-a": "ws-main"},
+        workspaces={"ws-main"},
+    )
+    registry = FakeIdentityRegistry()
+    management = RoomManagement(ManagedServices(
+        bindings, backend, topology, registry, FakeLinkRequests()))
+    await bindings.register(
+        person=ManagedPerson(
+            person_id="person_op", lifecycle=PersonLifecycle.ACTIVE),
+        account=ManagedAccount(
+            account_id="acct-op", person_id="person_op", platform=PLATFORM,
+            identifiers=frozenset({Identifier(
+                platform=PLATFORM, kind="phone", value="+00000000002")}),
+            state=AccountState.BOUND,
+        ))
+    registry.identities["person_op"] = {
+        "id": "kratos-op", "state": "active", "traits": {}}
+    await backend.put_relation(
+        scope=CMD_ROOM, relation="grant_manage_members", person_id="person_op")
+    return management, bindings
+
+
+async def _register_event(store, redis_client, stream, env) -> None:
+    await _produce(redis_client, stream, env)
+    reader = _reader(redis_client, store, stream)
+    task = asyncio.create_task(reader._read())
+    try:
+        await _wait_event(store, env.event_id)
+    finally:
+        reader.stop()
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+async def _claim_kind(store, kind: str, *, owner="w-test"):
+    """Claim rows until one of `kind` comes up (siblings may interleave)."""
+    for _ in range(6):
+        work = await store.claim_next(owner=owner, lease_seconds=60)
+        if work is None:
+            return None
+        if work.kind == kind:
+            return work
+    return None
+
+
+async def test_a_bare_room_command_is_bridged_as_command_work_and_replies(
+        bridge, redis_client, harness_factory):
+    """The bare-command guard: revert the `room_command` branch in
+    `_run_ingest` and no turn work exists — this goes red on `turn is
+    None`. A `!!!member` with no trigger must not wait on `decision.engage`."""
+    management, bindings = await _managed_room()
+    harness = await harness_factory(room_commands=management)
+    store, _, stream = bridge
+    env = _envelope("!!!member register", 1010,
+                    mentions=frozenset({"+00000000009"}))
+    await _register_event(store, redis_client, stream, env)
+
+    runner = _runner(store, redis_client, harness,
+                     room_command=management.is_command)
+    work = await store.claim_next(owner="w-test", lease_seconds=60)
+    assert work is not None and work.kind == "ingest"
+    await runner._execute(work)
+
+    # The command became durable turn work carrying its occasion, off the
+    # verified message — engage stayed False; nothing else could have routed it.
+    turn = await _claim_kind(store, "turn")
+    assert turn is not None
+    assert turn.payload["occasion"] == "room_command"
+    assert turn.payload["decision"]["engage"] is False
+    assert turn.payload["message"]["body"] == "!!!member register"
+    await runner._execute(turn)
+
+    async with store._engine.connect() as conn:
+        row = (await conn.execute(sa.select(BRIDGE_WORK).where(
+            BRIDGE_WORK.c.id == turn.id))).mappings().one()
+    assert row["state"] == "done"
+    assert row["result"]["disposition"] == "send_reply"
+    assert [text for _, text in harness.sink.sent] == [
+        "registered — they're a member of this room now"]
+    # The explicit occasion is model-free, and the effect really applied.
+    assert harness.agents_constructed == 0
+    assert any(m.state is MembershipState.MEMBER
+               for m in await bindings.members_of(CMD_ROOM))
+
+
+async def test_a_tagged_room_command_still_rides_the_command_occasion(
+        bridge, redis_client, harness_factory):
+    """A command that ALSO carries the trigger (`nora` is the trigger text)
+    is still a command: engage=True in the decision, `room_command` in the
+    payload, no model turn behind it."""
+    management, _bindings = await _managed_room()
+    harness = await harness_factory(room_commands=management)
+    store, _, stream = bridge
+    env = _envelope("!!!member add nora", 1011)
+    await _register_event(store, redis_client, stream, env)
+
+    runner = _runner(store, redis_client, harness,
+                     room_command=management.is_command)
+    work = await store.claim_next(owner="w-test", lease_seconds=60)
+    assert work is not None and work.kind == "ingest"
+    await runner._execute(work)
+
+    turn = await _claim_kind(store, "turn")
+    assert turn is not None
+    assert turn.payload["occasion"] == "room_command"
+    assert turn.payload["decision"]["engage"] is True
+    await runner._execute(turn)
+
+    async with store._engine.connect() as conn:
+        row = (await conn.execute(sa.select(BRIDGE_WORK).where(
+            BRIDGE_WORK.c.id == turn.id))).mappings().one()
+    assert row["state"] == "done"
+    # A rendered answer reached the room and no model was ever invoked.
+    assert len(harness.sink.sent) == 1
+    assert harness.agents_constructed == 0
+
+
+async def test_ordinary_and_edited_bridge_messages_never_become_command_work(
+        bridge, redis_client, harness_factory):
+    """Negative controls on the SAME predicate: an ordinary message and an
+    edit carrying `!!!member` text are both verified non-commands — no
+    command work, no reply, no model."""
+    management, _bindings = await _managed_room()
+    harness = await harness_factory(room_commands=management)
+    store, _, stream = bridge
+    ordinary = _envelope("hello room", 1012)
+    edited = _envelope("!!!member add", 1013, edit_of=EditTarget(sent_ts=5))
+    await _register_event(store, redis_client, stream, ordinary)
+    await _register_event(store, redis_client, stream, edited)
+
+    runner = _runner(store, redis_client, harness,
+                     room_command=management.is_command)
+    for _env in (ordinary, edited):
+        work = await _claim_kind(store, "ingest")
+        assert work is not None
+        await runner._execute(work)
+
+    async with store._engine.connect() as conn:
+        rows = (await conn.execute(sa.select(BRIDGE_WORK).where(
+            BRIDGE_WORK.c.event_id.in_([ordinary.event_id, edited.event_id]))
+        )).mappings().all()
+    assert not any(r["kind"] == "turn" for r in rows)
+    assert harness.sink.sent == []
+    assert harness.agents_constructed == 0

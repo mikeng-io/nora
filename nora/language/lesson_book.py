@@ -196,10 +196,11 @@ class LessonBook:
 
             Args:
                 body: The lesson, in prose.
-                citations: What it rests on, as strings: the `response:<n>` of
-                    episodes you were shown (as many different ones as your
-                    instructions ask for), and any `n` of a reply someone else
-                    wrote. Never only your own messages.
+                citations: Lesson evidence only: `response:<n>` from
+                    `lesson_episodes`, or a peer reply's `n` inside
+                    `lesson_episodes` or `lesson_corrections`. Agenda and
+                    transcript messages alone are not lesson evidence.
+                    Cite as many different episodes as your instructions require.
                 lesson_id: A lesson you hold, exactly as you were shown it, to
                     revise it. Omit for a new one.
             """

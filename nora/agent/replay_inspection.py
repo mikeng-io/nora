@@ -1,4 +1,4 @@
-"""Compare only the system/agenda projection, after transport normalization."""
+"""Read and compare actual subject instructions and assembled context at transport boundaries."""
 
 from __future__ import annotations
 
@@ -13,3 +13,15 @@ def compare_inspection(inspection: dict[str, Any], request: dict[str, Any]) -> b
     if isinstance(agenda, list):
         agenda = "".join(p.get("text", "") for p in agenda)
     return system == undash(inspection["system"]) and agenda == undash(inspection["agenda"])
+
+
+def instruction_messages(requests: Any) -> dict[str, Any]:
+    """The instruction roles from the first actual formatted request, without reconstruction."""
+    if not isinstance(requests, list) or not requests:
+        return {"status": "unavailable", "cause": "request_not_captured", "messages": None}
+    first = requests[0]
+    messages = first.get("messages") if isinstance(first, dict) else None
+    if not isinstance(messages, list) or any(not isinstance(m, dict) for m in messages):
+        return {"status": "unavailable", "cause": "request_invalid", "messages": None}
+    return {"status": "ok", "messages": [
+        m for m in messages if m.get("role") in ("system", "developer")]}

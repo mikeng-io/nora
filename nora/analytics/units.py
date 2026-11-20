@@ -38,12 +38,14 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
+from nora.access import IdentityAccess
 from nora.domain.mobility import Stay
 from nora.domain.ports import GeocodeCacheStore, StimulusStore
 from nora.domain.presence import haversine_distance_m
 from nora.domain.rollup import (
     FOLLOW_NAMES,
     FOLLOW_WINDOW_SECONDS,
+    NEVER,
     Colocation,
     Daybook,
     Deviation,
@@ -141,7 +143,7 @@ class UnitRollups:
         stimuli: StimulusStore | None = None, events: EventPlaces | None = None,
         social: SqlSocialStreamStore | None = None,
         metrics: Any = None, clock: Callable[[], float] = time.time,
-        areas: GeocodeCacheStore | None = None,
+        areas: GeocodeCacheStore | None = None, access: IdentityAccess | None = None,
     ) -> None:
         self._store = store
         #: Where an outing's areas are read (the geocode cache, READ-ONLY, as
@@ -149,6 +151,7 @@ class UnitRollups:
         self._areas = areas
         #: Without it no daybook reads social items: `items_posted` stays None.
         self._social = social
+        self._access = access
         self._cfg = config
         self._units = units
         self._people = people
@@ -197,7 +200,7 @@ class UnitRollups:
         stamps = [logical_now.get(m) for m in members]
         stamps.extend(m.ts for m in messages)
         stamps.extend(s.ts for s in sends)
-        known = [s for s in stamps if s is not None]
+        known = [s for s in stamps if s is not None and s != NEVER]
         as_of = min(max(known), mark.through_ms) if known else mark.through_ms
         posted = await self._posted(members, mark)
         found = colocations(
@@ -269,14 +272,21 @@ class UnitRollups:
         held)."""
         if self._social is None:
             return SocialInput()
-        ids = [p for p, subject in self._subject_of.items() if subject in members]
+        allowed = {p for p in members if self._access is None
+                   or not await self._access.social_off(p)}
+        ids = [p for p, subject in self._subject_of.items() if subject in allowed]
         read = await self._social.posted(persons=ids, through_ms=mark.through_ms)
+        allowed = {p for p in allowed if self._access is None
+                   or not await self._access.social_off(p)}
         observed: dict[str, int] = {}
         for person, since in read.observed_from.items():
+            if self._subject_of[person] not in allowed:
+                continue
             subject = self._subject_of[person]
             observed[subject] = min(since, observed.get(subject, since))
         return SocialInput(
-            items=tuple(SocialFact(self._subject_of[i.person_id], i.ts) for i in read.items),
+            items=tuple(SocialFact(self._subject_of[i.person_id], i.ts) for i in read.items
+                        if self._subject_of[i.person_id] in allowed),
             observed_from=observed,
         )
 

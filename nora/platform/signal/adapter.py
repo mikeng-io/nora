@@ -30,19 +30,29 @@ class SignalAdapter:
     def __init__(
         self, base_url: str, account: str, *, metrics: MetricsSink,
         dm_recipients: Set[str] = frozenset(),
+        on_consent: Callable[[dict], Awaitable[bool]] | None = None,
+        dm_gate: Callable[[str], Awaitable[bool]] | None = None,
     ) -> None:
         """`metrics` is required, not optional with a null default: identity
         enrichment degrading uncounted is R-17's entire subject, and an optional
         collaborator is how it stayed uncounted before.
 
         `dm_recipients` is every direct address in `identity.toml`; the sender
-        refuses a direct message to anything else."""
+        refuses a direct message to anything else.
+
+        `on_consent` is the narrow link-consent seam (`account-linking.md`):
+        when wired, each raw event is offered to it BEFORE `parse_event`,
+        because the room parser drops private decision envelopes as non-room
+        DMs. It consumes the event (returns True) only when the envelope was
+        a private link decision — a refusal or an unavailable answer is still
+        consumed, so a consent attempt can never fall through into a room."""
         self._base_url = base_url
         self._account = account
         self._metrics = metrics
         self._listener = SignalListener(base_url)
-        self._sender = SignalSender(base_url, dm_recipients=dm_recipients)
+        self._sender = SignalSender(base_url, dm_recipients=dm_recipients, dm_gate=dm_gate)
         self._reactor = SignalReactor(base_url)
+        self._on_consent = on_consent
         self._identity: PlatformIdentity | None = None
 
     async def resolve_identity(self) -> PlatformIdentity:
@@ -81,12 +91,20 @@ class SignalAdapter:
         parse-and-drop step lives here, not in `nora.ingest.pipeline`.
         """
 
-        async def _on_event(raw_event: dict) -> None:
-            message = parse_event(raw_event, self._account)
-            if message is not None:
-                await on_message(message)
+        await self._listener.listen(
+            lambda event: self._handle_event(event, on_message))
 
-        await self._listener.listen(_on_event)
+    async def _handle_event(
+        self,
+        raw_event: dict,
+        on_message: Callable[[NormalizedMessage], Awaitable[None]],
+    ) -> None:
+        """Private link consent first, then ordinary parse-and-drop room traffic."""
+        if self._on_consent is not None and await self._on_consent(raw_event):
+            return
+        message = parse_event(raw_event, self._account)
+        if message is not None:
+            await on_message(message)
 
     async def send(
         self,

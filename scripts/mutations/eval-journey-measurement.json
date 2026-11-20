@@ -1,0 +1,44 @@
+[
+  {
+    "name": "the SDK binds its claim before starting a case",
+    "file": "evals/backbone.py",
+    "old": "    spec.measurement.bind(evidence)",
+    "new": "    pass",
+    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_a_conflicting_measurement_refuses_before_sdk_composition"
+  },
+  {
+    "name": "a conflicting run claim refuses before case execution",
+    "file": "evals/measurement.py",
+    "old": "            raise EvidenceError(\"measurement_claim_conflict\")",
+    "new": "            pass",
+    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_a_conflicting_measurement_refuses_before_sdk_composition"
+  },
+  {
+    "name": "cognition reads the explicitly declared measurement",
+    "file": "scripts/cognition_loop/accounting.py",
+    "old": "    measurement = Measurement(mode=(rejudged if rejudged is not None else run).get(\n        \"measurement\", PROTOCOL.mode))",
+    "new": "    measurement = PROTOCOL",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_the_declared_measurement_reaches_cognition_json_and_html"
+  },
+  {
+    "name": "rejudging owns its claim instead of inheriting the original",
+    "file": "scripts/cognition_loop/accounting.py",
+    "old": "(rejudged if rejudged is not None else run).get(",
+    "new": "run.get(",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_rejudging_does_not_inherit_the_original_behavioral_claim"
+  },
+  {
+    "name": "semantic FAIL and REVIEW survive the producer error channel",
+    "file": "evals/rebuilt/autonomous_journey.py",
+    "old": "    if report[\"status\"] not in (PASS, FAIL, REVIEW):",
+    "new": "    if report[\"status\"] != PASS:",
+    "target": "tests/unit/test_eval_report_accounting.py::test_the_journey_producer_preserves_semantic_judgments"
+  },
+  {
+    "name": "retained behavior follows the canonical axes",
+    "file": "scripts/cognition_loop/accounting.py",
+    "old": "    report[\"behavior\"] = report[\"outcome\"][\"behavior\"][\"status\"]",
+    "new": "    report[\"behavior\"] = \"UNMEASURED\"",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_the_declared_measurement_reaches_cognition_json_and_html"
+  }
+]

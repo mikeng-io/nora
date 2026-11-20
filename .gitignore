@@ -60,7 +60,7 @@ venv/
 # GENERATED PER EVAL RUN, never pre-generated and never committed: the
 # deployment's own behaviour values applied over `config.example.toml`, so an
 # eval subject composes the Nora that is deployed rather than a fresh install
-# (`design/evaluation/subject.md` «Anchored input»). It carries the deployment's real
+# (`design/evaluation/subject.md` «Production owns the subject»). It carries the deployment's real
 # values -- the doctrine canary, room ids, internal endpoints -- which is
 # exactly what `config.toml` is untracked for.
 /config.evaluation.toml
@@ -87,6 +87,12 @@ policy.toml
 .claude/worktrees/
 .worktrees/
 
+# git-lfs writes these into .githooks/ because core.hooksPath is set; they only
+# support LFS file locking, which this repo does not use.
+/.githooks/post-checkout
+/.githooks/post-commit
+/.githooks/post-merge
+
 .eval-cache/
 
 # The build-time version stamp (DEC-79). GENERATED, never committed: it is
@@ -111,11 +117,6 @@ deploy/voice-wake/tests/fixtures/seam_frames.bin
 # The embedder service's model files (docker-compose.yml `embedder`,
 # EMBEDDER_MODELS_DIR): gigabytes of GGUF, never committed.
 /models/
-
-# OpenWiki public reader build output
-docs-site/node_modules/
-docs-site/dist/
-docs-site/.astro/
 
 /secret.toml
 .secret-delivery/

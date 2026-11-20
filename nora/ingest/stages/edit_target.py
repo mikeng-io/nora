@@ -48,9 +48,9 @@ import time
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from nora.access import IdentityAccess
 from nora.domain.models import EditedMessage, EditTarget, NormalizedMessage
 from nora.domain.ports import RecordStore
-from nora.persons import Persons
 
 log = logging.getLogger("nora.ingest.edit_target")
 
@@ -70,7 +70,7 @@ class EditTargetResult:
 
 async def run(
     *, message: NormalizedMessage, target: EditTarget, audit: RecordStore,
-    persons: Persons, metrics: Any,
+    access: IdentityAccess, metrics: Any,
 ) -> EditTargetResult:
     """`target` is `message.edit_of`, passed on its own so its presence is a
     type rather than a runtime check."""
@@ -93,7 +93,7 @@ async def run(
     if original is None or original.hidden:
         return EditTargetResult(message=message, original=None, ending="edit_orphaned")
 
-    if original.is_nora or not _same_author(message, original, persons):
+    if original.is_nora or not await _same_author(message, original, access):
         return EditTargetResult(message=message, original=original, ending="edit_refused")
 
     if _is_stale(message, target, original):
@@ -133,16 +133,24 @@ def _is_stale(
     return not (target.sent_ts is not None and target.sent_ts == original.edited_ts)
 
 
-def _same_author(
-    message: NormalizedMessage, original: EditedMessage, persons: Persons,
+async def _same_author(
+    message: NormalizedMessage, original: EditedMessage, access: IdentityAccess,
 ) -> bool:
     """An edit that names no sender cannot contradict the original's; one
-    that does must be the same account, or the same person."""
+    that does must be the same account, or the same canonical person."""
     if not message.sender_id or message.sender_id == original.sender_id:
         return True
-    editor = persons.resolve(message.platform, message.sender_id)
+    editor = await access.resolve_account(message.platform, message.sender_id)
+    if editor is None or original.person_id is None:
+        return False
+    # A publication hold makes either side's canonical answer unreliable —
+    # refuse rather than compare against a mid-merge id.
+    if await access.identity_held(editor.person_id) or await access.identity_held(
+        original.person_id
+    ):
+        return False
+    editor_person = await access.canonical_person(editor.person_id)
     return (
-        editor is not None
-        and original.person_id is not None
-        and editor.person_id == original.person_id
+        editor_person is not None
+        and editor_person == await access.canonical_person(original.person_id)
     )

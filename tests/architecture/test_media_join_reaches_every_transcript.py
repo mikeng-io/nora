@@ -92,6 +92,13 @@ _NOT_A_BUILDER = {
     "nora/subagents/adapters/tools.py": (
         "reads the subagent job store, not message bodies"
     ),
+    # Its `.since` is an event cursor, not a transcript read; the canonical
+    # effects it holds reach the model only through `Judge.bind_evidence`,
+    # which renders file links as handles (`HAND_BUILT` in the gate).
+    "nora/subject/effect_capture.py": (
+        "custody of the raw canonical effects bound for the judge; its one "
+        "model-bound projection renders through grading.bind_evidence"
+    ),
 }
 
 #: Modules that BUILD a transcript and that `_discovered_readers` structurally

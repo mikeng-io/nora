@@ -383,7 +383,7 @@ same bearer token: each text frame is one CDP message, relayed to Chrome's
 - Chrome's stderr is in the room's `browser/chrome.log`, emptied at each
   start. `navigator.webdriver` reads `false`
   (`--disable-blink-features=AutomationControlled`).
-- `computer_browse` uses this connection. Pages load only from hosts the
+- `web_browse` uses this connection. Pages load only from hosts the
   egress policy allows.
 
 ## Scoped microVMs ([computer.scoped])

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import Any
 
 from nora.agent.lineage import entry_permits
-from nora.agent.room import RoomView, _key, _names_of, tell_apart
+from nora.agent.room import Room, RoomView, _key, _names_of, tell_apart
 from nora.agent.security import scan_identifiers
 from nora.domain.lineage import (
     RenderRoom,
@@ -11,6 +12,8 @@ from nora.domain.lineage import (
     room_key,
 )
 from nora.domain.lineage import message as message_lineage
+from nora.domain.managed import room_scope_id
+from nora.domain.management import Scope, ScopeKind
 from nora.domain.models import (
     PersonRef,
     TranscriptRow,
@@ -18,6 +21,19 @@ from nora.domain.models import (
 from nora.domain.self_presence import KnownRoom, platform_name
 
 ROOM_ACTIVITY_WINDOW_HOURS = 24
+
+
+async def _name_rows(
+    persons: Any, room: Room, rows: Sequence[TranscriptRow], *,
+    platform: str, conversation_id: str,
+) -> Sequence[TranscriptRow]:
+    """Name handed-out rows through their actual room's selected authority."""
+    access = room.access
+    if access is None:
+        return persons.name_transcript(rows, platform=platform)
+    return await access.name_transcript(
+        rows, platform=platform,
+        scope=Scope(ScopeKind.ROOM, room_scope_id(platform, conversation_id)))
 
 _ROOM_CONNECTION: Mapping[str, str] = {
     "up": "up",

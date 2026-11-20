@@ -1,0 +1,114 @@
+[
+  {
+    "name": "an unanswered SDK verdict row is an errored reading",
+    "file": "evals/reading.py",
+    "old": "    for outputs in report.detailed_results:\n        if not outputs:\n            # A (case, evaluator) row whose evaluator produced no verdict \u2014\n            # a task or evaluator error \u2014 is an errored reading, never a\n            # smaller denominator.\n            counts[ERROR] += 1\n        for out in outputs:",
+    "new": "    for outputs in report.detailed_results:\n        for out in outputs:",
+    "target": "tests/unit/test_eval_report_accounting.py::test_a_failed_task_row_is_execution_error_never_silence"
+  },
+  {
+    "name": "a sampled draw with no verdict is an errored draw",
+    "file": "evals/reading.py",
+    "old": "        if not outputs:\n            # An unanswered row means the draw's evaluator produced no\n            # verdict \u2014 an errored draw, never an absent one.\n            groups.setdefault(base, []).append(ERROR)\n        for out in outputs:",
+    "new": "        for out in outputs:",
+    "target": "tests/unit/test_eval_report_accounting.py::test_a_sampled_draw_that_never_answered_is_errored_not_missing"
+  },
+  {
+    "name": "the retained SDK report carries coverage and axes",
+    "file": "evals/backbone.py",
+    "old": "               \"mode\": measurement.mode, \"coverage\": coverage,\n               \"behavior\": outcome[\"behavior\"][\"status\"], \"outcome\": outcome}",
+    "new": "               \"mode\": measurement.mode,\n               \"behavior\": outcome[\"behavior\"][\"status\"]}",
+    "target": "tests/unit/test_eval_report_accounting.py::test_the_retained_report_carries_its_coverage_and_axes"
+  },
+  {
+    "name": "a missing expected SDK row is a coverage error",
+    "file": "evals/accounting.py",
+    "old": "    for name, evaluator in sorted(expected - observed, key=str):\n        errors.append(f\"missing report row: {name}/{evaluator}\")",
+    "new": "",
+    "target": "tests/unit/test_eval_report_accounting.py::test_a_missing_row_cannot_shrink_the_declared_denominator"
+  },
+  {
+    "name": "an unexpected SDK row is a coverage error",
+    "file": "evals/accounting.py",
+    "old": "    for name, evaluator in sorted(observed - expected, key=str):\n        errors.append(f\"unexpected report row: {name}/{evaluator}\")",
+    "new": "",
+    "target": "tests/unit/test_eval_report_accounting.py::test_an_unexpected_row_is_an_error_not_bonus_coverage"
+  },
+  {
+    "name": "a duplicated SDK row is a coverage error",
+    "file": "evals/accounting.py",
+    "old": "    for (name, evaluator), count in sorted(observed.items(), key=str):\n        if count > 1 and expected[(name, evaluator)]:\n            errors.append(f\"duplicate report row: {name}/{evaluator}\")",
+    "new": "",
+    "target": "tests/unit/test_eval_report_accounting.py::test_a_duplicated_row_is_an_error_not_extra_evidence"
+  },
+  {
+    "name": "an evaluator that produced no verdict is a coverage error",
+    "file": "evals/accounting.py",
+    "old": "        if not outputs:\n            unanswered += 1\n            errors.append(f\"evaluator produced no verdict: {name}/{evaluator}\")",
+    "new": "        if not outputs:\n            unanswered += 1",
+    "target": "tests/unit/test_eval_report_accounting.py::test_a_failed_task_row_is_execution_error_never_silence"
+  },
+  {
+    "name": "a clean row without canonical settlement is unestablished",
+    "file": "evals/accounting.py",
+    "old": "        state = settlement.get(name)\n        if state == \"failed\":\n            failed += 1\n            causes.append(f\"{name}: the evidence case failed\")\n        elif state == \"settled\":\n            ran += 1\n        else:\n            missing += 1\n            causes.append(\n                f\"{name}: no canonical settlement recorded\"\n                if evidence is not None else\n                f\"{name}: settlement evidence unavailable\")",
+    "new": "        state = settlement.get(name)\n        if state == \"failed\":\n            failed += 1\n            causes.append(f\"{name}: the evidence case failed\")\n        else:\n            ran += 1",
+    "target": "tests/unit/test_eval_report_accounting.py::test_a_clean_row_without_a_canonical_settlement_stays_unestablished"
+  },
+  {
+    "name": "an unvalidated capture is never validity pass",
+    "file": "evals/accounting.py",
+    "old": "    if coverage.get(\"status\") == \"PASS\" and receipt_status == \"PASS\":\n        valid = \"PASS\"",
+    "new": "    if coverage.get(\"status\") == \"PASS\":\n        valid = \"PASS\"",
+    "target": "tests/unit/test_eval_report_accounting.py::test_an_unvalidated_or_failed_capture_is_never_validity_pass"
+  },
+  {
+    "name": "the corpus gate requires coverage and both required axes",
+    "file": "evals/__main__.py",
+    "old": "    return (reading.accepted\n            and context_complete and accepted(coverage, outcome))",
+    "new": "    return (reading.accepted\n            and context_complete)",
+    "target": "tests/unit/test_eval_report_accounting.py::test_a_denominator_error_fails_the_run_even_when_verdicts_pass"
+  },
+  {
+    "name": "the corpus gate refuses an unestablished axis",
+    "file": "evals/__main__.py",
+    "old": "    return (reading.accepted\n            and context_complete and accepted(coverage, outcome))",
+    "new": "    return (reading.accepted\n            and context_complete)",
+    "target": "tests/unit/test_eval_report_accounting.py::test_an_unestablished_axis_fails_the_run_even_when_verdicts_pass"
+  },
+  {
+    "name": "a frozen wake proves it belongs by content",
+    "file": "scripts/cognition_loop/accounting.py",
+    "old": "            identity = frozen_wake_identity(\n                frozen, unit=case[\"unit\"], recorded_wake_id=wake_id,\n                at_ms=wake.get(\"at_ms\"), step=wake.get(\"step\"),\n                wake_id=wake.get(\"wake_id\"), session_id=wake.get(\"session_id\"))\n            if identity is not None:\n                errors.append(f\"{identity}: {name}\")\n            if judgments:",
+    "new": "            if judgments:",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_expected_denominators_do_not_shrink_with_missing_evidence"
+  },
+  {
+    "name": "the saved report serializes the three result axes",
+    "file": "scripts/cognition_loop/accounting.py",
+    "old": "    report[\"coverage\"] = reconcile(report, output)\n    try:\n        report[\"outcome\"] = outcome(report, report[\"coverage\"])\n    except Exception:  # noqa: BLE001 \u2014 a failed projection is itself an error\n        report[\"outcome\"] = {\n            \"execution\": {\"status\": \"ERROR\"}, \"validity\": {\"status\": \"ERROR\"},\n            \"behavior\": {\"status\": \"ERROR\"}, \"cause\": \"outcome projection failed\"}",
+    "new": "    report[\"coverage\"] = reconcile(report, output)",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_the_saved_report_serializes_the_three_axes_once"
+  },
+  {
+    "name": "the report gate requires every required axis",
+    "file": "scripts/cognition_loop/accounting.py",
+    "old": "    if report[\"coverage\"][\"status\"] != \"PASS\" \\\n            or report[\"outcome\"].get(\"cause\") == \"outcome projection failed\" \\\n            or report[\"outcome\"][\"execution\"][\"status\"] != \"PASS\" \\\n            or report[\"outcome\"][\"validity\"][\"status\"] != \"PASS\":\n        # A required axis still unknown or errored is never a report PASS.\n        report[\"status\"] = \"ERROR\"",
+    "new": "    if report[\"coverage\"][\"status\"] != \"PASS\":\n        # A required axis still unknown or errored is never a report PASS.\n        report[\"status\"] = \"ERROR\"",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_a_report_outcome_axis_unknown_blocks_the_saved_status"
+  },
+  {
+    "name": "a failed or foreign canonical outcome is an execution error",
+    "file": "scripts/cognition_loop/accounting.py",
+    "old": "                elif state in (\"failed\", \"foreign\"):\n                    errored += 1\n                    causes.append(\n                        f\"{case.get('name')}:{index} canonical outcome \"\n                        f\"{state}: {ref or 'uncited'}\")",
+    "new": "                elif state in (\"failed\", \"foreign\"):\n                    unestablished += 1\n                    causes.append(\n                        f\"{case.get('name')}:{index} canonical outcome \"\n                        f\"{state}: {ref or 'uncited'}\")",
+    "target": "tests/unit/test_cognition_loop_accounting.py::test_a_wake_settles_only_on_its_own_closed_canonical_outcome"
+  },
+  {
+    "name": "a contradictory frozen artifact is never judged",
+    "file": "scripts/cognition_loop/rejudge.py",
+    "old": "        judgeable = identity is None and not stale and not gap",
+    "new": "        judgeable = not stale and not gap",
+    "target": "tests/unit/test_cognition_loop_rejudge.py::test_a_frozen_artifact_that_is_not_this_wake_is_never_judged"
+  }
+]

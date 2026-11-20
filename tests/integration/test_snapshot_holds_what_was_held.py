@@ -1,5 +1,4 @@
-"""Write, revise and retire across every store migrated here, snapshot at two
-moments, and get EXACTLY what was held at each.
+"""Write, revise and retire across every store; restore exactly what each moment held.
 
 WHAT IS HELD is read from the live tables at each moment (`to_jsonb` of
 every row) — the thing the restore claims to reproduce, observed directly,
@@ -20,10 +19,7 @@ Per in-place table, six rows keyed 0..5 walk every transition:
 
 Append-only tables get one row in each of the three stretches.
 
-And one case no store asks for: an edit of message 2, which is pruned
-between t1 and t2. `message_edit.message_id` is ON DELETE CASCADE, so the
-prune deletes the edit with no statement naming it; the edit must be held at
-t1, gone at t2, and kept in history as hidden.
+A cascading prune of message2 keeps its edit at t1, absent at t2, with hidden history.
 """
 
 from __future__ import annotations
@@ -42,6 +38,7 @@ from nora.infra.sql import create_sql_engine
 from nora.infra.sql.history import APPEND_ONLY, HISTORY_TABLES
 from nora.infra.sql.snapshot_at import copied_tables
 from nora.subject import sandbox_as_of
+from tests.integration import managed_snapshot_rows as managed_rows
 
 T0 = datetime(2026, 9, 1, tzinfo=UTC)
 MS0 = int(T0.timestamp() * 1000)
@@ -88,6 +85,7 @@ def _ledger_row(kind: str, i: int) -> dict[str, Any]:
 
 #: A valid row per in-place table, for key `i`.
 ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
+    **managed_rows.ROWS,
     "graph_arrival": lambda i: {
         "unit": "u", "message_id": 1000+i, "revision": f"generated-{i}", "room": "signal:g1",
     },
@@ -342,6 +340,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
 
 #: The column each revision moves, and to what.
 REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
+    **managed_rows.REVISE,
     "graph_arrival": ("batched", lambda i: True),
     "entity": ("name", lambda i: f"Revised generated event {i}"),
     "relation": ("status", lambda i: "superseded"),
@@ -410,6 +409,7 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
 
 #: One append-only row, number `n`, citing the stable key-0 parents.
 APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
+    **managed_rows.APPEND,
     "notebook_entry_revision": lambda i: {
         "id": f"generated-entry-revision-{i}", "entry_id": "generated-entry-0", "seq": i,
         "base_revision_id": f"generated-entry-revision-{i - 1}" if i > 1 else None,

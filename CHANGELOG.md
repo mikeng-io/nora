@@ -1,5 +1,355 @@
 # Changelog
 
+## [7.20.2](https://github.com/mikeng-io/nora/compare/v7.20.1...v7.20.2) (2026-11-20)
+
+
+### Security
+
+* **deps:** bump the base-images group across 1 directory with 2 updates ([90507bb](https://github.com/mikeng-io/nora/commit/90507bbefb34f5df0cde64d634af7fbda0c0254e))
+
+## [7.20.1](https://github.com/mikeng-io/nora/compare/v7.20.0...v7.20.1) (2026-11-20)
+
+
+### Security
+
+* **deps:** bump go.opentelemetry.io/otel/sdk ([faba75a](https://github.com/mikeng-io/nora/commit/faba75aa569f187d5920653448798fccd62775d1))
+
+## [7.20.0](https://github.com/mikeng-io/nora/compare/v7.19.17...v7.20.0) (2026-11-19)
+
+
+### Features
+
+* **computer:** let web_browse submit search forms and type into any offered field ([746c5cd](https://github.com/mikeng-io/nora/commit/746c5cd7441950736a757fb39732a4561361c55c))
+* **computer:** replace the per-click browse agent with the indexed-action web_browse tool ([09f77f5](https://github.com/mikeng-io/nora/commit/09f77f5de3276bff66e74378a195d5316a1b1a64))
+* **computer:** retrieve public web evidence with a bounded browser loop ([0239800](https://github.com/mikeng-io/nora/commit/023980053c36b6e5664e9c00d47683acc06a4609))
+
+
+### Bug Fixes
+
+* **browser:** account for web browse in acceptance contracts ([3d949cc](https://github.com/mikeng-io/nora/commit/3d949cc9b9efaf3e7518d34cfae202c1da3c8620))
+* **computer:** keep a cut-off web_browse from reading as nothing found and show its model what it already did ([4d1abdd](https://github.com/mikeng-io/nora/commit/4d1abdd517888610ed6d346f975f8c97f88564d4))
+* **computer:** remove what still named the deleted browse agent ([11b0678](https://github.com/mikeng-io/nora/commit/11b0678faf00efb1a781c50b7b876a145b683288))
+* **computer:** report every cut-off web_browse run as unavailable, declare its side effects unknown, name its tool in the task note ([4ddaff2](https://github.com/mikeng-io/nora/commit/4ddaff2c84a63c9cf1fc4791f2194d74e120b41e))
+
+## [7.19.17](https://github.com/mikeng-io/nora/compare/v7.19.16...v7.19.17) (2026-11-19)
+
+
+### Maintenance
+
+* origin/master into native-stack-commands, the #826 lessons loop and the #825 wiki retirement ([6a47ad7](https://github.com/mikeng-io/nora/commit/6a47ad7125bba56e5e6ed903753f0102538f0747))
+* origin/master into native-stack-commands, the v7.19.16 release metadata ([8c99f31](https://github.com/mikeng-io/nora/commit/8c99f31eda8e88447b288e511011a5c2071ffeed))
+
+## [7.19.16](https://github.com/mikeng-io/nora/compare/v7.19.15...v7.19.16) (2026-11-19)
+
+
+### Maintenance
+
+* make nora-land and nora-dispatch write lessons where the lifecycle does ([ae53a6f](https://github.com/mikeng-io/nora/commit/ae53a6f4e21193a6fb61ee1d343a20243bd02db1))
+
+## [7.19.15](https://github.com/mikeng-io/nora/compare/v7.19.14...v7.19.15) (2026-11-19)
+
+
+### Changes
+
+* **site:** retire the OpenWiki wiki and redirect /wiki to the homepage ([2959279](https://github.com/mikeng-io/nora/commit/2959279cac76a25726901aca08a0a88cb99c91c9))
+
+## [7.19.14](https://github.com/mikeng-io/nora/compare/v7.19.13...v7.19.14) (2026-11-19)
+
+
+### Bug Fixes
+
+* **architecture:** restore the comment, metric, store and guide checks ([781c2bb](https://github.com/mikeng-io/nora/commit/781c2bb4f8479804e6d55fa12dbc69175c230c81))
+* **ci:** equip manual acceptance for the managed portal browser ([2728906](https://github.com/mikeng-io/nora/commit/272890684dc507fd5bebeb5f22fa60145e8f2b55))
+* **deploy:** pass the presence directory key to Nora ([706781b](https://github.com/mikeng-io/nora/commit/706781bb522c1a6a2dca2771f75a8ca69268a449))
+* **evals:** align journey worlds and harness fixtures with the current protocol ([756ddfd](https://github.com/mikeng-io/nora/commit/756ddfdb6f2c066df56bef37bb7ac4bdf65d577d))
+* **evals:** allocate journey metrics ports at bind time ([b314f52](https://github.com/mikeng-io/nora/commit/b314f52f6c9407af7abc000d3ab21b2ac61c6973))
+* **evals:** keep the teardown caller out of the leak sweep ([bc16f6d](https://github.com/mikeng-io/nora/commit/bc16f6d1d5f21f9eac56888c8e5630bc5447499c))
+* **evals:** seed journey stimuli before starting the scheduler ([59edc4e](https://github.com/mikeng-io/nora/commit/59edc4e21f516c8fa2c95d18c989746d96c129a4))
+* **heartbeat:** restore the unit-wide proactive delivery recheck ([6bfc7f0](https://github.com/mikeng-io/nora/commit/6bfc7f03ad55e93386bc1a34c4ff8ccd98f65a4b))
+* **privacy:** build every social reader through the opt-out helper ([8819384](https://github.com/mikeng-io/nora/commit/881938438bc891de6bc7cd860476e1f1b2d63613))
+
+## [7.19.13](https://github.com/mikeng-io/nora/compare/v7.19.12...v7.19.13) (2026-11-19)
+
+
+### Maintenance
+
+* **architecture:** reshrink the log-marker baseline to the current tree ([d3e2f34](https://github.com/mikeng-io/nora/commit/d3e2f34ea6b8ce530711f8bdc97218019c9e420d))
+* **architecture:** scope the causal_protocol exemption to its reader site ([fad1c30](https://github.com/mikeng-io/nora/commit/fad1c30cd069d15e7a20f05073cfd6ea908e0c63))
+* **contracts:** drop the 170s wall-clock wrapping the fast baseline ([82338ea](https://github.com/mikeng-io/nora/commit/82338ea1359446209e5f4a222bbc57515293ae35))
+
+## [7.19.12](https://github.com/mikeng-io/nora/compare/v7.19.11...v7.19.12) (2026-11-18)
+
+
+### Maintenance
+
+* **ory:** split the managed-identity gate into two parallel jobs ([13c4359](https://github.com/mikeng-io/nora/commit/13c435978ccebae42f5a1366b9a500d836693f7e))
+
+## [7.19.11](https://github.com/mikeng-io/nora/compare/v7.19.10...v7.19.11) (2026-11-18)
+
+
+### Maintenance
+
+* origin/master into feat/watch-source-reference, managed identity and release 7.19.10 ([8c968a3](https://github.com/mikeng-io/nora/commit/8c968a37d9ae38cbfeeacbf903c63c9f62beb6e2))
+
+## [7.19.10](https://github.com/mikeng-io/nora/compare/v7.19.9...v7.19.10) (2026-11-18)
+
+
+### Features
+
+* **identity:** admit validated file mappings into an empty managed target ([75f6aae](https://github.com/mikeng-io/nora/commit/75f6aae3e21d62b48ab7273630897c9751d38d69))
+* **identity:** authenticate and scope private provisioning requests ([178f729](https://github.com/mikeng-io/nora/commit/178f729f9fee5c0b3ca010e6e78b9a518539f7a1))
+* **identity:** authenticate managed portal sessions against exact account bindings ([1f0ec15](https://github.com/mikeng-io/nora/commit/1f0ec157c1000f034d5dc07d693c014762c47054))
+* **identity:** authenticate portal data requests with retained account bindings ([deefff0](https://github.com/mikeng-io/nora/commit/deefff01997324ba271c0e9edb7211c22e8a4404))
+* **identity:** authorize human management through the shared private API ([3d8abbd](https://github.com/mikeng-io/nora/commit/3d8abbd7fd3a806fc46e4ab2de03322369b903c3))
+* **identity:** bind bilateral consent to an immutable link request ([17b2c1a](https://github.com/mikeng-io/nora/commit/17b2c1af5d29d236db3f87e711a4097054cad887))
+* **identity:** bind managed OTP login to the delivered account revision ([6ae7887](https://github.com/mikeng-io/nora/commit/6ae7887cd03c4b3173d22c228a253ebebda923a9))
+* **identity:** decode management requests under verified actors ([87b9519](https://github.com/mikeng-io/nora/commit/87b9519d0a0e14be7c611ed99b496f9e9a4ed382))
+* **identity:** export managed authority into a validated file pair ([50b39f1](https://github.com/mikeng-io/nora/commit/50b39f197d92e503a0f753686fae6ed0e8006861))
+* **identity:** expose session-bound holder portal routes ([9f1f397](https://github.com/mikeng-io/nora/commit/9f1f3976d566f91209476702a47c55a64f55a4b4))
+* **identity:** holder-facing account linking views ([d5a979f](https://github.com/mikeng-io/nora/commit/d5a979f1df80230d1badc0008f080fc3fb1cf733))
+* **identity:** integrate sender group enrichment across bridge ingress ([845513d](https://github.com/mikeng-io/nora/commit/845513d3b9493dfa083619500e92904f45d6d82a))
+* **identity:** let managed holders rename their canonical display name ([56723fc](https://github.com/mikeng-io/nora/commit/56723fcd5714455a7b5586e9363fcac6a9b712dd))
+* **identity:** link accounts through holder-authenticated bilateral consent ([2c6aafe](https://github.com/mikeng-io/nora/commit/2c6aafe5c503e5fa13cc019a5e7fd0bc16f449f3))
+* **identity:** managed Ory backend for person binding and scoped grants ([23703d4](https://github.com/mikeng-io/nora/commit/23703d4bfceb5592e1868313ec3cbfb22c837900))
+* **identity:** onboard managed people from approved platform collections ([26c4bde](https://github.com/mikeng-io/nora/commit/26c4bde43235bae632a8abfd1308c95c7fc60b43))
+* **identity:** paginate Discord rosters without publishing partial reads ([a171be8](https://github.com/mikeng-io/nora/commit/a171be81463c1746244849866a95d80cbb9249ba))
+* **identity:** parse private Signal link decisions from transport senders ([0405a22](https://github.com/mikeng-io/nora/commit/0405a2264ef0597d1c82cdd3f5643236ec6f7664))
+* **identity:** persist and serialize bilateral link decisions ([f9fddb5](https://github.com/mikeng-io/nora/commit/f9fddb5bef756967cdb9be09e6ac3f4a6d1aae1b))
+* **identity:** provision complete rosters through the private management API ([4df999d](https://github.com/mikeng-io/nora/commit/4df999d8f76434ad3a72e785c5d25bd665ba27fa))
+* **identity:** publish bilateral account links into canonical people ([53e3608](https://github.com/mikeng-io/nora/commit/53e36088653619fcfa39114842827a3aa7589852))
+* **identity:** request-bound provider consent for link decisions ([246a0d8](https://github.com/mikeng-io/nora/commit/246a0d80e3a513a751eada5ac3d59cc20af6b12d))
+* **identity:** resolve current managed identities through the private API ([d4acc2c](https://github.com/mikeng-io/nora/commit/d4acc2c7aca43e951643337ee1875968db5b7042))
+* **identity:** route identity and permission reads through the selected backend ([c938ace](https://github.com/mikeng-io/nora/commit/c938ace31cce29e9e749663da69bffc62465d434))
+* **identity:** scope portal data to current managed room permissions ([88ebacb](https://github.com/mikeng-io/nora/commit/88ebacb99f96a35b2eab17eb3502add1015be1f2))
+* **identity:** serialize managed writes and persist publication holds ([bfc8e82](https://github.com/mikeng-io/nora/commit/bfc8e824a4a8e7f6269bb851616e1010aa30556a))
+* **identity:** verify Telegram OAuth identity proofs ([2ef9c96](https://github.com/mikeng-io/nora/commit/2ef9c968e03e84439811000d370b16d11d3b8b22))
+* **identity:** wire private provisioning and migrated link persistence ([bf0a950](https://github.com/mikeng-io/nora/commit/bf0a95041aa377b017dba8ec8809c2a932a20739))
+* **managed:** scoped operator nicknames and the explicit-scope read ([82cc895](https://github.com/mikeng-io/nora/commit/82cc895fe4a8ae3c42c258dbd18ee542c95078b1))
+* **people:** authenticated in-room registration and membership ([a43f6a9](https://github.com/mikeng-io/nora/commit/a43f6a95c5ea914db5cdf5918bfc82ccfd020683))
+
+
+### Bug Fixes
+
+* **authority:** refuse operator self-promotion through delegation ([99e1255](https://github.com/mikeng-io/nora/commit/99e1255a84766647a91cdbd6e28236d162f101f2))
+* **ci:** validate managed journeys with complete database resets ([8659223](https://github.com/mikeng-io/nora/commit/865922336fa613bedecd8767c9858a0a7808ad51))
+* **engagement:** room commands release their slot and bridge as command work ([2fefbb0](https://github.com/mikeng-io/nora/commit/2fefbb03e19e590e133643635b5caff4fe280316))
+* **identity:** admit roster observations by producer time at the shared boundary ([e1a5550](https://github.com/mikeng-io/nora/commit/e1a5550dc1a6579568d6d1dd529ce333308df5b2))
+* **identity:** bind Signal consent to nested daemon account provenance ([b9eda22](https://github.com/mikeng-io/nora/commit/b9eda2232d34a5f96dad01f499913cfa24a8ab56))
+* **identity:** bind and consume holder consent display results ([69a2072](https://github.com/mikeng-io/nora/commit/69a2072bc7b441b920b65c83204bde38895c1516))
+* **identity:** bind background profile inputs to selected identity state ([16d20b7](https://github.com/mikeng-io/nora/commit/16d20b784142027b4996a82cd16523a0392968ab))
+* **identity:** bind equal-time rosters to their accepted operation ([e229177](https://github.com/mikeng-io/nora/commit/e2291779b131d43b4731996ae6bd8c8d483bd8dc))
+* **identity:** bind failure recovery to the complete journaled effect ([91912ec](https://github.com/mikeng-io/nora/commit/91912ec894aa7760a412a5c3fa3a6a5a3284ae85))
+* **identity:** bind owned recovery and share admission contracts ([d26cc4f](https://github.com/mikeng-io/nora/commit/d26cc4feb2e7e6f397f564f81744e321bfa61b36))
+* **identity:** bind profile updates to concrete scoped values ([2c317e6](https://github.com/mikeng-io/nora/commit/2c317e682f9088ec9d7f8202850b27343f5ebe4b))
+* **identity:** bind provider consent to its authorization flow ([c8985bd](https://github.com/mikeng-io/nora/commit/c8985bd1a71f4ad799d73bdb1467ddbae9ee3816))
+* **identity:** bind scoped profile effects to current authority and person ([05483ac](https://github.com/mikeng-io/nora/commit/05483ac4220370506cc7473121ece1743775fcae))
+* **identity:** bound admission command outcomes and assess the target honestly ([9d39f29](https://github.com/mikeng-io/nora/commit/9d39f29bbd7394e0a2b08a3c3df3513de0204b80))
+* **identity:** bound admission receipts and require explicit absence ([791f135](https://github.com/mikeng-io/nora/commit/791f135e5e1a45f99d04f3cc353fa450e7fbf11e))
+* **identity:** bound private-name source validation ([df9c833](https://github.com/mikeng-io/nora/commit/df9c8338ec42c8d00b75dd54bb6ef5948a6c4a3d))
+* **identity:** check canonical permissions for retired subjects ([4732db2](https://github.com/mikeng-io/nora/commit/4732db28226a35f780bedd63ba63ab45aeb80a2f))
+* **identity:** classify roster conflicts and align binding store contracts ([259034f](https://github.com/mikeng-io/nora/commit/259034f4c67413f4741d0559e073a177a45e0783))
+* **identity:** clean export files after write and flush failures ([94bf8c9](https://github.com/mikeng-io/nora/commit/94bf8c92cd139a53c2d72a1e1130c8fe9f9f4935))
+* **identity:** commit admission publication and completion atomically ([7f8a763](https://github.com/mikeng-io/nora/commit/7f8a76364ec8f4fa148ebb5660e9f4ca07a075ab))
+* **identity:** connect private current circles to scoped location reads ([8b2c99d](https://github.com/mikeng-io/nora/commit/8b2c99dd81b7e2c4fdec1744e2e2018fbb84da83))
+* **identity:** defer self-profile authority reads until needed ([cbc71af](https://github.com/mikeng-io/nora/commit/cbc71af473e296fc7523b9cea136aae15448deab))
+* **identity:** deliver one-time codes to the exact requested account ([8dcb446](https://github.com/mikeng-io/nora/commit/8dcb44650da073e184a15bc919725d7f74d27e39))
+* **identity:** derive memory opt-outs from the managed room roster ([5b78d08](https://github.com/mikeng-io/nora/commit/5b78d08af52abbafa90d3ed7995e0eaaa6984301))
+* **identity:** enrich a resolved sender through its provable group ([2ef43fe](https://github.com/mikeng-io/nora/commit/2ef43fe494dea8fc5d99a6e6a649aa372cab199c))
+* **identity:** enrich grouped account observations onto one exact account ([959df66](https://github.com/mikeng-io/nora/commit/959df66901b185793e5886ae9f04efaea88231b8))
+* **identity:** enumerate managed identities for background profiles ([cf2a744](https://github.com/mikeng-io/nora/commit/cf2a7445d2ac58ab3574272e57b486fbca779b77))
+* **identity:** fail-closed managed-to-file export ([0c6847b](https://github.com/mikeng-io/nora/commit/0c6847ba9fbfaacce36403a9d56ee2844b764b42))
+* **identity:** give descriptive views composition ownership ([df2b013](https://github.com/mikeng-io/nora/commit/df2b013c134aba15267fe911bb5ea48ddf1232f2))
+* **identity:** hold export authority through atomic completion publication ([bae007d](https://github.com/mikeng-io/nora/commit/bae007d260cfa5ee6f46ae385324e79972caeca1))
+* **identity:** inspect complete authority shapes before file export ([4eb8077](https://github.com/mikeng-io/nora/commit/4eb8077adfda7919c6d0298ad0fea2a156f7403e))
+* **identity:** inspect default workspace during file admission ([5e09c54](https://github.com/mikeng-io/nora/commit/5e09c5484c768354ae65ff5a8975fd5ee5a875d7))
+* **identity:** integrate admission authority equivalence repair ([f21973e](https://github.com/mikeng-io/nora/commit/f21973e39c5463f8c1ad1477910e198bab30a648))
+* **identity:** integrate admission owned identity recovery ([2902b95](https://github.com/mikeng-io/nora/commit/2902b955a2eb523940e75858a818ce7999c30847))
+* **identity:** integrate atomic admission publication ([777edea](https://github.com/mikeng-io/nora/commit/777edea238fe43b204f1310bf323f2744e470acd))
+* **identity:** integrate default workspace admission guard ([7269e49](https://github.com/mikeng-io/nora/commit/7269e494088d746fe0d7577a430665d6844308dc))
+* **identity:** integrate exact admission invocation and replay ([c57ca24](https://github.com/mikeng-io/nora/commit/c57ca24fb68a1c3374a90e8add4ab1560ba75109))
+* **identity:** integrate private admission preflight and outcomes ([6606db0](https://github.com/mikeng-io/nora/commit/6606db019697f0b05a6196dc93d9cd344fddbe1f))
+* **identity:** keep parsed room intents in their validated literal types ([c7a752c](https://github.com/mikeng-io/nora/commit/c7a752cecc41e873901add8a1b35fbc39712a8c8))
+* **identity:** keep the integrated member catalogue within its token ceiling ([cf04a24](https://github.com/mikeng-io/nora/commit/cf04a24171496ccfe2e06a1c3bfd630ea7dc6269))
+* **identity:** keep the managed directory fake callable ([8f0aac3](https://github.com/mikeng-io/nora/commit/8f0aac3f5f1b05d809216dba66bbbf593f200f5f))
+* **identity:** leave unavailable durable admission pending ([7f08cd7](https://github.com/mikeng-io/nora/commit/7f08cd76bdf98653196ea694fcb893db30dbd6ff))
+* **identity:** managed backend answers memory composition and source reads ([eed8e52](https://github.com/mikeng-io/nora/commit/eed8e52f91f9952383149002133334f569174ac7))
+* **identity:** observe resolved bridge senders for group enrichment ([b04b03a](https://github.com/mikeng-io/nora/commit/b04b03a44f08fd16ee371ecccc2bc70874ed5338))
+* **identity:** preserve captured effects and explicit replay receipts ([3b37f24](https://github.com/mikeng-io/nora/commit/3b37f244ad8b304470ef5107a0a38521dd228385))
+* **identity:** preserve file-predicate authority equivalence in admission ([ba637c5](https://github.com/mikeng-io/nora/commit/ba637c5e619ccf046e54f6c3a8552cbd00e335fc))
+* **identity:** preserve membership support per service collection ([6de1908](https://github.com/mikeng-io/nora/commit/6de190873c8f8fe8bb2fb2ff9f790d628630c6ce))
+* **identity:** preserve other membership support on direct withdrawal ([14b1e9c](https://github.com/mikeng-io/nora/commit/14b1e9ced07c672704b716019b9c08caf06f1c29))
+* **identity:** preserve scoped names through transcript reads ([4e53c2a](https://github.com/mikeng-io/nora/commit/4e53c2abd184fc085741fb23e4929dc1e7c7861d))
+* **identity:** preserve scoped profile partial outcomes ([3fae478](https://github.com/mikeng-io/nora/commit/3fae478d9b8c2536d96554d319ea058173ad08cb))
+* **identity:** preserve truthful recovery across integrated callers ([13fbf52](https://github.com/mikeng-io/nora/commit/13fbf5292a0140aa727d80cc98d5d700b2894665))
+* **identity:** project managed portal backend and issuer credentials ([8323d26](https://github.com/mikeng-io/nora/commit/8323d2658bb637baa6591ae22b7c49c015ed3c59))
+* **identity:** prove admission Kratos ownership across restarts ([563bb3e](https://github.com/mikeng-io/nora/commit/563bb3e92339933be1c994834d9baeb16afaa8a2))
+* **identity:** qualify room registration keys by platform ([0872aa1](https://github.com/mikeng-io/nora/commit/0872aa115c88b768971189a98427e24fd7020a79))
+* **identity:** read current managed lineage and location audiences ([3c0aebf](https://github.com/mikeng-io/nora/commit/3c0aebf0d127d9572634d2c390210e07a59b6d67))
+* **identity:** read managed social preferences from Kratos traits ([125e16f](https://github.com/mikeng-io/nora/commit/125e16f8827cdb2d7d7a5ba04b0270a70958cd3f))
+* **identity:** recheck backend standing before displaying consent outcomes ([4571b1b](https://github.com/mikeng-io/nora/commit/4571b1bb3da1c7e407bf823b9b04a5d180666b53))
+* **identity:** recheck roster freshness during recovery ([9b9bc5e](https://github.com/mikeng-io/nora/commit/9b9bc5e96e51e668aa881baad9323ccd1a80f3bb))
+* **identity:** reconcile selected backend composition types ([da3413b](https://github.com/mikeng-io/nora/commit/da3413b9bb5fd07b21676caa3efdfc22ef31990b))
+* **identity:** recover interrupted link preparation without orphaning publication holds ([e0002b9](https://github.com/mikeng-io/nora/commit/e0002b98ef4cdf785b809f08fbc416abb2da1f3a))
+* **identity:** recover the exact room registration on an authenticated retry ([03e6805](https://github.com/mikeng-io/nora/commit/03e6805590097d3ca18f9677ee76e411ba72a848))
+* **identity:** refuse ambiguous OAuth consent state ([117d842](https://github.com/mikeng-io/nora/commit/117d84216fff4d14be0c0e1f8fb16afc74166f17))
+* **identity:** refuse lossy wildcard admission ([caeb16b](https://github.com/mikeng-io/nora/commit/caeb16b64a7f9c17ad9e0336e8683ab5b7f9c2b4))
+* **identity:** refuse revoked bindings when resuming registration ([5a15ab3](https://github.com/mikeng-io/nora/commit/5a15ab36931a4083c84764ddb261368cee259dfa))
+* **identity:** refuse roster departures without a fresh producer-stamped observation ([5a36642](https://github.com/mikeng-io/nora/commit/5a36642179a14e3e194d6b6bc393f8f1e59d209f))
+* **identity:** register observed accounts without nature classification ([283038f](https://github.com/mikeng-io/nora/commit/283038f60216541bf39db136488c982f5573d508))
+* **identity:** render scoped names through room contexts and egress ([6ee6dfa](https://github.com/mikeng-io/nora/commit/6ee6dfa8397541ba1e819339bcceedef6adb20c9))
+* **identity:** repair durable slot ownership, pre-read authentication, and partial-write honesty ([90d033f](https://github.com/mikeng-io/nora/commit/90d033f3f76c119de6b370609f7f3c3199b5f483))
+* **identity:** repair integrated Python lint failures ([1b05d10](https://github.com/mikeng-io/nora/commit/1b05d10eac002957ef5fe3b7354303bb08ad7985))
+* **identity:** report committed profile effects honestly ([a298ab7](https://github.com/mikeng-io/nora/commit/a298ab71d7c6a15617bc492f285decda723164e7))
+* **identity:** report uncertain room mutations without promising recovery ([66d956c](https://github.com/mikeng-io/nora/commit/66d956cb0ff0e705989a5f38b1b598645362a8b9))
+* **identity:** reprotect resumed admission and prove atomic visibility ([15b6f5b](https://github.com/mikeng-io/nora/commit/15b6f5b5b6832b1bf955294e36559d49a83272b9))
+* **identity:** require confirmed unlink session revocation ([f7debb3](https://github.com/mikeng-io/nora/commit/f7debb3bb66d5ef995921f0e7f6d7e040444b88f))
+* **identity:** resolve background room names through selected access ([078e24a](https://github.com/mikeng-io/nora/commit/078e24af5300ad70377d25df93ad1cbc75ba8669))
+* **identity:** resolve managed presence from current account ownership ([ad26c74](https://github.com/mikeng-io/nora/commit/ad26c745fef86dbcb6b09de22b396d22fa95c3f0))
+* **identity:** resolve saved route names through current managed circles ([3d05aa2](https://github.com/mikeng-io/nora/commit/3d05aa2bcf85897f60abd94847382c79ac41a861))
+* **identity:** resume managed journals in the running process ([8fcc8f6](https://github.com/mikeng-io/nora/commit/8fcc8f6d36b5a7509eb146f33520a119b7025e3d))
+* **identity:** retain canonical background history after restart ([e107a90](https://github.com/mikeng-io/nora/commit/e107a9032d463163b6043b2cf780467c545f73b2))
+* **identity:** retain canonical supplied speaker labels for egress ([2f78c20](https://github.com/mikeng-io/nora/commit/2f78c205abc430bde4004496ec8733a60f943236))
+* **identity:** retain failed session revocation readbacks at the registry ([27b0c09](https://github.com/mikeng-io/nora/commit/27b0c09bdd3e33bc64c3e2a69275b72f6e46dd78))
+* **identity:** retain file graph preferences without an access facade ([f623152](https://github.com/mikeng-io/nora/commit/f62315213866cc2ce5137b6b49c9bed558e05f8f))
+* **identity:** retain managed state in system-time history ([b4fc29a](https://github.com/mikeng-io/nora/commit/b4fc29ab51f599e1113f2165b784353c1928a648))
+* **identity:** retain room-view preconditions after extraction ([00f50ce](https://github.com/mikeng-io/nora/commit/00f50ceb62be2462429246ceee1f403e318f7445))
+* **identity:** retain the exact admitted source snapshot ([9e02751](https://github.com/mikeng-io/nora/commit/9e027513c50daa3e483641362e899ad4c043be25))
+* **identity:** retain the required member catalogue trigger ([1f68b24](https://github.com/mikeng-io/nora/commit/1f68b249ec546eab4599984bbe7ddfde48df8e27))
+* **identity:** revalidate profile holders at commitment and preserve retries ([ffdd192](https://github.com/mikeng-io/nora/commit/ffdd19227c01f6e53dddaec3b443d2c13f311363))
+* **identity:** screen blank names, retired ids and mid-read source people ([24c0331](https://github.com/mikeng-io/nora/commit/24c033102de73c2eebe0ace6dc5b5f96800c39c5))
+* **identity:** screen managed source names before external reads ([46310c5](https://github.com/mikeng-io/nora/commit/46310c5fa7f4028c93bd007ebb1ba04229966b42))
+* **identity:** screen people introduced by later cognition reads ([9b7ccc0](https://github.com/mikeng-io/nora/commit/9b7ccc0bf5833cfb4701404e6f24f088183fd8bb))
+* **identity:** use selected authority in standalone analytics ([5a2b921](https://github.com/mikeng-io/nora/commit/5a2b9215c96308730c21600021762ef75e72623b))
+* **identity:** use selected collective members and social consent ([e3aa3b5](https://github.com/mikeng-io/nora/commit/e3aa3b5e980b59a9ef8e187d4fc85d1ff309969e))
+* **identity:** validate fresh Ory services and empty-session revocation ([705ced1](https://github.com/mikeng-io/nora/commit/705ced1c024ecd3fcc32b1ae678ef43c41b9a75d))
+* **identity:** validate resumed ownership even before its checkpoint ([90d18d2](https://github.com/mikeng-io/nora/commit/90d18d212e78d22e6aab63f1280f76b60f05836d))
+* **identity:** verify admission authority contracts and negative access ([9562f43](https://github.com/mikeng-io/nora/commit/9562f4356285579889bb95cbc086b0fcb485ee26))
+* **identity:** wire selected access into background and offline consumers ([f91dd3f](https://github.com/mikeng-io/nora/commit/f91dd3fbd5b4b38649b922d317f521bda3d2b1eb))
+* **managed:** bind admission invocations to one captured effect ([bc0a3a6](https://github.com/mikeng-io/nora/commit/bc0a3a69ec1ad226eab7ec3fee4a154ea47f918b))
+* **people:** conform member tool description to policy ([4e941f2](https://github.com/mikeng-io/nora/commit/4e941f2da00324a9df7b68424d5e3ad1819ea5e3))
+* **people:** guard room target resolution before reads and at commitment ([d452006](https://github.com/mikeng-io/nora/commit/d452006f868b951c68ee929d3b7c45bf42d687fd))
+
+
+### Changes
+
+* **identity:** run the managed Ory gate on every pull request head ([521de7e](https://github.com/mikeng-io/nora/commit/521de7ee70a9e47ba583ee82ebefca70dd5bd343))
+
+## [7.19.9](https://github.com/mikeng-io/nora/compare/v7.19.8...v7.19.9) (2026-11-18)
+
+
+### Features
+
+* **eval:** measure production journeys with canonical evidence ([d343361](https://github.com/mikeng-io/nora/commit/d3433614e1b7c2329542694a165e68aba3220d3a))
+
+
+### Bug Fixes
+
+* **eval:** bind computer Redis to the isolated journey service ([eca8796](https://github.com/mikeng-io/nora/commit/eca879655d294751739773a01e8bad32c935a142))
+* **eval:** close blob custody during composition teardown ([8aaf61a](https://github.com/mikeng-io/nora/commit/8aaf61a9772f6fbcb03e2b1b3ad2f22c9d7cae8f))
+* **eval:** cover declared subject occasions and repeatable reads ([3e0f3d7](https://github.com/mikeng-io/nora/commit/3e0f3d7558c96c0949243f831ea8db3d71ff56e4))
+* **evals:** bind discovered OAuth token endpoints to playback ([249f492](https://github.com/mikeng-io/nora/commit/249f492495c1fa1bb66f48ebd803b77153a20c0e))
+* **evals:** bind generated adaptor answers at the subject boundary ([16fff07](https://github.com/mikeng-io/nora/commit/16fff070e80c531e3daa0d3b9cfb33b5110ecfa9))
+* **evals:** defer OTLP export until isolation closes ([a3337d4](https://github.com/mikeng-io/nora/commit/a3337d4deb529b0e4850058606a640c946bbd89d))
+* **evals:** print scoped journey accounting and satisfy size gates ([e50f252](https://github.com/mikeng-io/nora/commit/e50f2527f3dd5a20d5bb5d88d280547ee8afb4c7))
+* **evals:** retain explicitly declared generated services beside recordings ([9459b71](https://github.com/mikeng-io/nora/commit/9459b71456eb3b118c606f1e7c36d6bc5dcad6f9))
+* **evals:** type the finite protocol request census ([106ee1c](https://github.com/mikeng-io/nora/commit/106ee1cc1ef3402d7df0466e5d43773ee8043284))
+* **image-gen:** isolate OAuth issuers and rotating state ([acb8aa3](https://github.com/mikeng-io/nora/commit/acb8aa378a6a1664a95b40d2a043fc1176e2c72f))
+
+## [7.19.8](https://github.com/mikeng-io/nora/compare/v7.19.7...v7.19.8) (2026-11-18)
+
+
+### Bug Fixes
+
+* **gc:** keep a branch that is the base of an open PR ([6d6e6f0](https://github.com/mikeng-io/nora/commit/6d6e6f0003217c5617db956098ab7ed5f627ae64))
+* **gc:** remove nothing, worktrees included, when open PRs cannot be fully read ([1ba40db](https://github.com/mikeng-io/nora/commit/1ba40db4600868cd3530ce80147fd0e701a0f241))
+
+## [7.19.7](https://github.com/mikeng-io/nora/compare/v7.19.6...v7.19.7) (2026-11-17)
+
+
+### Features
+
+* **scripts:** record each finished artifact's outcome with a settle step ([e1cb686](https://github.com/mikeng-io/nora/commit/e1cb6866bcdb273f2d25a0c09f6096ef5f1ab263))
+
+
+### Bug Fixes
+
+* **scripts:** derive the archived worktree from the branch, never from the caller ([1ff14ec](https://github.com/mikeng-io/nora/commit/1ff14ecd58367a90f8c329628d5c8aa49154f357))
+* **scripts:** make archive a plain annotated tag; refuse dirty worktrees ([17b66d2](https://github.com/mikeng-io/nora/commit/17b66d2298ee172fcc61644b33240134c4f0ced8))
+* **scripts:** make the archive tag the settlement record ([38b9f52](https://github.com/mikeng-io/nora/commit/38b9f52966842e4c6855a9c1c61f6ba9bd5c1195))
+
+## [7.19.6](https://github.com/mikeng-io/nora/compare/v7.19.5...v7.19.6) (2026-11-17)
+
+
+### Features
+
+* **scripts:** retire merged branches and stale worktrees by rule ([b07b55d](https://github.com/mikeng-io/nora/commit/b07b55d9b804a2877ee6b8a7102521382f51a1a4))
+
+
+### Bug Fixes
+
+* **scripts:** accept no merge proof after a failed refresh ([44c03e4](https://github.com/mikeng-io/nora/commit/44c03e415edd6b9416de303095ed0f67d7aa2ec1))
+* **scripts:** ignore configured fetch mappings when refreshing before classification ([80b7381](https://github.com/mikeng-io/nora/commit/80b7381f354e4c671e83f1e8bae632d106c5422c))
+* **scripts:** keep a failed remote delete a failure and recheck stale registrations ([e9a8765](https://github.com/mikeng-io/nora/commit/e9a876529fd48623b0ac3e1250facf362705b262))
+* **scripts:** make gc fresh, leased and scoped to classified removals ([3dbe6ab](https://github.com/mikeng-io/nora/commit/3dbe6ab22f0f0d0d4c855fedd21a3e61e775df70))
+* **scripts:** prune only remote-tracking refs before classifying ([f38ec85](https://github.com/mikeng-io/nora/commit/f38ec8540c8028bf6cf572c2306566eecdd53fe4))
+
+## [7.19.5](https://github.com/mikeng-io/nora/compare/v7.19.4...v7.19.5) (2026-11-15)
+
+
+### Features
+
+* **identity:** pin the managed-mode operation contract and platform account proofs ([563d578](https://github.com/mikeng-io/nora/commit/563d57864be013dad4d713fe313a70286972c457))
+
+
+### Bug Fixes
+
+* **identity:** enforce revision and permission contract boundaries ([e46cf90](https://github.com/mikeng-io/nora/commit/e46cf9081a680f38129e7ae63a8bed444980cec0))
+* **identity:** repair the managed contract's invariants and consent semantics ([e80a23e](https://github.com/mikeng-io/nora/commit/e80a23e034175e4503a044daf69fff1eedc104ac))
+
+## [7.19.4](https://github.com/mikeng-io/nora/compare/v7.19.3...v7.19.4) (2026-11-15)
+
+
+### Features
+
+* **identity:** expose the exact platform account a presented id binds ([7dc1cfa](https://github.com/mikeng-io/nora/commit/7dc1cfa775a6cd1ac41c19a23f26b6953fdd9c4f))
+
+## [7.19.3](https://github.com/mikeng-io/nora/compare/v7.19.2...v7.19.3) (2026-11-15)
+
+
+### Maintenance
+
+* origin/master into managed identity design, retain media recovery and release metadata ([65fbdda](https://github.com/mikeng-io/nora/commit/65fbddad08966df2189ff5092251700b9dcfec93))
+
+## [7.19.2](https://github.com/mikeng-io/nora/compare/v7.19.1...v7.19.2) (2026-11-15)
+
+
+### Bug Fixes
+
+* **media:** bound a chunked video read and recover its timed-out windows ([9cf9f49](https://github.com/mikeng-io/nora/commit/9cf9f49be2119b5d7af0d131f0c192ee3c40a956))
+* **media:** hand the item look's deadline to a video read's recovery ([fe8d3cf](https://github.com/mikeng-io/nora/commit/fe8d3cf75ecaedd401eebe6f29652c4975152c4e))
+* **media:** preserve partial results when recovery exhausts its allowance ([bf030bc](https://github.com/mikeng-io/nora/commit/bf030bc5dcbea3a584993bfd4157fd1ff7280f06))
+
+## [7.19.1](https://github.com/mikeng-io/nora/compare/v7.19.0...v7.19.1) (2026-11-14)
+
+
+### Maintenance
+
+* **eval:** align section citations with the consolidated subject contract ([521a31e](https://github.com/mikeng-io/nora/commit/521a31e238a6c50ce6f28d1a190331130a795e8d))
+
+## [7.19.0](https://github.com/mikeng-io/nora/compare/v7.18.12...v7.19.0) (2026-11-14)
+
+
+### Features
+
+* **speech:** add configurable local Qwen HK transcription ([4e5a8fb](https://github.com/mikeng-io/nora/commit/4e5a8fbf9cb9a22fd70f1b04f1366ddee738e128))
+
+
+### Bug Fixes
+
+* **cognition:** validate replay reads and explain lesson evidence refusals ([118aeab](https://github.com/mikeng-io/nora/commit/118aeab7868ef9759b4268983db55fb3f72aad44))
+* **memory:** keep graph walks within their budget without JIT compilation ([a7370fa](https://github.com/mikeng-io/nora/commit/a7370fa8a4bf2f21c1b8f1ded78aadd4eab48c3d))
+* **speech:** preserve readout context at long audio partitions ([d08be14](https://github.com/mikeng-io/nora/commit/d08be140fb2a7657cec8ddde0fe722032ee3f0e3))
+
 ## [7.18.12](https://github.com/mikeng-io/nora/compare/v7.18.11...v7.18.12) (2026-11-13)
 
 

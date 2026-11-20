@@ -1,0 +1,58 @@
+[
+  {
+    "name": "subject baseline silently disables heartbeat",
+    "file": "nora/subject/obtain.py",
+    "old": "    cfg = _with(cfg, \"store.data_dir\", workdir)",
+    "new": "    cfg = _with(cfg, \"store.data_dir\", workdir)\n    cfg = _with(cfg, \"heartbeat.enabled\", False)",
+    "target": "tests/unit/test_eval_subject_parity.py::test_subject_baseline_preserves_enabled_features_modes_and_self_identity"
+  },
+  {
+    "name": "generated subject config silently disables participation",
+    "file": "evals/subject_config.py",
+    "old": "    \"obs.tracing.enabled\", \"obs.errors.enabled\", \"evals.langfuse.enabled\",",
+    "new": "    \"obs.tracing.enabled\", \"obs.errors.enabled\", \"evals.langfuse.enabled\",\n    \"participation.enabled\",",
+    "target": "tests/unit/test_eval_subject_parity.py::test_generated_config_preserves_functional_settings_and_reports_feature_drift"
+  },
+  {
+    "name": "fire workers are rejected instead of isolating their external effects",
+    "file": "scripts/cognition_loop/egress.py",
+    "old": "    subject.environment.check()",
+    "new": "    subject.environment.check()\n    if any(report[\"workers\"].values()):\n        raise ValueError(\"delivery worker composed\")",
+    "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_real_bridge_identity_bound_sends_and_refusals_stay_in_owned_service"
+  },
+  {
+    "name": "a blocked external dependency is accepted as a valid measurement",
+    "file": "nora/subject/environment.py",
+    "old": "        if self.denied:",
+    "new": "        if False:",
+    "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_unknown_tcp_and_dns_are_refused_and_cannot_be_a_valid_zero"
+  },
+  {
+    "name": "asyncio subprocess doors bypass the process refusal",
+    "file": "nora/subject/environment.py",
+    "old": "        self._patches.enter_context(patch.object(subprocess.Popen, \"__init__\", subprocess_refused))",
+    "new": "",
+    "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_the_same_real_child_process_cannot_spawn_inside_the_boundary"
+  },
+  {
+    "name": "native HTTP and redirects bypass the dispatch boundary",
+    "file": "nora/subject/environment.py",
+    "old": "        self._guard_requests()",
+    "new": "        pass",
+    "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_http_dispatch_and_redirects_cannot_bypass_owned_services"
+  },
+  {
+    "name": "unknown fixture routes are treated as known absence",
+    "file": "nora/subject/environment.py",
+    "old": "            if request.match_info.http_exception is not None:",
+    "new": "            if False:",
+    "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_real_bridge_identity_bound_sends_and_refusals_stay_in_owned_service"
+  },
+  {
+    "name": "one shared service is composed more than once",
+    "file": "nora/subject/environment.py",
+    "old": "                if id(application) in bound:",
+    "new": "                if False:",
+    "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_real_bridge_identity_bound_sends_and_refusals_stay_in_owned_service"
+  }
+]

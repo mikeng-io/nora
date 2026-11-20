@@ -28,7 +28,8 @@ class HttpLocationRefresher:
     the whole round trip.
     """
 
-    def __init__(self, *, base_url: str, timeout_seconds: float = 10.0) -> None:
+    def __init__(self, *, base_url: str, timeout_seconds: float = 10.0, key: str = "") -> None:
+        self._headers = {"Authorization": "Bearer " + key} if key else {}
         self._url = base_url.rstrip("/") + "/refresh"
         self._timeout_seconds = timeout_seconds
 
@@ -37,7 +38,8 @@ class HttpLocationRefresher:
             timeout = aiohttp.ClientTimeout(total=self._timeout_seconds)
             async with (
                 aiohttp.ClientSession(timeout=timeout) as session,
-                session.post(self._url, params={"person_id": person_id}) as response,
+                session.post(self._url, params={"person_id": person_id},
+                             headers=self._headers) as response,
             ):
                 await response.read()
                 return response.status == 200

@@ -2,7 +2,7 @@
 
 Every kind is read through the store's own production read path over the
 sandbox engine — `SqlNoteStore.standing`, `SqlMemoStore.kept`,
-`SqlGatheringStore.list_for_conversation`, `SqlReminderStore.all_pending`,
+`SqlGatheringStore.list_for_conversation`, `SqlReminderStore.in_rooms`,
 `SqlStandingStore.read_head`, `SqlStandingLedger.read`,
 `SqlLessonStore.lessons`, `SqlProfileStore.account_heads`,
 `SqlMemoryGraph.aliases`, the graph's full relation set through
@@ -99,8 +99,8 @@ def _payload(obj: Any) -> Mapping[str, Any]:
 
 def reminder_in_rooms(reminder: Any, rooms: Sequence[tuple[str, str]]) -> bool:
     """A reminder is in scope only through one of the unit's own rooms —
-    `all_pending` is global, and a reminder carrying no unit key must
-    never read as another unit's."""
+    the same rule `SqlReminderStore.in_rooms` binds in SQL; a reminder
+    carrying no unit key must never read as another unit's."""
     return (reminder.platform, reminder.conversation_id) in set(rooms)
 
 
@@ -111,7 +111,14 @@ async def snapshot(
     now_ms: int,
     metrics: Any = None,
 ) -> UnitState:
-    """One instant's read of every owned store for `unit`."""
+    """One instant's read of every owned store for `unit`.
+
+    `engine` may be a `FrozenReads` facade (it carries `connect()`/
+    `begin()`; `FrozenReads` is not an `AsyncEngine` subclass, so callers
+    cast): the stores then share one REPEATABLE READ cut and a
+    mid-measurement commit is absent from all of them; otherwise each
+    store keeps its own short transaction.
+    """
     kinds: dict[str, Mapping[str, Mapping[str, Any]]] = {k: {} for k in KINDS}
 
     notes = await SqlNoteStore(engine).standing(unit=unit)
@@ -132,8 +139,7 @@ async def snapshot(
     reminders = SqlReminderStore(engine)
     kinds["reminder"] = {
         str(r.id): _payload(r)
-        for r in await reminders.all_pending(limit=10000)
-        if reminder_in_rooms(r, rooms)
+        for r in await reminders.in_rooms(rooms, limit=10000)
     }
 
     standing_store = SqlStandingStore(engine)

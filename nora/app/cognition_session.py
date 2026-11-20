@@ -2,12 +2,8 @@
 background writer of the notebook, the events, a room's Standing and Nora's own
 reminders.
 
-**What this module wires.** `[cognition] enabled` governs it
-(`nora.config.CognitionConfig`): off, the composition root never registers
-`CognitionSessionRunner.wake_hook`, so no session runs and no model call is
-made. On, one session runs per wake the evaluator (`nora.app.wake.WakeEvaluator`)
-records.
-
+The composition root registers `wake_hook` only when cognition is enabled.
+The production WakeEvaluator records the wakes this runner consumes.
 **A wake has one fate, and the brakes read it** (DEC-242;
 `nora.domain.stimuli`'s state machine). The evaluator writes the wake row
 `tracked`; from then until its ONE `cognition_wake_outcome` row the wake is
@@ -18,9 +14,8 @@ session row exists (a missing home room, `build_situation` or
 `record_session` raising, a cancel before the first step) is recorded
 `failed`/`cancelled` like any other; a kill, or an outcome write that itself
 fails, leaves the wake OPEN until it expires, which is the same fate, later.
-It ends exactly one way: `closed` (the model ended its turn; observed stimuli are consumed
-and unseen ones deferred), written in ONE
-transaction with those carry rows, or `failed` / `timeout` / `cancelled`,
+It ends `closed` (observed stimuli consumed, unseen ones deferred) in one
+transaction with the carry rows, or `failed` / `timeout` / `cancelled`,
 with none. Only `closed` advances the unit's watermark; the others leave their
 stimuli pending («a failed session does not advance it»), and a failure is
 RAISED after it is recorded, never returned as if it were a session that ran.
@@ -104,6 +99,8 @@ from nora.domain.gatherings import (
     field_mode,
 )
 from nora.domain.lessons import LessonEvidenceView
+from nora.domain.managed import room_scope_id
+from nora.domain.management import Scope, ScopeKind
 from nora.domain.memory_graph import ENTITY_KINDS, ENTRY, Source
 from nora.domain.note_body import (
     Shown,
@@ -1204,6 +1201,11 @@ class CognitionSessionRunner:
             return None
         if recorded.written:
             self._inc("nora_cognition_session_ended_total", outcome=recorded.outcome)
+        if eval_capture_enabled():
+            record_eval_event("nora.session.settled", {"body": json.dumps({
+                "session_id": session_id, "wake_id": wake_id, "unit": unit,
+                "outcome": recorded.outcome, "written": recorded.written,
+            })})
         return recorded
 
     async def _session_input(
@@ -1586,19 +1588,9 @@ class CognitionSessionRunner:
             state.unit_rooms = {
                 record_room_key(p, c): (p, c) for p, c in self._rooms_of_unit(unit)
             }
-        # EACH ITEM'S READS RESOLVE THROUGH ITS OWN ROOM (DEC-231, R-21). One
-        # room on the agenda: that room's tools. Several: `read_tools_for`
-        # returns ONE tool per name (a tool name is one tool: Strands keeps the
-        # LAST of two silently, which read one
-        # room's Record through another room's binding without a word), and
-        # each takes an `agenda_room` argument routing the read through that
-        # room's own build; an `agenda_room` value not on the agenda is refused.
-        # The unit is the
-        # boundary the session may read across (DEC-231: `record_query
-        # scope="all_rooms"` and `search_memory_workspace` read the unit's other
-        # rooms), the `agenda_room` argument picks the binding (roster, lineage)
-        # a read resolves through. The agenda's rooms are never replaced by
-        # the unit's home room.
+        # Agenda selection binds each tool to its room; an unlisted room is refused.
+        # One tool per name prevents Strands silently retaining only the last binding.
+        # Unit-wide reads retain that boundary; no home-room substitution is valid.
         rooms = list(dict.fromkeys(item.room for item in state.items_by_index.values()))
         keys = [_room_key(r) for r in rooms]
         # The prompt calls a room by its LABEL; the id is what a tool's
@@ -1621,15 +1613,13 @@ class CognitionSessionRunner:
                 persons=tuple({p for v in state.memory_items.values()
                                for source in v.sources for p in source.persons}),
                 shown_keys=state.shown_keys,
-                shown_relations=state.shown_relations)
+                shown_relations=state.shown_relations,
+                scopes=tuple(Scope(ScopeKind.ROOM, room_scope_id(r.platform, r.conversation_id))
+                             for r in rooms))
 
             def on_rows(rows: Sequence[Any]) -> None:
-                """A transcript read's handed-out rows, kept as the citable
-                `("message", id)` evidence `memory_propose` admits on: what
-                the tool showed is the bounded, as-of-projected row — a row
-                the session was never shown cannot become evidence, and a
-                row whose body the read withheld (deleted, redacted) carries
-                no text to cite, so it registers nothing either."""
+                """Retain shown names; only handed-out body text becomes citable source."""
+                lookups.remember_rows(rows)
                 for r in rows:
                     if r.body is None:
                         continue

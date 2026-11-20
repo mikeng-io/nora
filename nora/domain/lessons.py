@@ -223,8 +223,9 @@ def evidence_ceiling(citations: Iterable[str]) -> int:
 
 
 _CITATION_DETAILS = {
-    "unresolved_citation": "cite only the `response:<n>` of an episode you were "
-                           "shown, or the `n` of a reply someone else wrote",
+    "unresolved_citation": "cite `response:<n>` from `lesson_episodes`, or a peer "
+                           "reply's `n` inside `lesson_episodes` or `lesson_corrections`; "
+                           "agenda and transcript messages alone are not lesson evidence",
     "echo": "every citation is one of your own messages; cite the `response:<n>` "
             "episodes that show how people responded, or did not",
     "thin_evidence": "a lesson is a pattern: cite at least {n} different "

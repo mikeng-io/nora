@@ -54,14 +54,14 @@ def main() -> int:
         *targets, "tests/domain",
         *PLUMBING_GUARDS,
         "tests/architecture/test_ci_plan.py",
+        "tests/architecture/test_ci_backend_acceptance.py",
         "tests/architecture/test_ci_runs_the_plumbing_guards.py",
+        "tests/architecture/test_portal_browser_ci.py",
     ]
     print("Fast baseline only; full backend acceptance: dispatch CI manually.", flush=True)
-    # GNU timeout signals the process group; the runner forwards INT and cleans
-    # up workers. Its outer KILL also bounds teardown if a worker wedges.
-    return subprocess.run(  # noqa: S603
-        ["timeout", "--signal=INT", "--kill-after=10s", "170s", *command],  # noqa: S607 - CI GNU coreutils timeout
-    ).returncode
+    # The job's timeout-minutes is the bound; an inner wall-clock fired during
+    # healthy teardown (xdist worker shutdown, receipt write) and reported 137.
+    return subprocess.run(command).returncode  # noqa: S603
 
 
 if __name__ == "__main__":

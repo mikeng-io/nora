@@ -53,6 +53,8 @@ from pathlib import Path
 
 import yaml
 
+from nora.access import IdentityAccess
+from nora.policy import permissive_policy
 from nora.testing import (
     FakeAdapter,
     FakeAgentRunner,
@@ -601,16 +603,15 @@ async def run_case(
             build_eval_tool_registry(notes=notes_store, observations=obs_store)
             if live else None
         )
-        # Live mode also names the room so `saved_places`/`where_is` clear the R-31
-        # subset gate (the room {miles} ⊆ the eval circle {miles}); scripted mode
-        # leaves the room unavailable.
+        # Live mode names the room for the subset gate; scripted rooms stay unavailable.
         roster = (
             FakeRosterSource(groups={_EVAL_GROUP_ID: (frozenset({_EVAL_MEMBER_ID}),)})
             if live else None
         )
         try:
             dispatcher, _engagement, background, trigger = build_offline_pipeline(
-                cfg, adapter=adapter, audit=audit, memory=memory, persons=persons,
+                cfg, adapter=adapter, audit=audit, memory=memory,
+                access=IdentityAccess.for_files(persons, permissive_policy()),
                 doctrine_store=doctrine_store, runner=runner, metrics=metrics,
                 tool_registry=tool_registry, roster_source=roster,
                 notes=notes_store, standing=standing_store,

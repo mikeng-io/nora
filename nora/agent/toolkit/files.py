@@ -73,6 +73,11 @@ _KEPT_NOTE = (
     "show it there, and credit the page it came from under Sources."
 )
 
+_KEPT_CLIP_NOTE = (
+    "The clip is kept, and `code` names it: media_fetch(code=...) opens it "
+    "again without the link it came from."
+)
+
 _SHARED_PAGE_LINE_RE = re.compile(
     r"\[shared (post|reel)(?: by @[A-Za-z0-9._]+)? (https://www\.instagram\.com/[^\s\]]+)"
 )

@@ -1,9 +1,6 @@
-"""Profile's owning-store revision reads; independent of the optional index.
-
-Progress is per account/domain/source at consolidation_watermark. A content
-revision changes when the computable input changes, not when a Rollup is rebuilt.
-Failed reads raise and leave that domain pending. Presence uses the existing
-coordinate-free Rollup read shape and named routine metadata.
+"""Profile owning-source revisions, independent of the optional index.
+Failed reads retain per-account/domain progress; only input changes alter revisions.
+Presence uses coordinate-free Rollup and named routine metadata.
 """
 from __future__ import annotations
 
@@ -33,6 +30,7 @@ from nora.infra.sql.audit import (
     turn_id_for_message,
 )
 from nora.infra.sql.character import _in_rooms
+from nora.infra.sql.identity_views import IdentityLookup, identity_family, project_messages
 from nora.infra.sql.mobility import SqlMobilityStore, current_build_id
 from nora.infra.sql.rollup_read import SqlRollupRead, _row
 from nora.infra.sql.rollups import SqlRollupStore
@@ -95,10 +93,11 @@ def _stamp(value: Any) -> str:
 class SqlProfileInputs:
     """Four bounded source reads and their existing consolidation settlement."""
 
-    def __init__(self, engine: AsyncEngine, *, social: SqlSocialStreamStore | None = None) -> None:
+    def __init__(self, engine: AsyncEngine, *, social: SqlSocialStreamStore | None = None,
+                 identity_ids: IdentityLookup | None = None) -> None:
         self._engine = engine
-        # Composition supplies readable_social_store, carrying current and
-        # former opted-out ids. A missing reader is unavailable, never open.
+        self._identity_ids = identity_ids
+        # Composition owns selected social eligibility; a missing reader is unavailable.
         self._social = social
 
     async def recovery_requested(self, *, key: str) -> bool:
@@ -181,7 +180,8 @@ class SqlProfileInputs:
 
     def _messages(self, *, rooms: Sequence[tuple[str, str]], person: str,
                   message_ids: Sequence[int] | None = None, evidence: bool = True,
-                  key: str | None = None) -> Any:
+                  key: str | None = None, identities: Sequence[str] | None = None) -> Any:
+        ids = tuple(identities) if identities is not None else (person,)
         m: Any = MESSAGES.c
         scope = [_in_rooms(rooms), m.is_nora == 0]
         if message_ids is not None:
@@ -194,16 +194,17 @@ class SqlProfileInputs:
             MESSAGE_EDIT.c.mention_persons_json).select_from(MESSAGE_EDIT.join(
                 edit_ids, MESSAGE_EDIT.c.id == edit_ids.c.head)
             ).cte('profile_edit_heads').prefix_with('MATERIALIZED')
-        eligible = sa.or_(m.person_id == person, sa.cast(sa.func.coalesce(
-            edit.c.mention_persons_json, m.mention_persons_json), JSONB).contains([person]))
+        eligible = sa.or_(m.person_id.in_(ids), *(sa.cast(sa.func.coalesce(
+            edit.c.mention_persons_json, m.mention_persons_json), JSONB).contains([pid])
+            for pid in ids))
         edits = edit.c.id
         deleted: Any = sa.exists().where(MESSAGE_DELETE.c.message_id == m.id)
         heads = sa.select(m.id, m.media_json, m.body, m.hidden_at, m.person_id,
             m.mention_persons_json, m.conversation_id,
             edits.label('edit_head'), deleted.label('deleted'),
             sa.func.coalesce(eligible, False).label('eligible'),
-            sa.or_(m.person_id == person, sa.cast(m.mention_persons_json, JSONB)
-                   .contains([person])).label('originally_eligible'),
+            sa.or_(m.person_id.in_(ids), *(sa.cast(m.mention_persons_json, JSONB)
+                   .contains([pid]) for pid in ids)).label('originally_eligible'),
         ).select_from(MESSAGES.outerjoin(edit, edit.c.message_id == m.id)).where(
             *scope).cte('profile_message_heads').prefix_with('MATERIALIZED')
         m = heads.c
@@ -242,10 +243,10 @@ class SqlProfileInputs:
         media = cache.c.media
         edits, deleted = m.edit_head, m.deleted
         snapshot = sa.func.jsonb_build_array(
-            edits, deleted, m.body, m.media_json, m.hidden_at, m.person_id,
+            edits, deleted, m.body, m.media_json, m.hidden_at,
+            sa.case((m.person_id.in_(ids), ids[0]), else_=m.person_id),
             m.mention_persons_json, media,
         )
-        # Withdrawals retain metadata; transcript evidence loads after discovery.
         stmt = sa.select(
             m.id, m.media_json,
             m.conversation_id, (sa.literal('message:') + sa.cast(m.id, sa.Text)).label('source'),
@@ -254,8 +255,7 @@ class SqlProfileInputs:
             sa.or_(edits.is_not(None), deleted, m.hidden_at.is_not(None)).label('changed'),
             m.eligible, m.originally_eligible, m.seen,
         ).select_from(candidates.join(cache, cache.c.ref == sa.func.coalesce(m.media_json, '')))
-        # Pending predicates and ordering must reuse the revision projection.
-        # Keep provenance outside this fence: it is needed only for delivered rows.
+        # Reuse the revision fence; load transcript/provenance only after discovery.
         q = stmt.cte('profile_messages').prefix_with('MATERIALIZED')
         if not evidence:
             return sa.select(q)
@@ -287,24 +287,24 @@ class SqlProfileInputs:
         self, *, key: str, rooms: Sequence[tuple[str, str]], person: str, limit: int,
         after: int = 0, discover: bool = False,
     ) -> list[PersonSourceRevision]:
-        q = self._messages(rooms=rooms, person=person, evidence=False, key=key).subquery()
+        ids = await identity_family(person, self._identity_ids)
+        q = self._messages(rooms=rooms, person=person, evidence=False,
+                           key=key, identities=ids).subquery()
         seen = q.c.seen
-        # Initial recovery rehands eligible EXISTING cache, without replaying
-        # every consumed plain message or resetting either history cursor. Edits
-        # and withdrawals are independent candidates, including pre-upgrade rows;
-        # their source revision, never their edit id vs Record id, deduplicates them.
+        # Initial recovery rehands eligible cache without replaying consumed plain rows.
+        # Edits/withdrawals deduplicate by source revision, without resetting history cursors.
         stmt = sa.select(q).where(sa.or_(q.c.eligible, seen,
             sa.and_(q.c.changed, q.c.originally_eligible)),
             sa.or_(q.c.id > after, q.c.cache_ready, q.c.changed, seen))
         rows = await self._pending(key=key, domain='message', stmt=stmt, limit=limit)
         if not discover and rows:
-            # Discover identities before loading transcript/provenance. A concurrent
-            # edit is delivered at its new revision; settlement binds that read.
+            # Concurrent edits deliver their new revision; settlement binds this read.
             async with self._engine.connect() as conn:
                 loaded = (await conn.execute(self._messages(rooms=rooms, person=person,
-                    message_ids=[r.id for r in rows], key=key))).all()
+                    message_ids=[r.id for r in rows], key=key, identities=ids))).all()
             by_id = {r.id: r for r in loaded}
             rows = [by_id[r.id] for r in rows if r.id in by_id]
+        projected = {} if discover else {m.row.id: m for m in project_messages(rows, ids)}
         out = [PersonSourceRevision(domain='message', source=r.source,
             revision=r.revision, state='readable', recorded_at='unknown')
             for r in rows] if discover else [
@@ -319,7 +319,7 @@ class SqlProfileInputs:
             ready_handles=tuple(x[0][:6] for x in (r.cached_media or ()) if any(x[1:4])),
 
             roots=() if not r.eligible or r.hidden_at is not None or r.deleted else (
-                RoomMessage(room=r.conversation_id, row=transcript_row(r)),),
+                projected[r.id],),
         ) for r in rows]
         if len(out) < limit:
             h = ROW_HISTORY.c
@@ -335,9 +335,9 @@ class SqlProfileInputs:
                     prior.c.consolidator_name == 'profile-person:source:message',
                     prior.c.scope_id == sa.literal(key + '\x1f') + source),
                     sa.and_(h.image['is_nora'].astext == '0', sa.or_(
-                        h.image['person_id'].astext == person,
-                        sa.cast(h.image['mention_persons_json'].astext, JSONB)
-                        .contains([person])))))
+                        h.image['person_id'].astext.in_(ids),
+                        sa.or_(*(sa.cast(h.image['mention_persons_json'].astext, JSONB)
+                        .contains([pid]) for pid in ids))))))
             gone = await self._pending(key=key, domain='message', stmt=tombstones,
                                        limit=limit - len(out))
             out.extend(PersonSourceRevision(domain='message', source=r.source,

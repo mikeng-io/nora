@@ -5,9 +5,8 @@
 reservation exactly once; `bounded_http_client` and `gate_client` put
 them on the clients a bounded run reaches — factory clients, the
 judge's direct client, and SDK-owned provider clients
-(`build_structured_model` injects `bounded_http_client` into
-`client_args`, so the `AsyncOpenAI` the SDK builds internally
-dispatches through it too). Domain holds only the budget itself —
+(providers resolve a fresh bounded transport for each SDK-owned
+client). Domain holds only the budget itself —
 `nora.domain.run_budget` stays standard-library.
 """
 
@@ -278,25 +277,37 @@ class _BoundedTransport(httpx.AsyncBaseTransport):
                 budget.invalidate("run budget: stream without a body")
                 raise RunBudgetError("run budget: stream without a body")
             import httpx
+            try:
+                import httpx2
+            except ImportError:  # an SDK pinned before the httpx2 rename
+                httpx2 = None  # type: ignore[assignment]
 
-            class _Bound(httpx.AsyncByteStream):
-                _wrap = _BoundedStream(stream, budget, reservation)
+            # The bound stream subclasses whichever base the inner
+            # transport answered with — the SDK's default client is
+            # httpx2, an injected client httpx.
+            wrap = _BoundedStream(stream, budget, reservation)
 
-                async def __aiter__(self) -> AsyncIterator[bytes]:
-                    async for chunk in self._wrap:
-                        yield chunk
+            async def _aiter(_self: Any) -> AsyncIterator[bytes]:
+                async for chunk in wrap:
+                    yield chunk
 
-                async def aclose(self) -> None:
-                    await self._wrap.aclose()
+            async def _aclose(_self: Any) -> None:
+                await wrap.aclose()
 
+            base = (httpx2.AsyncByteStream
+                    if httpx2 is not None
+                    and isinstance(response, httpx2.Response)
+                    else httpx.AsyncByteStream)
+            bound = type("_Bound", (base,),
+                         {"__aiter__": _aiter, "aclose": _aclose})
             try:
                 # A fresh response carrying only the bounded stream: a
                 # buffered `._content` would let `aiter_bytes` skip the
                 # stream — and the reconcile — entirely.
-                return httpx.Response(
+                return type(response)(
                     status_code=response.status_code,
                     headers=response.headers,
-                    stream=_Bound(),
+                    stream=bound(),
                     request=request)
             except (AttributeError, TypeError) as exc:
                 budget.release(reservation)
@@ -304,6 +315,11 @@ class _BoundedTransport(httpx.AsyncBaseTransport):
                     "run budget: unwrappable stream response")
                 raise RunBudgetError(
                     "run budget: unwrappable stream response") from exc
+        return await self._read_bounded_response(response, reservation)
+
+    async def _read_bounded_response(self, response: Any,
+                                     reservation: int) -> Any:
+        budget = self._budget
         try:
             left = budget.remaining()
             if left is not None and left <= 0:

@@ -1,4 +1,4 @@
-import { checkSession } from "@/server/session";
+import { checkSession, sessionFailure } from "@/server/session";
 import { downloadRunner } from "@/server/downloads/runner";
 import { serveContent } from "@/server/downloads/service";
 
@@ -8,10 +8,7 @@ import { serveContent } from "@/server/downloads/service";
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const check = await checkSession();
   if (check.status !== "ok") {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: { "content-type": "application/json", "cache-control": "private, no-store" },
-    });
+    return sessionFailure(check);
   }
   const { id } = await params;
   const file = new URL(request.url).searchParams.get("file");

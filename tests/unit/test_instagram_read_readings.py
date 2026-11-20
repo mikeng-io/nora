@@ -1,25 +1,9 @@
-"""`instagram_read` returns what each item of a post, reel or story SHOWS,
-read by `media_fetch` itself.
+"""Instagram media reads over generated bridge/download fixtures.
 
-Two halves:
-
-* `read_view` on its own, with a scripted `media_fetch` stand-in: the cap, the
-  concurrency, a look that fails or runs out of time costing only its own item,
-  the whole-call deadline, and the turn's own deadline;
-* the tool end to end below the model: the REAL router, the REAL client over a
-  fake bridge answering the shared contract fixtures, and the REAL
-  `media_fetch` closure over a recording vision client, an in-memory blob
-  store, the registry's own vision cache and an in-memory `video_readings`
-  store. Only the network is fake: the bridge, and `_download_media`, the
-  module's own download seam, which answers distinct bytes per url and records
-  every url it was asked for.
-
-**The security property is asserted on what the vision client RECEIVED.** The
-caption is a stranger's words, and vision prompts are authored: no prompt may
-carry it. A result that merely looks right would not show that, so every test
-that reads media also reads the prompts.
-
-Every name, handle, url and id here is synthetic.
+`read_view` retains per-item cost, concurrency, cancellation and deadline controls.
+The real tool/router/client path uses recording vision and in-memory media stores.
+Assertions inspect vision input so captions cannot become authored prompt content.
+Look-context, custody and recovery cases live in test_instagram_look_recovery.py.
 """
 
 from __future__ import annotations
@@ -50,12 +34,16 @@ from nora.infra.social.readings import (
     MAX_READ_VIDEOS,
     READ_CONCURRENCY,
     TOTAL_TIMEOUT_SECONDS,
+    VIDEO_ITEM_TIMEOUT_SECONDS,
     TurnLook,
     read_view,
     reading_of,
     split_coverage,
 )
-from nora.infra.social.render import POST_READ_FRAMING, POST_UNSEEN_FRAMING
+from nora.infra.social.render import (
+    POST_READ_FRAMING,
+    POST_UNSEEN_FRAMING,
+)
 from nora.infra.social.views import ItemView, PostView, Reading, StoryView
 from nora.infra.vision import preprocess as _preprocess
 from nora.infra.vision.client import VisionResult
@@ -67,7 +55,6 @@ from nora.testing import (
     FakeMediaDescriptionStore,
     FakeMemoryStore,
     FakeRosterSource,
-    FakeSocialProvider,
     FakeVideoReadingStore,
 )
 from tests.fakes import SinkSender
@@ -145,7 +132,9 @@ def test_the_budgets_are_the_ones_the_design_states():
     """These numbers are design limits; a change to one is a design change, not
     a tweak."""
     assert (MAX_READ_ITEMS, MAX_READ_VIDEOS, READ_CONCURRENCY) == (8, 3, 4)
-    assert (ITEM_TIMEOUT_SECONDS, TOTAL_TIMEOUT_SECONDS) == (150.0, 180.0)
+    assert (
+        ITEM_TIMEOUT_SECONDS, VIDEO_ITEM_TIMEOUT_SECONDS, TOTAL_TIMEOUT_SECONDS
+    ) == (150.0, 270.0, 300.0)
 
 
 async def test_only_the_first_eight_items_are_looked_at_and_the_rest_keep_no_reading():
@@ -435,6 +424,39 @@ def test_a_reading_carries_text_exactly_when_it_was_seen():
         Reading("failed", "a photo")
 
 
+def test_an_ok_reading_carries_the_held_items_code_and_the_item_ref_hands_it_on():
+    """The `code` a kept look serves is the stable handle `media_fetch(code=...)`
+    resolves: it rides the `Reading` onto `items[]` — a content hash, never an
+    identifier — so the follow-up look never re-types the signed url. An `ok`
+    whose look kept nothing serves no code, and custody survives a FAILED
+    look: a `code` is served only when the store confirmed the row, so the
+    handle it names always resolves."""
+    from nora.infra.social.render import _item_ref
+    from nora.infra.social.views import ItemView
+
+    seen = reading_of(
+        {"status": "ok", "code": "abc123", "description": "a bowl of noodles"})
+    assert seen.code == "abc123"
+    seen_video = reading_of(
+        {"status": "ok", "code": "abc123",
+         "description": "0:00 — two people\n(I could not watch 0:30-0:39 of this clip.)"},
+        video=True)
+    assert seen_video.code == "abc123" and seen_video.coverage
+    assert reading_of(
+        {"status": "ok", "code": "abc123", "withheld": True}).code == "abc123"
+    # An ok with no keep (story look, store unwired) serves `code=None`; a
+    # FAILED look whose bytes were still held hands the verified code on —
+    # custody survives the look, so the item ref can offer the re-open path.
+    assert reading_of({"status": "ok", "code": None,
+                       "description": "a bowl of noodles"}).code is None
+    assert reading_of({"status": "unavailable", "code": "abc123"}).code == "abc123"
+
+    ref = _item_ref(ItemView(kind="video", url="https://cdn/x.mp4", reading=seen))
+    assert ref["code"] == "abc123" and ref["url"] == "https://cdn/x.mp4"
+    ref = _item_ref(ItemView(kind="image", url="https://cdn/x.png"))
+    assert "code" not in ref, "an item never looked at has no handle to offer"
+
+
 # ---- end to end, through the tool ----------------------------------------------
 
 
@@ -532,7 +554,15 @@ igid = "10000001"
 
 
 class _NoStore:
-    async def recent(self, *, conversation_id: str, limit: int):
+    async def recent(
+        self, *, conversation_id: str, limit: int, as_of_ms: int | None = None
+    ):
+        return []
+
+    async def media_rows(
+        self, *, conversation_id: str, since_ts: int, limit: int,
+        as_of_ms: int | None = None,
+    ):
         return []
 
 
@@ -570,12 +600,16 @@ def world(bridge, tmp_path, monkeypatch):
         ),))),
         accounts=client,
     )
+    blobs = FakeBlobStore()
+
     def build_registry(**config) -> ToolRegistry:
         return ToolRegistry(
-            social=router, vision=vision, blobs=FakeBlobStore(), video_readings=videos,
-            descriptions=descriptions,
-            describe_models={"image": "test/image-model", "video": "test/video-model"},
-            **config,
+            **({
+                "social": router, "vision": vision, "blobs": blobs,
+                "video_readings": videos, "descriptions": descriptions,
+                "describe_models": {
+                    "image": "test/image-model", "video": "test/video-model"},
+            } | config)
         )
 
     registries = [build_registry()]
@@ -717,7 +751,9 @@ async def test_every_item_failing_is_still_the_post_but_says_nothing_was_seen(wo
     assert out["note"] == POST_UNSEEN_FRAMING
     assert "shows:" not in out["text"]
     assert _inside_the_wrap(out["text"]).count("not seen:") == 3
-    assert len(world.vision.prompts) == 3   # positive control: it did try
+    # Positive control: it did try — the two images once each, and the timed-out
+    # video window its one owed recovery attempt.
+    assert len(world.vision.prompts) == 4
 
 
 @pytest.mark.parametrize("turn", [{"fire_turn": True}, {"dream_adaptor": "proactive"}])
@@ -758,79 +794,3 @@ async def test_a_profile_reads_no_media(world):
 
 
 # ---- the router hands `media_fetch` to the post and story rows only -------------
-
-
-class _Recorder(FakeSocialProvider):
-    """The shared fake, which also records whether it was handed a `look`,
-    so «the look was not forwarded» is a fact about the call, not about a
-    status. `_NOT_HANDED` is the argument's absence, which `None` is not."""
-
-    _NOT_HANDED = object()
-
-    def __init__(self, serves: frozenset[tuple[str, str]]) -> None:
-        super().__init__(serves=serves)
-        self.looks: list[object] = []
-
-    async def read(self, *, platform, what, target, limit, look=_NOT_HANDED) -> dict:
-        self.looks.append(look)
-        return await super().read(platform=platform, what=what, target=target, limit=limit)
-
-
-async def test_the_router_forwards_media_fetch_for_a_post_and_never_for_a_search():
-    bridge = _Recorder(frozenset({("instagram", "post"), ("instagram", "search")}))
-    default = _Recorder(frozenset({("x", "search")}))
-    router = SocialRouter(
-        default=default,
-        exceptions={("instagram", "post"): bridge, ("instagram", "search"): bridge},
-    )
-    look = ScriptedLook()
-    await router.read(platform="instagram", what="post", target="SynthPost01", limit=5, look=look)
-    await router.read(platform="instagram", what="search", target="synth", limit=5, look=look)
-    await router.read(platform="x", what="search", target="synth", limit=5, look=look)
-
-    assert bridge.looks == [look, _Recorder._NOT_HANDED]
-    assert default.looks == [_Recorder._NOT_HANDED]
-    assert look.calls == []
-
-
-async def test_two_batched_calls_share_one_turns_four_slots(world):
-    """Two `instagram_read` calls in ONE turn (the model batches them) share
-    the turn's four slots: six looks, never more than four at once. (A
-    look that waits for a slot may then be a cache hit, so fewer than six
-    reach the vision client; four at once is the positive control.)"""
-    world.vision.delay = 0.3
-    read = world.make()
-    await asyncio.gather(
-        read(link=_POST_LINK), read(link="https://www.instagram.com/p/SynthPost02/"),
-    )
-    assert len(world.vision.prompts) >= 4
-    assert world.vision.peak == 4
-
-
-async def test_a_story_frame_the_model_opens_itself_is_not_persisted_either(world):
-    """The story result points her at `media_fetch(url=...)` on a frame. That
-    call is the MODEL's own (`caller=model`), and it must not persist the
-    frame either: this turn's story links are remembered and read without
-    writing. The positive control is the same turn's `media_fetch` on a link
-    that is not a story frame, which does write."""
-    tools = world.tools()
-    story = await tools["instagram_read"](person="Quinn", what="story")
-    frame = story["items"][0]["url"]
-    assert world.descriptions.remembered == []
-
-    out = await tools["media_fetch"](url=frame)
-    assert out["status"] == "ok"
-    assert world.descriptions.remembered == []
-    assert world.metrics.get("nora_media_fetch_total", caller="model") == 1
-
-    await tools["media_fetch"](url="https://scontent.cdninstagram.com/v/t51/elsewhere.jpg")
-    assert len(world.descriptions.remembered) == 1
-
-
-async def test_shorter_windows_do_not_shrink_the_automatic_read_limit(world):
-    world.reconfigure(video_chunk_seconds=10)
-    out = await world.make()(link=_POST_LINK)
-    body = _inside_the_wrap(out["text"])
-    assert "not read here" not in body
-    assert body.count("shows: ") == 3
-    assert len(world.vision.seen) == 4

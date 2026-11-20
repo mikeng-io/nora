@@ -1,0 +1,9 @@
+[
+  {
+    "name": "a table inside an array silently stringifies",
+    "file": "evals/subject_config.py",
+    "old": "    if isinstance(value, dict):\n        # A table stays a table. Quoting str(value) would emit \"{'a': 1}\",\n        # which parses back as a string and the drift check refuses.\n        return \"{\" + \", \".join(\n            f\"{key if _BARE_KEY.match(key) else _fmt(key)} = {_fmt(item)}\"\n            for key, item in value.items()\n        ) + \"}\"",
+    "new": "",
+    "target": "tests/unit/test_eval_subject_config_arrays.py::test_a_list_of_tables_keeps_its_tables_through_the_round_trip"
+  }
+]

@@ -45,8 +45,8 @@ class _Deliverer(SinkSender):
         super().__init__()
         self.quotes: list = []
 
-    async def deliver(self, text, **kw):
-        self.quotes.append(kw.get("quote"))
+    async def deliver(self, text, *, source, quote=None):
+        self.quotes.append(quote)
         return True
 
 

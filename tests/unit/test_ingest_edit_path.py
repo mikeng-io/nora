@@ -11,6 +11,8 @@ from __future__ import annotations
 import dataclasses
 from typing import Any
 
+from nora.access import IdentityAccess
+from nora.domain.identity import BoundAccount, Identifier
 from nora.domain.models import EditTarget, NormalizedMessage, PersonRef, Quote
 from nora.domain.ports import EngageDecision, MemoryHealth
 from nora.ingest.pipeline import IngestPipeline
@@ -55,9 +57,17 @@ class RecordingMemory:
 
 def _persons() -> Persons:
     """Miles has TWO accounts on one platform — the WhatsApp phone/LID shape."""
+    miles = BoundAccount(
+        person_id="miles", platform="signal",
+        identifiers=frozenset({
+            Identifier(platform="signal", kind="phone", value="+852111"),
+            Identifier(platform="signal", kind="uuid", value="lid:111"),
+        }),
+    )
     return Persons(
         by_person={"miles": PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")},
         index={("signal", "+852111"): "miles", ("signal", "lid:111"): "miles"},
+        _accounts={("signal", "+852111"): miles, ("signal", "lid:111"): miles},
     )
 
 
@@ -92,7 +102,7 @@ def _pipeline(store: FakeRecordStore, *, memory: RecordingMemory | None = None,
     return IngestPipeline(
         audit=store,
         memory=memory or RecordingMemory(),
-        persons=_persons(),
+        access=IdentityAccess.for_files(persons=_persons(), policy=permissive_policy()),
         policy=policy or CompositePolicy([
             MentionPolicy(frozenset({NORA})), TriggerTextPolicy(TRIGGER),
         ]),

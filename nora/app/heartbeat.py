@@ -56,7 +56,7 @@ import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from nora.app.proactive_screen import PROACTIVE_KIND, ProactiveScreen
 from nora.domain.reminders import (
@@ -105,22 +105,16 @@ HEARTBEAT_NOT_RUNNING = -1.0
 DUE_BATCH_LIMIT = 100
 
 
-class _Allowlist(Protocol):
-    """The ONE method the tick needs from `policy.toml`'s `Policy`.
-
-    A narrow local shape, like `nora.app.runtime._PrunableStore`: this module
-    has no business with the rest of `Policy`, and naming only `is_allowed`
-    makes the wiring mistake loud rather than plausible. There are two objects
-    called "policy" in the composition root — the ENGAGE policy (`CompositePolicy`,
-    which decides whether a message is a tag) and the ALLOWLIST (`policy.toml`,
-    which decides who may talk to her and where). Only the second has
-    `is_allowed`, and passing the first here would defeat the revocation check
-    rather than break it.
+class _Access(Protocol):
+    """The ONE read the tick needs from the selected identity/access backend
+    (`nora.access.IdentityAccess`): whether this person may still speak in
+    this room. `UNAVAILABLE` refuses like any other non-allow — a heartbeat
+    fires nothing on a stale view of who is allowed.
     """
 
-    def is_allowed(
+    async def permitted(
         self, *, platform: str, conversation_id: str, person_id: str | None,
-    ) -> bool: ...
+    ) -> Any: ...
 
 
 class HeartbeatLoop:
@@ -136,7 +130,7 @@ class HeartbeatLoop:
         *,
         store: ReminderStore,
         slots: ConversationSlots,
-        policy: _Allowlist,
+        access: _Access,
         clock: Callable[[], datetime],
         metrics: Metrics,
         tick_seconds: float,
@@ -145,7 +139,7 @@ class HeartbeatLoop:
     ) -> None:
         self._store = store
         self._slots = slots
-        self._policy = policy
+        self._access = access
         self._clock = clock
         self._metrics = metrics
         self._tick_seconds = tick_seconds
@@ -305,11 +299,12 @@ class HeartbeatLoop:
                 )
                 await self._resolve_all([row], state, outcome=outcome, now=now)
                 continue
-            if self._policy.is_allowed(
+            verdict = await self._access.permitted(
                 platform=row.platform,
                 conversation_id=row.conversation_id,
                 person_id=row.requester_person_id,
-            ):
+            )
+            if verdict.allowed:
                 allowed.append(row)
                 continue
             log.warning(
@@ -429,21 +424,12 @@ class HeartbeatLoop:
             # check can never see. A delivered same-act row with a DIFFERENT
             # plan id supersedes this one; rows sharing the plan are the one
             # deliberate multi-room act and do not supersede each other.
-            policy = getattr(self, "_policy", None)
-            convo = (
-                policy.conversation(row.platform, row.conversation_id)
-                if policy is not None else None
-            )
-            if convo is None:
+            unit_rooms = self._proactive.rooms_in_unit(row) if self._proactive else []
+            if not unit_rooms:
                 # The unit's room set cannot be established, so the whole-
                 # unit delivered check cannot run: a same-room-only read
                 # would masquerade as the unit check it is not.
                 return ReminderState.FAILED, "failed_error"
-            unit_rooms = [
-                (c.platform, c.primary_id)
-                for c in getattr(policy, "conversations", ()) or ()
-                if c.unit == convo.unit
-            ]
             plan = (row.payload or {}).get("plan_id")
             hits = await self._store.delivered_subject(
                 unit_rooms,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import importlib
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -353,7 +354,7 @@ class OtpWiring:
 
 def build_otp(
     audit: Any, cfg: Any, doctrine_store: Any, engine: Any,
-    metrics: Any, persons: Any, registry: Any,
+    metrics: Any, persons: Any, registry: Any, identity_services: Any = None,
 ) -> OtpWiring:
 
 
@@ -363,6 +364,8 @@ def build_otp(
         otp_secret, otp_api_token = _otp_secrets(cfg)
         otp = OtpService(
             store=SqlOtpStore(engine),
+            bindings=(identity_services.bindings if cfg.identity.backend == "managed" else None),
+            registry=(identity_services.registry if cfg.identity.backend == "managed" else None),
             persons=persons,
             adapters=dict(registry.adapters),
             records=audit,
@@ -377,3 +380,116 @@ def build_otp(
             clock=lambda: datetime.now(UTC),
         )
     return OtpWiring(otp=otp, otp_api_token=otp_api_token)
+
+
+@dataclass(frozen=True)
+class ManagedIdentityWiring:
+    # `services`: the backend's ManagedServices — file reads the TOML pair
+    # and refuses managed mutators; `session`: the owned Ory HTTP session
+    # (managed only), closed at App shutdown.
+    services: Any
+    session: Any = None
+
+
+@dataclass(frozen=True)
+class IdentityBackendWiring:
+    """`database` + `managed` + the selected backend's `access` surface."""
+    database: DatabaseWiring
+    managed: ManagedIdentityWiring
+    access: Any
+    persons_view: Any
+
+
+async def identity_backend(
+    allowlist: Any, cfg: Any, metrics: Any, persons: Any, owner: Any = None,
+) -> IdentityBackendWiring:
+    """Select one authority, building its database before identity services.
+
+    Managed database wiring gets an empty descriptive view. Identity reads use
+    the selected services; alias warming refuses startup if authority is unavailable.
+    """
+    from nora.access import EmptyPersons
+    stores_database = database(
+        allowlist=allowlist, cfg=cfg, metrics=metrics,
+        persons=persons if cfg.identity.backend == "file" else EmptyPersons(),
+    )
+    managed = await managed_identity(
+        cfg, persons, allowlist, stores_database.engine, owner=owner)
+    access = managed.services.access
+    await access.refresh_aliases(ttl_seconds=0)
+    return IdentityBackendWiring(
+        database=stores_database,
+        managed=managed,
+        access=access,
+        persons_view=access.persons_view(),
+    )
+
+
+async def managed_identity(
+    cfg: Any, persons: Any, policy: Any, engine: Any, owner: Any = None,
+) -> ManagedIdentityWiring:
+    """Backend selection is BOOT-TIME: `config.toml` is never reloaded, so a
+    backend change is a restart, and the two graphs cannot mix.
+
+    `managed` is refused half-wired — the probe below must see BOTH Ory
+    listeners before the app accepts the backend. An unreachable Kratos or
+    Keto is `StartupError`, never a fallback to file grants: falling back
+    would silently serve stale file authority as managed truth
+    (`design/managed-identity-access/authorization.md` «Failure»).
+    """
+    _people_wire = importlib.import_module("nora.people").wire
+    if cfg.identity.backend == "file":
+        return ManagedIdentityWiring(
+            services=_people_wire.file_services(persons, policy)
+        )
+    import aiohttp
+
+    from nora.domain.managed import ObservationFreshness, Verdict
+    from nora.domain.management import Scope, ScopeKind
+
+    session = aiohttp.ClientSession()
+    if owner is not None:
+        owner.own_managed(session)
+    try:
+        services = _people_wire.managed_services(
+            managed=cfg.identity.managed, session=session,
+            policy=policy, engine=engine, credentials=cfg.credentials,
+            circle_observations=_circle_observations(cfg),
+            freshness=ObservationFreshness(
+                max_age_ms=int(
+                    cfg.identity.onboarding.interval_seconds * 1000)),
+        )
+    except ValueError:
+        await session.close()
+        raise StartupError("managed identity credentials are unavailable") from None
+    # Probe through the ports themselves: Kratos answers `unknown_scope`
+    # for an absent probe id when it is up; Keto answers a relation listing
+    # (possibly empty) when it is up. `unavailable` either side is refused.
+    kratos = await services.registry.identity_state(external_id="boot-probe")
+    if kratos.verdict is Verdict.UNAVAILABLE:
+        await session.close()
+        raise StartupError(
+            "managed identity: Kratos admin listener unreachable — refusing "
+            "to run half-wired"
+        )
+    keto = await services.backend.relations_on(
+        scope=Scope(ScopeKind.WORKSPACE, "boot-probe")
+    )
+    if not isinstance(keto, frozenset):
+        await session.close()
+        raise StartupError(
+            "managed identity: Keto read listener unreachable — refusing to "
+            "run half-wired"
+        )
+    return ManagedIdentityWiring(services=services, session=session)
+
+
+def _circle_observations(cfg: Any) -> Any:
+    from nora.infra.presence_circles import HttpCircleObservations
+
+    if not cfg.presence.enabled or not cfg.presence.refresh_url:
+        return None
+    return HttpCircleObservations(base_url=cfg.presence.refresh_url,
+        key=cfg.credentials.get(cfg.presence.directory_key_env, ""),
+        circles=cfg.presence.managed_circle_ids,
+        ttl_ms=int(max(cfg.presence.cadence_seconds, cfg.presence.cadence_still_seconds) * 2000))

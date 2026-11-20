@@ -993,7 +993,7 @@ async def test_wake_discovery_does_not_load_transcripts_or_repeat_completed_swee
 
 
 async def test_profile_count_discovers_without_constructing_message_evidence(env, monkeypatch):
-    import nora.infra.sql.profile_inputs as module
+    import nora.infra.sql.identity_views as module
 
     reads, _, source, evidence, _ = wired(env)
     assert await reads.history_state(key=KEY) == (0, 0)

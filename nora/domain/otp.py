@@ -24,4 +24,9 @@ REQUEST_OUTCOMES: tuple[str, ...] = (
 CHECK_OUTCOMES: tuple[str, ...] = (
     "ok",            # the right code for a live challenge: the person is returned
     "refused",       # wrong, spent, expired, superseded, worn out or unknown
+    "unavailable",   # code storage or the current identity authority could not answer
 )
+
+
+class OtpUnavailableError(RuntimeError):
+    """The code or current identity authority could not be checked."""

@@ -6,6 +6,7 @@ inside index reads and graph traversal; every result carries its state and note.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -425,3 +426,150 @@ async def test_parallel_tools_reserve_one_database_walk(persons, monkeypatch):
     completed = await task
     assert completed['status'] == 'ok' and 'Sunday football' in completed['preview']
     assert len(calls) == 1
+
+
+# ---- managed identity backend -------------------------------------------------
+
+_PERSON_A = "generated-person-a"
+_PERSON_B = "generated-person-b"
+_ACCOUNT_A = frozenset({"generated-account-a"})
+_ACCOUNT_B = frozenset({"generated-account-b"})
+#: The file roster predates managed registration and lists only person B —
+#: under managed it decides nothing; membership comes from the room's
+#: managed records.
+_MANAGED_FACTS = RoomFacts(
+    "signal", frozenset({GROUP}), "u1", frozenset({_PERSON_B}), label="Managed")
+_MANAGED_LINEAGE = LineagePolicy(
+    rooms=(_MANAGED_FACTS,), _by_id={("signal", GROUP): _MANAGED_FACTS})
+
+
+async def _managed_access(members: tuple[str, ...] = (_PERSON_A,)):
+    """A selected managed backend over the shared fakes."""
+    from uuid import uuid4
+
+    from nora.access import IdentityAccess
+    from nora.domain.identity import Identifier
+    from nora.domain.managed import (
+        AccountState,
+        ManagedAccount,
+        ManagedPerson,
+        OutcomeStatus,
+        PersonLifecycle,
+    )
+    from nora.domain.management import Scope, ScopeKind
+    from nora.people.app.managed_authority import AuthorityService
+    from nora.testing.managed import (
+        FakeAuthorityBackend,
+        FakeBindingStore,
+        FakeIdentityRegistry,
+        FakeTopologySource,
+    )
+
+    bindings = FakeBindingStore()
+    backend = FakeAuthorityBackend()
+    topology = FakeTopologySource(
+        rooms={f"signal/{GROUP}": ("u1", False)},
+        units={"u1": "generated-workspace"}, workspaces={"generated-workspace"})
+    registry = FakeIdentityRegistry()
+    for pid, account in ((_PERSON_A, _ACCOUNT_A), (_PERSON_B, _ACCOUNT_B)):
+        assert (await bindings.register(
+            person=ManagedPerson(pid, PersonLifecycle.ACTIVE),
+            account=ManagedAccount(
+                str(uuid4()), pid, "signal",
+                frozenset(
+                    Identifier("signal", "uuid", value) for value in account),
+                AccountState.BOUND),
+            membership=None,
+        )).status is OutcomeStatus.COMPLETE
+        outcome, _ = await registry.ensure_identity(
+            external_id=pid, traits={"display_name": pid, "social": True})
+        assert outcome.status is OutcomeStatus.COMPLETE
+    for pid in members:
+        assert (await bindings.set_membership(
+            person_id=pid, scope=Scope(ScopeKind.ROOM, f"signal/{GROUP}"),
+            member=True, source="generated-source",
+        )).status is OutcomeStatus.COMPLETE
+    access = IdentityAccess(
+        bindings=bindings, authority=AuthorityService(bindings, backend, topology),
+        topology=topology, registry=registry)
+    return bindings, access
+
+
+def _managed_tools(access, search, members):
+    """Tag-path tools use the selected managed view and authority."""
+
+    room = Room(
+        platform="signal", conversation_id=GROUP,
+        roster_source=FakeRosterSource(groups={GROUP: members}),
+        persons=access.persons_view(), access=access, tagger=None,
+        self_ids=frozenset(),
+    )
+    built = build_tools(
+        store=_NullStore(), conversation_id=GROUP, conversation_type="group",
+        persons=access.persons_view(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        metrics=Metrics(), room=room, transit_source=_UNREACHABLE_TRANSIT,
+        question="generated question", context_window=40,
+        lineage=_MANAGED_LINEAGE, memory_retrieval=search,
+    )
+    return {t.tool_name: t for t in built}
+
+
+def _managed_search(access):
+    """Index+graph retrieval over one in-scope message naming person A."""
+    from nora.testing.memory_graph import FakeMemoryGraph
+
+    index = FakeMemoryIndex(
+        [IndexedNode("message", "41", "generated football note", _T,
+                     origin_room=_ROOM, persons=(_PERSON_A,))],
+        embed_model="m")
+    graph = FakeMemoryGraph()
+    graph.indexed[("message", "41")] = index.nodes[("message", "41")]
+    return MemorySearch(index, Metrics(), graph=graph, access=access,
+                        embedder=FakeQueryEmbedder(), model="m")
+
+
+async def test_memory_search_admits_a_managed_member_the_stale_roster_omits():
+    """A person the managed room records but the file `persons` list never
+    names is still the tool's `person` — the stale file roster cannot
+    refuse them."""
+    _bindings, access = await _managed_access(members=(_PERSON_A,))
+    assert _MANAGED_FACTS.persons == {_PERSON_B}
+    tools = _managed_tools(access, _managed_search(access), (_ACCOUNT_A,))
+    result = await _call(tools["memory_search"], query="football", person=_PERSON_A)
+    assert result["status"] in {"ok", "partial"}
+    assert "message:41" in result["preview"]
+
+
+async def test_memory_search_does_not_treat_the_roster_as_room_membership():
+    """`person` resolves on the live roster (a guild roster names server
+    members, not channel members); without this room's managed membership
+    the person filter is refused, never silently widened."""
+    _, access = await _managed_access(members=(_PERSON_A,))
+    tools = _managed_tools(access, _managed_search(access), (_ACCOUNT_A, _ACCOUNT_B))
+    refused = await _call(tools["memory_search"], query="football", person=_PERSON_B)
+    assert refused["status"] == "unavailable" and refused["note"]
+    # Positive control: the recorded member reads on the same room.
+    admitted = await _call(tools["memory_search"], query="football", person=_PERSON_A)
+    assert admitted["status"] in {"ok", "partial"}
+    assert "message:41" in admitted["preview"]
+
+
+async def test_memory_search_is_unavailable_while_managed_authority_is_down():
+    """A membership or preference read that cannot answer lands as
+    `unavailable` — never allowed on the stale file answer, and it recovers."""
+    bindings, access = await _managed_access(members=(_PERSON_A,))
+    tools = _managed_tools(access, _managed_search(access), (_ACCOUNT_A,))
+    positive = await _call(tools["memory_search"], query="football", person=_PERSON_A)
+    assert positive["status"] in {"ok", "partial"}
+    # The room view is held for the turn; the membership read now fails.
+    bindings.down = True
+    down, = await asyncio.gather(
+        _call(tools["memory_search"], query="football", person=_PERSON_A),
+        return_exceptions=True,
+    )
+    assert isinstance(down, dict), down
+    assert down["status"] == "unavailable" and down["note"]
+    bindings.down = False
+    recovered = await _call(tools["memory_search"], query="football", person=_PERSON_A)
+    assert recovered["status"] in {"ok", "partial"}
+    assert "message:41" in recovered["preview"]

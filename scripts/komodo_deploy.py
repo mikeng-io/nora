@@ -11,9 +11,11 @@ import importlib.util
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
+import tomllib
 from pathlib import Path
 
 REGISTRY = 'ghcr.io/mikeng-io/nora-'
@@ -122,6 +124,41 @@ def reconcile_services(prefix: list[str], images: dict, reload: list[str]) -> No
         run([*prefix, *options, '--force-recreate', *reload], stage='config-reload')
 
 
+def stt_device_overlay(config: Path, directory: Path,
+                       render: Path = Path('/dev/dri/renderD128')) -> list[str]:
+    """Grant only a selected Vulkan backend its render node and numeric group."""
+    speech = tomllib.loads(config.read_text()).get('speech', {})
+    stt, wake = speech.get('stt', {}), speech.get('wake', {})
+    if (stt.get('qwen', {}).get('device', 'cpu') != 'vulkan'
+            or 'qwen3-asr-hk-0.6b' not in (stt.get('model'), wake.get('stt_model'))):
+        return []
+    node = render.stat()
+    if not stat.S_ISCHR(node.st_mode):
+        raise ValueError('STT Vulkan render node is not a character device')
+    overlay = directory / 'stt-device.json'
+    overlay.write_text(json.dumps({'services': {'stt': {
+        'devices': [f'{render}:{render}:rw'], 'group_add': [str(node.st_gid)]}}}))
+    overlay.chmod(0o600)
+    return ['-f', str(overlay)]
+
+
+def validate_final_compose(resolved: dict, images: dict, runtime: Path, project: str):
+    if resolved['name'] != project:
+        raise ValueError('Compose project differs from installed project')
+    for service, image in images.items():
+        definition = resolved['services'][service]
+        if definition['image'] != image or 'build' in definition:
+            raise ValueError('Compose differs from pinned manifest')
+    mounts = [v for v in resolved['services']['nora'].get('volumes', [])
+              if v['target'] == '/app/config.toml']
+    if len(mounts) != 1 or Path(mounts[0]['source']) != runtime / 'config.toml':
+        raise ValueError('candidate config mount differs from validated host config')
+    stt = resolved['services']['stt']
+    if (int(stt.get('mem_limit', 0)) != 8 * 1024**3
+            or int(stt.get('memswap_limit', 0)) != 8 * 1024**3):
+        raise ValueError('STT requires 8 GiB without swap')
+
+
 def apply_release(prefix: list[str], manifest: dict, runtime: Path, project: str,
                   *, site: bool) -> None:
     """Under the shared lock, allow preflight retries but never repeat a failed recreation."""
@@ -143,22 +180,13 @@ def apply_release(prefix: list[str], manifest: dict, runtime: Path, project: str
     # Resolve only in this captured host process; never return this config to Komodo.
     resolved = json.loads(run([*prefix, 'config', '--format', 'json'],
                               stage='compose-config', output=True))
-    if resolved['name'] != project:
-        raise ValueError('Compose project differs from installed project')
-    for service, image in images.items():
-        definition = resolved['services'][service]
-        if definition['image'] != image or 'build' in definition:
-            raise ValueError(f'{service}: Compose differs from pinned manifest')
+    validate_final_compose(resolved, images, runtime, project)
     request = Path(__file__).with_name('config-reload.json')
     reload = reload_services(resolved, images, request)
     nora = resolved['services']['nora']
     if any(v['target'] in ('/app/nora/doctrine', '/app/nora/dreamer')
            for v in nora.get('volumes', [])):
         raise ValueError('release instructions must come from the image')
-    config_mounts = [v for v in nora.get('volumes', [])
-                     if v['target'] == '/app/config.toml']
-    if len(config_mounts) != 1 or Path(config_mounts[0]['source']) != runtime / 'config.toml':
-        raise ValueError('candidate config mount differs from validated host config')
     # Pull every candidate before stopping any running service. Infrastructure is excluded.
     print('PULL: fetch every owned image before recreation', flush=True)
     run([*prefix, 'pull', *images], stage='pull')
@@ -191,6 +219,12 @@ def apply_release(prefix: list[str], manifest: dict, runtime: Path, project: str
                  '--entrypoint', '/app/.venv/bin/python', images['nora'], '-c',
                  'from pathlib import Path; from nora.config import load; '
                  'load(Path("/tmp/config.toml"))'], stage='credential-validation')
+        # Derive grants from the exact copied config the candidate validated.
+        prefix = [*prefix, *stt_device_overlay(config, Path(__file__).parent)]
+    resolved = json.loads(run([*prefix, 'config', '--format', 'json'],
+                              stage='final-compose-config', output=True))
+    validate_final_compose(resolved, images, runtime, project)
+    reload = reload_services(resolved, images, request)
     spec = importlib.util.spec_from_file_location('verify_deploy',
                                                  Path(__file__).with_name('verify-deploy.py'))
     if spec is None or spec.loader is None:

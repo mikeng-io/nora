@@ -15,6 +15,12 @@ wraps the coroutine in a task, a task copies the context it is created in, and
 every tool Strands runs inside that turn inherits it. Code running OUTSIDE any
 turn — ingest comprehension, the Dreamer's own passes — sees `None` and keeps
 its own ceilings unchanged.
+
+The same mechanism carries the envelope one level DOWN: a social read holds
+each item's look to its own `wait_for`, and `look_deadline` marks that inner
+allowance so a nested read — a video's chunked pass — spends a timed-out
+window's recovery from the SAME budget that kills the look, never beside it.
+Code running outside any item envelope sees `None` and keeps its own ceiling.
 """
 
 from __future__ import annotations
@@ -49,6 +55,36 @@ def seconds_left() -> float | None:
     "no time left" and must not be read as zero. Never negative.
     """
     deadline = _DEADLINE.get()
+    if deadline is None:
+        return None
+    return max(0.0, deadline - time.monotonic())
+
+
+_LOOK_DEADLINE: ContextVar[float | None] = ContextVar("nora_look_deadline", default=None)
+
+
+@contextmanager
+def look_deadline(seconds: float) -> Generator[None]:
+    """Mark everything started inside this block as bounded by `seconds`.
+
+    Entered around the `wait_for` that bounds a social read's item look,
+    with the SAME number, so a nested read's budget and the envelope that
+    kills the look cannot disagree (module docstring).
+    """
+    token = _LOOK_DEADLINE.set(time.monotonic() + seconds)
+    try:
+        yield
+    finally:
+        _LOOK_DEADLINE.reset(token)
+
+
+def look_seconds_left() -> float | None:
+    """How long the enclosing item look has before its `wait_for` fires.
+
+    `None` outside a look's envelope — "no look bounds this", which is not
+    the same as "no time left" and must not be read as zero. Never negative.
+    """
+    deadline = _LOOK_DEADLINE.get()
     if deadline is None:
         return None
     return max(0.0, deadline - time.monotonic())

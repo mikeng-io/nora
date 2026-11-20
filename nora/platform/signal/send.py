@@ -80,7 +80,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
-from collections.abc import Mapping, Set
+from collections.abc import Awaitable, Callable, Mapping, Set
 
 import aiohttp
 
@@ -253,6 +253,7 @@ class SignalSender:
     def __init__(
         self, base_url: str, *, timeout: float = 10.0,
         dm_recipients: Set[str] | None = frozenset(),
+        dm_gate: Callable[[str], Awaitable[bool]] | None = None,
     ) -> None:
         # The direct-message addresses this sender may reach: every Signal id
         # in `identity.toml` (`Persons.direct_addresses`). Empty by default, so
@@ -263,7 +264,11 @@ class SignalSender:
         # guard, and it only fires when the app's set is POPULATED — an
         # empty-set deployment admits every DM the action owner gate admits,
         # which is the accepted trust shape on every other bridge platform.
+        # `dm_gate` is the managed backend's live version of the set: consulted
+        # FIRST when present, answered per send, and an outage fails the send —
+        # never an allow.
         self._dm_recipients = dm_recipients
+        self._dm_gate = dm_gate
         self._base_url = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout)
         # A SECOND budget rather than one raised for everything: a text send
@@ -293,6 +298,15 @@ class SignalSender:
                 return resp.status, resp.headers.get("Retry-After"), None
             return resp.status, None, await resp.json()
 
+    async def _dm_refusal(self, address: str) -> str | None:
+        """The refusal log line for a denied DM, `None` when admitted."""
+        if self._dm_gate is not None and not await self._dm_gate(address):
+            return "refusing a direct message to an address the identity backend does not know"
+        if (self._dm_gate is None and self._dm_recipients is not None
+                and address not in self._dm_recipients):
+            return "refusing a direct message to an address not in identity.toml"
+        return None
+
     async def send(
         self,
         target: ConversationTarget,
@@ -312,9 +326,9 @@ class SignalSender:
         where = target.conversation_id
         if target.conversation_type == "dm":
             where = "dm"
-            if (self._dm_recipients is not None
-                    and target.conversation_id not in self._dm_recipients):
-                log.error("refusing a direct message to an address not in identity.toml")
+            refusal = await self._dm_refusal(target.conversation_id)
+            if refusal is not None:
+                log.error(refusal)
                 return SendResult(ok=False)
             params: dict[str, object] = {
                 "recipient": [target.conversation_id], "message": text,

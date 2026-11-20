@@ -98,8 +98,7 @@ async def test_the_replay_preparation_indexes_the_restored_sandbox(clean_pg_url,
     engine = create_sql_engine(clean_pg_url)
     try:
         read_id = uuid4().hex
-        # Everything the instant held: the read and its items, the stimuli and
-        # the wake that claims them, and the room's messages.
+        # Seed the instant's read, items, stimuli, claiming wake and room messages.
         async with engine.begin() as conn:
             await conn.execute(
                 sa.insert(MESSAGES),
@@ -184,6 +183,7 @@ async def test_the_replay_preparation_indexes_the_restored_sandbox(clean_pg_url,
                     database_url=url,
                     cfg=SimpleNamespace(
                         memory=SimpleNamespace(
+                            graph=SimpleNamespace(enabled=False),
                             index=SimpleNamespace(
                                 read=False, embed=False, embedder_model=MODEL_ID))),
                 )

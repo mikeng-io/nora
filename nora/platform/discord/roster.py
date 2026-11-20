@@ -30,6 +30,7 @@ failure, and one an operator can act on from the log line.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import aiohttp
@@ -45,12 +46,21 @@ DEFAULT_API_BASE = "https://discord.com/api/v10"
 # stay cheap relative to.
 DEFAULT_TIMEOUT_SECONDS = 4.0
 
-# Discord's own maximum for this endpoint. A guild larger than this would need
-# `after=` pagination; `_page_limit_reached` below says so out loud rather than
-# silently returning a truncated room, because a truncated roster is a roster
-# that has quietly FORGOTTEN people — the under-reporting error the module
-# docstring calls the unsafe direction.
+# The provider's maximum page size; a full page requires another read.
 MAX_MEMBERS_PER_PAGE = 1000
+
+
+def _member_ids(body: object) -> list[str] | None:
+    if not isinstance(body, list) or len(body) > MAX_MEMBERS_PER_PAGE:
+        return None
+    ids = []
+    for entry in body:
+        user = entry.get("user") if isinstance(entry, dict) else None
+        value = user.get("id") if isinstance(user, dict) else None
+        if not isinstance(value, str) or not value.isascii() or not value.isdigit():
+            return None
+        ids.append(value)
+    return ids
 
 
 class DiscordRoster:
@@ -77,7 +87,7 @@ class DiscordRoster:
         not addressable here — see the module docstring.
         """
         guild_id, _, _channel_id = conversation_id.partition("/")
-        if not (guild_id.isascii() and guild_id.isdigit()) or not _channel_id:
+        if not _channel_id:
             # Not the documented shape. Unavailable, not empty: a malformed id
             # is a wiring fault, and answering "nobody is here" would hide it.
             # Only a snowflake reaches the request path.
@@ -87,79 +97,70 @@ class DiscordRoster:
             )
             return Roster(available=False)
 
+        rows = await self.guild_members(guild_id)
+        if rows is None:
+            return Roster(available=False)
+        return Roster(
+            available=True,
+            members=tuple(frozenset({row["user"]["id"]}) for row in rows),
+        )
+
+    async def guild_members(self, guild_id: str) -> list[dict] | None:
+        """The guild's raw member rows — `roster`'s read minus the id
+        projection, for callers that need the provider fields the `Roster`
+        shape drops (`user.bot`/`user.system` classify the account; the
+        members list is the guild's, never a channel's audience). `None` on
+        any read failure under exactly `roster`'s rules — a partial page
+        set is never an answer.
+        """
+        if not (guild_id.isascii() and guild_id.isdigit()):
+            log.warning("guild_id %r is not a snowflake; member read refused", guild_id)
+            return None
+
         headers = {"Authorization": f"Bot {self._token}"}
+        rows: list[dict] = []
+        after = 0
         try:
             async with (
+                asyncio.timeout(self._timeout.total),
                 aiohttp.ClientSession(timeout=self._timeout) as session,
-                session.get(
-                    f"{self._base_url}/guilds/{int(guild_id)}/members",
-                    headers=headers,
-                    params={"limit": str(MAX_MEMBERS_PER_PAGE)},
-                ) as resp,
             ):
-                if resp.status == 403:
-                    log.error(
-                        "roster read forbidden for guild %s — the GUILD_MEMBERS "
-                        "privileged intent is probably off for this application; "
-                        "room-scoped tools stay unavailable until it is enabled",
-                        guild_id,
-                    )
-                    return Roster(available=False)
-                if resp.status != 200:
-                    log.warning(
-                        "roster read for guild %s returned HTTP %s", guild_id, resp.status
-                    )
-                    return Roster(available=False)
-                body = await resp.json()
-        except Exception:
-            # Never raises — see the module docstring.
-            log.warning("roster read failed for guild %s", guild_id, exc_info=True)
-            return Roster(available=False)
-
-        if not isinstance(body, list):
-            log.warning("roster read for guild %s returned a non-list body", guild_id)
-            return Roster(available=False)
-
-        if len(body) >= MAX_MEMBERS_PER_PAGE:
-            # A truncated roster silently FORGETS people, which is the
-            # under-reporting error this module must never make. Refuse the
-            # whole read rather than hand back a partial room.
-            log.error(
-                "guild %s has at least %d members — this roster does not paginate, "
-                "so it would under-report the room; answering unavailable instead",
-                guild_id, MAX_MEMBERS_PER_PAGE,
-            )
-            return Roster(available=False)
-
-        members: list[frozenset[str]] = []
-        skipped = 0
-        for entry in body:
-            user = entry.get("user") if isinstance(entry, dict) else None
-            user_id = user.get("id") if isinstance(user, dict) else None
-            if not isinstance(user_id, str) or not user_id:
-                # UNDER-REPORTING, which this module's own docstring calls the
-                # unsafe direction — a roster that has quietly forgotten
-                # somebody is one the disclosure gate will happily approve. So
-                # the one branch that can drop a real member is counted and
-                # reported below rather than
-                # refusing the whole read: an entry with no usable id is a
-                # shape Discord should never send, and losing the room over one
-                # malformed row would be worse than saying so loudly.
-                skipped += 1
-                continue
-            # ONE id form per member, and it is the immutable snowflake. Signal
-            # pairs several forms per account because the same person reaches
-            # Nora as a phone number on one message and an ACI on another;
-            # Discord has no such split. The username is deliberately NOT
-            # included — it is not a matchable identity on any platform
-            # (`nora.domain.identity`), because its owner can change it.
-            members.append(frozenset({user_id}))
-
-        if skipped:
-            log.error(
-                "roster for guild %s skipped %d member row(s) with no usable id "
-                "— the room is UNDER-reported by that many, which is the "
-                "direction that can let a disclosure through",
-                guild_id, skipped,
-            )
-        return Roster(available=True, members=tuple(members))
+                while True:
+                    params = {"limit": str(MAX_MEMBERS_PER_PAGE)}
+                    if after:
+                        params["after"] = str(after)
+                    async with session.get(
+                        f"{self._base_url}/guilds/{int(guild_id)}/members",
+                        headers=headers, params=params, allow_redirects=False,
+                    ) as resp:
+                        if resp.status == 403:
+                            log.error(
+                                "roster read forbidden for guild %s — the GUILD_MEMBERS "
+                                "privileged intent is probably off for this application; "
+                                "room-scoped tools stay unavailable until it is enabled",
+                                guild_id,
+                            )
+                            return None
+                        if resp.status != 200:
+                            log.warning("roster read returned HTTP %s", resp.status)
+                            return None
+                        body = await resp.json()
+                        ids = _member_ids(body)
+                    if ids is None:
+                        log.error("roster read has malformed member rows; refusing partial roster")
+                        return None
+                    numeric = [int(value) for value in ids]
+                    if len(set(numeric)) != len(numeric) or any(i <= after for i in numeric):
+                        log.error(
+                            "roster pagination repeated or regressed; refusing partial roster"
+                        )
+                        return None
+                    rows.extend(body)
+                    if len(ids) < MAX_MEMBERS_PER_PAGE:
+                        return rows
+                    after = max(numeric)
+        except (TimeoutError, aiohttp.ClientError, ValueError, TypeError):
+            # The total timeout covers ALL pages. A failed later page cannot
+            # turn the already read prefix into a complete disclosure roster.
+            log.warning("roster read failed; refusing partial roster")
+            return None
