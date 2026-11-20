@@ -33,6 +33,7 @@ TIMING_TESTS = (
     "tests/infra/test_graph_debrief.py",
     "tests/infra/test_debrief_obligation.py",
     "tests/integration/test_ambient_loop_positive_control.py",
+    "tests/infra/test_proactive_pass.py",
 )
 
 
