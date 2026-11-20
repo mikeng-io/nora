@@ -420,9 +420,27 @@ class SqlCognitiveGraph:
             "exposure": scope.exposure, "lineage": scope.lineage.to_json(),
             "excluded_persons": list(scope.excluded_persons),
         })
+        await self._retire_watches(conn, intention)
+
+    async def end_intention_by_clock_in(
+        self, conn: AsyncConnection, intention: RowData, ending: str, *, ended_at: datetime,
+    ) -> None:
+        row = INTENTION.c
+        locked = sa.select(row.id).where(
+            row.unit == intention["unit"], row.id == intention["id"], row.state == "open",
+        ).with_for_update(skip_locked=True)
+        if await conn.scalar(locked) is None:
+            return
+        await conn.execute(sa.update(INTENTION).where(
+            row.unit == intention["unit"], row.id == intention["id"],
+        ).values(state="ended", ending=ending, ended_at=ended_at))
+        await self._retire_watches(conn, intention)
+
+    @staticmethod
+    async def _retire_watches(conn: AsyncConnection, intention: RowData) -> None:
         if intention["form"] == "maintain":
             await conn.execute(sa.update(EDGE).where(
-                EDGE.c.unit == unit, EDGE.c.src_id == intention_id,
+                EDGE.c.unit == intention["unit"], EDGE.c.src_id == intention["id"],
                 EDGE.c.type == "watches", EDGE.c.state == "live",
             ).values(state="retired"))
 

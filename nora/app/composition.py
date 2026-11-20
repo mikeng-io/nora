@@ -693,9 +693,7 @@ async def _compose_dependencies(
     policy = _platforms_policies.policy
     presence_reader = _platforms_policies.presence_reader
     rosters = _platforms_policies.rosters
-    room_commands = _people_wire.room_management(
-        _stores_managed.services, rosters=rosters
-    )
+    room_commands = _people_wire.room_management(_stores_managed.services, rosters=rosters)
 
     onboarding_runner = onboarding(
         cfg=cfg, managed_services=_stores_managed.services,
@@ -1452,7 +1450,9 @@ async def _compose_dependencies(
         social_poller=social_poller,
         social_perception=social_perception,
         story_expiry=story_expiry,
-        graph_observe=graph_observe(engine, op_clock, metrics, fetch_client or search_client),
+        graph_observe=graph_observe(
+            engine, op_clock, metrics, fetch_client or search_client, analytics=cfg.analytics,
+        ),
         graph_batches=(
             GraphBatchProducer(engine, metrics=metrics) if cfg.memory.graph.enabled else None
         ),
