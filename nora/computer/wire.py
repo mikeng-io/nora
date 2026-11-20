@@ -7,9 +7,8 @@ from typing import Any
 
 import redis.asyncio as aioredis
 
-from nora.agent import factory, tool_choice
-from nora.agent.browse import BrowseAgentRunner, BrowseSettings
 from nora.agent.catalog.groups import COMPUTER_TOOLS
+from nora.agent.web_browse import BrowseSettings, WebBrowseRunner
 from nora.app.composition_helpers import _note_unit_of
 from nora.app.computer_metrics import ComputerMetrics
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
@@ -490,29 +489,16 @@ def browse(
     route_model: Any,
 ) -> BrowseWiring:
 
-    # `computer_browse` (ADR 0022): a sub-agent in the room's own browser, with a model
-    # source of its own (one model per task, the tag path's reason above). `None` unless
-    # `[computer]` AND `[computer.browse]` are on, so the registry withholds the tool.
-    browser: BrowseAgentRunner | None = None
-    if computer is not None and cfg.computer.browse.enabled:
+    # `web_browse`: the browse loop on the room's own task-owned tabs, with a model route of
+    # its own. `None` unless `[computer]`, `[computer.browse]` and the tab manager are all
+    # on, so the registry withholds the tool.
+    browser: WebBrowseRunner | None = None
+    if computer is not None and cfg.computer.browse.enabled and browser_manager is not None:
         browse_cfg = cfg.computer.browse
-        browser = BrowseAgentRunner(
-            model_source=factory.ModelSource(
-                client=model_client_for("browse"),
-                spec=factory.ModelSpec(
-                    model=route_model("browse", browse_cfg.model),
-                    max_tokens=browse_cfg.max_tokens,
-                    temperature=browse_cfg.temperature,
-                    tool_choice=tool_choice.AFTER_SPEAKING,
-                ),
-            ),
-            retry=factory.build_retry_policy(timeout_seconds=browse_cfg.timeout_seconds),
-            base_url=cfg.computer.base_url,
-            token=_computer_token(cfg),
-            # Task-owned tabs ([computer.scoped]): `acquire` binds the task's
-            # own target on the scope's VM; `base_url` is only the shared-VM
-            # fallback used when no manager is wired.
-            manager=browser_manager,
+        browser = WebBrowseRunner(
+            client=model_client_for("browse"),
+            model=route_model("browse", browse_cfg.model),
+            max_tokens=browse_cfg.max_tokens,
             settings=BrowseSettings(
                 max_steps=browse_cfg.max_steps,
                 timeout_seconds=browse_cfg.timeout_seconds,
@@ -521,6 +507,7 @@ def browse(
                 output_tokens=browse_cfg.output_tokens,
                 total_tokens=browse_cfg.total_tokens,
             ),
+            manager=browser_manager,
         )
     return BrowseWiring(browser=browser)
 

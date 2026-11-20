@@ -44,23 +44,8 @@ Read the real flow end to end, then stop at the first rung that holds:
 
 1. Does it need to exist? 2. Is it already in this codebase? 3. Does the
 stdlib, a Postgres constraint or an installed dependency do it? 4. One line?
-5. Only then, the minimum code that works.
-
-- **A guard needs a consequence**: a live count, an incident, or a real trust
-  boundary (an identifier or coordinate egressing, a room reading another, a
-  credential). Otherwise leave it out and name the ceiling in one line.
-- **A boundary is drawn by scope, never by a filter inside it.** The unit is
-  the read boundary: rooms that must not share belong to different units.
-- **A special case is a missing requirement.** Before an `if` for one value, a
-  retry, a swallowed exception or a skipped test, find the fix behind it. Two
-  patches to one seam mean the seam is wrong.
-- **What changes together lives together.** No unrequested abstraction, no
-  config for a constant. A deliberate corner gets a `# ponytail:` comment
-  naming its ceiling. One check, not a suite.
-- **Ship, then harden what breaks**: one integrated change from one spec,
-  measured once; deletion over addition, the shortest working diff. Undo is a
-  config flip or a backup. A complex ask ships its small version and questions
-  the rest in the same report.
+5. Only then, the minimum code that works. Ship it, measure it once, and harden
+what breaks; a complex ask ships its small version and questions the rest.
 
 Never simplified away: the egress and disclosure rules, fail-closed
 measurement, error handling that would lose input, and anything the operator
@@ -81,22 +66,6 @@ code. `nora-design` owns the procedure.
 GitHub Project owns roadmap; Linear owns execution; GitHub Issues hold reports. The ADRs are
 the one decision record kept as history; `design/09-decision-index.md` lists
 the decisions that hold now, each with its test or `NOT ENFORCED` (`nora-decision`).
-
-- **A document says what holds now**, high level, present tense, precise and
-  concise. Revise or consolidate the section that owns the subject; never add
-  a section beside it, never mark text deprecated or superseded. No dates,
-  issue or PR numbers, reversal stories or "was X, now Y".
-- **A comment says what the code cannot**: a unit, a bound, a non-obvious
-  constraint, one business fact, in at most three lines. Never history, a
-  measurement, a review story or a decision citation.
-- **A docstring says what the thing is**; an internal (`_name`) function gets
-  one line or none. A model-facing tool docstring is behaviour (`nora-tool`).
-- **Size**: a file at most 800 lines, a function at most 120, `AGENTS.md` at
-  most 250, a design subject file at most 300. Split by area and layer.
-
-Gates under `tests/architecture/` hold existing debt to baselines that only
-shrink; a cleanup rewrites its baseline (`python -m scripts.code_size --write`,
-likewise `scripts.log_markers`, `scripts.design_shape`).
 
 ## Reporting to the operator
 
@@ -121,55 +90,23 @@ hand only on request, for host config, or to recover.
 changes one in a line; a better-argued restatement does not, so hold. Write the
 reading that would overturn it when you decide. A decision the operator locked is closed.
 
+## Code standards
+
+Write and review every change against [docs/code-standards.md](docs/code-standards.md):
+the cross-cutting rules, then the section for each stack the diff touches.
+A reviewer's finding names the rule it breaks. A failure no rule caught is
+recorded in [docs/maintainers/lessons.md](docs/maintainers/lessons.md); a
+lesson seen on three separate days becomes a standard.
+
 ## Never
 
 - `pip install`: dependencies via `uv add`.
-- A test whose fake answers every request the same way, or that stays green
-  when the code under test is reverted.
 - Point signal-cli at another account, re-register it or unlink its device
   without an explicit decision.
 - Reference the archived legacy profile path, or reuse a Hermes gateway.
-- Assert a per-tag object was freed by an attribute; count live `gc` objects.
-- Build a model prompt outside context assembly: every model call is a
-  declared occasion (`test_every_model_call_is_a_declared_occasion.py`).
-- Paste production rows into a fixture. Fixtures are generated, or placeholders
-  from `identity.example.toml`; the hooks refuse real values, and you never
-  acknowledge a finding yourself.
-- Trust an instrument's null before saying what its positive would look like.
-- Claim a merge, deploy or fix without reading back its state; a fix needs its
-  line reverted and a named test red (`nora-prove-fix`). Read a gate's rc, never
-  through a pipe. Cite only files and functions opened in this session.
 - Edit, commit or merge on `master` in this checkout; every change starts in
   its own worktree. Never run two agents against one checkout.
-- Trust `alembic revision --autogenerate` for `idx_messages_conv_ts`.
-  `uv run alembic heads` prints exactly one line after every merge.
 - Take a decision number from a chat agreement; allocate it at merge time.
-
-## Instruments
-
-- Read `docs/observability.md` before adding one. One root span per entry point; stages are its children. Spawned work does
-  not inherit the caller's span: attach the intended context explicitly.
-- Langfuse gets traces with a generation in them (a root declares
-  `nora.trace_kind`); the rest is a counter label. Model calls use Strands'
-  spans, or `start_raw_model_span` for raw completions; never hand-write `gen_ai.*`.
-- A log line is not a metric; a declared metric has a call site, an increment a
-  declaration (`test_every_recorded_metric_is_declared.py`), and labels derive
-  from the code (`get_args` off a `Literal`). Three states on every instrument;
-  measure the cost, not only the result; pair every zero with a positive control.
-
-## Code conventions
-
-- Code is grouped by area in three layers that import inward (ARCHITECTURE.md
-  «Code map», `nora/AGENTS.md`, ADR 0037); `nora-structure` places the code.
-- Collaborators come through `__init__`: no `*_fn` hooks, no `_for_test`
-  parameters, no mutable module singletons.
-- A port gains a second implementation, a fake included, only with a shared
-  contract suite in `tests/contract/` (database scoped to the module); fakes
-  live in `nora/testing/`. A test directory names what makes the test true
-  (`tests/README.md`) and the `tests/` root takes no new files; tests read
-  config from the template fixtures, and only a deployment test reads `config.toml`.
-- A new behavioural rule gets a decision-index row and a named test in
-  `tests/test_acceptance_rules.py::RULE_TESTS`.
 
 ## Operational constraints
 
@@ -221,13 +158,6 @@ order of the commands and the check after each; a new skill adds both at once.
 | adding or changing one of Nora's runtime skills in `nora/skills/` | `nora-runtime-skill` |
 | creating or editing digital 3D assets with Meshy | `meshy-3d-generation` |
 
-## Validation budget
-
-Automatic checks target three minutes, five at most; a timeout fails. The full
-backend suite and Python CodeQL run on manual dispatch, so a skipped run claims
-nothing; report fast-baseline and full acceptance separately. Use focused local
-checks, never a full local pre-PR suite.
-
 ## Reading order
 
-`README.md` → `ARCHITECTURE.md` → the area's design bundle → `CONTRIBUTING.md`, `docs/maintainers/conventions.md`; `DESIGN.md` before touching how she looks; `docs/observability.md`, `docs/eval-sop.md`, `docs/runbook.md` as needed.
+`README.md` → `ARCHITECTURE.md` → the area's design bundle → `docs/code-standards.md` → `CONTRIBUTING.md`, `docs/maintainers/conventions.md`; `DESIGN.md` before touching how she looks; `docs/observability.md`, `docs/eval-sop.md`, `docs/runbook.md` as needed.

@@ -47,7 +47,7 @@ AREA_DESCRIPTIONS = {
     "runtime": ("0366D6", "Nora's application code"),
     "doctrine": ("C5DEF5", "Voice, conduct, skills and Dreamer instructions"),
     "portal": ("5319E7", "The portal frontend and its API"),
-    "site": ("BFDADC", "The public site and the wiki renderer"),
+    "site": ("BFDADC", "The public site"),
     "deploy": ("006B75", "Containers, Compose and Komodo"),
     "ci": ("0E8A16", "Workflows, hooks, scripts and the Makefile"),
     "docs": ("0075CA", "Documentation, ADRs and design"),

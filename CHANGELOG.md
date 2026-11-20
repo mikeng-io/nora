@@ -1,5 +1,44 @@
 # Changelog
 
+## [7.20.0](https://github.com/mikeng-io/nora/compare/v7.19.17...v7.20.0) (2026-11-19)
+
+
+### Features
+
+* **computer:** let web_browse submit search forms and type into any offered field ([746c5cd](https://github.com/mikeng-io/nora/commit/746c5cd7441950736a757fb39732a4561361c55c))
+* **computer:** replace the per-click browse agent with the indexed-action web_browse tool ([09f77f5](https://github.com/mikeng-io/nora/commit/09f77f5de3276bff66e74378a195d5316a1b1a64))
+* **computer:** retrieve public web evidence with a bounded browser loop ([0239800](https://github.com/mikeng-io/nora/commit/023980053c36b6e5664e9c00d47683acc06a4609))
+
+
+### Bug Fixes
+
+* **browser:** account for web browse in acceptance contracts ([3d949cc](https://github.com/mikeng-io/nora/commit/3d949cc9b9efaf3e7518d34cfae202c1da3c8620))
+* **computer:** keep a cut-off web_browse from reading as nothing found and show its model what it already did ([4d1abdd](https://github.com/mikeng-io/nora/commit/4d1abdd517888610ed6d346f975f8c97f88564d4))
+* **computer:** remove what still named the deleted browse agent ([11b0678](https://github.com/mikeng-io/nora/commit/11b0678faf00efb1a781c50b7b876a145b683288))
+* **computer:** report every cut-off web_browse run as unavailable, declare its side effects unknown, name its tool in the task note ([4ddaff2](https://github.com/mikeng-io/nora/commit/4ddaff2c84a63c9cf1fc4791f2194d74e120b41e))
+
+## [7.19.17](https://github.com/mikeng-io/nora/compare/v7.19.16...v7.19.17) (2026-11-19)
+
+
+### Maintenance
+
+* origin/master into native-stack-commands, the #826 lessons loop and the #825 wiki retirement ([6a47ad7](https://github.com/mikeng-io/nora/commit/6a47ad7125bba56e5e6ed903753f0102538f0747))
+* origin/master into native-stack-commands, the v7.19.16 release metadata ([8c99f31](https://github.com/mikeng-io/nora/commit/8c99f31eda8e88447b288e511011a5c2071ffeed))
+
+## [7.19.16](https://github.com/mikeng-io/nora/compare/v7.19.15...v7.19.16) (2026-11-19)
+
+
+### Maintenance
+
+* make nora-land and nora-dispatch write lessons where the lifecycle does ([ae53a6f](https://github.com/mikeng-io/nora/commit/ae53a6f4e21193a6fb61ee1d343a20243bd02db1))
+
+## [7.19.15](https://github.com/mikeng-io/nora/compare/v7.19.14...v7.19.15) (2026-11-19)
+
+
+### Changes
+
+* **site:** retire the OpenWiki wiki and redirect /wiki to the homepage ([2959279](https://github.com/mikeng-io/nora/commit/2959279cac76a25726901aca08a0a88cb99c91c9))
+
 ## [7.19.14](https://github.com/mikeng-io/nora/compare/v7.19.13...v7.19.14) (2026-11-19)
 
 
