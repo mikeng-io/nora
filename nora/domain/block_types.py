@@ -95,7 +95,7 @@ BLOCK_TYPES: dict[str, BlockType] = {
     _t("debrief_messages", "Room messages with ids, times, authors and Nora delivery states.",
        store="cognitive_graph.debrief_message_window"),
     _t("due_intention", "the open intention due in this pass and its grounded links",
-       "cause", "limit", store="cognitive_graph.standing"),
+       "cause", "limit", store="cognitive_graph.due_intention"),
     _t("why_now", "the due stimulus and the instant that made it eligible",
        store="cognitive_graph.graph_stimulus"),
     _t("graph_standing",
