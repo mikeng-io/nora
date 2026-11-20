@@ -88,14 +88,14 @@ async def test_orphan_entity_needs_an_evidenced_sibling(scenario):
         assert [entry["status"] for entry in result["operations"]] == ["admitted", "admitted"]
 
 
-async def test_graph_propose_refuses_lessons_and_unknown_fields_independently(scenario):
+async def test_graph_propose_checks_lessons_separately_from_unknown_fields(scenario):
     await scenario.item("observed-source")
     with wake_scope("observed-source"):
         result = await propose(scenario, [
             claim_payload(part="lesson"), claim_payload(typo="ignored?"), claim_payload(),
         ])
     lesson, unknown, admitted = result["operations"]
-    assert (lesson.get("reason"), lesson.get("field")) == ("invalid_field", "part")
+    assert (lesson.get("reason"), lesson.get("field")) == ("lesson_not_about_nora", "about")
     assert (unknown.get("reason"), unknown.get("field")) == ("invalid_field", "typo")
     assert admitted["status"] == "admitted"
 

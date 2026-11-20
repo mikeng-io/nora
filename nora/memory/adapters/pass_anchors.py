@@ -208,13 +208,35 @@ class _AnchorQueries:
             and (ref in claimed_ids or visible[ref][0] in ("item", "intention"))
         )
         links = await self._touched_intentions(tuple(visible))
+        earlier = await self._earlier_verdicts({
+            stimulus.graph_id for stimulus in stimuli if stimulus.kind == "verdict"
+        })
         return _Seeds(
-            tuple(dict.fromkeys((*ids, *links))),
+            tuple(dict.fromkeys((*ids, *earlier, *links))),
             (*tuple(row.room for row in stimuli if row.room is not None),
              *tuple(visible[ref][1] for ref in ids if visible[ref][1] is not None)),
             (*tuple(row.person for row in stimuli if row.person is not None),
              *tuple(person for ref in ids for person in (visible[ref][2] or ()) if person)),
         )
+
+    async def _earlier_verdicts(self, claimed: set[str]) -> tuple[str, ...]:
+        r = self._rows
+        earlier = self._graph.alias("earlier_verdicts").c
+        time = r.image["ended_at"].astext.cast(_TIME)
+        earlier_time = earlier.image["ended_at"].astext.cast(_TIME)
+        same_class = tuple(
+            earlier.image[key].astext.is_not_distinct_from(r.image[key].astext)
+            for key in ("form", "owed_to", "condition_form")
+        )
+        previous = sa.select(earlier.graph_id).where(
+            earlier.source == "intention_verdict", earlier_time < time, *same_class,
+        ).order_by(earlier_time.desc(), earlier.graph_id).limit(10).correlate(
+            self._graph,
+        ).lateral()
+        stmt = sa.select(previous.c.graph_id).select_from(
+            self._graph.join(previous, sa.true()),
+        ).where(r.source == "intention_verdict", r.graph_id.in_(claimed))
+        return tuple(await self._conn.scalars(stmt)) if claimed else ()
 
     async def _touched_intentions(self, refs: tuple[str, ...]) -> tuple[str, ...]:
         r = self._rows

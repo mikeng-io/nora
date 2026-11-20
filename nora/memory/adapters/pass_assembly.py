@@ -73,6 +73,9 @@ def _presentation_order(
             block, ids = builder.profile_block(result, subject, seeds.names)
             early.append(block)
             shown.update(ids)
+            if (choice.input_type is WakeInput and subject.pointer_ref == "nora"
+                    and subject.graph_id):
+                shown.add(subject.graph_id)
         for subject in seeds.people:
             block, ids = builder.profile_block(result, subject, seeds.names)
             late.append(block)

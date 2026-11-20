@@ -51,7 +51,7 @@ class EntityInput(EvidenceInput):
 
 
 class ClaimFields(EvidenceInput):
-    part: Literal["fact", "trait", "guess", "situation"]
+    part: Literal["fact", "trait", "guess", "situation", "lesson"]
     content: str
     prediction: NotRequired[str]
     window_end: NotRequired[str]
@@ -148,7 +148,9 @@ def parse_graph_operation(
                 expected_kind="claim",
             )
         part = _string(raw, "part")
-        if part not in ("fact", "trait", "guess", "situation"):
+        if part == "lesson" and context.occasion != "wake":
+            return Refusal("occasion_basis", "basis")
+        if part not in ("fact", "trait", "guess", "situation", "lesson"):
             raise InvalidFieldError("part")
         graph_id = f"claim:{uuid4().hex}"
         claim = CreateClaim(

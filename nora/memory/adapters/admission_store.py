@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from nora.domain.graph_registration import Exposure, InputScope, inherited_scope
 from nora.domain.graph_stimuli import GraphStimulus
 from nora.domain.lineage import Lineage
-from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY, INTENTION, REGISTRY
+from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, ENTITY, INTENTION, REGISTRY
 from nora.infra.sql.cognitive_graph_store import (
     AdmissionTopic,
     GraphWriteError,
@@ -42,6 +42,7 @@ from nora.memory.domain.admission_proposals import (
     Revise,
     RowFacts,
 )
+from nora.memory.domain.lesson_admission import LessonInventory
 
 
 class SqlAdmissionStore:
@@ -55,6 +56,24 @@ class SqlAdmissionStore:
 
     async def read(self, unit: str, ids: frozenset[str]) -> Mapping[str, RowFacts]:
         return await self._rows.read(unit, ids)
+
+    async def lessons(self, unit: str) -> LessonInventory:
+        c = CLAIM.c
+        try:
+            async with self._engine.connect() as conn:
+                rows = (await conn.execute(sa.select(
+                    c.id, c.content, c.state, c.asserted_at,
+                ).where(c.unit == unit, c.part == "lesson", sa.or_(
+                    c.state == "live",
+                    sa.and_(c.state == "retired", c.writer == "operator",
+                            c.occasion == "operator"),
+                )))).all()
+        except sa.exc.SQLAlchemyError as exc:
+            raise AdmissionUnavailableError(commit_uncertain=False) from exc
+        return LessonInventory(
+            tuple((row.id, str(row.content)) for row in rows if row.state == "live"),
+            tuple(row.asserted_at for row in rows if row.state == "retired"),
+        )
 
     async def close(
         self, intention: str, witness: str, context: PassContext,

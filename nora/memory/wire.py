@@ -65,10 +65,11 @@ from nora.memory.app.admission import AdmissionService
 from nora.memory.app.admission_identity import AdmissionIdentity
 from nora.memory.app.delivery_arbitration import DeliveryArbitration
 from nora.memory.app.graph_clock import GraphClock
+from nora.memory.app.lesson_review import LessonReview
 from nora.memory.app.retrieval import RetrievalService
 from nora.memory.app.verify import IntentionVerifier
 from nora.memory.app.watches import WatchPoller
-from nora.memory.domain.admission_ports import RoomSlots
+from nora.memory.domain.admission_ports import LessonChecker, RoomSlots
 from nora.memory.domain.graph_operations import WAKE_OPERATIONS as WAKE_OPERATIONS
 from nora.persons import Persons
 from nora.policy import Policy
@@ -374,12 +375,16 @@ def admission(
     content_checks: bool, room_slots: RoomSlots,
     nora_accounts: Iterable[tuple[str, str]] = (),
     access: IdentityAccess | None = None,
+    lesson_checker: LessonChecker | None = None,
 ) -> AdmissionService:
     identity = AdmissionIdentity(persons, policy, access=access, nora_accounts=nora_accounts)
     store = SqlAdmissionStore(SqlAdmissionRows(engine, identity), SqlCognitiveGraph(engine), engine)
+    from nora.infra.sql.tension import SqlTensionStore
+
+    review = LessonReview(lesson_checker, SqlTensionStore(engine)) if lesson_checker else None
     return AdmissionService(
         store, identity, leak_guard, content_checks=content_checks, room_slots=room_slots,
-        watch_kinds=WATCH_ADAPTERS.keys(),
+        watch_kinds=WATCH_ADAPTERS.keys(), lesson_review=review,
     )
 
 

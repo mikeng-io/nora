@@ -29,6 +29,7 @@ _PLANES = (
     "excluded_persons",
     "exposure",
     "lineage",
+    "asserted_at",
 )
 _SPEECH = {"messages", "message_edit", "message_reaction"}
 
@@ -155,14 +156,20 @@ class SqlAdmissionRows:
             source_ref=SourceReference(row["source_ref_kind"], row["source_ref_value"])
             if row.get("source_ref_kind") is not None else None,
             fetched_url=row.get("fetched_url"),
+            table=table, evidence_at=row["evidence_at"],
+            aimed_at_nora=bool(row.get("aimed_at_nora")),
+            pointer_ref=row.get("pointer_ref"), part=row.get("part"),
         )
 
 
 def _select(table: sa.Table, id_column: str) -> sa.Select:
     needed = [table.c[id_column].label("id"), *(table.c[name] for name in _PLANES)]
+    needed.append(sa.func.coalesce(table.c.occurred_at, table.c.asserted_at).label(
+        "evidence_at",
+    ))
     needed.extend(
         table.c[name]
-        for name in ("form", "trigger", "delivery_mode", "pointer_kind",
+        for name in ("form", "trigger", "delivery_mode", "pointer_kind", "pointer_ref", "part",
                      "source_ref_kind", "source_ref_value")
         if name in table.c
     )
@@ -170,6 +177,13 @@ def _select(table: sa.Table, id_column: str) -> sa.Select:
         needed.append(table.c.url.label("fetched_url"))
     if table.name not in _SPEECH:
         return sa.select(*needed)
+    stimulus = METADATA.tables["graph_stimulus"].c
+    source = table.outerjoin(stimulus.table, sa.and_(
+        stimulus.unit == table.c.unit, stimulus.graph_id == table.c.graph_id,
+        stimulus.kind == "strong_cue", stimulus.occurrence == "",
+        stimulus.cues.contains(["addresses_nora"]),
+    ))
+    needed.append(stimulus.graph_id.is_not(None).label("aimed_at_nora"))
     parent = MESSAGES
     sender = parent if table.name == "message_edit" else table
     stmt = sa.select(
@@ -181,9 +195,9 @@ def _select(table: sa.Table, id_column: str) -> sa.Select:
         (parent.c.is_nora if sender is parent else sa.literal(0)).label("source_is_nora"),
     )
     if table is parent:
-        return stmt
+        return stmt.select_from(source)
     return stmt.select_from(
-        table.outerjoin(
+        source.outerjoin(
             parent,
             (parent.c.id == table.c.message_id) & (parent.c.unit == table.c.unit),
         )

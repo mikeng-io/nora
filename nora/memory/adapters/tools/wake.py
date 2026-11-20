@@ -98,7 +98,9 @@ class WakeToolSurface:
             evidence supports a new entity, claim or connection, or changes a claim.
 
             Use a batch-local entity ref as an about target on an evidenced sibling.
-            Guess claims carry a prediction and window end.
+            Guess claims carry a prediction and window end. On a wake, a lesson
+            about Nora's practice needs an inferred about link to Nora and three
+            verdicts or a person's correction. A separate law check can refuse it.
             Returns `status`: ok, refused or unavailable, with a `note`.
 
             Args:

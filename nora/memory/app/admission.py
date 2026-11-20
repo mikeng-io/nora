@@ -11,6 +11,7 @@ from uuid import uuid4
 from nora.agent.egress import LeakGuard, scan_identifiers, scan_reply
 from nora.agent.security import looks_like_coordinate
 from nora.memory.app.admission_identity import AdmissionIdentity
+from nora.memory.app.lesson_review import LessonReview
 from nora.memory.domain.admission import (
     Admitted,
     Refusal,
@@ -35,6 +36,7 @@ from nora.memory.domain.admission_ports import (
 from nora.memory.domain.admission_proposals import (
     AddEdge,
     CloseIntention,
+    CreateClaim,
     CreateIntention,
     MergeEntities,
     PassContext,
@@ -60,6 +62,7 @@ class AdmissionService:
         content_checks: bool,
         room_slots: RoomSlots,
         watch_kinds: Collection[str] = (),
+        lesson_review: LessonReview | None = None,
     ) -> None:
         self._store = store
         self._identity = identity
@@ -67,6 +70,7 @@ class AdmissionService:
         self._content_checks = content_checks
         self._room_slots = room_slots
         self._watch_kinds = watch_kinds
+        self._lesson_review = lesson_review
 
     async def admit(
         self,
@@ -202,6 +206,14 @@ class AdmissionService:
             )
             if any(_unsafe_page(ref) for ref in references):
                 return Refusal("unsafe_page_reference", "source_ref"), ()
+            if isinstance(data, CreateClaim) and data.part == "lesson":
+                if self._lesson_review is None or not isinstance(data.content, str):
+                    return Refusal("check_unavailable", "content"), ()
+                if refusal := await self._lesson_review.review(
+                    self._store, data.content, data.citations,
+                    choice.base.id if choice.base is not None else None, context,
+                ):
+                    return refusal, ()
             stored = Stored(
                 choice.row.id, choice.base.id if choice.base is not None else None,
                 tuple(extra.row.id for extra in choice.deliveries),

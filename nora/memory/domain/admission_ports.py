@@ -4,8 +4,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
+from nora.domain.doctrine_check import CheckVerdict, LawRule, Tension
 from nora.memory.domain.admission import Admitted, Refusal
 from nora.memory.domain.admission_proposals import PassContext, RowFacts
+from nora.memory.domain.lesson_admission import LessonInventory
 
 
 class AdmissionUnavailableError(Exception):
@@ -38,7 +40,20 @@ class RoomSlots(Protocol):
     def held(self, room: str) -> bool: ...
 
 
+class LessonChecker(Protocol):
+    @property
+    def model(self) -> str: ...
+    def rules(self) -> tuple[LawRule, ...]: ...
+    async def judge(self, lesson: str) -> CheckVerdict: ...
+
+
+class TensionWriter(Protocol):
+    async def record(self, tension: Tension) -> str: ...
+
+
 class AdmissionStore(Protocol):
+    async def lessons(self, unit: str) -> LessonInventory: ...
+
     async def read(self, unit: str, ids: frozenset[str]) -> Mapping[str, RowFacts]: ...
 
     async def close(

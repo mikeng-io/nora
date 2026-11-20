@@ -28,6 +28,11 @@ from nora.memory.domain.admission_proposals import (
     SourceReference,
 )
 from nora.memory.domain.conditions import decode_condition_trigger
+from nora.memory.domain.lesson_admission import (
+    LessonFormRefusal,
+    LessonInventoryRefusal,
+    lesson_form,
+)
 
 FormRefusal = Literal[
     "unknown_kind",
@@ -53,11 +58,13 @@ FormRefusal = Literal[
     "invalid_field",
     "unbacked_page_reference",
     "unpollable_watch_target",
+    LessonFormRefusal,
 ]
 WriteRefusal = Literal[
     "stale_base", "credential", "doctrine", "content", "unsafe_page_reference",
     "not_open", "witness_not_met", "untyped_condition", "duplicate_delivery",
     "not_this_delivery", "citation_outside_pass", "not_a_commit", "room_busy",
+    LessonInventoryRefusal, "loosens_law", "check_unavailable",
 ]
 RefusalReason = Literal[FormRefusal, WriteRefusal]
 
@@ -332,6 +339,10 @@ class _Admission:
                 if link.source == row.id and link.type in ("draws_on", "rests_on")
             ),
         )
+        if (isinstance(data, CreateClaim) and data.part == "lesson"
+                and (refusal := lesson_form(data.content, evidence, links, self.rows, row.id))):
+            reason, field = refusal
+            raise _RefusalError(reason, field)
         return Admitted(proposal, row, links, base, survivor, owner, owed_to)
 
     def _get(self, ref: str, field: str, *, reason: FormRefusal) -> RowFacts:

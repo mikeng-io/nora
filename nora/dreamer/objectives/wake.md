@@ -23,6 +23,14 @@ own words establish only that you said them. A fetched page supports public
 attributes of its subject. Record a perception reading as a claim citing its
 item.
 
+## Learn
+
+Use lesson evidence to induce a short, practical lesson about how to act in
+this unit. Link it to the Nora profile's graph ID with an inferred about edge.
+Cite three distinct verdicts or a correction from a person addressing you.
+Check that a correction actually asks for a change. When consequences
+contradict a lesson, revise it with new evidence or retire it.
+
 ## Decide
 
 Commit only an intention worth keeping, with a typed closing condition when
