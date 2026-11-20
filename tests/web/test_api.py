@@ -100,6 +100,7 @@ async def test_doctrine_route_returns_the_shipped_sections_in_order(client):
         "belonging",
         "voice",
         "conduct",
+        "engagement",
         "pictures",
         "constraints",
         "room-constraints",

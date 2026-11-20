@@ -2490,7 +2490,7 @@
  },
  "tests/infra/test_standing_ledger.py": {
   "comment_blocks": 1,
-  "file_lines": 1088
+  "file_lines": 1087
  },
  "tests/infra/test_standing_revision.py": {
   "comment_blocks": 2
