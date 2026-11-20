@@ -1,6 +1,6 @@
 # Separate audio-controller image with its own dependency set, on the same
 # Node 24 / Debian trixie family as the other Node services.
-FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea
+FROM node:24-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0
 
 # curl runs the healthcheck; ffmpeg transcodes playback. Native audio
 # packages may lack a prebuild for the selected Node ABI, architecture or

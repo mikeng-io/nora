@@ -2,7 +2,7 @@
 # on the repo's own image approach (../../Dockerfile,
 # deploy/bridge-projection/Dockerfile): pinned python:3.12-slim-trixie, the
 # pinned uv binary, and a FROZEN `uv sync`.
-FROM python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2
+FROM python:3.15-slim-trixie@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 
 # curl runs the compose healthcheck; ffmpeg is the playback transcoder the
 # owned music path needs (same package deploy/stt and the app image install).

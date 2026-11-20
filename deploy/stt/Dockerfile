@@ -1,4 +1,4 @@
-FROM python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2 AS llama-build
+FROM python:3.15-slim-trixie@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS llama-build
 RUN apt-get update && apt-get install -y --no-install-recommends git cmake g++ ninja-build libvulkan-dev glslc spirv-headers glslang-dev && rm -rf /var/lib/apt/lists/*
 RUN git init /src && cd /src && git remote add origin https://github.com/ggml-org/llama.cpp.git && git fetch --depth=1 origin 78ffbaa18533c2ed51eab2ef5ae0702330efc3e9 && git checkout FETCH_HEAD
 RUN set -e; for device in cpu vulkan; do \
@@ -15,7 +15,7 @@ RUN set -e; for device in cpu vulkan; do \
 # consistency, but this is a SEPARATE image with its own dependency set --
 # `stt` is not a reuse of nora:latest, it's a different app that happens to
 # live in the same repo (docs/superpowers/specs/2026-08-21-nora-stt-infrastructure-design.md).
-FROM python:3.12-slim-trixie@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2
+FROM python:3.15-slim-trixie@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 
 # curl is needed for this Dockerfile's own HEALTHCHECK below; ffmpeg gives
 # soundfile a universal decoder for signal voice notes (opus/ogg works without
