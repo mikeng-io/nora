@@ -193,7 +193,7 @@
     "file": "nora/app/cognition_wiring.py",
     "old": "            n: frozenset(names) | {\"agenda_room\", \"room\"}",
     "new": "            n: frozenset(names) | {\"room\"}",
-    "target": "tests/test_composition.py::test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluator"
+    "target": "tests/test_composition.py::test_cognition_on_builds_one_runner_for_backfill_alongside_graph_wake"
   },
   {
     "name": "minor 1: a unit outside session_units is tracked and hooked",
@@ -208,13 +208,6 @@
     "old": "                if view.tracked:\n                    # The session sees what the wake CLAIMED",
     "new": "                if True:\n                    # The session sees what the wake CLAIMED",
     "target": "tests/unit/test_cognition_session_units.py"
-  },
-  {
-    "name": "minor 1: a unit without a home room is gauged but not woken",
-    "file": "nora/app/composition_dreamer.py",
-    "old": "            units=lambda: sorted(cognition_session_units or ()),\n            metrics=metrics,",
-    "new": "            units=lambda: sorted(unit_scopes()),\n            metrics=metrics,",
-    "target": "tests/test_composition.py::test_units_without_a_home_room_are_gauged_and_never_woken"
   },
   {
     "name": "minor 1: shadow boots with no unit that can run a session",

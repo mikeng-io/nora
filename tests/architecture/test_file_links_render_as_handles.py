@@ -322,6 +322,7 @@ BUILDERS: dict[str, str | tuple[str, ...]] = {
     "nora/app/fire.py": ("_window_query",),
     "nora/engagement/context.py": ("_recall_tagger",),
     "nora/app/cognition_context.py": "blocks: shared context_render through render_messages",
+    "nora/app/wake_floor.py": "blocks: shared context_render through render_messages",
     "nora/app/runtime.py": "blocks: the Dreamer's rows reach its adaptors' render_row_window",
     "nora/engagement/stages/debrief.py": "blocks: debrief_render.render_elements",
     "nora/memory/adapters/debrief_store.py": "graph_debrief._evidence_body (HAND_BUILT)",

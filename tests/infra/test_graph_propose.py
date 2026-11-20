@@ -76,14 +76,14 @@ async def test_graph_propose_refuses_a_real_citation_the_pass_did_not_see(scenar
     with wake_scope():
         result = await propose(scenario, [claim_payload()])
     [refused] = result["operations"]
-    assert (refused["status"], refused["reason"]) == ("refused", "citation_not_shown")
+    assert (refused["status"], refused.get("reason")) == ("refused", "citation_not_shown")
 
 
 async def test_orphan_entity_needs_an_evidenced_sibling(scenario):
     await scenario.item("observed-source")
     with wake_scope("observed-source"):
         result = await propose(scenario, [topic()])
-        assert result["operations"][0]["reason"] == "orphan_entity"
+        assert result["operations"][0].get("reason") == "orphan_entity"
         result = await propose(scenario, [topic(), claim_payload(about=[about()])])
         assert [entry["status"] for entry in result["operations"]] == ["admitted", "admitted"]
 
@@ -95,8 +95,8 @@ async def test_graph_propose_refuses_lessons_and_unknown_fields_independently(sc
             claim_payload(part="lesson"), claim_payload(typo="ignored?"), claim_payload(),
         ])
     lesson, unknown, admitted = result["operations"]
-    assert (lesson["reason"], lesson["field"]) == ("invalid_field", "part")
-    assert (unknown["reason"], unknown["field"]) == ("invalid_field", "typo")
+    assert (lesson.get("reason"), lesson.get("field")) == ("invalid_field", "part")
+    assert (unknown.get("reason"), unknown.get("field")) == ("invalid_field", "typo")
     assert admitted["status"] == "admitted"
 
 

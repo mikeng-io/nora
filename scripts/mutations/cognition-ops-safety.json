@@ -35,11 +35,11 @@
   "target": "tests/unit/test_cognition_restart_reclaim.py"
  },
  {
-  "name": "App.run never calls the reclaim",
+  "name": "App.run never recovers stale graph wake claims",
   "file": "nora/__main__.py",
-  "old": "            await deps.wake_evaluator.reclaim_orphans(process_started_ms=int(started_at * 1000))\n",
+  "old": "            await deps.wake_poller.recover()\n",
   "new": "",
-  "target": "tests/test_main.py::test_app_run_releases_what_a_previous_process_left_before_the_wake_loop_starts"
+  "target": "tests/integration/test_wake_composition.py::test_app_recovers_and_starts_the_graph_poller_without_a_legacy_wake"
  },
  {
   "name": "reclaim records a FAILED (infra) wake: a restart penalises the unit",

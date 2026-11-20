@@ -13,12 +13,7 @@ def wake_blocks(
     anchors: tuple[str, ...],
 ) -> tuple[tuple[ContextBlock, ...], frozenset[str]]:
     if result.status == "unavailable":
-        blocks = tuple(
-            ContextBlock(name, compose_body(""), attrs=(("status", "unavailable"),),
-                         when_empty="self_close")
-            for name in ("agenda", "lesson_corrections")
-        )
-        return blocks, frozenset()
+        return (), frozenset()
     rows = {row.graph_id: row for row in result.rows if row.unavailable is None}
     stimuli = tuple(stimulus for stimulus in data.stimuli if stimulus.graph_id in rows)
     open_intentions = tuple(rows[id_] for id_ in anchors

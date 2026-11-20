@@ -389,4 +389,14 @@ async def test_scheduled_deliveries_with_the_same_topic_and_recipient_are_arbitr
     )
     first, duplicate = result["operations"]
     assert first["status"] == "admitted", result
-    assert (duplicate["reason"], duplicate["field"]) == ("duplicate_delivery", first["id"])
+    assert (duplicate.get("reason"), duplicate.get("field")) == ("duplicate_delivery", first["id"])
+
+
+async def test_a_called_pass_refuses_the_valid_wake_about_shape(engine):
+    operation = _open(about=[{
+        "target": "entity:generated-topic", "reasoning": "deduced", "confidence": "high",
+    }])
+    with _pass("item-1"):
+        result = await _tool(engine)([operation])
+    [refusal] = result["operations"]
+    assert (refusal.get("reason"), refusal.get("field")) == ("invalid_field", "about")

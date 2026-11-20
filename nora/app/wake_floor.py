@@ -11,6 +11,7 @@ from nora.domain.composed import compose_body
 from nora.domain.context_data import MembersView, RoomLine, TranscriptLine
 from nora.domain.documents import DocumentAuthority
 from nora.domain.lineage import LiveRoom, room_key
+from nora.domain.media_join import MediaJoin
 from nora.domain.record_query import RecordQuery
 from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.self_presence import PresenceReader
@@ -35,7 +36,7 @@ class WakeRoomFloor:
         self, policy: Policy, access: IdentityAccess, room_for: Callable[[str, str], Room],
         records: SqlRecordQuery, audit: SqlRecordStore, presence: PresenceReader,
         documents: DocumentsContextReader | None, screen: Callable[[str], str | None], *,
-        display_name: str, record_chars: int,
+        display_name: str, record_chars: int, media_join: MediaJoin | None = None,
     ) -> None:
         self._policy = policy
         self._access = access
@@ -47,6 +48,7 @@ class WakeRoomFloor:
         self._screen = screen
         self._display_name = display_name
         self._record_chars = record_chars
+        self._media_join = media_join
 
     async def scope(self, claim: WakeClaim) -> tuple[PassScope, bool]:
         room = resolve_slot_room(
@@ -139,13 +141,16 @@ class WakeRoomFloor:
             [hit.row for hit in rows], platform=room.platform,
             scope=self._room_for(room.platform, id_).room_scope,
         )
+        if self._media_join is not None:
+            named = await self._media_join.enrich(named, path="wake")
         lines = tuple(
             TranscriptLine(row, room.label, platform=hit.platform,
                            conversation_id=hit.conversation_id)
             for row, hit in zip(named, rows, strict=True)
+            if not self._screen(row.body or "")
         )
         return render_transcript(lines, display_name=self._display_name, now=now,
-                                 not_listed=int(more), withheld=len(hits) - len(rows))
+                                 not_listed=int(more), withheld=len(hits) - len(lines))
 
     async def _document_index(
         self, room: Conversation, id_: str, unit: str, now_ms: int,

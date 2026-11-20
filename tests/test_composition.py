@@ -1630,7 +1630,7 @@ async def test_cognition_off_imports_no_model_machinery(cfg, tmp_path, monkeypat
 
 
 
-async def test_cognition_keeps_the_backfill_runner_alongside_the_graph_wake(
+async def test_cognition_on_builds_one_runner_for_backfill_alongside_graph_wake(
     cfg, tmp_path,
 ):
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)

@@ -20,6 +20,7 @@ from nora.app.wake_pass import WakePassRunner
 from nora.app.wake_poller import WakePoller
 from nora.app.wake_rooms import WakeRoomSlots
 from nora.config import Config
+from nora.domain.media_join import MediaJoin
 from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.self_presence import PresenceReader
 from nora.engagement.slots import ConversationSlots
@@ -38,7 +39,7 @@ def build_wake(
     presence: PresenceReader, documents: DocumentsContextReader | None,
     screen: Callable[[str], str | None], graph_reads: Any,
     metrics: Metrics, clock: Callable[[], datetime], rosters: Mapping[str, Any], registry: Any,
-    content_checks: bool,
+    content_checks: bool, media_join: MediaJoin | None,
 ) -> WakePoller | None:
     if not cfg.cognition.enabled:
         return None
@@ -61,6 +62,7 @@ def build_wake(
     floor = WakeRoomFloor(
         policy, access, room_for, SqlRecordQuery(engine), audit, presence, documents, screen,
         display_name=cfg.doctrine.display_name, record_chars=cfg.cognition.record_chars,
+        media_join=media_join,
     )
     graph = graph_reads or memory.wire.graph_read_tools(engine, access, lineage, None, None)
     surface = memory.wire.WakeToolSurface(
