@@ -148,10 +148,11 @@ async def test_verify_ends_a_due_intention_on_the_first_tick_after_its_room_rele
 
 async def test_verify_defers_a_drop_when_the_room_becomes_busy_at_the_row_lock(scenario):
     deadline = AT + timedelta(minutes=1)
-    await intention(
-        scenario, SUBJECT, origin_room=ORIGIN, drop_when_form="deadline",
-        drop_when={"at": deadline.isoformat()},
-    )
+    for id_, origin in ((SUBJECT, ORIGIN), ("roomless-drop", None)):
+        await intention(
+            scenario, id_, origin_room=origin, drop_when_form="deadline",
+            drop_when={"at": deadline.isoformat()},
+        )
     room_slots = slots(scenario)
     observe = graph_observe(
         scenario.engine, lambda: deadline, Metrics(),
@@ -159,7 +160,8 @@ async def test_verify_defers_a_drop_when_the_room_becomes_busy_at_the_row_lock(s
     )
 
     def acquire_after_lock(conn, cursor, statement, parameters, context, executemany):
-        if "SELECT intention.id" in statement and "FOR UPDATE SKIP LOCKED" in statement:
+        if (statement.startswith("SELECT intention.id \nFROM intention ")
+                and "FOR UPDATE SKIP LOCKED" in statement and SUBJECT in parameters):
             assert room_slots.try_acquire(KEY)
 
     engine = scenario.engine.sync_engine
@@ -170,7 +172,9 @@ async def test_verify_defers_a_drop_when_the_room_becomes_busy_at_the_row_lock(s
         sa.event.remove(engine, "after_cursor_execute", acquire_after_lock)
 
     assert room_slots.held(KEY)
-    row = (await _rows(scenario.engine, INTENTION))[SUBJECT]
+    rows = await _rows(scenario.engine, INTENTION)
+    row = rows[SUBJECT]
+    assert rows["roomless-drop"]["ending"] == "dropped"
     assert (row["state"], row["ending"]) == ("open", None)
 
     room_slots.release_and_dispatch(KEY)
