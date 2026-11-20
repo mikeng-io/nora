@@ -188,7 +188,7 @@ async def test_registered_corrections_are_lesson_evidence_but_own_items_are_not(
     for index, (sender, own, body) in enumerate((
         (PERSON, False, "Please use the original title next time."),
         (self_id, True, "Please use my own title next time."),
-        (PERSON, False, "I chose the third title."),
+        (PERSON, False, "I prefer the third title."),
         (PERSON, False, "The generated title was ready."),
     )):
         sent_at = AT + timedelta(seconds=index)
@@ -197,7 +197,12 @@ async def test_registered_corrections_are_lesson_evidence_but_own_items_are_not(
             mentions=frozenset({self_id}) if index < 2 else frozenset(),
         )
         await records.append(message=msg, is_nora=own, person_id=None if own else PERSON)
+    await scenario.item(
+        "previous-room-unit", unit="other-unit", body="A different unit's transcript.",
+        at=AT + timedelta(seconds=2),
+    )
     stimuli = await SqlGraphStimuli(scenario.engine).read(UNIT)
+    assert any(s.cues == ("self_reference",) for s in stimuli)
     assert {s.kind for s in stimuli} == {"strong_cue", "new_item"}
     model = WakeModel([])
     latest = await scenario.now()
@@ -207,8 +212,11 @@ async def test_registered_corrections_are_lesson_evidence_but_own_items_are_not(
     evidence = model.prompt().split("<lesson_corrections", 1)[1].split("</lesson_corrections>")[0]
     assert "Please use the original title next time." in evidence
     assert "Please use my own title next time." not in evidence
-    assert "I chose the third title." not in evidence
+    assert "I prefer the third title." not in evidence
     assert "The generated title was ready." not in evidence
+    transcript = model.prompt().split("<transcript", 1)[1].split("</transcript>")[0]
+    assert "The generated title was ready." in transcript
+    assert "A different unit" not in transcript
 
 
 async def test_wake_with_a_room_busy_write_fails_with_the_refusal(scenario):
