@@ -487,4 +487,5 @@ def test_refusal_literal_covers_all_reachable_form_and_write_reasons() -> None:
         "relearn",
         "loosens_law",
         "check_unavailable",
+        "occasion_part",
     }

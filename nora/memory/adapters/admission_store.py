@@ -139,7 +139,7 @@ class SqlAdmissionStore:
                     conn, self._graph, unit=context.unit, claim_id=stored.id, at=at,
                 )
             if revisions:
-                await _dependency(conn, stored, row)
+                await _dependency(conn, stored, row, context)
 
         try:
             await self._graph.write_admission(
@@ -257,8 +257,10 @@ async def _computed_about(conn: AsyncConnection, row: RowFacts, context: PassCon
     await conn.execute(sa.insert(EDGE), edges)
 
 
-async def _dependency(conn: AsyncConnection, stored: Stored, row: Mapping[str, Any]) -> None:
-    if stored.base is None:
+async def _dependency(
+    conn: AsyncConnection, stored: Stored, row: Mapping[str, Any], context: PassContext,
+) -> None:
+    if context.clock is not None or stored.base is None:
         return
     dependents = await dependent_claims(conn, row["unit"], stored.base)
     if dependents:
@@ -270,8 +272,11 @@ async def _dependency(conn: AsyncConnection, stored: Stored, row: Mapping[str, A
         ))
 
 
-def _stamp(context: PassContext) -> dict[str, str]:
-    return context.provenance()
+def _stamp(context: PassContext) -> dict[str, Any]:
+    provenance: dict[str, Any] = dict(context.provenance())
+    if context.clock is not None:
+        provenance.update(asserted_at=context.clock, occurred_at=context.clock)
+    return provenance
 
 
 def _link_values(link: Link) -> dict[str, Any]:
@@ -303,11 +308,11 @@ def _serialize(
         "lineage": row.lineage.to_json(),
     }
     planes: dict[str, Any] = {
-        **shared,
-        "id": row.id,
         "asserted_at": (
             sa.func.clock_timestamp() if context.occasion == "operator" else sa.func.now()
         ),
+        **shared,
+        "id": row.id,
         "kind": row.kind,
         "basis": row.basis,
         "state": row.state,

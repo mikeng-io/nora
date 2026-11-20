@@ -15,7 +15,7 @@ from nora.memory.domain.pass_inputs import (
 )
 from nora.memory.domain.retrieval import RetrievalBounds
 
-PassName = Literal["called", "ambient", "proactive", "debrief", "wake", "review"]
+PassName = Literal["called", "ambient", "proactive", "debrief", "wake", "wake_history", "review"]
 Presentation = Literal["graph_profile", "graph_standing", "graph_lessons", "related"]
 
 
@@ -46,6 +46,7 @@ _DECLARATIONS: dict[PassName, PassDeclaration] = {
     "proactive": PassDeclaration(ProactiveInput, _PRESENTATIONS, ("read",), _ENGAGEMENT),
     "debrief": PassDeclaration(DebriefInput, ("graph_standing",), (), _DEBRIEF),
     "wake": PassDeclaration(WakeInput, _PRESENTATIONS, ("read",), _WAKE),
+    "wake_history": PassDeclaration(WakeInput, _PRESENTATIONS, ("read",), _WAKE),
     "review": PassDeclaration(ReviewInput, (), ("read",), _REVIEW),
 }
 

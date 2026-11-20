@@ -102,7 +102,7 @@ class WakePassRunner:
     async def _run(self, claimed: WakeClaim) -> WakeOutcome:
         now = self._clock() if self._clock is not None else claimed.claimed
         scope, direct = await self._rooms.scope(claimed)
-        instruction = self._instructions.for_objective(self._occasion)
+        instruction = self._instructions.for_objective(self._occasion.replace("_", "-"))
         revs = self._revisions()
         room = room_key(scope.room.platform, scope.room.conversation_id)
         context = PassContext(
@@ -110,6 +110,7 @@ class WakePassRunner:
             current_trace_id() or "", self._model, revs.get("rev_code") or "",
             instruction.sha256, revs.get("rev_skill") or "", revs.get("rev_config") or "",
             revs.get("rev_identity") or "", revs.get("rev_policy") or "",
+            clock=now if self._occasion == "wake_history" else None,
         )
         authority = ActAuthority(context.unit, room=context.room, pass_context=context)
         busy = False

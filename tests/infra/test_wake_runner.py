@@ -69,7 +69,7 @@ class WakeModel(_ScriptedModel):
         return self.seen[0][0]["content"][0]["text"]
 
 
-def runner(scenario, model, *, turns=4, offered=wire.WAKE_TOOLS, admission=None):
+def runner(scenario, model, *, turns=4, offered=wire.WAKE_TOOLS, admission=None, occasion="wake"):
     access = IdentityAccess(file_persons=scenario.persons, file_policy=scenario.policy)
     lineage = LineagePolicy.from_policy(scenario.policy, access=access)
     metrics = Metrics()
@@ -103,7 +103,7 @@ def runner(scenario, model, *, turns=4, offered=wire.WAKE_TOOLS, admission=None)
             runtime=runtime, metrics=metrics, bound_tool_arguments=True,
         ),
         instructions=instructions, budget=AdaptorBudget(turns, 5000, 1000, 30.0),
-        model="scripted", revisions=revisions.current,
+        model="scripted", revisions=revisions.current, occasion=occasion,
     )
 
 

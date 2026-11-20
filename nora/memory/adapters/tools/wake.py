@@ -14,6 +14,7 @@ from nora.agent.room import Room
 from nora.agent.toolkit.spec import _spec
 from nora.memory.adapters.tools.intentions import submit_operations
 from nora.memory.adapters.tools.search import GraphReadTools, _make_memory_read, _make_memory_search
+from nora.memory.app.act_scope import active_act_authority
 from nora.memory.app.admission import AdmissionService
 from nora.memory.domain.admission import Refusal
 from nora.memory.domain.admission_proposals import PassContext, Proposal
@@ -40,7 +41,8 @@ WAKE_VERB_NAMES = {
     "intention_commit": AGENDA_TOOLS["intention_commit"],
 }
 WAKE_READ_TOOLS = frozenset({"memory_search", "memory_read"})
-WAKE_TOOLS = WAKE_READ_TOOLS | frozenset(WAKE_VERB_NAMES)
+WAKE_HISTORY_TOOLS = WAKE_READ_TOOLS | {"graph_propose"}
+WAKE_TOOLS = WAKE_HISTORY_TOOLS | {"intention_commit"}
 
 _ProposalInput = Annotated[
     GraphOperation, WrapValidator(lambda raw, _validate: raw),
@@ -78,6 +80,10 @@ class WakeToolSurface:
         reading = scope.room
         room = self._room_for(reading.platform, reading.conversation_id)
         def read_now() -> datetime:
+            authority = active_act_authority()
+            context = authority.pass_context if authority is not None else None
+            if context is not None and context.clock is not None:
+                return context.clock
             return max(now, self._clock())
 
         deps = SimpleNamespace(
