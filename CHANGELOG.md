@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.20.3](https://github.com/mikeng-io/nora/compare/v7.20.2...v7.20.3) (2026-11-20)
+
+
+### Security
+
+* **site:** refresh the reviewed site recipe hash after bringing master in ([5a2dd2f](https://github.com/mikeng-io/nora/commit/5a2dd2fb4f85ef42936f5eb34216816d4d911989))
+* **site:** serve the public site from a Caddy built with the Go certificate-trust fix ([5589dc9](https://github.com/mikeng-io/nora/commit/5589dc9e7d1b9c1dd8ad85ed45302e4e6daa2304))
+
 ## [7.20.2](https://github.com/mikeng-io/nora/compare/v7.20.1...v7.20.2) (2026-11-20)
 
 
