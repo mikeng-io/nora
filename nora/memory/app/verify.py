@@ -26,6 +26,8 @@ class VerificationBatch(Protocol):
 
     async def end(self, due: DueIntention, ending: ClockEnding) -> None: ...
 
+    async def record_verdicts(self, clock: Callable[[], datetime]) -> None: ...
+
 
 class VerificationStore(Protocol):
     def batch(self) -> AbstractAsyncContextManager[VerificationBatch]: ...
@@ -57,6 +59,7 @@ class IntentionVerifier:
                     opened, sources = await batch.window(due)
                     ending = "leaked" if await self._healthy(due, opened, sources) else "unknown"
                 await batch.end(due, ending)
+            await batch.record_verdicts(self._clock)
 
     async def _healthy(
         self, due: DueIntention, opened: datetime, sources: set[tuple[str, str]],

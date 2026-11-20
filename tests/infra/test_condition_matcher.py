@@ -35,13 +35,13 @@ from tests.infra.test_item_registration import (
 
 async def _intention(
     engine, id_, form, value, *, mode="achieve", drop=None, unit=_UNIT,
-    origin_room=_ROOM, asserted_at=_AT, **fields,
+    origin_room=_ROOM, asserted_at=_AT, exposure="internal", **fields,
 ):
     role = "done_when" if mode == "achieve" else "holds_while"
     graph = SqlCognitiveGraph(engine)
     await graph.create(INTENTION, {
         "id": id_, "unit": unit, "kind": "intention", "basis": "committed",
-        "state": "open", "writer": "fixture", "exposure": "internal",
+        "state": "open", "writer": "fixture", "exposure": exposure,
         "origin_room": origin_room, "owner": "generated-nora", "owed_to": _PERSON,
         "form": mode, role: value, f"{role}_form": form, "asserted_at": asserted_at,
         "delivery_mode": "choose_moment" if fields.get("trigger") else "when_it_comes_up",

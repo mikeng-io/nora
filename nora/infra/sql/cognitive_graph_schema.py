@@ -20,12 +20,17 @@ from sqlalchemy.dialects import postgresql as pg
 
 from nora.domain.graph_registration import SourceKind
 from nora.infra.sql.graph_stimulus_schema import graph_stimulus_claim_table, graph_stimulus_table
+from nora.infra.sql.intention_verdict_schema import (
+    attach_verdict_constraints,
+    intention_verdict_table,
+)
 from nora.infra.sql.schema import (
     EMBEDDING_DIMENSIONS,
     EMBEDDING_INDEXED_DIMENSIONS,
     METADATA,
 )
 
+INTENTION_VERDICT = intention_verdict_table(METADATA)
 GRAPH_STIMULUS = graph_stimulus_table(METADATA)
 GRAPH_STIMULUS_CLAIM = graph_stimulus_claim_table(METADATA)
 
@@ -518,9 +523,10 @@ _AGGREGATE_WRITERS = {
     "presence_places": ("PresenceStore", "internal"),
     "platform_object_state": ("SqlObservationStore", "external"),
     "claim_support": ("SqlClaimSupport", "internal"),
+    "intention_verdict": ("SqlIntentionVerification", "internal"),
 }
 
-_SCOPED_ONLY = frozenset({"forget_request", "dispute", "claim_support"})
+_SCOPED_ONLY = frozenset({"forget_request", "dispute", "claim_support", "intention_verdict"})
 
 
 def _observed_tables() -> Iterator[tuple[str, str, str, str, str]]:
@@ -579,6 +585,7 @@ for _log in ("computer_events", "tool_call_log"):
     METADATA.tables[_log].append_column(sa.Column("act_id", sa.Text))
 
 _attach_registration_planes()
+attach_verdict_constraints(INTENTION_VERDICT)
 
 for _key in ("unit", "graph_id"):
     WATCH_RESULT.c[_key].nullable = False

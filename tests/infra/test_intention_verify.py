@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from nora.app.graph_observe import graph_observe
 from nora.config import AnalyticsConfig
 from nora.infra.sql.audit import SqlRecordStore
-from nora.infra.sql.cognitive_graph_schema import EDGE, INTENTION
+from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY, INTENTION
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.rollups import SqlRollupStore
 from nora.memory.adapters.act_store import SqlActStore
@@ -229,10 +229,15 @@ async def test_the_clock_retires_watches_when_it_can_lock_the_maintain_head(engi
         engine, "due", "untyped", "Generated condition", mode="maintain",
         drop=("deadline", _AT.isoformat()),
     )
+    await graph.create(ENTITY, {
+        "id": "target", "unit": _UNIT, "kind": "entity", "basis": "inferred",
+        "state": "admitted", "writer": "fixture", "asserted_at": _AT, "exposure": "internal",
+        "name": "Generated source", "reasoning": "induced", "confidence": "high",
+    })
     await graph.create(EDGE, {
         "id": "watch", "unit": _UNIT, "kind": "edge", "type": "watches", "basis": "committed",
         "state": "live", "writer": "fixture", "asserted_at": _AT,
-        "src_id": "due", "dst_id": "due",
+        "src_id": "due", "dst_id": "target", "exposure": "internal",
     })
 
     async with engine.begin() as conn:

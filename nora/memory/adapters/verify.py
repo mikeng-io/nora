@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -13,6 +13,7 @@ from nora.infra.sql.cognitive_graph_schema import INTENTION
 from nora.infra.sql.cognitive_graph_store import RowData, SqlCognitiveGraph
 from nora.memory.adapters.condition_sources import ConditionSources, Source
 from nora.memory.adapters.intention_lineage import intention_lineages
+from nora.memory.adapters.intention_verdicts import record_intention_verdicts
 from nora.memory.app.verify import ClockEnding, DueIntention
 from nora.memory.domain.conditions import decode_condition
 from nora.memory.domain.time_trigger import aware_instant
@@ -83,3 +84,6 @@ class _Batch:
         await self._graph.end_intention_by_clock_in(
             self._conn, self._intentions[due.unit, due.id], ending, ended_at=due.deadline,
         )
+
+    async def record_verdicts(self, clock: Callable[[], datetime]) -> None:
+        await record_intention_verdicts(self._conn, self._graph, clock)

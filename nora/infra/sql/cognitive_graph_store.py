@@ -49,6 +49,8 @@ class AdmissionTopic:
 # person_pointer_in, _admission_base and _merge support writes and use raw identities.
 GRAPH_READERS = (
     "nora.memory.adapters.claim_support",
+    "nora.memory.adapters.intention_verdicts",
+    "nora.memory.adapters.learning_reads",
     "nora.memory.adapters.pass_anchors",
     "nora.memory.adapters.retrieval_load",
     "nora.memory.adapters.retrieval_rows",
@@ -164,6 +166,8 @@ _SOURCE_CONTENT = {
     "forget_request": ("targets", "delete_now"),
     "dispute": ("claim_id",),
     "claim_support": ("support_count", "last_evidenced_at"),
+    "intention_verdict": ("intention_id", "ending", "ended_at", "witness_id",
+                          "form", "owed_to", "condition_form"),
 }
 
 def content_digest(source: str, row: RowData) -> str:
