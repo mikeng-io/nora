@@ -4,7 +4,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0181_wake_claims"
-down_revision = "0179_proactive_recheck"
+down_revision = "0180_intention_verdict"
 branch_labels = None
 depends_on = None
 

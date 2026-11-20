@@ -465,7 +465,7 @@ class EngagementPipeline:
             # dispatcher to free it.
             disposition: dict[str, str] = {}
             await self._run_admitted(request, identity, indicator,
-                                     adapter=adapter, disposition=disposition)
+                                     adapter=adapter, disposition=disposition, slot_key=slot_key)
             return disposition.get("value", "handler_error")
 
     def _begin_indicator(self, request: EngagementRequest,
