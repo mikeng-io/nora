@@ -89,6 +89,13 @@ class Admitted:
     deliveries: tuple[Admitted, ...] = ()
     lesson_evidence_at: datetime | None = None
 
+    @property
+    def held_lesson(self) -> str | None:
+        base = self.base
+        if base is not None and base.part == "lesson" and base.state == "live":
+            return base.id
+        return None
+
 
 class _RefusalError(Exception):
     def __init__(self, reason: FormRefusal, field: str) -> None:

@@ -116,7 +116,7 @@ class SqlAdmissionStore:
             if isinstance(data, CreateClaim) and isinstance(data.content, str):
                 inventory = await _lesson_inventory(conn, context.unit)
                 reason = lesson_inventory_refusal(
-                    data.content, inventory, (), base.id if base is not None else None,
+                    data.content, inventory, (), decision.held_lesson,
                     decision.lesson_evidence_at,
                 )
                 if reason is not None:

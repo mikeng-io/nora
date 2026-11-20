@@ -214,8 +214,7 @@ class AdmissionService:
                     return Refusal("check_unavailable", "content"), ()
                 if refusal := await self._lesson_review.review(
                     self._store, data.content, data.citations,
-                    choice.base.id if choice.base is not None else None,
-                    choice.lesson_evidence_at, context,
+                    choice.held_lesson, choice.lesson_evidence_at, context,
                 ):
                     return refusal, ()
             stored = Stored(

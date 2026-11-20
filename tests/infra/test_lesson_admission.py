@@ -18,7 +18,7 @@ from nora.infra.sql.tension import SqlTensionStore
 from nora.memory import wire
 from nora.memory.app.admission import Stored
 from nora.memory.domain.admission import Refusal
-from nora.memory.domain.admission_proposals import Retire, Scope
+from nora.memory.domain.admission_proposals import Retire, Revise, Scope
 from nora.memory.domain.graph_operations import WAKE_OPERATIONS, parse_graph_operation
 from nora.memory.domain.pass_inputs import WakeInput
 from tests.infra.test_cognitive_graph_admission import _rows
@@ -243,6 +243,13 @@ async def test_operator_retirement_hides_graph_lesson_and_sets_evidence_floor(
     )
     assert BODY not in view.render()
     assert await admit(svc, ids) == Refusal("relearn", "content")
+
+    await scenario.claim("existing-fact")
+    candidate = proposal(ids)
+    assert not isinstance(candidate, Refusal)
+    conversion = Revise(base="existing-fact", replacement=candidate)
+    result = await svc.admit((conversion,), WAKE, (*ids, "existing-fact", "nora-pointer"))
+    assert result.outcomes == (Refusal("relearn", "content"),)
 
     for id_, offset in (("same-time", 0), ("new-verdict", 1)):
         await intention(scenario, id_, state="ended", ending="achieved",
