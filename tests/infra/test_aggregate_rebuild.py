@@ -19,13 +19,14 @@ from nora.analytics.runner import CODE_VERSION
 from nora.domain.observations import Observation, PollPayload, SourceScope
 from nora.domain.presence import SavedPlace
 from nora.infra.sql import create_sql_engine
-from nora.infra.sql.cognitive_graph_schema import GRAPH_STIMULUS, REGISTRY
+from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, GRAPH_STIMULUS, INTENTION, REGISTRY
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.item_registration import epoch_ms
 from nora.infra.sql.item_retention import tombstone_items
 from nora.infra.sql.observations import SqlObservationStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.schema import MESSAGES, METADATA, PRESENCE_CORRIDORS, PRESENCE_DERIVED_PLACES
+from nora.memory.adapters.lesson_tally import rebuild_lesson_tally
 from nora.memory.domain.registration import AGGREGATE_FAMILIES
 from nora.memory.wire import claim_support, intention_verifier
 from nora.testing.room_slots import FakeRoomSlots
@@ -52,6 +53,7 @@ _SYSTEM_COLUMNS = {
     "platform_object_state": {"id", "asserted_at", "created_at", "updated_at"},
     "claim_support": set(),
     "intention_verdict": set(),
+    "lesson_tally": {"asserted_at"},
 }
 _REFERENCE_COLUMNS = {
     "presence_stays": {"place_id": PRESENCE_DERIVED_PLACES},
@@ -304,6 +306,41 @@ async def _verdict_head(record, table):
     return folded, await _snapshot(record.engine, table)
 
 
+async def _tally_head(record, table):
+    graph = SqlCognitiveGraph(record.engine)
+    at = epoch_ms(_WATERMARK)
+    unit = record.unit
+    lesson, intention = "generated-lesson-head", "generated-resting-intention"
+    shared = {"unit": unit, "exposure": "internal", "writer": "fixture", "asserted_at": at}
+    await graph.create(CLAIM, {
+        **shared, "id": lesson, "kind": "claim", "basis": "inferred", "part": "lesson",
+        "content": "Confirm the plan before setting out.", "reasoning": "induced",
+        "confidence": "high", "state": "live",
+    })
+    await _intention(
+        record.engine, intention, "untyped", "Generated condition",
+        unit=unit, asserted_at=epoch_ms(_START), deadline=at,
+        origin_room=f"signal:{dict(record.rooms)['signal']}",
+    )
+    await graph.create(EDGE, {
+        **shared, "id": "generated-resting-edge", "kind": "edge", "basis": "committed",
+        "state": "live", "type": "rests_on", "src_id": intention, "dst_id": lesson,
+    })
+    async with record.engine.begin() as conn:
+        await conn.execute(sa.update(INTENTION).where(
+            INTENTION.c.unit == unit, INTENTION.c.id == intention,
+        ).values(state="ended", ending="achieved", ended_at=at))
+    await intention_verifier(
+        record.engine, lambda: at, max_poll_gap_seconds=900, room_slots=FakeRoomSlots({}),
+    ).run_once()
+    folded = await _snapshot(record.engine, table)
+    assert [(row["support"], row["contradiction"]) for row in folded[0]] == [(1, 0)]
+    await _reset_head(record.engine, table)
+    async with record.engine.begin() as conn:
+        await rebuild_lesson_tally(conn, graph, unit=unit, claim_id=lesson, at=at)
+    return folded, await _snapshot(record.engine, table)
+
+
 @pytest.fixture
 def aggregate_db(request, family):
     fixture = "clean_pg_url" if AGGREGATE_FAMILIES[family] == "head" else "builds"
@@ -329,6 +366,7 @@ async def test_each_aggregate_rebuilds_the_same_live_rows_and_registry(family, a
                 "presence_places": _saved_places,
                 "claim_support": _support_head,
                 "intention_verdict": _verdict_head,
+                "lesson_tally": _tally_head,
             }
             incremental, rebuilt = await builders[family](record, table)
             assert incremental == rebuilt
