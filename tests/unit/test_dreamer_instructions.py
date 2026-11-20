@@ -464,6 +464,7 @@ def test_no_shipped_description_reaches_the_model():
 # naming each objective here makes adding one a deliberate act.
 NATIVELY_AUTHORED = {
     "debrief",
+    "wake",
     "standing-debrief",
     # The culture tier's only pass (DEC-182).
     "culture",
