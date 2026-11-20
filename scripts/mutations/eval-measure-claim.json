@@ -23,8 +23,8 @@
   {
     "name": "an ordinary corpus cannot carry a behavioral measurement",
     "file": "evals/scenarios.py",
-    "old": "    if measurement.behavioral and name not in JOURNEY_CORPORA:",
-    "new": "    if measurement.behavioral and name in JOURNEY_CORPORA:",
+    "old": "    if measurement.behavioral and name not in behavioral_corpora:",
+    "new": "    if measurement.behavioral and name in behavioral_corpora:",
     "target": "tests/unit/test_eval_journey_cohort.py::test_a_behavioral_measurement_refuses_an_ordinary_corpus"
   },
   {

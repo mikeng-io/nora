@@ -60,6 +60,7 @@ from evals import pseudonyms
 from evals.measurement import PROTOCOL, Measurement
 from evals.outcome import ERROR, FAIL, PASS, REVIEW
 from evals.recall import recall_facts
+from evals.services import recording_for
 from evals.situation import (
     deployment_handles,
     deployment_networks,
@@ -1620,9 +1621,7 @@ async def _drive_uncaptured(case: Case, spec: Spec) -> dict[str, Any]:
     from evals.rebuilt.entry import ENTRY_POINTS
     spec = dataclasses.replace(spec, entry=(case.metadata or {}).get("entry", spec.entry))
     port = ENTRY_POINTS[spec.entry]
-    recording = (spec.services or {}).get(case.name or "unnamed")
-    if recording is None:
-        raise EvidenceError("external_responses_missing: " + (case.name or "unnamed"))
+    recording = recording_for(case, spec.services, spec.measurement)
     from nora.subject.eval_evidence import current
 
     if current() is None:
