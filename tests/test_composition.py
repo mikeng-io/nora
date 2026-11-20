@@ -1593,12 +1593,12 @@ async def test_the_social_poller_is_built_only_when_enabled(cfg, monkeypatch):
         await deps.background.cancel_all()
 
 
-async def test_cognition_off_builds_no_stimulus_stage_and_no_evaluator(cfg):
+async def test_cognition_off_builds_no_stimulus_stage_and_no_wake_poller(cfg):
     """`[cognition] enabled = false` is the shipped default: nothing is written
-    to `stimulus`, no evaluator is spawned. Adapter health is recorded anyway —
+    to `stimulus`, no poller is built. Adapter health is recorded anyway —
     it is Record, not a subsystem that acts."""
     deps = await build_dependencies(cfg)
-    assert deps.wake_evaluator is None
+    assert deps.wake_poller is None
     assert deps.ingest._stimulus_wiring is None
     assert deps.health_recorder is not None
 
@@ -1623,14 +1623,14 @@ async def test_cognition_off_imports_no_model_machinery(cfg, tmp_path, monkeypat
     deps = await build_dependencies(override_config(cfg, {
         "dreamer.enabled": True, "notes.enabled": True,
     }))
-    assert deps.wake_evaluator is None
+    assert deps.wake_poller is None
     assert deps.cognition_runner is None and deps.cognition_shutdown is None
     assert "nora.app.cognition_agent_runner" not in sys.modules
 
 
 
 
-async def test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluator(
+async def test_cognition_keeps_the_backfill_runner_alongside_the_graph_wake(
     cfg, tmp_path,
 ):
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
@@ -1638,11 +1638,9 @@ async def test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluato
     # `deps.cognition_runner` is the `SubconsciousExecutor`: the Dreamer
     # lane owns admission and cancellation, the session runner it holds
     # (`._runner`) owns everything the session itself was composed with.
-    executor, evaluator = deps.cognition_runner, deps.wake_evaluator
-    assert executor is not None and evaluator is not None
+    executor = deps.cognition_runner
+    assert executor is not None and deps.wake_poller is not None
     runner = executor._runner
-    assert evaluator.has_wake_hook
-    assert evaluator._on_wake == executor.wake_hook          # the SAME hook, not a copy
     assert deps.cognition_shutdown is not None and not deps.cognition_shutdown.done
     # A stopping process lets a running session finish for this long before it cancels it
     # (the PR-7 grace; `docker-compose.yml`'s `stop_grace_period` is sized above it).
@@ -1682,10 +1680,6 @@ async def test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluato
     assert "<dreamer_" not in text and sha
     assert runner._skill_text_for()
     assert set(runner._skill_versions_for()) == {"cognition-register"}
-    assert evaluator._floors_ready is True
-    # Only units with a home room are woken: `wedding` names none.
-    assert sorted(evaluator._units()) == ["friends"]
-    assert set(evaluator._session_units()) == {"friends"}
     assert set(runner._home_rooms) == {"friends"}
 
 
@@ -1848,24 +1842,14 @@ async def test_the_session_is_grounded_from_the_record_with_record_query_off(
     assert "other unit words" not in prompt and "a hidden one" not in prompt
 
 
-async def test_shadow_sessions_with_no_unit_that_can_run_them_refuse_to_boot(cfg, tmp_path):
-    """Units without a home room stay in the evaluator, but a shadow week in which NO unit
-    can start a session would record would-wakes and look healthy."""
-
+async def test_graph_wake_can_compose_with_no_home_room_for_legacy_sessions(cfg, tmp_path):
     (tmp_path / "policy.toml").write_text(
         'default = "deny"\n[[conversations]]\nplatform = "signal"\nid = "g1"\npersons = "*"\n'
         'unit = "friends"\nlabel = "Friends"\n',
     )
-    with pytest.raises(StartupError, match="no unit can run a session"):
-        await build_dependencies(override_config(cfg, _SESSION_ON))
-
-
-async def test_units_without_a_home_room_are_gauged_and_never_woken(cfg, tmp_path):
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, _SESSION_ON))
-    assert deps.metrics.get("nora_cognition_session_units", state="runnable") == 1
+    assert deps.wake_poller is not None
     assert deps.metrics.get("nora_cognition_session_units", state="no_home_room") == 1
-    assert "wedding" not in list(deps.wake_evaluator._units())
 
 
 async def test_the_document_tools_reach_the_registry_only_while_documents_are_on(cfg):
