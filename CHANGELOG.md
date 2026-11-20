@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.20.1](https://github.com/mikeng-io/nora/compare/v7.20.0...v7.20.1) (2026-11-20)
+
+
+### Security
+
+* **deps:** bump go.opentelemetry.io/otel/sdk ([faba75a](https://github.com/mikeng-io/nora/commit/faba75aa569f187d5920653448798fccd62775d1))
+
 ## [7.20.0](https://github.com/mikeng-io/nora/compare/v7.19.17...v7.20.0) (2026-11-19)
 
 
