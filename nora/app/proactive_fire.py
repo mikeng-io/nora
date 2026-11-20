@@ -43,6 +43,7 @@ from nora.memory import (
     ProactiveInput,
     ReadingRoom,
     act_pass,
+    seed_pass_shown,
 )
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.obs.metrics import Metrics
@@ -271,16 +272,17 @@ class ProactiveFire:
         now = self._clock()
         scope = PassScope(ReadingRoom(platform, room_id), claim.due.unit,
                           nora_name=agent.display_name)
-        assembled = await self._assembler.assemble(
-            "proactive", ProactiveInput(claim.due.intention),
-            _floor(claim, ctx, now, agent.display_name), scope, now,
-        )
-        if not assembled.intention_visible:
-            raise LookupError("Due intention is unavailable from the destination's graph scope")
         if getattr(room.records, "delivery_acts", None) is None:
             raise RuntimeError("a due reply requires a durable act envelope")
         admission = _ReplyAdmission(self._recheck, self._acts, authority, target, self._clock)
-        with act_pass(authority, self._acts, shown=assembled.shown):
+        with act_pass(authority, self._acts):
+            assembled = await self._assembler.assemble(
+                "proactive", ProactiveInput(claim.due.intention),
+                _floor(claim, ctx, now, agent.display_name), scope, now,
+            )
+            if not assembled.intention_visible:
+                raise LookupError("Due intention is unavailable from the destination's graph scope")
+            seed_pass_shown(assembled.shown)
             handle = deliver.build(
                 store=room.records, adapter=adapter, target=target, doctrine=doctrine,
                 canary=agent.canary, tag_id=ctx.tag_id, nora_sender_id=sender,

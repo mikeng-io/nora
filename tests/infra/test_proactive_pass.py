@@ -121,6 +121,27 @@ async def test_the_prompt_pins_the_due_intention_and_its_basis_without_legacy_me
     assert request["doctrine"].sha256
 
 
+async def test_a_proactive_reply_cannot_quote_its_internal_due_basis(scenario):
+    await seed_due(scenario)
+    internal = "The generated ledger describes a completely fictional catalogue entry"
+    await scenario.item("internal-witness", body="Generated evidence for the catalogue")
+    await scenario.claim("internal-basis", content={"text": internal})
+    await write_edge(scenario, "internal-basis", "internal-witness", "cites")
+    await write_edge(scenario, "scheduled", "internal-basis", "rests_on")
+    runner = ScriptedRunner((("send_reply", {"text": internal}),))
+    worker, sender, debrief = setup(scenario, runner, [])
+
+    await worker.poll()
+
+    [request] = runner.calls
+    assert "exposure=internal" in request["tag_message"] and internal in request["tag_message"]
+    assert sender.sent == []
+    [claim] = await claim_rows(scenario)
+    [output] = (await _rows(scenario.engine, NORA_PASS_OUTPUT)).values()
+    assert (output["silence_reason"], claim["state"]) == ("egress_block", "closed")
+    assert len(debrief.client.prompts) == 1
+
+
 async def test_a_unit_scope_intention_lands_in_the_owed_to_persons_dm(scenario):
     await seed_due(scenario, origin_room=None, owed_to=OTHER)
     runner = ScriptedRunner(())
