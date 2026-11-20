@@ -30,12 +30,15 @@ from pathlib import Path
 import pytest
 
 from nora.agent.registry import _opening
+from nora.memory.adapters.tools.wake import WAKE_VERB_NAMES
 from tests.tool_view import (
     _TOOL_SOURCES,
     _func_docs,
     _helper_closure_params,
+    _sent_specs,
     _tool_view,
     _tuple_bound_helper,
+    _wake_specs,
 )
 
 _ROOT = Path(__file__).parent.parent
@@ -302,40 +305,6 @@ def _sent_descriptions() -> dict[str, str]:
     from nora.agent.registry import ToolRegistry
 
     return dict(ToolRegistry()._descriptions())
-
-
-def _sent_specs() -> dict[str, str]:
-    """Each tool's WHOLE spec as Strands sends it (description, parameter
-    descriptions, schema), as JSON text. The dash and language rules apply to
-    all of it: an `Args:` line is model-facing text too, and a check over the
-    description alone would let one hide there. Built for a Discord room and a
-    Dreamer adaptor so the platform- and Dreamer-scoped tools are included."""
-    import json
-
-    from nora.agent.ports import adapt
-    from nora.agent.registry import ToolRegistry
-    from nora.agent.room import Room
-    from nora.obs.metrics import Metrics
-    from nora.testing.fakes import FakeMemoryStore
-
-    class _Persons:
-        def resolve(self, platform: str, sender_id: str):
-            return None
-
-    class _Store:
-        async def recent(self, *, conversation_id: str, limit: int):
-            return []
-
-    room = Room(platform="discord", conversation_id="g1", roster_source=None,
-                persons=_Persons())
-    specs = ToolRegistry().specs(
-        store=_Store(), conversation_id="g1", conversation_type="group",
-        persons=_Persons(), honcho=FakeMemoryStore(), deliverer=None,
-        metrics=Metrics(), room=room, dream_adaptor="policy",
-    )
-    return {
-        s.name: json.dumps(adapt(s).tool_spec, ensure_ascii=False) for s in specs
-    }
 
 
 def _rewritten() -> list[str]:
@@ -1374,3 +1343,25 @@ def test_every_listed_status_returns_a_note(tool: str) -> None:
     doc = dict(_model_facing_docstrings())[tool]
     problems = _check_tool(tool, doc)
     assert not problems, f"{tool}: " + "; ".join(problems)
+
+
+@pytest.mark.parametrize("name", tuple(WAKE_VERB_NAMES))
+def test_the_wake_verb_uses_its_own_catalogue_text_and_level(name):
+    import json
+
+    import tiktoken
+
+    offered = _wake_specs()
+    assert offered.keys() == WAKE_VERB_NAMES.keys()
+    spec = offered[name]
+    doc = spec["description"]
+    test_the_opening_paragraph_is_an_l1(name, doc)
+    sent = json.dumps(spec, ensure_ascii=False)
+    assert not any(dash in sent for dash in _DASHES)
+    assert len(set(_NON_LATIN_RUN.findall(sent))) <= 1
+    metadata = WAKE_VERB_NAMES[name]
+    assert metadata.level in LEVEL_CEILINGS
+    assert len(tiktoken.get_encoding("cl100k_base").encode(doc)) <= LEVEL_CEILINGS[metadata.level]
+    assert all(status in doc for status in ("ok", "refused", "unavailable"))
+    assert "your reply promises" not in doc
+    assert not _check_tool("intention_commit", doc)

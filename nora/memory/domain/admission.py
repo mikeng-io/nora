@@ -369,6 +369,8 @@ class _Admission:
                 proposal.replacement.form != base.form
             ):
                 raise _RefusalError("illegal_transition", "form")
+        elif proposal.expected_kind is not None and base.kind != proposal.expected_kind:
+            raise _RefusalError("illegal_transition", "kind")
         elif base.kind == "intention":
             if proposal.ending not in _ENDINGS.get(base.form or "", ()):
                 raise _RefusalError("illegal_transition", "ending")

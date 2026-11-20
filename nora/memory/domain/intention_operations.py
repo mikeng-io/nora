@@ -1,7 +1,6 @@
 """Parse the intention operations shared by engagement and debrief."""
 
 from collections.abc import Mapping
-from datetime import datetime
 from typing import Literal, NotRequired, TypedDict
 from uuid import uuid4
 
@@ -19,6 +18,14 @@ from nora.memory.domain.admission_proposals import (
 )
 from nora.memory.domain.conditions import Scalar, decode_condition
 from nora.memory.domain.graph import DeliveryMode, IntentionForm
+from nora.memory.domain.operation_fields import (
+    AboutInput,
+    InvalidFieldError,
+    _ids,
+    _instant,
+    _string,
+    about_links,
+)
 from nora.memory.domain.time_trigger import aware_instant, decode_time_trigger
 
 
@@ -141,7 +148,16 @@ class CloseOperation(TypedDict):
     witness: str
 
 
+class WakeOpenOperation(OpenOperation):
+    about: NotRequired[list[AboutInput]]
+
+
+class WakeReviseOperation(ReviseOperation):
+    about: NotRequired[list[AboutInput]]
+
+
 IntentionOperation = OpenOperation | ReviseOperation | DropOperation | CloseOperation
+WakeIntentionOperation = WakeOpenOperation | WakeReviseOperation | DropOperation | CloseOperation
 IntentionProposal = CreateIntention | Revise | Retire | CloseIntention
 
 _KEYS = {
@@ -152,11 +168,9 @@ _KEYS = {
 }
 
 
-class _InvalidFieldError(ValueError):
-    pass
-
-
-def parse_intention_operation(raw: object, context: PassContext) -> IntentionProposal | Refusal:
+def parse_intention_operation(
+    raw: object, context: PassContext, *, topics: Mapping[str, str] | None = None,
+) -> IntentionProposal | Refusal:
     """Return a proposal or the field the model needs to repair."""
     if not isinstance(raw, Mapping):
         return Refusal("invalid_field", "op")
@@ -165,7 +179,10 @@ def parse_intention_operation(raw: object, context: PassContext) -> IntentionPro
         return Refusal("invalid_field", "op")
     if raw.get("ending", "dropped") != "dropped":
         return Refusal("invalid_field", "ending")
-    unexpected = next((key for key in raw if key not in _KEYS[op]), None)
+    keys = _KEYS[op]
+    if context.occasion == "wake" and op in ("open", "revise"):
+        keys |= {"about"}
+    unexpected = next((key for key in raw if key not in keys), None)
     if unexpected is not None:
         return Refusal("invalid_field", str(unexpected))
     try:
@@ -180,11 +197,11 @@ def parse_intention_operation(raw: object, context: PassContext) -> IntentionPro
                 id=_id(), basis="committed", scope=Scope(context.unit, exposure=None),
                 base=_string(raw, "base"), ending="dropped", citations=_ids(raw, "citations"),
             )
-        intention = _intention(raw, context)
+        intention = _intention(raw, context, topics or {})
         if op == "revise":
             return Revise(base=_string(raw, "base"), replacement=intention)
         return intention
-    except _InvalidFieldError as exc:
+    except InvalidFieldError as exc:
         return Refusal("invalid_field", str(exc))
 
 
@@ -196,33 +213,35 @@ def limit_to_delivery(proposal: IntentionProposal, intention: str) -> Refusal | 
     return None if base == intention else Refusal("not_this_delivery", "base")
 
 
-def _intention(raw: Mapping[str, object], context: PassContext) -> CreateIntention:
+def _intention(
+    raw: Mapping[str, object], context: PassContext, topics: Mapping[str, str],
+) -> CreateIntention:
     form = raw.get("form")
     if form not in ("achieve", "maintain"):
-        raise _InvalidFieldError("form")
+        raise InvalidFieldError("form")
     condition = _condition(raw.get("condition"), "condition")
     if form == "achieve" and condition.form == "deadline":
-        raise _InvalidFieldError("condition.form")
+        raise InvalidFieldError("condition.form")
     drop = _condition(raw["drop_when"], "drop_when") if "drop_when" in raw else None
     deadline = _instant(raw, "deadline")
     if condition.form == "untyped":
         if form == "achieve" and deadline is None:
-            raise _InvalidFieldError("deadline")
+            raise InvalidFieldError("deadline")
         if form == "maintain" and (drop is None or drop.form != "deadline"):
-            raise _InvalidFieldError("drop_when")
+            raise InvalidFieldError("drop_when")
     mode, trigger = raw.get("delivery"), raw.get("trigger")
     if mode not in ("when_it_comes_up", "choose_moment"):
-        raise _InvalidFieldError("delivery")
+        raise InvalidFieldError("delivery")
     has_trigger = (
         isinstance(trigger, Mapping) and trigger.get("kind") == "condition"
     ) or decode_time_trigger(trigger) is not None
     if (mode == "choose_moment" and not has_trigger) or (
         mode == "when_it_comes_up" and "trigger" in raw
     ):
-        raise _InvalidFieldError("trigger")
+        raise InvalidFieldError("trigger")
     rooms = _ids(raw, "rooms")
     if "rooms" in raw and (not rooms or mode != "choose_moment"):
-        raise _InvalidFieldError("rooms")
+        raise InvalidFieldError("rooms")
     owner, owed_to = _string(raw, "owner"), _string(raw, "owed_to")
     graph_id = _id()
     people = tuple(dict.fromkeys(person for person in (owner, owed_to) if person != "nora"))
@@ -234,8 +253,9 @@ def _intention(raw: Mapping[str, object], context: PassContext) -> CreateIntenti
         id=graph_id, basis="committed", scope=Scope(context.unit, persons=people, exposure=None),
         owner=owner, owed_to=owed_to, form=str(form), condition=condition, drop_when=drop,
         deadline=deadline, review_time=_instant(raw, "review_time"),
-        delivery_mode=str(mode), trigger=trigger, citations=_ids(raw, "citations"), links=links,
-        rooms=rooms,
+        delivery_mode=str(mode), trigger=trigger, citations=_ids(raw, "citations"),
+        links=(*links, *about_links(raw, graph_id, topics)),
+        rooms=rooms, replace_about="about" in raw,
     )
 
 
@@ -243,42 +263,19 @@ def _id() -> str:
     return f"intention:{uuid4().hex}"
 
 
-def _string(raw: Mapping[str, object], field: str) -> str:
-    value = raw.get(field)
-    if not isinstance(value, str) or not value.strip():
-        raise _InvalidFieldError(field)
-    return value
-
-
-def _ids(raw: Mapping[str, object], field: str) -> tuple[str, ...]:
-    value = raw.get(field, [])
-    if not isinstance(value, list) or any(not isinstance(v, str) or not v.strip() for v in value):
-        raise _InvalidFieldError(field)
-    return tuple(dict.fromkeys(value))
-
-
-def _instant(raw: Mapping[str, object], field: str) -> datetime | None:
-    if field not in raw:
-        return None
-    value = aware_instant(raw[field])
-    if value is None:
-        raise _InvalidFieldError(field)
-    return value
-
-
 def _condition(raw: object, field: str) -> Condition:
     if not isinstance(raw, Mapping):
-        raise _InvalidFieldError(field)
+        raise InvalidFieldError(field)
     form, value = raw.get("form"), raw.get("value")
     if form in ("act_event", "person_event", "predicate"):
         if decode_condition(form, value) is None:
-            raise _InvalidFieldError(f"{field}.value")
+            raise InvalidFieldError(f"{field}.value")
     elif form == "deadline":
         if aware_instant(value.get("at") if isinstance(value, Mapping) else value) is None:
-            raise _InvalidFieldError(f"{field}.value")
+            raise InvalidFieldError(f"{field}.value")
     elif form == "untyped":
         if not isinstance(value, str) or not value.strip():
-            raise _InvalidFieldError(f"{field}.value")
+            raise InvalidFieldError(f"{field}.value")
     else:
-        raise _InvalidFieldError(f"{field}.form")
+        raise InvalidFieldError(f"{field}.form")
     return Condition(str(form), value)

@@ -27,6 +27,7 @@ from tests.infra.test_cognitive_graph_admission import (
     engine,  # noqa: F401
 )
 from tests.infra.test_condition_matcher import _health
+from tests.infra.test_retrieval_scope import scenario as scenario
 from tests.test_room_tools import _call
 
 _CONTEXT = replace(PASS, occasion="called", writer="engagement")
@@ -283,3 +284,109 @@ async def test_a_later_commit_can_revise_an_intention_opened_in_the_same_pass(en
     current = revised["operations"][0]["id"]
     rows = await _rows(engine, INTENTION)
     assert (rows[current]["replaces"], rows[base]["state"]) == (base, "superseded")
+
+
+async def _wake_tools(scenario, *operations, shown):
+    from tests.infra.test_graph_propose import surface, wake_scope
+    from tests.infra.test_pass_anchors import NOW, SCOPE
+
+    tool = next(tool for tool in surface(scenario).bind(SCOPE, NOW, lambda: None)
+                if tool.tool_name == "intention_commit")
+    with wake_scope(*shown):
+        return await _call(tool, operations=list(operations))
+
+
+async def _inferred_topics(scenario, row_id):
+    async with scenario.engine.connect() as conn:
+        return set(await conn.scalars(sa.select(EDGE.c.dst_id).where(
+            EDGE.c.src_id == row_id, EDGE.c.type == "about", EDGE.c.basis == "inferred",
+            EDGE.c.state == "live",
+        )))
+
+
+async def test_wake_open_links_a_new_topic_and_rediscover_returns_it(scenario):
+    from tests.infra.test_graph_debrief import opening
+    from tests.infra.test_graph_propose import about, topic
+
+    await scenario.item("observed-source")
+    result = await _wake_tools(
+        scenario, topic(), opening(citations=["observed-source"], about=[about()]),
+        shown=("observed-source",),
+    )
+    assert result["status"] == "ok", result
+    new_topic, commitment = result["operations"]
+    assert await _inferred_topics(scenario, commitment["id"]) == {new_topic["id"]}
+    assert ["entity", new_topic["id"]] in commitment["neighbourhood"]["keys"]
+
+
+async def test_a_called_revision_carries_only_live_inferred_about_and_derives_people(scenario):
+    from tests.infra.test_graph_debrief import CONTEXT, opening
+    from tests.infra.test_graph_propose import about, topic
+    from tests.infra.test_retrieval_scope import PERSON as MEMBER
+    from tests.infra.test_room_busy import service, slots
+
+    await scenario.item("observed-source")
+    await scenario.entity("fixture-person-pointer", pointer_kind="person", pointer_ref=MEMBER)
+    result = await _wake_tools(
+        scenario, topic("live-topic"), topic("retired-topic"),
+        opening(citations=["observed-source"], owed_to=MEMBER,
+                about=[about("live-topic"), about("retired-topic")]),
+        shown=("observed-source",),
+    )
+    live, retired, base = [entry["id"] for entry in result["operations"]]
+    async with scenario.engine.begin() as conn:
+        await conn.execute(sa.update(EDGE).where(
+            EDGE.c.src_id == base, EDGE.c.dst_id == retired, EDGE.c.type == "about",
+        ).values(state="retired"))
+    context = replace(CONTEXT, occasion="called", writer="engagement")
+    tool = adapt(_spec("intention_commit", _make_intention_commit(SimpleNamespace(
+        intention_admission=service(scenario, slots(scenario)), metrics=Metrics(),
+    ))))
+    with act_pass(ActAuthority(context.unit, pass_context=context), shown=frozenset({base})):
+        revised = await _call(tool, operations=[opening(op="revise", base=base, owed_to=MEMBER)])
+    assert revised["status"] == "ok", revised
+    new_id = revised["operations"][0]["id"]
+    assert await _inferred_topics(scenario, new_id) == {live}
+    async with scenario.engine.connect() as conn:
+        targets = list(await conn.scalars(sa.select(EDGE.c.dst_id).where(
+            EDGE.c.src_id == new_id, EDGE.c.type == "about", EDGE.c.basis == "computed",
+        )))
+    assert targets == ["fixture-person-pointer"]
+
+
+async def test_graph_propose_claim_revision_carries_subject_unless_explicitly_replaced(scenario):
+    from tests.infra.test_graph_propose import about, claim_payload, propose, topic, wake_scope
+
+    await scenario.item("observed-source")
+    with wake_scope("observed-source"):
+        opened = await propose(scenario, [topic(), claim_payload(about=[about()])])
+        entity, first = [entry["id"] for entry in opened["operations"]]
+        revise = await propose(scenario, [claim_payload(op="revise", base=first)])
+        [next_head] = revise["operations"]
+        assert await _inferred_topics(scenario, next_head["id"]) == {entity}
+        explicit = await propose(scenario, [
+            topic("replacement"),
+            claim_payload(op="revise", base=next_head["id"], about=[about("replacement")]),
+        ])
+    replacement, new_head = [entry["id"] for entry in explicit["operations"]]
+    assert await _inferred_topics(scenario, new_head) == {replacement}
+
+
+async def test_scheduled_deliveries_with_the_same_topic_and_recipient_are_arbitrated(scenario):
+    from tests.infra.test_graph_debrief import opening
+    from tests.infra.test_graph_propose import about
+    from tests.infra.test_retrieval_scope import PERSON as MEMBER
+
+    await scenario.item("observed-source")
+    await scenario.entity("delivery-topic")
+    scheduled = opening(
+        owed_to=MEMBER, citations=["observed-source"], delivery="choose_moment",
+        trigger={"kind": "time", "at": "2027-01-01T12:00:00Z", "zone": "UTC"},
+        about=[about("delivery-topic")],
+    )
+    result = await _wake_tools(
+        scenario, scheduled, scheduled, shown=("observed-source", "delivery-topic"),
+    )
+    first, duplicate = result["operations"]
+    assert first["status"] == "admitted", result
+    assert (duplicate["reason"], duplicate["field"]) == ("duplicate_delivery", first["id"])

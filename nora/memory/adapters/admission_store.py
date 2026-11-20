@@ -83,7 +83,11 @@ class SqlAdmissionStore:
             for topic in decision.topics
         )
         base, survivor = decision.base, decision.survivor
-        derive_about = isinstance(fields(decision.proposal), (CreateClaim, CreateIntention))
+        data = fields(decision.proposal)
+        derive_about = isinstance(data, (CreateClaim, CreateIntention))
+        carry_about = isinstance(decision.proposal, Revise) and isinstance(
+            data, (CreateClaim, CreateIntention),
+        ) and not data.replace_about and not any(link.type == "about" for link in data.links)
         revisions = isinstance(decision.proposal, (Revise, Retire))
         scheduled = (
             decision.row.kind == "intention" and decision.row.state == "open"
@@ -93,6 +97,8 @@ class SqlAdmissionStore:
         async def after_write(conn: AsyncConnection) -> None:
             if decision.deliveries:
                 await _additional_deliveries(conn, decision.deliveries, context)
+            if carry_about and base is not None:
+                await _carry_inferred_about(conn, base.id, decision.row, context)
             if derive_about:
                 for part in (decision, *decision.deliveries):
                     await _computed_about(conn, part.row, context)
@@ -135,6 +141,38 @@ async def _register(conn: AsyncConnection, rows: list[dict[str, Any]]) -> None:
     await conn.execute(sa.insert(REGISTRY), [
         {name: row[name] for name in ("id", "unit", "kind")} for row in rows
     ])
+
+
+async def _carry_inferred_about(
+    conn: AsyncConnection, base: str, head: RowFacts, context: PassContext,
+) -> None:
+    e = EDGE.c
+    rows = await conn.execute(sa.select(EDGE).where(
+        e.unit == head.unit, e.src_id == base, e.type == "about", e.state == "live",
+        e.basis == "inferred",
+    ).with_for_update(read=True))
+    head_scope = InputScope(head.excluded_persons, cast(Exposure, head.exposure), head.lineage)
+    edges = []
+    for old in rows.mappings():
+        old_scope = InputScope(
+            tuple(old["excluded_persons"]), old["exposure"], Lineage.from_json(old["lineage"]),
+        )
+        scope = inherited_scope(
+            (head_scope, old_scope), build_lineage=Lineage(), minimum="external",
+        )
+        link = Link(
+            type="about", source=head.id, target=old["dst_id"], basis="inferred",
+            reasoning=old["reasoning"], confidence=old["confidence"],
+        )
+        edges.append({
+            **_stamp(context), **_link_values(link), "id": f"edge:{uuid4().hex}",
+            "unit": head.unit, "origin_room": head.origin_room, "persons": list(head.persons),
+            "excluded_persons": list(scope.excluded_persons), "exposure": scope.exposure,
+            "lineage": scope.lineage.to_json(),
+        })
+    if edges:
+        await _register(conn, edges)
+        await conn.execute(sa.insert(EDGE), edges)
 
 
 async def _computed_about(conn: AsyncConnection, row: RowFacts, context: PassContext) -> None:

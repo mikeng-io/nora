@@ -303,6 +303,9 @@ def _tool_view(name: str) -> tuple[ast.AST, dict[str, ast.AST], dict[str, ast.Di
         if isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
     fn = _desplit(inner, file_defs)
+    # Both commit surfaces return the results of the same submission routine.
+    if name == "intention_commit":
+        fn = _submission_body(fn, file_defs)
 
     functions = {n: _desplit(d, file_defs) for n, d in {**file_defs, **inner_defs}.items()}
 
@@ -455,3 +458,64 @@ def _helper_closure_params(call: ast.Call, helper: ast.AST, fn: ast.AST) -> set[
         {kw.arg: kw.value for kw in call.keywords if isinstance(kw.value, ast.Name)}
     )
     return {p for p, v in args.items() if _named_def(fn, v.id) is not None}
+
+
+def _submission_body(fn, file_defs):
+    returns = [node for node in ast.iter_child_nodes(fn) if isinstance(node, ast.Return)]
+    if len(returns) == 1:
+        value = returns[0].value
+        if (isinstance(value, ast.Await) and isinstance(value.value, ast.Call)
+                and isinstance(value.value.func, ast.Name)
+                and value.value.func.id == "submit_operations"):
+            return file_defs["submit_operations"]
+    return fn
+
+
+def _sent_specs() -> dict[str, str]:
+    """Tool specifications as sent by Strands, including parameters."""
+    import json
+
+    from nora.agent.ports import adapt
+    from nora.agent.registry import ToolRegistry
+    from nora.agent.room import Room
+    from nora.obs.metrics import Metrics
+    from nora.testing.fakes import FakeMemoryStore
+
+    class _Persons:
+        def resolve(self, platform: str, sender_id: str):
+            return None
+
+    class _Store:
+        async def recent(self, *, conversation_id: str, limit: int):
+            return []
+
+    room = Room(platform="discord", conversation_id="g1", roster_source=None,
+                persons=_Persons())
+    specs = ToolRegistry().specs(
+        store=_Store(), conversation_id="g1", conversation_type="group",
+        persons=_Persons(), honcho=FakeMemoryStore(), deliverer=None,
+        metrics=Metrics(), room=room, dream_adaptor="policy",
+    )
+    return {
+        s.name: json.dumps(adapt(s).tool_spec, ensure_ascii=False) for s in specs
+    }
+
+
+def _wake_specs() -> dict:
+    from nora.agent.room import Room
+    from nora.memory import PassScope, ReadingRoom
+    from nora.memory.adapters.tools.wake import WAKE_VERB_NAMES, WakeToolSurface
+    from nora.obs.metrics import Metrics
+    from tests.infra.test_pass_anchors import NOW
+
+    surface = WakeToolSurface(
+        None, None, lambda platform, id_: Room(
+            platform=platform, conversation_id=id_, roster_source=None,
+        ), Metrics(), content_checks=False, offered=WAKE_VERB_NAMES, allowed_operations=(),
+    )
+    offered = {
+        tool.tool_name: tool.tool_spec
+        for tool in surface.bind(PassScope(ReadingRoom("signal", "fixture"), "unit"), NOW,
+                                 lambda: None)
+    }
+    return offered

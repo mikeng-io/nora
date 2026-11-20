@@ -1,0 +1,100 @@
+"""Run reflection proposals through production admission and scoped retrieval."""
+
+from dataclasses import replace
+
+from nora.access import IdentityAccess
+from nora.agent.lineage import LineagePolicy
+from nora.agent.room import Room
+from nora.memory import ActAuthority, act_pass, wire
+from nora.memory.app.act_scope import pass_shown
+from nora.obs.metrics import Metrics
+from tests.infra.test_graph_debrief import CONTEXT
+from tests.infra.test_pass_anchors import NOW, SCOPE
+from tests.infra.test_retrieval_scope import scenario as scenario
+from tests.infra.test_room_busy import service, slots
+from tests.test_room_tools import _call
+
+WAKE = replace(CONTEXT, occasion="wake", writer="reflection")
+BASIS = {"reasoning": "deduced", "confidence": "high"}
+
+
+def surface(scenario):
+    access = IdentityAccess(file_persons=scenario.persons, file_policy=scenario.policy)
+    lineage = LineagePolicy.from_policy(scenario.policy, access=access)
+    return wire.WakeToolSurface(
+        service(scenario, slots(scenario)),
+        wire.graph_read_tools(scenario.engine, access, lineage, None, None),
+        lambda platform, id_: Room(
+            platform=platform, conversation_id=id_, roster_source=None, access=access,
+        ),
+        Metrics(), content_checks=False, offered=wire.WAKE_TOOLS,
+        allowed_operations=wire.WAKE_OPERATIONS,
+    )
+
+
+def topic(ref="generated-topic"):
+    return {"op": "create_entity", "name": "Generated subject", "citations": [], "ref": ref,
+            **BASIS}
+
+
+def claim_payload(**changes):
+    return {"op": "create_claim", "part": "fact", "content": "Generated fact",
+            "citations": ["observed-source"], **BASIS, **changes}
+
+
+def about(target="generated-topic"):
+    return {"target": target, **BASIS}
+
+
+async def propose(scenario, operations):
+    tool = next(tool for tool in surface(scenario).bind(SCOPE, NOW, lambda: None)
+                if tool.tool_name == "graph_propose")
+    return await _call(tool, operations=operations)
+
+
+def wake_scope(*shown):
+    return act_pass(ActAuthority(WAKE.unit, pass_context=WAKE), shown=frozenset(shown))
+
+
+async def test_propose_reads_the_new_claim_and_its_topic_depth_one(scenario):
+    await scenario.item("observed-source")
+    with wake_scope("observed-source"):
+        result = await propose(scenario, [
+            topic(), claim_payload(about=[about()]),
+        ])
+        assert result["status"] == "ok", result
+        entity, claim = result["operations"]
+        neighbourhood = claim["neighbourhood"]
+        assert {entity["id"], "observed-source", claim["id"]} <= {
+            id_ for _, id_ in neighbourhood["keys"]
+        }
+        assert {entity["id"], claim["id"]} <= pass_shown()
+
+
+async def test_graph_propose_refuses_a_real_citation_the_pass_did_not_see(scenario):
+    await scenario.item("observed-source")
+    with wake_scope():
+        result = await propose(scenario, [claim_payload()])
+    [refused] = result["operations"]
+    assert (refused["status"], refused["reason"]) == ("refused", "citation_not_shown")
+
+
+async def test_orphan_entity_needs_an_evidenced_sibling(scenario):
+    await scenario.item("observed-source")
+    with wake_scope("observed-source"):
+        result = await propose(scenario, [topic()])
+        assert result["operations"][0]["reason"] == "orphan_entity"
+        result = await propose(scenario, [topic(), claim_payload(about=[about()])])
+        assert [entry["status"] for entry in result["operations"]] == ["admitted", "admitted"]
+
+
+async def test_graph_propose_refuses_lessons_and_unknown_fields_independently(scenario):
+    await scenario.item("observed-source")
+    with wake_scope("observed-source"):
+        result = await propose(scenario, [
+            claim_payload(part="lesson"), claim_payload(typo="ignored?"), claim_payload(),
+        ])
+    lesson, unknown, admitted = result["operations"]
+    assert (lesson["reason"], lesson["field"]) == ("invalid_field", "part")
+    assert (unknown["reason"], unknown["field"]) == ("invalid_field", "typo")
+    assert admitted["status"] == "admitted"
