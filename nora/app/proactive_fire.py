@@ -35,6 +35,7 @@ from nora.language.catalogue_render import render_tool_catalogue
 from nora.language.context_render import render_clock, render_members
 from nora.language.presence_render import render_presence
 from nora.memory import (
+    RECHECK_UNAVAILABLE,
     ActAuthority,
     ActEnvelope,
     PassContext,
@@ -154,7 +155,12 @@ class _ReplyAdmission:
         result = await self._recheck.recheck(intention, self._destination, self._clock())
         if result.status == "deliver":
             return True
-        await self._acts.record_silence(self._authority, reason=result.reason or result.status)
+        if result.status == "unavailable":
+            await self._acts.record_silence(
+                self._authority, reason=RECHECK_UNAVAILABLE, recheck_reason=result.reason,
+            )
+        else:
+            await self._acts.record_silence(self._authority, reason=result.reason or result.status)
         self.withheld = True
         return False
 
@@ -212,6 +218,8 @@ class ProactiveFire:
                         self._claims.settle(claim, self._clock()), timeout=agent.timeout_seconds,
                     )
                     annotate(**{"nora.outcome": settled or "unavailable"})
+                    if settled == "parked":
+                        agent.metrics.inc("nora_proactive_stimulus_parked_total")
                     if settled == "closed" and obligation is not None:
                         await graph_debrief.run_finished(self._debrief, obligation)
         finally:

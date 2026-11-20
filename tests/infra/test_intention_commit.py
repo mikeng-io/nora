@@ -32,6 +32,10 @@ from tests.test_room_tools import _call
 _CONTEXT = replace(PASS, occasion="called", writer="engagement")
 _WITNESS = "item:person-event"
 _TEXT = "The generated work is finished."
+_TRIGGER = {
+    "kind": "condition", "form": "predicate",
+    "value": {"graph_id": "generated-aggregate", "path": ["state"], "equals": "ready"},
+}
 
 
 def _open(*, form: IntentionForm = "achieve", **changes) -> dict:
@@ -118,6 +122,48 @@ async def test_a_malformed_operation_leaves_its_valid_sibling_admitted(engine):
     assert admitted["status"] == "admitted"
     assert refused.get("note") and admitted.get("note")
     assert set(await _rows(engine, INTENTION)) == {admitted["id"]}
+
+
+async def test_a_predicate_trigger_is_admitted_through_the_tool(engine):
+    tool = adapt(_spec("intention_commit", _tool(engine)))
+    with _pass("item-1"):
+        result = await _call(tool, operations=[_open(delivery="choose_moment", trigger=_TRIGGER)])
+    assert result["status"] == "ok", result
+    row = (await _rows(engine, INTENTION))[result["operations"][0]["id"]]
+    assert (row["state"], row["delivery_mode"], row["trigger"]) == (
+        "open", "choose_moment", _TRIGGER,
+    )
+
+
+@pytest.mark.parametrize("trigger", (
+    {**_TRIGGER, "value": {"graph_id": "generated-aggregate"}},
+    {"kind": "condition", "form": "deadline", "value": {"at": "2029-01-01T12:00:00Z"}},
+    {"kind": "condition", "form": "untyped", "value": "When the generated work starts."},
+), ids=("undecodable", "deadline", "untyped"))
+async def test_admission_refuses_an_invalid_condition_trigger(engine, trigger):
+    with _pass("item-1"):
+        result = await _tool(engine)([_open(delivery="choose_moment", trigger=trigger)])
+    assert result["status"] == "refused"
+    [refusal] = result["operations"]
+    assert (refusal["reason"], refusal["field"]) == ("invalid_field", "trigger")
+    assert "predicate" in refusal["note"]
+    assert await _rows(engine, INTENTION) == {}
+
+
+async def test_moving_a_condition_trigger_requires_a_citation(engine):
+    tool = _tool(engine)
+    base = await _opened(tool, delivery="choose_moment", trigger=_TRIGGER)
+    moved = {**_TRIGGER, "value": {**_TRIGGER["value"], "equals": "started"}}
+    operation = _open(op="revise", base=base, delivery="choose_moment", trigger=moved)
+    with _pass(base, "item-1"):
+        refused = await tool([{**operation, "citations": []}])
+        accepted = await tool([operation])
+    assert (refused["operations"][0]["reason"], refused["operations"][0]["field"]) == (
+        "trigger_without_evidence", "citations",
+    )
+    assert accepted["status"] == "ok", accepted
+    row = (await _rows(engine, INTENTION))[accepted["operations"][0]["id"]]
+    assert (row["replaces"], row["trigger"]) == (base, moved)
 
 
 async def test_drop_writes_the_dropped_ending(engine):

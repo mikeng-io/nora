@@ -1540,15 +1540,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "ratio is how often the occasion finds grounded value.",
         ("platform",),
     ),
-    # The proactive occasion (DEC-162), participation's pair: a
-    # `kind="proactive"` row's act turn that concluded «say nothing» (the healthy
-    # default; the row is DONE with outcome="silent") and one that spoke. Budget-cut
-    # turns are silent failures under audience="proactive", never here.
     _CounterSpec(
         "nora_proactive_silence_total",
-        "Proactive act turns that read the room again and declined their "
-        "own earlier intention (the healthy default — design/cognition-loop/proactive.md), "
-        "by platform. Budget-cut turns are NOT here.",
+        "Proactive act turns that reread the room and declined their earlier intention, "
+        "by platform. Budget-cut turns count as failures.",
         ("platform",),
     ),
     _CounterSpec(
@@ -1556,6 +1551,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Proactive act turns that spoke and delivered, by platform. Read "
         "against nora_proactive_silence_total.",
         ("platform",),
+    ),
+    _CounterSpec(
+        "nora_proactive_stimulus_parked_total",
+        "Due intention occurrences parked after repeated unavailable delivery rechecks.",
+        (),
     ),
     # The Relevance Gate has TWO series, and the split is the point: this one
     # moves only when the gate actually decided, the one below only when it could

@@ -1635,7 +1635,7 @@
   "internal_docstrings": 4
  },
  "nora/obs/metric_specs.py": {
-  "comment_blocks": 95,
+  "comment_blocks": 94,
   "file_lines": 2620
  },
  "nora/obs/metrics.py": {

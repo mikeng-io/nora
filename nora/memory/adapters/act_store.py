@@ -127,6 +127,7 @@ class SqlActStore:
     async def append_pass(
         self, authority: ActAuthority, kind: str, content: list[str] | None,
         *, ordinal: int | None = None, silence_reason: str | None = None,
+        recheck_reason: str | None = None,
     ) -> None:
         context = authority.pass_context
         if context is None:
@@ -147,6 +148,7 @@ class SqlActStore:
                 insert(table).values(
                     **planes, id=row_id, output_kind=kind, content=content,
                     authority_intention=authority.intention, silence_reason=silence_reason,
+                    recheck_reason=recheck_reason,
                 )
                 .on_conflict_do_nothing(index_elements=[table.c.id]),
             )
@@ -167,6 +169,9 @@ class SqlActStore:
         outputs = sa.select(
             output.graph_id, output.output_kind.label("kind"), output.asserted_at,
             sa.literal("nora").label("who"), sa.case(
+                (output.recheck_reason.is_not(None), sa.func.jsonb_build_object(
+                    "reason", output.silence_reason, "recheck_reason", output.recheck_reason,
+                )),
                 (output.silence_reason.is_not(None),
                  sa.func.jsonb_build_object("reason", output.silence_reason)),
                 else_=output.content,

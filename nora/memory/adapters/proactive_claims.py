@@ -17,7 +17,7 @@ from nora.infra.sql.cognitive_graph_schema import (
 )
 from nora.memory.adapters.debrief_store import insert_pending
 from nora.memory.domain.debrief import DebriefObligation
-from nora.memory.domain.proactive import DueIntention, ProactiveClaim
+from nora.memory.domain.proactive import RECHECK_UNAVAILABLE, DueIntention, ProactiveClaim
 
 S = GRAPH_STIMULUS.c
 C = GRAPH_STIMULUS_CLAIM.c
@@ -27,14 +27,20 @@ _OUTCOMES = NORA_ACT_OUTCOME.c
 P = NORA_PASS_OUTPUT.c
 KEY = ("unit", "kind", "graph_id", "occurrence")
 _MATCH = sa.and_(*(C[key] == S[key] for key in KEY), C.claimant == "proactive")
+_RECHECK_ATTEMPT_LIMIT = 3  # Provisional until there is runtime evidence.
+
+
+def _silence(unit: sa.ColumnElement, pass_id: sa.ColumnElement, reason: sa.ColumnElement):
+    return sa.exists(sa.select(1).where(
+        P.unit == unit, P["pass"] == pass_id, P.output_kind == "silence", reason,
+    ))
 
 
 def _reply_recorded(unit: sa.ColumnElement, pass_id: sa.ColumnElement) -> sa.ColumnElement[bool]:
     latest = (sa.select(_OUTCOMES.verdict).where(_OUTCOMES.act_id == A.id, _OUTCOMES.unit == A.unit)
               .order_by(_OUTCOMES.id.desc()).limit(1).scalar_subquery())
     return sa.or_(
-        sa.exists(sa.select(1).where(P.unit == unit, P["pass"] == pass_id,
-                                     P.output_kind == "silence")),
+        _silence(unit, pass_id, P.silence_reason.is_distinct_from(RECHECK_UNAVAILABLE)),
         sa.exists(sa.select(1).where(A.unit == unit, A["pass"] == pass_id,
                                      A.act_kind == "delivery",
                                      sa.func.coalesce(latest, "uncertain") != "failed")),
@@ -107,7 +113,7 @@ class SqlProactiveClaims:
 
     async def settle(self, claim: ProactiveClaim, now: datetime) -> str | None:
         async with self._engine.begin() as conn:
-            results = await _settle_claims(conn, now, *_claim_key(claim))
+            results = await _settle_claims(conn, now, *_claim_key(claim), count_recheck=True)
             return results[0][2] if results else None
 
 
@@ -121,16 +127,24 @@ def _claim_key(claim: ProactiveClaim) -> tuple[sa.ColumnElement[bool], ...]:
 
 async def _settle_claims(
     conn: AsyncConnection, now: datetime, *where: sa.ColumnElement[bool],
+    count_recheck: bool = False,
 ) -> list[tuple[str, str, str]]:
+    recorded = _reply_recorded(C.unit, C.pass_id)
+    attempts = C.attempts
+    if count_recheck:
+        incomplete = _silence(C.unit, C.pass_id, P.silence_reason == RECHECK_UNAVAILABLE)
+        attempts = C.attempts + sa.case((~recorded & incomplete, 1), else_=0)
     updated = await conn.execute(sa.update(GRAPH_STIMULUS_CLAIM).where(*where).values(
-        state=sa.case((_reply_recorded(C.unit, C.pass_id), "closed"), else_="released"),
+        state=sa.case((recorded, "closed"), (attempts >= _RECHECK_ATTEMPT_LIMIT, "parked"),
+                      else_="released"),
+        attempts=attempts,
         settled=now,
     ).returning(C.unit, C.pass_id, C.state))
     results = [(unit, pass_id, state) for unit, pass_id, state in updated]
-    released = [(unit, pass_id) for unit, pass_id, state in results if state == "released"]
-    if released:
+    unfinished = [(unit, pass_id) for unit, pass_id, state in results if state != "closed"]
+    if unfinished:
         pending = DEBRIEF_OBLIGATION.c
         await conn.execute(sa.delete(DEBRIEF_OBLIGATION).where(
-            sa.tuple_(pending.unit, pending.pass_id).in_(released), pending.attempts == 0,
+            sa.tuple_(pending.unit, pending.pass_id).in_(unfinished), pending.attempts == 0,
         ))
     return results
