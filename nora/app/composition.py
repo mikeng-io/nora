@@ -75,6 +75,7 @@ from nora.app.composition_platforms import (
     signal_link_consent,
     signal_link_delivery,
 )
+from nora.app.composition_proactive import build_proactive
 from nora.app.composition_runtime import build_slots, stimulus, tasks
 from nora.app.composition_social import expiry, inbox, poller, summons
 from nora.app.composition_stores import (
@@ -104,6 +105,7 @@ from nora.app.memory_routing import (
 )
 from nora.app.oauth_keepalive import OAuthKeepalive
 from nora.app.otp import OtpService
+from nora.app.proactive_fire import FireAgent, FireRoom
 from nora.app.social_expiry import StoryMediaExpiry
 from nora.app.social_perception import SocialPerception
 from nora.app.social_poller import SocialPoller
@@ -1060,8 +1062,7 @@ async def _compose_dependencies(
         slots=slots,
         tag_trace_store=tag_trace_store,
         tier=tier,
-        tool_call_log_store=tool_call_log_store,
-        tool_registry=tool_registry,
+        tool_call_log_store=tool_call_log_store, tool_registry=tool_registry,
     )
     engagement = _pipelines_engagement.engagement
     _fire_recover = await build_recover(
@@ -1114,18 +1115,17 @@ async def _compose_dependencies(
     )
     fire_path = _fire_path.fire_path
     _fire_heartbeat = heartbeat(
-        access=access,
-        allowlist=allowlist,
-        background=background,
-        cfg=cfg,
-        clock=clock,
-        fire_path=fire_path,
-        metrics=metrics,
-        note_store=note_store,
-        reminders=reminders,
-        slots=slots,
-    )
-    proactive_screen = _fire_heartbeat.proactive_screen
+        access=access, allowlist=allowlist, background=background, clock=clock, slots=slots,
+        cfg=cfg, fire_path=fire_path, metrics=metrics, note_store=note_store, reminders=reminders)
+    if cfg.heartbeat.enabled:
+        background.spawn(build_proactive(_memory_wire, engine, cfg.heartbeat, op_clock, slots,
+            FireRoom(access, audit, persons_view, quote_window, presence_reader, allowlist,
+                     registry.adapters, rosters, preview_source),
+            FireAgent(proactive_runner, tool_registry, doctrine_store, cfg.doctrine.canary,
+                      cfg.doctrine.display_name, cfg.store.context_window, limits,
+                      cfg.llm.defer_tools, cfg.heartbeat.timeout_seconds, metrics,
+                      graph_debrief.revisions, tool_call_log_store, reasoning_strip_store),
+            graph_debrief, lineage).run())
     _fire_compute_poller = compute_poller(
         allowlist=allowlist,
         background=background,
@@ -1391,7 +1391,7 @@ async def _compose_dependencies(
         fire_path=fire_path,
         self_presence=presence_reader,
         clock=clock,
-        proactive_screen=proactive_screen,
+        proactive_screen=_fire_heartbeat.proactive_screen,
         account=account,
         doctrine=doctrine,
         doctrine_store=doctrine_store,

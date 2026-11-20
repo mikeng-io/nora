@@ -30,17 +30,21 @@ BOUND = 30.0
 
 
 async def seed_due(scenario, graph_id="scheduled", **fields):
-    from nora.domain.graph_stimuli import GraphStimulus
-
-    values = {"delivery_mode": "choose_moment", "trigger": {
+    values = {"origin_room": f"signal:{ROOM}", "delivery_mode": "choose_moment", "trigger": {
         "kind": "time", "at": DUE.isoformat(), "zone": "UTC",
     }, **fields}
     await intention(scenario, graph_id, **values)
+    await publish_due(scenario, graph_id)
+    return graph_id
+
+
+async def publish_due(scenario, graph_id):
+    from nora.domain.graph_stimuli import GraphStimulus
+
     async with scenario.engine.begin() as conn:
         await SqlGraphStimuli.append_in(conn, GraphStimulus(
             UNIT, "intention_due", graph_id, DUE, "clock", occurrence=DUE.isoformat(),
         ))
-    return graph_id
 
 
 async def claim_rows(scenario):

@@ -1,9 +1,9 @@
 """The proactive occasion through the real graph, tool surface and debrief."""
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
-from typing import Literal
+from types import SimpleNamespace
 
 import pytest
 import sqlalchemy as sa
@@ -15,40 +15,34 @@ from nora.agent.registry import ToolRegistry
 from nora.app.proactive_fire import FireAgent, FireRoom, ProactiveFire
 from nora.app.proactive_poller import ProactiveLanding, ProactivePoller
 from nora.doctrine.loader import DoctrineStore
+from nora.domain.ports import SendResult
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.tag_trace import TagTrace
 from nora.engagement.stages import graph_debrief
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.cognitive_graph_schema import (
     DEBRIEF_OBLIGATION,
+    EDGE,
     INTENTION,
+    NORA_ACT,
+    NORA_ACT_OUTCOME,
     NORA_PASS_OUTPUT,
 )
 from nora.infra.sql.item_registration import RegistrationScope
-from nora.memory import ActAuthority, ActEnvelope, DebriefObligation, wire
+from nora.memory import ActAuthority, ActEnvelope, DebriefObligation, act_pass, wire
 from nora.memory.adapters.proactive_claims import SqlProactiveClaims
+from nora.memory.adapters.tools.intentions import _make_intention_commit
+from nora.policy import Policy
 from tests.fakes import SinkSender
 from tests.infra.test_cognitive_graph_admission import _rows
 from tests.infra.test_graph_debrief import CONTEXT, opening, wiring
 from tests.infra.test_pass_assembly import _assembler
-from tests.infra.test_proactive_claims import DUE, claim_rows, seed_due, slots
-from tests.infra.test_retrieval_scope import DM, OTHER, ROOM, UNIT, write_edge
+from tests.infra.test_proactive_claims import DUE, claim_rows, publish_due, seed_due, slots
+from tests.infra.test_retrieval_scope import DM, OTHER, OTHER_ROOM, ROOM, UNIT, write_edge
 from tests.infra.test_retrieval_scope import scenario as scenario
+from tests.infra.test_situation_staleness import intention, refuse_count
 
 NOW = DUE + timedelta(minutes=1)
-
-
-@dataclass(frozen=True)
-class Decision:
-    status: Literal["deliver", "unavailable"]
-    reason: str | None = None
-
-
-class ExpectedDestination:
-    async def recheck(self, intention_id, destination, now):
-        if (intention_id, destination, now) == ("scheduled", f"signal:{ROOM}", NOW):
-            return Decision("deliver")
-        return Decision("unavailable", "fixture_input_unexpected")
 
 
 class ScriptedRunner:
@@ -71,8 +65,11 @@ class ScriptedRunner:
         )
 
 
-def setup(scenario, runner, *answers):
-    debrief, act_store = wiring(scenario, *answers, clock=lambda: NOW)
+def setup(scenario, runner, *answers, proactive=True, sender=None, now=NOW, room_slots=None):
+    rooms = tuple(replace(room, proactive=proactive) for room in scenario.policy.rooms())
+    policy = Policy(rooms, _by_id={(room.platform, room.primary_id): room for room in rooms})
+    scenario = replace(scenario, policy=policy)
+    debrief, act_store = wiring(scenario, *answers, clock=lambda: now)
     acts = ActEnvelope(act_store)
     scope = RegistrationScope(scenario.policy, scenario.persons)
     access = IdentityAccess(file_persons=scenario.persons, file_policy=scenario.policy)
@@ -80,7 +77,7 @@ def setup(scenario, runner, *answers):
         scenario.engine, delivery_acts=DeliveryActs(acts, scope, debrief.revisions),
     )
     claims = SqlProactiveClaims(scenario.engine)
-    sender = SinkSender()
+    sender = sender or SinkSender()
     metrics = debrief.metrics
     graph = wire.graph_read_tools(scenario.engine, access, LineagePolicy.from_policy(
         scenario.policy, access=access), None, None)
@@ -93,9 +90,10 @@ def setup(scenario, runner, *answers):
         "fixture-canary", "Nora", 16, {}, False, 4, metrics, debrief.revisions, None, None,
     )
     turn = ProactiveFire(room, agent, _assembler(scenario), claims, acts, debrief,
-                         ExpectedDestination(), lambda: NOW)
+                         wire.delivery_arbitration(scenario.engine, policy), lambda: now)
     landing = ProactiveLanding(scenario.policy, access, {"signal"})
-    poller = ProactivePoller(claims, slots(), landing, turn, lambda: NOW,
+    shared_slots = slots() if room_slots is None else room_slots
+    poller = ProactivePoller(claims, shared_slots, landing, turn, lambda: now,
                              tick_seconds=1, timeout_seconds=4)
     return poller, sender, debrief
 
@@ -206,13 +204,13 @@ async def test_the_proactive_surface_matches_the_pinned_signal_grant(scenario):
     await poller.poll()
     [request] = runner.calls
     assert {tool.tool_name for tool in request["tools"]} == {
-        "calculate", "event_search", "file_fetch", "find_parking", "generate_image",
+        "calculate", "file_fetch", "find_parking", "generate_image",
         "group_members", "instagram_read", "instagram_search", "intention_commit", "linkedin_read",
-        "linkedin_search", "list_reminders", "load_transcript", "lookup_person", "media_fetch",
-        "media_search", "media_send", "memory_read", "memory_search", "note_read", "note_search",
-        "now", "online_now", "parking_status", "place_info", "reaction_send", "recall_lookups",
+        "linkedin_search", "load_transcript", "lookup_person", "media_fetch",
+        "media_search", "media_send", "memory_read", "memory_search",
+        "now", "online_now", "parking_status", "place_info", "reaction_send",
         "reverse_geocode", "room_list", "room_read", "route", "routine_read", "saved_places",
-        "search_gifs", "send_gif", "send_reply", "suggest_venue", "transit", "version_list",
+        "search_gifs", "send_gif", "send_reply", "transit", "version_list",
         "version_read", "weather", "web_fetch", "web_search", "where_been", "where_is", "x_read",
         "x_search",
     }
@@ -266,3 +264,115 @@ async def test_restart_makes_only_completed_claims_ready_for_debrief(scenario, r
         states = list(await conn.scalars(sa.select(DEBRIEF_OBLIGATION.c.state)))
     assert states == (["settled"] if recorded else [])
     assert len(debrief.client.prompts) == (1 if recorded else 0)
+
+_SEND = ("send_reply", {"text": "Generated reminder"})
+
+
+async def test_a_due_reminder_closes_by_its_recorded_delivery_and_cannot_be_claimed_again(scenario):
+    scheduled = await seed_due(scenario, done_when={"own_delivery": True})
+    runner = ScriptedRunner((_SEND,))
+    worker, sender, _ = setup(scenario, runner, [])
+
+    await worker.poll()
+    [claim] = await claim_rows(scenario)
+    assert claim["state"] == "closed"
+    assert sender.texts == ["Generated reminder"]
+    async with scenario.engine.connect() as conn:
+        [act] = (await conn.execute(sa.select(NORA_ACT))).mappings().all()
+        [outcome] = (await conn.execute(sa.select(NORA_ACT_OUTCOME))).mappings().all()
+    assert (act["authority_intention"], act["trigger_id"]) == (scheduled, claim["pass_id"])
+    assert outcome["act_id"] == act["id"] and outcome["verdict"] == "done"
+    await wire.condition_matcher(scenario.engine).run_once()
+    [ending] = (await _rows(scenario.engine, INTENTION)).values()
+    assert (ending["state"], ending["ending"]) == ("ended", "achieved")
+    async with scenario.engine.connect() as conn:
+        assert (await conn.execute(sa.select(EDGE.c.src_id, EDGE.c.dst_id).where(
+            EDGE.c.type == "closed_by",
+        ))).all() == [(scheduled, outcome["graph_id"])]
+
+    await worker.poll()
+    assert await claim_rows(scenario) == [claim]
+    assert len(runner.calls) == len(sender.sent) == 1
+
+
+@pytest.mark.parametrize("reason", ["room_not_allowed", "read_failed"])
+async def test_the_real_recheck_records_silence_when_it_cannot_deliver(scenario, reason):
+    await seed_due(scenario)
+    runner = ScriptedRunner((_SEND,))
+    worker, sender, debrief = setup(scenario, runner, [], proactive=reason != "room_not_allowed")
+    if reason == "read_failed":
+        with refuse_count(scenario.engine, "SELECT intention.owed_to, intention.asserted_at"):
+            await worker.poll()
+    else:
+        await worker.poll()
+
+    [claim] = await claim_rows(scenario)
+    assert claim["state"] == "closed"
+    assert len(runner.calls) == 1 and sender.sent == []
+    assert not await _rows(scenario.engine, NORA_ACT)
+    [output] = (await _rows(scenario.engine, NORA_PASS_OUTPUT)).values()
+    assert (output["output_kind"], output["silence_reason"], output["pass"]) == (
+        "silence", reason, claim["pass_id"],
+    )
+    assert len(debrief.client.prompts) == 1
+
+
+class UncertainSender(SinkSender):
+    async def send(self, *args, **kwargs):
+        await super().send(*args, **kwargs)
+        return SendResult(ok=False, uncertain=True)
+
+
+async def test_an_uncertain_proactive_send_cannot_be_repeated(scenario):
+    scheduled = await seed_due(scenario, done_when={"own_delivery": True})
+    calls = ScriptedRunner((_SEND, _SEND))
+    worker, sender, _ = setup(scenario, calls, [], sender=UncertainSender())
+    await worker.poll()
+    await worker.poll()
+    await wire.condition_matcher(scenario.engine).run_once()
+    [claim] = await claim_rows(scenario)
+    async with scenario.engine.connect() as conn:
+        verdicts = list(await conn.scalars(sa.select(NORA_ACT_OUTCOME.c.verdict)))
+    assert claim["state"] == "closed" and verdicts == ["uncertain"]
+    assert len(sender.sent) == len(calls.calls) == 1
+    assert (await _rows(scenario.engine, INTENTION))[scheduled]["state"] == "open"
+
+
+async def test_a_multi_room_open_still_delivers_to_the_second_room_after_the_first(scenario):
+    source = "generated-room-request"
+    await scenario.item(source)
+    await intention(scenario, "shared-subject", origin_room=None)
+    room_slots = slots()
+    second_key = ("signal", OTHER_ROOM)
+    room_slots.acquire(second_key)
+    runner = ScriptedRunner((_SEND,), (_SEND,))
+    now = await scenario.now() + timedelta(minutes=1)
+    worker, sender, debrief = setup(scenario, runner, [], [], now=now, room_slots=room_slots)
+    tool = _make_intention_commit(SimpleNamespace(
+        intention_admission=debrief.admission, metrics=debrief.metrics,
+    ))
+    context = replace(CONTEXT, room=f"signal:{ROOM}", occasion="called")
+    with act_pass(ActAuthority(UNIT, pass_context=context),
+                  shown=frozenset({source, "shared-subject"})):
+        answer = await tool([opening(
+            delivery="choose_moment",
+            trigger={"kind": "time", "at": DUE.isoformat(), "zone": "UTC"},
+            rooms=[f"signal:{ROOM}", f"signal:{OTHER_ROOM}"],
+            serves=["shared-subject"], citations=[source],
+        )])
+    [opened] = answer["operations"]
+    assert opened["status"] == "admitted", opened
+    first, second = opened["ids"]
+    for intention_id in (first, second):
+        await publish_due(scenario, intention_id)
+
+    await worker.poll()
+    await wire.condition_matcher(scenario.engine).run_once()
+    assert (await _rows(scenario.engine, INTENTION))[first]["ending"] == "achieved"
+    assert [row["graph_id"] for row in await claim_rows(scenario)] == [first]
+
+    room_slots.release_and_dispatch(second_key)
+    await worker.poll()
+    await wire.condition_matcher(scenario.engine).run_once()
+    assert (await _rows(scenario.engine, INTENTION))[second]["ending"] == "achieved"
+    assert [target.conversation_id for target, _ in sender.sent] == [ROOM, OTHER_ROOM]
