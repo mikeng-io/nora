@@ -239,6 +239,7 @@ $_$;
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -5442,6 +5443,7 @@ unit text CONSTRAINT memory_work_item_unit_not_null NOT NULL,
 unit text CONSTRAINT relation_unit_not_null NOT NULL,
 unit text CONSTRAINT signal_unit_not_null NOT NULL,
 unit text DEFAULT ''::text NOT NULL,
+unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,

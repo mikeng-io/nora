@@ -304,7 +304,7 @@ class _Admission:
         base, survivor = self._transition(proposal)
         if self.context.occasion == "operator" and (
             self.context.writer != "operator" or not isinstance(proposal, Retire)
-            or base is None or base.kind != "claim" or base.part != "lesson"
+            or base is None or base.kind != "claim" or base.part not in _OCCASION_PARTS["operator"]
             or base.state != "live" or not self.context.pass_id.startswith("operator:")
         ):
             raise _RefusalError("occasion_basis", "basis")
