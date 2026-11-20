@@ -37,7 +37,7 @@ class _Batch:
         self._sources = ConditionSources(conn)
         self._intentions: dict[tuple[str, str], RowData] = {}
 
-    async def due(self, now: datetime) -> list[DueIntention]:
+    async def due_intention_heads(self, now: datetime) -> list[DueIntention]:
         i = INTENTION.c
         stmt = sa.select(INTENTION).where(
             i.state == "open",

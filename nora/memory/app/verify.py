@@ -20,7 +20,7 @@ class DueIntention:
 
 
 class VerificationBatch(Protocol):
-    async def due(self, now: datetime) -> Sequence[DueIntention]: ...
+    async def due_intention_heads(self, now: datetime) -> Sequence[DueIntention]: ...
 
     async def window(self, due: DueIntention) -> tuple[datetime, set[tuple[str, str]]]: ...
 
@@ -52,7 +52,7 @@ class IntentionVerifier:
 
     async def run_once(self) -> None:
         async with self._store.batch() as batch:
-            for due in await batch.due(self._clock()):
+            for due in await batch.due_intention_heads(self._clock()):
                 if due.drops:
                     ending: ClockEnding = "dropped"
                 else:

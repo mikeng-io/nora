@@ -1,7 +1,5 @@
 """Resolve typed conditions to the health sources that can witness them."""
 
-from collections.abc import Mapping
-from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -59,7 +57,7 @@ class ConditionSources:
         )
 
     @staticmethod
-    def act_source(act: Mapping[str, Any]) -> set[Source]:
+    def act_source(act: RowData) -> set[Source]:
         platform = executor_health_platform(act["executor"], act["destination"])
         return {(platform, "")} if platform else set()
 
