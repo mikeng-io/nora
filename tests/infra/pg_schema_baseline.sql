@@ -594,7 +594,6 @@ ADD CONSTRAINT uq_extraction_claim UNIQUE (extraction_id, ordinal);
 ADD CONSTRAINT uq_extraction_queue_message UNIQUE (message_id);
 ADD CONSTRAINT uq_fetched_pages_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_forget_request_graph_replaces UNIQUE (replaces);
-ADD CONSTRAINT uq_graph_stimulus_claim_pass UNIQUE (unit, pass_id);
 ADD CONSTRAINT uq_intention_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_intention_verdict_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_memory_node_kind_source UNIQUE (kind, source_id);
@@ -760,7 +759,6 @@ ALTER TABLE ONLY public.graph_search
 ALTER TABLE ONLY public.graph_stimulus
 ALTER TABLE ONLY public.graph_stimulus
 ALTER TABLE ONLY public.graph_stimulus
-ALTER TABLE ONLY public.graph_stimulus_claim
 ALTER TABLE ONLY public.graph_stimulus_claim
 ALTER TABLE ONLY public.graph_stimulus_claim
 ALTER TABLE ONLY public.instagram_summons
