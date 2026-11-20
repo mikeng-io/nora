@@ -18,7 +18,7 @@ class LessonReview:
         self, store: AdmissionStore, body: str, citations: tuple[str, ...],
         base: str | None, evidence_at: datetime | None, context: PassContext,
     ) -> Refusal | None:
-        inventory = await store.lessons(context.unit)
+        inventory = await store.lesson_inventory(context.unit)
         try:
             law = self._checker.rules()
         except Exception:  # noqa: BLE001 - unclassifiable law fails closed

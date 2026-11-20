@@ -62,7 +62,7 @@ class SqlAdmissionStore:
     async def read(self, unit: str, ids: frozenset[str]) -> Mapping[str, RowFacts]:
         return await self._rows.read(unit, ids)
 
-    async def lessons(self, unit: str) -> LessonInventory:
+    async def lesson_inventory(self, unit: str) -> LessonInventory:
         try:
             async with self._engine.connect() as conn:
                 return await _lesson_inventory(conn, unit)

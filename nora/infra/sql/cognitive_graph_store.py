@@ -51,6 +51,7 @@ GRAPH_READERS = (
     "nora.memory.adapters.claim_support",
     "nora.memory.adapters.intention_verdicts",
     "nora.memory.adapters.lesson_tally",
+    "nora.app.graph_lessons_cli",
     "nora.memory.adapters.learning_reads",
     "nora.memory.adapters.pass_anchors",
     "nora.memory.adapters.retrieval_load",

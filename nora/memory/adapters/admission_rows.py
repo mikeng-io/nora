@@ -36,7 +36,6 @@ _PLANES = (
     "excluded_persons",
     "exposure",
     "lineage",
-    "asserted_at",
 )
 _SPEECH = {"messages", "message_edit", "message_reaction"}
 
@@ -177,8 +176,8 @@ def _select(table: sa.Table, id_column: str) -> sa.Select:
     ))
     needed.extend(
         table.c[name]
-        for name in ("form", "trigger", "delivery_mode", "pointer_kind", "pointer_ref", "part", "ending",
-                     "source_ref_kind", "source_ref_value")
+        for name in ("form", "trigger", "delivery_mode", "pointer_kind", "pointer_ref",
+                     "part", "ending", "source_ref_kind", "source_ref_value")
         if name in table.c
     )
     if table.name == "fetched_pages":

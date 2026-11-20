@@ -463,6 +463,9 @@ RULE_TESTS = {
         "test_a_called_revision_carries_only_live_inferred_about_and_derives_people"
     ),
     "wake-parks-failures": "test_the_third_counted_failure_parks_the_set",
+    "lesson-admission": "test_three_distinct_verdicts_admit_a_checked_lesson",
+    "lesson-tally": "test_lesson_tallies_resting_verdicts_and_renders_counts",
+    "lesson-relearn": "test_operator_retirement_hides_graph_lesson_and_sets_evidence_floor",
 }
 
 

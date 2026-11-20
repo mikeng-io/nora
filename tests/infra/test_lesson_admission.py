@@ -129,7 +129,7 @@ async def test_a_person_addressing_nora_can_supply_the_correction_floor(scenario
     ("too_short", "Short", "nora-pointer", True, False),
     ("too_long", "long " * 90, "nora-pointer", True, False),
     ("echoes_doctrine", LAW.text, "nora-pointer", True, False),
-])
+], ids=["about", "thin", "echo", "short", "long", "doctrine"])
 async def test_typed_form_refusals_run_before_the_checker(
     scenario, lesson_setup, reason, body, target, aimed, own,
 ):
@@ -160,7 +160,7 @@ async def test_called_pass_refuses_lesson_even_with_good_evidence(scenario, less
     svc, checker = lesson_setup
     await correction(scenario)
     context = replace(WAKE, occasion="called")
-    result = await admit(svc, ("correction",), context=context)
+    result = proposal(("correction",), context=context)
     assert result == Refusal("occasion_basis", "basis")
     candidate = proposal(("correction",))
     assert not isinstance(candidate, Refusal)
@@ -171,7 +171,7 @@ async def test_called_pass_refuses_lesson_even_with_good_evidence(scenario, less
 
 @pytest.mark.parametrize(("body", "reason"), [
     (CONFLICT, "loosens_law"), (ERROR, "check_unavailable"),
-])
+], ids=["conflict", "timeout"])
 async def test_conflict_records_one_operator_tension_and_error_writes_nothing(
     scenario, lesson_setup, body, reason,
 ):
@@ -208,7 +208,7 @@ async def test_wake_shows_earlier_same_class_verdicts_and_can_cite_them(scenario
     assert isinstance(admitted.outcomes[0], Stored)
 
 
-async def test_operator_graph_retirement_hides_the_lesson_and_sets_a_unit_evidence_floor(
+async def test_operator_retirement_hides_graph_lesson_and_sets_evidence_floor(
     scenario, lesson_setup, clean_pg_url, monkeypatch, capsys,
 ):
     svc, _checker = lesson_setup

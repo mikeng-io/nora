@@ -5,6 +5,8 @@ import pytest
 from nora.app.composition_lesson_check import build_graph_lesson_check
 from nora.app.startup import StartupError
 from nora.config import ModelRoute
+from nora.doctrine.loader import DoctrineStore
+from nora.instructions.dreamer import DreamerInstructions
 from nora.obs.metrics import Metrics
 
 
@@ -23,8 +25,19 @@ def test_graph_wake_refuses_the_same_resolved_model_with_legacy_lessons_on_or_of
         },
     })
 
-    def unexpected_client(_purpose):
-        raise AssertionError("Same-model independence must fail before building a model client")
+    metrics = Metrics()
+    doctrine = DoctrineStore(cfg.doctrine.dir, metrics=metrics)
+    instructions = DreamerInstructions(cfg.dreamer.dir, metrics=metrics)
+
+    def client(purpose):
+        assert purpose == "lesson_check"
+        return object()
 
     with pytest.raises(StartupError, match="Graph lesson check requires an independent model"):
-        build_graph_lesson_check(cfg, None, None, unexpected_client, Metrics())
+        build_graph_lesson_check(cfg, doctrine, instructions, client, metrics)
+
+    distinct = cfg.model_copy(update={"model_routes": {
+        **cfg.model_routes, "dreamer": ModelRoute(model="other-model"),
+    }})
+    checker = build_graph_lesson_check(distinct, doctrine, instructions, client, metrics)
+    assert checker is not None and checker.model == "resolved-model"

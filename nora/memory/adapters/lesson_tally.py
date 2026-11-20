@@ -19,24 +19,29 @@ from nora.infra.sql.cognitive_graph_store import RowData, SqlCognitiveGraph, vis
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 
 
-def _resting(unit: str) -> sa.Subquery:
+def _resting(unit: str, claim_id: str | None = None) -> sa.Subquery:
     rest, serve = EDGE.alias("lesson_rest"), EDGE.alias("maintain_child")
     lesson, parent = CLAIM.c, INTENTION.c
-    resting = sa.select(
+    by_claim = (lesson.id == claim_id,) if claim_id is not None else ()
+    direct = sa.select(
         rest.c.dst_id.label("claim_id"), rest.c.src_id.label("intention_id"),
+        rest.c.id.label("rest_id"), sa.literal(None, type_=sa.Text).label("serve_id"),
     ).select_from(rest.join(CLAIM, sa.and_(
         lesson.unit == rest.c.unit, lesson.id == rest.c.dst_id,
     ))).where(
         rest.c.unit == unit, rest.c.type == "rests_on", rest.c.state == "live",
-        lesson.part == "lesson", visible_to_reads(rest),
-    ).cte("resting_on_lesson")
-    indirect = sa.select(resting.c.claim_id, serve.c.src_id).select_from(resting.join(
-        INTENTION, sa.and_(parent.id == resting.c.intention_id, parent.unit == unit),
+        lesson.part == "lesson", visible_to_reads(rest), *by_claim,
+    )
+    rested = direct.cte("resting_on_lesson")
+    indirect = sa.select(
+        rested.c.claim_id, serve.c.src_id, rested.c.rest_id, serve.c.id,
+    ).select_from(rested.join(
+        INTENTION, sa.and_(parent.id == rested.c.intention_id, parent.unit == unit),
     ).join(serve, sa.and_(serve.c.unit == unit, serve.c.dst_id == parent.id))).where(
         parent.form == "maintain", serve.c.type == "serves", serve.c.state == "live",
         visible_to_reads(serve), visible_to_reads(INTENTION),
     )
-    return sa.select(resting).union(indirect).subquery()
+    return direct.union_all(indirect).subquery()
 
 
 async def rebuild_lessons_for_verdict(
@@ -46,7 +51,7 @@ async def rebuild_lessons_for_verdict(
     resting = _resting(unit)
     claims = tuple(await conn.scalars(sa.select(resting.c.claim_id).where(
         resting.c.intention_id == intention_id,
-    ).order_by(resting.c.claim_id)))
+    ).distinct().order_by(resting.c.claim_id)))
     for claim_id in claims:
         await rebuild_lesson_tally(conn, graph, unit=unit, claim_id=claim_id, at=at)
 
@@ -61,19 +66,25 @@ async def rebuild_lesson_tally(
     ).with_for_update())).mappings().one_or_none()
     if lesson is None:
         return
-    resting = _resting(unit)
-    verdicts = (await conn.execute(sa.select(INTENTION_VERDICT).join(
+    resting = _resting(unit, claim_id)
+    paths = (await conn.execute(sa.select(INTENTION_VERDICT, resting.c.rest_id,
+                                          resting.c.serve_id).join(
         resting, resting.c.intention_id == v.intention_id,
     ).where(
-        v.unit == unit, resting.c.claim_id == claim_id,
+        v.unit == unit,
         v.ending.in_(("achieved", "leaked")), visible_to_reads(INTENTION_VERDICT),
     ).order_by(v.ended_at, v.intention_id))).mappings().all()
-    await _write(conn, graph, lesson, verdicts, at)
+    verdicts = tuple({path["intention_id"]: path for path in paths}.values())
+    edge_ids = {path[key] for path in paths for key in ("rest_id", "serve_id") if path[key]}
+    edges = (await conn.execute(sa.select(EDGE).where(
+        EDGE.c.unit == unit, EDGE.c.id.in_(edge_ids),
+    ).order_by(EDGE.c.id))).mappings().all() if edge_ids else ()
+    await _write(conn, graph, lesson, verdicts, edges, at)
 
 
 async def _write(
     conn: AsyncConnection, graph: SqlCognitiveGraph, lesson: RowData,
-    verdicts: Sequence[sa.RowMapping], at: datetime,
+    verdicts: Sequence[sa.RowMapping], edges: Sequence[sa.RowMapping], at: datetime,
 ) -> None:
     unit, claim_id = lesson["unit"], lesson["id"]
     support = sum(row["ending"] == "achieved" for row in verdicts)
@@ -82,7 +93,7 @@ async def _write(
     planes = await graph.aggregate_planes(
         conn, LESSON_TALLY, unit=unit, key=(claim_id,), occurred_at=evidence_at,
         asserted_at=evidence_at, persons=lesson["persons"], room=lesson["origin_room"],
-        inputs=(lesson, *verdicts), minimum="internal",
+        inputs=(lesson, *verdicts, *edges), minimum="internal",
     )
     values = {**planes, "support": support, "contradiction": contradiction}
     row = LESSON_TALLY.c

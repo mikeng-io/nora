@@ -7,6 +7,7 @@ from uuid import uuid4
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+import nora.memory as memory
 from nora.agent.egress import LeakGuard
 from nora.app.wake_rooms import WakeRoomSlots
 from nora.doctrine.loader import Doctrine
@@ -14,7 +15,7 @@ from nora.engagement.slots import ConversationSlots
 from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, LESSON_TALLY
 from nora.infra.sql.cognitive_graph_store import visible_to_reads
 from nora.infra.sql.engine import create_readonly_sql_engine, create_sql_engine
-from nora.memory import PassContext, Refusal, Retire, Scope, Unavailable, wire
+from nora.memory import PassContext, Refusal, Retire, Scope, Unavailable
 from nora.persons import Persons
 from nora.policy import Policy
 
@@ -34,7 +35,9 @@ async def list_lessons(url: str, unit: str, *, everything: bool) -> int:
     rows = sa.select(
         c.id, c.state, c.content, t.support, t.contradiction,
     ).select_from(CLAIM.outerjoin(
-        LESSON_TALLY, sa.and_(t.unit == c.unit, t.claim_id == evidence),
+        LESSON_TALLY, sa.and_(
+            t.unit == c.unit, t.claim_id == evidence, visible_to_reads(LESSON_TALLY),
+        ),
     )).where(
         c.unit == unit, c.part == "lesson", visible_to_reads(CLAIM),
         sa.or_(_live(), c.state == "retired") if everything else _live(),
@@ -90,7 +93,7 @@ async def retire_lesson(
 async def _retire(engine: AsyncEngine, policy: Policy, unit: str, graph_id: str) -> str:
     slots = WakeRoomSlots(policy, ConversationSlots(maxlen=1, spawn=asyncio.create_task))
     guard = LeakGuard(Doctrine((), "", "", "", "", 0), "")
-    admission = wire.admission(engine, Persons({}, {}), policy, guard,
+    admission = memory.wire.admission(engine, Persons({}, {}), policy, guard,
                                content_checks=False, room_slots=slots)
     context = PassContext(
         unit, None, False, "operator", "operator", f"operator:{uuid4()}",
@@ -106,4 +109,4 @@ async def _retire(engine: AsyncEngine, policy: Policy, unit: str, graph_id: str)
         raise GraphLessonError(f"graph lesson retirement refused: {outcome.reason}")
     if isinstance(outcome, Unavailable):
         raise GraphLessonError("graph lesson retirement unavailable")
-    return outcome.id
+    return str(outcome.id)

@@ -160,3 +160,16 @@ async def test_only_the_current_lesson_head_can_publish_a_tally(scenario, held_l
     await _tick(scenario.engine, NOW)
     assert (await tallies(scenario))[revised.id] == (0, 2)
     assert set(await dependencies(scenario)) == {(old, "0:1"), (revised.id, "0:1")}
+
+
+async def test_tally_inherits_restrictions_from_the_resting_verdict(scenario, held_lesson):
+    _, lesson = held_lesson
+    await ended(scenario, "restricted", "leaked", lesson=lesson, exposure="operator")
+    now = await scenario.now()
+    await _tick(scenario.engine, now)
+
+    assert await tallies(scenario) == {lesson: (0, 1)}
+    assert (await tally_rows(scenario))[lesson]["exposure"] == "operator"
+    view = await _assembler(scenario).assemble("wake", WakeInput(()), (), SCOPE, now)
+    assert lesson in view.shown
+    assert "support=0, contradiction=1" not in view.render()

@@ -50,9 +50,10 @@ def wake_blocks(
     evidence = render_elements(
         (*verdicts, *corrections), tag="item", attrs=stimulus_attrs, body=stimulus_rows,
     )
+    claimed_verdict_ids = {s.graph_id for s in verdicts}
     previous = tuple(rows[id_] for id_ in anchors
                      if id_ in rows and rows[id_].source == "intention_verdict"
-                     and id_ not in {s.graph_id for s in verdicts})
+                     and id_ not in claimed_verdict_ids)
     if previous:
         evidence += "\nEarlier verdicts in the same classes:\n" + builder.graph_rows(previous)
     blocks = (
