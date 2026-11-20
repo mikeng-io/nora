@@ -13,6 +13,7 @@ from nora.domain.lessons import (
     LESSON_MIN_EPISODES,
     LESSON_UNIT_MAX_CHARS,
     echoes,
+    normalized_lesson_length,
 )
 from nora.memory.domain.admission_proposals import Link, PersonAuthor, RowFacts
 
@@ -55,7 +56,7 @@ def lesson_form(
     )
     if len(verdicts) < LESSON_MIN_EPISODES and not correction:
         return "thin_evidence", "citations"
-    if not isinstance(body, str) or len(body.strip()) < LESSON_BODY_MIN_CHARS:
+    if not isinstance(body, str) or normalized_lesson_length(body) < LESSON_BODY_MIN_CHARS:
         return "too_short", "content"
     if len(body) > LESSON_BODY_MAX_CHARS:
         return "too_long", "content"

@@ -126,7 +126,7 @@ async def test_a_person_addressing_nora_can_supply_the_correction_floor(scenario
     ("lesson_not_about_nora", BODY, None, True, False),
     ("thin_evidence", BODY, "nora-pointer", False, False),
     ("echo", BODY, "nora-pointer", True, True),
-    ("too_short", "Short", "nora-pointer", True, False),
+    ("too_short", "!!! Pause !!!", "nora-pointer", True, False),
     ("too_long", "long " * 90, "nora-pointer", True, False),
     ("echoes_doctrine", LAW.text, "nora-pointer", True, False),
 ], ids=["about", "thin", "echo", "short", "long", "doctrine"])

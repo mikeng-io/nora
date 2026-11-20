@@ -61,6 +61,7 @@ __all__ = [
     "echoes",
     "evidence_ceiling",
     "is_correction",
+    "normalized_lesson_length",
 ]
 
 #: **Sizing.** A starting unit is about 800 tokens, roughly 700 characters of
@@ -197,6 +198,11 @@ def _norm(text: str) -> str:
     return "".join(ch for ch in text.casefold() if ch.isalnum())
 
 
+def normalized_lesson_length(text: str) -> int:
+    """Count case-folded letters and digits for the minimum lesson body."""
+    return len(_norm(text))
+
+
 def _grams(text: str) -> frozenset[str]:
     norm = _norm(text)
     if len(norm) <= ECHO_GRAM:
@@ -255,7 +261,7 @@ def check_lesson(
     if len(text) > LESSON_BODY_MAX_CHARS:
         return Refusal("too_long", f"the lesson is {len(text)} characters, past the "
                        f"{LESSON_BODY_MAX_CHARS} cap; one practice, said short")
-    if len(_norm(text)) < LESSON_BODY_MIN_CHARS:
+    if normalized_lesson_length(text) < LESSON_BODY_MIN_CHARS:
         return Refusal("too_short", f"the lesson is under {LESSON_BODY_MIN_CHARS} letters "
                        "and digits; say what to do differently in a clause")
     refused = check_revision(body=text, citations=citations, citable=citable)

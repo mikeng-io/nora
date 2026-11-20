@@ -8,6 +8,7 @@ from typing import Literal, cast
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+from sqlalchemy.sql import FromClause
 
 from nora.domain.lineage import Lineage
 from nora.infra.sql.cognitive_graph_schema import (
@@ -182,15 +183,17 @@ def _select(table: sa.Table, id_column: str) -> sa.Select:
     )
     if table.name == "fetched_pages":
         needed.append(table.c.url.label("fetched_url"))
+    source: FromClause = table
+    if table.name in ITEM_SOURCES:
+        stimulus = GRAPH_STIMULUS.c
+        source = table.outerjoin(GRAPH_STIMULUS, sa.and_(
+            stimulus.unit == table.c.unit, stimulus.graph_id == table.c.graph_id,
+            stimulus.kind == "strong_cue", stimulus.occurrence == "",
+            stimulus.cues.contains(["addresses_nora"]),
+        ))
+        needed.append(stimulus.graph_id.is_not(None).label("aimed_at_nora"))
     if table.name not in _SPEECH:
-        return sa.select(*needed)
-    stimulus = GRAPH_STIMULUS.c
-    source = table.outerjoin(GRAPH_STIMULUS, sa.and_(
-        stimulus.unit == table.c.unit, stimulus.graph_id == table.c.graph_id,
-        stimulus.kind == "strong_cue", stimulus.occurrence == "",
-        stimulus.cues.contains(["addresses_nora"]),
-    ))
-    needed.append(stimulus.graph_id.is_not(None).label("aimed_at_nora"))
+        return sa.select(*needed).select_from(source)
     parent = MESSAGES
     sender = parent if table.name == "message_edit" else table
     stmt = sa.select(
