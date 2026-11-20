@@ -53,9 +53,14 @@ class DebriefInput:
     items: tuple[str, ...]
 
 
+ReviewCursor = tuple[int, str]
+
+
 @dataclass(frozen=True, slots=True)
 class ReviewInput:
     lessons: tuple[str, ...] = ()
+    after: ReviewCursor | None = None
+    include_roomless: bool = False
 
 
 PassInput = CalledInput | AmbientInput | ProactiveInput | WakeInput | DebriefInput | ReviewInput
@@ -71,6 +76,7 @@ class AssembledPass:
     observed: tuple[tuple[str, str], ...] = ()
     agenda_stimuli: tuple[str, ...] = ()
     review_due: tuple[tuple[str, datetime], ...] = ()
+    review_next: ReviewCursor | None = None
 
     def render(self) -> str:
         return render_blocks(tuple(replace(block, order=i) for i, block in enumerate(self.blocks)))

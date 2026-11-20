@@ -1,5 +1,6 @@
 """Run the scheduled judge through its real tools and scoped Postgres reads."""
 
+import re
 from datetime import timedelta
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from nora.agent.room import Room
 from nora.app.cognition_agent_runner import DreamerAgentRunner
 from nora.app.cognition_session import AdaptorBudget
 from nora.app.composition_review import build_review_runner
-from nora.app.review_pass import ReviewPass
+from nora.app.review_pass import REVIEW_RETRY_SECONDS, ReviewPass
 from nora.app.startup import StartupError
 from nora.config import ModelRoute
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
@@ -24,7 +25,7 @@ from nora.testing.scripted_agent import ScriptedTurn
 from tests.fakes import dreamer_runtime_for
 from tests.infra.test_graph_propose import BASIS
 from tests.infra.test_pass_anchors import NOW, SCOPE, reader
-from tests.infra.test_retrieval_scope import ROOM, UNIT, write_edge
+from tests.infra.test_retrieval_scope import AT, ROOM, UNIT, write_edge
 from tests.infra.test_retrieval_scope import scenario as scenario
 from tests.infra.test_review_admission import grade_rows, guess, lesson
 from tests.infra.test_room_busy import service, slots
@@ -116,6 +117,53 @@ async def test_incomplete_judge_writes_nothing_and_retries_on_its_bound(scenario
     assert model.turn == 2
     anchors = await reader(scenario).build(declaration("review"), ReviewInput(), SCOPE, NOW)
     assert anchors.review_due == ("guess",)
+
+
+async def test_two_review_ticks_page_guesses_and_show_the_lesson_with_its_tally(scenario):
+    tally = await lesson(scenario)
+    end = AT + timedelta(seconds=2)
+    for i in range(60):
+        await scenario.claim(f"guess-{i:02}", part="guess", prediction="Generated", window_end=end)
+    await scenario.item("in-window", at=AT + timedelta(seconds=1))
+    now = await scenario.now()
+    model = WakeModel([])
+    review = _review(scenario, model)
+    for tick in (now, now + timedelta(seconds=REVIEW_RETRY_SECONDS)):
+        review.poll(tick)
+        await review.drain()
+    assert len(model.seen) == 2
+    dockets = [re.findall(r"<item [^>]+>.*?</item>", call[0]["content"][0]["text"], re.DOTALL)
+               for call in model.seen]
+    assert any('role="due"' in item and "claim: lesson" in item for item in dockets[0])
+    assert any(tally["graph_id"] in item and '"contradiction": 1' in item for item in dockets[0])
+    pages = []
+    for items in dockets:
+        guesses = {id_ for item in items if 'role="due"' in item
+                   for id_ in re.findall(r"\bguess-\d\d\b", item)}
+        assert guesses and any("in-window" in item
+                               and set(re.findall(r"\bguess-\d\d\b", item)) == guesses
+                               for item in items)
+        pages.append(guesses)
+    assert pages[0].isdisjoint(pages[1])
+    assert await grade_rows(scenario) == []
+
+
+async def test_scheduled_review_uses_claim_room_in_unit_without_home(scenario):
+    assert UNIT not in scenario.policy.home_rooms()
+    await guess(scenario)
+    await scenario.claim("roomless-guess", part="guess", prediction="Roomless prediction",
+                         window_end=AT, origin_room=None)
+    await scenario.item("later")
+    model = _model("guess", "refuted", "later")
+    review = _review(scenario, model)
+    review.poll(NOW)
+    await review.drain()
+    assert [tuple(row)[1:] for row in await grade_rows(scenario)] == [("refuted", "scripted-judge")]
+    assert "Generated prediction" in model.prompt()
+    assert "Roomless prediction" not in model.prompt()
+    review.poll(NOW + timedelta(seconds=REVIEW_RETRY_SECONDS))
+    await review.drain()
+    assert model.turn == 2
 
 
 async def test_guess_profile_renders_its_refuted_grade(scenario):

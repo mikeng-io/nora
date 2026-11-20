@@ -2,8 +2,9 @@
 
 import asyncio
 import logging
+from bisect import bisect_right
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 from uuid import uuid4
@@ -13,6 +14,7 @@ from nora.agent.surface import deferred_surface
 from nora.app.cognition_session import AdaptorBudget, CognitionAgentRunner
 from nora.domain.blocks import BlockDeclaration, ContextBlock, assemble
 from nora.domain.lineage import room_key
+from nora.engagement.slot_keys import resolve_slot_room
 from nora.instructions.dreamer import DreamerInstructions
 from nora.language.catalogue_render import render_tool_catalogue
 from nora.memory import (
@@ -25,6 +27,7 @@ from nora.memory import (
     PassScope,
     Proposal,
     Refusal,
+    ReviewCursor,
     ReviewInput,
     act_pass,
     grade_target,
@@ -45,6 +48,7 @@ _BLOCKS: tuple[BlockDeclaration, ...] = (
 
 class ReviewLessons(Protocol):
     async def due_lessons(self, unit: str) -> tuple[str, ...]: ...
+    async def due_review_origins(self, unit: str, now: datetime) -> tuple[str | None, ...]: ...
 
 
 class ReviewRooms(Protocol):
@@ -69,6 +73,14 @@ class ReviewAdmission(Protocol):
     async def admit(
         self, proposals: Iterable[Proposal], context: PassContext, shown: Iterable[str],
     ) -> AdmissionResult: ...
+
+
+@dataclass(frozen=True, slots=True)
+class _Attempt:
+    start: ReviewCursor | None
+    next: ReviewCursor
+    due: tuple[tuple[str, datetime], ...]
+    retry_at: datetime
 
 
 class _GradeBatch:
@@ -103,14 +115,14 @@ class ReviewPass:
         self._surface, self._admission, self._agent = surface, admission, agent
         self._instructions, self._budget, self._model = instructions, budget, model
         self._revisions, self._policy = revisions, policy
-        self._attempts: dict[str, tuple[tuple[tuple[str, datetime], ...], datetime]] = {}
+        self._attempts: dict[tuple[str, str], _Attempt] = {}
+        self._last_room: dict[str, str] = {}
         self._running: dict[str, asyncio.Task[None]] = {}
 
     def poll(self, now: datetime) -> None:
-        for unit, home in self._policy.home_rooms().items():
+        for unit in {room.unit for room in self._policy.rooms() if room.absorbed}:
             if unit not in self._running:
-                room = room_key(home.platform, home.primary_id)
-                self._running[unit] = asyncio.create_task(self._tick(unit, room, now))
+                self._running[unit] = asyncio.create_task(self._tick(unit, now))
 
     async def drain(self) -> None:
         await asyncio.gather(*self._running.values(), return_exceptions=True)
@@ -119,30 +131,57 @@ class ReviewPass:
         for task in self._running.values():
             task.cancel()
 
-    async def _tick(self, unit: str, room: str, now: datetime) -> None:
+    async def _tick(self, unit: str, now: datetime) -> None:
         try:
-            await self.run_once(unit, room, now)
+            rooms = await self._due_rooms(unit, now)
+            start = bisect_right(rooms, self._last_room.get(unit, ""))
+            for room in (*rooms[start:], *rooms[:start]):
+                self._last_room[unit] = room
+                if await self.run_once(unit, room, now):
+                    break
         except Exception:
             log.exception("Review pass failed")
         finally:
             self._running.pop(unit)
 
-    async def run_once(self, unit: str, room: str, now: datetime) -> None:
+    async def _due_rooms(self, unit: str, now: datetime) -> list[str]:
+        allowed = self._policy.rooms()
+        home = self._policy.home_rooms().get(unit)
+        rooms: set[str] = set()
+        for origin in await self._lessons.due_review_origins(unit, now):
+            room = home if origin is None else resolve_slot_room(allowed, origin, unit=unit)
+            if room is not None and room.absorbed:
+                rooms.add(room_key(room.platform, room.primary_id))
+        return sorted(rooms)
+
+    async def run_once(self, unit: str, room: str, now: datetime) -> bool:
         scope, direct = await self._rooms.scope_for(unit, room)
-        data = ReviewInput(await self._lessons.due_lessons(unit))
+        home = self._policy.home_rooms().get(unit)
+        key = unit, room
+        previous = self._attempts.get(key)
+        waiting = previous is not None and now < previous.retry_at
+        after = None if previous is None else previous.start if waiting else previous.next
+        data = ReviewInput(
+            await self._lessons.due_lessons(unit), after=after,
+            include_roomless=home is not None and room == room_key(home.platform, home.primary_id),
+        )
         assembled = await self._assembler.assemble("review", data, (), scope, now)
         if assembled.status == "unavailable":
-            return
+            return False
+        if assembled.review_next is None:
+            self._attempts.pop(key, None)
+            return False
         due = assembled.review_due
+        if waiting and previous is not None and due == previous.due:
+            return False
+        self._attempts[key] = _Attempt(
+            after, assembled.review_next, due, now + timedelta(seconds=REVIEW_RETRY_SECONDS),
+        )
         if not due:
-            self._attempts.pop(unit, None)
-            return
-        previous = self._attempts.get(unit)
-        if previous is not None and due == previous[0] and now < previous[1]:
-            return
-        self._attempts[unit] = due, now + timedelta(seconds=REVIEW_RETRY_SECONDS)
+            return False
         with root_span("review", links=(), parent=None, **{TRACE_KIND: "generation"}):
             await self._judge(scope, direct, assembled, now)
+        return True
 
     async def _judge(
         self, scope: PassScope, direct: bool, assembled: AssembledPass, now: datetime,

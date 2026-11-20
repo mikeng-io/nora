@@ -88,7 +88,7 @@ class PassAssembler:
         return AssembledPass(
             blocks, result.status, result.cause, shown,
             not isinstance(data, ProactiveInput) or data.intention in due_ids, observed,
-            agenda_stimuli, review_due,
+            agenda_stimuli, review_due, seeds.review_next,
         )
 
 

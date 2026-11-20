@@ -66,6 +66,9 @@ from nora.memory.domain.pass_inputs import (
     ProactiveInput as ProactiveInput,
 )
 from nora.memory.domain.pass_inputs import (
+    ReviewCursor as ReviewCursor,
+)
+from nora.memory.domain.pass_inputs import (
     ReviewInput as ReviewInput,
 )
 from nora.memory.domain.pass_inputs import (
