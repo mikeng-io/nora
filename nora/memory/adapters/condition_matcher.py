@@ -178,7 +178,7 @@ class SqlIntentionBatch:
         start = row["valid_from"] or at
         end = row["valid_to"] or at
         if table.name == "platform_object_state":
-            sources = ("platform_observation",)
+            sources: tuple[str, ...] = ("platform_observation",)
         elif table.name.startswith("presence_"):
             sources = ("presence_fixes",)
         else:

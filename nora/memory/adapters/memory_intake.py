@@ -61,7 +61,7 @@ class SqlMemoryIntake:
             ))
             graph_id: str = planes["graph_id"]
             await conn.execute(sa.update(CLAIM).where(
-                CLAIM.c.unit == unit, CLAIM.c.id.in_(targets), author == sa.any_(CLAIM.c.persons),
+                CLAIM.c.unit == unit, CLAIM.c.id.in_(targets), sa.any_(CLAIM.c.persons) == author,
                 CLAIM.c.state != "tombstoned",
             ).values(state="hidden"))
             if delete_now:
@@ -113,7 +113,7 @@ class SqlMemoryIntake:
             async with conn.begin_nested():
                 return await self._delete(conn, unit, graph_id)
         except sa.exc.IntegrityError as exc:
-            driver = exc.orig.__cause__ or exc.orig
+            driver = getattr(exc.orig, "__cause__", None) or exc.orig
             table = getattr(driver, "table_name", None) or getattr(
                 getattr(driver, "diag", None), "table_name", None,
             )
