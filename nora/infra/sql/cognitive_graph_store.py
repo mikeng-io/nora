@@ -323,12 +323,15 @@ class SqlCognitiveGraph:
         retire: bool = False,
         merge: tuple[str, str] | None = None,
         topics: Sequence[AdmissionTopic] = (),
+        before_write: Callable[[AsyncConnection], Awaitable[None]] | None = None,
         after_write: Callable[[AsyncConnection], Awaitable[None]] | None = None,
     ) -> None:
         """Write a model proposal and all its edges as one graph transaction."""
         committing = False
         try:
             async with self._engine.begin() as conn:
+                if before_write is not None:
+                    await before_write(conn)
                 for topic in topics:
                     if topic.base_state is None:
                         await self._insert(conn, ENTITY, topic.row)

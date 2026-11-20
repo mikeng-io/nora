@@ -1,11 +1,14 @@
 """Graph lesson proposals consume scoped evidence and an independent verdict."""
 
+from argparse import Namespace
 from dataclasses import replace
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
 
 from nora.agent.egress import LeakGuard
+from nora.app import cli
 from nora.doctrine.loader import Doctrine
 from nora.domain.doctrine_check import CheckVerdict, LawRule
 from nora.domain.graph_stimuli import GraphStimulus
@@ -15,6 +18,7 @@ from nora.infra.sql.tension import SqlTensionStore
 from nora.memory import wire
 from nora.memory.app.admission import Stored
 from nora.memory.domain.admission import Refusal
+from nora.memory.domain.admission_proposals import Retire, Scope
 from nora.memory.domain.graph_operations import WAKE_OPERATIONS, parse_graph_operation
 from nora.memory.domain.pass_inputs import WakeInput
 from tests.infra.test_cognitive_graph_admission import _rows
@@ -55,7 +59,8 @@ class LessonChecker:
 
 def service(scenario, checker):
     return wire.admission(
-        scenario.engine, scenario.persons, scenario.policy, LeakGuard(Doctrine((), "", "", "fixture", "", 0), "fixture-canary"),
+        scenario.engine, scenario.persons, scenario.policy,
+        LeakGuard(Doctrine((), "", "", "fixture", "", 0), "fixture-canary"),
         content_checks=False, room_slots=slots(scenario), lesson_checker=checker,
     )
 
@@ -201,3 +206,70 @@ async def test_wake_shows_earlier_same_class_verdicts_and_can_cite_them(scenario
     assert not isinstance(candidate, Refusal)
     admitted = await svc.admit((candidate,), WAKE, assembled.shown)
     assert isinstance(admitted.outcomes[0], Stored)
+
+
+async def test_operator_graph_retirement_hides_the_lesson_and_sets_a_unit_evidence_floor(
+    scenario, lesson_setup, clean_pg_url, monkeypatch, capsys,
+):
+    svc, _checker = lesson_setup
+    ids = await verdicts(scenario)
+    lesson = await admit(svc, ids)
+    assert isinstance(lesson, Stored)
+
+    monkeypatch.setattr(cli, "_config", lambda _args: SimpleNamespace())
+    monkeypatch.setattr(cli, "_database_url", lambda _cfg: clean_pg_url)
+    monkeypatch.setattr(cli, "_policy", lambda _cfg: scenario.policy)
+    listing = Namespace(unit=UNIT, all=False)
+    assert await cli.cmd_lessons_list(listing) == 0
+    output = capsys.readouterr().out
+    assert lesson.id in output and "support=0 contradiction=0" in output
+    assert all(id_ in output for id_ in ids)
+
+    args = Namespace(lesson_id=lesson.id, why="Generated operator correction", apply=False)
+    assert await cli.cmd_lessons_retire(args) == 0
+    assert "nothing written" in capsys.readouterr().out
+    assert (await _rows(scenario.engine, CLAIM))[lesson.id]["state"] == "live"
+    args.apply = True
+    assert await cli.cmd_lessons_retire(args) == 0
+
+    claims = await _rows(scenario.engine, CLAIM)
+    [retirement] = [row for row in claims.values() if row["state"] == "retired"]
+    assert (retirement["writer"], retirement["occasion"], retirement["replaces"]) == (
+        "operator", "operator", lesson.id,
+    )
+    assert retirement["pass"].startswith("operator:")
+    view = await _assembler(scenario).assemble(
+        "wake", WakeInput(()), (), SCOPE, await scenario.now(),
+    )
+    assert BODY not in view.render()
+    assert await admit(svc, ids) == Refusal("relearn", "content")
+
+    for id_, offset in (("same-time", 0), ("new-verdict", 1)):
+        await intention(scenario, id_, state="ended", ending="achieved",
+                        ended_at=retirement["asserted_at"] + timedelta(seconds=offset))
+    await _tick(scenario.engine, await scenario.now())
+    after = await _verdicts(scenario.engine)
+    assert await admit(svc, (*ids[1:], after["same-time"]["graph_id"])) == Refusal(
+        "relearn", "content",
+    )
+    assert isinstance(await admit(svc, (*ids[1:], after["new-verdict"]["graph_id"])), Stored)
+
+    args.lesson_id = "21111111-1111-4111-8111-111111111111"
+    with pytest.raises(cli.CliError, match="no unique live graph lesson"):
+        await cli.cmd_lessons_retire(args)
+
+
+async def test_wake_retirement_sets_no_operator_relearn_floor(scenario, lesson_setup):
+    svc, _checker = lesson_setup
+    ids = await verdicts(scenario)
+    lesson = await admit(svc, ids)
+    assert isinstance(lesson, Stored)
+    retirement = Retire(
+        id="wake-retirement", base=lesson.id, basis="inferred",
+        reasoning="deduced", confidence="high", citations=ids,
+        scope=Scope(UNIT, exposure=None),
+    )
+    assert (await svc.admit((retirement,), WAKE, (*ids, lesson.id))).outcomes == (
+        Stored("wake-retirement", lesson.id),
+    )
+    assert isinstance(await admit(svc, ids), Stored)

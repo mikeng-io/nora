@@ -52,7 +52,10 @@ class GraphReadTools:
         authority = active_act_authority()
         context = authority.pass_context if authority is not None else None
         historical = scope.as_of if scope is not None else None
-        bounds = declaration(context.occasion if context else "called").bounds(historical or now)
+        occasion = context.occasion if context else "called"
+        if occasion == "operator":
+            return {"status": "unavailable", "note": "No graph read tool on the operator occasion."}
+        bounds = declaration(occasion).bounds(historical or now)
         start = max(bounds.since, since) if since is not None else bounds.since
         end = min(bounds.until, until) if until is not None else bounds.until
         if start > end:

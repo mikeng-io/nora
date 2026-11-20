@@ -10,6 +10,11 @@ from nora.memory.domain.admission_proposals import PassContext, RowFacts
 from nora.memory.domain.lesson_admission import LessonInventory
 
 
+class AdmissionWriteRefusedError(Exception):
+    def __init__(self, refusal: Refusal) -> None:
+        self.refusal = refusal
+
+
 class AdmissionUnavailableError(Exception):
     def __init__(self, *, commit_uncertain: bool) -> None:
         self.commit_uncertain = commit_uncertain

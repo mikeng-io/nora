@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass, replace
+from datetime import datetime
 from typing import Literal, cast, get_args
 
 from nora.domain.graph_registration import Exposure, InputScope, SourceKind, inherited_scope
@@ -86,6 +87,7 @@ class Admitted:
     owed_to: str | None = None
     topics: tuple[Admitted, ...] = ()
     deliveries: tuple[Admitted, ...] = ()
+    lesson_evidence_at: datetime | None = None
 
 
 class _RefusalError(Exception):
@@ -100,6 +102,7 @@ _OCCASIONS = {
     "proactive": ("committed",),
     "debrief": ("committed",),
     "wake": ("committed", "inferred"),
+    "operator": ("inferred",),
 }
 _REVISION_STATES = {
     "claim": ("live", "superseded", "awaiting_weighing"),
@@ -287,6 +290,12 @@ class _Admission:
         if data.scope.unit != self.context.unit:
             raise _RefusalError("wrong_unit", "unit")
         base, survivor = self._transition(proposal)
+        if self.context.occasion == "operator" and (
+            self.context.writer != "operator" or not isinstance(proposal, Retire)
+            or base is None or base.kind != "claim" or base.part != "lesson"
+            or base.state != "live" or not self.context.pass_id.startswith("operator:")
+        ):
+            raise _RefusalError("occasion_basis", "basis")
         wanted: str | None
         if isinstance(data, Retire) and base is not None:
             kind, wanted = base.kind, base.basis
@@ -339,11 +348,19 @@ class _Admission:
                 if link.source == row.id and link.type in ("draws_on", "rests_on")
             ),
         )
-        if (isinstance(data, CreateClaim) and data.part == "lesson"
-                and (refusal := lesson_form(data.content, evidence, links, self.rows, row.id))):
-            reason, field = refusal
-            raise _RefusalError(reason, field)
-        return Admitted(proposal, row, links, base, survivor, owner, owed_to)
+        lesson_evidence_at = None
+        if isinstance(data, CreateClaim) and data.part == "lesson":
+            if refusal := lesson_form(data.content, evidence, links, self.rows, row.id):
+                reason, field = refusal
+                raise _RefusalError(reason, field)
+            lesson_evidence_at = max(
+                (entry.evidence_at for entry in evidence if entry.evidence_at is not None),
+                default=None,
+            )
+        return Admitted(
+            proposal, row, links, base, survivor, owner, owed_to,
+            lesson_evidence_at=lesson_evidence_at,
+        )
 
     def _get(self, ref: str, field: str, *, reason: FormRefusal) -> RowFacts:
         row = self.rows.get(ref)

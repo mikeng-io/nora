@@ -46,10 +46,13 @@ def lesson_form(
 
     if all(row.author == "nora" for row in evidence):
         return "echo", "citations"
-    verdicts = {row.id for row in evidence if row.table == "intention_verdict"}
+    verdicts = {row.id for row in evidence
+                if row.table == "intention_verdict" and row.verdict_ending != "unknown"}
     # An offhand remark aimed at Nora passes this floor. Its content is judged separately.
-    correction = any(row.aimed_at_nora and isinstance(row.author, PersonAuthor)
-                     for row in evidence)
+    correction = any(
+        row.aimed_at_nora and isinstance(row.author, PersonAuthor) and row.author.id != "nora"
+        for row in evidence
+    )
     if len(verdicts) < LESSON_MIN_EPISODES and not correction:
         return "thin_evidence", "citations"
     if not isinstance(body, str) or len(body.strip()) < LESSON_BODY_MIN_CHARS:
@@ -61,12 +64,17 @@ def lesson_form(
 
 def lesson_inventory_refusal(
     body: str, inventory: LessonInventory, law: Sequence[LawRule], replacing: str | None,
+    newest_evidence: datetime | None,
 ) -> LessonInventoryRefusal | None:
     if any(echoes(body, rule.text) for rule in law):
         return "echoes_doctrine"
     others = [text for id_, text in inventory.live if id_ != replacing]
     if any(echoes(body, text) for text in others):
         return "echoes_lesson"
+    if replacing is None and inventory.operator_retirements and (
+        newest_evidence is None or newest_evidence <= max(inventory.operator_retirements)
+    ):
+        return "relearn"
     if len(others) >= LESSON_MAX_ACTIVE or (
         sum(map(len, others)) + len(body) > LESSON_UNIT_MAX_CHARS
     ):

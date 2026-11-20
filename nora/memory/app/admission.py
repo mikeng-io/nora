@@ -27,6 +27,7 @@ from nora.memory.domain.admission_ports import (
 from nora.memory.domain.admission_ports import (
     AdmissionStore,
     AdmissionUnavailableError,
+    AdmissionWriteRefusedError,
     RoomSlots,
     Stored,
 )
@@ -162,6 +163,8 @@ class AdmissionService:
         if ids & unknown:
             return Unavailable(data.id, commit_uncertain=False), ()
         if isinstance(proposal, CloseIntention):
+            if context.occasion == "operator":
+                return Refusal("occasion_basis", "basis"), ()
             return await self._close(proposal, context, shown), ()
         destinations = data.rooms if isinstance(data, CreateIntention) else ()
         if isinstance(data, CreateIntention) and destinations and (
@@ -211,7 +214,8 @@ class AdmissionService:
                     return Refusal("check_unavailable", "content"), ()
                 if refusal := await self._lesson_review.review(
                     self._store, data.content, data.citations,
-                    choice.base.id if choice.base is not None else None, context,
+                    choice.base.id if choice.base is not None else None,
+                    choice.lesson_evidence_at, context,
                 ):
                     return refusal, ()
             stored = Stored(
@@ -221,6 +225,8 @@ class AdmissionService:
             related = tuple(Stored(topic.row.id, topic.base.id if topic.base else None)
                             for topic in choice.topics)
             await self._store.persist_admitted_proposal(choice, context, stored)
+        except AdmissionWriteRefusedError as exc:
+            return exc.refusal, ()
         except StaleBaseError:
             return Refusal("stale_base", "base"), ()
         except DuplicateDeliveryError as exc:

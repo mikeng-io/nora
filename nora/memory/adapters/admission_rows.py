@@ -164,6 +164,7 @@ class SqlAdmissionRows:
             if row.get("source_ref_kind") is not None else None,
             fetched_url=row.get("fetched_url"),
             table=table, evidence_at=row["evidence_at"],
+            verdict_ending=row.get("ending") if table == "intention_verdict" else None,
             aimed_at_nora=bool(row.get("aimed_at_nora")),
             pointer_ref=row.get("pointer_ref"), part=row.get("part"),
         )
@@ -176,7 +177,7 @@ def _select(table: sa.Table, id_column: str) -> sa.Select:
     ))
     needed.extend(
         table.c[name]
-        for name in ("form", "trigger", "delivery_mode", "pointer_kind", "pointer_ref", "part",
+        for name in ("form", "trigger", "delivery_mode", "pointer_kind", "pointer_ref", "part", "ending",
                      "source_ref_kind", "source_ref_value")
         if name in table.c
     )

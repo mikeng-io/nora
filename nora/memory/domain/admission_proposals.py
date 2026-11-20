@@ -12,7 +12,7 @@ from nora.domain.lineage import Lineage
 from nora.memory.domain.graph import Kind
 
 ExposureOrder = ("external", "internal", "operator")
-Occasion = Literal["called", "ambient", "proactive", "debrief", "wake", "review"]
+Occasion = Literal["called", "ambient", "proactive", "debrief", "wake", "review", "operator"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +90,7 @@ class RowFacts:
     fetched_url: str | None = None
     table: str | None = None
     evidence_at: datetime | None = None
+    verdict_ending: str | None = None
     aimed_at_nora: bool = False
     pointer_ref: str | None = None
     part: str | None = None

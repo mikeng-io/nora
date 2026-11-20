@@ -1,5 +1,6 @@
 """Rebuild a lesson head's tally from the verdicts on its dependencies."""
 
+from collections.abc import Sequence
 from datetime import datetime
 
 import sqlalchemy as sa
@@ -72,7 +73,7 @@ async def rebuild_lesson_tally(
 
 async def _write(
     conn: AsyncConnection, graph: SqlCognitiveGraph, lesson: RowData,
-    verdicts: list[sa.RowMapping], at: datetime,
+    verdicts: Sequence[sa.RowMapping], at: datetime,
 ) -> None:
     unit, claim_id = lesson["unit"], lesson["id"]
     support = sum(row["ending"] == "achieved" for row in verdicts)

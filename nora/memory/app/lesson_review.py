@@ -16,14 +16,14 @@ class LessonReview:
 
     async def review(
         self, store: AdmissionStore, body: str, citations: tuple[str, ...],
-        base: str | None, context: PassContext,
+        base: str | None, evidence_at: datetime | None, context: PassContext,
     ) -> Refusal | None:
         inventory = await store.lessons(context.unit)
         try:
             law = self._checker.rules()
         except Exception:  # noqa: BLE001 - unclassifiable law fails closed
             return Refusal("check_unavailable", "content")
-        if reason := lesson_inventory_refusal(body, inventory, law, base):
+        if reason := lesson_inventory_refusal(body, inventory, law, base, evidence_at):
             return Refusal(reason, "content")
         try:
             verdict = await self._checker.judge(body)

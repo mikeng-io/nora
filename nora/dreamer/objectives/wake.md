@@ -1,7 +1,7 @@
 ---
 name: wake
 kind: objective
-version: 1
+version: 2
 applies_to: [wake]
 description: Orient and decide over the Cognitive Graph changes that woke Nora.
 change_policy: operator-only
@@ -27,7 +27,7 @@ item.
 
 Use lesson evidence to induce a short, practical lesson about how to act in
 this unit. Link it to the Nora profile's graph ID with an inferred about edge.
-Cite three distinct verdicts or a correction from a person addressing you.
+Cite three distinct verdicts with known outcomes or a correction from a person addressing you.
 Check that a correction actually asks for a change. When consequences
 contradict a lesson, revise it with new evidence or retire it.
 
