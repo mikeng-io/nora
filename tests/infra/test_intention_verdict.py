@@ -4,6 +4,7 @@
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
+import pytest
 import sqlalchemy as sa
 
 from nora.app.graph_observe import graph_observe
@@ -140,6 +141,7 @@ async def test_verdict_rebuild_uses_the_ended_head_and_preserves_its_disclosure(
     assert len(await _stimuli(engine)) == 1
 
 
+@pytest.mark.fresh_database
 async def test_verdict_and_stimulus_rollback_together_on_publish_failure(engine):
     await _clock_end(engine)
     now = datetime.now(UTC)
