@@ -100,6 +100,7 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
     ("entity", "lineage"): _LINEAGE,
     ("watch_result", "lineage"): _LINEAGE,
     ("claim_support", "lineage"): _LINEAGE,
+    ("lesson_tally", "lineage"): _LINEAGE,
     ("intention_verdict", "lineage"): _LINEAGE,
     ("dispute", "lineage"): _LINEAGE,
     ("forget_request", "lineage"): _LINEAGE,

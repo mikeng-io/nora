@@ -10,7 +10,14 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.lineage import Lineage
-from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, ENTITY, INTENTION, REGISTRY
+from nora.infra.sql.cognitive_graph_schema import (
+    CLAIM,
+    EDGE,
+    ENTITY,
+    GRAPH_STIMULUS,
+    INTENTION,
+    REGISTRY,
+)
 from nora.infra.sql.schema import MESSAGES, METADATA
 from nora.memory.app.admission_identity import AdmissionIdentity
 from nora.memory.domain.admission_ports import AdmissionUnavailableError
@@ -177,8 +184,8 @@ def _select(table: sa.Table, id_column: str) -> sa.Select:
         needed.append(table.c.url.label("fetched_url"))
     if table.name not in _SPEECH:
         return sa.select(*needed)
-    stimulus = METADATA.tables["graph_stimulus"].c
-    source = table.outerjoin(stimulus.table, sa.and_(
+    stimulus = GRAPH_STIMULUS.c
+    source = table.outerjoin(GRAPH_STIMULUS, sa.and_(
         stimulus.unit == table.c.unit, stimulus.graph_id == table.c.graph_id,
         stimulus.kind == "strong_cue", stimulus.occurrence == "",
         stimulus.cues.contains(["addresses_nora"]),

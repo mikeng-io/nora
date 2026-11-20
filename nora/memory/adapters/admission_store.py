@@ -28,6 +28,7 @@ from nora.memory.adapters.delivery_arbitration import (
     check_deliveries,
     lock_deliveries,
 )
+from nora.memory.adapters.lesson_tally import rebuild_lesson_tally
 from nora.memory.app.condition_matcher import ConditionMatcher
 from nora.memory.domain.admission import Admitted, Refusal, fields
 from nora.memory.domain.admission_ports import AdmissionUnavailableError, Stored
@@ -124,6 +125,11 @@ class SqlAdmissionStore:
             if scheduled:
                 await lock_deliveries(conn, context.unit)
                 await check_deliveries(conn, context.unit, (stored.id, *stored.other_deliveries))
+            if isinstance(data, CreateClaim) and data.part == "lesson":
+                at = (await conn.execute(sa.select(sa.func.now()))).scalar_one()
+                await rebuild_lesson_tally(
+                    conn, self._graph, unit=context.unit, claim_id=stored.id, at=at,
+                )
             if revisions:
                 await _dependency(conn, stored, row)
 

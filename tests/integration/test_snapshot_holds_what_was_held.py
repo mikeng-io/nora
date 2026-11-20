@@ -78,7 +78,7 @@ async def _write(conn: Any, table: str, i: int) -> None:
             id=graph_id, unit=row["unit"], kind="aggregate",
         ))
         row["graph_id"] = graph_id
-    if table == "claim_support":
+    if table in {"claim_support", "lesson_tally"}:
         claim = {**ROWS["claim"](i), "id": row["claim_id"]}
         await conn.execute(sa.insert(_table("registry")).values(
             id=claim["id"], unit=claim["unit"], kind="claim",
@@ -101,10 +101,11 @@ async def _write(conn: Any, table: str, i: int) -> None:
         ))
     if table == "watch_result":
         await _seed_watch(conn, row["watch_edge"], i)
-    if table in {"forget_request", "dispute", "claim_support", "intention_verdict", "watch_result"}:
+    aggregates = {"claim_support", "intention_verdict", "lesson_tally"}
+    if table in aggregates | {"forget_request", "dispute", "watch_result"}:
         await conn.execute(sa.insert(_table("registry")).values(
             id=row["graph_id"], unit=row["unit"],
-            kind="aggregate" if table in {"claim_support", "intention_verdict"} else "item",
+            kind="aggregate" if table in aggregates else "item",
         ))
     await conn.execute(sa.insert(_table(table)).values(row))
 

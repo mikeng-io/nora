@@ -104,9 +104,9 @@ BLOCK_TYPES: dict[str, BlockType] = {
        "and your claims may no longer describe the current situation.",
        "cause", "limit", store="cognitive_graph.standing"),
     _t("graph_lessons",
-       "Claims you recorded about your practice in this unit, with the evidence they cite. "
-       "An empty result found none in this read. A missing block says nothing about what "
-       "you learned, and a lesson can still be wrong.",
+       "Claims about your practice in this unit, with citations and counts of supporting "
+       "and contradicting verdicts. An empty result found none in this read. A missing "
+       "block says nothing about what you learned, and a lesson can still be wrong.",
        "cause", "limit", store="cognitive_graph.lessons"),
     _t("related",
        "Messages and claims reached from the starting references. They carry the original "

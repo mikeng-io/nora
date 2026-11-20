@@ -93,6 +93,7 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     "forget_request": ("id",),
     "dispute": ("id",),
     "claim_support": ("claim_id", "unit"),
+    "lesson_tally": ("claim_id", "unit"),
     "intention_verdict": ("intention_id", "unit"),
     "entity": ("id", "unit"),
     "claim": ("id", "unit"),

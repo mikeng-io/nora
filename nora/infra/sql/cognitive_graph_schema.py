@@ -24,6 +24,7 @@ from nora.infra.sql.intention_verdict_schema import (
     attach_verdict_constraints,
     intention_verdict_table,
 )
+from nora.infra.sql.lesson_tally_schema import attach_lesson_tally_constraints, lesson_tally_table
 from nora.infra.sql.schema import (
     EMBEDDING_DIMENSIONS,
     EMBEDDING_INDEXED_DIMENSIONS,
@@ -31,6 +32,7 @@ from nora.infra.sql.schema import (
 )
 
 INTENTION_VERDICT = intention_verdict_table(METADATA)
+LESSON_TALLY = lesson_tally_table(METADATA)
 GRAPH_STIMULUS = graph_stimulus_table(METADATA)
 GRAPH_STIMULUS_CLAIM = graph_stimulus_claim_table(METADATA)
 
@@ -525,9 +527,12 @@ _AGGREGATE_WRITERS = {
     "platform_object_state": ("SqlObservationStore", "external"),
     "claim_support": ("SqlClaimSupport", "internal"),
     "intention_verdict": ("SqlIntentionVerification", "internal"),
+    "lesson_tally": ("SqlLessonTally", "internal"),
 }
 
-_SCOPED_ONLY = frozenset({"forget_request", "dispute", "claim_support", "intention_verdict"})
+_SCOPED_ONLY = frozenset({
+    "forget_request", "dispute", "claim_support", "intention_verdict", "lesson_tally",
+})
 
 
 def _observed_tables() -> Iterator[tuple[str, str, str, str, str]]:
@@ -587,6 +592,7 @@ for _log in ("computer_events", "tool_call_log"):
 
 _attach_registration_planes()
 attach_verdict_constraints(INTENTION_VERDICT)
+attach_lesson_tally_constraints(LESSON_TALLY)
 
 for _key in ("unit", "graph_id"):
     WATCH_RESULT.c[_key].nullable = False

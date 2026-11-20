@@ -1,6 +1,7 @@
 """Build a pass's context from its floor and one scoped graph retrieval."""
 
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import datetime
 
 from nora.domain.blocks import ContextBlock
@@ -36,8 +37,12 @@ class PassAssembler:
         if seeds.cause is not None:
             result = RetrievalResult("unavailable", bounds, cause=seeds.cause)
         else:
+            anchors = seeds.anchors
+            if "graph_lessons" in choice.presentations and seeds.collective[0].graph_id:
+                nora = seeds.collective[0].graph_id
+                anchors = replace(anchors, graph_ids=(*anchors.graph_ids, nora))
             result = await self._retrieval.retrieve(
-                scope.room, seeds.anchors, bounds, concerns=seeds.concerns,
+                scope.room, anchors, bounds, concerns=seeds.concerns,
                 as_of=scope.as_of, now=now,
             )
         builder = GraphPresentationBlocks(now, seeds.room, seeds.dm_rooms)

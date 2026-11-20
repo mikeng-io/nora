@@ -15,7 +15,11 @@ def wake_blocks(
     if result.status == "unavailable":
         return (), frozenset()
     rows = {row.graph_id: row for row in result.rows if row.unavailable is None}
-    stimuli = tuple(stimulus for stimulus in data.stimuli if stimulus.graph_id in rows)
+    stimuli = tuple(
+        stimulus for stimulus in data.stimuli if stimulus.graph_id in rows
+        and (stimulus.source != "lesson_tally"
+             or rows[stimulus.graph_id].lesson_tally is not None)
+    )
     open_intentions = tuple(rows[id_] for id_ in anchors
                             if id_ in rows and rows[id_].kind == "intention"
                             and rows[id_].state == "open")

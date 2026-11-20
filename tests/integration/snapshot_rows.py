@@ -78,6 +78,10 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
         "ending": "unknown", "ended_at": T0, "form": "achieve", "owed_to": "generated-person",
         "condition_form": "untyped",
     },
+    "lesson_tally": lambda i: {
+        "claim_id": f"cg-lesson-parent-{i}", "unit": "u", "graph_id": f"generated-lesson-tally-{i}",
+        "support": 2, "contradiction": 1,
+    },
     "claim_support": lambda i: {
         "claim_id": f"cg-tally-parent-{i}", "unit": "u", "graph_id": f"generated-tally-{i}",
         "support_count": 1, "last_evidenced_at": T0,
@@ -407,6 +411,7 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
     "tool_call_log": ("tool_result", lambda i: {"revised": i}),
     "watch_result": ("content_hash", lambda i: f"generated-watch-hash-revised-{i}"),
     "claim_support": ("support_count", lambda i: i + 2),
+    "lesson_tally": ("contradiction", lambda i: i + 2),
     "intention_verdict": ("state", lambda i: "tombstoned"),
     "forget_request": ("blocked", lambda i: [{"graph_id": "cg-claim-0", "table": "fixture"}]),
     "dispute": ("author", lambda i: f"generated-revised-person-{i}"),
