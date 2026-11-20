@@ -387,7 +387,9 @@ async def test_three_unavailable_rechecks_park_and_discard_the_staged_debrief(sc
 
     assert len(runner.calls) == 3 and sender.sent == []
     assert await claim_rows(scenario) == [claim]
-    assert not await _rows(scenario.engine, DEBRIEF_OBLIGATION)
+    async with scenario.engine.connect() as conn:
+        obligations = await conn.scalars(sa.select(DEBRIEF_OBLIGATION.c.pass_id))
+        assert obligations.all() == []
     assert debrief.client.prompts == []
     assert debrief.metrics.get("nora_proactive_stimulus_parked_total") == 1
 

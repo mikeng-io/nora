@@ -158,6 +158,7 @@ async def test_moving_a_condition_trigger_requires_a_citation(engine):
     with _pass(base, "item-1"):
         refused = await tool([{**operation, "citations": []}])
         accepted = await tool([operation])
+    assert refused["status"] == "refused", refused
     assert (refused["operations"][0]["reason"], refused["operations"][0]["field"]) == (
         "trigger_without_evidence", "citations",
     )
