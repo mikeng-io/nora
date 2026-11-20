@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { checkSession } from "@/server/session";
+import { checkSession, sessionFailure } from "@/server/session";
 import { downloadRunner } from "@/server/downloads/runner";
 import { convert } from "@/server/downloads/service";
 
@@ -10,7 +10,7 @@ const Body = z.object({ target: z.string().max(8) });
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const check = await checkSession();
   if (check.status !== "ok") {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401, headers: PRIVATE });
+    return sessionFailure(check);
   }
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {

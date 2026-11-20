@@ -68,7 +68,8 @@ async def test_listen_parses_and_forwards_only_parseable_events(monkeypatch):
         ),
     ]
 
-    async def _fake_listen(self, on_message_cb, on_edit_cb=None, on_touch_cb=None):
+    async def _fake_listen(self, on_message_cb, on_edit_cb=None,
+                           on_touch_cb=None, on_observation_cb=None):
         for event in events:
             await on_message_cb(event)
 
@@ -117,7 +118,8 @@ async def test_an_edit_reaches_the_same_callback_marked_as_an_edit(monkeypatch):
     )
     embed_only.edited_at = None
 
-    async def _fake_listen(self, on_message_cb, on_edit_cb=None, on_touch_cb=None):
+    async def _fake_listen(self, on_message_cb, on_edit_cb=None,
+                           on_touch_cb=None, on_observation_cb=None):
         assert on_edit_cb is not None, "the adapter must wire the edit callback"
         await on_edit_cb(self_edit)
         await on_edit_cb(embed_only)
@@ -153,7 +155,8 @@ async def test_a_reaction_and_a_delete_reach_the_same_callback_as_touches(monkey
     own = SimpleNamespace(message_id=4, channel_id=2, guild_id=1, user_id=999, emoji="👀")
     delete = SimpleNamespace(message_id=4, channel_id=2, guild_id=1)
 
-    async def _fake_listen(self, on_message_cb, on_edit_cb=None, on_touch_cb=None):
+    async def _fake_listen(self, on_message_cb, on_edit_cb=None,
+                           on_touch_cb=None, on_observation_cb=None):
         assert on_touch_cb is not None, "the adapter must wire the touch callback"
         await on_touch_cb("reaction_add", own)
         await on_touch_cb("reaction_add", reaction)
@@ -561,7 +564,8 @@ async def test_a_channels_message_and_its_edit_are_ingested_in_order(monkeypatch
     edited.edited_at = _dt.datetime(2026, 9, 24, tzinfo=_dt.UTC)
     order: list[str] = []
 
-    async def _fake_listen(self, on_message_cb, on_edit_cb=None, on_touch_cb=None):
+    async def _fake_listen(self, on_message_cb, on_edit_cb=None,
+                           on_touch_cb=None, on_observation_cb=None):
         # Both dispatched at once, as discord.py does.
         await asyncio.gather(on_message_cb(original), on_edit_cb(edited))
 

@@ -1,8 +1,8 @@
 # Configuration and credential delivery
 
 `config.toml` carries deployment settings, `identity.toml` people, `policy.toml`
-trust, and private `secret.toml` credential values. Identity and policy reload every
-three seconds after validation. Config and secrets require controlled restart or
+trust, and private `secret.toml` credential values. In the file backend, identity
+and policy reload every three seconds after validation. Config and secrets require controlled restart or
 recreation. They are not hot reloaded. See the
 [contract amendment](adr/0033-private-secrets-and-model-endpoints.md) (DEC-325).
 
@@ -38,6 +38,54 @@ native environment projections. `.env` participates only in deployment paths tha
 load it; host precedence is process environment, then legacy `.env`, then secret.
 To retire `.env` overrides, remove the corresponding assignments under the deploy
 lock after backup and validation. Empty assignments remain overrides.
+
+## Managed identity and access
+
+`[identity] backend = "file"` is the default. Managed installations select
+`backend = "managed"`; person/account bindings and scoped access then use the
+managed services rather than file authority. Room destinations and topology
+retain their declared configuration. Backend selection is a restart boundary,
+not an identity-file hot reload. See the
+[identity contract](../design/managed-identity-access/identity.md).
+
+Configure private Kratos admin and Keto read/write URLs under
+`[identity.managed]`. They must be reachable from Nora's runtime, not just the
+operator's shell. The [pinned Ory artifacts](../deploy/ory/README.md) include a
+disposable local/CI stack; its development mode, loopback host ports and volume
+cleanup commands are for that environment. An installed managed service needs
+its own persistent stores and private listener access.
+
+The portal uses one configured authentication issuer, named by the deployment's
+`NORA_AUTHENTICATION_ISSUER` (default `portal`). For example, the private config
+can declare:
+
+```toml
+[identity.authentication.portal]
+key_env = "NORA_AUTHENTICATION_KEY"
+methods = { discord_oauth = "configured-discord-client-id", telegram_oidc = "configured-telegram-client-id" }
+```
+
+Store the referenced key in private `[credentials]`, with environment overrides
+on that reference name. Use a distinct signing key of at least 32 bytes, separate
+from `AUTH_SECRET`, OTP and provisioning credentials. Method values must match
+the actual gateway provider client IDs; only configure verified login methods.
+Signal/WhatsApp code methods use their configured OTP proof issuer and are
+login proof, never linking consent.
+
+The existing private Compose projection derives `NORA_IDENTITY_BACKEND` from
+config for the portal and projects only its selected issuer key to the native
+`NORA_AUTHENTICATION_KEY`. OTP custom aliases remain supported. An unconfigured
+portal issuer gets no other issuer's key; managed mode still refuses file
+fallback. Ory admin keys, provisioning tokens and model keys are not portal
+credentials. Optional `AUTH_TELEGRAM_ID` and `AUTH_TELEGRAM_SECRET` use the same
+private credential delivery. Recreate affected readers through the
+[validated-copy procedure](../.agents/skills/nora-deploy/SKILL.md#3-config-only-change)
+after changing these loaded-once settings; updating source does not update an
+installed helper or live process.
+
+Production authority handoff requires operator approval and a validated data
+handoff, in addition to configuration. Follow the
+[managed activation and recovery prerequisites](runbook.md#managed-identity-activation-and-recovery).
 
 ## Model endpoints
 
@@ -118,7 +166,8 @@ picker; neither setting enables or chooses the agent's reaction.
 | operational script credential reads | common resolver | host-local Python process | synthetic/offline input tests; never print resolved mappings |
 
 Existing Compose owns native image mappings; `scripts/secret_delivery.py` adds
-configured aliases only to Nora, presence and analytics. The installed Komodo
+configured aliases to Nora, presence and analytics, plus the app backend, selected
+authentication issuer/signing key and OTP bearer. The installed Komodo
 wrapper writes private `compose.env` and `compose.json` into `.secret-delivery/`
 beside itself (normally `/etc/komodo/nora-deploy/.secret-delivery/`). Its control
 directory must be writable and shared at the same path on the host and in
@@ -261,3 +310,35 @@ only affected readers through native Stack. Keep current OAuth state unless a
 separate coordinated state recovery is required: restoring old rotating state
 can replay a spent token. Backup scope includes state; restoring it is not an
 automatic part of config rollback. Preserve native DB/object-store data paths.
+
+## Local Qwen Cantonese transcription
+
+Voice notes select `speech.stt.model`; wake utterances independently select
+`speech.wake.stt_model`. Either accepts `qwen3-asr-hk-0.6b`; existing defaults
+remain Whisper noise detection and SenseVoice respectively. The shared
+`[speech.stt.qwen] device = "cpu"` defaults to CPU; `"vulkan"` explicitly
+requires the physical Radeon render device. It never silently falls back.
+The STT service warms the wake engine and Qwen when either role selects it.
+An explicit CLI `--model` retains its legacy preload override.
+
+The existing STT image contains same-ABI CPU and Vulkan llama.cpp builds at
+`78ffbaa18533c2ed51eab2ef5ae0702330efc3e9`. It verifies the pinned Q8 decoder
+and audio projector before loading, using the persistent Hugging Face cache.
+Qwen uses mandatory standalone FSMN VAD: valid no-speech returns empty text;
+a failed detector, worker or incomplete response fails transcription. Native
+Traditional Chinese bypasses OpenCC. VAD-padded speech is partitioned into
+contiguous windows of at most thirty seconds. Cuts prefer detected pauses,
+then quiet audio frames when VAD spans a pause; no synthetic word timestamps
+are returned. `speech.stt.timeout_seconds` bounds queued Qwen work and inference.
+Cold model downloads use a separate bounded startup warmup. Audio stays local.
+
+Before GPU activation, refresh the **installed** `komodo_deploy.py` helper
+beside the installed verifier using the host migration procedure above; compare
+its bytes with the reviewed release source. A repository update alone does not
+refresh that helper. Under the existing deployment lock, validate the candidate
+private config before changing either selector. The helper derives a non-secret
+render-node overlay and numeric supplementary group after image/config validation,
+then resolves and validates effective Compose again before recreation. Credential
+projection stays credential-only. CPU/legacy selections require no GPU device.
+The STT memory limit remains eight GiB with no swap. Activation/config edits and
+owned-service recreation are separate operator-authorized deployment actions.

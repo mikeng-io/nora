@@ -176,7 +176,7 @@ async def enabled(
     reminders: Any, rosters: Any, route_model: Any, session_guidance: Any,
     shared: Any, standing_fold: Any, standing_store: Any, stimulus_store: Any,
     tag_trace_store: Any, tier: Any, tool_registry: Any, unit_rooms: Any,
-    unit_scopes: Any,
+    unit_scopes: Any, access: Any = None,
 ) -> EnabledWiring:
     dream_adaptors = ()
     dreamer_runtime = None
@@ -190,7 +190,7 @@ async def enabled(
             content_checks=content_checks, engine=engine,
             media_join=media_join, metrics=metrics, note_store=note_store,
             persons=persons, profile_index=profile_index,
-            unit_scopes=unit_scopes,
+            unit_scopes=unit_scopes, access=access,
         )
         dream_adaptors = objectives.adaptors
         dream_schedules = objectives.schedules
@@ -207,7 +207,7 @@ async def enabled(
             dream_schedules=dream_schedules,
             dreamer_instructions=dreamer_instructions, memory=memory,
             metrics=metrics, model_client_for=model_client_for,
-            persons=persons, proactive_homes=proactive_homes,
+            persons=persons, proactive_homes=proactive_homes, access=access,
             reasoning_strip_store=reasoning_strip_store, registry=registry,
             rosters=rosters, route_model=route_model, tier=tier,
             tool_registry=tool_registry,
@@ -241,7 +241,7 @@ async def enabled(
                 standing_store=standing_store,
                 stimulus_store=stimulus_store,
                 tag_trace_store=tag_trace_store, tier=tier,
-                tool_registry=tool_registry, unit_rooms=unit_rooms,
+                tool_registry=tool_registry, unit_rooms=unit_rooms, access=access,
                 unit_scopes=unit_scopes,
             )
             cognition_runner = cog.cognition_runner
@@ -317,7 +317,7 @@ def _dreamer_runtime(
     dream_adaptors: Any, dream_schedules: Any, dreamer_instructions: Any, memory: Any,
     metrics: Any, model_client_for: Any, persons: Any, proactive_homes: Any,
     reasoning_strip_store: Any, registry: Any, rosters: Any, route_model: Any,
-    tier: Any, tool_registry: Any,
+    tier: Any, tool_registry: Any, access: Any,
 ) -> DreamerRuntimeWiring:
     """The DreamerRuntime the loop hosts every adaptor on."""
     dream_model = route_model("dreamer", cfg.dreamer_model())
@@ -345,7 +345,7 @@ def _dreamer_runtime(
     dream_tools = _dream_tool_source(
         allowlist=allowlist, audit=audit, cfg=cfg, memory=memory,
         metrics=metrics, persons=persons, proactive_homes=proactive_homes,
-        registry=registry, rosters=rosters, tool_registry=tool_registry,
+        registry=registry, rosters=rosters, tool_registry=tool_registry, access=access,
     )
     dream_grants, dream_budgets, fallback = _dream_grants_and_budgets(cfg)
     dreamer_runtime = DreamerRuntime(

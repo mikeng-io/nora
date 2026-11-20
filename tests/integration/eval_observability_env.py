@@ -7,11 +7,30 @@ import json
 
 import httpx
 import pytest
-from strands import tool
+from strands import Agent, ModelRetryStrategy, tool
+from strands.agent.conversation_manager import SlidingWindowConversationManager
+from strands.tools.executors import SequentialToolExecutor
 
 import evals.backbone as backbone
 from nora.agent import factory
 from nora.subject.eval_evidence import RunEvidence
+
+
+def tool_agent(*, model, system_prompt, tools, trace_attributes, retry):
+    """A plain Strands agent over a generated model: one tool at a time, a short window."""
+    return Agent(
+        model=model, hooks=factory.replay_hooks(), name="generated", agent_id="generated",
+        retry_strategy=ModelRetryStrategy(
+            max_attempts=retry.max_attempts, initial_delay=retry.initial_delay,
+            max_delay=retry.max_delay,
+        ),
+        system_prompt=system_prompt, tools=tools,
+        conversation_manager=SlidingWindowConversationManager(
+            window_size=24, per_turn=True, pin_first=1,
+        ),
+        tool_executor=SequentialToolExecutor(), session_manager=None, callback_handler=None,
+        load_tools_from_directory=False, trace_attributes=trace_attributes,
+    )
 
 
 @pytest.fixture
@@ -98,7 +117,7 @@ async def model_round_trip(requests, *, sentinel="", rounds=2, reasoning_prefill
                                        http_client=transport)
         model = factory.create_model_provider(model="generated-model", max_tokens=100,
                                               temperature=0, client=client, tool_choice="auto")
-        agent = factory.create_browse_agent(
+        agent = tool_agent(
             model=model, system_prompt=(
                 "Judge the generated answer; return a score and reason." if judge
                 else "Increment the supplied integer."),
@@ -120,3 +139,54 @@ async def model_round_trip(requests, *, sentinel="", rounds=2, reasoning_prefill
         assert "6" in str(result)
 
 
+
+
+async def nested_or_reused(nested):
+    """Exercise real SDK invocations against a sequenced local protocol."""
+    requests = []
+    limits = factory.build_limits(turns=4, output_tokens=200, total_tokens=1000)
+    async def respond(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        index = len(requests)
+        if nested and index == 1:
+            message = {"role": "assistant", "content": "parent tool preamble", "tool_calls": [{
+                "id": "generated-nested", "type": "function", "function": {
+                    "name": "run_child", "arguments": "{}"}}]}
+            finish = "tool_calls"
+        else:
+            output = ("child answer" if nested and index == 2 else
+                      "tool raw answer" if nested and index == 3 else
+                      "parent answer" if nested else f"answer {index}")
+            message = {"role": "assistant", "content": output}
+            finish = "stop"
+        assert index <= (4 if nested else 2)
+        return httpx.Response(200, json={"id": "generated", "created": 0,
+            "object": "chat.completion", "model": "generated-model", "choices": [{
+                "index": 0, "finish_reason": finish, "message": message}],
+            "usage": {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as transport:
+        client = factory.create_client(base_url="https://generated.invalid/v1",
+                                       api_key="generated", http_client=transport)
+        model = factory.create_model_provider(model="generated-model", max_tokens=100,
+                                              temperature=0, client=client, tool_choice="auto")
+        model.update_config(stream=False)
+        def agent(tools):
+            return tool_agent(model=model, system_prompt="Generated task",
+                                               tools=tools, trace_attributes={},
+                                               retry=factory.build_retry_policy(timeout_seconds=5))
+        child = agent([])
+        @tool
+        async def run_child() -> str:
+            """Run the generated child task."""
+            result = await factory.invoke(child, "child input", invocation_state={}, limits=limits)
+            async for _ in model.stream(
+                    messages=[{"role": "user", "content": [{"text": "raw input"}]}]):
+                pass
+            return str(result)
+        outer = agent([run_child] if nested else [])
+        for prompt in (["outer input"] if nested else ["first input", "second input"]):
+            await factory.invoke(outer, prompt, invocation_state={}, limits=limits)
+        await client.close()
+    return requests

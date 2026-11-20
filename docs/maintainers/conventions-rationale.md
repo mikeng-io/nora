@@ -1,11 +1,10 @@
 # Conventions & operational detail
 
-The long-form behind `AGENTS.md`'s rules. `AGENTS.md` carries the terse rules an
-agent must not violate; this file carries the *reasoning*, the war-stories, and
-the specific values. Read it when a rule needs its "why" — every mistake recorded
-here cost an afternoon, and the terse rule is only safe because the story is
-preserved. Nothing here is optional context; it is the load-bearing detail moved
-out of `AGENTS.md` so that file can stay scannable.
+The long-form behind the [code standards](../code-standards.md). The standards
+carry the rule, what a reviewer checks and what holds it; this file carries the
+*reasoning*, the war-stories, and the specific values. Read it when a rule needs
+its "why": the terse rule is only safe because the story is preserved. A lesson
+promoted from [lessons](lessons.md) brings its evidence here.
 
 ## Gate commands — the detail
 
@@ -1067,6 +1066,26 @@ manual dispatch of CI. Release PRs do not wait for a full run. A timeout is fail
 not partial success. Local affected selection remains available, and may broaden
 to ALL when dependency evidence is unavailable; use focused targets for iteration.
 See [ADR 0038](../adr/0038-bound-automatic-validation-and-run-full-tests-on-demand.md).
+
+
+## Test practice — how a test is written
+
+The placement rules above made every test findable; they did not make tests
+honest. Measured on the suite at the time the practice was written down:
+13,693 test functions in 927 files; 53 files over a thousand lines, the largest
+3,351; 219 inline fake or stub classes under 138 names, the same fake redefined
+up to eight times; 1,470 `monkeypatch` uses across 124 `unit/` files despite the
+rule that collaborators come through `__init__`; 187 sleeps; five `unit/` files
+reaching Postgres or the network. Naming was the one consistent habit: four in
+five tests already read as sentences.
+
+Each habit has a cost the suite has already paid. A fake that returned `""`
+where the real SDK returns the reply guard's veto text let 2,257 tests pass over
+a change that would have sent that text to a room. `monkeypatch` on the code
+under test replaces the seam the rule asks for, so the production path is never
+the one tested. A sleep is a race that passes until a slow runner. A redefined
+fake drifts from the one the contract suite checks. `nora-test` is the
+procedure; `tests/README.md` carries the summary.
 
 ## Local comments and configuration sources
 

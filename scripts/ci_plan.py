@@ -19,7 +19,10 @@ from scripts import affected_tests, testmon_record
 JOBS = (
     "python",
     "contracts",
+    "ory",
+    "ory-journey",
     "portal",
+    "portal-browser",
     "go",
     "site",
     "dependency-review",
@@ -30,10 +33,49 @@ JOBS = (
 )
 
 
-def classify(paths: list[str], repo: Path = affected_tests.ROOT) -> dict[str, bool]:
+def classify(
+    paths: list[str], repo: Path = affected_tests.ROOT, *, pull_request: bool = False
+) -> dict[str, bool]:
     plan = dict.fromkeys(JOBS, False)
     plan["contracts"] = True
     for path in paths:
+        if (Path(path).suffix != ".md" and path.startswith((
+            "deploy/ory/", "nora/infra/ory/", "nora/people/",
+            "nora/domain/", "scripts/check_ory_",
+        ))) or path in {
+            "pyproject.toml", "uv.lock",
+            "tests/contract/test_authority_backend_contract.py",
+            "tests/contract/test_admission_identity_contract.py",
+            "tests/contract/test_admission_probe_contract.py",
+            "tests/contract/test_binding_store_contract.py",
+            "tests/infra/test_managed_admission_sql.py",
+            "tests/infra/test_account_link_requests.py",
+            "tests/infra/test_roster_provisioning_sql.py",
+            "tests/integration/test_managed_admission_ory.py",
+            "tests/integration/test_managed_export_ory.py",
+            "tests/integration/test_managed_identity_journey.py",
+            "tests/integration/test_managed_identity_restore.py",
+            "tests/integration/test_managed_runtime_recovery.py",
+            "tests/integration/test_managed_community_cost.py",
+            "tests/integration/test_managed_analytics.py",
+            "tests/integration/test_managed_circle_cost.py",
+            "tests/integration/test_managed_collective_identity.py",
+            "tests/integration/test_managed_ingest_authority.py",
+            "tests/integration/test_managed_lineage.py",
+            "tests/integration/test_managed_presence.py",
+            "tests/integration/test_managed_routes.py",
+            "tests/integration/test_platform_observation_ingest.py",
+            "tests/integration/managed_ory.py",
+            "tests/unit/test_account_linking_state.py",
+            "tests/unit/test_grouped_account_observation.py",
+            "tests/unit/test_holder_link.py",
+            "tests/unit/test_link_publication.py",
+            "tests/web/test_holder_links.py",
+            "tests/web/test_roster_provisioning.py",
+            "tests/web/test_managed_ory_credentials.py",
+            "tests/contract/test_binding_store_scoped_contract.py",
+        }:
+            plan["ory"] = True
         # These component contracts read shared generated schemas/fixtures.
         if path.startswith("nora/documents/"):
             plan["portal"] = plan["codeql-javascript"] = True
@@ -56,7 +98,7 @@ def classify(paths: list[str], repo: Path = affected_tests.ROOT) -> dict[str, bo
         }
         if dependency:
             plan["dependency-review"] = True
-        if path.startswith(("site/", "docs-site/", "openwiki/", "assets/")):
+        if path.startswith(("site/", "assets/")):
             plan["site"] = True
             if (
                 suffix in {".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".astro", ".mdx"}
@@ -91,6 +133,15 @@ def classify(paths: list[str], repo: Path = affected_tests.ROOT) -> dict[str, bo
                 plan["codeql-javascript"] = True
         else:
             return dict.fromkeys(JOBS, True)
+    if pull_request:
+        # NOR-1 acceptance: the managed-identity Ory gate runs on every PR
+        # head, so the join never sees the named item-1 job skipped. Item 5
+        # adds the same guarantee for the managed portal browser journey.
+        plan["ory"] = True
+        plan["portal-browser"] = True
+    # The Ory gate is split in two for wall-clock headroom; both halves share
+    # one selection so the join holds each on exactly the same diffs.
+    plan["ory-journey"] = plan["ory"]
     return plan
 
 
@@ -360,7 +411,7 @@ def _node_path(classname: str) -> str:
 def _junit_failures(directory: Path) -> list[str]:
     failed = []
     for report in sorted(directory.glob("*.xml")):
-        for case in ET.parse(report).iter("testcase"):
+        for case in ET.parse(report).iter("testcase"):  # noqa: S314 -- owned pytest JUnit reports
             if any(child.tag in ("failure", "error") for child in case):
                 file = case.get("file") or _node_path(case.get("classname", ""))
                 failed.append(f"{file}::{case.get('name', '')}")
@@ -520,7 +571,7 @@ def main() -> int:
         is_pr = "pull_request" in event
         paths = changed_paths(event, repo) if (
             is_pr or ("before" in event and "after" in event)) else []
-        plan = classify(paths, repo) if is_pr else dict.fromkeys(JOBS, True)
+        plan = classify(paths, repo, pull_request=True) if is_pr else dict.fromkeys(JOBS, True)
         docs = [p for p in paths if affected_tests._is_doc_or_data(p, repo)]
         # Retain selector metadata for explicit consumers. Automatic backend
         # CI uses the fixed fast baseline rather than this dependency record.

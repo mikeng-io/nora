@@ -13,6 +13,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 
 import yaml
@@ -94,6 +95,14 @@ def _apply(tmp_path: Path, monkeypatch, manifest: dict,
         if command[:2] == ['docker', 'compose'] and 'config' in command:
             resolved = copy.deepcopy(compose)
             resolved['name'] = 'nora'
+            limits = {k: resolved['services']['stt'][k]
+                      for k in ('mem_limit', 'memswap_limit')}
+            native = subprocess.run(
+                ['docker', 'compose', '-f', '-', 'config', '--format', 'json'],
+                input=json.dumps({'services': {'stt': {'image': 'generated', **limits}}}),
+                capture_output=True, text=True, check=True)
+            normalized = json.loads(native.stdout)['services']['stt']
+            resolved['services']['stt'].update({k: normalized[k] for k in limits})
             for name, image in manifest['services'].items():
                 resolved['services'][name]['image'] = image
             resolved['services']['nora']['volumes'] = [

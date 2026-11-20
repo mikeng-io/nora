@@ -82,6 +82,7 @@ from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from datetime import datetime
 from typing import Any
 
+from nora.access import IdentityAccess
 from nora.agent.catalog.model import turn_occasion
 from nora.agent.intent_router import route_intent
 from nora.agent.outbound import OutboundComposer
@@ -115,14 +116,14 @@ from nora.obs.tracing import (
     root_span,
     span,
 )
-from nora.persons import Persons
+from nora.persons import Persons, sanitize_unmapped
 from nora.platform.bridge import telemetry as _bridge_telemetry
 from nora.policy import Policy
 from nora.tag import Debounce
 
 from .mentions import MentionRenderer
 from .slots import ConversationSlots
-from .stages import admission, debrief, deliver, feedback, indicate, invoke
+from .stages import admission, command, debrief, deliver, feedback, indicate, invoke
 from .stages.admission import Admission
 from .stages.indicate import Indicator
 from .stages.invoke import AgentRunner
@@ -188,6 +189,7 @@ class EngagementPipeline:
     def __init__(
         self,
         *,
+        access: Any,
         adapters: Mapping[str, Any],
         audit: RecordStore,
         memory: MemoryStore,
@@ -218,6 +220,7 @@ class EngagementPipeline:
         debrief_wiring: debrief.Wiring | None = None,
         decisions: DecisionLogRecorder | None = None,
         clock: Callable[[], datetime] | None = None,
+        room_commands: Any = None,
     ) -> None:
         # Platform -> adapter, not a single adapter: a reply must leave on the
         # SAME platform the tag arrived on; selecting one adapter
@@ -226,21 +229,17 @@ class EngagementPipeline:
         # the wrong group. Keyed by `NormalizedMessage.platform`, which is
         # the only thing that can answer "where did this come from".
         self._adapters = adapters
-        self._audit = audit
-        self._memory = memory
-        self._persons = persons
-        self._doctrine_store = doctrine_store
-        self._context = context_assembler
-        self._runner = runner
-        self._tool_registry = tool_registry
+        self._audit, self._memory, self._persons = audit, memory, persons
+        self._access = access or IdentityAccess.for_files(persons, policy)
+        self._doctrine_store, self._context = doctrine_store, context_assembler
+        self._runner, self._tool_registry = runner, tool_registry
         # policy.toml's per-conversation MCP allowlist. The ingest pipeline already checked
         # this tag's conversation is admitted at all (nora.ingest.stages.scope,
         # DEC-18) using the SAME Policy instance — this is the second read of
         # it, for a narrower question: which MCP servers, not whether to
         # engage at all.
         self._policy = policy
-        self._debounce = debounce
-        self._canary = canary
+        self._debounce, self._canary = debounce, canary
         self._display_name = display_name
         # The Nora aiPeer id (Honcho): her replies feed under it.
         self._ai_peer = ai_peer
@@ -250,8 +249,7 @@ class EngagementPipeline:
         # (which reads the same injected clock) state one instant. `None`
         # falls back to the wall, which is what production's clock is.
         self._clock = clock
-        self._timeout_seconds = timeout_seconds
-        self._limits = limits
+        self._timeout_seconds, self._limits = timeout_seconds, limits
         self._defer_tools = defer_tools
         self._metrics = metrics
         self._spawn = spawn
@@ -282,54 +280,20 @@ class EngagementPipeline:
         # all. Delivering to the wrong platform is catastrophic; failing to
         # read a roster is merely blind, and blind-but-saying-so is allowed.
         self._rosters: Mapping[str, RosterSource] = rosters or {}
-        # The OpenGraph fetcher behind an outbound link-preview card. `None`
-        # whenever `[preview].enabled` is false and in every offline
-        # composition, which is why it defaults rather than being required: a
-        # missing preview is a message without a card, and nothing about it is a
-        # wrong claim. (`composer` on `deliver.build` is required for the opposite
-        # reason; the split is argued there.)
+        # Optional outbound preview fetcher; absent when previews are disabled or offline.
         self._preview_source = preview_source
-        # The tool-recall log's write-path store (R-48). `None` in every
-        # offline/eval composition and any deployment that has not wired it —
-        # `deliver.build`'s `ToolCallLog` treats a `None` store as fully inert,
-        # same shape as `roster_source`/`preview_source` above.
+        # R-48: an absent tool-recall store leaves ToolCallLog inert.
         self._tool_call_log_store = tool_call_log_store
-        # The durable half of the reasoning-strip watch (`reasoning_strip_log`).
-        # Same optional-collaborator shape as `tool_call_log_store` above:
-        # `None` leaves `deliver.build`'s `ReasoningStripWatch` counting in
-        # Prometheus and writing no row, which is what every offline/eval
-        # composition gets.
+        # Without persistence, ReasoningStripWatch still counts its Prometheus metrics.
         self._reasoning_strip_store = reasoning_strip_store
-        # The reasoning-continuity retention store. `None` in every offline/eval composition and any
-        # deployment that has not wired it — the SAME optional-collaborator
-        # shape `preview_source`/`tool_call_log_store` already have above:
-        # `_run_admitted`'s `finally` treats a `None` store as fully inert
-        # (nothing to save into), never a reason to fail the turn. Production
-        # wiring (`composition.py`) is unconditional: retention must exist before
-        # the `[debrief]` flag has anything to gate.
+        # Production retention is unconditional; absent offline stores skip writes in finally.
         self._tag_trace_store = tag_trace_store
-        # The debrief stage's collaborators, as ONE object
-        # rather than four optional parameters — see `debrief.Wiring`. `None`
-        # is `[standing] enabled = false`, the shipped default, and in every
-        # offline/eval composition: `_debrief` below returns without awaiting
-        # anything, so a deployment that has not wired it pays nothing and
-        # holds the slot for no longer than it otherwise would.
-        #
-        # Unlike `tag_trace_store` above, this one IS gated on its flag: retention
-        # exists unconditionally because a lossy fold is only recoverable from
-        # traces that were already being kept, and the fold is the part an
-        # operator turns on.
+        # debrief.Wiring is flag-gated; absence runs no fold or extra await, unlike retention.
         self._debrief_wiring = debrief_wiring
-        # R-10's single-in-flight lock and R-30's per-conversation FIFO queue,
-        # both keyed by (platform, conversation_id), as one INJECTED
-        # collaborator. The queue feeds the lock's one slot in order as each
-        # turn finishes — it never widens it. Both are per-CONVERSATION and
-        # self-draining: `release_and_dispatch` on every exit path, and
-        # `ConversationQueues.dequeue` deletes a key once its last waiting tag
-        # is gone. Neither retains anything per-tag. It is injected rather than
-        # constructed here because the heartbeat fire path holds the SAME
-        # instance — see `nora.engagement.slots`.
+        # R-10/R-30: shared with FirePath, keyed by platform/room; every exit releases and drains.
         self._slots = slots
+        # Opaque area collaborator; absent where room management is not wired.
+        self._room_commands = room_commands
 
     def _adapter_for(self, platform: str) -> Any:
         """The adapter this tag's platform belongs to, or a hard failure.
@@ -550,7 +514,10 @@ class EngagementPipeline:
         """A told-by person id as a NAME for the fold's `<profile>` block
         (45 §5): the identity index's name, "someone" when it has none (R-18 —
         never the id itself)."""
-        ref = self._persons.by_person.get(person_id)
+        # Managed names need the async read surface — a sync fold gets the
+        # same honest "someone" an unmapped file id gets.
+        ref = (self._persons.by_person.get(person_id)
+               if self._access.is_file_backend else None)
         return ref.name if ref is not None else "someone"
 
     async def _debrief(
@@ -643,10 +610,34 @@ class EngagementPipeline:
             "engagement.turn",
             **{"nora.tag_id": request.tag_id,
                "nora.platform": request.message.platform,
+               "nora.occasion": request.occasion,
                "nora.conversation_id": request.message.conversation_id},
         ):
-            await self._run_turn(request, identity, indicator, adapter=adapter,
-                                 disposition=disposition)
+            if request.occasion == "room_command":
+                await self._run_room_command(request, identity, indicator,
+                                             adapter=adapter,
+                                             disposition=disposition)
+            else:
+                await self._run_turn(request, identity, indicator, adapter=adapter,
+                                     disposition=disposition)
+
+    async def _run_room_command(
+        self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
+        adapter: Any = None, disposition: dict[str, str] | None = None,
+    ) -> None:
+        """The `!!!member` occasion — its body is `stages/command.py`."""
+        await command.run(
+            request=request, identity=identity, indicator=indicator,
+            adapter=adapter, disposition=disposition,
+            commands=self._room_commands, policy=self._policy,
+            audit=self._audit, adapter_for=self._adapter_for,
+            doctrine_store=self._doctrine_store, canary=self._canary,
+            tool_registry=self._tool_registry, metrics=self._metrics,
+            access=self._access, rosters=self._rosters,
+            preview_source=self._preview_source, spawn=self._spawn,
+            reasoning_strip_store=self._reasoning_strip_store,
+            tool_call_log_store=self._tool_call_log_store,
+            slots=self._slots)
 
     async def _run_turn(
         self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
@@ -708,12 +699,11 @@ class EngagementPipeline:
             # ingest (the audit stores what arrived) or in the prefill (which
             # may not import `nora.platform`), against `raw_json`, which every
             # historical row already carries. See `nora.engagement.mentions`.
-            ctx = MentionRenderer(
-                persons=self._persons, display_name=self._display_name,
+            ctx = await MentionRenderer(
+                display_name=self._display_name, access=self._access,
                 self_ids=frozenset(getattr(identity, "aliases", ())),
                 metrics=self._metrics,
-                content_checks=self._tool_registry.content_checks,
-            ).rehydrate(ctx)
+                content_checks=self._tool_registry.content_checks).rehydrate(ctx)
             doctrine = self._doctrine_store.get(applies_to="tag")
             log.info(
                 "tag start (tag_id=%s conversation_id=%s sender_id=%s person_id=%s "
@@ -773,7 +763,7 @@ class EngagementPipeline:
                 # and at most once, rather than against the whole address book.
                 composer=OutboundComposer(
                     platform=msg.platform, conversation_id=msg.conversation_id,
-                    persons=self._persons, metrics=self._metrics,
+                    metrics=self._metrics, access=self._access,
                     roster_source=self._rosters.get(msg.platform),
                     preview_source=self._preview_source,
                     content_checks=self._tool_registry.content_checks,
@@ -800,7 +790,7 @@ class EngagementPipeline:
             # both the ingest path and the front of the model call.
             room = Room(
                 platform=msg.platform, conversation_id=msg.conversation_id,
-                roster_source=self._rosters.get(msg.platform), persons=self._persons,
+                roster_source=self._rosters.get(msg.platform), access=self._access,
                 tagger=ctx.tagger, self_ids=frozenset(getattr(identity, "aliases", ())),
                 # From the ASSEMBLED context, not from config: the block is
                 # absent when Honcho could not answer as well as when it is
@@ -821,9 +811,10 @@ class EngagementPipeline:
                 # hop of silence in the channel first.
                 occasion=turn_occasion(voice=msg.voice),
                 store=self._audit, conversation_id=msg.conversation_id,
-                conversation_type=msg.conversation_type, persons=self._persons,
+                conversation_type=msg.conversation_type,
+                persons=self._access.persons_view(),
                 honcho=self._memory, deliverer=handle.deliverer,
-                room=room, question=render_file_links(msg.body),
+                room=room, question=render_file_links(msg.body), message=msg,
                 context_window=self._context_window, metrics=self._metrics,
                 # DEC-146: the SAME tuple `build_prefill` below renders
                 # `<group_transcript>` from. `who_said` answers out of the window
@@ -843,9 +834,9 @@ class EngagementPipeline:
                 # tools mint links into it and the sender puts back the ones the
                 # reply earned and dropped; two carriers would be a feature that
                 # collects perfectly and appends nothing.
-                links=handle.links,
-            )
-            tagger_name = self._persons.display_name(msg)
+                links=handle.links)
+            tagger_name = (ctx.tagger.name if ctx.tagger is not None
+                           else msg.sender_name or sanitize_unmapped(msg.sender_id))
             # NO ROSTER IN THE PROMPT; there is a tool instead.
             # `identity.toml` is Nora's address book across EVERY room; handing
             # all of it to one room discloses the existence and names of people
@@ -1355,10 +1346,10 @@ class EngagementPipeline:
                                 "tag trace save failed (tag=%s)", request.tag_id,
                             )
                 finally:
-                    self._slots.release_and_dispatch(key)
-            # `total` was read BEFORE the debrief, above — see the comment
-            # there. Observed here so the two histograms below stay adjacent
-            # and keep reading off one number.
+                    # Only direct turns release here; the durable worker owns its slot.
+                    if disposition is None:
+                        self._slots.release_and_dispatch(key)
+            # Both latency histograms use the same pre-debrief total.
             self._metrics.observe("nora_tag_latency_seconds", total)
             self._metrics.observe("nora_overhead_seconds", max(0.0, total - llm_elapsed))
             # One observation per ADMITTED tag, silent turns included as 0 —

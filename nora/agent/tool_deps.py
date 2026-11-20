@@ -213,6 +213,9 @@ class ToolDeps:
     video: VideoDesk | None = None
     video_ref_kinds: frozenset[str] = frozenset()
     external_files: ExternalFilesSource | None = None
+    # Both the shared management invocation and verified trigger message are required.
+    room_management: Any = None
+    message: Any = None
     # `[google] account`: Nora's own Google mailbox, named in the NOT_SHARED
     # note so the owner knows who to share with. "" → a generic phrasing.
     google_account: str = ""
@@ -447,7 +450,7 @@ class ToolDeps:
         if self.lineage is None:
             _record(self.metrics, tool, "unavailable", reason="unwired")
             return None
-        target = self.lineage.render_room(
+        target = await self.lineage.read_room(
             platform=self.room.platform, conversation_id=self.bound_conversation_id
         )
         if target.room is None:
@@ -475,8 +478,8 @@ class ToolDeps:
             obj, platform=self.room.platform, conversation_id=self.bound_conversation_id
         )
 
-    async def _keep_fetched_image(self, url: str, data: bytes, media_type: str) -> str | None:
-        """Put a looked-at web picture into custody as a `fetched` row born in"""
+    async def _keep_fetched_media(self, url: str, data: bytes, media_type: str) -> str | None:
+        """Put a looked-at web medium into custody as a `fetched` row born in"""
         if self.blob_store is None or self.media_store is None:
             return None
         try:
@@ -498,7 +501,7 @@ class ToolDeps:
             )
             row = await self.media_store.get(sha256=key)
         except Exception:
-            log.exception("media_fetch could not keep a fetched picture")
+            log.exception("media_fetch could not keep a fetched medium")
             return None
         if row is None or not born_in_room(
             row, platform=self.room.platform, conversation_id=self.bound_conversation_id

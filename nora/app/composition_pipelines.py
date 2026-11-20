@@ -25,7 +25,7 @@ class SharedWiring:
 
 
 def build_shared(
-    allowlist: Any, audit: Any, background: Any, cfg: Any,
+    access: Any, allowlist: Any, audit: Any, background: Any, cfg: Any,
     clock: Any, computer_context: Any, culture_reader: Any, documents_context: Any,
     engine: Any, ledger_store: Any, lessons_reader: Any, media_join: Any,
     memo_store: Any, memory: Any, memory_search: Any, metrics: Any,
@@ -45,6 +45,7 @@ def build_shared(
     )
     assembler = build_assembler(
         cfg,
+        access=access,
         audit=audit,
         memory=memory,
         persons=persons,
@@ -108,17 +109,17 @@ class IngestWiring:
 
 
 def build_ingest(
-    _spawn: Any, allowlist: Any, audit: Any, blobs: Any,
+    _spawn: Any, access: Any, allowlist: Any, audit: Any, blobs: Any,
     cfg: Any, comprehension: Any, media_objects: Any, media_sources: Any,
-    memory: Any, metrics: Any, persons: Any, policy: Any,
+    memory: Any, metrics: Any, policy: Any,
     sticker_reader: Any, stimulus_wiring: Any, transcriber: Any,
 ) -> IngestWiring:
     ingest = IngestPipeline(
         audit=audit,
         memory=memory,
-        persons=persons,
         policy=policy,
         allowlist=allowlist,
+        access=access,
         metrics=metrics,
         spawn=_spawn,
         media_sources=media_sources,
@@ -219,16 +220,18 @@ class EngagementWiring:
 
 
 def build_engagement(
-    allowlist: Any, assembler: Any, audit: Any, background: Any,
+    access: Any, allowlist: Any, assembler: Any, audit: Any, background: Any,
     cfg: Any, clock: Any, debounce: Any, debrief_wiring: Any,
     decision_log: Any, doctrine_store: Any, limits: Any, llm_state: Any,
     memory: Any, metrics: Any, persons: Any, preview_source: Any,
-    reasoning_strip_store: Any, registry: Any, rosters: Any, runner: Any,
+    reasoning_strip_store: Any, registry: Any, room_commands: Any,
+    rosters: Any, runner: Any,
     slots: Any, tag_trace_store: Any, tier: Any, tool_call_log_store: Any,
     tool_registry: Any,
 ) -> EngagementWiring:
 
     engagement = EngagementPipeline(
+        access=access,
         # EVERY built adapter, not just Signal's: a tag is answered on the
         # platform it arrived from, and `registry.adapters` is exactly the set
         # of platforms this process can both hear and speak on.
@@ -268,6 +271,10 @@ def build_engagement(
         # never in doubt about whether to speak. What it writes is what the other two deciders
         # could not see.
         decisions=decision_log,
+        # The `!!!member` invocation — the SAME object the tool registry's
+        # `member_update` calls, so command and semantic tool share one
+        # authenticated path.
+        room_commands=room_commands,
     )
     return EngagementWiring(engagement=engagement)
 
@@ -279,6 +286,7 @@ class DispatcherWiring:
 
 def build_dispatcher(
     background: Any, engagement: Any, ingest: Any, participation_trigger: Any,
+    room_command: Any = None,
 ) -> DispatcherWiring:
 
     dispatcher = Dispatcher(
@@ -286,5 +294,6 @@ def build_dispatcher(
         engagement=engagement,
         background=background,
         participation=participation_trigger,
+        room_command=room_command,
     )
     return DispatcherWiring(dispatcher=dispatcher)

@@ -1,0 +1,37 @@
+[
+  {
+    "name": "effects and state use the same database snapshot",
+    "file": "evals/rebuilt/journey_wakes.py",
+    "old": "            cast(AsyncEngine, reads), unit=scope.unit, rooms=scope.rooms,",
+    "new": "            ctx[\"engine\"], unit=scope.unit, rooms=scope.rooms,",
+    "target": "tests/integration/subject/test_autonomous_finalize_controls.py::test_finalize_cut_hides_a_concurrent_commit_consistently"
+  },
+  {
+    "name": "an unresolved production default refuses parity",
+    "file": "evals/subject_config.py",
+    "old": "            out[key] = (value, UNRESOLVED)",
+    "new": "            pass",
+    "target": "tests/architecture/test_the_eval_subject_is_the_deployed_nora.py::test_an_unresolvable_generated_key_is_a_refusal_not_an_agreement"
+  },
+  {
+    "name": "an omitted optional key follows production loading",
+    "file": "evals/subject_config.py",
+    "old": "            else:\n                continue\n        out.append(line)",
+    "new": "            else:\n                pass\n        out.append(line)",
+    "target": "tests/architecture/test_the_eval_subject_is_the_deployed_nora.py::test_an_omitted_optional_key_keeps_the_deployment_effective_value"
+  },
+  {
+    "name": "missing terminal and settlement evidence blocks the actual rejudge door",
+    "file": "scripts/cognition_loop/judges.py",
+    "old": "        for name in (\"settlement\", \"final_response\"):",
+    "new": "        for name in ():",
+    "target": "tests/integration/subject/test_rejudge_recorded_services.py::test_rejudge_prerequisite_gap_spends_no_judge_on_the_affected[terminal] tests/integration/subject/test_rejudge_recorded_services.py::test_rejudge_prerequisite_gap_spends_no_judge_on_the_affected[settlement]"
+  },
+  {
+    "name": "an invalid antecedent blocks subsequent judge dispatch",
+    "file": "scripts/cognition_loop/judges.py",
+    "old": "    return trajectory_gap(trajectory) + _earlier_gaps(earlier_wakes)",
+    "new": "    return trajectory_gap(trajectory)",
+    "target": "tests/integration/subject/test_rejudge_recorded_services.py::test_rejudge_prerequisite_gap_spends_no_judge_on_the_affected[antecedent]"
+  }
+]

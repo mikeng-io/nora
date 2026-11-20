@@ -435,6 +435,29 @@ class SqlReminderStore:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_reminder(r) for r in rows]
 
+    async def in_rooms(
+        self, rooms: Sequence[tuple[str, str]], *, limit: int,
+    ) -> Sequence[Reminder]:
+        """Every row in the given rooms, EVERY state — the unit's ledger of
+        reminders as it stands now, not the pending work queue `all_pending`
+        serves. A state cut that only saw pending rows could not show a
+        reminder that fired and was delivered inside the window."""
+        if not rooms:
+            return ()
+        in_rooms = sa.or_(*(
+            sa.and_(REMINDERS.c.platform == p,
+                    REMINDERS.c.conversation_id == c)
+            for p, c in rooms))
+        stmt = (
+            sa.select(REMINDERS)
+            .where(in_rooms)
+            .order_by(REMINDERS.c.due_at.asc(), REMINDERS.c.id.asc())
+            .limit(check_limit(limit))
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [_row_to_reminder(r) for r in rows]
+
     async def count_pending(self, requester_person_id: str) -> int:
         stmt = (
             sa.select(sa.func.count())

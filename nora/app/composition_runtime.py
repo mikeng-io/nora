@@ -23,11 +23,18 @@ class TasksWiring:
     llm_state: Any
 
 
-async def tasks(cfg: Any, channel_directory: Any, engine: Any, reload_files: Any)-> TasksWiring:
+async def tasks(
+    cfg: Any, channel_directory: Any, engine: Any, reload_files: Any,
+    owner: Any = None,
+)-> TasksWiring:
 
 
     llm_state = LLMState()
     background = BackgroundTasks()
+    if owner is not None:
+        # Owned before the first spawn — a failing `hydrate` below must
+        # still cancel what is already running.
+        owner.own_background(background)
     background.spawn(reload_files.run())
     if isinstance(channel_directory, BridgeChannelDirectory):
         # The bridge-mode directory's TTL snapshot only stays live while

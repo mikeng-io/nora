@@ -1,67 +1,80 @@
 # Subject and sandbox
 
-## Obtained through production
+## Production owns the subject
 
-`nora/subject` obtains the graph through the same composition root as the
-deployment. The subject carries the deployment's configuration, room policy,
-identity mappings, model and enabled features. Only isolation keys differ:
-database, workspace, process resources and the frozen clock.
+The subject is Nora obtained through the production composition root. Her
+configuration, policy, identities, instructions, feature flags, tool admission,
+context builders and completion hooks belong to that runtime. Evaluation owns
+scenario input, environmental isolation and measurement, not an alternate
+assembly or control loop.
 
-A case enters through a real entry point: admission, addressed reply,
-background cognition, deferred fire or another declared occasion. There is no
-taxonomy of fake Noras and no suite-specific construction branch.
+The baseline is the deployment's own subject. A model, prompt or feature change
+is an explicit candidate variable, not an implicit sandbox default. Sharing a
+runner does not establish equivalence when its dependencies or inputs differ.
+The pinned runtime revision determines which canonical state and active
+dependencies belong to that subject.
 
-## Anchored input
+For the same occasion, state and stimulus, equivalence is checked at the actual
+model boundary: instructions, rendered blocks, tool schemas and parameters,
+read availability and tool-result semantics. Legitimate generated identities
+remain traceable to their source. No normalization hides a behavioural change.
+The assembly contract is owned by [context assembly](../context-assembly/registry.md).
 
-A case names a real room and instant. The sandbox reconstructs what that room
-held there from a read-only deployment clone: source Record and history,
-Notebook revisions, Rollups, media references and the stores the selected
-entry point reads. Every case in one corpus uses the same restoration path.
+## Isolation replaces dependencies
 
-The source room's real ids and policy remain intact. Rows keep their original
-times, and the subject's clock is the anchor instant, so ages and relative dates
-mean what they meant then. The case's arriving message and any structural
-mention are input, not authored context.
+Each case owns its database, external workspaces and process resources.
+Semantic time follows the scenario; operational deadlines still advance.
+External adapters retain their production validation, payload construction and
+result contracts while their effects land in isolated services. Disabling a
+feature, deleting a tool or substituting an unavailable reader is not isolation
+of the same capability.
 
-Some corpora need complete row-history restoration rather than the smaller
-snapshot projection. That choice is corpus-level, never a per-case optimisation.
-A store that cannot be reconstructed and is required by the case makes the run
-unavailable rather than silently reduced.
+The one declared exception is the model gateway. When a case declares it,
+dispatches naming the declared subject or judge identities reach that single
+configured upstream unchanged — model alias, tools and context intact — each
+request admitted on destination, method, configured route and declared model,
+counted once through the installed run budget, and the upstream's addresses
+reachable only while an admitted dispatch is in flight. Every other external
+effect remains refused; a missing declaration or budget refuses rather than
+defaulting to a live endpoint.
 
-## Isolation
+Recorded external responses cross the real dependency boundary, not a prompt
+block pretending to be a tool result. Their identities, time and availability
+remain part of the scenario. An unknown historical roster cannot be replaced
+by today's roster and described as the same audience.
 
-Each case gets its own migrated database and external memory workspace. Writes,
-derived memory and later draws cannot leak into another case. External
-workspaces are created empty and deleted after the draw; cleanup and background
-cancellation happen on every exit path.
+When a required dependency or history cannot be reproduced, execution refuses
+or the affected claim is unavailable. An explicitly broken dependency can test
+failure handling; it cannot establish healthy capability. Declaring a divergence
+does not turn it into production equivalence.
 
-Shared source and blank-template databases are read-only invariants. A run may
-create and migrate a disposable private template when revisions diverge, but it
-never upgrades a shared one. Source, target and shared-version checks happen
-before and after the run, including when a case fails or the process is
-interrupted.
+Production storage and shared source/template databases remain unchanged.
+Disposable copies may be migrated privately; teardown and cancellation run on
+all exits. Restoration preserves the pinned target's required state. For a
+[Cognitive Graph subject](../cognition/storage.md), its tables are the truth;
+third-party memory is neither fed nor read. A target that uses external memory
+requires its actual state; an empty workspace is not a reconstruction.
 
-## Counterfactuals
+## Input and causal scope
 
-A counterfactual starts from a real anchor and varies one declared tier that no
-real moment could contain, with the reason stated. It is a manipulation, not a
-reconstruction, and is counted separately from anchored cases.
+An anchored case names a real room and instant. Restored canonical rows, source
+content and derived indexes preserve their provenance and read scope.
+Restoration uses production's producers and readers, not authored substitutes
+for missing context. Different storage restoration strategies must preserve the
+same required state; they cannot justify a reduced subject per corpus.
 
-The set of variable tiers is closed and scoped to the corpus that needs it.
-A missing anchor, an invented override or a counterfactual parked case is
-refused. A seam the rebuild itself owes is unfinished work, not a reason to
-park a case out of sight.
+A replay holds a recorded input or session boundary fixed. It measures the
+runtime downstream of that boundary. Forcing a recorded wake does not measure
+whether Nora would admit that wake herself. A complete journey instead delivers
+external events through production entry points and lets production admission,
+engagement, scheduling and cognition produce the subsequent work.
 
-Active, unanchored, parked and counterfactual counts are visible in every
-report. An unanchored active case errors; a parked case has a reason and an
-observable return condition and is never silently dropped from the census.
+World input is separate from Nora's effects. A journey retains candidate state
+between turns; it does not copy production's intervening replies or derived
+state over candidate decisions. Readable snapshots and scripted environment
+responses do not authorize a second implementation of Nora's orchestration.
 
-## Declared limits
-
-Any remaining divergence is explicit: unavailable adapters, unrecoverable
-history, media not reconstructed, held transport health, or an external store
-with no point-in-time restore. These are not passed off as production parity.
-Where a platform cannot execute the entry point, the case errors rather than
-becoming an easier scenario. Every tool an eval turn can reach is stated or
-refused; a tool call with no stated result is an ERROR, never a live or billed
-external call.
+A counterfactual varies an explicitly named input or experimental condition.
+It is reported separately from historical reconstruction and deployment
+acceptance. Missing prerequisites remain unfinished work, never a reason to
+quietly omit a block or an active case.

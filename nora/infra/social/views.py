@@ -29,20 +29,9 @@ from typing import Literal
 #: silently.
 ItemKind = Literal["image", "video", "media"]
 
-#: What became of one item's reading.
-#:
-#: * `seen` — `media_fetch` answered, and `text` is what it saw;
-#: * `withheld` — it looked, and what it saw carries what looks like an
-#:   identifier, so the words are not repeated (`media_fetch`'s own screen);
-#: * `failed` — it could not look (the download, the vision call, media
-#:   reading not configured: `media_fetch` said it could not);
-#: * `timed_out` — the look ran past its own ceiling or the whole call's;
-#: * `too_long` — a video longer than the automatic read limit: not read here, by
-#:   design, because one open must not spend a long clip's minutes;
-#: * `over_video_cap` — a video past the per-open video cap: not read here;
-#: * `unknown_length` — a post video with no stated length: not read here,
-#:   because nothing bounds it;
-#: * `not_started` — it waited for a slot and the deadline came first.
+#: Per-item state distinguishes seen, withheld, failed and timed-out looks.
+#: Unseen items state their budget, length or cap reason and carry no description.
+#: A custody code is independent of the reading outcome.
 ReadingState = Literal[
     "seen", "withheld", "failed", "timed_out", "not_started",
     "too_long", "over_video_cap", "unknown_length",
@@ -73,6 +62,11 @@ class Reading:
     state: ReadingState
     text: str | None = None
     coverage: str | None = None
+    #: The custody handle `media_fetch(code=...)` resolves when the look held
+    #: the item's media — a content hash, never an identifier, so it is not
+    #: a private account identifier. A re-look by code never re-types the
+    #: signed url, which is what makes it stable where the link expires.
+    code: str | None = None
 
     def __post_init__(self) -> None:
         if (self.state == "seen") != bool(self.text):

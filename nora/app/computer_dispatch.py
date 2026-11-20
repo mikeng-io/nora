@@ -24,6 +24,7 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
+from nora.access import IdentityAccess
 from nora.agent.room import Room
 from nora.agent.surface import ToolScope
 from nora.domain.computer_events import DREAMER_ACTOR_PREFIX
@@ -37,8 +38,23 @@ __all__ = ["ComputerToolDispatch"]
 #: The tools a durable row may name — exactly the tools the queue wraps.
 EXECUTABLE = frozenset({
     "computer_run", "computer_write", "computer_edit", "computer_import",
-    "computer_browse", "computer_capture",
+    "web_browse", "computer_capture",
 })
+
+
+#: A tool name a queued row may still carry, mapped to the tool that replaced it.
+_RENAMED = {"computer_browse": "web_browse"}
+
+
+def _stored_authority(task: ComputerTask) -> tuple[str, frozenset[str] | None]:
+    """The tool a row names now and its stored grant, carried to a renamed tool, never widened."""
+    old = str(task.payload.get("tool") or "")
+    tool = _RENAMED.get(old, old)
+    raw = (task.origin or {}).get("grant")
+    grant = None if raw is None else frozenset(str(g) for g in raw)
+    if grant is not None and old != tool and old in grant:
+        grant = (grant - {old}) | {tool}
+    return tool, grant
 
 
 def _refused(reason: str, note: str) -> dict[str, Any]:
@@ -59,11 +75,12 @@ class ComputerToolDispatch:
         self, *, registry: Any, store: Any, persons: Any, honcho: Any,
         metrics: Any, rosters: Mapping[str, Any] | None = None,
         self_ids: frozenset[str] = frozenset(),
-        policy: Any, scope_for: Any,
+        policy: Any, scope_for: Any, access: Any = None,
     ) -> None:
         self._registry = registry
         self._store = store
         self._persons = persons
+        self._access = access
         self._honcho = honcho
         self._metrics = metrics
         self._rosters = dict(rosters or {})
@@ -72,16 +89,36 @@ class ComputerToolDispatch:
         # execution time, not inherited from when the row was written.
         self._policy = policy
         self._scope_for = scope_for
+        self._file_access: Any = None
 
-    def _room(self, origin: Mapping[str, Any]) -> Room:
+    def _access_or_files(self) -> Any:
+        if self._access is not None:
+            return self._access
+        if self._file_access is None:
+            self._file_access = IdentityAccess.for_files(
+                self._persons, self._policy)
+        return self._file_access
+
+    def _allow_file(self, platform: str, conversation_id: str, requester: str) -> Any:
+        return self._access_or_files().permitted(
+            platform=platform, conversation_id=conversation_id,
+            person_id=requester or None)
+
+    async def _room(self, origin: Mapping[str, Any]) -> Room:
         platform = str(origin.get("platform") or "")
         requester = str(origin.get("requester_person_id") or "")
-        tagger = self._persons.by_person.get(requester) if requester else None
+        if not requester:
+            tagger = None
+        elif self._access is not None:
+            tagger = await self._access.person_ref(requester)
+        else:
+            tagger = self._persons.by_person.get(requester)
         return Room(
             platform=platform,
             conversation_id=str(origin.get("conversation_id") or ""),
             roster_source=self._rosters.get(platform),
             persons=self._persons,
+            access=self._access,
             tagger=tagger,
             self_ids=self._self_ids,
         )
@@ -90,7 +127,7 @@ class ComputerToolDispatch:
         """Run the row's durable request: the named tool, its stored args,
         its origin room — under the CURRENT admission, never the one the
         row was written under. The reply is the segment's result."""
-        tool = str(task.payload.get("tool") or "")
+        tool, grant = _stored_authority(task)
         if tool not in EXECUTABLE:
             return _refused(
                 f"the task names no runnable tool ({tool or 'empty'})",
@@ -108,8 +145,6 @@ class ComputerToolDispatch:
         dream_adaptor = (actor[len(DREAMER_ACTOR_PREFIX):]
                          if actor.startswith(DREAMER_ACTOR_PREFIX) else "")
         worker = str(origin.get("worker") or "")
-        raw_grant = origin.get("grant")
-        grant = None if raw_grant is None else frozenset(str(g) for g in raw_grant)
         if dream_adaptor:
             current_grant = self._registry.read_only_tools()
             grant = current_grant if grant is None else grant & current_grant
@@ -117,17 +152,21 @@ class ComputerToolDispatch:
         # a revoked requester, a removed room, a moved unit/DM anchor and a
         # grant or occasion that no longer offers the tool all refuse the
         # segment — never a guest effect on stale authority.
-        convo = self._policy.conversation(platform, conversation_id) \
-            if platform and conversation_id else None
-        if convo is None:
+        admitted = (
+            await self._access_or_files().scope_admitted(platform, conversation_id)
+            if platform and conversation_id else False
+        )
+        if not admitted:
             return _refused(
                 "the task's room is no longer admitted",
                 "That queued computer task could not run: the room it came "
                 "from is not admitted any more; it was never run.")
-        if actor in ("tag", "subagent") and not self._policy.is_allowed(
+        if actor in ("tag", "subagent"):
+            verdict = await self._access_or_files().permitted(
                 platform=platform, conversation_id=conversation_id,
-                person_id=requester or None):
-            return _refused(
+                person_id=requester or None)
+            if not verdict.allowed:
+                return _refused(
                 "the task's requester is no longer allowed",
                 "That queued computer task could not run: the person who "
                 "asked for it is not allowed in that room any more; it was "
@@ -159,7 +198,7 @@ class ComputerToolDispatch:
                 # No deliverer, ever: a deferred segment speaks through its
                 # terminal row and the delivery path, never live.
                 "deliverer": None, "metrics": self._metrics,
-                "room": self._room(origin),
+                "room": await self._room(origin),
                 # The deferred call keeps the origin's own provenance: a
                 # Dreamer-launched segment audits as the Dreamer again,
                 # and the origin's grant ceiling rides into the rebuilt

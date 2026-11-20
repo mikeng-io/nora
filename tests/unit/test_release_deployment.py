@@ -101,6 +101,7 @@ def test_host_validation_failure_never_recreates_services_or_records_success(tmp
         if command[0:2] == ['docker', 'compose'] and 'config' in command:
             resolved = copy.deepcopy(compose)
             resolved['name'] = 'nora'
+            resolved['services']['stt'].update(mem_limit=8 * 1024**3, memswap_limit=8 * 1024**3)
             resolved['services']['nora']['volumes'] = [
                 {'target': '/app/config.toml', 'source': str(runtime / 'config.toml')}]
             return json.dumps(resolved)
@@ -120,7 +121,6 @@ def test_host_validation_failure_never_recreates_services_or_records_success(tmp
 
 
 def test_failed_health_readback_preserves_the_previous_success_receipt(tmp_path, monkeypatch):
-    import json
 
     wrapper = load('komodo_deploy')
     bundle = load('release_bundle')
@@ -143,6 +143,7 @@ def test_failed_health_readback_preserves_the_previous_success_receipt(tmp_path,
         if 'config' in command and command[0:2] == ['docker', 'compose']:
             resolved = copy.deepcopy(compose)
             resolved['name'] = 'nora'
+            resolved['services']['stt'].update(mem_limit=8 * 1024**3, memswap_limit=8 * 1024**3)
             resolved['services']['nora']['volumes'] = [
                 {'target': '/app/config.toml', 'source': str(tmp_path / 'config.toml')}]
             return json.dumps(resolved)
@@ -283,13 +284,12 @@ def test_site_profile_is_enabled_before_real_candidate_resolution(tmp_path, monk
 @pytest.fixture
 def release_runtime(tmp_path, monkeypatch):
     """Exercise the transaction with command-specific subprocess responses."""
-    import json
-    import subprocess
 
     wrapper = load('komodo_deploy')
     bundle = load('release_bundle')
     compose, manifest = bundle.render(source(), images(bundle), 'v6.3.1', 'b' * 40)
     compose['name'] = 'nora'
+    compose['services']['stt'].update(mem_limit=8 * 1024**3, memswap_limit=8 * 1024**3)
     for service in compose['services'].values():
         service['volumes'] = [{'target': v.split(':')[1]}
                               for v in service.get('volumes', [])]
@@ -338,7 +338,6 @@ def release_runtime(tmp_path, monkeypatch):
 @pytest.mark.parametrize('stage', ['compose-config', 'pull', 'config-validation'])
 def test_preflight_failure_can_retry_the_identical_release(
         release_runtime, tmp_path, capsys, stage):
-    import json
 
     wrapper, manifest, calls, fault = release_runtime
     receipt = tmp_path / 'release-deploy.json'
@@ -355,7 +354,7 @@ def test_preflight_failure_can_retry_the_identical_release(
     assert receipt.read_text() == 'previous successful deployment'
     fault.clear()
     wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
-    assert calls.count(stage) == 2
+    assert calls.count(stage) == (3 if stage == 'compose-config' else 2)
     assert calls.count('recreate') == 1
     assert json.loads(receipt.read_text()) == manifest
     assert not (tmp_path / 'release-attempt.json').exists()
@@ -365,7 +364,6 @@ def test_preflight_failure_can_retry_the_identical_release(
 @pytest.mark.parametrize('failure', [None, SystemExit, KeyboardInterrupt])
 def test_failed_or_interrupted_candidate_cannot_be_applied_again(
         release_runtime, tmp_path, stage, failure):
-    import json
 
     wrapper, manifest, calls, fault = release_runtime
     receipt = tmp_path / 'release-deploy.json'

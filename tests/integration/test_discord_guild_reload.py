@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import pytest
 
+from nora.access import IdentityAccess
 from nora.config_reload import ReloadFiles
 from nora.domain.models import NormalizedMessage
 from nora.ingest.stages import scope
@@ -58,7 +59,8 @@ async def _admitted(files, channel_id):
             "discord", f"{GUILD}/{channel_id}", "group",
             "424242424242424242", "Miles", 1, "hi", {},
         ),
-        policy=files.policy, persons=files.persons, metrics=files._test_metrics,
+        policy=files.policy, access=IdentityAccess.for_files(files.persons, files.policy),
+        metrics=files._test_metrics,
     )
 
 

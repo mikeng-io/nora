@@ -12,24 +12,33 @@ should stop cleanly, as in `nora.presence.composition`.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, replace
 
+from aiohttp import ClientSession
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from nora.access import IdentityAccess
+from nora.analytics.identity_inputs import ManagedAnalyticsInputs
 from nora.analytics.rollup import RollupConfig
 from nora.analytics.runner import RollupRunner, Subject
 from nora.analytics.units import PersonScope, UnitConfig, UnitRollups
 from nora.config import Config
-from nora.config_reload import ReloadFiles
+from nora.config_reload import FileReload, LivePolicy, ReloadFiles, RestartRequiredError
 from nora.domain.live import LiveMapping, LiveSequence
+from nora.domain.managed import Verdict
+from nora.domain.management import Scope, ScopeKind
 from nora.infra.sql import create_sql_engine, run_migrations
 from nora.infra.sql.geocode_cache import SqlGeocodeCacheStore
 from nora.infra.sql.mobility import SqlMobilityStore
+from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.rollups import SqlRollupStore, UnitRooms
 from nora.infra.sql.social_stream import readable_social_store
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError
-from nora.policy import Policy, PolicyError
+from nora.policy import Policy, PolicyError, load_policy
 
 log = logging.getLogger("nora.analytics.composition")
 
@@ -51,7 +60,9 @@ class AnalyticsDependencies:
     #: transaction committed a moment late is still inside it.
     grace_seconds: float = 60.0
     units: Sequence[UnitRooms] = ()
-    reload_files: ReloadFiles | None = None
+    reload_files: ReloadFiles | FileReload[Policy] | None = None
+    refresh_identity: Callable[[], Awaitable[None]] | None = None
+    engine: AsyncEngine | None = None
 
 
 def _subjects_from_identity(persons: Persons) -> tuple[Subject, ...]:
@@ -143,20 +154,11 @@ def _units_from_policy(policy: Policy, persons: Persons) -> tuple[UnitRooms, ...
     return tuple(out)
 
 
-def build_rollup(cfg: Config) -> AnalyticsDependencies:
-    metrics = Metrics()
-    analytics = cfg.analytics
-    if not analytics.enabled:
-        log.info("analytics is disabled (analytics.enabled = false) — rollup inert")
-        return AnalyticsDependencies(
-            runner=None, persons=None, subjects=(), metrics=metrics,
-            metrics_port=analytics.metrics_port, tick_seconds=analytics.tick_seconds,
-            grace_seconds=analytics.grace_seconds,
-        )
-
+def _file_identity(cfg: Config, metrics: Metrics) -> tuple[Persons, Policy, ReloadFiles]:
     def validate_persons(persons: Persons) -> None:
         if not _subjects_from_identity(persons):
-            raise AnalyticsStartupError("analytics enabled but identity has no Life360 subjects")
+            raise AnalyticsStartupError(
+                "analytics enabled but identity has no Life360 subjects")
 
     try:
         reload_files = ReloadFiles(
@@ -167,8 +169,38 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
     except (PersonsError, PolicyError, ValueError) as exc:
         raise AnalyticsStartupError(f"identity/policy error: {exc}") from exc
     persons, policy = reload_files.persons, reload_files.policy
-    subjects = LiveSequence(lambda: _subjects_from_identity(persons))
-    units = LiveSequence(lambda: _units_from_policy(policy, persons))
+    return persons, policy, reload_files
+
+
+def build_rollup(
+    cfg: Config, *, access: IdentityAccess | None = None,
+    policy: Policy | None = None, engine: AsyncEngine | None = None,
+) -> AnalyticsDependencies:
+    metrics = Metrics()
+    analytics = cfg.analytics
+    if not analytics.enabled:
+        log.info("analytics is disabled (analytics.enabled = false) — rollup inert")
+        return AnalyticsDependencies(
+            runner=None, persons=None, subjects=(), metrics=metrics,
+            metrics_port=analytics.metrics_port, tick_seconds=analytics.tick_seconds,
+            grace_seconds=analytics.grace_seconds,
+        )
+
+    inputs = None
+    persons: Persons | None = None
+    reload_files: ReloadFiles | FileReload[Policy] | None = None
+    subjects: Sequence[Subject] = ()
+    units: Sequence[UnitRooms] = ()
+    if cfg.identity.backend == "managed":
+        if access is None or access.is_file_backend or policy is None or engine is None:
+            raise AnalyticsStartupError("managed analytics authority is unavailable")
+        inputs = ManagedAnalyticsInputs(access, policy, PresenceStore(engine))
+        subjects = LiveSequence(lambda: inputs.current.subjects)
+        units = LiveSequence(lambda: inputs.current.units)
+    else:
+        persons, policy, reload_files = _file_identity(cfg, metrics)
+        subjects = LiveSequence(lambda: _subjects_from_identity(persons))
+        units = LiveSequence(lambda: _units_from_policy(policy, persons))
 
     database_url = cfg.credentials.get(cfg.store.database_url_env, "")
     if not database_url:
@@ -176,14 +208,15 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
             f"environment variable {cfg.store.database_url_env} is not set — "
             "refusing to start"
         )
-    try:
-        # Idempotent, like the collector's own call — this process may start
-        # before or after Nora/presence.
-        run_migrations(database_url)
-    except Exception as exc:
-        raise AnalyticsStartupError(f"migration error: {exc}") from exc
+    if engine is None:
+        try:
+            # Idempotent, like the collector's own call — this process may start
+            # before or after Nora/presence.
+            run_migrations(database_url)
+        except Exception as exc:
+            raise AnalyticsStartupError(f"migration error: {exc}") from exc
 
-    engine = create_sql_engine(database_url)
+    engine = engine or create_sql_engine(database_url)
     mobility = SqlMobilityStore(engine, metrics=metrics)
     # Google-cache-only labelling: this process READS `geocode_cache` only —
     # it never calls a geocoder itself. REUSES `engine` for the same reason
@@ -228,17 +261,19 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
         tz_name=analytics.tz_name,
     )
     rollups = SqlRollupStore(engine, metrics=metrics)
-    people = LiveMapping(lambda: {
+    people = (LiveMapping(lambda: inputs.current.people) if inputs is not None else
+        LiveMapping(lambda: {
         s.subject_id: PersonScope(
             subject=s.subject_id, circles=s.circle_ids,
             former_ids=tuple(p for p in s.person_ids if p != s.subject_id),
         )
         for s in subjects
-    })
+    }))
+    social = readable_social_store(engine, inputs if inputs is not None else persons)
     unit_rollups = UnitRollups(
         store=rollups, config=unit_config, units=units, people=people,
         stimuli=SqlStimulusStore(engine), metrics=metrics,
-        social=readable_social_store(engine, persons),
+        social=social, access=access,
         areas=geocode_cache,
     )
     runner = RollupRunner(
@@ -246,12 +281,64 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
         unit_rollups=unit_rollups, subjects=subjects, unit_config=unit_config,
         metrics=metrics, geocode_cache=geocode_cache,
     )
-    log.info(
-        "analytics rollup wired: %d subject(s), %d unit(s), tick %.0fs",
-        len(subjects), len(units), analytics.tick_seconds,
-    )
+    log.info("analytics rollup wired: %s identity, tick %.0fs",
+             cfg.identity.backend, analytics.tick_seconds)
     return AnalyticsDependencies(
         runner=runner, persons=persons, subjects=subjects, metrics=metrics,
         metrics_port=analytics.metrics_port, tick_seconds=analytics.tick_seconds,
         grace_seconds=analytics.grace_seconds, units=units, reload_files=reload_files,
+        refresh_identity=inputs.refresh if inputs is not None else None,
+        engine=engine,
     )
+
+
+@asynccontextmanager
+async def open_rollup(cfg: Config) -> AsyncIterator[AnalyticsDependencies]:
+    """Own managed clients/engine for the daemon and rebuild; file mode keeps its factory."""
+    if not cfg.analytics.enabled or cfg.identity.backend == "file":
+        deps = build_rollup(cfg)
+        try:
+            yield deps
+        finally:
+            if deps.engine is not None:
+                await deps.engine.dispose()
+        return
+    from nora.people import managed_services
+
+    database_url = cfg.credentials.get(cfg.store.database_url_env, "")
+    if not database_url:
+        raise AnalyticsStartupError("analytics database credential is unavailable")
+    try:
+        policy = LivePolicy(load_policy(cfg.policy_file))
+        run_migrations(database_url)
+    except Exception as exc:  # noqa: BLE001 — CLI startup must not echo credentials or SQL parameters
+        raise AnalyticsStartupError(
+            f"managed analytics setup failed ({type(exc).__name__})") from None
+    boot = policy.current
+
+    def validate(candidate: Policy) -> None:
+        if (candidate.units_declared, candidate._unit_workspace) != (
+                boot.units_declared, boot._unit_workspace):
+            raise RestartRequiredError("analytics policy unit workspace")
+
+    reload = FileReload(cfg.policy_file, policy, load_policy, validate, Metrics())
+    engine = create_sql_engine(database_url)
+    try:
+        async with ClientSession() as session:
+            try:
+                services = managed_services(managed=cfg.identity.managed, session=session,
+                    policy=policy, engine=engine, credentials=cfg.credentials)
+                state = await services.registry.identity_state(external_id="boot-probe")
+                relations = await services.backend.relations_on(
+                    scope=Scope(ScopeKind.WORKSPACE, "boot-probe"))
+                if state.verdict is Verdict.UNAVAILABLE or not isinstance(relations, frozenset):
+                    raise AnalyticsStartupError("managed services are unavailable")
+                deps = build_rollup(cfg, access=services.access, policy=policy, engine=engine)
+                if deps.refresh_identity is not None:
+                    await deps.refresh_identity()
+            except Exception as exc:  # noqa: BLE001 — bounded managed initialization failure
+                raise AnalyticsStartupError(
+                    f"managed analytics authority failed ({type(exc).__name__})") from None
+            yield replace(deps, reload_files=reload)
+    finally:
+        await engine.dispose()

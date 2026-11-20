@@ -5,11 +5,12 @@ from types import SimpleNamespace
 
 from nora.agent.security import _names_a_person, scan_identifiers
 from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
-from nora.agent.toolkit.results import _record
 from nora.agent.whereis import (
     DisclosureGuard,
 )
 from nora.location.adapters.tools.shared import _WEATHER_OFF, _weather_result
+from nora.location.app.circles import reader_for
+from nora.location.app.circles import record_result as _record
 
 log = logging.getLogger("nora.tools")
 
@@ -199,6 +200,7 @@ def _make__find_parking_ok_note(deps):
 
 
 def _make_find_parking(deps):
+    circles = reader_for(deps)
     async def find_parking(place: str = "") -> dict:
         """Where the nearest car parks are, around a spot the group names. Call
         this when somebody wants parking near somewhere.
@@ -219,7 +221,7 @@ def _make_find_parking(deps):
             location_trusted=deps.location_trusted,
             metrics=deps.metrics,
             parking_source=deps.parking_source,
-            presence_circles=deps.presence_circles,
+            presence_circles=deps.presence_circles, circle_reader=circles,
             presence_source=deps.presence_source,
             room=deps.room,
             route_source=deps.route_source,
@@ -337,6 +339,7 @@ async def _find_parking__validate(c):
 
 
 async def _find_parking__audience(c):
+    c.presence_circles = await c.circle_reader.read()
     if c.presence_source is None or not c.presence_circles:
         _record(c.metrics, "find_parking", "unavailable")
         return (

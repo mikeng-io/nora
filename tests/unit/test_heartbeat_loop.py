@@ -5,6 +5,7 @@ including the clock, which is what makes the whole tick testable here."""
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -17,6 +18,7 @@ from nora.app.heartbeat import (
     publish_idle_gauge,
     recover,
 )
+from nora.domain.managed import allowed, check_denied
 from nora.domain.reminders import Reminder, ReminderState
 from nora.engagement.slots import ConversationSlots
 from nora.obs.metrics import Metrics
@@ -54,6 +56,11 @@ class _RecordingAllowlist:
         })   # a dict LITERAL: ruff's C4 ruleset is enabled and C408 rejects dict()
         return self._allow
 
+    async def permitted(self, **kw):
+        """`IdentityAccess`'s grant read — the same recording, new shape."""
+        granted = self.is_allowed(**kw)
+        return allowed() if granted else check_denied("test-denial")
+
 
 class _StoreWithOneFailure(FakeReminderStore):
     """The real fake, with ONE injected failure on one method's Nth call.
@@ -82,9 +89,7 @@ class _StoreWithOneFailure(FakeReminderStore):
 
     async def mark(self, reminder_id, state, *, fired_at=None, outcome=None):
         self._count("mark")
-        return await super().mark(
-            reminder_id, state, fired_at=fired_at, outcome=outcome,
-        )
+        return await super().mark(reminder_id, state, fired_at=fired_at, outcome=outcome)
 
 
 def _row(**kw) -> Reminder:
@@ -98,7 +103,8 @@ def _row(**kw) -> Reminder:
     return Reminder(**base)
 
 
-def _build(*, store, policy=None, fire=None, slots=None, metrics=None, clock=None):
+def _build(*, store, policy=None, fire=None, slots=None, metrics=None, clock=None,
+           proactive=None):
     """One constructor for every test — the loop takes all collaborators
     through __init__, including the clock, so nothing here needs a real clock,
     a real model, or a real adapter."""
@@ -115,12 +121,11 @@ def _build(*, store, policy=None, fire=None, slots=None, metrics=None, clock=Non
         # for a fresh one — which hands every test its own private lock and
         # makes the held-slot test pass a turn it should have deferred.
         slots=slots if slots is not None else ConversationSlots(maxlen=16, spawn=lambda c: None),
-        policy=policy if policy is not None else _RecordingAllowlist(allow=True),
+        access=policy if policy is not None else _RecordingAllowlist(allow=True),
         clock=clock or (lambda: T0),
         metrics=metrics or Metrics(),
         tick_seconds=60.0,
-        fire=fire or _default_fire,
-    )
+        fire=fire or _default_fire, proactive=proactive)
     return loop, fired
 
 
@@ -556,9 +561,7 @@ async def test_rows_of_two_kinds_same_requester_are_two_turns():
     ROW — counts 2 either way."""
     store = FakeReminderStore()
     plain = _row(text="買奶")
-    other = _row(
-        text="Event: Dinner", kind="other_kind",
-    )
+    other = _row(text="Event: Dinner", kind="other_kind")
     await store.create(plain)
     await store.create(other)
     metrics = Metrics()
@@ -650,10 +653,9 @@ async def test_a_silent_proactive_turn_resolves_done_with_outcome_silent():
 
     loop = HeartbeatLoop(
         store=store, slots=ConversationSlots(maxlen=16, spawn=lambda c: None),
-        policy=_RoomPolicy(allow=False, proactive=True), clock=lambda: T0,
+        access=_RoomPolicy(allow=False, proactive=True), clock=lambda: T0,
         metrics=metrics, tick_seconds=60.0, fire=_fire,
-        proactive=ProactiveScreen(policy=_RoomPolicy(allow=False, proactive=True), notes=notes),
-    )
+        proactive=ProactiveScreen(policy=_RoomPolicy(allow=False, proactive=True), notes=notes))
 
     await loop.tick()
 
@@ -682,9 +684,8 @@ async def test_a_proactive_row_is_screened_on_the_flag_not_on_a_person():
 
         loop = HeartbeatLoop(
             store=store, slots=ConversationSlots(maxlen=16, spawn=lambda c: None),
-            policy=policy, clock=lambda: T0, metrics=Metrics(), tick_seconds=60.0,
-            fire=_fire, proactive=ProactiveScreen(policy=policy, notes=notes),
-        )
+            access=policy, clock=lambda: T0, metrics=Metrics(), tick_seconds=60.0,
+            fire=_fire, proactive=ProactiveScreen(policy=policy, notes=notes))
         await loop.tick()
         return fired, await store.get(row.id), policy.calls
 
@@ -737,9 +738,8 @@ async def test_a_tag_path_revision_since_the_link_cancels_the_row():
     def _loop():
         return HeartbeatLoop(
             store=store, slots=ConversationSlots(maxlen=16, spawn=lambda c: None),
-            policy=policy, clock=lambda: T0, metrics=Metrics(), tick_seconds=60.0,
-            fire=_fire, proactive=ProactiveScreen(policy=policy, notes=notes),
-        )
+            access=policy, clock=lambda: T0, metrics=Metrics(), tick_seconds=60.0,
+            fire=_fire, proactive=ProactiveScreen(policy=policy, notes=notes))
 
     # Background move only: the row fires.
     await _loop().tick()
@@ -819,9 +819,8 @@ async def test_a_pending_proactive_row_on_a_merged_note_follows_its_survivor():
     def _loop():
         return HeartbeatLoop(
             store=store, slots=ConversationSlots(maxlen=16, spawn=lambda c: None),
-            policy=policy, clock=lambda: T0, metrics=Metrics(), tick_seconds=60.0,
-            fire=_fire, proactive=ProactiveScreen(policy=policy, notes=notes),
-        )
+            access=policy, clock=lambda: T0, metrics=Metrics(), tick_seconds=60.0,
+            fire=_fire, proactive=ProactiveScreen(policy=policy, notes=notes))
 
     await _loop().tick()
     assert len(fired) == 1, "the fold is not a closing: the row fires"
@@ -951,16 +950,18 @@ class _SupersededPolicy:
             for p, c in rooms
         ]
 
+    def rooms(self):
+        return tuple(self.conversations)
+
     def conversation(self, platform, conversation_id):
         return next(
-            (c for c in self.conversations
+            (c for c in self.rooms()
              if c.platform == platform and c.primary_id == conversation_id),
             None,
         )
 
 
 def _superseded_row(payload_plan="p1"):
-    from dataclasses import replace  # noqa: F401
     now = datetime.now(UTC)
     return Reminder(
         id=uuid.uuid4(), kind="proactive", requester_person_id="synthetic-ai",
@@ -977,19 +978,16 @@ async def test_superseded_refuses_a_claimed_act_already_delivered():
     """The parent repro: a FIRING row whose (subject,action) already has a
     DONE+sent row must resolve, not fire — `open_proactive_subject` gated on
     open state made the delivered key unreadable."""
-    from dataclasses import replace
     row = _superseded_row()
     sent = replace(
-        row, id=uuid.uuid4(), state=ReminderState.DONE, outcome="sent",
-        fired_at=row.fired_at - timedelta(minutes=30),
+        row, id=uuid.uuid4(), conversation_id="other-room",
+        state=ReminderState.DONE, outcome="sent", fired_at=row.fired_at - timedelta(minutes=30),
         payload={**row.payload, "plan_id": "p2"},
     )
     store = FakeReminderStore()
     await store.create(sent)
-    loop = SimpleNamespace(
-        _store=store,
-        _policy=_SupersededPolicy(rooms=[("signal", "generated-room")]),
-    )
+    policy = _SupersededPolicy(rooms=[("signal", "generated-room"), ("signal", "other-room")])
+    loop, _ = _build(store=store, proactive=ProactiveScreen(policy=policy, notes=None))
     refusal = await HeartbeatLoop._superseded(loop, row)
     assert refusal == (ReminderState.FAILED, "failed_superseded")
 
@@ -997,7 +995,6 @@ async def test_superseded_refuses_a_claimed_act_already_delivered():
 async def test_superseded_lets_a_same_plan_row_fire():
     """A deliberate multi-room act (same `plan_id`) is not superseded by its
     sibling's delivery — the plan is one producer intent."""
-    from dataclasses import replace
     row = _superseded_row()
     sibling = replace(
         row, id=uuid.uuid4(), conversation_id="other-room",
@@ -1006,11 +1003,8 @@ async def test_superseded_lets_a_same_plan_row_fire():
     )
     store = FakeReminderStore()
     await store.create(sibling)
-    loop = SimpleNamespace(
-        _store=store,
-        _policy=_SupersededPolicy(
-            rooms=[("signal", "generated-room"), ("signal", "other-room")]),
-    )
+    policy = _SupersededPolicy(rooms=[("signal", "generated-room"), ("signal", "other-room")])
+    loop, _ = _build(store=store, proactive=ProactiveScreen(policy=policy, notes=None))
     assert await HeartbeatLoop._superseded(loop, row) is None
 
 
@@ -1019,7 +1013,7 @@ async def test_superseded_fails_closed_without_a_unit():
     cannot run; a same-room-only read would masquerade as the unit check."""
     row = _superseded_row()
     store = FakeReminderStore()
-    loop = SimpleNamespace(
-        _store=store, _policy=_SupersededPolicy(rooms=[]))
+    policy = _SupersededPolicy()
+    loop, _ = _build(store=store, proactive=ProactiveScreen(policy=policy, notes=None))
     refusal = await HeartbeatLoop._superseded(loop, row)
     assert refusal == (ReminderState.FAILED, "failed_error")

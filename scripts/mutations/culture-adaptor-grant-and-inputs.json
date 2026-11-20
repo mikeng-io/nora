@@ -107,7 +107,7 @@
   {
     "name": "the declared store-call bound stops covering the two reads",
     "file": "nora/language/culture.py",
-    "old": "STORE_CALLS_PER_TICK = 4",
+    "old": "STORE_CALLS_PER_TICK = 5",
     "new": "STORE_CALLS_PER_TICK = 2",
     "target": "tests/unit/test_culture_adaptor.py tests/architecture/test_dream_store_calls_are_declared.py"
   },

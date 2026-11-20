@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from nora.policy import load_policy
 from nora.subject.obtain import SubjectSpec, _conversation_for, build_config, default_policy
 
 _DEPLOYMENT_SHAPED = (
@@ -41,6 +42,39 @@ def _spec(tmp_path: Path, **over) -> SubjectSpec:
 def test_default_policy_names_the_given_unit() -> None:
     policy = default_policy(("signal", "g1"), unit="friends")
     assert 'unit = "friends"' in policy
+
+
+def test_judges_keep_the_bound_config_instead_of_reloading_deployment_routes(
+    example_config, monkeypatch, tmp_path,
+):
+    import importlib
+
+    from nora.subject.obtain import _with
+    from scripts.memory_graph_spike import Judges
+
+    module = importlib.import_module("nora.subject.obtain")
+    endpoint = "http://127.0.0.1:13421/v1"
+    cfg = _with(example_config, "llm.base_url", endpoint)
+    for name in cfg.providers:
+        cfg = _with(cfg, f"providers.{name}.base_url", endpoint)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("bound model routing must not reload files or resolve DNS")
+
+    monkeypatch.setattr(module, "_load_config", forbidden)
+    monkeypatch.setattr(module, "_resolves", forbidden)
+    judges = Judges(cfg, ["generated-judge"], tmp_path / "unbound-config.toml")
+    assert judges._endpoint("generated-judge")[0] == endpoint
+    assert judges._endpoint("generated-judge")[2] == "generated-judge"
+    from evals.rebuilt.grading import Judge
+
+    original = Judge("unused", model="generated-judge", config_path=tmp_path / "missing.toml",
+                     samples=1, max_tokens=99, timeout_seconds=7)
+    bound = original.bind(cfg)
+    assert bound._endpoint()[0] == endpoint
+    assert bound._endpoint()[2] == "generated-judge"
+    assert (bound.samples, bound.max_tokens, bound.timeout_seconds) == (1, 99, 7)
+    assert original.config is None
 
 
 def test_default_policy_defaults_to_the_shipped_unit_default() -> None:
@@ -69,6 +103,42 @@ def test_subject_consumers_read_the_pytest_owned_config(
     assert cfg.llm.model == stated["llm"]["model"] == "nora"
     assert cfg.relevance_gate.enabled is True
     assert module.memory_endpoint()[1] == stated["honcho"]["workspace_id"]
+
+
+def test_each_spec_composes_its_own_declared_config(
+    evaluation_config, tmp_path, monkeypatch,
+) -> None:
+    """`spec.config` binds THAT file, per spec: two distinguishable recorded
+    configs compose two distinguishable subjects while the module template
+    and a caller that declares nothing are untouched."""
+    import importlib
+
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    module = importlib.import_module("nora.subject.obtain")
+    template_text = evaluation_config.read_text(encoding="utf-8")
+    first_path = tmp_path / "in_force_first" / "config.toml"
+    second_path = tmp_path / "in_force_second" / "config.toml"
+    first_path.parent.mkdir()
+    second_path.parent.mkdir()
+    first_path.write_text(template_text.replace(
+        'model = "nora"', 'model = "recorded-first"', 1), encoding="utf-8")
+    second_path.write_text(template_text.replace(
+        'model = "nora"', 'model = "recorded-second"', 1), encoding="utf-8")
+
+    first = build_config(_spec(tmp_path / "first", config=first_path))
+    second = build_config(_spec(tmp_path / "second", config=second_path))
+    assert first.llm.model == "recorded-first"
+    assert second.llm.model == "recorded-second"
+    # Each subject owns its copy in ITS workdir.
+    assert tomllib.loads((tmp_path / "first" / "config.toml").read_text(
+        encoding="utf-8"))["llm"]["model"] == "recorded-first"
+    # The module template never moved, and a spec that declares nothing
+    # still composes it.
+    assert evaluation_config == module._TEMPLATE
+    assert build_config(_spec(tmp_path / "third")).llm.model == "nora"
+    # Credential custody stays with the deployment's secret file wherever
+    # the declared config lives — a recorded `in_force/` holds none.
+    assert first._secret_path == module._TEMPLATE.parent / "secret.toml"
 
 
 @pytest.mark.parametrize("ambient", ["absent", "home", "deployment_env"])
@@ -102,7 +172,7 @@ def test_evaluation_config_ignores_ambient_deployments(
 def test_build_config_writes_a_policy_naming_the_room(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     build_config(_spec(tmp_path))
-    convo = _conversation_for(_spec(tmp_path))
+    convo = _conversation_for(_spec(tmp_path), load_policy(tmp_path / "policy.toml"))
     assert (convo.primary_id, convo.unit) == ("g1", "nora")
 
 
@@ -148,7 +218,7 @@ def test_a_deployment_shaped_policy_whose_unit_is_not_the_workspace_is_accepted(
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     spec = _spec(tmp_path, room=("signal", "friends-sig"), policy=_DEPLOYMENT_SHAPED)
     cfg = build_config(spec)
-    convo = _conversation_for(spec)
+    convo = _conversation_for(spec, load_policy(tmp_path / "policy.toml"))
     assert convo.unit == "friends"
     assert convo.primary_id == "friends-sig"
     assert cfg.honcho.workspace_id != "friends", "the unit is the room's, not Honcho's"
@@ -158,18 +228,23 @@ def test_conversation_for_resolves_the_rooms_own_entry_among_several(tmp_path, m
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     spec = _spec(tmp_path, room=("signal", "ridgeline-sig"), policy=_DEPLOYMENT_SHAPED)
     build_config(spec)
-    convo = _conversation_for(spec)
+    convo = _conversation_for(spec, load_policy(tmp_path / "policy.toml"))
     assert (convo.primary_id, convo.unit) == ("ridgeline-sig", "ridgeline")
 
 
-def test_the_honcho_workspace_is_a_fixed_sibling_of_the_deployments(tmp_path, monkeypatch) -> None:
-    """Honcho is the one store the sandbox database does not isolate. The
-    subject's workspace is the deployment's with `-eval` — stable, so a
-    replay into it can be shared; never per case, never the real one."""
+def test_the_honcho_workspace_name_is_preserved(evaluation_config, tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     cfg = build_config(_spec(tmp_path))
-    assert cfg.honcho.workspace_id.endswith("-eval")
-    assert cfg.honcho.workspace_id != "-eval"
+    assert cfg.honcho.workspace_id == tomllib.loads(evaluation_config.read_text())["honcho"][
+        "workspace_id"]
+
+
+def test_subject_identity_workspace_bindings_are_preserved(tmp_path, monkeypatch):
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
+    identity = ('[workspaces.home]\nhoncho_workspace="generated-home"\n'
+                '[workspaces.work]\nhoncho_workspace="generated-work"\n')
+    build_config(_spec(tmp_path, identity=identity))
+    assert (tmp_path / "identity.toml").read_text() == identity
 
 
 def test_a_draw_names_its_own_workspace(tmp_path, monkeypatch) -> None:
@@ -182,15 +257,12 @@ def test_a_draw_names_its_own_workspace(tmp_path, monkeypatch) -> None:
 
 
 @pytest.mark.parametrize("workspace", ["nora", "probe", "nora-eval-", "nora-48b00d52c0ff"])
-def test_no_spelling_of_the_workspace_reaches_outside_the_eval_namespace(
+def test_workspace_names_are_values_not_the_external_isolation_boundary(
     tmp_path, monkeypatch, workspace,
 ) -> None:
-    """No override can point a subject at production's workspace (or
-    anything else outside `nora-eval[-...]`): an eval turn FEEDS Honcho, so
-    that would write eval speech into real peer cards with nothing raising."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    with pytest.raises(ValueError, match="draw workspace"):
-        build_config(_spec(tmp_path, overrides={"honcho.workspace_id": workspace}))
+    cfg = build_config(_spec(tmp_path, overrides={"honcho.workspace_id": workspace}))
+    assert cfg.honcho.workspace_id == workspace
 
 
 def test_a_policy_naming_the_rooms_id_on_a_different_entry_is_refused(
@@ -210,8 +282,10 @@ def test_a_policy_naming_the_rooms_id_on_a_different_entry_is_refused(
         '[[conversations]]\nplatform = "discord"\nid = "g-case3"\n'
         'label = "g-case3"\npersons = "*"\nunit = "friends"\n'
     )
+    spec = _spec(tmp_path, room=("signal", "g-case3"), policy=stated)
+    build_config(spec)
     with pytest.raises(ValueError, match="resolves to primary_id"):
-        build_config(_spec(tmp_path, room=("signal", "g-case3"), policy=stated))
+        _conversation_for(spec, load_policy(tmp_path / "policy.toml"))
 
 
 def test_a_policy_naming_the_id_on_the_wrong_platform_is_refused(
@@ -226,8 +300,10 @@ def test_a_policy_naming_the_id_on_the_wrong_platform_is_refused(
         'default = "deny"\n[[conversations]]\nplatform = "discord"\n'
         'id = "g-case4"\nlabel = "g-case4"\npersons = "*"\nunit = "nora"\n'
     )
+    spec = _spec(tmp_path, room=("signal", "g-case4"), policy=stated)
+    build_config(spec)
     with pytest.raises(ValueError, match="names no conversation"):
-        build_config(_spec(tmp_path, room=("signal", "g-case4"), policy=stated))
+        _conversation_for(spec, load_policy(tmp_path / "policy.toml"))
 
 
 def test_a_named_provider_is_dialled_on_loopback_from_the_host(

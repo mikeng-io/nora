@@ -5,10 +5,12 @@ import psycopg
 import pytest
 from testcontainers.postgres import PostgresContainer
 
+from tests.conftest import PG_IMAGE
+
 
 @pytest.mark.parametrize('init', [False, True])
 def test_external_orphan_exit_does_not_reach_postmaster(init):
-    with PostgresContainer('pgvector/pgvector:pg18', driver='psycopg').with_kwargs(
+    with PostgresContainer(PG_IMAGE, driver='psycopg').with_kwargs(
         init=init, mem_limit='256m',
     ) as pg, psycopg.connect(pg.get_connection_url().replace('+psycopg', '')) as conn:
         backend = conn.execute('SELECT pg_backend_pid()').fetchone()[0]

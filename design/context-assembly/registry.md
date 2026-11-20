@@ -11,6 +11,13 @@ closed to everything except the few blocks its verdict requires; a test holds
 that closure even when a dormant extra row would render nothing. Widening is a
 change to the table with its own evidence, not a convenience of shared code.
 
+Production and evaluation of the same occasion use the same declaration,
+builders, selection rules, ordering, scope and empty/unavailable semantics.
+Evaluation replaces environmental dependencies, not blocks or tool admission.
+Shared builders alone do not prove parity: the actual rendered request and
+schemas must match the subject under test. Intentional candidate changes are
+explicit experiment variables; missing context is not an isolation mechanism.
+
 A builder is registered against a meaning, not merely a tag spelling. Two
 renderers that give one field different meanings are two block types. Shared
 builders preserve one reading of a store while each occasion restamps its own

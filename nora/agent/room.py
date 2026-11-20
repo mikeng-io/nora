@@ -39,7 +39,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
+from ..domain.managed import room_scope_id
+from ..domain.management import Scope, ScopeKind
 from ..domain.models import PersonRef, TranscriptRow
 from ..domain.ports import Roster, RosterSource
 from ..persons import Persons
@@ -165,9 +168,8 @@ class Room:
 
     Holds the roster read for the length of the tag: `group_members` followed
     by two `lookup_person` calls is three tool calls and must stay ONE daemon
-    round trip. The cache is per-instance and the instance dies with the tag,
-    so it can neither go stale within a turn nor survive into the next one —
-    the same "fresh per tag, no bookkeeping" construction `ReplyGuard` uses.
+    round trip. The observation dies with the tag; managed bindings and names
+    are resolved again on each read rather than cached with the roster.
     """
 
     def __init__(
@@ -176,7 +178,8 @@ class Room:
         platform: str,
         conversation_id: str,
         roster_source: RosterSource | None,
-        persons: Persons,
+        persons: Persons | None = None,
+        access: Any = None,
         tagger: PersonRef | None = None,
         self_ids: frozenset[str] = frozenset(),
         tagger_card_injected: bool = False,
@@ -186,11 +189,13 @@ class Room:
         self._platform = platform
         self._conversation_id = conversation_id
         self._roster_source = roster_source
-        self._persons = persons
+        self._access = access
+        self._persons = (access.persons_view() if access is not None else persons)
         self._tagger = tagger
         self._self_ids = frozenset(self_ids)
         self._tagger_card_injected = tagger_card_injected
         self._view: RoomView | None = None
+        self._roster = Roster(available=False)
 
     @property
     def platform(self) -> str:
@@ -205,6 +210,15 @@ class Room:
         here rather than carried as a second parameter.
         """
         return self._platform
+
+    @property
+    def room_scope(self) -> Scope:
+        return Scope(ScopeKind.ROOM, room_scope_id(self._platform, self._conversation_id))
+
+    @property
+    def access(self) -> Any:
+        """The selected identity reader, absent only for explicitly unwired rooms."""
+        return self._access
 
     @property
     def trigger_message_ids(self) -> tuple[int, ...]:
@@ -253,10 +267,13 @@ class Room:
     async def members(self) -> RoomView:
         """The room as the platform reports it. `available=False` if it could not be read."""
         if self._view is None:
-            self._view = self._resolve(await self._read())
+            self._roster = await self._read()
+            self._view = await self._resolve(self._roster)
+        elif self._access is not None and not self._access.is_file_backend:
+            self._view = await self._resolve(self._roster)
         return self._view
 
-    def find(self, view: RoomView, name: str) -> tuple[PersonRef, ...]:
+    async def find(self, view: RoomView, name: str) -> tuple[PersonRef, ...]:
         """Every person in `view` that `name` could mean: `view.find`'s
         names, the same name with a leading `@` dropped (a tag as typed), and
         an Instagram `username` the operator recorded for them
@@ -266,7 +283,14 @@ class Room:
         recorded for someone who is not in it resolves to nobody, exactly as
         their name would. One person matched two ways is one match."""
         bare = _key(name).removeprefix("@")
-        owners = self._persons.instagram_username_owners(bare) if bare else frozenset()
+        owners: frozenset[str]
+        if not bare:
+            owners = frozenset()
+        elif self._access is not None:
+            owners = await self._access.instagram_username_owners(bare)
+        else:
+            owners = (self._persons.instagram_username_owners(bare)
+                      if self._persons is not None else frozenset())
         found: dict[str, PersonRef] = {}
         for ref in (
             *view.find(name), *view.find(bare),
@@ -286,7 +310,10 @@ class Room:
         "I only know about you right now" and "you are the only one here" are
         different sentences.
         """
-        view = await self.members()
+        try:
+            view = await self.members()
+        except Exception:  # noqa: BLE001 - identity lookup failure withholds the scope
+            return RoomView(available=False)
         if view.available:
             return view
         if self._tagger is None:
@@ -310,19 +337,26 @@ class Room:
             log.exception("roster source raised for %s", self._conversation_id)
             return Roster(available=False)
 
-    def _resolve(self, roster: Roster) -> RoomView:
-        if not roster.available:
+    async def _resolve_account(self, value: str) -> PersonRef | None:
+        if self._access is not None:
+            return await self._access.resolve_ref(
+                self._platform, value,
+                scope=Scope(ScopeKind.ROOM, room_scope_id(self._platform, self._conversation_id)))
+        return (self._persons.resolve(self._platform, value)
+                if self._persons is not None else None)
+
+    async def _resolve(self, roster: Roster) -> RoomView:
+        if not roster.available or (self._access is None and self._persons is None):
             return RoomView(available=False)
         people: dict[str, PersonRef] = {}
         unnamed = 0
         for account in roster.members:
             if account & self._self_ids:
                 continue                      # Nora is in the room; she is not a member of it
-            ref = next(
-                (r for value in sorted(account)
-                 if (r := self._persons.resolve(self._platform, value)) is not None),
-                None,
-            )
+            ref = None
+            for value in sorted(account):
+                if (ref := await self._resolve_account(value)) is not None:
+                    break
             if ref is None:
                 unnamed += 1
                 continue

@@ -22,13 +22,13 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Sequence
 
+from nora.access import IdentityAccess
 from nora.domain.models import NormalizedMessage, PersonRef, TranscriptRow
-from nora.persons import Persons
 from nora.platform.signal.parser import mention_spans
 
 
-def _speakers(
-    persons: Persons, platform: str, transcript: Sequence[TranscriptRow],
+async def _speakers(
+    access: IdentityAccess, platform: str, transcript: Sequence[TranscriptRow],
 ) -> set[str]:
     """Person ids of every non-Nora row, resolved through `Persons` like
     `FirePath._window_speakers`: an unmapped sender contributes nothing."""
@@ -36,7 +36,7 @@ def _speakers(
     for row in transcript:
         if row.is_nora:
             continue
-        ref = persons.resolve(platform, row.sender_id)
+        ref = await access.resolve_ref(platform, row.sender_id)
         if ref is not None:
             found.add(ref.person_id)
         elif row.person_id:
@@ -44,11 +44,14 @@ def _speakers(
     return found
 
 
-def _resolve_all(persons: Persons, platform: str, ids: Iterable[str]) -> set[str]:
-    return {
-        ref.person_id for value in ids
-        if (ref := persons.resolve(platform, value)) is not None
-    }
+async def _resolve_all(
+    access: IdentityAccess, platform: str, ids: Iterable[str],
+) -> set[str]:
+    out: set[str] = set()
+    for value in ids:
+        if (ref := await access.resolve_ref(platform, value)) is not None:
+            out.add(ref.person_id)
+    return out
 
 
 def _row_mentions(row: TranscriptRow) -> frozenset[str]:
@@ -68,8 +71,8 @@ def _row_mentions(row: TranscriptRow) -> frozenset[str]:
     return frozenset(found)
 
 
-def tag_character_people(
-    members: Sequence[PersonRef], *, persons: Persons, message: NormalizedMessage,
+async def tag_character_people(
+    members: Sequence[PersonRef], *, access: IdentityAccess, message: NormalizedMessage,
     tagger: PersonRef | None, transcript: Sequence[TranscriptRow],
 ) -> tuple[PersonRef, ...]:
     """The listed `members` whose account this tag turn renders."""
@@ -77,30 +80,30 @@ def tag_character_people(
     ids: set[str] = set()
     if tagger is not None:
         ids.add(tagger.person_id)
-    ids |= _resolve_all(persons, platform, message.mentions)
+    ids |= await _resolve_all(access, platform, message.mentions)
     if message.quote is not None:
         # The parent row's recorded author is authoritative (R-20); the quote's
         # own `author_id` is the sender's claim, used only for a parent that
         # fell outside the window. Either way it only ever selects a LISTED
         # member's account, which a forged id cannot widen.
         if message.quote.author_id:
-            ids |= _resolve_all(persons, platform, (message.quote.author_id,))
+            ids |= await _resolve_all(access, platform, (message.quote.author_id,))
         parent = next(
             (r for r in transcript if r.ts == message.quote.quoted_ts and not r.is_nora),
             None,
         )
         if parent is not None:
-            ids |= _resolve_all(persons, platform, (parent.sender_id, *_row_mentions(parent)))
-    ids |= _speakers(persons, platform, transcript)
+            ids |= await _resolve_all(access, platform, (parent.sender_id, *_row_mentions(parent)))
+    ids |= await _speakers(access, platform, transcript)
     return tuple(m for m in members if m.person_id in ids)
 
 
-def fire_character_people(
-    members: Sequence[PersonRef], *, persons: Persons, platform: str,
+async def fire_character_people(
+    members: Sequence[PersonRef], *, access: IdentityAccess, platform: str,
     person: PersonRef | None, transcript: Sequence[TranscriptRow],
 ) -> tuple[PersonRef, ...]:
     """The listed `members` whose account this fire turn renders."""
-    ids = _speakers(persons, platform, transcript)
+    ids = await _speakers(access, platform, transcript)
     if person is not None:
         ids.add(person.person_id)
     return tuple(m for m in members if m.person_id in ids)

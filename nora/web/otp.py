@@ -26,9 +26,13 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+from dataclasses import asdict
 from typing import Any
 
 from aiohttp import web
+
+from nora.domain.otp import OtpUnavailableError
+from nora.domain.otp_account import CODE_ISSUER
 
 log = logging.getLogger("nora.web.otp")
 
@@ -79,6 +83,21 @@ def register_otp_routes(app: web.Application, *, otp: Any, api_token: str) -> No
         purpose = body.get("purpose", "sign_in")
         if not all(isinstance(f, str) for f in (challenge_id, code, purpose)):
             return web.json_response({"error": "bad_request"}, status=400)
+        if getattr(otp, "managed", False):
+            try:
+                verified = await otp.verify_account(challenge_id=challenge_id,
+                                                     code=code, purpose=purpose)
+            except OtpUnavailableError:
+                return web.json_response({"error": "unavailable"}, status=503,
+                                         headers={"Cache-Control": "no-store"})
+            if verified is None:
+                return web.json_response(_REFUSED, status=401)
+            return web.json_response({"personId": verified.person_id, "managedIdentity": {
+                "authentication": {"sessionId": "otp:" + verified.challenge_id,
+                    "account": asdict(verified.account),
+                    "method": verified.account.platform + "_code", "proofIssuer": CODE_ISSUER,
+                    "authenticatedAt": int(verified.verified_at.timestamp())},
+                "binding": asdict(verified.binding)}}, headers={"Cache-Control": "no-store"})
         person_id = await otp.verify(challenge_id=challenge_id, code=code, purpose=purpose)
         if person_id is None:
             return web.json_response(_REFUSED, status=401)

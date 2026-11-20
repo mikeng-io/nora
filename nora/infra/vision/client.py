@@ -89,6 +89,10 @@ VISION_LOOP_SHARE = 0.6
 # Shared with the bounded batches in read_video_windows.
 VISION_WINDOW_CONCURRENCY = 3
 
+#: Whole-read budget: two per-call ceilings permit a timed-out window recovery.
+#: Per-call, turn and look deadlines can only shorten the time available.
+VIDEO_READ_SECONDS = 240.0
+
 # Authored, fixed, and small — never model-supplied. The description it asks for
 # is untrusted egress, screened by the tool on every serve.
 _PROMPT = "Describe this image. If it contains text in it, transcribe that text."

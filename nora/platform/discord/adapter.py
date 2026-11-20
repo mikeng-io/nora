@@ -18,6 +18,7 @@ from typing import Any
 import discord
 
 from ...domain.models import ConversationTarget, NormalizedMessage
+from ...domain.observations import Observation
 from ...domain.ports import (
     AdapterHealth,
     LinkPreview,
@@ -40,6 +41,9 @@ from .music_notify import ResolveMusicChannel, no_music_channel
 from .parser import (
     parse_discord_delete,
     parse_discord_edit,
+    parse_discord_member_add,
+    parse_discord_member_remove,
+    parse_discord_member_update,
     parse_discord_message,
     parse_discord_reaction,
 )
@@ -148,10 +152,14 @@ class DiscordAdapter:
         return self._own_handle
 
     async def listen(
-        self, *, on_message: Callable[[NormalizedMessage], Awaitable[None]]
+        self, *, on_message: Callable[[NormalizedMessage], Awaitable[None]],
+        on_observation: Callable[[Observation], Awaitable[None]] | None = None,
+        on_resumed: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         """No `parse()` on the public surface — parsing happens internally via
-        `parse_discord_message`, mirroring `SignalAdapter.listen`'s Trap B."""
+        `parse_discord_message`, mirroring `SignalAdapter.listen`'s Trap B.
+        `on_observation`/`on_resumed` are the onboarding seam; both default
+        off."""
         if self._identity is None:
             await self.resolve_identity()
 
@@ -203,7 +211,7 @@ class DiscordAdapter:
 
         self._listener = DiscordListener(
             client, self._token, on_ready_extra=_register_music_commands,
-        )
+            on_resumed_extra=on_resumed)
 
         # ONE EVENT AT A TIME PER CHANNEL. discord.py dispatches every gateway
         # event as its own task, so a message and its edit could be ingested
@@ -243,18 +251,13 @@ class DiscordAdapter:
             # expands on, so the touch lands in the room the message was
             # recorded under, tagged with the thread like a message would be.
             channel_id = getattr(payload, "channel_id", None)
-            parent = (
-                self._channels.parent_channel(channel_id=str(channel_id))
-                if channel_id is not None else None
-            )
-            message = (
-                parse_discord_delete(payload, room_channel_id=parent)
-                if kind == "delete"
-                else parse_discord_reaction(
-                    payload, own_id=self._own_id, removed=kind == "reaction_remove",
-                    room_channel_id=parent,
-                )
-            )
+            parent = (self._channels.parent_channel(channel_id=str(channel_id))
+                      if channel_id is not None else None)
+            message = (parse_discord_delete(payload, room_channel_id=parent)
+                       if kind == "delete"
+                       else parse_discord_reaction(
+                           payload, own_id=self._own_id, room_channel_id=parent,
+                           removed=kind == "reaction_remove"))
             if message is not None:
                 key = str(getattr(payload, "channel_id", ""))
                 async with channel_locks.setdefault(key, asyncio.Lock()):
@@ -263,7 +266,7 @@ class DiscordAdapter:
         try:
             await self._listener.listen(
                 _on_discord_message, _on_discord_edit, _on_discord_touch,
-            )
+                self._observation_dispatcher(on_observation))
         finally:
             # `Client.start()` is `login()` then `connect()`. `connect()` closes
             # the client itself before re-raising, but `login()` raising — a
@@ -279,6 +282,29 @@ class DiscordAdapter:
             with contextlib.suppress(Exception):
                 await client.close()
             self._current_client = None
+
+    def _observation_dispatcher(
+        self, on_observation: Callable[[Observation], Awaitable[None]] | None,
+    ) -> Callable[[str, Any], Awaitable[None]]:
+        # Membership deltas — the same (kind, payload) dispatch the bridge's
+        # `_observations` runs (`bridge_app.py`), parsed to `Observation`s the
+        # onboarding reconciler marks its collection dirty on.
+        async def dispatch(kind: str, payload: Any) -> None:
+            if on_observation is None:
+                return
+            account_key = str(self._own_id or "")
+            observation = (
+                parse_discord_member_add(payload, account_key=account_key)
+                if kind == "member_join"
+                else parse_discord_member_remove(payload, account_key=account_key)
+                if kind == "member_remove"
+                else parse_discord_member_update(payload[1], account_key=account_key)
+                if kind == "member_update" and isinstance(payload, tuple)
+                else None)
+            if observation is not None:
+                await on_observation(observation)
+
+        return dispatch
 
     def current_client(self) -> discord.Client | None:
         """`None` whenever there is no live connection attempt right now

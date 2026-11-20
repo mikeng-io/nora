@@ -46,6 +46,7 @@ from nora.domain.computer_exports import (
 )
 from nora.domain.documents import DOCUMENT_QUERY_MAX, RoomKey, normalize_query
 from nora.domain.ports import BlobStore
+from nora.web.data_context import data_context as _ctx
 from nora.web.documents import MAX_PAGE, MAX_PAGE_SIZE, RoomLabel
 
 log = logging.getLogger(__name__)
@@ -275,7 +276,7 @@ def register_artifact_routes(app: web.Application) -> None:
 
     def _viewer(request: web.Request) -> str | None:
         person_id = request.query.get("personId")
-        if not person_id or request.app["web_persons"].by_person.get(person_id) is None:
+        if not person_id or _ctx(request)["web_persons"].by_person.get(person_id) is None:
             return None
         return person_id
 
@@ -283,7 +284,7 @@ def register_artifact_routes(app: web.Application) -> None:
         return web.json_response({"status": "refused", "note": note}, status=400)
 
     async def artifacts_list(request: web.Request) -> web.Response:
-        a = request.app
+        a = _ctx(request)
         if a["web_artifacts"] is None or a["web_rooms_of"] is None:
             return _unavailable()
         person_id = _viewer(request)
@@ -308,7 +309,7 @@ def register_artifact_routes(app: web.Application) -> None:
         return web.json_response(body)
 
     async def artifacts_detail(request: web.Request) -> web.Response:
-        a = request.app
+        a = _ctx(request)
         if a["web_artifacts"] is None or a["web_rooms_of"] is None:
             return _unavailable()
         person_id = _viewer(request)
@@ -325,7 +326,7 @@ def register_artifact_routes(app: web.Application) -> None:
         return _not_found() if body is None else web.json_response(body)
 
     async def artifacts_download(request: web.Request) -> web.Response:
-        a = request.app
+        a = _ctx(request)
         if a["web_artifacts"] is None or a["web_rooms_of"] is None:
             return _unavailable()
         person_id = _viewer(request)

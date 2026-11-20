@@ -143,8 +143,9 @@ def main() -> None:
         from testcontainers.postgres import PostgresContainer
 
         from nora.infra.sql.migrations_runner import run_migrations
+        from tests.conftest import PG_IMAGE
 
-        with PostgresContainer("pgvector/pgvector:pg18") as pg:
+        with PostgresContainer(PG_IMAGE) as pg:
             url = pg.get_connection_url().replace("postgresql+psycopg2:", "postgresql+asyncpg:")
             run_migrations(url)
             asyncio.run(measure(url, args))

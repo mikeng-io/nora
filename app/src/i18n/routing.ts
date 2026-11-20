@@ -1,5 +1,6 @@
 import { defineRouting } from "next-intl/routing";
 import { createNavigation } from "next-intl/navigation";
+import { DEFAULT_LOCALE, LOCALES } from "./locales";
 
 // zh-Hant is the default: the circle talks in Cantonese-inflected Traditional
 // Chinese, and so does Nora's own doctrine; English is the second audience.
@@ -7,8 +8,8 @@ import { createNavigation } from "next-intl/navigation";
 // it owns `/` and `/en/` exactly, so the portal's pages never live at a
 // bare locale root (site/README.md, "Going live").
 export const routing = defineRouting({
-  locales: ["zh-Hant", "en"],
-  defaultLocale: "zh-Hant",
+  locales: LOCALES,
+  defaultLocale: DEFAULT_LOCALE,
   localePrefix: "always",
   // The locale preference is not a secret (HttpOnly would buy nothing the
   // rendered page does not already say), but it IS browser state and must not

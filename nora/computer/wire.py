@@ -7,9 +7,8 @@ from typing import Any
 
 import redis.asyncio as aioredis
 
-from nora.agent import factory, tool_choice
-from nora.agent.browse import BrowseAgentRunner, BrowseSettings
 from nora.agent.catalog.groups import COMPUTER_TOOLS
+from nora.agent.web_browse import BrowseSettings, WebBrowseRunner
 from nora.app.composition_helpers import _note_unit_of
 from nora.app.computer_metrics import ComputerMetrics
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
@@ -98,44 +97,6 @@ def stores(cfg: Any, engine: Any, metrics: Any)-> StoresWiring:
 
 
 @dataclass(frozen=True)
-class QueueWiring:
-    browser_manager: Any
-    browser_tabs: Any
-    computer_admission: Any
-    computer_dm_scope_for: Any
-    computer_queue_runner: Any
-    computer_scope_for: Any
-    computer_task_backend: Any
-    computer_tasks: Any
-
-
-def queue() -> QueueWiring:
-    # The scoped computer ([computer.scoped], design/browser-runtime): one microVM per
-    # computer scope, resolved through the `nora-computer scope provision` registry — built
-    # INSTEAD of the shared-VM client, so a call for a scope with no record answers…
-    computer_admission: Any = None
-    browser_manager: Any = None
-    computer_queue_runner: Any = None
-    computer_task_backend: Any = None
-    computer_tasks: Any = None
-    browser_tabs: Any = None
-    #: The canonical scope resolvers ([computer.scoped]); `None` in the
-    #: shared-VM shape, where nothing scoped may resolve.
-    computer_scope_for: Any = None
-    computer_dm_scope_for: Any = None
-    return QueueWiring(
-        browser_manager=browser_manager,
-        browser_tabs=browser_tabs,
-        computer_admission=computer_admission,
-        computer_dm_scope_for=computer_dm_scope_for,
-        computer_queue_runner=computer_queue_runner,
-        computer_scope_for=computer_scope_for,
-        computer_task_backend=computer_task_backend,
-        computer_tasks=computer_tasks,
-    )
-
-
-@dataclass(frozen=True)
 class ScopedWiring:
     browser_manager: Any
     browser_tabs: Any
@@ -150,19 +111,25 @@ class ScopedWiring:
 
 
 async def scoped(
-    allowlist: Any, background: Any, browser_tabs: Any, computer_context: Any,
+    allowlist: Any, background: Any, computer_context: Any,
     cfg: Any, clock: Any, compute_jobs: Any, computer: Any,
-    computer_admission: Any, computer_dm_scope_for: Any, computer_events: Any,
-    computer_metrics: Any, computer_probe: Any, computer_tasks: Any,
+    computer_events: Any, computer_metrics: Any, computer_probe: Any,
     computer_token: Any, engine: Any, metrics: Any, op_clock: Any,
+    owner: Any = None,
 ) -> ScopedWiring:
+    """The scoped computer's wiring — every queue field empty while it is off."""
     browser_manager = computer_queue_runner = None
-    computer_scope_for = computer_task_backend = None
+    browser_tabs = computer_admission = computer_tasks = None
+    computer_scope_for = computer_task_backend = computer_dm_scope_for = None
     if cfg.computer.enabled and cfg.computer.scoped.enabled:
         rt = _scoped_computer_runtime(
             cfg=cfg, computer_metrics=computer_metrics,
             computer_token=computer_token, engine=engine,
         )
+        if owner is not None:
+            # Redis, the journal flock and the lifecycle socket exist NOW —
+            # before the queue await; re-registered once the runner exists.
+            owner.own_computer(_close_scoped_acquisition(rt))
         computer = rt.computer
         computer_probe = rt.computer_probe
         computer_tasks = rt.computer_tasks
@@ -176,6 +143,8 @@ async def scoped(
             lifecycle=rt.lifecycle, metrics=metrics, op_clock=op_clock,
             scoped_cfg=cfg.computer.scoped, tabs=browser_tabs,
         )
+        if owner is not None:
+            owner.own_computer(_close_scoped_acquisition(rt, queues))
         browser_manager = queues.browser_manager
         computer_admission = queues.computer_admission
         computer_queue_runner = queues.computer_queue_runner
@@ -256,13 +225,32 @@ def _scoped_computer_runtime(
         ),
     )
 
-
 @dataclass(frozen=True)
 class ScopedQueuesWiring:
     browser_manager: Any
     computer_admission: Any
     computer_queue_runner: Any
     computer_task_backend: Any
+
+
+def _close_scoped_acquisition(
+    rt: ScopedRuntimeWiring, queues: ScopedQueuesWiring | None = None,
+) -> Any:
+    """A `ComputerLifecycle.close`-ordered close for before it exists."""
+    async def _close() -> None:
+        # One outer-stack entry hiding several closes: the inner stack keeps
+        # drain order and unwinds each; `runner.close` itself still refuses
+        # to release Redis/journal under an undrained executor.
+        async with contextlib.AsyncExitStack() as closing:
+            if queues is not None:
+                closing.push_async_callback(queues.computer_queue_runner.close)
+                closing.push_async_callback(queues.browser_manager.aclose)
+                await queues.computer_queue_runner.stop()
+            else:
+                closing.callback(rt.computer_segments.close)
+                closing.push_async_callback(rt.computer_redis.aclose)
+
+    return _close
 
 
 async def _scoped_computer_queues(
@@ -501,29 +489,16 @@ def browse(
     route_model: Any,
 ) -> BrowseWiring:
 
-    # `computer_browse` (ADR 0022): a sub-agent in the room's own browser, with a model
-    # source of its own (one model per task, the tag path's reason above). `None` unless
-    # `[computer]` AND `[computer.browse]` are on, so the registry withholds the tool.
-    browser: BrowseAgentRunner | None = None
-    if computer is not None and cfg.computer.browse.enabled:
+    # `web_browse`: the browse loop on the room's own task-owned tabs, with a model route of
+    # its own. `None` unless `[computer]`, `[computer.browse]` and the tab manager are all
+    # on, so the registry withholds the tool.
+    browser: WebBrowseRunner | None = None
+    if computer is not None and cfg.computer.browse.enabled and browser_manager is not None:
         browse_cfg = cfg.computer.browse
-        browser = BrowseAgentRunner(
-            model_source=factory.ModelSource(
-                client=model_client_for("browse"),
-                spec=factory.ModelSpec(
-                    model=route_model("browse", browse_cfg.model),
-                    max_tokens=browse_cfg.max_tokens,
-                    temperature=browse_cfg.temperature,
-                    tool_choice=tool_choice.AFTER_SPEAKING,
-                ),
-            ),
-            retry=factory.build_retry_policy(timeout_seconds=browse_cfg.timeout_seconds),
-            base_url=cfg.computer.base_url,
-            token=_computer_token(cfg),
-            # Task-owned tabs ([computer.scoped]): `acquire` binds the task's
-            # own target on the scope's VM; `base_url` is only the shared-VM
-            # fallback used when no manager is wired.
-            manager=browser_manager,
+        browser = WebBrowseRunner(
+            client=model_client_for("browse"),
+            model=route_model("browse", browse_cfg.model),
+            max_tokens=browse_cfg.max_tokens,
             settings=BrowseSettings(
                 max_steps=browse_cfg.max_steps,
                 timeout_seconds=browse_cfg.timeout_seconds,
@@ -532,6 +507,7 @@ def browse(
                 output_tokens=browse_cfg.output_tokens,
                 total_tokens=browse_cfg.total_tokens,
             ),
+            manager=browser_manager,
         )
     return BrowseWiring(browser=browser)
 
@@ -583,6 +559,7 @@ def dispatch(
     allowlist: Any, audit: Any, compute_backends: Any, computer_queue_runner: Any,
     computer_scope_for: Any, computer_task_backend: Any, memory: Any, metrics: Any,
     persons: Any, registry: Any, rosters: Any, tool_registry: Any,
+    access: Any = None,
 ) -> DispatchWiring:
     if computer_queue_runner is not None:
         # The queue's executor for durable `native`/`browse`/`capture` rows: each is re-entered
@@ -602,6 +579,7 @@ def dispatch(
             # the live scope resolver, never the queue-time row's word.
             policy=allowlist,
             scope_for=computer_scope_for,
+            access=access,
         )
         for _kind in ("native", "browse", "capture"):
             computer_queue_runner.set_dispatch(_kind, _computer_dispatch)

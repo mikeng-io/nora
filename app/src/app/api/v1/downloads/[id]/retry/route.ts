@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { checkSession } from "@/server/session";
+import { checkSession, sessionFailure } from "@/server/session";
 import { downloadRunner } from "@/server/downloads/runner";
 import { retry } from "@/server/downloads/service";
 import { JOB_ID } from "@/server/downloads/store";
@@ -10,7 +10,7 @@ const PRIVATE = { "cache-control": "private, no-store" };
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const check = await checkSession();
   if (check.status !== "ok") {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401, headers: PRIVATE });
+    return sessionFailure(check);
   }
   const { id } = await params;
   if (!JOB_ID.test(id)) {

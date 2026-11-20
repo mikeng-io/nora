@@ -1,0 +1,212 @@
+[
+ {
+  "name": "reminder owner is the resolved canonical person",
+  "file": "nora/agenda/adapters/tools/reminders.py",
+  "old": "    c.owner = c.tagger.person_id",
+  "new": "    c.owner = c.tagger.name",
+  "target": "tests/unit/test_managed_reminders.py::test_the_reminder_owner_is_the_canonical_person_the_room_scope_names"
+ },
+ {
+  "name": "reminder tagger carries the room scoped name",
+  "file": "nora/access.py",
+  "old": "        scoped = await self._scoped_name(person.person_id, scope)",
+  "new": "        scoped = None",
+  "target": "tests/unit/test_managed_reminders.py::test_the_reminder_owner_is_the_canonical_person_the_room_scope_names"
+ },
+ {
+  "name": "an unmapped tagger is refused before the owner is read",
+  "file": "nora/agenda/adapters/tools/reminders.py",
+  "old": "    if c.tagger is None:",
+  "new": "    if False and c.tagger is None:",
+  "target": "tests/unit/test_managed_reminders.py::test_an_unmapped_sender_names_nobody_and_sets_no_reminder"
+ },
+ {
+  "name": "unmapped roster accounts count as unnamed",
+  "file": "nora/agent/room.py",
+  "old": "                unnamed += 1",
+  "new": "                unnamed += 0",
+  "target": "tests/unit/test_managed_reminders.py::test_an_unmapped_sender_names_nobody_and_sets_no_reminder"
+ },
+ {
+  "name": "scoped refs SELECT budget compares the real count",
+  "file": "tests/integration/test_managed_circle_cost.py",
+  "old": "                        (\"first-scoped-read\", \"SELECT\", 2433),",
+  "new": "                        (\"first-scoped-read\", \"SELECT\", 0),",
+  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+ },
+ {
+  "name": "scoped refs Kratos GET budget compares the real count",
+  "file": "tests/integration/test_managed_circle_cost.py",
+  "old": "                        (\"first-scoped-read\", \"kratos:GET\", 128),",
+  "new": "                        (\"first-scoped-read\", \"kratos:GET\", 0),",
+  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+ },
+ {
+  "name": "lineage SELECT budget compares the real count",
+  "file": "tests/integration/test_managed_circle_cost.py",
+  "old": "                        (\"lineage\", \"SELECT\", 2051),",
+  "new": "                        (\"lineage\", \"SELECT\", 0),",
+  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+ },
+ {
+  "name": "lineage Kratos GET budget compares the real count",
+  "file": "tests/integration/test_managed_circle_cost.py",
+  "old": "                        (\"lineage\", \"kratos:GET\", 128),",
+  "new": "                        (\"lineage\", \"kratos:GET\", 0),",
+  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+ },
+ {
+  "name": "lineage Keto GET budget compares the real count",
+  "file": "tests/integration/test_managed_circle_cost.py",
+  "old": "                        (\"lineage\", \"keto:GET\", 128),",
+  "new": "                        (\"lineage\", \"keto:GET\", 0),",
+  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+ },
+ {
+  "name": "where_is SELECT budget compares the real count",
+  "file": "tests/integration/test_managed_circle_cost.py",
+  "old": "                        (\"where-is-tool\", \"SELECT\", 6678),",
+  "new": "                        (\"where-is-tool\", \"SELECT\", 0),",
+  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+ },
+ {
+  "name": "where_is Kratos GET budget compares the real count",
+  "file": "tests/integration/test_managed_circle_cost.py",
+  "old": "                        (\"where-is-tool\", \"kratos:GET\", 512)):",
+  "new": "                        (\"where-is-tool\", \"kratos:GET\", 0)):",
+  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+ },
+ {
+  "name": "analytics stays Ory-selected",
+  "file": "scripts/ci_plan.py",
+  "old": "            \"tests/integration/test_managed_analytics.py\",\n",
+  "new": "",
+  "target": "tests/architecture/test_ory_ci.py::test_managed_identity_changes_require_the_real_ory_job[tests/integration/test_managed_analytics.py]"
+ },
+ {
+  "name": "circle cost stays Ory-selected",
+  "file": "scripts/ci_plan.py",
+  "old": "            \"tests/integration/test_managed_circle_cost.py\",\n",
+  "new": "",
+  "target": "tests/architecture/test_ory_ci.py::test_managed_identity_changes_require_the_real_ory_job[tests/integration/test_managed_circle_cost.py]"
+ },
+ {
+  "name": "collective identity stays Ory-selected",
+  "file": "scripts/ci_plan.py",
+  "old": "            \"tests/integration/test_managed_collective_identity.py\",\n",
+  "new": "",
+  "target": "tests/architecture/test_ory_ci.py::test_managed_identity_changes_require_the_real_ory_job[tests/integration/test_managed_collective_identity.py]"
+ },
+ {
+  "name": "ingest authority stays Ory-selected",
+  "file": "scripts/ci_plan.py",
+  "old": "            \"tests/integration/test_managed_ingest_authority.py\",\n",
+  "new": "",
+  "target": "tests/architecture/test_ory_ci.py::test_managed_identity_changes_require_the_real_ory_job[tests/integration/test_managed_ingest_authority.py]"
+ },
+ {
+  "name": "lineage stays Ory-selected",
+  "file": "scripts/ci_plan.py",
+  "old": "            \"tests/integration/test_managed_lineage.py\",\n",
+  "new": "",
+  "target": "tests/architecture/test_ory_ci.py::test_managed_identity_changes_require_the_real_ory_job[tests/integration/test_managed_lineage.py]"
+ },
+ {
+  "name": "presence stays Ory-selected",
+  "file": "scripts/ci_plan.py",
+  "old": "            \"tests/integration/test_managed_presence.py\",\n",
+  "new": "",
+  "target": "tests/architecture/test_ory_ci.py::test_managed_identity_changes_require_the_real_ory_job[tests/integration/test_managed_presence.py]"
+ },
+ {
+  "name": "routes stays Ory-selected",
+  "file": "scripts/ci_plan.py",
+  "old": "            \"tests/integration/test_managed_routes.py\",\n",
+  "new": "",
+  "target": "tests/architecture/test_ory_ci.py::test_managed_identity_changes_require_the_real_ory_job[tests/integration/test_managed_routes.py]"
+ },
+ {
+  "name": "room membership confers in that room alone",
+  "file": "nora/testing/managed.py",
+  "old": "            and (namespace, obj, \"member\", person) in self.tuples",
+  "new": "            and any(rel == \"member\" and sub == person for _, _, rel, sub in self.tuples)",
+  "target": "tests/integration/test_managed_ingest_authority.py::test_a_member_only_of_a_sibling_unit_is_refused_at_the_same_entry"
+ },
+ {
+  "name": "membership reads stay inside their own scope",
+  "file": "nora/testing/managed.py",
+  "old": "            if s == scope and m.state is MembershipState.MEMBER",
+  "new": "            if m.state is MembershipState.MEMBER",
+  "target": "tests/unit/test_managed_reminders.py::test_a_member_only_of_a_sibling_unit_is_denied_this_rooms_reminders"
+ },
+ {
+  "name": "unit population reads only its own memberships",
+  "file": "nora/testing/managed.py",
+  "old": "            if s == scope and m.state is MembershipState.MEMBER",
+  "new": "            if m.state is MembershipState.MEMBER",
+  "target": "tests/unit/test_managed_background_access.py::test_the_selected_population_carries_no_key_for_a_sibling_unit_member"
+ },
+ {
+  "name": "memory hits place only in the reading unit's rooms",
+  "file": "nora/domain/memory_index.py",
+  "old": "        or (node.origin_room is not None and node.origin_room in scope.rooms)",
+  "new": "        or node.origin_room is not None",
+  "target": "tests/unit/test_managed_memory_scope.py::test_memory_search_reads_its_unit_and_refuses_matching_sibling_unit_content"
+ },
+ {
+  "name": "admin on a scope confers no manage_members in a sibling scope",
+  "file": "nora/testing/managed.py",
+  "old": "            if (ns, ob, f\"grant_{permit}\", person) in self.tuples or (\n                ns, ob, \"admin\", person\n            ) in self.tuples:\n                return True",
+  "new": "            if any(rel in (f\"grant_{permit}\", \"admin\") and sub == person\n                   for _ns, _ob, rel, sub in self.tuples):\n                return True",
+  "target": "tests/unit/test_scoped_profile.py::test_the_gate_refuses_honestly_before_any_effect[sibling-scope]"
+ },
+ {
+  "name": "unit membership rows are scoped to the asked scope",
+  "file": "nora/infra/sql/managed_identity.py",
+  "old": "                        MANAGED_MEMBERSHIP.c.scope_kind == scope.kind.value,\n                        MANAGED_MEMBERSHIP.c.scope_id == scope.id,\n                        MANAGED_MEMBERSHIP.c.state == MembershipState.MEMBER.value,",
+  "new": "                        MANAGED_MEMBERSHIP.c.state == MembershipState.MEMBER.value,",
+  "target": "tests/integration/test_managed_analytics.py::test_selected_analytics_folds_recorded_circles_without_file_authority"
+ },
+ {
+  "name": "collective social evidence follows this unit's room membership",
+  "file": "nora/language/background_identity.py",
+  "old": "(members is None or canonical in members)",
+  "new": "(members is None or True)",
+  "target": "tests/unit/test_managed_background_access.py::test_collective_batch_refuses_held_social_for_a_sibling_unit_member"
+ },
+ {
+  "name": "memory hits carry only persons the reading room lists",
+  "file": "nora/domain/memory_index.py",
+  "old": "    if not set(node.persons) <= scope.listed_here:",
+  "new": "    if False and not set(node.persons) <= scope.listed_here:",
+  "target": "tests/unit/test_managed_memory_scope.py::test_memory_search_refuses_content_bound_to_a_sibling_unit_member"
+ },
+ {
+  "name": "the operator gate checks standing on the op's scope",
+  "file": "nora/people/app/management_invocation.py",
+  "old": "                if not permission.allowed:",
+  "new": "                if False:",
+  "target": "tests/unit/test_scoped_profile.py::test_a_sibling_only_member_is_denied_the_local_scope_profile_edit"
+ },
+ {
+  "name": "the fire-time (room, person) re-check gates reminder delivery",
+  "file": "nora/app/heartbeat.py",
+  "old": "            if verdict.allowed:",
+  "new": "            if True:",
+  "target": "tests/unit/test_managed_reminders.py::test_a_sibling_only_requesters_due_reminder_fails_the_fire_time_recheck"
+ },
+ {
+  "name": "a complete roster is what authorizes departure",
+  "file": "nora/people/app/managed_authority.py",
+  "old": "        if payload.complete:",
+  "new": "        if payload.complete and False:",
+  "target": "tests/unit/test_roster_observation.py::test_a_complete_retraction_leaves_restrictions_and_other_support_in_place"
+ },
+ {
+  "name": "an unconfirmed departure blocks the member's authority answer",
+  "file": "nora/people/app/managed_authority.py",
+  "old": "            if block.person_id in {person_id, canonical} and block.scope == scope:",
+  "new": "            if False:",
+  "target": "tests/unit/test_roster_observation.py::test_an_incomplete_roster_source_invalidates_the_member_answer_not_the_member"
+ }
+]

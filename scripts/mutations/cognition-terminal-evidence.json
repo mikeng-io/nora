@@ -1,0 +1,51 @@
+[
+  {
+    "name": "request history is substituted for the terminal response",
+    "file": "scripts/cognition_loop/judges.py",
+    "old": "def _final_output(trajectory: dict[str, Any]) -> str | None:\n    \"\"\"The canonical terminal response; absent evidence remains unavailable.\"\"\"\n    response = trajectory.get(\"final_response\") or {}\n    return response.get(\"text\") if response.get(\"status\") == \"observed\" else None",
+    "new": "def _final_output(trajectory: dict[str, Any]) -> str | None:\n    \"\"\"The last exchange's assistant output, never every request's input.\"\"\"\n    for request in reversed(trajectory.get(\"model_calls\") or []):\n        messages = request.get(\"messages\") if isinstance(request, dict) else None\n        for message in reversed(messages or []):\n            if not isinstance(message, dict) or message.get(\"role\") != \"assistant\":\n                continue\n            text = \"\".join(\n                part.get(\"text\", \"\")\n                for part in message.get(\"content\") or []\n                if isinstance(part, dict)\n            )\n            if text.strip():\n                return text\n    return None",
+    "target": "tests/unit/test_cognition_loop_judge_digest.py::test_request_history_never_supplies_missing_or_interrupted_final_response"
+  },
+  {
+    "name": "response fragments are discarded",
+    "file": "scripts/cognition_loop/trajectory.py",
+    "old": "            if content is not None:\n                text.append(content)",
+    "new": "            if content is not None:\n                pass",
+    "target": "tests/unit/test_cognition_loop_judge_digest.py::test_terminal_response_is_canonical_including_empty_and_streamed_output"
+  },
+  {
+    "name": "transport success is presented as the domain outcome",
+    "file": "scripts/cognition_loop/judges.py",
+    "old": "\"status\": tool_outcome(result).get(\"status\"),",
+    "new": "\"status\": result.get(\"status\") if isinstance(result, dict) else None,",
+    "target": "tests/unit/test_cognition_loop_judge_digest.py::test_judge_distinguishes_domain_unavailability_from_transport_success"
+  },
+  {
+    "name": "rejudge dispatches before wake completeness is known",
+    "file": "scripts/cognition_loop/rejudge.py",
+    "old": "    errors = reconcile(report, output, judgments=False)[\"errors\"]",
+    "new": "    errors = []",
+    "target": "tests/unit/test_cognition_loop_rejudge.py::test_missing_frozen_wake_stops_before_judge_setup"
+  },
+  {
+    "name": "rejudge overwrites the source campaign report",
+    "file": "scripts/cognition_loop/accounting.py",
+    "old": "    (output / \"report.json\").write_text(",
+    "new": "    (Path(report[\"rejudged\"][\"source\"]) / \"report.json\").write_text(",
+    "target": "tests/unit/test_cognition_loop_rejudge.py::test_preflight_reconciles_rows_and_json_without_changing_originals"
+  },
+  {
+    "name": "tool-side transport replaces the completed SDK response",
+    "file": "scripts/cognition_loop/trajectory.py",
+    "old": "    records = records[:finished[-1][0] + 1]",
+    "new": "",
+    "target": "tests/unit/test_cognition_loop_judge_digest.py::test_tool_side_model_transport_cannot_replace_the_completed_sdk_response"
+  },
+  {
+    "name": "after-state failure discards the captured trajectory",
+    "file": "scripts/cognition_loop/run.py",
+    "old": "                            no_session=no_session, trajectory=got[\"trajectory\"])",
+    "new": "                            no_session=no_session)",
+    "target": "tests/unit/test_cognition_loop_run.py::test_after_state_failure_preserves_captured_trajectory"
+  }
+]

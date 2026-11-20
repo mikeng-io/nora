@@ -1,13 +1,12 @@
 # AGENTS.md
-
 The entry point for any agent working in this repo. `CLAUDE.md` points here so
-there is one copy. **Read [ORCHESTRATION.md](ORCHESTRATION.md) before assigning
-work**: it owns worker selection, review tiers and artifact boundaries. When a
-task matches a skill in [Skills](#skills-the-procedures), load it before the first edit.
+there is one copy. Start or resume engineering work with `nora-work`: it routes
+the current outcome through the lifecycle in [ORCHESTRATION.md](ORCHESTRATION.md).
+That policy owns responsibilities and boundaries; skills own procedures. Load
+only the skill and references needed for the next action, before that action.
 
-This file states what holds now. It is revised in place, never appended to: a
-new rule rewrites the section that owns its subject, and a rule that no longer
-holds is deleted. Git is the history.
+State current instructions once; revise their owner in place. Delete obsolete
+rules. Git is the history.
 
 ## The spine: comprehend → measure → serialize
 
@@ -45,23 +44,8 @@ Read the real flow end to end, then stop at the first rung that holds:
 
 1. Does it need to exist? 2. Is it already in this codebase? 3. Does the
 stdlib, a Postgres constraint or an installed dependency do it? 4. One line?
-5. Only then, the minimum code that works.
-
-- **A guard needs a consequence**: a live count, an incident, or a real trust
-  boundary (an identifier or coordinate egressing, a room reading another, a
-  credential). Otherwise leave it out and name the ceiling in one line.
-- **A boundary is drawn by scope, never by a filter inside it.** The unit is
-  the read boundary: rooms that must not share belong to different units.
-- **A special case is a missing requirement.** Before an `if` for one value, a
-  retry, a swallowed exception or a skipped test, find the fix behind it. Two
-  patches to one seam mean the seam is wrong.
-- **What changes together lives together.** No unrequested abstraction, no
-  config for a constant. A deliberate corner gets a `# ponytail:` comment
-  naming its ceiling. One check, not a suite.
-- **Ship, then harden what breaks**: one integrated change from one spec,
-  measured once; deletion over addition, the shortest working diff. Undo is a
-  config flip or a backup. A complex ask ships its small version and questions
-  the rest in the same report.
+5. Only then, the minimum code that works. Ship it, measure it once, and harden
+what breaks; a complex ask ships its small version and questions the rest.
 
 Never simplified away: the egress and disclosure rules, fail-closed
 measurement, error handling that would lose input, and anything the operator
@@ -79,25 +63,9 @@ refactor, threshold, prompt or doctrine wording, eval case) goes straight to
 code. `nora-design` owns the procedure.
 
 **Git and GitHub are the log.** Commits and PRs record what changed and why;
-plans, roadmaps and open items are GitHub issues and the project. The ADRs are
+GitHub Project owns roadmap; Linear owns execution; GitHub Issues hold reports. The ADRs are
 the one decision record kept as history; `design/09-decision-index.md` lists
 the decisions that hold now, each with its test or `NOT ENFORCED` (`nora-decision`).
-
-- **A document says what holds now**, high level, present tense, precise and
-  concise. Revise or consolidate the section that owns the subject; never add
-  a section beside it, never mark text deprecated or superseded. No dates,
-  issue or PR numbers, reversal stories or "was X, now Y".
-- **A comment says what the code cannot**: a unit, a bound, a non-obvious
-  constraint, one business fact, in at most three lines. Never history, a
-  measurement, a review story or a decision citation.
-- **A docstring says what the thing is**; an internal (`_name`) function gets
-  one line or none. A model-facing tool docstring is behaviour (`nora-tool`).
-- **Size**: a file at most 800 lines, a function at most 120, `AGENTS.md` at
-  most 250, a design subject file at most 300. Split by area and layer.
-
-Gates under `tests/architecture/` hold existing debt to baselines that only
-shrink; a cleanup rewrites its baseline (`python -m scripts.code_size --write`,
-likewise `scripts.log_markers`, `scripts.design_shape`).
 
 ## Reporting to the operator
 
@@ -114,74 +82,38 @@ NEEDS YOU   only what requires the operator, with the real trade-off
 
 Lead with the conclusion; headers are subjects, not verdicts; no internal
 identifiers in prose; errors get one clause; reasoning goes in the artifact,
-not the message. **Proceed unless blocked**: stop
-only for a blocker or a fact only the operator holds. Changes land by merge and the release
-pipeline deploys them; deploy by hand only on request, for host config, or to recover.
+not the message. **Proceed unless blocked**: stop only for a blocker or what the
+operator alone holds: intent, authority or a redesign (`nora-work`). Merges deploy through the release pipeline; deploy by
+hand only on request, for host config, or to recover.
 
-**Decisions change on evidence, not argument.** New evidence (a measurement, a
-read-back, a probe) changes a decision in one line. A better-argued
-restatement does not: hold, and say what reading would overturn it. Write that
-reversal condition when you decide. A decision the operator locked is closed.
+**Decisions change on evidence, not argument**: a measurement, read-back or probe
+changes one in a line; a better-argued restatement does not, so hold. Write the
+reading that would overturn it when you decide. A decision the operator locked is closed.
+
+## Code standards
+
+Write and review every change against [docs/code-standards.md](docs/code-standards.md):
+the cross-cutting rules, then the section for each stack the diff touches.
+A reviewer's finding names the rule it breaks. A failure no rule caught is
+recorded in [docs/maintainers/lessons.md](docs/maintainers/lessons.md); a
+lesson seen on three separate days becomes a standard.
 
 ## Never
 
 - `pip install`: dependencies via `uv add`.
-- A test whose fake answers every request the same way, or that stays green
-  when the code under test is reverted.
 - Point signal-cli at another account, re-register it or unlink its device
   without an explicit decision.
 - Reference the archived legacy profile path, or reuse a Hermes gateway.
-- Assert a per-tag object was freed by an attribute; count live `gc` objects.
-- Build a model prompt outside context assembly: every model call is a
-  declared occasion (`test_every_model_call_is_a_declared_occasion.py`).
-- Paste production rows into a fixture. Fixtures are generated, or placeholders
-  from `identity.example.toml`; the hooks refuse real values, and you never
-  acknowledge a finding yourself.
-- Trust an instrument's null before saying what its positive would look like.
-- Claim a merge, deploy or fix without reading back its state; a fix needs its
-  line reverted and a named test red (`nora-prove-fix`). Read a gate's rc, never
-  through a pipe. Cite only files and functions opened in this session.
 - Edit, commit or merge on `master` in this checkout; every change starts in
   its own worktree. Never run two agents against one checkout.
-- Trust `alembic revision --autogenerate` for `idx_messages_conv_ts`.
-  `uv run alembic heads` prints exactly one line after every merge.
 - Take a decision number from a chat agreement; allocate it at merge time.
-
-## Instruments
-
-- Read `docs/observability.md` before adding one. One root span per entry point; stages are its children. Spawned work does
-  not inherit the caller's span: attach the intended context explicitly.
-- Langfuse gets traces with a generation in them (a root declares
-  `nora.trace_kind`); the rest is a counter label. Model calls use Strands'
-  spans, or `start_raw_model_span` for raw completions; never hand-write `gen_ai.*`.
-- A log line is not a metric. A declared metric has a call site and an
-  increment has a declaration (`test_every_recorded_metric_is_declared.py`).
-  Label vocabularies are derived from the code (`get_args` off a `Literal`).
-- Three states on every instrument; measure the cost (the plan, the bound),
-  not only the result; pair every zero-assertion with a positive control.
-
-## Code conventions
-
-- Code is grouped by area in three layers that import inward (ARCHITECTURE.md
-  «Code map», `nora/AGENTS.md`, ADR 0037); `nora-structure` places the code.
-- Collaborators come through `__init__`: no `*_fn` hooks, no `_for_test`
-  parameters, no mutable module singletons.
-- A port gains a second implementation, a test fake included, only with a
-  shared contract suite in `tests/contract/`, its database scoped to the module.
-  Port fakes live in `nora/testing/`.
-- A test directory names what makes the test true (`tests/README.md`); the
-  `tests/` root takes no new files. Tests read config from the template
-  fixtures; only a test whose subject is the deployment reads `config.toml`.
-- A new behavioural rule gets a decision-index row and a named test in
-  `tests/test_acceptance_rules.py::RULE_TESTS`.
 
 ## Operational constraints
 
-1. Direct builds need `docker build --network=host`; compose sets it.
-2. Honcho health is `GET /health`, not `GET /v3/workspaces`.
-3. signal-cli is Nora's transport, in her compose project, on Java 25;
+1. Direct builds need `docker build --network=host` (compose sets it); Honcho
+   health is `GET /health`, not `GET /v3/workspaces`.
+2. signal-cli is Nora's transport, in her compose project, on Java 25;
    `--receive-mode=on-start` is load-bearing (without it every message drops).
-4. Dependencies via `uv add`.
 
 ## Settings and secrets
 
@@ -192,27 +124,26 @@ reversal condition when you decide. A decision the operator locked is closed.
 | `policy.toml` | who may talk to her, and where | trust changes |
 | `secret.toml` | credential values | credentials change |
 
-All are gitignored; `*.example.toml` record their shapes. No config change
-reaches a process unvalidated (`nora-deploy`). Policy is deny-by-default and
-Nora refuses to start if it allows nothing; the host's file is authoritative.
+All are gitignored, their shapes in `*.example.toml`; no config change reaches a
+process unvalidated (`nora-deploy`). Policy is deny-by-default (Nora refuses to start if it allows nothing); the host's file is authoritative.
 
 ## Deployment and releases
 
-`nora-host` is a deploy target, not a dev checkout. The Komodo stack
-`nora-releases` deploys from the `deployments` branch; `~/workspace/nora` on
-the host holds live config, data and state and is never deleted or reset. Key
-auth only: never `sshpass` or a password in `.env`, chat or a readable file. Every ordinary master push releases a patch or minor automatically;
-`nora-release` owns the rest, `nora-deploy` owns deployment.
+`nora-host` is a deploy target, not a dev checkout: Komodo's `nora-releases`
+deploys from `deployments`; the host's `~/workspace/nora` holds live config,
+data and state and is never deleted or reset. Key auth only, never a password.
+Master pushes release automatically (`nora-release`); `nora-deploy` deploys.
 
 ## Skills: the procedures
 
-Each is `.agents/skills/<name>/SKILL.md`, linked from `.claude/skills/<name>`:
-the order of the commands and the check after each. A new skill adds its row
-here and its link in the same commit.
+Each is `.agents/skills/<name>/SKILL.md`, linked from `.claude/skills/<name>`: the
+order of the commands and the check after each; a new skill adds both at once.
 
 | when the task is | load |
 |---|---|
+| starting or resuming engineering work, choosing the next stage, or handing over | `nora-work` |
 | starting a change, running the gate, committing, opening or merging a PR | `nora-land` |
+| turning a design or issue into briefs, delegating a build, or reading a builder's result back | `nora-dispatch` |
 | reviewing a change against its original scope and acceptance | `nora-review` |
 | an architecture change, or any edit under `design/` | `nora-design` |
 | a new DEC or R row, an ADR, an issue, a roadmap direction, or citing a decision | `nora-decision` |
@@ -220,42 +151,13 @@ here and its link in the same commit.
 | cutting a release: the release-please PR, the `vX.Y.Z` tag, the GitHub Release | `nora-release` |
 | reading a trace, a metric, a row or a log as evidence | `nora-readback` |
 | confirming a built prompt, doctrine, tool-text or routing fix with the eval suite (find the cause offline first) | `nora-eval` |
+| writing or changing a test under `tests/` | `nora-test` |
 | proving a fix is guarded (revert, watch a named test go red, restore) | `nora-prove-fix` |
 | adding a module, or moving or splitting code | `nora-structure` |
 | adding or changing one of Nora's tools | `nora-tool` |
 | adding or changing one of Nora's runtime skills in `nora/skills/` | `nora-runtime-skill` |
 | creating or editing digital 3D assets with Meshy | `meshy-3d-generation` |
 
-## Validation budget
-
-Automatic PR and master checks target three minutes with a five-minute ceiling.
-The complete backend suite is on demand through manual CI dispatch; release PRs
-do not wait for it. A timeout fails. Report fast-baseline and complete acceptance
-as separate outcomes. Use focused local checks, never a full local pre-PR suite.
-
-Python CodeQL is on demand through manual CI dispatch; its hosted analysis exceeded
-the automatic budget. Other selected security scans remain automatic. A skipped
-Python scan is no claim that Python security analysis passed.
-
 ## Reading order
 
-`README.md` → `ARCHITECTURE.md` → the area's design bundle → `CONTRIBUTING.md`
-and `docs/maintainers/conventions.md`; `DESIGN.md` before touching anything she
-looks like; `docs/observability.md`, `docs/eval-sop.md`, `docs/runbook.md` as needed.
-
-<!-- OPENWIKI:START -->
-
-## OpenWiki
-
-This repository has a generated `openwiki/` evidence index. It is optional just-in-time context, not required startup reading.
-
-- Do not enumerate, preload, or search wikis at task start. Use retrieval when the user asks for it, when unfamiliar architecture or dependency behavior materially affects the task, or when source inspection leaves an important uncertainty. Stop once the question is grounded.
-- When those conditions apply and OpenWiki retrieval tools are available, use `openwiki_search` for just-in-time context and `openwiki_read` for the relevant complete sections. If search returns `workspace_required`, ask which listed workspace to use and retry with its ID.
-- Use `openwiki_list_workspaces` or `openwiki_list_wikis` when workspace membership itself needs to be discovered.
-- If the retrieval tools are unavailable, read `openwiki/quickstart.md` and follow its links to the relevant pages.
-- Treat source code and tests as authoritative. A brief's unknowns and review items are verification gaps, not automatic requirements.
-- Prefer the narrowest quiet validation that proves the changed behavior. Preserve complete failure output.
-
-The scheduled OpenWiki GitHub Actions workflow refreshes the repository wiki. Do not hand-edit generated OpenWiki pages unless explicitly asked; prefer updating source code/docs and letting OpenWiki regenerate.
-
-<!-- OPENWIKI:END -->
+`README.md` → `ARCHITECTURE.md` → the area's design bundle → `docs/code-standards.md` → `CONTRIBUTING.md`, `docs/maintainers/conventions.md`; `DESIGN.md` before touching how she looks; `docs/observability.md`, `docs/eval-sop.md`, `docs/runbook.md` as needed.
