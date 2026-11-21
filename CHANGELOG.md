@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.20.4](https://github.com/mikeng-io/nora/compare/v7.20.3...v7.20.4) (2026-11-21)
+
+
+### Bug Fixes
+
+* **identity:** read the register path's unique violation by SQLSTATE too ([83dc27f](https://github.com/mikeng-io/nora/commit/83dc27f56a4bd2092e224ce2da6d6f26f8f13479))
+* **identity:** translate concurrent identifier collisions by SQLSTATE ([4d0939a](https://github.com/mikeng-io/nora/commit/4d0939a9a0b96082c7cbc9fde9416048909773ae))
+
 ## [7.20.3](https://github.com/mikeng-io/nora/compare/v7.20.2...v7.20.3) (2026-11-20)
 
 
