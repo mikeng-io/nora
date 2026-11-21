@@ -150,6 +150,11 @@ quote_window_multiplier = 3
 [memory.graph]
 enabled = false
 
+[memory.retention]
+# Set horizon_days.<source> to a positive number of days to expire that source.
+# horizon_days.messages = 365
+# Presence fixes use presence.retention_days.
+
 [memory.index]
 refresh_seconds = 60.0
 read = false

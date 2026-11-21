@@ -64,6 +64,7 @@ _NOT_PROJECTED: dict[str, str] = {
 #: Writes the scan cannot see, because their table is a variable: each named
 #: function must still call the projector. `path::function` -> the write.
 _UNSEEN_WRITERS: dict[str, str] = {
+    "nora/infra/sql/item_retention.py::tombstone_items": "expired message and social item nodes",
     "nora/infra/sql/rollups.py::apply": "rollup_outing, through _diff_apply's `table`",
     "nora/infra/sql/mobility_writes.py::commit_fold": (
         "presence_stays and presence_trips, through store_presence's `table`"
@@ -243,7 +244,6 @@ def test_the_scan_sees_the_known_projecting_writers() -> None:
         ("nora/infra/sql/audit.py", "append"),
         ("nora/infra/sql/audit.py", "append_edit"),
         ("nora/infra/sql/audit.py", "hide_message"),
-        ("nora/infra/sql/audit.py", "prune_all"),
         ("nora/infra/sql/media_objects.py", "comprehend"),
         ("nora/infra/sql/media_descriptions.py", "remember"),
         ("nora/infra/sql/notes.py", "_create_on_conn"),

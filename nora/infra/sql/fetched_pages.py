@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nora.domain.fetched_page import FetchedPage
 from nora.infra.sql.blob_refs import held_elsewhere
 from nora.infra.sql.item_registration import SqlItemRegistration
+from nora.infra.sql.item_retention import older_than, tombstone_items
 from nora.infra.sql.schema import FETCHED_PAGES
 
 log = logging.getLogger("nora.infra.sql.fetched_pages")
@@ -39,8 +40,10 @@ class SqlFetchedPageStore:
 
     def __init__(
         self, engine: AsyncEngine, *, registration: SqlItemRegistration | None = None,
+        horizon_days: int | None = None,
     ) -> None:
         self._engine = engine
+        self._horizon_days = horizon_days
         self._registration = registration or engine.get_execution_options().get("item_registration")
 
     async def get(
@@ -93,14 +96,12 @@ class SqlFetchedPageStore:
 
     async def purge_expired(self, *, now: datetime, limit: int = 20) -> list[str]:
         try:
-            due = sa.select(FETCHED_PAGES.c.conversation_id, FETCHED_PAGES.c.url).where(
-                FETCHED_PAGES.c.expires_at <= now).limit(limit)
-            stmt = sa.delete(FETCHED_PAGES).where(
-                sa.tuple_(FETCHED_PAGES.c.conversation_id, FETCHED_PAGES.c.url).in_(due),
-            ).returning(FETCHED_PAGES.c.blob_key)
+            due = FETCHED_PAGES.c.expires_at <= now
+            if self._horizon_days is not None:
+                due = sa.or_(due, older_than(FETCHED_PAGES, now, self._horizon_days))
             async with self._engine.begin() as conn:
-                keys = list(dict.fromkeys(
-                    row[0] for row in await conn.execute(stmt)))
+                rows = await tombstone_items(conn, FETCHED_PAGES, due, limit=limit)
+                keys = list(dict.fromkeys(row["blob_key"] for row in rows))
                 held = await held_elsewhere(conn, keys)
         except Exception:
             log.exception("fetched_pages purge failed")

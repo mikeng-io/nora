@@ -85,6 +85,12 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     "legacy_relation_evidence": ("id",),
     "legacy_memory_work_item": ("id",),
     "registry": ("id", "unit"),
+    "tool_call_log": ("id",),
+    "watch_result": ("id",),
+    "expired_coverage": ("id",),
+    "forget_request": ("id",),
+    "dispute": ("id",),
+    "claim_support": ("claim_id", "unit"),
     "entity": ("id", "unit"),
     "claim": ("id", "unit"),
     "intention": ("id", "unit"),
@@ -174,10 +180,7 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
 }
 
 #: Append-only tables a restore copies, and each one's system-time column.
-#: `tool_call_log.created_at` is `now()` at insert and is system time; the
-#: others gained `recorded_at` in `0068`.
 APPEND_ONLY: dict[str, str] = {
-    "watch_result": "asserted_at",
     "nora_act": "asserted_at",
     "nora_act_outcome": "asserted_at",
     "nora_pass_output": "asserted_at",
@@ -224,7 +227,6 @@ APPEND_ONLY: dict[str, str] = {
     "blob_tombstone": "recorded_at",
     "decision_log": "recorded_at",
     "note_merge_decision": "recorded_at",
-    "tool_call_log": "created_at",
     # 0081_computer_events: the computer audit,
     # two rows (started, finished) per computer tool call, never changed.
     "computer_events": "created_at",

@@ -105,6 +105,7 @@ REGISTRY = sa.Table(
     ),
     sa.Column("content_hash", sa.Text),
     sa.Column("tombstoned_at", sa.DateTime(timezone=True)),
+    sa.Column("occurred_at", sa.DateTime(timezone=True)),
     sa.PrimaryKeyConstraint("id", "unit", name="pk_registry"),
     sa.UniqueConstraint("id", "unit", "kind", name="uq_registry_id_unit_kind"),
     sa.CheckConstraint(
@@ -121,6 +122,18 @@ REGISTRY = sa.Table(
         name="ck_registry_tombstone_at",
     ),
 )
+
+EXPIRED_COVERAGE = sa.Table(
+    "expired_coverage", METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("source", sa.Text, nullable=False),
+    sa.Column("person", sa.Text),
+    sa.Column("from", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("to", sa.DateTime(timezone=True), nullable=False),
+    sa.CheckConstraint('"from" <= "to"', name="ck_expired_coverage_order"),
+)
+sa.Index("idx_expired_coverage_unit_to", EXPIRED_COVERAGE.c.unit, EXPIRED_COVERAGE.c["to"])
 
 ENTITY = sa.Table(
     "entity",
@@ -319,6 +332,33 @@ WATCH_RESULT = sa.Table(
     sa.Column("content_hash", sa.Text, nullable=False),
 )
 
+FORGET_REQUEST = sa.Table(
+    "forget_request", METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
+    sa.Column("author", sa.Text, nullable=False),
+    sa.Column("targets", pg.ARRAY(sa.Text), nullable=False),
+    sa.Column("delete_now", sa.Boolean, nullable=False),
+    sa.Column("blocked", pg.JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
+)
+
+DISPUTE = sa.Table(
+    "dispute", METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
+    sa.Column("author", sa.Text, nullable=False),
+    sa.Column("claim_id", sa.Text, nullable=False),
+)
+
+CLAIM_SUPPORT = sa.Table(
+    "claim_support", METADATA,
+    sa.Column("claim_id", sa.Text, nullable=False),
+    sa.Column("support_count", sa.Integer, nullable=False),
+    sa.Column("last_evidenced_at", sa.DateTime(timezone=True)),
+    sa.CheckConstraint(
+        "support_count >= 0 AND ((support_count = 0) = (last_evidenced_at IS NULL))",
+        name="ck_claim_support_tally",
+    ),
+)
+
 
 NORA_ACT = sa.Table(
     "nora_act", METADATA,
@@ -390,6 +430,8 @@ _ITEM_WRITERS = {
     "nora_pass_output": ("SqlActStore", "internal"),
     "computer_events": ("SqlComputerEventStore", "internal"),
     "tool_call_log": ("SqlToolCallLogStore", "internal"),
+    "forget_request": ("SqlMemoryIntake", "internal"),
+    "dispute": ("SqlMemoryIntake", "internal"),
 }
 
 _AGGREGATE_WRITERS = {
@@ -406,7 +448,10 @@ _AGGREGATE_WRITERS = {
     "rollup_daybook": ("SqlRollupStore", "internal"),
     "presence_places": ("PresenceStore", "internal"),
     "platform_object_state": ("SqlObservationStore", "external"),
+    "claim_support": ("SqlClaimSupport", "internal"),
 }
+
+_SCOPED_ONLY = frozenset({"forget_request", "dispute", "claim_support"})
 
 
 def _observed_tables() -> Iterator[tuple[str, str, str, str, str]]:
@@ -430,7 +475,7 @@ def _registration_planes(
                 continue
             if field.name == "persons" and table in {"rollup_colocation", "rollup_outing"}:
                 continue
-            if field.name in {"unit", "graph_id"}:
+            if field.name in {"unit", "graph_id"} and table not in _SCOPED_ONLY:
                 field.nullable = True
             defaults = {
                 "kind": kind, "basis": basis, "writer": writer,
@@ -442,8 +487,9 @@ def _registration_planes(
     yield sa.CheckConstraint(
         "(unit IS NULL) = (graph_id IS NULL)",
         name=f"ck_{table}_graph_pair",
-        postgresql_not_valid=table not in {"nora_act", "nora_act_outcome", "nora_pass_output",
-                                          "watch_result"},
+        postgresql_not_valid=table not in _SCOPED_ONLY | {
+            "nora_act", "nora_act_outcome", "nora_pass_output", "watch_result",
+        },
     )
 
 
@@ -457,6 +503,9 @@ def _attach_registration_planes() -> None:
                 table.append_constraint(field)
 
 
+sa.Index("idx_forget_request_targets", FORGET_REQUEST.c.targets, postgresql_using="gin")
+
+
 for _log in ("computer_events", "tool_call_log"):
     METADATA.tables[_log].append_column(sa.Column("act_id", sa.Text))
 
@@ -464,6 +513,13 @@ _attach_registration_planes()
 
 for _key in ("unit", "graph_id"):
     WATCH_RESULT.c[_key].nullable = False
+DISPUTE.append_constraint(sa.ForeignKeyConstraint(
+    ["claim_id", "unit"], ["claim.id", "claim.unit"], name="fk_dispute_claim",
+))
+CLAIM_SUPPORT.append_constraint(sa.PrimaryKeyConstraint("claim_id", "unit"))
+CLAIM_SUPPORT.append_constraint(sa.ForeignKeyConstraint(
+    ["claim_id", "unit"], ["claim.id", "claim.unit"], name="fk_claim_support_claim",
+))
 WATCH_RESULT.append_constraint(sa.ForeignKeyConstraint(
     ["watch_edge", "unit"], ["edge.id", "edge.unit"], name="fk_watch_result_edge",
 ))

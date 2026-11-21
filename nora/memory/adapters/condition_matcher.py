@@ -11,6 +11,7 @@ from nora.domain.lineage import ROW, Lineage, split_room
 from nora.infra.sql.cognitive_graph_schema import INTENTION, NORA_ACT, NORA_ACT_OUTCOME
 from nora.infra.sql.cognitive_graph_store import RowData, SqlCognitiveGraph
 from nora.infra.sql.history import HISTORY_TABLES
+from nora.infra.sql.item_retention import expired_between
 from nora.infra.sql.schema import (
     MESSAGES,
     METADATA,
@@ -119,7 +120,11 @@ class _Batch:
         ).order_by(m.asserted_at, m.id).limit(1).with_for_update(read=True)
         row = (await self._conn.execute(stmt)).mappings().one_or_none()
         if row is None:
-            return Evaluation("false")
+            expired = await self._conn.scalar(sa.select(expired_between(
+                unit, intention["asserted_at"], sa.func.clock_timestamp(),
+                sources=("messages",), persons=(condition.person_id,),
+            )))
+            return Evaluation("unknown" if expired else "false")
         return Evaluation("true", _witness(row, row["asserted_at"]))
 
     async def _predicate(self, intention: Mapping[str, Any], condition: Predicate) -> Evaluation:
@@ -138,12 +143,36 @@ class _Batch:
             sources = await self._aggregate_sources(table, row)
             if not sources or not all([await self._healthy(unit, source) for source in sources]):
                 return Evaluation("unknown")
+            if await self._has_expired_inputs(table, row):
+                return Evaluation("unknown")
             # The edge pins the history version by graph id and recorded time.
             stamp = await self._revision_time(table, row)
             if stamp is None:
                 return Evaluation("unknown")
             return Evaluation(condition.measure(dict(row)), _witness(row, stamp))
         return Evaluation("unknown")
+
+    async def _has_expired_inputs(self, table: sa.Table, row: RowData) -> bool:
+        at = row["occurred_at"] or row["asserted_at"]
+        start = row["valid_from"] or at
+        end = row["valid_to"] or at
+        if table.name == "platform_object_state":
+            sources = ("platform_observation",)
+        elif table.name.startswith("presence_"):
+            sources = ("presence_fixes",)
+        else:
+            item_sources = {
+                "message": ("messages", "message_edit", "message_reaction"),
+                "presence": ("presence_fixes",),
+                "social": ("social_item",),
+            }
+            lineage = Lineage.from_json(row["build_lineage"])
+            sources = tuple({source for entry in lineage.section(ROW)
+                             for source in item_sources.get(entry.kind, ())})
+        return bool(await self._conn.scalar(sa.select(expired_between(
+            row["unit"], min(start, end), max(start, end),
+            sources=sources, persons=row["persons"] or None,
+        ))))
 
     async def _revision_time(self, table: sa.Table, row: RowData) -> datetime | None:
         key = {column: row[column] for column in HISTORY_TABLES[table.name]}

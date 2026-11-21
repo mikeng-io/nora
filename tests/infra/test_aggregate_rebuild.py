@@ -21,11 +21,14 @@ from nora.domain.presence import SavedPlace
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.cognitive_graph_schema import REGISTRY
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
+from nora.infra.sql.item_retention import tombstone_items
 from nora.infra.sql.observations import SqlObservationStore
 from nora.infra.sql.presence import PresenceStore
-from nora.infra.sql.schema import METADATA, PRESENCE_CORRIDORS, PRESENCE_DERIVED_PLACES
+from nora.infra.sql.schema import MESSAGES, METADATA, PRESENCE_CORRIDORS, PRESENCE_DERIVED_PLACES
 from nora.memory.domain.registration import AGGREGATE_FAMILIES
+from nora.memory.wire import claim_support
 from tests.infra.rollup_fixtures import RollupFixture
+from tests.infra.test_support import _evidence
 
 pytestmark = pytest.mark.asyncio(loop_scope="module")
 
@@ -44,6 +47,7 @@ _SYSTEM_COLUMNS = {
     "rollup_daybook": {"id", "build_id", "asserted_at", "recorded_at"},
     "presence_places": set(),
     "platform_object_state": {"id", "asserted_at", "created_at", "updated_at"},
+    "claim_support": set(),
 }
 _REFERENCE_COLUMNS = {
     "presence_stays": {"place_id": PRESENCE_DERIVED_PLACES},
@@ -160,6 +164,15 @@ async def _seed_rollup(record):
             "signal", sent, is_nora=1, body="Fixture question", delivery_status="sent"
         )
         await record.message("signal", sent + _MIN, person=_PEOPLE[0], quoted_ts=sent)
+    expired = await record.message(
+        "signal", _START + _HOUR, person=_PEOPLE[0], body="Generated retained endpoint",
+    )
+    async with record.engine.begin() as conn:
+        (old,) = await tombstone_items(conn, MESSAGES, MESSAGES.c.id == expired)
+        state = await conn.scalar(sa.select(REGISTRY.c.state).where(
+            REGISTRY.c.unit == record.unit, REGISTRY.c.id == old["graph_id"],
+        ))
+        assert state == "tombstoned"
     await record.health("presence", record.circle, "poll", "ok", _WATERMARK)
 
 
@@ -249,6 +262,23 @@ async def _saved_places(record, table):
     return folded, rebuilt
 
 
+async def _support_head(record, table):
+    from datetime import UTC, datetime, timedelta
+
+    at = datetime(2026, 1, 1, tzinfo=UTC)
+    await _evidence(record.engine, [("signal", at, "first"), ("discord", at, "second")])
+    builder = claim_support(record.engine)
+    assert await builder.rebuild(unit=record.unit, claim_id="generated-claim", at=at) == 2
+    async with record.engine.begin() as conn:
+        assert await tombstone_items(conn, MESSAGES, MESSAGES.c.body == "second")
+    later = at + timedelta(days=1)
+    assert await builder.rebuild(unit=record.unit, claim_id="generated-claim", at=later) == 1
+    folded = await _snapshot(record.engine, table)
+    await _reset_head(record.engine, table)
+    assert await builder.rebuild(unit=record.unit, claim_id="generated-claim", at=later) == 1
+    return folded, await _snapshot(record.engine, table)
+
+
 @pytest.fixture
 def aggregate_db(request, family):
     fixture = "clean_pg_url" if AGGREGATE_FAMILIES[family] == "head" else "builds"
@@ -269,7 +299,11 @@ async def test_each_aggregate_rebuilds_the_same_live_rows_and_registry(family, a
         engine = create_sql_engine(aggregate_db)
         try:
             record = RollupFixture(engine, people=_PEOPLE)
-            builders = {"platform_object_state": _platform_heads, "presence_places": _saved_places}
+            builders = {
+                "platform_object_state": _platform_heads,
+                "presence_places": _saved_places,
+                "claim_support": _support_head,
+            }
             incremental, rebuilt = await builders[family](record, table)
             assert incremental == rebuilt
         finally:

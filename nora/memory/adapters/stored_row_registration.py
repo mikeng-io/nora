@@ -20,7 +20,7 @@ from nora.infra.sql.schema import METADATA, PRESENCE_PLACES
 from nora.memory.adapters.stored_aggregate_planes import AggregatePlanes
 from nora.memory.adapters.stored_item_planes import ItemPlanes
 from nora.memory.app.register_stored_rows import TableRegistration
-from nora.memory.domain.registration import AGGREGATE_FAMILIES, BACKFILL_ITEM_SOURCES
+from nora.memory.domain.registration import BACKFILL_AGGREGATE_FAMILIES, BACKFILL_ITEM_SOURCES
 
 Rows = Sequence[RowData]
 
@@ -93,7 +93,7 @@ class SqlStoredRows:
         self._aggregates = AggregatePlanes(AggregateWrites(graph, None), scope)
 
     async def register_table(self, name: str, *, batch_size: int) -> TableRegistration:
-        if name not in BACKFILL_ITEM_SOURCES and name not in AGGREGATE_FAMILIES:
+        if name not in BACKFILL_ITEM_SOURCES and name not in BACKFILL_AGGREGATE_FAMILIES:
             raise ValueError(f"not a stored-row registration source: {name}")
         table = METADATA.tables[name]
         keys = _key(table)
@@ -182,7 +182,7 @@ class SqlStoredRows:
 
     async def validate_pairs(self) -> None:
         async with self._engine.begin() as conn:
-            for name in (*BACKFILL_ITEM_SOURCES, *AGGREGATE_FAMILIES):
+            for name in (*BACKFILL_ITEM_SOURCES, *BACKFILL_AGGREGATE_FAMILIES):
                 ident = conn.dialect.identifier_preparer.quote_identifier
                 check = ident(f"ck_{name}_graph_pair")
                 stmt = sa.text(f"ALTER TABLE {ident(name)} VALIDATE CONSTRAINT {check}")

@@ -35,9 +35,11 @@ from nora.infra.sql.standing_ledger import SqlStandingLedger
 from nora.memory.adapters.act_store import SqlActStore
 from nora.memory.adapters.admission_rows import SqlAdmissionRows
 from nora.memory.adapters.admission_store import SqlAdmissionStore
+from nora.memory.adapters.claim_support import SqlClaimSupport
 from nora.memory.adapters.condition_matcher import SqlConditionMatcher
 from nora.memory.adapters.graph_clock import SqlDueSchedules
 from nora.memory.adapters.graph_store import SqlCognitiveGraph
+from nora.memory.adapters.memory_intake import SqlMemoryIntake
 from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
 from nora.memory.adapters.tools.session import session_verbs as _session_verbs
@@ -372,3 +374,16 @@ def watch_poller(
         SqlWatchResults(engine, registration, WATCH_ADAPTERS.keys()),
         {kind: adapter(provider) for kind, adapter in WATCH_ADAPTERS.items()}, clock,
     )
+
+
+
+def memory_intake(
+    engine: AsyncEngine, registration: SqlItemRegistration | None = None,
+) -> SqlMemoryIntake:
+    item_registration = registration or engine.get_execution_options()["item_registration"]
+    return SqlMemoryIntake(engine, item_registration, SqlCognitiveGraph(engine))
+
+
+
+def claim_support(engine: AsyncEngine) -> SqlClaimSupport:
+    return SqlClaimSupport(engine, SqlCognitiveGraph(engine))
