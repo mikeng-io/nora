@@ -109,7 +109,10 @@ async def _write(
     await conn.execute(stmt.on_conflict_do_update(
         constraint="pk_lesson_tally", set_=values,
     ))
-    if lesson["state"] == "live" and contradiction > support:
+    if (
+        lesson["state"] == "live" and contradiction > support
+        and planes["exposure"] != "operator"
+    ):
         await SqlGraphStimuli.append_in(conn, GraphStimulus(
             unit, "dependency", claim_id, at, "lesson_tally", room=lesson["origin_room"],
             occurrence=f"{support}:{contradiction}",

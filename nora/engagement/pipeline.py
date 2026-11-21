@@ -338,7 +338,7 @@ class EngagementPipeline:
         """
         message = request.message
         identity = await self._adapter_for(message.platform).resolve_identity()
-        key = self._slots.key((message.platform, message.conversation_id))
+        key = (message.platform, message.conversation_id)
         # THE ROOT. Everything this tag opens hangs under it, so one
         # tagged message is one Langfuse trace instead of three — see this
         # module's docstring for why the queued half needs a captured context

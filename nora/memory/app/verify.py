@@ -4,6 +4,7 @@ from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import datetime
+from functools import partial
 from typing import Literal, Protocol
 
 from nora.domain.rollup import HealthRow, adapter_up, polls_healthy
@@ -26,7 +27,9 @@ class VerificationBatch(Protocol):
 
     async def window(self, due: DueIntention) -> tuple[datetime, set[tuple[str, str]]]: ...
 
-    async def end(self, due: DueIntention, ending: ClockEnding) -> None: ...
+    async def end(
+        self, due: DueIntention, ending: ClockEnding, *, room_busy: Callable[[], bool],
+    ) -> None: ...
 
     async def record_verdicts(self, clock: Callable[[], datetime]) -> None: ...
 
@@ -63,9 +66,7 @@ class IntentionVerifier:
                 else:
                     opened, sources = await batch.window(due)
                     ending = "leaked" if await self._healthy(due, opened, sources) else "unknown"
-                    if self._room_busy(due):
-                        continue
-                await batch.end(due, ending)
+                await batch.end(due, ending, room_busy=partial(self._room_busy, due))
             await batch.record_verdicts(self._clock)
 
     def _room_busy(self, due: DueIntention) -> bool:

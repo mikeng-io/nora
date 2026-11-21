@@ -69,6 +69,7 @@ class AssembledPass:
     shown: frozenset[str] = frozenset()
     intention_visible: bool = True
     observed: tuple[tuple[str, str], ...] = ()
+    agenda_stimuli: tuple[str, ...] = ()
 
     def render(self) -> str:
         return render_blocks(tuple(replace(block, order=i) for i, block in enumerate(self.blocks)))
