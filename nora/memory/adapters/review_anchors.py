@@ -56,16 +56,18 @@ class SqlReviewLessons:
 async def review_anchors(
     conn: AsyncConnection, graph: FromClause, unit: str, data: ReviewInput, now: datetime,
     room_aliases: tuple[str, ...],
-) -> tuple[tuple[str, ...], tuple[tuple[str, str], ...], ReviewCursor | None]:
+) -> tuple[tuple[str, ...], tuple[tuple[str, str], ...], ReviewCursor | None, datetime | None]:
     row = graph.c
-    window = row.image["window_end"].astext.cast(sa.DateTime(timezone=True))
     part = row.image["part"].astext
     priority = sa.case((part == "lesson", 0), else_=1)
     origin = row.origin_room.in_(room_aliases)
     if data.include_roomless:
         origin = origin | row.origin_room.is_(None)
     due_guesses = _due_guesses(unit, now).with_only_columns(CLAIM.c.id)
-    query = sa.select(row.graph_id, row.asserted_at, window, priority).where(
+    query = sa.select(
+        row.graph_id, row.asserted_at, row.event_time, priority.label("priority"),
+        row.image["window_end"].astext.cast(sa.DateTime(timezone=True)).label("window_end"),
+    ).where(
         row.kind == "claim", row.state.in_(_STATES),
         origin,
         sa.or_(
@@ -76,27 +78,63 @@ async def review_anchors(
     if data.after is not None:
         # Wrap to the head after all keys past the previous page have had a turn.
         key = sa.tuple_(priority, row.graph_id)
-        query = query.order_by(sa.case((key <= data.after, 1), else_=0))
+        before = (key < data.after.target if data.after.after_verdict is not None
+                  else key <= data.after.target)
+        query = query.order_by(sa.case((before, 1), else_=0))
     cap = declaration("review").bounds(now).rows
-    due = (await conn.execute(query.order_by(priority, row.graph_id)
-                              .limit(cap // (1 + _EVIDENCE_PER_TARGET)))).all()
-    if not due:
-        return (), (), None
+    minimum = 1 + _EVIDENCE_PER_TARGET
+    candidates = (await conn.execute(query.order_by(priority, row.graph_id)
+                                    .limit(cap // minimum))).all()
+    due: list[str] = []
     evidence: list[tuple[str, str]] = []
-    for id_, start, end, _ in due:
-        if end is None:
-            refs = await conn.scalars(sa.select(row.graph_id).where(
-                sa.or_(sa.and_(row.source == "lesson_tally",
-                              row.image["claim_id"].astext == id_),
-                       row.graph_id.in_(lesson_verdict_ids(unit, id_))),
-            ).order_by((row.source == "lesson_tally").desc(), row.event_time.desc(),
-                       row.graph_id).limit(_EVIDENCE_PER_TARGET))
+    cursor = None
+    since = None
+    remaining = cap
+    for row in candidates:
+        if remaining < minimum:
+            break
+        id_ = row.graph_id
+        target = row.priority, id_
+        cursor_after = None
+        if row.window_end is None:
+            after_verdict = (data.after.after_verdict
+                             if data.after is not None and data.after.target == target else None)
+            lesson_rows = await _lesson_evidence(
+                conn, graph, unit, id_, now, after_verdict, remaining,
+            )
+            if len(lesson_rows) == remaining:
+                # Start a fresh docket before splitting a lesson's evidence.
+                if due:
+                    break
+                lesson_rows = lesson_rows[:-1]
+                last = lesson_rows[-1]
+                cursor_after = last.priority, last.graph_id
+            refs = tuple(item.graph_id for item in lesson_rows)
+            since = min(since or now, row.event_time, *(item.event_time for item in lesson_rows))
         else:
-            guesses = await _guess_evidence(conn, graph, start, end, now)
+            guesses = await _guess_evidence(conn, graph, row.asserted_at, row.window_end, now)
             refs = tuple(dict.fromkeys(guesses))
+        due.append(id_)
         evidence.extend((ref, id_) for ref in refs)
-    last = due[-1]
-    return tuple(item.graph_id for item in due), tuple(evidence), (last[3], last.graph_id)
+        remaining -= 1 + len(refs)
+        cursor = ReviewCursor(target, cursor_after)
+    return tuple(due), tuple(evidence), cursor, since
+
+
+async def _lesson_evidence(
+    conn: AsyncConnection, graph: FromClause, unit: str, lesson: str, now: datetime,
+    after: tuple[int, str] | None, limit: int,
+) -> list[sa.Row]:
+    row = graph.c
+    tally = sa.and_(row.source == "lesson_tally", row.image["claim_id"].astext == lesson)
+    priority = sa.case((tally, 0), (row.image["ending"].astext == "leaked", 1), else_=2)
+    attached = tally | row.graph_id.in_(lesson_verdict_ids(unit, lesson))
+    if after is not None:
+        attached &= tally | (sa.tuple_(priority, row.graph_id) > after)
+    result = await conn.execute(sa.select(
+        row.graph_id, row.event_time, priority.label("priority"),
+    ).where(attached, row.event_time <= now).order_by(priority, row.graph_id).limit(limit))
+    return list(result)
 
 
 async def _guess_evidence(

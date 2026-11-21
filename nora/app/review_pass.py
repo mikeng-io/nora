@@ -116,7 +116,7 @@ class ReviewPass:
         self._instructions, self._budget, self._model = instructions, budget, model
         self._revisions, self._policy = revisions, policy
         self._attempts: dict[tuple[str, str], _Attempt] = {}
-        self._last_room: dict[str, str] = {}
+        self._turns: dict[str, tuple[str, datetime]] = {}
         self._running: dict[str, asyncio.Task[None]] = {}
 
     def poll(self, now: datetime) -> None:
@@ -134,17 +134,17 @@ class ReviewPass:
     async def _tick(self, unit: str, now: datetime) -> None:
         try:
             rooms = await self._due_rooms(unit, now)
-            last = self._last_room.get(unit, "")
-            if last in rooms:
-                previous = self._attempts.get((unit, last))
-                if previous is not None and now < previous.retry_at:
-                    await self.run_once(unit, last, now)
-                    return
+            last, rotate_at = self._turns.get(unit, ("", now))
+            # A refresh within a room's turn leaves its rotation deadline fixed.
+            if last in rooms and now < rotate_at:
+                await self.run_once(unit, last, now)
+                return
             start = bisect_right(rooms, last)
             for room in (*rooms[start:], *rooms[:start]):
-                self._last_room[unit] = room
+                self._turns[unit] = room, now
                 if await self.run_once(unit, room, now):
-                    break
+                    self._turns[unit] = room, now + timedelta(seconds=REVIEW_RETRY_SECONDS)
+                    return
         except Exception:
             log.exception("Review pass failed")
         finally:

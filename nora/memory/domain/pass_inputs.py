@@ -53,7 +53,10 @@ class DebriefInput:
     items: tuple[str, ...]
 
 
-ReviewCursor = tuple[int, str]
+@dataclass(frozen=True, slots=True)
+class ReviewCursor:
+    target: tuple[int, str]
+    after_verdict: tuple[int, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)

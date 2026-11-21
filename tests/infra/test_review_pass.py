@@ -26,11 +26,14 @@ from nora.obs.metrics import Metrics
 from nora.testing.scripted_agent import ScriptedTurn
 from tests.fakes import dreamer_runtime_for
 from tests.infra.test_graph_propose import BASIS
+from tests.infra.test_intention_verdict import _tick, _verdicts
+from tests.infra.test_lesson_tally import ended, rebuild, resting, tally_rows
 from tests.infra.test_pass_anchors import NOW, SCOPE, reader
 from tests.infra.test_retrieval_scope import AT, OTHER, OTHER_ROOM, ROOM, UNIT, write_edge
 from tests.infra.test_retrieval_scope import scenario as scenario
 from tests.infra.test_review_admission import grade_rows, guess, lesson
 from tests.infra.test_room_busy import service, slots
+from tests.infra.test_situation_staleness import intention
 from tests.infra.test_wake_runner import WakeModel
 from tests.unit.test_dream_memory_budget import _tool_results
 
@@ -188,6 +191,83 @@ async def test_review_retry_bound_holds_across_rooms_in_one_unit(scenario):
     review.poll(NOW + timedelta(seconds=REVIEW_RETRY_SECONDS))
     await review.drain()
     assert model.turn == 2 and "Generated prediction" in model.seen[1][0]["content"][0]["text"]
+
+
+async def test_room_rotation_survives_six_consecutive_docket_changes(scenario):
+    await guess(scenario)
+    await scenario.claim("busy-first", part="guess", prediction="Busy room prediction",
+                         window_end=AT, origin_room=OTHER_ROOM)
+    model = WakeModel([])
+    review = _review(scenario, model)
+    review.poll(NOW)
+    await review.drain()
+    assert "Busy room prediction" in model.prompt()
+    for minute in range(1, 7):
+        tick = NOW + timedelta(minutes=minute)
+        await scenario.claim(f"busy-{minute}", part="guess", prediction="Busy room prediction",
+                             asserted_at=tick, window_end=tick, origin_room=OTHER_ROOM)
+        review.poll(tick)
+        await review.drain()
+
+    prompts = [call[0]["content"][0]["text"] for call in model.seen]
+    assert sum("Generated prediction" in prompt for prompt in prompts) == 1
+    assert any("claim: busy-4" in prompt for prompt in prompts)
+    assert all("Busy room prediction" not in prompt for prompt in prompts
+               if "Generated prediction" in prompt)
+
+
+async def test_review_shows_all_three_counted_verdicts_and_cites_the_contradiction(scenario):
+    await scenario.claim("lesson", part="lesson", asserted_at=AT - timedelta(hours=1))
+    await ended(scenario, "earlier-leak", "leaked", lesson="lesson")
+    for support in ("later-support-a", "later-support-b"):
+        await intention(scenario, support, state="ended", ending="achieved", ended_at=NOW)
+        await resting(scenario, support, "lesson")
+    await _tick(scenario.engine, NOW)
+    tally = (await tally_rows(scenario))["lesson"]
+    assert (tally["support"], tally["contradiction"]) == (2, 1)
+    verdicts = await _verdicts(scenario.engine)
+    model = _model("lesson", "weakened", verdicts["earlier-leak"]["graph_id"])
+    review = _review(scenario, model)
+    review.poll(await scenario.now())
+    await review.drain()
+
+    assert model.turn >= 1
+    assert '"contradiction": 1' in model.prompt()
+    for verdict in verdicts.values():
+        assert verdict["graph_id"] in model.prompt(), verdict["intention_id"]
+    assert [row.grade for row in await grade_rows(scenario)] == ["weakened"]
+
+
+async def test_review_pages_all_contradictions_when_they_exceed_the_row_budget(scenario):
+    old = AT - timedelta(days=400)
+    await scenario.claim("lesson", part="lesson", asserted_at=old - timedelta(hours=1))
+    await intention(scenario, "old-leak", state="ended", ending="leaked", ended_at=old,
+                    asserted_at=old - timedelta(minutes=1))
+    leaks = [f"leak-{i:02}" for i in range(59)]
+    for leak in leaks:
+        await ended(scenario, leak, "leaked")
+    await _tick(scenario.engine, NOW)
+    for leak in (*leaks, "old-leak"):
+        await resting(scenario, leak, "lesson")
+    await rebuild(scenario, "lesson")
+    verdicts = {row["graph_id"] for row in (await _verdicts(scenario.engine)).values()}
+    assert len(verdicts) == 60
+    now = await scenario.now()
+    model = WakeModel([])
+    review = _review(scenario, model)
+    for tick in (now, now + timedelta(seconds=REVIEW_RETRY_SECONDS)):
+        review.poll(tick)
+        await review.drain()
+
+    assert len(model.seen) == 2
+    pages = []
+    for call in model.seen:
+        prompt = call[0]["content"][0]["text"]
+        assert prompt.count("<item ") <= 60
+        assert "claim: lesson" in prompt and '"contradiction": 60' in prompt
+        pages.append({ref for ref in verdicts if ref in prompt})
+    assert [len(page) for page in pages] == [58, 2]
+    assert pages[0].isdisjoint(pages[1]) and set.union(*pages) == verdicts
 
 
 async def test_guess_profile_renders_its_refuted_grade(scenario):

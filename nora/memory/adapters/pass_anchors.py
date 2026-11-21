@@ -48,6 +48,7 @@ class AnchorRead:
     review_due: tuple[str, ...] = ()
     review_evidence: tuple[tuple[str, str], ...] = ()
     review_next: ReviewCursor | None = None
+    review_since: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +60,7 @@ class _Seeds:
     review_due: tuple[str, ...] = ()
     review_evidence: tuple[tuple[str, str], ...] = ()
     review_next: ReviewCursor | None = None
+    review_since: datetime | None = None
 
 
 class SqlPassAnchors:
@@ -124,7 +126,7 @@ class SqlPassAnchors:
             id_for(("room", room_ref), ""), dm_rooms, scope.concerns | frozenset(people),
             _collective(room_ref, room.unit, pointers), people_subjects, names,
             review_due=seeds.review_due, review_evidence=seeds.review_evidence,
-            review_next=seeds.review_next,
+            review_next=seeds.review_next, review_since=seeds.review_since,
         )
 
     async def _identity_people(
@@ -274,11 +276,11 @@ class _AnchorQueries:
     async def review(self, data: ReviewInput, now: datetime) -> _Seeds:
         aliases = tuple(ref for ref, key in self._scope.room_keys.items()
                         if key == self._scope.room)
-        due, evidence, cursor = await review_anchors(
+        due, evidence, cursor, since = await review_anchors(
             self._conn, self._graph, self._scope.unit, data, now, aliases,
         )
         return _Seeds((*due, *(ref for ref, _ in evidence)), review_due=due,
-                      review_evidence=evidence, review_next=cursor)
+                      review_evidence=evidence, review_next=cursor, review_since=since)
 
     async def pointers(
         self, rooms: tuple[str, ...], people: tuple[str, ...],
