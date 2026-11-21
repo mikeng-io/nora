@@ -1,5 +1,27 @@
 # Changelog
 
+## [7.20.3](https://github.com/mikeng-io/nora/compare/v7.20.2...v7.20.3) (2026-11-20)
+
+
+### Security
+
+* **site:** refresh the reviewed site recipe hash after bringing master in ([5a2dd2f](https://github.com/mikeng-io/nora/commit/5a2dd2fb4f85ef42936f5eb34216816d4d911989))
+* **site:** serve the public site from a Caddy built with the Go certificate-trust fix ([5589dc9](https://github.com/mikeng-io/nora/commit/5589dc9e7d1b9c1dd8ad85ed45302e4e6daa2304))
+
+## [7.20.2](https://github.com/mikeng-io/nora/compare/v7.20.1...v7.20.2) (2026-11-20)
+
+
+### Security
+
+* **deps:** bump the base-images group across 1 directory with 2 updates ([90507bb](https://github.com/mikeng-io/nora/commit/90507bbefb34f5df0cde64d634af7fbda0c0254e))
+
+## [7.20.1](https://github.com/mikeng-io/nora/compare/v7.20.0...v7.20.1) (2026-11-20)
+
+
+### Security
+
+* **deps:** bump go.opentelemetry.io/otel/sdk ([faba75a](https://github.com/mikeng-io/nora/commit/faba75aa569f187d5920653448798fccd62775d1))
+
 ## [7.20.0](https://github.com/mikeng-io/nora/compare/v7.19.17...v7.20.0) (2026-11-19)
 
 
