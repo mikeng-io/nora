@@ -1,5 +1,22 @@
 # Changelog
 
+## [7.20.5](https://github.com/mikeng-io/nora/compare/v7.20.4...v7.20.5) (2026-11-21)
+
+
+### Features
+
+* **site:** tell the landing page as a journey up the mountain, with Nora alive in it ([2749470](https://github.com/mikeng-io/nora/commit/2749470a307b98ef671535a0e35bfac7bbf710fc))
+
+
+### Bug Fixes
+
+* **site:** answer the review of the landing journey, and give Nora's site the clasp emblem ([729877e](https://github.com/mikeng-io/nora/commit/729877e32c853e81c7a3508098b95accbe1ec8bf))
+* **site:** keep the circle labels under the story's words ([0f9961e](https://github.com/mikeng-io/nora/commit/0f9961eafba1ac7300c8078e2af7333010926bc5))
+* **site:** one release for every stage failure, a scrollable chat, phone-safe labels ([ed295cb](https://github.com/mikeng-io/nora/commit/ed295cb409ae878ced7ef76c7b5bc34c39556360))
+* **site:** open on the hero, label the circles, and make take two a real map ([82ef845](https://github.com/mikeng-io/nora/commit/82ef84556648e6ecd3793092bb7c7541101cb327))
+* **site:** own the rig before it loads and release a stage that cannot start ([dfac8ee](https://github.com/mikeng-io/nora/commit/dfac8ee6b0fc274415858797679d8b73ac952c18))
+* **site:** readable words over every scene, a bigger Nora, and the re-check's repairs ([e0d3219](https://github.com/mikeng-io/nora/commit/e0d3219e4b50e14492f384d062e5e73e215e2ec8))
+
 ## [7.20.4](https://github.com/mikeng-io/nora/compare/v7.20.3...v7.20.4) (2026-11-21)
 
 
