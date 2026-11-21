@@ -29,8 +29,8 @@ def _explicit_event_environment(monkeypatch):
         (["uv.lock"], {"python", "dependency-review", "codeql-python"}, {"portal"}),
         (["app/package-lock.json"], {"portal", "dependency-review"}, {"go"}),
         (
-            ["docs/a.md", "nora/a.py", "site/src/a.mdx"],
-            {"python", "site", "codeql-javascript"},
+            ["docs/a.md", "nora/a.py", "app/src/a.mdx"],
+            {"python", "portal", "codeql-javascript"},
             {"go"},
         ),
         ([".github/codeql/config.yml"], set(ci_plan.JOBS), set()),
@@ -99,13 +99,11 @@ def test_workflow_join_and_trust_boundary():
     jobs = ci["jobs"]
     assert ci["name"] == "CI"
     assert ci[True]["pull_request"] is None
-    site = yaml.safe_load((root / ".github/workflows/site.yml").read_text())
-    for workflow in (ci, site):
-        assert workflow["concurrency"]["cancel-in-progress"] == (
-            "${{ github.event_name == 'pull_request' }}"
-        )
-        for key in ("github.workflow", "github.event_name", "github.sha"):
-            assert key in workflow["concurrency"]["group"]
+    assert ci["concurrency"]["cancel-in-progress"] == (
+        "${{ github.event_name == 'pull_request' }}"
+    )
+    for key in ("github.workflow", "github.event_name", "github.sha"):
+        assert key in ci["concurrency"]["group"]
     assert jobs["checks"]["if"] == "always()"
     assert set(jobs["checks"]["needs"]) == {"classify", *ci_plan.JOBS}
     assert jobs["checks"]["steps"][-1]["run"] == "python3 -m scripts.ci_plan verify"

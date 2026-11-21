@@ -113,7 +113,7 @@ lifecycle, composition root), `language/`, `doctrine/`, `instructions/`,
 kernel. `documents/` and `persons.py`, `persons_file.py`, `policy.py` (`people`)
 are area code still to move.
 
-Outside `nora/`: the portal in `app/`, the site in `site/`, services in `deploy/`.
+Outside `nora/`: the portal in `app/`, services in `deploy/` (ADR 0039 for her art and site).
 
 ## State and trust boundaries
 

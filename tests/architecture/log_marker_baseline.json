@@ -504,7 +504,6 @@
  "scripts/migrate_media_to_rustfs.py": 1,
  "scripts/signoz_provision.py": 1,
  "scripts/smoke_xai_imagegen.py": 1,
- "site/scripts/make_images.py": 1,
  "tests/architecture/test_agent_skills.py": 4,
  "tests/architecture/test_assess_reports_are_operator_only.py": 1,
  "tests/architecture/test_compose_gives_nora_no_container_control.py": 1,

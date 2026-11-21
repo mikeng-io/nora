@@ -3,8 +3,7 @@
     uv run --no-project --with pillow python app/scripts/make-icons.py
 
 Needs rsvg-convert. Outputs are committed under app/public/icons/ (favicon.ico
-at app/public/); rerun after the emblem changes. Same rules as the site's own
-generator (site/scripts/make_images.py), per DESIGN.md §2 and §7:
+at app/public/); rerun after the emblem changes. Per DESIGN.md §2 and §7:
   - `any` icons: assets/nora-emblem.svg bare, transparent
   - where a platform forbids transparency (a maskable icon, the iOS home
     screen): a full-bleed paper square, never a circle, with the emblem inside

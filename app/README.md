@@ -6,13 +6,10 @@ in `identity.toml`: Discord, or a one-time code Nora sends to the person's own
 Signal or WhatsApp account (DEC-287). Either way the session is the same
 identity.toml person. An installable PWA for phones and desktops.
 
-The public page at `/` and `/en/` is a different thing: `site/`. They share
-the hostname; the site owns exactly `/`, `/en/`, `/_astro/`, `/_site/`,
-`/favicon.ico`, `/robots.txt`, `/sitemap.xml` and `/llms.txt` (site/README.md,
-"Going live"), so no portal page lives at a bare locale root, and the portal's
-own files sit under paths the site does not claim (`/sw.js`,
-`/manifest.webmanifest`, `/offline.html`, `/icons/`, `/vendor/`,
-`/screenshots/`).
+The portal answers every path on its hostname, `/` included: signed out, it
+opens on the sign-in page. Nora's official site, heynora.bot, is a separate
+private repository (`nora-site`, ADR 0039). `public/robots.txt` keeps the
+whole portal out of search except the public privacy and terms pages.
 
 ## What is where
 

@@ -19,3 +19,21 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+Nora's art is not covered by the MIT License above. The following files depict
+Nora or carry her mark and are Copyright (c) 2026 mikeng-io, all rights reserved;
+they may be used only to build and run Nora from this repository:
+
+- assets/nora-canonical-self.png
+- assets/nora-emblem.svg
+- assets/cinematic/mini-nora-social-banner.png
+- app/src/assets/nora-emblem.svg
+- app/src/assets/art/
+- app/public/icons/
+- app/public/favicon.ico
+- app/public/models/mini-nora/
+- app/public/screenshots/
+
+Their masters are kept privately (ADR 0039).

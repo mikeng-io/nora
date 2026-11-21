@@ -3657,7 +3657,7 @@ class DocumentsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
-    # The web app's public origin (`https://nora.67.zone`), so a published document can
+    # The web app's public origin (`https://nora.example.com`), so a published document can
     # be handed to the room as a link. EMPTY = no link is ever built or shown: she says
     # where to find the document by title instead, and never prints a path or a host.
     # An origin only: no path, query, fragment or credentials. The link carries the
@@ -3691,7 +3691,7 @@ class DocumentsConfig(BaseModel):
         )
         if bad:
             msg = (
-                "[documents] public_url must be an origin like https://nora.67.zone "
+                "[documents] public_url must be an origin like https://nora.example.com "
                 "(http or https, a plain host, optional port; no path, query, fragment, "
                 "login, trailing dot or backslash)"
             )

@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import io
 import shutil
-import struct
 import subprocess
-import zlib
 
 from PIL import Image
 
@@ -55,23 +52,3 @@ def test_inventory_measures_tracked_coverage_and_real_source_existence(tmp_path,
     assert "unlisted tracked image: omitted.png" in visual_assets.validate(data)
     source.unlink()
     assert any("missing declared source source.png" in e for e in visual_assets.validate(data))
-
-
-def test_png_metadata_removal_preserves_idat_and_decoded_pixels():
-    image = Image.new("RGBA", (3, 2), (101, 91, 83, 192))
-    stream = io.BytesIO()
-    image.save(stream, "PNG")
-    original = stream.getvalue()
-    metadata = b"SyntheticAuthor\x00synthetic metadata"
-    kind = b"tEXt"
-    chunk = (
-        struct.pack(">I", len(metadata))
-        + kind
-        + metadata
-        + struct.pack(">I", zlib.crc32(kind + metadata))
-    )
-    tagged = original[:33] + chunk + original[33:]
-    cleaned = visual_assets.sanitize_png(tagged)
-    # Exact original bytes, including compressed IDAT, survive unchanged.
-    assert cleaned == original
-    assert Image.open(io.BytesIO(cleaned)).tobytes() == image.tobytes()

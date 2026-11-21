@@ -119,10 +119,10 @@ components:
 
 # Design System: Nora
 
-This file binds every visual surface of Nora: the public site (`site/`), the
-portal (`app/`), the docs site (`docs-site/`), her social profiles, the images
-she generates of herself, stickers and icons, and any 3D or spatial form she is
-given. Her character is specified in `design/self-reference/identity.md`; it
+This file binds every visual surface of Nora: the official site (heynora.bot,
+the private `nora-site` repository), the portal (`app/`), the docs site
+(`docs-site/`), her social profiles, the images she generates of herself,
+stickers and icons, and any 3D or spatial form she is given. Her character is specified in `design/self-reference/identity.md`; it
 governs her appearance and takes precedence over this file on it. What the
 site says about her mind is bound by `design/cognition/`.
 
@@ -156,13 +156,13 @@ clothing of the identity anchors. Mini is the ordinary representation.
 
 | surface | form | source |
 |---|---|---|
-| site, portal, chat, reactions, stickers, runtime self-images | **Mini Nora** | `assets/nora-canonical-self.png`, `assets/nora-character-reference-sheet.png` |
-| cinematic art: the site's world, social banner and icon | **Mini Nora**, dimensional soft materials in the Lingnan mountain-and-sea world | `assets/cinematic/mini-nora-master.png`, `assets/cinematic/README.md` |
+| site, portal, chat, reactions, stickers, runtime self-images | **Mini Nora** | `assets/nora-canonical-self.png`; the reference sheet in `nora-assets` |
+| cinematic art: the site's world, social banner and icon | **Mini Nora**, dimensional soft materials in the Lingnan mountain-and-sea world | the cinematic set in `nora-assets` |
 | beside the wordmark; favicon, app icon, project avatar | **the clasp emblem** (below), not her | `assets/nora-emblem.svg` |
-| where she appears as herself among people: a transcript, a member list | **Mini Nora**, cut-out (§7) | `assets/nora-mini-icon.png` |
+| where she appears as herself among people: a transcript, a member list | **Mini Nora**, cut-out (§7) | the Mini icon in `nora-assets` |
 | her live form on the site | **Mini Nora**, a layered 2D rig (§6) | drawn from the canonical and cinematic sources |
-| adult illustration | **Adult Nora**, 2D anime | `assets/nora-human-bauhinia-reference.png` |
-| 3D modeling of either form | Meshy reference inputs; no validated mesh | `assets/modeling/bauhinia/v2/` |
+| adult illustration | **Adult Nora**, 2D anime | the adult reference in `nora-assets` |
+| 3D modeling of either form | Meshy reference inputs; no validated mesh | the modeling set in `nora-assets` |
 
 Rules on every surface:
 
@@ -198,8 +198,8 @@ toward red or blue. The step number is the job:
 | 9–10 | solids and their hover |
 | 11–12 | text: secondary, primary |
 
-Night is tuned on its own, never inverted. `site/src/styles/tokens.css` and
-`app/src/styles/globals.css` carry these values one for one.
+Night is tuned on its own, never inverted. `app/src/styles/globals.css` and the
+site's tokens carry these values one for one.
 
 | scale | paper (light) 1 → 12 | night 1 → 12 |
 |---|---|---|

@@ -14,7 +14,7 @@ merge evaluation answered "Required status check 'PR content' is expected" for i
 was green, because it is created through the Checks API rather than by a job, and that blocked
 every merge.
 
-Selective CodeQL, dependency review and site jobs feed the unconditional `checks`
+Selective CodeQL and dependency review jobs feed the unconditional `checks`
 result rather than being required individually. A required check must report on
 EVERY pull request; requiring a path-filtered workflow would block unrelated PRs.
 """

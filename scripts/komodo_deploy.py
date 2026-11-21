@@ -22,7 +22,7 @@ REGISTRY = 'ghcr.io/mikeng-io/nora-'
 COHORT = {
     'http-egress': 'http-egress',
     'nora': 'nora', 'presence': 'nora', 'analytics': 'nora',
-    'app': 'app', 'site': 'site', 'stt': 'stt', 'voice-wake': 'voice-wake',
+    'app': 'app', 'stt': 'stt', 'voice-wake': 'voice-wake',
     'voice-sidecar': 'voice-sidecar', 'signal-bridge': 'signal-bridge',
     'discord-bridge': 'discord-bridge',
     'whatsapp-bridge': 'whatsapp-bridge', 'instagram-bridge': 'instagram-bridge',
@@ -68,7 +68,7 @@ def compose_prefix(command: list[str]) -> tuple[list[str], str]:
     raise ValueError('only config/up may use this wrapper')
 
 
-def expected_images(manifest: dict, *, site: bool) -> dict[str, str]:
+def expected_images(manifest: dict) -> dict[str, str]:
     number = r'(?:0|[1-9][0-9]*)'
     version = re.fullmatch(rf'v{number}\.{number}\.{number}(?:-[1-9][0-9]*-g([0-9a-f]{{7,40}}))?',
                            manifest['version'])
@@ -88,7 +88,7 @@ def expected_images(manifest: dict, *, site: bool) -> dict[str, str]:
             raise ValueError(f'invalid pinned image for {service}')
     if len({images[s] for s in ('nora', 'presence', 'analytics')}) != 1:
         raise ValueError('shared Nora services must use one image')
-    return {s: image for s, image in images.items() if s != 'site' or site}
+    return dict(images)
 
 
 def reload_services(resolved: dict, images: dict, request: Path) -> list[str]:
@@ -106,7 +106,7 @@ def reload_services(resolved: dict, images: dict, request: Path) -> list[str]:
         raise ValueError('invalid scoped config reload request')
     if set(files) & {'secret.toml', '.env'}:
         return [name for name in images if name not in {
-            'site', 'stt', 'signal-bridge', 'discord-bridge', 'http-egress'}]
+            'stt', 'signal-bridge', 'discord-bridge', 'http-egress'}]
     targets = {'/app/' + f for f in files}
     readers = [name for name in images if any(
         v['target'] in targets for v in resolved['services'][name].get('volumes', []))]
@@ -159,10 +159,9 @@ def validate_final_compose(resolved: dict, images: dict, runtime: Path, project:
         raise ValueError('STT requires 8 GiB without swap')
 
 
-def apply_release(prefix: list[str], manifest: dict, runtime: Path, project: str,
-                  *, site: bool) -> None:
+def apply_release(prefix: list[str], manifest: dict, runtime: Path, project: str) -> None:
     """Under the shared lock, allow preflight retries but never repeat a failed recreation."""
-    images = expected_images(manifest, site=site)
+    images = expected_images(manifest)
     selected = {key: manifest[key] for key in ('version', 'commit', 'services')}
     fingerprint = hashlib.sha256(json.dumps(selected, sort_keys=True).encode()).hexdigest()
     marker = Path(__file__).with_name('release-attempt.json')
@@ -175,8 +174,6 @@ def apply_release(prefix: list[str], manifest: dict, runtime: Path, project: str
         from scripts.secret_delivery import prepare
     prefix = [*prefix, *prepare(
         runtime, output_directory=Path(__file__).parent / '.secret-delivery')]
-    if site:
-        prefix = [*prefix, '--profile', 'site']
     # Resolve only in this captured host process; never return this config to Komodo.
     resolved = json.loads(run([*prefix, 'config', '--format', 'json'],
                               stage='compose-config', output=True))
@@ -266,7 +263,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--runtime-root', type=Path, required=True)
     parser.add_argument('--project', required=True)
-    parser.add_argument('--site', action='store_true', help='include the optional public site')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ['--'] else args.command
@@ -286,7 +282,7 @@ def main() -> None:
                             '/run/nora-deploy.lock',  # same host inode; non-sticky parent
                             sys.executable, __file__, *sys.argv[1:]], env)
     manifest = json.loads(Path('release.json').read_text())
-    apply_release(prefix, manifest, args.runtime_root, args.project, site=args.site)
+    apply_release(prefix, manifest, args.runtime_root, args.project)
 
 
 if __name__ == '__main__':

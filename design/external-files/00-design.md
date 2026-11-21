@@ -1,7 +1,7 @@
 ---
 type: design
 title: "External files: a shared link becomes a handle, and Nora opens it only when asked"
-description: "S1 merged; S2, S3 and S4 built (off). A file link sent to Nora (Google Drive first, Dropbox maybe later) is recorded as a handle, the link and nothing else, the way an attachment becomes [image a3f2c1]. Its content is not fetched, read or remembered until somebody asks her to open it. Opening goes through a vendor-neutral tool over one adapter per provider, signed in read-only as Nora's own account nora@67.zone: the text comes back into the turn, or the file is copied to her computer. Read-only means the source file is never changed; what she makes from it goes out through her own tools."
+description: "S1 merged; S2, S3 and S4 built (off). A file link sent to Nora (Google Drive first, Dropbox maybe later) is recorded as a handle, the link and nothing else, the way an attachment becomes [image a3f2c1]. Its content is not fetched, read or remembered until somebody asks her to open it. Opening goes through a vendor-neutral tool over one adapter per provider, signed in read-only as Nora's own account nora@example.com: the text comes back into the turn, or the file is copied to her computer. Read-only means the source file is never changed; what she makes from it goes out through her own tools."
 tags: [nora, tools, external-files, google-drive, adapter, handles, read-only]
 timestamp: '2026-10-11'
 status: proposed
@@ -181,7 +181,7 @@ the house statuses (`ok`, `nothing_found`, `ambiguous`, `refused`,
 Statuses specific to a file:
 
 - `refused`, file not shared with her: the note says to share it with
-  `nora@67.zone` as Viewer, then ask again. A link open to anyone reads
+  `nora@example.com` as Viewer, then ask again. A link open to anyone reads
   without a share.
 - `refused`, too large to read as text: it can still be copied.
 - `nothing_found`: the code is not in any message she can see, or the file
@@ -239,14 +239,14 @@ and one re-run of the sign-in script, same client.
 `[route] api_key_env`) is a different mechanism and stays with its feature.
 
 **Sign-in (operator, once, and again when a service is added).**
-1. Create the Google account `nora@67.zone`.
+1. Create the Google account `nora@example.com`.
 2. In Google Cloud, enable the Drive API and the Sheets API, and create an
    OAuth client of type Desktop app.
 3. Set the OAuth consent screen to **In production**. In Testing, a refresh
    token expires after 7 days and the tool goes `unavailable` a week after
    setup. The unverified-app warning is expected for one account.
 4. Run `uv run python scripts/google_auth.py` on a machine with a browser,
-   sign in as `nora@67.zone` and approve. It asks for the union of every
+   sign in as `nora@example.com` and approve. It asks for the union of every
    service's scope (`access_type=offline`, `prompt=consent`; no
    `include_granted_scopes`, so nothing granted to the client earlier is
    folded in) and prints one refresh token for `GOOGLE_OAUTH_REFRESH_TOKEN`

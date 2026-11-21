@@ -44,18 +44,11 @@ symlink .claude/skills/* -- Claude Code reads the repo skills through these link
 
 binary app/public/screenshots/*.webp -- mock PWA screenshots
 binary app/src/assets/art/*.webp -- existing portal artwork
-binary site/src/assets/journey/* -- the public site's painted world, scene stills and Nora's rig package (site/scripts/make_journey.py, make_nora.py)
-binary assets/nora-notebook.webp -- shared notebook source artwork
 
 binary assets/*.png -- Nora's character art (DESIGN.md)
 binary app/public/favicon.ico -- the portal's generated favicon (app/scripts/make-icons.py)
 binary app/public/icons/*.png -- the portal's generated PWA and iOS icons (app/scripts/make-icons.py)
 binary app/src/assets/art/nora-mini-icon.webp -- the portal's derived Mini Nora portrait (DESIGN.md)
-binary site/public/* -- the public site's icons and social cards
-binary site/src/assets/art/* -- the public site's art
-binary site/src/fonts/* -- subset web fonts
-binary showreel/public/* -- showreel art, grain frames and fonts
-binary showreel/audio/* -- showreel voice-over renders
 binary voice-lab/models/* -- wake-word model weights and listening samples
 binary voice-lab/tts-cmp/samples/* -- TTS comparison samples
 binary deploy/voice-wake/models/* -- the deployed wake-word model
