@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import distinct_on
-from sqlalchemy.ext.asyncio import AsyncConnection
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.graph_registration import Exposure, InputScope, inherited_scope
 from nora.domain.graph_stimuli import GraphStimulus
@@ -22,7 +22,9 @@ from nora.infra.sql.cognitive_graph_store import (
 )
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.memory.adapters.admission_rows import GRAPH_TABLES, SqlAdmissionRows
-from nora.memory.domain.admission import Admitted, fields
+from nora.memory.adapters.condition_matcher import SqlIntentionBatch
+from nora.memory.app.condition_matcher import ConditionMatcher
+from nora.memory.domain.admission import Admitted, Refusal, fields
 from nora.memory.domain.admission_ports import AdmissionUnavailableError, Stored
 from nora.memory.domain.admission_proposals import (
     AddEdge,
@@ -38,12 +40,34 @@ from nora.memory.domain.admission_proposals import (
 
 
 class SqlAdmissionStore:
-    def __init__(self, rows: SqlAdmissionRows, graph: SqlCognitiveGraph) -> None:
+    def __init__(
+        self, rows: SqlAdmissionRows, graph: SqlCognitiveGraph, engine: AsyncEngine,
+    ) -> None:
         self._rows = rows
         self._graph = graph
+        self._engine = engine
+        self._matcher = ConditionMatcher()
 
     async def read(self, unit: str, ids: frozenset[str]) -> Mapping[str, RowFacts]:
         return await self._rows.read(unit, ids)
+
+    async def close(
+        self, intention: str, witness: str, context: PassContext,
+    ) -> Stored | Refusal:
+        committing = False
+        try:
+            async with self._engine.begin() as conn:
+                batch = SqlIntentionBatch(conn, self._graph)
+                row = await batch.one(context.unit, intention)
+                if row is None:
+                    return Refusal("stale_base", "base")
+                refusal = await self._matcher.close(batch, row, witness)
+                if refusal is not None:
+                    return refusal
+                committing = True
+        except sa.exc.SQLAlchemyError as exc:
+            raise AdmissionUnavailableError(commit_uncertain=committing) from exc
+        return Stored(intention)
 
     async def persist_admitted_proposal(
         self, decision: Admitted, context: PassContext, stored: Stored,

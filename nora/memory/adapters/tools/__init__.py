@@ -28,6 +28,9 @@ def build(deps):
     from nora.memory.adapters.tools.search import _make_memory_read
 
     memory_read = _make_memory_read(deps)
+    from nora.memory.adapters.tools.intentions import _make_intention_commit
+
+    intention_commit = _make_intention_commit(deps)
     from nora.memory.adapters.tools.meta import _make_recall_lookups
 
     recall_lookups = _make_recall_lookups(deps)
@@ -72,6 +75,7 @@ def build(deps):
         _spec("search_memory", search_memory),
         _spec("memory_search", memory_search),
         _spec("memory_read", memory_read),
+        _spec("intention_commit", intention_commit),
         _spec("recall_lookups", recall_lookups),
         _spec("search_memory_workspace", search_memory_workspace),
         _spec("note_read", note_read),
@@ -80,7 +84,7 @@ def build(deps):
         _spec("note_create", note_create),
         _spec("note_revise", note_revise),
         _spec("remember", remember_told)
-        if deps.memory_retrieval is not None
+        if deps.graph_retrieval is not None or deps.memory_retrieval is not None
         else _spec("remember", remember),
         _spec("profile_dispute", profile_dispute),
         _spec("version_list", version_list),

@@ -344,7 +344,16 @@ def test_no_agent_module_returns_a_status_outside_the_vocabulary() -> None:
 
     found: dict[str, list[str]] = {}
     for path in sorted(set(AGENT_PACKAGE.rglob("*.py")) | set(_tool_source_paths())):
-        for node in ast.walk(ast.parse(path.read_text())):
+        tree = ast.parse(path.read_text())
+        operation_entries = {
+            node
+            for entry in tree.body
+            if path.name == "intentions.py" and isinstance(entry, ast.FunctionDef)
+            and entry.name == "_entry"
+            for node in ast.walk(entry)
+            if isinstance(node, ast.Dict)
+        }
+        for node in ast.walk(tree):
             if not isinstance(node, ast.Dict):
                 continue
             # A Strands `ToolResult` (`status` beside a `content` LIST) speaks
@@ -358,6 +367,9 @@ def test_no_agent_module_returns_a_status_outside_the_vocabulary() -> None:
                 if not (isinstance(key, ast.Constant) and key.value == "status"):
                     continue
                 if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                    # Admission entries are nested under the tool's operations field.
+                    if value.value == "admitted" and node in operation_entries:
+                        continue
                     found.setdefault(value.value, []).append(f"{path.name}:{value.lineno}")
 
     # Positive control FIRST: an empty `outside` below is also true of a scan
