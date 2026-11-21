@@ -48,8 +48,8 @@ before it; a tier describes the work and its checking, never a model or toolset.
 
 ## The orchestrator
 
-The orchestrator is whichever agent holds the operator-facing session: Claude
-Code, Codex, Devin or any other coding agent. It owns the outcome: scope, do or
+The orchestrator is whichever coding agent holds the operator-facing session;
+how each runtime does a step is in [.agents/runtimes/](.agents/runtimes/README.md). It owns the outcome: scope, do or
 delegate, reconcile evidence, triage, land and report.
 
 - **Do small changes yourself**: documentation, agent-skill wording, comments,
@@ -88,7 +88,7 @@ The operator owns outcomes, scope amendments and exceptions. The orchestrator
 chooses units, workers, review tier and next steps within that authority;
 builders implement their slice; reviewers judge it without adding requirements.
 For a shared design, interface or migration, read the related active work and
-T3 threads before assigning writes (`nora-dispatch`); one writer owns a shared
+session threads before assigning writes (`nora-dispatch`); one writer owns a shared
 seam at a time, and one outcome owner integrates.
 
 ## Execution tier

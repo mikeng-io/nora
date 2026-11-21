@@ -136,6 +136,9 @@ Master pushes release automatically (`nora-release`); `nora-deploy` deploys.
 
 ## Skills: the procedures
 
+Policy and skills name no coding agent, session host or model: how a runtime
+does a step is in `.agents/runtimes/`, which model does it is `.agents/lanes.md`,
+and a ruling lives in the repo or Linear, never in one tool's memory.
 Each is `.agents/skills/<name>/SKILL.md`, linked from `.claude/skills/<name>`: the
 order of the commands and the check after each; a new skill adds both at once.
 

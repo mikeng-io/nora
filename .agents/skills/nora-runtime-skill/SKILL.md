@@ -155,7 +155,7 @@ merge; an error means the container or path is wrong, which is not a pass.
 
 ## Tool notes
 
-- **Claude Code with the rtk hook:** pytest and grep output can come back
-  condensed. Read the log file as written above, or run through `rtk proxy`.
+- Runtime quirks (output-compressing hooks, background notices, sandboxed git): `.agents/runtimes/`.
+  Read the log file as written above when a count matters.
 
 Host exec requires the [installed secret-delivery helper](../../../docs/configuration.md#host-migration-and-installed-files).

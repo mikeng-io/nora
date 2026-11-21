@@ -163,8 +163,7 @@ manually rebuild after merge. When acceptance requires live evidence, follow
 
 ## Tool notes
 
-- **Claude Code with the rtk hook:** long pytest or grep output can come back
-  condensed. When the pass count matters, read the log file as written above,
-  or run the command through `rtk proxy`.
+- Runtime quirks (output-compressing hooks, background notices, sandboxed git): `.agents/runtimes/`.
+  Read the log file as written above when the pass count matters.
 
 Host exec requires the [installed secret-delivery helper](../../../docs/configuration.md#host-migration-and-installed-files).

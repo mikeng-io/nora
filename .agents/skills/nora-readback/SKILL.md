@@ -188,8 +188,8 @@ ssh nora-host 'python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-roo
 
 ## Tool notes
 
-- Claude Code with the rtk hook: `curl` piped into a parser returns a schema
-  summary instead of JSON. Use `-o <file>` (as above) or `rtk proxy curl`.
+- Runtime quirks (output-compressing hooks, background notices, sandboxed git): `.agents/runtimes/`.
+  Write `curl` output with `-o <file>` (as above) before parsing it.
 
 ## Credential-source amendment
 

@@ -49,15 +49,15 @@ Use native ownership and blocking relations instead of a copied task table.
 Sequence shared write ownership. For an integrated change, units are review
 slices on its integration branch, not separate master releases. Use
 `nora-land`'s stacked-delivery path when dependent PR layers are useful; an
-issue, PR layer and T3 worker need not have one-to-one identities. An issue in a
+issue, PR layer and worker session need not have one-to-one identities. An issue in a
 project exists only for an outcome with its own owner and acceptance: a proof,
 measurement or review of the project's acceptance is a check on a PR, never an
 issue of its own.
 Check: every Done-when item maps to a unit with a write set, and units whose
 write sets overlap are sequenced (`references/plan.md`).
 
-For cross-session work, first follow linked related work/threads; use T3's
-project thread search/list (or the host's equivalent session store) to find
+For cross-session work, first follow linked related work/threads; use the
+session host's thread search and list (`.agents/runtimes/`) to find
 missing relevant owners, then read their actual checkout/head and latest handoff. Check neighboring bundles when
 they share an interface/invariant. Do not preload all sessions or infer ownership
 from titles. Record the related work/thread links and shared seam in References.
@@ -144,7 +144,7 @@ operator. Link receipts instead of copying logs into Linear.
 
 At pause, blocker or session replacement, update a short current handoff:
 **where now, what remains, next action, active holds**, plus necessary decisions
-and why. Link the work, T3 thread, checkout/head and evidence. Preserve context
+and why. Link the work, session thread, checkout/head and evidence. Preserve context
 that cannot be recovered from those links; do not repeat the code or transcript.
 On resume, read it and verify the anchors before returning to the relevant step.
 If tracker access is unavailable, retain the handoff in the session and disclose

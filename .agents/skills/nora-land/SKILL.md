@@ -200,4 +200,4 @@ make decision-numbers > "$LOG/dn.txt" 2>&1; grep -vc '^==' "$LOG/dn.txt" # must 
 Then resolve ([reference.md](reference.md#resolve)): settle the artifact (merged, or `make archive BRANCH=<b> REASON="..."`), run `make gc APPLY=1` and read back its totals, update the Linear brief with the reviewer's met/unmet/unavailable marks, and add or extend a lesson in `docs/maintainers/lessons.md` when the lifecycle's resolve step calls for one.
 Close only a fully satisfied outcome; GitHub defect reports keep their separate resolution. Report completed/unmet obligations and stop at the agreed boundary. Deploying: nora-deploy.
 
-Tool-specific workarounds and Claude commit footers: `nora-land/reference.md`.
+Stacked delivery, scanner triage and resolve: `nora-land/reference.md`; runtime quirks: `.agents/runtimes/`.
