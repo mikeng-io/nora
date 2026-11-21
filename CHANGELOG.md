@@ -1,5 +1,17 @@
 # Changelog
 
+## [7.20.6](https://github.com/mikeng-io/nora/compare/v7.20.5...v7.20.6) (2026-11-21)
+
+
+### Features
+
+* **assets:** make the clasp emblem Nora's canonical mark ([d1dd5e4](https://github.com/mikeng-io/nora/commit/d1dd5e46aa46659c6482aa5a39c21eb406686d83))
+
+
+### Bug Fixes
+
+* **app:** show the emblem beside the portal wordmark and refresh cached icons ([732d341](https://github.com/mikeng-io/nora/commit/732d341186d1eb455a6f21a7af4777b078978a38))
+
 ## [7.20.5](https://github.com/mikeng-io/nora/compare/v7.20.4...v7.20.5) (2026-11-21)
 
 
