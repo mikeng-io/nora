@@ -39,7 +39,7 @@ _ROLE = {
 _CONDITION_FIELDS = (
     "done_when", "drop_when", "deadline", "review_time", "trigger", "ending", "ended_at",
 )
-_VALIDITY_FIELDS = ("valid_to", "window_end", "prediction")
+_VALIDITY_FIELDS = ("valid_to", "window_end")
 
 
 def _instant(value: str | None) -> datetime | None:
@@ -349,5 +349,6 @@ async def load_rows(
                 content_digest(source, image) if ceiling is not None and kind == "item" else None
             ),
             grade=None if unavailable else grades.get(graph_id, image.get("grade")),
+            prediction=None if unavailable else image.get("prediction"),
         ))
     return tuple(result)

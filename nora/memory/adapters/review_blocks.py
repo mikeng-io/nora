@@ -39,10 +39,9 @@ def review_block(
 
     def body(row: RetrievedRow) -> str:
         text = builder.graph_rows((row,))
-        prediction = row.close_when.get("prediction")
-        if row.graph_id in due and isinstance(prediction, str):
+        if row.graph_id in due and row.prediction is not None:
             text += "\n" + escape(mask_coordinates(
-                f"Prediction {prediction}\nWindow ends {row.close_when.get('window_end')}",
+                f"Prediction {row.prediction}\nWindow ends {row.close_when.get('window_end')}",
             ))
         return text
 
