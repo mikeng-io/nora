@@ -263,6 +263,14 @@ NORA_MEMORY_WORKSPACE = "nora.memory_workspace"
 #: processes and so never share one.
 RUN_ID = new_run_id()
 
+#: One case's drive budget. `run_evaluations` runs `task` through
+#: `asyncio.to_thread` and can abandon that future when the failed case's
+#: worker is cancelled — the executor thread's `asyncio.run` keeps going,
+#: and a drive suspended inside `async with IsolatedServices` would hold
+#: the process-global guard forever. The bound cancels the coroutine so
+#: `__aexit__` runs and the guard unwinds, budget + close budget at worst.
+_DRIVE_BUDGET = 600
+
 #: The three verdicts, carried in `EvaluationOutput.label`.
 #:
 #: `test_pass` is a `bool`, so ERROR has nowhere else to go. Every aggregation
@@ -2224,8 +2232,12 @@ def nora_task(spec: Spec):
     """
 
     def task(case: Case) -> dict[str, Any]:
+        async def bounded() -> dict[str, Any]:
+            async with asyncio.timeout(_DRIVE_BUDGET):
+                return await _drive(case, spec)
+
         try:
-            return asyncio.run(_drive(case, spec))
+            return asyncio.run(bounded())
         except Exception as exc:                      # noqa: BLE001 — see module docstring
             from evals.results import task_error
 

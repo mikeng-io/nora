@@ -1361,3 +1361,42 @@ async def test_circle_hold_enters_real_participation_send_permission(monkeypatch
         outcome = await entry.participation(subject, case, now_ms=1234)
         assert outcome.error is None and outcome.outcome_token == 'silent'  # noqa: S105
     assert calls == [{'send_permitted': False}, {}]
+
+
+def test_an_abandoned_drives_env_cannot_hold_the_guard_past_the_budget(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """`run_evaluations` runs `task` through `asyncio.to_thread` and can
+    abandon that future; the executor thread's `asyncio.run` continues, so
+    a drive suspended inside `async with IsolatedServices` must still be
+    cancelled at the drive budget or the process-global guard leaks."""
+    import asyncio
+    import socket
+    import subprocess
+    import threading
+
+    from nora.subject.environment import IsolatedServices
+
+    connect, popen_init = socket.socket.connect, subprocess.Popen.__init__
+    monkeypatch.setattr(backbone, "_DRIVE_BUDGET", 0.2)
+    held: list[IsolatedServices] = []
+
+    async def hanging_drive(_case: object, _spec: object) -> dict:
+        environment = IsolatedServices(database_url="sqlite://", applications={})
+        held.append(environment)
+        async with environment:
+            await asyncio.Event().wait()
+        return {}
+
+    monkeypatch.setattr(backbone, "_drive", hanging_drive)
+    case = Case(name="hanging", input="x", metadata={"expect": "none"})
+    task = backbone.nora_task(backbone.Spec(source_url="unused", entry="gate"))
+    worker = threading.Thread(target=task, args=(case,), daemon=True)
+    try:
+        worker.start()
+        worker.join(10)
+        assert not worker.is_alive()
+        assert socket.socket.connect is connect
+        assert subprocess.Popen.__init__ is popen_init
+    finally:
+        if held:
+            held[0]._unwind_guard()
