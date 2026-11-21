@@ -249,7 +249,12 @@ class BridgeAdapter:
         keys = []
         for i, a in enumerate(attachments):
             key = f"out-{self._next_action_id('send')}-{i}"
-            await self._put_bytes(f"/v1/attachments/{key}", a.content)
+            try:
+                await self._put_bytes(f"/v1/attachments/{key}", a.content)
+            except BridgeUnavailableError as exc:
+                if exc.status == 413:
+                    return SendResult(ok=False)
+                raise
             keys.append({"key": key, "file_name": a.filename,
                          "media_type": a.media_type})
         request: dict[str, Any] = {
