@@ -20,24 +20,32 @@ replacement.
 
 ## Observation and action
 
-Accessibility snapshots and element references are the default model input;
-screenshots are requested when visual grounding or direct capture is needed.
-References and page content are observed fresh before acting, even when a
-context summary is cached.
+The page's visible text and an accessibility snapshot of its numbered controls are
+the model's input; a picture of the owned tab is a separate capture. References and
+page content are observed fresh before acting, even when a context summary is
+cached.
 
 The shared executor validates references and performs actions through
 authenticated computerd/CDP. Scope and task tab are checked on reconnect and by
 ID. No unauthenticated debugging listener or cross-scope relay exists.
 
-A task-level browser runner reasons over the objective and proposes steps while
-code owns admission, execution, audit and outcome. Another decision backend can
-implement the same contract later, but the first version needs no fallback
-cascade, model tier or second agent loop. Selection is recorded and does not
-change silently on failure.
+`web_browse` is the one browser tool: pages whose data appears only after
+interaction (clicking, choosing, searching, content that loads late). A page the
+caller already knows enters as `start_url`; ordinary pages are read with
+`web_fetch`. The task-level runner hands one objective to the configured browse
+model while code owns admission, execution, audit and outcome. Each decision gets
+one observation, a bounded list of numbered actions (click, choose an option, type
+into a box, scroll, finish, ask a person) and the actions already taken, and the
+model returns one ID through the model gateway. The runner validates it against
+that observation, acts on the matching live control and observes again. A reply
+that names no ID finishes from the evidence in hand; a page that needs a person
+ends the task for one.
 
-A typed decision model may choose among prepared candidates, including
-abstention. It does not execute a click, synthesize every answer or remove the
-cost of the remaining model calls. Its confidence is not task success.
+Tasks own their tabs, and `task` continues on one. The report cites observed page
+evidence and keeps facts the page does not publish unconfirmed. A run cut off at a
+limit has not covered its range: it reports what it read as unavailable, never as
+nothing found, and keeps its task. The model receives no executable browser
+controls or endpoint configuration.
 
 ## Capture and export
 

@@ -26,7 +26,6 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 
-from evals.backbone import _close
 from nora.domain.media_join import HANDLE_CHARS
 from nora.domain.models import NormalizedMessage
 from nora.domain.standing import Standing
@@ -34,9 +33,9 @@ from nora.infra.sql import create_sql_engine
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.standing import SqlStandingStore
-from nora.subject import Knowledge, Message, NoteSeed, SubjectSpec, obtain, sandbox_as_of
+from nora.subject import Knowledge, Message, NoteSeed, SubjectSpec, sandbox_as_of
 from nora.subject.as_of import blocks_of, compare_blocks, render_tag_blocks
-from tests.sandbox_fixtures import ROOM, Source, seed_source
+from tests.sandbox_fixtures import ROOM, Source, offline_subject, seed_source
 
 BEFORE_MS = 1_752_000_000_000
 MINUTE = 60_000
@@ -126,8 +125,7 @@ async def test_a_restore_renders_the_blocks_the_turn_was_handed(
     )
     await _describe(engine, _photo_sha(1), "a red bicycle against a wall")
 
-    live = await obtain(_spec(clean_pg_url, src, tmp_path / "live"))
-    try:
+    async with offline_subject(_spec(clean_pg_url, src, tmp_path / "live")) as live:
         tag = NormalizedMessage(
             platform=ROOM[0], conversation_id=ROOM[1], conversation_type="group",
             sender_id="+85200000001", sender_name="Jordan", timestamp=BEFORE_MS,
@@ -177,19 +175,16 @@ async def test_a_restore_renders_the_blocks_the_turn_was_handed(
             written_at=BEFORE_MS - MINUTE, established_by="test",
         )
         moved = await render_tag_blocks(live, message=tag, now=NOW)
-    finally:
-        await _close(live)
 
     # Positive control: what the stores hold NOW is not what the turn saw.
     control = compare_blocks(recorded, moved)
     assert set(control.differs) >= MUST_COMPARE, control
 
-    async with sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, _report):
-        restored_subject = await obtain(_spec(url, src, tmp_path / "restored"))
-        try:
-            restored = await render_tag_blocks(restored_subject, message=tag, now=NOW)
-        finally:
-            await _close(restored_subject)
+    async with (
+        sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, _report),
+        offline_subject(_spec(url, src, tmp_path / "restored")) as restored_subject,
+    ):
+        restored = await render_tag_blocks(restored_subject, message=tag, now=NOW)
 
     diff = compare_blocks(recorded, restored)
     assert set(diff.compared) >= MUST_COMPARE, diff
