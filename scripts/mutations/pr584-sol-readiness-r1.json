@@ -2,8 +2,8 @@
  {
   "name": "empty grant never widens",
   "file": "nora/app/computer_dispatch.py",
-  "old": "grant = None if raw_grant is None else frozenset(str(g) for g in raw_grant)",
-  "new": "grant = None if not raw_grant else frozenset(str(g) for g in raw_grant)",
+  "old": "grant = None if raw is None else frozenset(str(g) for g in raw)",
+  "new": "grant = None if not raw else frozenset(str(g) for g in raw)",
   "target": "tests/integration/test_computer_readiness_review.py::test_dispatch_anonymous_revocation_and_empty_grant"
  },
  {

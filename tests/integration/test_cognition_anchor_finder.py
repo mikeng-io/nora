@@ -143,8 +143,6 @@ def _recording(cfg) -> RecordedServices:
                               "json": {"id": cfg.honcho.ai_peer}}},
             ],
             "bridge": [
-                {"method": "GET", "path": "/api/v1/accounts",
-                 "response": {"status": 200, "json": ["generated-account"]}},
                 {"method": "POST", "path": "/api/v1/rpc",
                  "response": {"status": 200, "json": [
                      {"id": "nora-self-contacts", "result": [

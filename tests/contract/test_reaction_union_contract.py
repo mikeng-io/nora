@@ -1,5 +1,5 @@
 """Shared contract for the UNION reaction projection. Every implementation
-pair runs every test (AGENTS.md, «a contract suite scopes its database to the
+pair runs every test (docs/code-standards.md, «a contract suite scopes its database to the
 MODULE»).
 
 Two implementations: `SqlRecordStore` + `SqlObservationStore` over real

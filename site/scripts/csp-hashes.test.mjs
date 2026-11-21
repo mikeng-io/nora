@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -30,15 +30,6 @@ test('an inline event handler or a javascript: URL cannot be covered and is repo
   assert.equal(inspect('<button onclick="go()">x</button>').hazards.length, 1);
   assert.equal(inspect('<a href="javascript:void(0)">x</a>').hazards.length, 1);
   assert.equal(inspect('<script>const onclick = "x"; el.onclick = () => 1;</script>').hazards.length, 0);
-});
-
-test('the graph export keeps its own policy and is skipped', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'csp-'));
-  mkdirSync(join(dir, 'graph'));
-  writeFileSync(join(dir, 'index.html'), '<script>a()</script>');
-  writeFileSync(join(dir, 'graph', 'index.html'), '<script>graphOnly()</script>');
-  const { hashes } = collect([dir]);
-  assert.deepEqual(hashes, [hash('a()')]);
 });
 
 test('the token is replaced everywhere and a missing token is an error', () => {

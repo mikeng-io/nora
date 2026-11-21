@@ -474,14 +474,14 @@ class IsolatedServices:
     async def __aexit__(self, exc_type: type[BaseException] | None,
                         exc: BaseException | None,
                         tb: TracebackType | None) -> None:
-        cleanup = asyncio.create_task(self._close())
+        cleanup = asyncio.create_task(self._close(asyncio.current_task()))
         try:
             await asyncio.shield(cleanup)
         except asyncio.CancelledError:
             await cleanup
             raise
 
-    async def _close(self) -> None:
+    async def _close(self, owner: asyncio.Task[Any] | None) -> None:
         errors: list[BaseException] = []
         try:
             for subject in tuple(self._subjects):
@@ -490,7 +490,8 @@ class IsolatedServices:
                 except BaseException as error:  # noqa: BLE001 -- finish cleanup, then re-raise all causes
                     errors.append(error)
             if self._before_tasks:
-                pending = asyncio.all_tasks() - self._before_tasks - {asyncio.current_task()}
+                # The exit caller may be a different task from the entry caller.
+                pending = asyncio.all_tasks() - self._before_tasks - {asyncio.current_task(), owner}
                 for task in pending:
                     task.cancel()
                 await asyncio.gather(*pending, return_exceptions=True)

@@ -35,7 +35,7 @@ def _label(data) -> str:
 def _journey_data(calls):
     from evals.backbone import NORA_TOOL_INPUTS, NORA_TOOL_RESULTS
 
-    tools = ["computer_browse", "computer_capture", "computer_export"]
+    tools = ["web_browse", "computer_capture", "computer_export"]
     return EvaluationData(
         input="x",
         metadata={
@@ -62,8 +62,8 @@ def _journey_data(calls):
 )
 def test_journey_requires_successful_browse_capture_export_order(order, expected):
     calls = {
-        "b": ("computer_browse", {}, {"status": "ok", "task": "owned", "tab": "target"}),
-        "u": ("computer_browse", {}, {"status": "unavailable"}),
+        "b": ("web_browse", {}, {"status": "ok", "task": "owned", "tab": "target"}),
+        "u": ("web_browse", {}, {"status": "unavailable"}),
         "f": ("computer_capture", {"task": "owned"}, {"status": "unavailable"}),
         "c": ("computer_capture", {"task": "owned"}, {
             "status": "ok", "tab": "target", "path": "captures/a.png", "sha256": "a" * 64,
@@ -75,13 +75,13 @@ def test_journey_requires_successful_browse_capture_export_order(order, expected
     assert _label(_journey_data([calls[key] for key in order])) == expected
 
 
-@pytest.mark.parametrize("tool", ["computer_browse", "computer_capture", "computer_export"])
+@pytest.mark.parametrize("tool", ["web_browse", "computer_capture", "computer_export"])
 @pytest.mark.parametrize("missing", [None, "malformed", "absent_row", "input"])
 def test_journey_missing_evidence_is_error(tool, missing):
     from evals.backbone import NORA_TOOL_INPUTS, NORA_TOOL_RESULTS
 
     calls = [
-        ("computer_browse", {}, {"status": "ok", "task": "owned", "tab": "target"}),
+        ("web_browse", {}, {"status": "ok", "task": "owned", "tab": "target"}),
         ("computer_capture", {"task": "owned"}, {
             "status": "ok", "tab": "target", "path": "captures/a.png", "sha256": "a" * 64,
         }),

@@ -50,7 +50,7 @@ def test_real_case_request_tools_results_logs_and_report_are_durable(evidence_ro
                             evaluators=[backbone.AbsenceGrader()])
     monkeypatch.setattr(cli, "experiment_for", lambda *a, **k: (
         experiment, backbone.nora_task(backbone.Spec(source_url="", entry="tag"))))
-    monkeypatch.setattr(cli, "census", lambda _: "generated census")
+    monkeypatch.setattr(cli, "census", lambda _, *, cohort: "generated census")
     with eval_host_lock() as fd:
         evidence = capture(fd)
         with evidence.capture(trace.get_tracer_provider()):
@@ -314,6 +314,7 @@ def test_two_round_private_record_sdk_and_each_public_sink(
         assert sentinel not in json.dumps(receipt)  # public receipt
         # These are the workflow's actual upload roots. Private capture is
         # outside all of them; only the content-free receipt is uploadable.
+        from glob import iglob
         from pathlib import Path
 
         import yaml
@@ -327,7 +328,8 @@ def test_two_round_private_record_sdk_and_each_public_sink(
             for pattern in patterns.splitlines():
                 root = repo / pattern.split("*")[0]
                 assert evidence.path != root and root not in evidence.path.parents
-                for artifact in repo.glob(pattern):
+                for match in iglob(str(repo / pattern), recursive=True):
+                    artifact = Path(match)
                     if artifact.is_file():
                         assert sentinel.encode() not in artifact.read_bytes()  # CI upload sink
         responses = [e for e in events if e["kind"] == "transport_response"]
