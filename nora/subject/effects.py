@@ -141,7 +141,7 @@ SOURCES = (
     Source("bridge_action", "delivery"),
 )
 HISTORY_KINDS = {
-    "entity": "graph", "relation": "graph", "relation_evidence": "graph",
+    "legacy_entity": "graph", "legacy_relation": "graph", "legacy_relation_evidence": "graph",
     "note": "note", "notebook_entry": "topic", "events": "event",
     "standing": "standing", "standing_decision": "standing",
     "standing_commitment": "standing", "standing_thread": "standing",
@@ -260,9 +260,9 @@ def _history_scope(table: str, unit: str, rooms: tuple[tuple[str, str], ...],
     image = ROW_HISTORY.c.image
     if table == "profile":
         return image["key"].astext.in_(profile_keys)
-    if table == "relation_evidence":
-        relation = METADATA.tables["relation"]
-        entity = METADATA.tables["entity"]
+    if table == "legacy_relation_evidence":
+        relation = METADATA.tables["legacy_relation"]
+        entity = METADATA.tables["legacy_entity"]
         return sa.or_(
             sa.exists().where(relation.c.unit == unit,
                               relation.c.id == image["relation_id"].astext),

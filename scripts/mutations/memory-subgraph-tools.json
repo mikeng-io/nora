@@ -65,8 +65,8 @@
  {
   "name": "every recursive branch reads the scoped relation source",
   "file": "nora/infra/sql/memory_graph.py",
-  "old": "\"FROM relation r\", \"FROM eligible r\"",
-  "new": "\"FROM relation r WHERE\", \"FROM eligible r WHERE\"",
+  "old": "\"FROM legacy_relation r\", \"FROM eligible r\"",
+  "new": "\"FROM legacy_relation r WHERE\", \"FROM eligible r WHERE\"",
   "target": "tests/contract/test_memory_graph_contract.py::test_hidden_intermediate_never_enters_recursive_sql_paths[sql]"
  },
  {

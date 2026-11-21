@@ -11,6 +11,8 @@ name's own note for why it is exported with no in-repo caller), and
 `audit.py` imports its sibling `migrations_runner` directly too.
 """
 
+# Registers the Cognitive Graph's tables on METADATA; the import is the wiring.
+from nora.infra.sql import cognitive_graph_schema as cognitive_graph_schema
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import (
     create_readonly_sql_engine,

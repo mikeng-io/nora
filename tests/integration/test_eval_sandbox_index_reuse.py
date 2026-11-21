@@ -378,7 +378,7 @@ async def test_a_sandbox_built_with_the_graph_context_holds_code_relations(
     code-owned relations a live write would have (here a message's
     authorship); without it, the sandbox holds none."""
     from nora.infra.sql.graph_projection import ProjectionContext
-    from nora.infra.sql.schema import RELATION
+    from nora.infra.sql.schema import LEGACY_RELATION
 
     graph = ProjectionContext(
         {"signal:g-synthetic": "u"}, {"u": frozenset({"member-a"})}, produce=False)
@@ -386,9 +386,9 @@ async def test_a_sandbox_built_with_the_graph_context_holds_code_relations(
     async def code_relations(engine: Any) -> int:
         async with engine.connect() as conn:
             return (await conn.execute(
-                sa.select(sa.func.count()).select_from(RELATION)
-                .where(RELATION.c.written_by.like("project:%"),
-                       RELATION.c.status == "current"))).scalar_one()
+                sa.select(sa.func.count()).select_from(LEGACY_RELATION)
+                .where(LEGACY_RELATION.c.written_by.like("project:%"),
+                       LEGACY_RELATION.c.status == "current"))).scalar_one()
 
     async with AsyncExitStack() as stack:
         plain = await _sandbox(stack, source[0], pg_template)

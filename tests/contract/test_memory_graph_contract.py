@@ -51,8 +51,8 @@ async def graph(request):
         await conn.execute(sa.text("SET LOCAL session_replication_role = replica"))
         await conn.execute(
             sa.text(
-                "TRUNCATE relation_evidence, relation, entity, memory_work_item, "
-                "memory_node CASCADE"
+                "TRUNCATE legacy_relation_evidence, legacy_relation, legacy_entity, "
+                "legacy_memory_work_item, memory_node CASCADE"
             )
         )
     try:
@@ -249,7 +249,7 @@ async def test_unavailable_is_not_empty_success(graph: MemoryGraph) -> None:
         # A real conflicting table lock forces the SQL read past its deadline.
         slow = SqlMemoryGraph(graph.engine, statement_timeout_ms=1)
         async with graph.engine.begin() as lock:
-            await lock.execute(sa.text("LOCK TABLE relation IN ACCESS EXCLUSIVE MODE"))
+            await lock.execute(sa.text("LOCK TABLE legacy_relation IN ACCESS EXCLUSIVE MODE"))
             result = await slow.walk((PERSON.key,), query)
     assert result.status == "unavailable"
     assert not result.nodes and not result.relations
@@ -555,11 +555,10 @@ def test_entity_name_has_trigram_index() -> None:
     from sqlalchemy.schema import CreateIndex
 
     for module in ("nora.infra.sql.schema", "nora.infra.sql.migrations.versions.0137_memory_graph"):
-        entity = importlib.import_module(module).ENTITY
-        ddl = [
-            str(CreateIndex(index).compile(dialect=postgresql.dialect()))
-            for index in entity.indexes
-        ]
+        entity = (vars(importlib.import_module(module))["ENTITY"] if "migrations" in module
+                  else vars(importlib.import_module(module))["LEGACY_ENTITY"])
+        ddl = [str(CreateIndex(index).compile(dialect=postgresql.dialect()))
+               for index in entity.indexes]
         assert any("USING gin (name gin_trgm_ops)" in sql for sql in ddl)
 
 
@@ -762,7 +761,7 @@ async def test_topic_activity_direct_evidence_counts_times_and_failure(graph: Me
 
         slow = SqlMemoryGraph(graph.engine, statement_timeout_ms=1)
         async with graph.engine.begin() as lock:
-            await lock.execute(sa.text("LOCK TABLE relation IN ACCESS EXCLUSIVE MODE"))
+            await lock.execute(sa.text("LOCK TABLE legacy_relation IN ACCESS EXCLUSIVE MODE"))
             failed = await slow.topic_activity(unit="u1", topic=topic.key, at=NOW)
     assert failed.status == "unavailable" and not failed.persons
     await graph.stage_and_admit(

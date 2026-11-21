@@ -38,12 +38,12 @@ from nora.domain.memory_graph import (
 )
 from nora.infra.sql.schema import (
     COMPREHEND_WEB_PAGE,
-    ENTITY,
-    MEMORY_GRAPH_REFUSAL,
+    LEGACY_ENTITY,
+    LEGACY_MEMORY_GRAPH_REFUSAL,
+    LEGACY_MEMORY_WORK_ITEM,
+    LEGACY_RELATION,
+    LEGACY_RELATION_EVIDENCE,
     MEMORY_NODE,
-    MEMORY_WORK_ITEM,
-    RELATION,
-    RELATION_EVIDENCE,
 )
 
 # Each branch probes an endpoint index. Scope is applied inside each probe,
@@ -52,10 +52,10 @@ WALK_SQL = """
 WITH RECURSIVE paths(kind, id, depth, seen, edge) AS (
  SELECT s.kind, s.id, 0, ARRAY[s.kind || ':' || s.id], NULL::text
  FROM unnest(CAST(:kinds AS text[]), CAST(:ids AS text[])) AS s(kind,id)
- WHERE (NOT EXISTS (SELECT 1 FROM entity e WHERE e.kind=s.kind AND e.id=s.id)
-        OR EXISTS (SELECT 1 FROM entity e WHERE e.kind=s.kind AND e.id=s.id AND e.unit=:unit))
+ WHERE (NOT EXISTS (SELECT 1 FROM legacy_entity e WHERE e.kind=s.kind AND e.id=s.id)
+        OR EXISTS (SELECT 1 FROM legacy_entity e WHERE (e.kind,e.id,e.unit)=(s.kind,s.id,:unit)))
  AND EXISTS (
-   SELECT 1 FROM relation r WHERE
+   SELECT 1 FROM legacy_relation r WHERE
      ((r.src_kind=s.kind AND r.src_id=s.id) OR (r.dst_kind=s.kind AND r.dst_id=s.id))
      AND r.unit=:unit AND r.persons <@ CAST(:persons AS text[])
      AND r.status='current' AND r.layer=ANY(CAST(:layers AS text[]))
@@ -71,11 +71,11 @@ WITH RECURSIVE paths(kind, id, depth, seen, edge) AS (
    SELECT ranked.* FROM (
      SELECT adjacent.*, row_number() OVER (PARTITION BY rel ORDER BY id) AS ordinal
      FROM (
-       SELECT r.*, r.dst_kind AS other_kind, r.dst_id AS other_id FROM relation r
+       SELECT r.*, r.dst_kind AS other_kind, r.dst_id AS other_id FROM legacy_relation r
        WHERE r.src_kind=p.kind AND r.src_id=p.id
          AND r.unit=:unit AND r.persons <@ CAST(:persons AS text[])
        UNION ALL
-       SELECT r.*, r.src_kind AS other_kind, r.src_id AS other_id FROM relation r
+       SELECT r.*, r.src_kind AS other_kind, r.src_id AS other_id FROM legacy_relation r
        WHERE r.dst_kind=p.kind AND r.dst_id=p.id
          AND r.unit=:unit AND r.persons <@ CAST(:persons AS text[])
      ) adjacent
@@ -86,8 +86,8 @@ WITH RECURSIVE paths(kind, id, depth, seen, edge) AS (
        AND (CAST(:at AS timestamptz) IS NULL OR
          ((valid_from IS NULL OR valid_from<=:at) AND (valid_to IS NULL OR :at<valid_to)))
        AND (CAST(:known_at AS timestamptz) IS NULL OR asserted_at<=:known_at)
-       AND (NOT EXISTS (SELECT 1 FROM entity e WHERE e.kind=other_kind AND e.id=other_id)
-         OR EXISTS (SELECT 1 FROM entity e WHERE e.kind=other_kind AND e.id=other_id
+       AND (NOT EXISTS (SELECT 1 FROM legacy_entity e WHERE e.kind=other_kind AND e.id=other_id)
+         OR EXISTS (SELECT 1 FROM legacy_entity e WHERE e.kind=other_kind AND e.id=other_id
              AND e.unit=:unit))
    ) ranked WHERE ordinal<=:fan
  ) r
@@ -120,7 +120,7 @@ def walk_sql(query: Walk) -> tuple[str, dict[str, Any]]:
     # Correlated endpoint probes use the memory_node key index. No whole-unit preload.
     def permitted(kind: str, ident: str) -> str:
         # Only code-owned column expressions and a compiled bound predicate enter SQL.
-        return f"""(EXISTS (SELECT 1 FROM entity e WHERE e.kind={kind} AND e.id={ident}
+        return f"""(EXISTS (SELECT 1 FROM legacy_entity e WHERE e.kind={kind} AND e.id={ident}
           AND e.unit=:unit AND (e.kind!='person'
             OR coalesce(e.attributes->>'ref',e.id)=ANY(CAST(:persons AS text[]))))
           OR EXISTS (SELECT 1 FROM ({predicate}) scoped_node
@@ -129,7 +129,7 @@ def walk_sql(query: Walk) -> tuple[str, dict[str, Any]]:
           AND (scoped_node.origin_room IS NULL OR NOT EXISTS (
             SELECT 1 FROM (
               SELECT unnest(r.persons) AS person UNION
-              SELECT coalesce(subject.attributes->>'ref',subject.id) FROM entity subject
+              SELECT coalesce(subject.attributes->>'ref',subject.id) FROM legacy_entity subject
               WHERE subject.kind='person' AND subject.unit=:unit
                 AND (subject.id=r.src_id OR subject.id=r.dst_id)
             ) subjects WHERE NOT EXISTS (
@@ -146,17 +146,17 @@ def walk_sql(query: Walk) -> tuple[str, dict[str, Any]]:
     conditions = [permitted("r.src_kind", "r.src_id"), permitted("r.dst_kind", "r.dst_id")]
     conditions.append("""(NOT (r.rel=ANY(CAST(:location_rels AS text[]))) OR (
         r.persons <@ CAST(:presence AS text[]) AND NOT EXISTS (
-          SELECT 1 FROM entity subject WHERE subject.kind='person' AND subject.unit=:unit
+          SELECT 1 FROM legacy_entity subject WHERE subject.kind='person' AND subject.unit=:unit
             AND subject.id IN (r.src_id,r.dst_id)
             AND NOT coalesce(subject.attributes->>'ref',subject.id)=ANY(CAST(:presence AS text[]))
         )))""")
     conditions.append(
-        "NOT EXISTS (SELECT 1 FROM relation_evidence ev WHERE ev.relation_id=r.id AND NOT "  # noqa: S608
+        "NOT EXISTS (SELECT 1 FROM legacy_relation_evidence ev WHERE ev.relation_id=r.id AND NOT "  # noqa: S608
         + permitted("ev.source_kind", "ev.source_id")
         + ")"
     )
     conditions.append(
-        "NOT EXISTS (SELECT 1 FROM relation_evidence attribute_ev "  # noqa: S608
+        "NOT EXISTS (SELECT 1 FROM legacy_relation_evidence attribute_ev "  # noqa: S608
         "WHERE attribute_ev.entity_id IN (r.src_id,r.dst_id) AND NOT "
         + permitted("attribute_ev.source_kind", "attribute_ev.source_id")
         + ")"
@@ -170,24 +170,25 @@ def walk_sql(query: Walk) -> tuple[str, dict[str, Any]]:
         (CAST(:since_ms AS bigint) IS NULL OR extract(epoch FROM r.asserted_at)*1000>=:since_ms)
         AND (CAST(:until_ms AS bigint) IS NULL OR extract(epoch FROM r.asserted_at)*1000<=:until_ms)
         AND (CAST(:only_person AS text) IS NULL OR :only_person=ANY(r.persons)
-          OR EXISTS (SELECT 1 FROM entity subject WHERE subject.kind='person'
+          OR EXISTS (SELECT 1 FROM legacy_entity subject WHERE subject.kind='person'
             AND subject.unit=:unit AND subject.id IN (r.src_id,r.dst_id)
             AND coalesce(subject.attributes->>'ref',subject.id)=:only_person)
-          OR NOT EXISTS (SELECT 1 FROM entity e WHERE e.kind=r.src_kind AND e.id=r.src_id)
-          OR NOT EXISTS (SELECT 1 FROM entity e WHERE e.kind=r.dst_kind AND e.id=r.dst_id)
-          OR EXISTS (SELECT 1 FROM relation_evidence ev WHERE ev.relation_id=r.id
+          OR NOT EXISTS (SELECT 1 FROM legacy_entity e WHERE e.kind=r.src_kind AND e.id=r.src_id)
+          OR NOT EXISTS (SELECT 1 FROM legacy_entity e WHERE e.kind=r.dst_kind AND e.id=r.dst_id)
+          OR EXISTS (SELECT 1 FROM legacy_relation_evidence ev WHERE ev.relation_id=r.id
                       OR ev.entity_id IN (r.src_id,r.dst_id)))
     )""")
     cte = (
-        "eligible AS NOT MATERIALIZED (SELECT r.* FROM relation r WHERE "  # noqa: S608
+        "eligible AS NOT MATERIALIZED (SELECT r.* FROM legacy_relation r WHERE "  # noqa: S608
         + " AND ".join(conditions)
         + "), "
     )
     sql = WALK_SQL.replace("WITH RECURSIVE ", "WITH RECURSIVE " + cte).replace(
-        "FROM relation r", "FROM eligible r"
+        "FROM legacy_relation r", "FROM eligible r"
     )
     # The replacement must leave the CTE's base table intact.
-    sql = sql.replace("SELECT r.* FROM eligible r WHERE", "SELECT r.* FROM relation r WHERE", 1)
+    sql = sql.replace(
+        "SELECT r.* FROM eligible r WHERE", "SELECT r.* FROM legacy_relation r WHERE", 1)
     params = dict(compiled.params)
     only = query.scope.only
     params.update(
@@ -342,16 +343,17 @@ async def upsert_entity(conn: AsyncConnection, entity: Entity) -> Entity:
     )
     if values["created_at"] is None:
         values.pop("created_at")
-    stmt = insert(ENTITY).values(**values)
+    stmt = insert(LEGACY_ENTITY).values(**values)
     result = (
         await conn.execute(
             stmt.on_conflict_do_update(
-                index_elements=[ENTITY.c.id],
+                index_elements=[LEGACY_ENTITY.c.id],
                 set_={
                     k: getattr(stmt.excluded, k) for k in values if k not in ("id", "created_at")
                 },
-                where=sa.and_(ENTITY.c.unit == entity.unit, ENTITY.c.kind == entity.kind),
-            ).returning(ENTITY.c.id)
+                where=sa.and_(LEGACY_ENTITY.c.unit == entity.unit,
+                              LEGACY_ENTITY.c.kind == entity.kind),
+            ).returning(LEGACY_ENTITY.c.id)
         )
     ).scalar_one_or_none()
     if result is None:
@@ -374,12 +376,12 @@ async def enqueue(conn: AsyncConnection, item: WorkItem) -> WorkItem:
     for key in ("created_at", "updated_at", "due_at"):
         if values[key] is None:
             values.pop(key)
-    stmt = insert(MEMORY_WORK_ITEM).values(**values)
+    stmt = insert(LEGACY_MEMORY_WORK_ITEM).values(**values)
     # Returning the existing row, without resetting a running/settled attempt.
     returning = stmt.on_conflict_do_update(
         constraint="memory_work_item_input_key",
-        set_={"id": MEMORY_WORK_ITEM.c.id},
-    ).returning(MEMORY_WORK_ITEM)
+        set_={"id": LEGACY_MEMORY_WORK_ITEM.c.id},
+    ).returning(LEGACY_MEMORY_WORK_ITEM)
     return work_row((await conn.execute(returning)).mappings().one())
 
 
@@ -411,16 +413,17 @@ class SqlMemoryGraph:
         async with self.engine.begin() as conn:
             # ponytail: serialize admission globally; use per-unit advisory locks
             # if concurrent sessions contend. Prevent duplicate-name/endpoint races.
-            await conn.execute(sa.text("LOCK TABLE entity, relation IN SHARE ROW EXCLUSIVE MODE"))
+            await conn.execute(sa.text(
+                "LOCK TABLE legacy_entity, legacy_relation IN SHARE ROW EXCLUSIVE MODE"))
             state = AdmissionState()
             units = {e.unit for e in entities} | {r.unit for r in relations}
             old = list(
                 (
                     await conn.execute(
-                        sa.select(RELATION).where(
+                        sa.select(LEGACY_RELATION).where(
                             sa.or_(
-                                RELATION.c.id.in_([c.relation_id for c in corrections]),
-                                RELATION.c.id.in_([r.id for r in relations]),
+                                LEGACY_RELATION.c.id.in_([c.relation_id for c in corrections]),
+                                LEGACY_RELATION.c.id.in_([r.id for r in relations]),
                             )
                         )
                     )
@@ -429,8 +432,9 @@ class SqlMemoryGraph:
             units.update(r["unit"] for r in old)
             for row in (
                 await conn.execute(
-                    sa.select(ENTITY).where(
-                        sa.or_(ENTITY.c.unit.in_(units), ENTITY.c.id.in_([e.id for e in entities]))
+                    sa.select(LEGACY_ENTITY).where(
+                        sa.or_(LEGACY_ENTITY.c.unit.in_(units),
+                               LEGACY_ENTITY.c.id.in_([e.id for e in entities]))
                     )
                 )
             ).mappings():
@@ -448,13 +452,13 @@ class SqlMemoryGraph:
             for e in admitted.entities:
                 await upsert_entity(conn, e)
             for r in admitted.relations:
-                await conn.execute(insert(RELATION).values(**relation_values(r)))
+                await conn.execute(insert(LEGACY_RELATION).values(**relation_values(r)))
             for c in admitted.corrections:
                 r = state.relations[c.relation_id]
                 values = relation_values(r)
                 values.pop("id")
                 await conn.execute(
-                    sa.update(RELATION).where(RELATION.c.id == r.id).values(**values)
+                    sa.update(LEGACY_RELATION).where(LEGACY_RELATION.c.id == r.id).values(**values)
                 )
             for ev in admitted.evidence:
                 values = asdict(ev)
@@ -462,16 +466,16 @@ class SqlMemoryGraph:
                 values.update(source_kind=ev.source[0], source_id=ev.source[1])
                 exists = sa.exists().where(
                     *(
-                        getattr(RELATION_EVIDENCE.c, k).is_not_distinct_from(v)
+                        getattr(LEGACY_RELATION_EVIDENCE.c, k).is_not_distinct_from(v)
                         for k, v in values.items()
                     )
                 )
                 await conn.execute(
-                    insert(RELATION_EVIDENCE).from_select(
+                    insert(LEGACY_RELATION_EVIDENCE).from_select(
                         list(values),
                         sa.select(
                             *(
-                                sa.literal(v, type_=getattr(RELATION_EVIDENCE.c, k).type)
+                                sa.literal(v, type_=getattr(LEGACY_RELATION_EVIDENCE.c, k).type)
                                 for k, v in values.items()
                             )
                         ).where(~exists),
@@ -479,7 +483,7 @@ class SqlMemoryGraph:
                 )
             for refusal in admitted.refused:
                 await conn.execute(
-                    insert(MEMORY_GRAPH_REFUSAL).values(
+                    insert(LEGACY_MEMORY_GRAPH_REFUSAL).values(
                         kind=refusal.kind, part_id=refusal.id, reason=refusal.reason
                     )
                 )
@@ -489,13 +493,13 @@ class SqlMemoryGraph:
         async with self.engine.begin() as conn:
             rows = (
                 await conn.execute(
-                    sa.select(ENTITY)
+                    sa.select(LEGACY_ENTITY)
                     .where(
-                        ENTITY.c.unit == unit,
-                        ENTITY.c.state == "live",
-                        ENTITY.c.merged_into.is_(None),
+                        LEGACY_ENTITY.c.unit == unit,
+                        LEGACY_ENTITY.c.state == "live",
+                        LEGACY_ENTITY.c.merged_into.is_(None),
                     )
-                    .order_by(ENTITY.c.id)
+                    .order_by(LEGACY_ENTITY.c.id)
                 )
             ).mappings()
             return {
@@ -518,8 +522,9 @@ class SqlMemoryGraph:
             anchor = (
                 (
                     await conn.execute(
-                        sa.select(ENTITY).where(
-                            ENTITY.c.unit == unit, ENTITY.c.kind == near[0], ENTITY.c.id == near[1]
+                        sa.select(LEGACY_ENTITY).where(
+                            LEGACY_ENTITY.c.unit == unit, LEGACY_ENTITY.c.kind == near[0],
+                            LEGACY_ENTITY.c.id == near[1],
                         )
                     )
                 )
@@ -530,22 +535,23 @@ class SqlMemoryGraph:
             )
             location = anchor["attributes"].get("location") if anchor else None
             exact = sa.or_(
-                sa.func.lower(ENTITY.c.name) == name.casefold(),
-                sa.text("EXISTS (SELECT 1 FROM unnest(entity.aliases) a WHERE lower(a)=:alias)"),
+                sa.func.lower(LEGACY_ENTITY.c.name) == name.casefold(),
+                sa.text(
+                    "EXISTS (SELECT 1 FROM unnest(legacy_entity.aliases) a WHERE lower(a)=:alias)"),
             )
-            lexical = sa.or_(ENTITY.c.name.op("%")(name), exact)
+            lexical = sa.or_(LEGACY_ENTITY.c.name.op("%")(name), exact)
             rows = (
                 (
                     await conn.execute(
                         sa.select(
-                            ENTITY,
+                            LEGACY_ENTITY,
                             exact.label("exact"),
-                            sa.func.similarity(ENTITY.c.name, name).label("score"),
+                            sa.func.similarity(LEGACY_ENTITY.c.name, name).label("score"),
                         ).where(
-                            ENTITY.c.unit == unit,
-                            ENTITY.c.kind == kind,
-                            ENTITY.c.state == "live",
-                            ENTITY.c.merged_into.is_(None),
+                            LEGACY_ENTITY.c.unit == unit,
+                            LEGACY_ENTITY.c.kind == kind,
+                            LEGACY_ENTITY.c.state == "live",
+                            LEGACY_ENTITY.c.merged_into.is_(None),
                             sa.or_(
                                 lexical,
                                 sa.literal(kind == "place" and location is not None),
@@ -578,17 +584,17 @@ class SqlMemoryGraph:
                 return (not r["exact"], distance, not overlap, -r["score"], r["id"])
 
             return tuple(
-                entity_row({column.name: r[column.name] for column in ENTITY.c})
+                entity_row({column.name: r[column.name] for column in LEGACY_ENTITY.c})
                 for r in sorted(rows, key=rank)[: max(0, min(limit, 5))]
             )
 
     async def topic_activity(self, *, unit: str, topic: Key, at: datetime) -> TopicActivity:
         if topic[0] != "topic":
             raise ValueError("topic key required")
-        r, e = RELATION.c, RELATION_EVIDENCE.c
+        r, e = LEGACY_RELATION.c, LEGACY_RELATION_EVIDENCE.c
         stmt = (
             sa.select(r.src_kind, r.src_id, r.asserted_at, e.source_kind, e.source_id)
-            .select_from(RELATION.join(RELATION_EVIDENCE, e.relation_id == r.id))
+            .select_from(LEGACY_RELATION.join(LEGACY_RELATION_EVIDENCE, e.relation_id == r.id))
             .where(
                 r.unit == unit,
                 r.dst_kind == "topic",
@@ -648,12 +654,14 @@ class SqlMemoryGraph:
                 # Include record pointers only for seed reachability; they never expand.
                 seed_edges = (
                     sa.and_(
-                        RELATION.c.layer == "record",
+                        LEGACY_RELATION.c.layer == "record",
                         sa.or_(
                             *(
                                 sa.or_(
-                                    sa.and_(RELATION.c.src_kind == k, RELATION.c.src_id == i),
-                                    sa.and_(RELATION.c.dst_kind == k, RELATION.c.dst_id == i),
+                                    sa.and_(LEGACY_RELATION.c.src_kind == k,
+                                            LEGACY_RELATION.c.src_id == i),
+                                    sa.and_(LEGACY_RELATION.c.dst_kind == k,
+                                            LEGACY_RELATION.c.dst_id == i),
                                 )
                                 for k, i in seeds
                             )
@@ -664,10 +672,10 @@ class SqlMemoryGraph:
                 )
                 for row in (
                     await conn.execute(
-                        sa.select(RELATION).where(
-                            RELATION.c.unit == query.unit,
-                            RELATION.c.persons.contained_by(sorted(query.persons)),
-                            sa.or_(RELATION.c.id.in_(ids), seed_edges),
+                        sa.select(LEGACY_RELATION).where(
+                            LEGACY_RELATION.c.unit == query.unit,
+                            LEGACY_RELATION.c.persons.contained_by(sorted(query.persons)),
+                            sa.or_(LEGACY_RELATION.c.id.in_(ids), seed_edges),
                         )
                     )
                 ).mappings():
@@ -675,8 +683,9 @@ class SqlMemoryGraph:
                 keys = {(p["kind"], p["id"]) for p in paths}
                 for row in (
                     await conn.execute(
-                        sa.select(ENTITY).where(
-                            ENTITY.c.unit == query.unit, ENTITY.c.id.in_([i for _, i in keys])
+                        sa.select(LEGACY_ENTITY).where(
+                            LEGACY_ENTITY.c.unit == query.unit,
+                            LEGACY_ENTITY.c.id.in_([i for _, i in keys]),
                         )
                     )
                 ).mappings():
@@ -684,10 +693,10 @@ class SqlMemoryGraph:
                     state.entities[entity.id] = entity
                 for row in (
                     await conn.execute(
-                        sa.select(RELATION_EVIDENCE).where(
+                        sa.select(LEGACY_RELATION_EVIDENCE).where(
                             sa.or_(
-                                RELATION_EVIDENCE.c.relation_id.in_(state.relations),
-                                RELATION_EVIDENCE.c.entity_id.in_([i for _, i in keys]),
+                                LEGACY_RELATION_EVIDENCE.c.relation_id.in_(state.relations),
+                                LEGACY_RELATION_EVIDENCE.c.entity_id.in_([i for _, i in keys]),
                             )
                         )
                     )
@@ -769,26 +778,26 @@ class SqlMemoryGraph:
             raise ValueError("positive lease required")
         async with self.engine.begin() as conn:
             await conn.execute(
-                sa.update(MEMORY_WORK_ITEM)
+                sa.update(LEGACY_MEMORY_WORK_ITEM)
                 .where(
-                    MEMORY_WORK_ITEM.c.historical == historical,
-                    MEMORY_WORK_ITEM.c.state.in_(["pending", "running"]),
-                    MEMORY_WORK_ITEM.c.due_at <= now,
-                    MEMORY_WORK_ITEM.c.attempts >= 5,
+                    LEGACY_MEMORY_WORK_ITEM.c.historical == historical,
+                    LEGACY_MEMORY_WORK_ITEM.c.state.in_(["pending", "running"]),
+                    LEGACY_MEMORY_WORK_ITEM.c.due_at <= now,
+                    LEGACY_MEMORY_WORK_ITEM.c.attempts >= 5,
                 )
                 .values(state="failed", updated_at=now)
             )
             row = (
                 (
                     await conn.execute(
-                        sa.select(MEMORY_WORK_ITEM)
+                        sa.select(LEGACY_MEMORY_WORK_ITEM)
                         .where(
-                            MEMORY_WORK_ITEM.c.historical == historical,
-                            MEMORY_WORK_ITEM.c.state.in_(["pending", "running"]),
-                            MEMORY_WORK_ITEM.c.due_at <= now,
-                            MEMORY_WORK_ITEM.c.attempts < 5,
+                            LEGACY_MEMORY_WORK_ITEM.c.historical == historical,
+                            LEGACY_MEMORY_WORK_ITEM.c.state.in_(["pending", "running"]),
+                            LEGACY_MEMORY_WORK_ITEM.c.due_at <= now,
+                            LEGACY_MEMORY_WORK_ITEM.c.attempts < 5,
                         )
-                        .order_by(MEMORY_WORK_ITEM.c.as_of, MEMORY_WORK_ITEM.c.id)
+                        .order_by(LEGACY_MEMORY_WORK_ITEM.c.as_of, LEGACY_MEMORY_WORK_ITEM.c.id)
                         .with_for_update(skip_locked=True)
                         .limit(1)
                     )
@@ -801,15 +810,15 @@ class SqlMemoryGraph:
             updated = (
                 (
                     await conn.execute(
-                        sa.update(MEMORY_WORK_ITEM)
-                        .where(MEMORY_WORK_ITEM.c.id == row["id"])
+                        sa.update(LEGACY_MEMORY_WORK_ITEM)
+                        .where(LEGACY_MEMORY_WORK_ITEM.c.id == row["id"])
                         .values(
                             state="running",
                             attempts=row["attempts"] + 1,
                             updated_at=now,
                             due_at=now + timedelta(seconds=lease_seconds),
                         )
-                        .returning(MEMORY_WORK_ITEM)
+                        .returning(LEGACY_MEMORY_WORK_ITEM)
                     )
                 )
                 .mappings()
@@ -820,7 +829,7 @@ class SqlMemoryGraph:
     async def settle(self, item: WorkItem, *, now: datetime) -> bool:
         async with self.engine.begin() as conn:
             result = await conn.execute(
-                sa.update(MEMORY_WORK_ITEM)
+                sa.update(LEGACY_MEMORY_WORK_ITEM)
                 .where(*self._owns(item))
                 .values(state="settled", settled_at=now, updated_at=now)
             )
@@ -829,7 +838,7 @@ class SqlMemoryGraph:
     async def fail(self, item: WorkItem, *, error: str, now: datetime) -> bool:
         async with self.engine.begin() as conn:
             result = await conn.execute(
-                sa.update(MEMORY_WORK_ITEM)
+                sa.update(LEGACY_MEMORY_WORK_ITEM)
                 .where(*self._owns(item))
                 .values(
                     state="failed" if item.attempts >= 5 else "pending",
@@ -843,19 +852,19 @@ class SqlMemoryGraph:
     @staticmethod
     def _owns(item: WorkItem) -> tuple[Any, ...]:
         return (
-            MEMORY_WORK_ITEM.c.id == item.id,
-            MEMORY_WORK_ITEM.c.state == "running",
-            MEMORY_WORK_ITEM.c.attempts == item.attempts,
-            MEMORY_WORK_ITEM.c.input_hash == item.input_hash,
+            LEGACY_MEMORY_WORK_ITEM.c.id == item.id,
+            LEGACY_MEMORY_WORK_ITEM.c.state == "running",
+            LEGACY_MEMORY_WORK_ITEM.c.attempts == item.attempts,
+            LEGACY_MEMORY_WORK_ITEM.c.input_hash == item.input_hash,
         )
 
     async def requeue_failed(self, *, unit: str | None = None, now: datetime) -> int:
         async with self.engine.begin() as conn:
             result = await conn.execute(
-                sa.update(MEMORY_WORK_ITEM)
+                sa.update(LEGACY_MEMORY_WORK_ITEM)
                 .where(
-                    MEMORY_WORK_ITEM.c.state == "failed",
-                    MEMORY_WORK_ITEM.c.unit == unit if unit is not None else sa.true(),
+                    LEGACY_MEMORY_WORK_ITEM.c.state == "failed",
+                    LEGACY_MEMORY_WORK_ITEM.c.unit == unit if unit is not None else sa.true(),
                 )
                 .values(state="pending", attempts=0, last_error=None, due_at=now, updated_at=now)
             )

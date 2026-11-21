@@ -18,22 +18,22 @@ async def test_scoped_walk_uses_endpoint_indexes(_graph_db):
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(
                 sa.text("""
-                INSERT INTO entity(id,kind,unit,name)
+                INSERT INTO legacy_entity(id,kind,unit,name)
                 SELECT n::text,'event','generated','Generated event '||n
                 FROM generate_series(1,10000) n
             """)
             )
             await conn.execute(
                 sa.text("""
-                INSERT INTO relation(id,src_kind,src_id,rel,dst_kind,dst_id,layer,
+                INSERT INTO legacy_relation(id,src_kind,src_id,rel,dst_kind,dst_id,layer,
                                      asserted_at,written_by,unit)
                 SELECT 'generated-'||n,'event',n::text,'same_as','event',(n+1)::text,
                        'notebook',now(),'generated','generated'
                 FROM generate_series(1,9999) n
             """)
             )
-            await conn.execute(sa.text("ANALYZE entity"))
-            await conn.execute(sa.text("ANALYZE relation"))
+            await conn.execute(sa.text("ANALYZE legacy_entity"))
+            await conn.execute(sa.text("ANALYZE legacy_relation"))
             scope = MemoryScope(
                 ("generated",),
                 (),

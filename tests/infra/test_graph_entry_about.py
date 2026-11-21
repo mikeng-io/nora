@@ -50,10 +50,10 @@ from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.profile import SqlProfileStore
 from nora.infra.sql.schema import (
     EVENT_REVISION,
+    LEGACY_RELATION,
     MEMORY_EDGE,
     MEMORY_PROJECTION_QUEUE,
     PRESENCE_STAYS,
-    RELATION,
     ROLLUP_BUILD,
 )
 
@@ -108,8 +108,9 @@ async def engine(_db: str) -> AsyncIterator[Any]:
         async with eng.begin() as conn:
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             for table in (
-                "relation_evidence", "relation", "entity", "memory_work_item",
-                "graph_refusal", "graph_arrival", "memory_node", "memory_edge",
+                "legacy_relation_evidence", "legacy_relation", "legacy_entity",
+                "legacy_memory_work_item", "legacy_graph_refusal",
+                "legacy_graph_arrival", "memory_node", "memory_edge",
                 "memory_projection_queue", "event_revision", "event_rsvps",
                 "events", "messages", "profile_line", "profile", "culture",
                 "presence_stays", "rollup_build", "row_history",
@@ -179,7 +180,7 @@ async def _abouts(engine: Any) -> list[Any]:
     async with engine.connect() as conn:
         return (
             await conn.execute(
-                sa.select(RELATION).where(RELATION.c.rel == "about")
+                sa.select(LEGACY_RELATION).where(LEGACY_RELATION.c.rel == "about")
             )
         ).mappings().all()
 
@@ -383,16 +384,16 @@ async def test_rebuild_and_retry_recreate_subject_relations(engine):
     assert await _current_about(engine, str(sid), entity.id)
     async with engine.begin() as conn:
         await conn.execute(
-            sa.update(RELATION)
-            .where(RELATION.c.rel == "about")
+            sa.update(LEGACY_RELATION)
+            .where(LEGACY_RELATION.c.rel == "about")
             .values(status="retired")
         )
     await memory_index.rebuild(engine)
     assert await _current_about(engine, str(sid), entity.id)
     async with engine.begin() as conn:
         await conn.execute(
-            sa.update(RELATION)
-            .where(RELATION.c.rel == "about")
+            sa.update(LEGACY_RELATION)
+            .where(LEGACY_RELATION.c.rel == "about")
             .values(status="retired")
         )
         await conn.execute(
