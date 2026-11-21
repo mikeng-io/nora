@@ -283,6 +283,7 @@ PATHS = {
     "nora/engagement/stages/debrief.py": "debrief",
     "nora/app/runtime.py": "dreamer",
     "nora/app/cognition_context.py": "cognition",
+    "nora/app/wake_floor.py": "wake",
     "nora/app/adoption.py": "adoption",
     # The conversation tools' record_query hit render (`query.py`); record.py/
     # rooms.py share the label — the discovery sees only the toolkit's

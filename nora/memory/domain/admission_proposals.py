@@ -131,6 +131,7 @@ class CreateClaim(ProposalFields):
     valid_from: datetime | None = None
     valid_to: datetime | None = None
     links: tuple[Link, ...] = ()
+    replace_about: bool = False
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -164,6 +165,7 @@ class CreateIntention(ProposalFields):
     trigger: object = None
     links: tuple[Link, ...] = ()
     rooms: tuple[str, ...] = ()
+    replace_about: bool = False
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -187,6 +189,7 @@ class Revise:
 class Retire(ProposalFields):
     base: str
     ending: str | None = None
+    expected_kind: Kind | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

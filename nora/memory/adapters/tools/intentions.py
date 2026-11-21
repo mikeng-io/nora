@@ -1,19 +1,22 @@
 """Model surface for committing intentions through admission."""
 
+from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
 
 from pydantic import PlainSerializer, WrapValidator
 
 from nora.agent.toolkit.results import _record
 from nora.memory.app.act_scope import active_act_authority, pass_shown
-from nora.memory.app.admission import Unavailable
+from nora.memory.app.admission import AdmissionService, Unavailable
 from nora.memory.domain.admission import Refusal
 from nora.memory.domain.admission_ports import Stored
+from nora.memory.domain.admission_proposals import PassContext, Proposal
 from nora.memory.domain.intention_operations import (
     IntentionOperation,
     limit_to_delivery,
     parse_intention_operation,
 )
+from nora.obs.metrics import Metrics
 
 _ENTRY_NOTES = {
     "admitted": "The operation was admitted.",
@@ -23,6 +26,7 @@ _ENTRY_NOTES = {
 }
 
 _REFUSALS = {
+    "room_busy": "This room is in an engagement pass. Leave the change for a later wake.",
     "not_this_delivery": "Only change the intention this pass delivers.",
     "invalid_field": "Fix the named field and submit that operation again.",
     "invalid_trigger": "Use a time or an act_event, person_event or predicate condition.",
@@ -69,59 +73,86 @@ def _make_intention_commit(deps):
             operations: Intention operations in order. Give person IDs or nora for owner
                 and owed_to. Use graph IDs shown in this pass for references.
         """
-        authority = active_act_authority()
-        context = authority.pass_context if authority is not None else None
-        shown = pass_shown()
-        if admission is None or context is None or shown is None:
-            _record(metrics, "intention_commit", "unavailable")
-            return {
-                "status": "unavailable",
-                "operations": [
-                    {
-                        "status": "unavailable", "commit_uncertain": False,
-                        "note": _ENTRY_NOTES["inactive"],
-                    }
-                    for _ in operations
-                ],
-                "note": ("The intention store is unavailable." if admission is None
-                         else "No active pass can commit intentions."),
-            }
+        return await submit_operations(
+            operations, admission, metrics, "intention_commit", _parse_commit,
+        )
 
-        parsed = [parse_intention_operation(raw, context) for raw in operations]
-        if authority is not None and authority.intention is not None:
-            parsed = [
-                entry if isinstance(entry, Refusal)
-                else limit_to_delivery(entry, authority.intention) or entry
-                for entry in parsed
-            ]
-        proposals = tuple(entry for entry in parsed if not isinstance(entry, Refusal))
-        admitted = await admission.admit(proposals, context, shown) if proposals else None
-        admission_outcomes = admitted.outcomes if admitted is not None else ()
+    return intention_commit
+
+
+def _parse_commit(operations: list, context: PassContext) -> list[Proposal | Refusal]:
+    authority = active_act_authority()
+    delivery = authority.intention if authority is not None else None
+    parsed = [parse_intention_operation(raw, context) for raw in operations]
+    return [
+        entry if isinstance(entry, Refusal)
+        else limit_to_delivery(entry, delivery) or entry for entry in parsed
+    ] if delivery is not None else list(parsed)
+
+
+async def submit_operations(
+    operations: list, admission: AdmissionService | None, metrics: Metrics, name: str,
+    parse: Callable[[list, PassContext], list[Proposal | Refusal]], *,
+    rediscover: Callable[[str], Awaitable[dict]] | None = None,
+    room_busy: Callable[[], None] | None = None,
+) -> dict:
+    authority = active_act_authority()
+    context = authority.pass_context if authority is not None else None
+    shown = pass_shown()
+    if admission is None or context is None or shown is None:
+        _record(metrics, name, "unavailable")
+        return {
+            "status": "unavailable",
+            "operations": [
+                {
+                    "status": "unavailable", "commit_uncertain": False,
+                    "note": _ENTRY_NOTES["inactive"],
+                }
+                for _ in operations
+            ],
+            "note": ("The intention store is unavailable." if admission is None
+                     else "No active pass can submit operations." if name != "intention_commit"
+                         else "No active pass can commit intentions."),
+        }
+
+    parsed = parse(operations, context)
+    proposals = tuple(entry for entry in parsed if not isinstance(entry, Refusal))
+    admitted = await admission.admit(proposals, context, shown) if proposals else None
+    admission_outcomes = admitted.outcomes if admitted is not None else ()
+    if rediscover is None:
         shown.update(
             key for outcome in admission_outcomes if isinstance(outcome, Stored)
             for key in (outcome.id, *outcome.other_deliveries)
         )
-        stored = iter(admission_outcomes)
-        outcomes = [
-            _entry(entry if isinstance(entry, Refusal) else next(stored)) for entry in parsed
-        ]
-        statuses = {entry["status"] for entry in outcomes}
-        if "unavailable" in statuses:
-            _record(metrics, "intention_commit", "unavailable")
-            return {
-                "status": "unavailable", "operations": outcomes,
-                "note": "Some operations could not be confirmed. Read back uncertain writes.",
-            }
-        if "refused" in statuses:
-            _record(metrics, "intention_commit", "refused")
-            return {
-                "status": "refused", "operations": outcomes,
-                "note": "Use the operation results to repair individual refusals.",
-            }
-        _record(metrics, "intention_commit", "ok")
-        return {"status": "ok", "operations": outcomes, "note": "All operations were admitted."}
-
-    return intention_commit
+    stored = iter(admission_outcomes)
+    outcomes = []
+    for entry in parsed:
+        outcome = entry if isinstance(entry, Refusal) else next(stored)
+        result = _entry(outcome)
+        if isinstance(outcome, Stored) and rediscover is not None:
+            result["neighbourhood"] = await rediscover(outcome.id)
+            if outcome.other_deliveries:
+                result["other_neighbourhoods"] = {
+                    id_: await rediscover(id_) for id_ in outcome.other_deliveries
+                }
+        if isinstance(outcome, Refusal) and outcome.reason == "room_busy" and room_busy:
+            room_busy()
+        outcomes.append(result)
+    statuses = {entry["status"] for entry in outcomes}
+    if "unavailable" in statuses:
+        _record(metrics, name, "unavailable")
+        return {
+            "status": "unavailable", "operations": outcomes,
+            "note": "Some operations could not be confirmed. Read back uncertain writes.",
+        }
+    if "refused" in statuses:
+        _record(metrics, name, "refused")
+        return {
+            "status": "refused", "operations": outcomes,
+            "note": "Use the operation results to repair individual refusals.",
+        }
+    _record(metrics, name, "ok")
+    return {"status": "ok", "operations": outcomes, "note": "All operations were admitted."}
 
 
 def _entry(outcome: Stored | Refusal | Unavailable) -> dict:

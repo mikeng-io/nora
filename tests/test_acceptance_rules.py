@@ -418,7 +418,6 @@ RULE_TESTS = {
     # error result is a correction, and a model corrects by retrying, which is
     # the loop the ceiling exists to end.
     "R-91": "test_a_third_memory_read_is_answered_unavailable_and_the_pass_completes",
-    # R-92 is retired; the number is not reused.
     # R-93 (DEC-187): ONE Discord voice connection, owned by the
     # audio-controller — nothing in nora's production tree opens a voice
     # connection or holds a VoiceClient. The named test is the architecture
@@ -450,11 +449,7 @@ RULE_TESTS = {
     # person in no room, beside a positive control showing the same person's
     # profile does reach the bridge.
     "R-98": "test_a_story_for_someone_in_no_room_is_refused_and_never_requested",
-    # R-99: a tool call carrying an argument its own signature does not declare
-    # is refused before Strands' generated pydantic model can silently drop it.
-    # The named test drives the REAL guard hooks through `FakeAgentRunner` and
-    # asserts both halves: the tool body never runs, and the refusal names the
-    # unknown argument and what the tool actually accepts.
+    # R-99 refuses undeclared arguments before Strands can discard them.
     "R-99": "test_the_veto_fires_before_the_tool_body_ever_runs",
     # R-100: the real Deliverer strips, counts and never sends a made-up file link.
     "R-100": "test_a_reply_with_a_made_up_link_is_sent_without_it_and_counted",
@@ -462,6 +457,11 @@ RULE_TESTS = {
     "R-101": "test_a_dm_to_an_address_not_in_identity_toml_is_refused",
     "wake-claims-close": "test_a_closed_wake_closes_its_whole_set",
     "wake-room-busy": "test_engagement_alias_acquisition_blocks_a_wake_write_and_defers_debrief",
+    "wake-never-delivers": "test_wake_offers_only_graph_tools_and_its_one_objective",
+    "wake-subject-links": "test_wake_open_links_a_new_topic_and_rediscover_returns_it",
+    "wake-subject-links-carry": (
+        "test_a_called_revision_carries_only_live_inferred_about_and_derives_people"
+    ),
     "wake-parks-failures": "test_the_third_counted_failure_parks_the_set",
 }
 

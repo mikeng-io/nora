@@ -56,6 +56,7 @@ class DreamerAgentRunner:
         agent_name: str = "cognition",
         param_names: Mapping[str, frozenset[str]] | None = None,
         result_caps: Mapping[str, int] | None = None,
+        bound_tool_arguments: bool = False,
     ) -> None:
         """`param_names` and `result_caps` are two of the ceilings the guard
         builds (R-99, the result size cap); left out, the guard holds
@@ -66,6 +67,7 @@ class DreamerAgentRunner:
         self._metrics = metrics if metrics is not None else Metrics()
         self._agent_name = agent_name
         self._param_names = param_names
+        self._bound_tool_arguments = bound_tool_arguments
         self._result_caps = dict(result_caps or {})
 
     async def run(
@@ -82,7 +84,15 @@ class DreamerAgentRunner:
         strands_tools = (
             list(surface.tools) if surface is not None else as_strands_tools(tools)
         )
-        guard = self._guard(tool_names)
+        param_names = self._param_names
+        if self._bound_tool_arguments:
+            param_names = {
+                tool.tool_name: frozenset(
+                    tool.tool_spec["inputSchema"]["json"].get("properties", {}),
+                )
+                for tool in strands_tools
+            }
+        guard = self._guard(tool_names, param_names)
         reservation = (
             TokenReservation(budget.total_tokens) if budget.reserve_tokens else None
         )
@@ -130,7 +140,9 @@ class DreamerAgentRunner:
             messages=tuple(result.messages), requirements=dict(result.requirements),
         )
 
-    def _guard(self, tool_names: list[str]) -> DreamGuard:
+    def _guard(
+        self, tool_names: list[str], param_names: Mapping[str, frozenset[str]] | None,
+    ) -> DreamGuard:
         """One `DreamGuard` for a session, with NO call ceiling of any kind
         (DEC-247): not per tool, not over the memory cluster, not over every
         verb. A session is bounded by `AdaptorBudget`'s rounds, tokens and wall
@@ -142,6 +154,6 @@ class DreamerAgentRunner:
             budgets=dict.fromkeys(tool_names, 0),
             metrics=self._metrics,
             result_caps=self._result_caps,
-            param_names=self._param_names,
+            param_names=param_names,
             per_tool_ceilings=False,
         )

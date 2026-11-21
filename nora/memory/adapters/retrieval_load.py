@@ -79,7 +79,7 @@ async def _people(
     persons = tuple(image.get("persons") or ())
     if source == "claim":
         return tuple(RetrievedPerson(person, "subject") for person in persons)
-    if source == "intention":
+    if source in ("intention", "intention_verdict"):
         roles = tuple(RetrievedPerson(image[key], key) for key in ("owner", "owed_to")
                       if image.get(key) is not None)
     else:
@@ -129,6 +129,10 @@ def _content(source: str, image: Mapping[str, Any]) -> object:
         return image.get("content")
     if source == "edge":
         return {field: image[field] for field in ("type", "src_id", "dst_id")}
+    if source == "intention_verdict":
+        return {field: image[field] for field in (
+            "intention_id", "ending", "ended_at", "witness_id", "form", "condition_form",
+        )}
     return {name: image[name] for name in SEARCHABLE_SOURCES.get(source, ()) if name in image}
 
 
@@ -270,7 +274,8 @@ async def load_rows(
             else:
                 items_since = counts.get(graph_id, 0)
         result.append(RetrievedRow(
-            graph_id=graph_id, kind=cast(Kind, kind), source=source if kind == "item" else None,
+            graph_id=graph_id, kind=cast(Kind, kind),
+            source=source if kind in ("item", "aggregate") else None,
             basis=image["basis"], reasoning=image.get("reasoning"),
             confidence=image.get("confidence"),
             occurred_at=_instant(image.get("occurred_at")), asserted_at=entry["asserted_at"],

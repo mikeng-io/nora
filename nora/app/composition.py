@@ -48,7 +48,12 @@ from nora.app.composition_agent import (
 from nora.app.composition_bridge import runtime
 from nora.app.composition_computer import build_computer
 from nora.app.composition_documents import service
-from nora.app.composition_dreamer import cognition_inits, enabled, guidance, preamble, wake
+from nora.app.composition_dreamer import (
+    enabled,
+    guidance,
+    legacy_cognition_shutdown,
+    preamble,
+)
 from nora.app.composition_fire import (
     build_gate,
     build_recover,
@@ -93,6 +98,7 @@ from nora.app.composition_stores import (
     readers,
     runtime_stores,
 )
+from nora.app.composition_wake import build_wake
 from nora.app.computer_sweeper import ComputerSessionSweeper
 from nora.app.documents_service import DocumentService, room_label, rooms_named
 from nora.app.fire_engagement import AmbientEngagement
@@ -113,7 +119,8 @@ from nora.app.source_health import AdapterHealthRecorder
 from nora.app.startup import StartupError  # noqa: F401 — boot surface for __main__
 from nora.app.subagent_backend import SubagentBackend
 from nora.app.voice_events import VoiceEventConsumer
-from nora.app.wake import WakeEvaluator
+from nora.app.wake_poller import WakePoller
+from nora.app.wake_rooms import WakeRoomSlots
 from nora.config import Config
 from nora.config_reload import ReloadFiles
 from nora.doctrine.loader import Doctrine, DoctrineStore
@@ -400,16 +407,15 @@ class Dependencies:
     # and every voice verb fails closed.
     voice_hub: VoiceControllerHub | None
     voice_event_consumer: VoiceEventConsumer | None
-    # The cognition loop's wake evaluator and session:
+    # The graph wake poller and the legacy backfill runner:
     # `None` under `[cognition] enabled = false`, the shipped default. The
     # shutdown cancels the sessions in flight, once (`nora.app.cognition_wiring`).
-    wake_evaluator: WakeEvaluator | None = None
+    wake_poller: WakePoller | None = None
     cognition_runner: CognitionSessionRunner | None = None
     cognition_shutdown: CognitionShutdown | None = None
     # The sub-agent worker: `None` under `[subagent] enabled = false`, the
     # shipped default. The shutdown cancels the jobs in flight.
     subagent_backend: SubagentBackend | None = None
-    wake_tick_seconds: float = 30.0
     # The computer session sweeper: `None`
     # unless `[computer] enabled`. `nora/__main__.py` spawns
     # `runtime.computer_sweep_loop` on it every `sweep_seconds`.
@@ -1255,9 +1261,6 @@ async def _compose_dependencies(
         access=access,
     )
     cognition_memory = _memory_graph.cognition_memory
-    _dreamer_cognition_inits = cognition_inits()
-    cognition_session_units = _dreamer_cognition_inits.cognition_session_units
-    cognition_upcoming = _dreamer_cognition_inits.cognition_upcoming
     _dreamer_enabled = await enabled(
         allowlist=allowlist,
         audit=audit,
@@ -1315,22 +1318,17 @@ async def _compose_dependencies(
         access=access,
     )
     cognition_runner = _dreamer_enabled.cognition_runner
-    cognition_session_units = _dreamer_enabled.cognition_session_units
-    cognition_upcoming = _dreamer_enabled.cognition_upcoming
     dream_adaptors = _dreamer_enabled.dream_adaptors
     dream_schedules = _dreamer_enabled.dream_schedules
     dreamer_runtime = _dreamer_enabled.dreamer_runtime
-    _dreamer_wake = wake(
-        cfg=cfg,
-        cognition_runner=cognition_runner,
-        cognition_session_units=cognition_session_units,
-        cognition_upcoming=cognition_upcoming,
-        metrics=metrics,
-        stimulus_store=stimulus_store,
+    wake_poller = build_wake(
+        cfg, dreamer_runtime, dreamer_instructions, engine, access, lineage, allowlist,
+        graph_debrief, slots, audit, presence_reader, documents_context, cognition_context_screen,
+        graph_reads, metrics, clock, rosters, registry, content_checks, media_join,
     )
-    cognition_shutdown = _dreamer_wake.cognition_shutdown
-    owner.own_cognition(cognition_shutdown)
-    wake_evaluator = _dreamer_wake.wake_evaluator
+    cognition_shutdown = legacy_cognition_shutdown(cfg, cognition_runner)
+    if cognition_shutdown is not None:
+        owner.own_cognition(cognition_shutdown)
     _stores_otp = build_otp(
         audit=audit,
         cfg=cfg,
@@ -1420,11 +1418,10 @@ async def _compose_dependencies(
         speaker=speaker,
         voice_hub=voice_hub,
         voice_event_consumer=voice_event_consumer,
-        wake_evaluator=wake_evaluator,
+        wake_poller=wake_poller,
         cognition_runner=cognition_runner,
         cognition_shutdown=cognition_shutdown,
         subagent_backend=subagent_backend,
-        wake_tick_seconds=cfg.cognition.tick_seconds,
         computer_sweeper=computer_sweeper,
         computer_sweep_seconds=cfg.computer.sessions.sweep_interval_seconds,
         computer_queue_runner=computer_queue_runner,
@@ -1454,9 +1451,8 @@ async def _compose_dependencies(
         social_poller=social_poller,
         social_perception=social_perception,
         story_expiry=story_expiry,
-        graph_observe=graph_observe(
-            engine, op_clock, metrics, fetch_client or search_client, analytics=cfg.analytics,
-        ),
+        graph_observe=graph_observe(engine, op_clock, metrics, fetch_client or search_client,
+            analytics=cfg.analytics, room_slots=WakeRoomSlots(policy, slots)),
         graph_batches=(
             GraphBatchProducer(engine, metrics=metrics) if cfg.memory.graph.enabled else None
         ),

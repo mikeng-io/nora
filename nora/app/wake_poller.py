@@ -6,6 +6,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Protocol
 
+from nora.app.wake_pass import wake_lane
 from nora.config import CognitionConfig
 from nora.domain.lineage import room_key
 from nora.memory import WakeClaim, WakeFailed, WakeGroup, WakeOutcome, WakePass, WakePolicy
@@ -66,9 +67,15 @@ class WakePoller:
     async def drain(self) -> None:
         await asyncio.gather(*self._running.values(), return_exceptions=True)
 
+    async def recover(self) -> None:
+        await self._recover_at(self._clock())
+
+    async def _recover_at(self, now: datetime) -> None:
+        await self._store.recover(now, timedelta(seconds=self._timeout))
+
     async def poll(self) -> None:
         now = self._clock()
-        await self._store.recover(now, timedelta(seconds=self._timeout))
+        await self._recover_at(now)
         homes = self._policy.home_rooms()
         for group in await self._store.groups(now):
             room = group.room
@@ -78,12 +85,13 @@ class WakePoller:
                     self._metrics.inc("nora_errors_total", stage="wake_no_home_room")
                     continue
                 room = room_key(home.platform, home.primary_id)
-            if (group.unit in self._running
+            lane = wake_lane(group.unit)
+            if (lane in self._running
                     or len(self._running) >= self._admission.max_concurrent_sessions):
                 continue
             claim = await self._store.claim(group, room, now, self._admission)
             if claim is not None:
-                self._running[group.unit] = asyncio.create_task(self._pass(claim))
+                self._running[lane] = asyncio.create_task(self._pass(claim))
         await self._debrief.poll()
 
     async def _pass(self, claim: WakeClaim) -> None:
@@ -98,7 +106,7 @@ class WakePoller:
             log.exception("Wake settlement failed")
         finally:
             clear_tag_id()
-            self._running.pop(claim.group.unit)
+            self._running.pop(wake_lane(claim.group.unit))
 
     async def _run_and_settle(self, claim: WakeClaim) -> None:
         outcome: WakeOutcome = WakeFailed("cancelled")

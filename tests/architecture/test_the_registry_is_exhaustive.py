@@ -100,8 +100,14 @@ def _shared_builder_names(tree: ast.Module) -> set[str]:
         if module_name not in parsed:
             parsed[module_name] = ast.parse(path.read_text())
         module = parsed[module_name]
-        fn = next((n for n in module.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-                   and n.name == function), None)
+        owner, sep, member = function.partition(".")
+        body = module.body
+        if sep:
+            cls = next((n for n in body if isinstance(n, ast.ClassDef) and n.name == owner), None)
+            body = cls.body if cls is not None else []
+        name = member if sep else owner
+        fn = next((n for n in body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                   and n.name == name), None)
         if fn is None:
             return set()
         subtree = ast.Module(body=fn.body, type_ignores=[])
@@ -112,6 +118,9 @@ def _shared_builder_names(tree: ast.Module) -> set[str]:
                 name = call.func.id
                 target = bindings.get(name, (module_name, name))
                 names |= follow(*target)
+            if (sep and isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+                    and isinstance(call.func.value, ast.Name) and call.func.value.id == "self"):
+                names |= follow(module_name, f"{owner}.{call.func.attr}")
         return names
 
     bindings = imports(tree)
@@ -123,6 +132,10 @@ def _shared_builder_names(tree: ast.Module) -> set[str]:
             and call.func.id in bindings
         ):
             names |= follow(*bindings[call.func.id])
+    calls = {ast.unparse(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)}
+    if {"self._rooms.floor", "WakeInput", "self._assembler.assemble"} <= calls:
+        names |= follow("nora.app.wake_floor", "WakeRoomFloor.floor")
+        names |= follow("nora.memory.adapters.wake_blocks", "wake_blocks")
     return names
 
 

@@ -4,7 +4,6 @@ import logging
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from nora.agent import factory, tool_choice
 from nora.agent.dreamer import (
@@ -16,7 +15,6 @@ from nora.app.cognition_session import CognitionSessionRunner
 from nora.app.cognition_wiring import (
     SESSION_SHUTDOWN_GRACE_SECONDS,
     CognitionShutdown,
-    require_session_hook,
 )
 from nora.app.cognition_wiring import session_guidance as cognition_session_guidance
 from nora.app.composition_cognition import cognition_session
@@ -28,14 +26,9 @@ from nora.app.composition_dream import (
 )
 from nora.app.composition_helpers import _adaptor_budget, _reasoning_effort
 from nora.app.startup import StartupError
-from nora.app.wake import Floor, WakeEvaluator
-from nora.config import Config
 from nora.domain.ports import DreamAdaptor
-from nora.domain.stimuli import WakeHook, WakePolicy
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
-from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.language.lessons import CognitionLessons
-from nora.obs.metrics import Metrics
 
 """Dreamer and Cognition wiring steps."""
 
@@ -43,40 +36,6 @@ from nora.obs.metrics import Metrics
 log = logging.getLogger("nora.app.composition")
 
 
-
-
-def _build_wake_evaluator(
-    cfg: Config, store: SqlStimulusStore, units: Callable[[], Sequence[str]],
-    metrics: Metrics, on_wake: WakeHook | None,
-    session_units: Callable[[], Collection[str]] | None = None, floors_ready: bool = True,
-    upcoming: Callable[[str, int], Awaitable[Sequence[tuple[str, str]]]] | None = None,
-) -> WakeEvaluator:
-    """The cognition loop's wake evaluator: every"""
-    return WakeEvaluator(
-        store=store,
-        units=units,
-        policy=WakePolicy(
-            quiet_seconds=cfg.cognition.quiet_seconds,
-            cue_quiet_seconds=cfg.cognition.cue_quiet_seconds,
-            batch_max=cfg.cognition.batch_max,
-            max_age_seconds=cfg.cognition.max_age_seconds,
-            cooldown_seconds=cfg.cognition.cooldown_seconds,
-            max_concurrent_sessions=cfg.cognition.max_concurrent_sessions,
-            session_timeout_seconds=cfg.cognition.session_timeout_seconds,
-            backoff_max_seconds=cfg.cognition.backoff_max_seconds,
-            max_consecutive_failures=cfg.cognition.max_consecutive_failures,
-        ),
-        metrics=metrics,
-        floors=tuple(Floor.parse(f) for f in cfg.cognition.time_floors),
-        tz=ZoneInfo(cfg.cognition.timezone),
-        floor_grace_seconds=cfg.cognition.floor_grace_seconds,
-        mode="live",
-        store_timeout_seconds=cfg.cognition.store_timeout_seconds,
-        on_wake=on_wake,
-        session_units=session_units,
-        floors_ready=floors_ready,
-        upcoming=upcoming,
-    )
 
 
 @dataclass(frozen=True)
@@ -257,51 +216,14 @@ async def enabled(
     )
 
 
-@dataclass(frozen=True)
-class WakeWiring:
-    cognition_shutdown: Any
-    wake_evaluator: Any
-
-
-def wake(
-    cfg: Any, cognition_runner: Any, cognition_session_units: Any, cognition_upcoming: Any,
-    metrics: Any, stimulus_store: Any,
-) -> WakeWiring:
-
-    # The wake evaluator, after the Dreamer block so it can be handed the
-    # runner's hook. The boot check below refuses `enabled` with no runner or
-    # no hook. Only units a session can run for are woken.
-    wake_evaluator: WakeEvaluator | None = None
-    cognition_shutdown: CognitionShutdown | None = None
-    if stimulus_store is not None:
-        wake_evaluator = _build_wake_evaluator(
-            cfg,
-            store=stimulus_store,
-            units=lambda: sorted(cognition_session_units or ()),
-            metrics=metrics,
-            on_wake=cognition_runner.wake_hook if cognition_runner is not None else None,
-            session_units=(
-                None if cognition_session_units is None else (lambda: cognition_session_units)
-            ),
-            floors_ready=True,
-            upcoming=cognition_upcoming,
-        )
-        if cognition_runner is not None:
-            cognition_shutdown = CognitionShutdown(
-                evaluator=wake_evaluator,
-                runner=cognition_runner,
-                grace_seconds=SESSION_SHUTDOWN_GRACE_SECONDS,
-            )
-    try:
-        require_session_hook(
-            enabled=cfg.cognition.enabled,
-            runner=cognition_runner,
-            evaluator=wake_evaluator,
-            session_units=cognition_session_units,
-        )
-    except RuntimeError as exc:
-        raise StartupError(str(exc)) from exc
-    return WakeWiring(cognition_shutdown=cognition_shutdown, wake_evaluator=wake_evaluator)
+def legacy_cognition_shutdown(cfg: Any, runner: Any) -> CognitionShutdown | None:
+    if runner is None:
+        if cfg.cognition.enabled:
+            raise StartupError("[cognition] enabled but no session runner was built")
+        return None
+    return CognitionShutdown(
+        evaluator=None, runner=runner, grace_seconds=SESSION_SHUTDOWN_GRACE_SECONDS,
+    )
 
 
 @dataclass(frozen=True)

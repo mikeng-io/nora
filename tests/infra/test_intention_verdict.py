@@ -15,6 +15,7 @@ from nora.infra.sql.schema import MESSAGES
 from nora.memory.app.admission import Stored
 from nora.memory.domain.admission_proposals import Retire, Scope
 from nora.memory.wire import condition_matcher, intention_verifier
+from nora.testing.room_slots import FakeRoomSlots
 from tests.infra.test_cognitive_graph_admission import (
     CLAIM_PROPOSAL,
     PASS,
@@ -31,7 +32,9 @@ _CONDITION = {"person_id": "fixture-person", "platform": "signal", "room": "room
 
 
 async def _tick(engine, now):
-    await intention_verifier(engine, lambda: now, max_poll_gap_seconds=900).run_once()
+    await intention_verifier(
+        engine, lambda: now, max_poll_gap_seconds=900, room_slots=FakeRoomSlots({}),
+    ).run_once()
 
 
 async def _verdicts(engine):
@@ -152,7 +155,9 @@ async def test_verdict_and_stimulus_rollback_together_on_publish_failure(engine)
         ))
 
     errors = _Errors()
-    observe = graph_observe(engine, lambda: now, errors, analytics=AnalyticsConfig())
+    observe = graph_observe(
+        engine, lambda: now, errors, analytics=AnalyticsConfig(), room_slots=FakeRoomSlots({}),
+    )
     await observe.tick()
 
     assert errors.stages == ["intention_verify"]
