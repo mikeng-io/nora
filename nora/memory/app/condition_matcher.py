@@ -11,6 +11,7 @@ from nora.memory.domain.conditions import (
     Ending,
     Truth,
     decode_condition,
+    decode_condition_trigger,
     ending_for,
 )
 
@@ -32,12 +33,14 @@ class IntentionBatch(Protocol):
     async def open(self) -> Iterable[Mapping[str, object]]: ...
 
     async def evaluate(
-        self, intention: Mapping[str, object], condition: ConditionValue,
+        self, intention: Mapping[str, object], condition: ConditionValue, *, trigger: bool = False,
     ) -> Evaluation: ...
 
     async def end(
         self, intention: Mapping[str, object], ending: Ending, witness: Witness,
     ) -> None: ...
+
+    async def publish_due(self, intention: Mapping[str, object], witness: Witness) -> None: ...
 
 
 class ConditionMatcher:
@@ -46,6 +49,12 @@ class ConditionMatcher:
             ending, witness = await self._ending(batch, intention)
             if ending is not None and witness is not None:
                 await batch.end(intention, ending, witness)
+            elif intention["delivery_mode"] == "choose_moment":
+                trigger = decode_condition_trigger(intention["trigger"])
+                if trigger is not None:
+                    result = await batch.evaluate(intention, trigger, trigger=True)
+                    if result.truth == "true" and result.witness is not None:
+                        await batch.publish_due(intention, result.witness)
 
     async def close(
         self, batch: IntentionBatch, intention: Mapping[str, object], witness_id: str,

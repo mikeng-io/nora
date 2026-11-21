@@ -25,6 +25,7 @@ _ENTRY_NOTES = {
 _REFUSALS = {
     "not_this_delivery": "Only change the intention this pass delivers.",
     "invalid_field": "Fix the named field and submit that operation again.",
+    "invalid_trigger": "Use a time or an act_event, person_event or predicate condition.",
     "citation_not_shown": "Use a citation from this pass's context or graph reads.",
     "unrooted_citation": "Cite a graph row grounded in observation or computation.",
     "illegal_endpoints": "Check the referenced IDs and their row kinds.",
@@ -60,6 +61,8 @@ def _make_intention_commit(deps):
         when a commitment needs to be opened, revised, dropped or closed.
 
         On a call or an offered floor, commit only what your reply promises.
+        For choose_moment, use a time trigger or a condition trigger with the
+        act_event, person_event or predicate form.
         Returns `status`: ok, refused or unavailable, with a `note`.
 
         Args:
@@ -123,9 +126,12 @@ def _make_intention_commit(deps):
 
 def _entry(outcome: Stored | Refusal | Unavailable) -> dict:
     if isinstance(outcome, Refusal):
+        note = "invalid_trigger" if (outcome.reason, outcome.field) == (
+            "invalid_field", "trigger",
+        ) else outcome.reason
         return {
             "status": "refused", "reason": outcome.reason, "field": outcome.field,
-            "note": _REFUSALS.get(outcome.reason, "This operation was refused."),
+            "note": _REFUSALS.get(note, "This operation was refused."),
         }
     if isinstance(outcome, Unavailable):
         reason = "commit_uncertain" if outcome.commit_uncertain else "unavailable"

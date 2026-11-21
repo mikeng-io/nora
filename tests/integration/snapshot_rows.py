@@ -58,7 +58,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
     "graph_stimulus_claim": lambda n: {
         "unit": "u", "kind": "intention_due", "graph_id": f"generated-due-{n}",
         "occurrence": "", "claimant": "proactive", "pass_id": f"proactive-pass-{n}",
-        "state": "claimed", "claimed": T0,
+        "state": "parked", "claimed": T0, "settled": T0, "attempts": 3,
     },
     "debrief_obligation": lambda n: {
         "unit": "u", "room": "signal:generated-room", "pass_id": f"generated-pass-{n}",
@@ -398,7 +398,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
 #: The column each revision moves, and to what.
 REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
     "debrief_obligation": ("attempts", lambda n: n + 1),
-    "graph_stimulus_claim": ("claimed", lambda n: T0 + timedelta(seconds=n)),
+    "graph_stimulus_claim": ("settled", lambda n: T0 + timedelta(seconds=n)),
     "tool_call_log": ("tool_result", lambda i: {"revised": i}),
     "watch_result": ("content_hash", lambda i: f"generated-watch-hash-revised-{i}"),
     "claim_support": ("support_count", lambda i: i + 2),

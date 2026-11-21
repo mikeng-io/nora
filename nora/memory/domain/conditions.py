@@ -80,6 +80,13 @@ def decode_condition(form: str | None, value: object) -> ConditionValue | None:
     return None
 
 
+def decode_condition_trigger(trigger: object) -> ConditionValue | None:
+    if not isinstance(trigger, Mapping) or trigger.get("kind") != "condition":
+        return None
+    form = trigger.get("form")
+    return decode_condition(form if isinstance(form, str) else None, trigger.get("value"))
+
+
 def ending_for(
     done_when: Truth, holds_while: Truth, drop_when: Truth,
 ) -> Ending | None:

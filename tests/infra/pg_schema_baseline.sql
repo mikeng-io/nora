@@ -1300,7 +1300,7 @@ CONSTRAINT ck_forget_request_graph_reasoning CHECK (((reasoning IS NULL) OR (rea
 CONSTRAINT ck_forget_request_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
 CONSTRAINT ck_graph_search_embed_input CHECK ((embed_input = 'text'::text))
 CONSTRAINT ck_graph_stimulus_claim_settled CHECK (((state = 'claimed'::text) = (settled IS NULL))),
-CONSTRAINT ck_graph_stimulus_claim_state CHECK ((state = ANY (ARRAY['claimed'::text, 'closed'::text, 'released'::text])))
+CONSTRAINT ck_graph_stimulus_claim_state CHECK ((state = ANY (ARRAY['claimed'::text, 'closed'::text, 'released'::text, 'parked'::text])))
 CONSTRAINT ck_graph_stimulus_kind CHECK ((kind = ANY (ARRAY['new_item'::text, 'strong_cue'::text, 'failed_act'::text, 'dependency'::text, 'aggregate_crossing'::text, 'intention_due'::text, 'review_time'::text, 'valid_to'::text, 'deadline'::text, 'watched_source_changed'::text, 'absence'::text, 'verdict'::text, 'presence_change'::text])))
 CONSTRAINT ck_instagram_summons_mode CHECK ((mode = ANY (ARRAY['dry_run'::text, 'live'::text]))),
 CONSTRAINT ck_instagram_summons_state CHECK ((state = ANY (ARRAY['claimed'::text, 'unresolved'::text, 'ignored_summoner'::text, 'stale'::text, 'unreadable'::text, 'silent'::text, 'staged'::text, 'flushing'::text, 'published'::text, 'refused'::text, 'capped'::text, 'duplicate'::text, 'ambiguous'::text, 'failed'::text])))
@@ -2884,6 +2884,7 @@ at_ms bigint,
 attempt integer NOT NULL,
 attempted_at timestamp with time zone NOT NULL,
 attempts integer DEFAULT 0 CONSTRAINT memory_work_item_attempts_not_null NOT NULL,
+attempts integer DEFAULT 0 NOT NULL,
 attempts integer DEFAULT 0 NOT NULL,
 attempts integer DEFAULT 0 NOT NULL,
 attempts integer DEFAULT 0 NOT NULL,
@@ -4512,6 +4513,7 @@ reasoning text,
 reasoning_effort text NOT NULL,
 received_ms bigint NOT NULL,
 received_ms bigint NOT NULL,
+recheck_reason text,
 recognition_score double precision DEFAULT 0 NOT NULL,
 recognition_score double precision DEFAULT 0 NOT NULL,
 recorded_at bigint NOT NULL,
