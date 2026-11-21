@@ -17,27 +17,26 @@ from nora.app.composition_review import build_review_runner
 from nora.app.review_pass import REVIEW_RETRY_SECONDS, ReviewPass
 from nora.app.startup import StartupError
 from nora.config import ModelRoute
-from nora.domain.graph_stimuli import GraphStimulus
+from nora.domain.graph_registration import aggregate_graph_id
 from nora.domain.lineage import LiveRoom
-from nora.infra.sql.cognitive_graph_schema import CLAIM
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.instructions.dreamer import DreamerInstructions
-from nora.memory import ReadingRoom, ReviewInput, WakeClosed, WakeInput, pass_shown, wire
+from nora.memory import ReadingRoom, ReviewInput, WakeInput, wire
 from nora.memory.domain.pass_declarations import declaration
 from nora.obs.metrics import Metrics
 from nora.testing.scripted_agent import ScriptedTurn
 from tests.fakes import dreamer_runtime_for
 from tests.infra.test_graph_propose import BASIS
 from tests.infra.test_intention_verdict import _tick, _verdicts
-from tests.infra.test_lesson_tally import ended, rebuild, resting, tally_rows
+from tests.infra.test_lesson_tally import ended, resting, tally_rows
 from tests.infra.test_pass_anchors import NOW, SCOPE, reader
 from tests.infra.test_pass_assembly import _assembler
 from tests.infra.test_retrieval_scope import AT, OTHER, OTHER_ROOM, ROOM, UNIT, write_edge
 from tests.infra.test_retrieval_scope import scenario as scenario
-from tests.infra.test_review_admission import START, changed_tally, grade_rows, guess, lesson
+from tests.infra.test_review_admission import changed_tally, grade_rows, guess, lesson
 from tests.infra.test_room_busy import service, slots
 from tests.infra.test_situation_staleness import intention
-from tests.infra.test_wake_runner import WakeModel, claim, runner
+from tests.infra.test_wake_runner import WakeModel
 from tests.unit.test_dream_memory_budget import _tool_results
 
 
@@ -277,56 +276,33 @@ async def test_review_records_the_tally_refreshed_between_due_read_and_docket(
     assert '"contradiction": 3' in prompt and later["asserted_at"].isoformat() in prompt
 
 
-async def test_review_shows_all_three_counted_verdicts_and_cites_the_contradiction(scenario):
+@pytest.mark.parametrize("supports", [2, 3])
+async def test_review_caps_counted_verdicts_and_keeps_the_contradiction(scenario, supports):
     await scenario.claim("lesson", part="lesson", asserted_at=AT - timedelta(hours=1))
-    await ended(scenario, "earlier-leak", "leaked", lesson="lesson")
-    for support in ("later-support-a", "later-support-b"):
+    # The contradiction sorts last by graph id, so the capped case depends on priority.
+    verdict_ids = sorted(
+        (f"ending-{i}" for i in range(supports + 1)),
+        key=lambda id_: aggregate_graph_id("intention_verdict", (id_,), None),
+    )
+    *support_ids, leak = verdict_ids
+    await ended(scenario, leak, "leaked", lesson="lesson")
+    for support in support_ids:
         await intention(scenario, support, state="ended", ending="achieved", ended_at=NOW)
         await resting(scenario, support, "lesson")
     await _tick(scenario.engine, NOW)
     tally = (await tally_rows(scenario))["lesson"]
-    assert (tally["support"], tally["contradiction"]) == (2, 1)
+    assert (tally["support"], tally["contradiction"]) == (supports, 1)
     verdicts = await _verdicts(scenario.engine)
-    model = _model("lesson", "weakened", verdicts["earlier-leak"]["graph_id"])
+    contradiction = verdicts[leak]["graph_id"]
+    model = _model("lesson", "weakened", contradiction)
     review = _review(scenario, model)
     await review(await scenario.now())
 
     assert model.turn >= 1
     assert '"contradiction": 1' in model.prompt()
-    for verdict in verdicts.values():
-        assert verdict["graph_id"] in model.prompt(), verdict["intention_id"]
+    assert contradiction in model.prompt()
+    assert sum(verdict["graph_id"] in model.prompt() for verdict in verdicts.values()) == 3
     assert [row.grade for row in await grade_rows(scenario)] == ["weakened"]
-
-
-async def test_review_pages_all_contradictions_when_they_exceed_the_row_budget(scenario):
-    old = AT - timedelta(days=400)
-    await scenario.claim("lesson", part="lesson", asserted_at=old - timedelta(hours=1))
-    await intention(scenario, "old-leak", state="ended", ending="leaked", ended_at=old,
-                    asserted_at=old - timedelta(minutes=1))
-    leaks = [f"leak-{i:02}" for i in range(59)]
-    for leak in leaks:
-        await ended(scenario, leak, "leaked")
-    await _tick(scenario.engine, NOW)
-    for leak in (*leaks, "old-leak"):
-        await resting(scenario, leak, "lesson")
-    await rebuild(scenario, "lesson")
-    verdicts = {row["graph_id"] for row in (await _verdicts(scenario.engine)).values()}
-    assert len(verdicts) == 60
-    now = await scenario.now()
-    model = WakeModel([])
-    review = _review(scenario, model)
-    for tick in (now, now + timedelta(seconds=REVIEW_RETRY_SECONDS)):
-        await review(tick)
-
-    assert len(model.seen) == 2
-    pages = []
-    for call in model.seen:
-        prompt = call[0]["content"][0]["text"]
-        assert prompt.count("<item ") <= 60
-        assert "claim: lesson" in prompt and '"contradiction": 60' in prompt
-        pages.append({ref for ref in verdicts if ref in prompt})
-    assert [len(page) for page in pages] == [58, 2]
-    assert pages[0].isdisjoint(pages[1]) and set.union(*pages) == verdicts
 
 
 async def test_guess_profile_renders_its_refuted_grade(scenario):
@@ -361,55 +337,7 @@ async def test_weakened_grade_publishes_dependency_on_the_lesson(scenario):
     assembled = await assembler.assemble("wake", data, (), SCOPE, await scenario.now())
     agenda = next(block for block in assembled.blocks if block.name == "agenda")
     assert "claim: lesson" in str(agenda.body)
-    assert f"graph:{grade.id} outcome=weakened" in str(agenda.body)
-    assert grade.id in assembled.shown
-
-    await scenario.graph.tombstone(
-        CLAIM, unit=UNIT, row_id=grade.id, content_hash="fixture-deletion",
-    )
-    after = await assembler.assemble("wake", data, (), SCOPE, await scenario.now())
-    agenda = next(block for block in after.blocks if block.name == "agenda")
-    assert "claim: lesson" in str(agenda.body)
-    assert "outcome=weakened" not in str(agenda.body) and grade.id not in after.shown
-
-
-async def test_wake_weakening_obeys_the_audience_expanded_by_an_observation(scenario):
-    await scenario.claim("lesson", part="lesson", asserted_at=START)
-    await ended(scenario, "excluded-verdict", "leaked", lesson="lesson", excluded_persons=[OTHER])
-    await _tick(scenario.engine, NOW)
-    tally = (await tally_rows(scenario))["lesson"]
-    assert OTHER in tally["excluded_persons"]
-    review = _review(scenario, _model("lesson", "weakened", tally["graph_id"]))
-    await review(await scenario.now())
-    [grade] = await grade_rows(scenario)
-    [dependency] = [stimulus for stimulus in await SqlGraphStimuli(scenario.engine).read(UNIT)
-                    if stimulus.source == "review"]
-    await scenario.item("excluded-author-observation", person=OTHER)
-    observation = GraphStimulus(UNIT, "new_item", "excluded-author-observation", AT,
-                                "messages", room=ROOM, person=OTHER)
-    shown = set()
-
-    def observe():
-        shown.update(pass_shown() or ())
-
-    visible = WakeModel([], observe)
-    now = await scenario.now()
-    assert await runner(scenario, visible).run(
-        replace(claim(dependency), claimed=now),
-    ) == WakeClosed()
-    assert f"graph:{grade.id} outcome=weakened" in visible.prompt()
-    assert grade.id in shown
-
-    shown.clear()
-    excluded = WakeModel([], observe)
-    assert await runner(scenario, excluded).run(
-        replace(claim(dependency, observation), claimed=now),
-    ) == WakeClosed()
-    assert {"lesson", observation.graph_id} <= shown
-    assert observation.graph_id in excluded.prompt()
-    assert (
-        grade.id in excluded.prompt(), "outcome=weakened" in excluded.prompt(), grade.id in shown,
-    ) == (False, False, False)
+    assert assembled.agenda_stimuli == ("lesson",)
 
 
 def test_review_fails_startup_when_the_resolved_judge_is_the_writer(example_config):

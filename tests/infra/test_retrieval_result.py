@@ -13,12 +13,10 @@ from nora.memory.domain.retrieval import (
     RetrievalAnchors,
     RetrievedEdge,
     RetrievedPerson,
-    ReviewWeakening,
 )
 from tests.infra.test_retrieval_scope import (
     AT,
     BOUNDS,
-    OTHER,
     PERSON,
     READ,
     ROOM,
@@ -60,27 +58,6 @@ async def test_exact_edge_seed_carries_its_type_and_endpoints(scenario) -> None:
     assert (edge.graph_id, edge.kind, edge.content) == (
         edge_id, "edge", {"type": "cites", "src_id": "claim", "dst_id": "evidence"},
     )
-
-
-async def test_weakening_lookup_requires_a_visible_grades_link(scenario) -> None:
-    await scenario.claim("lesson", part="lesson")
-    await scenario.claim("grade", part="grade", grade="weakened")
-    await scenario.graph.create(EDGE, {
-        "id": "scoped-grades-link", "unit": UNIT, "kind": "edge", "type": "grades",
-        "src_id": "grade", "dst_id": "lesson", "basis": "inferred", "state": "live",
-        "reasoning": "deduced", "confidence": "high",
-        "exposure": "internal", "writer": "fixture", "asserted_at": AT,
-        "excluded_persons": [OTHER],
-    })
-    ref = ReviewWeakening(grade_id="grade", lesson_id="lesson")
-    anchors = RetrievalAnchors(graph_ids=("lesson", "grade"), review_weakenings=(ref,))
-    service = scenario.service()
-    visible = await service.retrieve(READ, anchors, BOUNDS)
-    assert visible.review_weakenings == frozenset({ref})
-
-    excluded = await service.retrieve(READ, anchors, BOUNDS, concerns=frozenset({OTHER}))
-    assert {row.graph_id for row in excluded.rows} == {"lesson", "grade"}
-    assert excluded.review_weakenings == frozenset()
 
 
 async def test_stale_index_text_never_revives_a_retired_claim(scenario) -> None:

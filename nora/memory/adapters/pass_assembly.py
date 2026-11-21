@@ -20,7 +20,6 @@ from nora.memory.domain.pass_inputs import (
     ProactiveInput,
     ReviewInput,
     WakeInput,
-    review_weakening,
 )
 from nora.memory.domain.presentations import lessons, related
 from nora.memory.domain.retrieval import RetrievalResult
@@ -54,11 +53,6 @@ class PassAssembler:
             result = RetrievalResult("unavailable", bounds, cause=seeds.cause)
         else:
             anchors = seeds.anchors
-            if isinstance(data, WakeInput):
-                anchors = replace(anchors, review_weakenings=tuple(
-                    ref for stimulus in data.stimuli if stimulus.unit == scope.unit
-                    and (ref := review_weakening(stimulus)) is not None
-                ))
             if "graph_lessons" in choice.presentations and seeds.collective[0].graph_id:
                 nora = seeds.collective[0].graph_id
                 anchors = replace(anchors, graph_ids=(*anchors.graph_ids, nora))

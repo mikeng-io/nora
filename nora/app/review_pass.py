@@ -118,6 +118,7 @@ class ReviewPass:
         self._surface, self._admission, self._agent = surface, admission, agent
         self._instructions, self._budget, self._model = instructions, budget, model
         self._revisions, self._policy, self._clock = revisions, policy, clock
+        # ponytail: retry and rotation state is in memory, so a restart resets both.
         self._attempts: dict[str, _UnitAttempt] = {}
         self._cursors: dict[tuple[str, str], ReviewCursor] = {}
         self._running: dict[str, asyncio.Task[None]] = {}
@@ -198,9 +199,6 @@ class ReviewPass:
         revisions.update(assembled.review_due)
         reviewed = frozenset(revisions.items())
         started = self._clock()
-        previous = self._attempts.get(unit)
-        if previous is not None and previous.blocks(reviewed, started):
-            return True
         self._cursors[key] = assembled.review_next
         with root_span("review", links=(), parent=None, **{TRACE_KIND: "generation"}):
             self._attempts[unit] = _UnitAttempt(

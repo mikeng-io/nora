@@ -13,7 +13,8 @@ from nora.memory.domain.pass_declarations import declaration
 from nora.memory.domain.pass_inputs import ReviewCursor, ReviewInput, ReviewTarget
 
 _STATES = ("live", "awaiting_weighing")
-_EVIDENCE_PER_TARGET = 3
+# ponytail: show the lesson tally and at most three counted verdicts, contradictions first.
+_LESSON_VERDICT_CAP = 3
 
 
 def _due_guesses(unit: str, now: datetime) -> sa.Select:
@@ -73,61 +74,40 @@ async def review_anchors(
     if data.after is not None:
         # Wrap to the head after all keys past the previous page have had a turn.
         key = sa.tuple_(priority, row.graph_id)
-        before = (key < data.after.target if data.after.after_verdict is not None
-                  else key <= data.after.target)
-        query = query.order_by(sa.case((before, 1), else_=0))
+        query = query.order_by(sa.case((key <= data.after.target, 1), else_=0))
     cap = declaration("review").bounds(now).rows
-    minimum = 1 + _EVIDENCE_PER_TARGET
-    candidates = (await conn.execute(query.order_by(priority, row.graph_id)
-                                    .limit(cap // minimum))).all()
+    candidates = await conn.execute(
+        query.order_by(priority, row.graph_id).limit(cap // (2 + _LESSON_VERDICT_CAP)),
+    )
     due: list[str] = []
     evidence: list[tuple[str, str]] = []
     cursor = None
     since = None
-    remaining = cap
     for row in candidates:
-        if remaining < minimum:
-            break
         id_ = row.graph_id
-        target = row.priority, id_
-        cursor_after = None
         if row.window_end is None:
-            after_verdict = (data.after.after_verdict
-                             if data.after is not None and data.after.target == target else None)
-            evidence_rows = await _lesson_evidence(
-                conn, graph, unit, id_, now, after_verdict, remaining,
-            )
-            if len(evidence_rows) == remaining:
-                # Start a fresh docket before splitting a lesson's evidence.
-                if due:
-                    break
-                evidence_rows = evidence_rows[:-1]
-                last = evidence_rows[-1]
-                cursor_after = last.priority, last.graph_id
+            evidence_rows = await _lesson_evidence(conn, graph, unit, id_, now)
         else:
             evidence_rows = await _guess_evidence(conn, graph, row.asserted_at, row.window_end, now)
         refs = tuple(dict.fromkeys(item.graph_id for item in evidence_rows))
         since = min(since or now, row.event_time, *(item.event_time for item in evidence_rows))
         due.append(id_)
         evidence.extend((ref, id_) for ref in refs)
-        remaining -= 1 + len(refs)
-        cursor = ReviewCursor(target, cursor_after)
+        cursor = ReviewCursor((row.priority, id_))
     return tuple(due), tuple(evidence), cursor, since
 
 
 async def _lesson_evidence(
     conn: AsyncConnection, graph: FromClause, unit: str, lesson: str, now: datetime,
-    after: tuple[int, str] | None, limit: int,
 ) -> list[sa.Row]:
     row = graph.c
     tally = sa.and_(row.source == "lesson_tally", row.image["claim_id"].astext == lesson)
     priority = sa.case((tally, 0), (row.image["ending"].astext == "leaked", 1), else_=2)
     attached = tally | row.graph_id.in_(lesson_verdict_ids(unit, lesson))
-    if after is not None:
-        attached &= tally | (sa.tuple_(priority, row.graph_id) > after)
-    result = await conn.execute(sa.select(
-        row.graph_id, row.event_time, priority.label("priority"),
-    ).where(attached, row.event_time <= now).order_by(priority, row.graph_id).limit(limit))
+    query = sa.select(row.graph_id, row.event_time).where(attached, row.event_time <= now)
+    result = await conn.execute(
+        query.order_by(priority, row.graph_id).limit(1 + _LESSON_VERDICT_CAP),
+    )
     return list(result)
 
 
@@ -140,7 +120,7 @@ async def _guess_evidence(
     ordinary = sa.and_(row.kind.in_(("item", "aggregate")), ~source_health)
     result: list[sa.Row] = []
     for condition, cap in (
-        (ordinary & row.event_time.between(start, end), _EVIDENCE_PER_TARGET - 1),
+        (ordinary & row.event_time.between(start, end), 2),
         ((source_health | computed) & row.event_time.between(end, now), 1),
     ):
         result.extend(await conn.execute(sa.select(row.graph_id, row.event_time).where(

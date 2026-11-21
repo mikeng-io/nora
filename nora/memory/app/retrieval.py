@@ -94,11 +94,6 @@ class RetrievalService:
                 if fresh.outside_window:
                     walk.limits["time_window"] = None
                 rows = await graph.load(walk.distances, already_shown)
-                requested = tuple(ref for ref in anchors.review_weakenings
-                                  if ref.lesson_id in walk.distances)
-                weakenings = (
-                    await graph.visible_review_weakenings(requested) if requested else frozenset()
-                )
         except RetrievalUnavailableError as exc:
             return RetrievalResult("unavailable", bounds, cause=str(exc))
         if any(row.unavailable for row in rows):
@@ -114,7 +109,7 @@ class RetrievalService:
         return RetrievalResult(
             "partial" if degraded or walk.limits else "ok",
             bounds, rows, tuple(walk.limits), degraded,
-            sum(not row.already_shown for row in rows), review_weakenings=weakenings,
+            sum(not row.already_shown for row in rows),
         )
 
     async def _seed(

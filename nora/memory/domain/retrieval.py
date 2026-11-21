@@ -52,17 +52,10 @@ class RetrievalBounds:
 
 
 @dataclass(frozen=True, slots=True)
-class ReviewWeakening:
-    grade_id: str
-    lesson_id: str
-
-
-@dataclass(frozen=True, slots=True)
 class RetrievalAnchors:
     graph_ids: tuple[str, ...] = ()
     handles: tuple[str, ...] = ()
     query: str = ""
-    review_weakenings: tuple[ReviewWeakening, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,7 +135,6 @@ class RetrievalResult:
     limits: tuple[RetrievalLimit, ...] = ()
     cause: str | None = None
     new_count: int = 0
-    review_weakenings: frozenset[ReviewWeakening] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,10 +163,6 @@ class ScopedGraph(Protocol):
     async def walk_neighbours(self, graph_id: str, seen: frozenset[str]) -> Candidates: ...
 
     async def fresh_items(self, distances: Mapping[str, int]) -> FreshCandidates: ...
-
-    async def visible_review_weakenings(
-        self, requested: tuple[ReviewWeakening, ...],
-    ) -> frozenset[ReviewWeakening]: ...
 
     async def load(
         self, distances: Mapping[str, int], already_shown: frozenset[str],

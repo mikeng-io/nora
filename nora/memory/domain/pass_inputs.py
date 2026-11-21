@@ -7,7 +7,7 @@ from typing import Literal
 from nora.domain.blocks import ContextBlock
 from nora.domain.blocks import assemble as render_blocks
 from nora.domain.graph_stimuli import GraphStimulus
-from nora.memory.domain.retrieval import ReadingRoom, RetrievalStatus, ReviewWeakening
+from nora.memory.domain.retrieval import ReadingRoom, RetrievalStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,12 +49,6 @@ class WakeInput:
     stimuli: tuple[GraphStimulus, ...]
 
 
-def review_weakening(stimulus: GraphStimulus) -> ReviewWeakening | None:
-    if stimulus.kind == "dependency" and stimulus.source == "review" and stimulus.occurrence:
-        return ReviewWeakening(stimulus.occurrence, stimulus.graph_id)
-    return None
-
-
 @dataclass(frozen=True, slots=True)
 class DebriefInput:
     items: tuple[str, ...]
@@ -71,7 +65,6 @@ class ReviewTarget:
 @dataclass(frozen=True, slots=True)
 class ReviewCursor:
     target: tuple[int, str]
-    after_verdict: tuple[int, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
