@@ -139,11 +139,12 @@ def test_agents_md_lists_every_skill_and_only_real_ones() -> None:
 
 
 #: Names of coding-agent runtimes, session hosts, their tool names and model
-#: families. Devin's GitHub services (Devin Review, its release automation) are
-#: external services the skills describe, so "Devin" alone is not listed.
+#: families, matched across line wraps. Devin's GitHub services (Devin Review,
+#: its release automation) are external services the skills describe, so
+#: "Devin" alone is not listed. "Cursor" is the product only when capitalised.
 _AGENT_SPECIFIC = re.compile(
-    r"claude code|\bcodex\b|\bt3\b|\bcursor\b|kimi|run_in_background|delegate_task|"
-    r"\brtk\b|\bsonnet\b|\bopus\b|gpt-\d|swe-2",
+    r"claude\s+code|\bcodex\b|\bt3\b|(?-i:\bCursor\b)|\bkimi\b|run_in_background|"
+    r"delegate_task|\brtk\b|\bsonnet\b|\bopus\b|gpt-\d|swe-2",
     re.IGNORECASE,
 )
 
@@ -153,16 +154,17 @@ def test_policy_and_skills_name_no_coding_agent() -> None:
     quirk belongs in `.agents/runtimes/` and a model in `.agents/lanes.md`;
     written into a skill, it is followed by every other agent too. Vendored
     third-party skills (a PROVENANCE.md beside SKILL.md) are theirs."""
-    paths = [ROOT / "ORCHESTRATION.md", ROOT / "REVIEW.md"]
+    paths = [ROOT / "AGENTS.md", ROOT / "ORCHESTRATION.md", ROOT / "REVIEW.md"]
     for skill in _skill_dirs():
         if (skill / "PROVENANCE.md").exists():
             continue
         paths += sorted(skill.rglob("*.md"))
-    hits = [
-        f"{p.relative_to(ROOT)}:{n}: {m.group(0)}"
-        for p in paths
-        for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
-        for m in [_AGENT_SPECIFIC.search(line)]
-        if m
-    ]
-    assert hits == [], "agent-specific names outside .agents/runtimes and lanes.md:\n" + "\n".join(hits)
+    hits = []
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        for match in _AGENT_SPECIFIC.finditer(text):
+            line = text.count("\n", 0, match.start()) + 1
+            hits.append(f"{path.relative_to(ROOT)}:{line}: {' '.join(match.group(0).split())}")
+    assert hits == [], "agent-specific names outside .agents/runtimes and lanes.md:\n" + "\n".join(
+        hits
+    )
