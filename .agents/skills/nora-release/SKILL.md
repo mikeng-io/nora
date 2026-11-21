@@ -37,8 +37,8 @@ remain included. `Release-As:` is unsupported. Existing versions/tags stay intac
 including internal commits and merges, stop automatic processing before version
 writes. Never use a footer to request major. Document the incompatible
 interface/config and its migration; only the owner selects the bump, at an exact
-full current master SHA. A break that moves only the operator's own host may ship
-as patch/minor; the `Release-Bump: minor` floor still binds.
+full current master SHA, patch/minor included (for example, a break that moves
+only the operator's own host); the `Release-Bump: minor` floor still binds.
 
 ## 2. Follow automatic preparation and publication
 

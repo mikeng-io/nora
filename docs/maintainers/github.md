@@ -132,8 +132,9 @@ to PATCH, including `feat`. Authors mark a complete new product capability or a
 new/deprecated documented supported integration API/CLI with the commit footer
 `Release-Bump: minor`. The planner consumes that decision without another approval
 or classifier. `!` / `BREAKING CHANGE:` markers across the range stop automatic
-processing before version writes; the owner selects their bump (patch/minor when
-only the operator's own host moves), never below the `Release-Bump: minor` floor.
+processing before version writes; the owner selects their bump, patch/minor
+included (for example, when only the operator's own host moves), never below the
+`Release-Bump: minor` floor.
 
 The repository has native auto-merge enabled. Only the generated release PR on
 `release-please--branches--master--components--nora` gets `gh pr merge --auto
