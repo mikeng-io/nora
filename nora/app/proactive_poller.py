@@ -7,8 +7,8 @@ from datetime import datetime, timedelta
 from typing import Protocol
 
 from nora.access import IdentityAccess
-from nora.domain.lineage import split_room
 from nora.domain.models import ConversationTarget
+from nora.engagement.slot_keys import resolve_slot_room
 from nora.engagement.slots import ConversationSlots
 from nora.memory import DebriefObligation, DueIntention, ProactiveClaim
 from nora.policy import Policy
@@ -37,13 +37,9 @@ class ProactiveLanding:
 
     async def resolve(self, due: DueIntention) -> ConversationTarget | None:
         if due.origin_room is not None:
-            platform, room = split_room(due.origin_room)
-            rooms = [candidate for candidate in self._policy.rooms()
-                     if candidate.unit == due.unit and room in candidate.ids
-                     and platform in (None, candidate.platform)]
-            if len(rooms) != 1:
+            candidate = resolve_slot_room(self._policy.rooms(), due.origin_room, unit=due.unit)
+            if candidate is None:
                 return None
-            candidate = rooms[0]
             direct = not candidate.ids.isdisjoint(
                 await self._access.direct_addresses(candidate.platform),
             )
@@ -91,7 +87,7 @@ class ProactivePoller:
 
     async def _process(self, due: DueIntention) -> None:
         target = await self._landing.resolve(due)
-        key = (target.platform, target.conversation_id) if target is not None else None
+        key = self._slots.key((target.platform, target.conversation_id)) if target else None
         if key is not None and not self._slots.try_acquire(key):
             return
         try:

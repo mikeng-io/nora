@@ -74,6 +74,13 @@ from nora.memory.domain.registration import (
     PROTECTED_ITEM_SOURCES as PROTECTED_ITEM_SOURCES,
 )
 from nora.memory.domain.retrieval import ReadingRoom as ReadingRoom
+from nora.memory.domain.wake import WakeClaim as WakeClaim
+from nora.memory.domain.wake import WakeClosed as WakeClosed
+from nora.memory.domain.wake import WakeFailed as WakeFailed
+from nora.memory.domain.wake import WakeGroup as WakeGroup
+from nora.memory.domain.wake import WakeOutcome as WakeOutcome
+from nora.memory.domain.wake import WakePass as WakePass
+from nora.memory.domain.wake import WakePolicy as WakePolicy
 
 
 def __getattr__(name: str):

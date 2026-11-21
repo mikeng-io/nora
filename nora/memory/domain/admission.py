@@ -57,7 +57,7 @@ FormRefusal = Literal[
 WriteRefusal = Literal[
     "stale_base", "credential", "doctrine", "content", "unsafe_page_reference",
     "not_open", "witness_not_met", "untyped_condition", "duplicate_delivery",
-    "not_this_delivery", "citation_outside_pass", "not_a_commit",
+    "not_this_delivery", "citation_outside_pass", "not_a_commit", "room_busy",
 ]
 RefusalReason = Literal[FormRefusal, WriteRefusal]
 

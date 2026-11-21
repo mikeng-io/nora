@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import cast
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.dialects.postgresql import distinct_on, insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.infra.sql.audit import transcript_select
@@ -63,11 +63,33 @@ class SqlDebriefStore:
             )).mappings().one_or_none()
         if row is None:
             return None
-        return DebriefObligation(
-            row["unit"], row["room"], row["pass_id"], cast(Occasion, row["occasion"]),
-            row["intention"], row["created"], row["first_message_id"], row["last_message_id"],
-            None if row["proposal_ids"] is None else tuple(row["proposal_ids"]),
-        )
+        return _obligation(row)
+
+    async def pending_retries(self) -> tuple[DebriefObligation, ...]:
+        oldest = (sa.select(*_C).where(_C.state == "pending", _C.attempts >= MAX_SLOT_ATTEMPTS)
+                  .ext(distinct_on(_C.unit, _C.room))
+                  .order_by(_C.unit, _C.room, _C.created, _C.pass_id))
+        async with self._engine.connect() as conn:
+            return tuple(_obligation(row) for row in (await conn.execute(oldest)).mappings())
+
+    async def pending_retry(self, row: DebriefObligation) -> DebriefObligation | None:
+        async with self._engine.connect() as conn:
+            current = (await conn.execute(sa.select(*_C).where(
+                _C.unit == row.unit, _C.pass_id == row.pass_id, _C.state == "pending",
+                _C.attempts >= MAX_SLOT_ATTEMPTS,
+            ))).mappings().one_or_none()
+        return _obligation(current) if current is not None else None
+
+    async def record_retry_failure(self, row: DebriefObligation) -> None:
+        attempts = _C.attempts + 1
+        async with self._engine.begin() as conn:
+            await conn.execute(sa.update(JOURNAL).where(
+                _C.unit == row.unit, _C.pass_id == row.pass_id, _C.state == "pending",
+                _C.attempts >= MAX_SLOT_ATTEMPTS,
+            ).values(
+                attempts=attempts,
+                state=sa.case((attempts >= 2 * MAX_SLOT_ATTEMPTS, "parked"), else_="pending"),
+            ))
 
     async def record_proposal_ids(
         self, row: DebriefObligation, proposal_ids: tuple[ProposalId, ...],
@@ -141,6 +163,14 @@ class SqlDebriefStore:
                 )
                 for item in rows
             )
+
+
+def _obligation(row: sa.RowMapping) -> DebriefObligation:
+    return DebriefObligation(
+        row["unit"], row["room"], row["pass_id"], cast(Occasion, row["occasion"]),
+        row["intention"], row["created"], row["first_message_id"], row["last_message_id"],
+        None if row["proposal_ids"] is None else tuple(row["proposal_ids"]),
+    )
 
 
 async def insert_pending(conn: AsyncConnection, row: DebriefObligation, *, attempts: int) -> bool:

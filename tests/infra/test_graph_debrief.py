@@ -25,6 +25,7 @@ from nora.memory.adapters.tools.intentions import _make_intention_commit
 from nora.memory.domain.acts import Act, ActIdentity
 from nora.memory.wire import admission
 from nora.obs.metrics import Metrics
+from nora.testing.room_slots import FakeRoomSlots
 from tests.infra.test_cognitive_graph_admission import PASS, _rows
 from tests.infra.test_condition_matcher import _health
 from tests.infra.test_pass_assembly import _assembler
@@ -71,7 +72,7 @@ def wiring(scenario, *answers, clock=lambda: WALL + timedelta(hours=1), service=
         service = admission(
             scenario.engine, scenario.persons, scenario.policy,
             LeakGuard(Doctrine((), "", "", "fixture", "", 0), "fixture-canary"),
-            content_checks=False,
+            content_checks=False, room_slots=FakeRoomSlots({}),
         )
     return graph_debrief.Wiring(
         SqlDebriefStore(scenario.engine, acts), service, _assembler(scenario),

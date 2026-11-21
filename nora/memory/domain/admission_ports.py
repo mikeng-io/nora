@@ -33,6 +33,11 @@ class AdmissionResult:
     retirements: tuple[Stored, ...]
 
 
+class RoomSlots(Protocol):
+    def resolve(self, room: str, unit: str) -> str | None: ...
+    def held(self, room: str) -> bool: ...
+
+
 class AdmissionStore(Protocol):
     async def read(self, unit: str, ids: frozenset[str]) -> Mapping[str, RowFacts]: ...
 

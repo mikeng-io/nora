@@ -594,7 +594,6 @@ ADD CONSTRAINT uq_extraction_claim UNIQUE (extraction_id, ordinal);
 ADD CONSTRAINT uq_extraction_queue_message UNIQUE (message_id);
 ADD CONSTRAINT uq_fetched_pages_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_forget_request_graph_replaces UNIQUE (replaces);
-ADD CONSTRAINT uq_graph_stimulus_claim_pass UNIQUE (unit, pass_id);
 ADD CONSTRAINT uq_intention_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_intention_verdict_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_memory_node_kind_source UNIQUE (kind, source_id);
@@ -760,7 +759,6 @@ ALTER TABLE ONLY public.graph_search
 ALTER TABLE ONLY public.graph_stimulus
 ALTER TABLE ONLY public.graph_stimulus
 ALTER TABLE ONLY public.graph_stimulus
-ALTER TABLE ONLY public.graph_stimulus_claim
 ALTER TABLE ONLY public.graph_stimulus_claim
 ALTER TABLE ONLY public.graph_stimulus_claim
 ALTER TABLE ONLY public.instagram_summons
@@ -1239,7 +1237,7 @@ CONSTRAINT ck_computer_tasks_status CHECK ((status = ANY (ARRAY['cancelled'::tex
 CONSTRAINT ck_corridor_speed_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
 CONSTRAINT ck_debrief_obligation_attempts CHECK ((attempts >= 0)),
 CONSTRAINT ck_debrief_obligation_settled CHECK (((state = 'settled'::text) = (settled IS NOT NULL))),
-CONSTRAINT ck_debrief_obligation_state CHECK ((state = ANY (ARRAY['pending'::text, 'settled'::text]))),
+CONSTRAINT ck_debrief_obligation_state CHECK ((state = ANY (ARRAY['pending'::text, 'settled'::text, 'parked'::text]))),
 CONSTRAINT ck_debrief_obligation_window CHECK (((first_message_id IS NULL) = (last_message_id IS NULL)))
 CONSTRAINT ck_derived_places_kind CHECK ((source_kind = ANY (ARRAY['home'::text, 'work'::text, 'unlabeled'::text]))),
 CONSTRAINT ck_dispute_graph_basis CHECK ((basis = 'observed'::text)),
