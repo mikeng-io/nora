@@ -62,26 +62,11 @@ const cjkFace = `@font-face{font-family:"Noto Sans HK";src:url(${cjkFont}) forma
     <title>{title ?? t.meta.title}</title>
     <meta name="description" content={t.meta.description} />
     {!index && <meta name="robots" content="noindex" />}
-    <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#f4f2f2" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#141112" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0d0e10" />
 
-    <script is:inline>
-      // Before first paint: an explicit lighting choice wins over the system.
-      // Storage can be missing or throw (private windows); the system
-      // preference then stands and nothing breaks.
-      try {
-        const t = localStorage.getItem("nora-theme");
-        if (t === "light" || t === "dark") {
-          document.documentElement.dataset.theme = t;
-          for (const m of document.querySelectorAll('meta[name="theme-color"]')) {
-            m.content = t === "dark" ? "#141112" : "#f4f2f2";
-          }
-        }
-      } catch {}
-    </script>
     <Font cssVariable="--font-inter" preload />
-    <Font cssVariable="--font-wordmark" preload />
+    <Font cssVariable="--font-bricolage" preload />
     <Font cssVariable="--font-mono" />
     {isZh && <link rel="preload" href={cjkFont} as="font" type="font/woff2" crossorigin />}
     {isZh && <style is:inline set:html={cjkFace} />}
@@ -123,37 +108,7 @@ const cjkFace = `@font-face{font-family:"Noto Sans HK";src:url(${cjkFont}) forma
       {t.nav.skip}
     </a>
     <Header locale={locale} />
-    <main id="main" tabindex="-1">
-      <slot />
-    </main>
+    <slot />
     <Footer locale={locale} />
-    <script>
-      import "../scripts/prefs.ts";
-      import "../scripts/sound.ts";
-    </script>
   </body>
 </html>
-
-<style>
-  .skip {
-    position: fixed;
-    left: 16px;
-    top: 12px;
-    z-index: 100;
-    padding: 10px 16px;
-    border-radius: var(--radius-control);
-    background: var(--ink);
-    color: var(--studio);
-    font-weight: 600;
-    transform: translateY(-160%);
-    transition: transform var(--dur) var(--ease);
-  }
-
-  .skip:focus-visible {
-    transform: none;
-  }
-
-  main:focus {
-    outline: none;
-  }
-</style>

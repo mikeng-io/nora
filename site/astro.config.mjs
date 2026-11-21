@@ -1,8 +1,7 @@
-// Nora's public site. Static output, no adapter, no client framework: every
-// page is HTML + CSS plus small vanilla scripts (the chat demo, the lighting
-// and language choices, the character-sheet viewer, her notebook, the loop's
-// signal, sound, and Nora herself in src/scripts/nora/), each progressive:
-// the page reads in full without them.
+// Nora's public site. Static output, no adapter, no client framework: the
+// page is HTML + CSS that reads in full on its own, and one progressive
+// module (src/journey/) that turns it into the stage: a painted world in
+// Three.js, Nora's layered rig and the scroll-told story (DESIGN.md §6, §9).
 import { defineConfig, fontProviders } from "astro/config";
 import { cjkCoverage } from "./scripts/cjk-coverage.mjs";
 
@@ -31,15 +30,19 @@ export default defineConfig({
       },
     },
     {
-      // The wordmark face, subset to the four glyphs of "Nora" (1.2 KB):
-      // DESIGN.md allows Space Grotesk for her name and nothing else, so
-      // the file cannot be used for anything else either.
+      // Display, headings and the wordmark (DESIGN.md §4), with its optical-size axis.
       provider: fontProviders.local(),
-      name: "Space Grotesk",
-      cssVariable: "--font-wordmark",
-      fallbacks: ["sans-serif"],
+      name: "Bricolage Grotesque",
+      cssVariable: "--font-bricolage",
+      fallbacks: ["Noto Sans HK", "PingFang HK", "system-ui", "sans-serif"],
       options: {
-        variants: [{ weight: "300 700", style: "normal", src: ["./src/fonts/space-grotesk-nora.woff2"] }],
+        variants: [
+          {
+            weight: "200 800",
+            style: "normal",
+            src: [fontsource("bricolage-grotesque", "bricolage-grotesque-latin-opsz-normal.woff2")],
+          },
+        ],
       },
     },
     {

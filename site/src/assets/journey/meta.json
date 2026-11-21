@@ -1,0 +1,70 @@
+{
+ "spots": {
+  "hero": {
+   "layer": 3,
+   "feet": [
+    0.74,
+    0.9
+   ],
+   "height": 0.5
+  },
+  "path": {
+   "layer": 3,
+   "feet": [
+    0.63,
+    0.885
+   ],
+   "height": 0.6
+  },
+  "night": {
+   "layer": 3,
+   "feet": [
+    0.63,
+    0.885
+   ],
+   "height": 0.6
+  },
+  "terrace": {
+   "layer": 2,
+   "feet": [
+    0.8,
+    0.93
+   ],
+   "height": 0.56
+  },
+  "gate": {
+   "layer": 3,
+   "feet": [
+    0.64,
+    0.9
+   ],
+   "height": 0.44
+  }
+ },
+ "pavilions": {
+  "harbour": [
+   0.252404,
+   0.776709
+  ],
+  "slope": [
+   0.348558,
+   0.505342
+  ],
+  "terraces": [
+   0.754808,
+   0.470085
+  ],
+  "spur": [
+   0.813101,
+   0.74359
+  ]
+ },
+ "gate": {
+  "center": [
+   0.498035,
+   0.472561
+  ],
+  "radius": 0.174175,
+  "radiusBasis": "height"
+ }
+}

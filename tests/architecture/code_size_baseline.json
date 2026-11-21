@@ -2091,12 +2091,6 @@
    "report": 126
   }
  },
- "site/scripts/make_rig.py": {
-  "comment_blocks": 1,
-  "functions": {
-   "build": 129
-  }
- },
  "tests/architecture/test_agent_skills.py": {
   "internal_docstrings": 1
  },
