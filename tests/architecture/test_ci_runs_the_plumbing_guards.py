@@ -22,7 +22,6 @@ PLUMBING_GUARDS = (
     "tests/architecture/test_release_plan.py",
     "tests/architecture/test_release_config_matches_the_repo.py",
     "tests/architecture/test_dockerfile_bases_are_pinned.py",
-    "tests/architecture/test_site_csp_takes_script_hashes.py",
     "tests/architecture/test_doc_references_resolve.py",
 )
 

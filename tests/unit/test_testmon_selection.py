@@ -257,8 +257,7 @@ def test_every_repo_package_root_resolves():
     graph — a src/ or unknown layout would raise (ALL), never a subset."""
     root = Path(__file__).resolve().parents[2]
     graph = _import_graph(root)
-    for top in ("nora", "evals", "scripts", "tests", "app", "deploy",
-                "showreel"):
+    for top in ("nora", "evals", "scripts", "tests", "app", "deploy"):
         assert top in graph
     # `site/` is stdlib-shadowed — no interpreter can import it, so it is
     # correctly excluded rather than resolved to the wrong package

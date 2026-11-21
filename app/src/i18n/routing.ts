@@ -4,9 +4,6 @@ import { DEFAULT_LOCALE, LOCALES } from "./locales";
 
 // zh-Hant is the default: the circle talks in Cantonese-inflected Traditional
 // Chinese, and so does Nora's own doctrine; English is the second audience.
-// The public site (site/) makes the same choice and shares this hostname:
-// it owns `/` and `/en/` exactly, so the portal's pages never live at a
-// bare locale root (site/README.md, "Going live").
 export const routing = defineRouting({
   locales: LOCALES,
   defaultLocale: DEFAULT_LOCALE,

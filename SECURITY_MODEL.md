@@ -7,7 +7,7 @@ from the code. Security scans and finding triage start from this file. Vulnerabi
 reporting is in [`SECURITY.md`](SECURITY.md).
 
 Scope: runtime code only: `nora/`, `app/`, `deploy/`, `docker-compose.yml`,
-`Dockerfile`. Not `evals/`, `tests/`, `site/`, `showreel/`,
+`Dockerfile`. Not `evals/`, `tests/`,
 `voice-lab/`, `docs/`, `design/`. Infrastructure is the in-repo
 `docker-compose.yml`, `Dockerfile` and `deploy/`; there is no separate
 infrastructure repository.
@@ -29,7 +29,6 @@ Nora is a self-hosted, single-operator social AI agent. Platform adapters receiv
 | **Data stores** | `nora/infra/sql/` (+ Alembic), `nora/infra/honcho/`, `nora/infra/blobs/`, `nora/infra/embedder.py`, `nora/documents/`, `nora/infra/external_files/` | Postgres (:5435 loopback), Honcho (no auth, private network only), RustFS, embedder |
 | **Presence** | `nora/presence/`, `nora/analytics/`, `nora/infra/life360/`, `nora/infra/presence_refresh.py`, `nora/agent/whereis.py` | Life360 credentials → live GPS fixes → location history; `/refresh` on :9101 (loopback) |
 | **Deployment** | `docker-compose.yml`, `Dockerfile`, `deploy/` (komodo, prometheus, alertmanager, alert-bridge, postgres, install.sh), `.github/workflows/`, `scripts/` | Host, Docker networks, CI/release pipeline, secrets in host `.env` |
-| **Public site** | `site/` (Astro + Caddy) (outside scan scope) | Internet, static content only |
 
 ## Entry points and who can reach them
 
@@ -63,7 +62,7 @@ Operator: **all five matter**; none is ruled out (including A5, the co-networked
 
 ## Existing controls
 
-- Portal: NextAuth JWT sessions, roster re-check on every request (`checkSession()`, `personById` with `Object.hasOwn`), dev login only in `next dev` with `NORA_DEV_LOGIN=1`, CSP and headers (`app/next.config.ts`, `site/Caddyfile`).
+- Portal: NextAuth JWT sessions, roster re-check on every request (`checkSession()`, `personById` with `Object.hasOwn`), dev login only in `next dev` with `NORA_DEV_LOGIN=1`, CSP and headers (`app/next.config.ts`).
 - OTP: bearer token with constant-time compare, uniform 202/401 responses, purpose-bound codes (`nora/web/otp.py`, `nora/app/otp*`).
 - Network: only loopback publishes; bridges, signal-cli, Honcho, stt and voice services publish nothing; Honcho isolated on its own network.
 - Service auth: `NORA_BRIDGE_TOKEN` on bridges and voice routes; `NORA_COMPUTER_TOKEN` on computerd.
@@ -75,7 +74,7 @@ Operator: **all five matter**; none is ruled out (including A5, the co-networked
 
 - **Content filters off by default (ADR 0030):** phone/UUID/coordinate content vetoes, third-party place/person-name screening and location audience subset checks are disabled by an operator ruling. Findings that only amount to "this filter is off" are accepted risk; credential blocking, LeakGuard, admission, unit scope and location consent are not.
 - Host, operator and Docker-daemon compromise; the operator's own config files.
-- Dev-only paths (`evals/`, `voice-lab/`, `showreel/`, `NORA_DEV_LOGIN`), unless reachable in the production image.
+- Dev-only paths (`evals/`, `voice-lab/`, `NORA_DEV_LOGIN`), unless reachable in the production image.
 - LLM provider / OmniRoute misbehaviour (the model provider itself returning malicious or wrong output); prompt injection from room members or web content is still in scope (A2/A4).
 - Experimental project, best-effort fixes, default branch only (`SECURITY.md`).
 

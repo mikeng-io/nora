@@ -114,7 +114,7 @@ def test_host_validation_failure_never_recreates_services_or_records_success(tmp
     monkeypatch.setattr(wrapper, '__file__', str(control / 'komodo_deploy.py'))
     monkeypatch.setattr(wrapper, 'run', execute)
     with pytest.raises(RuntimeError, match='invalid candidate config'):
-        wrapper.apply_release(['docker', 'compose'], manifest, runtime, 'nora', site=False)
+        wrapper.apply_release(['docker', 'compose'], manifest, runtime, 'nora')
     assert not any('up' in command for command in commands)
     assert not (control / 'release-deploy.json').exists()
     assert not (runtime / '.secret-delivery').exists()
@@ -153,10 +153,10 @@ def test_failed_health_readback_preserves_the_previous_success_receipt(tmp_path,
 
     monkeypatch.setattr(wrapper, 'run', execute)
     with pytest.raises(RuntimeError, match='stale presence'):
-        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora')
     up = next(command for command in commands if 'up' in command)
     assert '--no-deps' in up and '--no-build' in up
-    assert not {'db', 'rustfs', 'prometheus', 'site'} & set(up)
+    assert not {'db', 'rustfs', 'prometheus'} & set(up)
     assert receipt.read_text() == 'previous successful deployment'
 
 
@@ -239,46 +239,7 @@ def test_optional_profiles_are_excluded_from_native_default_monitoring():
     import tomllib
 
     resources = tomllib.loads((ROOT / 'deploy/komodo/resources.example.toml').read_text())
-    assert {'site', 'embedder'} <= set(resources['stack'][0]['config']['ignore_services'])
-
-
-def test_site_profile_is_enabled_before_real_candidate_resolution(tmp_path, monkeypatch):
-    import json
-    import os
-    import re
-    import shutil
-    import subprocess
-
-    if shutil.which('docker') is None:
-        pytest.skip('Docker Compose CLI unavailable')
-    bundle = load('release_bundle')
-    wrapper = load('komodo_deploy')
-    compose, manifest = bundle.render(source(), images(bundle), 'v6.3.1', 'b' * 40)
-    text = json.dumps(compose)
-    (tmp_path / 'compose.json').write_text(text)
-    for key in re.findall(r'\$\{([A-Z0-9_]+):\?', text):
-        monkeypatch.setenv(key, 'synthetic-placeholder')
-    monkeypatch.setenv('NORA_RUNTIME_ROOT', str(tmp_path))
-    monkeypatch.setenv('AUTH_URL', 'https://example.invalid')
-    monkeypatch.chdir(tmp_path)
-
-    class PullReached(Exception):
-        pass
-
-    def execute(command, *, stage, output=False):
-        if command[-3:] == ['config', '--format', 'json']:
-            result = subprocess.run(  # noqa: S603 -- real, network-free Compose resolution
-                command, env=os.environ, text=True, capture_output=True, check=True)
-            return result.stdout
-        if 'pull' in command:
-            assert '--profile' in command and 'site' in command
-            raise PullReached
-        raise AssertionError('must stop before any image pull or recreation')
-
-    monkeypatch.setattr(wrapper, 'run', execute)
-    with pytest.raises(PullReached):
-        wrapper.apply_release(['docker', 'compose', '-p', 'nora', '-f', 'compose.json'],
-                              manifest, tmp_path, 'nora', site=True)
+    assert 'embedder' in resources['stack'][0]['config']['ignore_services']
 
 
 @pytest.fixture
@@ -344,7 +305,7 @@ def test_preflight_failure_can_retry_the_identical_release(
     receipt.write_text('previous successful deployment')
     fault['stage'] = stage
     with pytest.raises(wrapper.CommandError) as error:
-        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora')
     captured = capsys.readouterr()
     public = str(error.value) + captured.out + captured.err
     assert 'PRIVATE_STDOUT' not in public and 'PRIVATE_STDERR' not in public
@@ -353,7 +314,7 @@ def test_preflight_failure_can_retry_the_identical_release(
     assert not (tmp_path / 'release-attempt.json').exists()
     assert receipt.read_text() == 'previous successful deployment'
     fault.clear()
-    wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+    wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora')
     assert calls.count(stage) == (3 if stage == 'compose-config' else 2)
     assert calls.count('recreate') == 1
     assert json.loads(receipt.read_text()) == manifest
@@ -370,18 +331,18 @@ def test_failed_or_interrupted_candidate_cannot_be_applied_again(
     receipt.write_text('previous successful deployment')
     fault.update(stage=stage, exception=failure)
     with pytest.raises(failure or wrapper.CommandError):
-        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora')
     attempted = list(calls)
     assert (tmp_path / 'release-attempt.json').stat().st_mode & 0o777 == 0o600
     assert receipt.read_text() == 'previous successful deployment'
     for candidate in (manifest, dict(manifest, annotation='changed')):
         with pytest.raises(RuntimeError, match='blocked'):
-            wrapper.apply_release(['docker', 'compose'], candidate, tmp_path, 'nora', site=False)
+            wrapper.apply_release(['docker', 'compose'], candidate, tmp_path, 'nora')
     assert calls == attempted  # not even preflight is repeated after a possible mutation
     fault.clear()
     # Simulate the explicit operator recovery after inspecting the mutation.
     (tmp_path / 'release-attempt.json').unlink()
-    wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+    wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora')
     assert json.loads(receipt.read_text()) == manifest
     assert not (tmp_path / 'release-attempt.json').exists()
 
@@ -392,10 +353,10 @@ def test_different_release_can_roll_forward_after_failed_recreation(release_runt
     wrapper, manifest, calls, fault = release_runtime
     fault['stage'] = 'recreate'
     with pytest.raises(wrapper.CommandError):
-        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora')
     fault.clear()
     manifest.update(version='v6.3.2', commit='c' * 40)
-    wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+    wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora')
     assert calls.count('recreate') == 2
     assert json.loads((tmp_path / 'release-deploy.json').read_text()) == manifest
     assert not (tmp_path / 'release-attempt.json').exists()
@@ -413,7 +374,7 @@ def test_existing_marker_still_requires_operator_recovery(release_runtime, tmp_p
         'manifest_sha256': fingerprint,
         'version': manifest['version'], 'commit': manifest['commit']}))
     with pytest.raises(RuntimeError, match='blocked'):
-        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora')
     assert calls == []
     assert marker.exists()
 
@@ -421,7 +382,7 @@ def test_existing_marker_still_requires_operator_recovery(release_runtime, tmp_p
 def test_verified_release_can_be_reapplied_after_operator_config_change(release_runtime, tmp_path):
     wrapper, manifest, calls, _ = release_runtime
     for _ in range(2):
-        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora')
     assert calls.count('recreate') == 2
 
 
@@ -731,7 +692,7 @@ def test_complete_image_build_uses_selected_source_version_and_channel(
     bundle.main()
     manifest = json.loads(Path('release-output/release.json').read_text())
     assert manifest['channel'] == selected['channel']
-    assert load('komodo_deploy').expected_images(manifest, site=True) == manifest['services']
+    assert load('komodo_deploy').expected_images(manifest) == manifest['services']
 
 
 def write_image_receipts(bundle, directory, version, commit, channel):
@@ -941,16 +902,16 @@ def test_snapshot_wrapper_retains_validation_failure_and_final_stamp_boundary(
     else:
         fault['stamp'] = dict(manifest, commit='a' * 40)
     with pytest.raises(wrapper.CommandError if failure == 'config' else ValueError):
-        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora')
     assert not (tmp_path / 'release-deploy.json').exists()
     if failure == 'config':
         assert 'recreate' not in calls
     else:
         with pytest.raises(RuntimeError, match='blocked'):
-            wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+            wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora')
         (tmp_path / 'release-attempt.json').unlink()  # explicit operator recovery in the fake
     fault.clear()
-    wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+    wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora')
     assert calls[-3:] == ['recreate', 'readback', 'stamp-readback']
     assert json.loads((tmp_path / 'release-deploy.json').read_text()) == manifest
     assert not (tmp_path / 'release-attempt.json').exists()
@@ -967,7 +928,7 @@ def test_wrapper_refuses_forged_or_unsupported_snapshot_identity(version, channe
     _, manifest = bundle.render(source(), images(bundle), 'v7.11.0', 'b' * 40)
     manifest.update(version=version, channel=channel, commit=commit)
     with pytest.raises(ValueError):
-        load('komodo_deploy').expected_images(manifest, site=False)
+        load('komodo_deploy').expected_images(manifest)
 
 
 def test_reuse_preserves_original_provenance_and_checks_current_inputs(
@@ -1015,11 +976,11 @@ def test_reuse_preserves_original_provenance_and_checks_current_inputs(
 
 
 @pytest.mark.parametrize('change', ['lockfile', 'dockerfile', 'basepin', 'ignore',
-                                   'specific-ignore', 'workflow', 'publisher', 'shared-copy',
+                                   'specific-ignore', 'workflow', 'publisher',
                                    'signal-recipe', 'whatsapp-recipe'])
 def test_reuse_invalidates_changed_effective_inputs(publisher_source, monkeypatch, change):
     bundle, state, git = publisher_source
-    name = 'site' if change == 'shared-copy' else 'app'
+    name = 'app'
     if change in ('signal-recipe', 'whatsapp-recipe'):
         name = 'signal-bridge' if change == 'signal-recipe' else 'whatsapp-bridge'
     old = bundle.build_inputs(name, state['current'])
@@ -1028,7 +989,6 @@ def test_reuse_invalidates_changed_effective_inputs(publisher_source, monkeypatc
              'basepin': 'app/Dockerfile', 'ignore': 'app/.dockerignore',
              'specific-ignore': 'app/Dockerfile.dockerignore',
              'workflow': '.github/workflows/release-images.yml',
-             'shared-copy': 'assets/generated.txt',
              'signal-recipe': 'deploy/signal-bridge/Dockerfile',
              'whatsapp-recipe': 'deploy/whatsapp-bridge/Dockerfile'}
     if change == 'publisher':
@@ -1123,11 +1083,11 @@ def test_scoped_reload_consumed_only_after_verified_transaction(
     request.write_text(json.dumps({'files': ['config.toml']}))
     fault['stage'] = failure_stage
     with pytest.raises(wrapper.CommandError):
-        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+        wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora')
     assert request.exists() and (tmp_path / 'release-attempt.json').exists()
     fault.clear()
     (tmp_path / 'release-attempt.json').unlink()  # explicit recovery, same native transaction
-    wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora', site=False)
+    wrapper.apply_release(['docker', 'compose'], manifest, tmp_path, 'nora')
     assert calls.count('config-reload') == 2
     assert not request.exists() and not (tmp_path / 'release-attempt.json').exists()
 
@@ -1307,6 +1267,21 @@ def test_previous_manifest_compatibility_keeps_image_and_cohort_checks(fault):
         bundle.validate_manifest(previous, previous=True)
 
 
+def test_a_release_from_before_the_site_moved_out_is_accepted_for_rollback_only():
+    bundle = load('release_bundle')
+    wrapper = load('komodo_deploy')
+    _, previous = bundle.render(source(), images(bundle), 'v7.20.7', 'b' * 40)
+    previous['services']['site'] = 'ghcr.io/mikeng-io/nora-site@sha256:' + 'c' * 64
+    bundle.validate_manifest(previous, previous=True)
+    with pytest.raises(ValueError, match='service set'):
+        bundle.validate_manifest(previous)
+    assert 'site' not in bundle.BUILDS
+    assert 'site' not in wrapper.expected_images(previous)
+    previous['services']['site'] = previous['services']['nora']
+    with pytest.raises(ValueError, match='site'):
+        wrapper.expected_images(previous)
+
+
 def _pre_bridge_manifest(bundle):
     _, manifest = bundle.render(source(), images(bundle), 'v7.12.3', 'b' * 40)
     for name in ('signal-bridge', 'discord-bridge', 'bridge-projection'):
@@ -1367,7 +1342,7 @@ def test_gateway_cohort_and_previous_cohort_are_owned():
     bundle = load('release_bundle')
     wrapper = load('komodo_deploy')
     _, manifest = bundle.render(source(), images(bundle), 'v6.3.1', 'b' * 40)
-    assert 'http-egress' in wrapper.expected_images(manifest, site=False)
+    assert 'http-egress' in wrapper.expected_images(manifest)
     del manifest['services']['http-egress']
     bundle.validate_manifest(manifest, previous=True)
-    assert 'http-egress' not in wrapper.expected_images(manifest, site=False)
+    assert 'http-egress' not in wrapper.expected_images(manifest)

@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { NoraMark, Wordmark } from "@/components/ui/avatar";
 import { Link } from "@/i18n/routing";
-import { LEGAL_CONTACT } from "@/lib/legal";
 
 export type LegalSection = {
   id: string;
@@ -28,10 +27,12 @@ type Labels = {
 // anyone.
 export function LegalPage({
   locale,
+  contact,
   labels,
   sections,
 }: {
   locale: string;
+  contact: string;
   labels: Labels;
   sections: LegalSection[];
 }): ReactNode {
@@ -81,7 +82,7 @@ export function LegalPage({
         </main>
         <footer className="grid gap-3 border-t border-hairline pt-6 text-meta text-ink-soft">
           <p>
-            <a href={`mailto:${LEGAL_CONTACT}`} className="font-semibold text-denim underline-offset-4 hover:underline">
+            <a href={`mailto:${contact}`} className="font-semibold text-denim underline-offset-4 hover:underline">
               {labels.contact}
             </a>
           </p>

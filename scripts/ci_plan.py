@@ -24,7 +24,6 @@ JOBS = (
     "portal",
     "portal-browser",
     "go",
-    "site",
     "dependency-review",
     "codeql-python",
     "codeql-javascript",
@@ -98,15 +97,7 @@ def classify(
         }
         if dependency:
             plan["dependency-review"] = True
-        if path.startswith(("site/", "assets/")):
-            plan["site"] = True
-            if (
-                suffix in {".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".astro", ".mdx"}
-                or dependency
-                or name.endswith("config.json")
-            ):
-                plan["codeql-javascript"] = True
-        elif path.startswith("app/"):
+        if path.startswith("app/"):
             if suffix != ".md" or dependency:
                 plan["portal"] = True
                 if (

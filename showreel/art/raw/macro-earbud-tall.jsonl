@@ -1,7 +1,0 @@
-{"type":"thread.started","thread_id":"01a0dd04-7b27-7970-b932-1b6524cc4d98"}
-{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Under-development features enabled: chronicle. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in /Users/miles/.codex/config.toml."}}
-{"type":"item.completed","item":{"id":"item_1","type":"error","message":"loading hooks from both /Users/miles/.codex/hooks.json and /Users/miles/.codex/config.toml; prefer a single representation for this layer"}}
-{"type":"turn.started"}
-{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"I’m using the image-generation tool with both canonical references to preserve Nora’s exact model, materials, outfit details, and earphone design."}}
-{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":""}}
-{"type":"turn.completed","usage":{"input_tokens":134090,"cached_input_tokens":107392,"cache_write_input_tokens":0,"output_tokens":629,"reasoning_output_tokens":59}}

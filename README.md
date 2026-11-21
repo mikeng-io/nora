@@ -9,7 +9,7 @@
 
 <h1 align="center">Nora</h1>
 
-<p align="center"><strong>Earphones in.</strong></p>
+<p align="center"><strong>Earphones in.</strong> · <a href="https://heynora.bot">heynora.bot</a></p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-48587A?labelColor=5E5351" alt="License: MIT"></a>
@@ -240,7 +240,7 @@ and merge rules are documented in [GitHub maintenance](docs/maintainers/github.m
 
 ## License
 
-Nora is licensed under the [MIT License](LICENSE). Third-party components retain
-their respective licenses.
+Code: [MIT](LICENSE). Her art listed in `LICENSE` is all rights reserved, for
+building and running Nora only. Third-party components keep their licenses.
 
 Credential-source migration and named model endpoints: [configuration](docs/configuration.md).

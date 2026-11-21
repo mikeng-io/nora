@@ -86,7 +86,6 @@ jobs:
           tests/architecture/test_commit_body_rule.py
           tests/architecture/test_dockerfile_bases_are_pinned.py
           tests/architecture/test_runtime_imports_are_runtime_dependencies.py
-          tests/architecture/test_site_csp_takes_script_hashes.py
           tests/architecture/test_doc_references_resolve.py
           tests/test_architecture_doc.py tests/test_docs.py
           tests/test_boundaries.py tests/test_deploy_assets.py
@@ -180,13 +179,6 @@ jobs:
         working-directory: ${{ matrix.module }}
       - run: go test ./...
         working-directory: ${{ matrix.module }}
-
-  site:
-    needs: classify
-    if: ${{ always() && (needs.classify.result != 'success' || fromJSON(needs.classify.outputs.plan).site) }}
-    uses: ./.github/workflows/site.yml
-    with:
-      full_validation: ${{ github.event_name == 'workflow_dispatch' }}
 
   dependency-review:
     needs: classify
@@ -600,7 +592,7 @@ jobs:
   checks:
     timeout-minutes: 1
     if: always()
-    needs: [classify, python, contracts, ory, ory-journey, portal, portal-browser, go, site, dependency-review, codeql-python, codeql-javascript, codeql-go, codeql-actions]
+    needs: [classify, python, contracts, ory, ory-journey, portal, portal-browser, go, dependency-review, codeql-python, codeql-javascript, codeql-go, codeql-actions]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -1,7 +1,6 @@
 /*
  * The portal's visual system. DESIGN.md governs every value here; the raw
- * tokens are DESIGN.md's frontmatter one for one (and site/src/styles/
- * tokens.css, the landing page's copy of the same). Change a value only
+ * tokens are DESIGN.md's frontmatter one for one. Change a value only
  * together with DESIGN.md.
  */
 @import "tailwindcss";

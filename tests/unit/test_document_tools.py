@@ -150,7 +150,7 @@ def test_the_link_passes_egress_whole_and_the_uuid_does_not() -> None:
         assert scan_identifiers(reply) is None, link
         assert scan_reply(reply) is None, link
         assert scan_reply(f"id {document_id}") == "uuid"  # the control: egress is unchanged
-    worst = "https://nora.67.zone/documents/" + "0123456789ab"
+    worst = "https://nora.67.example/documents/" + "0123456789ab"
     assert scan_reply(worst) is None
 
 
