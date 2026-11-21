@@ -326,8 +326,7 @@ class ToolRegistry:
         # public_url`; `""` answers a link export `unavailable`.
         artifact_link_base: str = "",
         clock: Callable[[], datetime] = utc_now,
-        mcp_tools: Mapping[str, McpToolGroup] | None = None,
-        mcp_act_envelope: Any = None,
+        mcp_tools: Mapping[str, McpToolGroup] | None = None, mcp_act_envelope: Any = None,
         versions: VersionManifest | None = None,
         releases: GithubReleases | None = None,
         giphy: GifSource | None = None,
@@ -364,8 +363,7 @@ class ToolRegistry:
         # `[video_gen]` wired (ships off): the desk `video_create` calls, and the reference
         # kinds its gates allow (`image`, `video`, `audio`). Without the desk the registry
         # withholds the tool from every turn.
-        video: VideoDesk | None = None,
-        video_ref_kinds: frozenset[str] = frozenset(),
+        video: VideoDesk | None = None, video_ref_kinds: frozenset[str] = frozenset(),
         # `[external_files]` (ships off): the one read-only source a shared file
         # link is opened through; `None` answers the open `unavailable`. Its
         # `google_account` names who the NOT_SHARED note says to share with.

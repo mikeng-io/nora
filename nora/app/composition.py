@@ -595,8 +595,7 @@ async def _compose_dependencies(
     _location_route = _location_wire.route(cfg=cfg)
     route_client = _location_route.route_client
     _documents_ground = _documents_wire.ground(
-        access=access,
-        allowlist=allowlist,
+        access=access, allowlist=allowlist,
         cfg=cfg,
         content_checks=content_checks,
         doctrine_store=lambda: doctrine_store,
