@@ -1,6 +1,6 @@
 ---
 name: nora-release
-description: Follows Nora's automatic patch/minor release pipeline or prepares an owner-selected major at an exact source SHA. Use for release PRs, version bumps, tags, changelogs or publication. Not for an ordinary deploy (nora-deploy).
+description: Follows Nora's automatic patch/minor release pipeline or prepares the owner-selected bump for a break at an exact source SHA. Use for release PRs, version bumps, tags, changelogs or publication. Not for an ordinary deploy (nora-deploy).
 ---
 
 # Nora releases
@@ -35,9 +35,10 @@ remain included. `Release-As:` is unsupported. Existing versions/tags stay intac
 
 `!` and `BREAKING CHANGE:` / `BREAKING-CHANGE:` anywhere in the unreleased range,
 including internal commits and merges, stop automatic processing before version
-writes. Never hide a break under patch/minor or use a footer to request major.
-Document the incompatible supported interface/config and its migration; only the
-owner may explicitly select major at an exact full current master SHA.
+writes. Never use a footer to request major. Document the incompatible
+interface/config and its migration; only the owner selects the bump, at an exact
+full current master SHA. A break that moves only the operator's own host may ship
+as patch/minor; the `Release-Bump: minor` floor still binds.
 
 ## 2. Follow automatic preparation and publication
 
@@ -65,19 +66,18 @@ A metadata merge triggers publication and no next bump by itself. If publication
 fails, rerun that workflow: publication comes first, and manifest/tag mismatch
 blocks planning a duplicate version until the existing release is published.
 
-## 3. Owner-only major and recovery dispatch
+## 3. Owner-only break and recovery dispatch
 
 The original and rerun actor must both be the repository owner, on master.
 Select the exact full current master SHA; drift is refused, never silently
 reinterpreted as a new owner decision:
 
 ```bash
-gh workflow run release-please.yml --ref master -f action=prepare -f bump=major -f candidate=<full-master-sha>
+gh workflow run release-please.yml --ref master -f action=prepare -f bump=<patch|minor|major> -f candidate=<full-master-sha>
 ```
 
-The generated major metadata follows the same required checks and exact-head
-auto-merge; its master push lets release-please publish the explicitly prepared
-major. Manual prepare can also select patch/minor for recovery, retaining marker
+The generated metadata follows the same required checks and exact-head
+auto-merge; its master push lets release-please publish the owner's selection. Manual prepare can also select patch/minor for recovery, retaining marker
 minimums. A merged but unpublished PR can be resumed without preparing again:
 
 ```bash
@@ -100,7 +100,7 @@ the generated metadata merge. A stable published Release automatically feeds
 `release-images.yml`, then the complete `deployments` bundle and installed Komodo
 poller under the existing release-image control. The operator's standing release
 and deployment authority includes this normal patch/minor path and explicitly
-owner-prepared majors. Follow `nora-deploy` for image/source/receipt/live-stamp
+owner-prepared breaks. Follow `nora-deploy` for image/source/receipt/live-stamp
 readback; a tag or build alone proves no deployment.
 
 The separate owner-only Deploy master image entry stays default-off behind

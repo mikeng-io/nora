@@ -28,7 +28,7 @@ COHORT = {
     'whatsapp-bridge': 'whatsapp-bridge', 'instagram-bridge': 'instagram-bridge',
     'bridge-projection': 'bridge-projection',
 }
-# Released before the site moved out (ADR 0039): accepted for rollback, never applied.
+# Released before the site moved out: accepted for rollback, never applied.
 RETIRED = {'site': 'site'}
 
 

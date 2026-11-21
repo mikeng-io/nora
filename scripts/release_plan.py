@@ -1,4 +1,4 @@
-"""Prepare an automatic patch/minor or owner-selected major release.
+"""Prepare an automatic patch/minor release, or the owner-selected bump for a break.
 
 release-please walks history in committer-date order and stops at the last release
 commit, so a branch whose commits were written before that release and merged after
@@ -81,8 +81,12 @@ def bump(current: str, found: list[Entry], requested: str | None = None) -> str:
         else "patch"
     )
     levels = ("patch", "minor", "major")
-    if requested is None and minimum == "major":
-        raise ValueError("breaking changes require an owner-selected major at an exact candidate")
+    if minimum == "major":
+        if requested is None:
+            raise ValueError("breaking changes require an owner-selected bump at an exact SHA")
+        # The owner judges a break's reach: one that moves only the operator's
+        # own host may ship as patch/minor. The marker floor still binds below.
+        minimum = "minor" if any(e.minor for e in found) else "patch"
     selected = requested or minimum
     if levels.index(selected) < levels.index(minimum):
         raise ValueError(f"{selected} bump is below the {minimum} required by unreleased commits")

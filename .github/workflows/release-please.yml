@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Owner recovery or explicit major preparation/publication
+        description: Owner recovery, or preparing the bump for a break
         required: true
         type: choice
         options: [prepare, publish]
