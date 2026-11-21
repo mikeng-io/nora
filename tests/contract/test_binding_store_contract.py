@@ -1,5 +1,4 @@
-"""Shared contract for the managed `BindingStore` — every implementation
-runs every test.
+"""Shared contract for the managed `BindingStore` and its PostgreSQL race regression.
 
 Two implementations: `nora.infra.sql.managed_identity.SqlBindingStore` over
 real Postgres in a testcontainer, and `nora.testing.managed.FakeBindingStore`
@@ -22,13 +21,15 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, aclosing
 from dataclasses import replace
 from types import MappingProxyType
 from typing import Any, Protocol
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import Insert, event
+from sqlalchemy.exc import IntegrityError
 
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
@@ -50,6 +51,7 @@ from nora.domain.managed import (
 from nora.domain.management import Scope, ScopeKind
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.managed_identity import SqlBindingStore
+from nora.infra.sql.schema_managed import MANAGED_IDENTIFIER
 from nora.testing.managed import FakeBindingStore
 
 ACCOUNT_1 = str(uuid4())
@@ -432,6 +434,41 @@ async def test_concurrent_identifier_claims_have_exactly_one_winner(store: _Stor
     losing_ident = ACCT if loser == ACCOUNT_1 else ACCT_2
     record = await store.record_for(account=losing_ident)
     assert record is not None and record.identifiers == frozenset({losing_ident})
+
+
+async def test_sql_identifier_claim_reports_conflict_when_the_owner_read_is_stale(
+    clean_pg_url: str,
+):
+    winner = SqlBindingStore(create_sql_engine(clean_pg_url))
+    loser_engine = create_sql_engine(clean_pg_url)
+    loser = SqlBindingStore(loser_engine)
+    async with aclosing(winner), aclosing(loser):
+        await winner.register(person=_person(), account=_account(ACCOUNT_1), membership=None)
+        await winner.register(
+            person=_person("person_other"),
+            account=_account(ACCOUNT_2, person_id="person_other", identifiers=frozenset({ACCT_2})),
+            membership=None,
+        )
+
+        async def commit_winning_claim(_driver_connection):
+            outcome = await winner.bind_identifiers(
+                account_id=ACCOUNT_1, identifiers=frozenset({PHONE})
+            )
+            assert outcome.status is OutcomeStatus.COMPLETE
+
+        @event.listens_for(loser_engine.sync_engine, "before_execute")
+        def interleave_claims(conn, statement, _multiparams, _params, _options):
+            if isinstance(statement, Insert) and statement.table is MANAGED_IDENTIFIER:
+                # Commit on another connection after the owner's pre-read, before this INSERT.
+                conn.connection.dbapi_connection.run_async(commit_winning_claim)
+
+        with pytest.raises(IdentifierConflictError) as conflict:
+            await loser.bind_identifiers(account_id=ACCOUNT_2, identifiers=frozenset({PHONE}))
+        cause = conflict.value.__cause__
+        assert isinstance(cause, IntegrityError)
+        assert cause.orig.sqlstate == "23505"
+        owner = await winner.record_for(account=PHONE)
+        assert owner is not None and owner.account_id == ACCOUNT_1
 
 
 async def test_lifecycle_changes_revise_the_person(store: _Store):

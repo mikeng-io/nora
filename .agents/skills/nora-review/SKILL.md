@@ -94,15 +94,11 @@ unless separately assigned.
   real boundary. An unverified premise is a hypothesis: name the smallest
   discriminating check, not a speculative guard or test suite.
 - Separate **severity** (impact/urgency) from **disposition** (what happens next).
-  P1 denotes material correctness, safety or availability failure; P2 denotes
-  bounded impact. Use BLOCKER / FIX-IF-CHEAP / ISSUE / DROP per the policy.
   Recurrence, confidence or repair effort does not raise severity. Preserve an
-  external finding's original rating when triaging; P2 harvest buys no new round.
-- One remedy means one defect class. On its first report, inspect siblings in
-  the affected flow and group the instances. Keep an unresolved class open;
-  do not emit new findings for new inputs with the same remedy. Distinct fixes
-  remain separate. Repair-induced defects name the earlier finding and why
-  their class differs.
+  external finding's original rating when triaging.
+- One remedy means one defect class. Keep an unresolved class open; distinct
+  fixes remain separate. Repair-induced defects name the earlier finding and
+  why their class differs.
 - For a behavioral claim, check observable behavior. A regex over source,
   AST check or green test count is not proof the real path works. Report a
   false-PASS proxy at the boundary it weakens; do not spend rounds enumerating

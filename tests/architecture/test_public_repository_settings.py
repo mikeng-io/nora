@@ -86,7 +86,7 @@ def test_rules_require_exactly_the_checks_that_report_on_every_pr_and_allow_no_b
         if rule["type"] == "required_status_checks"
         for c in rule["parameters"]["required_status_checks"]
     ]
-    # CodeQL and dependency-review are skipped while private and the wiki build is
+    # CodeQL and dependency-review are skipped while private and the site build is
     # path-filtered: requiring any of them would block every PR that never reports one.
     assert contexts == ["checks", "pr-metadata"]
 

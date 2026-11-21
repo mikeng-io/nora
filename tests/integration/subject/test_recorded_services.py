@@ -1,5 +1,8 @@
 import asyncio
 import json
+import subprocess
+import sys
+from textwrap import dedent
 
 import aiohttp
 import pytest
@@ -156,6 +159,41 @@ async def test_missing_response_and_exception_cleanup(tmp_path):
             async with recorded.open("sqlite://") as env:
                 raise exception
         assert not env.active
+
+
+def test_cleanup_can_be_requested_by_a_different_task():
+    probe = dedent("""
+        import asyncio
+
+        from nora.subject.environment import IsolatedServices
+
+        async def exercise():
+            environment = IsolatedServices(database_url="sqlite://", applications={})
+            await asyncio.create_task(environment.__aenter__())
+            assert environment.guarded
+
+            started = asyncio.Event()
+
+            async def leak():
+                started.set()
+                await asyncio.Event().wait()
+
+            leaked = asyncio.create_task(leak())
+            await started.wait()
+            await asyncio.create_task(environment.__aexit__(None, None, None))
+            assert leaked.cancelled()
+            assert not environment.active
+
+        asyncio.run(exercise())
+    """)
+    # Keep the deadlock probe in a subprocess so a regression cannot hang pytest.
+    try:
+        result = subprocess.run(  # noqa: S603 -- fixed interpreter and probe
+            [sys.executable, "-c", probe], capture_output=True, text=True, timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("isolated services deadlocked during teardown in a different task")
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.asyncio

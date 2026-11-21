@@ -31,8 +31,9 @@ It is a code change when only *how* a part does its job moves: a hotfix, a
 refactor, a threshold, prompt or doctrine wording, an eval case, a performance
 fix. The design does not move; do not touch `design/`.
 
-Check: the PR's «Architecture» line names the bundle changed, or says `none`
-with the reason.
+Check: the PR's «Architecture» section names each bundle changed with its
+trigger, the behaviour before and after, and the test or read-back that shows
+it; or says `none` with the reason.
 
 ## 2. Altitude: what a bundle holds
 
@@ -46,7 +47,8 @@ with the reason.
 A contract stays at the level of terms and promises. *"An intention is what
 Nora has committed to; it closes only by a recorded outcome; the model
 proposes it and code admits it"* is design. Its columns, lengths and rendering
-are code.
+are code. Each part names its owning module or symbol, never a line number,
+so a reader can verify the bundle against the code.
 
 **How a definition is written.** Concise and precise; each form does one job:
 

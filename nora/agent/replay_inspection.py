@@ -23,5 +23,5 @@ def instruction_messages(requests: Any) -> dict[str, Any]:
     messages = first.get("messages") if isinstance(first, dict) else None
     if not isinstance(messages, list) or any(not isinstance(m, dict) for m in messages):
         return {"status": "unavailable", "cause": "request_invalid", "messages": None}
-    return {"status": "observed", "messages": [
+    return {"status": "ok", "messages": [
         m for m in messages if m.get("role") in ("system", "developer")]}
