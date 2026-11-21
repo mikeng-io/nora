@@ -1170,7 +1170,7 @@ CONSTRAINT ck_claim_guess CHECK (((state = 'tombstoned'::text) OR (part <> 'gues
 CONSTRAINT ck_claim_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
 CONSTRAINT ck_claim_kind CHECK ((kind = 'claim'::text)),
 CONSTRAINT ck_claim_non_guess CHECK (((part = 'guess'::text) OR ((prediction IS NULL) AND (window_end IS NULL)))),
-CONSTRAINT ck_claim_part CHECK ((part = ANY (ARRAY['fact'::text, 'trait'::text, 'guess'::text]))),
+CONSTRAINT ck_claim_part CHECK ((part = ANY (ARRAY['fact'::text, 'trait'::text, 'guess'::text, 'lesson'::text, 'situation'::text]))),
 CONSTRAINT ck_claim_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
 CONSTRAINT ck_claim_state CHECK ((state = ANY (ARRAY['live'::text, 'superseded'::text, 'hidden'::text, 'awaiting_weighing'::text, 'retired'::text, 'tombstoned'::text])))
 CONSTRAINT ck_claim_support_graph_basis CHECK ((basis = 'computed'::text)),
@@ -1236,7 +1236,7 @@ CONSTRAINT ck_edge_inferred_detail CHECK (((basis = 'inferred'::text) = ((reason
 CONSTRAINT ck_edge_kind CHECK ((kind = 'edge'::text)),
 CONSTRAINT ck_edge_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
 CONSTRAINT ck_edge_state CHECK ((state = ANY (ARRAY['live'::text, 'superseded'::text, 'retired'::text, 'tombstoned'::text]))),
-CONSTRAINT ck_edge_type CHECK ((type = ANY (ARRAY['cites'::text, 'about'::text, 'draws_on'::text, 'rests_on'::text, 'serves'::text, 'watches'::text, 'closed_by'::text, 'interested_in'::text, 'merged_into'::text])))
+CONSTRAINT ck_edge_type CHECK ((type = ANY (ARRAY['cites'::text, 'about'::text, 'draws_on'::text, 'rests_on'::text, 'serves'::text, 'watches'::text, 'closed_by'::text, 'merged_into'::text])))
 CONSTRAINT ck_entity_basis CHECK ((basis = ANY (ARRAY['computed'::text, 'inferred'::text]))),
 CONSTRAINT ck_entity_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_entity_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),

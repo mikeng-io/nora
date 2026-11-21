@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Literal, Protocol
 
 from nora.domain.lineage import LiveRoom
-from nora.memory.domain.graph import Kind
+from nora.memory.domain.graph import ClaimPart, Kind, PointerKind
 
 RetrievalStatus = Literal["ok", "partial", "nothing_found", "unavailable"]
 RetrievalLimit = Literal["rows", "depth", "fan_out", "time_window"]
@@ -78,6 +78,12 @@ class RetrievedEdge:
 
 
 @dataclass(frozen=True, slots=True)
+class RetrievedSupport:
+    count: int
+    last_evidenced_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class RetrievedRow:
     graph_id: str
     kind: Kind
@@ -100,6 +106,9 @@ class RetrievedRow:
     distance: int
     already_shown: bool
     unavailable: str | None = None
+    part: ClaimPart | None = None
+    pointer_kind: PointerKind | None = None
+    support: RetrievedSupport | None = None
 
 
 @dataclass(frozen=True, slots=True)

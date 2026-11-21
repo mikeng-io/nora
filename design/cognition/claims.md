@@ -13,13 +13,18 @@ A profile is the claims about one entity in one unit, read in three parts.
 | **trait** | a recurring interest, habit, preference, disposition or aim | distinct occasions, counted by code; never message count or the writer's confidence |
 | **guess** | why a pattern occurs | carries a falsifiable prediction and window; an independent verdict confirms, refutes, expires or leaves it unknown |
 
+Two claim parts sit outside a profile. A **lesson** rests on verdicts and
+corrections ([learning](learning.md)). A **situation** claim shows its age
+and how many items arrived since it was asserted.
+
 A collective's profile describes observed collective practice, never an
 average of its members. Nora's profile describes how she has come across.
 
 ## Support and precedence
 
 - The subject's own statement outranks another person's, which outranks
-  deduction, which outranks induction. An outranked claim stays inspectable.
+  deduction, which outranks induction, which outranks abduction. An outranked
+  claim stays inspectable.
 - A person's instruction about themselves comes only from that person.
 - A typed value keeps its unit, condition, valid time and uncertainty; what
   cannot be represented faithfully stays a reading of its source.
@@ -40,8 +45,8 @@ average of its members. Nora's profile describes how she has come across.
 - A **constraint** is an explicit, applicable restriction: diet, budget,
   compatibility, size, an exclusion. Low affinity, a question or a guess is
   never a constraint.
-- An interest is an edge from a person to a topic or thing; its weight is its
-  evidence counted by code.
+- An interest is a trait claim about the person and the topic, weighted by
+  its counted support.
 
 ## Disputes, deletion and decay
 

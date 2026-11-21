@@ -36,7 +36,7 @@ Kind = Literal["entity", "item", "aggregate", "claim", "intention", "edge"]
 Reasoning = Literal["told", "deduced", "induced", "abduced"]
 Confidence = Literal["low", "medium", "high"]
 
-ClaimPart = Literal["fact", "trait", "guess"]
+ClaimPart = Literal["fact", "trait", "guess", "lesson", "situation"]
 PointerKind = Literal["person", "room", "unit", "nora"]
 
 ConditionForm = Literal[
@@ -63,7 +63,7 @@ EdgeState = Literal["live", "superseded", "retired", "tombstoned"]
 EdgeFamily = Literal["cites", "about", "draws_on", "relation"]
 EdgeType = Literal[
     "cites", "about", "draws_on", "rests_on", "serves", "watches", "closed_by",
-    "interested_in", "merged_into",
+    "merged_into",
 ]
 
 
@@ -127,12 +127,6 @@ EDGES: dict[str, EdgeDeclaration] = {
         bases=frozenset({"computed"}),
     ),
     "merged_into": EdgeDeclaration(
-        family="relation",
-        source_kinds=frozenset({"entity"}),
-        target_kinds=frozenset({"entity"}),
-        bases=frozenset({"inferred"}),
-    ),
-    "interested_in": EdgeDeclaration(
         family="relation",
         source_kinds=frozenset({"entity"}),
         target_kinds=frozenset({"entity"}),

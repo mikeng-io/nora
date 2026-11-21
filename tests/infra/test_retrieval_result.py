@@ -1,10 +1,11 @@
 """Read current and historical graph facts with their evidence and outcome."""
 
 from datetime import timedelta
+from uuid import uuid4
 
 import sqlalchemy as sa
 
-from nora.infra.sql.cognitive_graph_schema import CLAIM, GRAPH_SEARCH, INTENTION
+from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, GRAPH_SEARCH, INTENTION
 from nora.infra.sql.item_retention import tombstone_items
 from nora.infra.sql.schema import MESSAGES
 from nora.memory.domain.retrieval import (
@@ -39,6 +40,23 @@ async def test_superseded_seed_loads_its_successor(scenario) -> None:
     (current,) = result.rows
     assert (current.graph_id, current.content, current.distance) == (
         "current-claim", {"text": "Current content"}, 0,
+    )
+
+
+async def test_exact_edge_seed_carries_its_type_and_endpoints(scenario) -> None:
+    await scenario.claim("claim")
+    await scenario.item("evidence")
+    edge_id = f"edge:{uuid4().hex}"
+    await scenario.graph.create(EDGE, {
+        "id": edge_id, "unit": UNIT, "kind": "edge", "type": "cites",
+        "src_id": "claim", "dst_id": "evidence", "basis": "computed",
+        "state": "live", "exposure": "internal", "writer": "fixture", "asserted_at": AT,
+    })
+    result = await scenario.service().retrieve(READ, references(edge_id), BOUNDS)
+    assert result.status == "ok"
+    (edge,) = result.rows
+    assert (edge.graph_id, edge.kind, edge.content) == (
+        edge_id, "edge", {"type": "cites", "src_id": "claim", "dst_id": "evidence"},
     )
 
 

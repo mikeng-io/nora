@@ -44,7 +44,7 @@ its reasons reconsiderable.
 
 **Edges take a basis by the same rule.** An edge recorded with an item
 (authored by, replied to) is observed; an edge code derives (co-located with,
-closed by) is computed; an edge Nora judges (likes, knows) is inferred; an
+closed by) is computed; an edge Nora judges (about a topic) is inferred; an
 edge from her own decision (rests on, serves) is committed.
 
 Three edge families never stand in for each other:
@@ -195,15 +195,15 @@ disclosure rules and the cap on unsolicited proposals.
 A presentation is a read over rows, assembled for an occasion. Nothing writes a
 presentation.
 
-- **profile** — the claims about one entity, in the parts [claims](claims.md)
-  defines. A room's or unit's profile is its culture; Nora's is how she has
+- **profile** — the fact, trait and guess [claims](claims.md) about one entity.
+  A room's or unit's profile is its culture; Nora's is how she has
   come across.
 - **Standing** — Nora's current position in a room: what she holds open, owes
   and has on offer, what was recently settled and how, and where the
-  conversation stands. It reads intentions and the reflection loop's claims,
-  showing each situation claim's age and how many items arrived since it was
+  conversation stands. It reads intentions and situation claims, showing
+  each situation claim's age and how many items arrived since it was
   asserted, so a stale claim reads as stale. Nothing writes it.
-- **lessons** — the claims about Nora's own practice in a unit.
+- **lessons** — lesson claims about Nora's own practice in a unit.
 - **likes** — the claims about what people enjoy, for a fixed destination
   audience.
 
