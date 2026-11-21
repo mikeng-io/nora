@@ -169,7 +169,7 @@ async def dispatch(page: BrowserPage, action: RetrievalAction, text: str = "") -
         "functionDeclaration": _CONTROL,
         "arguments": [{"value": value} for value in (action.control, action.kind, action.option)],
         "returnByValue": True,
-    })
+    }, mutating=True)
     if "exceptionDetails" in result:
         raise BrowserError("the page action could not be confirmed")
     applied = result.get("result", {}).get("value")
