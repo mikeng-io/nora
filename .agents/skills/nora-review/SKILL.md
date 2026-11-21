@@ -20,8 +20,8 @@ instead of steps 2–3; item marking, severity and follow-through are there too.
    the candidate. On the standard and full routes, the brief and plan passed
    brief review with no BLOCKER and the candidate arrives with its execution
    receipt. Return a candidate with missing gate evidence unreviewed. On light,
-   the PR body carries a brief. On every route, confirm the recorded route against the
-   triggers in `nora-work/references/lifecycle.md`; a lower route is a finding.
+   the PR body carries a brief. On every route, confirm the recorded route against the ordered triage rule in
+   `nora-work/references/lifecycle.md`; a lower route is a finding.
    Missing material requirements return to scoping.
 2. **Inspect the candidate.** Verify checkout/head/status; read
    `git diff <base>...<head>`. A repair re-check uses

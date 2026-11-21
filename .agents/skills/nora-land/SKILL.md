@@ -111,7 +111,8 @@ git log -1 --format='%h %s'
 ## 5. The subject is the release note
 
 Follow `nora-release`: ordinary master pushes automatically prepare patch/minor;
-only generated metadata auto-merges. Application PRs retain explicit merges.
+generated metadata auto-merges; an application PR merges on green once its
+route's review passes, under the standing authorities (`.agents/lanes.md`).
 PATCH is default; a complete new capability/supported API uses `Release-Bump: minor`.
 Breaking markers stop automatic writes; major requires owner dispatch at an exact SHA.
 
