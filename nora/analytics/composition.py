@@ -26,7 +26,7 @@ from nora.analytics.runner import RollupRunner, Subject
 from nora.analytics.units import PersonScope, UnitConfig, UnitRollups
 from nora.config import Config
 from nora.config_reload import FileReload, LivePolicy, ReloadFiles, RestartRequiredError
-from nora.domain.live import LiveMapping, LiveSequence, LiveSet
+from nora.domain.live import LiveMapping, LiveSequence
 from nora.domain.managed import Verdict
 from nora.domain.management import Scope, ScopeKind
 from nora.infra.sql import create_sql_engine, run_migrations
@@ -39,7 +39,7 @@ from nora.infra.sql.item_registration import (
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.rollups import SqlRollupStore, UnitRooms
-from nora.infra.sql.social_stream import SqlSocialStreamStore, readable_social_store
+from nora.infra.sql.social_stream import readable_social_store
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError
@@ -280,8 +280,7 @@ def build_rollup(
         )
         for s in subjects
     }))
-    social = (SqlSocialStreamStore(engine, opted_out=LiveSet(lambda: inputs.current.opted_out))
-        if inputs is not None else readable_social_store(engine, persons))
+    social = readable_social_store(engine, inputs if inputs is not None else persons)
     unit_rollups = UnitRollups(
         store=rollups, config=unit_config, units=units, people=people,
         stimuli=SqlStimulusStore(engine), metrics=metrics,

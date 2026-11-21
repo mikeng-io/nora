@@ -32,6 +32,7 @@ from nora.infra.sql.schema import (
     COGNITION_WAKE_OUTCOME,
     REMINDERS,
 )
+from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.platform.bridge.envelope import Envelope, canonical_source_key
 from nora.platform.bridge.queue import StreamProducer
 from nora.platform.bridge.rehydrate import message_from_dict, message_to_dict
@@ -194,8 +195,11 @@ class JourneyDriver:
             return list(result)
 
     async def start(self) -> None:
-        self.task = asyncio.create_task(self.app.run())
         await prepare_effect_reads(self.engine, self.subject.environment)
+        # The opening cut and live scheduler must see the same committed seed.
+        await SqlStimulusStore(self.engine).view(
+            unit=self.subject.unit, mode="live", now_ms=int(time.time() * 1000), limit=1)
+        self.task = asyncio.create_task(self.app.run())
         try:
             async with asyncio.timeout(15):
                 while not await self.runtime.redis.exists(self.runtime.readers[0].stream):

@@ -525,10 +525,9 @@ def test_composition_hands_the_client_the_derivations_inputs_not_a_budget():
         "count is not known until read time, so a number derived here is "
         "derived from the wrong wave count for every video"
     )
-    assert "direct_clients=_direct_describer_clients(cfg)" in call, (
-        "composition no longer hands VisionClient its DIRECT lanes — every "
-        "kimi and opencode-go read would answer unavailable, with no test red "
-        "(DEC-197 review)"
+    assert "direct_clients = _direct_describer_clients(cfg)" in source
+    assert "direct_clients=direct_clients" in call, (
+        "composition must hand VisionClient the configured direct clients"
     )
     assert "budget" not in call, (
         "a budget term is back in the vision timeout wiring — budgeted calls "
