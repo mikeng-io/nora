@@ -149,12 +149,6 @@
   "comment_blocks": 9,
   "internal_docstrings": 3
  },
- "nora/agent/browse.py": {
-  "comment_blocks": 2,
-  "functions": {
-   "_tools": 177
-  }
- },
  "nora/agent/cognition_pace.py": {
   "comment_blocks": 1,
   "internal_docstrings": 3
@@ -184,7 +178,7 @@
  },
  "nora/agent/factory.py": {
   "comment_blocks": 12,
-  "file_lines": 968
+  "file_lines": 921
  },
  "nora/agent/fetch_watch.py": {
   "internal_docstrings": 1
@@ -261,10 +255,10 @@
   "internal_docstrings": 4
  },
  "nora/agent/registry.py": {
-  "comment_blocks": 39,
-  "file_lines": 1374,
+  "comment_blocks": 38,
+  "file_lines": 1369,
   "functions": {
-   "ToolRegistry.__init__": 452
+   "ToolRegistry.__init__": 447
   },
   "internal_docstrings": 5
  },
@@ -327,7 +321,7 @@
  "nora/agent/tools.py": {
   "comment_blocks": 15,
   "functions": {
-   "build_tool_specs": 372,
+   "build_tool_specs": 370,
    "build_tools": 133
   }
  },
@@ -349,7 +343,7 @@
  "nora/analytics/composition.py": {
   "comment_blocks": 2,
   "functions": {
-   "build_rollup": 125
+   "build_rollup": 124
   },
   "internal_docstrings": 2
  },
@@ -623,7 +617,7 @@
  },
  "nora/domain/block_types.py": {
   "comment_blocks": 19,
-  "file_lines": 1102,
+  "file_lines": 1095,
   "internal_docstrings": 1
  },
  "nora/domain/blocks.py": {
@@ -934,7 +928,7 @@
   "internal_docstrings": 1
  },
  "nora/infra/computer/browser.py": {
-  "internal_docstrings": 5
+  "internal_docstrings": 4
  },
  "nora/infra/computer/client.py": {
   "comment_blocks": 1,
@@ -2163,7 +2157,7 @@
   "internal_docstrings": 3
  },
  "tests/architecture/test_every_model_call_is_a_declared_occasion.py": {
-  "comment_blocks": 5,
+  "comment_blocks": 4,
   "internal_docstrings": 2
  },
  "tests/architecture/test_every_recorded_metric_is_declared.py": {
@@ -2300,6 +2294,9 @@
  "tests/contract/test_audit_store_contract.py": {
   "file_lines": 1162,
   "internal_docstrings": 2
+ },
+ "tests/contract/test_binding_store_contract.py": {
+  "file_lines": 801
  },
  "tests/contract/test_blob_store_contract.py": {
   "comment_blocks": 2
@@ -2527,7 +2524,7 @@
   "comment_blocks": 2
  },
  "tests/integration/test_a_real_snapshot_seeds_an_isolated_subject.py": {
-  "file_lines": 876,
+  "file_lines": 871,
   "internal_docstrings": 1
  },
  "tests/integration/test_ambient.py": {
@@ -2580,7 +2577,7 @@
   "internal_docstrings": 1
  },
  "tests/integration/test_eval_official_entry_scoped.py": {
-  "internal_docstrings": 2
+  "internal_docstrings": 1
  },
  "tests/integration/test_eval_sandbox_index_reuse.py": {
   "internal_docstrings": 2
@@ -2691,7 +2688,7 @@
   "internal_docstrings": 2
  },
  "tests/integration/test_two_entry_points_one_runner.py": {
-  "comment_blocks": 2
+  "comment_blocks": 1
  },
  "tests/integration/test_version.py": {
   "internal_docstrings": 1
@@ -2871,7 +2868,7 @@
   "file_lines": 859
  },
  "tests/test_output_contracts.py": {
-  "comment_blocks": 3,
+  "comment_blocks": 2,
   "internal_docstrings": 1
  },
  "tests/test_persons.py": {
@@ -2988,7 +2985,7 @@
  },
  "tests/test_vision.py": {
   "comment_blocks": 8,
-  "file_lines": 1024,
+  "file_lines": 1023,
   "internal_docstrings": 2
  },
  "tests/test_web_fetch_tool.py": {
@@ -3234,7 +3231,7 @@
  },
  "tests/unit/test_heartbeat_loop.py": {
   "comment_blocks": 5,
-  "file_lines": 1021,
+  "file_lines": 1019,
   "internal_docstrings": 1
  },
  "tests/unit/test_ingest_pipeline.py": {

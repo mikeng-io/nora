@@ -15,7 +15,6 @@ import html as html_mod
 import importlib.util
 import json
 import re
-import socket
 import sys
 import tempfile
 import time
@@ -355,16 +354,10 @@ class JourneyServices:
         self.daemon: FakeSignalDaemon | None = None
         self.protocol: CausalProtocol | None = None
         self.judge: GeneratedJudge | None = None
-        self._metrics_port = self._free_port()
-
-    @staticmethod
-    def _free_port() -> int:
-        with socket.socket() as listener:
-            listener.bind(("127.0.0.1", 0))
-            return listener.getsockname()[1]
 
     def overrides(self) -> dict[str, Any]:
-        return {**self._overrides, "obs.metrics.port": self._metrics_port}
+        # The kernel assigns the port when the App binds its listener.
+        return {**self._overrides, "obs.metrics.port": 0}
 
     def subject_spec(self, database_url: str, environment: IsolatedServices,
                      *, workdir: Path) -> SubjectSpec:

@@ -57,7 +57,7 @@ def test_incomplete_or_placeholder_pr_fails(title, body):
     [
         ("fix/message-delivery", True),
         ("security/aikido-high-triage", True),
-        ("docs/openwiki-update", True),
+        ("docs/code-standards", True),
         ("mikeng-io/aikido-high-triage", False),  # owner-named, the form an agent used
         ("fix/Message_Delivery", False),
         ("fix/", False),

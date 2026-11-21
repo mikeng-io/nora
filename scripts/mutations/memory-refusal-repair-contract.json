@@ -51,7 +51,7 @@
  {
   "name": "the quoted-sample exemption is scoped to the named constant",
   "file": "tests/architecture/test_one_block_injector.py",
-  "old": "        if (opens[tag] - (allowed := _sample_sites(tree, rel, tag)))\n        and (closes[tag] - allowed)))",
+  "old": "        if (opens[tag] - (allowed := _sample_sites(tree, rel, tag)\n                          | _reader_sites(tree, rel, tag)))\n        and (closes[tag] - allowed)))",
   "new": "        if opens[tag] and closes[tag]))",
   "target": "tests/architecture/test_one_block_injector.py::test_a_quoted_sample_constant_exempts_only_itself"
  },
