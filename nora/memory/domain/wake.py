@@ -17,6 +17,7 @@ WakeFailure = Literal["error", "cancelled", "timeout", "bound", "room_busy"]
 @dataclass(frozen=True, slots=True)
 class WakeClosed:
     state: Literal["closed"] = "closed"
+    observed: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,3 +117,20 @@ def decide_wake(
     if any(s.kind in ("review_time", "valid_to", "deadline") for s in eligible):
         return WakeDecision(reason="clock")
     return WakeDecision(brake="waiting")
+
+
+NotObservable = Literal["operator_exposure", "outside_reading_scope", "no_home_room"]
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayItem:
+    graph_id: str
+    source: str
+    clock: datetime
+    origin: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayCoverage:
+    pending: tuple[tuple[ReplayItem, str], ...]
+    not_observable: dict[str, NotObservable]

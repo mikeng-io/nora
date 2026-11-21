@@ -15,7 +15,7 @@ from nora.memory.domain.pass_inputs import (
 )
 from nora.memory.domain.retrieval import RetrievalBounds
 
-PassName = Literal["called", "ambient", "proactive", "debrief", "wake", "review"]
+PassName = Literal["called", "ambient", "proactive", "debrief", "wake", "wake_history", "review"]
 Presentation = Literal["graph_profile", "graph_standing", "graph_lessons", "related"]
 
 
@@ -26,9 +26,10 @@ class PassDeclaration:
     pull: tuple[Literal["read"], ...]
     window: tuple[int, int, int, timedelta]
 
-    def bounds(self, at: datetime) -> RetrievalBounds:
+    def bounds(self, at: datetime, *, clock: datetime | None = None) -> RetrievalBounds:
         depth, fan_out, rows, age = self.window
-        return RetrievalBounds(depth, fan_out, rows, at - age, at)
+        at = clock if clock is not None else at
+        return RetrievalBounds(depth, fan_out, rows, at - age, at, ceiling=clock)
 
 
 # Provisional bounds, measured in phase 8.
@@ -46,6 +47,7 @@ _DECLARATIONS: dict[PassName, PassDeclaration] = {
     "proactive": PassDeclaration(ProactiveInput, _PRESENTATIONS, ("read",), _ENGAGEMENT),
     "debrief": PassDeclaration(DebriefInput, ("graph_standing",), (), _DEBRIEF),
     "wake": PassDeclaration(WakeInput, _PRESENTATIONS, ("read",), _WAKE),
+    "wake_history": PassDeclaration(WakeInput, _PRESENTATIONS, ("read",), _WAKE),
     "review": PassDeclaration(ReviewInput, (), ("read",), _REVIEW),
 }
 

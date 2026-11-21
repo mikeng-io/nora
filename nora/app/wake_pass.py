@@ -102,7 +102,7 @@ class WakePassRunner:
     async def _run(self, claimed: WakeClaim) -> WakeOutcome:
         now = self._clock() if self._clock is not None else claimed.claimed
         scope, direct = await self._rooms.scope(claimed)
-        instruction = self._instructions.for_objective(self._occasion)
+        instruction = self._instructions.for_objective(self._occasion.replace("_", "-"))
         revs = self._revisions()
         room = room_key(scope.room.platform, scope.room.conversation_id)
         context = PassContext(
@@ -110,6 +110,7 @@ class WakePassRunner:
             current_trace_id() or "", self._model, revs.get("rev_code") or "",
             instruction.sha256, revs.get("rev_skill") or "", revs.get("rev_config") or "",
             revs.get("rev_identity") or "", revs.get("rev_policy") or "",
+            clock=now if self._occasion == "wake_history" else None,
         )
         authority = ActAuthority(context.unit, room=context.room, pass_context=context)
         busy = False
@@ -126,6 +127,10 @@ class WakePassRunner:
                 self._occasion, WakeInput(claimed.stimuli), floor, scope, now,
             )
             if assembled.status == "unavailable":
+                return WakeFailed("error")
+            if context.clock is not None and tuple(id_ for id_, _ in assembled.observed) != tuple(
+                stimulus.graph_id for stimulus in claimed.stimuli
+            ):
                 return WakeFailed("error")
             seed_pass_shown(assembled.shown)
             tools = as_strands_tools(self._surface.bind(scope, now, room_busy))
@@ -157,4 +162,6 @@ class WakePassRunner:
             return WakeFailed("room_busy")
         if result.stop_reason in LIMIT_STOP_REASONS:
             return WakeFailed("bound")
-        return WakeClosed() if result.stop_reason == "end_turn" else WakeFailed("error")
+        if result.stop_reason == "end_turn":
+            return WakeClosed(observed=assembled.observed)
+        return WakeFailed("error")

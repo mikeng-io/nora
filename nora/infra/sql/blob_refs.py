@@ -67,6 +67,7 @@ _TRACE = "a log of what a turn or session was shown; nothing reads bytes through
 #: Columns that look like a key, or are JSON that could hold one under
 #: another name, and name no blob that must stay, and why.
 NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
+    ("graph_replay_receipt", "inputs"): "graph identifiers and content digests",
     ("graph_stimulus_claim", "graph_id"): "stimulus graph reference",
     ("nora_pass_output", "authority_intention"): "graph reference authorizing the output",
     ("debrief_obligation", "proposal_ids"): "graph identifiers of attempted operations",

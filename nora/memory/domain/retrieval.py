@@ -40,12 +40,15 @@ class RetrievalBounds:
     rows: int
     since: datetime
     until: datetime
+    ceiling: datetime | None = None
 
     def __post_init__(self) -> None:
         if self.depth < 0 or self.fan_out < 1 or self.rows < 1:
             raise ValueError("invalid graph bounds")
         if self.since.tzinfo is None or self.until.tzinfo is None or self.since > self.until:
             raise ValueError("invalid graph time window")
+        if self.ceiling is not None and self.ceiling.tzinfo is None:
+            raise ValueError("invalid graph ceiling")
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +122,7 @@ class RetrievedRow:
     items_since: int | None = None
     items_since_cause: str | None = None
     lesson_tally: RetrievedLessonTally | None = None
+    input_digest: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

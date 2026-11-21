@@ -64,7 +64,7 @@ FormRefusal = Literal[
 WriteRefusal = Literal[
     "stale_base", "credential", "doctrine", "content", "unsafe_page_reference",
     "not_open", "witness_not_met", "untyped_condition", "duplicate_delivery",
-    "not_this_delivery", "citation_outside_pass", "not_a_commit", "room_busy",
+    "not_this_delivery", "citation_outside_pass", "not_a_commit", "room_busy", "occasion_part",
     LessonInventoryRefusal, "loosens_law", "check_unavailable",
 ]
 RefusalReason = Literal[FormRefusal, WriteRefusal]
@@ -98,7 +98,7 @@ class Admitted:
 
 
 class _RefusalError(Exception):
-    def __init__(self, reason: FormRefusal, field: str) -> None:
+    def __init__(self, reason: RefusalReason, field: str) -> None:
         self.refusal = Refusal(reason, field)
 
 
@@ -110,6 +110,11 @@ _OCCASIONS = {
     "debrief": ("committed",),
     "wake": ("committed", "inferred"),
     "operator": ("inferred",),
+    "wake_history": ("inferred",),
+}
+_OCCASION_PARTS = {
+    "operator": frozenset({"lesson"}),
+    "wake_history": frozenset({"fact", "trait", "guess", "situation"}),
 }
 _REVISION_STATES = {
     "claim": ("live", "superseded", "awaiting_weighing"),
@@ -299,7 +304,7 @@ class _Admission:
         base, survivor = self._transition(proposal)
         if self.context.occasion == "operator" and (
             self.context.writer != "operator" or not isinstance(proposal, Retire)
-            or base is None or base.kind != "claim" or base.part != "lesson"
+            or base is None or base.kind != "claim" or base.part not in _OCCASION_PARTS["operator"]
             or base.state != "live" or not self.context.pass_id.startswith("operator:")
         ):
             raise _RefusalError("occasion_basis", "basis")
@@ -318,6 +323,10 @@ class _Admission:
             if isinstance(data, AddEdge) and data.basis not in get_args(graph.GraphBasis):
                 raise _RefusalError("illegal_basis", "basis")
             raise _RefusalError("occasion_basis", "basis")
+        allowed_parts = _OCCASION_PARTS.get(self.context.occasion)
+        if (isinstance(data, CreateClaim) and allowed_parts is not None
+                and data.part not in allowed_parts):
+            raise _RefusalError("occasion_part", "part")
         evidence = self._citations(data, base.kind if survivor and base else kind)
         if isinstance(data, CreateClaim) and not evidence:
             raise _RefusalError("missing_evidence", "citations")

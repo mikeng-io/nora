@@ -12,7 +12,9 @@ from nora.domain.lineage import Lineage
 from nora.memory.domain.graph import Kind
 
 ExposureOrder = ("external", "internal", "operator")
-Occasion = Literal["called", "ambient", "proactive", "debrief", "wake", "review", "operator"]
+Occasion = Literal[
+    "called", "ambient", "proactive", "debrief", "wake", "wake_history", "review", "operator",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +39,7 @@ class PassContext:
     rev_config: str
     rev_identity: str
     rev_policy: str
+    clock: datetime | None = None
 
     def provenance(self) -> dict[str, str]:
         return {

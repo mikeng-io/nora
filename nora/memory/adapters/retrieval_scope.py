@@ -152,14 +152,18 @@ def _permits(
 
 async def scoped_rows(
     conn: AsyncConnection, scope: RetrievalScope, target: RenderRoom, dm_rooms: frozenset[str],
+    *, ceiling: datetime | None = None, rows: FromClause | None = None,
 ) -> FromClause:
     here = target.room
     if here is None:
         raise RetrievalUnavailableError("reading_room_unavailable")
     aliases = _rooms(here)
-    rows = graph_rows(scope.unit, scope.as_of)
+    if rows is None:
+        rows = graph_rows(scope.unit, scope.as_of, source_clock=ceiling)
     row = rows.c
     base = _row_scope(rows, scope, reading_aliases=aliases, dm_rooms=dm_rooms)
+    if ceiling is not None:
+        base = sa.and_(base, row.event_time <= ceiling)
     details = (await conn.execute(sa.select(
         row.lineage, row.origin_room, row.source,
     ).where(base).distinct())).all()
