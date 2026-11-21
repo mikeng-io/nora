@@ -14,8 +14,8 @@
       ],
       "recipe": "app-icons",
       "consumers": [
-        "app/public/offline.html (standalone app URL /favicon.ico; deployed shared host uses site favicon)",
-        "app/public/sw.js (standalone app URL /favicon.ico; deployed shared host uses site favicon)"
+        "app/public/offline.html (URL /favicon.ico)",
+        "app/public/sw.js (URL /favicon.ico)"
       ],
       "provenance": "The clasp emblem (assets/nora-emblem.svg, the canonical mark; DESIGN.md \u00a72 and \u00a77), rendered by app/scripts/make-icons.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
@@ -402,7 +402,7 @@
         1536
       ],
       "mode": "RGB",
-      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; the evidence is in nora-assets. No 3D model/rig acceptance."
     },
     {
       "id": "assets.cinematic.mini-nora-social-banner",
