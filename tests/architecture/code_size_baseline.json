@@ -343,7 +343,7 @@
  "nora/analytics/composition.py": {
   "comment_blocks": 2,
   "functions": {
-   "build_rollup": 124
+   "build_rollup": 125
   },
   "internal_docstrings": 2
  },
@@ -2294,9 +2294,6 @@
  "tests/contract/test_audit_store_contract.py": {
   "file_lines": 1162,
   "internal_docstrings": 2
- },
- "tests/contract/test_binding_store_contract.py": {
-  "file_lines": 801
  },
  "tests/contract/test_blob_store_contract.py": {
   "comment_blocks": 2
