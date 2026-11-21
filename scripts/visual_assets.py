@@ -2,13 +2,13 @@
 """Inventory and synchronize tracked visual assets; no model calls or video renders.
 
 uv run python scripts/visual_assets.py check|report|sync
-sync reuses existing icon, showreel and rig processors (see their prerequisites).
+sync reuses the existing app icon, site image and showreel processors (see their prerequisites).
 Optional --sources JSON maps repository master paths to local generated PNGs.
 Full sync prerequisites (already used by those processors):
-uv run --no-project --python 3.12 --with pillow --with numpy --with scipy \
-    --with pymatting --with "rembg[cpu]" --with fonttools --with brotli \
+uv run --no-project --python 3.12 --with pillow --with numpy --with fonttools --with brotli \
     python scripts/visual_assets.py sync --sources /tmp/mini08-sources.json
-The site needs npm ci and site/.cache/NotoSansHK-wght.ttf for OG typography.
+Icons need rsvg-convert; the site needs npm ci and site/.cache/NotoSansHK-wght.ttf
+for OG typography.
 """
 
 from __future__ import annotations
@@ -125,7 +125,7 @@ def report(data: dict) -> str:
         (
             "Run `check` to verify coverage, source existence, byte fingerprints and the "
             "runtime handle; `sync` to rebuild app copies, icons, OG previews, showreel "
-            "images and the live rig using existing processors. These commands do not "
+            "images using existing processors. These commands do not "
             "generate new artwork, ingest media, publish profiles, deploy or render videos. A "
             "source edit requires a sync before its derivatives can be accepted."
         ),
@@ -287,6 +287,16 @@ def import_sources(data: dict, mapping: dict[str, str]) -> None:
     )
 
 
+def cutout(src: Path, size: int) -> Image.Image:
+    """Her cut-out (the portal's in-app icon of her): trimmed to its alpha, squared."""
+    art = Image.open(src).convert("RGBA")
+    art = art.crop(art.getchannel("A").point(lambda v: 255 if v > 24 else 0).getbbox())
+    side = max(art.size)
+    square = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    square.alpha_composite(art, ((side - art.width) // 2, (side - art.height) // 2))
+    return square.resize((size, size), Image.LANCZOS)
+
+
 def sync(data: dict) -> None:
     errors = validate(data, hashes=False)
     if errors:
@@ -299,7 +309,7 @@ def sync(data: dict) -> None:
         elif a["recipe"] == "webp":
             Image.open(ROOT / a["parents"][0]).save(dst, "WEBP", quality=90, method=6)
         elif a["recipe"] == "app-icon-webp":
-            app.bare_icon(512).save(
+            cutout(ROOT / a["parents"][0], 512).save(
                 dst, "WEBP", quality=90, method=6, exact=True, alpha_quality=100
             )
     app.main()
@@ -307,9 +317,6 @@ def sync(data: dict) -> None:
     rc = load_module("nora_showreel_art", "showreel/pipeline/process_art.py").main()
     if rc:
         raise SystemExit(rc)
-    subprocess.run(  # noqa: S603 - fixed repository processor, no external arguments
-        [sys.executable, str(ROOT / "site/scripts/make_rig.py"), "--debug"], cwd=ROOT, check=True
-    )
     by_path = {a["path"]: a for a in data["assets"]}
 
     # Masters precede outputs in the dependency graph, regardless of list order.

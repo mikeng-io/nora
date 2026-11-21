@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/cinematic/mini-nora-social-icon.png" alt="Mini Nora portrait" width="128">
+  <img src="assets/nora-emblem.svg" alt="Nora's emblem: a five-petal Bauhinia clasp with a copper thread tied off" width="112">
 </p>
 
 <h1 align="center">Nora</h1>

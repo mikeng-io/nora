@@ -5,7 +5,7 @@
 
 Outputs are committed under site/public/_site/ (favicon.ico at the root);
 rerun after changing the headline copy or the icon source. Sources, per DESIGN.md:
-  - icons: the clasp emblem, site/src/assets/emblem.svg (DESIGN.md §2: the
+  - icons: the clasp emblem, assets/nora-emblem.svg (DESIGN.md §2: the
     project's mark, never her face), transparent; a paper square where a
     platform forbids transparency
   - link previews: the wordmark, the headline and a Mini Nora cut-out
@@ -24,7 +24,7 @@ from PIL import Image, ImageDraw, ImageFont
 SITE = Path(__file__).resolve().parent.parent
 REPO = SITE.parent
 PUBLIC = SITE / "public" / "_site"
-EMBLEM = SITE / "src" / "assets" / "emblem.svg"   # the clasp emblem (DESIGN.md §2)
+EMBLEM = REPO / "assets" / "nora-emblem.svg"   # the clasp emblem, canonical (DESIGN.md §2)
 FONTS = SITE / "node_modules" / "@fontsource-variable"
 CJK = SITE / ".cache" / "NotoSansHK-wght.ttf"
 
@@ -49,8 +49,8 @@ def bare_icon(size: int) -> Image.Image:
 
 def on_studio(size: int, fill: float) -> Image.Image:
     """For platforms that forbid transparency (iOS paints it black, a maskable
-    icon must be full bleed): a studio square, never a circle, with her inside
-    `fill` of it."""
+    icon must be full bleed): a paper square, never a circle, with the emblem
+    inside `fill` of it."""
     canvas = Image.new("RGBA", (size, size), (*PAPER, 255))
     inner = bare_icon(round(size * fill))
     canvas.alpha_composite(inner, ((size - inner.width) // 2, (size - inner.height) // 2))

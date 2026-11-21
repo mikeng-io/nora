@@ -158,7 +158,7 @@ clothing of the identity anchors. Mini is the ordinary representation.
 |---|---|---|
 | site, portal, chat, reactions, stickers, runtime self-images | **Mini Nora** | `assets/nora-canonical-self.png`, `assets/nora-character-reference-sheet.png` |
 | cinematic art: the site's world, social banner and icon | **Mini Nora**, dimensional soft materials in the Lingnan mountain-and-sea world | `assets/cinematic/mini-nora-master.png`, `assets/cinematic/README.md` |
-| beside the wordmark; favicon, app icon, project avatar | **the clasp emblem** (below), not her | `site/src/assets/emblem.svg` |
+| beside the wordmark; favicon, app icon, project avatar | **the clasp emblem** (below), not her | `assets/nora-emblem.svg` |
 | where she appears as herself among people: a transcript, a member list | **Mini Nora**, cut-out (§7) | `assets/nora-mini-icon.png` |
 | her live form on the site | **Mini Nora**, a layered 2D rig (§6) | drawn from the canonical and cinematic sources |
 | adult illustration | **Adult Nora**, 2D anime | `assets/nora-human-bauhinia-reference.png` |
