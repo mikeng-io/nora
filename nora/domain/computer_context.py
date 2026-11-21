@@ -78,7 +78,7 @@ class LinkLine:
 @dataclass(frozen=True)
 class TaskLine:
     """One `computer_tasks` row as the block shows it ([computer.scoped]):
-    the task's short id (what `task=` on `computer_browse`/`computer_capture`
+    the task's short id (what `task=` on `web_browse`/`computer_capture`
     and `computer_cancel` take), its kind, its state — `queued`, `running`
     or a terminal word — when it was created, and how it ended (`note`)."""
 

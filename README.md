@@ -132,7 +132,6 @@ platform accounts and persistent storage.
 
 ## Start here
 
-- [Implementation wiki](https://nora.67.zone/wiki/): connected concepts and contributor workflows, maintained with OpenWiki.
 - [Glossary](GLOSSARY.md): the words that mean something specific here.
 - [Architecture](ARCHITECTURE.md): runtime boundaries, data and deployment.
 - [Decisions](docs/adr/README.md) and [design index](design/09-decision-index.md):
