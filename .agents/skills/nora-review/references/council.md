@@ -19,8 +19,9 @@ An advisory member may share a vendor with an author: its findings are
 evidence, never the independent verdict. A tier above 0 is chosen before review, naming the question it answers; a
 dispute or low confidence never adds members after a round. A disputed
 finding follows the existing stop rule (`ORCHESTRATION.md` «Bounded
-independent review»): the orchestrator triages it, and a blocking dispute goes
-to Mike.
+independent review»): the orchestrator triages it against the evidence; a
+supported blocker is fixed and verified, and Mike is asked only for intent,
+authority or redesign.
 
 ## Modes
 
@@ -49,7 +50,7 @@ to Mike.
 The orchestrator merges members' findings into one report: a finding two
 members ground independently keeps its strongest severity; a disputed finding
 names both positions and the evidence each cites, and is triaged by the
-orchestrator, and goes to Mike when it blocks. Severity stays the reviewer's (`ORCHESTRATION.md`).
+orchestrator under the same stop rule. Severity stays the reviewer's (`ORCHESTRATION.md`).
 A member that is unavailable is recorded **SKIPPED**, never filled in; the
 panel proceeds once its independent verdict member returns. When that member
 is SKIPPED, launch the next qualifying lane (`.agents/lanes.md`); a panel left
