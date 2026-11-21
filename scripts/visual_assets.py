@@ -2,7 +2,7 @@
 """Inventory and synchronize the images this repository ships; no model calls.
 
 uv run python scripts/visual_assets.py check|report|sync
-Her art's masters live in the private nora-assets repository (ADR 0039). A
+Her art's masters live in the private nora-assets repository. A
 copy here names its source as `nora-assets:<path>@<commit>`; refreshing it is a
 PR that copies the new file in. sync rebuilds only what is made here: the
 portal's icons from the emblem (app/scripts/make-icons.py, needs rsvg-convert).

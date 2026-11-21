@@ -112,14 +112,14 @@ def test_ordinary_changes_default_to_patch_even_with_feat(repo, plan, subjects, 
     assert plan.bump("1.0.0", plan.entries("v1.0.0")) == expected
 
 
-def test_a_breaking_change_footer_requires_owner_selected_major(repo, plan):
+def test_a_breaking_change_footer_requires_an_owner_selected_bump(repo, plan):
     (repo / "nora").mkdir(exist_ok=True)
     (repo / "nora/a.py").write_text("x")
     run("add", ".")
     run("commit", "-qm", "change: drop a verb\n\nBREAKING CHANGE: the verb is gone")
     found = plan.entries("v1.0.0")
     assert found[0].breaking
-    with pytest.raises(ValueError, match="owner-selected major"):
+    with pytest.raises(ValueError, match="owner-selected bump"):
         plan.bump("1.0.0", found)
     assert plan.bump("1.0.0", found, "major") == "2.0.0"
 
@@ -297,16 +297,26 @@ def test_a_compatible_feature_can_ship_as_an_assessed_product_patch(repo, plan):
     "subject",
     ["change!: remove a verb", "change: remove a verb\n\nBREAKING CHANGE: the verb is gone"],
 )
-@pytest.mark.parametrize("selected", ["patch", "minor"])
-def test_manual_bump_cannot_hide_a_declared_compatibility_change(repo, plan, subject, selected):
+@pytest.mark.parametrize(("selected", "version"), [("patch", "1.0.1"), ("minor", "1.1.0")])
+def test_the_owner_may_ship_a_declared_break_below_major(repo, plan, subject, selected, version):
     commit(repo, "nora/f.py", subject)
-    with pytest.raises(ValueError, match="below the"):
+    source = run("rev-parse", "HEAD").strip()
+    args = ["--repo", REPO, "--bump", selected, "--candidate", source, "--out", str(repo / "out")]
+    assert plan.main(args) == 0
+    assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": version}
+    assert "### ⚠ BREAKING CHANGES" in (repo / "CHANGELOG.md").read_text()
+
+
+def test_a_break_does_not_lift_the_milestone_floor(repo, plan):
+    commit(repo, "nora/f.py", "feat: add a capability\n\nRelease-Bump: minor")
+    commit(repo, "nora/g.py", "change!: remove a verb")
+    with pytest.raises(ValueError, match="below the minor"):
         plan.main(
             [
                 "--repo",
                 REPO,
                 "--bump",
-                selected,
+                "patch",
                 "--candidate",
                 run("rev-parse", "HEAD").strip(),
                 "--out",
@@ -314,7 +324,6 @@ def test_manual_bump_cannot_hide_a_declared_compatibility_change(repo, plan, sub
             ]
         )
     assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.0.0"}
-    assert not (repo / "out").exists()
 
 
 @pytest.mark.parametrize(
@@ -329,7 +338,7 @@ def test_manual_bump_cannot_hide_a_declared_compatibility_change(repo, plan, sub
 def test_automatic_major_is_refused_before_any_version_write(repo, plan, subject):
     commit(repo, "docs/note.md", subject)
     before = {p: (repo / p).read_bytes() for p in plan_files()}
-    with pytest.raises(ValueError, match="owner-selected major"):
+    with pytest.raises(ValueError, match="owner-selected bump"):
         plan.main(["--repo", REPO, "--out", str(repo / "out")])
     assert {p: (repo / p).read_bytes() for p in plan_files()} == before
     assert not (repo / "out").exists()
@@ -361,7 +370,7 @@ def test_breaking_merge_message_is_not_hidden(repo, plan):
     commit(repo, "docs/a.md", "docs: clarify behavior")
     run("switch", "-q", "master")
     run("merge", "--no-ff", "topic", "-m", "merge!: remove supported behavior")
-    with pytest.raises(ValueError, match="owner-selected major"):
+    with pytest.raises(ValueError, match="owner-selected bump"):
         plan.main(["--repo", REPO, "--out", str(repo / "out")])
 
 

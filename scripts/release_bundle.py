@@ -95,7 +95,7 @@ def validate_manifest(manifest: dict, *, previous: bool = False) -> None:
         builds = builds - {'signal-bridge', 'discord-bridge', 'bridge-projection'} | {'signal-cli'}
     if previous and 'alert-bridge' in services:
         builds.add('alert-bridge')
-    if previous and 'site' in services:  # releases before the site moved out (ADR 0039)
+    if previous and 'site' in services:  # releases before the site moved out
         builds.add('site')
     if set(services) != builds | {'presence', 'analytics'}:
         raise ValueError('deployment service set differs from owned cohort')
