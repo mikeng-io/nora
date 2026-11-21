@@ -28,6 +28,8 @@ COHORT = {
     'whatsapp-bridge': 'whatsapp-bridge', 'instagram-bridge': 'instagram-bridge',
     'bridge-projection': 'bridge-projection',
 }
+# Released before the site moved out (ADR 0039): accepted for rollback, never applied.
+RETIRED = {'site': 'site'}
 
 
 class CommandError(RuntimeError):
@@ -80,15 +82,16 @@ def expected_images(manifest: dict) -> dict[str, str]:
     if version[1] and (channel != 'master' or not manifest['commit'].startswith(version[1])):
         raise ValueError('snapshot stamp differs from master source')
     images = manifest['services']
-    if set(images) not in (set(COHORT), set(COHORT) - {'http-egress'}):
+    owned = set(images) - set(RETIRED)
+    if owned not in (set(COHORT), set(COHORT) - {'http-egress'}):
         raise ValueError('release service set differs from installed ownership')
     for service, image in images.items():
-        pattern = re.escape(REGISTRY + COHORT[service]) + r'@sha256:[0-9a-f]{64}'
+        pattern = re.escape(REGISTRY + {**COHORT, **RETIRED}[service]) + r'@sha256:[0-9a-f]{64}'
         if not re.fullmatch(pattern, image):
             raise ValueError(f'invalid pinned image for {service}')
     if len({images[s] for s in ('nora', 'presence', 'analytics')}) != 1:
         raise ValueError('shared Nora services must use one image')
-    return dict(images)
+    return {s: image for s, image in images.items() if s not in RETIRED}
 
 
 def reload_services(resolved: dict, images: dict, request: Path) -> list[str]:

@@ -362,6 +362,17 @@ so the source runtime and credentials can remain mounted read-only. Direct
 unless given `output_directory`. No new shared secret mounts are needed.
 Candidate validation remains network-disabled and also validates required model credentials using only the Nora service environment projection.
 
+## The site leaves the cohort
+
+The public site is no longer a Nora service (ADR 0039). The installed
+`komodo_deploy.py` needs this release's version before the first site-free
+release can apply; the old wrapper refuses it. The updated wrapper still
+accepts a release that lists `site`, for rollback, and never starts it. Remove
+`--site` and the `site` monitoring exclusion from the Stack, then the old
+container with `docker rm -f nora-site`, and route `/` on the instance's
+hostname to the portal. A release older than the split cannot be rebuilt from
+its tag; roll back by selecting its existing image bundle.
+
 ## Shared HTTP egress cohort (implementation candidate, 2026-11-05)
 
 The new `http-egress` image joins the ordinary publisher/rendered cohort. The

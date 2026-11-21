@@ -82,6 +82,10 @@ def validate(data: dict, *, hashes: bool = True) -> list[str]:
             errors.append(f"{a['path']}: missing consumer/provenance")
         if hashes and a.get("status") in {"pending-refresh", "needs-recapture"}:
             errors.append(f"pending Mini refresh: {a['path']}")
+        local = [p for p in a["parents"] if not p.startswith(EXTERNAL)]
+        copy_of = ROOT / local[0] if a.get("recipe") == "copy" and local else None
+        if hashes and copy_of and copy_of.is_file() and digest(path) != digest(copy_of):
+            errors.append(f"{a['path']}: copy differs from {local[0]}; run sync")
         if hashes and a.get("sha256") != digest(path):
             errors.append(f"changed bytes; run sync after reviewing source: {a['path']}")
     exports = {e["path"] for e in data["historical_exports"]}
@@ -216,8 +220,11 @@ def sync(data: dict) -> None:
     errors = validate(data, hashes=False)
     if errors:
         raise SystemExit("\n".join(errors))
-    app = load_module("nora_app_icons", "app/scripts/make-icons.py")
-    app.main()
+    for a in data["assets"]:
+        local = [p for p in a["parents"] if not p.startswith(EXTERNAL)]
+        if a["recipe"] == "copy" and local:
+            shutil.copyfile(ROOT / local[0], ROOT / a["path"])
+    load_module("nora_app_icons", "app/scripts/make-icons.py").main()
     by_path = {a["path"]: a for a in data["assets"]}
 
     # Masters precede outputs in the dependency graph, regardless of list order.

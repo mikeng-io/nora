@@ -33,7 +33,7 @@ they may be used only to build and run Nora from this repository:
 - app/src/assets/art/
 - app/public/icons/
 - app/public/favicon.ico
-- app/public/models/mini-nora/
+- app/public/models/mini-nora/character.glb
 - app/public/screenshots/
 
 Their masters are kept privately (ADR 0039).

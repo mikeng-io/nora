@@ -1267,6 +1267,21 @@ def test_previous_manifest_compatibility_keeps_image_and_cohort_checks(fault):
         bundle.validate_manifest(previous, previous=True)
 
 
+def test_a_release_from_before_the_site_moved_out_is_accepted_for_rollback_only():
+    bundle = load('release_bundle')
+    wrapper = load('komodo_deploy')
+    _, previous = bundle.render(source(), images(bundle), 'v7.20.7', 'b' * 40)
+    previous['services']['site'] = 'ghcr.io/mikeng-io/nora-site@sha256:' + 'c' * 64
+    bundle.validate_manifest(previous, previous=True)
+    with pytest.raises(ValueError, match='service set'):
+        bundle.validate_manifest(previous)
+    assert 'site' not in bundle.BUILDS
+    assert 'site' not in wrapper.expected_images(previous)
+    previous['services']['site'] = previous['services']['nora']
+    with pytest.raises(ValueError, match='site'):
+        wrapper.expected_images(previous)
+
+
 def _pre_bridge_manifest(bundle):
     _, manifest = bundle.render(source(), images(bundle), 'v7.12.3', 'b' * 40)
     for name in ('signal-bridge', 'discord-bridge', 'bridge-projection'):

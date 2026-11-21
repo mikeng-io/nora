@@ -120,8 +120,7 @@ def _apply(tmp_path: Path, monkeypatch, manifest: dict,
 
     monkeypatch.setattr(wrapper, '__file__', str(control / 'komodo_deploy.py'))
     monkeypatch.setattr(wrapper, 'run', execute)
-    wrapper.apply_release(['docker', 'compose'], manifest, runtime, 'nora',
-                          site=False)
+    wrapper.apply_release(['docker', 'compose'], manifest, runtime, 'nora')
 
 
 def test_app_only_release_preserves_bridge_and_publisher_containers(
@@ -152,8 +151,7 @@ def test_app_only_release_preserves_bridge_and_publisher_containers(
            control, runtime)
     first = copy.deepcopy(fixture.table)
     assert first, 'release did not create the cohort'
-    missing = {s for s in manifest_v1['services']
-               if s not in first and s != 'site'}
+    missing = {s for s in manifest_v1['services'] if s not in first}
     assert not missing, f'unstarted services: {sorted(missing)}'
 
     # The next release changes the app image alone — an app-only source diff.

@@ -1,8 +1,8 @@
 # A self-hosted Nora's portal is private: only its privacy and terms pages
 # are public. Nora's official site is heynora.bot.
 User-agent: *
-Allow: /zh-Hant/privacy
-Allow: /zh-Hant/terms
-Allow: /en/privacy
-Allow: /en/terms
+Allow: /zh-Hant/privacy$
+Allow: /zh-Hant/terms$
+Allow: /en/privacy$
+Allow: /en/terms$
 Disallow: /

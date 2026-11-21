@@ -62,7 +62,7 @@ Operator: **all five matter**; none is ruled out (including A5, the co-networked
 
 ## Existing controls
 
-- Portal: NextAuth JWT sessions, roster re-check on every request (`checkSession()`, `personById` with `Object.hasOwn`), dev login only in `next dev` with `NORA_DEV_LOGIN=1`, CSP and headers (`app/next.config.ts`, `site/Caddyfile`).
+- Portal: NextAuth JWT sessions, roster re-check on every request (`checkSession()`, `personById` with `Object.hasOwn`), dev login only in `next dev` with `NORA_DEV_LOGIN=1`, CSP and headers (`app/next.config.ts`).
 - OTP: bearer token with constant-time compare, uniform 202/401 responses, purpose-bound codes (`nora/web/otp.py`, `nora/app/otp*`).
 - Network: only loopback publishes; bridges, signal-cli, Honcho, stt and voice services publish nothing; Honcho isolated on its own network.
 - Service auth: `NORA_BRIDGE_TOKEN` on bridges and voice routes; `NORA_COMPUTER_TOKEN` on computerd.
