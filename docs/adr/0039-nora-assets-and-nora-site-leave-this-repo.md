@@ -1,6 +1,6 @@
 # ADR 0039: Her art and the public site leave this repository
 
-**Status:** proposed
+**Status:** accepted
 **Date:** 2026-11-22
 **Index:** none. This is a repository layout, not a runtime rule. The public
 repository's CI cannot read a private one, so a public build that needs one
