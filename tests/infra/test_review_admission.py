@@ -141,8 +141,8 @@ async def test_wake_cannot_change_a_judges_grade(scenario, occasion, operation):
     assert await submit(scenario, proposal("refuted", "guess", ("later",))) == Stored("grade")
     now = await scenario.now()
     context = replace(WAKE, occasion=occasion, clock=now if occasion == "wake_history" else None)
-    fields = dict(id="writer-change", scope=Scope(UNIT), basis="inferred", citations=("later",),
-                  **BASIS)
+    fields = dict(id="writer-change", scope=Scope(UNIT, exposure=None), basis="inferred",
+                  citations=("later",), **BASIS)
     mutation = (Revise(base="grade", replacement=CreateClaim(**fields, content="Generated change"))
                 if operation == "revise" else Retire(base="grade", **fields))
     [outcome] = (await service(scenario, slots(scenario)).admit(
