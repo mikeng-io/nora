@@ -474,12 +474,25 @@ class IsolatedServices:
     async def __aexit__(self, exc_type: type[BaseException] | None,
                         exc: BaseException | None,
                         tb: TracebackType | None) -> None:
-        cleanup = asyncio.create_task(self._close(asyncio.current_task()))
         try:
-            await asyncio.shield(cleanup)
-        except asyncio.CancelledError:
-            await cleanup
-            raise
+            cleanup = asyncio.create_task(self._close(asyncio.current_task()))
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                await cleanup
+                raise
+        finally:
+            # The guard is process-global: a teardown that cannot run the
+            # shielded close — no running loop, or the loop torn down
+            # first — must still unwind it, or the next case inherits the
+            # refusals.
+            self._unwind_guard()
+
+    def _unwind_guard(self) -> None:
+        self._active = False
+        self._patches.close()
+        if self._directory is not None:
+            self._directory.cleanup()
 
     async def _close(self, owner: asyncio.Task[Any] | None) -> None:
         errors: list[BaseException] = []
@@ -506,9 +519,6 @@ class IsolatedServices:
                     self._process.terminate()
                     await self._process.wait()
             finally:
-                self._active = False
-                self._patches.close()
-                if self._directory is not None:
-                    self._directory.cleanup()
+                self._unwind_guard()
         if errors:
             raise BaseExceptionGroup("evaluation dependency cleanup failed", errors)
