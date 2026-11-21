@@ -28,6 +28,8 @@ export class Stage {
   readonly grade: ShaderPass;
   private readonly loader = new THREE.TextureLoader();
   private readonly fogs: THREE.ShaderMaterial[] = [];
+  /** Set by dispose(): a texture that arrives after it is released, not used. */
+  private dead = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
@@ -68,6 +70,10 @@ export class Stage {
       this.loader.load(
         url,
         (t) => {
+          if (this.dead) {
+            t.dispose();
+            return res(null);
+          }
           t.colorSpace = THREE.SRGBColorSpace;
           t.anisotropy = 8;
           res(t);
@@ -125,6 +131,24 @@ export class Stage {
   order(group: THREE.Object3D, base = 0, last: THREE.Object3D[] = []): void {
     group.children.forEach((o, i) => o.traverse((c) => (c.renderOrder = base + i)));
     for (const o of last) o.traverse((c) => (c.renderOrder = base + 900));
+  }
+
+  /** Release everything on the GPU: the scene's geometries, materials and textures, each pass, the renderer. */
+  dispose(): void {
+    this.dead = true;
+    this.scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      m.geometry?.dispose();
+      for (const mat of [m.material].flat()) {
+        if (!mat) continue;
+        for (const v of Object.values(mat)) if (v instanceof THREE.Texture) v.dispose();
+        mat.dispose();
+      }
+    });
+    for (const pass of this.composer.passes) pass.dispose();
+    this.composer.dispose();
+    this.renderer.dispose();
+    this.renderer.forceContextLoss();
   }
 
   render(t: number): void {

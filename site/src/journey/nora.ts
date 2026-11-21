@@ -53,7 +53,13 @@ export class Nora {
 
   static async create(canvas: HTMLCanvasElement, url: string): Promise<Nora> {
     const n = new Nora(canvas);
-    const info = await n.player.load(url);
+    let info;
+    try {
+      info = await n.player.load(url);
+    } catch (e) {
+      n.player.dispose({ release: true });
+      throw e;
+    }
     if (info.fullBody) n.player.view.fit = "whole";
     return n;
   }

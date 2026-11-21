@@ -109,16 +109,22 @@ export class Ui {
       this.place(el, at);
       const px = parseFloat(el.style.left), py = parseFloat(el.style.top);
       const w = card.offsetWidth, h = card.offsetHeight;
-      // a spot is [dx, dy]; dy 1 means "below the pavilion"
+      // a spot is [dx, dy]; dy 1, 2, 3 mean "below the pavilion", each step further down
       const box = ([dx, dy]: [number, number]) => {
-        const below = dy === 1;
-        const top = below ? GAP : -GAP - h + dy;
+        const below = dy >= 1 && dy <= 3;
+        const top = below ? GAP + (dy - 1) * 90 : -GAP - h + dy;
         return { left: px + dx - w / 2, top: py + top, right: px + dx + w / 2, bottom: py + top + h, below, dx, y: top };
       };
       const fits = (b: ReturnType<typeof box>) =>
         b.left > 8 && b.right < innerWidth - 8 && b.top > 64 && b.bottom < innerHeight - 8 &&
         !keep.some((r) => b.left < r.right && b.right > r.left && b.top < r.bottom && b.bottom > r.top);
-      const spot = spots.map(box).find(fits);
+      // nearby spots first; then the same heights slid just inside the screen's edges
+      const inside = (dy: number): [number, number][] => {
+        const leftEdge = 12 + w / 2 - px, rightEdge = innerWidth - 12 - w / 2 - px;
+        return [[Math.max(leftEdge, Math.min(rightEdge, 0)), dy]];
+      };
+      const tries: [number, number][] = [...spots, ...[0, -60, -140, 1, 2, 3].flatMap(inside)];
+      const spot = tries.map(box).find(fits);
       const use = spot ?? box([0, 0]);
       card.style.left = `${use.dx - w / 2}px`;
       card.style.top = `${use.y}px`;

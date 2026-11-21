@@ -118,7 +118,7 @@ const slips = { path: [said("l1"), said("l2"), said("l4")], lifted: said("l1"), 
                 <span class="name">{c.room}</span>
                 <span class="members">{c.members}</span>
               </header>
-              <ol class="log">
+              <ol class="log" data-lenis-prevent>
                 {c.lines.map((x) => (
                   <li class="msg" data-chat-line={x.id}>
                     <span class="who">{x.who}</span>

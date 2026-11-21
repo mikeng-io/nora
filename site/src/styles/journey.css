@@ -462,13 +462,6 @@
   font-size: clamp(3rem, 9.5vw, 11rem);
 }
 
-.stage-on .beat-soulbound .display,
-.stage-on .beat-soulbound .eyebrow {
-  user-select: none;
-  -webkit-user-select: none;
-  pointer-events: none;
-}
-
 .stage-on .beat-soulbound .copy {
   max-width: none;
   justify-items: center;
@@ -885,8 +878,9 @@
     padding-top: 104px;
   }
 
-  .rail .l {
-    display: none;
+  /* no side rail on a phone: it would sit on the words */
+  .rail {
+    display: none !important;
   }
 
   .chat {
@@ -896,4 +890,12 @@
 
 .chat:not(.live) .how {
   display: none;
+}
+
+/* dragging the soulbound split never selects its words (after the active-beat rules) */
+.stage-on .beat-soulbound.on .display,
+.stage-on .beat-soulbound.on .eyebrow {
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
 }

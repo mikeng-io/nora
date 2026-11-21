@@ -29,61 +29,61 @@ const supported = () => {
 };
 
 if (canvas && noraCanvas && story && supported()) {
-  start(canvas, noraCanvas, story).catch((e) => {
-    console.error(e);
-    root.classList.remove("stage-on", "stage-loading");
-  });
+  start(canvas, noraCanvas, story).catch((e) => console.error(e));
 }
 
 async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, story: HTMLElement): Promise<void> {
+  // Everything the stage makes is registered here as it is made; any failure,
+  // at startup or later, runs the same release in reverse and leaves the page
+  // as written: the whole story as stills and words.
+  const undo: (() => void)[] = [];
+  let released = false;
+  const release = () => {
+    released = true;
+    while (undo.length) {
+      try {
+        undo.pop()!();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    root.classList.remove("stage-on", "stage-loading", "stage-waiting", "own-cursor");
+  };
   root.classList.add("stage-on", "stage-loading");
   scrollTo(0, 0);
   const stage = new Stage(canvas);
+  undo.push(() => stage.dispose());
   const words = (story.dataset.nodes ?? "").split("|").filter(Boolean);
   const slips = JSON.parse(story.dataset.slips ?? "{}") as { path: string[]; lifted: string; traveller: string };
   const world = new World(stage, words, slips);
-  const [nora] = await Promise.all([Nora.create(noraCanvas, noraUrl), world.loadHero()]);
+  let nora: Nora;
+  try {
+    const noraLoad = Nora.create(noraCanvas, noraUrl);
+    noraLoad.then((n) => undo.push(() => n.player.dispose({ release: true })), () => {});
+    [nora] = await Promise.all([noraLoad, world.loadHero()]);
+  } catch (e) {
+    release();
+    throw e;
+  }
   const veil = new Veil(stage.camera, world.transit);
   const type = new Type(story);
+  undo.push(() => type.restore());
   const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+  undo.push(() => rt.dispose());
   const life = new AbortController();   // every stage listener ends with the stage
+  undo.push(() => life.abort());
   const ui = new Ui(life.signal);
   const chat = new Chat(life.signal);
+  undo.push(() => chat.detach());
   const director = new Director(stage, world, nora);
   let rest = false;
-  let failed = false;
   world.loadRest().then(
     () => (rest = true),
     (e) => {
-      // a required painting failed: give the visitor the whole story as stills and words
       console.error(e);
-      failed = true;
-      teardown();
+      release();
     },
   );
-
-  /** Back to the written page: listeners off, words and chat as written, GPU and rig released. */
-  const teardown = () => {
-    life.abort();
-    lenis.destroy();
-    type.restore();
-    chat.detach();
-    root.classList.remove("stage-on", "stage-loading", "stage-waiting", "own-cursor");
-    nora.player.dispose({ release: true });
-    stage.scene.traverse((o) => {
-      const m = o as THREE.Mesh;
-      m.geometry?.dispose();
-      for (const mat of [m.material].flat()) {
-        if (!mat) continue;
-        for (const v of Object.values(mat)) if (v instanceof THREE.Texture) v.dispose();
-        mat.dispose();
-      }
-    });
-    rt.dispose();
-    stage.composer.dispose();
-    stage.renderer.dispose();
-    stage.renderer.forceContextLoss();
-  };
 
   ui.onLit = () => {
     nora.player.act("nod");
@@ -98,7 +98,9 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
     }
   };
 
+  // the chat's log scrolls itself (data-lenis-prevent on it)
   const lenis = new Lenis({ lerp: 0.08, wheelMultiplier: 0.85 });
+  undo.push(() => lenis.destroy());
   const max = () => document.documentElement.scrollHeight - innerHeight;
   for (const a of document.querySelectorAll<HTMLAnchorElement>("a[data-scene]")) {
     a.addEventListener("click", (e) => {
@@ -116,7 +118,7 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
   const t0 = last;
 
   const frame = (now: number) => {
-    if (failed) return;
+    if (released) return;
     lenis.raf(now);
     const t = (now - t0) / 1000, dt = Math.min(0.05, (now - last) / 1000);
     last = now;
@@ -145,7 +147,7 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
       stage.grade.uniforms.tAlt.value = rt.texture;
     }
     const lt = waiting ? 0.5 : scene.id === "hero" ? Math.max(l, 0.26 * ease(ramp(intro, 0.35, 1))) : scene.id === "gate" ? Math.min(l, 0.75) : l;
-    if (waiting) chat.frame(scene.id === "act", 0.9);
+    chat.live(!waiting);
     type.show(scene.id, lt);
     type.hideAll(new Set([scene.id]));
     ui.railFrame(index);

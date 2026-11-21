@@ -13,6 +13,7 @@ export class Chat {
   private readonly svg: SVGSVGElement | null;
   private timers: number[] = [];
   private asked = false;
+  private shownCount = 0;
   onEvent: (kind: "ask" | "reply" | "own") => void = () => {};
 
   constructor(private readonly signal: AbortSignal) {
@@ -40,8 +41,11 @@ export class Chat {
       this.root.querySelector("[data-morning]")?.classList.toggle("in", own);
       if (own) this.onEvent("own");
     }
+    // follow the newest message when one arrives; otherwise the visitor scrolls the log
     const log = this.root.querySelector<HTMLElement>(".log");
-    if (log && active) log.scrollTop = log.scrollHeight;
+    const count = this.root.querySelectorAll(".log .in").length;
+    if (log && active && count > this.shownCount) log.scrollTop = log.scrollHeight;
+    this.shownCount = active ? count : 0;
     if (!active) this.clear();
   }
 
@@ -101,6 +105,11 @@ export class Chat {
     for (const el of this.root.querySelectorAll("[data-you], [data-reply], [data-typing]")) el.classList.remove("in", "shown");
     for (const x of this.root.querySelectorAll<HTMLButtonElement>("[data-ask]")) x.disabled = false;
     this.clear();
+  }
+
+  /** Live chat, or (while its scene's paintings are still arriving) the written transcript. */
+  live(on: boolean): void {
+    this.root?.classList.toggle("live", on);
   }
 
   /** Back to the written transcript: everything shown, nothing live. */
