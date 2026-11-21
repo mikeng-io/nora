@@ -415,7 +415,18 @@ def test_only_earlier_admitted_rows_join_the_shown_set() -> None:
 
 
 def test_refusal_literal_covers_all_reachable_form_and_write_reasons() -> None:
+    nora = replace(ENTITY, basis="computed", pointer_kind="nora", pointer_ref="nora")
+    correction = replace(ITEM, aimed_at_nora=True)
+    lesson = replace(
+        NEW_CLAIM, part="lesson", content="Check the plan before committing.",
+        links=(replace(ENTITY_LINK, source=NEW_CLAIM.id, target=nora.id),),
+    )
     cases = (
+        (replace(lesson, links=()), {}),
+        (lesson, {"extra": (nora,)}),
+        (lesson, {"extra": (nora, replace(ITEM, author="nora"))}),
+        (replace(lesson, content="Short"), {"extra": (nora, correction)}),
+        (replace(lesson, content="Long " * 90), {"extra": (nora, correction)}),
         (cast(Proposal, object()), {}),
         (replace(NEW_EDGE, type="invalid"), {}),
         (replace(NEW_EDGE, target=INTENTION.id), {}),
@@ -470,4 +481,10 @@ def test_refusal_literal_covers_all_reachable_form_and_write_reasons() -> None:
         "citation_outside_pass",
         "not_a_commit",
         "room_busy",
+        "echoes_doctrine",
+        "echoes_lesson",
+        "cap",
+        "relearn",
+        "loosens_law",
+        "check_unavailable",
     }

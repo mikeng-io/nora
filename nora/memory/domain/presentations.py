@@ -284,8 +284,10 @@ def lessons(result: RetrievalResult) -> tuple[RetrievedRow, ...]:
         row for row in result.rows if row.kind == "claim" and row.part == "lesson"
         and row.state in ("live", "retired")
     )
-    def key(row: RetrievedRow) -> tuple[bool, int, timedelta, str]:
+    def key(row: RetrievedRow) -> tuple[int, bool, int, timedelta, str]:
+        tally = row.lesson_tally
         return (
+            tally.contradiction - tally.support if tally is not None else 0,
             row.support is None, -row.support.count if row.support is not None else 0,
             _recency(row), row.graph_id,
         )

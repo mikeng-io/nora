@@ -68,7 +68,6 @@ def cfg(tmp_path, monkeypatch, clean_pg_url, example_config_path, owned_dependen
     # DATABASE_URL, which build_dependencies() reads (store.database_url_env) to run
     # migrations and wire the store: a throwaway database, never production.
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    dst = example_config_path
     # config.example.toml's identity_file ("identity.toml") resolves relative to
     # the config file's own directory (nora/config.py's path-resolution context);
     # build_dependencies() calls load_persons() against it, so it must exist.
@@ -109,7 +108,7 @@ def cfg(tmp_path, monkeypatch, clean_pg_url, example_config_path, owned_dependen
     # become a silent Dreamer three hours later), so an unpointed `[dreamer]`
     # section makes every wiring test here fail on a missing directory rather
     # than on the thing it is testing.
-    return override_config(load(dst), {
+    return override_config(load(example_config_path), {
         "store.data_dir": tmp_path,
         "platforms.signal.mode": "direct",
         "platforms.signal.base_url": "http://127.0.0.1:18080",
@@ -1609,6 +1608,7 @@ async def test_cognition_off_builds_no_stimulus_stage_and_no_wake_poller(cfg):
 
 _SESSION_ON = {
     "dreamer.enabled": True, "notes.enabled": True, "cognition.enabled": True,
+    "lessons.check_model": "fixture-lesson-check",
 }
 
 

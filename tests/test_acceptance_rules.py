@@ -51,13 +51,10 @@ RULE_TESTS = {
     # R-1: ordinary ambient traffic constructs no agents. The participation exception
     # requires an opted-in room, a quiescence-closed window and one `FirePath.speak` evaluation.
     "R-1": "test_ambient_reaches_the_agent_only_through_participation_gating",
-    # R-1b: the send-path clause of R-1 includes the untagged `nora.app.fire.FirePath`.
-    # R-1's test harnesses only ambient input, so it stays green no matter how many non-tag
-    # send paths exist and is no brake on this clause. R-1b is that brake: `Deliverer` is
-    # the only caller of `adapter.send`, it is constructed only by `deliver.build`, and
-    # `deliver.build` has exactly two callers — the tag pipeline and the fire path. The
-    # participation occasion changes NOTHING here: it goes through `FirePath.speak`, so the
-    # two callers remain two.
+    # R-1b covers sending outside the ambient-input harness for R-1.
+    # Only Deliverer calls adapter.send. Only deliver.build constructs it.
+    # The tag pipeline and FirePath.speak remain the only two callers of deliver.build.
+    # The participation occasion uses FirePath.speak.
     "R-1b": "test_only_the_tag_path_and_the_fire_path_can_send",
     "R-2": "test_a_reaction_and_a_text_reply_share_the_message_cap",
     "R-2b": "test_deliverer_latch_is_single_shot",
@@ -463,6 +460,9 @@ RULE_TESTS = {
         "test_a_called_revision_carries_only_live_inferred_about_and_derives_people"
     ),
     "wake-parks-failures": "test_the_third_counted_failure_parks_the_set",
+    "lesson-admission": "test_three_distinct_verdicts_admit_a_checked_lesson",
+    "lesson-tally": "test_lesson_tallies_resting_verdicts_and_renders_counts",
+    "lesson-relearn": "test_operator_retirement_hides_graph_lesson_and_sets_evidence_floor",
 }
 
 

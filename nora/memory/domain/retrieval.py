@@ -85,6 +85,12 @@ class RetrievedSupport:
 
 
 @dataclass(frozen=True, slots=True)
+class RetrievedLessonTally:
+    support: int
+    contradiction: int
+
+
+@dataclass(frozen=True, slots=True)
 class RetrievedRow:
     graph_id: str
     kind: Kind
@@ -112,6 +118,7 @@ class RetrievedRow:
     support: RetrievedSupport | None = None
     items_since: int | None = None
     items_since_cause: str | None = None
+    lesson_tally: RetrievedLessonTally | None = None
 
 
 @dataclass(frozen=True, slots=True)

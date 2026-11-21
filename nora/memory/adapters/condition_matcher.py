@@ -171,7 +171,7 @@ class SqlIntentionBatch:
         stamp = await self._revision_time(table, row)
         if stamp is None:
             return Evaluation("unknown")
-        return Evaluation(condition.measure(row), _witness(row, stamp))
+        return Evaluation(condition.measure(dict(row)), _witness(row, stamp))
 
     async def _has_expired_inputs(self, table: sa.Table, row: RowData) -> bool:
         at = row["occurred_at"] or row["asserted_at"]

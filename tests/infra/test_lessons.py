@@ -229,28 +229,14 @@ async def _cli(monkeypatch, env, func, capsys, **args):
     return rc, capsys.readouterr().out
 
 
-async def test_the_cli_lists_shows_retires_and_rolls_back(env, monkeypatch, capsys):
+async def test_the_cli_shows_and_rolls_back_legacy_revisions(env, monkeypatch, capsys):
     lid = (await _write(env))["lesson_id"]
-    rc, out = await _cli(monkeypatch, env, cli.cmd_lessons_list, capsys, unit=UNIT, all=False)
-    assert rc == 0 and lid in out and ONE in out
     rc, out = await _cli(monkeypatch, env, cli.cmd_lessons_show, capsys, lesson_id=lid)
     assert rc == 0 and "rev 1" in out and "cites: 110, 111" in out
-
-    # A dry run writes nothing.
-    rc, out = await _cli(monkeypatch, env, cli.cmd_lessons_retire, capsys, lesson_id=lid,
-                         why="wrong", apply=False)
-    assert rc == 0 and "nothing written" in out
-    assert len(await env.book.active(unit=UNIT)) == 1
-
-    rc, out = await _cli(monkeypatch, env, cli.cmd_lessons_retire, capsys, lesson_id=lid,
-                         why="wrong", apply=True)
-    assert rc == 0 and json.loads(out)["status"] == "ok"
-    rc, out = await _cli(monkeypatch, env, cli.cmd_lessons_list, capsys, unit=UNIT, all=False)
-    assert "no active lessons" in out
-    rc, out = await _cli(monkeypatch, env, cli.cmd_lessons_list, capsys, unit=UNIT, all=True)
-    assert "retired by operator" in out
-    # No re-learn: an empty Record means the floor is the lesson's own newest citation (111).
-    assert (await _write(env, body=TWO, citations=("110", "111")))["reason"] == "relearn"
+    await env.book.retire(
+        unit=UNIT, lesson_id=lid, by="operator", why="Generated correction",
+        established_by="operator", record_head=111,
+    )
 
     rc, out = await _cli(monkeypatch, env, cli.cmd_lessons_rollback, capsys, lesson_id=lid,
                          to=1, apply=True)

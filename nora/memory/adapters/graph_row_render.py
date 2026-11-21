@@ -50,6 +50,12 @@ def _claim(row: RetrievedRow, now: datetime) -> tuple[str, ...]:
         "support=unknown" if support is None else
         f"support={support.count}, last evidenced={_age(support.last_evidenced_at, now)}"
     )
+    if row.part == "lesson":
+        tally = row.lesson_tally
+        evidence = (
+            f"support={tally.support}, contradiction={tally.contradiction}"
+            if tally is not None else "support=unknown, contradiction=unknown"
+        )
     staleness = ""
     if row.part == "situation":
         count = row.items_since if row.items_since is not None else "unknown"

@@ -19,6 +19,7 @@ from nora.memory.domain.retrieval import (
     RetrievalScope,
     RetrievalUnavailableError,
     RetrievedEdge,
+    RetrievedLessonTally,
     RetrievedPerson,
     RetrievedRow,
     RetrievedSupport,
@@ -151,6 +152,22 @@ async def _support(
     return {key: RetrievedSupport(total, at) for key, total, at in heads}
 
 
+async def _lesson_tallies(
+    conn: AsyncConnection, rows: FromClause, claims: tuple[str, ...],
+) -> dict[str, RetrievedLessonTally]:
+    if not claims:
+        return {}
+    tally = rows.alias("scoped_lesson_tallies").c
+    image = tally.image
+    claim_id = image["claim_id"].astext
+    counts = await conn.execute(sa.select(
+        claim_id, image["support"].astext.cast(sa.Integer),
+        image["contradiction"].astext.cast(sa.Integer),
+    ).where(tally.source == "lesson_tally", claim_id.in_(claims)))
+    return {key: RetrievedLessonTally(support, contradiction)
+            for key, support, contradiction in counts}
+
+
 async def _optional_counts(
     conn: AsyncConnection, statement: sa.Select[Any],
 ) -> dict[str, int] | None:
@@ -238,6 +255,10 @@ async def load_rows(
     support = await _support(conn, rows, tuple(
         key for key, entry in found.items() if entry["kind"] == "claim"
     ))
+    lesson_tallies = await _lesson_tallies(conn, rows, tuple(
+        key for key, entry in found.items() if entry["image"].get("part") == "lesson"
+        and key not in tombstoned
+    ))
     situations = {
         key: _staleness_cause(entry["origin_room"], scope, dm_rooms)
         for key, entry in found.items()
@@ -290,7 +311,7 @@ async def load_rows(
             part=cast(ClaimPart, image["part"]) if kind == "claim" else None,
             pointer_kind=cast(PointerKind | None, image["pointer_kind"])
             if kind == "entity" else None,
-            support=support.get(graph_id),
+            support=support.get(graph_id), lesson_tally=lesson_tallies.get(graph_id),
             items_since=items_since, items_since_cause=staleness_cause,
         ))
     return tuple(result)

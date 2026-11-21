@@ -918,8 +918,8 @@ async def _compose_dependencies(
     )
     subagent_desk = _agent_desk.subagent_desk
     graph_debrief = build_graph_debrief(
-        _memory_wire, dreamer_instructions, cfg, engine, access, lineage,
-        persons_view, allowlist, doctrine_store, content_checks, clock, metrics, slots,
+        _memory_wire, dreamer_instructions, cfg, engine, access, lineage, persons_view,
+        allowlist, doctrine_store, content_checks, clock, metrics, slots, model_client_for,
     )
     engagement_graph = EngagementGraph(
         access, _memory_wire.message_graph_ids(engine),

@@ -32,6 +32,7 @@ from nora.memory.domain.admission_proposals import Occasion as Occasion
 from nora.memory.domain.admission_proposals import PassContext as PassContext
 from nora.memory.domain.admission_proposals import Retire as Retire
 from nora.memory.domain.admission_proposals import Revise as Revise
+from nora.memory.domain.admission_proposals import Scope as Scope
 from nora.memory.domain.authored_output import without_reasoning as without_reasoning
 from nora.memory.domain.debrief import DebriefObligation as DebriefObligation
 from nora.memory.domain.debrief import ProposalId as ProposalId

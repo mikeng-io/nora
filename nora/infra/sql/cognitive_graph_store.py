@@ -50,6 +50,8 @@ class AdmissionTopic:
 GRAPH_READERS = (
     "nora.memory.adapters.claim_support",
     "nora.memory.adapters.intention_verdicts",
+    "nora.memory.adapters.lesson_tally",
+    "nora.app.graph_lessons_cli",
     "nora.memory.adapters.learning_reads",
     "nora.memory.adapters.pass_anchors",
     "nora.memory.adapters.retrieval_load",
@@ -166,6 +168,7 @@ _SOURCE_CONTENT = {
     "forget_request": ("targets", "delete_now"),
     "dispute": ("claim_id",),
     "claim_support": ("support_count", "last_evidenced_at"),
+    "lesson_tally": ("claim_id", "support", "contradiction"),
     "intention_verdict": ("intention_id", "ending", "ended_at", "witness_id",
                           "form", "owed_to", "condition_form"),
 }
@@ -193,7 +196,7 @@ def visible_to_reads(
     excluded_claim_states = ("hidden", "tombstoned") if registry_at is None else ("hidden",)
     request = FORGET_REQUEST.alias().c
     targets: list[sa.ColumnElement[str]] = [identity]
-    if "support_count" in c:
+    if "support_count" in c or "contradiction" in c:
         targets.append(c.claim_id)
     return sa.and_(
         sa.exists().where(
@@ -321,12 +324,15 @@ class SqlCognitiveGraph:
         retire: bool = False,
         merge: tuple[str, str] | None = None,
         topics: Sequence[AdmissionTopic] = (),
+        before_write: Callable[[AsyncConnection], Awaitable[None]] | None = None,
         after_write: Callable[[AsyncConnection], Awaitable[None]] | None = None,
     ) -> None:
         """Write a model proposal and all its edges as one graph transaction."""
         committing = False
         try:
             async with self._engine.begin() as conn:
+                if before_write is not None:
+                    await before_write(conn)
                 for topic in topics:
                     if topic.base_state is None:
                         await self._insert(conn, ENTITY, topic.row)

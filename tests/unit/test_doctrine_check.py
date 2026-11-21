@@ -209,10 +209,7 @@ def test_a_book_takes_the_check_and_the_tension_store_together():
 
 
 def test_no_model_surface_reads_a_tension_row():
-    """A tension rendered into her turns becomes an argument with the
-    law. No read tool can return one, no block type names one, and only the
-    composition root (which hands the store to the book's write path) and the
-    operator's CLI import the store."""
+    """Tensions go to the operator CLI. Composition wires the lesson writers."""
     from nora.agent.registry import ToolRegistry
     from nora.domain.block_types import BLOCK_TYPES
 
@@ -223,7 +220,7 @@ def test_no_model_surface_reads_a_tension_row():
         str(p.relative_to(root.parent)) for p in root.rglob("*.py")
         if "from nora.infra.sql.tension import" in p.read_text(encoding="utf-8")
     }
-    assert users == {"nora/app/composition_dream.py", "nora/app/cli.py"}
+    assert users == {"nora/app/composition_dream.py", "nora/app/cli.py", "nora/memory/wire.py"}
 
 
 def test_the_objective_answers_in_the_shape_the_parser_reads():
