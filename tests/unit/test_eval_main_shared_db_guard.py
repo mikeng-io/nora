@@ -371,7 +371,10 @@ def test_a_sigterm_mid_run_still_drops_the_private_template_and_checks_the_guard
 def test_context_experiment_requires_a_prefill_receipt_for_each_draw(monkeypatch, capsys):
     from types import SimpleNamespace
 
-    report = SimpleNamespace(cases=[{"name": "generated#1"}, {"name": "generated#2"}])
+    report = SimpleNamespace(
+        cases=[{"name": "generated#1"}, {"name": "generated#2"}],
+        detailed_results=[[SimpleNamespace(label=m.PASS)] for _ in range(2)],
+    )
     experiment = SimpleNamespace(cases=report.cases, run_evaluations=lambda **kwargs: report)
     monkeypatch.setattr(m, "experiment_for", lambda *a, **k: (experiment, None))
     # This test's subject is the prefill receipt check; the accounting seam
@@ -380,10 +383,9 @@ def test_context_experiment_requires_a_prefill_receipt_for_each_draw(monkeypatch
         {"status": "PASS"},
         {"execution": {"status": "PASS"}, "validity": {"status": "PASS"},
          "behavior": {"status": "UNMEASURED"}}))
-    monkeypatch.setattr(m, "census", lambda *a: "synthetic census")
+    monkeypatch.setattr(m, "census", lambda _, *, cohort: "synthetic census")
     monkeypatch.setattr(m, "_print_spend", lambda: None)
     monkeypatch.setattr(m, "_print_memory_overhead", lambda: None)
-    monkeypatch.setattr(m, "read", lambda *a: SimpleNamespace(passed=2, failed=0, errored=0))
     receipts = [{"case": "generated#1"}]
     assert not m._run_one("tool_selection", source_url="URL", judge=None, sample=1,
                           context_receipts=receipts)

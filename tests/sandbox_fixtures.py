@@ -16,12 +16,27 @@ rows in it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
+from aiohttp import web
+from opentelemetry import trace
+
+from evals import backbone
+from nora.platform.bridge.service import ActionReply, action_response
+from nora.platform.bridge.wire import ActionRequest
 from nora.subject import Knowledge, Message, SubjectSpec, know, obtain
+from nora.subject.environment import IsolatedServices
+from nora.subject.eval_evidence import EvidenceError, RunEvidence, read_events
 from nora.subject.obtain import _DEFAULT_IDENTITY, default_policy
+from nora.subject.sandbox import eval_host_lock
+from nora.testing.signal_daemon import FakeSignalDaemon
+from tests.fakes import FakeHoncho
 
 #: One room, the shape `SubjectSpec`'s defaults give a test.
 ROOM = ("signal", "g1")
@@ -49,6 +64,104 @@ class Source:
             "conversation_id": self.room[1],
             "before_ms": self.before_ms,
         }
+
+
+class OfflineSubjectServices:
+    """Own a fresh protocol world per draw. Model requests receive a local outage."""
+
+    @asynccontextmanager
+    async def open(self, database_url: str, redis: bool = False) -> AsyncIterator[IsolatedServices]:
+        model = web.Application()
+
+        async def unavailable(request: web.Request) -> web.Response:
+            body = await request.json()
+            if not isinstance(body, dict) or not (body.get("model") and body.get("messages")):
+                return web.json_response({"error": {"message": "invalid request"}}, status=400)
+            return web.json_response({"error": {"message": "offline test provider"}}, status=503)
+
+        model.router.add_post("/v1/chat/completions", unavailable)
+        daemon = FakeSignalDaemon()
+        bridge = web.Application()
+
+        async def identity(_request: web.Request) -> web.Response:
+            return web.json_response({"primary": "generated-self", "aliases": []})
+
+        async def groups(_request: web.Request) -> web.Response:
+            return web.json_response(daemon.groups)
+
+        async def health(_request: web.Request) -> web.Response:
+            return web.json_response({"ok": True})
+
+        async def action(request: web.Request) -> web.Response:
+            body = await request.json()
+            try:
+                action = ActionRequest.from_dict(body)
+                target = action.request["target"]
+                payload = action.request[{"send": "text", "react": "emoji"}[action.op]]
+                if not action.action_id or not target["id"] or not isinstance(payload, str):
+                    raise ValueError("invalid bridge action")
+            except (KeyError, TypeError, ValueError):
+                return web.json_response({"error": "unexpected bridge action"}, status=400)
+            return web.json_response(action_response(
+                action.action_id, ActionReply("confirmed", platform_ms=daemon.sent_at_ms),
+            ))
+
+        async def signal_rpc(request: web.Request) -> web.Response:
+            body = await request.json()
+            if not isinstance(body, list):
+                return await daemon.rpc(request)
+            if {row.get("method") for row in body} != {"listContacts", "getUserStatus"}:
+                return web.json_response({"error": "unexpected identity batch"}, status=400)
+            return web.json_response([
+                {"jsonrpc": "2.0", "id": row["id"], "result": []} for row in body
+            ])
+
+        bridge.router.add_post("/api/v1/rpc", signal_rpc)
+        bridge.router.add_get("/v1/self", identity)
+        bridge.router.add_get("/v1/groups", groups)
+        bridge.router.add_get("/v1/health", health)
+        bridge.router.add_post("/v1/actions", action)
+        async with IsolatedServices(database_url=database_url, redis=redis, applications={
+            "llm.base_url": model,
+            "honcho.base_url": FakeHoncho().application(),
+            "platforms.signal.base_url": bridge,
+        }) as environment:
+            yield environment
+            environment.check()
+
+
+@asynccontextmanager
+async def offline_subject(spec: SubjectSpec):
+    """Compose and close a subject for a test that supplies no external model."""
+    async with OfflineSubjectServices().open(spec.database_url, redis=True) as environment:
+        yield await obtain(replace(spec, environment=environment))
+
+
+async def offline_drive(case, spec):
+    """Drive the harness with real private capture and an isolated offline world."""
+    from scripts.memory_graph_spike import measured_run_budget
+
+    backbone._prefill_capture()
+    services = {case.name or "unnamed": OfflineSubjectServices()}
+    with eval_host_lock() as lock_fd:
+        evidence = RunEvidence(run_id=f"offline-{uuid4().hex}", lock_fd=lock_fd, metadata={})
+        result = None
+        try:
+            with evidence.capture(trace.get_tracer_provider()), measured_run_budget(
+                SimpleNamespace(stop_after_tokens=20_000), evidence, evidence.path, {},
+                max_requests=20, max_output_tokens=400_000,
+            ):
+                result = await backbone._drive(case, replace(spec, services=services))
+        except EvidenceError as error:
+            # The negative controls intentionally drive a provider failure. Read
+            # the persisted ERROR outcome while preserving the failed run receipt.
+            if str(error) != "model_error" or result is None or not any(
+                state.name == backbone.NORA_ERROR and state.state
+                for state in result["environment_state"]
+            ):
+                raise
+            assert any(row["kind"] == "run_failed" for row in read_events(evidence.path))
+        return result
 
 
 def dated(
@@ -84,15 +197,12 @@ async def seed_source(
     Rows without an `at_ms` are dated by `dated()`; `standing`'s age and the
     notes are written relative to `before_ms` exactly as `know()` does.
     """
-    from evals.backbone import _close
-
     policy = policy or default_policy(room)
-    subject = await obtain(SubjectSpec(
+    async with offline_subject(SubjectSpec(
         database_url=url, workdir=workdir / "seed", room=room,
         policy=policy, identity=identity,
         now=datetime.fromtimestamp(before_ms / 1000, tz=UTC),
-    ))
-    try:
+    )) as subject:
         transcript = knowledge.transcript
         if transcript and any(
             isinstance(m, str) or m.at_ms is None for m in transcript
@@ -113,8 +223,6 @@ async def seed_source(
             now_ms=before_ms,
             leave_room_for_arrival=False,
         )
-    finally:
-        await _close(subject)
     return Source(
         url=url, room=room, before_ms=before_ms, policy=policy, identity=identity,
         template=template,

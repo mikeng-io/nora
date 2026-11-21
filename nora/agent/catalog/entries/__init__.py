@@ -108,7 +108,7 @@ _KEY_ORDER = [
     "computer_export",
     "computer_import",
     "computer_session_list",
-    "computer_browse",
+    "web_browse",
     "computer_capture",
     "computer_cancel",
     "document_publish",

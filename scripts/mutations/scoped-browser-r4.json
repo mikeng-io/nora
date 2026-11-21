@@ -23,8 +23,8 @@
  {
   "name": "browser actions have separate audit operations",
   "file": "nora/computer/adapters/tools/sessions.py",
-  "old": "\"computer_browse.action\",\n                    uuid.uuid4(),\n                    (\"finished\"",
-  "new": "\"computer_browse.action\", operation_id, \"finished\"",
+  "old": "f\"{c.tool_name}.action\",\n                    uuid.uuid4(),\n                    (\"finished\"",
+  "new": "f\"{c.tool_name}.action\", c.operation_id, \"finished\"",
   "target": "tests/integration/test_scoped_browser_recovery.py::test_action_rows_have_distinct_keys_and_preserve_tool_finish"
  },
  {

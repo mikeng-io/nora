@@ -247,7 +247,7 @@ class ToolRouteGrader(Evaluator):
         if results is None or inputs is None:
             return self._out(ERROR, 0.0, "journey inputs/results unavailable")
 
-        tools = ("computer_browse", "computer_capture", "computer_export")
+        tools = ("web_browse", "computer_capture", "computer_export")
         ordered_inputs = [(name, text) for name, text in inputs if name in tools]
         ordered_results = [(name, text) for name, text in results if name in tools]
         expected = [name for name in ran if name in tools]
@@ -281,7 +281,7 @@ class ToolRouteGrader(Evaluator):
             if result["status"] == "ok":
                 successful[name].append((index, args, result))
 
-        for browse_index, _, browse in successful["computer_browse"]:
+        for browse_index, _, browse in successful["web_browse"]:
             handle, target = browse.get("task"), browse.get("tab")
             if not handle or not target:
                 continue

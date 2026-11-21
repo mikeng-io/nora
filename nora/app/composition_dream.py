@@ -44,7 +44,7 @@ from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.profile import SqlProfileStore
 from nora.infra.sql.profile_inputs import SqlProfileInputs
 from nora.infra.sql.rollup_read import SqlRollupRead
-from nora.infra.sql.social_stream import SqlSocialStreamStore, readable_social_store
+from nora.infra.sql.social_stream import readable_social_store
 from nora.infra.sql.tension import SqlTensionStore
 from nora.language.background_identity import BackgroundIdentity
 from nora.language.character import (
@@ -227,9 +227,7 @@ def _character_person_adaptor(
                 store=SqlCharacterEvidence(engine,
                     identity_ids=access.identity_ids if access is not None else None),
                 keys=person_keys,
-                # Evidence and input assembly both enforce current social consent.
-                social=(SqlSocialStreamStore(engine) if access is not None
-                    and not access.is_file_backend else readable_social_store(engine, persons)),
+                social=readable_social_store(engine, persons),
                 access=access,
                 former_ids=access.former_ids_for if access is not None
                     else persons.former_ids_for,
@@ -385,10 +383,6 @@ def _profile_person_adaptors(
     # store's (opted-out, gone and hidden left out there), the
     # same store the social cursor and the counts come from.
     profile_social = readable_social_store(engine, persons)
-    # Selected person reads are gated by current preferences in evidence and render.
-    # Collective readers retain their own store rather than inheriting this scope.
-    person_social = (SqlSocialStreamStore(engine) if access is not None
-        and not access.is_file_backend else profile_social)
     schedules = {
         PROFILE_PERSON_ADAPTOR_NAME: AdaptorSchedule(
             min_interval_seconds=cfg.memory.profile.update_every_seconds,
@@ -415,10 +409,10 @@ def _profile_person_adaptors(
                 profile=profile_store,
                 keys=character.person_keys,
                 wake_batch=cfg.memory.profile.person.update_every_messages,
-                source_inputs=SqlProfileInputs(engine, social=person_social,
+                source_inputs=SqlProfileInputs(engine, social=profile_social,
                     identity_ids=access.identity_ids if access is not None else None),
                 source_timeout_seconds=cfg.standing.store_timeout_seconds,
-                social=person_social, access=access,
+                social=profile_social, access=access,
                 former_ids=access.former_ids_for if access is not None
                     else persons.former_ids_for,
             ),
@@ -435,7 +429,7 @@ def _profile_person_adaptors(
             # The social items' render (45 §4): screened like the
             # Character session's, captions redacted to the author's
             # own handle, each reading clipped as the media reads.
-            social=person_social, identity=BackgroundIdentity(access),
+            social=profile_social, identity=BackgroundIdentity(access),
             coordinate_screen=looks_like_coordinate if content_checks else None,
             screen=functools.partial(scan_identifiers, content_checks=content_checks),
             render_chars=cfg.media.comprehension_render_chars,
@@ -530,8 +524,7 @@ def _profile_collective_adaptors(
                     kind=kind,
                     render=profile_index,
                     identity=BackgroundIdentity(access),
-                    source_inputs=SqlProfileInputs(engine, social=(SqlSocialStreamStore(engine)
-                        if access is not None and not access.is_file_backend else profile_social)),
+                    source_inputs=SqlProfileInputs(engine, social=profile_social),
                     members=LiveMapping(
                         functools.partial(
                             _collective_members,

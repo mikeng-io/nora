@@ -550,7 +550,7 @@ def test_the_trigger_records_nothing_to_a_decision_log():
     decision-log seam on BOTH sides, so the trigger has no decision-log collaborator.
 
     Asserted structurally rather than behaviourally: the test-seam policy
-    (AGENTS.md) is that a production class takes every collaborator through
+    (docs/code-standards.md) is that a production class takes every collaborator through
     `__init__` and nothing else, so the only way this trigger could write a
     decision row again is for a constructor parameter naming one to exist.
 

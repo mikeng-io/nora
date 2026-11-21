@@ -141,7 +141,9 @@ Either form carries:
   them is revised, the intention is due for reconsideration;
 - **serves** — the parent intention a child advances;
 - **watches** — for a maintain intention, the outside sources code polls on its
-  behalf for as long as it holds;
+  behalf for as long as it holds. A watch targets an entity that carries a
+  **source reference** (its page address, account or saved place) of a kind an
+  intake adapter can poll; admission refuses a watch on any other entity;
 - **delivery** — *choose a moment*, re-judged at delivery, or *when it comes
   up*, raised only in a natural opening. A chosen moment has a **trigger**: a
   time, or a watched condition holding, such as an event starting. Moving a
