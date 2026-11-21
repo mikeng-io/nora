@@ -23,6 +23,7 @@ from nora.infra.voice.hub import VoiceControllerHub
 from nora.platform.discord import music_messages as m
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.channels import is_voice_channel
+from nora.platform.discord.command_acts import DiscordCommandActs
 from nora.platform.discord.music_commands import _connect_factory
 from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.discord.music_notify import (
@@ -62,12 +63,14 @@ class DiscordMusicToolBridge:
         hub: VoiceControllerHub | None = None,
         voice_guild_ids: frozenset[str] = frozenset(),
         resolve_music_channel: ResolveMusicChannel = no_music_channel,
+        command_acts: DiscordCommandActs | None = None,
     ) -> None:
         self._adapter = adapter
         self._manager = manager
         self._hub = hub
         self._voice_guild_ids = voice_guild_ids
         self._resolve_music_channel = resolve_music_channel
+        self._command_acts = command_acts
 
     def _guild_id(self, conversation_id: str) -> str:
         guild_id, _, _ = conversation_id.partition("/")
@@ -123,6 +126,7 @@ class DiscordMusicToolBridge:
             guild_id=guild_id,
             fallback_channel_id=channel_id or None,
             resolve_music_channel=self._resolve_music_channel,
+            command_acts=self._command_acts,
         )
 
     async def play(

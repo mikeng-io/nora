@@ -348,11 +348,11 @@ def _wired(monkeypatch, *, instance="boot-1", tasks=None, segments=None, lifecyc
     tabs = FakeBrowserTabStore()
 
     @contextlib.asynccontextmanager
-    async def fake_cdp(*, base_url, token, scope, instance=None):
+    async def fake_cdp(*, base_url, token, scope, instance=None, effects=None):
         yield cdp
 
     @contextlib.asynccontextmanager
-    async def fake_tab(*, base_url, token, scope, target_id, instance=None):
+    async def fake_tab(*, base_url, token, scope, target_id, instance=None, effects=None):
         if target_id is None:
             cdp._n += 1
             target_id = f"target-{cdp._n}"

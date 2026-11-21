@@ -53,6 +53,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from nora.app.computer_task_acts import ComputerTaskActs
 from nora.domain.computer_tasks import (
     QUEUED,
     RUNNING,
@@ -419,9 +420,10 @@ class ComputerAdmission:
         reconcile: Callable[[str], Awaitable[str]] | None = None,
         audit: Callable[[ComputerTask, str], Awaitable[None]] | None = None,
         lifecycle: Any = None,
+        acts: ComputerTaskActs | None = None,
     ) -> None:
         self._tasks = tasks
-        self._redis = redis
+        self._acts = acts or ComputerTaskActs(redis)
         self._clock = clock
         self._poll = poll_seconds
         self.executors = executors or SegmentRegistry()
@@ -488,17 +490,12 @@ class ComputerAdmission:
             created_at=now, updated_at=now, deadline_at=deadline_at,
         )
         task = await self._tasks.enqueue(task)
-        claimed = await self._tasks.try_claim_head(task.id, now=self._clock())
+        claimed = await self._acts.start(
+            task, _stream(scope), lambda: self._tasks.try_claim_head(task.id, now=self._clock()),
+        )
         if claimed is not None:
             return SubmittedTask(task=claimed, granted=True)
-        try:
-            await self._redis.xadd(_stream(scope), {"task": str(task.id)})
-        except Exception:  # noqa: BLE001 - a publish gap reconciles, never loses the row
-            log.warning("computer task publish failed; the reconcile pass will")
-        # The wait is for the RUNNER's grant+dispatch: `granted` is never
-        # answered here — a row the runner claimed executes runner-side, and
-        # returning it to the caller would run the segment twice. The caller
-        # only ever sees the terminal result inside the window.
+        # Once the runner owns dispatch, the caller may only observe its terminal result.
         deadline = asyncio.get_running_loop().time() + wait_seconds
         while asyncio.get_running_loop().time() < deadline:
             row = await self._tasks.get(task.id)
@@ -634,6 +631,7 @@ class ComputerAdmission:
         try:
             await self._tasks.finish(
                 task_id, status=status, result=cut_result(result), now=self._clock())
+            await self._acts.observe_job(str(task_id), await self._tasks.get(task_id))
         except Exception:
             log.exception("computer task %s could not write its terminal row", task_id)
             return False
@@ -659,6 +657,7 @@ class ComputerAdmission:
         `cancelled` on a flag alone."""
         row = await self._tasks.request_cancel(task_id, now=self._clock())
         if row is None or row.status != RUNNING:
+            await self._acts.observe_job(str(task_id), row)
             return row
         executor = self.executors.executor(task_id)
         if executor is None:
@@ -856,9 +855,11 @@ class ComputerQueueRunner:
         executors: SegmentRegistry | None = None,
         audit: Callable[[ComputerTask, str], Awaitable[None]] | None = None,
         lifecycle: Any = None,
+        acts: ComputerTaskActs | None = None,
     ) -> None:
         self._tasks = tasks
         self._redis = redis
+        self._acts = acts or ComputerTaskActs(redis)
         self._clock = clock
         self._metrics = metrics
         self._batch = batch
@@ -939,7 +940,7 @@ class ComputerQueueRunner:
             grace = self._clock() - timedelta(seconds=10)
             for task in await self._tasks.unannounced(limit=self._batch):
                 if task.created_at < grace:
-                    await self._redis.xadd(_stream(task.scope), {"task": str(task.id)})
+                    await self._acts.recover(task, _stream(task.scope))
             for task in await self._tasks.interrupted(
                     older_than=self._clock() - ORPHAN_AFTER, limit=self._batch):
                 if self._executors.executor(task.id) is not None:
@@ -975,11 +976,7 @@ class ComputerQueueRunner:
         return granted
 
     async def _deliver_pending(self) -> None:
-        """Terminal rows whose result never reached a room, discovered from
-        the table — not the stream: a last terminal row with no open
-        siblings (a fast-path row its caller lost, a delivery that kept
-        failing after the row's siblings closed) is re-driven until
-        `delivered_at` lands, never stranded."""
+        """Report terminal results from SQL until `delivered_at` is set."""
         if self._on_terminal is None:
             return
         try:
@@ -988,6 +985,7 @@ class ComputerQueueRunner:
             log.exception("computer queue undelivered read failed")
             return
         for row in rows:
+            await self._acts.observe_job(str(row.id), row)
             pending = self._executors.pending_result(row.id)
             if pending is not None and pending.consumed:
                 await _persist_pending(
@@ -1079,6 +1077,7 @@ class ComputerQueueRunner:
                 continue
             row = await self._tasks.get(task_id)
             if row is None:
+                await self._acts.observe_job(str(task_id), None)
                 await self._ack(stream, mid)
                 continue
             if row.status in TERMINAL:
@@ -1208,6 +1207,7 @@ class ComputerQueueRunner:
         try:
             await self._tasks.finish(
                 task_id, status=status, result=cut_result(result), now=self._clock())
+            await self._acts.observe_job(str(task_id), await self._tasks.get(task_id))
         except Exception:
             log.exception("computer task %s could not write its terminal row", task_id)
             return False

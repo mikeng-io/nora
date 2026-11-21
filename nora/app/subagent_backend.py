@@ -28,6 +28,7 @@ from nora.app.subagent_runner import REASON_TEXT, SubagentOutcome, SubagentRunne
 from nora.domain.checkpoint import Checkpoint
 from nora.domain.compute import ComputeJobStore
 from nora.domain.ports import JobResult, JobStatus, LaunchRequest
+from nora.memory import Act, ActAuthority, ActEnvelope, ActInvocation, Outcome, declare_act
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.app.subagent_backend")
@@ -51,6 +52,7 @@ class _Job:
     # The queue segment this job holds, when it was admitted through the
     # scoped computer's FIFO: `cancel` drains it there first.
     segment_id: uuid.UUID | None = None
+    act: Act | None = None
 
 
 @dataclass(frozen=True)
@@ -77,6 +79,8 @@ class SubagentBackend:
         admission: Any = None,
         scope_for: Callable[[str, str, str], str] | None = None,
         worker_seconds: float = 960.0,
+        acts: ActEnvelope | None = None,
+        room_unit: Callable[[str, str], str | None] | None = None,
     ) -> None:
         self._store = jobs
         self._runner = runner
@@ -90,6 +94,8 @@ class SubagentBackend:
         self._admission = admission
         self._scope_for = scope_for
         self._worker_seconds = worker_seconds
+        self._acts = acts
+        self._room_unit = room_unit
         self._jobs: dict[str, _Job] = {}
 
     async def launch(self, *, request: LaunchRequest) -> str:
@@ -101,9 +107,29 @@ class SubagentBackend:
                 persist=lambda payload, at: self._persist(job_id, payload, at),
             ),
         )
+        if self._acts is None:
+            self._start(job)
+        else:
+            unit = (
+                self._room_unit(request.platform, request.conversation_id)
+                if self._room_unit is not None else None
+            )
+            job.act = declare_act(
+                "subagent.launch", f"subagent:{job_id}", event=job_id,
+                authority=ActAuthority(unit, request.requester_person_id,
+                                        room=request.conversation_id),
+            )
+            if await self._acts.invoke(job.act, lambda _key: self._dispatch(job)) is None:
+                raise RuntimeError("the sub-agent launch was already invoked")
+        return job.id
+
+    def _start(self, job: _Job) -> None:
         self._jobs[job.id] = job
         job.task = asyncio.create_task(self._work(job), name=f"subagent-{job.id}")
-        return job.id
+
+    async def _dispatch(self, job: _Job) -> ActInvocation[None]:
+        self._start(job)
+        return ActInvocation(None, Outcome("uncertain"))
 
     async def _persist(self, backend_job_id: str, payload: Mapping[str, Any], at: datetime) -> None:
         """Write a job's checkpoint to its row. The row is written after `launch` returns, so
@@ -121,6 +147,7 @@ class SubagentBackend:
             job.outcome = await self._run_admitted(job)
         except asyncio.CancelledError:
             self._mark_cancelled(job)
+            await self._observe_job(job)
             raise
         except Exception:
             log.exception("sub-agent %s raised outside its run", job.id)
@@ -128,9 +155,25 @@ class SubagentBackend:
                 document_ids=job.progress.document_ids, failure_reason="error",
             )
         job.finished_at = self._clock()
+        await self._observe_job(job)
         self._metrics.inc(
             "nora_subagent_jobs_total", outcome=job.outcome.failure_reason or "done",
         )
+
+    async def _observe_job(self, job: _Job) -> None:
+        if self._acts is None or job.act is None:
+            return
+        out = job.outcome
+        if job.cancelled or (out is not None and out.failure_reason is not None):
+            outcome = Outcome("failed")
+        elif out is not None:
+            outcome = Outcome("done", {"report": out.report, "document_ids": out.document_ids})
+        else:
+            outcome = Outcome("uncertain")
+        try:
+            await self._acts.record_act_outcome(job.act, outcome)
+        except Exception:
+            log.exception("sub-agent act outcome could not be recorded (job=%s)", job.id)
 
     async def _run_admitted(self, job: _Job) -> SubagentOutcome:
         """Run the job — inside the scope's `worker` segment when the queue
@@ -234,6 +277,10 @@ class SubagentBackend:
         self._prune()
         job = self._jobs.get(job_id)
         if job is None:
+            if self._acts is not None:
+                act = await self._acts.by_destination("subagent.launch", f"subagent:{job_id}")
+                if act is not None:
+                    await self._acts.record_act_outcome(act, Outcome("uncertain"))
             return JobResult(
                 status=JobStatus.FAILED, error="unknown job_id", failure_reason="lost",
             )
@@ -274,6 +321,7 @@ class SubagentBackend:
         job.task.cancel()
         await asyncio.gather(job.task, return_exceptions=True)
         self._mark_cancelled(job)
+        await self._observe_job(job)
 
     def status(self, job_id: str) -> SubagentStatus | None:
         job = self._jobs.get(job_id)

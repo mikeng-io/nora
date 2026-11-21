@@ -91,6 +91,7 @@ from nora.platform.bridge.wire import attachment_key_ok
 from . import music_messages as m
 from .adapter import DiscordAdapter
 from .channels import ClientChannelDirectory
+from .command_acts import DiscordCommandActs
 from .discord_presence import DiscordPresence
 from .listener import DiscordListener
 from .media import DEFAULT_ATTACHMENT_HOSTS
@@ -380,11 +381,13 @@ class DiscordBridge:
         publisher: JournalPublisher | None = None,
         journal: Journal | None = None,
         metrics: Metrics | None = None,
+        command_acts: DiscordCommandActs | None = None,
     ) -> None:
         if client is None and client_factory is None:
             raise ValueError("a client or a client_factory is required")
         self._api_token = api_token
         self._metrics = metrics
+        self._command_acts = command_acts or DiscordCommandActs()
         self._account_key = account_key
         self._client = client
         self._client_factory = client_factory
@@ -447,19 +450,17 @@ class DiscordBridge:
         # off this bridge's client getter (see _ClientHolder).
         self._holder = _ClientHolder(self.current_client)
         self._channels = ClientChannelDirectory(self.current_client)
-        # `cast` is honest here: each consumer only ever calls
-        # `adapter.current_client()`, which is the shim's entire surface.
+        # The bridge's cache readers and music tools only use this shim's live client getter.
         shim = cast(DiscordAdapter, self._holder)
         self._voice_presence = DiscordVoicePresence(adapter=shim)
         self._presence = DiscordPresence(adapter=shim)
-        # The forwarded deterministic command surface — the real
-        # `MusicToolBridge` implementation, so the slash commands and the
-        # app's tool calls are literally the same decision path.
         self._tool: DiscordMusicToolBridge | None = (
             DiscordMusicToolBridge(
                 adapter=shim, manager=manager, hub=hub,
                 voice_guild_ids=self._voice_guild_ids,
-                resolve_music_channel=self._resolve_music_channel)
+                resolve_music_channel=self._resolve_music_channel,
+                command_acts=self._command_acts,
+            )
             if manager is not None
             else None
         )
@@ -524,16 +525,11 @@ class DiscordBridge:
         return f"{guild_id}/{room}"
 
     async def _slash_admission(self, interaction: Any) -> bool:
-        """The tree-wide `interaction_check`: every standalone slash
-        command (`/music …`, `/discord …`) answers to the SAME projection
-        as capture and the forwarded tool surface — room admitted AND
-        requester holding the room's sender grant — not just the voice
-        guild allow-list (that still gates `connect()` itself)."""
+        """Slash commands require both capture scope and the room's sender grant."""
         guild_id = getattr(interaction, "guild_id", None)
         if guild_id is None:
             with contextlib.suppress(Exception):
-                await interaction.response.send_message(
-                    m.music_not_in_server_line(), ephemeral=True)
+                await self._command_acts.denied(interaction, m.music_not_in_server_line())
             return False
         channel = getattr(interaction, "channel", None)
         channel_id = getattr(interaction, "channel_id", None)
@@ -544,12 +540,14 @@ class DiscordBridge:
             if channel is not None
             else f"{guild_id}/{channel_id}")
         user_id = str(getattr(getattr(interaction, "user", None), "id", "") or "")
-        if self._admit_room(conv_id) and self._admit_requester(conv_id, (user_id,)):
+        admitted = self._admit_room(conv_id)
+        if admitted and self._admit_requester(conv_id, (user_id,)):
             return True
         log.info("slash admission denied in guild %s", guild_id)
         with contextlib.suppress(Exception):
-            await interaction.response.send_message(
-                m.room_not_admitted_line(), ephemeral=True)
+            await self._command_acts.denied(
+                interaction, m.room_not_admitted_line(), room=conv_id, admitted=admitted,
+            )
         return False
 
     def _projection_music_channel(self, guild_id: str) -> str | None:
@@ -635,9 +633,6 @@ class DiscordBridge:
         if user is not None:
             self.self_id = str(user.id)
         self.connected_at_ms = int(time.time() * 1000)
-        # A READY is a NEW session: dispatch `s` resets and any frames a
-        # previous session queued name sequence numbers that mean nothing
-        # now — provenance must reset with the session it describes.
         self._frames.clear()
         log.info("discord gateway connected as %s", self.self_id)
         if self._manager is not None and client is not None:
@@ -646,11 +641,15 @@ class DiscordBridge:
                 hub=self._hub, voice_guild_ids=self._voice_guild_ids,
                 resolve_music_channel=self._resolve_music_channel,
                 client_getter=self.current_client,
-                admission=self._slash_admission)
+                admission=self._slash_admission,
+                command_acts=self._command_acts,
+            )
             await resume_persisted_sessions(
                 client, self._manager, hub=self._hub,
                 resolve_music_channel=self._resolve_music_channel,
-                client_getter=self.current_client)
+                client_getter=self.current_client,
+                command_acts=self._command_acts,
+            )
             self._manager.start_liveness_watch()
         if self._hub is not None:
             await self._hub.adopt_boot_voice_sessions(self._voice_guild_ids)

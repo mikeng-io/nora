@@ -177,6 +177,9 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
 #: `tool_call_log.created_at` is `now()` at insert and is system time; the
 #: others gained `recorded_at` in `0068`.
 APPEND_ONLY: dict[str, str] = {
+    "nora_act": "asserted_at",
+    "nora_act_outcome": "asserted_at",
+    "nora_pass_output": "asserted_at",
     "managed_link_decision": "recorded_at",
     "managed_link_delivery": "created_at",
     "legacy_graph_refusal": "created_at",

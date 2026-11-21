@@ -47,6 +47,7 @@ from nora.domain.models import TagContext
 from nora.domain.tag_trace import TagTrace
 from nora.domain.turn_deadline import seconds_left
 from nora.domain.turn_record import retain_exchange
+from nora.memory import record_pass_expression
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger(__name__)
@@ -184,6 +185,10 @@ class LiveAgentRunner:
         # a test can drive the timeout without a clock.
         self._draft_timeout_seconds = draft_timeout_seconds
 
+    @property
+    def model_id(self) -> str:
+        return str(self._models.model_id)
+
     async def invoke(
         self,
         *,
@@ -312,16 +317,16 @@ class LiveAgentRunner:
                     reason=stop_reason,
                 )
         finally:
+            try:
+                await record_pass_expression(agent.messages[baseline:])
+            except Exception:
+                log.exception("engagement expression write failed (tag=%s)", ctx.tag_id)
             trace = extract_tag_trace(
                 agent, baseline=baseline, tag_id=ctx.tag_id,
                 conversation_id=ctx.message.conversation_id, transcript=(),
                 outcome="send_reply", max_chars=self._max_trace_chars,
                 metrics=self._metrics,
             )
-            # `TagTrace` is frozen (`nora/domain/tag_trace.py`) — `dataclasses.
-            # replace` produces a corrected instance. Stamped here because this is
-            # the earliest point the real clock is knowable and the trace must
-            # carry it before going anywhere persistent.
             trace = dataclasses.replace(
                 trace, created_at=int(time.time() * 1000), started_at=started_at,
                 platform=ctx.message.platform,

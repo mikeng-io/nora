@@ -49,17 +49,20 @@ from typing import Any
 import redis.asyncio as aioredis
 from aiohttp import web
 
+import nora.memory as memory
 from nora import config
 from nora.app.voice_events import VoiceEventConsumer
 from nora.infra.music.ytdlp_source import YtDlpSource
 from nora.infra.sql.bridge_store import SqlBridgeStore
 from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.music_queue import SqlMusicQueueStore
 from nora.infra.sql.music_session import SqlMusicSessionStore
 from nora.infra.voice.http_controller import VoiceControllerClient
 from nora.infra.voice.hub import VoiceControllerHub
 from nora.obs.metrics import Metrics
 from nora.platform.bridge.journal import Journal
+from nora.platform.bridge.projection import projected_room_unit
 from nora.platform.bridge.queue import StreamProducer
 from nora.platform.bridge.service import (
     DurableActionService,
@@ -71,6 +74,7 @@ from nora.platform.discord.bridge_app import (
     DiscordBridge,
     DiscordRestActionService,
 )
+from nora.platform.discord.command_acts import DiscordCommandActs
 from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.discord.roster import DiscordRoster
 from nora.platform.discord.send import DEFAULT_API_BASE
@@ -140,7 +144,7 @@ def _client() -> Any:
 
 
 def _voice_graph(
-        cfg: Any, engine: Any,
+        cfg: Any, engine: Any, effects: memory.EffectRecorder,
 ) -> tuple[VoiceControllerHub | None, MusicPlayerManager | None,
            VoiceEventConsumer | None]:
     """The graph the APP relinquishes — the exact `_discord_bridge`
@@ -161,7 +165,7 @@ def _voice_graph(
     # handed `voice_guild_ids` — `[speech.tts] sidecars`, read canonically.
     hub = (
         VoiceControllerHub({
-            guild_id: VoiceControllerClient(endpoint)
+            guild_id: VoiceControllerClient(endpoint, effects=effects)
             for guild_id, endpoint in cfg.speech.tts.sidecars_by_guild.items()})
         if cfg.speech.tts.sidecars else None)
     # ONE manager — the deterministic surface's only mutation path. Wired
@@ -170,7 +174,7 @@ def _voice_graph(
     # reconcile the same way.
     manager = (
         MusicPlayerManager(
-            queue_store=SqlMusicQueueStore(engine),
+            queue_store=SqlMusicQueueStore(engine, effects=effects),
             session_store=SqlMusicSessionStore(engine),
             track_source=YtDlpSource(),
             idle_timeout_seconds=cfg.music.idle_timeout_seconds,
@@ -192,8 +196,16 @@ def _voice_graph(
 
 async def main() -> None:
     cfg = config.load(Path(_parse_args().config), require_secrets=False)
+    run_migrations(DATABASE_URL)
     engine = create_sql_engine(DATABASE_URL)
-    hub, manager, consumer = _voice_graph(cfg, engine)
+    envelope = memory.wire.bridge_act_envelope(engine)
+    effects = memory.EffectRecorder(envelope)
+
+    def room_unit(room: str) -> str | None:
+        return projected_room_unit(PROJ_DIR / f"{PLATFORM}.json", load_projection(), room)
+
+    command_acts = DiscordCommandActs(envelope, room_unit=room_unit)
+    hub, manager, consumer = _voice_graph(cfg, engine, effects)
     voice_guild_ids = hub.guild_ids if hub is not None else frozenset()
 
     redis = aioredis.from_url(os.environ["NORA_REDIS_URL"])
@@ -224,6 +236,7 @@ async def main() -> None:
         manager=manager, hub=hub, voice_guild_ids=voice_guild_ids,
         roster=DiscordRoster(BOT_TOKEN, base_url=API_BASE),
         voice_event_sink=consumer,
+        command_acts=command_acts,
     )
     bridge.attach(actions=DurableActionService(
         store=SqlBridgeStore(engine), platform=PLATFORM,
@@ -231,7 +244,7 @@ async def main() -> None:
         execute=DiscordRestActionService(bridge).run,
         receipt_intents=lambda: receipt_intent_ids(JOURNAL),
         ops=frozenset({"send", "react", "edit", "typing"}),
-        metrics=metrics))
+        metrics=metrics, effects=effects, room_unit=room_unit))
 
     app = bridge.routes()
     runner = web.AppRunner(app, access_log=None)

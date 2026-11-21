@@ -26,6 +26,7 @@ from nora.agent.toolkit.clock import utc_now
 
 from ..doctrine.loader import Doctrine
 from ..domain.actions import ActionOwner
+from ..domain.audience import ONE_TIME_CODE
 from ..domain.media import MediaBlob
 from ..domain.models import (
     ConversationTarget,
@@ -149,12 +150,11 @@ class Deliverer:
         intent: str | None = None,
         content_checks: bool = True,
     ) -> None:
-        # The brief's intent (`tell`/`ask`) of a fire turn, written into the
-        # raw_json of every message this Deliverer audits (key `intent`). None is
-        # the tag path: a reply has no brief.
+        # Fire turns retain their brief's intent in the audited message.
         self._content_checks = content_checks
         self._intent = intent
         self._store = store
+        self._delivery_acts = getattr(store, "delivery_acts", None) if send_permitted else None
         self._adapter = adapter
         self._target = target
         self._tag_id = tag_id
@@ -355,11 +355,20 @@ class Deliverer:
         supported = True
         try:
             await self._on_delivered.prepare_reaction()
-            result = await self._adapter.react(
-                target=self._target, emoji=emoji, to_author=quote.author_id,
-                to_timestamp=quote.ts, to_message_id=quote.platform_message_id or "",
+            async def react():
+                return await self._adapter.react(
+                    target=self._target, emoji=emoji, to_author=quote.author_id,
+                    to_timestamp=quote.ts, to_message_id=quote.platform_message_id or "",
+                )
+
+            result = (
+                await react() if self._delivery_acts is None else await self._delivery_acts.run(
+                    "platform.reaction", self._target, self._tag_id, self._attempts - 1, react,
+                    author=quote.author_id,
+                )
             )
-            ok, supported = result.ok, result.supported
+            if result is not None:
+                ok, supported = result.ok, result.supported
         except Exception:
             log.exception("reaction failed (tag=%s)", self._tag_id)
         finally:
@@ -413,14 +422,7 @@ class Deliverer:
             self._last_outcome = "cap_spent"
             return False
 
-        # DEC-82: Markdown is converted ONCE, below, before the remaining guards,
-        # so each one measures the bytes that actually LEAVE rather than a draft
-        # that no longer exists, and the audit row, `sent_texts` and the Honcho
-        # feed all carry the one canonical form. `styled` is the only model of
-        # this reply from there on (comprehend-once): `render_markdown` both
-        # deletes the asterisks and produces the ranges that index what is left,
-        # so a second call would be a second interpretation of one text. The value
-        # is passed whole to `_compose` (see `nora.agent.markdown`).
+        # Render Markdown once so the guards, audit and transport share its text and ranges.
         drafted = text
 
         if (not text or not text.strip()) and not attachments:  # R-4
@@ -549,17 +551,7 @@ class Deliverer:
             return False
 
         self._attempts += 1
-        # The last thing that may look at the text. `outbound.text` is the string
-        # that goes on the wire and into the audit row, and neither `text` nor
-        # `styled` is read again below (see `nora.agent.outbound`'s module
-        # docstring). A transformation added after this line cannot corrupt a
-        # mention offset, because it cannot reach the wire; one that is needed
-        # belongs in `nora.agent.markdown.render_markdown`, where the text and
-        # every range over it are produced together. Pinned on the AST by
-        # `tests/architecture/test_outbound_offsets_are_computed_last.py`.
-        #
-        # `styled` and not `styled.text` goes to the composer: handing it the
-        # string alone would strand the style ranges.
+        # Keep the text and its ranges together. The composer fixes the final wire offsets.
         outbound = await self._compose(styled)
         row = NormalizedMessage(
             platform=self._target.platform,
@@ -568,12 +560,7 @@ class Deliverer:
             sender_id=self._nora_sender_id,
             sender_name=None,
             timestamp=int(time.time() * 1000),
-            # The audited body is the text as written, `@grant` and all, which is
-            # also what goes on the wire, because a mention replaces no characters
-            # (`nora.agent.outbound`). That equality keeps her own rows readable
-            # in the transcript: Signal's inbound convention is a U+FFFC
-            # placeholder, and `MentionRenderer` cannot rehydrate one in a row of
-            # hers.
+            # Record the wire's readable mention text so the transcript can render it.
             body=outbound.text if record_text is None else record_text,
             raw={"tag_id": self._tag_id, "source": source,
                  "doctrine_sha256": self._doctrine_sha256,
@@ -606,17 +593,23 @@ class Deliverer:
             adapter = bind_owner(ActionOwner(kind="live_invocation", id=str(row_id)))
         self.send_unresolved += 1
         try:
-            result = await adapter.send(
-                target=self._target, text=outbound.text,
-                mentions=outbound.mentions, styles=outbound.styles,
-                preview=outbound.preview,
-                attachments=attachments,
-                # Threading rides on the send but is not part of what the guards
-                # measured: `outbound` is the screened text, and a quote points at
-                # a row Nora already audited. It carries no model-supplied string,
-                # so there is nothing for R-6 or R-18 to scan.
-                quote=quote,
-            )
+            async def send() -> SendResult:
+                return await adapter.send(
+                    target=self._target, text=outbound.text,
+                    mentions=outbound.mentions, styles=outbound.styles,
+                    preview=outbound.preview, attachments=attachments, quote=quote,
+                )
+
+            if self._delivery_acts is None:
+                result = await send()
+            else:
+                otp = self._audience == ONE_TIME_CODE
+                result = (await self._delivery_acts.run(
+                    "platform.otp" if otp else "platform.reply",
+                    self._target, self._tag_id.removeprefix("otp-") if otp else self._tag_id,
+                    self._attempts - 1, send, from_pass=not otp,
+                    author=self._target.conversation_id if otp else None,
+                )) or SendResult(ok=False)
         except Exception:
             log.exception("send raised (tag=%s)", self._tag_id)
             result = SendResult(ok=False)

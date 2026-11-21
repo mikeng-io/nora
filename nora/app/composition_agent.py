@@ -169,6 +169,8 @@ def _build_tool_registry(
     computer_exports: Any, mobility: Any, computer_events: Any, room_management: Any = None,
 ) -> Any:
     """The native tool surface's collaborator registry."""
+    import nora.memory as memory_area
+
     return ToolRegistry(
         room_management=room_management,
         display_name=cfg.doctrine.display_name,
@@ -181,6 +183,7 @@ def _build_tool_registry(
         subagent=subagent_desk,
         ai_peer=cfg.honcho.ai_peer,
         mcp_tools=mcp_tool_groups,
+        mcp_act_envelope=memory_area.wire.act_envelope(engine) if mcp_tool_groups else None,
         # The document tools: ships OFF, and off the
         # registry withholds all three from every turn.
         documents=document_service if cfg.documents.enabled else None,
@@ -478,6 +481,7 @@ def backend(
     metrics: Any, model_client_for: Any, persons: Any, registry: Any,
     rosters: Any, route_model: Any, subagent_desk: Any, subagents_context: Any,
     tier: Any, tool_registry: Any, access: Any = None,
+    acts: Any = None, room_unit: Any = None,
 ) -> SubagentBackendWiring:
     # The sub-agent worker, registered under its kind for the poller below.
     # OFF by default: nothing is built and `compute_backends` stays empty. It needs the tool
@@ -510,6 +514,7 @@ def backend(
             # drain, never a computer caller outside the FIFO it calls into.
             admission=computer_admission,
             scope_for=computer_scope_for,
+            acts=acts, room_unit=room_unit,
         )
         compute_backends[SUBAGENT_KIND] = subagent_backend
         if subagent_desk is not None:

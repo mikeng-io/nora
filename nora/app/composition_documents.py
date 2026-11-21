@@ -4,6 +4,7 @@ import functools
 from dataclasses import dataclass
 from typing import Any
 
+import nora.memory as memory
 from nora.agent.catalog.groups import LOAD_TRANSCRIPT_MAX
 from nora.app.composition_helpers import _room_ids_of
 from nora.app.documents_service import DocumentService, rooms_named
@@ -22,9 +23,10 @@ def service(
     allowlist: Any, audit: Any, cfg: Any, clock: Any,
     cognition_context_screen: Any, cognition_shared_document_room: Any, content_checks: Any,
     documents_store: Any, media_objects: Any, metrics: Any, persons: Any,
-    route_client: Any, access: Any = None,
+    route_client: Any, engine: Any, access: Any = None,
 ) -> ServiceWiring:
 
+    registration = engine.get_execution_options()["item_registration"]
     document_service = DocumentService(
         store=documents_store,
         records=audit,
@@ -48,6 +50,8 @@ def service(
         content_checks=content_checks,
         shared_room=cognition_shared_document_room,
         autonomous_screen=cognition_context_screen,
+        writes=memory.EffectRecorder(memory.wire.act_envelope(engine)),
+        room_unit=registration.scope.room_unit,
     )
     # `<documents>`: the one reader the tag path and the fire path
     # share. `None` while `[documents]` is off, so no room renders the block (the same

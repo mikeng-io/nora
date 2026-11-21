@@ -6,9 +6,9 @@ engine comes through `__init__`, every write is one statement inside
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
-from typing import Any
+from typing import Any, TypeVar
 from uuid import uuid4
 
 import sqlalchemy as sa
@@ -18,8 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.music import QueuedTrack, ensure_utc
 from nora.infra.sql.schema import MUSIC_QUEUE
+from nora.memory import ActAuthority, EffectRecorder, Outcome
 
 log = logging.getLogger("nora.music")
+_T = TypeVar("_T")
 
 # Postgres's own SQLSTATE for a unique-constraint violation — same constant
 # `nora.infra.sql.reminders.SqlReminderStore.create` uses to translate its
@@ -47,8 +49,17 @@ def _row_to_track(row: Row[*tuple[Any, ...]]) -> QueuedTrack:
 class SqlMusicQueueStore:
     """Satisfies `nora.domain.music.MusicQueueStore`."""
 
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(self, engine: AsyncEngine, *, effects: EffectRecorder | None = None) -> None:
         self._engine = engine
+        self._effects = effects
+
+    async def _write(self, guild_id: str, call: Callable[[], Awaitable[_T]]) -> _T:
+        if self._effects is None:
+            return await call()
+        return await self._effects.invoke(
+            "music.queue", f"music-queue:{guild_id}", str(uuid4()), ActAuthority(None),
+            call, judge=lambda _: Outcome("done"),
+        )
 
     async def enqueue(
         self,
@@ -59,6 +70,15 @@ class SqlMusicQueueStore:
         title: str,
         added_by_person_id: str,
         added_at: datetime,
+    ) -> QueuedTrack:
+        return await self._write(guild_id, lambda: self._enqueue(
+            guild_id=guild_id, source=source, url=url, title=title,
+            added_by_person_id=added_by_person_id, added_at=added_at,
+        ))
+
+    async def _enqueue(
+        self, *, guild_id: str, source: str, url: str, title: str,
+        added_by_person_id: str, added_at: datetime,
     ) -> QueuedTrack:
         # The position subquery and the INSERT are one statement, which
         # keeps two concurrent `/music play` calls from racing on it in
@@ -108,6 +128,9 @@ class SqlMusicQueueStore:
         raise RuntimeError("unreachable: the loop above always sets last_error before exiting")
 
     async def pop_next(self, guild_id: str) -> QueuedTrack | None:
+        return await self._write(guild_id, lambda: self._pop_next(guild_id))
+
+    async def _pop_next(self, guild_id: str) -> QueuedTrack | None:
         # `ORDER BY position LIMIT 1` scoped inside the DELETE's own subquery
         # (`FOR UPDATE SKIP LOCKED` is not needed here — Nora runs one
         # process, so there is no second connection to skip past) is what
@@ -140,12 +163,18 @@ class SqlMusicQueueStore:
         return [_row_to_track(row) for row in rows]
 
     async def clear(self, guild_id: str) -> int:
+        return await self._write(guild_id, lambda: self._clear(guild_id))
+
+    async def _clear(self, guild_id: str) -> int:
         stmt = sa.delete(MUSIC_QUEUE).where(MUSIC_QUEUE.c.guild_id == guild_id)
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)
         return int(result.rowcount or 0)
 
     async def move_to_front(self, guild_id: str, *, position: int) -> QueuedTrack | None:
+        return await self._write(guild_id, lambda: self._move_to_front(guild_id, position))
+
+    async def _move_to_front(self, guild_id: str, position: int) -> QueuedTrack | None:
         # A direct swap of two rows' `position` values would transiently
         # violate `uq_music_queue_guild_position` mid-statement (Postgres
         # checks the unique index per row, not once for the whole UPDATE) --

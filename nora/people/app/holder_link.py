@@ -59,6 +59,7 @@ from nora.domain.management import (
     TargetKind,
     Unlink,
 )
+from nora.memory import ActAuthority, act_event
 from nora.people.app.authentication import AccountSessions
 from nora.people.app.link_publication import LinkPublicationService
 from nora.people.app.managed import RegistrationService
@@ -461,8 +462,10 @@ class HolderLinkService:
             if nonce is None:
                 continue
             try:
-                await self._signal_delivery.deliver(
-                    account=account, text=_challenge_text(link, side, nonce))
+                authority = ActAuthority(None, person=link.owners[LinkSide.INITIATING])
+                with act_event(f"{link.request_id}:{side.value}", authority):
+                    await self._signal_delivery.deliver(
+                        account=account, text=_challenge_text(link, side, nonce))
             except Exception:  # noqa: BLE001 — a failed push never blocks the pull view
                 log.warning(
                     "link challenge delivery failed for request %s side %s",

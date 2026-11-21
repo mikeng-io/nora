@@ -84,7 +84,9 @@ __all__ = [
     "ENV_TOKEN_FALLBACK",
     "PLATFORMS",
     "BridgeChannelDirectory",
+    "BridgePlacementError",
     "ProjectionPublisher",
+    "projected_room_unit",
     "run_fleet",
 ]
 
@@ -149,6 +151,38 @@ def _revision(semantic: dict[str, Any]) -> int:
     return int.from_bytes(hashlib.sha256(_canonical(semantic)).digest()[:8], "big") & (
         _MAX_JS_SAFE_INT
     )
+
+
+class BridgePlacementError(RuntimeError):
+    """The published admission and graph placement could not be matched."""
+
+
+def _unit_artifact(target: Path) -> Path:
+    return target.with_suffix(".room-units.json")
+
+
+def _placement_revision(semantic: dict[str, Any], units: dict[str, str]) -> int:
+    # Both files are atomic individually. Mixed generations cannot place an act.
+    return _revision({**semantic, "room_units": units})
+
+
+def projected_room_unit(target: Path, projection: dict[str, Any], room: str) -> str | None:
+    try:
+        units = json.loads(_unit_artifact(target).read_bytes())
+    except (OSError, ValueError):
+        raise BridgePlacementError("bridge room units unavailable") from None
+    if (not isinstance(projection, dict) or set(projection) != _CONTRACT_KEYS
+            or projection["enabled"] is not True
+            or not isinstance(projection["rooms"], list) or not isinstance(units, dict)
+            or any(r not in projection["rooms"] or not isinstance(u, str) or not u
+                   for r, u in units.items())):
+        raise BridgePlacementError("bridge room units invalid")
+    semantic = {k: v for k, v in projection.items() if k not in {"revision", "generated_ms"}}
+    if projection["revision"] != _placement_revision(semantic, units):
+        raise BridgePlacementError("bridge room units revision mismatch")
+    if room in projection["rooms"] and room not in units:
+        raise BridgePlacementError("admitted bridge room has no unit")
+    return units.get(room)
 
 
 def _semantic(
@@ -522,37 +556,42 @@ class ProjectionPublisher:
 
     # ---- publish -----------------------------------------------------------
 
-    def _needs_write(self, semantic: dict[str, Any]) -> bool:
-        """Write only when the file's truth diverges: first write, a content
-        change, or an external edit to heal. `generated_ms`/`revision` are
-        excluded from the comparison — identical truth must not churn mtime,
-        which is the signal bridges poll."""
+    def _needs_write(self, semantic: dict[str, Any], units: dict[str, str], rev: int) -> bool:
+        """Identical truth keeps both files' mtimes stable."""
         try:
-            if stat.S_IMODE(self.target.stat().st_mode) != 0o600:
+            artifact = _unit_artifact(self.target)
+            if any(stat.S_IMODE(path.stat().st_mode) != 0o600 for path in (self.target, artifact)):
+                return True
+            if json.loads(artifact.read_bytes()) != units:
                 return True
             existing = json.loads(self.target.read_bytes())
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):
             return True
         if not isinstance(existing, dict) or set(existing) != _CONTRACT_KEYS:
             return True
-        return any(existing.get(k) != v for k, v in semantic.items())
+        return existing["revision"] != rev or any(existing[k] != v for k, v in semantic.items())
 
     def _publish(self, semantic: dict[str, Any]) -> None:
-        """Write the artifact, tracking write health HONESTLY: a failed write
-        marks the file stale until a new truth actually lands (or the file is
-        verified to already hold it) — never `ok` on the strength of an older
-        write while the current truth is unwritten."""
+        """Publish both artifacts and mark stale whenever current truth fails to land."""
+        rooms = set(semantic["rooms"]) if semantic["enabled"] else set()
+        units = {
+            room: entry.unit for entry in self._reloads.policy.rooms()
+            if entry.platform == self.platform and entry.unit
+            for room in entry.ids if room in rooms
+        } if rooms else {}
+        revision = _placement_revision(semantic, units)
         try:
-            if not self._needs_write(semantic):
+            if not self._needs_write(semantic, units, revision):
                 self._write_stale = False    # file already holds current truth
                 return
             generated_ms = int(time.time() * 1000)
             payload = {
-                "revision": _revision(semantic),
+                "revision": revision,
                 "generated_ms": generated_ms,
                 **semantic,
             }
             data = _canonical(payload) + b"\n"
+            _write_atomic(_unit_artifact(self.target), _canonical(units) + b"\n")
             _write_atomic(self.target, data)
         except OSError:
             self._write_stale = True

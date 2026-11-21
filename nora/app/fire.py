@@ -67,6 +67,7 @@ import mimetypes
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from contextlib import ExitStack
 from dataclasses import replace
 from datetime import datetime
 from typing import Any
@@ -185,6 +186,7 @@ from nora.ingest.relevance_gate import SCORE_ABSENT
 from nora.language.culture_render import read_character, read_culture
 from nora.language.lesson_render import ActiveLessons, read_lessons
 from nora.language.profile_render import ProfileHeads, authored_identity, read_profile
+from nora.memory import record_pass_silence
 from nora.obs.determination import (
     WINDOW_BODY_CHARS,
     Determination,
@@ -1906,36 +1908,19 @@ class FirePath:
         handle = None
         stop_reason: str | None = None
         completed = False
-        # The participation occasion carries its OWN audience: its doctrine is
-        # the may-speak rule set, its failures are never charged to the
-        # heartbeat's budget, and its quiet turn is a success (`SILENT`), never
-        # a `failed_*`.
+        # Quiet participation and proactive turns are successful outcomes.
         participation = occasion.kind == "participation"
-        # The proactive occasion shares participation's two
-        # properties — its own audience, and silence as a healthy outcome —
-        # and none of its others: no shadow mirror, no cooldown, and the
-        # heartbeat (not a trigger) is what brought it here.
         proactive = occasion.kind == "proactive"
         audience = (
             PARTICIPATION_AUDIENCE if participation
             else PROACTIVE_AUDIENCE if proactive
             else AUDIENCE
         )
+        act_scope = ExitStack()
         try:
             tagger = ctx.tagger
             if tagger is None and occasion.person_id is not None:
-                # Only a mapped person may hold a reminder, re-checked here
-                # for the same reason policy is — identity.toml is read
-                # once at startup and this row may be thirty days old.
-                # `failed_policy`, not `failed_error`: nothing went wrong, the
-                # grant went away.
-                #
-                # `and occasion.person_id is not None` is the whole difference an
-                # occasion held on NOBODY's behalf makes. Without that clause a
-                # participation or proactive turn — which names no requester by
-                # design — would refuse itself on a rule about a grant it never had, and
-                # the failure would read as a revoked person. An occasion that
-                # DOES name someone still refuses, unchanged.
+                # Recheck the named holder before firing. Unowned occasions may proceed.
                 log.error(
                     "%s turn not fired: %s is no longer in identity.toml",
                     occasion.kind, occasion.person_id,
@@ -1963,6 +1948,17 @@ class FirePath:
             ).rehydrate(ctx)
 
             doctrine = self._doctrine_store.get(applies_to=audience)
+            acts = getattr(self._records, "delivery_acts", None)
+            if acts is not None:
+                runner = (
+                    self._participation_runner if participation else
+                    self._proactive_runner if proactive else self._runner
+                )
+                if runner is not None:
+                    act_scope.enter_context(acts.pass_scope(
+                        ctx, "ambient" if participation else "proactive",
+                        getattr(runner, "model_id", ""), doctrine.sha256,
+                    ))
             log.info(
                 "fire turn start (tag_id=%s kind=%s conversation_id=%s "
                 "person_id=%s doctrine_sha256=%s)",
@@ -1974,13 +1970,7 @@ class FirePath:
                 store=self._records, adapter=bound_adapter,
                 target=ctx.message.target(),
                 doctrine=doctrine, canary=self._canary, tag_id=ctx.tag_id,
-                # Nora's own id ON THIS PLATFORM, from the platform itself
-                # (`resolve_identity`, resolved just above) — never a string an
-                # operator typed into config.toml. A hardcoded value is one
-                # deployment's guess about who Nora is; the platform is the only
-                # authority on that, and with more than one platform wired a
-                # single configured string is necessarily wrong for all but one
-                # of them (DEC-102).
+                # Resolve the sender on the target platform before auditing her own message.
                 nora_sender_id=identity.primary,
                 conversation_id=occasion.conversation_id,
                 # `allowed_mcp` left at its default (empty) on purpose: a fire
@@ -2250,6 +2240,13 @@ class FirePath:
             completed = False
             return FAILED_ERROR
         finally:
+            try:
+                if completed and handle is not None and not handle.deliverer.called:
+                    await record_pass_silence()
+            except Exception:
+                log.exception("fire silence item could not be written (tag=%s)", ctx.tag_id)
+            finally:
+                act_scope.close()
             # The participation root span's stop_reason (no-op on every other
             # occasion — no span is current, and annotate on a non-recording
             # span costs nothing). The disambiguating signal the eval gate

@@ -34,6 +34,7 @@ from nora.domain.computer import (
 )
 from nora.domain.computer_vms import ScopedEndpoint, ScopeEndpoints
 from nora.infra.computer.client import ComputerdRuntime
+from nora.memory import EffectRecorder
 
 log = logging.getLogger("nora.computer.scoped")
 
@@ -85,12 +86,14 @@ class ScopedComputerdRuntime:
         timeout_seconds: float = 30.0, max_output_chars: int = 8000,
         observer: Any = None, verify_seconds: float = 10.0,
         clock: Callable[[], datetime] | None = None,
+        effects: EffectRecorder | None = None,
     ) -> None:
         self._endpoints = endpoints
         self._token = token
         self._timeout = timeout_seconds
         self._max_output = max_output_chars
         self._observer = observer
+        self._effects = effects
         self._verify_seconds = verify_seconds
         self._clock = clock or (lambda: datetime.now(UTC))
         self._bound: dict[str, _Bound] = {}
@@ -157,7 +160,7 @@ class ScopedComputerdRuntime:
             runtime=ComputerdRuntime(
                 base_url=endpoint.base_url, token=self._token,
                 timeout_seconds=self._timeout, max_output_chars=self._max_output,
-                observer=self._observer, instance=instance),
+                observer=self._observer, instance=instance, effects=self._effects),
             instance=instance,
         )
         self._bound[scope] = _Bound(binding=binding, verified_at=self._clock())
