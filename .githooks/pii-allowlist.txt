@@ -44,7 +44,7 @@ symlink .claude/skills/* -- Claude Code reads the repo skills through these link
 
 binary app/public/screenshots/*.webp -- mock PWA screenshots
 binary app/src/assets/art/*.webp -- existing portal artwork
-binary site/src/assets/rig/*.webp -- generated procedural rig textures and plates
+binary site/src/assets/journey/* -- the public site's painted world, scene stills and Nora's rig package (site/scripts/make_journey.py, make_nora.py)
 binary assets/nora-notebook.webp -- shared notebook source artwork
 
 binary assets/*.png -- Nora's character art (DESIGN.md)
