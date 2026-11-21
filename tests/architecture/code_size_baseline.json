@@ -1190,9 +1190,9 @@
   }
  },
  "nora/infra/sql/memory_index.py": {
-  "comment_blocks": 8,
-  "file_lines": 2764,
-  "internal_docstrings": 42
+  "comment_blocks": 7,
+  "file_lines": 2746,
+  "internal_docstrings": 41
  },
  "nora/infra/sql/memory_read.py": {
   "comment_blocks": 3,

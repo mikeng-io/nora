@@ -52,7 +52,7 @@ Three edge families never stand in for each other:
 | edge | from → to | is evidence |
 |---|---|---|
 | **cites** | a row → the observed or computed rows it rests on | yes, the only evidence |
-| **about** | a row → the entities it concerns | no: an index for retrieval |
+| **about** | a row → an entity it concerns. Admission computes links from claims and intentions to their resolved person pointers. Nora proposes inferred links from claims, intentions and recorded items. | no: an index for retrieval |
 | **draws on** | a claim or intention → another claim or intention | no: context or premise |
 
 **Support and dependency stay apart.** `cites` is evidential support: it gives

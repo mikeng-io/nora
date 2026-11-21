@@ -139,9 +139,11 @@ def test_basis_legal() -> None:
     assert graph.basis_legal("cites", "inferred")
     assert graph.basis_legal("rests_on", "committed")
     assert graph.basis_legal("about", "computed")
+    assert graph.basis_legal("about", "inferred")
     assert graph.basis_legal("closed_by", "computed")
     assert not graph.basis_legal("rests_on", "inferred")
-    assert not graph.basis_legal("about", "inferred")
+    assert not graph.basis_legal("about", "observed")
+    assert not graph.basis_legal("about", "committed")
     assert not graph.basis_legal("cites", "observed")
     assert not graph.basis_legal("closed_by", "committed")
 

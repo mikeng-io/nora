@@ -4,7 +4,8 @@ One batch per tick of the nora process's memory drain loop
 (`nora.app.runtime.memory_drain_loop`), only while `[memory.index] embed`.
 The node is the queue: `embed_pick` finds live, embeddable nodes
 with no vector, each is embedded and stored with the model's fingerprint, and
-lexical search finds a node before its vector exists.
+lexical search finds a node before its vector exists. The Cognitive Graph has
+a separate text-only queue with the same attempt schedule and fingerprint.
 
 **Before the first batch**, once per process: the server must be serving the
 configured model file (/props `model_path`), or nothing is stamped with a
@@ -67,7 +68,8 @@ from nora.infra.embedder import (
     EmbedderUnavailableError,
     LlamaEmbedder,
 )
-from nora.infra.sql import memory_index
+from nora.infra.sql import graph_search_embed, memory_index
+from nora.infra.sql.graph_search_embed import GraphEmbeddable
 from nora.infra.sql.memory_index import EMBED_MAX_ATTEMPTS, Embeddable
 
 __all__ = ["MemoryEmbedWorker"]
@@ -122,6 +124,7 @@ class MemoryEmbedWorker:
             return False
         async with self._engine.begin() as conn:
             cleared = await memory_index.clear_embeddings(conn, keep_model=self._model)
+            cleared += await graph_search_embed.clear_other_models(conn, keep_model=self._model)
         if cleared:
             log.info("memory embed: cleared %d vectors of other models", cleared)
         self._ready = True
@@ -137,6 +140,7 @@ class MemoryEmbedWorker:
             picked = await memory_index.embed_pick(
                 conn, limit=self._batch, now_ms=int(now * 1000), media=media,
             )
+            graph = await graph_search_embed.pick(conn, limit=self._batch, now_ms=int(now * 1000))
             types = await memory_index.media_types(
                 conn, [(n.source_id, n.sha256 or "") for n in picked if n.kind == "media"],
                 social=[
@@ -144,8 +148,12 @@ class MemoryEmbedWorker:
                 ],
             )
         tried = 0
-        for item in picked:
-            media_type = types.get(item.source_id, "") if item.kind in ATTACHMENT_KINDS else ""
+        items: list[Embeddable | GraphEmbeddable] = [*picked, *graph]
+        for item in items:
+            media_type = (
+                types.get(item.source_id, "")
+                if isinstance(item, Embeddable) and item.kind in ATTACHMENT_KINDS else ""
+            )
             outcome = await self._one(item, media_type)
             if outcome is None:
                 continue
@@ -159,7 +167,9 @@ class MemoryEmbedWorker:
         if self._metrics is not None:
             self._metrics.inc("nora_memory_embed_total", outcome=outcome)
 
-    async def _one(self, item: Embeddable, media_type: str) -> EmbedOutcome | None:
+    async def _one(
+        self, item: Embeddable | GraphEmbeddable, media_type: str,
+    ) -> EmbedOutcome | None:
         """Embed one node and store or record the result. None: an image
         left for a later tick, the throttle having run out in this batch."""
         by_bytes = False
@@ -187,10 +197,16 @@ class MemoryEmbedWorker:
                 vector = embedded.vector
                 truncated = embedded.truncated
             async with self._engine.begin() as conn:
-                stored = await memory_index.embed_store(
-                    conn, item, vector=vector, model=self._model,
-                    now_ms=int(self._clock() * 1000), by_bytes=by_bytes,
-                )
+                now_ms = int(self._clock() * 1000)
+                if isinstance(item, GraphEmbeddable):
+                    stored = await graph_search_embed.store(
+                        conn, item, vector=vector, model=self._model, now_ms=now_ms,
+                    )
+                else:
+                    stored = await memory_index.embed_store(
+                        conn, item, vector=vector, model=self._model,
+                        now_ms=now_ms, by_bytes=by_bytes,
+                    )
             # Only a vector that was stored stands for a cut text: a node
             # that changed meanwhile is embedded again, and counted then.
             if truncated and stored and self._metrics is not None:
@@ -213,19 +229,25 @@ class MemoryEmbedWorker:
             return "error"
 
     async def _failed(
-        self, item: Embeddable, error: str, *, by_bytes: bool, counts: bool = True,
+        self, item: Embeddable | GraphEmbeddable, error: str, *,
+        by_bytes: bool, counts: bool = True,
     ) -> None:
         """Record the failure on the node. `counts` only for a failure of the
         input itself: an unavailable embedder or blob store backs the node
         off but never gives up on it (`memory_index.embed_failed`)."""
         async with self._engine.begin() as conn:
-            attempts = await memory_index.embed_failed(
-                conn, item, error=error, now_ms=int(self._clock() * 1000), by_bytes=by_bytes,
-                counts=counts,
-            )
+            now_ms = int(self._clock() * 1000)
+            if isinstance(item, GraphEmbeddable):
+                attempts = await graph_search_embed.failed(
+                    conn, item, error=error, now_ms=now_ms, counts=counts,
+                )
+            else:
+                attempts = await memory_index.embed_failed(
+                    conn, item, error=error, now_ms=now_ms, by_bytes=by_bytes, counts=counts,
+                )
         if counts and attempts >= EMBED_MAX_ATTEMPTS:
             log.warning(
-                "memory embed: node %d given up after %d attempts (%s)",
+                "memory embed: node %s given up after %d attempts (%s)",
                 item.id, attempts, error,
             )
             self._count("given_up")

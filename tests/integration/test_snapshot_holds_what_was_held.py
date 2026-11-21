@@ -39,7 +39,7 @@ from nora.infra.sql import create_sql_engine
 from nora.infra.sql.history import APPEND_ONLY, HISTORY_TABLES
 from nora.infra.sql.snapshot_at import copied_tables
 from nora.subject import sandbox_as_of
-from tests.integration.snapshot_rows import APPEND, MS0, REVISE, ROWS
+from tests.integration.snapshot_rows import APPEND, DERIVED, MS0, REVISE, ROWS
 
 #: The edit of message 2 that the prune cascades away.
 PRUNED_EDIT = 3100
@@ -167,6 +167,8 @@ async def test_a_snapshot_at_each_moment_holds_exactly_what_was_held(
             for table in tables:
                 for i in (0, 1, 2, 3):
                     await _write(conn, table, i)
+            for table, row in DERIVED.items():
+                await conn.execute(sa.insert(_table(table)).values(row(0)))
             await conn.execute(sa.insert(_table("message_edit")).values(
                 id=PRUNED_EDIT, message_id=ROWS["messages"](2)["id"], ts=MS0, body="edited",
             ))
@@ -226,6 +228,11 @@ async def test_a_snapshot_at_each_moment_holds_exactly_what_was_held(
             restored_engine = create_sql_engine(url)
             try:
                 restored = await _held(restored_engine)
+                async with restored_engine.connect() as conn:
+                    for table in DERIVED:
+                        assert await conn.scalar(
+                            sa.select(sa.func.count()).select_from(_table(table)),
+                        ) == 0
             finally:
                 await restored_engine.dispose()
         assert report.orphaned == {}

@@ -546,6 +546,13 @@ class _Admission:
         )
         if not graph.endpoints_legal(link.type, source.kind, target.kind):
             raise _RefusalError("illegal_endpoints", "target")
+        if link.type == "about":
+            if isinstance(data, AddEdge):
+                allowed = source.kind == "item"
+            else:
+                allowed = source.id == row.id and row.kind in ("claim", "intention")
+            if not allowed:
+                raise _RefusalError("illegal_endpoints", "source")
         if link.type == "watches":
             if source.form != "maintain" or source.state != "open":
                 raise _RefusalError("illegal_endpoints", "source")
