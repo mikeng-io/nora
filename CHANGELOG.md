@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.20.7](https://github.com/mikeng-io/nora/compare/v7.20.6...v7.20.7) (2026-11-21)
+
+
+### Maintenance
+
+* **assets:** say the favicons come from the emblem, not her portrait ([422cfd5](https://github.com/mikeng-io/nora/commit/422cfd57bcb10b784ae6798fabc0f18549d1ca5a))
+
 ## [7.20.6](https://github.com/mikeng-io/nora/compare/v7.20.5...v7.20.6) (2026-11-21)
 
 
