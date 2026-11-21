@@ -158,13 +158,11 @@ Preserve originals; posthoc regrades are calibration. Replays, diagnostics and r
    UNSTABLE prints `[p pass / f fail / e error]`; ERROR is never PASS; report n with
    every number (`reference.md` "Reading the log": census, spend, TRUNCATED, memory-reading draws,
    judged baselines, Discord anchors). A FAIL is the end of the run, not a reason
-   for more samples: go back to "An eval confirms a fix" and read the case's input,
-   anchor and expectation. A wrong expectation fails every draw.
+   for more samples: reread the case's input, anchor and expectation ("An eval confirms a fix").
    Check: every number you will quote has its n, draw split and arm beside it.
 
-9. **Write the receipt where the decision lives:** the delivery PR body (a `What`
-   block, per `CONTRIBUTING.md`) for an eval that confirms a change; otherwise the
-   conversation or issue, or the goal-driven checkpoint:
+9. **Write the receipt where the decision lives:** a confirmed change's PR body (`What`,
+   `CONTRIBUTING.md`); else the conversation, issue or goal-driven checkpoint:
    ```
    Eval: `python -m evals <corpus> --grading-contract FILE --grading-contract-sha256 SHA [--case …] --sample N [--judge]`, on nora-host,
    source refreshed <newest_ts>, one run on the host at a time.
