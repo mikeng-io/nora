@@ -10,6 +10,8 @@ Read [REVIEW.md](../../../REVIEW.md) for the review contract and
 independence, dispositions and convergence. This skill is the procedure.
 A brief review follows [references/brief-review.md](references/brief-review.md)
 instead of steps 2–3; item marking, severity and follow-through are there too.
+A panel of reviewers (tiers, re-check checks, brainstorm packets, synthesis)
+follows [references/council.md](references/council.md).
 
 1. **Identify the review.** Use REVIEW.md's brief: confirm the question, basis,
    surface, relevant lenses, evidence and exclusions. Read its source requirements;
