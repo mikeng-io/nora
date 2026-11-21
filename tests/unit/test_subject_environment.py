@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+import nora.subject.environment as environment_module
 from nora.subject.environment import IsolatedServices
 
 
@@ -62,3 +63,27 @@ def test_an_exit_abandoned_mid_close_still_unwinds_the_guard() -> None:
     exit_coroutine.close()
     assert socket.socket.connect is connect
     assert subprocess.Popen.__init__ is popen_init
+
+
+@pytest.mark.asyncio
+async def test_a_close_that_never_finishes_still_releases_the_guard(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """The case task's thread can abandon a suspended `__aexit__` — a stuck
+    `_close` (a child task that ignores its cancellation, a process that
+    ignores its terminate) — and the guard is process-global, so the wait
+    is bounded and the guard is released regardless."""
+    connect, popen_init = socket.socket.connect, subprocess.Popen.__init__
+    monkeypatch.setattr(environment_module, "_CLOSE_BUDGET", 0.1)
+    environment = await _open()
+
+    async def never(_owner: Any) -> None:
+        await asyncio.Event().wait()
+
+    environment._close = never  # type: ignore[method-assign]
+    exit_task = asyncio.ensure_future(environment.__aexit__(None, None, None))
+    await asyncio.sleep(0.3)
+    assert not getattr(socket.socket.connect, "_nora_eval_guard", False)
+    assert socket.socket.connect is connect
+    assert subprocess.Popen.__init__ is popen_init
+    with pytest.raises(TimeoutError):
+        await exit_task

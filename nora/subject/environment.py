@@ -39,6 +39,10 @@ from nora.subject.model_gateway import (
 _admitted_egress: ContextVar[ResolvedGateway | None] = ContextVar(
     "admitted_egress", default=None)
 
+#: Teardown's budget for the shielded close: a close that outlives it must
+#: not hold the process-global guard the next case would inherit.
+_CLOSE_BUDGET = 60
+
 
 class IsolatedServices:
     """Own HTTP listeners and optional Redis for one evaluation case.
@@ -486,9 +490,11 @@ class IsolatedServices:
         try:
             cleanup = asyncio.create_task(self._close(asyncio.current_task()))
             try:
-                await asyncio.shield(cleanup)
+                async with asyncio.timeout(_CLOSE_BUDGET):
+                    await asyncio.shield(cleanup)
             except asyncio.CancelledError:
-                await cleanup
+                async with asyncio.timeout(_CLOSE_BUDGET):
+                    await asyncio.shield(cleanup)
                 raise
         finally:
             # The guard is process-global: a teardown that cannot run the
