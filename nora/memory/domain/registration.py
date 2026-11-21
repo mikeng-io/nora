@@ -67,6 +67,7 @@ BACKFILL_AGGREGATE_FAMILIES: MappingProxyType[str, AggregateFamily] = MappingPro
 AGGREGATE_FAMILIES: MappingProxyType[str, AggregateFamily] = MappingProxyType({
     **BACKFILL_AGGREGATE_FAMILIES,
     "claim_support": "head",
+    "intention_verdict": "head",
 })
 
 NonGraphReason = Literal[

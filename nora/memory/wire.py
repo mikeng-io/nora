@@ -32,6 +32,7 @@ from nora.infra.sql.memory_graph import SqlMemoryGraph
 from nora.infra.sql.memory_read import SqlMemoryIndex
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.profile import SqlProfileStore
+from nora.infra.sql.rollups import SqlRollupStore
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.standing_ledger import SqlStandingLedger
 from nora.memory.adapters.act_store import SqlActStore
@@ -53,6 +54,7 @@ from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
 from nora.memory.adapters.tools.search import GraphReadTools
 from nora.memory.adapters.tools.session import session_verbs as _session_verbs
+from nora.memory.adapters.verify import SqlIntentionVerification
 from nora.memory.adapters.watch_page import WATCH_ADAPTERS
 from nora.memory.adapters.watch_results import SqlWatchResults
 from nora.memory.app.acts import ActEnvelope
@@ -61,6 +63,7 @@ from nora.memory.app.admission_identity import AdmissionIdentity
 from nora.memory.app.delivery_arbitration import DeliveryArbitration
 from nora.memory.app.graph_clock import GraphClock
 from nora.memory.app.retrieval import RetrievalService
+from nora.memory.app.verify import IntentionVerifier
 from nora.memory.app.watches import WatchPoller
 from nora.persons import Persons
 from nora.policy import Policy
@@ -376,6 +379,15 @@ def admission(
 
 def condition_matcher(engine: AsyncEngine) -> SqlConditionMatcher:
     return SqlConditionMatcher(engine, SqlCognitiveGraph(engine))
+
+
+def intention_verifier(
+    engine: AsyncEngine, clock: Callable[[], datetime], *, max_poll_gap_seconds: float,
+) -> IntentionVerifier:
+    return IntentionVerifier(
+        SqlIntentionVerification(engine, SqlCognitiveGraph(engine)), SqlRollupStore(engine), clock,
+        max_poll_gap_ms=int(max_poll_gap_seconds * 1000),
+    )
 
 
 def graph_clock(engine: AsyncEngine, clock: Callable[[], datetime]) -> GraphClock:

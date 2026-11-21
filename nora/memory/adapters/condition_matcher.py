@@ -8,7 +8,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.graph_stimuli import GraphStimulus
-from nora.domain.lineage import ROW, Lineage, split_room
+from nora.domain.lineage import ROW, Lineage
 from nora.infra.sql.cognitive_graph_schema import (
     GRAPH_STIMULUS,
     INTENTION,
@@ -21,14 +21,10 @@ from nora.infra.sql.history import HISTORY_TABLES
 from nora.infra.sql.item_retention import expired_between
 from nora.infra.sql.schema import (
     MESSAGES,
-    METADATA,
-    PRESENCE_DERIVED_PLACES,
-    PRESENCE_FIXES,
-    ROLLUP_BUILD,
     ROW_HISTORY,
-    SOCIAL_ITEM,
     SOURCE_HEALTH,
 )
+from nora.memory.adapters.condition_sources import ConditionSources, Source
 from nora.memory.app.condition_matcher import ConditionMatcher, Evaluation, Witness
 from nora.memory.domain.conditions import (
     ActEvent,
@@ -38,15 +34,10 @@ from nora.memory.domain.conditions import (
     PersonEvent,
     Predicate,
 )
-from nora.memory.domain.registration import AGGREGATE_FAMILIES
 
-_Source = tuple[str, str]
 _FORMS = ("act_event", "person_event", "predicate")
 _ACT, _OUTCOME = NORA_ACT.c, NORA_ACT_OUTCOME.c
 _INTENT = INTENTION.c
-_CURRENT_BUILD = sa.select(ROLLUP_BUILD.c.id).where(
-    ROLLUP_BUILD.c.status == "current",
-).scalar_subquery()
 
 
 class SqlConditionMatcher:
@@ -64,7 +55,8 @@ class SqlIntentionBatch:
     def __init__(self, conn: AsyncConnection, graph: SqlCognitiveGraph) -> None:
         self._conn = conn
         self._graph = graph
-        self._health: dict[tuple[str, _Source], bool] = {}
+        self._sources = ConditionSources(conn)
+        self._health: dict[tuple[str, Source], bool] = {}
 
     async def one(self, unit: str, intention: str) -> Mapping[str, object] | None:
         row = (await self._conn.execute(sa.select(INTENTION).where(
@@ -95,7 +87,7 @@ class SqlIntentionBatch:
             return await self._person(intention, condition, trigger=trigger)
         return await self._predicate(intention, condition)
 
-    async def _healthy(self, unit: str, source: _Source) -> bool:
+    async def _healthy(self, unit: str, source: Source) -> bool:
         key = unit, source
         if key not in self._health:
             h = SOURCE_HEALTH.c
@@ -106,25 +98,18 @@ class SqlIntentionBatch:
             self._health[key] = await self._conn.scalar(stmt) in {"up", "ok"}
         return self._health[key]
 
+    async def _sources_healthy(self, unit: str, sources: set[Source]) -> bool:
+        return bool(sources) and all([await self._healthy(unit, source) for source in sources])
+
     async def _act(
         self, intention: Mapping[str, Any], condition: ActEvent | OwnDelivery, *, trigger: bool,
     ) -> Evaluation:
         unit = intention["unit"]
-        if isinstance(condition, OwnDelivery):
-            match = sa.and_(
-                _ACT.act_kind == "delivery", _ACT.authority_intention == intention["id"],
-            )
-        else:
-            match = sa.and_(
-                _OUTCOME.act_id == condition.act_id,
-                sa.or_(_ACT.authority_intention.is_(None),
-                       _ACT.authority_intention == intention["id"]),
-            )
         stmt = (
-            sa.select(NORA_ACT_OUTCOME, _ACT.executor)
+            sa.select(NORA_ACT_OUTCOME, _ACT.executor, _ACT.destination)
             .join(NORA_ACT, sa.and_(_ACT.id == _OUTCOME.act_id, _ACT.unit == _OUTCOME.unit))
             .where(
-                _OUTCOME.unit == unit, match,
+                _OUTCOME.unit == unit, self._sources.act_match(intention, condition),
                 _OUTCOME.graph_id.is_not(None), _OUTCOME.state == "live",
                 _ACT.state == "live",
             )
@@ -136,8 +121,8 @@ class SqlIntentionBatch:
         done = row["verdict"] == "done"
         # The recorded success is the witness for the intention's own delivery.
         recorded_delivery = done and isinstance(condition, OwnDelivery) and not trigger
-        if not recorded_delivery and not await self._healthy(
-            unit, (row["executor"], ""),
+        if not recorded_delivery and not await self._sources_healthy(
+            unit, self._sources.act_source(row),
         ):
             return Evaluation("unknown")
         return Evaluation("true" if done else "false", _witness(row, row["asserted_at"]))
@@ -146,7 +131,7 @@ class SqlIntentionBatch:
         self, intention: Mapping[str, Any], condition: PersonEvent, *, trigger: bool,
     ) -> Evaluation:
         unit = intention["unit"]
-        if not await self._healthy(unit, (condition.platform, "")):
+        if not await self._sources_healthy(unit, await self._sources.resolve(intention, condition)):
             return Evaluation("unknown")
         m = MESSAGES.c
         stmt = sa.select(MESSAGES).where(
@@ -173,28 +158,20 @@ class SqlIntentionBatch:
 
     async def _predicate(self, intention: Mapping[str, Any], condition: Predicate) -> Evaluation:
         unit = intention["unit"]
-        for name in AGGREGATE_FAMILIES:
-            table = METADATA.tables[name]
-            c = table.c
-            conditions = [c.unit == unit, c.graph_id == condition.graph_id, c.state == "live"]
-            if "build_id" in c:
-                conditions.append(c.build_id == _CURRENT_BUILD)
-            row = (await self._conn.execute(
-                sa.select(table).where(*conditions).with_for_update(read=True),
-            )).mappings().one_or_none()
-            if row is None:
-                continue
-            sources = await self._aggregate_sources(table, row)
-            if not sources or not all([await self._healthy(unit, source) for source in sources]):
-                return Evaluation("unknown")
-            if await self._has_expired_inputs(table, row):
-                return Evaluation("unknown")
-            # The edge pins the history version by graph id and recorded time.
-            stamp = await self._revision_time(table, row)
-            if stamp is None:
-                return Evaluation("unknown")
-            return Evaluation(condition.measure(dict(row)), _witness(row, stamp))
-        return Evaluation("unknown")
+        aggregate = await self._sources.aggregate(unit, condition.graph_id)
+        if aggregate is None:
+            return Evaluation("unknown")
+        table, row = aggregate
+        sources = await self._sources.aggregate_sources(table, row)
+        if not await self._sources_healthy(unit, sources):
+            return Evaluation("unknown")
+        if await self._has_expired_inputs(table, row):
+            return Evaluation("unknown")
+        # The edge pins the history version by graph id and recorded time.
+        stamp = await self._revision_time(table, row)
+        if stamp is None:
+            return Evaluation("unknown")
+        return Evaluation(condition.measure(row), _witness(row, stamp))
 
     async def _has_expired_inputs(self, table: sa.Table, row: RowData) -> bool:
         at = row["occurred_at"] or row["asserted_at"]
@@ -225,54 +202,6 @@ class SqlIntentionBatch:
             h.table_name == table.name, h.row_key == key, h.op != "delete",
             h.superseded_at.is_(None),
         ).order_by(h.id.desc()).limit(1))
-
-    async def _aggregate_sources(self, table: sa.Table, row: RowData) -> set[_Source]:
-        if table.name == "platform_object_state":
-            return {(row["platform"], "")}
-        if table.name.startswith("presence_"):
-            circle = row.get("circle_id")
-            if circle is None and "place_id" in row:
-                p = PRESENCE_DERIVED_PLACES.c
-                circle = await self._conn.scalar(sa.select(p.circle_id).where(
-                    p.unit == row["unit"], p.id == row["place_id"],
-                ))
-            if circle:
-                return {("presence", circle)}
-            subject = row.get("subject_id")
-            return await self._presence_sources(row["unit"], subject)
-        sources: set[_Source] = set()
-        entries = Lineage.from_json(row.get("build_lineage")).section(ROW)
-        for entry in entries:
-            if entry.kind == "message" and entry.origin:
-                platform, _ = split_room(entry.origin)
-                if not platform:
-                    return set()
-                sources.add((platform, ""))
-            elif entry.kind == "presence" and entry.subject:
-                found = await self._presence_sources(row["unit"], entry.subject)
-                if not found:
-                    return set()
-                sources.update(found)
-            elif entry.kind == "social" and entry.subject:
-                s = SOCIAL_ITEM.c
-                networks = set(await self._conn.scalars(sa.select(s.network).where(
-                    s.unit == row["unit"], s.person == entry.subject, s.state == "live",
-                ).distinct()))
-                if not networks:
-                    return set()
-                sources.update((f"social.{network}", "") for network in networks)
-            else:
-                return set()
-        return sources
-
-    async def _presence_sources(self, unit: str, subject: str | None) -> set[_Source]:
-        if subject is None:
-            return set()
-        p = PRESENCE_FIXES.c
-        circles = await self._conn.scalars(sa.select(p.circle_id).where(
-            p.unit == unit, p.person_id == subject, p.state == "live",
-        ).distinct())
-        return {("presence", circle) for circle in circles}
 
     async def end(
         self, intention: Mapping[str, Any], ending: Ending, witness: Witness,

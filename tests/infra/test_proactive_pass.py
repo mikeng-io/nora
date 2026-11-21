@@ -12,6 +12,7 @@ from nora.access import IdentityAccess
 from nora.agent.delivery_acts import DeliveryActs
 from nora.agent.lineage import LineagePolicy
 from nora.agent.registry import ToolRegistry
+from nora.app.graph_observe import graph_observe
 from nora.app.proactive_fire import FireAgent, FireRoom, ProactiveFire
 from nora.app.proactive_poller import ProactiveLanding, ProactivePoller
 from nora.doctrine.loader import DoctrineStore
@@ -32,13 +33,17 @@ from nora.infra.sql.item_registration import RegistrationScope
 from nora.memory import ActAuthority, ActEnvelope, DebriefObligation, act_pass, wire
 from nora.memory.adapters.proactive_claims import SqlProactiveClaims
 from nora.memory.adapters.tools.intentions import _make_intention_commit
+from nora.obs.metrics import Metrics
 from nora.policy import Policy
 from tests.fakes import SinkSender
 from tests.infra.test_cognitive_graph_admission import _rows
+from tests.infra.test_condition_matcher import _health
+from tests.infra.test_condition_triggers import _TEXT
+from tests.infra.test_condition_triggers import _schedule as _schedule_condition_trigger
 from tests.infra.test_graph_debrief import CONTEXT, opening, wiring
 from tests.infra.test_pass_assembly import _assembler
 from tests.infra.test_proactive_claims import DUE, claim_rows, publish_due, seed_due, slots
-from tests.infra.test_retrieval_scope import DM, OTHER, OTHER_ROOM, ROOM, UNIT, write_edge
+from tests.infra.test_retrieval_scope import AT, DM, OTHER, OTHER_ROOM, ROOM, UNIT, write_edge
 from tests.infra.test_retrieval_scope import scenario as scenario
 from tests.infra.test_situation_staleness import intention, refuse_count
 
@@ -287,6 +292,26 @@ async def test_restart_makes_only_completed_claims_ready_for_debrief(scenario, r
     assert len(debrief.client.prompts) == (1 if recorded else 0)
 
 _SEND = ("send_reply", {"text": "Generated reminder"})
+
+
+async def test_observe_and_the_proactive_poller_deliver_a_condition_trigger_once(scenario):
+    await _schedule_condition_trigger(scenario, origin_room=f"signal:{ROOM}")
+    await _health(scenario.engine, "signal", "up", unit=UNIT)
+    await scenario.item("witness", _TEXT, at=AT)
+    runner = ScriptedRunner((_SEND,))
+    poller, sender, _ = setup(scenario, runner, [])
+    observe = graph_observe(scenario.engine, lambda: AT, Metrics())
+
+    await observe.tick()
+    await poller.poll()
+    await observe.tick()
+    await poller.poll()
+
+    [claim] = await claim_rows(scenario)
+    assert (claim["graph_id"], claim["occurrence"], claim["state"]) == (
+        "waiting", "witness", "closed",
+    )
+    assert len(sender.sent) == len(runner.calls) == 1
 
 
 async def test_a_due_reminder_closes_by_its_recorded_delivery_and_cannot_be_claimed_again(scenario):

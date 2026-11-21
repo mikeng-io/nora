@@ -564,7 +564,7 @@ class SqlRollupStore:
 
     async def health_rows(
         self, *, sources: Sequence[str], start_ms: int, through_ms: int,
-        graph_unit: str | None = None,
+        graph_unit: str | None = None, require_preceding: bool | None = None,
     ) -> list[HealthRow]:
         """Source health for `sources`, from the newest row at or before
         `start_ms` of each (the state a span begins in) to `through_ms`,
@@ -577,8 +577,9 @@ class SqlRollupStore:
             filters.append(sa.or_(h.source == "presence", h.event == "transition"))
         else:
             filters.extend((h.unit == graph_unit, h.state == "live", h.graph_id.is_not(None)))
-        starts = h.at_ms > start_ms if graph_unit is None else h.at_ms >= start_ms
-        precedes = h.at_ms <= start_ms if graph_unit is None else h.at_ms < start_ms
+        strict_start = graph_unit is not None if require_preceding is None else require_preceding
+        starts = h.at_ms >= start_ms if strict_start else h.at_ms > start_ms
+        precedes = h.at_ms < start_ms if strict_start else h.at_ms <= start_ms
         inside = (
             sa.select(SOURCE_HEALTH)
             .where(
