@@ -29,8 +29,8 @@
   "internal_docstrings": 3
  },
  "deploy/signal-bridge/wrapper.py": {
-  "comment_blocks": 3,
-  "file_lines": 822,
+  "comment_blocks": 5,
+  "file_lines": 823,
   "internal_docstrings": 11
  },
  "deploy/stt/server.py": {
@@ -139,9 +139,9 @@
   "comment_blocks": 1
  },
  "nora/__main__.py": {
-  "comment_blocks": 16,
+  "comment_blocks": 17,
   "functions": {
-   "App.run": 278
+   "App.run": 282
   },
   "internal_docstrings": 2
  },
@@ -184,10 +184,10 @@
   "internal_docstrings": 1
  },
  "nora/agent/guards.py": {
-  "comment_blocks": 45,
-  "file_lines": 1528,
+  "comment_blocks": 49,
+  "file_lines": 1535,
   "functions": {
-   "Deliverer.deliver": 282,
+   "Deliverer.deliver": 298,
    "ReplyGuard.evaluate": 223
   },
   "internal_docstrings": 10
@@ -255,10 +255,10 @@
   "internal_docstrings": 4
  },
  "nora/agent/registry.py": {
-  "comment_blocks": 34,
-  "file_lines": 1362,
+  "comment_blocks": 36,
+  "file_lines": 1369,
   "functions": {
-   "ToolRegistry.__init__": 436
+   "ToolRegistry.__init__": 444
   },
   "internal_docstrings": 5
  },
@@ -343,13 +343,13 @@
  "nora/analytics/composition.py": {
   "comment_blocks": 2,
   "functions": {
-   "build_rollup": 124
+   "build_rollup": 125
   },
   "internal_docstrings": 2
  },
  "nora/analytics/rollup.py": {
   "comment_blocks": 19,
-  "file_lines": 1078,
+  "file_lines": 1080,
   "functions": {
    "MobilityRollup._reconcile_places": 124,
    "MobilityRollup._segment_batch": 304
@@ -364,7 +364,7 @@
   "internal_docstrings": 1
  },
  "nora/app/agent_runner.py": {
-  "comment_blocks": 8,
+  "comment_blocks": 9,
   "functions": {
    "LiveAgentRunner.invoke": 154
   }
@@ -431,9 +431,9 @@
  },
  "nora/app/composition.py": {
   "comment_blocks": 22,
-  "file_lines": 1498,
+  "file_lines": 1494,
   "functions": {
-   "_compose_dependencies": 983
+   "_compose_dependencies": 979
   },
   "internal_docstrings": 1
  },
@@ -455,9 +455,9 @@
   "comment_blocks": 1
  },
  "nora/app/computer_queue.py": {
-  "comment_blocks": 15,
+  "comment_blocks": 16,
   "file_lines": 1365,
-  "internal_docstrings": 10
+  "internal_docstrings": 11
  },
  "nora/app/config_cli.py": {
   "internal_docstrings": 8
@@ -472,12 +472,12 @@
   "internal_docstrings": 6
  },
  "nora/app/fire.py": {
-  "comment_blocks": 74,
-  "file_lines": 2952,
+  "comment_blocks": 78,
+  "file_lines": 2955,
   "functions": {
    "FirePath.__init__": 248,
    "FirePath._invoke": 231,
-   "FirePath._turn": 397,
+   "FirePath._turn": 402,
    "FirePath.build_context": 194,
    "FirePath.speak": 142
   },
@@ -589,12 +589,12 @@
   "comment_blocks": 5
  },
  "nora/app/wake.py": {
-  "comment_blocks": 1,
+  "comment_blocks": 2,
   "internal_docstrings": 4
  },
  "nora/config.py": {
-  "comment_blocks": 102,
-  "file_lines": 4698,
+  "comment_blocks": 104,
+  "file_lines": 4702,
   "internal_docstrings": 23
  },
  "nora/doctrine/loader.py": {
@@ -617,7 +617,7 @@
  },
  "nora/domain/block_types.py": {
   "comment_blocks": 18,
-  "file_lines": 1094,
+  "file_lines": 1095,
   "internal_docstrings": 1
  },
  "nora/domain/blocks.py": {
@@ -877,10 +877,10 @@
   "internal_docstrings": 1
  },
  "nora/engagement/pipeline.py": {
-  "comment_blocks": 48,
-  "file_lines": 1401,
+  "comment_blocks": 52,
+  "file_lines": 1417,
   "functions": {
-   "EngagementPipeline._run_turn": 757
+   "EngagementPipeline._run_turn": 776
   },
   "internal_docstrings": 8
  },
@@ -936,8 +936,8 @@
  },
  "nora/infra/computer/manager.py": {
   "comment_blocks": 4,
-  "file_lines": 842,
-  "internal_docstrings": 10
+  "file_lines": 844,
+  "internal_docstrings": 12
  },
  "nora/infra/computer/scoped.py": {
   "comment_blocks": 1
@@ -1107,11 +1107,11 @@
  },
  "nora/infra/sql/audit.py": {
   "comment_blocks": 8,
-  "file_lines": 1158,
+  "file_lines": 1174,
   "functions": {
    "reaction_states": 184
   },
-  "internal_docstrings": 4
+  "internal_docstrings": 5
  },
  "nora/infra/sql/blob_refs.py": {
   "comment_blocks": 2
@@ -1675,7 +1675,7 @@
  },
  "nora/platform/bridge/projection.py": {
   "comment_blocks": 5,
-  "internal_docstrings": 10
+  "internal_docstrings": 12
  },
  "nora/platform/bridge/queue.py": {
   "comment_blocks": 1
@@ -1691,18 +1691,18 @@
   "comment_blocks": 1
  },
  "nora/platform/discord/adapter.py": {
-  "comment_blocks": 15,
+  "comment_blocks": 16,
   "functions": {
-   "DiscordAdapter.listen": 130
+   "DiscordAdapter.listen": 131
   }
  },
  "nora/platform/discord/bridge_app.py": {
   "comment_blocks": 10,
-  "file_lines": 1985,
+  "file_lines": 1986,
   "functions": {
    "DiscordBridge._observation_events": 217
   },
-  "internal_docstrings": 22
+  "internal_docstrings": 23
  },
  "nora/platform/discord/bridge_control.py": {
   "comment_blocks": 2
@@ -1735,9 +1735,9 @@
   "internal_docstrings": 3
  },
  "nora/platform/discord/music_manager.py": {
-  "comment_blocks": 18,
-  "file_lines": 1054,
-  "internal_docstrings": 11
+  "comment_blocks": 19,
+  "file_lines": 1058,
+  "internal_docstrings": 12
  },
  "nora/platform/discord/music_notify.py": {
   "comment_blocks": 4,
@@ -1798,7 +1798,7 @@
  "nora/platform/registry.py": {
   "comment_blocks": 4,
   "functions": {
-   "AdapterRegistry.from_config": 234
+   "AdapterRegistry.from_config": 237
   },
   "internal_docstrings": 1
  },
@@ -2294,9 +2294,6 @@
  "tests/contract/test_audit_store_contract.py": {
   "file_lines": 1162,
   "internal_docstrings": 2
- },
- "tests/contract/test_binding_store_contract.py": {
-  "file_lines": 801
  },
  "tests/contract/test_blob_store_contract.py": {
   "comment_blocks": 2
@@ -2953,7 +2950,7 @@
  },
  "tests/test_tool_surface_policy.py": {
   "comment_blocks": 17,
-  "file_lines": 1376,
+  "file_lines": 1377,
   "functions": {
    "_classify_value": 143
   },
