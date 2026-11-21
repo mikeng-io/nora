@@ -1,4 +1,9 @@
-# Site art: provenance
+# Earlier site art: provenance
+
+The public site no longer shows these renders (its world is `../journey/`).
+They stay because the showreel reads four of them as inputs
+(`showreel/pipeline/process_art.py`) and the portal's `lost.webp` is derived
+from the one here.
 
 ## Current 2D Bauhinia sources — 2026-10-26
 

@@ -1,46 +1,39 @@
-// The shape every locale fills. Both dictionaries are checked against it
-// by `astro check`, so a key added to one language and not the other fails
-// the build instead of rendering a hole.
+// The shape every locale fills. Both dictionaries are checked against it by
+// `astro check`, so a key in one language and not the other fails the build.
+//
+// Titles mark the one emphasised word with *asterisks* (rendered as <em>,
+// the copper accent: DESIGN.md §3, the Thread Rule).
 
-export type Person = "ken" | "mei" | "jo";
+/** One scene of the story: its words, and the still that stands for it
+    without script or motion. */
+export interface Beat {
+  /** Small label above the title, such as "Take one · Memory". */
+  eyebrow?: string;
+  title: string;
+  lede?: string;
+  /** Alt text for the scene's still. */
+  still: string;
+}
 
-export interface SeedMessage {
-  who: Person;
+export interface ChatLine {
+  id: string;
+  who: string;
   time: string;
   text: string;
 }
 
-export interface Exchange {
+export interface Ask {
   id: string;
-  /** The button label in "Ask her". */
+  /** The button label. */
   prompt: string;
-  /** What "you" type into the room; absent for a time skip. */
-  ask?: string;
-  /** A time-skip divider shown instead of a message from you. */
-  skip?: string;
+  /** What "you" type into the room. */
+  ask: string;
   time: string;
   reply: string;
+  /** The ids of the lines her answer rests on; "How she knew" points at them. */
+  cites: string[];
   /** One line on where her answer came from. */
   source: string;
-  /** She said it without being asked (a reminder coming due). */
-  own?: boolean;
-}
-
-export interface Stage {
-  title: string;
-  body: string;
-}
-
-export interface Tier {
-  scale: string;
-  title: string;
-  body: string;
-}
-
-export interface Row {
-  icon: "chat" | "voice" | "place" | "presence" | "web" | "picture" | "everyday";
-  title: string;
-  body: string;
 }
 
 export interface Dict {
@@ -48,150 +41,35 @@ export interface Dict {
   nav: {
     skip: string;
     home: string;
-    room: string;
-    loop: string;
-    memory: string;
-    form: string;
-    signIn: string;
-    menu: string;
-    theme: string;
-    studio: string;
-    night: string;
     language: string;
-    /** The earphones button: sound, off until pressed (scripts/sound.ts). */
-    sound: string;
+    /** The scene index on the side of the stage. */
+    scenes: string;
   };
-  /** What she is doing, as the header says it beside her name (src/scripts/nora/). */
-  presence: {
-    listening: string;
-    music: string;
-    reading: string;
-    thinking: string;
-    writing: string;
-    quiet: string;
-    posing: string;
-    waving: string;
-    dozing: string;
-    annoyed: string;
-    speaking: string;
-    searching: string;
-    moving: string;
-    /** The hero's caption while she is somewhere else on the page. */
-    away: string;
-  };
-  hero: {
-    status: string;
-    title: string;
-    lede: string;
-    primary: string;
-    secondary: string;
-    platforms: string;
-    alt: string;
-    nightAlt: string;
-    caption: string;
-    /** The hour where she lives, beside her caption; `{time}` is HH:MM in Hong Kong. */
-    clock: string;
-    lights: string;
-  };
-  chat: {
-    title: string;
-    lede: string;
-    disclaimer: string;
-    roomName: string;
-    members: string;
-    platformLabel: string;
-    sameNora: string;
-    promptsLabel: string;
-    replay: string;
-    typing: string;
-    you: string;
-    aiBadge: string;
-    onHerOwn: string;
-    sourceLabel: string;
-    logLabel: string;
-    people: Record<Person, string>;
-    seed: SeedMessage[];
-    exchanges: Exchange[];
-  };
-  loop: {
-    title: string;
-    lede: string;
-    tagTitle: string;
-    tagBody: string;
-    tagSteps: string[];
-    ambientTitle: string;
-    ambientBody: string;
-    stages: Stage[];
-    /** The fifth stop, where the loop closes: the people, not her. */
-    people: Stage;
-    closing: string;
-  };
-  memory: {
-    title: string;
-    lede: string;
-    tiers: Tier[];
-    note: string;
-    imageAlt: string;
-    /** What she would be keeping from the chat demo, under each tier (scripts/memory.ts). */
-    kept: {
-      intro: string;
-      /** Where the room stands: before anything is asked, then rewritten after each exchange (by id). */
-      standing: { seed: string } & Record<string, string>;
-      /** What is still open. */
-      open: { table: string; reminder: string; retired: string };
-      /** The slow two, which the demo never changes. */
-      culture: string;
-      cultureWhen: string;
-      people: string;
-      peopleWhen: string;
-      /** Label for the line under each tier, for assistive technology. */
-      label: string;
+  hero: Beat & { cta: string };
+  circles: Beat & { you: string; family: string; team: string; friends: string };
+  memory: Beat;
+  knowledge: Beat & { nodes: string[] };
+  rewind: Beat & { label: string };
+  nora: Beat & { hold: string; tag: string };
+  shift: Beat & { slip: string; tagBefore: string; tagAfter: string };
+  act: Beat & {
+    chat: {
+      room: string;
+      members: string;
+      disclaimer: string;
+      prompts: string;
+      you: string;
+      typing: string;
+      howShe: string;
+      onHerOwn: string;
+      lines: ChatLine[];
+      asks: Ask[];
+      own: { time: string; text: string; source: string };
     };
   };
-  senses: {
-    title: string;
-    lede: string;
-    rows: Row[];
-    note: string;
-    /** Her voice, under the voice row: a clip made with her own voice settings. */
-    voice: { play: string; transcript: string; about: string };
-  };
-  manners: {
-    title: string;
-    items: Stage[];
-    imageAlt: string;
-  };
-  form: {
-    title: string;
-    body: string[];
-    quote: string;
-    anchorsTitle: string;
-    anchors: string[];
-    figureAlt: string;
-    sheetCaption: string;
-    sheetAlt: string;
-    tposeCaption: string;
-    tposeAlt: string;
-    enlarge: string;
-    close: string;
-  };
-  portal: {
-    title: string;
-    body: string;
-    cta: string;
-    items: string[];
-    imageAlt: string;
-  };
-  footer: {
-    made: string;
-    site: string;
-    colophon: string;
-    top: string;
-  };
-  notFound: {
-    title: string;
-    body: string;
-    home: string;
-    imageAlt: string;
-  };
+  rooms: Beat;
+  soulbound: Beat & { without: string; with: string; lines: [string, string, string]; drag: string };
+  gate: Beat & { source: string };
+  footer: { made: string; site: string; colophon: string; top: string };
+  notFound: { title: string; body: string; home: string; imageAlt: string };
 }

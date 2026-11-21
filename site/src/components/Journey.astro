@@ -1,0 +1,180 @@
+---
+// The story, written once as HTML (DESIGN.md §9). Without the stage it reads
+// as a column of scenes: a still and its words each. With the stage
+// (src/journey/main.ts) the same words are choreographed over the painted
+// world; the stills stay in the page for anyone the stage does not reach.
+import { Image } from "astro:assets";
+import { LOCALES, type Locale } from "../i18n";
+import "../styles/journey.css";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = LOCALES[locale].dict;
+const stills = import.meta.glob<{ default: ImageMetadata }>("../assets/journey/stills/*.webp", { eager: true });
+const still = (id: string) => stills[`../assets/journey/stills/${id}.webp`]?.default;
+
+// *word* marks the one copper word (DESIGN.md §3, the Thread Rule).
+// No regex literals here: angle brackets and star-slash inside them trip the frontmatter parser.
+const esc = (s: string) => s.split("&").join("&amp;").split("<").join("&lt;").split(">").join("&gt;");
+const STAR = new RegExp("\\*(.+?)\\*", "g");
+const em = (s: string) => esc(s).replace(STAR, "<em>$1</em>");
+const plain = (s: string) => s.split("*").join("");
+
+const c = t.act.chat;
+const rail = [
+  ["hero", "01", plain(t.hero.title)],
+  ["circles", "02", t.circles.eyebrow],
+  ["memory", "03", t.memory.eyebrow],
+  ["knowledge", "04", t.knowledge.eyebrow],
+  ["rewind", "05", t.rewind.label],
+  ["nora", "06", t.nora.eyebrow],
+  ["shift", "07", t.shift.eyebrow],
+  ["act", "08", t.act.eyebrow],
+  ["rooms", "09", t.rooms.eyebrow],
+  ["soulbound", "10", plain(t.soulbound.lines[2])],
+  ["gate", "11", plain(t.gate.title)],
+] as const;
+const pavilions = [t.circles.you, t.circles.family, t.circles.team, t.circles.friends];
+const stillOf: Record<string, string> = { rewind: "knowledge", rooms: "circles" };
+---
+
+<div class="stage-only" aria-hidden="true">
+  <canvas class="stage" data-stage></canvas>
+  <canvas class="nora-canvas" data-nora-canvas width="600" height="1200"></canvas>
+  <div class="loading"><span class="wordmark">NORA</span><span class="bar"></span></div>
+  <div class="cursor" data-cursor></div>
+  <div class="tag" data-tag><span class="before">{t.shift.tagBefore}</span><span class="after">{t.shift.tagAfter}</span><span class="what">{t.nora.tag}</span></div>
+  {pavilions.map((p) => <span class="pavilion" data-pavilion>{p}</span>)}
+  <div class="split" data-split-ui>
+    <span class="side without">{t.soulbound.without}</span>
+    <span class="line"></span>
+    <span class="side with">{t.soulbound.with}</span>
+    <span class="drag">{t.soulbound.drag}</span>
+  </div>
+  <div class="timecode" data-timecode><span>{t.rewind.label}</span></div>
+</div>
+
+<button class="hold stage-only" type="button" data-hold hidden>
+  <span class="ring"></span><span class="txt">{t.nora.hold}</span>
+</button>
+
+<nav class="rail stage-only" data-rail aria-label={t.nav.scenes}>
+  <ol>
+    {rail.map(([id, n, label]) => (
+      <li>
+        <a href={`#${id}`} data-scene={id}>
+          <span class="n">{n}</span>
+          <span class="l">{label}</span>
+        </a>
+      </li>
+    ))}
+  </ol>
+</nav>
+
+<main id="main" class="story" data-story data-nodes={t.knowledge.nodes.join("|")}>
+  {[
+    ["hero", "rise", t.hero],
+    ["circles", "rise", t.circles],
+    ["memory", "drop", t.memory],
+    ["knowledge", "link", t.knowledge],
+    ["rewind", "crop", t.rewind],
+    ["nora", "ignite", t.nora],
+    ["shift", "rise", t.shift],
+    ["act", "rise", t.act],
+    ["rooms", "rise", t.rooms],
+  ].map(([id, style, b]) => {
+    const beat = b as { eyebrow?: string; title: string; lede?: string; still: string };
+    const img = still(stillOf[id as string] ?? (id as string));
+    const Tag = id === "hero" ? "h1" : "h2";
+    return (
+      <section class={`beat beat-${id}`} id={id as string} data-beat={id} data-style={style}>
+        {img && <Image class="still" src={img} alt={beat.still} widths={[800, 1600]} sizes="100vw" loading={id === "hero" ? "eager" : "lazy"} />}
+        <div class="copy">
+          {beat.eyebrow && <p class="eyebrow" data-rest>{beat.eyebrow}</p>}
+          <Tag class="display" data-split set:html={em(beat.title)} />
+          {beat.lede && <p class="lede" data-rest>{beat.lede}</p>}
+          {id === "hero" && (
+            <p class="actions" data-rest>
+              <a class="pill" href="#circles">{t.hero.cta}</a>
+            </p>
+          )}
+          {id === "act" && (
+            <div class="chat" data-chat data-rest>
+              <header class="room">
+                <span class="name">{c.room}</span>
+                <span class="members">{c.members}</span>
+              </header>
+              <ol class="log">
+                {c.lines.map((x) => (
+                  <li class="msg" data-chat-line={x.id}>
+                    <span class="who">{x.who}</span>
+                    <span class="text">{x.text}</span>
+                    <time>{x.time}</time>
+                  </li>
+                ))}
+                {c.asks.map((a) => (
+                  <>
+                    <li class="msg you" data-you={a.id}>
+                      <span class="who">{c.you}</span>
+                      <span class="text">{a.ask}</span>
+                      <time>{a.time}</time>
+                    </li>
+                    <li class="msg her" data-reply={a.id} data-cites={a.cites.join(" ")}>
+                      <span class="who">Nora</span>
+                      <span class="text">{a.reply}</span>
+                      <button class="how" type="button" data-how>{c.howShe}</button>
+                      <span class="source">{a.source}</span>
+                    </li>
+                  </>
+                ))}
+                <li class="typing" data-typing aria-hidden="true"><span>{c.typing}</span><i></i><i></i><i></i></li>
+                <li class="morning" data-morning>{c.own.time}</li>
+                <li class="msg her own" data-chat-own>
+                  <span class="who">Nora <span class="badge">{c.onHerOwn}</span></span>
+                  <span class="text">{c.own.text}</span>
+                  <span class="source">{c.own.source}</span>
+                </li>
+              </ol>
+              <svg class="threads" data-chat-threads aria-hidden="true"></svg>
+              <div class="asks" data-asks>
+                <span class="label">{c.prompts}</span>
+                {c.asks.map((a) => <button type="button" class="ask" data-ask={a.id}>{a.prompt}</button>)}
+              </div>
+              <p class="disclaimer">{c.disclaimer}</p>
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  })}
+
+  <section class="beat beat-soulbound" id="soulbound" data-beat="soulbound" data-style="crop">
+    {still("soulbound") && <Image class="still" src={still("soulbound")!} alt={t.soulbound.still} widths={[800, 1600]} sizes="100vw" loading="lazy" />}
+    <div class="copy">
+      <p class="eyebrow" data-rest>{t.soulbound.title}</p>
+      <h2 class="display">
+        {t.soulbound.lines.map((line) => <span class="line" data-line set:html={em(line)} />)}
+      </h2>
+    </div>
+  </section>
+
+  <section class="beat beat-gate" id="gate" data-beat="gate" data-style="rise">
+    {still("gate") && <Image class="still" src={still("gate")!} alt={t.gate.still} widths={[800, 1600]} sizes="100vw" loading="lazy" />}
+    <div class="copy">
+      <h2 class="display" data-split set:html={em(t.gate.title)} />
+      <p class="lede" data-rest>{t.gate.lede}</p>
+      <p class="actions" data-rest>
+        <a class="pill" href="https://github.com/mikeng-io/nora" rel="noopener">{t.gate.source}</a>
+      </p>
+    </div>
+  </section>
+</main>
+
+<div class="runway stage-only" aria-hidden="true"></div>
+
+<script>
+  import "../journey/main.ts";
+</script>

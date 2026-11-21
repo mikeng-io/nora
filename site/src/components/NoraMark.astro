@@ -1,9 +1,9 @@
 ---
-// Her cut-out icon, bare: transparent, no disc, no ring. Used beside the
-// wordmark (header, footer); the favicon and app icons are the same image
-// (scripts/make_images.py). DESIGN.md §2, operator 2026-09-26.
+// Her cut-out icon, bare: transparent, no disc, no ring (DESIGN.md §2, §7).
+// Beside the wordmark; the favicon and app icons are the same image
+// (scripts/make_images.py).
 import { Image } from "astro:assets";
-import { art } from "../assets/art";
+import icon from "../../../assets/nora-mini-icon.png";
 
 interface Props {
   size?: number;
@@ -12,16 +12,7 @@ interface Props {
 const { size = 36 } = Astro.props;
 ---
 
-<Image
-  class="mark"
-  src={art.icon}
-  alt=""
-  width={size}
-  densities={[1, 2, 3]}
-  loading="eager"
-  decoding="async"
-  style={`--s:${size}px`}
-/>
+<Image class="mark" src={icon} alt="" width={size} densities={[1, 2, 3]} loading="eager" decoding="async" style={`--s:${size}px`} />
 
 <style>
   .mark {

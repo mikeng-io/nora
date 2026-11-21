@@ -81,6 +81,8 @@ export function sitemap(site: URL): string {
     first, for a model that reads the site instead of rendering it. The spec
     keeps H2 for link lists, so the claims sit before the first H2 under the
     page's own section titles in bold. */
+const plain = (s: string) => s.replace(/\*/g, "");
+
 export function llmsTxt(site: URL): string {
   const t = LOCALES.en.dict;
   const zh = LOCALES["zh-Hant"].dict;
@@ -94,31 +96,17 @@ export function llmsTxt(site: URL): string {
     ``,
     t.hero.lede,
     ``,
-    `**${t.loop.title}** ${t.loop.lede}`,
+    `**${plain(t.circles.title)}** ${t.circles.lede}`,
     ``,
-    `- **${t.loop.tagTitle}.** ${t.loop.tagBody}`,
-    `- **${t.loop.ambientTitle}.** ${t.loop.ambientBody} ${t.loop.stages.map((s) => `${s.title}: ${s.body}`).join(" ")}`,
-    `- ${t.loop.closing}`,
+    ...list(
+      [t.memory, t.knowledge, t.nora, t.shift, t.act, t.rooms].map(
+        (b) => `**${b.eyebrow ? `${b.eyebrow}: ` : ""}${plain(b.title)}** ${b.lede ?? ""}`,
+      ),
+    ),
     ``,
-    `**${t.memory.title}** ${t.memory.lede}`,
+    t.soulbound.lines.map(plain).join(" "),
     ``,
-    ...list(t.memory.tiers.map((m) => `**${m.title}** (${m.scale}): ${m.body}`)),
-    ``,
-    t.memory.note,
-    ``,
-    `**${t.senses.title}** ${t.senses.lede}`,
-    ``,
-    ...list(t.senses.rows.map((r) => `**${r.title}:** ${r.body}`)),
-    ``,
-    t.senses.note,
-    ``,
-    `**${t.manners.title}**`,
-    ``,
-    ...list(t.manners.items.map((m) => `**${m.title}** ${m.body}`)),
-    ``,
-    `**${t.form.title}** ${t.form.body.join(" ")}`,
-    ``,
-    `**${t.portal.title}** ${t.portal.body}`,
+    `**${plain(t.gate.title)}** ${t.gate.lede}`,
     ``,
     `## Pages`,
     ``,

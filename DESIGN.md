@@ -259,7 +259,7 @@ image and says where it was sampled; it is the one raw value allowed.
 
 | family | for |
 |---|---|
-| **Bricolage Grotesque** | display, headings and the wordmark |
+| **Bricolage Grotesque** | display, headings and the wordmark, which is always set in capitals: NORA |
 | **Inter** | interface and reading text |
 | **Noto Sans HK** (then PingFang HK) | every Chinese glyph, in both families' stacks |
 | **JetBrains Mono**, tabular | IDs, hashes, counts, times, coordinates |
@@ -361,9 +361,10 @@ labels above in sentence case. Panels: surface fill, hairline border, `16px`
 radius, 16–24px padding, no eyebrow labels.
 
 ### Stage navigation
-A thin top bar over the scene: the wordmark left, at most three section links,
-the copper "Sign in" pill right, a sound toggle. A scene indicator shows where
-the visitor is in the story; it is a list of real links to each scene.
+A thin top bar over the scene: her mark and the NORA wordmark left, the
+language right. The public site is an introduction, so it carries no sign-in.
+A scene indicator shows where the visitor is in the story; it is a list of
+real links to each scene.
 
 ### Nora in the UI
 - Among other people's round avatars (a transcript, a member list): the cut-out
@@ -441,7 +442,7 @@ acts.** It shows the difference instead of explaining it.
    lanterns; nothing crosses a valley.
 10. **Soulbound.** She steps out: every lantern cools to paper. She steps back
     in: they light.
-11. **Gate.** First light at the moon gate. Sign in; the source on GitHub.
+11. **Gate.** First light at the moon gate. Meet Nora; the source on GitHub.
 
 Every claim the page makes is a behaviour `design/cognition/` defines, in its
 terms: engagement and reflection loops, intentions that close on recorded

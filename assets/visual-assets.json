@@ -1885,10 +1885,7 @@
       "recipe": "source",
       "consumers": [
         "showreel/pipeline/process_art.py (BORROWED input)",
-        "showreel/pipeline/process_art.py (explicit path reference)",
-        "site/scripts/make_rig.py (POSES input)",
-        "site/src/assets/art.ts (direct import)",
-        "site/src/components/ChatDemo.astro (art.groupChat via registry)"
+        "showreel/pipeline/process_art.py (explicit path reference)"
       ],
       "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
       "unchanged_reason": null,
@@ -1896,82 +1893,6 @@
       "size": [
         996,
         1578
-      ],
-      "mode": "RGBA",
-      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
-    },
-    {
-      "id": "site.src.assets.art.hop",
-      "path": "site/src/assets/art/hop.webp",
-      "form": "mini",
-      "role": "reference",
-      "status": "active",
-      "eyes": "mini08",
-      "parents": [
-        "assets/nora-canonical-self.png"
-      ],
-      "recipe": "source",
-      "consumers": [
-        "site/scripts/make_rig.py (POSES input)"
-      ],
-      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
-      "unchanged_reason": null,
-      "sha256": "5459fffe95523b4cc99cb2d61950418ff85625727410c41b7f9a19db0cf44e05",
-      "size": [
-        977,
-        1609
-      ],
-      "mode": "RGBA",
-      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
-    },
-    {
-      "id": "site.src.assets.art.ledge",
-      "path": "site/src/assets/art/ledge.webp",
-      "form": "mini",
-      "role": "reference",
-      "status": "active",
-      "eyes": "mini08",
-      "parents": [
-        "assets/nora-canonical-self.png"
-      ],
-      "recipe": "source",
-      "consumers": [
-        "site/scripts/make_rig.py (POSES input)",
-        "site/src/assets/art.ts (direct import)",
-        "site/src/components/Memory.astro (art.ledge via registry)"
-      ],
-      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
-      "unchanged_reason": null,
-      "sha256": "ba646abcca6889ca259ddfab57a232a57620741e19fe77758887402338b8c23d",
-      "size": [
-        959,
-        1640
-      ],
-      "mode": "RGBA",
-      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
-    },
-    {
-      "id": "site.src.assets.art.lost",
-      "path": "site/src/assets/art/lost.webp",
-      "form": "mini",
-      "role": "reference",
-      "status": "active",
-      "eyes": "mini08",
-      "parents": [
-        "assets/nora-canonical-self.png"
-      ],
-      "recipe": "source",
-      "consumers": [
-        "site/scripts/make_rig.py (POSES input)",
-        "site/src/assets/art.ts (direct import)",
-        "site/src/pages/404.astro (art.lost via registry)"
-      ],
-      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
-      "unchanged_reason": null,
-      "sha256": "90e00d7bea0b236eb24a3526a1bca43594815a867d46ed92a5a722770a29e835",
-      "size": [
-        963,
-        1633
       ],
       "mode": "RGBA",
       "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
@@ -1989,11 +1910,7 @@
       "recipe": "source",
       "consumers": [
         "showreel/pipeline/process_art.py (BORROWED input)",
-        "showreel/pipeline/process_art.py (explicit path reference)",
-        "site/scripts/make_rig.py (POSES input)",
-        "site/src/assets/art.ts (direct import)",
-        "site/src/components/Form.astro (art.nightPortrait via registry)",
-        "site/src/components/Hero.astro (art.nightPortrait via registry)"
+        "showreel/pipeline/process_art.py (explicit path reference)"
       ],
       "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
       "unchanged_reason": null,
@@ -2018,10 +1935,7 @@
       "recipe": "source",
       "consumers": [
         "showreel/pipeline/process_art.py (BORROWED input)",
-        "showreel/pipeline/process_art.py (explicit path reference)",
-        "site/scripts/make_rig.py (POSES input)",
-        "site/src/assets/art.ts (direct import)",
-        "site/src/components/Manners.astro (art.quiet via registry)"
+        "showreel/pipeline/process_art.py (explicit path reference)"
       ],
       "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
       "unchanged_reason": null,
@@ -2032,28 +1946,6 @@
       ],
       "mode": "RGBA",
       "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
-    },
-    {
-      "id": "site.src.assets.art.stool",
-      "path": "site/src/assets/art/stool.webp",
-      "form": "noncharacter",
-      "role": "reference",
-      "status": "active",
-      "eyes": "no-eyes",
-      "parents": [],
-      "recipe": "source",
-      "consumers": [
-        "site/src/assets/art.ts (direct import)",
-        "site/src/components/Memory.astro (art.stool via registry)"
-      ],
-      "provenance": "Existing source retained; site art README or showreel prompts. Grain recipe: showreel/pipeline/grain.mjs.",
-      "unchanged_reason": "Prop, food, empty room or grain; no Mini face to refresh.",
-      "sha256": "c8fe6a46fc9b0c93e9dec60fb44e7a51551e415342dfe8cb4fc2e3a430678f23",
-      "size": [
-        839,
-        911
-      ],
-      "mode": "RGBA"
     },
     {
       "id": "site.src.assets.art.wave",
@@ -2068,10 +1960,7 @@
       "recipe": "source",
       "consumers": [
         "showreel/pipeline/process_art.py (BORROWED input)",
-        "showreel/pipeline/process_art.py (explicit path reference)",
-        "site/scripts/make_rig.py (POSES input)",
-        "site/src/assets/art.ts (direct import)",
-        "site/src/components/Portal.astro (art.wave via registry)"
+        "showreel/pipeline/process_art.py (explicit path reference)"
       ],
       "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
       "unchanged_reason": null,
@@ -2082,252 +1971,6 @@
       ],
       "mode": "RGBA",
       "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
-    },
-    {
-      "id": "site.src.assets.rig.hop",
-      "path": "site/src/assets/rig/hop.webp",
-      "form": "mini",
-      "role": "rig-texture",
-      "status": "active",
-      "eyes": "procedural-mini08",
-      "parents": [
-        "site/src/assets/art/hop.webp"
-      ],
-      "recipe": "rig",
-      "consumers": [
-        "site/src/components/NoraRig.astro (direct import)",
-        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
-      ],
-      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
-      "unchanged_reason": null,
-      "sha256": "555c07ff2bb1b7bb9d1392a39a5d87c6a3f0f95053a06b9e689bb2cf11b38588",
-      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
-      "size": [
-        977,
-        1609
-      ],
-      "mode": "RGBA"
-    },
-    {
-      "id": "site.src.assets.rig.ledge",
-      "path": "site/src/assets/rig/ledge.webp",
-      "form": "mini",
-      "role": "rig-texture",
-      "status": "active",
-      "eyes": "procedural-mini08",
-      "parents": [
-        "site/src/assets/art/ledge.webp"
-      ],
-      "recipe": "rig",
-      "consumers": [
-        "site/src/components/NoraRig.astro (direct import)",
-        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
-      ],
-      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
-      "unchanged_reason": null,
-      "sha256": "25536db12328b04b2182196127b1d072452022debae7cdffc7acc03bf0de8b7e",
-      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
-      "size": [
-        959,
-        1640
-      ],
-      "mode": "RGBA"
-    },
-    {
-      "id": "site.src.assets.rig.lost",
-      "path": "site/src/assets/rig/lost.webp",
-      "form": "mini",
-      "role": "rig-texture",
-      "status": "active",
-      "eyes": "procedural-mini08",
-      "parents": [
-        "site/src/assets/art/lost.webp"
-      ],
-      "recipe": "rig",
-      "consumers": [
-        "site/src/components/NoraRig.astro (direct import)",
-        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
-      ],
-      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
-      "unchanged_reason": null,
-      "sha256": "742ac341da2c3d6276f7166676867471337f74e3625e2f7c1916601b5d209552",
-      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
-      "size": [
-        963,
-        1633
-      ],
-      "mode": "RGBA"
-    },
-    {
-      "id": "site.src.assets.rig.perch",
-      "path": "site/src/assets/rig/perch.webp",
-      "form": "mini",
-      "role": "rig-texture",
-      "status": "active",
-      "eyes": "procedural-mini08",
-      "parents": [
-        "site/src/assets/art/group-chat.webp"
-      ],
-      "recipe": "rig",
-      "consumers": [
-        "site/src/components/NoraRig.astro (direct import)",
-        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
-      ],
-      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
-      "unchanged_reason": null,
-      "sha256": "85a66bc1c15d690bf926f1767560d00da166c752899cfaae6b81f2ed53d687b2",
-      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
-      "size": [
-        996,
-        1578
-      ],
-      "mode": "RGBA"
-    },
-    {
-      "id": "site.src.assets.rig.plate-night",
-      "path": "site/src/assets/rig/plate-night.webp",
-      "form": "mini",
-      "role": "rig-plate",
-      "status": "active",
-      "eyes": "no-eyes",
-      "parents": [],
-      "recipe": "source",
-      "consumers": [
-        "site/src/components/Form.astro (direct import)",
-        "site/src/components/Hero.astro (direct import)"
-      ],
-      "provenance": "Retained earlier empty studio background, 2026-10-26 2D integration. Original sweep/floor/grain reconstruction predates the new character art; exact existing bytes preserved after processor sync. Not derived from the current Bauhinia portrait.",
-      "unchanged_reason": "Operator requested preservation of empty background plates; new-character compositing acceptance is separate.",
-      "sha256": "627aa371f3f1d6a2056e9679e4d1cc39b321d641f8ebee007d649ad629233959",
-      "visual_review": "Retained background bytes; parent current 2D browser seam/placement inspection PASS, 2026-10-26.",
-      "size": [
-        1024,
-        1536
-      ],
-      "mode": "RGB"
-    },
-    {
-      "id": "site.src.assets.rig.plate-studio",
-      "path": "site/src/assets/rig/plate-studio.webp",
-      "form": "mini",
-      "role": "rig-plate",
-      "status": "active",
-      "eyes": "no-eyes",
-      "parents": [],
-      "recipe": "source",
-      "consumers": [
-        "site/src/components/Form.astro (direct import)",
-        "site/src/components/Hero.astro (direct import)"
-      ],
-      "provenance": "Retained earlier empty studio background, 2026-10-26 2D integration. Original sweep/floor/grain reconstruction predates the new character art; exact existing bytes preserved after processor sync. Not derived from the current Bauhinia portrait.",
-      "unchanged_reason": "Operator requested preservation of empty background plates; new-character compositing acceptance is separate.",
-      "sha256": "9aed7be76d4342c0812a003aace651eb85ac4d5fcee4081fe228422bb93bd660",
-      "visual_review": "Retained background bytes; parent current 2D browser seam/placement inspection PASS, 2026-10-26.",
-      "size": [
-        1024,
-        1536
-      ],
-      "mode": "RGB"
-    },
-    {
-      "id": "site.src.assets.rig.quiet",
-      "path": "site/src/assets/rig/quiet.webp",
-      "form": "mini",
-      "role": "rig-texture",
-      "status": "active",
-      "eyes": "procedural-mini08",
-      "parents": [
-        "site/src/assets/art/quiet.webp"
-      ],
-      "recipe": "rig",
-      "consumers": [
-        "site/src/components/NoraRig.astro (direct import)",
-        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
-      ],
-      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
-      "unchanged_reason": null,
-      "sha256": "7e516fa0853647cd58e9cef88366726fbeccbf0404f5899288dab15254c57cec",
-      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
-      "size": [
-        934,
-        1685
-      ],
-      "mode": "RGBA"
-    },
-    {
-      "id": "site.src.assets.rig.stand-night",
-      "path": "site/src/assets/rig/stand-night.webp",
-      "form": "mini",
-      "role": "rig-texture",
-      "status": "active",
-      "eyes": "procedural-mini08",
-      "parents": [
-        "site/src/assets/art/night-portrait.webp"
-      ],
-      "recipe": "rig",
-      "consumers": [
-        "site/src/components/NoraRig.astro (direct import)",
-        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
-      ],
-      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
-      "unchanged_reason": null,
-      "sha256": "5e6f5e9ac22b0b43701f06f3d44651439c57c63ac2ca78a6b86180659caaf33f",
-      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
-      "size": [
-        613,
-        1497
-      ],
-      "mode": "RGBA"
-    },
-    {
-      "id": "site.src.assets.rig.stand",
-      "path": "site/src/assets/rig/stand.webp",
-      "form": "mini",
-      "role": "rig-texture",
-      "status": "active",
-      "eyes": "procedural-mini08",
-      "parents": [
-        "assets/nora-canonical-self.png"
-      ],
-      "recipe": "rig",
-      "consumers": [
-        "site/src/components/NoraRig.astro (direct import)",
-        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
-      ],
-      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
-      "unchanged_reason": null,
-      "sha256": "4e5a777620f58b75e01dd089b95800fb949886288f034a5db1254a6a4ab0b600",
-      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
-      "size": [
-        716,
-        1506
-      ],
-      "mode": "RGBA"
-    },
-    {
-      "id": "site.src.assets.rig.wave",
-      "path": "site/src/assets/rig/wave.webp",
-      "form": "mini",
-      "role": "rig-texture",
-      "status": "active",
-      "eyes": "procedural-mini08",
-      "parents": [
-        "site/src/assets/art/wave.webp"
-      ],
-      "recipe": "rig",
-      "consumers": [
-        "site/src/components/NoraRig.astro (direct import)",
-        "site/src/scripts/nora/rig.ts (texture URL from NoraRig.astro pose registry)"
-      ],
-      "provenance": "site/scripts/make_rig.py blankface texture plus rig.json; visible eyes are drawn by rig.ts. Parent browser visual inspection PASS, 2026-10-26; see verification.shader_and_rig for scope and screenshot evidence.",
-      "unchanged_reason": null,
-      "sha256": "6c313a8d54a743c4bc0947a910bf116edf31826bc6dec2c617f3f18524bd197b",
-      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance.",
-      "size": [
-        979,
-        1607
-      ],
-      "mode": "RGBA"
     },
     {
       "id": "assets.modeling.bauhinia.v2.human-anime-tpose",
@@ -2741,6 +2384,1176 @@
         724
       ],
       "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.journey.circles.01-sky",
+      "path": "site/src/assets/journey/circles/01-sky.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "711517dad4aa12f9c5735f40399203f1391facb478d1b536174868bd192642bd",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.journey.circles.02-far",
+      "path": "site/src/assets/journey/circles/02-far.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "a8468b9665eac0effb90015939cb29d226283341a7a92b97988cec417ceafbcf",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.circles.03-land",
+      "path": "site/src/assets/journey/circles/03-land.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "30ed827541a1de04423d09fab4e35ec3cd57dcbd709e3354377da7d38feb7ca2",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.circles.04-mist",
+      "path": "site/src/assets/journey/circles/04-mist.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "69659a646c5b988a0c282e44b3d278bf93d56806c2d001147ce8b1f025c6a119",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.circles.05-foreground",
+      "path": "site/src/assets/journey/circles/05-foreground.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "046689192bc83908ea69a81263644aa74b739f55b560042223aef3b6b48c29ae",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.gate.01-sky",
+      "path": "site/src/assets/journey/gate/01-sky.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "d952ac6deda06b4caeb29b8dcc596a43be162a7b03c782aad674d07ded6b5199",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.journey.gate.02-far",
+      "path": "site/src/assets/journey/gate/02-far.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "96c96589e42b1fa3c7e6cbae2074b58e3b469c3a0629c32755430aaa7d5e216e",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.gate.03-wall",
+      "path": "site/src/assets/journey/gate/03-wall.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "0be532353264dfc5730223f53ba06aa6614857b3b263a269b27ef36b4a09acc3",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.gate.04-steps",
+      "path": "site/src/assets/journey/gate/04-steps.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "81b13c9c0c8a7e4e34fb0930889f47b29d6440998a3e32d4be856ecc93dd5b81",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.gate.05-foreground",
+      "path": "site/src/assets/journey/gate/05-foreground.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "feba670cefca030a0a24388c77a5d3a76b2550e0e577470bd4a364481071045f",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.hero.01-sky",
+      "path": "site/src/assets/journey/hero/01-sky.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "42f30f425345fa578d3f8afdf12af2ac9e5964b1ac32a506e9538b3f87a819a3",
+      "size": [
+        1672,
+        941
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.journey.hero.02-far",
+      "path": "site/src/assets/journey/hero/02-far.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "c1aa1cae24ef5a89597e7f9dd2d36066cd8a88ecf265f5c58300121710da1ff5",
+      "size": [
+        1672,
+        941
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.hero.03-mid",
+      "path": "site/src/assets/journey/hero/03-mid.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "e4f5004623685b123519a4eb3f8b6c5f32c876691895bcdd5f04692e4381f724",
+      "size": [
+        1672,
+        941
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.hero.04-near",
+      "path": "site/src/assets/journey/hero/04-near.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "46f98d44532cad98259cf42b4384a7037d65ad0ad26be3099137161494ca70dd",
+      "size": [
+        1672,
+        941
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.hero.05-foreground",
+      "path": "site/src/assets/journey/hero/05-foreground.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "62e60ce5df5ea8e644dfa87017535332f4449c54319f7dde43f2ac032a08d605",
+      "size": [
+        1672,
+        941
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.memory.01-sky",
+      "path": "site/src/assets/journey/memory/01-sky.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "b753daca18ee8b2b22057908cde6d46f2b1c9984ff8479e64b889b5586dbd4e3",
+      "size": [
+        1672,
+        941
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.journey.memory.02-far",
+      "path": "site/src/assets/journey/memory/02-far.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "d69b20e996d97232089c2f77a8c202fab7564baa98660be49c2c098be6977ac4",
+      "size": [
+        1672,
+        941
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.memory.03-cliff",
+      "path": "site/src/assets/journey/memory/03-cliff.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "93749d5f1e6e519e6627a7c4d7d41a2ac2445851dde60e35d186002ba4d7498a",
+      "size": [
+        1672,
+        941
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.memory.04-slips",
+      "path": "site/src/assets/journey/memory/04-slips.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "36d9396ac07487d8671629d09827ec939ab00f3c0ebd9d6cd08e417f0abc2dc5",
+      "size": [
+        1672,
+        941
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.memory.05-foreground",
+      "path": "site/src/assets/journey/memory/05-foreground.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "2108c4c004b6d6154de3f26566f5eddce92f06007054b11d37e78efd8f150dda",
+      "size": [
+        1672,
+        941
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.night.01-sky",
+      "path": "site/src/assets/journey/night/01-sky.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "742e2c1a5a01e4d2702939e3c210cd025f60ce5f68d0454394e07d1461ab2e07",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.journey.night.02-far-peaks",
+      "path": "site/src/assets/journey/night/02-far-peaks.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "61910b7aefaae492066c0728186235a0b11182f57716f1a57b5d5dde16cf1460",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.night.03-mid-peaks",
+      "path": "site/src/assets/journey/night/03-mid-peaks.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "fb11a7ab58d1eede82577e169da777c8cd5fff3e130c25323d13f0c466d6a7b3",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.night.04-path",
+      "path": "site/src/assets/journey/night/04-path.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "e7ebef68a75331cdd9ac5fba44a344f240859c47481ab562775add53fd6f06cd",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.night.05-foreground",
+      "path": "site/src/assets/journey/night/05-foreground.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "4e8428c213235861186eca155acea83d1932fe363719d9cdc60d81e8749a5d30",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.path.01-sky",
+      "path": "site/src/assets/journey/path/01-sky.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "c4d7099206e2f5093ca17191083297f84bbc9cc4dcfbca5a1141c42661bd3e9e",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.journey.path.02-far-peaks",
+      "path": "site/src/assets/journey/path/02-far-peaks.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "e3582021b7433aa45abd13c8bed0bba623627643f212c4eeea4b9c5263fc2f0b",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.path.03-mid-peaks",
+      "path": "site/src/assets/journey/path/03-mid-peaks.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "857565188bcf6256ba5f03a01411becd6ef66706528139ef0e7d488ce26a3978",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.path.04-path",
+      "path": "site/src/assets/journey/path/04-path.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "25292ed45b9a78f875a4ce3da25ab51d00cb991642ffc336d6fc1d28c0a9afa3",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.path.05-foreground",
+      "path": "site/src/assets/journey/path/05-foreground.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "9938174295b4e07b3be968ae6f601d4e62e693eb6a30091968cba32f628fbfd5",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.props.lantern-lit",
+      "path": "site/src/assets/journey/props/lantern-lit.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "08110fcdff5b8506a68150ab4a1537bc318bd6bf530eed479f9edfe25b24c9f3",
+      "size": [
+        900,
+        900
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.props.lantern-unlit",
+      "path": "site/src/assets/journey/props/lantern-unlit.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "d1e969f08bcb52a1fba2d0cbed685661bab58508e06df9771c84c732b372bd87",
+      "size": [
+        900,
+        900
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.props.slip",
+      "path": "site/src/assets/journey/props/slip.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "5af0d561b0b305e874f124b7e236b67404cf2dd1ed099af60443716002987572",
+      "size": [
+        900,
+        300
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.ridge.01-sky",
+      "path": "site/src/assets/journey/ridge/01-sky.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "8dc9df284e7d24deb65e825ad99e06ef7d24de82f3a0332ba429792201cb7ef4",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.journey.ridge.02-cloudsea",
+      "path": "site/src/assets/journey/ridge/02-cloudsea.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "9f0da5adb38e52c6114bf7a60f10758e69f63224b3e0ed9a00123510b16b294d",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.ridge.03-ridge",
+      "path": "site/src/assets/journey/ridge/03-ridge.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "7e031933ee70a6c4a07caa053336397dca336fc9ddb8810039f395d36cbe77d6",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.ridge.04-foreground",
+      "path": "site/src/assets/journey/ridge/04-foreground.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "79fe88ce74be6af61de98ec2ac78928f053fe6bd06a20171b35388575a8ee4a5",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.stills.act",
+      "path": "site/src/assets/journey/stills/act.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/components/Journey.astro (scene still, shown without the stage)"
+      ],
+      "provenance": "Composite of the station's depth plates with Nora's 2D anime master placed where the stage stands her; anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "5f3164f63239fb2a0ed2ad498f54b20691712b4d3a47f11cb1773f7b712eef97",
+      "size": [
+        1600,
+        900
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.journey.stills.circles",
+      "path": "site/src/assets/journey/stills/circles.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/components/Journey.astro (scene still, shown without the stage)"
+      ],
+      "provenance": "Composite of the station's depth plates with Nora's 2D anime master placed where the stage stands her; anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "09441af81f7f131401161d7a1ecd2289d699768807eeb590d8c305c54208564b",
+      "size": [
+        1600,
+        900
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.journey.stills.gate",
+      "path": "site/src/assets/journey/stills/gate.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/components/Journey.astro (scene still, shown without the stage)"
+      ],
+      "provenance": "Composite of the station's depth plates with Nora's 2D anime master placed where the stage stands her; anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "b54e4a830ad3c262a2d3e2bceb4d8d836e468030fa9f6f3260296c2b4bd18ba2",
+      "size": [
+        1600,
+        900
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.journey.stills.hero",
+      "path": "site/src/assets/journey/stills/hero.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/components/Journey.astro (scene still, shown without the stage)"
+      ],
+      "provenance": "Composite of the station's depth plates with Nora's 2D anime master placed where the stage stands her; anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "7a631bb2c7bb9c494f3c3247e8e202d3a3a2c52086b8b35fa06dc731fe296942",
+      "size": [
+        1599,
+        900
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.journey.stills.knowledge",
+      "path": "site/src/assets/journey/stills/knowledge.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/components/Journey.astro (scene still, shown without the stage)"
+      ],
+      "provenance": "Composite of the station's depth plates with Nora's 2D anime master placed where the stage stands her; anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "b304fa73d4cb786d65e651caaf7503a8766bcb956e6858910dd16750383eff94",
+      "size": [
+        1600,
+        900
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.journey.stills.memory",
+      "path": "site/src/assets/journey/stills/memory.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/components/Journey.astro (scene still, shown without the stage)"
+      ],
+      "provenance": "Composite of the station's depth plates with Nora's 2D anime master placed where the stage stands her; anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "7d587e5ccb7b88bcd953c784fbe91ac09641cdad1ecee9cba297580b2b13c225",
+      "size": [
+        1599,
+        900
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.journey.stills.nora",
+      "path": "site/src/assets/journey/stills/nora.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/components/Journey.astro (scene still, shown without the stage)"
+      ],
+      "provenance": "Composite of the station's depth plates with Nora's 2D anime master placed where the stage stands her; anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "310390fa06db8b4c0295cbdabadc0a967cdc998a9802b2e4a67aad95e4a5c2e3",
+      "size": [
+        1600,
+        900
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.journey.stills.shift",
+      "path": "site/src/assets/journey/stills/shift.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/components/Journey.astro (scene still, shown without the stage)"
+      ],
+      "provenance": "Composite of the station's depth plates with Nora's 2D anime master placed where the stage stands her; anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "4e13fe264c5ddad1c7ee1fc5926c3ab33c1d3c37be087589a48ad28dde8d21b2",
+      "size": [
+        1600,
+        900
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.journey.stills.soulbound",
+      "path": "site/src/assets/journey/stills/soulbound.webp",
+      "form": "mini",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/components/Journey.astro (scene still, shown without the stage)"
+      ],
+      "provenance": "Composite of the station's depth plates with Nora's 2D anime master placed where the stage stands her; anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "4e13fe264c5ddad1c7ee1fc5926c3ab33c1d3c37be087589a48ad28dde8d21b2",
+      "size": [
+        1600,
+        900
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.journey.terrace.01-sky",
+      "path": "site/src/assets/journey/terrace/01-sky.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "1cb5e4cc4f5017b32846408806d5bfd39b93c2f51ee0dd882c4fd18da53469a3",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGB"
+    },
+    {
+      "id": "site.src.assets.journey.terrace.02-far",
+      "path": "site/src/assets/journey/terrace/02-far.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "b5e1f912f22f7412ce6a37980617980377e8172792df95e3aeb62c9f55cd3b17",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.terrace.03-terrace",
+      "path": "site/src/assets/journey/terrace/03-terrace.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "50eec17f520bfd2866226f87f3f01c358a77b7151a4151194698304d9b6c0d1f",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.terrace.04-foreground",
+      "path": "site/src/assets/journey/terrace/04-foreground.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "00add507223eeec238cfa1b0f25dde0bb3d5c0f990ae87d0e90596d3e777fdcc",
+      "size": [
+        1664,
+        936
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.transit.cloud-a",
+      "path": "site/src/assets/journey/transit/cloud-a.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "c0e8612c13665c029907de538446661207906bcb69726b7b8b3accc1f5355356",
+      "size": [
+        1600,
+        900
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.transit.cloud-b",
+      "path": "site/src/assets/journey/transit/cloud-b.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "cfa3c0ceeb8e27462e652104aab569c09761404a23b3ae09e8bd1abc96c255b0",
+      "size": [
+        1600,
+        900
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.transit.fog-a",
+      "path": "site/src/assets/journey/transit/fog-a.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "1dd94e0a65e29bca957979900eee71ccd264c31dd683776a88090729011b60bb",
+      "size": [
+        1600,
+        900
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.journey.transit.fog-b",
+      "path": "site/src/assets/journey/transit/fog-b.webp",
+      "form": "noncharacter",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "site-journey",
+      "consumers": [
+        "site/src/journey/world.ts (stage plates via import.meta.glob)"
+      ],
+      "provenance": "anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "unchanged_reason": null,
+      "sha256": "8b473628b2c10469e9c44f94c9dd794b99283b50c063246ee5910ee5bdc6cb69",
+      "size": [
+        1600,
+        900
+      ],
+      "mode": "RGBA"
+    },
+    {
+      "id": "site.src.assets.art.lost",
+      "path": "site/src/assets/art/lost.webp",
+      "form": "mini",
+      "role": "reference",
+      "status": "active",
+      "eyes": "mini08",
+      "parents": [
+        "assets/nora-canonical-self.png"
+      ],
+      "recipe": "source",
+      "consumers": [
+        "app/src/assets/art/lost.webp (declared source)"
+      ],
+      "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
+      "unchanged_reason": null,
+      "sha256": "90e00d7bea0b236eb24a3526a1bca43594815a867d46ed92a5a722770a29e835",
+      "size": [
+        963,
+        1633
+      ],
+      "mode": "RGBA",
+      "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
     }
   ],
   "historical_exports": [
