@@ -107,6 +107,7 @@ _UNRESOLVABLE: frozenset[tuple[str, str, str, str]] = frozenset(
         ("nora/obs/metrics.py", "inc", "inc", "value"),
         ("nora/obs/metrics.py", "observe", "observe", "value"),
         ("nora/presence/collector.py", "_count", "inc", "name"),
+        ("nora/location/app/circles.py", "inc", "inc", "metric"),
     }
 )
 

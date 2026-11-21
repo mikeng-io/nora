@@ -112,6 +112,7 @@ REQUIRED: dict[str, tuple[str, ...]] = {
     # call runs while the conversation's slot is held, and a truncated verdict
     # still parses as JSON into something shorter and wrong.
     "nora/app/raw_clients.py": ("timeout", "finish_reason", "usage"),
+    "nora/agent/web_browse.py": ("timeout", "finish_reason", "usage"),
     # NOT `usage`, and the reason is structural rather than an oversight:
     # `nora.infra` may not import `nora.obs` (the layered-architecture
     # contract, enforced by `lint-imports`), so a raw client in this layer
@@ -201,9 +202,9 @@ def _names_called(node: ast.AST) -> set[str]:
 
 
 def _on_the_call_path(
-    rel: str, fn: ast.FunctionDef | ast.AsyncFunctionDef, token: str,
+    rel: str, fn: ast.FunctionDef | ast.AsyncFunctionDef, identifier: str,
 ) -> bool:
-    """Whether `token` appears anywhere on the call path through `fn`.
+    """Whether `identifier` appears anywhere on the call path through `fn`.
 
     BOTH DIRECTIONS, because each otherwise gives a false positive against
     correct code:
@@ -275,8 +276,23 @@ def _on_the_call_path(
     def _up(node):  # type: ignore[no-untyped-def]
         return [n for n in every if node.name in _names_called(n)]
 
+    path = _closure(_down) + _closure(_up)
+    return any(identifier in _code_of(node) for node in path) or (
+        identifier == "wait_for" and any(_uses_asyncio_timeout(node) for node in path)
+    )
+
+
+def _uses_asyncio_timeout(node: ast.AST) -> bool:
     return any(
-        token in _code_of(node) for node in _closure(_down) + _closure(_up)
+        isinstance(stmt, ast.AsyncWith) and any(
+            isinstance(item.context_expr, ast.Call)
+            and isinstance(item.context_expr.func, ast.Attribute)
+            and isinstance(item.context_expr.func.value, ast.Name)
+            and item.context_expr.func.value.id == "asyncio"
+            and item.context_expr.func.attr == "timeout"
+            for item in stmt.items
+        )
+        for stmt in ast.walk(node)
     )
 
 

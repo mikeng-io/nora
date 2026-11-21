@@ -565,8 +565,6 @@
         "design/self-reference/references.md (explicit path reference)",
         "design/self-reference/README.md (explicit path reference)",
         "design/video-generation/README.md (explicit path reference)",
-        "docs-site/src/pages/index.astro (direct import)",
-        "docs-site/src/pages/index.astro (explicit path reference)",
         "scripts/ingest_self_asset.py (explicit path reference)",
         "showreel/README.md (explicit path reference)",
         "showreel/pipeline/gen_art.sh (explicit path reference)",
@@ -690,8 +688,6 @@
         "app/scripts/make-icons.py (explicit path reference)",
         "assets/nora-mini-icon.md (explicit path reference)",
         "design/self-reference/references.md (explicit path reference)",
-        "docs-site/src/components/SiteTitle.astro (direct import)",
-        "docs-site/src/components/SiteTitle.astro (explicit path reference)",
         "showreel/pipeline/process_art.py (BORROWED input)",
         "showreel/pipeline/process_art.py (explicit path reference)",
         "site/scripts/make_images.py (explicit path reference)",
@@ -1865,7 +1861,6 @@
       "consumers": [
         "app/public/offline.html (shared-host /favicon.ico resolves to site; standalone app has its own fallback)",
         "app/public/sw.js (shared-host /favicon.ico precache resolves to site)",
-        "docs-site/astro.config.mjs (URL /favicon.ico)",
         "site/src/layouts/Base.astro (URL /favicon.ico)"
       ],
       "provenance": "Existing icon/OG processor; no external profile publication.",

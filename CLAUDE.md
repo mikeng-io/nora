@@ -10,10 +10,4 @@ the same rules instead of a second, drifting copy.
 `docs/adr/0010-agents-md-is-the-entry-point.md` for the decision and what it
 cost.
 
-<!-- OPENWIKI:START -->
-
-## OpenWiki
-
 @AGENTS.md
-
-<!-- OPENWIKI:END -->
