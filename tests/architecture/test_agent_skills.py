@@ -140,11 +140,12 @@ def test_agents_md_lists_every_skill_and_only_real_ones() -> None:
 
 #: Names of coding-agent runtimes, session hosts, their tool names and model
 #: families, matched across line wraps. Devin's GitHub services (Devin Review,
-#: its release automation) are external services the skills describe, so
-#: "Devin" alone is not listed. "Cursor" is the product only when capitalised.
+#: Devin release automation) are external services the skills describe; any
+#: other "Devin" is the coding agent. "Cursor" is the product only when capitalised.
 _AGENT_SPECIFIC = re.compile(
     r"claude\s+code|\bcodex\b|\bt3\b|(?-i:\bCursor\b)|\bkimi\b|run_in_background|"
-    r"delegate_task|\brtk\b|\bsonnet\b|\bopus\b|gpt-\d|swe-2",
+    r"delegate_task|\brtk\b|\bsonnet\b|\bopus\b|gpt-\d|swe-2|"
+    r"\bdevin\b(?!\s+(?:review|release\s+automation))",
     re.IGNORECASE,
 )
 
