@@ -1,6 +1,6 @@
 """`identity.example.toml` is the only committed record of what an
 `identity.toml` may say, and it is the repo's designated source of PLACEHOLDER
-identifiers (AGENTS.md, «Never paste production rows into a fixture»). Both
+identifiers (docs/code-standards.md: fixtures are generated, never production rows). Both
 jobs fail the same way: an example that names a key the loader would refuse is
 a trap an operator copies, and it fails at THEIR startup rather than here.
 

@@ -127,18 +127,6 @@ def _foreground_declarations(cfg, request, tool_spec):
                 {"verdict": "no_go", "relevance_score": 0},
             ),
         ],
-        "nora/language/browse_render.py": [
-            (
-                request(
-                    "browse",
-                    cfg.computer.browse.model,
-                    '<browse_task scope="turn"/>',
-                    tools=(tool_spec("browse_done", "answer", "string"),),
-                ),
-                "browse",
-                ("browse_done", {"answer": "No result in the generated browser.", "found": False}),
-            ),
-        ],
     }
 
 
@@ -278,7 +266,9 @@ def test_generated_subject_answers_every_production_declaration(tmp_path, evalua
     }
     modules = _modules()
     declared = {path for path, tree in modules.items() if declares_blocks(tree)}
-    assert set(cases) | scripted | offline == declared
+    # test_registered_web_browse_journey exercises both retrieval model requests.
+    browser_journey = {"nora/language/web_browse_render.py"}
+    assert set(cases) | scripted | offline | browser_journey == declared
     for path in cases:
         objectives = {
             node.value.value for node in modules[path].body

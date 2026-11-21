@@ -424,21 +424,12 @@ class HeartbeatLoop:
             # check can never see. A delivered same-act row with a DIFFERENT
             # plan id supersedes this one; rows sharing the plan are the one
             # deliberate multi-room act and do not supersede each other.
-            policy = getattr(self, "_policy", None)
-            convo = (
-                policy.conversation(row.platform, row.conversation_id)
-                if policy is not None else None
-            )
-            if convo is None:
+            unit_rooms = self._proactive.rooms_in_unit(row) if self._proactive else []
+            if not unit_rooms:
                 # The unit's room set cannot be established, so the whole-
                 # unit delivered check cannot run: a same-room-only read
                 # would masquerade as the unit check it is not.
                 return ReminderState.FAILED, "failed_error"
-            unit_rooms = [
-                (c.platform, c.primary_id)
-                for c in getattr(policy, "conversations", ()) or ()
-                if c.unit == convo.unit
-            ]
             plan = (row.payload or {}).get("plan_id")
             hits = await self._store.delivered_subject(
                 unit_rooms,

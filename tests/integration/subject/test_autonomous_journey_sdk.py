@@ -20,10 +20,11 @@ from evals.backbone import JourneyGrader, Spec, nora_task
 from evals.rebuilt.entry import ENTRY_POINTS
 from nora.subject.eval_evidence import EvidenceError, read_events
 from nora.subject.journey_world import JourneyServices
-from nora.subject.obtain import SubjectSpec, build_config, default_policy
+from nora.subject.obtain import _DEFAULT_IDENTITY, SubjectSpec, build_config, default_policy
 from nora.subject.recorded_services import RecordedServices
 from nora.testing.causal_protocol import (
     ANSWER,
+    CAUSAL_TIMING,
     CORRECTION,
     FOLLOWUP,
     INITIAL,
@@ -62,13 +63,13 @@ def world(*, overrides=None):
               .replace('persons = "*"', 'persons = ["miles_novak"]')
               + "home_room = true\nproactive = true\n")
     return JourneyServices(
-        policy=policy, room=("signal", "g1"),
+        policy=policy, room=("signal", "g1"), identity=_DEFAULT_IDENTITY,
         overrides={
             "platforms.signal.mode": "bridge",
             "platforms.signal.enabled": True,
             "cognition.enabled": True,
             "heartbeat.enabled": True,
-            # Preserve deployment scheduling; unsupported occasions fail the finite world.
+            **CAUSAL_TIMING,
             **(overrides or {}),
         },
         judge_models=JUDGES)
@@ -303,8 +304,12 @@ async def test_sdk_autonomous_journey_version2_turns_through_real_app(
     try:
         report = await experiment.run_evaluations_async(
             task=nora_task(spec), max_workers=1)
-        _assert_v2_report(
-            draw, report, experiment, sdk_evidence, plan)
+        report_path = sdk_evidence.path / f"journey-{draw.name}" / "report.json"
+        assert [rows[0].label for rows in report.detailed_results] == ["PASS"], (
+            json.loads(report_path.read_text())["errors"]
+            if report_path.is_file() else report.detailed_results
+        )
+        _assert_v2_report(draw, report, experiment, sdk_evidence, plan)
     finally:
         _durable_mirror(sdk_evidence)
 
@@ -312,7 +317,6 @@ async def test_sdk_autonomous_journey_version2_turns_through_real_app(
 def _assert_v2_report(draw: Any, report: Any, experiment: Any,
                       sdk_evidence: Any, plan: Any) -> None:
     events = read_events(sdk_evidence.path)
-    assert [rows[0].label for rows in report.detailed_results] == ["PASS"]
     coverage, outcome = accounted(
         report, experiment, evidence=evidence_outcome(sdk_evidence))
     assert accepted(coverage, outcome), (coverage, outcome)
