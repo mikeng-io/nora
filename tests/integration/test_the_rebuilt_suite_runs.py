@@ -30,14 +30,10 @@ from evals.backbone import (
     PASS,
     MeetsGrader,
     Spec,
-    _drive,
     state_of,
 )
 from nora.subject import Knowledge, NoteSeed
-from tests.sandbox_fixtures import ROOM, seed_source
-
-#: Every draw creates a Honcho workspace of its own.
-pytestmark = pytest.mark.usefixtures("draw_honcho")
+from tests.sandbox_fixtures import ROOM, offline_drive, seed_source
 
 _NO_PROVIDER = {"llm.base_url": "http://127.0.0.1:9/v1"}
 
@@ -87,7 +83,7 @@ async def _graded(
         source_url=source.url, entry=entry, overrides=_NO_PROVIDER,
         policy=source.policy, identity=source.identity, template=source.template,
     )
-    result = await _drive(case, spec)
+    result = await offline_drive(case, spec)
     data = EvaluationData(
         input=input, actual_output=result["output"],
         actual_environment_state=result["environment_state"], metadata={"expect": expect},
@@ -206,7 +202,7 @@ async def test_a_graph_surface_sandbox_is_indexed_from_the_sources_vectors(
     )
     # `_drive` raises; `nora_task` turns it into the draw's ERROR.
     with pytest.raises(GraphIndexRefusedError, match="no vector of"):
-        await _drive(case, spec)
+        await offline_drive(case, spec)
 
     engine = create_sql_engine(source.url)
     try:
@@ -224,7 +220,7 @@ async def test_a_graph_surface_sandbox_is_indexed_from_the_sources_vectors(
     finally:
         await engine.dispose()
     capsys.readouterr()
-    result = await _drive(case, spec)
+    result = await offline_drive(case, spec)
     data = EvaluationData(input="", actual_output=result["output"],
                           actual_environment_state=result["environment_state"])
     assert state_of(data, NORA_ERROR) is None or "memory index" not in str(

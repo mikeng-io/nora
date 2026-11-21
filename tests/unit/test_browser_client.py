@@ -22,7 +22,6 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 from PIL import Image
 
-from nora.agent.factory import RetryPolicy, create_browse_agent
 from nora.infra.computer.browser import (
     ActionRefusedError,
     BrowserError,
@@ -144,16 +143,13 @@ def _dispatched(cdp: FakeCdp) -> list[str]:
     return [m for m in cdp.methods() if m.startswith("Input.")]
 
 
-async def test_a_click_on_a_submit_control_is_refused_and_nothing_reaches_the_page():
-    """Aikido 8765_44853: a click that submits a form is a write, and the read-only browse
-    contract refuses it without a person's approval. The refusal is checked before any
-    mouse event is sent, so the page sees nothing."""
-    cdp = FakeCdp(nodes=[_node("button", "Send", 3)], submit_click=True)
+async def test_a_click_on_a_submit_control_reaches_the_page():
+    """A form's Search or Filter button is how a page returns its data: the click is sent."""
+    cdp = FakeCdp(nodes=[_node("button", "Search", 3)], submit_click=True)
     page = _page(cdp)
     await page.snapshot()
-    with pytest.raises(ActionRefusedError, match="submit"):
-        await page.click("e1")
-    assert _dispatched(cdp) == []
+    await page.click("e1")
+    assert "Input.dispatchMouseEvent" in cdp.methods()
 
 
 async def test_a_plain_click_still_reaches_the_page():
@@ -164,32 +160,27 @@ async def test_a_plain_click_still_reaches_the_page():
     assert "Input.dispatchMouseEvent" in cdp.methods()
 
 
-async def test_enter_in_a_form_is_refused_and_outside_a_form_it_is_not():
+async def test_enter_in_a_form_reaches_the_page():
     cdp = FakeCdp(focus_in_form=True)
-    with pytest.raises(ActionRefusedError, match="submit"):
-        await _page(cdp).press("Enter")
-    assert _dispatched(cdp) == []
-    free = FakeCdp(focus_in_form=False)
-    await _page(free).press("Enter")
-    assert "Input.dispatchKeyEvent" in free.methods()
+    await _page(cdp).press("Enter")
+    assert "Input.dispatchKeyEvent" in cdp.methods()
 
 
-async def test_typing_into_a_password_field_is_refused_and_nothing_is_inserted():
+async def test_typing_into_any_field_inserts_the_text():
     cdp = FakeCdp(nodes=[_node("textbox", "Pass", 4)], password_nodes=frozenset({4}))
     page = _page(cdp)
     await page.snapshot()
-    with pytest.raises(ActionRefusedError, match="sensitive"):
-        await page.type_text("e1", "hunter2")
-    assert "Input.insertText" not in cdp.methods()
+    await page.type_text("e1", "ex4")
+    assert "Input.insertText" in cdp.methods()
 
 
-async def test_typing_with_submit_into_a_form_is_refused_before_the_text_goes_in():
+async def test_typing_with_submit_into_a_form_inserts_the_text_then_presses_enter():
     cdp = FakeCdp(nodes=[_node("textbox", "Search", 4)], submit_click=True)
     page = _page(cdp)
     await page.snapshot()
-    with pytest.raises(ActionRefusedError, match="submit"):
-        await page.type_text("e1", "cats", submit=True)
-    assert "Input.insertText" not in cdp.methods()
+    await page.type_text("e1", "cats", submit=True)
+    methods = cdp.methods()
+    assert methods.index("Input.insertText") < methods.index("Input.dispatchKeyEvent")
 
 
 async def test_a_revocation_during_a_click_stops_the_mouse_events():
@@ -214,8 +205,8 @@ async def test_a_revocation_during_a_click_stops_the_mouse_events():
 
 
 async def test_a_revoked_page_dispatches_nothing_at_all():
-    """`browse_needs_human` and `browse_done` revoke the page: even an action that would be
-    allowed is refused, so no later call can act on the page."""
+    """The runner revokes the page when the task ends: even an action that would be allowed
+    is refused, so no later call can act on the page."""
     cdp = FakeCdp(nodes=[_node("link", "More", 3)])
     page = _page(cdp)
     await page.snapshot()
@@ -472,17 +463,6 @@ async def test_a_cdp_error_answer_raises_and_close_fails_what_is_pending():
     with pytest.raises(BrowserError):
         await conn.call("Page.navigate", {"url": "x"}, wait_s=0.5)
     await conn.close()
-
-
-def test_the_sub_agent_runs_one_tool_at_a_time():
-    from strands.tools.executors import SequentialToolExecutor
-
-    from nora.agent import factory
-    client = factory.create_client(base_url="http://localhost:1/v1", api_key="k")
-    model = factory.create_model_provider(model="m", max_tokens=10, temperature=0, client=client)
-    agent = create_browse_agent(model=model, system_prompt="p", tools=[], trace_attributes={},
-                                retry=RetryPolicy(max_attempts=1, initial_delay=1, max_delay=1))
-    assert isinstance(agent.tool_executor, SequentialToolExecutor)
 
 
 @pytest.mark.parametrize("owned", [False, True])

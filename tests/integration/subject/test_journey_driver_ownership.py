@@ -1,7 +1,7 @@
 """`JourneyDriver` owns what it acquires: the app task, the App's
 shutdown and the journey SQL engine — on every exit, not only the clean
 one. Each control composes a REAL subject over owned generated services,
-starts the real `App` task (or fails after it was created), and observes
+starts the real `App` task (or fails during startup), and observes
 the teardown calls land before the original exception or cancellation
 continues.
 """
@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.infra.sql.schema import STIMULUS_PENDING
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import EvidenceError
 from nora.subject.journey import JourneyDriver
@@ -80,8 +81,20 @@ async def test_driver_clean_exit_ends_task_shuts_app_and_disposes_engine(
     async with _world(clean_pg_url, tmp_path, "clean") as (_env, subject, port):
         driver = JourneyDriver(subject)
         shutdowns, disposes = _spy(driver, monkeypatch)
+        started_with_seed = []
+        run = driver.app.run
+
+        async def observe_start() -> None:
+            started_with_seed.append(any(
+                row["unit"] == subject.unit and row["mode"] == "live" and row["stimulus_id"] == 0
+                for row in await driver.rows(STIMULUS_PENDING)
+            ))
+            await run()
+
+        driver.app.run = observe_start
         async with driver:
             assert driver.task is not None and not driver.task.done()
+            assert started_with_seed == [True]
         assert driver.task is None
         assert shutdowns == [1] and disposes == [1]
         assert not subject.deps.background._tasks
@@ -91,9 +104,7 @@ async def test_driver_clean_exit_ends_task_shuts_app_and_disposes_engine(
 
 async def test_driver_start_failure_still_unwinds_and_surfaces(
         clean_pg_url, evaluation_config, tmp_path, monkeypatch):
-    """A failure AFTER the app task was created (`prepare_effect_reads`)
-    still cancels the task, shuts the app down and disposes the engine —
-    and the caller sees the start failure, not a teardown artifact."""
+    """A failed preflight disposes the engine before the App starts."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
     async with _world(clean_pg_url, tmp_path, "start-fail") as (_env, subject, _):
         driver = JourneyDriver(subject)
@@ -108,13 +119,12 @@ async def test_driver_start_failure_still_unwinds_and_surfaces(
             async with driver:
                 pass  # pragma: no cover — entry fails before the body
         assert driver.task is None
-        assert shutdowns == [1] and disposes == [1]
+        assert shutdowns == [0] and disposes == [1]
 
 
 async def test_driver_start_cancellation_still_unwinds(
         clean_pg_url, evaluation_config, tmp_path, monkeypatch):
-    """Cancellation while `start()` holds a live app task is not a leak:
-    the same teardown runs and the CancelledError continues."""
+    """Cancelling preflight disposes the engine and propagates cancellation."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
     async with _world(clean_pg_url, tmp_path, "start-cancel") as (_env, subject, _):
         driver = JourneyDriver(subject)
@@ -129,7 +139,7 @@ async def test_driver_start_cancellation_still_unwinds(
             async with driver:
                 pass  # pragma: no cover — entry is cancelled before the body
         assert driver.task is None
-        assert shutdowns == [1] and disposes == [1]
+        assert shutdowns == [0] and disposes == [1]
 
 
 async def test_driver_failed_app_task_is_retrieved_and_unwound(

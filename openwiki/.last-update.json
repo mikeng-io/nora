@@ -1,8 +1,0 @@
-{
-  "updatedAt": "2026-10-20T15:39:37.055Z",
-  "command": "update",
-  "gitHead": "a8c05ecc89492f77d0019ef2d4d62d3acafd45bf",
-  "model": "ollama-cloud/deepseek-v4.1-flash:1017",
-  "status": "complete",
-  "language": "en"
-}
