@@ -169,8 +169,9 @@ async def standing(
             content_checks=content_checks,
         )
     # The Cognition session's completion hook (design/notebook-memory-types/ 20-standing.md
-    # §3): the SAME tools-less Standing fold the tag path runs after every admitted turn,
-    # run once per room the finished session actually bound, with the session's whole…
+    # §3): the tools-less Standing fold, run once per room the finished session
+    # actually bound. The tag path's own per-turn fold went through graph
+    # admission with the debrief (NOR-36); this is the session's copy.
     standing_fold = None
     if debrief_wiring is not None:
 

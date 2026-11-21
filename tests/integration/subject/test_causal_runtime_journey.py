@@ -59,25 +59,18 @@ def reply_service(cfg, requests, errors):
         position = len(requests)
         requests.append(body)
         try:
-            assert position < 2 and body["model"] == cfg.llm.model
+            assert position < 1 and body["model"] == cfg.llm.model
             assert body["stream"] is True
             tools = {tool["function"]["name"]: tool["function"]
                      for tool in body.get("tools", [])}
-            if position == 0:
-                assert "Generated bridge admission input." in json.dumps(body["messages"])
-                arguments = {"text": "Generated protocol acknowledgement."}
-                validate(arguments, tools["send_reply"]["parameters"])
-                result = completion(cfg.llm.model, "", stream=True)["response"]
-                result["chunks"][0]["choices"][0]["delta"] = {"role": "assistant",
-                    "tool_calls": [{"index": 0, "id": "generated-reply", "type": "function",
-                        "function": {"name": "send_reply", "arguments": json.dumps(arguments)}}]}
-                result["chunks"][1]["choices"][0]["finish_reason"] = "tool_calls"
-            else:
-                assert not tools
-                assert "Generated protocol acknowledgement." in json.dumps(body["messages"])
-                result = completion(cfg.llm.model, json.dumps({
-                    "standing": "Generated protocol acknowledgement.", "working_set": []}),
-                    stream=True)["response"]
+            assert "Generated bridge admission input." in json.dumps(body["messages"])
+            arguments = {"text": "Generated protocol acknowledgement."}
+            validate(arguments, tools["send_reply"]["parameters"])
+            result = completion(cfg.llm.model, "", stream=True)["response"]
+            result["chunks"][0]["choices"][0]["delta"] = {"role": "assistant",
+                "tool_calls": [{"index": 0, "id": "generated-reply", "type": "function",
+                    "function": {"name": "send_reply", "arguments": json.dumps(arguments)}}]}
+            result["chunks"][1]["choices"][0]["finish_reason"] = "tool_calls"
         except (AssertionError, KeyError) as exc:
             errors.append((position, body.get("model"), type(exc).__name__))
             return web.json_response({"error": "unmatched generated model request"}, status=422)
@@ -193,7 +186,9 @@ async def test_real_app_bridge_admission_settles_before_cancellation(
                 await engine.dispose()
         assert not subject.deps.background._tasks
         assert not errors
-        assert len(requests) == (2 if tagged else 0)
+        # One model call a tag turn: the reply. The Standing fold runs inside
+        # the cognition session now, not as a second call on admission.
+        assert len(requests) == (1 if tagged else 0)
         evidence, _ = runtime_evidence
         captured = [json.loads(e["attributes"]["nora.model.request.body"])
                     for e in read_events(evidence.path) if e.get("name") == "nora.model.request"]
