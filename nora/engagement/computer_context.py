@@ -236,7 +236,7 @@ class ComputerContextReader:
         if self._tasks is not None and not tasks_unavailable:
             try:
                 tasks = tuple(TaskLine(
-                    # The FULL id: `task=` on computer_browse/capture/cancel
+                    # The FULL id: `task=` on web_browse/capture/cancel
                     # parses the whole UUID — a cut handle answers not-a-task.
                     task_id=str(t.id), kind=t.kind, status=t.status,
                     created=t.created_at,

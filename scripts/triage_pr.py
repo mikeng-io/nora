@@ -47,7 +47,7 @@ AREA_DESCRIPTIONS = {
     "runtime": ("0366D6", "Nora's application code"),
     "doctrine": ("C5DEF5", "Voice, conduct, skills and Dreamer instructions"),
     "portal": ("5319E7", "The portal frontend and its API"),
-    "site": ("BFDADC", "The public site and the wiki renderer"),
+    "site": ("BFDADC", "The public site"),
     "deploy": ("006B75", "Containers, Compose and Komodo"),
     "ci": ("0E8A16", "Workflows, hooks, scripts and the Makefile"),
     "docs": ("0075CA", "Documentation, ADRs and design"),
@@ -81,13 +81,13 @@ def areas(path: str) -> set[str]:
         found.add("runtime")
     if path.startswith("app/"):
         found.add("portal")
-    if path.startswith(("site/", "docs-site/")):
+    if path.startswith("site/"):
         found.add("site")
     if path.startswith(("deploy/",)) or path in {"Dockerfile", "docker-compose.yml", "compose.yml"}:
         found.add("deploy")
     if path.startswith((".github/", "scripts/", ".githooks/")) or path == "Makefile":
         found.add("ci")
-    if path.startswith(("docs/", "design/", "assets/", "openwiki/")) or (
+    if path.startswith(("docs/", "design/", "assets/")) or (
         "/" not in path and path.endswith(".md")
     ):
         found.add("docs")

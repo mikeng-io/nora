@@ -124,7 +124,8 @@ class EmptyPersons:
     def social_off(self, person_id: str) -> bool:
         return True  # never volunteered: absent data opts OUT, not in
 
-    def social_off_ids(self, among: Any) -> frozenset[str]:
+    def social_off_ids(self, among: Any = None) -> frozenset[str]:
+        """No descriptive identities to enumerate. Explicit candidates default to opt-out."""
         return frozenset(among) if among else frozenset()
 
     def instagram_handle(self, fbid: str) -> None:

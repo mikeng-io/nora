@@ -22,6 +22,10 @@ adapter, never a new store, table family or write path.
 
 - An adapter records a change of state, never a repeated read of the same one.
 - A failed read is an unhealthy source, never an empty one.
+- A watched source is polled only through an adapter that can read one
+  source reference on demand, so a watch never opens a path the intake lacks.
+  Each poll is a read under its spend controls and the outside-query rule
+  ([boundaries](boundaries.md)).
 
 Every item of Nora's own acts carries the pass that produced it, so her sent
 rows render with that pass and a pass's items can be opened whole. What a pass
