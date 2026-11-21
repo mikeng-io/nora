@@ -48,6 +48,10 @@ Three repositories, all owned by `mikeng-io`:
   files it names live in `nora-assets`.
 - **The operator's instance serves the portal at `/`**, so `/` shows the sign-in. The
   `site` Compose service and the tunnel routes to it are removed.
+- **The operator's instance stays out of `nora`.** Its hostname, accounts and
+  contact addresses are configuration. Examples use the reserved
+  `example.com` names (RFC 2606), and the portal's legal contact is instance
+  configuration like its public origin.
 - **The site moves with its history** (a subdirectory split of `site/`).
   `nora-assets` takes its files' history the same way.
 - **This repository's history is not rewritten.** Clearing old binaries from
