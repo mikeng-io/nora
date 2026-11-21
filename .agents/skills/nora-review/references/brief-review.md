@@ -47,7 +47,8 @@ lowers or raises the severity.
 
 After a repair, a re-check covers the repair delta, the open findings and
 any evidence that was unavailable. One focused re-check follows a repair,
-without asking. A finding it leaves open gets one more repair; a new blocker
+without asking. A BLOCKER it leaves open gets one more repair (a round with no
+BLOCKER ends review, `ORCHESTRATION.md`); a new blocker
 class, or a finding open after its second repair, is an architecture verdict
 for Mike (`nora-work/references/lifecycle.md` «Escalation»), never another round.
 
