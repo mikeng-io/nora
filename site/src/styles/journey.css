@@ -589,7 +589,9 @@
   display: inline;
 }
 
+/* the labels ride on the painted world, under the story's words */
 .pavilion {
+  z-index: 1;
   display: grid;
   justify-items: center;
   transform: translate(-50%, -100%);

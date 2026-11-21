@@ -84,12 +84,16 @@ export class Ui {
     this.tag.classList.toggle("moved", moved > 0.5);
   }
 
+  /** Labels on painted things; one that would sit under the scene's words fades back to a faint mark. */
   labelFrame(points: (THREE.Vector3 | null)[], k: number[]): void {
+    const words = [...document.querySelectorAll<HTMLElement>(".beat.on .display, .beat.on .lede, .beat.on .eyebrow")].map((e) => e.getBoundingClientRect());
     this.labels.forEach((el, i) => {
       const at = points[i];
       el.classList.toggle("on", (k[i] ?? 0) > 0.01 && !!at);
-      el.style.opacity = String(k[i] ?? 0);
       if (at) this.place(el, at);
+      const r = el.getBoundingClientRect();
+      const under = words.some((w) => r.left < w.right && r.right > w.left && r.top < w.bottom && r.bottom > w.top);
+      el.style.opacity = String((k[i] ?? 0) * (under ? 0.18 : 1));
     });
   }
 
