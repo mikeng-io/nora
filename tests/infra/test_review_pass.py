@@ -74,16 +74,25 @@ def _review(scenario, model, *, turns=4):
         models=model, metrics=metrics,
         retry=RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
     )
-    return ReviewPass(
-        lessons=wire.SqlReviewLessons(scenario.engine), rooms=_Room(),
+    current = NOW
+    review = ReviewPass(
+        targets=wire.SqlReviewTargets(scenario.engine), rooms=_Room(),
         assembler=wire.pass_assembler(scenario.engine, access, lineage, None, None),
         surface=surface, admission=admission, agent=DreamerAgentRunner(
             runtime=runtime, metrics=metrics, agent_name="review", bound_tool_arguments=True,
         ),
         instructions=DreamerInstructions(Path("nora/dreamer"), metrics=metrics),
         budget=AdaptorBudget(turns, 5000, 1000, 30.0), model="scripted-judge",
-        revisions=dict, policy=scenario.policy,
+        revisions=dict, policy=scenario.policy, clock=lambda: current,
     )
+
+    async def tick(now=NOW):
+        nonlocal current
+        current = now
+        review.poll(now)
+        await review.drain()
+
+    return tick
 
 
 def _model(target, outcome, citation, *, model=WakeModel):
@@ -92,16 +101,12 @@ def _model(target, outcome, citation, *, model=WakeModel):
     return model([ScriptedTurn(tool_calls=[("graph_propose", {"operations": [operation]})])])
 
 
-async def _run(review, now=NOW):
-    await review.run_once(UNIT, f"signal:{ROOM}", now)
-
-
 async def test_review_grades_due_guess_once_and_removes_it_from_anchors(scenario):
     await guess(scenario)
     await scenario.item("later")
     model = _model("guess", "refuted", "later")
     review = _review(scenario, model)
-    await _run(review)
+    await review()
     [stored] = await grade_rows(scenario)
     assert tuple(stored)[1:] == ("refuted", "scripted-judge")
     assert model.tools == {"graph_propose", "memory_read", "memory_search"}
@@ -109,7 +114,7 @@ async def test_review_grades_due_guess_once_and_removes_it_from_anchors(scenario
     anchors = await reader(scenario).build(declaration("review"), ReviewInput(), SCOPE, NOW)
     assert anchors.cause is None and anchors.review_due == ()
     turns = model.turn
-    await _run(review, NOW + timedelta(hours=1))
+    await review(NOW + timedelta(hours=1))
     assert model.turn == turns
 
 
@@ -118,11 +123,11 @@ async def test_incomplete_judge_writes_nothing_and_retries_on_its_bound(scenario
     await scenario.item("later")
     model = _model("guess", "refuted", "later", model=_TruncatedReview)
     review = _review(scenario, model)
-    await _run(review)
+    await review()
     assert model.turn == 2
     assert "Proposals staged" in str(_tool_results(model))
     assert await grade_rows(scenario) == []
-    await _run(review, NOW + timedelta(seconds=1))
+    await review(NOW + timedelta(seconds=1))
     assert model.turn == 2
     anchors = await reader(scenario).build(declaration("review"), ReviewInput(), SCOPE, NOW)
     assert anchors.review_due == ("guess",)
@@ -138,8 +143,7 @@ async def test_two_review_ticks_page_guesses_and_show_the_lesson_with_its_tally(
     model = WakeModel([])
     review = _review(scenario, model)
     for tick in (now, now + timedelta(seconds=REVIEW_RETRY_SECONDS)):
-        review.poll(tick)
-        await review.drain()
+        await review(tick)
     assert len(model.seen) == 2
     dockets = [re.findall(r"<item [^>]+>.*?</item>", call[0]["content"][0]["text"], re.DOTALL)
                for call in model.seen]
@@ -165,13 +169,11 @@ async def test_scheduled_review_uses_claim_room_in_unit_without_home(scenario):
     await scenario.item("later")
     model = _model("guess", "refuted", "later")
     review = _review(scenario, model)
-    review.poll(NOW)
-    await review.drain()
+    await review()
     assert [tuple(row)[1:] for row in await grade_rows(scenario)] == [("refuted", "scripted-judge")]
     assert "Generated prediction" in model.prompt()
     assert "Roomless prediction" not in model.prompt()
-    review.poll(NOW + timedelta(seconds=REVIEW_RETRY_SECONDS))
-    await review.drain()
+    await review(NOW + timedelta(seconds=REVIEW_RETRY_SECONDS))
     assert model.turn == 2
 
 
@@ -181,39 +183,41 @@ async def test_review_retry_bound_holds_across_rooms_in_one_unit(scenario):
                          window_end=AT, origin_room=OTHER_ROOM)
     model = WakeModel([])
     review = _review(scenario, model)
-    review.poll(NOW)
-    await review.drain()
+    await review()
     assert model.turn == 1 and "Other room prediction" in model.prompt()
     assert "Generated prediction" not in model.prompt()
-    review.poll(NOW + timedelta(seconds=1))
-    await review.drain()
+    await review(NOW + timedelta(seconds=1))
     assert model.turn == 1
-    review.poll(NOW + timedelta(seconds=REVIEW_RETRY_SECONDS))
-    await review.drain()
+    await review(NOW + timedelta(seconds=REVIEW_RETRY_SECONDS))
     assert model.turn == 2 and "Generated prediction" in model.seen[1][0]["content"][0]["text"]
 
 
-async def test_room_rotation_survives_six_consecutive_docket_changes(scenario):
+async def test_unit_review_grants_preserve_the_retry_bound_and_rotate_rooms(scenario):
     await guess(scenario)
     await scenario.claim("busy-first", part="guess", prediction="Busy room prediction",
                          window_end=AT, origin_room=OTHER_ROOM)
     model = WakeModel([])
     review = _review(scenario, model)
-    review.poll(NOW)
-    await review.drain()
+    await review()
     assert "Busy room prediction" in model.prompt()
     for minute in range(1, 7):
         tick = NOW + timedelta(minutes=minute)
+        await review(tick)
+        assert model.turn == minute, f"unchanged due set at minute {minute}"
         await scenario.claim(f"busy-{minute}", part="guess", prediction="Busy room prediction",
                              asserted_at=tick, window_end=tick, origin_room=OTHER_ROOM)
-        review.poll(tick)
-        await review.drain()
+        await review(tick)
+        assert model.turn == minute + 1, f"changed due set at minute {minute}"
+    latest = NOW + timedelta(minutes=6)
+    await review(latest + timedelta(seconds=REVIEW_RETRY_SECONDS - 1))
+    assert model.turn == 7
+    await review(latest + timedelta(seconds=REVIEW_RETRY_SECONDS))
+    assert model.turn == 8
 
     prompts = [call[0]["content"][0]["text"] for call in model.seen]
-    assert sum("Generated prediction" in prompt for prompt in prompts) == 1
-    assert any("claim: busy-4" in prompt for prompt in prompts)
-    assert all("Busy room prediction" not in prompt for prompt in prompts
-               if "Generated prediction" in prompt)
+    assert all("Busy room prediction" in prompt for prompt in prompts[::2])
+    assert all("Generated prediction" in prompt for prompt in prompts[1::2])
+    assert all("Busy room prediction" not in prompt for prompt in prompts[1::2])
 
 
 async def test_review_shows_all_three_counted_verdicts_and_cites_the_contradiction(scenario):
@@ -228,8 +232,7 @@ async def test_review_shows_all_three_counted_verdicts_and_cites_the_contradicti
     verdicts = await _verdicts(scenario.engine)
     model = _model("lesson", "weakened", verdicts["earlier-leak"]["graph_id"])
     review = _review(scenario, model)
-    review.poll(await scenario.now())
-    await review.drain()
+    await review(await scenario.now())
 
     assert model.turn >= 1
     assert '"contradiction": 1' in model.prompt()
@@ -256,8 +259,7 @@ async def test_review_pages_all_contradictions_when_they_exceed_the_row_budget(s
     model = WakeModel([])
     review = _review(scenario, model)
     for tick in (now, now + timedelta(seconds=REVIEW_RETRY_SECONDS)):
-        review.poll(tick)
-        await review.drain()
+        await review(tick)
 
     assert len(model.seen) == 2
     pages = []
@@ -275,7 +277,8 @@ async def test_guess_profile_renders_its_refuted_grade(scenario):
     await scenario.entity("nora-profile", pointer_kind="nora", pointer_ref="nora")
     await write_edge(scenario, "guess", "nora-profile", "about")
     await scenario.item("later")
-    await _run(_review(scenario, _model("guess", "refuted", "later")))
+    review = _review(scenario, _model("guess", "refuted", "later"))
+    await review()
     from nora.memory.domain.pass_inputs import WakeInput
     from tests.infra.test_pass_assembly import _assembler
 
@@ -289,7 +292,8 @@ async def test_weakened_grade_publishes_dependency_on_the_lesson(scenario):
     tally = await lesson(scenario)
     now = await scenario.now()
     model = _model("lesson", "weakened", tally["graph_id"])
-    await _run(_review(scenario, model), now)
+    review = _review(scenario, model)
+    await review(now)
     [grade] = await grade_rows(scenario)
     assert "contradiction" in model.prompt() and "first-leak" in model.prompt()
     stimuli = [entry for entry in await SqlGraphStimuli(scenario.engine).read(UNIT)
@@ -297,7 +301,7 @@ async def test_weakened_grade_publishes_dependency_on_the_lesson(scenario):
     assert [(stimulus.graph_id, stimulus.occurrence) for stimulus in stimuli] == [
         ("lesson", grade.id),
     ]
-    assert await wire.SqlReviewLessons(scenario.engine).due_lessons(UNIT) == ()
+    assert await wire.SqlReviewTargets(scenario.engine).due_review_targets(UNIT, now) == ()
 
 
 def test_review_fails_startup_when_the_resolved_judge_is_the_writer(example_config):

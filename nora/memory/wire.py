@@ -51,7 +51,7 @@ from nora.memory.adapters.pass_assembly import PassAssembler
 from nora.memory.adapters.proactive_claims import SqlProactiveClaims
 from nora.memory.adapters.replay_receipts import SqlReplayReceipts
 from nora.memory.adapters.retrieval_store import SqlRetrieval
-from nora.memory.adapters.review_anchors import SqlReviewLessons as SqlReviewLessons
+from nora.memory.adapters.review_anchors import SqlReviewTargets as SqlReviewTargets
 from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
 from nora.memory.adapters.tools.search import GraphReadTools

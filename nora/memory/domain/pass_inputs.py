@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, replace
 from datetime import datetime
+from typing import Literal
 
 from nora.domain.blocks import ContextBlock
 from nora.domain.blocks import assemble as render_blocks
@@ -54,6 +55,14 @@ class DebriefInput:
 
 
 @dataclass(frozen=True, slots=True)
+class ReviewTarget:
+    graph_id: str
+    revision: datetime
+    origin_room: str | None
+    part: Literal["guess", "lesson"]
+
+
+@dataclass(frozen=True, slots=True)
 class ReviewCursor:
     target: tuple[int, str]
     after_verdict: tuple[int, str] | None = None
@@ -64,6 +73,7 @@ class ReviewInput:
     lessons: tuple[str, ...] = ()
     after: ReviewCursor | None = None
     include_roomless: bool = False
+    guesses: tuple[str, ...] | None = None
 
 
 PassInput = CalledInput | AmbientInput | ProactiveInput | WakeInput | DebriefInput | ReviewInput

@@ -10,7 +10,7 @@ from nora.infra.sql.cognitive_graph_schema import CLAIM, LESSON_TALLY
 from nora.infra.sql.cognitive_graph_store import visible_to_reads
 from nora.memory.adapters.review_grades import current_grade, lesson_verdict_ids
 from nora.memory.domain.pass_declarations import declaration
-from nora.memory.domain.pass_inputs import ReviewCursor, ReviewInput
+from nora.memory.domain.pass_inputs import ReviewCursor, ReviewInput, ReviewTarget
 
 _STATES = ("live", "awaiting_weighing")
 _EVIDENCE_PER_TARGET = 3
@@ -18,39 +18,32 @@ _EVIDENCE_PER_TARGET = 3
 
 def _due_guesses(unit: str, now: datetime) -> sa.Select:
     c = CLAIM.c
-    return sa.select(c.id, c.origin_room).where(
+    return sa.select(c.id, c.asserted_at, c.origin_room, c.part).where(
         c.unit == unit, c.part == "guess", c.state.in_(_STATES), c.window_end <= now,
-        visible_to_reads(CLAIM), ~current_grade(unit, c.id),
+        c.exposure != "operator", visible_to_reads(CLAIM), ~current_grade(unit, c.id),
     )
 
 
 def _due_lessons(unit: str) -> sa.Select:
     t, c = LESSON_TALLY.c, CLAIM.c
-    return sa.select(t.claim_id, c.origin_room).join(
+    return sa.select(t.claim_id, t.asserted_at, c.origin_room, c.part).join(
         CLAIM, sa.and_(c.unit == t.unit, c.id == t.claim_id),
     ).where(
         t.unit == unit, t.contradiction > 0, c.part == "lesson", c.state.in_(_STATES),
+        t.exposure != "operator", c.exposure != "operator",
         visible_to_reads(LESSON_TALLY), visible_to_reads(CLAIM),
         ~current_grade(unit, t.claim_id, newer_than=t.asserted_at),
     )
 
 
-class SqlReviewLessons:
+class SqlReviewTargets:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
-    async def due_lessons(self, unit: str) -> tuple[str, ...]:
-        due = _due_lessons(unit).order_by(LESSON_TALLY.c.claim_id)
+    async def due_review_targets(self, unit: str, now: datetime) -> tuple[ReviewTarget, ...]:
+        due = _due_guesses(unit, now).union_all(_due_lessons(unit))
         async with self._engine.connect() as conn:
-            return tuple(await conn.scalars(due))
-
-    async def due_review_origins(self, unit: str, now: datetime) -> tuple[str | None, ...]:
-        origin = CLAIM.c.origin_room
-        due = _due_guesses(unit, now).with_only_columns(origin).union(
-            _due_lessons(unit).with_only_columns(origin),
-        )
-        async with self._engine.connect() as conn:
-            return tuple(await conn.scalars(due))
+            return tuple(ReviewTarget(*row) for row in await conn.execute(due))
 
 
 async def review_anchors(
@@ -64,6 +57,8 @@ async def review_anchors(
     if data.include_roomless:
         origin = origin | row.origin_room.is_(None)
     due_guesses = _due_guesses(unit, now).with_only_columns(CLAIM.c.id)
+    if data.guesses is not None:
+        due_guesses = due_guesses.where(CLAIM.c.id.in_(data.guesses))
     query = sa.select(
         row.graph_id, row.asserted_at, row.event_time, priority.label("priority"),
         row.image["window_end"].astext.cast(sa.DateTime(timezone=True)).label("window_end"),

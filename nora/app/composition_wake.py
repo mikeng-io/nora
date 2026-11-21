@@ -86,10 +86,10 @@ def build_wake(
             allowed_parts=memory.wire.REVIEW_PARTS, clock=clock,
         )
         review_pass = ReviewPass(
-            lessons=memory.wire.SqlReviewLessons(engine), rooms=floor, assembler=debrief.assembler,
+            targets=memory.wire.SqlReviewTargets(engine), rooms=floor, assembler=debrief.assembler,
             surface=review_surface, admission=debrief.admission, agent=judge,
             instructions=instructions, budget=cognition_budget(cfg.dreamer.budget_for("cognition")),
-            model=judge_model, revisions=debrief.revisions, policy=policy,
+            model=judge_model, revisions=debrief.revisions, policy=policy, clock=clock,
         )
     return WakePoller(memory.wire.wake_claims(engine), runner, retry, policy, metrics, clock,
                       config=cfg.cognition, review=review_pass)

@@ -72,6 +72,9 @@ from nora.memory.domain.pass_inputs import (
     ReviewInput as ReviewInput,
 )
 from nora.memory.domain.pass_inputs import (
+    ReviewTarget as ReviewTarget,
+)
+from nora.memory.domain.pass_inputs import (
     WakeInput as WakeInput,
 )
 from nora.memory.domain.proactive import RECHECK_UNAVAILABLE as RECHECK_UNAVAILABLE

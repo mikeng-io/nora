@@ -29,6 +29,7 @@ from nora.memory import (
     Refusal,
     ReviewCursor,
     ReviewInput,
+    ReviewTarget,
     act_pass,
     grade_target,
     pass_shown,
@@ -46,9 +47,8 @@ _BLOCKS: tuple[BlockDeclaration, ...] = (
 )
 
 
-class ReviewLessons(Protocol):
-    async def due_lessons(self, unit: str) -> tuple[str, ...]: ...
-    async def due_review_origins(self, unit: str, now: datetime) -> tuple[str | None, ...]: ...
+class ReviewTargets(Protocol):
+    async def due_review_targets(self, unit: str, now: datetime) -> tuple[ReviewTarget, ...]: ...
 
 
 class ReviewRooms(Protocol):
@@ -76,10 +76,9 @@ class ReviewAdmission(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class _Attempt:
-    start: ReviewCursor | None
-    next: ReviewCursor
-    due: tuple[tuple[str, datetime], ...]
+class _UnitAttempt:
+    room: str
+    due: frozenset[tuple[str, datetime]]
     retry_at: datetime
 
 
@@ -106,17 +105,18 @@ class _GradeBatch:
 
 class ReviewPass:
     def __init__(
-        self, *, lessons: ReviewLessons, rooms: ReviewRooms, assembler: ReviewAssembler,
+        self, *, targets: ReviewTargets, rooms: ReviewRooms, assembler: ReviewAssembler,
         surface: ReviewSurface, admission: ReviewAdmission, agent: CognitionAgentRunner,
         instructions: DreamerInstructions, budget: AdaptorBudget, model: str,
         revisions: Callable[[], Mapping[str, str | None]], policy: Policy,
+        clock: Callable[[], datetime],
     ) -> None:
-        self._lessons, self._rooms, self._assembler = lessons, rooms, assembler
+        self._targets, self._rooms, self._assembler = targets, rooms, assembler
         self._surface, self._admission, self._agent = surface, admission, agent
         self._instructions, self._budget, self._model = instructions, budget, model
-        self._revisions, self._policy = revisions, policy
-        self._attempts: dict[tuple[str, str], _Attempt] = {}
-        self._turns: dict[str, tuple[str, datetime]] = {}
+        self._revisions, self._policy, self._clock = revisions, policy, clock
+        self._attempts: dict[str, _UnitAttempt] = {}
+        self._cursors: dict[tuple[str, str], ReviewCursor] = {}
         self._running: dict[str, asyncio.Task[None]] = {}
 
     def poll(self, now: datetime) -> None:
@@ -133,59 +133,66 @@ class ReviewPass:
 
     async def _tick(self, unit: str, now: datetime) -> None:
         try:
-            rooms = await self._due_rooms(unit, now)
-            last, rotate_at = self._turns.get(unit, ("", now))
-            # A refresh within a room's turn leaves its rotation deadline fixed.
-            if last in rooms and now < rotate_at:
-                await self.run_once(unit, last, now)
+            targets = await self._due_rooms(unit, now)
+            due = frozenset((target.graph_id, target.revision)
+                            for entries in targets.values() for target in entries)
+            previous = self._attempts.get(unit)
+            if not due:
+                if previous is not None:
+                    self._attempts[unit] = replace(previous, due=due)
                 return
-            start = bisect_right(rooms, last)
+            if previous is not None and due == previous.due and now < previous.retry_at:
+                return
+            rooms = sorted(targets)
+            start = bisect_right(rooms, previous.room if previous is not None else "")
             for room in (*rooms[start:], *rooms[:start]):
-                self._turns[unit] = room, now
-                if await self.run_once(unit, room, now):
-                    self._turns[unit] = room, now + timedelta(seconds=REVIEW_RETRY_SECONDS)
+                if await self._review_room(unit, room, now, targets[room], due):
                     return
         except Exception:
             log.exception("Review pass failed")
         finally:
             self._running.pop(unit)
 
-    async def _due_rooms(self, unit: str, now: datetime) -> list[str]:
+    async def _due_rooms(self, unit: str, now: datetime) -> dict[str, list[ReviewTarget]]:
         allowed = self._policy.rooms()
         home = self._policy.home_rooms().get(unit)
-        rooms: set[str] = set()
-        for origin in await self._lessons.due_review_origins(unit, now):
+        rooms: dict[str, list[ReviewTarget]] = {}
+        for target in await self._targets.due_review_targets(unit, now):
+            origin = target.origin_room
             room = home if origin is None else resolve_slot_room(allowed, origin, unit=unit)
             if room is not None and room.absorbed:
-                rooms.add(room_key(room.platform, room.primary_id))
-        return sorted(rooms)
+                rooms.setdefault(room_key(room.platform, room.primary_id), []).append(target)
+        return rooms
 
-    async def run_once(self, unit: str, room: str, now: datetime) -> bool:
-        scope, direct = await self._rooms.scope_for(unit, room)
+    async def _review_room(
+        self, unit: str, room: str, now: datetime, targets: list[ReviewTarget],
+        due: frozenset[tuple[str, datetime]],
+    ) -> bool:
+        try:
+            scope, direct = await self._rooms.scope_for(unit, room)
+        except LookupError:
+            return False
         home = self._policy.home_rooms().get(unit)
         key = unit, room
-        previous = self._attempts.get(key)
-        waiting = previous is not None and now < previous.retry_at
-        after = None if previous is None else previous.start if waiting else previous.next
         data = ReviewInput(
-            await self._lessons.due_lessons(unit), after=after,
+            tuple(target.graph_id for target in targets if target.part == "lesson"),
+            after=self._cursors.get(key),
             include_roomless=home is not None and room == room_key(home.platform, home.primary_id),
+            guesses=tuple(target.graph_id for target in targets if target.part == "guess"),
         )
         assembled = await self._assembler.assemble("review", data, (), scope, now)
         if assembled.status == "unavailable":
             return False
         if assembled.review_next is None:
-            self._attempts.pop(key, None)
+            self._cursors.pop(key, None)
             return False
-        due = assembled.review_due
-        if waiting and previous is not None and due == previous.due:
-            return False
-        self._attempts[key] = _Attempt(
-            after, assembled.review_next, due, now + timedelta(seconds=REVIEW_RETRY_SECONDS),
-        )
-        if not due:
+        self._cursors[key] = assembled.review_next
+        if not assembled.review_due:
             return False
         with root_span("review", links=(), parent=None, **{TRACE_KIND: "generation"}):
+            self._attempts[unit] = _UnitAttempt(
+                room, due, self._clock() + timedelta(seconds=REVIEW_RETRY_SECONDS),
+            )
             await self._judge(scope, direct, assembled, now)
         return True
 
