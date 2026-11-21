@@ -36,14 +36,18 @@ Three repositories, all owned by `mikeng-io`:
 
 | repository | visibility | holds |
 |---|---|---|
-| `nora` | public, MIT | the runtime, the portal (`app/`), deployment, `design/`, DESIGN.md, the docs: everything a self-hosted Nora runs |
-| `nora-assets` | private, all rights reserved | her identity art: the canonical and Mini masters, the reference sheets, the clasp emblem, the 3D model, and the visual-asset inventory and its checks |
+| `nora` | public; MIT except the reserved art below | the runtime, the portal (`app/`), deployment, `design/`, DESIGN.md, the docs: everything a self-hosted Nora runs |
+| `nora-assets` | private, all rights reserved | her identity art: the canonical and Mini masters, the reference sheets, the cinematic set, the clasp emblem, the 3D model's source, the showreel, and the visual-asset inventory and its checks |
 | `nora-site` | private | heynora.bot: the journey, its art and rig, served as static files from Cloudflare |
 
-- **`nora` builds without the private repositories.** The portal keeps the
-  derivatives it ships (icons, the emblem copy, her cut-out, the model)
-  committed, each recording the `nora-assets` version it came from. A refresh
-  is a PR that copies new derivatives in.
+- **`nora` keeps only the art it runs, reserved.** That is the portal's
+  shipped art (icons, the emblem copy, her cut-out, portrait and poses, the 3D
+  model) and the canonical self-image the runtime reads and pins. Each copy
+  records the `nora-assets` version it came from, and a refresh is a PR that
+  copies new files in. LICENSE names these paths as all rights reserved; MIT
+  covers everything else. Everything else of hers moves out.
+- **`nora` builds without the private repositories,** because those copies
+  are committed.
 - **DESIGN.md stays in `nora`.** It governs the portal, which is public; the
   files it names live in `nora-assets`.
 - **The operator's instance serves the portal at `/`**, so `/` shows the sign-in. The
@@ -59,12 +63,12 @@ Three repositories, all owned by `mikeng-io`:
 
 ## Consequences
 
-- A contributor clones the code without the art, and the public repository
-  states one licence that is true of everything in it.
+- A contributor clones the code without her source art. The public
+  repository's licence names exactly which files are reserved.
 - heynora.bot deploys independently of a Nora release, and an instance no
   longer carries the marketing site.
-- Her likeness is no longer offered under MIT from the moment the art leaves.
-  Copies already published under MIT stay MIT.
+- Her likeness is no longer offered under MIT from this change on, including
+  the copies `nora` keeps. Copies already published under MIT stay MIT.
 
 **Worse:**
 
