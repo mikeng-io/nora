@@ -115,7 +115,7 @@ def render_computer(view: ComputerView | None) -> ContextBlock | None:
 
     # The scoped runtime's queue and tabs ([computer.scoped]): live
     # `computer_tasks` rows — the model reads `task <id8>` here as the `task`
-    # `computer_browse`/`computer_capture`/`computer_cancel` take — then the
+    # `web_browse`/`computer_capture`/`computer_cancel` take — then the
     # task-owned tabs with their idle state. Both sections only render when
     # the stores are wired (shared-VM keeps its old block).
     if view.tasks_unavailable:

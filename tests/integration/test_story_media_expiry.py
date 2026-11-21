@@ -9,7 +9,7 @@ carried from one tick to the next. The memory index embeds no social item yet,
 so at the tick no frame is embedded; when the bytes go once BOTH exist is
 `bytes_due`'s, `tests/unit/test_story_bytes_due.py`.
 
-Database scoped to the MODULE and truncated between tests (AGENTS.md).
+Database scoped to the MODULE and truncated between tests (docs/code-standards.md).
 """
 
 from __future__ import annotations
