@@ -39,18 +39,25 @@ Triage also picks the **track**: *is success a checkable
 artifact before execute starts?* Yes is `standard`; no (an eval, a spike, a
 benchmark, a prompt or quality goal) is `goal-driven` («Goal-driven track»).
 Read `docs/maintainers/lessons.md` for the area before scoring. Record the
-factors, route and track in the brief, or the PR body for direct and light work.
+factors, route and track in the brief, or the PR body for direct and light work
+(the issue, for evidence-only work).
 
 ## Routes
 
 | route | when | gates |
 |---|---|---|
-| **direct** | rule 6 | the PR review at its tier, and CI |
-| **light** | rule 5, or rule 6's remainder | the brief in the PR body; the reviewer at verify reads it with the diff; merge on green under the standing authorities (`.agents/lanes.md`) |
+| **direct** | rule 6 | the PR review at its tier, and CI (shipping work) |
+| **light** | rule 5, or rule 6's remainder | the brief in the PR body (shipping work); the reviewer at verify reads it with the diff; merge on green under the standing authorities (`.agents/lanes.md`) |
 | **standard** | rule 4 | the reviewer by rule closes brief review of the brief and plan with no BLOCKER before the first dispatch |
 | **full** | rule 3 | as standard, with the full review tier |
 | **split** | rule 2 | a Linear project holding the Intent, a milestone per phase, and one issue per child brief of at most 6 items, each taking its own route |
 | **clarify** | rule 1 | stop and ask Mike |
+
+**Evidence-only work.** On any route, a goal-driven outcome that ships no change
+(a spike, benchmark or measurement) replaces every PR, PR-body brief, reviewed
+head and CI requirement in this file with: its brief in the issue, the
+checkpoint record, and an independent reviewer's goal mark («Goal-driven track»).
+That reviewer is its first independent checker on direct and light.
 
 **Full triggers:** disclosure, security, auth or identity, a migration, locks
 or concurrency, model spending, or more than one area. An **area** is one
@@ -61,7 +68,7 @@ triggers give is a finding against the work, not a judgement call.
 
 | transition | routes | input | checker | pass | block | escalation |
 |---|---|---|---|---|---|---|
-| triage → propose | all | the request and the route the orchestrator recorded | the first independent reviewer the route has: the brief reviewer on standard and full, the PR reviewer on direct and light | the reviewer confirms the route against the ordered triage rule | a lower route than the triggers give: the work returns to triage | Mike |
+| triage → propose | all | the request and the route the orchestrator recorded | the first independent reviewer the route has: the brief reviewer on standard and full, the PR reviewer on direct and light (the checkpoint reviewer for evidence-only work) | the reviewer confirms the route against the ordered triage rule | a lower route than the triggers give: the work returns to triage | Mike |
 | propose → plan | standard, full | the brief and its attached plan (`nora-dispatch/references/brief.md`, `plan.md`) | the reviewer by rule, in brief review | the round closes with no BLOCKER and locks Done-when | a BLOCKER, returned to the author | Mike for intent, authority or redesign («When Mike is asked») |
 | plan → execute | standard, full | the plan, validated in that brief review | the reviewer by rule | the plan passed brief review's «Mapped» check | a plan BLOCKER: nothing is dispatched | — |
 | execute → verify | standard, full | the handoff PR with its execution receipt; on the goal-driven track, the checkpoint record whose final `keep` evidence is the receipt | the reviewer by rule | the receipt names evidence for each item addressed | a missing receipt or missing evidence, returned to the builder | the orchestrator |
@@ -141,7 +148,9 @@ verify and the merge then refuse:
 - standard and full: without a brief review that closes with no BLOCKER and
   an execution receipt;
 - light: without a brief in the PR body;
-- direct: nothing beyond its PR review and CI.
+- direct: nothing beyond its PR review and CI;
+- evidence-only work, on any route: without the checkpoint record and an
+  independent reviewer's goal mark, in place of the PR and CI requirements.
 
 A skipped gate therefore stops the work at verify or merge, at the latest.
 

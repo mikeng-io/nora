@@ -25,7 +25,8 @@ This skill is the entry router; it does not repeat the other procedures.
    crosses. Confirm that the previous gate's output, as the route requires it,
    exists. On standard and full, confirm that the brief and plan pass brief
    review with no BLOCKER before dispatch and that the execution receipt is
-   present before verify. On light, confirm the PR body carries a brief.
+   present before verify. On light, confirm the PR body carries a brief
+   (evidence-only work: the issue and checkpoint record, lifecycle «Evidence-only work»).
    On every route: a reviewed head before merge. When it is missing,
    halt and report what is missing. Never produce a missing gate output yourself.
    Check: the input this route requires here exists. Where the route assigns a
