@@ -745,6 +745,33 @@ async def test_projection_outage_keeps_created_row_and_retry_relinks_same_associ
                for r in memory.graph.relations.values())
 
 
+async def test_register_link_refusal_keeps_committed_row_and_records_refusal(monkeypatch):
+    memory = wake_memory()
+    stores = Stores()
+    memory.records.load = _register_load(stores)
+    event = _seed_event(memory, "u:event:generated-gala")
+    from nora.domain.memory_graph import Admission, Refusal
+
+    async def refused_admission(**kwargs):
+        return Admission(refused=(
+            Refusal("relation", "generated-refused", "missing_evidence"),))
+
+    monkeypatch.setattr(memory.graph, "stage_and_admit", refused_admission)
+    answers = []
+
+    async def behave(by, tools):
+        answers.append(await by["note_create"](
+            body=GOOD_BODY, associations=[["event", event.id]], **NOTE))
+
+    await session(behave, stores=stores, runner_kwargs={"memory": memory})
+    assert answers[0]["status"] == "ok"
+    note_id = answers[0]["note_id"]
+    assert note_id in stores.notes.notes
+    assert not any(r.src == ("note", note_id) for r in memory.graph.relations.values())
+    assert any(row[1] == "relation" and row[2] == "missing_evidence"
+               for row in memory.records.refusals)
+
+
 async def test_revise_without_associations_keeps_the_semantic_link():
     from nora.domain.memory_graph import Walk
     memory = wake_memory()
