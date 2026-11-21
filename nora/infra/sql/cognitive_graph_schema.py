@@ -16,8 +16,10 @@ from collections.abc import Iterator
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
 
+from nora.infra.sql.graph_stimulus_schema import graph_stimulus_table
 from nora.infra.sql.schema import METADATA
 
+GRAPH_STIMULUS = graph_stimulus_table(METADATA)
 
 def _planes(
     basis_check: str, state_check: str, kind: str, *,

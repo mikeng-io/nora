@@ -30,6 +30,7 @@ from nora.domain.live import LiveMapping, LiveSequence
 from nora.domain.managed import Verdict
 from nora.domain.management import Scope, ScopeKind
 from nora.infra.sql import create_sql_engine, run_migrations
+from nora.infra.sql.aggregate_crossings import SqlAggregateCrossings
 from nora.infra.sql.geocode_cache import SqlGeocodeCacheStore
 from nora.infra.sql.item_registration import (
     RegistrationScope,
@@ -290,7 +291,7 @@ def build_rollup(
     runner = RollupRunner(
         mobility=mobility, rollups=rollups, config=rollup_config,
         unit_rollups=unit_rollups, subjects=subjects, unit_config=unit_config,
-        metrics=metrics, geocode_cache=geocode_cache,
+        metrics=metrics, geocode_cache=geocode_cache, crossings=SqlAggregateCrossings(engine),
     )
     log.info("analytics rollup wired: %s identity, tick %.0fs",
              cfg.identity.backend, analytics.tick_seconds)

@@ -443,6 +443,10 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
 #: One append-only row, number `n`, citing the stable key-0 parents.
 APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     **managed_rows.APPEND,
+    "graph_stimulus": lambda n: {
+        "unit": "u", "kind": "new_item", "graph_id": f"generated-stimulus-item-{n}",
+        "eligible_at": T0, "source": "message",
+    },
     "nora_act": lambda n: {
         "id": f"generated-act-{n}", "graph_id": f"generated-act-item-{n}", "unit": "u",
         "executor": "test.deliver", "trigger_id": f"generated-trigger-{n}", "ordinal": 0,

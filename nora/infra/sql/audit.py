@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -26,8 +26,6 @@ from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.bounds import cut, over_fetch
-from nora.domain.external_files import external_files_json
-from nora.domain.media import media_json
 from nora.domain.models import (
     DeliveryStatus,
     EditedMessage,
@@ -49,8 +47,14 @@ from nora.domain.observations import (
 )
 from nora.domain.ports import RoomActivity
 from nora.infra.sql import memory_index
-from nora.infra.sql.item_registration import SqlItemRegistration, epoch_ms, touch_planes
+from nora.infra.sql.item_registration import (
+    SqlItemRegistration,
+    epoch_ms,
+    message_graph_cues,
+    touch_planes,
+)
 from nora.infra.sql.migrations_runner import head_revision
+from nora.infra.sql.record_insert import record_insert_values
 from nora.infra.sql.schema import (
     MESSAGE_DELETE,
     MESSAGE_EDIT,
@@ -410,6 +414,7 @@ class SqlRecordStore:
         mention_persons: Any = None,
         registration: SqlItemRegistration | None = None,
         delivery_acts: Any = None,
+        self_ids: Callable[[str], frozenset[str]] = lambda _: frozenset(),
     ) -> None:
         self._engine = engine
         self._max_per_conversation = max_per_conversation
@@ -417,6 +422,7 @@ class SqlRecordStore:
         self._mention_persons = mention_persons
         self._registration = registration
         self.delivery_acts = delivery_acts
+        self._self_ids = self_ids
 
     def _resolved_mentions_json(self, message: NormalizedMessage) -> str | None:
         """Sorted mention identities, or None when the platform or resolver cannot say."""
@@ -440,32 +446,18 @@ class SqlRecordStore:
         tx_hook: Any = None,
     ) -> int:
         registration = self._registration
-        stmt = sa.insert(MESSAGES).values(
-            platform=message.platform,
-            conversation_id=message.conversation_id,
-            conversation_type=message.conversation_type,
-            sender_id=message.sender_id,
-            sender_name=message.sender_name,
-            person_id=person_id,
-            ts=message.timestamp,
-            body=message.body,
-            is_nora=int(is_nora),
-            delivery_status=delivery_status.value,
-            raw_json=json.dumps(message.raw),
-            quoted_ts=message.quote.quoted_ts if message.quote else None,
-            media_json=media_json(message.media_blobs),
-            external_files_json=external_files_json(message.external_files),
-            platform_message_id=message.message_id or None,
-            mentions_json=mentions_json(message.mentions),
-            mention_persons_json=self._resolved_mentions_json(message),
-        ).returning(MESSAGES.c.id)
+        stmt = sa.insert(MESSAGES).values(**record_insert_values(
+            message, is_nora, delivery_status, person_id, self._resolved_mentions_json(message),
+        )).returning(MESSAGES.c.id)
         async with self._engine.begin() as conn:
             if registration is not None:
                 stmt = stmt.values(**await registration.planes(
                     conn, MESSAGES,
                     unit=registration.scope.message_unit(message),
                     room=message.conversation_id, occurred_at=epoch_ms(message.timestamp),
-                    persons=(person_id,),
+                    persons=(person_id,), own=is_nora,
+                    cues=() if is_nora else await message_graph_cues(
+                        conn, message, self._self_ids(message.platform)),
                 ))
             row_id = int((await conn.execute(stmt)).scalar_one())
             # `tx_hook(conn, row_id)` runs INSIDE this transaction — the
@@ -856,7 +848,7 @@ class SqlRecordStore:
 
             original = (await conn.execute(sa.select(
                 MESSAGES.c.platform, MESSAGES.c.conversation_id, MESSAGES.c.sender_id,
-                MESSAGES.c.person_id,
+                MESSAGES.c.person_id, MESSAGES.c.is_nora,
             ).where(MESSAGES.c.id == message_id))).one()
             registration = self._registration
             if registration is not None:
@@ -864,7 +856,9 @@ class SqlRecordStore:
                     conn, MESSAGE_EDIT,
                     unit=registration.scope.message_unit(message),
                     room=original.conversation_id, occurred_at=epoch_ms(message.timestamp),
-                    persons=(original.person_id,),
+                    persons=(original.person_id,), own=bool(original.is_nora),
+                    cues=() if original.is_nora else await message_graph_cues(
+                        conn, message, self._self_ids(message.platform)),
                 ))
             await conn.execute(stmt)
             await relink_arriving_targets(
@@ -894,6 +888,7 @@ class SqlRecordStore:
         async with self._engine.begin() as conn:
             stmt = stmt.values(**await touch_planes(
                 self._registration, conn, MESSAGE_REACTION, message_id, message, person_id,
+                own=message.sender_id in self._self_ids(message.platform),
             ))
             result = await conn.execute(stmt)
             row_id = int(result.scalar_one())
@@ -927,6 +922,7 @@ class SqlRecordStore:
         async with self._engine.begin() as conn:
             stmt = stmt.values(**await touch_planes(
                 self._registration, conn, MESSAGE_DELETE, message_id, message, person_id,
+                own=message.sender_id in self._self_ids(message.platform),
             ))
             result = await conn.execute(stmt)
         return int(result.scalar_one())

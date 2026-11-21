@@ -11,6 +11,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from nora.domain.cues import graph_item_cues
 from nora.domain.social_stream import (
     PLACE_STATE,
     BackfillEnd,
@@ -68,7 +69,7 @@ class SocialItemWrites:
                 for unit in await reg.scope.person_units(person) or (None,):
                     inserted = await reg.insert_once(
                         conn, SOCIAL_ITEM, stmt, unit=unit, persons=(person,),
-                        occurred_at=item.taken_at,
+                        occurred_at=item.taken_at, cues=graph_item_cues(item.caption),
                     )
                     wrote |= inserted is not None
             if wrote:

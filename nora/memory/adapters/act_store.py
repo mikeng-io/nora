@@ -108,6 +108,7 @@ class SqlActStore:
             planes = await self._registration.planes(
                 conn, OUTCOME, unit=parent["unit"], occurred_at=datetime.now(UTC),
                 persons=parent["persons"], room=parent["origin_room"],
+                failed=outcome.verdict == "failed",
             )
             planes.update({column: parent[column] for column in _PROVENANCE})
             await conn.execute(sa.insert(OUTCOME).values(

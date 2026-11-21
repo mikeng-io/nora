@@ -28,9 +28,11 @@ import math
 import time
 from datetime import UTC, datetime, timedelta
 
+MILLISECONDS_PER_SECOND = 1000
+
 #: Tick quantum: one minute, in milliseconds and as a `timedelta`.
-TICK_MS = 60_000
 TICK_SECONDS = 60
+TICK_MS = TICK_SECONDS * MILLISECONDS_PER_SECOND
 _TICK = timedelta(milliseconds=TICK_MS)
 _EPOCH = datetime.fromtimestamp(0, tz=UTC)
 

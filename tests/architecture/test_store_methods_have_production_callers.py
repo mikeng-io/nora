@@ -373,7 +373,8 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 _STORE_MODULES: frozenset[str] = frozenset(
     {
         "account_links.py", "managed_identity.py",
-        "aggregate_writes.py", "cognitive_graph_store.py", "item_registration.py",
+        "aggregate_crossings.py", "aggregate_writes.py", "cognitive_graph_store.py",
+        "graph_stimuli.py", "item_registration.py",
         "mobility_writes.py", "observation_heads.py", "social_item_writes.py",
         "assess.py", "audit.py", "bridge_store.py", "cognition_store.py",
         "comprehend.py", "lessons.py", "tension.py", "entries.py",
