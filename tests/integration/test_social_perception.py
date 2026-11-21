@@ -7,7 +7,7 @@ Every test runs successive ticks, and one runs the poller first, never a
 batch: «perceived once», «tried again tomorrow», «announced once» and «once
 across a restart» are all state carried from one tick to the next.
 
-Database scoped to the MODULE and truncated between tests (AGENTS.md).
+Database scoped to the MODULE and truncated between tests (docs/code-standards.md).
 """
 
 

@@ -5,6 +5,7 @@ including the clock, which is what makes the whole tick testable here."""
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -102,7 +103,8 @@ def _row(**kw) -> Reminder:
     return Reminder(**base)
 
 
-def _build(*, store, policy=None, fire=None, slots=None, metrics=None, clock=None):
+def _build(*, store, policy=None, fire=None, slots=None, metrics=None, clock=None,
+           proactive=None):
     """One constructor for every test — the loop takes all collaborators
     through __init__, including the clock, so nothing here needs a real clock,
     a real model, or a real adapter."""
@@ -123,7 +125,7 @@ def _build(*, store, policy=None, fire=None, slots=None, metrics=None, clock=Non
         clock=clock or (lambda: T0),
         metrics=metrics or Metrics(),
         tick_seconds=60.0,
-        fire=fire or _default_fire)
+        fire=fire or _default_fire, proactive=proactive)
     return loop, fired
 
 
@@ -948,16 +950,18 @@ class _SupersededPolicy:
             for p, c in rooms
         ]
 
+    def rooms(self):
+        return tuple(self.conversations)
+
     def conversation(self, platform, conversation_id):
         return next(
-            (c for c in self.conversations
+            (c for c in self.rooms()
              if c.platform == platform and c.primary_id == conversation_id),
             None,
         )
 
 
 def _superseded_row(payload_plan="p1"):
-    from dataclasses import replace  # noqa: F401
     now = datetime.now(UTC)
     return Reminder(
         id=uuid.uuid4(), kind="proactive", requester_person_id="synthetic-ai",
@@ -974,19 +978,16 @@ async def test_superseded_refuses_a_claimed_act_already_delivered():
     """The parent repro: a FIRING row whose (subject,action) already has a
     DONE+sent row must resolve, not fire — `open_proactive_subject` gated on
     open state made the delivered key unreadable."""
-    from dataclasses import replace
     row = _superseded_row()
     sent = replace(
-        row, id=uuid.uuid4(), state=ReminderState.DONE, outcome="sent",
-        fired_at=row.fired_at - timedelta(minutes=30),
+        row, id=uuid.uuid4(), conversation_id="other-room",
+        state=ReminderState.DONE, outcome="sent", fired_at=row.fired_at - timedelta(minutes=30),
         payload={**row.payload, "plan_id": "p2"},
     )
     store = FakeReminderStore()
     await store.create(sent)
-    loop = SimpleNamespace(
-        _store=store,
-        _policy=_SupersededPolicy(rooms=[("signal", "generated-room")]),
-    )
+    policy = _SupersededPolicy(rooms=[("signal", "generated-room"), ("signal", "other-room")])
+    loop, _ = _build(store=store, proactive=ProactiveScreen(policy=policy, notes=None))
     refusal = await HeartbeatLoop._superseded(loop, row)
     assert refusal == (ReminderState.FAILED, "failed_superseded")
 
@@ -994,7 +995,6 @@ async def test_superseded_refuses_a_claimed_act_already_delivered():
 async def test_superseded_lets_a_same_plan_row_fire():
     """A deliberate multi-room act (same `plan_id`) is not superseded by its
     sibling's delivery — the plan is one producer intent."""
-    from dataclasses import replace
     row = _superseded_row()
     sibling = replace(
         row, id=uuid.uuid4(), conversation_id="other-room",
@@ -1003,10 +1003,8 @@ async def test_superseded_lets_a_same_plan_row_fire():
     )
     store = FakeReminderStore()
     await store.create(sibling)
-    loop = SimpleNamespace(
-        _store=store,
-        _policy=_SupersededPolicy(
-            rooms=[("signal", "generated-room"), ("signal", "other-room")]))
+    policy = _SupersededPolicy(rooms=[("signal", "generated-room"), ("signal", "other-room")])
+    loop, _ = _build(store=store, proactive=ProactiveScreen(policy=policy, notes=None))
     assert await HeartbeatLoop._superseded(loop, row) is None
 
 
@@ -1015,7 +1013,7 @@ async def test_superseded_fails_closed_without_a_unit():
     cannot run; a same-room-only read would masquerade as the unit check."""
     row = _superseded_row()
     store = FakeReminderStore()
-    loop = SimpleNamespace(
-        _store=store, _policy=_SupersededPolicy(rooms=[]))
+    policy = _SupersededPolicy()
+    loop, _ = _build(store=store, proactive=ProactiveScreen(policy=policy, notes=None))
     refusal = await HeartbeatLoop._superseded(loop, row)
     assert refusal == (ReminderState.FAILED, "failed_error")

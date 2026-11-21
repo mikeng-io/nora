@@ -250,68 +250,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "Issue #385 folds triage into contribution-content.yml. The historical ADR "
         "records the earlier workflow and remains historical; resolves in git history."
     ),
-    ('openwiki/concepts/persona-and-provenance.md', 'nora/domain/persona.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('openwiki/concepts/persona-and-provenance.md', 'nora/infra/sql/persona.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('openwiki/concepts/persona-and-provenance.md', 'nora/infra/sql/persona_inputs.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('openwiki/concepts/persona-and-provenance.md', 'nora/language/persona_collective.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('openwiki/concepts/persona-and-provenance.md', 'nora/language/persona_verdict.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('openwiki/concepts/persona-and-provenance.md', 'nora/subject/persona_coverage.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    (
-        'openwiki/concepts/persona-and-provenance.md',
-        'tests/infra/test_memory_projection_persona.py',
-    ): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('openwiki/concepts/persona-and-provenance.md', 'tests/infra/test_persona_collective.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('openwiki/concepts/persona-and-provenance.md', 'tests/infra/test_persona_store.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('openwiki/concepts/persona-and-provenance.md', 'tests/infra/test_persona_verdict.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('openwiki/concepts/persona-and-provenance.md', 'tests/infra/test_remember_persona.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    (
-        'openwiki/concepts/persona-and-provenance.md',
-        'tests/integration/test_eval_persona_writer.py',
-    ): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('openwiki/concepts/persona-and-provenance.md', 'tests/unit/test_persona_rules.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
-    ('openwiki/concepts/persona-and-provenance.md', 'tests/unit/test_persona_social_input.py'): (
-        "ADR 0029 renamed this typed-tier file; this historical design or generated "
-        "evidence citation resolves in git history. Current code uses profile names."
-    ),
 
     (
         "design/online-status/04-consumers.md",

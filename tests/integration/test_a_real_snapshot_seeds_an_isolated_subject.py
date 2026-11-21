@@ -33,7 +33,6 @@ import psycopg
 import pytest
 import sqlalchemy as sa
 
-from evals.backbone import _close
 from nora.domain.models import NormalizedMessage
 from nora.domain.reminders import DuplicateProactiveNoteError, Reminder, ReminderState
 from nora.domain.standing import Standing
@@ -52,13 +51,12 @@ from nora.subject import (
     Subject,
     SubjectSpec,
     know,
-    obtain,
     sandbox_as_of,
     sandbox_database,
     sandbox_from_snapshot,
 )
 from nora.subject.proactive import owe
-from tests.sandbox_fixtures import ROOM, Source, seed_source
+from tests.sandbox_fixtures import ROOM, Source, offline_subject, seed_source
 
 BEFORE_MS = 1_752_000_000_000
 MINUTE = 60_000
@@ -203,16 +201,15 @@ async def source(
 async def sandbox(source: Source, pg_template: str, tmp_path: Any) -> AsyncIterator[Subject]:
     """A subject composed for the SAME real room, in a database of its own,
     with its clock frozen at the moment."""
-    async with sandbox_database(source.url, template=pg_template) as url:
-        subject = await obtain(SubjectSpec(
+    async with (
+        sandbox_database(source.url, template=pg_template) as url,
+        offline_subject(SubjectSpec(
             database_url=url, workdir=tmp_path / "sandbox", room=source.room,
             policy=source.policy, identity=source.identity,
             now=datetime.fromtimestamp(BEFORE_MS / 1000, tz=UTC),
-        ))
-        try:
-            yield subject
-        finally:
-            await _close(subject)
+        )) as subject,
+    ):
+        yield subject
 
 
 async def _seed(subject: Subject, source: Source) -> Any:
@@ -453,32 +450,30 @@ async def test_a_subject_whose_clock_is_not_the_moment_is_refused(
 ) -> None:
     """A window seeded at the moment's clock but read at the wall clock is a
     room that has said nothing for however long ago the moment was."""
-    async with sandbox_database(source.url, template=pg_template) as url:
-        subject = await obtain(SubjectSpec(
+    async with (
+        sandbox_database(source.url, template=pg_template) as url,
+        offline_subject(SubjectSpec(
             database_url=url, workdir=tmp_path / "wall", room=source.room,
             policy=source.policy, identity=source.identity, now=None,
-        ))
-        try:
-            with pytest.raises(ValueError, match="the subject's clock reads"):
-                await sandbox_from_snapshot(subject, source_url=source.url, before_ms=BEFORE_MS)
-        finally:
-            await _close(subject)
+        )) as subject,
+    ):
+        with pytest.raises(ValueError, match="the subject's clock reads"):
+            await sandbox_from_snapshot(subject, source_url=source.url, before_ms=BEFORE_MS)
 
 
 async def test_a_moment_before_the_first_row_is_refused(source, pg_template, tmp_path) -> None:
     """An empty reconstruction is what a mistyped id reads as too."""
     early = BEFORE_MS - 11 * MINUTE
-    async with sandbox_database(source.url, template=pg_template) as url:
-        subject = await obtain(SubjectSpec(
+    async with (
+        sandbox_database(source.url, template=pg_template) as url,
+        offline_subject(SubjectSpec(
             database_url=url, workdir=tmp_path / "early", room=source.room,
             policy=source.policy, identity=source.identity,
             now=datetime.fromtimestamp(early / 1000, tz=UTC),
-        ))
-        try:
-            with pytest.raises(ValueError, match="holds no row"):
-                await sandbox_from_snapshot(subject, source_url=source.url, before_ms=early)
-        finally:
-            await _close(subject)
+        )) as subject,
+    ):
+        with pytest.raises(ValueError, match="holds no row"):
+            await sandbox_from_snapshot(subject, source_url=source.url, before_ms=early)
 
 
 # --- the sandbox database itself ---------------------------------------------
