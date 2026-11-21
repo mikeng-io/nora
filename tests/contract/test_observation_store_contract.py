@@ -1,5 +1,5 @@
 """Shared contract for the observation store. Every implementation runs every
-test (AGENTS.md, «a contract suite scopes its database to the MODULE»).
+test (docs/code-standards.md, «a contract suite scopes its database to the MODULE»).
 
 Two implementations: `nora.infra.sql.observations.SqlObservationStore` over
 real Postgres, and `nora.testing.observations.FakeObservationStore`. The

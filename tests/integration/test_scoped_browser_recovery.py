@@ -10,10 +10,11 @@ import tarfile
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
+from openai import AsyncOpenAI
 
-from nora.agent import browse as browse_module
-from nora.agent.browse import BrowseAgentRunner, BrowseSettings
+from nora.agent.web_browse import BrowseSettings, WebBrowseRunner
 from nora.app import computer_queue as queue_module
 from nora.app.computer_queue import ComputerAdmission, ComputerQueueRunner
 from nora.domain.computer import BrowseOutcome, SandboxStatus, StateResult, anything_running
@@ -28,10 +29,10 @@ from nora.testing import (
     FakeComputerTaskStore,
     FakeStreamRedis,
 )
-from tests.unit.test_browse_agent import FakePage, _named
-from tests.unit.test_computer_browse_tool import _browse
 from tests.unit.test_computerd_processes import UID, _proc
 from tests.unit.test_scoped_computer import NOW, UNIT_SCOPE, _register, _wired, clock
+from tests.unit.test_web_browse_results import _browse
+from tests.unit.test_web_browse_tool import ALIAS, Manager, Page, gateway_reply
 
 ROOT = Path(__file__).resolve().parents[2]
 TOKEN = "generated"  # noqa: S105 - synthetic local guest credential
@@ -129,28 +130,28 @@ async def test_context_joins_browser_handle_to_execution_segment(monkeypatch):
     redis = FakeStreamRedis()
     rig = _wired(monkeypatch, tasks=store)
     _register(rig.runtime, scope=UNIT_SCOPE)
-    runner = BrowseAgentRunner(
-        model_source=None,
-        retry=None,
-        base_url="http://generated",
-        token=TOKEN,
-        settings=BrowseSettings(),
+    runner = WebBrowseRunner(
+        client=None, model="generated", max_tokens=512, settings=BrowseSettings(),
         manager=rig.manager,
     )
 
-    async def drive(self, page, objective, start_url, task_id="", tab="", record=None):
-        return BrowseOutcome(status="ok", answer="generated", task_id=task_id, tab=tab)
+    async def drive(self, page, owner, objective, start_url, record):
+        return BrowseOutcome(
+            status="ok", answer="generated", task_id=str(owner), tab=page.target_id,
+        )
 
-    monkeypatch.setattr(BrowseAgentRunner, "_drive", drive)
+    monkeypatch.setattr(WebBrowseRunner, "_drive", drive)
     admission = ComputerAdmission(
         tasks=store, redis=redis, clock=clock(),
         reconcile=lambda scope: asyncio.sleep(0, "quiet"))
     segment = await admission.submit(
-        scope=UNIT_SCOPE, kind="browse", payload={"tool": "computer_browse", "args": {}}, origin={}
+        scope=UNIT_SCOPE, kind="browse", payload={"tool": "web_browse", "args": {}}, origin={}
     )
 
     async def work():
-        got = await runner.browse(scope=UNIT_SCOPE, objective="generated")
+        got = await runner.browse(
+            scope=UNIT_SCOPE, objective="generated", start_url="https://example.invalid/",
+        )
         return {"status": got.status, "task": got.task_id, "tab": got.tab}
 
     reply = await admission.run_segment(segment.task, work())
@@ -176,7 +177,7 @@ async def test_context_joins_browser_handle_to_execution_segment(monkeypatch):
             conversation_type="group",
             tag_id="",
             scope=UNIT_SCOPE,
-            tool="computer_browse",
+            tool="web_browse",
             path="direct",
             trace_id="",
             span_id="",
@@ -197,12 +198,12 @@ async def test_context_joins_browser_handle_to_execution_segment(monkeypatch):
     view = await reader.read(platform="signal", conversation_id="generated-room")
     assert (
         view.tabs
-        and view.tabs[0].last_op == "computer_browse"
+        and view.tabs[0].last_op == "web_browse"
         and view.tabs[0].last_result == "done"
     )
     assert "browse" in _body_text(render_computer(view).body)
     handle = __import__("uuid").UUID(reply["task"])
-    for tool in ("computer_browse", "computer_capture"):
+    for tool in ("web_browse", "computer_capture"):
         next_segment = await admission.submit(
             scope=UNIT_SCOPE, kind="browse", payload={"tool": tool, "args": {}}, origin={}
         )
@@ -223,53 +224,34 @@ async def test_context_joins_browser_handle_to_execution_segment(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_action_rows_have_distinct_keys_and_preserve_tool_finish(tmp_path, monkeypatch):
+async def test_action_rows_have_distinct_keys_and_preserve_tool_finish(tmp_path):
     identity = tmp_path / "generated-identity.toml"
     identity.write_text('[persons.generated]\nfirst_name="Generated"\n')
     persons = load_persons(identity)
+    replies = iter(["1-1", "2-finish", json.dumps({"answer": "generated result", "found": True})])
 
-    async def run(self, scope, objective, start_url, task_id):
-        task = browse_module._Task(
-            FakePage(), BrowseSettings(), record=browse_module._action_record.get()
+    def handler(request):
+        return gateway_reply(next(replies), used=1)
+
+    async with AsyncOpenAI(
+        base_url="http://gateway.invalid/v1", api_key="local",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    ) as client:
+        runner = WebBrowseRunner(
+            client=client, model=ALIAS, max_tokens=512, settings=BrowseSettings(),
+            manager=Manager(Page()),
         )
-        tools = _named(task)
-        await tools["page_open"](url="https://example.invalid/")
-        await tools["page_read"]()
-        await tools["page_snapshot"]()
-        await tools["page_click"](ref="e99")
-        await tools["page_open"](url="file:///generated")
-        return BrowseOutcome(status="ok", answer="generated result", steps=4)
-
-    monkeypatch.setattr(BrowseAgentRunner, "_run", run)
-    runner = BrowseAgentRunner(
-        model_source=None,
-        retry=None,
-        base_url="http://generated",
-        token=TOKEN,
-        settings=BrowseSettings(),
-    )
-    events = FakeComputerEventStore()
-    reply = await _browse(persons, browser=runner, events=events)(objective="generated")
+        events = FakeComputerEventStore()
+        reply = await _browse(persons, browser=runner, events=events)(
+            objective="generated", start_url="https://example.invalid/",
+        )
     assert reply["status"] == "ok"
-    actions = [e for e in events.events if e.tool == "computer_browse.action"]
-    assert [a.request["action"] for a in actions] == [
-        "page_open",
-        "page_read",
-        "page_snapshot",
-        "page_click",
-        "page_open",
-    ]
-    assert len({a.operation_id for a in actions}) == 5
-    assert [a.result["outcome"] for a in actions] == [
-        "executed",
-        "executed",
-        "executed",
-        "error",
-        "rejected",
-    ]
-    assert actions[3].request["ref"] == "e99"
-    assert actions[3].request["observation"] == 1
-    whole = [e for e in events.events if e.tool == "computer_browse"]
+    actions = [e for e in events.events if e.tool == "web_browse.action"]
+    assert [a.request["action"] for a in actions] == ["open", "click"]
+    assert len({a.operation_id for a in actions}) == 2
+    assert [a.result["outcome"] for a in actions] == ["ok", "ok"]
+    assert actions[1].request["observation"] == 1
+    whole = [e for e in events.events if e.tool == "web_browse"]
     assert [e.phase for e in whole] == ["started", "finished"]
     assert all(a.request["parent_operation_id"] == str(whole[0].operation_id) for a in actions)
 

@@ -130,7 +130,7 @@ class Judge:
         from nora.domain.external_files import render_file_links
 
         # The judge is a MODEL sink: effect rows carry stored message bodies,
-        # whose shared file links must reach it as handles (R-18). The raw
+        # whose shared file links must reach it as handles. The raw
         # canonical artifact is the capture's; only the bound projection renders.
         lifecycle = json.dumps(effects, ensure_ascii=False, sort_keys=True)
         return replace(self, lifecycle=render_file_links(lifecycle))

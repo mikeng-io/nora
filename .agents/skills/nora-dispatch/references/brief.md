@@ -63,7 +63,8 @@ no BLOCKER.
    revision. A link behind a login it cannot pass is not an input.
 
 A first-round BLOCKER that this pre-flight would have caught is the author's
-miss. Its fix carries a lesson line (`nora-land/reference.md` «Resolve»).
+miss. Its fix adds or extends a lesson in `docs/maintainers/lessons.md`
+(`nora-land/reference.md` «Resolve»).
 
 ## Review and lock
 

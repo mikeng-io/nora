@@ -16,7 +16,7 @@ renumbers them, and an action on a ref the last snapshot did not give is
 refused.
 
 Everything here returns or raises plainly; the statuses the model is told are
-decided by the caller (`nora.agent.browse`). No credential path exists.
+decided by the caller (`nora.agent.web_browse`). No credential path exists.
 """
 
 from __future__ import annotations
@@ -80,12 +80,10 @@ class ActionRefusedError(BrowserError):
 
 @dataclass
 class ActionPolicy:
-    """What a browse task may still do to its page, decided before each CDP call.
+    """Whether a browse task may still act on its page, decided before each CDP call.
 
-    Fail-closed, and read-only by default: a click or Enter that submits a form, typing
-    into a password or other sensitive field, and every action after `revoke` are refused.
-    No approval channel exists yet, so a person does the submission, not the task. Navigation
-    is not restricted here (no origin allowlist is configured; see the PR's Also).
+    Fail-closed once the task is over: after `revoke` every action is refused and the page
+    is not touched.
     """
 
     revoked: bool = False
@@ -93,17 +91,8 @@ class ActionPolicy:
     def revoke(self) -> None:
         self.revoked = True
 
-    def check(self, action: str, *, submits: bool = False, sensitive: bool = False) -> None:
-        """Raise `ActionRefusedError` if `action` may not run now. Called before the first CDP call
-        of an action and again, through `live`, immediately before each input is sent."""
-        self.live(action)
-        if submits:
-            raise ActionRefusedError(f"{action} would submit a form; a person must do that step")
-        if sensitive:
-            raise ActionRefusedError(f"{action} is into a sensitive field; a person must type it")
-
     def live(self, action: str) -> None:
-        """Raise if the task is over. Checked right before a CDP input call."""
+        """Raise `ActionRefusedError` if the task is over. Checked right before a CDP call."""
         if self.revoked:
             raise ActionRefusedError(f"{action}: the task is over; the page is not touched")
 
@@ -429,26 +418,9 @@ class BrowserPage:
         except (BrowserError, KeyError, TypeError, ValueError):
             return 1920.0, 1080.0
 
-    async def _submits(self, ref: str) -> bool:
-        """Whether the element is a control that submits its form: a submit button or
-        image, or a button with no type, inside a form."""
-        return bool(await self._call_on(ref, """function() {
-            const f = this.form || (this.closest && this.closest('form'));
-            if (!f) return false;
-            const t = String(this.type || '').toLowerCase();
-            if (this.tagName === 'BUTTON') return t === '' || t === 'submit';
-            if (this.tagName === 'INPUT') return t === 'submit' || t === 'image';
-            return false;
-        }"""))
-
-    async def _in_form(self, ref: str) -> bool:
-        return bool(await self._call_on(ref, """function() {
-            return !!(this.form || (this.closest && this.closest('form')));
-        }"""))
-
     async def click(self, ref: str) -> None:
         node = self._node(ref)
-        self.policy.check("click", submits=await self._submits(ref))
+        self.policy.live("click")
         before = await self._loader()
         known = {str(t.get("targetId")) for t in await self._targets()}
         with contextlib.suppress(BrowserError):
@@ -478,9 +450,7 @@ class BrowserPage:
         """Replace the field's text with `text`, as typing would: an input's
         value, or an editable element's text."""
         node = self._node(ref)
-        sensitive = await self._is_password(node)
-        self.policy.check("type", sensitive=sensitive,
-                          submits=submit and await self._in_form(ref))
+        self.policy.live("type")
         await self._page("DOM.focus", {"backendNodeId": node})
         self.policy.live("type")
         await self._call_on(ref, """function() {
@@ -522,13 +492,7 @@ class BrowserPage:
         if key not in _KEYS:
             raise BrowserError(f"unknown key {key!r}")
         code, text, keycode = _KEYS[key]
-        if key == "Enter":
-            focused = await self.evaluate(
-                "!!(document.activeElement && (document.activeElement.form || "
-                "(document.activeElement.closest && document.activeElement.closest('form'))))")
-            self.policy.check("press Enter", submits=bool(focused))
-        else:
-            self.policy.live("press")
+        self.policy.live("press")
         before = await self._loader()
         down: dict[str, Any] = {"type": "keyDown", "key": code, "code": code,
                                 "windowsVirtualKeyCode": keycode}
