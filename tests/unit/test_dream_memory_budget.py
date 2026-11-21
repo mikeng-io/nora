@@ -314,7 +314,7 @@ async def test_the_ceiling_counts_across_verbs_rather_than_per_verb():
 async def test_a_pass_inside_its_ration_is_untouched():
     """The positive control. Same loop, same verbs, one fewer call: nothing is
     refused, nothing is rewritten, and a `== 0` on the refusal counter means
-    something because this run genuinely RAN (AGENTS.md: pair every
+    something because this run genuinely RAN (docs/code-standards.md: pair every
     zero-assertion with a positive control).
     """
     model = _ScriptedModel(["about", "ask_memory", None])
@@ -613,7 +613,7 @@ def test_an_id_less_refusal_never_answers_another_call():
 def test_the_guard_rule_labels_come_from_one_vocabulary():
     """`nora_dream_guard_vetoes_total{rule}` has a vocabulary: a typo in a
     label starts a new series instead of raising, so the label set is DERIVED
-    off a `Literal` (AGENTS.md) and all emitters are pinned to it — R-7 for a
+    off a `Literal` (docs/code-standards.md) and all emitters are pinned to it — R-7 for a
     tool never granted, tool-budget for one tool's own per-pass ceiling spent,
     memory-budget for the pass's memory ration spent. They are different
     findings that must not collapse: `tool-budget` is not carried on `R-7`, or

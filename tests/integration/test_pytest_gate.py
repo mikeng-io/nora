@@ -222,6 +222,8 @@ def test_timing_admission_and_default_targets_are_independent_of_caller_cwd(tmp_
 @pytest.mark.parametrize("targets", [
     [], ["tests"], ["tests/integration"],
     ["tests/integration/test_latency.py::test_specific"],
+    ["tests/integration/subject/test_autonomous_journey_sdk.py",
+     "tests/integration/test_managed_circle_cost.py"],
     ["tests/unit/test_engagement_pipeline.py", "tests/test_plain.py"],
     ["tests/test_plain.py"],
 ])
@@ -247,6 +249,11 @@ def test_phases_preserve_selected_targets_and_keep_timing_out_of_parallel(
                                   if name.startswith("tests/integration/")],
         ("tests/integration/test_latency.py::test_specific",): [
             "tests/integration/test_latency.py::test_specific"],
+        ("tests/integration/subject/test_autonomous_journey_sdk.py",
+         "tests/integration/test_managed_circle_cost.py"): [
+            "tests/integration/subject/test_autonomous_journey_sdk.py",
+            "tests/integration/test_managed_circle_cost.py",
+        ],
         ("tests/unit/test_engagement_pipeline.py", "tests/test_plain.py"): [
             gate.TIMING_TESTS[1]],
         ("tests/test_plain.py",): [],

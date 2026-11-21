@@ -217,7 +217,7 @@ _ORDER = [
     "computer_export",
     "computer_import",
     "computer_session_list",
-    "computer_browse",
+    "web_browse",
     "computer_capture",
     "computer_cancel",
     "version_list",
@@ -339,9 +339,7 @@ def build_tool_specs(
     # the computer. `None` answers the destinations that need it
     # `unavailable`.
     computer_exports: ComputerExportStore | None = None,
-    # `computer_browse`: the sub-agent that
-    # drives the room's browser. `None` (`[computer.browse]` off) answers the
-    # tool `unavailable`; the registry withholds it then.
+    # Browser runners are withheld by the registry when unwired.
     browser: BrowserRunner | None = None,
     # The scoped-computer runtime: `ComputerAdmission` (per-scope FIFO,
     # `nora.app.computer_queue`) and `ScopeBrowserManager` (task-owned tabs,

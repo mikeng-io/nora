@@ -79,6 +79,8 @@ class _Policy(Protocol):
 
     def conversation(self, platform: str, conversation_id: str) -> Conversation | None: ...
 
+    def rooms(self) -> tuple[Conversation, ...]: ...
+
     def proactive_allowed(self, *, platform: str, conversation_id: str) -> bool: ...
 
 
@@ -106,6 +108,13 @@ class ProactiveScreen:
         # note then cannot be screened and does not fire (module docstring);
         # a row with no note is unaffected.
         self._notes = notes
+
+    def rooms_in_unit(self, row: Reminder) -> list[tuple[str, str]]:
+        convo = self._policy.conversation(row.platform, row.conversation_id)
+        if convo is None:
+            return []
+        return [(room.platform, room.primary_id) for room in self._policy.rooms()
+                if room.unit == convo.unit and room.primary_id]
 
     async def refusal(self, row: Reminder) -> tuple[ReminderState, str] | None:
         if not self._policy.proactive_allowed(
