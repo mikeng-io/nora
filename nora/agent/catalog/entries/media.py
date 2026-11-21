@@ -6,6 +6,7 @@ from nora.agent.link_owners import LinkInput
 TOOLS = {
     "media_fetch": NativeTool(
         8,
+        outside=True,
         read_only=True,
         side_effect_state="none",
         idempotency="idempotent",
@@ -25,6 +26,7 @@ TOOLS = {
     ),
     "generate_image": NativeTool(
         2,
+        outside=True,
         read_only=False,
         side_effect_state="unknown",
         idempotency="non_idempotent",
@@ -34,6 +36,7 @@ TOOLS = {
     ),
     "video_create": NativeTool(
         2,
+        outside=True,
         read_only=False,
         side_effect_state="confirmed",
         idempotency="non_idempotent",

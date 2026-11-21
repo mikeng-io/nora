@@ -72,7 +72,7 @@ from ..domain.models import PersonRef
 from ..domain.self_presence import KnownRoom, TransportState, platform_name
 from ..language.presence_render import state_phrase
 from ..policy import Conversation, Policy
-from .egress import scan_reply
+from .egress import internal_span, scan_reply
 
 log = logging.getLogger("nora.agent.relay")
 
@@ -249,8 +249,8 @@ class Relay:
         # Attributed, always (module docstring). Built here rather than left to
         # the model so it cannot be talked out of it.
         outbound = f"{requester.name}: {body}"
-
-        if (kind := scan_reply(outbound, content_checks=self._content_checks)) is not None:
+        if kind := (internal_span(outbound)
+                    or scan_reply(outbound, content_checks=self._content_checks)):
             log.warning("relay blocked by egress scan (%s)", kind)
             return self._refuse(
                 "egress_blocked",

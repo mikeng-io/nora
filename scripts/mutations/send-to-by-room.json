@@ -51,8 +51,8 @@
  {
   "name": "egress scanning remains a delivery gate",
   "file": "nora/agent/relay.py",
-  "old": "if (kind := scan_reply(outbound, content_checks=self._content_checks)) is not None:",
-  "new": "if False and (kind := scan_reply(outbound, content_checks=self._content_checks)) is not None:",
+  "old": "if kind := (internal_span(outbound)\n                    or scan_reply(outbound, content_checks=self._content_checks)):",
+  "new": "if False:",
   "target": "tests/test_relay.py::test_text_that_fails_the_egress_scan_never_leaves"
  },
  {

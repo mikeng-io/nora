@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .egress import scan_identifiers as scan_identifiers
+from .egress import scan_outside
 from .room import _key
 
 log = logging.getLogger(__name__)
@@ -140,7 +141,7 @@ def _refused_before_the_call(
     """Why a place query may not leave the host, or `None`: an identifier or a coordinate
     (`identifier`), or a known person's name (`person`). The outbound half of R-28, shared
     by `screen_and_resolve_place` and `screen_and_locate_place` so the two cannot drift."""
-    if scan_identifiers(query, content_checks=content_checks) is not None or (
+    if scan_outside(query, content_checks=content_checks) is not None or (
         content_checks and looks_like_coordinate(query)
     ):
         return "identifier"

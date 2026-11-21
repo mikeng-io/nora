@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 from types import SimpleNamespace
+from urllib.parse import unquote
 
+from nora.agent.egress import scan_outside
 from nora.agent.toolkit.files import (
     _FILE_MORE_NOTE,
     _FILE_STATUS_NOTES,
@@ -46,6 +48,7 @@ def _make_file_fetch(deps):
         c = SimpleNamespace(
             code=code,
             link=link,
+            content_checks=deps.content_checks,
             part=part,
             external_files=deps.external_files,
             google_account=deps.google_account,
@@ -93,6 +96,11 @@ async def _file_fetch__resolve_ref(c):
     except (TypeError, ValueError):
         c.want = 1
     if c.link:
+        if kind := scan_outside(unquote(c.link), content_checks=c.content_checks):
+            _record(c.metrics, "file_fetch", "refused", reason=kind)
+            return (True, None, {
+                "status": "refused", "note": "I cannot open a link carrying private material."
+            })
         c.ref = c.external_files.recognise(url=c.link)
         if c.ref is None:
             _record(c.metrics, "file_fetch", "nothing_found", reason="link")

@@ -5,8 +5,8 @@ import urllib.parse
 from types import SimpleNamespace
 from typing import Any
 
+from nora.agent.egress import scan_outside
 from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
-from nora.agent.security import scan_identifiers
 from nora.agent.toolkit.files import _file_handle_pointer
 from nora.agent.toolkit.pages import (
     _PAGE_BLOB_PUT_GRACE_SECONDS,
@@ -52,7 +52,7 @@ def _make_web_search(deps):
         # The query is an EGRESS surface: it leaves the host to Tavily. An IDENTIFIER
         # must never be searched — it is unsafe at every exit — so it is blocked
         # BEFORE the call, and `nothing_found` rather than a fourth state: from where
-        if scan_identifiers(query, content_checks=content_checks) is not None:
+        if scan_outside(query, content_checks=content_checks) is not None:
             _record(metrics, "web_search", "nothing_found", reason="identifier")
             return {
                 "status": "nothing_found",
@@ -162,7 +162,7 @@ async def _web_fetch__guards(c):
             },
         )
     c.decoded_url = urllib.parse.unquote(c.url)
-    if scan_identifiers(c.decoded_url, content_checks=c.content_checks) is not None:
+    if scan_outside(c.decoded_url, content_checks=c.content_checks) is not None:
         _record(c.metrics, "web_fetch", "nothing_found", reason="identifier")
         return (
             True,

@@ -45,7 +45,7 @@ from nora.domain.models import TranscriptRow
 from nora.domain.ports import GifSource, OutboundAttachment
 from nora.domain.prompt import escape, one_line
 
-from .egress import scan_identifiers
+from .egress import scan_outside
 
 log = logging.getLogger("nora.agent.reaction")
 
@@ -156,7 +156,7 @@ def _usable_query(query: str, *, content_checks: bool = True) -> bool:
     # The same bar `search_gifs` holds her own queries to: short, and nothing
     # that looks like an identifier leaves for Giphy.
     return (bool(query) and len(query) <= 60 and len(query.split()) <= 6
-            and scan_identifiers(query, content_checks=content_checks) is None)
+            and scan_outside(query, content_checks=content_checks) is None)
 
 
 class ReactionPicker:

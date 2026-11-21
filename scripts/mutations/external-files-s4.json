@@ -79,8 +79,8 @@
  {
   "name": "(i) split: file_fetch reclassified as a write leaves R-97's lookups",
   "file": "nora/agent/catalog/entries/computer.py",
-  "old": "\"file_fetch\": NativeTool(\n        4,\n        read_only=True,",
-  "new": "    \"file_fetch\": NativeTool(4,\n                             read_only=False,",
+  "old": "\"file_fetch\": NativeTool(\n        4,\n        outside=True,\n        read_only=True,",
+  "new": "\"file_fetch\": NativeTool(\n        4,\n        outside=True,\n        read_only=False,",
   "target": "tests/unit/test_computer_import_shared_file.py::test_file_fetch_stays_a_read_and_a_lookup"
  },
  {

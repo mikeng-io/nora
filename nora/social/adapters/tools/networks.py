@@ -5,10 +5,10 @@ import urllib.parse
 from types import SimpleNamespace
 from typing import Literal, cast
 
+from nora.agent.egress import scan_outside
 from nora.agent.link_owners import OWNER_LINK_INPUT as _OWNER_LINK_INPUT
 from nora.agent.link_owners import redirect as _link_redirect
 from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
-from nora.agent.security import scan_identifiers
 from nora.agent.toolkit.files import _other_link_owner
 from nora.agent.toolkit.pages import _URL_AND_LINK_DIFFER, _resolve_url_alias, _with_scheme
 from nora.agent.toolkit.results import _record, _with_note
@@ -121,7 +121,7 @@ def _make_x_search(deps):
         # coordinate, must not leave in a search. Decoded first, so a
         # percent-encoded identifier cannot ride past a raw-string match.
         decoded = urllib.parse.unquote(text)
-        if scan_identifiers(decoded, content_checks=content_checks) is not None or (
+        if scan_outside(decoded, content_checks=content_checks) is not None or (
             content_checks and _looks_like_coordinate(decoded)
         ):
             _record(metrics, "x_search", "refused", reason="egress")
@@ -247,7 +247,7 @@ def _make_linkedin_search(deps):
         # A phone number pasted into a PEOPLE search would be looked up
         # against real people, so the screen matters most here.
         decoded = urllib.parse.unquote(text)
-        if scan_identifiers(decoded, content_checks=content_checks) is not None or (
+        if scan_outside(decoded, content_checks=content_checks) is not None or (
             content_checks and _looks_like_coordinate(decoded)
         ):
             _record(metrics, "linkedin_search", "refused", reason="egress")
@@ -380,8 +380,10 @@ async def _x_read__resolve_link(c):
 
 
 async def _x_read__guard_egress(c):
-    if scan_identifiers(c.target, content_checks=c.content_checks) is not None or (
-        c.content_checks and _looks_like_coordinate(c.target)
+    if (
+        scan_outside(urllib.parse.unquote(c.link or ""), content_checks=c.content_checks)
+        or scan_outside(c.target, content_checks=c.content_checks)
+        or (c.content_checks and _looks_like_coordinate(c.target))
     ):
         _record(c.metrics, "x_read", "refused", reason="egress")
         return (
@@ -551,8 +553,10 @@ async def _linkedin_read__resolve_target(c):
 
 
 async def _linkedin_read__fetch(c):
-    if scan_identifiers(c.target, content_checks=c.content_checks) is not None or (
-        c.content_checks and _looks_like_coordinate(c.target)
+    if (
+        scan_outside(urllib.parse.unquote(c.link or ""), content_checks=c.content_checks)
+        or scan_outside(c.target, content_checks=c.content_checks)
+        or (c.content_checks and _looks_like_coordinate(c.target))
     ):
         _record(c.metrics, "linkedin_read", "refused", reason="egress")
         return (

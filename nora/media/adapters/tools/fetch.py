@@ -5,8 +5,8 @@ import logging
 import urllib.parse
 from types import SimpleNamespace
 
+from nora.agent.egress import scan_outside
 from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
-from nora.agent.security import scan_identifiers
 from nora.agent.toolkit.files import (
     _FILE_LOOK_NOTES,
     _KEEPABLE_IMAGE_TYPES,
@@ -131,7 +131,7 @@ def _make_media_fetch(deps):
 async def _media_fetch__scan_question(c):
     c.question = c.question.strip()
     if c.question:
-        c.kind = scan_identifiers(c.question, content_checks=c.content_checks)
+        c.kind = scan_outside(c.question, content_checks=c.content_checks)
         if c.kind is not None:
             _record_media(c.metrics, "nothing_found", reason="identifier")
             c.metrics.inc("nora_egress_blocks_total", kind=c.kind)
@@ -185,6 +185,10 @@ async def _media_fetch__scan_question(c):
         _recognise_file_link(c.__dict__.__setitem__("pasted", c.url or c.code) or c.pasted)
         is not None
     ):
+        if scan_outside(urllib.parse.unquote(c.pasted), content_checks=c.content_checks):
+            return (True, None, {
+                "status": "nothing_found", "note": "I cannot open a link carrying private material."
+            })
         c.shared = (
             c.external_files.recognise(url=c.pasted)
             if c.external_files is not None
@@ -199,7 +203,7 @@ async def _media_fetch__scan_question(c):
 
 async def _media_fetch__scan_url(c):
     c.decoded_url = urllib.parse.unquote(c.url)
-    if scan_identifiers(c.decoded_url, content_checks=c.content_checks) is not None:
+    if scan_outside(c.decoded_url, content_checks=c.content_checks) is not None:
         _record_media(c.metrics, "nothing_found", reason="identifier")
         return (
             True,

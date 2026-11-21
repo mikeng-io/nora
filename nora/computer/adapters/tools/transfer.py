@@ -7,7 +7,9 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from functools import partial
 from types import SimpleNamespace
+from urllib.parse import unquote
 
+from nora.agent.egress import scan_outside
 from nora.agent.toolkit.files import (
     _FILE_COPY_NOTES,
     _FILE_STATUS_NOTES,
@@ -84,6 +86,7 @@ def _make_computer_import(deps):
         c = SimpleNamespace(
             code=code,
             link=link,
+            content_checks=deps.content_checks,
             blob_store=deps.blob_store,
             external_files=deps.external_files,
             google_account=deps.google_account,
@@ -277,6 +280,10 @@ async def _computer_import__resolve_link(c):
         and (_recognise_file_link(c.code) is not None or "://" in c.code.lower())
     ):
         c.code, c.link = ("", c.code)
+    if c.link and scan_outside(unquote(c.link), content_checks=c.content_checks):
+        return (True, None, {
+            "status": "refused", "note": "I cannot copy a link carrying private material."
+        })
     c.linked = (
         (
             c.external_files.recognise(url=c.link)

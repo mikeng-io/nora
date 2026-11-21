@@ -32,6 +32,7 @@ TIMING_TESTS = (
     "tests/infra/test_register_stored_rows.py",
     "tests/infra/test_graph_debrief.py",
     "tests/infra/test_debrief_obligation.py",
+    "tests/integration/test_ambient_loop_positive_control.py",
     "tests/integration/subject/test_autonomous_journey_sdk.py",
     "tests/integration/test_managed_circle_cost.py",
     # Enters the stack at feat/cognitive-graph-wake-claims; inert until then.

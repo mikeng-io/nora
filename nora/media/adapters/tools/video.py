@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from types import SimpleNamespace
 
+from nora.agent.egress import scan_outside
 from nora.agent.toolkit.files import (
     _handle_hex,
     _is_external_reference,
@@ -65,6 +66,7 @@ def _make_video_create(deps):
             reference_2=reference_2,
             reference_3=reference_3,
             first_frame=first_frame,
+            content_checks=deps.content_checks,
             conversation_type=deps.conversation_type,
             metrics=deps.metrics,
             room=deps.room,
@@ -87,6 +89,12 @@ def _make_video_create(deps):
 
 async def _video_create__prepare(c):
     c.tool = "video_create"
+    if kind := scan_outside(c.prompt, content_checks=c.content_checks):
+        _record(c.metrics, c.tool, "unavailable", reason=kind)
+        return (True, None, {
+            "status": "unavailable",
+            "note": "Remove private material from the prompt. Nothing started.",
+        })
     if c.video is None:
         _record(c.metrics, c.tool, "unavailable", reason="not_wired")
         return (

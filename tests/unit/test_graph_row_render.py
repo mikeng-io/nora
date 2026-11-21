@@ -43,13 +43,14 @@ CLAIM = replace(
         pytest.param(
             ITEM,
             "item: row-1 | basis=observed | occurred=2h ago | asserted=just now | state=live"
+            " | exposure=internal"
             " | people=author=fixture-person | edges=none | source=messages | a message",
             id="item",
         ),
         pytest.param(
             CLAIM,
             "claim: row-1 | basis=inferred (told, high confidence) | occurred=unknown"
-            " | asserted=just now | state=live | people=subject=fixture-person"
+            " | asserted=just now | state=live | exposure=internal | people=subject=fixture-person"
             " | edges=cites to item-2 | citations=item-2 | part=trait"
             " | support=2, last evidenced=2h ago | a trait",
             id="claim",
@@ -59,7 +60,8 @@ CLAIM = replace(
                     content={"holds_while": "the room stays open"},
                     close_when={"drop_when": "the pass is cancelled", "deadline": None}),
             "intention: row-1 | basis=committed | occurred=2h ago | asserted=just now"
-            ' | state=open | people=none | edges=none | close when={"drop_when": '
+            ' | state=open | exposure=internal | people=none | edges=none'
+            ' | close when={"drop_when": '
             '"the pass is cancelled", "holds_while": "the room stays open"}',
             id="intention",
         ),
@@ -68,19 +70,21 @@ CLAIM = replace(
                     content={"name": "a topic"},
                     edges=(RetrievedEdge("about", "claim-2", "row-1"),)),
             "entity: row-1 | basis=computed | occurred=2h ago | asserted=just now"
-            ' | state=admitted | people=none | edges=about from claim-2 | {"name": "a topic"}',
+            ' | state=admitted | exposure=internal | people=none | edges=about from claim-2'
+            ' | {"name": "a topic"}',
             id="entity",
         ),
         pytest.param(
             replace(ITEM, kind="aggregate", basis="computed", persons=(), content={}),
             "aggregate: row-1 | basis=computed | occurred=2h ago | asserted=just now"
-            " | state=live | people=none | edges=none",
+            " | state=live | exposure=internal | people=none | edges=none",
             id="aggregate",
         ),
         pytest.param(
             replace(ITEM, kind="edge", basis="computed", persons=(),
                     content={"type": "cites", "src_id": "claim-2", "dst_id": "item-2"}),
             "edge: row-1 | basis=computed | occurred=2h ago | asserted=just now | state=live"
+            " | exposure=internal"
             " | people=none | edges=none | type=cites | source=claim-2 | target=item-2",
             id="edge",
         ),

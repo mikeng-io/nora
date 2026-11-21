@@ -5,6 +5,7 @@ from nora.agent.catalog.model import NativeTool
 TOOLS = {
     "transit": NativeTool(
         4,
+        outside=True,
         time_shiftable=False,
         source_tier="confirmed",
         cacheable=True,
@@ -17,6 +18,7 @@ TOOLS = {
     ),
     "route": NativeTool(
         8,
+        outside=True,
         time_shiftable=True,
         source_tier="confirmed",
         cacheable=True,
@@ -40,6 +42,7 @@ TOOLS = {
     ),
     "place_info": NativeTool(
         4,
+        outside=True,
         source_tier="confirmed",
         cacheable=True,
         read_only=True,
@@ -61,6 +64,7 @@ TOOLS = {
     ),
     "reverse_geocode": NativeTool(
         2,
+        outside=True,
         time_shiftable=None,
         source_tier="confirmed",
         read_only=True,
@@ -118,6 +122,7 @@ TOOLS = {
     ),
     "find_parking": NativeTool(
         3,
+        outside=True,
         source_tier="confirmed",
         cacheable=False,
         read_only=True,
