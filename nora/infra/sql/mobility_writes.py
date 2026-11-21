@@ -160,7 +160,7 @@ class MobilityWrites:
         `presence_stays.place_id`, `presence_occupancy` and
         `presence_place_rhythm` key off, so it is never churned — else INSERT
         into the bound build. `kind='unlabeled'` is a stored value, never a
-        deletion (DEC-190 rule 4): the place is still where the person goes."""
+        deletion under the keep-where-they-go rule: the place is still where the person goes."""
         build = self._bound()
         values = {
             "lat": lat,
