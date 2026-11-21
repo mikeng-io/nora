@@ -58,9 +58,10 @@ runner, corpus fields, private evidence and trace hierarchy.
    controls, draws, source/config versions, budget, retries/cache behavior and
    stop condition. Declare intended differences between arms. Preserve every
    attempted case, error and exclusion. A completed run leaves no open-ended
-   credit: a rerun is covered only by the brief's scenario budget or a
-   goal-driven convergence budget (`.agents/lanes.md`), each invocation still
-   records its own `--stop-after-tokens` limit, and rescoring is never covered.
+   credit: a rerun is covered only while the brief's scenario budget remains
+   and, on the goal-driven track, the convergence budget too (`.agents/lanes.md`);
+   each invocation's receipt records its effective cutoff (`--stop-after-tokens`,
+   or the frozen job's `budget.measured_tokens`), and rescoring is never covered.
 6. **Read back and adjudicate.** Apply Coherence, Consistency, Conformance,
    Correctness and Completeness to scenario → criterion → evidence → verdict
    → report. Separate execution, valid measurement, content quality, governance

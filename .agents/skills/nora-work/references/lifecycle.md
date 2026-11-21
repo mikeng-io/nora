@@ -28,7 +28,7 @@ authority routes to `clarify`, not to a confident guess.
 
 The route is the first rule that applies, in this order:
 
-1. intent, authority or acceptance cannot be stated: **clarify**;
+1. intent, authority or acceptance cannot be stated, or a factor is unknown: **clarify**;
 2. more than 6 Done-when items: **split**;
 3. any full trigger (below): **full**;
 4. any factor high: **standard**;
@@ -61,7 +61,7 @@ triggers give is a finding against the work, not a judgement call.
 
 | transition | routes | input | checker | pass | block | escalation |
 |---|---|---|---|---|---|---|
-| triage → propose | all | the request and the route the orchestrator recorded | the first independent reviewer the route has: the brief reviewer on standard and full, the PR reviewer on direct and light | the reviewer confirms the route against the triggers | a lower route than the triggers give: the work returns to triage | Mike |
+| triage → propose | all | the request and the route the orchestrator recorded | the first independent reviewer the route has: the brief reviewer on standard and full, the PR reviewer on direct and light | the reviewer confirms the route against the ordered triage rule | a lower route than the triggers give: the work returns to triage | Mike |
 | propose → plan | standard, full | the brief and its attached plan (`nora-dispatch/references/brief.md`, `plan.md`) | the reviewer by rule, in brief review | the round closes with no BLOCKER and locks Done-when | a BLOCKER, returned to the author | Mike for intent, authority or redesign («When Mike is asked») |
 | plan → execute | standard, full | the plan, validated in that brief review | the reviewer by rule | the plan passed brief review's «Mapped» check | a plan BLOCKER: nothing is dispatched | — |
 | execute → verify | standard, full | the handoff PR with its execution receipt; on the goal-driven track, the checkpoint record whose final `keep` evidence is the receipt | the reviewer by rule | the receipt names evidence for each item addressed | a missing receipt or missing evidence, returned to the builder | the orchestrator |
@@ -112,7 +112,11 @@ artifact, the verdict `keep`, `roll back` or `restart`). Nothing lands until a
 probe is `keep`. Probes run by their own procedure (an eval uses `nora-eval`'s
 worktree and exact arm SHA) on one branch with no handoff PRs. Verify reads the
 checkpoint record in the issue, and the final `keep` checkpoint's evidence is
-the execution receipt; a PR exists only when the outcome ships a change. Smoke
+the execution receipt. An outcome that ships a change ends in one PR and takes
+the normal verify and merge gates; an evidence-only outcome (a spike, benchmark
+or measurement) has no PR or CI gate: the independent reviewer marks the goal
+met from the checkpoint record, and resolve records the result in the issue and
+archives the branch (`make archive`). Smoke
 the real path at zero cost before a paid probe.
 Grading criteria are frozen for the run; changing them is Mike's call.
 

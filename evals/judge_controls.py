@@ -241,7 +241,7 @@ def main() -> int:
     parser.add_argument("--job-sha256", required=True)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--execute", action="store_true",
-                        help="requires separate operator budget approval")
+                        help="needs a spending authority: a scenario budget or operator approval")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     try:
