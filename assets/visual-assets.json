@@ -5,21 +5,21 @@
     {
       "id": "app.public.favicon",
       "path": "app/public/favicon.ico",
-      "form": "mini",
+      "form": "ui",
       "role": "derivative",
       "status": "active",
-      "eyes": "mini08",
+      "eyes": "no-eyes",
       "parents": [
-        "assets/nora-mini-icon.png"
+        "assets/nora-emblem.svg"
       ],
       "recipe": "app-icons",
       "consumers": [
         "app/public/offline.html (standalone app URL /favicon.ico; deployed shared host uses site favicon)",
         "app/public/sw.js (standalone app URL /favicon.ico; deployed shared host uses site favicon)"
       ],
-      "provenance": "Standalone app fallback icon; the deployed shared hostname serves /favicon.ico from site/public/favicon.ico. Existing app icon processor; no publication.",
+      "provenance": "The clasp emblem (assets/nora-emblem.svg, the canonical mark; DESIGN.md \u00a72 and \u00a77), rendered by app/scripts/make-icons.py with rsvg-convert; paper square where a platform forbids transparency. Standalone app fallback; the deployed shared hostname serves /favicon.ico from site/public/favicon.ico.",
       "unchanged_reason": null,
-      "sha256": "9a9d029ec7860fedca31a2911ecc1f939b444408c39df146d81ba224849688f7",
+      "sha256": "ceb9e8eaa6dc4f4a5bf674130c29372fe1cdbe92423229f9c78a0b8fc7436b1f",
       "size": [
         48,
         48
@@ -29,21 +29,21 @@
     {
       "id": "app.public.icons.apple-touch-icon",
       "path": "app/public/icons/apple-touch-icon.png",
-      "form": "mini",
+      "form": "ui",
       "role": "derivative",
       "status": "active",
-      "eyes": "mini08",
+      "eyes": "no-eyes",
       "parents": [
-        "assets/nora-mini-icon.png"
+        "assets/nora-emblem.svg"
       ],
       "recipe": "app-icons",
       "consumers": [
         "app/public/sw.js (URL /icons/apple-touch-icon.png)",
         "app/src/app/[locale]/layout.tsx (URL /icons/apple-touch-icon.png)"
       ],
-      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "provenance": "The clasp emblem (assets/nora-emblem.svg, the canonical mark; DESIGN.md \u00a72 and \u00a77), rendered by app/scripts/make-icons.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
-      "sha256": "3e41cb1ffefc6f4f936eeb46ff9df28ea893bad743831e2425e8d1950396f51b",
+      "sha256": "d47ad3cfca966c41f29b2d736ca4510ab05e3d73edada7135929455ccd66fc04",
       "size": [
         180,
         180
@@ -53,12 +53,12 @@
     {
       "id": "app.public.icons.icon-192",
       "path": "app/public/icons/icon-192.png",
-      "form": "mini",
+      "form": "ui",
       "role": "derivative",
       "status": "active",
-      "eyes": "mini08",
+      "eyes": "no-eyes",
       "parents": [
-        "assets/nora-mini-icon.png"
+        "assets/nora-emblem.svg"
       ],
       "recipe": "app-icons",
       "consumers": [
@@ -67,9 +67,9 @@
         "app/public/sw.js (URL /icons/icon-192.png)",
         "app/src/app/[locale]/layout.tsx (URL /icons/icon-192.png)"
       ],
-      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "provenance": "The clasp emblem (assets/nora-emblem.svg, the canonical mark; DESIGN.md \u00a72 and \u00a77), rendered by app/scripts/make-icons.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
-      "sha256": "05ac4950b9c1e8902ff306451ecefeef0b2f37a8f030ae88b412a25fd9081e50",
+      "sha256": "6bf92f1e5c370ecca2365df344964411303224a428aca4cf14b598991cd1db34",
       "size": [
         192,
         192
@@ -79,12 +79,12 @@
     {
       "id": "app.public.icons.icon-512",
       "path": "app/public/icons/icon-512.png",
-      "form": "mini",
+      "form": "ui",
       "role": "derivative",
       "status": "active",
-      "eyes": "mini08",
+      "eyes": "no-eyes",
       "parents": [
-        "assets/nora-mini-icon.png"
+        "assets/nora-emblem.svg"
       ],
       "recipe": "app-icons",
       "consumers": [
@@ -93,9 +93,9 @@
         "app/public/sw.js (URL /icons/icon-512.png)",
         "app/src/app/[locale]/layout.tsx (URL /icons/icon-512.png)"
       ],
-      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "provenance": "The clasp emblem (assets/nora-emblem.svg, the canonical mark; DESIGN.md \u00a72 and \u00a77), rendered by app/scripts/make-icons.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
-      "sha256": "77b5410b2bf0f3ec09aae7e418bdefb2d7c62c77cf062f9741f2747bcf0595a2",
+      "sha256": "f5d4d41ae87b0b0c411c7450dfad4c2fd08e5c2b32196ee5405fd3e347464721",
       "size": [
         512,
         512
@@ -105,21 +105,21 @@
     {
       "id": "app.public.icons.icon-maskable-512",
       "path": "app/public/icons/icon-maskable-512.png",
-      "form": "mini",
+      "form": "ui",
       "role": "derivative",
       "status": "active",
-      "eyes": "mini08",
+      "eyes": "no-eyes",
       "parents": [
-        "assets/nora-mini-icon.png"
+        "assets/nora-emblem.svg"
       ],
       "recipe": "app-icons",
       "consumers": [
         "app/public/manifest.webmanifest (URL /icons/icon-maskable-512.png)",
         "app/public/sw.js (URL /icons/icon-maskable-512.png)"
       ],
-      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "provenance": "The clasp emblem (assets/nora-emblem.svg, the canonical mark; DESIGN.md \u00a72 and \u00a77), rendered by app/scripts/make-icons.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
-      "sha256": "84477686cba84d316df1bbad0ae82aa6226cc3bccd14cbdb26b327169370c4ee",
+      "sha256": "b932a3f843258a78e0d4b791a0db2034a607f6e5c889778c001f043c97694c8b",
       "size": [
         512,
         512
@@ -1714,13 +1714,13 @@
       "status": "active",
       "eyes": "no-eyes",
       "parents": [
-        "site/src/assets/emblem.svg"
+        "assets/nora-emblem.svg"
       ],
       "recipe": "site-images",
       "consumers": [
         "site/src/layouts/Base.astro (URL /_site/apple-touch-icon.png)"
       ],
-      "provenance": "The clasp emblem (site/src/assets/emblem.svg: her five-petal Bauhinia clasp with a thread tied off; DESIGN.md \u00a72, the project's mark, never her face), rendered by site/scripts/make_images.py with rsvg-convert; paper square where a platform forbids transparency.",
+      "provenance": "The clasp emblem (assets/nora-emblem.svg: her five-petal Bauhinia clasp with a thread tied off; DESIGN.md \u00a72, the project's mark, never her face), rendered by site/scripts/make_images.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
       "sha256": "d47ad3cfca966c41f29b2d736ca4510ab05e3d73edada7135929455ccd66fc04",
       "size": [
@@ -1737,13 +1737,13 @@
       "status": "active",
       "eyes": "no-eyes",
       "parents": [
-        "site/src/assets/emblem.svg"
+        "assets/nora-emblem.svg"
       ],
       "recipe": "site-images",
       "consumers": [
         "site/public/_site/site.webmanifest (URL /_site/icon-512.png)"
       ],
-      "provenance": "The clasp emblem (site/src/assets/emblem.svg: her five-petal Bauhinia clasp with a thread tied off; DESIGN.md \u00a72, the project's mark, never her face), rendered by site/scripts/make_images.py with rsvg-convert; paper square where a platform forbids transparency.",
+      "provenance": "The clasp emblem (assets/nora-emblem.svg: her five-petal Bauhinia clasp with a thread tied off; DESIGN.md \u00a72, the project's mark, never her face), rendered by site/scripts/make_images.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
       "sha256": "f5d4d41ae87b0b0c411c7450dfad4c2fd08e5c2b32196ee5405fd3e347464721",
       "size": [
@@ -1760,13 +1760,13 @@
       "status": "active",
       "eyes": "no-eyes",
       "parents": [
-        "site/src/assets/emblem.svg"
+        "assets/nora-emblem.svg"
       ],
       "recipe": "site-images",
       "consumers": [
         "site/public/_site/site.webmanifest (URL /_site/icon-maskable.png)"
       ],
-      "provenance": "The clasp emblem (site/src/assets/emblem.svg: her five-petal Bauhinia clasp with a thread tied off; DESIGN.md \u00a72, the project's mark, never her face), rendered by site/scripts/make_images.py with rsvg-convert; paper square where a platform forbids transparency.",
+      "provenance": "The clasp emblem (assets/nora-emblem.svg: her five-petal Bauhinia clasp with a thread tied off; DESIGN.md \u00a72, the project's mark, never her face), rendered by site/scripts/make_images.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
       "sha256": "b932a3f843258a78e0d4b791a0db2034a607f6e5c889778c001f043c97694c8b",
       "size": [
@@ -1783,14 +1783,14 @@
       "status": "active",
       "eyes": "no-eyes",
       "parents": [
-        "site/src/assets/emblem.svg"
+        "assets/nora-emblem.svg"
       ],
       "recipe": "site-images",
       "consumers": [
         "site/public/_site/site.webmanifest (URL /_site/icon.png)",
         "site/src/layouts/Base.astro (URL /_site/icon.png)"
       ],
-      "provenance": "The clasp emblem (site/src/assets/emblem.svg: her five-petal Bauhinia clasp with a thread tied off; DESIGN.md \u00a72, the project's mark, never her face), rendered by site/scripts/make_images.py with rsvg-convert; paper square where a platform forbids transparency.",
+      "provenance": "The clasp emblem (assets/nora-emblem.svg: her five-petal Bauhinia clasp with a thread tied off; DESIGN.md \u00a72, the project's mark, never her face), rendered by site/scripts/make_images.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
       "sha256": "6bf92f1e5c370ecca2365df344964411303224a428aca4cf14b598991cd1db34",
       "size": [
@@ -1808,7 +1808,7 @@
       "eyes": "mini08",
       "parents": [
         "site/src/assets/art/group-chat.webp",
-        "site/src/assets/emblem.svg"
+        "assets/nora-emblem.svg"
       ],
       "recipe": "site-images",
       "consumers": [
@@ -1832,7 +1832,7 @@
       "eyes": "mini08",
       "parents": [
         "site/src/assets/art/group-chat.webp",
-        "site/src/assets/emblem.svg"
+        "assets/nora-emblem.svg"
       ],
       "recipe": "site-images",
       "consumers": [
@@ -1855,7 +1855,7 @@
       "status": "active",
       "eyes": "no-eyes",
       "parents": [
-        "site/src/assets/emblem.svg"
+        "assets/nora-emblem.svg"
       ],
       "recipe": "site-images",
       "consumers": [
@@ -1863,7 +1863,7 @@
         "app/public/sw.js (shared-host /favicon.ico precache resolves to site)",
         "site/src/layouts/Base.astro (URL /favicon.ico)"
       ],
-      "provenance": "The clasp emblem (site/src/assets/emblem.svg: her five-petal Bauhinia clasp with a thread tied off; DESIGN.md \u00a72, the project's mark, never her face), rendered by site/scripts/make_images.py with rsvg-convert; paper square where a platform forbids transparency.",
+      "provenance": "The clasp emblem (assets/nora-emblem.svg: her five-petal Bauhinia clasp with a thread tied off; DESIGN.md \u00a72, the project's mark, never her face), rendered by site/scripts/make_images.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
       "sha256": "9d5590ec43a1251bea9837fe9b53889507bb16501f512ca481f4288c26d4576c",
       "size": [
@@ -3556,21 +3556,24 @@
       "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
     },
     {
-      "id": "site.src.assets.emblem",
-      "path": "site/src/assets/emblem.svg",
+      "id": "assets.nora-emblem",
+      "path": "assets/nora-emblem.svg",
       "form": "ui",
-      "role": "shared-master",
+      "role": "canonical",
       "status": "active",
       "eyes": "no-eyes",
       "parents": [],
       "recipe": "source",
       "consumers": [
+        "DESIGN.md (explicit path reference)",
+        "README.md (project mark)",
         "site/src/components/NoraMark.astro (inline, beside the wordmark)",
-        "site/scripts/make_images.py (favicon, app icons, link previews)"
+        "site/scripts/make_images.py (favicon, site icons, link previews)",
+        "app/scripts/make-icons.py (favicon, app icons)"
       ],
-      "provenance": "The project's clasp emblem: her five-petal Bauhinia clasp with one copper thread tied off, drawn as vector for the public site (DESIGN.md \u00a72: the project's mark, never her face). Chosen by the operator from three rendered candidates.",
+      "provenance": "The project's canonical mark, the clasp emblem: her five-petal Bauhinia clasp with one copper thread tied off, drawn as vector (DESIGN.md \u00a72: the project's mark, never her face). Chosen by the operator from three rendered candidates; made canonical by the operator.",
       "unchanged_reason": null,
-      "sha256": "3aec4d11e3d69e4f5a2683d811ba659a43e7ebe3cd560960f8ddf00386e5530b",
+      "sha256": "226340b9d5685634e28134e859689569985f8b8cedbc561ce14483b20e467df5",
       "size": [
         100,
         100
