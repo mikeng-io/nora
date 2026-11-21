@@ -183,9 +183,9 @@ ones go into one PR summary comment, at most six classes, and open no round.
 - A round with no BLOCKER ends review once required evidence is in; waiting
   for evidence is not a round. One re-check covers
   `git diff <reviewed-sha>..HEAD`, unresolved findings and previously
-  unavailable required evidence. One focused re-check follows a repair; a
-  BLOCKER after it, or one target failing three rounds, is an architecture
-  verdict for the operator («Escalation», `nora-work`), never another patch.
+  unavailable required evidence. One focused re-check follows a repair; a new
+  blocker class in it, a finding open after its second repair, or one target
+  failing three rounds is an architecture verdict («Escalation», `nora-work`).
 - A class is one remedy fixing all its instances: first report names the
   structural remedy and every sibling instance in that round, then no new
   input shapes. A repair-induced finding names its origin; same class unless

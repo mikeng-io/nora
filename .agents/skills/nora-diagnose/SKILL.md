@@ -44,8 +44,9 @@ case is a missing requirement»).
 
 ## Architecture verdict
 
-When the lifecycle escalates (the same target failed a third round, or a
-BLOCKER survived the focused re-check), run the steps above at full scale:
+When the lifecycle escalates (a target failed a third round, a finding
+survived its second repair, or a re-check found a new blocker class), run the
+steps above at full scale:
 the evaluated code, the eval or test harness, the runtime, the context the
 model sees and the prompt are all suspects, and step 5 names which design
 assumption is wrong. Bring Mike the cause and the redesign it implies.

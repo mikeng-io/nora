@@ -122,8 +122,8 @@ Grading criteria are frozen for the run; changing them is Mike's call.
 
 ## Escalation
 
-The same target failing a third checkpoint, or a BLOCKER after the one focused
-re-check, is an **architecture verdict**: the design, not the code, is wrong.
+The same target failing a third checkpoint, a new blocker class in the focused
+re-check, or a finding still open after its second repair is an **architecture verdict**: the design, not the code, is wrong.
 Stop tuning. Run `nora-diagnose` at full scale, across the evaluated code, the
 eval or test harness, the runtime and the context the model sees, then bring
 Mike the root cause and the redesign it implies.

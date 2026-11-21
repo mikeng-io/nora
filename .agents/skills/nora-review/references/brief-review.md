@@ -47,8 +47,9 @@ lowers or raises the severity.
 
 After a repair, a re-check covers the repair delta, the open findings and
 any evidence that was unavailable. One focused re-check follows a repair,
-without asking; a BLOCKER after it is an architecture verdict for Mike
-(`nora-work/references/lifecycle.md` «Escalation»), never another round.
+without asking. A finding it leaves open gets one more repair; a new blocker
+class, or a finding open after its second repair, is an architecture verdict
+for Mike (`nora-work/references/lifecycle.md` «Escalation»), never another round.
 
 When fixing a reported defect class, the author searches for every sibling
 instance, as the reviewer does when reporting one. A re-check that finds an
