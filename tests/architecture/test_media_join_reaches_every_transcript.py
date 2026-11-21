@@ -116,6 +116,10 @@ _NOT_A_BUILDER = {
 #: if the module stops reading `messages` (stale entry — delete it) and red if
 #: it starts joining (limitation closed — delete it).
 _UNJOINED_BY_OWN_SQL = {
+    "nora/memory/adapters/debrief_store.py": (
+        "returns room message text and attachment handles. Cached image or video "
+        "descriptions are absent unless the pass recorded them in a tool result."
+    ),
     "nora/infra/sql/character.py": (
         "a person's Character session (design/self-growth/character.md) reads that "
         "person's own lines across their unit's rooms by its own SQL; a photo "

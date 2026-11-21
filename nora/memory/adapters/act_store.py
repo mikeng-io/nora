@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nora.infra.sql.cognitive_graph_schema import NORA_ACT, NORA_ACT_OUTCOME, NORA_PASS_OUTPUT
 from nora.infra.sql.item_registration import SqlItemRegistration, item_graph_id
 from nora.memory.adapters.admission_store import _stamp
+from nora.memory.app.acts import PassItem
 from nora.memory.domain.acts import (
     Act,
     ActAuthority,
@@ -118,12 +119,15 @@ class SqlActStore:
 
     async def append_pass(
         self, authority: ActAuthority, kind: str, content: list[str] | None,
+        *, ordinal: int | None = None,
     ) -> None:
         context = authority.pass_context
         if context is None:
             raise ValueError("pass output requires pass provenance")
         table = NORA_PASS_OUTPUT
-        row_id = item_graph_id(table.name, (context.unit, context.pass_id, kind), context.unit)
+        key = (context.unit, context.pass_id, kind)
+        row_id = item_graph_id(table.name, key if ordinal is None else (*key, ordinal),
+                               context.unit)
         async with self._engine.begin() as conn:
             planes = await self._registration.planes(
                 conn, table, unit=context.unit, occurred_at=datetime.now(UTC),
@@ -140,6 +144,35 @@ class SqlActStore:
         async with self._engine.connect() as conn:
             rows = await conn.execute(
                 sa.select(table.c.output_kind, table.c.content)
-                .where(table.c.unit == unit, table.c["pass"] == pass_id),
+                .where(table.c.unit == unit, table.c["pass"] == pass_id,
+                       table.c.output_kind.in_(("expression", "silence"))),
             )
             return {row.output_kind: row.content for row in rows}
+
+    async def read_pass_items(self, unit: str, pass_id: str) -> tuple[PassItem, ...]:
+        output = NORA_PASS_OUTPUT.c
+        act, outcome = ACT.c, OUTCOME.c
+        outputs = sa.select(
+            output.graph_id, output.output_kind.label("kind"), output.asserted_at,
+            sa.literal("nora").label("who"), output.content,
+        ).where(output.unit == unit, output["pass"] == pass_id, output.state == "live")
+        deliveries = (
+            act.unit == unit, act["pass"] == pass_id, act.act_kind == "delivery",
+            act.state == "live",
+        )
+        acts = sa.select(
+            act.graph_id, sa.literal("send"), act.asserted_at, sa.literal("nora"),
+            sa.func.jsonb_build_object("act", act.id, "executor", act.executor,
+                                       "destination", act.destination),
+        ).where(*deliveries)
+        outcomes = sa.select(
+            outcome.graph_id, sa.literal("send_outcome"), outcome.asserted_at, sa.literal("nora"),
+            sa.func.jsonb_build_object("act", act.id, "outcome", outcome.verdict,
+                                       "result", outcome.result),
+        ).select_from(OUTCOME.join(ACT, (outcome.act_id == act.id) & (outcome.unit == act.unit))
+                      ).where(*deliveries, outcome.state == "live")
+        items = outputs.union_all(acts, outcomes).subquery()
+        async with self._engine.connect() as conn:
+            rows = await conn.execute(sa.select(items).where(items.c.graph_id.is_not(None))
+                                      .order_by(items.c.asserted_at, items.c.graph_id))
+            return tuple(PassItem(*row) for row in rows)

@@ -2527,13 +2527,6 @@
  "tests/integration/test_ambient.py": {
   "comment_blocks": 1
  },
- "tests/integration/test_ambient_loop_positive_control.py": {
-  "comment_blocks": 7,
-  "functions": {
-   "_drive": 162
-  },
-  "internal_docstrings": 1
- },
  "tests/integration/test_bridge_deferred.py": {
   "file_lines": 1246,
   "internal_docstrings": 1

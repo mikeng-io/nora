@@ -325,6 +325,8 @@ def _build_pipeline(
     # in the suite having to pass one in just to keep the collaborator non-None.
     tag_trace_store = tag_trace_store if tag_trace_store is not None else _FakeTagTraceStore()
     audit = audit if audit is not None else FakeRecordStore()
+    if debrief_wiring is not None:
+        audit.delivery_acts = _DebriefPassActs()
     memory = memory if memory is not None else _FakeMemory()
     metrics = metrics if metrics is not None else Metrics()
     background = background if background is not None else BackgroundTasks()
@@ -2335,22 +2337,27 @@ async def test_an_unwired_platform_refuses_rather_than_picking_an_adapter():
 # turn a turn that delivered into a turn that reports a failure.
 # ---------------------------------------------------------------------------
 
+class _DebriefPassActs:
+    def pass_scope(self, ctx, occasion, model, doctrine):
+        from nora.memory import ActAuthority, PassContext, act_pass
+
+        room = ctx.message.conversation_id
+        context = PassContext("fixture-unit", room, False, occasion, "test", ctx.tag_id,
+                              "", model, "", doctrine, "", "", "", "")
+        return act_pass(ActAuthority("fixture-unit", room=room, pass_context=context))
+
+    async def run(self, executor, target, event, ordinal, invoke, **kwargs):
+        return await invoke()
+
+
 class _RecordingDebrief:
-    """Stands in for `debrief.run`, records what it was given, and can be told
-    to fail the way the real one might.
-
-    `fail` is a `BaseException` on purpose and defaults to `CancelledError` in
-    the test that uses it: `except Exception` does not catch that, which is the
-    whole point of R-69's second clause.
-    """
-
     def __init__(self, *, fail: BaseException | None = None, sleep: float = 0.0) -> None:
         self.calls: list[dict] = []
         self._fail = fail
         self._sleep = sleep
 
-    async def __call__(self, **kwargs) -> None:
-        self.calls.append(kwargs)
+    async def __call__(self, wiring, authority, message, transcript) -> None:
+        self.calls.append({"authority": authority, "message": message, "transcript": transcript})
         if self._sleep:
             await asyncio.sleep(self._sleep)
         if self._fail is not None:
@@ -2358,22 +2365,18 @@ class _RecordingDebrief:
 
 
 def _wiring() -> object:
-    """A `debrief.Wiring` whose collaborators are never reached — every test
-    below patches `debrief.run` itself. It exists so `_debrief`'s «is this
-    configured at all» guard passes; the stage's own collaborators have their
-    own suite."""
-    from nora.engagement.stages.debrief import Wiring
-
-    return Wiring(store=object(), client=object(),
-                  objective=object(), record_store=object(),
-                  max_chars=1200, fold_batch=200, timeout_seconds=5.0,
-                  store_timeout_seconds=5.0)
+    return object()
 
 
-def _patch_debrief(monkeypatch, spy) -> None:
-    from nora.engagement.stages import debrief as debrief_module
+def _patch_debrief(monkeypatch, spy, *, retry=None) -> None:
+    from nora.engagement.stages import graph_debrief
 
-    monkeypatch.setattr(debrief_module, "run", spy)
+    async def no_pending(wiring, unit, platform, room):
+        assert platform == "signal"
+        assert room
+
+    monkeypatch.setattr(graph_debrief, "run", spy)
+    monkeypatch.setattr(graph_debrief, "retry", retry or no_pending)
 
 
 class _FakePerfCounter:
@@ -2396,7 +2399,7 @@ class _FakePerfCounter:
 
 
 class _ClockAdvancingDebrief:
-    """Stands in for `debrief.run` the way `_RecordingDebrief` does, but
+    """Stands in for `graph_debrief.run` the way `_RecordingDebrief` does, but
     instead of `asyncio.sleep`ing a fixed duration it jumps `timer` forward
     by `seconds` — its "cost" is exact and it spends no real wall-clock time
     doing it, so the test below runs in milliseconds regardless of how large
@@ -2407,8 +2410,8 @@ class _ClockAdvancingDebrief:
         self._timer = timer
         self._seconds = seconds
 
-    async def __call__(self, **kwargs) -> None:
-        self.calls.append(kwargs)
+    async def __call__(self, *args) -> None:
+        self.calls.append(args)
         self._timer.advance(self._seconds)
 
 
@@ -2451,8 +2454,8 @@ async def test_the_debrief_runs_on_a_delivered_turn_and_on_a_silence(
     await _drain(background)
 
     assert len(spy.calls) == 1
-    assert spy.calls[0]["trace"].outcome == outcome
-    assert spy.calls[0]["platform"] == "signal"
+    assert pipeline._tag_trace_store.saved[0].outcome == outcome
+    assert spy.calls[0]["message"].platform == "signal"
 
 
 async def test_the_debrief_runs_after_a_timeout_too(monkeypatch):
@@ -2469,10 +2472,10 @@ async def test_the_debrief_runs_after_a_timeout_too(monkeypatch):
     await _drain(background)
 
     assert len(spy.calls) == 1
-    assert spy.calls[0]["trace"].outcome == "timeout"
+    assert pipeline._tag_trace_store.saved[0].outcome == "timeout"
 
 
-async def test_a_turn_with_no_attributable_trace_is_not_debriefed(monkeypatch):
+async def test_a_context_failure_never_started_a_pass_to_debrief(monkeypatch):
     """The mirror of `test_a_fault_before_invoke_run_ever_returns_saves_nothing`.
 
     A crashed turn's `trace` is cleared deliberately, because its placeholder
@@ -2502,7 +2505,7 @@ async def test_the_debrief_holds_the_slot_and_then_releases_it(monkeypatch):
     held_during: list[bool] = []
     pipeline_ref: list = []
 
-    async def _observe(**kwargs) -> None:
+    async def _observe(*args) -> None:
         held_during.append(_held(pipeline_ref[0]))
 
     _patch_debrief(monkeypatch, _observe)
@@ -3094,32 +3097,25 @@ async def test_a_tag_turn_that_faults_is_written_too():
     ]
 
 
-async def test_the_debrief_is_handed_the_account_the_turn_read(monkeypatch):
-    """DEC-207: `ctx.culture` from the turn's own `assemble` reaches the
-    debrief, so the fold reads the SAME account the reply did."""
-    import dataclasses
-
-    from nora.domain.culture import CultureRevision
-
-    account = CultureRevision(
-        id="r1", culture_key="g1", body="they decide by attrition",
-        written_at=1, established_by="dream:culture:test")
+async def test_the_graph_debrief_gets_the_pass_transcript_window(monkeypatch):
     spy = _RecordingDebrief()
     _patch_debrief(monkeypatch, spy)
     pipeline, _metrics, _audit, _memory, background = _build_pipeline(
         runner=ScriptedRunner(_reply_turns()), debrief_wiring=_wiring(),
     )
     real = pipeline._context.assemble
+    window = []
 
-    async def _with_culture(*, request):
-        return dataclasses.replace(await real(request=request), culture=account)
+    async def tracking(*, request):
+        ctx = await real(request=request)
+        window.append(ctx.transcript)
+        return ctx
 
-    monkeypatch.setattr(pipeline._context, "assemble", _with_culture)
+    monkeypatch.setattr(pipeline._context, "assemble", tracking)
     await pipeline.run(_request())
     await _drain(background)
 
-    assert len(spy.calls) == 1
-    assert spy.calls[0]["culture"] is account
+    assert [call["transcript"] for call in spy.calls] == window
 
 
 # ---------------------------------------------------------------------------

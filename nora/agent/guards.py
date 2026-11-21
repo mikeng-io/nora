@@ -23,6 +23,7 @@ from strands.hooks import (
 
 from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.toolkit.clock import utc_now
+from nora.memory import begin_pass_tool, record_pass_tool
 
 from ..doctrine.loader import Doctrine
 from ..domain.actions import ActionOwner
@@ -795,15 +796,7 @@ def _unwrap_tool_status(result: Any) -> str | None:
 
 
 class ToolCallLog(HookProvider):
-    """Write path for the tool-recall log (R-48). Constructed fresh per tag, like
-    `ReplyGuard`.
-
-    A different responsibility from `ReplyGuard` (veto/budget logic): this is
-    persistence, so it is its own `HookProvider`. `store=None` is the inert
-    default (offline/eval compositions): every write is a no-op, never a raised
-    error and never a fallback that pretends to remember (R-5's shape, applied
-    to a write path).
-    """
+    """Cache successful recallable tools and retain every in-pass call."""
 
     def __init__(
         self, *, conversation_id: str, conversation_type: str, tag_id: str,
@@ -818,6 +811,20 @@ class ToolCallLog(HookProvider):
         self._metrics = metrics
         self._clock = clock
 
+    def _before_pass_tool(self, event: BeforeToolCallEvent) -> None:
+        begin_pass_tool(dict(event.tool_use))
+
+    async def _record_pass_tool(self, event: AfterToolCallEvent) -> None:
+        try:
+            result = event.result
+            status = (
+                "cancelled" if getattr(event, "cancel_message", None) is not None else
+                _unwrap_tool_status(result) or result["status"]
+            )
+            await record_pass_tool(dict(event.tool_use), status, result.get("content", ()))
+        except Exception:
+            log.exception("Pass tool evidence write failed")
+
     async def _after_tool_async(self, event: Any) -> None:
         try:
             if getattr(event, "cancel_message", None) is not None:
@@ -830,10 +837,7 @@ class ToolCallLog(HookProvider):
             if self._store is None:
                 return
             tool_input = (getattr(event, "tool_use", None) or {}).get("input") or {}
-            # `content[0]["text"]` is `json.dumps(the tool's own dict)` (see
-            # `_unwrap_tool_status`), so this second `json.loads` is the tool's
-            # real return value. Guarded like `_unwrap_tool_status`; a second parse
-            # of the same string should not fail, but is not assumed to succeed.
+            # Cache the semantic payload rather than the SDK envelope.
             try:
                 tool_result = json.loads(event.result["content"][0]["text"])
             except (KeyError, IndexError, TypeError, json.JSONDecodeError):
@@ -861,6 +865,8 @@ class ToolCallLog(HookProvider):
             )
 
     def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
+        registry.add_callback(BeforeToolCallEvent, self._before_pass_tool)
+        registry.add_callback(AfterToolCallEvent, self._record_pass_tool)
         registry.add_callback(AfterToolCallEvent, self._after_tool_async)
 
 

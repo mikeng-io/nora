@@ -22,7 +22,7 @@ from nora.config import (
     SpeechConfig,
     load,
 )
-from nora.domain.standing import STANDING_STORE_CALLS_PER_FOLD
+from nora.domain.standing import GRAPH_DEBRIEF_STORE_CALLS
 from tests.builders import copy_example_config
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1338,9 +1338,9 @@ def _real_slot_hold(toml_path) -> float:
     a derived value can.
     """
     cfg = load(toml_path)
-    return (
+    return 2 * (
         cfg.standing.timeout_seconds
-        + STANDING_STORE_CALLS_PER_FOLD * cfg.standing.store_timeout_seconds
+        + GRAPH_DEBRIEF_STORE_CALLS * cfg.standing.store_timeout_seconds
     )
 
 
@@ -1430,24 +1430,16 @@ def test_the_standing_slot_hold_refuses_a_budget_the_timeouts_do_not_fit(toml_pa
         load(toml_path)
 
 
+def test_the_standing_slot_hold_requires_room_for_a_second_debrief(toml_path):
+    one_debrief = _real_slot_hold(toml_path) / 2
+    toml_path.write_text(_set_key(toml_path.read_text(), "max_slot_hold_seconds",
+                                  f"{one_debrief:g}"))
+    with pytest.raises(ConfigError, match="two debriefs"):
+        load(toml_path)
+
+
 def test_the_slot_hold_does_not_count_the_llm_timeout(toml_path):
-    """**`[llm] timeout_seconds` bounds NOTHING in the debrief**, and counting
-    it would make an operator-facing budget claim a hold longer than the real one.
-
-    The fold's model call is built with `[standing] timeout_seconds` in
-    `_DebriefModelClient` AND wrapped in an `asyncio.wait_for` on the same
-    value; the `[llm]` figure is never consulted on this path. So an enormous
-    reply timeout must not move this gate at all.
-
-    Falsification: put `self.llm.timeout_seconds` back in the sum and this
-    refuses to start.
-
-    The budget is set to EXACTLY the real hold, deliberately, so a term added
-    to the sum or dropped from it reddens this test as well as the one above.
-    It is DERIVED rather than typed: a literal goes stale when the sum changes
-    and then passes silently, and a gate that cannot notice the thing it exists
-    to notice is worse than no gate, because it reads as coverage.
-    """
+    """A large reply timeout leaves the two post-reply debrief bounds unchanged."""
     text = _set_key(
         toml_path.read_text(), "max_slot_hold_seconds",
         f"{_real_slot_hold(toml_path):g}",
@@ -1468,9 +1460,9 @@ def test_the_slot_hold_does_not_count_the_llm_timeout(toml_path):
     # The POSITIVE CONTROL for the whole test: it must have loaded with the
     # budget set to exactly the real hold, not to some larger number that would
     # have let an uncounted term hide underneath it.
-    assert cfg.standing.max_slot_hold_seconds == (
+    assert cfg.standing.max_slot_hold_seconds == 2 * (
         cfg.standing.timeout_seconds
-        + STANDING_STORE_CALLS_PER_FOLD * cfg.standing.store_timeout_seconds
+        + GRAPH_DEBRIEF_STORE_CALLS * cfg.standing.store_timeout_seconds
     )
 
 

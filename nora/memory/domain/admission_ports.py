@@ -19,6 +19,19 @@ class Stored:
     base: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class Unavailable:
+    id: str
+    commit_uncertain: bool
+
+
+@dataclass(frozen=True, slots=True)
+class AdmissionResult:
+    outcomes: tuple[Stored | Refusal | Unavailable, ...]
+    revisions: tuple[Stored, ...]
+    retirements: tuple[Stored, ...]
+
+
 class AdmissionStore(Protocol):
     async def read(self, unit: str, ids: frozenset[str]) -> Mapping[str, RowFacts]: ...
 

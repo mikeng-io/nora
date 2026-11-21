@@ -60,6 +60,7 @@ PLAN = {
 
 def world(*, overrides=None):
     policy = (default_policy(("signal", "g1"), unit="generated-unit")
+              .replace('persons = "*"', 'persons = ["miles_novak"]')
               + "home_room = true\nproactive = true\n")
     return JourneyServices(
         policy=policy, room=("signal", "g1"), identity=_DEFAULT_IDENTITY,
@@ -379,9 +380,9 @@ def _assert_v2_report(draw: Any, report: Any, experiment: Any,
     # The scenario occasions are the eleven phase-advancing calls; every
     # other served occasion is counted background — a Dreamer pass raised
     # on its own tick, never scenario work it could stand in for.
-    scenario = {"cognition", "turn", "fold_unit", "fold_room"}
+    scenario = {"cognition", "turn", "fold_unit", "debrief"}
     assert {k: v for k, v in protocol.occasions.items() if k in scenario} == {
-        "cognition": 6, "turn": 2, "fold_unit": 2, "fold_room": 1}
+        "cognition": 6, "turn": 2, "fold_unit": 2, "debrief": 1}
     assert protocol.background == sum(
         v for k, v in protocol.occasions.items() if k not in scenario)
     assert len(protocol.requests) == 11 + protocol.background

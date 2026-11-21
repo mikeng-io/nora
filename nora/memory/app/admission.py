@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Collection, Iterable, Mapping
-from dataclasses import dataclass, is_dataclass, replace
 from dataclasses import fields as data_fields
+from dataclasses import is_dataclass, replace
 from urllib.parse import unquote
 
 from nora.agent.egress import LeakGuard, scan_identifiers, scan_reply
@@ -18,7 +18,17 @@ from nora.memory.domain.admission import (
     row_references,
     topic_targets,
 )
-from nora.memory.domain.admission_ports import AdmissionStore, AdmissionUnavailableError, Stored
+from nora.memory.domain.admission_ports import (
+    AdmissionResult as AdmissionResult,
+)
+from nora.memory.domain.admission_ports import (
+    AdmissionStore,
+    AdmissionUnavailableError,
+    Stored,
+)
+from nora.memory.domain.admission_ports import (
+    Unavailable as Unavailable,
+)
 from nora.memory.domain.admission_proposals import (
     CloseIntention,
     CreateIntention,
@@ -32,19 +42,6 @@ from nora.memory.domain.admission_proposals import (
     SourceReference,
 )
 from nora.memory.domain.graph import StaleBaseError
-
-
-@dataclass(frozen=True, slots=True)
-class Unavailable:
-    id: str
-    commit_uncertain: bool
-
-
-@dataclass(frozen=True, slots=True)
-class AdmissionResult:
-    outcomes: tuple[Stored | Refusal | Unavailable, ...]
-    revisions: tuple[Stored, ...]
-    retirements: tuple[Stored, ...]
 
 
 class AdmissionService:

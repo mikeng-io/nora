@@ -39,6 +39,7 @@ from nora.memory.adapters.admission_rows import SqlAdmissionRows
 from nora.memory.adapters.admission_store import SqlAdmissionStore
 from nora.memory.adapters.claim_support import SqlClaimSupport
 from nora.memory.adapters.condition_matcher import SqlConditionMatcher
+from nora.memory.adapters.debrief_store import SqlDebriefStore
 from nora.memory.adapters.graph_clock import SqlDueSchedules
 from nora.memory.adapters.graph_store import SqlCognitiveGraph
 from nora.memory.adapters.memory_intake import SqlMemoryIntake
@@ -421,6 +422,12 @@ def graph_read_tools(
 ) -> GraphReadTools:
     return GraphReadTools(retrieval(engine, access, lineage, embedder, embedding_model),
                           engine, access, lineage)
+
+
+def debrief_store(engine: AsyncEngine) -> SqlDebriefStore:
+    return SqlDebriefStore(engine, SqlActStore(
+        engine, engine.get_execution_options()["item_registration"],
+    ))
 
 
 def pass_assembler(

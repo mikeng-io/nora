@@ -47,7 +47,7 @@ from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import CompositePolicy, RelevanceGatePolicy, TriggerTextPolicy
 from nora.ingest.relevance_gate import RelevanceGate
 from nora.obs.metrics import Metrics
-from nora.policy import permissive_policy
+from nora.policy import Policy, permissive_policy
 from nora.tag import Debounce
 
 
@@ -76,6 +76,7 @@ def build_offline_pipeline(
     quote_window: QuoteWindow | None = None,
     participation: ParticipationTrigger | None = None,
     extra_engage_policies: tuple[EngagePolicy, ...] = (),
+    room_policy: Policy | None = None,
     participation_runner: Any = None,
     proactive_runner: Any = None,
     participation_clock: Callable[[], float] | None = None,
@@ -93,6 +94,10 @@ def build_offline_pipeline(
     persons = access.persons_view()
     metrics = metrics or Metrics()
     background = BackgroundTasks()
+
+    def room_allowlist() -> Policy:
+        return permissive_policy() if room_policy is None else room_policy
+
     debounce = Debounce(cfg.engagement.trigger.min_interval_seconds)
     # `extra_engage_policies` is the participation occasion's test seam: an integration
     # harness exercising the occasion wraps the trigger-text policy in a `CompositePolicy`
@@ -100,28 +105,24 @@ def build_offline_pipeline(
     # reaches the dispatcher with `EngageDecision.relevance_gate` set exactly as
     # production's wiring does it.
     policy: Any = TriggerTextPolicy(cfg.engagement.trigger.text)
-    # `participation_opt_in` is the eval half of the room gate: a real
-    # `RelevanceGatePolicy` over THIS harness's `permissive_policy()` (whose
-    # rooms are all opted in), so an untagged message is marked
-    # `EngageDecision.relevance_gate` exactly as production's opted-in rooms
-    # do.
+    # The eval can opt into the same relevance-gate decision as production.
     if participation_opt_in:
         extra_engage_policies = (
-            *extra_engage_policies, RelevanceGatePolicy(permissive_policy()),
+            *extra_engage_policies, RelevanceGatePolicy(room_allowlist()),
         )
     if extra_engage_policies:
         policy = CompositePolicy((policy, *extra_engage_policies))
     # `<presence>` — the production reader over this harness's own policy and adapters, so
     # an eval prompt carries the block a production turn carries: the network, the
-    # harness's (empty) room table, the fake adapters' health, and the handles
+    # harness's room table, the fake adapters' health, and the handles
     # `config.evaluation.toml` declares.
     presence_reader = PresenceReader(
-        policy=permissive_policy(), adapters=adapters,
+        policy=room_allowlist(), adapters=adapters,
         handles=cfg.agent.handles,
     )
     from nora.agent.shared_state import shared_reader
 
-    harness_policy = permissive_policy()
+    harness_policy = room_allowlist()
     # The one `standing` view (design/notebook-memory-types/20-standing.md):
     # a reader over the same store doubles a caller passes in — `None` only
     # when none were given, exactly like `notes` here.
@@ -191,7 +192,7 @@ def build_offline_pipeline(
 
     ingest = IngestPipeline(
         audit=audit, memory=memory, access=access,
-        policy=policy, allowlist=permissive_policy(), metrics=metrics, spawn=_spawn,
+        policy=policy, allowlist=room_allowlist(), metrics=metrics, spawn=_spawn,
     )
 
     tier = cfg.llm
@@ -221,13 +222,8 @@ def build_offline_pipeline(
         audit=audit, memory=memory, persons=persons,
         doctrine_store=doctrine_store, context_assembler=assembler, runner=runner,
         tool_registry=tool_registry,
-        # `permissive_policy()`, matching `ingest`'s `allowlist` above: an
-        # offline harness has no real `policy.toml` to resolve a per-conversation
-        # MCP allowlist from, and this module builds no MCP tools either
-        # (`ToolRegistry()` above takes no `mcp_tools`), so the allowlist this
-        # resolves to is never disclosed to anything real. A caller that wants
-        # to exercise MCP scoping supplies its own `EngagementPipeline`.
-        policy=permissive_policy(), access=access,
+        # Use the same room topology as ingest when the harness supplies one.
+        policy=room_allowlist(), access=access,
         debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         ai_peer=cfg.honcho.ai_peer,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
@@ -307,7 +303,7 @@ def build_offline_pipeline(
             # Lineage: the same value `build_assembler` above builds for the tag prompt,
             # from the same policy and identity, so an eval's fire prompt is filtered as
             # production's is.
-            lineage=lineage_policy(cfg, policy=permissive_policy(), persons=persons),
+            lineage=lineage_policy(cfg, policy=room_allowlist(), persons=persons),
             event_registry={
                 "reminder": reminder_occasion,
                 # The proactive act turn, registered as production registers it.
@@ -354,7 +350,7 @@ def build_offline_pipeline(
             # has no Profile store, so the fire path reads the pre-switch tiers.
             profile=None,
             lessons=None,
-            policy=permissive_policy(),
+            policy=room_allowlist(),
             participation_runner=participation_runner,
             # The proactive act turn's runner: its OWN, as the composition root builds
             # it (a separate runner at `[proactive] reasoning_effort`). The act suite

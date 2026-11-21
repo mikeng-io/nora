@@ -4,6 +4,7 @@ from collections.abc import Coroutine
 from dataclasses import dataclass
 from typing import Any
 
+from nora.agent.egress import LeakGuard
 from nora.agent.shared_state import shared_reader
 from nora.app.assembler import build_assembler
 from nora.app.composition_helpers import _reasoning_effort
@@ -11,6 +12,7 @@ from nora.app.dispatch import Dispatcher
 from nora.app.raw_clients import _DebriefModelClient
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.stages.debrief import Wiring as DebriefWiring
+from nora.engagement.stages.graph_debrief import Wiring as GraphDebriefWiring
 from nora.infra.sql.record_query import SqlRecordQuery
 from nora.ingest.pipeline import IngestPipeline
 
@@ -214,6 +216,28 @@ async def standing(
     return StandingWiring(debrief_wiring=debrief_wiring, standing_fold=standing_fold)
 
 
+def build_graph_debrief(
+    memory_wire: Any, standing: DebriefWiring | None, cfg: Any, engine: Any,
+    access: Any, lineage: Any,
+    persons: Any, policy: Any, doctrine_store: Any, content_checks: bool, clock: Any, metrics: Any,
+) -> GraphDebriefWiring | None:
+    if standing is None:
+        return None
+    return GraphDebriefWiring(
+        store=memory_wire.debrief_store(engine),
+        admission=memory_wire.admission(
+            engine, persons, policy,
+            LeakGuard(doctrine_store.get(applies_to="tag"), cfg.doctrine.canary),
+            content_checks=content_checks, access=access,
+        ),
+        assembler=memory_wire.pass_assembler(engine, access, lineage, None, None),
+        client=standing.client, objective=standing.objective, clock=clock,
+        revisions=engine.get_execution_options()["item_registration"].revisions,
+        metrics=metrics, timeout_seconds=standing.timeout_seconds,
+        store_timeout_seconds=standing.store_timeout_seconds,
+    )
+
+
 @dataclass(frozen=True)
 class EngagementWiring:
     engagement: Any
@@ -221,13 +245,13 @@ class EngagementWiring:
 
 def build_engagement(
     access: Any, allowlist: Any, assembler: Any, audit: Any, background: Any,
-    cfg: Any, clock: Any, debounce: Any, debrief_wiring: Any,
+    cfg: Any, clock: Any, debounce: Any, debrief_wiring: GraphDebriefWiring | None,
     decision_log: Any, doctrine_store: Any, limits: Any, llm_state: Any,
     memory: Any, metrics: Any, persons: Any, preview_source: Any,
     reasoning_strip_store: Any, registry: Any, room_commands: Any,
     rosters: Any, runner: Any,
     slots: Any, tag_trace_store: Any, tier: Any, tool_call_log_store: Any,
-    tool_registry: Any,
+    tool_registry: Any, standing_replay_wiring: DebriefWiring | None = None,
 ) -> EngagementWiring:
 
     engagement = EngagementPipeline(
@@ -266,7 +290,7 @@ def build_engagement(
         tool_call_log_store=tool_call_log_store,
         reasoning_strip_store=reasoning_strip_store,
         tag_trace_store=tag_trace_store,
-        debrief_wiring=debrief_wiring,
+        debrief_wiring=debrief_wiring, standing_replay_wiring=standing_replay_wiring,
         # The shared decision log. The tag path only WRITES: somebody addressed her, so it is
         # never in doubt about whether to speak. What it writes is what the other two deciders
         # could not see.

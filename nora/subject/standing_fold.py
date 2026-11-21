@@ -3,17 +3,8 @@
 The seam that measures a fold: a real tag turn's `tag_trace` row, the position as it stood BEFORE
 that turn, and the deployed pipeline's own `_debrief` run against them.
 
-**Why `EngagementPipeline._debrief` and not `debrief.run`.** The two arms the
-corpus compares are master's fold and the branch's, and `run` has a different
-signature on each (master's takes a verdict store and a rebuild ceiling). The
-pipeline's `_debrief(trace=, platform=)` is the same on both, and
-it is the exact call production makes: it reads the composed `Wiring` — the
-deployment's model client, objective source, `max_chars`, `fold_batch`,
-timeouts — and passes it the way the live turn does. Reaching a private method
-of the composed graph is the price of measuring the deployed path rather than
-assembling a second one, which is the one thing this package exists to refuse.
-A missing wiring (`[standing] enabled = false`) is a `LookupError`, never a
-fold that silently did nothing.
+The composed historical fold supplies its model client, objective, bounds, and
+store. Missing Standing wiring is a LookupError.
 
 **Two things the sandbox copy gets wrong, and this corrects them, for this
 seam only.**
@@ -72,6 +63,7 @@ measures noise»).
 from __future__ import annotations
 
 import dataclasses
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -82,6 +74,7 @@ from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.standing import Standing, WorkingSetItem
 from nora.domain.tag_trace import TagTrace
 from nora.engagement.stages.debrief import Completion
+from nora.engagement.stages.debrief import run as run_standing_fold
 from nora.infra.sql import create_readonly_sql_engine, create_sql_engine
 from nora.infra.sql.schema import MESSAGES, STANDING_REVISION, TAG_TRACE, TURN_VERDICT
 from nora.infra.sql.snapshot import snapshot
@@ -373,7 +366,7 @@ async def fold(
     if (turn.platform, turn.trace.conversation_id) != (platform, conversation_id):
         raise ValueError("the turn is not in the subject's room")
     pipeline = subject.deps.engagement
-    wiring = getattr(pipeline, "_debrief_wiring", None)
+    wiring = pipeline._standing_replay_wiring
     if wiring is None:
         raise LookupError(
             "the composed pipeline holds no debrief wiring — [standing] enabled "
@@ -431,11 +424,16 @@ async def fold(
 
     recorder = _Recording(wiring.client, call_model=call_model)
     before = _outcome_counts(subject)
-    pipeline._debrief_wiring = dataclasses.replace(wiring, client=recorder)
-    try:
-        await pipeline._debrief(trace=trace, platform=platform)
-    finally:
-        pipeline._debrief_wiring = wiring
+    await run_standing_fold(
+        trace=trace, platform=platform, store=wiring.store, client=recorder,
+        objective=wiring.objective, metrics=subject.deps.metrics,
+        display_name=subject.cfg.doctrine.display_name, record_store=wiring.record_store,
+        media_join=wiring.media_join, max_chars=wiring.max_chars, fold_batch=wiring.fold_batch,
+        timeout_seconds=wiring.timeout_seconds, store_timeout_seconds=wiring.store_timeout_seconds,
+        working_set_max_items=wiring.working_set_max_items,
+        working_set_max_chars=wiring.working_set_max_chars, content_checks=wiring.content_checks,
+        now_ms=int(time.time() * 1000),
+    )
     after = _outcome_counts(subject)
     moved = sorted(k for k, v in after.items() if v > before.get(k, 0.0))
     if len(moved) != 1:
@@ -476,7 +474,7 @@ async def fold_recorded_unit(
     from nora.language.shared_render import render_shared_state
 
     runner = subject.deps.cognition_runner
-    wiring = subject.deps.engagement._debrief_wiring
+    wiring = subject.deps.engagement._standing_replay_wiring
     if runner is None or runner._standing_fold is None or wiring is None:
         raise LookupError("unit Standing completion hook unavailable")
     engine = create_readonly_sql_engine(source_url)

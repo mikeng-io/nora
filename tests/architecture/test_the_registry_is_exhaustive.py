@@ -126,6 +126,23 @@ def _shared_builder_names(tree: ast.Module) -> set[str]:
     return names
 
 
+def _graph_presentation_names(tree: ast.Module) -> set[str]:
+    """Follow literal PassAssembler calls to the graph pass's own presentation declaration."""
+    from typing import get_args
+
+    from nora.memory.domain.pass_declarations import PassName, declaration
+
+    return {
+        name for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "assemble" and isinstance(node.func.value, ast.Attribute)
+        and node.func.value.attr == "assembler"
+        and len(node.args) == 5 and isinstance(node.args[0], ast.Constant)
+        and node.args[0].value in get_args(PassName)
+        for name in declaration(node.args[0].value).presentations
+    }
+
+
 def _declared_names(tree: ast.Module, rel: str) -> set[str]:
     """The module's own `_BLOCKS` tuple, read as data. Raises if a named
     occasion has no such table — this test exists BECAUSE a table exists;
@@ -163,7 +180,7 @@ def _declared_names(tree: ast.Module, rel: str) -> set[str]:
 @pytest.mark.parametrize("rel", _OCCASIONS)
 def test_every_block_the_occasion_builds_has_a_row(rel: str):
     tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
-    built = _local_block_names(tree) | _shared_builder_names(tree)
+    built = _local_block_names(tree) | _shared_builder_names(tree) | _graph_presentation_names(tree)
     declared = _declared_names(tree, rel)
     missing = built - declared
     assert not missing, (
@@ -175,7 +192,7 @@ def test_every_block_the_occasion_builds_has_a_row(rel: str):
 @pytest.mark.parametrize("rel", _OCCASIONS)
 def test_no_declared_row_is_dead(rel: str):
     tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
-    built = _local_block_names(tree) | _shared_builder_names(tree)
+    built = _local_block_names(tree) | _shared_builder_names(tree) | _graph_presentation_names(tree)
     declared = _declared_names(tree, rel)
     extra = declared - built
     assert not extra, (
