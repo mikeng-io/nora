@@ -81,6 +81,9 @@ class _UnitAttempt:
     due: frozenset[tuple[str, datetime]]
     retry_at: datetime
 
+    def blocks(self, due: frozenset[tuple[str, datetime]], now: datetime) -> bool:
+        return due == self.due and now < self.retry_at
+
 
 class _GradeBatch:
     def __init__(self, due: tuple[tuple[str, datetime], ...]) -> None:
@@ -141,7 +144,7 @@ class ReviewPass:
                 if previous is not None:
                     self._attempts[unit] = replace(previous, due=due)
                 return
-            if previous is not None and due == previous.due and now < previous.retry_at:
+            if previous is not None and previous.blocks(due, now):
                 return
             rooms = sorted(targets)
             start = bisect_right(rooms, previous.room if previous is not None else "")
@@ -168,6 +171,7 @@ class ReviewPass:
         self, unit: str, room: str, now: datetime, targets: list[ReviewTarget],
         due: frozenset[tuple[str, datetime]],
     ) -> bool:
+        """Return whether to stop scanning rooms this tick."""
         try:
             scope, direct = await self._rooms.scope_for(unit, room)
         except LookupError:
@@ -186,12 +190,21 @@ class ReviewPass:
         if assembled.review_next is None:
             self._cursors.pop(key, None)
             return False
-        self._cursors[key] = assembled.review_next
         if not assembled.review_due:
+            self._cursors[key] = assembled.review_next
             return False
+        # Replace only the revisions the judge can see on this page.
+        revisions = dict(due)
+        revisions.update(assembled.review_due)
+        reviewed = frozenset(revisions.items())
+        started = self._clock()
+        previous = self._attempts.get(unit)
+        if previous is not None and previous.blocks(reviewed, started):
+            return True
+        self._cursors[key] = assembled.review_next
         with root_span("review", links=(), parent=None, **{TRACE_KIND: "generation"}):
             self._attempts[unit] = _UnitAttempt(
-                room, due, self._clock() + timedelta(seconds=REVIEW_RETRY_SECONDS),
+                room, reviewed, started + timedelta(seconds=REVIEW_RETRY_SECONDS),
             )
             await self._judge(scope, direct, assembled, now)
         return True

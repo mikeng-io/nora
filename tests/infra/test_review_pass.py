@@ -31,7 +31,7 @@ from tests.infra.test_lesson_tally import ended, rebuild, resting, tally_rows
 from tests.infra.test_pass_anchors import NOW, SCOPE, reader
 from tests.infra.test_retrieval_scope import AT, OTHER, OTHER_ROOM, ROOM, UNIT, write_edge
 from tests.infra.test_retrieval_scope import scenario as scenario
-from tests.infra.test_review_admission import grade_rows, guess, lesson
+from tests.infra.test_review_admission import changed_tally, grade_rows, guess, lesson
 from tests.infra.test_room_busy import service, slots
 from tests.infra.test_situation_staleness import intention
 from tests.infra.test_wake_runner import WakeModel
@@ -218,6 +218,44 @@ async def test_unit_review_grants_preserve_the_retry_bound_and_rotate_rooms(scen
     assert all("Busy room prediction" in prompt for prompt in prompts[::2])
     assert all("Generated prediction" in prompt for prompt in prompts[1::2])
     assert all("Busy room prediction" not in prompt for prompt in prompts[1::2])
+
+
+async def test_review_records_the_tally_refreshed_between_due_read_and_docket(
+    scenario, monkeypatch,
+):
+    before = await lesson(scenario)
+    read_targets = wire.SqlReviewTargets.due_review_targets
+    refreshed = None
+
+    async def refresh_after_read(store, unit, now):
+        nonlocal refreshed
+        targets = await read_targets(store, unit, now)
+        if refreshed is None:
+            assert [(target.graph_id, target.revision) for target in targets] == [
+                ("lesson", before["asserted_at"]),
+            ]
+            refreshed = await changed_tally(scenario, "refresh-during-docket")
+            assert refreshed["asserted_at"] > before["asserted_at"]
+        return targets
+
+    monkeypatch.setattr(wire.SqlReviewTargets, "due_review_targets", refresh_after_read)
+    judge = WakeModel([])
+    review = _review(scenario, judge)
+    now = await scenario.now()
+    await review(now)
+
+    assert refreshed is not None and judge.turn == 1
+    assert '"contradiction": 2' in judge.prompt()
+    assert refreshed["asserted_at"].isoformat() in judge.prompt()
+    await review(now + timedelta(seconds=1))
+    assert await grade_rows(scenario) == []
+    assert judge.turn == 1, f"{judge.turn} judge calls for the same tally revision"
+
+    later = await changed_tally(scenario, "refresh-after-dispatch")
+    await review(now + timedelta(seconds=2))
+    assert judge.turn == 2
+    prompt = judge.seen[1][0]["content"][0]["text"]
+    assert '"contradiction": 3' in prompt and later["asserted_at"].isoformat() in prompt
 
 
 async def test_review_shows_all_three_counted_verdicts_and_cites_the_contradiction(scenario):
