@@ -41,6 +41,7 @@ CHECK_LITERALS: dict[str, object] = {
     "ck_entity_pointer_kind": graph.PointerKind,
     "ck_entity_source_ref_kind": SourceKind,
     "ck_claim_part": graph.ClaimPart,
+    "ck_claim_grade": graph.Grade,
     "ck_intention_form": graph.IntentionForm,
     "ck_intention_done_when_form": graph.DoneWhenForm,
     "ck_intention_holds_while_form": graph.ConditionForm,
@@ -60,7 +61,7 @@ _LITERAL_SETS = {
     for literal in (
         graph.Basis, graph.GraphBasis, graph.EntityBasis, graph.ClaimBasis,
         graph.IntentionBasis, graph.Kind, graph.Exposure, graph.Reasoning,
-        graph.Confidence, graph.ClaimPart, graph.PointerKind,
+        graph.Confidence, graph.ClaimPart, graph.Grade, graph.PointerKind,
         graph.ConditionForm, graph.DoneWhenForm, graph.IntentionForm,
         graph.AchieveEnding, graph.MaintainEnding, graph.DeliveryMode,
         graph.RegistryState, graph.EntityState, graph.ClaimState,

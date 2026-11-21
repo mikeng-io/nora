@@ -595,8 +595,7 @@ async def _compose_dependencies(
     _location_route = _location_wire.route(cfg=cfg)
     route_client = _location_route.route_client
     _documents_ground = _documents_wire.ground(
-        access=access,
-        allowlist=allowlist,
+        access=access, allowlist=allowlist,
         cfg=cfg,
         content_checks=content_checks,
         doctrine_store=lambda: doctrine_store,
@@ -1325,6 +1324,7 @@ async def _compose_dependencies(
         cfg, dreamer_runtime, dreamer_instructions, engine, access, lineage, allowlist,
         graph_debrief, slots, audit, presence_reader, documents_context, cognition_context_screen,
         graph_reads, metrics, clock, rosters, registry, content_checks, media_join,
+        review=_dreamer_enabled.review,
     )
     cognition_shutdown = legacy_cognition_shutdown(cfg, cognition_runner)
     if cognition_shutdown is not None:

@@ -33,7 +33,7 @@ PLANES = {
 EXTRAS = {
     "entity": {"name", "aliases", "pointer_kind", "pointer_ref",
                "source_ref_kind", "source_ref_value"},
-    "claim": {"part", "content", "prediction", "window_end"},
+    "claim": {"part", "content", "prediction", "window_end", "grade"},
     "intention": {
         "owner", "owed_to", "form", "done_when_form", "done_when",
         "holds_while_form", "holds_while", "drop_when_form", "drop_when",
@@ -252,6 +252,9 @@ async def test_a_kind_row_whose_registry_kind_disagrees_is_refused(engine) -> No
     ("intention", {"ended_at": datetime(2026, 1, 1, tzinfo=UTC)}),
     ("edge", {"basis": "authored"}),
     ("edge", {"type": "loves"}),
+    ("claim", {"part": "grade"}),
+    ("claim", {"part": "fact", "grade": "holds"}),
+    ("claim", {"part": "grade", "grade": "unknown"}),
     ("edge", {"state": "livex"}),
     ("entity", {"exposure": "public"}),
 ], ids=repr)
@@ -266,6 +269,8 @@ async def test_a_row_breaking_a_closed_rule_is_refused(engine, kind, over) -> No
     ("entity", {"pointer_kind": "person", "pointer_ref": "p1"}),
     ("entity", {"basis": "inferred", "reasoning": "told", "confidence": "low"}),
     ("claim", {"part": "guess", "prediction": "p", "window_end": datetime(2027, 1, 1, tzinfo=UTC)}),
+    ("claim", {"part": "grade", "grade": "holds"}),
+    ("claim", {"part": "grade", "state": "tombstoned", "grade": None, "content": None}),
     ("intention", {"form": "maintain", "done_when_form": None,
                    "done_when": None, "holds_while_form": "act_event",
                    "holds_while": {}, "drop_when_form": "deadline",

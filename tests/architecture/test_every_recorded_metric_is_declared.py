@@ -96,9 +96,10 @@ _MIN_DISTINCT_NAMES = 117
 # Recording sites whose name argument cannot be read statically, pinned by
 # (path, enclosing function, method, argument source text). Every row is either
 # a forwarding wrapper's own body — the `name` parameter, checked instead at
-# the callers that pass it a literal — or `Metrics`' internals calling
-# `.inc()`/`.observe()` on a prometheus-client collector object, which takes a
-# VALUE and is not a metric-name site at all. `reload.py::_on_failure` is the
+# the callers that pass it a literal — or internals calling `.inc()`/`.observe()`
+# on a non-metric receiver, which takes a VALUE and is not a metric-name site at
+# all: `Metrics`' prometheus-client collectors, and `acts.py`'s `Act` store
+# calls and `_attempt` forwarding. `reload.py::_on_failure` is the
 # one genuine gap: its name is bound at construction, so it is unchecked here.
 _UNRESOLVABLE: frozenset[tuple[str, str, str, str]] = frozenset(
     {
@@ -108,6 +109,12 @@ _UNRESOLVABLE: frozenset[tuple[str, str, str, str]] = frozenset(
         ("nora/obs/metrics.py", "observe", "observe", "value"),
         ("nora/presence/collector.py", "_count", "inc", "name"),
         ("nora/location/app/circles.py", "inc", "inc", "metric"),
+        ("nora/memory/app/acts.py", "record_act_outcome", "observe", "act"),
+        ("nora/memory/app/acts.py", "stream", "observe", "act"),
+        ("nora/memory/app/acts.py", "invoke", "_attempt", "act"),
+        ("nora/memory/app/acts.py", "_attempt", "observe", "act"),
+        ("nora/memory/app/acts.py", "settle", "observe", "act"),
+        ("nora/memory/app/acts.py", "settle", "_attempt", "act"),
     }
 )
 

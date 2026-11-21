@@ -14,6 +14,7 @@ from nora.domain.lineage import RoomFacts, split_room
 from nora.domain.managed import room_scope_id
 from nora.domain.management import Scope, ScopeKind
 from nora.memory.adapters.retrieval_scope import RetrievalAccess, scoped_rows
+from nora.memory.adapters.review_anchors import review_anchors
 from nora.memory.domain.pass_declarations import PassDeclaration
 from nora.memory.domain.pass_inputs import (
     AmbientInput,
@@ -22,6 +23,7 @@ from nora.memory.domain.pass_inputs import (
     PassInput,
     PassScope,
     ProactiveInput,
+    ReviewCursor,
     ReviewInput,
     WakeInput,
 )
@@ -43,6 +45,10 @@ class AnchorRead:
     people: tuple[EntityAnchor, ...]
     names: Mapping[str, str]
     cause: str | None = None
+    review_due: tuple[str, ...] = ()
+    review_evidence: tuple[tuple[str, str], ...] = ()
+    review_next: ReviewCursor | None = None
+    review_since: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +57,10 @@ class _Seeds:
     rooms: tuple[str, ...] = ()
     people: tuple[str, ...] = ()
     query: str = ""
+    review_due: tuple[str, ...] = ()
+    review_evidence: tuple[tuple[str, str], ...] = ()
+    review_next: ReviewCursor | None = None
+    review_since: datetime | None = None
 
 
 class SqlPassAnchors:
@@ -115,6 +125,8 @@ class SqlPassAnchors:
             RetrievalAnchors(graph_ids=ids, query=seeds.query), room, room_ref,
             id_for(("room", room_ref), ""), dm_rooms, scope.concerns | frozenset(people),
             _collective(room_ref, room.unit, pointers), people_subjects, names,
+            review_due=seeds.review_due, review_evidence=seeds.review_evidence,
+            review_next=seeds.review_next, review_since=seeds.review_since,
         )
 
     async def _identity_people(
@@ -262,27 +274,13 @@ class _AnchorQueries:
         return _Seeds((*data.items, *ids), (self._scope.room,))
 
     async def review(self, data: ReviewInput, now: datetime) -> _Seeds:
-        r = self._rows
-        image = r.image
-        drop_at = sa.func.coalesce(image["drop_when"]["at"].astext, image["drop_when"].astext)
-        drop_deadline = sa.case((
-            sa.and_(
-                image["drop_when_form"].astext == "deadline",
-                sa.func.pg_input_is_valid(drop_at, "timestamp with time zone"),
-            ), drop_at.cast(_TIME),
-        ))
-        ids = await self._conn.scalars(sa.select(r.graph_id).where(sa.or_(
-            sa.and_(
-                r.kind == "intention", r.state == "open",
-                sa.or_(image["deadline"].astext.cast(_TIME) <= now,
-                       image["review_time"].astext.cast(_TIME) <= now, drop_deadline <= now),
-            ),
-            sa.and_(
-                r.kind == "claim", image["state"].astext.in_(("live", "awaiting_weighing")),
-                image["part"].astext == "guess", image["window_end"].astext.cast(_TIME) <= now,
-            ),
-        )).order_by(r.graph_id))
-        return _Seeds((*ids, *data.lessons))
+        aliases = tuple(ref for ref, key in self._scope.room_keys.items()
+                        if key == self._scope.room)
+        due, evidence, cursor, since = await review_anchors(
+            self._conn, self._graph, self._scope.unit, data, now, aliases,
+        )
+        return _Seeds((*due, *(ref for ref, _ in evidence)), review_due=due,
+                      review_evidence=evidence, review_next=cursor, review_since=since)
 
     async def pointers(
         self, rooms: tuple[str, ...], people: tuple[str, ...],

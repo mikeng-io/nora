@@ -199,22 +199,22 @@ CLAIM = sa.Table(
     sa.Column("content", pg.JSONB(none_as_null=True)),
     sa.Column("prediction", sa.Text),
     sa.Column("window_end", sa.DateTime(timezone=True)),
+    sa.Column("grade", sa.Text),
     sa.PrimaryKeyConstraint("id", "unit", name="pk_claim"),
-    sa.CheckConstraint(
-        "part IN ('fact', 'trait', 'guess', 'lesson', 'situation')", name="ck_claim_part",
-    ),
-    sa.CheckConstraint(
-        "state = 'tombstoned' OR content IS NOT NULL", name="ck_claim_content"
-    ),
+    sa.CheckConstraint("part IN ('fact', 'trait', 'guess', 'lesson', 'situation', 'grade')",
+                       name="ck_claim_part"),
+    sa.CheckConstraint("state = 'tombstoned' OR content IS NOT NULL", name="ck_claim_content"),
     sa.CheckConstraint(
         "state = 'tombstoned' OR part <> 'guess' "
         "OR (prediction IS NOT NULL AND window_end IS NOT NULL)",
         name="ck_claim_guess",
     ),
+    sa.CheckConstraint("part = 'guess' OR (prediction IS NULL AND window_end IS NULL)",
+                       name="ck_claim_non_guess"),
     sa.CheckConstraint(
-        "part = 'guess' OR (prediction IS NULL AND window_end IS NULL)",
-        name="ck_claim_non_guess",
-    ),
+        "CASE WHEN part = 'grade' AND state <> 'tombstoned' THEN grade IS NOT NULL AND grade IN "
+        "('confirmed', 'refuted', 'expired', 'holds', 'weakened') ELSE grade IS NULL END",
+        name="ck_claim_grade"),
 )
 
 INTENTION = sa.Table(
@@ -327,7 +327,7 @@ EDGE = sa.Table(
     sa.PrimaryKeyConstraint("id", "unit", name="pk_edge"),
     sa.CheckConstraint(
         "type IN ('cites', 'about', 'draws_on', 'rests_on', 'serves', 'watches',"
-        " 'closed_by', 'merged_into')",
+        " 'closed_by', 'merged_into', 'grades')",
         name="ck_edge_type",
     ),
     sa.ForeignKeyConstraint(

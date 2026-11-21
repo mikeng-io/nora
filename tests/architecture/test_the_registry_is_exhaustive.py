@@ -136,6 +136,8 @@ def _shared_builder_names(tree: ast.Module) -> set[str]:
     if {"self._rooms.floor", "WakeInput", "self._assembler.assemble"} <= calls:
         names |= follow("nora.app.wake_floor", "WakeRoomFloor.floor")
         names |= follow("nora.memory.adapters.wake_blocks", "wake_blocks")
+    if {"ReviewInput", "self._assembler.assemble"} <= calls:
+        names |= follow("nora.memory.adapters.review_blocks", "review_block")
     return names
 
 

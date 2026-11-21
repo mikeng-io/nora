@@ -13,19 +13,20 @@ This module is the comparison, used two ways:
   of T (`nora.subject.sandbox.sandbox_as_of`); every compared block must be
   byte-identical;
 - **live**, by the operator, against a real trace: `scripts/
-  snapshot_block_equivalence.py` takes the prefill text a tag turn's
-  Langfuse generation recorded as its input (the second user message), the
+  snapshot_block_equivalence.py` takes the block message a tag turn's
+  Langfuse generation recorded as its input, the
   turn's system time, and the source (the eval clone), and runs the same
   comparison. Its docstring is the procedure.
 
 What is excepted, by name, and why:
 
 - **memory** — `peer_card`, `peer_history`: Honcho has no chain
-  to read backwards, so a restore cannot hold what it said.
+  to read backwards, so a restore cannot hold what it said. Neither block
+  renders on the graph path (design/cognition/context.md's migration table);
+  the names stay so an old recording is excepted rather than extra.
 - **Live** — `tool_catalogue` (built from the tools admitted at the turn, not
-  from any store), `presence` (her platform presence: transport health read
-  at turn start), and the clock line that opens the block message (`now`,
-  which a restore takes as an input rather than reproducing).
+  from any store) and `presence` (her platform presence: transport health
+  read at turn start).
 """
 
 from __future__ import annotations
@@ -36,9 +37,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
-from nora.agent.prefill import build_prefill
+from nora.agent.prefill import TAG_HEADER, engagement_floor
 from nora.domain.models import NormalizedMessage
 from nora.domain.ports import EngageDecision, EngagementRequest
+from nora.persons import sanitize_unmapped
 
 from .obtain import Subject
 
@@ -56,23 +58,32 @@ LIVE_BLOCKS: frozenset[str] = frozenset({"tool_catalogue", "presence"})
 
 #: One top-level block: its opening tag starts a line, its body is escaped
 #: (so it cannot carry its own closing tag), its closing tag ends a line.
-_BLOCK = re.compile(r"^<([a-z_]+)(?: [^\n]*)?>\n(.*?)\n</\1>$", re.MULTILINE | re.DOTALL)
+#: Self-closed empty presentations (`<graph_profile ... />`) carry no body and
+#: are not blocks for comparison purposes — an empty and a filled account
+#: differ on every comparison that matters.
+_BLOCK = re.compile(
+    r"^<([a-z_]+)([^\n>]*[^/\n>])?>\n(.*?)\n</\1>$", re.MULTILINE | re.DOTALL)
+_OF = re.compile(r'\bof="([^"]+)"')
 
 
 def blocks_of(prefill_text: str) -> dict[str, str]:
-    """Each block of a prefill's block message, by name, as rendered.
+    """Each block of a tag turn's block message, keyed by name as rendered.
 
-    `prefill_text` is the content of the SECOND user message `build_prefill`
-    returns (the clock line, then the blocks): exactly what a tag turn's
-    Langfuse generation records as that message. Fails closed on a name that
-    appears twice, rather than keeping one of them.
+    `prefill_text` is the block message `EngagementGraph.prompt` returns —
+    exactly what a tag turn's Langfuse generation records. A block rendered
+    per subject (`graph_profile`) repeats its name, so its key carries the
+    `of` attribute: `graph_profile of=entity:unit:nora`. Any other duplicate
+    fails closed rather than keeping one of them.
     """
     out: dict[str, str] = {}
     for match in _BLOCK.finditer(prefill_text):
-        name = match.group(1)
-        if name in out:
-            raise ValueError(f"block {name!r} appears twice; this is not one prefill")
-        out[name] = match.group(0)
+        name, attrs = match.group(1), match.group(2) or ""
+        key = name
+        if name == "graph_profile" and (of := _OF.search(attrs)):
+            key = f"{name} of={of.group(1)}"
+        if key in out:
+            raise ValueError(f"block {key!r} appears twice; this is not one prefill")
+        out[key] = match.group(0)
     return out
 
 
@@ -90,11 +101,20 @@ async def render_tag_blocks(
         message=message, decision=EngageDecision(engage=True, reason="tag"),
         tag_id=f"as-of-{uuid.uuid4().hex[:12]}",
     ))
-    prefill = build_prefill(
-        ctx, display_name=subject.cfg.doctrine.display_name,
-        context_window=subject.cfg.store.context_window, now=now,
+    display_name = subject.cfg.doctrine.display_name
+    tagger_name = (ctx.tagger.name if ctx.tagger is not None
+                   else message.sender_name or sanitize_unmapped(message.sender_id))
+    convo = subject.deps.engagement._policy.conversation(
+        message.platform, message.conversation_id)
+    floor = engagement_floor(
+        ctx, display_name=display_name, tagger_name=tagger_name,
+        context_window=subject.cfg.store.context_window, now=now, catalogue="",
     )
-    return blocks_of(str(prefill[1]["content"][0]["text"]))
+    _prefill, tag_message, _shown = await subject.deps.engagement._graph.prompt(
+        "called", ctx, floor=floor, unit=convo.unit if convo is not None else None,
+        display_name=display_name, now=now, header=TAG_HEADER,
+    )
+    return blocks_of(tag_message)
 
 
 @dataclass(frozen=True, slots=True)

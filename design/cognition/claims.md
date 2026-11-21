@@ -11,11 +11,18 @@ A profile is the claims about one entity in one unit, read in three parts.
 |---|---|---|
 | **fact** | who or what the entity is: names, roles, relationships, stable attributes, a person's instructions about themselves | a direct statement or a resolved record; authored names and accounts render from identity, never from a claim |
 | **trait** | a recurring interest, habit, preference, disposition or aim | distinct occasions, counted by code; never message count or the writer's confidence |
-| **guess** | why a pattern occurs | carries a falsifiable prediction and window; an independent verdict confirms, refutes, expires or leaves it unknown |
+| **guess** | why a pattern occurs | carries a falsifiable prediction and window; an independent judge grades it against later evidence |
 
-Two claim parts sit outside a profile. A **lesson** rests on verdicts and
+Three claim parts sit outside a profile. A **lesson** rests on verdicts and
 corrections ([learning](learning.md)). A **situation** claim shows its age
-and how many items arrived since it was asserted.
+and how many items arrived since it was asserted. A **grade** links a guess
+or lesson to the independent judge's assessment and cites later evidence.
+`confirmed` means the evidence supports the prediction, `refuted` means it
+contradicts the prediction, and `expired` means a healthy source recorded
+no deciding evidence by the window's end. `holds` means a lesson still
+applies and `weakened` means its later outcomes undermine it. Missing
+evidence leaves the row due. Lesson grades are retained as history and the
+newest counts. Grades assess claims. Verdicts record computed intention endings.
 
 A collective's profile describes observed collective practice, never an
 average of its members. Nora's profile describes how she has come across.

@@ -75,6 +75,7 @@ class IsolatedServices:
         self._unix: set[str] = set()
         self._subjects: list[Any] = []
         self._before_tasks: set[asyncio.Task[Any]] = set()
+        self._case = ""
         #: The services plan that opened this environment, when the plan
         #: carries request-aware state a driver needs back (e.g. the journey
         #: world's counters). `None` for positional recordings.
@@ -226,8 +227,11 @@ class IsolatedServices:
         if self._active or self._runners:
             raise RuntimeError("an evaluation environment cannot be re-entered")
         if getattr(socket.socket.connect, "_nora_eval_guard", False):
-            raise RuntimeError("evaluation cases must not share a network context")
+            holder = getattr(socket.socket.connect, "_nora_eval_case", "")
+            raise RuntimeError("evaluation cases must not share a network context"
+                               + (f"; held by {holder}" if holder else ""))
         try:
+            self._case = os.environ.get("PYTEST_CURRENT_TEST", "")
             # OpenAI's SDK lazily reads platform.platform() for its user-agent.
             # macOS may run uname/file for that read; resolve host metadata
             # before the effect boundary, without exempting later subprocesses.
@@ -317,7 +321,9 @@ class IsolatedServices:
         # ponytail: one case per process, as SDK max_workers=1 requires;
         # parallel case execution needs separate worker processes.
         if getattr(socket.socket.connect, "_nora_eval_guard", False):
-            raise RuntimeError("evaluation cases must not share a network context")
+            holder = getattr(socket.socket.connect, "_nora_eval_case", "")
+            raise RuntimeError("evaluation cases must not share a network context"
+                               + (f"; held by {holder}" if holder else ""))
 
         def allowed(address: Any) -> bool:
             if isinstance(address, tuple) and len(address) >= 2:
@@ -331,7 +337,9 @@ class IsolatedServices:
         def refuse(operation: str,
                    cause: str = "external_dependency_not_isolated") -> None:
             self.denied.append({"operation": operation, "cause": cause})
-            raise PermissionError(errno.EACCES, "evaluation dependency is not isolated")
+            held = f" (guard held by {self._case})" if self._case else ""
+            raise PermissionError(
+                errno.EACCES, f"evaluation dependency is not isolated{held}")
 
         original_lookup = socket.getaddrinfo
 
@@ -393,6 +401,7 @@ class IsolatedServices:
 
             connect._nora_eval_guard = True  # type: ignore[attr-defined]
             connect._nora_eval_environment = self  # type: ignore[attr-defined]
+            connect._nora_eval_case = self._case  # type: ignore[attr-defined]
             self._patches.enter_context(patch.object(socket.socket, name, connect))
 
         def check_connected(sock: socket.socket) -> None:
@@ -474,12 +483,25 @@ class IsolatedServices:
     async def __aexit__(self, exc_type: type[BaseException] | None,
                         exc: BaseException | None,
                         tb: TracebackType | None) -> None:
-        cleanup = asyncio.create_task(self._close(asyncio.current_task()))
         try:
-            await asyncio.shield(cleanup)
-        except asyncio.CancelledError:
-            await cleanup
-            raise
+            cleanup = asyncio.create_task(self._close(asyncio.current_task()))
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                await cleanup
+                raise
+        finally:
+            # The guard is process-global: a teardown that cannot run the
+            # shielded close — no running loop, or the loop torn down
+            # first — must still unwind it, or the next case inherits the
+            # refusals.
+            self._unwind_guard()
+
+    def _unwind_guard(self) -> None:
+        self._active = False
+        self._patches.close()
+        if self._directory is not None:
+            self._directory.cleanup()
 
     async def _close(self, owner: asyncio.Task[Any] | None) -> None:
         errors: list[BaseException] = []
@@ -506,9 +528,6 @@ class IsolatedServices:
                     self._process.terminate()
                     await self._process.wait()
             finally:
-                self._active = False
-                self._patches.close()
-                if self._directory is not None:
-                    self._directory.cleanup()
+                self._unwind_guard()
         if errors:
             raise BaseExceptionGroup("evaluation dependency cleanup failed", errors)

@@ -251,6 +251,14 @@ def test_generated_subject_answers_every_production_declaration(tmp_path, evalua
             )
             for objective in ("wake", "wake-history")
         ],
+        "nora/app/review_pass.py": [(
+            request(
+                "lesson_check", cfg.lessons.check_model, "<review_docket/>",
+                system=wake_instructions.for_objective("review").text,
+                tools=(tool_spec("graph_propose", "operations", "array"),),
+            ),
+            "review", "Generated protocol retains the previous account.",
+        )],
     }
     # These three builders share the scripted turn, cognition and fold journey.
     scripted = {

@@ -64,6 +64,7 @@ def make_causal_protocol(cfg: Config) -> CausalProtocol:
             PROFILE_VERDICT_ADAPTOR_NAME: "profile_verdict",
             "wake": "session_close",
             "wake-history": "session_close",
+            "review": "session_close",
         },
     )
 

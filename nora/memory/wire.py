@@ -51,6 +51,7 @@ from nora.memory.adapters.pass_assembly import PassAssembler
 from nora.memory.adapters.proactive_claims import SqlProactiveClaims
 from nora.memory.adapters.replay_receipts import SqlReplayReceipts
 from nora.memory.adapters.retrieval_store import SqlRetrieval
+from nora.memory.adapters.review_anchors import SqlReviewTargets as SqlReviewTargets
 from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
 from nora.memory.adapters.tools.search import GraphReadTools
@@ -72,6 +73,7 @@ from nora.memory.app.retrieval import RetrievalService
 from nora.memory.app.verify import IntentionVerifier
 from nora.memory.app.watches import WatchPoller
 from nora.memory.domain.admission_ports import LessonChecker, RoomSlots
+from nora.memory.domain.graph_operations import REVIEW_PARTS as REVIEW_PARTS
 from nora.memory.domain.graph_operations import WAKE_OPERATIONS as WAKE_OPERATIONS
 from nora.persons import Persons
 from nora.policy import Policy

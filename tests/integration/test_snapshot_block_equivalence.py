@@ -4,8 +4,9 @@
 A generated eval source holds what a deployment's clone holds: the three
 recorded in-force loads (written through the production `SqlRevisionStore`,
 the same table the deployment's own start records), a tag turn's transcript
-and a note (written through `SqlRecordStore`/`SqlNoteStore`), all before the
-snapshot instant. The live render runs inside the same finite recorded
+(written through `SqlRecordStore`) and the room's open position (written as
+graph claims, the rows `graph_standing` renders), all before the snapshot
+instant. The live render runs inside the same finite recorded
 services the script then opens: `materialise` writes `in_force/`,
 `sandbox_as_of` restores as of T, `obtain` composes from the RECORDED config
 through `SubjectSpec.config` inside a case-owned environment under
@@ -32,8 +33,9 @@ import sqlalchemy as sa
 
 from evals.backbone import _close
 from nora.domain.models import NormalizedMessage
+from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, ENTITY
+from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.revisions import SqlRevisionStore
 from nora.subject import SubjectSpec, obtain, sandbox_as_of
 from nora.subject.as_of import render_tag_blocks
@@ -52,28 +54,45 @@ from tests.integration.test_cognition_anchor_finder import (
 
 def _services(cfg: Any) -> dict[str, Any]:
     """One run's finite world — and NO model response recorded at all."""
-    ws = cfg.honcho.workspace_id
-    reads = [
-        {"method": "GET",
-         "path": f"/v3/workspaces/{ws}/peers/miles_novak/card",
-         "response": {"status": 200, "json": {
-             "peer_card": ["Miles prefers Friday mornings"]}}},
-        # Any body matches: the read is identified by method, path, order
-        # and count, not by a re-derivation of the assembler's query.
-        {"method": "POST",
-         "path": f"/v3/workspaces/{ws}/peers/{cfg.honcho.ai_peer}/representation",
-         "response": {"status": 200, "json": {
-             "representation": "## Explicit Observations\n"
-                               "[2026-07-01 09:00] Miles is deciding "
-                               "between friday and saturday"}}},
-    ]
     doc = _recording(cfg)._data
     doc["services"]["model"] = []
-    doc["services"]["memory"] += reads
-    # This path reads the room roster once (the tag render's `<members>`),
-    # not twice as the confirmer's session assembly does.
-    doc["services"]["bridge"] = doc["services"]["bridge"][:-1]
+    # The peer card and representation reads are gone: `peer_card` and
+    # `peer_history` are graph presentations now (design/cognition/
+    # context.md's migration table), read from Postgres, not Honcho. Only
+    # the workspace handshake remains.
+    doc["services"]["bridge"] = doc["services"]["bridge"][:1]
     return doc
+
+
+async def _graph_seed(engine: Any, unit: str, room: str, *, at_ms: int) -> None:
+    """The room's account and its open position as graph rows — the claims a
+    `called` pass reaches from the room pointer and renders as `graph_profile`
+    and `graph_standing` (design/cognition/context.md's migration table).
+    """
+    graph = SqlCognitiveGraph(engine)
+    room_entity = f"{unit}:room:signal:{room}"
+    old = datetime.fromtimestamp((at_ms - 30 * 24 * 3_600_000) / 1000, tz=UTC)
+    await graph.create(ENTITY, {
+        "id": room_entity, "kind": "entity", "basis": "computed", "state": "admitted",
+        "unit": unit, "name": room, "pointer_kind": "room",
+        "pointer_ref": f"signal:{room}", "persons": [], "exposure": "internal",
+        "writer": "test", "asserted_at": old,
+    })
+    when = datetime.fromtimestamp((at_ms - 30_000) / 1000, tz=UTC)
+    await graph.create(CLAIM, {
+        "id": "claim:situation:friday", "kind": "claim", "basis": "inferred",
+        "state": "live", "unit": unit, "part": "situation",
+        "content": {"text": "they are deciding between friday and saturday"},
+        "reasoning": "deduced", "confidence": "high", "origin_room": room,
+        "exposure": "internal", "writer": "test", "asserted_at": when,
+    })
+    await graph.create(EDGE, {
+        "id": "edge:claim:situation:friday:about", "kind": "edge", "basis": "inferred",
+        "state": "live", "unit": unit, "type": "about",
+        "src_id": "claim:situation:friday", "dst_id": room_entity,
+        "reasoning": "deduced", "confidence": "high", "exposure": "internal",
+        "writer": "test", "asserted_at": old,
+    })
 
 
 async def test_the_block_gate_runs_the_migrated_path_end_to_end(
@@ -127,15 +146,10 @@ async def test_the_block_gate_runs_the_migrated_path_end_to_end(
                     message=tag, person_id="miles_novak")
                 engine = create_sql_engine(url)
                 try:
-                    await SqlNoteStore(engine).create(
-                        unit=live.unit, title="Friday ride",
-                        description="whether friday holds",
-                        uncertainty="open",
-                        closing_condition="somebody says yes",
-                        established_in=ROOM[1],
-                        body="nobody has confirmed friday",
-                        established_by="debrief", now_ms=before_ms - 30_000,
-                        anchor_date=20260701)
+                    # The room's open position is a graph claim now — what the
+                    # turn's `graph_standing` carries (design/cognition/
+                    # context.md's migration table).
+                    await _graph_seed(engine, live.unit, ROOM[1], at_ms=before_ms)
                     # The deployment's own start records what it loaded; a
                     # snapshot at --at names these loads or refuses.
                     async with engine.connect() as conn:

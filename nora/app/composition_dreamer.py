@@ -25,6 +25,7 @@ from nora.app.composition_dream import (
     _lessons_evidence,
 )
 from nora.app.composition_helpers import _adaptor_budget, _reasoning_effort
+from nora.app.composition_review import build_review_runner
 from nora.app.startup import StartupError
 from nora.domain.ports import DreamAdaptor
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
@@ -118,6 +119,7 @@ class EnabledWiring:
     dream_adaptors: Any
     dream_schedules: Any
     dreamer_runtime: Any
+    review: Any = None
 
 
 async def enabled(
@@ -139,6 +141,7 @@ async def enabled(
 ) -> EnabledWiring:
     dream_adaptors = ()
     dreamer_runtime = None
+    review = None
     dream_schedules = {}
     cognition_runner = None
     cognition_session_units = None
@@ -172,6 +175,10 @@ async def enabled(
             tool_registry=tool_registry,
         )
         dreamer_runtime = rt.dreamer_runtime
+        review = build_review_runner(
+            cfg, dreamer_instructions, rt.dream_tools, model_client_for, metrics,
+            content_checks=content_checks,
+        )
         if cfg.cognition.enabled and stimulus_store is not None:
             cog = await cognition_session(
                 allowlist=allowlist, audit=audit, cfg=cfg, clock=clock,
@@ -213,6 +220,7 @@ async def enabled(
         dream_adaptors=dream_adaptors,
         dream_schedules=dream_schedules,
         dreamer_runtime=dreamer_runtime,
+        review=review,
     )
 
 

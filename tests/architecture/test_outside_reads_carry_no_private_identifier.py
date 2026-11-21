@@ -93,7 +93,7 @@ FILE_URL = f"https://docs.google.com/document/d/{FILE_ID}/edit"
 PLACE = "Central Library"
 PERSON = PersonRef("test-person", "Juniper", "test-person")
 
-# A bare name or a non-identifier handle can pass. Name screens follow ADR 0030.
+# A bare name or a non-identifier handle can pass. Name screens follow the content-filter decision.
 # reverse_geocode has only float arguments. Its coordinate provenance is a separate boundary.
 PROBES = {
     "computer_import": ("link", FILE_URL, "files", {}),

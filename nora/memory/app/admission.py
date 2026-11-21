@@ -163,7 +163,7 @@ class AdmissionService:
         if ids & unknown:
             return Unavailable(data.id, commit_uncertain=False), ()
         if isinstance(proposal, CloseIntention):
-            if context.occasion in {"operator", "wake_history"}:
+            if context.occasion in {"operator", "wake_history", "review"}:
                 return Refusal("occasion_basis", "basis"), ()
             return await self._close(proposal, context, shown), ()
         destinations = data.rooms if isinstance(data, CreateIntention) else ()

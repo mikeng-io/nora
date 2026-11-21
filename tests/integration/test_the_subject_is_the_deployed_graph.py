@@ -141,6 +141,7 @@ async def test_obtain_returns_the_production_graph(spec, clean_pg_url, cognition
     assert "wake_poller" in fields
     if cognition:
         assert isinstance(subject.deps.wake_poller, WakePoller)
+        assert subject.deps.wake_poller._review is not None
     else:
         assert subject.deps.wake_poller is None
     assert not requests

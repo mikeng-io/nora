@@ -10,12 +10,13 @@ from nora.memory.domain.admission_proposals import (
     AddEdge,
     CreateClaim,
     CreateEntity,
+    Link,
     PassContext,
     Retire,
     Revise,
     Scope,
 )
-from nora.memory.domain.graph import Confidence, Reasoning
+from nora.memory.domain.graph import Confidence, Grade, Reasoning
 from nora.memory.domain.operation_fields import (
     AboutInput,
     InvalidFieldError,
@@ -64,6 +65,18 @@ class ClaimInput(ClaimFields):
     op: Literal["create_claim"]
 
 
+WAKE_PARTS = get_args(ClaimFields.__annotations__["part"])
+REVIEW_PARTS = ("grade",)
+
+
+class GradeInput(EvidenceInput):
+    op: Literal["create_claim"]
+    part: Literal["grade"]
+    grade: Grade
+    target: str
+    content: str
+
+
 class ReviseClaimInput(ClaimFields):
     op: Literal["revise"]
     base: str
@@ -104,14 +117,16 @@ def topic_refs(operations: Iterable[object]) -> dict[str, str]:
 
 def parse_graph_operation(
     raw: object, context: PassContext, allowed: Collection[GraphOperationName],
-    topics: Mapping[str, str],
+    topics: Mapping[str, str], *, parts: Collection[str] = WAKE_PARTS,
 ) -> GraphProposal | Refusal:
     if not isinstance(raw, Mapping):
         return Refusal("invalid_field", "op")
     op = raw.get("op")
     if not isinstance(op, str) or op not in allowed:
         return Refusal("invalid_field", "op")
-    unexpected = next((key for key in raw if key not in _KEYS[op]), None)
+    is_grade = op == "create_claim" and parts == REVIEW_PARTS
+    keys = GradeInput.__annotations__ if is_grade else _KEYS[op]
+    unexpected = next((key for key in raw if key not in keys), None)
     if unexpected is not None:
         return Refusal("invalid_field", str(unexpected))
 
@@ -150,9 +165,17 @@ def parse_graph_operation(
         part = _string(raw, "part")
         if part == "lesson" and context.occasion != "wake":
             return Refusal("occasion_basis", "basis")
-        if part not in ("fact", "trait", "guess", "situation", "lesson"):
+        if part not in parts:
             raise InvalidFieldError("part")
         graph_id = f"claim:{uuid4().hex}"
+        if part == "grade":
+            return CreateClaim(
+                **shared, id=graph_id, part=part, content=_string(raw, "content"),
+                grade=_string(raw, "grade"),
+                links=(Link(type="grades", source=graph_id, target=_string(raw, "target"),
+                            basis="inferred", reasoning=shared["reasoning"],
+                            confidence=shared["confidence"]),),
+            )
         claim = CreateClaim(
             **shared, id=graph_id, part=part, content=_string(raw, "content"),
             prediction=_string(raw, "prediction") if "prediction" in raw else None,
