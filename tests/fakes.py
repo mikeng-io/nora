@@ -269,10 +269,13 @@ class FakeHoncho:
             ]
         self._delete_queue.clear()
 
-    async def start(self) -> str:
+    def application(self) -> web.Application:
         app = web.Application()
         app.router.add_route("*", "/{tail:.*}", self._handle)
-        self._server = TestServer(app)
+        return app
+
+    async def start(self) -> str:
+        self._server = TestServer(self.application())
         await self._server.start_server()
         self.url = str(self._server.make_url("/")).rstrip("/")
         return self.url

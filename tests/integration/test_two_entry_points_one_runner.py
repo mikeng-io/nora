@@ -21,16 +21,13 @@ import pytest
 from strands_evals import Case
 from strands_evals.types.evaluation import EvaluationData
 
-from evals.backbone import ERROR, NORA_ERROR, MeetsGrader, Spec, _drive, state_of
+from evals.backbone import ERROR, NORA_ERROR, MeetsGrader, Spec, state_of
 from nora.subject import Knowledge
-from tests.sandbox_fixtures import seed_source
+from tests.sandbox_fixtures import offline_drive, seed_source
 
 #: Point the subject at a port nothing answers on, so the model call fails
 #: rather than reaching a real provider from a test run. Configuration, which
 #: is the legal seam — there is no way here to pass a collaborator.
-#: Every draw creates a Honcho workspace of its own.
-pytestmark = pytest.mark.usefixtures("draw_honcho")
-
 _NO_PROVIDER = {"llm.base_url": "http://127.0.0.1:9/v1"}
 
 _HISTORY = {
@@ -55,7 +52,7 @@ async def _driven(entry: str, clean_pg_url: str, pg_template: str, tmp_path) -> 
         source_url=source.url, entry=entry, overrides=_NO_PROVIDER,
         policy=source.policy, identity=source.identity, template=source.template,
     )
-    return await _drive(case, spec)
+    return await offline_drive(case, spec)
 
 
 @pytest.mark.asyncio

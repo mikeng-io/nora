@@ -93,7 +93,9 @@ A skipped gate therefore stops the work at verify or merge, at the latest.
 ## Resolve and lessons
 
 Resolve settles every artifact: merged, or archived with `make archive`, then
-`make gc APPLY=1` (`nora-land/reference.md` «Resolve»). When a failure was
-caused by the process, not the code, the PR records one lesson line. That line
-names the skill edit that fixes the process, made in the same PR or filed as a
-follow-up. A failure in the code gets no lesson line.
+`make gc APPLY=1` (`nora-land/reference.md` «Resolve»). When the work fixed
+something an earlier merge got wrong, or the process stalled it, the PR adds
+or extends one lesson in `docs/maintainers/lessons.md`: the rule that would
+have caught it, and its evidence. A process lesson also names the skill edit
+that fixes the process, made in the same PR or filed as a follow-up. A lesson
+seen on three separate days is promoted to `docs/code-standards.md`.

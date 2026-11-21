@@ -29,6 +29,7 @@ from evals.backbone import Spec, state_of
 from evals.rebuilt.domain import Outcome
 from evals.rebuilt.entry import ENTRY_POINTS, EntryPoint
 from nora.infra.sql import create_sql_engine
+from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import RunEvidence, read_events, validate_events
 from nora.subject.journey_state import JourneyState, journey_initial_state
 from nora.subject.sandbox import eval_host_lock
@@ -303,11 +304,11 @@ async def _world(room: tuple[str, str]):
     """A plan-level stand-in for `JourneyServices.open`."""
     @contextlib.asynccontextmanager
     async def open_env(database_url: str, redis: bool = False):
-        yield SimpleNamespace(
-            world=SimpleNamespace(
+        async with IsolatedServices(database_url=database_url, applications={}) as env:
+            env.world = SimpleNamespace(
                 subject_spec=lambda url, env, workdir: SimpleNamespace(
-                    database_url=url, room=room, environment=env)),
-            guarded=False)
+                    database_url=url, room=room, environment=env))
+            yield env
 
     yield SimpleNamespace(open=open_env)
 

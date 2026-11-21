@@ -2152,15 +2152,15 @@ class ComputerSessionsConfig(BaseModel):
 
 
 class ComputerBrowseConfig(BaseModel):
-    """`[computer.browse]`: `computer_browse`, a whole browser task handed to a
-    sub-agent in the room's own browser (ADR 0022). INERT by default: the tool
-    answers `unavailable` until `enabled`, and
-    `[computer] enabled` must be on too (the browser is the computer's).
+    """`[computer.browse]`: `web_browse`, a whole browser task run by one model in the
+    room's own browser (ADR 0022). INERT by default: the tool answers `unavailable`
+    until `enabled`, and `[computer] enabled` must be on too (the browser is the
+    computer's).
 
-    `model` is the sub-agent's (empty: `[llm] model`); `max_steps` counts page
-    actions, past which the agent is told to finish; `timeout_seconds` bounds
-    the whole task; `turns`, `output_tokens` and `total_tokens` are its loop's
-    three caps (`build_limits`); `read_chars` cuts one page's text.
+    `model` is the browse model (empty: `[llm] model`); `max_steps` counts page
+    actions, past which only finishing is offered; `timeout_seconds` bounds the
+    whole task; `turns`, `output_tokens` and `total_tokens` are its loop's three
+    caps; `read_chars` cuts one page's text.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)

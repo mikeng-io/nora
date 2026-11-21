@@ -20,15 +20,14 @@ from evals.backbone import (
     PASS,
     MeetsGrader,
     Spec,
-    _drive,
     state_of,
 )
 from evals.profile_cases import case_file
 from nora.agent import factory
 from nora.subject import Knowledge
-from tests.sandbox_fixtures import seed_source
+from tests.sandbox_fixtures import offline_drive, offline_subject, seed_source
 
-pytestmark = pytest.mark.usefixtures("draw_honcho")
+_PROFILE_WRITER = {"dreamer.enabled": True, "memory.profile.write": True}
 
 
 @pytest.mark.parametrize("behavior,label", [
@@ -107,10 +106,10 @@ async def test_writer_runtime_receipt_and_fail_closed_paths(
         "profile_input": {"sources": private["sources"], "clock_ms": private["clock_ms"]},
         "print_input": behavior == "print",
     })
-    result = await _drive(case, Spec(
+    result = await offline_drive(case, Spec(
         source_url=source.url, entry="profile_identity", policy=source.policy,
         identity=source.identity, template=source.template,
-        overrides={"llm.base_url": "http://127.0.0.1:9/v1"},
+        overrides=_PROFILE_WRITER,
     ))
     data = EvaluationData(input="", actual_output=result["output"],
                           actual_environment_state=result["environment_state"],
@@ -162,10 +161,10 @@ async def test_all_declared_sources_reach_writer_after_restored_backlog(
         "profile_input": {"sources": private["sources"], "clock_ms": private["clock_ms"]},
         "print_input": True,
     })
-    result = await _drive(case, Spec(
+    result = await offline_drive(case, Spec(
         source_url=source.url, entry="profile_identity", policy=source.policy,
         identity=source.identity, template=source.template,
-        overrides={"llm.base_url": "http://127.0.0.1:9/v1"},
+        overrides=_PROFILE_WRITER,
     ))
     data = EvaluationData(input="", actual_output=result["output"],
                           actual_environment_state=result["environment_state"], metadata={})
@@ -183,21 +182,19 @@ async def test_all_declared_sources_reach_writer_after_restored_backlog(
 async def test_restored_out_of_order_rows_do_not_enter_recent_writer_batch(
     clean_pg_url, pg_template, tmp_path, monkeypatch,
 ):
-    from evals.backbone import _close
-    from nora.subject import Message, SubjectSpec, know, obtain
+    from nora.subject import Message, SubjectSpec, know
     from nora.subject.profile_writer import run_writer
     from tests.sandbox_fixtures import BEFORE_MS
 
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    subject = await obtain(SubjectSpec(
-        database_url=clean_pg_url, workdir=tmp_path,
-        overrides={"dreamer.enabled": True, "memory.profile.write": True},
-        policy=('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
-                'id = "g1"\nlabel = "g1"\npersons = ["miles_novak"]\nunit = "nora"\n'),
-    ))
     calls = []
     monkeypatch.setattr(factory, "create_dream_agent", lambda **kw: calls.append(kw))
-    try:
+    async with offline_subject(SubjectSpec(
+        database_url=clean_pg_url, workdir=tmp_path,
+        overrides=_PROFILE_WRITER,
+        policy=('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+                'id = "g1"\nlabel = "g1"\npersons = ["miles_novak"]\nunit = "nora"\n'),
+    )) as subject:
         # IDs 1..10 are newer by timestamp than restored ID 11. Seed the
         # sandbox directly: snapshot reconstruction sorts rows by timestamp.
         await know(subject, Knowledge(transcript=tuple(
@@ -216,8 +213,6 @@ async def test_restored_out_of_order_rows_do_not_enter_recent_writer_batch(
         assert re.findall(r'<m n="(\d+)"', shown) == ["12"]
         assert "restored background" not in shown
         assert 'evidence_mode="recent"' in shown
-    finally:
-        await _close(subject)
 
 
 @pytest.mark.parametrize("vector,exposure", [
@@ -231,9 +226,8 @@ async def test_restored_out_of_order_rows_do_not_enter_recent_writer_batch(
 async def test_source_lane_composed_input_and_storage(
     clean_pg_url, tmp_path, monkeypatch, vector, exposure, print_only,
 ):
-    from evals.backbone import _close
     from evals.rebuilt.profile_identity import check_identity
-    from nora.subject import SubjectSpec, obtain
+    from nora.subject import SubjectSpec
     from nora.subject.profile_writer import run_writer
 
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
@@ -250,13 +244,6 @@ async def test_source_lane_composed_input_and_storage(
     media_only = vector.startswith("profile_media_only")
     preference_text = ("usual food preference is vegetarian ramen." if media_only else
                        "My usual food preference is vegetarian ramen.")
-    subject = await obtain(SubjectSpec(
-        database_url=clean_pg_url, workdir=tmp_path,
-        now=datetime.fromtimestamp(private["clock_ms"] / 1000, UTC),
-        overrides={"dreamer.enabled": True, "memory.profile.write": True},
-        policy=('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
-                'id = "g1"\nlabel = "g1"\npersons = ["miles_novak"]\nunit = "nora"\n'),
-    ))
     available = not vector.endswith("missing") and exposure == "cached"
     calls = []
     agents = []
@@ -298,7 +285,13 @@ async def test_source_lane_composed_input_and_storage(
         return SimpleNamespace(stop_reason="end_turn")
 
     monkeypatch.setattr(factory, "invoke", invoke)
-    try:
+    async with offline_subject(SubjectSpec(
+        database_url=clean_pg_url, workdir=tmp_path,
+        now=datetime.fromtimestamp(private["clock_ms"] / 1000, UTC),
+        overrides=_PROFILE_WRITER,
+        policy=('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+                'id = "g1"\nlabel = "g1"\npersons = ["miles_novak"]\nunit = "nora"\n'),
+    )) as subject:
         args = {"subject": subject, "person": "miles_novak", "sources": private["sources"],
                 "held_birthday": False, "now_ms": private["clock_ms"]}
         receipt = await run_writer(**args, print_input=print_only)
@@ -337,36 +330,30 @@ async def test_source_lane_composed_input_and_storage(
         filename = f"{vector}{'-first' if missing_first else ''}-{exposure}.txt"
         (evidence / filename).write_text(calls[0])
         (evidence / (filename + ".receipt.json")).write_text(json.dumps(receipt, default=str))
-    finally:
-        await _close(subject)
 
 
 async def test_v2_missing_reading_cannot_pass_with_missing_fixture_root(
     clean_pg_url, tmp_path, monkeypatch,
 ):
-    from evals.backbone import _close
     from nora.agent.dreamer import DreamerRuntime
-    from nora.subject import SubjectSpec, obtain
+    from nora.subject import SubjectSpec
     from nora.subject.profile_writer import run_writer
 
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     private = case_file(source_lanes_v2=True)["profile_media_only_missing"]
-    subject = await obtain(SubjectSpec(
-        database_url=clean_pg_url, workdir=tmp_path,
-        overrides={"dreamer.enabled": True, "memory.profile.write": True},
-        policy=('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
-                'id = "g1"\nlabel = "g1"\npersons = ["miles_novak"]\nunit = "nora"\n'),
-    ))
     agents = []
     monkeypatch.setattr(factory, "create_dream_agent", lambda **kw: agents.append(kw))
     monkeypatch.setattr(DreamerRuntime, "batch_limit_for", lambda *_: 1)
-    try:
+    async with offline_subject(SubjectSpec(
+        database_url=clean_pg_url, workdir=tmp_path,
+        overrides=_PROFILE_WRITER,
+        policy=('default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+                'id = "g1"\nlabel = "g1"\npersons = ["miles_novak"]\nunit = "nora"\n'),
+    )) as subject:
         with pytest.raises(ValueError, match="declared synthetic sources missing"):
             await run_writer(subject, person="miles_novak", sources=private["sources"],
                              held_birthday=False, print_input=False, now_ms=private["clock_ms"])
         assert agents == []
-    finally:
-        await _close(subject)
 
 
 @pytest.mark.parametrize("vector", [
@@ -434,9 +421,9 @@ async def test_representation_sources_use_composed_writer_and_store(
         "profile_input": {"sources": private["sources"], "clock_ms": private["clock_ms"]},
         "print_input": print_only,
     })
-    from evals.rebuilt.grading import Judgement
+    from evals.rebuilt.grading import Judge, Judgement
 
-    class ScriptedJudge:
+    class ScriptedJudge(Judge):
         async def grade_identity(self, *, heads, evidence):
             payload = json.loads(heads)
             source = json.loads(evidence)
@@ -451,10 +438,10 @@ async def test_representation_sources_use_composed_writer_and_store(
                              receipt={"actual_model": "scripted-judge", "usage_known": False,
                                       "response_id": "response-1", "trace_id": "trace-1"})
 
-    result = await _drive(case, Spec(source_url=source.url, entry="profile_identity",
-        judge=None if judge_mode == "missing" else ScriptedJudge(),
+    result = await offline_drive(case, Spec(source_url=source.url, entry="profile_identity",
+        judge=None if judge_mode == "missing" else ScriptedJudge(base_url=""),
         policy=policy, identity=identity, template=source.template,
-        overrides={"llm.base_url": "http://127.0.0.1:9/v1"}))
+        overrides=_PROFILE_WRITER))
     data = EvaluationData(input="", actual_output=result["output"],
         actual_environment_state=result["environment_state"], metadata={"expect": "facts"})
     if print_only:

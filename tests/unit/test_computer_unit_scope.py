@@ -74,7 +74,7 @@ def kit(tmp_path):
             subagent_job=job,
             dream_adaptor="test" if background else "",
         )
-        return {s.name: s.call for s in specs if s.name.startswith("computer_")}
+        return {s.name: s.call for s in specs if s.name.startswith(("computer_", "web_browse"))}
 
     return tools, runtime, events, sessions, leases, browser
 
@@ -120,7 +120,8 @@ async def test_unresolved_rooms_and_private_dms_never_get_a_group_workspace(
     tools, runtime, _, sessions, _, _ = kit
     calls = tools(platform, cid, kind=kind)
     assert (await calls["computer_run"](command="true"))["status"] == "unavailable"
-    assert (await calls["computer_browse"](objective="anything"))["status"] == "unavailable"
+    assert (await calls["web_browse"](
+        objective="anything", start_url="https://example.com"))["status"] == "unavailable"
     assert runtime.run_calls == [] and sessions.sessions == {}
 
 
@@ -137,7 +138,8 @@ async def test_different_sessions_in_one_unit_cannot_split_the_lease(kit):
                 path="blocked", content="x"
             )
         )["status"] == "unavailable"
-        assert (await tools("discord", "d")["computer_browse"](objective="blocked"))[
+        assert (await tools("discord", "d")["web_browse"](
+            objective="blocked", start_url="https://example.com"))[
             "status"
         ] == "unavailable"
         assert (await tools("signal", "private")["computer_run"](command="other"))["status"] == "ok"
@@ -155,7 +157,8 @@ async def test_different_sessions_in_one_unit_cannot_split_the_lease(kit):
 async def test_browser_and_context_bind_the_same_unit_as_the_tools(kit):
     tools, runtime, events, sessions, _, browser = kit
     for platform, cid in [("signal", "s"), ("discord", "d"), ("whatsapp", "w")]:
-        assert (await tools(platform, cid)["computer_browse"](objective="tab"))["status"] == "ok"
+        assert (await tools(platform, cid)["web_browse"](
+            objective="tab", start_url="https://example.com"))["status"] == "ok"
     assert {c[0] for c in browser.calls} == {computer_unit_scope("team")}
     reader = ComputerContextReader(
         sessions=sessions,
