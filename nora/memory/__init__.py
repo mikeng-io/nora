@@ -14,6 +14,8 @@ from nora.memory.app.act_scope import seed_pass_shown as seed_pass_shown
 from nora.memory.app.acts import ActEnvelope as ActEnvelope
 from nora.memory.app.acts import ActInvocation as ActInvocation
 from nora.memory.app.acts import PassItem as PassItem
+from nora.memory.app.delivery_arbitration import DeliveryArbitration as DeliveryArbitration
+from nora.memory.app.delivery_arbitration import DeliveryRecheck as DeliveryRecheck
 from nora.memory.app.effects import EffectRecorder as EffectRecorder
 from nora.memory.domain.acts import Act as Act
 from nora.memory.domain.acts import ActAuthority as ActAuthority

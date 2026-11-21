@@ -55,7 +55,7 @@ FormRefusal = Literal[
 ]
 WriteRefusal = Literal[
     "stale_base", "credential", "doctrine", "content", "unsafe_page_reference",
-    "not_open", "witness_not_met", "untyped_condition",
+    "not_open", "witness_not_met", "untyped_condition", "duplicate_delivery",
     "not_this_delivery", "citation_outside_pass", "not_a_commit",
 ]
 RefusalReason = Literal[FormRefusal, WriteRefusal]
@@ -77,6 +77,7 @@ class Admitted:
     owner: str | None = None
     owed_to: str | None = None
     topics: tuple[Admitted, ...] = ()
+    deliveries: tuple[Admitted, ...] = ()
 
 
 class _RefusalError(Exception):
