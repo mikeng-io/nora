@@ -68,7 +68,13 @@ class RetrievalAccess:
                     alias for alias in rendered.aliases if rendered.canonical(alias) in audience
                 )
             key = room_key(here.platform, here.primary_id or room.conversation_id)
-            scope = RetrievalScope(here.unit, key, key in dm_rooms, audience, frozenset(), as_of)
+            room_keys = {
+                alias: room_key(r.platform, r.primary_id)
+                for r in rooms if r.primary_id for alias in _rooms(r)
+            }
+            scope = RetrievalScope(
+                here.unit, key, key in dm_rooms, audience, frozenset(), as_of, room_keys,
+            )
             return rendered, scope, dm_rooms
         except RetrievalUnavailableError:
             raise

@@ -7,6 +7,7 @@ from datetime import datetime
 from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.lineage import RoomFacts
 from nora.domain.prompt import age
+from nora.memory.domain.presentations import OpenIntention
 from nora.memory.domain.retrieval import RetrievedRow
 
 
@@ -30,7 +31,11 @@ def _claim(row: RetrievedRow, now: datetime) -> tuple[str, ...]:
         "support=unknown" if support is None else
         f"support={support.count}, last evidenced={_age(support.last_evidenced_at, now)}"
     )
-    return (f"part={row.part}", evidence, _content(row.content))
+    staleness = ""
+    if row.part == "situation":
+        count = row.items_since if row.items_since is not None else "unknown"
+        staleness = f"items_since={count}"
+    return (f"part={row.part}", evidence, staleness, _content(row.content))
 
 
 def _intention(row: RetrievedRow, _now: datetime) -> tuple[str, ...]:
@@ -66,7 +71,10 @@ _DETAILS = {
 }
 
 
-def _line(row: RetrievedRow, now: datetime, room: RoomFacts, dm_rooms: Set[str]) -> str:
+def _line(
+    row: RetrievedRow, now: datetime, room: RoomFacts, dm_rooms: Set[str],
+    show_distance: bool, due: Set[str],
+) -> str:
     basis = row.basis
     if basis == "inferred":
         basis = f"{basis} ({row.reasoning}, {row.confidence} confidence)"
@@ -87,6 +95,8 @@ def _line(row: RetrievedRow, now: datetime, room: RoomFacts, dm_rooms: Set[str])
         f"occurred={_age(row.occurred_at, now)}",
         f"asserted={_age(row.asserted_at, now)}",
         f"state={row.state}",
+        "due" if row.graph_id in due else "",
+        f"distance={row.distance}" if show_distance else "",
         f"people={people or 'none'}",
         f"edges={edges or 'none'}",
         f"citations={citations}" if citations else "",
@@ -98,11 +108,12 @@ def _line(row: RetrievedRow, now: datetime, room: RoomFacts, dm_rooms: Set[str])
 
 def render_graph_rows(
     rows: Sequence[RetrievedRow], *, now: datetime, reading_room: RoomFacts, dm_rooms: Set[str],
+    show_distance: bool = False, due: Set[str] = frozenset(),
 ) -> str:
     """Render the rows selected for the reading room, with ages against the pass clock."""
     return render_rows(
         rows, style=RowStyle(), speaker=lambda row: row.kind,
-        body=lambda row: _line(row, now, reading_room, dm_rooms),
+        body=lambda row: _line(row, now, reading_room, dm_rooms, show_distance, due),
     )
 
 
@@ -110,3 +121,22 @@ def render_graph_row(
     row: RetrievedRow, *, now: datetime, reading_room: RoomFacts, dm_rooms: Set[str],
 ) -> str:
     return render_graph_rows((row,), now=now, reading_room=reading_room, dm_rooms=dm_rooms)
+
+
+def render_open_intention(
+    entry: OpenIntention, *, now: datetime, reading_room: RoomFacts, dm_rooms: Set[str],
+) -> str:
+    """Render an intention with the due judgment made by Standing."""
+    due = frozenset({entry.row.graph_id}) if entry.due else frozenset()
+    return render_graph_rows(
+        (entry.row,), now=now, reading_room=reading_room, dm_rooms=dm_rooms, due=due,
+    )
+
+
+def render_related_rows(
+    rows: Sequence[RetrievedRow], *, now: datetime, reading_room: RoomFacts, dm_rooms: Set[str],
+) -> str:
+    """Render each related row with its distance from an anchor."""
+    return render_graph_rows(
+        rows, now=now, reading_room=reading_room, dm_rooms=dm_rooms, show_distance=True,
+    )
