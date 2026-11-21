@@ -17,11 +17,12 @@ from nora.app.composition_review import build_review_runner
 from nora.app.review_pass import REVIEW_RETRY_SECONDS, ReviewPass
 from nora.app.startup import StartupError
 from nora.config import ModelRoute
+from nora.domain.graph_stimuli import GraphStimulus
 from nora.domain.lineage import LiveRoom
 from nora.infra.sql.cognitive_graph_schema import CLAIM
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.instructions.dreamer import DreamerInstructions
-from nora.memory import ReadingRoom, ReviewInput, WakeInput, wire
+from nora.memory import ReadingRoom, ReviewInput, WakeClosed, WakeInput, pass_shown, wire
 from nora.memory.domain.pass_declarations import declaration
 from nora.obs.metrics import Metrics
 from nora.testing.scripted_agent import ScriptedTurn
@@ -33,10 +34,10 @@ from tests.infra.test_pass_anchors import NOW, SCOPE, reader
 from tests.infra.test_pass_assembly import _assembler
 from tests.infra.test_retrieval_scope import AT, OTHER, OTHER_ROOM, ROOM, UNIT, write_edge
 from tests.infra.test_retrieval_scope import scenario as scenario
-from tests.infra.test_review_admission import changed_tally, grade_rows, guess, lesson
+from tests.infra.test_review_admission import START, changed_tally, grade_rows, guess, lesson
 from tests.infra.test_room_busy import service, slots
 from tests.infra.test_situation_staleness import intention
-from tests.infra.test_wake_runner import WakeModel
+from tests.infra.test_wake_runner import WakeModel, claim, runner
 from tests.unit.test_dream_memory_budget import _tool_results
 
 
@@ -370,6 +371,45 @@ async def test_weakened_grade_publishes_dependency_on_the_lesson(scenario):
     agenda = next(block for block in after.blocks if block.name == "agenda")
     assert "claim: lesson" in str(agenda.body)
     assert "outcome=weakened" not in str(agenda.body) and grade.id not in after.shown
+
+
+async def test_wake_weakening_obeys_the_audience_expanded_by_an_observation(scenario):
+    await scenario.claim("lesson", part="lesson", asserted_at=START)
+    await ended(scenario, "excluded-verdict", "leaked", lesson="lesson", excluded_persons=[OTHER])
+    await _tick(scenario.engine, NOW)
+    tally = (await tally_rows(scenario))["lesson"]
+    assert OTHER in tally["excluded_persons"]
+    review = _review(scenario, _model("lesson", "weakened", tally["graph_id"]))
+    await review(await scenario.now())
+    [grade] = await grade_rows(scenario)
+    [dependency] = [stimulus for stimulus in await SqlGraphStimuli(scenario.engine).read(UNIT)
+                    if stimulus.source == "review"]
+    await scenario.item("excluded-author-observation", person=OTHER)
+    observation = GraphStimulus(UNIT, "new_item", "excluded-author-observation", AT,
+                                "messages", room=ROOM, person=OTHER)
+    shown = set()
+
+    def observe():
+        shown.update(pass_shown() or ())
+
+    visible = WakeModel([], observe)
+    now = await scenario.now()
+    assert await runner(scenario, visible).run(
+        replace(claim(dependency), claimed=now),
+    ) == WakeClosed()
+    assert f"graph:{grade.id} outcome=weakened" in visible.prompt()
+    assert grade.id in shown
+
+    shown.clear()
+    excluded = WakeModel([], observe)
+    assert await runner(scenario, excluded).run(
+        replace(claim(dependency, observation), claimed=now),
+    ) == WakeClosed()
+    assert {"lesson", observation.graph_id} <= shown
+    assert observation.graph_id in excluded.prompt()
+    assert (
+        grade.id in excluded.prompt(), "outcome=weakened" in excluded.prompt(), grade.id in shown,
+    ) == (False, False, False)
 
 
 def test_review_fails_startup_when_the_resolved_judge_is_the_writer(example_config):

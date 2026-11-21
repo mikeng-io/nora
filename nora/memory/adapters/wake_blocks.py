@@ -4,13 +4,13 @@ from nora.domain.blocks import ContextBlock, render_elements
 from nora.domain.composed import compose_body
 from nora.domain.graph_stimuli import GraphStimulus
 from nora.memory.adapters.presentation_blocks import GraphPresentationBlocks
-from nora.memory.domain.pass_inputs import WakeInput
+from nora.memory.domain.pass_inputs import WakeInput, review_weakening
 from nora.memory.domain.retrieval import EvidenceHandle, RetrievalResult
 
 
 def wake_blocks(
     data: WakeInput, result: RetrievalResult, builder: GraphPresentationBlocks,
-    anchors: tuple[str, ...], weakenings: frozenset[GraphStimulus],
+    anchors: tuple[str, ...],
 ) -> tuple[tuple[ContextBlock, ...], frozenset[str], tuple[str, ...]]:
     if result.status == "unavailable":
         return (), frozenset(), ()
@@ -20,6 +20,7 @@ def wake_blocks(
         and (stimulus.source != "lesson_tally"
              or rows[stimulus.graph_id].lesson_tally is not None)
     )
+    weakenings = frozenset(s for s in stimuli if review_weakening(s) in result.review_weakenings)
     open_intentions = tuple(rows[id_] for id_ in anchors
                             if id_ in rows and rows[id_].kind == "intention"
                             and rows[id_].state == "open")

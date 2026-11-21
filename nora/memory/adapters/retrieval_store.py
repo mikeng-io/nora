@@ -15,6 +15,7 @@ from nora.access import IdentityAccess
 from nora.agent.lineage import LineagePolicy
 from nora.infra.sql.cognitive_graph_schema import GRAPH_SEARCH
 from nora.memory.adapters.retrieval_load import load_rows
+from nora.memory.adapters.retrieval_rows import tombstoned_ids
 from nora.memory.adapters.retrieval_scope import RetrievalAccess, scoped_rows
 from nora.memory.domain.registration import SEARCHABLE_SOURCES
 from nora.memory.domain.retrieval import (
@@ -25,6 +26,7 @@ from nora.memory.domain.retrieval import (
     RetrievalScope,
     RetrievalUnavailableError,
     RetrievedRow,
+    ReviewWeakening,
     ScopedGraph,
 )
 
@@ -206,6 +208,24 @@ class _ScopedQueries:
             self.conn, self.rows, distances, already_shown, self.scope, self.access,
             self.now, self.dm_rooms, ceiling=self.bounds.ceiling,
         )
+
+    async def visible_review_weakenings(
+        self, requested: tuple[ReviewWeakening, ...],
+    ) -> frozenset[ReviewWeakening]:
+        # Both rows come from the graph opened for the final retrieval audience.
+        grade, edge = self.rows.c, self.rows.alias("weakening_links").c
+        source, target, kind = _endpoints(edge)
+        pairs = tuple((ref.grade_id, ref.lesson_id) for ref in requested)
+        query = sa.select(source, target).where(
+            edge.source == "edge", edge.state == "live", kind == "grades",
+            sa.tuple_(source, target).in_(pairs), grade.graph_id == source,
+            grade.source == "claim", grade.state == "live", grade.event_time <= self.now,
+            grade.image["part"].astext == "grade", grade.image["grade"].astext == "weakened",
+        )
+        if self.scope.as_of is not None:
+            removed = tombstoned_ids(self.scope.unit, since=self.scope.as_of)
+            query = query.where(grade.graph_id.not_in(removed), edge.graph_id.not_in(removed))
+        return frozenset(ReviewWeakening(*pair) for pair in await self.conn.execute(query))
 
 
 def _endpoints(edge: Any) -> tuple[Any, Any, Any]:
