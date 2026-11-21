@@ -30,6 +30,10 @@ TIMING_TESTS = (
     "tests/unit/test_engagement_pipeline.py",
     "tests/integration/test_bridge_queue_telemetry.py",
     "tests/infra/test_register_stored_rows.py",
+    "tests/integration/subject/test_autonomous_journey_sdk.py",
+    "tests/integration/test_managed_circle_cost.py",
+    # Enters the stack at feat/cognitive-graph-wake-claims; inert until then.
+    "tests/infra/test_room_busy.py",
 )
 
 
