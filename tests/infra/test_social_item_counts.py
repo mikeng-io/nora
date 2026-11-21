@@ -5,7 +5,7 @@ unknown as 0, writes nothing for a read that carried nothing, and keeps
 `likes` NULL while the author hides them; `current_counts` and `items_of`
 read the latest row under the readable rule.
 
-Database scoped to the MODULE and truncated between tests (AGENTS.md).
+Database scoped to the MODULE and truncated between tests (docs/code-standards.md).
 """
 
 from __future__ import annotations

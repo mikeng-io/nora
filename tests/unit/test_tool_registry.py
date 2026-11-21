@@ -139,16 +139,16 @@ def test_the_computer_tools_are_offered_only_when_a_computer_is_wired(defer):
     assert COMPUTER_TOOLS.isdisjoint(set(off.shelf.names()))
     assert "computer_read" not in ToolRegistry().capability_digest()
     # A shared VM (`[computer]` on, `[computer.scoped]` off) has no queue and
-    # no browser manager, so `computer_browse`, `computer_capture` and
+    # no browser manager, so `web_browse`, `computer_capture` and
     # `computer_cancel` would only answer `unavailable` and stay withheld.
     no_browser = _surface(ToolRegistry(computer=FakeSandboxRuntime()), defer=defer)
     assert no_browser.admitted >= COMPUTER_TOOLS - {
-        "computer_browse", "computer_capture", "computer_cancel"}
-    assert {"computer_browse", "computer_capture", "computer_cancel"}.isdisjoint(
+        "web_browse", "computer_capture", "computer_cancel"}
+    assert {"web_browse", "computer_capture", "computer_cancel"}.isdisjoint(
         no_browser.admitted | catalogued(no_browser))
     # Scoped wiring (`[computer.scoped]`): the admission queue and the
     # browser manager are real, so capture and cancel are offered;
-    # `computer_browse` still waits on a BrowserRunner.
+    # `web_browse` still waits on a BrowserRunner.
     scoped_registry = ToolRegistry(
         computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(),
         computer_admission=object(), browser_manager=object())
@@ -242,8 +242,8 @@ def test_the_registry_exposes_every_declared_tool():
         # Nora's computer (DEC-243).
         "computer_run", "computer_read", "computer_write", "computer_edit", "computer_export",
         "computer_import", "computer_session_list",
-        # a whole browser task, by a sub-agent.
-        "computer_browse",
+        # a whole browser task: a page that needs clicking, choosing or searching.
+        "web_browse",
         # the scoped pair: a picture of a task's own tab; a queued or
         # running task stopped.
         "computer_capture",
@@ -359,7 +359,7 @@ def test_budgets_match_todays_table():
         # one session tool reads. One call answers «what were you doing»; a
         # second is a different status filter.
         "computer_session_list": 2,
-        "computer_browse": 2,
+        "web_browse": 2,
         # one capture of a task's own tab, one retry with a fresh look; one
         # stop of a queued or running task, a second to read the row back.
         "computer_capture": 2, "computer_cancel": 2,
@@ -942,8 +942,8 @@ ACT_VERBS = frozenset({"document_revise", "intention_commit",
     # a command, a file write and a file edit all
     # change the room's workspace.
     "computer_run", "computer_write", "computer_edit",
-    # the sub-agent clicks and types in a page.
-    "computer_browse",
+    # the browser clicks, types and scrolls in a page.
+    "web_browse",
     # S3a: an export publishes (a Drop link, an attachment) or stores, and an
     # import writes into the workspace.
     "computer_export", "computer_import",

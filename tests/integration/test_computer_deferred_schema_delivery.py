@@ -45,7 +45,7 @@ from nora.testing import (
 
 NOW = datetime(2026, 2, 1, 12, 0, tzinfo=UTC)
 UNIT = "unit-x"
-LOAD_NAMES = ["computer_browse", "computer_write",
+LOAD_NAMES = ["web_browse", "computer_write",
               "computer_capture", "computer_export"]
 
 
@@ -111,7 +111,7 @@ def _rig(persons):
 
 async def test_deferred_computer_schemas_reach_the_real_request(persons):
     """Req1: no computer schema resident, `load_tools` is, catalogue in the
-    prompt. `load_tools(["computer_browse","computer_wrong"])` loads one and
+    prompt. `load_tools(["web_browse","computer_wrong"])` loads one and
     names the other `unknown`; a second call loads the remaining three — req3
     carries all four schemas. `computer_write` then runs against the runtime
     and lands bytes on the bound scope."""
@@ -135,14 +135,14 @@ async def test_deferred_computer_schemas_reach_the_real_request(persons):
             for name in LOAD_NAMES:
                 assert name in prompt  # deferred catalogue reached the prompt
             delta = _tool_call("call_load1", LOADER_TOOL,
-                               {"names": ["computer_browse", "computer_wrong"]})
+                               {"names": ["web_browse", "computer_wrong"]})
             return httpx.Response(200, headers={"content-type": "text/event-stream"},
                                   content=_sse(delta, "tool_calls"))
         if n == 2:
-            assert "computer_browse" in names
+            assert "web_browse" in names
             assert "computer_write" not in names  # not loaded yet
             result = json.loads(tool_msgs[-1]["content"])
-            assert result["loaded"] == ["computer_browse"]
+            assert result["loaded"] == ["web_browse"]
             assert result["unknown"] == ["computer_wrong"]
             delta = _tool_call("call_load2", LOADER_TOOL,
                                {"names": ["computer_write", "computer_capture",
