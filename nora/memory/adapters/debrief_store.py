@@ -8,10 +8,15 @@ from typing import cast
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.infra.sql.audit import transcript_select
-from nora.infra.sql.cognitive_graph_schema import DEBRIEF_OBLIGATION, EDGE, INTENTION
+from nora.infra.sql.cognitive_graph_schema import (
+    DEBRIEF_OBLIGATION,
+    EDGE,
+    GRAPH_STIMULUS_CLAIM,
+    INTENTION,
+)
 from nora.infra.sql.schema import MESSAGES
 from nora.memory.adapters.act_store import SqlActStore
 from nora.memory.app.acts import PassItem
@@ -30,18 +35,25 @@ class SqlDebriefStore:
 
     async def begin(self, row: DebriefObligation) -> bool:
         async with self._engine.begin() as conn:
-            inserted = await conn.scalar(insert(JOURNAL).values(
-                unit=row.unit, room=row.room, pass_id=row.pass_id, occasion=row.occasion,
-                intention=row.intention, created=row.created, attempts=1,
-                first_message_id=row.first_message_id, last_message_id=row.last_message_id,
-            ).on_conflict_do_nothing().returning(_C.pass_id))
-        return inserted is not None
+            return await insert_pending(conn, row, attempts=1)
 
-    async def take_oldest(self, unit: str, room: str) -> DebriefObligation | None:
-        oldest = sa.select(_C.pass_id).where(
+    async def take_oldest(
+        self, unit: str, room: str, *, pass_id: str | None = None,
+    ) -> DebriefObligation | None:
+        # A staged proactive obligation is runnable only after its reply is durable.
+        claim = GRAPH_STIMULUS_CLAIM.c
+        finished = sa.exists(sa.select(1).where(
+            claim.unit == _C.unit, claim.pass_id == _C.pass_id, claim.state == "closed",
+        ))
+        pending = sa.select(_C.pass_id).where(
             _C.unit == unit, _C.room == room, _C.state == "pending",
             _C.attempts < MAX_SLOT_ATTEMPTS,
-        ).order_by(_C.created, _C.pass_id).limit(1).with_for_update().scalar_subquery()
+            sa.or_(_C.attempts > 0, _C.occasion != "proactive", finished),
+        )
+        if pass_id is not None:
+            pending = pending.where(_C.pass_id == pass_id)
+        oldest = (pending.order_by(_C.created, _C.pass_id).limit(1)
+                  .with_for_update().scalar_subquery())
         async with self._engine.begin() as conn:
             row = (await conn.execute(
                 sa.update(JOURNAL).where(
@@ -129,3 +141,12 @@ class SqlDebriefStore:
                 )
                 for item in rows
             )
+
+
+async def insert_pending(conn: AsyncConnection, row: DebriefObligation, *, attempts: int) -> bool:
+    inserted = await conn.scalar(insert(JOURNAL).values(
+        unit=row.unit, room=row.room, pass_id=row.pass_id, occasion=row.occasion,
+        intention=row.intention, created=row.created, attempts=attempts,
+        first_message_id=row.first_message_id, last_message_id=row.last_message_id,
+    ).on_conflict_do_nothing().returning(_C.pass_id))
+    return inserted is not None

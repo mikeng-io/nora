@@ -47,6 +47,7 @@ from nora.memory.adapters.memory_intake import SqlMemoryIntake
 from nora.memory.adapters.message_graph_ids import SqlMessageGraphIds
 from nora.memory.adapters.pass_anchors import SqlPassAnchors
 from nora.memory.adapters.pass_assembly import PassAssembler
+from nora.memory.adapters.proactive_claims import SqlProactiveClaims
 from nora.memory.adapters.retrieval_store import SqlRetrieval
 from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
@@ -450,3 +451,7 @@ def pass_assembler(
         SqlPassAnchors(engine, access, lineage),
         retrieval(engine, access, lineage, embedder, embedding_model),
     )
+
+
+def proactive_claims(engine: AsyncEngine) -> SqlProactiveClaims:
+    return SqlProactiveClaims(engine)

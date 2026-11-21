@@ -25,6 +25,7 @@ from nora.app.startup import StartupError
 from nora.config import load
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
+from nora.memory import DeliveryArbitration
 from nora.platform.discord.media import DiscordMediaSource
 from nora.platform.instagram.media import InstagramMediaSource
 from nora.platform.registry import MediaSourceRegistry
@@ -515,16 +516,7 @@ async def test_media_disabled_is_off_even_with_a_valid_key(cfg, monkeypatch):
 
 
 async def test_the_heartbeat_is_wired_to_the_real_fire_path(cfg):
-    """The tick's `fire` collaborator is a `FirePath`, not a stub.
-
-    `HeartbeatLoop` takes `fire` as a collaborator and calls whatever it is handed, so a
-    stub left in place claims every due row, delivers nothing, and resolves it, with every
-    unit test green because each one supplies its own fake `fire`.
-
-    Reaching into `background._tasks` and `_fire` is the only way to see it from out here:
-    `Dependencies` deliberately exposes no heartbeat, and widening it to make one test
-    easier is exactly what its docstring refuses.
-    """
+    """Inspect the spawned fire loops because Dependencies keeps them private."""
     on = override_config(cfg, {"heartbeat.enabled": True})
     deps = await build_dependencies(on)
     try:
@@ -535,6 +527,13 @@ async def test_the_heartbeat_is_wired_to_the_real_fire_path(cfg):
         ]
         assert loops, "the heartbeat loop was not spawned"
         assert isinstance(loops[0]._fire.__self__, FirePath)
+        [poller] = [
+            task.get_coro().cr_frame.f_locals["self"]
+            for task in deps.background._tasks
+            if task.get_coro().__qualname__ == "ProactivePoller.run"
+        ]
+        assert poller._slots is loops[0]._slots
+        assert isinstance(poller._proactive._recheck, DeliveryArbitration)
     finally:
         await deps.background.cancel_all()
 

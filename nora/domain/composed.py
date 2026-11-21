@@ -10,6 +10,7 @@ from types import FrameType
 COMPOSERS = frozenset(
     {
         "nora.memory.adapters.presentation_blocks:_graph_block",
+        "nora.app.proactive_fire:_floor",
         "nora.language.register_render:render_register",
         "nora.language.cognition_render:_grounded_blocks",
         "nora.language.cognition_render:_item_blocks",

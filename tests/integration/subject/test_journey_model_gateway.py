@@ -65,6 +65,19 @@ def _foreground_declarations(cfg, request, tool_spec):
                 "Generated & spoken.",
             ),
         ],
+        "nora/app/proactive_fire.py": [
+            (
+                request(
+                    "proactive",
+                    cfg.llm.model,
+                    "<due_intention>Generated intention</due_intention>"
+                    "<why_now>intention_due at 2099-01-01T12:00:00+00:00</why_now>",
+                    tools=(tool_spec("send_reply", "text", "string"),),
+                ),
+                "proactive",
+                "",
+            ),
+        ],
         "nora/domain/summons.py": [
             (
                 request(

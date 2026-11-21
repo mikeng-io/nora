@@ -7,9 +7,14 @@ from typing import cast
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from nora.infra.sql.cognitive_graph_schema import NORA_ACT, NORA_ACT_OUTCOME, NORA_PASS_OUTPUT
+from nora.infra.sql.cognitive_graph_schema import (
+    GRAPH_STIMULUS_CLAIM,
+    NORA_ACT,
+    NORA_ACT_OUTCOME,
+    NORA_PASS_OUTPUT,
+)
 from nora.infra.sql.item_registration import SqlItemRegistration, item_graph_id
 from nora.memory.adapters.admission_store import _stamp
 from nora.memory.app.acts import PassItem
@@ -65,6 +70,8 @@ class SqlActStore:
             guarantee=act.guarantee, idempotency_key=act.key,
         ).on_conflict_do_nothing(index_elements=[ACT.c.id])
         async with self._engine.begin() as conn, conn.begin_nested() as attempt:
+            if not await _current_claim(conn, authority):
+                return False
             planes = await self._registration.planes(
                 conn, ACT, unit=authority.unit, occurred_at=datetime.now(UTC),
                 persons=(authority.person,), room=authority.room, key=(identity.id,),
@@ -119,7 +126,7 @@ class SqlActStore:
 
     async def append_pass(
         self, authority: ActAuthority, kind: str, content: list[str] | None,
-        *, ordinal: int | None = None,
+        *, ordinal: int | None = None, silence_reason: str | None = None,
     ) -> None:
         context = authority.pass_context
         if context is None:
@@ -129,13 +136,18 @@ class SqlActStore:
         row_id = item_graph_id(table.name, key if ordinal is None else (*key, ordinal),
                                context.unit)
         async with self._engine.begin() as conn:
+            if kind == "silence" and not await _current_claim(conn, authority):
+                return
             planes = await self._registration.planes(
                 conn, table, unit=context.unit, occurred_at=datetime.now(UTC),
                 persons=(authority.person,), room=context.room, key=(row_id,),
             )
             planes.update(_stamp(context))
             await conn.execute(
-                insert(table).values(**planes, id=row_id, output_kind=kind, content=content)
+                insert(table).values(
+                    **planes, id=row_id, output_kind=kind, content=content,
+                    authority_intention=authority.intention, silence_reason=silence_reason,
+                )
                 .on_conflict_do_nothing(index_elements=[table.c.id]),
             )
 
@@ -154,7 +166,11 @@ class SqlActStore:
         act, outcome = ACT.c, OUTCOME.c
         outputs = sa.select(
             output.graph_id, output.output_kind.label("kind"), output.asserted_at,
-            sa.literal("nora").label("who"), output.content,
+            sa.literal("nora").label("who"), sa.case(
+                (output.silence_reason.is_not(None),
+                 sa.func.jsonb_build_object("reason", output.silence_reason)),
+                else_=output.content,
+            ).label("content"),
         ).where(output.unit == unit, output["pass"] == pass_id, output.state == "live")
         deliveries = (
             act.unit == unit, act["pass"] == pass_id, act.act_kind == "delivery",
@@ -176,3 +192,15 @@ class SqlActStore:
             rows = await conn.execute(sa.select(items).where(items.c.graph_id.is_not(None))
                                       .order_by(items.c.asserted_at, items.c.graph_id))
             return tuple(PassItem(*row) for row in rows)
+
+
+async def _current_claim(conn: AsyncConnection, authority: ActAuthority) -> bool:
+    context = authority.pass_context
+    if context is None or context.occasion != "proactive" or authority.intention is None:
+        return True
+    claim = GRAPH_STIMULUS_CLAIM.c
+    return await conn.scalar(sa.select(claim.pass_id).where(
+        claim.unit == context.unit, claim.pass_id == context.pass_id,
+        claim.graph_id == authority.intention,
+        claim.claimant == "proactive", claim.state == "claimed",
+    ).with_for_update()) is not None

@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Awaitable, Callable, Collection, Mapping
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -148,7 +148,7 @@ class Deliverer:
         on_delivered: DeliveredObserver | None = None,
         composer: OutboundComposer | None = None,
         links: LinkCarry | None = None,
-        send_permitted: bool = True,
+        send_permitted: bool | Callable[[], Awaitable[bool]] = True,
         intent: str | None = None,
         content_checks: bool = True,
     ) -> None:
@@ -348,7 +348,8 @@ class Deliverer:
                               platform=self._target.platform, audience=self._audience)
             self._last_outcome = "egress_block"
             return False
-        if not self._send_permitted:
+        if not (await self._send_permitted() if callable(self._send_permitted)
+                else self._send_permitted):
             self._held_texts.append(emoji)
             self._last_outcome = "cooldown_held"
             return False
@@ -526,14 +527,9 @@ class Deliverer:
             self._last_outcome = "egress_block"
             return False
 
-        # The participation SEND cooldown, placed AFTER every guard above has
-        # measured the text (the guards' accounting of a held message stays true)
-        # and BEFORE `_attempts`, the audit row and the wire: a held message
-        # leaves no trace in the room's history, because the room never heard it.
-        # Not a failure: no counter moves, the held text is retained on
-        # `held_texts` for the shadow-mode mirror, and `called` stays True, so the
-        # turn is never read as `no_send_call`.
-        if not self._send_permitted:
+        # Apply the last-inch send decision before auditing or reaching the wire.
+        if not (await self._send_permitted() if callable(self._send_permitted)
+                else self._send_permitted):
             log.info(
                 "send held by the participation cooldown (tag=%s, %d chars)",
                 self._tag_id, len(styled.text),

@@ -19,7 +19,7 @@ from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy.dialects import postgresql as pg
 
 from nora.domain.graph_registration import SourceKind
-from nora.infra.sql.graph_stimulus_schema import graph_stimulus_table
+from nora.infra.sql.graph_stimulus_schema import graph_stimulus_claim_table, graph_stimulus_table
 from nora.infra.sql.schema import (
     EMBEDDING_DIMENSIONS,
     EMBEDDING_INDEXED_DIMENSIONS,
@@ -27,6 +27,7 @@ from nora.infra.sql.schema import (
 )
 
 GRAPH_STIMULUS = graph_stimulus_table(METADATA)
+GRAPH_STIMULUS_CLAIM = graph_stimulus_claim_table(METADATA)
 
 def _planes(
     basis_check: str, state_check: str, kind: str, *,
@@ -442,6 +443,8 @@ NORA_PASS_OUTPUT = sa.Table(
     "nora_pass_output", METADATA,
     sa.Column("id", sa.Text, primary_key=True),
     sa.Column("output_kind", sa.Text, nullable=False),
+    sa.Column("silence_reason", sa.Text),
+    sa.Column("authority_intention", sa.Text),
     sa.Column("content", pg.JSONB(none_as_null=True)),
     sa.CheckConstraint(
         "output_kind IN ('expression', 'silence', 'tool_call')", name="ck_nora_pass_output_kind",

@@ -9,7 +9,11 @@ from nora.memory.app.act_scope import active_act_authority, pass_shown
 from nora.memory.app.admission import Unavailable
 from nora.memory.domain.admission import Refusal
 from nora.memory.domain.admission_ports import Stored
-from nora.memory.domain.intention_operations import IntentionOperation, parse_intention_operation
+from nora.memory.domain.intention_operations import (
+    IntentionOperation,
+    limit_to_delivery,
+    parse_intention_operation,
+)
 
 _ENTRY_NOTES = {
     "admitted": "The operation was admitted.",
@@ -19,6 +23,7 @@ _ENTRY_NOTES = {
 }
 
 _REFUSALS = {
+    "not_this_delivery": "Only change the intention this pass delivers.",
     "invalid_field": "Fix the named field and submit that operation again.",
     "citation_not_shown": "Use a citation from this pass's context or graph reads.",
     "unrooted_citation": "Cite a graph row grounded in observation or computation.",
@@ -80,6 +85,12 @@ def _make_intention_commit(deps):
             }
 
         parsed = [parse_intention_operation(raw, context) for raw in operations]
+        if authority is not None and authority.intention is not None:
+            parsed = [
+                entry if isinstance(entry, Refusal)
+                else limit_to_delivery(entry, authority.intention) or entry
+                for entry in parsed
+            ]
         proposals = tuple(entry for entry in parsed if not isinstance(entry, Refusal))
         admitted = await admission.admit(proposals, context, shown) if proposals else None
         admission_outcomes = admitted.outcomes if admitted is not None else ()

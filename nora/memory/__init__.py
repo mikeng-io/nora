@@ -66,6 +66,8 @@ from nora.memory.domain.pass_inputs import (
 from nora.memory.domain.pass_inputs import (
     WakeInput as WakeInput,
 )
+from nora.memory.domain.proactive import DueIntention as DueIntention
+from nora.memory.domain.proactive import ProactiveClaim as ProactiveClaim
 from nora.memory.domain.registration import ITEM_SOURCES as ITEM_SOURCES
 from nora.memory.domain.registration import (
     PROTECTED_ITEM_SOURCES as PROTECTED_ITEM_SOURCES,

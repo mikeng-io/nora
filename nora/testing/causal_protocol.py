@@ -339,6 +339,13 @@ class CausalProtocol:
         tools = {tool["function"]["name"] for tool in body.get("tools", [])}
         endpoint = self.cfg.endpoint
         if stream:
+            if (
+                model == endpoint("proactive", self.cfg.llm.model)[2]
+                and "send_reply" in tools
+                and re.search(r"<due_intention\b", user)
+                and re.search(r"<why_now\b[^>]*>\s*intention_due at ", user)
+            ):
+                return "proactive", completion(model, "", stream=True)["response"]
             if model == self.standing_model and not tools and re.search(r"<debrief_items\b", user):
                 return "debrief", completion(model, '{"operations":[]}', stream=True)["response"]
             if (
