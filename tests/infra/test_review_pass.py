@@ -18,9 +18,10 @@ from nora.app.review_pass import REVIEW_RETRY_SECONDS, ReviewPass
 from nora.app.startup import StartupError
 from nora.config import ModelRoute
 from nora.domain.lineage import LiveRoom
+from nora.infra.sql.cognitive_graph_schema import CLAIM
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.instructions.dreamer import DreamerInstructions
-from nora.memory import ReadingRoom, ReviewInput, wire
+from nora.memory import ReadingRoom, ReviewInput, WakeInput, wire
 from nora.memory.domain.pass_declarations import declaration
 from nora.obs.metrics import Metrics
 from nora.testing.scripted_agent import ScriptedTurn
@@ -29,6 +30,7 @@ from tests.infra.test_graph_propose import BASIS
 from tests.infra.test_intention_verdict import _tick, _verdicts
 from tests.infra.test_lesson_tally import ended, rebuild, resting, tally_rows
 from tests.infra.test_pass_anchors import NOW, SCOPE, reader
+from tests.infra.test_pass_assembly import _assembler
 from tests.infra.test_retrieval_scope import AT, OTHER, OTHER_ROOM, ROOM, UNIT, write_edge
 from tests.infra.test_retrieval_scope import scenario as scenario
 from tests.infra.test_review_admission import changed_tally, grade_rows, guess, lesson
@@ -159,6 +161,22 @@ async def test_two_review_ticks_page_guesses_and_show_the_lesson_with_its_tally(
         pages.append(guesses)
     assert pages[0].isdisjoint(pages[1])
     assert await grade_rows(scenario) == []
+
+
+async def test_review_grades_a_guess_and_evidence_older_than_its_default_window(scenario):
+    now = await scenario.now()
+    start = now - timedelta(days=366)
+    await scenario.claim("old-guess", part="guess", prediction="Generated old prediction",
+                         asserted_at=start, occurred_at=start + timedelta(hours=1),
+                         window_end=now - timedelta(seconds=1))
+    await scenario.item("old-evidence", at=start + timedelta(minutes=1))
+    model = _model("old-guess", "refuted", "old-evidence")
+    review = _review(scenario, model)
+    await review(now)
+
+    assert model.turn == 2
+    assert "Generated old prediction" in model.prompt() and "old-evidence" in model.prompt()
+    assert [row.grade for row in await grade_rows(scenario)] == ["refuted"]
 
 
 async def test_scheduled_review_uses_claim_room_in_unit_without_home(scenario):
@@ -317,9 +335,6 @@ async def test_guess_profile_renders_its_refuted_grade(scenario):
     await scenario.item("later")
     review = _review(scenario, _model("guess", "refuted", "later"))
     await review()
-    from nora.memory.domain.pass_inputs import WakeInput
-    from tests.infra.test_pass_assembly import _assembler
-
     assembled = await _assembler(scenario).assemble("wake", WakeInput(()), (), SCOPE, NOW)
     profile = next(block for block in assembled.blocks if block.name == "graph_profile")
     assert "guess" in str(profile.body)
@@ -340,6 +355,21 @@ async def test_weakened_grade_publishes_dependency_on_the_lesson(scenario):
         ("lesson", grade.id),
     ]
     assert await wire.SqlReviewTargets(scenario.engine).due_review_targets(UNIT, now) == ()
+    assembler = _assembler(scenario)
+    data = WakeInput(tuple(stimuli))
+    assembled = await assembler.assemble("wake", data, (), SCOPE, await scenario.now())
+    agenda = next(block for block in assembled.blocks if block.name == "agenda")
+    assert "claim: lesson" in str(agenda.body)
+    assert f"graph:{grade.id} outcome=weakened" in str(agenda.body)
+    assert grade.id in assembled.shown
+
+    await scenario.graph.tombstone(
+        CLAIM, unit=UNIT, row_id=grade.id, content_hash="fixture-deletion",
+    )
+    after = await assembler.assemble("wake", data, (), SCOPE, await scenario.now())
+    agenda = next(block for block in after.blocks if block.name == "agenda")
+    assert "claim: lesson" in str(agenda.body)
+    assert "outcome=weakened" not in str(agenda.body) and grade.id not in after.shown
 
 
 def test_review_fails_startup_when_the_resolved_judge_is_the_writer(example_config):

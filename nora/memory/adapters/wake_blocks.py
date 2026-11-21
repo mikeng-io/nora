@@ -5,12 +5,12 @@ from nora.domain.composed import compose_body
 from nora.domain.graph_stimuli import GraphStimulus
 from nora.memory.adapters.presentation_blocks import GraphPresentationBlocks
 from nora.memory.domain.pass_inputs import WakeInput
-from nora.memory.domain.retrieval import RetrievalResult
+from nora.memory.domain.retrieval import EvidenceHandle, RetrievalResult
 
 
 def wake_blocks(
     data: WakeInput, result: RetrievalResult, builder: GraphPresentationBlocks,
-    anchors: tuple[str, ...],
+    anchors: tuple[str, ...], weakenings: frozenset[GraphStimulus],
 ) -> tuple[tuple[ContextBlock, ...], frozenset[str], tuple[str, ...]]:
     if result.status == "unavailable":
         return (), frozenset(), ()
@@ -25,7 +25,10 @@ def wake_blocks(
                             and rows[id_].state == "open")
 
     def stimulus_rows(stimulus: GraphStimulus) -> str:
-        return builder.graph_rows((rows[stimulus.graph_id],))
+        text = builder.graph_rows((rows[stimulus.graph_id],))
+        if stimulus in weakenings:
+            text += f"\nReview grade {EvidenceHandle(stimulus.occurrence).handle} outcome=weakened"
+        return text
 
     def stimulus_attrs(stimulus: GraphStimulus, _: int) -> tuple[tuple[str, str], ...]:
         return (
@@ -65,5 +68,6 @@ def wake_blocks(
         ),
     )
     shown = {s.graph_id for s in stimuli} | {row.graph_id for row in open_intentions}
+    shown.update(s.occurrence for s in stimuli if s in weakenings)
     shown.update(row.graph_id for row in previous)
     return blocks, frozenset(shown), tuple(s.graph_id for s in stimuli)

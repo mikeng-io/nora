@@ -411,6 +411,8 @@ class _Admission:
         if not isinstance(proposal, (Revise, Retire)):
             return None, None
         base = self._get(proposal.base, "base", reason="illegal_transition")
+        if base.part == "grade" and self.context.occasion != "operator":
+            raise _RefusalError("grade_owned_by_judge", "base")
         if base.pointer_kind is not None:
             raise _RefusalError("pointer_entity", "base")
         states = _REVISION_STATES if isinstance(proposal, Revise) else _RETIRE_STATES

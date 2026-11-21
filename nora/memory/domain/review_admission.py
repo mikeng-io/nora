@@ -5,7 +5,10 @@ from typing import Literal
 
 from nora.memory.domain.admission_proposals import CreateClaim, PassContext, Proposal, RowFacts
 
-ReviewRefusal = Literal["grade_target", "grade_outside_part", "no_later_evidence", "self_assent"]
+ReviewRefusal = Literal[
+    "grade_target", "grade_outside_part", "no_later_evidence", "self_assent",
+    "grade_owned_by_judge",
+]
 
 _OUTCOMES = {
     "guess": ("confirmed", "refuted", "expired"),

@@ -434,6 +434,7 @@ def test_refusal_literal_covers_all_reachable_form_and_write_reasons() -> None:
     grade_cases = {"context": review, "extra": (guess, replace(ITEM, evidence_at=now))}
     nora_evidence = replace(ITEM, evidence_at=now, author="nora")
     cases = (
+        (Revise(base=CLAIM.id, replacement=NEW_CLAIM), {"extra": (replace(CLAIM, part="grade"),)}),
         (replace(grade, links=()), grade_cases),
         (replace(grade, grade="holds"), grade_cases),
         (grade, {"context": review, "extra": (guess,)}),

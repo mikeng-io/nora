@@ -10,9 +10,11 @@ from sqlalchemy.sql import FromClause
 
 from nora.access import IdentityAccess
 from nora.agent.lineage import LineagePolicy
+from nora.domain.graph_stimuli import GraphStimulus
 from nora.domain.lineage import RoomFacts, split_room
 from nora.domain.managed import room_scope_id
 from nora.domain.management import Scope, ScopeKind
+from nora.memory.adapters.retrieval_rows import tombstoned_ids
 from nora.memory.adapters.retrieval_scope import RetrievalAccess, scoped_rows
 from nora.memory.adapters.review_anchors import review_anchors
 from nora.memory.domain.pass_declarations import PassDeclaration
@@ -49,6 +51,7 @@ class AnchorRead:
     review_evidence: tuple[tuple[str, str], ...] = ()
     review_next: ReviewCursor | None = None
     review_since: datetime | None = None
+    wake_weakenings: frozenset[GraphStimulus] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +64,7 @@ class _Seeds:
     review_evidence: tuple[tuple[str, str], ...] = ()
     review_next: ReviewCursor | None = None
     review_since: datetime | None = None
+    wake_weakenings: frozenset[GraphStimulus] = frozenset()
 
 
 class SqlPassAnchors:
@@ -127,6 +131,7 @@ class SqlPassAnchors:
             _collective(room_ref, room.unit, pointers), people_subjects, names,
             review_due=seeds.review_due, review_evidence=seeds.review_evidence,
             review_next=seeds.review_next, review_since=seeds.review_since,
+            wake_weakenings=seeds.wake_weakenings,
         )
 
     async def _identity_people(
@@ -172,7 +177,7 @@ class _AnchorQueries:
             case ProactiveInput():
                 return await self.proactive(data)
             case WakeInput():
-                return await self.wake(data)
+                return await self.wake(data, now)
             case DebriefInput():
                 return await self.debrief(data)
             case ReviewInput():
@@ -204,7 +209,7 @@ class _AnchorQueries:
             tuple(person for person in row[1] if person) if row is not None else (),
         )
 
-    async def wake(self, data: WakeInput) -> _Seeds:
+    async def wake(self, data: WakeInput, now: datetime) -> _Seeds:
         stimuli = tuple(row for row in data.stimuli if row.unit == self._scope.unit)
         refs = tuple(dict.fromkeys(
             ref for row in stimuli for ref in (row.graph_id, row.revision_id, *row.dependents)
@@ -230,7 +235,31 @@ class _AnchorQueries:
              *tuple(visible[ref][1] for ref in ids if visible[ref][1] is not None)),
             (*tuple(row.person for row in stimuli if row.person is not None),
              *tuple(person for ref in ids for person in (visible[ref][2] or ()) if person)),
+            wake_weakenings=await self._wake_weakenings(stimuli, now),
         )
+
+    async def _wake_weakenings(
+        self, stimuli: tuple[GraphStimulus, ...], now: datetime,
+    ) -> frozenset[GraphStimulus]:
+        reviews = tuple(s for s in stimuli if s.kind == "dependency" and s.source == "review"
+                        and s.occurrence)
+        if not reviews:
+            return frozenset()
+        grade, edge = self._rows, self._graph.alias("weakening_links").c
+        source, target = edge.image["src_id"].astext, edge.image["dst_id"].astext
+        pairs = tuple((s.occurrence, s.graph_id) for s in reviews)
+        query = sa.select(source, target).where(
+            edge.source == "edge", edge.state == "live", edge.image["type"].astext == "grades",
+            sa.tuple_(source, target).in_(pairs), grade.graph_id == source,
+            grade.source == "claim", grade.state == "live", grade.event_time <= now,
+            grade.image["part"].astext == "grade", grade.image["grade"].astext == "weakened",
+        )
+        if self._scope.as_of is not None:
+            query = query.where(grade.graph_id.not_in(
+                tombstoned_ids(self._scope.unit, since=self._scope.as_of),
+            ))
+        shown = set(await self._conn.execute(query))
+        return frozenset(s for s in reviews if (s.occurrence, s.graph_id) in shown)
 
     async def _earlier_verdicts(self, claimed: set[str]) -> tuple[str, ...]:
         r = self._rows

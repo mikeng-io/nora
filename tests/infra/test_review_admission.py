@@ -8,14 +8,16 @@ import sqlalchemy as sa
 
 from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, LESSON_TALLY, REGISTRY
 from nora.infra.sql.schema import SOURCE_HEALTH
+from nora.memory import WakeInput, wire
 from nora.memory.app.admission import Stored
 from nora.memory.domain.admission import Refusal
-from nora.memory.domain.admission_proposals import CreateClaim, Link, Scope
+from nora.memory.domain.admission_proposals import CreateClaim, Link, Retire, Revise, Scope
 from tests.infra.test_graph_propose import BASIS, WAKE
 from tests.infra.test_intention_verdict import _tick
 from tests.infra.test_lesson_tally import ended, tally_rows
-from tests.infra.test_pass_anchors import NOW
-from tests.infra.test_retrieval_scope import AT, UNIT
+from tests.infra.test_pass_anchors import NOW, SCOPE
+from tests.infra.test_pass_assembly import _assembler
+from tests.infra.test_retrieval_scope import AT, UNIT, write_edge
 from tests.infra.test_retrieval_scope import scenario as scenario
 from tests.infra.test_room_busy import service, slots
 
@@ -127,6 +129,30 @@ async def test_guess_with_a_live_grade_is_refused(scenario):
     repeat = proposal("confirmed", "guess", ("later",), id_="second")
     assert await submit(scenario, repeat) == Refusal("already_graded", "links")
     assert await grade_rows(scenario) == [("grade", "refuted", REVIEW.model)]
+
+
+@pytest.mark.parametrize("occasion", ("wake", "wake_history"))
+@pytest.mark.parametrize("operation", ("revise", "retire"))
+async def test_wake_cannot_change_a_judges_grade(scenario, occasion, operation):
+    await guess(scenario)
+    await scenario.entity("nora-profile", pointer_kind="nora", pointer_ref="nora")
+    await write_edge(scenario, "guess", "nora-profile", "about")
+    await scenario.item("later")
+    assert await submit(scenario, proposal("refuted", "guess", ("later",))) == Stored("grade")
+    now = await scenario.now()
+    context = replace(WAKE, occasion=occasion, clock=now if occasion == "wake_history" else None)
+    fields = dict(id="writer-change", scope=Scope(UNIT), basis="inferred", citations=("later",),
+                  **BASIS)
+    mutation = (Revise(base="grade", replacement=CreateClaim(**fields, content="Generated change"))
+                if operation == "revise" else Retire(base="grade", **fields))
+    [outcome] = (await service(scenario, slots(scenario)).admit(
+        (mutation,), context, ("grade", "later"),
+    )).outcomes
+    assert outcome == Refusal("grade_owned_by_judge", "base")
+    assembled = await _assembler(scenario).assemble("wake", WakeInput(()), (), SCOPE, now)
+    profile = next(block for block in assembled.blocks if block.name == "graph_profile")
+    assert "guess" in str(profile.body) and "grade=refuted" in str(profile.body)
+    assert await wire.SqlReviewTargets(scenario.engine).due_review_targets(UNIT, now) == ()
 
 
 async def test_lesson_refuses_second_grade_for_same_tally(scenario):

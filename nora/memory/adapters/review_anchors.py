@@ -94,21 +94,20 @@ async def review_anchors(
         if row.window_end is None:
             after_verdict = (data.after.after_verdict
                              if data.after is not None and data.after.target == target else None)
-            lesson_rows = await _lesson_evidence(
+            evidence_rows = await _lesson_evidence(
                 conn, graph, unit, id_, now, after_verdict, remaining,
             )
-            if len(lesson_rows) == remaining:
+            if len(evidence_rows) == remaining:
                 # Start a fresh docket before splitting a lesson's evidence.
                 if due:
                     break
-                lesson_rows = lesson_rows[:-1]
-                last = lesson_rows[-1]
+                evidence_rows = evidence_rows[:-1]
+                last = evidence_rows[-1]
                 cursor_after = last.priority, last.graph_id
-            refs = tuple(item.graph_id for item in lesson_rows)
-            since = min(since or now, row.event_time, *(item.event_time for item in lesson_rows))
         else:
-            guesses = await _guess_evidence(conn, graph, row.asserted_at, row.window_end, now)
-            refs = tuple(dict.fromkeys(guesses))
+            evidence_rows = await _guess_evidence(conn, graph, row.asserted_at, row.window_end, now)
+        refs = tuple(dict.fromkeys(item.graph_id for item in evidence_rows))
+        since = min(since or now, row.event_time, *(item.event_time for item in evidence_rows))
         due.append(id_)
         evidence.extend((ref, id_) for ref in refs)
         remaining -= 1 + len(refs)
@@ -134,17 +133,17 @@ async def _lesson_evidence(
 
 async def _guess_evidence(
     conn: AsyncConnection, graph: FromClause, start: datetime, end: datetime, now: datetime,
-) -> tuple[str, ...]:
+) -> list[sa.Row]:
     row = graph.c
     source_health = row.source == "source_health"
     computed = row.kind == "aggregate"
     ordinary = sa.and_(row.kind.in_(("item", "aggregate")), ~source_health)
-    result: list[str] = []
+    result: list[sa.Row] = []
     for condition, cap in (
         (ordinary & row.event_time.between(start, end), _EVIDENCE_PER_TARGET - 1),
         ((source_health | computed) & row.event_time.between(end, now), 1),
     ):
-        result.extend(await conn.scalars(sa.select(row.graph_id).where(
+        result.extend(await conn.execute(sa.select(row.graph_id, row.event_time).where(
             condition, row.state == "live",
         ).order_by(source_health.desc(), row.event_time.desc(), row.graph_id).limit(cap)))
-    return tuple(result)
+    return result

@@ -46,7 +46,7 @@ class PassAssembler:
             bounds = replace(bounds, since=min(bounds.since, since),
                              rows=max(bounds.rows, len(data.stimuli)))
         seeds = await self._anchors.build(choice, data, scope, now, ceiling=clock)
-        # The selected lesson verdicts can predate the default retrieval window.
+        # Selected review targets and their evidence can predate the default window.
         if seeds.review_since is not None:
             bounds = replace(bounds, since=min(bounds.since, seeds.review_since))
         if seeds.cause is not None:
@@ -70,7 +70,7 @@ class PassAssembler:
             floor = (due, *floor)
         elif isinstance(data, WakeInput):
             agenda, due_ids, agenda_stimuli = wake_blocks(
-                data, result, builder, seeds.anchors.graph_ids,
+                data, result, builder, seeds.anchors.graph_ids, seeds.wake_weakenings,
             )
             floor = (*agenda, *floor)
         elif isinstance(data, ReviewInput) and seeds.review_due:
