@@ -75,6 +75,19 @@ _QUOTED_SAMPLES: dict[str, dict[str, frozenset[str]]] = {
     },
 }
 
+#: (module, tag) -> the exact `ast.unparse` text of the one `re.*` call
+#: whose PATTERN argument may name the tag without the module counting as
+#: its builder.
+_RE_READERS = {
+    ("nora/testing/causal_protocol.py", "m"):
+        "re.findall('<m n=\"(\\\\d+)\"[^>]*>(.*?)</m>', "
+        "html.unescape(text), re.DOTALL)",
+}
+
+#: No shape analysis: any edit to the pinned call — a different pattern, an
+#: added or changed argument — changes the unparsed text, and every other
+#: occurrence of the tag (a `re.sub` replacement, an f-string) is flagged.
+
 def _docstring_nodes(tree: ast.AST) -> set[int]:
     """Every Constant that is a DOCSTRING — prose about a tag, not a tag.
 
@@ -179,12 +192,31 @@ def _sample_sites(tree: ast.Module, rel: str, tag: str) -> set[int]:
     return sites
 
 
+def _reader_sites(tree: ast.Module, rel: str, tag: str) -> set[int]:
+    """String nodes that are the pattern argument of the pinned `re.*` call."""
+    pin = _RE_READERS.get((rel, tag))
+    if pin is None:
+        return set()
+    sites: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and ast.unparse(node) == pin:
+            candidates = ([node.args[0]] if node.args else []) + [
+                kw.value for kw in node.keywords if kw.arg == "pattern"
+            ]
+            for arg in candidates:
+                for sub in ast.walk(arg):
+                    if isinstance(sub, (ast.Constant, ast.JoinedStr)):
+                        sites.add(id(sub))
+    return sites
+
+
 def _built(tree: ast.Module, rel: str) -> tuple[str, ...]:
-    """The tags a module OPENS AND CLOSES outside its quoted samples."""
+    """The tags a module OPENS AND CLOSES outside quoted samples and pinned reader sites."""
     opens, closes = _tag_sites(tree)
     return tuple(sorted(
         tag for tag in set(opens) & set(closes)
-        if (opens[tag] - (allowed := _sample_sites(tree, rel, tag)))
+        if (opens[tag] - (allowed := _sample_sites(tree, rel, tag)
+                          | _reader_sites(tree, rel, tag)))
         and (closes[tag] - allowed)))
 
 
@@ -250,6 +282,43 @@ def test_a_quoted_sample_constant_exempts_only_itself():
     assert "m" in _built(ast.parse(sneaky), rel)
     reassigned = quoted + '_WORKED_EXAMPLES = _WORKED_EXAMPLES + "<m>x</m>"\n'
     assert "m" in _built(ast.parse(reassigned), rel)
+
+
+def test_a_regex_reader_occurrence_exempts_only_that_call() -> None:
+    """The (module, tag) `_RE_READERS` pin exempts the pattern argument of
+    the one pinned `re.*` call and nothing else: a replacement-argument or
+    f-string occurrence in the same module, the same call under another
+    module, the call with any argument changed, and every other tag are all
+    still caught."""
+    rel = "nora/testing/causal_protocol.py"
+    reader = (
+        "import re\n"
+        "def source(text):\n"
+        "    return re.findall('<m n=\"(\\\\d+)\"[^>]*>(.*?)</m>', "
+        "html.unescape(text), re.DOTALL)\n"
+    )
+    assert _built(ast.parse(reader), rel) == ()
+
+    emitted = reader + "def build(v):\n    return f'<m n=\"9\">{v}</m>'\n"
+    assert "m" in _built(ast.parse(emitted), rel)
+
+    replacement = reader + (
+        "def p(t):\n    return re.sub('x', '<m>value</m>', t)\n"
+    )
+    assert "m" in _built(ast.parse(replacement), rel)
+
+    changed_arg = reader.replace("re.DOTALL", "0")
+    assert changed_arg != reader
+    assert "m" in _built(ast.parse(changed_arg), rel)
+
+    other_tag = (
+        "import re\n"
+        "def p(t):\n"
+        "    return re.findall('<facts>(.*?)</facts>', t)\n"
+    )
+    assert "facts" in _built(ast.parse(other_tag), rel)
+
+    assert _built(ast.parse(reader), "nora/scratch.py") == ("m",)
 
 
 def test_a_module_that_writes_a_tag_by_hand_is_caught():
