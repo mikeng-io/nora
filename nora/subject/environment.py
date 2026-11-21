@@ -330,6 +330,22 @@ class IsolatedServices:
         return (not self._active
                 or (self._loop is not None and self._loop.is_closed()))
 
+    def _allowed(self, address: Any) -> bool:
+        if isinstance(address, tuple) and len(address) >= 2:
+            if (str(address[0]), int(address[1])) in self._addresses:
+                return True
+            egress = _admitted_egress.get()
+            return (egress is not None
+                    and (str(address[0]), int(address[1])) in egress.addresses)
+        return isinstance(address, str) and address in self._unix
+
+    def _refuse(self, operation: str,
+                cause: str = "external_dependency_not_isolated") -> None:
+        self.denied.append({"operation": operation, "cause": cause})
+        held = f" (guard held by {self._case})" if self._case else ""
+        raise PermissionError(
+            errno.EACCES, f"evaluation dependency is not isolated{held}")
+
     def _guard_network(self) -> None:
         # ponytail: one case per process, as SDK max_workers=1 requires;
         # parallel case execution needs separate worker processes.
@@ -337,23 +353,17 @@ class IsolatedServices:
         if holder is not None and not holder._released():
             raise RuntimeError("evaluation cases must not share a network context"
                                + (f"; held by {holder._case}" if holder._case else ""))
+        self._guard_lookup()
+        # Loopback services are direct even on developer hosts with a proxy.
+        self._patches.enter_context(patch.dict(os.environ, {
+            "NO_PROXY": "127.0.0.1,localhost,::1",
+            "no_proxy": "127.0.0.1,localhost,::1",
+        }))
+        self._guard_requests()
+        self._guard_process()
+        self._guard_sockets()
 
-        def allowed(address: Any) -> bool:
-            if isinstance(address, tuple) and len(address) >= 2:
-                if (str(address[0]), int(address[1])) in self._addresses:
-                    return True
-                egress = _admitted_egress.get()
-                return (egress is not None
-                        and (str(address[0]), int(address[1])) in egress.addresses)
-            return isinstance(address, str) and address in self._unix
-
-        def refuse(operation: str,
-                   cause: str = "external_dependency_not_isolated") -> None:
-            self.denied.append({"operation": operation, "cause": cause})
-            held = f" (guard held by {self._case})" if self._case else ""
-            raise PermissionError(
-                errno.EACCES, f"evaluation dependency is not isolated{held}")
-
+    def _guard_lookup(self) -> None:
         original_lookup = socket.getaddrinfo
 
         def lookup(host: Any, port: Any, *args: Any, **kwargs: Any) -> Any:
@@ -385,30 +395,26 @@ class IsolatedServices:
                 return result
             addresses = {h for h, _ in self._addresses}
             if host not in addresses and host not in (None, "localhost"):
-                refuse("resolve")
+                self._refuse("resolve")
             result = original_lookup(host, port, *args, **kwargs)
-            if any(not allowed(item[4]) for item in result):
-                refuse("resolve")
+            if any(not self._allowed(item[4]) for item in result):
+                self._refuse("resolve")
             return result
 
         self._patches.enter_context(patch.object(socket, "getaddrinfo", lookup))
 
-        # Loopback services are direct even on developer hosts with a proxy.
-        self._patches.enter_context(patch.dict(os.environ, {
-            "NO_PROXY": "127.0.0.1,localhost,::1",
-            "no_proxy": "127.0.0.1,localhost,::1",
-        }))
-        self._guard_requests()
-
+    def _guard_process(self) -> None:
         original_popen_init = subprocess.Popen.__init__
 
         def subprocess_refused(*args: Any, **kwargs: Any) -> Any:
             if self._released():
                 return original_popen_init(*args, **kwargs)
-            refuse("subprocess")
+            self._refuse("subprocess")
 
         # SSH/browser/codec helpers otherwise escape the Python socket boundary.
         self._patches.enter_context(patch.object(subprocess.Popen, "__init__", subprocess_refused))
+
+    def _guard_sockets(self) -> None:
         for name in ("connect", "connect_ex"):
             original = getattr(socket.socket, name)
 
@@ -416,8 +422,8 @@ class IsolatedServices:
                         _original: Any = original, **kwargs: Any) -> Any:
                 if self._released():
                     return _original(sock, address, *args, **kwargs)
-                if not allowed(address):
-                    refuse("connect")
+                if not self._allowed(address):
+                    self._refuse("connect")
                 return _original(sock, address, *args, **kwargs)
 
             connect._nora_eval_guard = True  # type: ignore[attr-defined]
@@ -437,8 +443,8 @@ class IsolatedServices:
             serving = (egress is not None and isinstance(local, tuple)
                        and len(local) >= 2
                        and (str(local[0]), int(local[1])) in egress.addresses)
-            if not allowed(peer) and not allowed(local) and not serving:
-                refuse("send")
+            if not self._allowed(peer) and not self._allowed(local) and not serving:
+                self._refuse("send")
 
         for cls, names in ((socket.socket, ("send", "sendall")),
                            (ssl.SSLSocket, ("write",))):
@@ -458,8 +464,8 @@ class IsolatedServices:
         def sendto(sock: socket.socket, data: Any, *args: Any) -> Any:
             if self._released():
                 return original_sendto(sock, data, *args)
-            if not args or not allowed(args[-1]):
-                refuse("sendto")
+            if not args or not self._allowed(args[-1]):
+                self._refuse("sendto")
             return original_sendto(sock, data, *args)
 
         self._patches.enter_context(patch.object(socket.socket, "sendto", sendto))

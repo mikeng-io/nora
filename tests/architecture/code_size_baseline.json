@@ -58,8 +58,8 @@
   "internal_docstrings": 8
  },
  "evals/backbone.py": {
-  "comment_blocks": 36,
-  "file_lines": 2645,
+  "comment_blocks": 37,
+  "file_lines": 2657,
   "functions": {
    "_drive_draw": 449
   },
@@ -436,6 +436,9 @@
    "_compose_dependencies": 975
   },
   "internal_docstrings": 1
+ },
+ "nora/app/composition_pipelines.py": {
+  "comment_blocks": 1
  },
  "nora/app/comprehend.py": {
   "functions": {
@@ -1864,6 +1867,9 @@
  "nora/skills/loader.py": {
   "comment_blocks": 3
  },
+ "nora/subject/as_of.py": {
+  "comment_blocks": 1
+ },
  "nora/subject/circle.py": {
   "comment_blocks": 1
  },
@@ -1872,6 +1878,10 @@
  },
  "nora/subject/dreaming.py": {
   "comment_blocks": 5,
+  "internal_docstrings": 1
+ },
+ "nora/subject/environment.py": {
+  "comment_blocks": 1,
   "internal_docstrings": 1
  },
  "nora/subject/evidence.py": {
@@ -2652,11 +2662,19 @@
  "tests/integration/test_silent_failures.py": {
   "comment_blocks": 2
  },
+ "tests/integration/test_snapshot_block_equivalence.py": {
+  "comment_blocks": 1,
+  "internal_docstrings": 1
+ },
+ "tests/integration/test_snapshot_copies_the_character_blocks.py": {
+  "internal_docstrings": 1
+ },
  "tests/integration/test_snapshot_holds_what_was_held.py": {
   "comment_blocks": 1
  },
  "tests/integration/test_snapshot_renders_the_recorded_blocks.py": {
-  "comment_blocks": 1
+  "comment_blocks": 2,
+  "internal_docstrings": 2
  },
  "tests/integration/test_social_poller.py": {
   "file_lines": 2083
@@ -3182,7 +3200,7 @@
  },
  "tests/unit/test_eval_backbone.py": {
   "comment_blocks": 3,
-  "file_lines": 1363,
+  "file_lines": 1402,
   "internal_docstrings": 2
  },
  "tests/unit/test_eval_full_restore.py": {
