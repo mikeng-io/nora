@@ -10,12 +10,13 @@ transition, never the transition's approval.
 
 | tier | panel | when |
 |---|---|---|
-| 0 | one independent reviewer | the default: light and standard routes |
+| 0 | one independent reviewer | the default, including a full route whose only trigger is model spending |
 | 1 | several reviewers of one vendor, one lens each (application, security, data/concurrency, measurement) | a change across several areas where one reviewer cannot hold every lens |
-| 2 | reviewers of different vendors on the same question | the full route, a phase-end drift audit, an architecture verdict |
+| 2 | reviewers of different vendors on the same question | the full route with impact or reversibility high, a phase-end drift audit, an architecture verdict |
 | 3 | tier 2, then one debate round where members answer each other's findings | an irreversible or high-stakes design decision |
 
-Start at the lowest tier the route allows. Raise it one step only when a
+An advisory member may share a vendor with an author: its findings are
+evidence, never the independent verdict. Start at the lowest tier the route allows. Raise it one step only when a
 round's reviewers dispute a finding or report low confidence; a raised tier is
 recorded with its reason. A tier is never raised to buy another round.
 
