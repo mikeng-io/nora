@@ -22,7 +22,7 @@ export class Nora {
   private readonly mat: THREE.ShaderMaterial;
   private where: THREE.Object3D | null = null;
 
-  private constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement) {
     this.player = new Player(canvas, { renderWhenHidden: true, followPointer: "page", maxPixelRatio: 2 });
     this.tex = new THREE.CanvasTexture(canvas);
     this.tex.colorSpace = THREE.SRGBColorSpace;
@@ -51,17 +51,10 @@ export class Nora {
     );
   }
 
-  static async create(canvas: HTMLCanvasElement, url: string): Promise<Nora> {
-    const n = new Nora(canvas);
-    let info;
-    try {
-      info = await n.player.load(url);
-    } catch (e) {
-      n.player.dispose({ release: true });
-      throw e;
-    }
-    if (info.fullBody) n.player.view.fit = "whole";
-    return n;
+  /** Load her rig; on failure the caller's release disposes the player. */
+  async load(url: string): Promise<void> {
+    const info = await this.player.load(url);
+    if (info.fullBody) this.player.view.fit = "whole";
   }
 
   /** Stand her in a station: her feet at a point, her canvas `height` tall. */

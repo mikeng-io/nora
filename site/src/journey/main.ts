@@ -33,11 +33,15 @@ if (canvas && noraCanvas && story && supported()) {
 }
 
 async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, story: HTMLElement): Promise<void> {
-  // Everything the stage makes is registered here as it is made; any failure,
-  // at startup or later, runs the same release in reverse and leaves the page
-  // as written: the whole story as stills and words.
+  // Everything the stage makes is registered as it is made, before anything
+  // can fail; any failure, at startup or later, runs the same release in
+  // reverse and leaves the page as written: the whole story as stills and words.
   const undo: (() => void)[] = [];
   let released = false;
+  const own = (fn: () => void) => {
+    if (released) fn();
+    else undo.push(fn);
+  };
   const release = () => {
     released = true;
     while (undo.length) {
@@ -49,32 +53,44 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
     }
     root.classList.remove("stage-on", "stage-loading", "stage-waiting", "own-cursor");
   };
-  root.classList.add("stage-on", "stage-loading");
-  scrollTo(0, 0);
-  const stage = new Stage(canvas);
-  undo.push(() => stage.dispose());
-  const words = (story.dataset.nodes ?? "").split("|").filter(Boolean);
-  const slips = JSON.parse(story.dataset.slips ?? "{}") as { path: string[]; lifted: string; traveller: string };
-  const world = new World(stage, words, slips);
-  let nora: Nora;
   try {
-    const noraLoad = Nora.create(noraCanvas, noraUrl);
-    noraLoad.then((n) => undo.push(() => n.player.dispose({ release: true })), () => {});
-    [nora] = await Promise.all([noraLoad, world.loadHero()]);
+    await run(canvas, noraCanvas, story, own, release, () => released);
   } catch (e) {
     release();
     throw e;
   }
+}
+
+async function run(
+  canvas: HTMLCanvasElement,
+  noraCanvas: HTMLCanvasElement,
+  story: HTMLElement,
+  own: (fn: () => void) => void,
+  release: () => void,
+  released: () => boolean,
+): Promise<void> {
+  root.classList.add("stage-on", "stage-loading");
+  scrollTo(0, 0);
+  const stage = new Stage(canvas);
+  own(() => stage.dispose());
+  const words = (story.dataset.nodes ?? "").split("|").filter(Boolean);
+  const slips = JSON.parse(story.dataset.slips ?? "{}") as { path: string[]; lifted: string; traveller: string };
+  const world = new World(stage, words, slips);
+  // the player exists, and is owned, before its download starts
+  const nora = new Nora(noraCanvas);
+  own(() => nora.player.dispose({ release: true }));
+  await Promise.all([nora.load(noraUrl), world.loadHero()]);
+  if (released()) return;
   const veil = new Veil(stage.camera, world.transit);
   const type = new Type(story);
-  undo.push(() => type.restore());
+  own(() => type.restore());
   const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
-  undo.push(() => rt.dispose());
+  own(() => rt.dispose());
   const life = new AbortController();   // every stage listener ends with the stage
-  undo.push(() => life.abort());
+  own(() => life.abort());
   const ui = new Ui(life.signal);
   const chat = new Chat(life.signal);
-  undo.push(() => chat.detach());
+  own(() => chat.detach());
   const director = new Director(stage, world, nora);
   let rest = false;
   world.loadRest().then(
@@ -100,7 +116,7 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
 
   // the chat's log scrolls itself (data-lenis-prevent on it)
   const lenis = new Lenis({ lerp: 0.08, wheelMultiplier: 0.85 });
-  undo.push(() => lenis.destroy());
+  own(() => lenis.destroy());
   const max = () => document.documentElement.scrollHeight - innerHeight;
   for (const a of document.querySelectorAll<HTMLAnchorElement>("a[data-scene]")) {
     a.addEventListener("click", (e) => {
@@ -117,8 +133,17 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
   let last = performance.now();
   const t0 = last;
 
+  // a frame that throws ends the stage like any other failure
+  const tick = (now: number) => {
+    try {
+      frame(now);
+    } catch (e) {
+      console.error(e);
+      release();
+    }
+  };
   const frame = (now: number) => {
-    if (released) return;
+    if (released()) return;
     lenis.raf(now);
     const t = (now - t0) / 1000, dt = Math.min(0.05, (now - last) / 1000);
     last = now;
@@ -153,7 +178,7 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
     ui.railFrame(index);
     stage.render(t);
     if (root.classList.contains("stage-loading") && land) root.classList.remove("stage-loading");
-    requestAnimationFrame(frame);
+    requestAnimationFrame(tick);
   };
 
   /** The HTML that rides on the world: the hold, the tag, the labels, the split, the counter, the chat. */
@@ -174,5 +199,5 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
     ui.timecode(id === "rewind", l);
     chat.frame(id === "act", l);
   };
-  requestAnimationFrame(frame);
+  requestAnimationFrame(tick);
 }
