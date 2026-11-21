@@ -9,8 +9,9 @@ No earphones or cables. Parent viewed the final crop and bun visibility PASS.
 It remains an icon derivative, never the full-body canonical self reference.
 
 The central inventory records the canonical semantic parent, dated prompt
-intent and all app/site/showreel outputs. Existing icon and OG processors keep
-bare transparent icons and full-bleed studio squares where required. Two PWA
+intent and all app/site/showreel outputs. This portrait shows her among
+people; the favicon, app icons and the mark beside the wordmark are the clasp
+emblem, `assets/nora-emblem.svg` (DESIGN.md §2), never this portrait. Two PWA
 screenshots were recaptured using the documented synthetic mock workflow;
 no real account or live data was used. External profile publication, media
 ingest and deployment were not performed.
@@ -62,13 +63,11 @@ Single bare character cutout on true transparent alpha background, clean edge, n
 
 ## Exports
 
-- Portal icons and favicon: `uv run python app/scripts/make-icons.py`.
-- Public site icons, favicon and link previews: `site/scripts/make_images.py`
-  (its docstring lists the font and Python prerequisites).
-- Portal UI portrait: the portal generator's `bare_icon(512)`, WebP quality 90,
-  method 6, exact transparent RGB, alpha quality 100.
+- Portal portrait of her among people: `scripts/visual_assets.py sync`'s
+  `cutout(…, 512)`, WebP quality 90, method 6, exact transparent RGB, alpha
+  quality 100.
 - Showreel portrait: `showreel/pipeline/process_art.py`'s `trim`, WebP quality 92,
   method 6, exact transparent RGB, alpha quality 100.
 
-Transparent exports stay bare; iOS and maskable icons use the existing studio
-square treatment from `DESIGN.md`.
+Favicons and app icons come from the emblem, not from this portrait:
+`app/scripts/make-icons.py` and `site/scripts/make_images.py`.
