@@ -42,6 +42,8 @@ from nora.memory.adapters.condition_matcher import SqlConditionMatcher
 from nora.memory.adapters.graph_clock import SqlDueSchedules
 from nora.memory.adapters.graph_store import SqlCognitiveGraph
 from nora.memory.adapters.memory_intake import SqlMemoryIntake
+from nora.memory.adapters.pass_anchors import SqlPassAnchors
+from nora.memory.adapters.pass_assembly import PassAssembler
 from nora.memory.adapters.retrieval_store import SqlRetrieval
 from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
@@ -398,3 +400,14 @@ def retrieval(
 ) -> RetrievalService:
     """Build the shared scoped graph reader for a pass."""
     return RetrievalService(SqlRetrieval(engine, access, lineage, embedding_model), embedder)
+
+
+def pass_assembler(
+    engine: AsyncEngine, access: IdentityAccess, lineage: LineagePolicy,
+    embedder: QueryEmbedder | None, embedding_model: str | None,
+) -> PassAssembler:
+    """Build the graph context assembler for cognition passes."""
+    return PassAssembler(
+        SqlPassAnchors(engine, access, lineage),
+        retrieval(engine, access, lineage, embedder, embedding_model),
+    )
