@@ -39,6 +39,8 @@ The route is the first rule that applies, in this order:
 Triage also picks the **track**: *is success a checkable
 artifact before execute starts?* Yes is `standard`; no (a prompt, doctrine or
 quality change judged by an eval) is `goal-driven` («Goal-driven track»).
+The review panel is tier 0, the route's own review; a larger panel needs a
+named question one reviewer cannot answer (`nora-review/references/council.md`).
 Read `docs/maintainers/lessons.md` for the area before scoring. Record the
 factors, route and track in the brief, or the PR body for light work; direct
 work records a one-line route, and factors are scored only if it is disputed.
