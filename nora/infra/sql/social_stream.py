@@ -56,7 +56,7 @@ Postgres.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping, Sequence, Set
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -64,14 +64,12 @@ from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.live import LiveSet
 from nora.domain.rollup import SocialFact, SocialInput
 from nora.domain.social_stream import (
     HIDING_STATES,
-    PLACE_STATE,
     SOCIAL_READ_REF,
     BackfillEnd,
     ByteDeletionReason,
@@ -84,14 +82,13 @@ from nora.domain.social_stream import (
     Reading,
     RecordedCounts,
     RecordedItem,
-    SocialItem,
-    counts_changed,
     cursor_is_bad,
     from_us,
     to_us,
 )
 from nora.infra.sql import memory_index
 from nora.infra.sql.blob_refs import held_elsewhere
+from nora.infra.sql.item_registration import SqlItemRegistration
 from nora.infra.sql.memory_index import current_place, social_source_id
 from nora.infra.sql.schema import (
     BLOB_TOMBSTONE,
@@ -102,12 +99,12 @@ from nora.infra.sql.schema import (
     ROLLUP_COLOCATION,
     ROLLUP_OUTING,
     SOCIAL_ITEM,
-    SOCIAL_ITEM_COUNT,
     SOCIAL_ITEM_STATE,
     SOCIAL_PERCEPTION,
     SOCIAL_POLL,
     STIMULUS,
 )
+from nora.infra.sql.social_item_writes import SocialItemWrites, latest_counts
 
 Stage = PollStage
 
@@ -243,104 +240,23 @@ class Relist:
     last_at: datetime | None = None
 
 
-class SqlSocialStreamStore:
+class SqlSocialStreamStore(SocialItemWrites):
     """The stream's six tables, as twenty-nine verbs."""
 
-    def __init__(
-        self, engine: AsyncEngine, *, opted_out: Set[str] = frozenset(),
-        metrics: Any = None,
-    ) -> None:
-        self._engine = engine
-        self._opted_out = opted_out
-        self._metrics = metrics
-
     def _readable(self) -> list[Any]:
-        """An item a reader may see: its person has not opted out, and it has
-        no `gone` or `hidden` state row."""
+        """One readable copy of each logical item, respecting opt-outs and hiding."""
         i, s = SOCIAL_ITEM, SOCIAL_ITEM_STATE
         stated = sa.exists().where(
             s.c.network == i.c.network, s.c.item_id == i.c.item_id,
-            s.c.state.in_(HIDING_STATES),
+            s.c.source_state.in_(HIDING_STATES),
         )
-        where: list[Any] = [~stated]
+        first = i.alias("original_item")
+        copied = sa.exists().where(first.c.network == i.c.network, first.c.item_id == i.c.item_id,
+            sa.tuple_(first.c.recorded_at, first.c.id) < sa.tuple_(i.c.recorded_at, i.c.id))
+        where: list[Any] = [~stated, ~copied]
         if self._opted_out:
             where.append(i.c.person.not_in(sorted(self._opted_out)))
         return where
-
-    async def insert_item(
-        self, item: SocialItem, *, person: str, origin: Origin, seen_at: datetime,
-        media_ref: str | None = None, location: str | None = None,
-        tagged: tuple[str, ...] = (), mentioned: tuple[str, ...] = (),
-        read_id: str | None = None,
-    ) -> bool:
-        """Record one item. True when it is new; False when `(network, item_id)`
-        was already recorded, in which case nothing was written and the first
-        row stands unchanged."""
-        stmt = (
-            pg_insert(SOCIAL_ITEM)
-            .values(
-                network=item.network, item_id=item.item_id, person=person,
-                account=item.account, kind=item.kind, taken_at=item.taken_at,
-                expires_at=item.expires_at, caption=item.caption, alt_text=item.alt_text,
-                location=location, tagged=list(tagged), mentioned=list(mentioned),
-                media_ref=media_ref, seen_at=seen_at, origin=origin, collab=item.collab,
-                read_id=read_id,
-            )
-            .on_conflict_do_nothing(index_elements=["network", "item_id"])
-        )
-        async with self._engine.begin() as conn:
-            result = await conn.execute(stmt)
-            if result.rowcount:
-                await memory_index.project(
-                    conn, "social", social_source_id(item.network, item.item_id),
-                    metrics=self._metrics,
-                )
-        return bool(result.rowcount)
-
-    async def record_poll(
-        self, *, network: str, person: str, stage: Stage, outcome: str,
-        latest_reel_media: int | None = None, media_count: int | None = None,
-        total_clips_count: int | None = None, advanced_marker: bool = False,
-        advanced_counts: bool = False, latency_ms: int | None = None,
-        id: str | None = None, cursor: str | None = None,
-        end_reason: BackfillEnd | None = None,
-    ) -> None:
-        """Append one probe or read. A read passes its own `id`, the
-        `read_id` its items were recorded with; a back-fill page its next
-        `cursor`, None when the walk ended on it, and its `end_reason`."""
-        extra = {} if id is None else {"id": id}
-        async with self._engine.begin() as conn:
-            await conn.execute(sa.insert(SOCIAL_POLL).values(
-                **extra, network=network, person=person, stage=stage, outcome=outcome,
-                latest_reel_media=latest_reel_media, media_count=media_count,
-                total_clips_count=total_clips_count, advanced_marker=advanced_marker,
-                advanced_counts=advanced_counts, latency_ms=latency_ms, cursor=cursor,
-                end_reason=end_reason,
-            ))
-
-    async def record_state(
-        self, *, network: str, item_id: str, state: ItemState, reason: str | None = None,
-    ) -> None:
-        """Append that an item is gone or hidden."""
-        async with self._engine.begin() as conn:
-            await conn.execute(sa.insert(SOCIAL_ITEM_STATE).values(
-                network=network, item_id=item_id, state=state, reason=reason,
-            ))
-            await memory_index.project(
-                conn, "social", social_source_id(network, item_id), metrics=self._metrics,
-            )
-
-    async def record_place(self, *, network: str, item_id: str, place: str | None) -> None:
-        """Append that an item's tagged place is now `place` (None: the tag
-        was removed), and re-project it, so the index searches the current
-        place and nothing else."""
-        async with self._engine.begin() as conn:
-            await conn.execute(sa.insert(SOCIAL_ITEM_STATE).values(
-                network=network, item_id=item_id, state=PLACE_STATE, place=place,
-            ))
-            await memory_index.project(
-                conn, "social", social_source_id(network, item_id), metrics=self._metrics,
-            )
 
     async def current_places(
         self, *, network: str, item_ids: list[str],
@@ -357,36 +273,6 @@ class SqlSocialStreamStore:
                 .where(i.c.network == network, i.c.item_id.in_(item_ids))
             )).all()
         return {r.item_id: r.place for r in rows}
-
-    async def record_counts(
-        self, *, network: str, items: Sequence[SocialItem], read_id: str | None,
-    ) -> int:
-        """Append the counts `items` carry, one read's, for each recorded item
-        among them whose counts differ from its latest row (`counts_changed`)
-        → how many rows were written. An item not recorded, or whose read
-        carried nothing, writes none."""
-        carried = {i.item_id: i.counts for i in items if i.counts.known}
-        if not carried:
-            return 0
-        i = SOCIAL_ITEM
-        async with self._engine.begin() as conn:
-            recorded = set((await conn.execute(
-                sa.select(i.c.item_id)
-                .where(i.c.network == network, i.c.item_id.in_(sorted(carried))),
-            )).scalars())
-            latest = await _latest_counts(conn, [(network, item) for item in recorded])
-            rows = [
-                {
-                    "network": network, "item_id": item, "likes": counts.likes,
-                    "comments": counts.comments, "reposts": counts.reposts,
-                    "likes_hidden": counts.likes_hidden is True, "read_id": read_id,
-                }
-                for item, counts in sorted(carried.items())
-                if item in recorded and counts_changed(counts, latest.get((network, item)))
-            ]
-            if rows:
-                await conn.execute(sa.insert(SOCIAL_ITEM_COUNT), rows)
-        return len(rows)
 
     async def current_counts(
         self, *, items: Sequence[tuple[str, str]],
@@ -405,7 +291,7 @@ class SqlSocialStreamStore:
                     sa.tuple_(i.c.network, i.c.item_id).in_(sorted(set(items))),
                 ),
             )).tuples().all()
-            return await _latest_counts(conn, list(readable))
+            return await latest_counts(conn, list(readable))
 
     async def read_marker(self, *, network: str, person: str) -> int | None:
         """The probe value that led to this person's last completed story read,
@@ -443,10 +329,7 @@ class SqlSocialStreamStore:
     async def posted(
         self, *, persons: Collection[str], through_ms: int, network: str | None = None,
     ) -> SocialInput:
-        """What the Rollup's daybook counts for `persons`: each readable item
-        recorded at or before `through_ms`, whenever it was taken (a back-filled
-        item lands in its own day), and per person the first answered poll
-        recorded by then. A person who has opted out has neither."""
+        """The daybook's readable items and first answered polls as of the watermark."""
         at = datetime.fromtimestamp(through_ms / 1000, tz=UTC)
         i, p = SOCIAL_ITEM, SOCIAL_POLL
         who = sorted(set(persons) - self._opted_out)
@@ -510,10 +393,10 @@ class SqlSocialStreamStore:
         """The item's current state, the latest row, or None when it has none."""
         s = SOCIAL_ITEM_STATE
         stmt = (
-            sa.select(s.c.state)
+            sa.select(s.c.source_state)
             .where(
                 s.c.network == network, s.c.item_id == item_id,
-                s.c.state.in_(HIDING_STATES),
+                s.c.source_state.in_(HIDING_STATES),
             )
             .order_by(s.c.recorded_at.desc(), s.c.id.desc())
             .limit(1)
@@ -539,10 +422,10 @@ class SqlSocialStreamStore:
         still show."""
         i, s = SOCIAL_ITEM, SOCIAL_ITEM_STATE
         gone = sa.exists().where(
-            s.c.network == i.c.network, s.c.item_id == i.c.item_id, s.c.state == "gone",
+            s.c.network == i.c.network, s.c.item_id == i.c.item_id, s.c.source_state == "gone",
         )
         stmt = sa.select(i.c.item_id).where(
-            i.c.network == network, i.c.person == person, i.c.kind == "story_frame",
+            i.c.network == network, i.c.person == person, i.c.source_kind == "story_frame",
             i.c.expires_at > now, ~gone,
         )
         async with self._engine.connect() as conn:
@@ -566,16 +449,17 @@ class SqlSocialStreamStore:
     async def calls_since(
         self, *, network: str, since: datetime,
     ) -> list[tuple[datetime, PollStage]]:
-        """Every probe and read recorded on `network` after `since`, oldest
-        first, as `(recorded_at, stage)`: the calls a poller that has just
-        started counts against its hourly budget. An `abandoned` row marks a
-        back-fill's end beside its call's own row and is not a call."""
+        """One entry per probe or read for the poller's hourly budget."""
         p = SOCIAL_POLL
+        first = p.alias("original_poll")
+        copied = sa.exists().where(first.c.unit < p.c.unit, *(
+            first.c[c] == p.c[c] for c in ("network", "person", "recorded_at", "stage")
+        ))
         stmt = (
             sa.select(p.c.recorded_at, p.c.stage)
             .where(
                 p.c.network == network, p.c.recorded_at > since,
-                p.c.outcome != "abandoned",
+                p.c.outcome != "abandoned", ~copied,
             )
             .order_by(p.c.recorded_at, p.c.id)
         )
@@ -749,7 +633,7 @@ class SqlSocialStreamStore:
         )
         stmt = (
             sa.select(
-                i.c.network, i.c.item_id, i.c.person, i.c.kind, i.c.collab,
+                i.c.network, i.c.item_id, i.c.person, i.c.source_kind, i.c.collab,
                 i.c.taken_at, i.c.origin, i.c.media_ref, i.c.recorded_at,
                 failures.label("failures"),
             )
@@ -764,7 +648,7 @@ class SqlSocialStreamStore:
             )
         return [
             Unperceived(
-                network=r.network, item_id=r.item_id, person=r.person, kind=r.kind,
+                network=r.network, item_id=r.item_id, person=r.person, kind=r.source_kind,
                 collab=r.collab, taken_at=r.taken_at, origin=r.origin,
                 media=_media(r.media_ref), failures=int(r.failures),
                 expired=all(
@@ -861,13 +745,13 @@ class SqlSocialStreamStore:
                 ~sa.exists().where(
                     SOCIAL_ITEM_STATE.c.network == other.c.network,
                     SOCIAL_ITEM_STATE.c.item_id == other.c.item_id,
-                    SOCIAL_ITEM_STATE.c.state.in_(HIDING_STATES),
+                    SOCIAL_ITEM_STATE.c.source_state.in_(HIDING_STATES),
                 ),
             )
             where.append(~waiting)
         stmt = (
             sa.select(
-                i.c.read_id, i.c.network, i.c.person, i.c.item_id, i.c.kind, i.c.collab,
+                i.c.read_id, i.c.network, i.c.person, i.c.item_id, i.c.source_kind, i.c.collab,
                 i.c.taken_at, i.c.caption, i.c.media_ref, announced.label("announced"),
             )
             .where(*where)
@@ -878,7 +762,7 @@ class SqlSocialStreamStore:
         reads: dict[str, SettledRead] = {}
         for r in rows:
             item = ReadItem(
-                item_id=r.item_id, kind=r.kind, collab=r.collab, taken_at=r.taken_at,
+                item_id=r.item_id, kind=r.source_kind, collab=r.collab, taken_at=r.taken_at,
                 caption=r.caption, media=_media(r.media_ref),
             )
             got = reads.get(r.read_id)
@@ -907,7 +791,7 @@ class SqlSocialStreamStore:
         i = SOCIAL_ITEM
         stmt = (
             sa.select(
-                i.c.network, i.c.item_id, i.c.kind, i.c.collab, i.c.taken_at, i.c.expires_at,
+                i.c.network, i.c.item_id, i.c.source_kind, i.c.collab, i.c.taken_at, i.c.expires_at,
                 # The place as the author has it now: a tag they changed shows
                 # the new place, one they removed shows none.
                 i.c.caption, current_place(i).label("location"), i.c.media_ref,
@@ -931,10 +815,10 @@ class SqlSocialStreamStore:
                 )
             } if shas else {}
             # The rows are readable already; their latest counts, if any.
-            counts = await _latest_counts(conn, [(r.network, r.item_id) for r in rows])
+            counts = await latest_counts(conn, [(r.network, r.item_id) for r in rows])
         return [
             RecordedItem(
-                network=r.network, kind=r.kind, collab=r.collab, taken_at=r.taken_at,
+                network=r.network, kind=r.source_kind, collab=r.collab, taken_at=r.taken_at,
                 expires_at=r.expires_at, caption=r.caption, location=r.location,
                 perception=tuple(
                     readings[sha] for sha in _media(r.media_ref) if readings.get(sha)
@@ -981,7 +865,7 @@ class SqlSocialStreamStore:
             return []
         i = SOCIAL_ITEM
         cols = (
-            i.c.id, i.c.network, i.c.item_id, i.c.kind, i.c.collab, i.c.taken_at,
+            i.c.id, i.c.network, i.c.item_id, i.c.source_kind, i.c.collab, i.c.taken_at,
             i.c.origin, i.c.caption, i.c.media_ref, i.c.recorded_at,
         )
         mine = [*self._readable(), i.c.person.in_(list(persons))]
@@ -1016,7 +900,7 @@ class SqlSocialStreamStore:
             } if shas else {}
         return [
             PersonSocialItem(
-                network=r.network, item_id=r.item_id, kind=r.kind, collab=r.collab,
+                network=r.network, item_id=r.item_id, kind=r.source_kind, collab=r.collab,
                 taken_at=r.taken_at, origin=r.origin, caption=r.caption,
                 readings=tuple(read.get(sha, Reading()) for sha in _media(r.media_ref)),
                 recorded_us=to_us(r.recorded_at),
@@ -1055,7 +939,7 @@ class SqlSocialStreamStore:
                 perceived.label("perceived"),
             )
             .where(
-                i.c.kind == "story_frame", i.c.expires_at <= before,
+                i.c.source_kind == "story_frame", i.c.expires_at <= before,
                 i.c.media_ref.is_not(None), i.c.media_ref != "",
             )
             .order_by(i.c.expires_at, i.c.id)
@@ -1108,35 +992,9 @@ class SqlSocialStreamStore:
             ))
 
 
-async def _latest_counts(
-    conn: Any, items: Sequence[tuple[str, str]],
-) -> dict[tuple[str, str], RecordedCounts]:
-    """Each of `items` (`(network, item_id)`) that has a `social_item_count`
-    row → its latest. Unfiltered: a caller passes only items it may show or
-    write for."""
-    if not items:
-        return {}
-    c = SOCIAL_ITEM_COUNT
-    rows = (await conn.execute(
-        sa.select(
-            c.c.network, c.c.item_id, c.c.likes, c.c.comments, c.c.reposts,
-            c.c.likes_hidden, c.c.recorded_at,
-        )
-        .where(sa.tuple_(c.c.network, c.c.item_id).in_(sorted(set(items))))
-        .distinct(c.c.network, c.c.item_id)
-        .order_by(c.c.network, c.c.item_id, c.c.recorded_at.desc(), c.c.id.desc()),
-    )).all()
-    return {
-        (r.network, r.item_id): RecordedCounts(
-            likes=r.likes, comments=r.comments, reposts=r.reposts,
-            likes_hidden=r.likes_hidden, read_at=r.recorded_at,
-        )
-        for r in rows
-    }
-
-
 def readable_social_store(
     engine: AsyncEngine, persons: Any, *, metrics: Any = None,
+    registration: SqlItemRegistration | None = None,
 ) -> SqlSocialStreamStore:
     """The social stream's store for every reader: the poller's,
     `social_read`'s, a person's Character session's and the Rollup's. It
@@ -1144,4 +1002,7 @@ def readable_social_store(
     `social = false`, under their current id and every retired one
     (`Persons.social_off_ids`). The one store built without it is the story
     expiry's, which deletes every person's frames' bytes at their bound."""
-    return SqlSocialStreamStore(engine, opted_out=LiveSet(persons.social_off_ids), metrics=metrics)
+    return SqlSocialStreamStore(
+        engine, opted_out=LiveSet(persons.social_off_ids), metrics=metrics,
+        registration=registration,
+    )

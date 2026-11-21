@@ -156,8 +156,8 @@
   {
     "name": "the absorb read fails closed when the room vanished (message path)",
     "file": "nora/ingest/pipeline.py",
-    "old": "        absorbed = room is not None and room.absorbed\n\n        # AN EDIT takes its own path from here",
-    "new": "        absorbed = room is None or room.absorbed\n\n        # AN EDIT takes its own path from here",
+    "old": "        absorbed = room is not None and room.absorbed\n        message = dataclasses.replace(message, admitted_unit=room.unit if room else \"\")",
+    "new": "        absorbed = room is None or room.absorbed\n        message = dataclasses.replace(message, admitted_unit=room.unit if room else \"\")",
     "target": "tests/unit/test_discord_guild_entry.py::test_a_room_vanishing_between_scope_and_the_absorb_read_is_not_absorbed"
   },
   {

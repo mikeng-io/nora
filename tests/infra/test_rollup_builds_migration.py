@@ -48,7 +48,9 @@ async def test_existing_rows_become_the_current_legacy_build_with_history(
             engine, "SELECT id, code_version, status FROM rollup_build",
         )
         assert (version, status) == ("legacy", "current")
-        [(stay_build, lineage)] = await _one(engine, "SELECT build_id, lineage FROM presence_stays")
+        [(stay_build, lineage)] = await _one(
+            engine, "SELECT build_id, build_lineage FROM presence_stays",
+        )
         assert stay_build == build_id and lineage == [["presence", "a", None]]
         tables = {r[0] for r in await _one(
             engine, "SELECT table_name FROM row_history WHERE op = 'backfill'",

@@ -72,8 +72,8 @@
   {
     "name": "the fold reads fixes recorded at or before its watermark only",
     "file": "nora/infra/sql/mobility.py",
-    "old": "                fix_recorded <= through_ms,\n",
-    "new": "",
+    "old": "                fix_recorded <= through_ms, ~copied_fix,\n",
+    "new": "                ~copied_fix,\n",
     "target": "tests/integration/test_rollup_builds.py::test_every_rollup_recomputes_identically_from_the_record"
   },
   {

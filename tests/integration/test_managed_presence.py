@@ -411,6 +411,45 @@ async def location(case):
             store=store, room_scope=room_scope, services=services, observations=observations)
 
 
+async def test_graph_places_fixes_by_membership_without_a_view_grant(case, location):
+    from nora.domain.managed import Verdict
+    from nora.domain.management import Scope, ScopeKind
+    from nora.domain.presence import PresenceFix, WireState
+    from nora.infra.sql.item_registration import (
+        RegistrationScope,
+        RuntimeRevisions,
+        SqlItemRegistration,
+    )
+    from nora.policy import Policy
+
+    unit = "generated-location-unit"
+    access = location.access
+    view = await access.check(scope=Scope(ScopeKind.UNIT, unit), person_id=PERSON, permit="view")
+    assert view.verdict is Verdict.DENIED
+    nonmember = "generated-presence-nonmember"
+    identifier = Identifier("life360", "member_id", "generated-nonmember-account")
+    await case.bindings.register(person=ManagedPerson(nonmember, PersonLifecycle.ACTIVE),
+        account=ManagedAccount(str(uuid4()), nonmember, "life360", frozenset({identifier}),
+                               AccountState.BOUND))
+    assert await access.canonical_person(nonmember) == nonmember
+
+    policy = Policy(())
+    registration = SqlItemRegistration(
+        RegistrationScope(policy, None, access=access), RuntimeRevisions({}, policy, None),
+    )
+    store = PresenceStore(case.engine, registration=registration)
+    ts = int(time.time() * 1000) + 1000
+    for person_id in (PERSON, nonmember):
+        assert await store.record_fix(fix=PresenceFix(
+            circle_id=CIRCLE, person_id=person_id, ts=ts, lat=22.3, lng=114.1,
+            wire_state=WireState.LIVE, recorded_at=ts,
+        ))
+    by_person = {r["person_id"]: (r["unit"], r["graph_id"])
+                 for r in await _fixes(case) if r["ts"] == ts}
+    assert by_person[PERSON][0] == unit and by_person[PERSON][1] is not None
+    assert by_person[nonmember] == (None, None)
+
+
 async def test_real_location_tool_reads_current_managed_circle_and_preserves_provider_boundary(
     case, location,
 ):

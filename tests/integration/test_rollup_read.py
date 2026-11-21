@@ -249,7 +249,7 @@ async def test_a_history_past_ninety_days_is_readable_where_where_been_stops(eng
         await conn.execute(sa.insert(PRESENCE_STAYS).values(
             subject_id="a", person_id="a", circle_id="c1", started_ts=old_start,
             ended_ts=old_start + 3_600_000, lat=22.3, lng=114.1, radius_m=100.0,
-            fix_count=3, build_id=build, lineage=[["presence", "a", None]],
+            fix_count=3, build_id=build, build_lineage=[["presence", "a", None]],
         ))
     rows = (await SqlRollupRead(engine).read(
         _q("stay", start=old_start - DAY, end=old_start + DAY))).rows

@@ -149,6 +149,14 @@ def _configure_generated_deployment(tmp_path, monkeypatch, pg_admin, pg_template
             "UPDATE row_history SET recorded_at = "
             "to_timestamp((image->>'ts')::bigint / 1000.0) "
             "WHERE table_name='messages'"))
+        c.execute(sa.text("""
+            UPDATE row_history AS registry
+            SET recorded_at = message.recorded_at
+            FROM row_history AS message
+            WHERE registry.table_name = 'registry' AND message.table_name = 'messages'
+              AND registry.row_key->>'id' = message.image->>'graph_id'
+              AND registry.row_key->>'unit' = message.image->>'unit'
+        """))
     # The private map a pseudonymised anchor resolves through — generated,
     # pointing the corpus pseudonym at the seeded real room.
     pmap = tmp_path / "pseudonyms.map"

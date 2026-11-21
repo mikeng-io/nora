@@ -53,15 +53,26 @@ from nora.domain.rollup import (
     SendFact,
     StaySpan,
     Tie,
-    episode_key,
-    lineage_json,
     resolve_by_overlap,
     room_key,
     stay_from_json,
     unquoted_follows,
 )
 from nora.infra.sql import memory_index
+from nora.infra.sql.aggregate_writes import AggregateWrites
+from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
+from nora.infra.sql.item_registration import SqlItemRegistration
 from nora.infra.sql.mobility import current_build_id
+from nora.infra.sql.rollup_writes import (
+    colocation_values,
+    daybook_values,
+    diff_apply,
+    outing_key,
+    outing_values,
+    plain,
+    response_values,
+    tie_values,
+)
 from nora.infra.sql.schema import (
     MESSAGE_EDIT,
     MESSAGE_REACTION,
@@ -120,12 +131,21 @@ class UnitRooms:
     accounts: dict[tuple[str, str], str]
 
 
+def _unit_input(table: sa.Table, unit: str | None) -> Any:
+    return sa.true() if unit is None else sa.or_(table.c.unit == unit, table.c.unit.is_(None))
+
+
 class SqlRollupStore:
-    def __init__(self, engine: AsyncEngine, *, metrics: Any = None) -> None:
-        """`metrics` is injected, never imported (`SqlMobilityStore`'s
-        reason); it counts the memory index's projections."""
+    def __init__(
+        self,
+        engine: AsyncEngine,
+        *,
+        metrics: Any = None,
+        registration: SqlItemRegistration | None = None,
+    ) -> None:
         self._engine = engine
         self._metrics = metrics
+        self._computed = AggregateWrites(SqlCognitiveGraph(engine), registration)
 
     # -- builds --------------------------------------------------------------
 
@@ -163,13 +183,24 @@ class SqlRollupStore:
         index never sees two builds' outings at once."""
         now = sa.func.clock_timestamp()
         async with self._engine.begin() as conn:
+            previous = await conn.scalar(
+                sa.select(ROLLUP_BUILD.c.id)
+                .where(
+                    ROLLUP_BUILD.c.status == "current",
+                    ROLLUP_BUILD.c.id != build_id,
+                )
+                .with_for_update()
+            )
+            if previous is not None:
+                await self._computed.retire_missing_build(conn, previous, build_id)
             await conn.execute(
                 sa.update(ROLLUP_BUILD)
                 .where(ROLLUP_BUILD.c.status == "current", ROLLUP_BUILD.c.id != build_id)
                 .values(status="superseded", superseded_at=now, superseded_by=build_id)
             )
             await conn.execute(
-                sa.update(ROLLUP_BUILD).where(ROLLUP_BUILD.c.id == build_id)
+                sa.update(ROLLUP_BUILD)
+                .where(ROLLUP_BUILD.c.id == build_id)
                 .values(status="current", switched_at=now)
             )
             await memory_index.reproject_episodes(conn, metrics=self._metrics)
@@ -217,25 +248,36 @@ class SqlRollupStore:
             edit_id=await newest(MESSAGE_EDIT, MESSAGE_EDIT.c.recorded_at),
         )
 
-    async def stay_spans(self, *, build_id: int, subjects: Sequence[str]) -> list[StaySpan]:
+    async def stay_spans(
+        self, *, build_id: int, subjects: Sequence[str], unit: str | None = None
+    ) -> list[StaySpan]:
         """Every closed stay of `subjects` in the build with the place it is
         linked to, and each one's stay in progress from its fold state."""
         if not subjects:
             return []
         stmt = (
             sa.select(
-                PRESENCE_STAYS.c.subject_id, PRESENCE_STAYS.c.started_ts,
-                PRESENCE_STAYS.c.ended_ts, PRESENCE_STAYS.c.lat, PRESENCE_STAYS.c.lng,
-                PRESENCE_STAYS.c.radius_m, PRESENCE_STAYS.c.place_id,
-                PRESENCE_DERIVED_PLACES.c.kind, PRESENCE_DERIVED_PLACES.c.label,
+                PRESENCE_STAYS.c.subject_id,
+                PRESENCE_STAYS.c.started_ts,
+                PRESENCE_STAYS.c.ended_ts,
+                PRESENCE_STAYS.c.lat,
+                PRESENCE_STAYS.c.lng,
+                PRESENCE_STAYS.c.radius_m,
+                PRESENCE_STAYS.c.place_id,
+                PRESENCE_DERIVED_PLACES.c.source_kind,
+                PRESENCE_DERIVED_PLACES.c.label,
                 PRESENCE_DERIVED_PLACES.c.saved_place_id,
             )
-            .select_from(PRESENCE_STAYS.outerjoin(
-                PRESENCE_DERIVED_PLACES,
-                PRESENCE_STAYS.c.place_id == PRESENCE_DERIVED_PLACES.c.id,
-            ))
+            .select_from(
+                PRESENCE_STAYS.outerjoin(
+                    PRESENCE_DERIVED_PLACES,
+                    PRESENCE_STAYS.c.place_id == PRESENCE_DERIVED_PLACES.c.id,
+                )
+            )
             .where(
                 PRESENCE_STAYS.c.build_id == build_id,
+                PRESENCE_STAYS.c.state == "live",
+                _unit_input(PRESENCE_STAYS, unit),
                 PRESENCE_STAYS.c.subject_id.in_(list(subjects)),
             )
             .order_by(PRESENCE_STAYS.c.subject_id, PRESENCE_STAYS.c.started_ts)
@@ -249,31 +291,54 @@ class SqlRollupStore:
             open_rows = (await conn.execute(opens)).all()
         out = [
             StaySpan(
-                person_id=r.subject_id, started_ts=r.started_ts, ended_ts=r.ended_ts,
-                lat=r.lat, lng=r.lng, radius_m=r.radius_m, place_id=r.place_id,
-                place_kind=r.kind, place_label=r.label, saved_place_id=r.saved_place_id,
+                person_id=r.subject_id,
+                started_ts=r.started_ts,
+                ended_ts=r.ended_ts,
+                lat=r.lat,
+                lng=r.lng,
+                radius_m=r.radius_m,
+                place_id=r.place_id,
+                place_kind=r.source_kind,
+                place_label=r.label,
+                saved_place_id=r.saved_place_id,
             )
             for r in rows
         ]
         for r in open_rows:
             stay = stay_from_json(r.open_stay)
             if stay is not None:
-                out.append(StaySpan(
-                    person_id=r.subject_id, started_ts=stay.started_ts,
-                    ended_ts=stay.ended_ts, lat=stay.lat, lng=stay.lng,
-                    radius_m=stay.radius_m, open=True,
-                ))
+                out.append(
+                    StaySpan(
+                        person_id=r.subject_id,
+                        started_ts=stay.started_ts,
+                        ended_ts=stay.ended_ts,
+                        lat=stay.lat,
+                        lng=stay.lng,
+                        radius_m=stay.radius_m,
+                        open=True,
+                    )
+                )
         return out
 
-    async def homes(self, *, build_id: int, subjects: Sequence[str]) -> dict[str, list[Home]]:
-        stmt = sa.select(
-            PRESENCE_DERIVED_PLACES.c.subject_id, PRESENCE_DERIVED_PLACES.c.lat,
-            PRESENCE_DERIVED_PLACES.c.lng, PRESENCE_DERIVED_PLACES.c.radius_m,
-        ).where(
-            PRESENCE_DERIVED_PLACES.c.build_id == build_id,
-            PRESENCE_DERIVED_PLACES.c.subject_id.in_(list(subjects)),
-            PRESENCE_DERIVED_PLACES.c.kind == "home",
-        ).order_by(PRESENCE_DERIVED_PLACES.c.subject_id, PRESENCE_DERIVED_PLACES.c.id)
+    async def homes(
+        self, *, build_id: int, subjects: Sequence[str], unit: str | None = None
+    ) -> dict[str, list[Home]]:
+        stmt = (
+            sa.select(
+                PRESENCE_DERIVED_PLACES.c.subject_id,
+                PRESENCE_DERIVED_PLACES.c.lat,
+                PRESENCE_DERIVED_PLACES.c.lng,
+                PRESENCE_DERIVED_PLACES.c.radius_m,
+            )
+            .where(
+                PRESENCE_DERIVED_PLACES.c.build_id == build_id,
+                PRESENCE_DERIVED_PLACES.c.subject_id.in_(list(subjects)),
+                PRESENCE_DERIVED_PLACES.c.source_kind == "home",
+                PRESENCE_DERIVED_PLACES.c.state == "live",
+                _unit_input(PRESENCE_DERIVED_PLACES, unit),
+            )
+            .order_by(PRESENCE_DERIVED_PLACES.c.subject_id, PRESENCE_DERIVED_PLACES.c.id)
+        )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         out: dict[str, list[Home]] = {}
@@ -515,8 +580,14 @@ class SqlRollupStore:
     # -- rows ----------------------------------------------------------------
 
     async def apply(
-        self, *, build_id: int, unit: str, colocations: Sequence[Colocation],
-        outings: Sequence[Outing], daybooks: Sequence[Daybook], ties: Sequence[Tie],
+        self,
+        *,
+        build_id: int,
+        unit: str,
+        colocations: Sequence[Colocation],
+        outings: Sequence[Outing],
+        daybooks: Sequence[Daybook],
+        ties: Sequence[Tie],
         responses: Sequence[Response],
     ) -> dict[str, int]:
         """Make the build's rows for `unit` exactly these, DIFFED by natural
@@ -526,26 +597,38 @@ class SqlRollupStore:
         touched: list[dict[str, Any]] = []
         async with self._engine.begin() as conn:
             for table, key, rows in (
-                (ROLLUP_COLOCATION, ("persons", "valid_from_ms"),
-                 [_colocation_values(c) for c in colocations]),
-                (ROLLUP_OUTING, ("persons", "valid_from_ms"),
-                 [_outing_values(o) for o in outings]),
-                (ROLLUP_DAYBOOK, ("person_id", "local_date"),
-                 [_daybook_values(d) for d in daybooks]),
-                (ROLLUP_TIE, ("person_a", "person_b", "iso_week"),
-                 [_tie_values(t) for t in ties]),
-                (ROLLUP_RESPONSE, ("message_id",),
-                 [_response_values(r) for r in responses]),
+                (
+                    ROLLUP_COLOCATION,
+                    ("persons", "valid_from_ms"),
+                    [colocation_values(c) for c in colocations],
+                ),
+                (ROLLUP_OUTING, ("persons", "valid_from_ms"), [outing_values(o) for o in outings]),
+                (
+                    ROLLUP_DAYBOOK,
+                    ("person_id", "local_date"),
+                    [daybook_values(d) for d in daybooks],
+                ),
+                (ROLLUP_TIE, ("person_a", "person_b", "iso_week"), [tie_values(t) for t in ties]),
+                (ROLLUP_RESPONSE, ("message_id",), [response_values(r) for r in responses]),
             ):
-                changes[table.name] = await _diff_apply(
-                    conn, table, build_id=build_id, unit=unit, key=key, rows=rows,
+                changes[table.name] = await diff_apply(
+                    conn,
+                    table,
+                    self._computed,
+                    build_id=build_id,
+                    unit=unit,
+                    key=key,
+                    rows=rows,
                     touched=touched if table is ROLLUP_OUTING else None,
                 )
             # Every outing this diff inserted, updated or deleted, by its key
             # before and after: a key the build no longer holds is dropped.
             await memory_index.project_episodes(
-                conn, build_id, "outing",
-                [_outing_key(r) for r in touched], metrics=self._metrics,
+                conn,
+                build_id,
+                "outing",
+                [outing_key(r) for r in touched],
+                metrics=self._metrics,
             )
         return changes
 
@@ -553,12 +636,15 @@ class SqlRollupStore:
         """Every row of one unit rollup table in a build, as plain dicts
         without their surrogate id or system time — what the determinism
         gate compares."""
-        stmt = sa.select(table).where(table.c.build_id == build_id)
+        stmt = sa.select(table).where(table.c.build_id == build_id, table.c.state == "live")
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).mappings().all()
+        from nora.infra.sql.cognitive_graph_schema import ENTITY
+
+        identity = {"id", "graph_id", "recorded_at", "build_id"}
+        extra_planes = set(ENTITY.c.keys()) - {"unit", "persons"}
         return [
-            {k: _plain(v) for k, v in r.items() if k not in ("id", "build_id", "recorded_at")}
-            for r in rows
+            {k: plain(v) for k, v in r.items() if k not in identity | extra_planes} for r in rows
         ]
 
     async def resolve(self, citation: Citation) -> Resolution:
@@ -613,122 +699,6 @@ def _citation_scope(citation: Citation) -> tuple[sa.Table, list[Any]]:
     else:
         where.append(table.c.message_id == int(key))
     return table, where
-
-
-def _plain(value: Any) -> Any:
-    if isinstance(value, list):
-        return [_plain(v) for v in value]
-    if isinstance(value, float):
-        return round(value, 9)
-    return value
-
-
-def _common(row: Any) -> dict[str, Any]:
-    return {
-        "unit": row.unit, "lineage": lineage_json(row.lineage),
-        "valid_from_ms": row.valid_from_ms, "valid_to_ms": row.valid_to_ms,
-        "as_of_ms": row.as_of_ms,
-    }
-
-
-def _colocation_values(c: Colocation) -> dict[str, Any]:
-    return {
-        **_common(c), "persons": list(c.persons), "lat": c.lat, "lng": c.lng,
-        "radius_m": c.radius_m, "place_label": c.place_label,
-        "saved_place_id": c.saved_place_id, "at_home_of": list(c.at_home_of),
-        "homes_unknown": list(c.homes_unknown), "stay_count": c.stay_count,
-        "open": int(c.open),
-    }
-
-
-def _outing_values(o: Outing) -> dict[str, Any]:
-    return {
-        **_common(o), "persons": list(o.persons), "lat": o.lat, "lng": o.lng,
-        "place_label": o.place_label, "saved_place_id": o.saved_place_id,
-        "open": int(o.open), "district": o.district, "city": o.city,
-    }
-
-
-def _daybook_values(d: Daybook) -> dict[str, Any]:
-    return {
-        **_common(d), "person_id": d.person_id, "local_date": d.local_date,
-        "stays": list(d.stays), "stay_ms": d.stay_ms, "home_ms": d.home_ms,
-        "colocation_ms": d.colocation_ms, "with_persons": list(d.with_persons),
-        "outings": d.outings, "rooms": dict(d.rooms), "messages": d.messages,
-        "reactions": d.reactions, "items_posted": d.items_posted,
-    }
-
-
-def _tie_values(t: Tie) -> dict[str, Any]:
-    return {
-        **_common(t), "person_a": t.person_a, "person_b": t.person_b,
-        "iso_week": t.iso_week, "replies_ab": t.replies_ab, "replies_ba": t.replies_ba,
-        "mentions_ab": t.mentions_ab, "mentions_ba": t.mentions_ba,
-        "reactions_ab": t.reactions_ab, "reactions_ba": t.reactions_ba,
-        "colocation_ms": t.colocation_ms,
-    }
-
-
-def _response_values(r: Response) -> dict[str, Any]:
-    return {
-        **_common(r), "message_id": r.message_id, "platform": r.platform,
-        "conversation_id": r.conversation_id, "sent_ts": r.sent_ts,
-        "replies": r.replies, "reactions": r.reactions, "edits": r.edits,
-        "follows": r.follows, "responders": list(r.responders),
-        "named_persons": list(r.named_persons),
-        "intent": r.intent, "outcome": r.outcome,
-    }
-
-
-def _key_of(row: dict[str, Any], key: Sequence[str]) -> tuple[Any, ...]:
-    return tuple(tuple(row[k]) if isinstance(row[k], list) else row[k] for k in key)
-
-
-def _outing_key(row: dict[str, Any]) -> str:
-    """An outing row's memory-index key: its citation, `unit|persons` and its
-    interval (`rollup_read`'s subject for it)."""
-    subject = f"{row['unit']}|{','.join(row['persons'])}"
-    return episode_key(subject, row["valid_from_ms"], row["valid_to_ms"])
-
-
-async def _diff_apply(
-    conn: Any, table: sa.Table, *, build_id: int, unit: str, key: Sequence[str],
-    rows: Sequence[dict[str, Any]], touched: list[dict[str, Any]] | None = None,
-) -> int:
-    """`touched`, when given, collects every row the diff changed, as it was
-    and as it is now."""
-    columns = list(rows[0]) if rows else []
-    stored = {
-        _key_of(dict(r), key): dict(r)
-        for r in (await conn.execute(
-            sa.select(table).where(table.c.build_id == build_id, table.c.unit == unit)
-        )).mappings().all()
-    }
-    wanted = {_key_of(r, key): r for r in rows}
-    changed = 0
-    doomed = [stored[k]["id"] for k in stored if k not in wanted]
-    if doomed:
-        await conn.execute(sa.delete(table).where(table.c.id.in_(doomed)))
-        changed += len(doomed)
-        if touched is not None:
-            touched += [stored[k] for k in stored if k not in wanted]
-    for k, row in wanted.items():
-        prior = stored.get(k)
-        if prior is None:
-            await conn.execute(sa.insert(table).values(build_id=build_id, **row))
-            changed += 1
-        elif any(_plain(prior[c]) != _plain(row[c]) for c in columns):
-            await conn.execute(
-                sa.update(table).where(table.c.id == prior["id"]).values(**row)
-            )
-            changed += 1
-            if touched is not None:
-                touched.append(prior)
-        else:
-            continue
-        if touched is not None:
-            touched.append(row)
-    return changed
 
 
 def _send_tag(raw_json: str | None) -> str | None:

@@ -76,7 +76,7 @@ class SqlRollupRead:
             return self._person_select(
                 q, PRESENCE_STAYS, PRESENCE_STAYS.c.started_ts, PRESENCE_STAYS.c.ended_ts,
                 extra=(
-                    PRESENCE_DERIVED_PLACES.c.kind.label("place_kind"),
+                    PRESENCE_DERIVED_PLACES.c.source_kind.label("place_kind"),
                     PRESENCE_DERIVED_PLACES.c.label.label("place_label"),
                     PRESENCE_DERIVED_PLACES.c.saved_place_id.label("place_saved_id"),
                 ),
@@ -97,7 +97,7 @@ class SqlRollupRead:
         if table is None:
             raise ValueError(f"not a Rollup kind rollup_read reads: {q.kind!r}")
         where = [
-            table.c.build_id == current_build_id(), table.c.unit == q.unit,
+            table.c.state == 'live', table.c.build_id == current_build_id(), table.c.unit == q.unit,
             table.c.valid_from_ms < q.end_ms, table.c.valid_to_ms >= q.start_ms,
         ]
         where.append(_involves(q, table))
@@ -110,12 +110,12 @@ class SqlRollupRead:
     ) -> sa.Select[Any]:
         stmt = sa.select(
             table.c.subject_id, start.label("valid_from_ms"), end.label("valid_to_ms"),
-            table.c.lineage, *extra,
+            table.c.build_lineage, *extra,
         )
         if join is not None:
             stmt = stmt.select_from(join)
         return stmt.where(
-            table.c.build_id == current_build_id(),
+            table.c.state == 'live', table.c.build_id == current_build_id(),
             table.c.subject_id.in_(q.subjects),
             start < q.end_ms, end >= q.start_ms,
         ).order_by(start, table.c.id)
@@ -139,7 +139,7 @@ def _row(kind: str, r: Any) -> RollupReadRow:
     def make(subject: str, fields: dict[str, Any]) -> RollupReadRow:
         return RollupReadRow(
             kind=kind, subject=subject, valid_from_ms=int(r.valid_from_ms),
-            valid_to_ms=int(r.valid_to_ms), lineage=Lineage.from_json(r.lineage),
+            valid_to_ms=int(r.valid_to_ms), lineage=Lineage.from_json(r.build_lineage),
             fields=fields,
         )
 

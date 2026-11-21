@@ -107,9 +107,16 @@ class FakeStore:
         self.fixes.append(fix)
         return True
 
-    async def replace_places(self, *, circle_id: str, places: list[SavedPlace]) -> None:
+    async def replace_places(
+        self, *, circle_id: str, places: list[SavedPlace], partial: bool = False,
+        observed_persons: tuple[str, ...] | None = None,
+    ) -> None:
         self.place_writes += 1
-        self.places[circle_id] = places
+        covered = {place.place_id for place in places}
+        prior = self.places.get(circle_id, []) if partial else []
+        self.places[circle_id] = [
+            place for place in prior if place.place_id not in covered
+        ] + places
 
     async def prune(self, *, now_ms: int) -> int:
         return 0

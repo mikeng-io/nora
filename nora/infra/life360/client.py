@@ -113,6 +113,7 @@ class PlacesRead:
     status: ReadStatus
     places: tuple[SavedPlace, ...] = field(default_factory=tuple)
     detail: str = ""
+    partial: bool = False
 
 
 @dataclass(frozen=True)
@@ -295,8 +296,8 @@ class Life360Client:
         if not result.is_json:
             self._alarm("challenge")
             return PlacesRead(ReadStatus.CHALLENGE, detail="non-JSON body")
-        places = tuple(parse_places(result.json, circle_id=circle_id, now_ms=now_ms))
-        return PlacesRead(ReadStatus.OK, places=places)
+        places, partial = parse_places(result.json, circle_id=circle_id, now_ms=now_ms)
+        return PlacesRead(ReadStatus.OK, places=tuple(places), partial=partial)
 
     async def discover(self) -> list[DiscoveredCircle]:
         """Every circle this account can see, each with its members' id + name —

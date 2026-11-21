@@ -20,6 +20,7 @@ from nora.infra.sql.schema import (
 from nora.obs.metrics import Metrics
 from tests.contract.test_memory_graph_contract import PERSON, load
 from tests.contract.test_memory_graph_contract import _graph_db as _graph_db
+from tests.infra.rollup_fixtures import insert_rollup_row
 
 BASE_MS = int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000)
 
@@ -344,18 +345,16 @@ async def test_rollup_projection_and_closed_episode_work_are_atomic(sql):
             "build_id": bid,
             "unit": unit,
             "persons": persons,
-            "lineage": [],
+            "build_lineage": [],
             "valid_from_ms": start,
             "valid_to_ms": start + 100,
             "as_of_ms": start + 100,
             "lat": float(0),
             "lng": float(0),
         }
-        await conn.execute(sa.insert(ROLLUP_COLOCATION).values(**common, radius_m=10, stay_count=2))
-        await conn.execute(
-            sa.insert(ROLLUP_OUTING).values(
-                **common, district="Generated District", city="Generated City"
-            )
+        await insert_rollup_row(conn, ROLLUP_COLOCATION, **common, radius_m=10, stay_count=2)
+        await insert_rollup_row(conn, ROLLUP_OUTING,
+            **common, district="Generated District", city="Generated City"
         )
         await conn.execute(
             sa.insert(PRESENCE_STAYS).values(
@@ -370,27 +369,25 @@ async def test_rollup_projection_and_closed_episode_work_are_atomic(sql):
                 radius_m=10,
                 fix_count=2,
                 address="Generated Place",
-                lineage=[],
+                build_lineage=[],
             )
         )
-        await conn.execute(
-            sa.insert(ROLLUP_RESPONSE).values(
-                build_id=bid,
-                unit=unit,
-                lineage=[],
-                valid_from_ms=start,
-                valid_to_ms=start + 100,
-                as_of_ms=start + 100,
-                message_id=123,
-                platform="signal",
-                conversation_id="generated-room",
-                sent_ts=start,
-                replies=1,
-                reactions=0,
-                edits=0,
-                named_persons=persons,
-                outcome="responded",
-            )
+        await insert_rollup_row(conn, ROLLUP_RESPONSE,
+            build_id=bid,
+            unit=unit,
+            build_lineage=[],
+            valid_from_ms=start,
+            valid_to_ms=start + 100,
+            as_of_ms=start + 100,
+            message_id=123,
+            platform="signal",
+            conversation_id="generated-room",
+            sent_ts=start,
+            replies=1,
+            reactions=0,
+            edits=0,
+            named_persons=persons,
+            outcome="responded",
         )
         key = episode_key(f"{unit}|{','.join(persons)}", start, start + 100)
         await memory_index.project_episodes(conn, bid, "outing", [key])

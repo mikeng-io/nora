@@ -132,7 +132,10 @@ def poller(
 
         # ONE store for the poller and every reader, holding who opted out:
         # the read-side exclusion lives in the store's reads (§2).
-        social_store = readable_social_store(engine, persons, metrics=metrics)
+        social_store = readable_social_store(
+            engine, persons, metrics=metrics,
+            registration=engine.get_execution_options().get("item_registration"),
+        )
         social_poller = SocialPoller(
             source=InstagramSocialSource(
                 base_url=cfg.social.instagram.base_url,
@@ -184,7 +187,9 @@ def expiry(blobs: Any, cfg: Any, engine: Any, metrics: Any)-> ExpiryWiring:
     # poller is off; it reads every person's frames, opted out or not.
     story_expiry = (
         StoryMediaExpiry(
-            store=SqlSocialStreamStore(engine),
+            store=SqlSocialStreamStore(
+                engine, registration=engine.get_execution_options().get("item_registration"),
+            ),
             blobs=blobs,
             keep_days=cfg.social.story_media_keep_days,
             max_days=cfg.social.story_media_keep_max_days,

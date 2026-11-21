@@ -342,6 +342,9 @@
  },
  "nora/analytics/composition.py": {
   "comment_blocks": 2,
+  "functions": {
+   "build_rollup": 125
+  },
   "internal_docstrings": 2
  },
  "nora/analytics/rollup.py": {
@@ -738,7 +741,7 @@
  },
  "nora/domain/models.py": {
   "comment_blocks": 43,
-  "file_lines": 971
+  "file_lines": 968
  },
  "nora/domain/music.py": {
   "comment_blocks": 2
@@ -1002,7 +1005,6 @@
   "internal_docstrings": 2
  },
  "nora/infra/life360/places.py": {
-  "comment_blocks": 1,
   "internal_docstrings": 2
  },
  "nora/infra/music/ytdlp_source.py": {
@@ -1104,8 +1106,8 @@
   "comment_blocks": 1
  },
  "nora/infra/sql/audit.py": {
-  "comment_blocks": 10,
-  "file_lines": 1176,
+  "comment_blocks": 8,
+  "file_lines": 1174,
   "functions": {
    "reaction_states": 184
   },
@@ -1332,7 +1334,6 @@
  },
  "nora/infra/sql/mobility.py": {
   "comment_blocks": 1,
-  "file_lines": 1057,
   "internal_docstrings": 7
  },
  "nora/infra/sql/music_queue.py": {
@@ -1348,11 +1349,8 @@
   "internal_docstrings": 14
  },
  "nora/infra/sql/observations.py": {
-  "comment_blocks": 3,
-  "internal_docstrings": 6
- },
- "nora/infra/sql/presence.py": {
-  "comment_blocks": 1
+  "comment_blocks": 2,
+  "internal_docstrings": 5
  },
  "nora/infra/sql/profile_inputs.py": {
   "comment_blocks": 1,
@@ -1373,11 +1371,11 @@
   "functions": {
    "SqlRollupStore.message_facts": 179
   },
-  "internal_docstrings": 3
+  "internal_docstrings": 1
  },
  "nora/infra/sql/schema.py": {
   "comment_blocks": 190,
-  "file_lines": 5925,
+  "file_lines": 5917,
   "internal_docstrings": 4
  },
  "nora/infra/sql/snapshot.py": {
@@ -1390,8 +1388,8 @@
  },
  "nora/infra/sql/social_stream.py": {
   "comment_blocks": 1,
-  "file_lines": 1147,
-  "internal_docstrings": 3
+  "file_lines": 1008,
+  "internal_docstrings": 1
  },
  "nora/infra/sql/standing.py": {
   "comment_blocks": 7,
@@ -1490,7 +1488,7 @@
  "nora/ingest/pipeline.py": {
   "comment_blocks": 12,
   "functions": {
-   "IngestPipeline._run": 150
+   "IngestPipeline._run": 149
   },
   "internal_docstrings": 5
  },

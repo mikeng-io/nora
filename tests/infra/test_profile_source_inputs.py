@@ -27,6 +27,7 @@ from nora.infra.sql.schema import (
     SOCIAL_ITEM_COUNT,
     SOCIAL_ITEM_STATE,
 )
+from tests.infra.rollup_fixtures import insert_rollup_row
 
 T0 = 1_790_000_000_000
 AT = datetime.fromtimestamp(T0 / 1000, UTC)
@@ -223,14 +224,13 @@ async def test_message_checks_reuse_media_lookups_per_attachment_value(
         assert sum(n['Actual Rows'] * n['Actual Loops'] for n in plan
                    if n.get('Relation Name') == 'messages') <= 2
 
-
 @pytest.mark.parametrize('kind', ['post', 'reel', 'story_frame'])
 async def test_social_late_media_counts_and_restrictions_are_rechecked(env, kind):
     sha = 'b' * 64
     async with env.begin() as conn:
         await conn.execute(sa.insert(SOCIAL_ITEM).values(
             network='synthetic', item_id='item-a', person=PERSON, account='author',
-            kind=kind, taken_at=AT, expires_at=AT, seen_at=AT, origin='poll', media_ref=sha,
+            source_kind=kind, taken_at=AT, expires_at=AT, seen_at=AT, origin='poll', media_ref=sha,
             caption='synthetic caption',
         ))
     source = source_inputs(env)
@@ -256,7 +256,7 @@ async def test_social_late_media_counts_and_restrictions_are_rechecked(env, kind
     assert opted.state == 'withheld' and opted.social is None and opted.counts is None
     async with env.begin() as conn:
         await conn.execute(sa.insert(SOCIAL_ITEM_STATE).values(
-            network='synthetic', item_id='item-a', state='hidden',
+            network='synthetic', item_id='item-a', source_state='hidden',
         ))
     [hidden] = await source.social(key=KEY, persons=[PERSON], limit=6,
                                    citations=['social:synthetic:item-a'])
@@ -315,13 +315,13 @@ async def test_rollup_rebuild_same_roots_is_unchanged_but_changed_bounds_are_pen
                 id=ident, status='current', code_version='synthetic', params_sha256='a' * 64,
                 through_ms=until,
             ))
-            await conn.execute(sa.insert(ROLLUP_TIE).values(
+            await insert_rollup_row(conn, ROLLUP_TIE,
                 build_id=ident, unit='unit', valid_from_ms=T0, valid_to_ms=until,
-                as_of_ms=T0, lineage=[['message', None, 'signal:room-a']],
+                as_of_ms=T0, build_lineage=[['message', None, 'signal:room-a']],
                 person_a=PERSON, person_b='person-b', iso_week='2026-W38',
                 replies_ab=1, replies_ba=0, mentions_ab=0, mentions_ba=0,
                 reactions_ab=0, reactions_ba=0, colocation_ms=999,
-            ))
+            )
     await build(1, T0 + 10)
     source = source_inputs(env)
     [first] = await source.rollup(key=KEY, unit='unit', rooms=ROOMS, person=PERSON, limit=6)
@@ -346,11 +346,11 @@ async def test_rollup_pending_page_computes_each_root_revision_once(env):
     async with env.begin() as conn:
         await conn.execute(sa.insert(ROLLUP_BUILD).values(id=1, status='current',
             code_version='synthetic', params_sha256='a' * 64, through_ms=T0 + 10))
-        await conn.execute(sa.insert(ROLLUP_TIE).values(build_id=1, unit='unit',
+        await insert_rollup_row(conn, ROLLUP_TIE, build_id=1, unit='unit',
             valid_from_ms=T0, valid_to_ms=T0 + 10, as_of_ms=T0,
-            lineage=[['message', None, 'signal:room-a']], person_a=PERSON,
+            build_lineage=[['message', None, 'signal:room-a']], person_a=PERSON,
             person_b='person-b', iso_week='2026-W38', replies_ab=1, replies_ba=0,
-            mentions_ab=0, mentions_ba=0, reactions_ab=0, reactions_ba=0, colocation_ms=0))
+            mentions_ab=0, mentions_ba=0, reactions_ab=0, reactions_ba=0, colocation_ms=0)
 
     queries = []
 
@@ -620,8 +620,8 @@ async def test_unavailable_social_is_explicit_and_does_not_block_or_ack_other_do
             W.c.consolidator_name == 'profile-person:source:social'))).scalar_one() == 0
         await conn.execute(sa.text('ALTER TABLE unavailable_social_item RENAME TO social_item'))
         await conn.execute(sa.insert(SOCIAL_ITEM).values(
-            network='synthetic', item_id='retry', person=PERSON, account='author', kind='post',
-            taken_at=AT, seen_at=AT, origin='poll', caption='recovered source',
+            network='synthetic', item_id='retry', person=PERSON, account='author',
+            source_kind='post', taken_at=AT, seen_at=AT, origin='poll', caption='recovered source',
         ))
     [retry] = await source_inputs(env).social(key=KEY, persons=[PERSON], limit=6)
     assert retry.social.caption == 'recovered source'
@@ -689,11 +689,11 @@ async def test_historical_page_cannot_reintroduce_unrooted_withdrawn_rollup_supp
     async with env.begin() as conn:
         await conn.execute(sa.insert(ROLLUP_BUILD).values(id=1, status='current',
             code_version='synthetic', params_sha256='a' * 64, through_ms=T0 + 10))
-        await conn.execute(sa.insert(ROLLUP_TIE).values(build_id=1, unit='unit',
+        await insert_rollup_row(conn, ROLLUP_TIE, build_id=1, unit='unit',
             valid_from_ms=T0, valid_to_ms=T0 + 10, as_of_ms=T0,
-            lineage=[['message', None, 'signal:room-a']], person_a=PERSON,
+            build_lineage=[['message', None, 'signal:room-a']], person_a=PERSON,
             person_b='person-b', iso_week='2026-W38', replies_ab=1, replies_ba=0,
-            mentions_ab=0, mentions_ba=0, reactions_ab=0, reactions_ba=0, colocation_ms=0))
+            mentions_ab=0, mentions_ba=0, reactions_ab=0, reactions_ba=0, colocation_ms=0)
         # A withdrawal after the build leaves the derived count in place.
         await conn.execute(sa.update(MESSAGES).where(MESSAGES.c.id == 11)
                            .values(hidden_at=T0 + 1))
@@ -744,11 +744,11 @@ async def test_response_projection_keeps_question_context_and_only_subject_reply
             size=1, source='inbound', created_at_ms=T0, description='target cached scene'))
         await conn.execute(sa.insert(ROLLUP_BUILD).values(id=1, status='current',
             code_version='synthetic', params_sha256='a' * 64, through_ms=T0 + 10))
-        await conn.execute(sa.insert(ROLLUP_RESPONSE).values(build_id=1, unit='unit',
+        await insert_rollup_row(conn, ROLLUP_RESPONSE, build_id=1, unit='unit',
             valid_from_ms=T0 - 1, valid_to_ms=T0 + 10, as_of_ms=T0 + 2,
-            lineage=[['message', None, 'signal:room-a']], message_id=9, platform='signal',
+            build_lineage=[['message', None, 'signal:room-a']], message_id=9, platform='signal',
             conversation_id='room-a', sent_ts=T0 - 1, replies=2, reactions=0, edits=0,
-            responders=[PERSON, 'person-b'], outcome='responded'))
+            responders=[PERSON, 'person-b'], outcome='responded')
     source = source_inputs(env)
     [reply] = await source.rollup(key=KEY, unit='unit', rooms=ROOMS, person=PERSON, limit=12)
     assert {r.row.id for r in reply.roots} == {10}
@@ -775,12 +775,12 @@ async def test_rejected_rollup_page_cannot_hide_readable_revision(env, invalid_r
         await conn.execute(sa.insert(ROLLUP_BUILD).values(id=1, status='current',
             code_version='synthetic', params_sha256='a' * 64, through_ms=T0))
         for i in range(27):
-            await conn.execute(sa.insert(ROLLUP_DAYBOOK).values(build_id=1, unit='unit',
+            await insert_rollup_row(conn, ROLLUP_DAYBOOK, build_id=1, unit='unit',
                 valid_from_ms=T0 + i * 86400000, valid_to_ms=T0 + (i + 1) * 86400000,
-                as_of_ms=T0, lineage=[['message', None, 'signal:room-a']], person_id=PERSON,
+                as_of_ms=T0, build_lineage=[['message', None, 'signal:room-a']], person_id=PERSON,
                 local_date=f'2026-01-{i + 1:02}', stays=[], stay_ms=0, home_ms=0,
                 colocation_ms=0, outings=0, rooms={}, messages=invalid_roots if i < 26 else 1,
-                reactions=0))
+                reactions=0)
     reads, _, _, evidence, adaptor = wired(env)
     await reads.history_state(key=KEY)
     await reads.advance_history(key=KEY, cursor=200)
@@ -1039,11 +1039,11 @@ async def test_rollup_total_work_scales_with_history_and_fixed_page(env, tmp_pat
     async with env.begin() as conn:
         await conn.execute(sa.insert(ROLLUP_BUILD).values(id=1, status='current',
             code_version='synthetic', params_sha256='a' * 64, through_ms=T0 + 10))
-        await conn.execute(sa.insert(ROLLUP_TIE).values(build_id=1, unit='unit',
+        await insert_rollup_row(conn, ROLLUP_TIE, build_id=1, unit='unit',
             valid_from_ms=T0, valid_to_ms=T0 + 10, as_of_ms=T0,
-            lineage=[['message', None, 'signal:room-a']], person_a=PERSON,
+            build_lineage=[['message', None, 'signal:room-a']], person_a=PERSON,
             person_b='person-b', iso_week='2026-W38', replies_ab=1, replies_ba=0,
-            mentions_ab=0, mentions_ba=0, reactions_ab=0, reactions_ba=0, colocation_ms=0))
+            mentions_ab=0, mentions_ba=0, reactions_ab=0, reactions_ba=0, colocation_ms=0)
     measured = []
     for first, last in [(100, 3099), (3100, 6099)]:
         async with env.begin() as conn:
@@ -1103,11 +1103,11 @@ async def test_rollup_discovery_and_render_share_exact_pending_with_competing_ti
             code_version='synthetic', params_sha256='a' * 64, through_ms=T0 + 10))
         for other, week in (('person-b', '2026-W38'), ('person-b', '2026-W39'),
                             ('person-c', '2026-W38')):
-            await conn.execute(sa.insert(ROLLUP_TIE).values(build_id=1, unit='unit',
+            await insert_rollup_row(conn, ROLLUP_TIE, build_id=1, unit='unit',
                 valid_from_ms=T0, valid_to_ms=T0 + 10, as_of_ms=T0,
-                lineage=[['message', None, 'signal:room-a']], person_a=PERSON,
+                build_lineage=[['message', None, 'signal:room-a']], person_a=PERSON,
                 person_b=other, iso_week=week, replies_ab=1, replies_ba=0,
-                mentions_ab=0, mentions_ba=0, reactions_ab=0, reactions_ba=0, colocation_ms=0))
+                mentions_ab=0, mentions_ba=0, reactions_ab=0, reactions_ba=0, colocation_ms=0)
     source = source_inputs(env)
     queries = []
 

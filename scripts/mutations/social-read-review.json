@@ -44,21 +44,21 @@
   {
     "name": "4 helper: the reader store drops opted_out",
     "file": "nora/infra/sql/social_stream.py",
-    "old": "    return SqlSocialStreamStore(engine, opted_out=LiveSet(persons.social_off_ids), metrics=metrics)\n",
-    "new": "    return SqlSocialStreamStore(engine, metrics=metrics)\n",
+    "old": "    return SqlSocialStreamStore(\n        engine, opted_out=LiveSet(persons.social_off_ids), metrics=metrics,\n        registration=registration,\n    )\n",
+    "new": "    return SqlSocialStreamStore(\n        engine, metrics=metrics,\n        registration=registration,\n    )\n",
     "target": "tests/unit/test_social_store_wiring.py::test_a_reader_store_leaves_out_an_opted_out_person_under_every_id tests/infra/test_social_read.py::test_an_opted_out_person_stays_out_under_a_retired_id tests/architecture/test_social_reads_exclude_every_opted_out_id.py"
   },
   {
     "name": "4 helper: the opt-out leaves out the current id only",
     "file": "nora/infra/sql/social_stream.py",
-    "old": "    return SqlSocialStreamStore(engine, opted_out=LiveSet(persons.social_off_ids), metrics=metrics)\n",
-    "new": "    return SqlSocialStreamStore(engine, opted_out=frozenset(p for p in persons.by_person if persons.social_off(p)), metrics=metrics)\n",
+    "old": "    return SqlSocialStreamStore(\n        engine, opted_out=LiveSet(persons.social_off_ids), metrics=metrics,\n        registration=registration,\n    )\n",
+    "new": "    return SqlSocialStreamStore(\n        engine, opted_out=frozenset(p for p in persons.by_person if persons.social_off(p)), metrics=metrics,\n        registration=registration,\n    )\n",
     "target": "tests/unit/test_social_store_wiring.py::test_a_reader_store_leaves_out_an_opted_out_person_under_every_id tests/architecture/test_social_reads_exclude_every_opted_out_id.py"
   },
   {
     "name": "4 composition: social_read's store is built beside the helper, without opted_out",
     "file": "nora/app/composition_social.py",
-    "old": "        social_store = readable_social_store(engine, persons, metrics=metrics)",
+    "old": "        social_store = readable_social_store(\n            engine, persons, metrics=metrics,\n            registration=engine.get_execution_options().get(\"item_registration\"),\n        )",
     "new": "        social_store = SqlSocialStreamStore(engine)",
     "target": "tests/architecture/test_social_reads_exclude_every_opted_out_id.py::test_every_social_reader_is_built_through_the_helper"
   },
@@ -135,8 +135,8 @@
   {
     "name": "8 store: any state row, a place row included, hides an item",
     "file": "nora/infra/sql/social_stream.py",
-    "old": "        no `gone` or `hidden` state row.\"\"\"\n        i, s = SOCIAL_ITEM, SOCIAL_ITEM_STATE\n        stated = sa.exists().where(\n            s.c.network == i.c.network, s.c.item_id == i.c.item_id,\n            s.c.state.in_(HIDING_STATES),\n        )\n",
-    "new": "        no `gone` or `hidden` state row.\"\"\"\n        i, s = SOCIAL_ITEM, SOCIAL_ITEM_STATE\n        stated = sa.exists().where(\n            s.c.network == i.c.network, s.c.item_id == i.c.item_id,\n        )\n",
+    "old": "        \"\"\"One readable copy of each logical item, respecting opt-outs and hiding.\"\"\"\n        i, s = SOCIAL_ITEM, SOCIAL_ITEM_STATE\n        stated = sa.exists().where(\n            s.c.network == i.c.network, s.c.item_id == i.c.item_id,\n            s.c.source_state.in_(HIDING_STATES),\n        )\n",
+    "new": "        \"\"\"One readable copy of each logical item, respecting opt-outs and hiding.\"\"\"\n        i, s = SOCIAL_ITEM, SOCIAL_ITEM_STATE\n        stated = sa.exists().where(\n            s.c.network == i.c.network, s.c.item_id == i.c.item_id,\n        )\n",
     "target": "tests/infra/test_social_read.py::test_a_changed_tag_shows_the_new_place_and_a_removed_one_shows_none"
   },
   {
