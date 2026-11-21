@@ -1,5 +1,112 @@
 # Changelog
 
+## [7.20.4](https://github.com/mikeng-io/nora/compare/v7.20.3...v7.20.4) (2026-11-21)
+
+
+### Bug Fixes
+
+* **identity:** read the register path's unique violation by SQLSTATE too ([83dc27f](https://github.com/mikeng-io/nora/commit/83dc27f56a4bd2092e224ce2da6d6f26f8f13479))
+* **identity:** translate concurrent identifier collisions by SQLSTATE ([4d0939a](https://github.com/mikeng-io/nora/commit/4d0939a9a0b96082c7cbc9fde9416048909773ae))
+
+## [7.20.3](https://github.com/mikeng-io/nora/compare/v7.20.2...v7.20.3) (2026-11-20)
+
+
+### Security
+
+* **site:** refresh the reviewed site recipe hash after bringing master in ([5a2dd2f](https://github.com/mikeng-io/nora/commit/5a2dd2fb4f85ef42936f5eb34216816d4d911989))
+* **site:** serve the public site from a Caddy built with the Go certificate-trust fix ([5589dc9](https://github.com/mikeng-io/nora/commit/5589dc9e7d1b9c1dd8ad85ed45302e4e6daa2304))
+
+## [7.20.2](https://github.com/mikeng-io/nora/compare/v7.20.1...v7.20.2) (2026-11-20)
+
+
+### Security
+
+* **deps:** bump the base-images group across 1 directory with 2 updates ([90507bb](https://github.com/mikeng-io/nora/commit/90507bbefb34f5df0cde64d634af7fbda0c0254e))
+
+## [7.20.1](https://github.com/mikeng-io/nora/compare/v7.20.0...v7.20.1) (2026-11-20)
+
+
+### Security
+
+* **deps:** bump go.opentelemetry.io/otel/sdk ([faba75a](https://github.com/mikeng-io/nora/commit/faba75aa569f187d5920653448798fccd62775d1))
+
+## [7.20.0](https://github.com/mikeng-io/nora/compare/v7.19.17...v7.20.0) (2026-11-19)
+
+
+### Features
+
+* **computer:** let web_browse submit search forms and type into any offered field ([746c5cd](https://github.com/mikeng-io/nora/commit/746c5cd7441950736a757fb39732a4561361c55c))
+* **computer:** replace the per-click browse agent with the indexed-action web_browse tool ([09f77f5](https://github.com/mikeng-io/nora/commit/09f77f5de3276bff66e74378a195d5316a1b1a64))
+* **computer:** retrieve public web evidence with a bounded browser loop ([0239800](https://github.com/mikeng-io/nora/commit/023980053c36b6e5664e9c00d47683acc06a4609))
+
+
+### Bug Fixes
+
+* **browser:** account for web browse in acceptance contracts ([3d949cc](https://github.com/mikeng-io/nora/commit/3d949cc9b9efaf3e7518d34cfae202c1da3c8620))
+* **computer:** keep a cut-off web_browse from reading as nothing found and show its model what it already did ([4d1abdd](https://github.com/mikeng-io/nora/commit/4d1abdd517888610ed6d346f975f8c97f88564d4))
+* **computer:** remove what still named the deleted browse agent ([11b0678](https://github.com/mikeng-io/nora/commit/11b0678faf00efb1a781c50b7b876a145b683288))
+* **computer:** report every cut-off web_browse run as unavailable, declare its side effects unknown, name its tool in the task note ([4ddaff2](https://github.com/mikeng-io/nora/commit/4ddaff2c84a63c9cf1fc4791f2194d74e120b41e))
+
+## [7.19.17](https://github.com/mikeng-io/nora/compare/v7.19.16...v7.19.17) (2026-11-19)
+
+
+### Maintenance
+
+* origin/master into native-stack-commands, the #826 lessons loop and the #825 wiki retirement ([6a47ad7](https://github.com/mikeng-io/nora/commit/6a47ad7125bba56e5e6ed903753f0102538f0747))
+* origin/master into native-stack-commands, the v7.19.16 release metadata ([8c99f31](https://github.com/mikeng-io/nora/commit/8c99f31eda8e88447b288e511011a5c2071ffeed))
+
+## [7.19.16](https://github.com/mikeng-io/nora/compare/v7.19.15...v7.19.16) (2026-11-19)
+
+
+### Maintenance
+
+* make nora-land and nora-dispatch write lessons where the lifecycle does ([ae53a6f](https://github.com/mikeng-io/nora/commit/ae53a6f4e21193a6fb61ee1d343a20243bd02db1))
+
+## [7.19.15](https://github.com/mikeng-io/nora/compare/v7.19.14...v7.19.15) (2026-11-19)
+
+
+### Changes
+
+* **site:** retire the OpenWiki wiki and redirect /wiki to the homepage ([2959279](https://github.com/mikeng-io/nora/commit/2959279cac76a25726901aca08a0a88cb99c91c9))
+
+## [7.19.14](https://github.com/mikeng-io/nora/compare/v7.19.13...v7.19.14) (2026-11-19)
+
+
+### Bug Fixes
+
+* **architecture:** restore the comment, metric, store and guide checks ([781c2bb](https://github.com/mikeng-io/nora/commit/781c2bb4f8479804e6d55fa12dbc69175c230c81))
+* **ci:** equip manual acceptance for the managed portal browser ([2728906](https://github.com/mikeng-io/nora/commit/272890684dc507fd5bebeb5f22fa60145e8f2b55))
+* **deploy:** pass the presence directory key to Nora ([706781b](https://github.com/mikeng-io/nora/commit/706781bb522c1a6a2dca2771f75a8ca69268a449))
+* **evals:** align journey worlds and harness fixtures with the current protocol ([756ddfd](https://github.com/mikeng-io/nora/commit/756ddfdb6f2c066df56bef37bb7ac4bdf65d577d))
+* **evals:** allocate journey metrics ports at bind time ([b314f52](https://github.com/mikeng-io/nora/commit/b314f52f6c9407af7abc000d3ab21b2ac61c6973))
+* **evals:** keep the teardown caller out of the leak sweep ([bc16f6d](https://github.com/mikeng-io/nora/commit/bc16f6d1d5f21f9eac56888c8e5630bc5447499c))
+* **evals:** seed journey stimuli before starting the scheduler ([59edc4e](https://github.com/mikeng-io/nora/commit/59edc4e21f516c8fa2c95d18c989746d96c129a4))
+* **heartbeat:** restore the unit-wide proactive delivery recheck ([6bfc7f0](https://github.com/mikeng-io/nora/commit/6bfc7f03ad55e93386bc1a34c4ff8ccd98f65a4b))
+* **privacy:** build every social reader through the opt-out helper ([8819384](https://github.com/mikeng-io/nora/commit/881938438bc891de6bc7cd860476e1f1b2d63613))
+
+## [7.19.13](https://github.com/mikeng-io/nora/compare/v7.19.12...v7.19.13) (2026-11-19)
+
+
+### Maintenance
+
+* **architecture:** reshrink the log-marker baseline to the current tree ([d3e2f34](https://github.com/mikeng-io/nora/commit/d3e2f34ea6b8ce530711f8bdc97218019c9e420d))
+* **architecture:** scope the causal_protocol exemption to its reader site ([fad1c30](https://github.com/mikeng-io/nora/commit/fad1c30cd069d15e7a20f05073cfd6ea908e0c63))
+* **contracts:** drop the 170s wall-clock wrapping the fast baseline ([82338ea](https://github.com/mikeng-io/nora/commit/82338ea1359446209e5f4a222bbc57515293ae35))
+
+## [7.19.12](https://github.com/mikeng-io/nora/compare/v7.19.11...v7.19.12) (2026-11-18)
+
+
+### Maintenance
+
+* **ory:** split the managed-identity gate into two parallel jobs ([13c4359](https://github.com/mikeng-io/nora/commit/13c435978ccebae42f5a1366b9a500d836693f7e))
+
+## [7.19.11](https://github.com/mikeng-io/nora/compare/v7.19.10...v7.19.11) (2026-11-18)
+
+
+### Maintenance
+
+* origin/master into feat/watch-source-reference, managed identity and release 7.19.10 ([8c968a3](https://github.com/mikeng-io/nora/commit/8c968a37d9ae38cbfeeacbf903c63c9f62beb6e2))
+
 ## [7.19.10](https://github.com/mikeng-io/nora/compare/v7.19.9...v7.19.10) (2026-11-18)
 
 

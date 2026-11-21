@@ -35,6 +35,9 @@ TIMING_TESTS = (
     "tests/integration/test_ambient_loop_positive_control.py",
     "tests/infra/test_proactive_pass.py",
     "tests/infra/test_wake_pass.py",
+    "tests/integration/subject/test_autonomous_journey_sdk.py",
+    "tests/integration/test_managed_circle_cost.py",
+    "tests/infra/test_room_busy.py",
 )
 
 
