@@ -181,7 +181,7 @@ carries the budget and the ending:
 
 - State each arm's `estimate:` line; never `--allow-long` unless the operator asked;
   spend, re-runs and escalation: [reference.md](reference.md#budget-repeats-and-escalation).
-- Launch with `run_in_background` (Tool notes) and END the turn. No sleep-polling or
+- Launch in the background (Tool notes) and END the turn. No sleep-polling or
   open subagent: the parent reads `/tmp/eval-<arm>.rc` at the computed finish, then the log.
 - A brand-new tool has no before arm that can pass: that arm only proves the arms
   differ (step 5). Spend draws on the after arm and the negatives.
@@ -198,7 +198,6 @@ unanchored case before a run.
 
 ## Tool notes
 
-- **Claude Code:** launch the long run as the Bash command itself with
-  `run_in_background`, never `nohup … &` inside it: the completion notice then
-  reports the wrapper, and a live run looks dead. The notice's exit
-  code is the last command's, so read the rc file, not the notice.
+- Runtime quirks (output-compressing hooks, background notices, sandboxed git): `.agents/runtimes/`.
+  Launch the run itself in the background, not a wrapper around it, and read the
+  rc file, not the notice.

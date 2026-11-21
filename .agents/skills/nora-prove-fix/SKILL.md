@@ -150,9 +150,6 @@ By hand: reverting <file>'s <clause> turns `<test_name>` red; restored, green.
 
 ## Tool notes
 
-- **Claude Code:** the rtk hook rewrites `git` and `pytest` and compacts their
-  output; use `rtk proxy <cmd>` when you need the raw failure text. Inside a
-  worktree-isolated subagent every `git` form is refused (`git -C` too); use
-  the wrapper in nora-land's Tool notes.
-- **Claude Code:** a backgrounded command's notice reports the LAST command's exit
-  code (a trailing `echo` or `tee`), so write `RC=$?` to a file and read the file.
+- Runtime quirks (output-compressing hooks, background notices, sandboxed git): `.agents/runtimes/`.
+- A backgrounded command's notice can report the LAST command's exit code, so
+  write `RC=$?` to a file and read the file.
