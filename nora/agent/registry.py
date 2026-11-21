@@ -306,7 +306,7 @@ class ToolRegistry:
         # `computer_export`'s record of what left the computer (always built
         # by the composition root).
         computer_exports: ComputerExportStore | None = None,
-        # `computer_browse` (B2): None while `[computer.browse]` is off.
+        # `web_browse`: None while `[computer.browse]` is off.
         browser: BrowserRunner | None = None,
         # The scoped-computer runtime ([computer.scoped]): `ComputerAdmission`
         # is the per-scope FIFO the write-path tools queue through (None: they
@@ -410,7 +410,8 @@ class ToolRegistry:
         self._ledger = ledger
         self._culture = culture
         self._social_items = social_items
-        # Withhold tools whose runtime dependency is disabled.
+        # Tools with missing dependencies are omitted from every surface
+        # and from the gate's digest, so a turn cannot route to them.
         self._withheld: frozenset[str] = (
             (frozenset() if record is not None else frozenset({"record_query"}))
             | (frozenset() if rollup is not None else frozenset({"rollup_read"}))
@@ -422,7 +423,8 @@ class ToolRegistry:
             | (frozenset() if observations is not None
                else frozenset({"poll_list", "poll_read", "room_state_read"}))
             | (frozenset() if computer is not None else COMPUTER_TOOLS)
-            | (frozenset() if browser is not None else frozenset({"computer_browse"}))
+            | (frozenset() if browser is not None and computer_admission is not None
+               and browser_manager is not None else frozenset({"web_browse"}))
             | (frozenset() if browser_manager is not None else frozenset({"computer_capture"}))
             | (frozenset() if computer_admission is not None else frozenset({"computer_cancel"}))
             | (frozenset() if documents is not None else DOCUMENT_TOOLS)

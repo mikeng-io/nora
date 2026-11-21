@@ -34,8 +34,8 @@ def request_census(events: list[dict[str, Any]], *, judges: list[str]) -> dict[s
 def subject_instructions(trajectory: dict[str, Any]) -> dict[str, Any]:
     requests = trajectory.get("model_calls")
     observed = instruction_messages(requests)
-    if observed["status"] == "observed" and observed["messages"]:
-        return observed
+    if observed["status"] == "ok" and observed["messages"]:
+        return {**observed, "status": "observed"}
     effects = trajectory.get("effects") or {}
     wake_id = trajectory.get("wake_id")
     unit = trajectory.get("unit")

@@ -1,4 +1,4 @@
-"""AGENTS.md's "Never" list: never assume your migration's parent is
+"""docs/code-standards.md «Postgres and Alembic»: never assume your migration's parent is
 unclaimed — "two branches cut from the same head each write `down_revision =
 <that head>`, git merges both files without a conflict, every test that does
 not actually migrate stays green, and the container fails at boot because
