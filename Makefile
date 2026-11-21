@@ -194,7 +194,7 @@ archive:
 	@test -n "$(BRANCH)" && test -n "$(REASON)" || { echo 'usage: make archive BRANCH=<b> REASON="..."'; exit 2; }
 	uv run python scripts/git_archive.py "$(BRANCH)" --reason "$(REASON)"
 
-# --- merge-time checks (AGENTS.md "Never"; each of these has a dated incident
+# --- merge-time checks (docs/code-standards.md and AGENTS.md "Never"; each of these has a dated incident
 # behind it, and until now each existed only as a command to retype by hand).
 # Reports, not assertions: `uniq -d` exits 0 with no output, so read the output
 # rather than trusting the exit code — that noisy-gate trap is why the real

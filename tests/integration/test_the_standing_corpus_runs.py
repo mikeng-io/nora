@@ -41,8 +41,6 @@ from evals.backbone import (
     PASS,
     MeetsGrader,
     Spec,
-    _close,
-    _drive,
     state_of,
 )
 from evals.rebuilt.grading import Judge, Judgement
@@ -59,15 +57,18 @@ from nora.subject import (
     Knowledge,
     Message,
     SubjectSpec,
-    obtain,
     sandbox_database,
     sandbox_from_snapshot,
 )
 from nora.subject.standing_fold import FoldCall, Folded, fold, read_fold_turn
-from tests.sandbox_fixtures import BEFORE_MS, ROOM, STEP_MS, seed_source
-
-#: Every draw creates a Honcho workspace of its own.
-pytestmark = pytest.mark.usefixtures("draw_honcho")
+from tests.sandbox_fixtures import (
+    BEFORE_MS,
+    ROOM,
+    STEP_MS,
+    offline_drive,
+    offline_subject,
+    seed_source,
+)
 
 _NO_PROVIDER = {"llm.base_url": "http://127.0.0.1:9/v1"}
 _TAG = "t-fold-probe"
@@ -199,7 +200,7 @@ async def _run(
         policy=source.policy, identity=source.identity, template=source.template,
         judge=judge,
     )
-    result = await _drive(case, spec)
+    result = await offline_drive(case, spec)
     data = EvaluationData(
         input="", actual_output=result["output"],
         actual_environment_state=result["environment_state"], metadata={"expect": "fold"},
@@ -266,14 +267,14 @@ async def test_the_judge_reads_the_record_not_the_folds_input(
     monkeypatch.setattr("evals.rebuilt.entry.fold", written)
     graded: dict[str, Any] = {}
 
-    class Recording:
+    class Recording(Judge):
         async def grade_position(self, **kwargs: Any) -> Judgement:
             graded.update(kwargs)
             raw = json.dumps([{"criterion": POSITION_CRITERION, "score": 1.0,
                                "confidence": 0.9, "rationale": "held"}])
             return Judgement(criterion=POSITION_CRITERION, verdict="PASS", samples=(raw,))
 
-    out, _data = await _run(source, metadata={}, judge=Recording())
+    out, _data = await _run(source, metadata={}, judge=Recording(base_url=""))
     assert out.label == PASS, out.reason
     assert "held" in out.reason
     evidence = graded["evidence"]
@@ -295,33 +296,32 @@ async def test_the_verdict_chain_is_seeded_as_of_the_turn(
     turn — and not the one this turn's own fold wrote."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     source = await _seed(clean_pg_url, pg_template, tmp_path, prior=True)
-    async with sandbox_database(source.url, template=source.template) as sandbox:
-        subject = await obtain(SubjectSpec(
+    async with (
+        sandbox_database(source.url, template=source.template) as sandbox,
+        offline_subject(SubjectSpec(
             database_url=sandbox, workdir=tmp_path / "subject", room=ROOM,
             overrides={**_NO_PROVIDER, "standing.enabled": True},
             policy=source.policy, identity=source.identity,
             now=datetime.fromtimestamp(_FOLDED / 1000, tz=UTC),
-        ))
+        )) as subject,
+    ):
+        seeded = await sandbox_from_snapshot(
+            subject, source_url=source.url, before_ms=_FOLDED,
+            leave_room_for_arrival=False,
+        )
+        turn = await read_fold_turn(subject, source_url=source.url, tag_id=_TAG)
+        assert turn.folded_at == _FOLDED
+        assert turn.prior is not None and turn.prior.body == _PRIOR
+        assert "row-7" in [r.body for r in turn.seen]
+        folded = await fold(subject, turn, rows=seeded.rows, call_model=False)
+        assert folded.outcome == "malformed"
+        engine = create_sql_engine(sandbox)
         try:
-            seeded = await sandbox_from_snapshot(
-                subject, source_url=source.url, before_ms=_FOLDED,
-                leave_room_for_arrival=False,
-            )
-            turn = await read_fold_turn(subject, source_url=source.url, tag_id=_TAG)
-            assert turn.folded_at == _FOLDED
-            assert turn.prior is not None and turn.prior.body == _PRIOR
-            assert "row-7" in [r.body for r in turn.seen]
-            folded = await fold(subject, turn, rows=seeded.rows, call_model=False)
-            assert folded.outcome == "malformed"
-            engine = create_sql_engine(sandbox)
-            try:
-                async with engine.connect() as conn:
-                    tags = {r.tag_id for r in (await conn.execute(
-                        sa.select(TURN_VERDICT.c.tag_id))).all()}
-            finally:
-                await engine.dispose()
+            async with engine.connect() as conn:
+                tags = {r.tag_id for r in (await conn.execute(
+                    sa.select(TURN_VERDICT.c.tag_id))).all()}
         finally:
-            await _close(subject)
+            await engine.dispose()
     assert tags == {"t-earlier"}
 
 
@@ -482,14 +482,14 @@ async def test_the_counterfactuals_judge_sees_the_search_and_the_delivered_reply
     monkeypatch.setattr("evals.rebuilt.entry.fold", written)
     graded: dict[str, Any] = {}
 
-    class Recording:
+    class Recording(Judge):
         async def grade_position(self, **kwargs: Any) -> Judgement:
             graded.update(kwargs)
             raw = json.dumps([{"criterion": POSITION_CRITERION, "score": 1.0,
                                "confidence": 0.9, "rationale": "kept an unsent one"}])
             return Judgement(criterion=POSITION_CRITERION, verdict="PASS", samples=(raw,))
 
-    out, _data = await _run(source, metadata=dict(_COUNTERFACTUAL), judge=Recording(),
+    out, _data = await _run(source, metadata=dict(_COUNTERFACTUAL), judge=Recording(base_url=""),
                             before_ms=_REPLY_AT)
     assert out.label == PASS, out.reason
     evidence = graded["evidence"]
