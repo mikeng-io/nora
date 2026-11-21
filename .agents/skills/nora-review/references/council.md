@@ -10,7 +10,7 @@ transition, never the transition's approval.
 
 | tier | panel | when |
 |---|---|---|
-| 0 | one independent reviewer | the default, including a full route whose only trigger is model spending |
+| 0 | the review tier `ORCHESTRATION.md` gives the change: none (the orchestrator reads the diff) or one independent reviewer | the default |
 | 1 | several reviewers of one vendor, one lens each (application, security, data/concurrency, measurement) | a change across several areas where one reviewer cannot hold every lens |
 | 2 | reviewers of different vendors on the same question | the full route with impact or reversibility high, a phase-end drift audit, an architecture verdict |
 | 3 | tier 2, then one debate round where members answer each other's findings | an irreversible or high-stakes design decision |
@@ -48,5 +48,6 @@ members ground independently keeps its strongest severity; a disputed finding
 names both positions and the evidence each cites, and goes to the next tier or
 to Mike when it blocks. Severity stays the reviewer's (`ORCHESTRATION.md`).
 A member that is unavailable is recorded **SKIPPED**, never filled in; the
-panel proceeds when at least one member returns. A tier-2 panel with every
-other vendor SKIPPED is a tier-0 review and is reported as one.
+panel proceeds once its independent verdict member returns. When that member
+is SKIPPED, launch the next qualifying lane (`.agents/lanes.md`); a panel left
+with advisory members only has no verdict and is Blocked.
