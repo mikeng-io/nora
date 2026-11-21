@@ -57,6 +57,32 @@ function slip(paper: THREE.Texture | null, text: string): THREE.CanvasTexture {
   return t;
 }
 
+/** A word as a small paper chip with a node dot, for the knowledge map. */
+function chip(text: string, hub: boolean): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  const g = c.getContext("2d")!;
+  const font = `${hub ? 600 : 500} 44px "Inter", sans-serif`;
+  g.font = font;
+  const w = Math.ceil(g.measureText(text).width) + 96;
+  c.width = w;
+  c.height = 84;
+  g.font = font;
+  g.fillStyle = hub ? "rgba(246,242,234,0.96)" : "rgba(232,237,248,0.9)";
+  g.beginPath();
+  g.roundRect(2, 2, w - 4, 80, 40);
+  g.fill();
+  g.fillStyle = "#6a7fb4";
+  g.beginPath();
+  g.arc(40, 42, 9, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = "#1a2134";
+  g.fillText(text, 62, 57);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
 function thread(from: THREE.Vector3, to: THREE.Vector3, lift: number, width: number): THREE.Mesh {
   const mid = from.clone().lerp(to, 0.5).add(new THREE.Vector3(0, lift, 0.2));
   return new THREE.Mesh(
@@ -96,7 +122,7 @@ export class World {
   traveller!: THREE.Mesh;
   travelPath!: THREE.CatmullRomCurve3;
   stars: { mesh: THREE.Mesh; from: THREE.Vector3; to: THREE.Vector3 }[] = [];
-  starLinks!: THREE.LineSegments;
+  links: THREE.Mesh[] = [];
   falling: { mesh: THREE.Mesh; x: number; speed: number; phase: number }[] = [];
   lifted!: THREE.Mesh;
   liftFrom = new THREE.Vector3();
@@ -206,41 +232,41 @@ export class World {
       s.group.add(m);
       this.falling.push({ mesh: m, x, speed: 0.6 + (i % 7) * 0.08, phase: i * 0.37 });
     }
-    this.lifted = new THREE.Mesh(new THREE.PlaneGeometry(size * 3.2, size * 0.9), new THREE.MeshBasicMaterial({ map: slip(this.maps.slip, "Alex: someone should sort this before Friday"), transparent: true, depthWrite: false, color: new THREE.Color(0.86, 0.88, 0.94), opacity: 0 }));
+    this.lifted = new THREE.Mesh(new THREE.PlaneGeometry(size * 2.6, size * 0.73), new THREE.MeshBasicMaterial({ map: slip(this.maps.slip, "Alex: someone should sort this before Friday"), transparent: true, depthWrite: false, color: new THREE.Color(0.86, 0.88, 0.94), opacity: 0 }));
     this.liftFrom.copy(this.stage.at(cliff, 0.79, 0.75, 1.5));
     this.lifted.position.copy(this.liftFrom);
     s.group.add(this.lifted);
   }
 
-  /** The constellation: slips rising off the ridge and locking into a still map. */
+  /** Take two's map: the words of the conversation as nodes, joined by what
+      actually relates them. It forms, complete, and then nothing moves. */
   private dressRidge(): void {
     const s = this.station("ridge");
-    const words = this.words;
-    const N = 26;
-    const rnd = (i: number, k: number) => Math.sin(i * 91.7 + k * 13.3) * 0.5 + 0.5;
-    const pts: THREE.Vector3[] = [];
-    for (let i = 0; i < N; i++) {
-      const text = words[i % Math.max(1, words.length)] ?? "";
-      const w = 0.55 + rnd(i, 4) * 0.35;
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, w * 0.28), new THREE.MeshBasicMaterial({ map: slip(this.maps.slip, i < words.length ? text : ""), transparent: true, depthWrite: false, color: new THREE.Color(0.85, 0.88, 0.97), opacity: 0 }));
-      const to = new THREE.Vector3((rnd(i, 1) - 0.5) * 12, -1.1 + rnd(i, 2) * 4.2, -5 - rnd(i, 3) * 8);
-      const from = new THREE.Vector3(to.x * 0.6, -3.2 - rnd(i, 5), -4 - rnd(i, 6) * 3);
+    // nodes in the order of knowledge.nodes: Alex, Friday, the booking, Sam, Thursday, Mia, the table, someone
+    const at: [number, number][] = [[-2.6, 0.9], [2.4, 1.1], [0, 0], [-1.9, -1.5], [2.2, -1.1], [3.6, 0.1], [0.6, -1.9], [-3.2, -0.5]];
+    const edges: [number, number][] = [[0, 2], [7, 2], [0, 7], [2, 1], [2, 6], [3, 4], [5, 4], [4, 2]];
+    const Z = -6;
+    const pts = at.map(([x, y]) => new THREE.Vector3(x, y, Z));
+    this.words.slice(0, at.length).forEach((word, i) => {
+      const tex = chip(word, i === 2);
+      const h = i === 2 ? 0.46 : 0.36;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(h * (tex.image.width / tex.image.height), h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 }));
+      const to = pts[i];
+      const from = new THREE.Vector3(to.x * 0.4, to.y - 3.4, Z + 1.2);
       m.position.copy(from);
-      m.rotation.z = (rnd(i, 7) - 0.5) * 0.3;
       s.group.add(m);
       this.stars.push({ mesh: m, from, to });
-      pts.push(to);
-    }
-    const seg: number[] = [];
-    pts.forEach((p, i) => {
-      const near = pts.map((q, j) => [p.distanceTo(q), j] as [number, number]).filter(([, j]) => j !== i).sort((a, b) => a[0] - b[0]).slice(0, 2);
-      for (const [, j] of near) if (j > i) seg.push(p.x, p.y, p.z, pts[j].x, pts[j].y, pts[j].z);
     });
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(seg, 3));
-    this.starLinks = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: PALE, transparent: true, opacity: 0 }));
-    g.setDrawRange(0, 0);
-    s.group.add(this.starLinks);
+    for (const [a, b] of edges) {
+      const mid = pts[a].clone().lerp(pts[b], 0.5).add(new THREE.Vector3(0, 0.25, -0.2));
+      const tube = new THREE.Mesh(
+        new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(pts[a], mid, pts[b]), 48, 0.008, 5, false),
+        new THREE.MeshBasicMaterial({ color: PALE, transparent: true, opacity: 0 }),
+      );
+      tube.geometry.setDrawRange(0, 0);
+      s.group.add(tube);
+      this.links.push(tube);
+    }
   }
 
   /** A warm light at each pavilion, and a lantern for when the circles are shown apart. */

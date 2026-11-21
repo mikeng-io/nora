@@ -25,10 +25,12 @@ export const zhHant = {
     eyebrow: "佢喺邊",
     title: "為你，同你身處嘅*每個圈子。*",
     lede: "你同佢嘅私人對話、屋企、團隊、朋友。同一個 Nora，每個圈子各自一個世界。",
-    you: "你",
-    family: "屋企",
-    team: "團隊",
-    friends: "朋友",
+    places: [
+      { name: "你", what: "淨係你同佢" },
+      { name: "屋企", what: "家庭群組" },
+      { name: "團隊", what: "團隊嘅房" },
+      { name: "朋友", what: "朋友群組" },
+    ],
     still: "金黃時分，四座小涼亭各據山坡，山谷之間有霧。",
   },
   memory: {

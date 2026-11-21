@@ -32,8 +32,6 @@ export const SCENES: Scene[] = [
 
 /** Half the width of a bank, in page progress. */
 export const BANK = 0.016;
-/** The page opens inside the cloud and leaves it by this point. */
-export const INTRO = 0.022;
 
 export const clamp = (x: number): number => Math.min(1, Math.max(0, x));
 export const ramp = (x: number, a: number, b: number): number => clamp((x - a) / (b - a));
@@ -49,7 +47,6 @@ export function sceneAt(p: number): { scene: Scene; l: number; index: number } {
 
 /** Where the camera is in a bank: 0..1 through it, or -1 outside any. */
 export function bank(p: number): { k: number; warm: boolean } {
-  if (p < INTRO) return { k: 0.5 + 0.5 * (p / INTRO), warm: true };
   for (const s of SCENES) {
     if (s.enter !== "cloud" && s.enter !== "fog") continue;
     if (s.a === 0) continue;

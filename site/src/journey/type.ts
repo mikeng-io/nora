@@ -4,10 +4,9 @@
 // title moves the way its words mean:
 //   rise   — arrives letter by letter, lifting into place
 //   drop   — falls and settles, a little crooked, like slips onto a pile
-//   link   — appears with a fine thread drawn through its letters
 //   ignite — catches copper light as it lands, then settles into ink
 //   crop   — each line slides in huge from the side, one after another
-type Style = "rise" | "drop" | "link" | "ignite" | "crop";
+type Style = "rise" | "drop" | "ignite" | "crop";
 
 interface Beat {
   el: HTMLElement;
@@ -15,7 +14,6 @@ interface Beat {
   chars: HTMLElement[];
   lines: HTMLElement[];
   rest: HTMLElement[];
-  link: SVGPolylineElement | null;
   seed: number[];
 }
 
@@ -67,42 +65,14 @@ export class Type {
       const lines = [...el.querySelectorAll<HTMLElement>("[data-line]")];
       const titles = lines.length ? lines : [...el.querySelectorAll<HTMLElement>("[data-split]")];
       const chars = titles.flatMap(split);
-      let link: SVGPolylineElement | null = null;
-      if (style === "link") {
-        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        svg.setAttribute("class", "thread");
-        svg.setAttribute("aria-hidden", "true");
-        link = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-        svg.appendChild(link);
-        el.appendChild(svg);
-      }
       this.beats.set(el.dataset.beat!, {
         el,
         style,
         chars,
         lines,
         rest: [...el.querySelectorAll<HTMLElement>("[data-rest]")],
-        link,
         seed: chars.map((_, i) => Math.sin(i * 12.9898 + 4.1) % 1),
       });
-    }
-    this.measure();
-    addEventListener("resize", () => this.measure());
-  }
-
-  /** The thread through a linked title follows its letters' tops. */
-  private measure(): void {
-    for (const b of this.beats.values()) {
-      if (!b.link) continue;
-      const box = b.el.getBoundingClientRect();
-      const pts = b.chars.filter((_, i) => i % 2 === 0).map((c) => {
-        const r = c.getBoundingClientRect();
-        return `${(r.left + r.width / 2 - box.left).toFixed(1)},${(r.top + r.height * 0.3 - box.top).toFixed(1)}`;
-      });
-      b.link.setAttribute("points", pts.join(" "));
-      const len = pts.length * 60;
-      b.link.style.strokeDasharray = `${len}`;
-      b.link.dataset.len = String(len);
     }
   }
 
@@ -115,11 +85,6 @@ export class Type {
     if (!on) return;
     const n = b.chars.length || 1;
     b.chars.forEach((c, i) => this.letter(b, c, i, n, l));
-    if (b.link) {
-      const len = Number(b.link.dataset.len ?? 0);
-      const k = ease(ramp(l, 0.12, 0.4)) * (1 - ease(ramp(l, 0.82, 0.96)));
-      b.link.style.strokeDashoffset = String(len * (1 - k));
-    }
     const r = ease(ramp(l, 0.14, 0.32)) * (1 - ease(ramp(l, 0.8, 0.94)));
     for (const e of b.rest) {
       e.style.opacity = String(r);

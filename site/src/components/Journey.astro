@@ -37,7 +37,6 @@ const rail = [
   ["soulbound", "10", plain(t.soulbound.lines[2])],
   ["gate", "11", plain(t.gate.title)],
 ] as const;
-const pavilions = [t.circles.you, t.circles.family, t.circles.team, t.circles.friends];
 const stillOf: Record<string, string> = { rewind: "knowledge", rooms: "circles" };
 ---
 
@@ -47,7 +46,13 @@ const stillOf: Record<string, string> = { rewind: "knowledge", rooms: "circles" 
   <div class="loading"><span class="wordmark">NORA</span><span class="bar"></span></div>
   <div class="cursor" data-cursor></div>
   <div class="tag" data-tag><span class="before">{t.shift.tagBefore}</span><span class="after">{t.shift.tagAfter}</span><span class="what">{t.nora.tag}</span></div>
-  {pavilions.map((p) => <span class="pavilion" data-pavilion>{p}</span>)}
+  {t.circles.places.map((p, i) => (
+    <span class="pavilion" data-pavilion>
+      <span class="label"><span class="n">0{i + 1}</span><span class="name">{p.name}</span><span class="what">{p.what}</span></span>
+      <span class="stem"></span>
+      <span class="dot"></span>
+    </span>
+  ))}
   <div class="split" data-split-ui>
     <span class="side without">{t.soulbound.without}</span>
     <span class="line"></span>
@@ -79,7 +84,7 @@ const stillOf: Record<string, string> = { rewind: "knowledge", rooms: "circles" 
     ["hero", "rise", t.hero],
     ["circles", "rise", t.circles],
     ["memory", "drop", t.memory],
-    ["knowledge", "link", t.knowledge],
+    ["knowledge", "rise", t.knowledge],
     ["rewind", "crop", t.rewind],
     ["nora", "ignite", t.nora],
     ["shift", "rise", t.shift],

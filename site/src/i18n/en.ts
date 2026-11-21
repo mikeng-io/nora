@@ -28,10 +28,12 @@ export const en = {
     eyebrow: "Where she lives",
     title: "For you, and every *circle* you’re in.",
     lede: "Your own chat with her, your family, your team, your friends. One Nora, a separate world in each.",
-    you: "You",
-    family: "Family",
-    team: "Team",
-    friends: "Friends",
+    places: [
+      { name: "You", what: "just you and her" },
+      { name: "Family", what: "the family chat" },
+      { name: "Team", what: "your team’s room" },
+      { name: "Friends", what: "the group chat" },
+    ],
     still: "Four small pavilions on separate slopes of a mountain at golden hour, mist in the valleys between them.",
   },
   memory: {

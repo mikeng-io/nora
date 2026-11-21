@@ -77,6 +77,7 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
 
   const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
   const land = world.station("hero");
+  let opened = 0;
   let last = performance.now();
   const t0 = last;
 
@@ -87,8 +88,11 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
     const p = Math.min(1, Math.max(0, scrollY / Math.max(1, max())));
     let { scene, l, index } = sceneAt(p);
     if (!rest && scene.station !== "hero") ({ scene, l, index } = { scene: SCENES[0], l: 1, index: 0 });
+    // the page opens inside the cloud and leaves it on its own, then scroll takes over
+    if (!opened) opened = now;
+    const intro = Math.min(1, (now - opened) / 2400);
     const b = bank(p);
-    veil.set(b.k, b.warm);
+    veil.set(intro < 1 ? 0.5 + 0.5 * intro : b.k, intro < 1 ? true : b.warm);
 
     const f = { lit: ui.lit, split: ui.split };
     director.run(scene.id, l, p, f, t);
@@ -103,7 +107,7 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
       director.run(scene.id, l, p, f, t);
       stage.grade.uniforms.tAlt.value = rt.texture;
     }
-    type.show(scene.id, l);
+    type.show(scene.id, scene.id === "hero" ? Math.max(l, 0.26 * ease(ramp(intro, 0.35, 1))) : l);
     type.hideAll(new Set([scene.id]));
     ui.railFrame(index);
     stage.render(t);
@@ -122,7 +126,7 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
     const land3 = circles.plates[2];
     const keys = ["harbour", "slope", "terraces", "spur"] as const;
     const on = id === "circles" || id === "rooms";
-    const pts = keys.map((k) => (on ? project(stage.at(land3, meta.pavilions[k][0], meta.pavilions[k][1] - 0.08).applyMatrix4(circles.group.matrixWorld)) : null));
+    const pts = keys.map((k) => (on ? project(stage.at(land3, meta.pavilions[k][0], meta.pavilions[k][1] - 0.012).applyMatrix4(circles.group.matrixWorld)) : null));
     const ks = keys.map((_, i) => (id === "circles" ? ease(ramp(l, 0.2 + i * 0.12, 0.32 + i * 0.12)) : id === "rooms" ? ramp(l, 0.1, 0.3) : 0) * (1 - ramp(l, 0.9, 1)));
     ui.labelFrame(pts, ks);
     ui.splitFrame(id === "soulbound", l);

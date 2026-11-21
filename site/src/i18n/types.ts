@@ -46,7 +46,8 @@ export interface Dict {
     scenes: string;
   };
   hero: Beat & { cta: string };
-  circles: Beat & { you: string; family: string; team: string; friends: string };
+  /** The four circles, in pavilion order: harbour, slope, terraces, spur. */
+  circles: Beat & { places: { name: string; what: string }[] };
   memory: Beat;
   knowledge: Beat & { nodes: string[] };
   rewind: Beat & { label: string };

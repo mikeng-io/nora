@@ -21,7 +21,7 @@ const SHOTS: Record<string, Shot> = {
   hero: { from: [-0.2, 1.5, 10.6], to: [0.45, -0.15, 8.4], lookFrom: [-0.3, 0.9], lookTo: [0.6, -0.45] },
   circles: { from: [-1.3, 1.4, 10.4], to: [1.2, 0.5, 9.0], lookFrom: [-0.9, -0.2], lookTo: [0.9, -0.6] },
   memory: { from: [0.5, 0.35, 10.4], to: [1.35, -0.25, 7.1], lookFrom: [0.3, 0.2], lookTo: [1.9, -0.6] },
-  knowledge: { from: [0, -0.7, 10.2], to: [0, 0.2, 9.4], lookFrom: [0, -0.6], lookTo: [0, 0.55] },
+  knowledge: { from: [0, -0.4, 10.4], to: [0.2, 0.7, 9.2], lookFrom: [0, -0.4], lookTo: [0.2, 0.9] },
   nora: { from: [0, 0.25, 10.4], to: [0.55, -0.1, 8.3], lookFrom: [0, 0], lookTo: [0.45, -0.3] },
   shift: { from: [0.55, -0.1, 8.3], to: [0.15, 0.25, 9.6], lookFrom: [0.45, -0.3], lookTo: [0.2, 0.6] },
   act: { from: [-0.3, 0.15, 10.2], to: [0.25, -0.05, 9.1], lookFrom: [-0.2, 0], lookTo: [0.3, -0.15] },
@@ -103,7 +103,7 @@ export class Director {
     this.shot("hero", l);
     this.grade(0.15, 0.5, 0);
     this.stand("hero");
-    this.nora.light(ramp(l, 0.1, 0.2), this.tmp.setRGB(1, 0.97, 0.94), 0.35);
+    this.nora.light(1, this.tmp.setRGB(1, 0.97, 0.94), 0.35);   // she is there from the first frame
   }
 
   private circles(l: number, apart: boolean): void {
@@ -138,7 +138,7 @@ export class Director {
     const lift = ease(ramp(l, 0.35, 0.55)) * (1 - ease(ramp(l, 0.7, 0.88)));
     const cam = this.stage.camera.position;
     const m = this.world.lifted;
-    m.position.copy(this.world.liftFrom).lerp(new THREE.Vector3(cam.x - 0.6, cam.y + 0.1, cam.z - 2.6), lift);
+    m.position.copy(this.world.liftFrom).lerp(new THREE.Vector3(cam.x + 0.9, cam.y + 0.25, cam.z - 7.5), lift);
     m.position.y -= ease(ramp(l, 0.7, 0.88)) * 1.2;
     m.rotation.z = (1 - lift) * 0.4;
     (m.material as THREE.MeshBasicMaterial).opacity = ramp(l, 0.3, 0.38) * (1 - ramp(l, 0.86, 0.94));
@@ -146,19 +146,22 @@ export class Director {
 
   private knowledge(l: number): void {
     this.show(["ridge"]);
-    // the camera tilts up as the map forms, and stops when it is whole
+    // the camera settles on the map as it forms, and stops when it is whole
     this.shot("knowledge", Math.min(l, 0.7) / 0.7);
     this.grade(0.9, 0, 0.2);
     this.nora.leave();
-    const form = ease(ramp(l, 0.08, 0.6));
+    const fade = 1 - ramp(l, 0.94, 1);
     this.world.stars.forEach(({ mesh, from, to }, i) => {
-      const k = ease(ramp(form, (i % 9) * 0.04, 0.6 + (i % 9) * 0.04));
+      const k = ease(ramp(l, 0.06 + i * 0.03, 0.3 + i * 0.03));
       mesh.position.lerpVectors(from, to, k);
-      (mesh.material as THREE.MeshBasicMaterial).opacity = ramp(l, 0.04, 0.16) * (1 - ramp(l, 0.94, 1));
+      (mesh.material as THREE.MeshBasicMaterial).opacity = ramp(l, 0.04 + i * 0.03, 0.14 + i * 0.03) * fade;
     });
-    const links = this.world.starLinks;
-    links.geometry.setDrawRange(0, Math.floor((links.geometry.attributes.position.count) * ease(ramp(l, 0.4, 0.7))));
-    (links.material as THREE.LineBasicMaterial).opacity = 0.85 * ramp(l, 0.4, 0.5) * (1 - ramp(l, 0.94, 1));
+    this.world.links.forEach((tube, i) => {
+      const k = ease(ramp(l, 0.36 + i * 0.03, 0.5 + i * 0.03));
+      const g = tube.geometry;
+      g.setDrawRange(0, Math.floor((g.index?.count ?? 0) * k));
+      (tube.material as THREE.MeshBasicMaterial).opacity = 0.8 * Math.min(1, k * 3) * fade;
+    });
   }
 
   /** The take runs backwards: ridge, alcove, pavilions, harbour, as tape. */
