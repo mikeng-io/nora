@@ -760,10 +760,14 @@ async def _compose_dependencies(
     unit_scopes = _people_unit_scopes.unit_scopes
     _models_source = source(client=client, route_model=route_model, tier=tier)
     models = _models_source.models
-    browser = _computer_wire.browse(
-        browser_manager=browser_manager, cfg=cfg, computer=computer, engine=engine,
-        model_client_for=model_client_for, route_model=route_model,
-    ).browser
+    _browse_wiring = _computer_wire.browse(
+        browser_manager=browser_manager,
+        cfg=cfg,
+        computer=computer,
+        model_client_for=model_client_for,
+        route_model=route_model,
+    )
+    browser = _browse_wiring.browser
     _models_runner = build_runner(cfg=cfg, metrics=metrics, models=models, tier=tier)
     runner = _models_runner.runner
     _people_homes = _people_wire.homes(allowlist=allowlist)

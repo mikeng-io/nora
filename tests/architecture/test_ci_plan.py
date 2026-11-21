@@ -99,8 +99,8 @@ def test_workflow_join_and_trust_boundary():
     jobs = ci["jobs"]
     assert ci["name"] == "CI"
     assert ci[True]["pull_request"] is None
-    wiki = yaml.safe_load((root / ".github/workflows/wiki.yml").read_text())
-    for workflow in (ci, wiki):
+    site = yaml.safe_load((root / ".github/workflows/site.yml").read_text())
+    for workflow in (ci, site):
         assert workflow["concurrency"]["cancel-in-progress"] == (
             "${{ github.event_name == 'pull_request' }}"
         )
@@ -215,7 +215,7 @@ def test_agent_skill_link_ci_uses_the_same_document_classification(
     assert values["docs_only"] == str(canonical).lower()
     selected = {job for job, chosen in json.loads(values["plan"]).items() if chosen}
     assert selected == (
-        {"contracts", "ory", "portal-browser"}
+        {"contracts", "ory", "ory-journey", "portal-browser"}
         if canonical else set(ci_plan.JOBS) - {"codeql-python"})
     if canonical:
         assert "tests/architecture/test_agent_skills.py" in json.loads(values["readers"])
@@ -749,11 +749,14 @@ def test_pull_requests_always_run_the_ory_item1_gate(tmp_path, monkeypatch):
     assert ci_plan.main() == 0
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     plan = json.loads(values["plan"])
-    assert plan["ory"]
+    assert plan["ory"] and plan["ory-journey"]
     needs = {"classify": {"result": "success"}}
     needs.update({job: {"result": "success" if chosen else "skipped"}
                   for job, chosen in plan.items()})
     assert ci_plan.verify(plan, needs)
+    needs["ory-journey"]["result"] = "skipped"
+    assert not ci_plan.verify(plan, needs)
+    needs["ory-journey"]["result"] = "success"
     needs["ory"]["result"] = "skipped"
     assert not ci_plan.verify(plan, needs)
 

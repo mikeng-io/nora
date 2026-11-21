@@ -17,6 +17,10 @@ updates:
   - 'type: build'
   - 'area: deps'
   open-pull-requests-limit: 2
+  # The repository Actions policy allows one exact SHA of setup-buildx-action; a bump
+  # fails the release-images run at startup. Move it by hand with the allowlist.
+  ignore:
+  - dependency-name: docker/setup-buildx-action
   groups:
     github-actions:
       patterns:
@@ -117,7 +121,6 @@ updates:
   - /deploy/whatsapp-bridge
   - /showreel
   - /site
-  - /docs-site
   - /voice-lab/spikes/sidecar
   schedule:
     interval: monthly

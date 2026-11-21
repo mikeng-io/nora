@@ -390,7 +390,7 @@ def test_the_declared_world_keeps_production_cadence_and_lanes(tmp_path):
     nothing suppressed, no route invented."""
     plan = JourneyServices(policy=_POLICY, overrides=dict(_OVERRIDES))
     cfg = plan._declared_config("sqlite://", tmp_path)
-    assert cfg.obs.metrics.port == plan._metrics_port
+    assert cfg.obs.metrics.port == 0
     assert cfg.cognition.enabled and cfg.heartbeat.enabled
     assert cfg.dreamer.enabled and cfg.culture.enabled and cfg.standing.enabled
     assert cfg.llm.model == "nora" and cfg.dreamer.model == "nora-dreamer"
