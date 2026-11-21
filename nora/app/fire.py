@@ -90,6 +90,7 @@ from nora.agent.prefill import (
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.standing_ledger import ledger_permits, ledger_target
+from nora.app.fire_engagement import AmbientEngagement
 from nora.doctrine.loader import DoctrineStore
 from nora.domain import audience as audience_names
 from nora.domain.blocks import RowStyle, render_rows
@@ -178,6 +179,7 @@ from nora.engagement.character_who import fire_character_people
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.context import StandingNotesReader
 from nora.engagement.documents_context import DocumentsContextReader
+from nora.engagement.graph_context import EngagementGraph
 from nora.engagement.mentions import MentionRenderer
 from nora.engagement.self_presence import PresenceReader
 from nora.engagement.stages import deliver, feedback
@@ -186,7 +188,7 @@ from nora.ingest.relevance_gate import SCORE_ABSENT
 from nora.language.culture_render import read_character, read_culture
 from nora.language.lesson_render import ActiveLessons, read_lessons
 from nora.language.profile_render import ProfileHeads, authored_identity, read_profile
-from nora.memory import record_pass_silence
+from nora.memory import active_act_authority, record_pass_silence
 from nora.obs.determination import (
     WINDOW_BODY_CHARS,
     Determination,
@@ -611,8 +613,7 @@ class FirePath:
         culture: CultureReader | None = None,
         lessons: ActiveLessons | None = None,
         standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
-        # The participation turn's memory reads. All default to the inert
-        # shape: `0` renders no block.
+        ambient: AmbientEngagement | None = None,
         people_in_window_conclusions: int = 0,
         people_in_window_speakers: int = 0,
         memory_read_timeout_seconds: float = DEFAULT_MEMORY_READ_TIMEOUT_SECONDS,
@@ -720,6 +721,7 @@ class FirePath:
         self._lineage = lineage
         self._persons = persons
         self._access = access or IdentityAccess.for_files(persons, policy)
+        self._ambient = ambient or AmbientEngagement(EngagementGraph(self._access))
         self._records = records
         # The shared quote-window resolver (DEC-195). `None` keeps
         # `build_context`'s plain `context_window` fetch.
@@ -830,44 +832,7 @@ class FirePath:
         self._presence = presence
 
     async def build_context(self, occasion: Event) -> TagContext:
-        """The fire turn's context, assembled HERE rather than by `ContextAssembler`.
-
-        **This is the trap the whole section exists for.** The synthetic message
-        carries a blank `sender_id` on purpose — that is what makes "no
-        reactions" hold by construction. But `TranscriptInjection.assemble`
-        resolves the tagger as `persons.resolve(platform, msg.sender_id)`, and a
-        blank id resolves to `None`. Every one of these then follows, silently,
-        with every gate still green:
-
-        * `ctx.tagger is None`, so `peer_card` is `()` — she remembers nothing
-          about the person she is answering
-        * `Room(tagger=None).scope()` returns UNAVAILABLE, so every room-scoped
-          tool goes dark
-        * `search_memory` refuses outright
-        * the `tagger is None -> refuse` gate fires on EVERY fire turn, for a
-          reason that has nothing to do with trust
-
-        So the tagger comes from the OCCASION's `person_id` — for a reminder,
-        the id the tick already screened `policy.is_allowed` against — through
-        `Persons.by_person`, and never from the message.
-
-        An occasion with `person_id=None` (a proactive or participation turn) therefore has
-        `tagger is None` DELIBERATELY, and every consequence above is accepted
-        rather than escaped: nobody asked, so there is no peer card to read and
-        no person whose room membership scopes a lookup. What makes that safe is
-        that `speak` skips that refusal only for such an occasion, and that the
-        tools which go dark are exactly the ones such an occasion has no use
-        for.
-
-        `sender_name` has the same shape and is the second half of the same
-        trap: `Persons.display_name(msg)` reads `msg.sender_id` and would
-        return `""` here. It comes off the `PersonRef` too.
-
-        Async because both its sources are: `RecordStore.recent` and
-        `MemoryStore.peer_card`. A synchronous signature would push an
-        implementer toward an empty transcript and an empty card — a fire turn
-        with no context at all, and nothing anywhere saying so.
-        """
+        """Read the room floor, and the legacy context for other fire occasions."""
         # Resolve the occasion's room view; an absent requester remains None.
         scope = Scope(ScopeKind.ROOM, room_scope_id(occasion.platform, occasion.conversation_id))
         ref = (await self._access.person_ref(occasion.person_id, scope=scope)
@@ -912,6 +877,16 @@ class FirePath:
             transcript, platform=occasion.platform, scope=scope)
         if self._media_join is not None:
             transcript = await self._media_join.enrich(transcript, path="fire")
+
+        if occasion.kind == "participation":
+            return await self._ambient.floor(
+                TagContext(
+                    tag_id=uuid.uuid4().hex, message=_synthetic_message(occasion, ref), tagger=ref,
+                    transcript=transcript, peer_card=(), started_at=time.perf_counter(),
+                ),
+                presence=self._read_presence(occasion), computer=self._read_computer(occasion),
+                documents=self._read_documents(occasion), members=self._room_members(occasion),
+            )
 
         card: tuple[str, ...] = ()
         if ref is not None and self._profile_reader is None:
@@ -1714,38 +1689,11 @@ class FirePath:
         gate_verdict: str | None = None, gate_score: float | None = None,
         adapter: PlatformAdapter | None = None,
     ) -> str:
-        """One turn, and the outcome its caller records.
-
-        `gate_verdict`/`gate_score` are the Relevance Gate's upstream
-        judgement, threaded from the trigger into the PARTICIPATION occasion's
-        trace so a turn can be read back in Langfuse as one story: gate said
-        `go` → turn answered `sent`/`SILENT`. Only the trigger passes them
-        (every other occasion leaves both `None`).
-
-        **It does not call `invoke.run` or `deliver.check_outcome`.**
-        Not for metric isolation (that is what `audience` is for) but because
-        it needs its own timeout
-        (`[heartbeat] timeout_seconds`) and its own outcome mapping: both of
-        those functions answer `bool`, and a `bool` cannot distinguish
-        `failed_timeout` from `failed_error`, which is precisely the
-        distinction the row has to record. It reimplements the one side effect
-        `check_outcome` has that is not accounting — the `llm_state.last_success_at`
-        touch — because a successful fire turn IS a successful invocation, and
-        omitting it would let a healthy process report a stale LLM to `/health`.
-
-        Only `sent` is DONE, and `sent` means the `Deliverer` actually
-        delivered. Anything else is a turn the group never heard — a reminder
-        that did not arrive. The
-        participation occasion (kind="participation") is the exception that
-        proves the reading: for it "the group never heard" is the HEALTHY
-        default, so its quiet turn answers `SILENT`, not a failure string.
-
-        `send_permitted` is the participation occasion's SEND cooldown
-        threaded into `deliver.build`;
-        every other occasion leaves it True. The trigger decides and this
-        method enforces — the two are separate so that a trigger bug cannot
-        both mistime the evaluation and skip the hold.
-        """
+        """Run an occasion inside its caller's slot and return its reply outcome."""
+        if occasion.kind == "participation":
+            await self._ambient.retry(
+                self._unit_for(occasion), occasion.platform, occasion.conversation_id,
+            )
         ctx = await self.build_context(occasion)
         # Every log line for the rest of this turn — across every stage it calls
         # into — carries the tag id without naming it (nora.obs.logging's
@@ -2053,11 +2001,8 @@ class FirePath:
             surface = self._registry.surface(
                 # `[llm] defer_tools`.
                 defer=self._defer_tools,
-                # DEC-256, the same derivation as the tag path. A fire turn's
-                # message is never spoken (`_synthetic_message` leaves `voice`
-                # False), so this is a text turn; derived rather than
-                # hardcoded so the two paths cannot drift.
                 occasion=turn_occasion(voice=ctx.message.voice),
+                engagement=participation,
                 store=self._records, conversation_id=occasion.conversation_id,
                 conversation_type=occasion.conversation_type, persons=self._persons,
                 honcho=self._memory, deliverer=handle.deliverer, room=room,
@@ -2095,24 +2040,22 @@ class FirePath:
             for attachment in occasion.attachments:
                 handle.links.carry_media(attachment, occasion.media_blobs)
             now = self._clock().astimezone()
-            pre_fill = build_prefill(
-                ctx, display_name=self._display_name,
-                context_window=self._context_window,
-                now=now, header=occasion.header(tagger, now),
-                catalogue=surface.prompt_catalogue,
-            )
-            # `tagger.name`, NOT `Persons.display_name(ctx.message)` — that reads
-            # `sender_id`, which is blank here, and would attribute the request to
-            # nobody. Same trap as `build_context`'s `sender_name`. An occasion
-            # with no person falls back to the name IT gives its author
-            # (`Event.speaker`), because an unattributed `<tag_message>` is
-            # unsourced text in the prompt — the one thing R-13's block structure
-            # exists to prevent.
-            tag_message = build_tag_message(
-                ctx,
-                tagger_name=tagger.name if tagger is not None else occasion.speaker,
-                display_name=self._display_name,
-            )
+            speaker = tagger.name if tagger is not None else occasion.speaker
+            header = occasion.header(tagger, now)
+            if participation:
+                pre_fill, tag_message = await self._ambient.prompt(
+                    ctx, unit=self._unit_for(occasion), display_name=self._display_name,
+                    speaker=speaker, context_window=self._context_window,
+                    now=now, catalogue=surface.prompt_catalogue, header=header, room=room,
+                )
+            else:
+                pre_fill = build_prefill(
+                    ctx, display_name=self._display_name, context_window=self._context_window,
+                    now=now, header=header, catalogue=surface.prompt_catalogue,
+                )
+                tag_message = build_tag_message(
+                    ctx, tagger_name=speaker, display_name=self._display_name,
+                )
 
             failure, stop_reason, final_text = await self._invoke(
                 doctrine=doctrine, tools=surface.tools, limits=surface.limits(self._limits),
@@ -2241,17 +2184,17 @@ class FirePath:
             return FAILED_ERROR
         finally:
             try:
-                if completed and handle is not None and not handle.deliverer.called:
+                if ((participation or completed) and handle is not None
+                        and not handle.deliverer.delivered
+                        and (participation or not handle.deliverer.called)):
                     await record_pass_silence()
             except Exception:
                 log.exception("fire silence item could not be written (tag=%s)", ctx.tag_id)
             finally:
+                authority = active_act_authority()
                 act_scope.close()
-            # The participation root span's stop_reason (no-op on every other
-            # occasion — no span is current, and annotate on a non-recording
-            # span costs nothing). The disambiguating signal the eval gate
-            # reads: a SILENT determination that ended in invocation_timeout
-            # is an ERROR, not a decline.
+            if participation:
+                await self._ambient.close(authority, ctx)
             if stop_reason is not None:
                 annotate(**{"nora.stop_reason": stop_reason})
             messages = handle.deliverer.delivered_count if handle is not None else 0

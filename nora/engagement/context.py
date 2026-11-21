@@ -329,115 +329,27 @@ class TranscriptInjection:
         ref = await self._access.resolve_ref(
             msg.platform, msg.sender_id, scope=self._room_scope(msg))
 
-        # Helpers contain their failures; independent reads overlap. Nested gathers
-        # preserve distinct result types within asyncio's six-awaitable overload.
-        # Scheduling unit-keyed notes beside room reads does not widen their scope.
-        async def transcript_and_prefetch() -> Any:
-            transcript, character, profiles = await self._recent_with_character(msg, ref)
-            prefetch = await self._prefetch(msg, ref, transcript)
-            return transcript, character, profiles, prefetch
-
-        (
-            ((transcript, character, profiles, prefetch),
-             card, tagger_card, notes,
-             (source_events, source_objects, source_failed,
-              source_events_more, source_objects_more)),
-            presence,
-            culture,
-            (unit_culture, self_account, lessons),
-            (computer, documents, subagents, memos),
-            shared,
-        ) = await asyncio.gather(
-            asyncio.gather(
-                transcript_and_prefetch(),
-                self._peer_card(ref, msg),
-                self._recall_tagger(ref, msg),
-                self._notes(msg),
-                self._observation_reads(msg),
-            ),
-            self._presence(msg),
-            self._culture(msg),
-            asyncio.gather(
-                self._unit_culture(msg), self._self_account(msg), self._lessons(msg),
-            ),
-            asyncio.gather(
-                self._computer(msg),
-                self._documents(msg, ref),
-                self._subagents(msg, ref),
-                self._memos(msg),
-            ),
-            self._shared(msg, ref),
+        transcript, presence, computer, documents, subagents, observations = await asyncio.gather(
+            self._recent(msg), self._presence(msg), self._computer(msg),
+            self._documents(msg, ref), self._subagents(msg, ref), self._observation_reads(msg),
         )
-
-        # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
         transcript = await self._access.name_transcript(
             transcript, platform=msg.platform, scope=self._room_scope(msg))
-        # THEN the media join, after the transcript read and before the context
-        # is frozen. It is a second round trip, so it is NOT in the gather above:
-        # it needs the rows the gather returns. ONE bounded query per
-        # `DEFAULT_QUERY_BLOBS` distinct blobs, and it degrades to the stored
-        # body — which already says `[image a3f2c1]`, so a join that does not
-        # happen claims nothing.
-        #
-        # `MediaJoin` is SHARED with the fire path, the standing fold, the
-        # Dreamer's batch, lazy adoption and `load_transcript`: every transcript
-        # builder gives one answer to «what did that photo show».
         if self._media_join is not None:
             transcript = await traced_read(
                 "media_join", "enrich", self._media_join.enrich(transcript, path="tag"),
             )
 
-        # LAST, after naming and the media join, so the lookup rows read the
-        # same as the shown ones. Empty when nothing was cut.
         shown = self._shown(transcript, msg)
-        lookup = tuple(transcript) if len(shown) < len(transcript) else ()
-        recalled = self._recalled(prefetch, msg, shown)
-        # The retained lane is a post-gather read: it needs the note index
-        # (which refs exist) and the shown heads (what NOT to resolve again).
-        retained, retained_more = await self._retained_sources(
-            msg, notes, frozenset(o.handle for o in source_objects))
-
+        events, objects, failed, more, objects_more = observations
         return TagContext(
-            tag_id=request.tag_id,
-            message=msg,
-            tagger=ref,
-            transcript=shown,
-            lookup_transcript=lookup,
-            peer_card=card,
-            started_at=time.perf_counter(),
-            tagger_card=tagger_card,
-            notes=notes,
-            memos=memos,
-            shared=shared,
-            source_events=source_events,
-            source_objects=source_objects,
-            source_reads_failed=source_failed,
-            source_events_more=source_events_more,
-            source_objects_more=source_objects_more,
-            retained_sources=retained,
-            retained_sources_more=retained_more,
-            presence=presence,
-            culture=culture,
-            character=character,
-            profiles=profiles,
-            unit_culture=unit_culture,
-            self_account=self_account,
-            lessons=lessons,
-            computer=computer,
-            documents=documents,
-            subagents=subagents,
-            recalled=recalled,
-            recalled_partial=bool(recalled) and prefetch is not None
-            and prefetch.found["status"] == "partial",
-            # A pure lookup (policy.toml, identity.toml), no read: the room's
-            # listed persons and their aliases for `<room_members>`.
+            tag_id=request.tag_id, message=msg, tagger=ref, transcript=shown,
+            lookup_transcript=tuple(transcript) if len(shown) < len(transcript) else (),
+            peer_card=(), started_at=time.perf_counter(), presence=presence,
+            computer=computer, documents=documents, subagents=subagents,
+            source_events=events, source_objects=objects, source_reads_failed=failed,
+            source_events_more=more, source_objects_more=objects_more,
             room_members=await self._room_members(msg),
-            lineage_room=(
-                await self._lineage.read_room(
-                    platform=msg.platform, conversation_id=msg.conversation_id,
-                )
-                if self._lineage is not None else None
-            ),
         )
 
     async def _prefetch(

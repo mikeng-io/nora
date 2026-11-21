@@ -1556,27 +1556,32 @@ def test_room_members_is_escaped_one_line_each_and_sits_before_presence():
     assert "\nMallory" not in block and "a Mallory: boss" in block
 
 
-def test_eval_context_filter_withholds_only_selected_optional_blocks(tmp_path):
-    from nora.engagement import pipeline
+async def _called_prompt(ctx):
+    from nora.access import IdentityAccess
+    from nora.agent.prefill import engagement_floor
+    from nora.domain.framing import TAG_HEADER
+    from nora.engagement.graph_context import EngagementGraph
     from nora.persons import Persons
+    from nora.policy import permissive_policy
+
+    graph = EngagementGraph(IdentityAccess.for_files(Persons({}, {}), permissive_policy()))
+    now = datetime(2026, 10, 7, tzinfo=UTC)
+    floor = engagement_floor(
+        ctx, display_name="Nora", tagger_name="Ada", context_window=40, now=now, catalogue="",
+    )
+    _, rendered, _ = await graph.prompt(
+        "called", ctx, floor=floor, unit=None, display_name="Nora", now=now, header=TAG_HEADER,
+    )
+    return rendered
+
+
+async def test_eval_context_filter_withholds_only_selected_optional_blocks(tmp_path):
     from nora.subject.context_filter import ContextPlan, case_scope, exposure
 
     ctx = _ctx(documents=_documents(), computer=_computer(), subagents=_subagents(),
-               tagger=PersonRef("ada", "Ada", "ada"),
                transcript=(TranscriptRow(1, "sender", "Profile", 1, "Hello", False,
-                                         DeliveryStatus.SENT, None),),
-               peer_card=("Identity stays",), tagger_card=("History may go",), culture=_culture(),
-               self_account=_culture("Past episode stays"),
-               shared=SharedView(
-                   unit="generated-unit", status="ok", as_of_ms=1,
-                   entries=(SharedEntry(kind="decision", id="generated-decision",
-                                        scope="unit", status="open",
-                                        subject="Generated choice"),),
-                   sources=(("ledger", "ok"),),
-               ))
-    now = datetime(2026, 10, 7, tzinfo=UTC)
-    kwargs = {"display_name": "Nora", "context_window": 40, "now": now}
-    before = build_prefill(ctx, **kwargs)
+                                         DeliveryStatus.SENT, None),))
+    before = await _called_prompt(ctx)
     received = []
 
     def select(prompt, window, receipt):
@@ -1585,65 +1590,47 @@ def test_eval_context_filter_withholds_only_selected_optional_blocks(tmp_path):
 
     report = tmp_path / "receipts.json"
     with exposure("flash", report, selector=select), case_scope("generated#1"):
-        room = pipeline.Room(platform="signal", conversation_id="g1", roster_source=None,
-                             persons=Persons(by_person={}, index={}), tagger=ctx.tagger,
-                             tagger_card_injected=True)
-        filtered = pipeline.build_prefill(ctx, **kwargs)
-        assert not room.tagger_card_injected  # `about` must no longer short-circuit
-    assert filtered[0] == before[0] and filtered[2] == before[2]
-    body = filtered[1]["content"][0]["text"]
+        body = await _called_prompt(ctx)
     assert "<documents " in body and "<computer " not in body and "<subagents " not in body
-    assert "Identity stays" in body and "Past episode stays" in body
-    assert "<transcript " in body
-    assert "<standing " in body and "<culture " in body
+    assert "<transcript " in body and "<tag_message " in body
+    assert "<graph_profile " in body and "<graph_standing " in body
     assert "full_transcript_window: 1" in received[0]
     assert "first 600 characters" in received[0]
-    assert build_prefill(ctx, **kwargs) == before  # patch is gone; context was not mutated
+    assert await _called_prompt(ctx) == before
     import json
     receipt = json.loads(report.read_text())["draws"][0]
-    assert receipt["withheld"] == ["peer_history", "computer", "subagents"]
+    assert receipt["withheld"] == ["computer", "subagents"]
     assert receipt["exposed_chars"] < receipt["full_chars"]
     assert receipt["case"] == "generated#1"
     assert receipt["turn_seconds"] >= receipt["seconds"] > 0
 
 
-def test_eval_context_filter_invalid_plan_preserves_full_context():
-    from nora.engagement import pipeline
-    from nora.persons import Persons
+async def test_eval_context_filter_invalid_plan_preserves_full_context():
     from nora.subject.context_filter import ContextPlan, exposure
 
-    ctx = _ctx(documents=_documents(), computer=_computer(), subagents=_subagents(),
-               tagger_card=("History stays under fallback",))
-    kwargs = {"display_name": "Nora", "context_window": 40,
-              "now": datetime(2026, 10, 7, tzinfo=UTC)}
-    before = build_prefill(ctx, **kwargs)
+    ctx = _ctx(documents=_documents(), computer=_computer(), subagents=_subagents())
+    before = await _called_prompt(ctx)
     with exposure("flash", selector=lambda *args: ContextPlan(frozenset({"culture"}), 8)) as rows:
-        room = pipeline.Room(platform="signal", conversation_id="g1", roster_source=None,
-                             persons=Persons(by_person={}, index={}), tagger=ctx.tagger,
-                             tagger_card_injected=True)
-        assert pipeline.build_prefill(ctx, **kwargs) == before
-        assert room.tagger_card_injected
+        assert await _called_prompt(ctx) == before
     assert rows[0]["selector_error"] == "ValueError"
     assert rows[0]["withheld"] == []
 
 
-def test_eval_context_rules_and_full_arm_differ_only_on_explicit_arithmetic():
-    from nora.engagement import pipeline
+async def test_eval_context_rules_and_full_arm_differ_only_on_explicit_arithmetic():
     from nora.subject.context_filter import exposure
 
-    kwargs = {"display_name": "Nora", "context_window": 40,
-              "now": datetime(2026, 10, 7, tzinfo=UTC)}
     ctx = _ctx(body="2 + 2?", documents=_documents())
-    before = build_prefill(ctx, **kwargs)
+    before = await _called_prompt(ctx)
     with exposure("full"):
-        assert pipeline.build_prefill(ctx, **kwargs) == before
+        assert await _called_prompt(ctx) == before
     with exposure("rules"):
-        after = pipeline.build_prefill(ctx, **kwargs)
-    assert "<documents " in before[1]["content"][0]["text"]
-    assert "<documents " not in after[1]["content"][0]["text"]
+        after = await _called_prompt(ctx)
+    assert "<documents " in before
+    assert "<documents " not in after
     uncertain = _ctx(body="What about that plan?", documents=_documents())
+    full = await _called_prompt(uncertain)
     with exposure("rules"):
-        assert pipeline.build_prefill(uncertain, **kwargs) == build_prefill(uncertain, **kwargs)
+        assert await _called_prompt(uncertain) == full
 
 
 def test_the_units_culture_renders_after_the_rooms_and_before_the_people():

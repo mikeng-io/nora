@@ -232,14 +232,14 @@
   "internal_docstrings": 1
  },
  "nora/agent/prefill.py": {
-  "comment_blocks": 38,
-  "file_lines": 1311,
+  "comment_blocks": 37,
+  "file_lines": 1303,
   "functions": {
    "_standing_block": 142,
    "_transcript_block": 147,
    "build_prefill": 128
   },
-  "internal_docstrings": 23
+  "internal_docstrings": 22
  },
  "nora/agent/punctuation.py": {
   "internal_docstrings": 1
@@ -255,10 +255,10 @@
   "internal_docstrings": 4
  },
  "nora/agent/registry.py": {
-  "comment_blocks": 36,
-  "file_lines": 1369,
+  "comment_blocks": 34,
+  "file_lines": 1341,
   "functions": {
-   "ToolRegistry.__init__": 444
+   "ToolRegistry.__init__": 438
   },
   "internal_docstrings": 5
  },
@@ -431,9 +431,9 @@
  },
  "nora/app/composition.py": {
   "comment_blocks": 22,
-  "file_lines": 1494,
+  "file_lines": 1493,
   "functions": {
-   "_compose_dependencies": 979
+   "_compose_dependencies": 975
   },
   "internal_docstrings": 1
  },
@@ -472,14 +472,13 @@
   "internal_docstrings": 6
  },
  "nora/app/fire.py": {
-  "comment_blocks": 78,
-  "file_lines": 2955,
+  "comment_blocks": 71,
+  "file_lines": 2895,
   "functions": {
    "FirePath.__init__": 248,
    "FirePath._invoke": 231,
-   "FirePath._turn": 402,
-   "FirePath.build_context": 194,
-   "FirePath.speak": 142
+   "FirePath._turn": 392,
+   "FirePath.build_context": 167
   },
   "internal_docstrings": 29
  },
@@ -616,7 +615,7 @@
   "comment_blocks": 3
  },
  "nora/domain/block_types.py": {
-  "comment_blocks": 18,
+  "comment_blocks": 17,
   "file_lines": 1095,
   "internal_docstrings": 1
  },
@@ -774,8 +773,8 @@
   "comment_blocks": 1
  },
  "nora/domain/ports.py": {
-  "comment_blocks": 18,
-  "file_lines": 3348
+  "comment_blocks": 17,
+  "file_lines": 3345
  },
  "nora/domain/profile.py": {
   "comment_blocks": 4,
@@ -859,8 +858,8 @@
   "internal_docstrings": 2
  },
  "nora/engagement/context.py": {
-  "comment_blocks": 21,
-  "file_lines": 1490,
+  "comment_blocks": 20,
+  "file_lines": 1402,
   "functions": {
    "TranscriptInjection.__init__": 137,
    "TranscriptInjection._observation_reads": 147
@@ -877,12 +876,12 @@
   "internal_docstrings": 1
  },
  "nora/engagement/pipeline.py": {
-  "comment_blocks": 52,
-  "file_lines": 1417,
+  "comment_blocks": 42,
+  "file_lines": 1245,
   "functions": {
-   "EngagementPipeline._run_turn": 776
+   "EngagementPipeline._run_turn": 670
   },
-  "internal_docstrings": 8
+  "internal_docstrings": 6
  },
  "nora/engagement/self_presence.py": {
   "internal_docstrings": 2
@@ -2485,7 +2484,7 @@
  },
  "tests/infra/test_standing_ledger.py": {
   "comment_blocks": 1,
-  "file_lines": 1088
+  "file_lines": 1087
  },
  "tests/infra/test_standing_revision.py": {
   "comment_blocks": 2
@@ -2708,7 +2707,7 @@
  "tests/offline_pipeline.py": {
   "comment_blocks": 21,
   "functions": {
-   "build_offline_pipeline": 365
+   "build_offline_pipeline": 366
   }
  },
  "tests/test_acceptance_rules.py": {
@@ -2735,7 +2734,7 @@
  },
  "tests/test_composition.py": {
   "comment_blocks": 9,
-  "file_lines": 2197,
+  "file_lines": 2196,
   "internal_docstrings": 2
  },
  "tests/test_config.py": {
@@ -2766,8 +2765,8 @@
   "internal_docstrings": 2
  },
  "tests/test_doctrine_content.py": {
-  "comment_blocks": 7,
-  "file_lines": 923,
+  "comment_blocks": 6,
+  "file_lines": 920,
   "internal_docstrings": 2
  },
  "tests/test_doctrine_loader.py": {
@@ -2876,7 +2875,7 @@
  },
  "tests/test_prefill.py": {
   "comment_blocks": 6,
-  "file_lines": 1710,
+  "file_lines": 1697,
   "internal_docstrings": 7
  },
  "tests/test_relay.py": {
@@ -3170,8 +3169,7 @@
   "internal_docstrings": 2
  },
  "tests/unit/test_engagement_context.py": {
-  "comment_blocks": 4,
-  "file_lines": 1012,
+  "comment_blocks": 3,
   "internal_docstrings": 1
  },
  "tests/unit/test_engagement_deliver.py": {
@@ -3179,8 +3177,8 @@
  },
  "tests/unit/test_engagement_pipeline.py": {
   "comment_blocks": 20,
-  "file_lines": 3207,
-  "internal_docstrings": 6
+  "file_lines": 3173,
+  "internal_docstrings": 5
  },
  "tests/unit/test_eval_backbone.py": {
   "comment_blocks": 3,
@@ -3208,7 +3206,7 @@
  },
  "tests/unit/test_fire_path.py": {
   "comment_blocks": 13,
-  "file_lines": 3351,
+  "file_lines": 3253,
   "internal_docstrings": 8
  },
  "tests/unit/test_generate_image_description.py": {
@@ -3348,7 +3346,6 @@
   "internal_docstrings": 7
  },
  "tests/unit/test_offline_pipeline_assembler.py": {
-  "comment_blocks": 1,
   "internal_docstrings": 1
  },
  "tests/unit/test_online_now.py": {
@@ -3373,7 +3370,7 @@
   "internal_docstrings": 2
  },
  "tests/unit/test_people_in_window.py": {
-  "comment_blocks": 3,
+  "comment_blocks": 2,
   "internal_docstrings": 2
  },
  "tests/unit/test_persons_former_ids.py": {
@@ -3397,9 +3394,9 @@
  },
  "tests/unit/test_platform_observation_wired.py": {
   "comment_blocks": 2,
-  "file_lines": 1691,
+  "file_lines": 1675,
   "functions": {
-   "test_the_session_runner_assembles_and_consumes_an_observation_stimulus": 139
+   "test_the_session_runner_assembles_and_consumes_an_observation_stimulus": 138
   }
  },
  "tests/unit/test_pr584_astra_readiness.py": {

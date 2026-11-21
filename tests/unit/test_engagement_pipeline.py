@@ -41,7 +41,6 @@ from nora.domain.ports import (
     MemoryHealth,
     PlatformIdentity,
     ReactionResult,
-    Recollection,
     SendResult,
 )
 from nora.domain.tag_trace import TagTrace
@@ -164,28 +163,6 @@ class _FakeMemory:
 
     async def aclose(self) -> None:
         return None
-
-
-class _RecordingMemory(_FakeMemory):
-    """`_FakeMemory` plus the one endpoint the `about` tool speaks to.
-
-    Unknown peers are reachable-with-nothing, exactly as the live Honcho is
-    (200 and an empty string, never a 404) — a fake that 404'd instead would
-    make «no such peer» and «could not ask» look like the same event.
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-        # (observer, observed, search_query) — the `about` tool reads Nora's
-        # model of a person, `(observer=nora, observed=person)`.
-        self.queries: list[tuple[str, str, str]] = []
-
-    async def representation(
-        self, *, peer_id, search_query, max_conclusions=5, target=None, **_route,
-    ):
-        observed = target if target is not None else peer_id
-        self.queries.append((peer_id, observed, search_query))
-        return Recollection(reachable=True, conclusions=("Miles is from Ridgeline",))
 
 
 class _FakeDoctrineStore:
@@ -441,10 +418,7 @@ async def test_authorized_conversation_receives_demo_tools():
 
 
 def _prompt_text(call: dict) -> str:
-    return "\n".join(
-        block.get("text", "")
-        for message in call["pre_fill"] for block in message["content"]
-    )
+    return call["tag_message"]
 
 
 
@@ -468,15 +442,17 @@ async def test_deferring_ships_the_hot_set_the_loader_and_the_catalogue():
     hot tools plus `load_tools`, the prompt carries `<tool_catalogue>`, and
     the loop gets one more turn for the load. All three come from ONE
     `ToolSurface`, so they cannot disagree about what was deferred."""
-    from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HOT_TOOLS, LOADER_TOOL
+    from nora.agent.catalog.groups import HOT_TOOLS, LEGACY_ENGAGEMENT_TOOLS, LOADER_TOOL
 
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(defer_tools=True)
+    registry = ToolRegistry(engagement_graph_retrieval=object(), intention_admission=object())
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        defer_tools=True, tool_registry=registry,
+    )
     await pipeline.run(_request())
     await _drain(background)
     call = pipeline._runner.calls[-1]
     names = {t.tool_name for t in call["tools"]}
-    # no index wired: the Honcho memory surface (DEC-316)
-    assert names == ((HOT_TOOLS - GRAPH_MEMORY_TOOLS) | {LOADER_TOOL})
+    assert names == ((HOT_TOOLS - LEGACY_ENGAGEMENT_TOOLS) | {LOADER_TOOL})
     assert "<tool_catalogue" in _prompt_text(call)
     assert "weather" in _prompt_text(call)  # a shelved tool is still NAMED
     assert call["limits"]["turns"] == LIMITS["turns"] + 1
@@ -488,7 +464,7 @@ async def test_a_spoken_tag_is_handed_the_voice_tools_and_a_typed_one_is_not():
     tools declared `hot_on` voice and the same words typed do not."""
     import dataclasses
 
-    from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HOT_TOOLS, LOADER_TOOL
+    from nora.agent.catalog.groups import HOT_TOOLS, LEGACY_ENGAGEMENT_TOOLS, LOADER_TOOL
     from nora.agent.surface import DISCORD_ONLY_TOOLS
 
     seen: list = []
@@ -501,7 +477,8 @@ async def test_a_spoken_tag_is_handed_the_voice_tools_and_a_typed_one_is_not():
     handed = {}
     for voice in (True, False):
         pipeline, _metrics, _audit, _memory, background = _build_pipeline(
-            defer_tools=True, tool_registry=_Spy(),
+            defer_tools=True,
+            tool_registry=_Spy(engagement_graph_retrieval=object(), intention_admission=object()),
             adapters={"discord": _DiscordFakeAdapter(account="555000111")},
         )
         spoken = dataclasses.replace(_discord_msg(), voice=voice)
@@ -509,7 +486,7 @@ async def test_a_spoken_tag_is_handed_the_voice_tools_and_a_typed_one_is_not():
         await _drain(background)
         handed[voice] = {t.tool_name for t in pipeline._runner.calls[-1]["tools"]}
     assert seen == ["voice", None]
-    assert handed[False] == (HOT_TOOLS - GRAPH_MEMORY_TOOLS) | {LOADER_TOOL}
+    assert handed[False] == (HOT_TOOLS - LEGACY_ENGAGEMENT_TOOLS) | {LOADER_TOOL}
     assert {"play_music", "set_music_volume"} <= handed[True]
     assert handed[True] - handed[False] <= DISCORD_ONLY_TOOLS
 
@@ -1847,18 +1824,13 @@ async def test_a_pipeline_with_no_roster_source_degrades_instead_of_emptying_the
     assert runner.result["status"] == "unavailable"
 
 
-async def test_recall_asks_about_the_tagging_message_without_being_told_it():
-    """DEC-24 end to end: `about(person)` has one parameter, and the QUESTION
-    reaches Honcho anyway because the pipeline closed over the tag body."""
-    runner = _RoomRunner("about", person="Miles")
-    memory = _RecordingMemory()
-    pipeline, _metrics, _audit, _memory2, background = _build_pipeline(
-        runner=runner, memory=memory,
-        roster_source=FakeRosterSource(groups={"g1": (frozenset({"+852111"}),)}),
-    )
+async def test_the_called_pass_excludes_about_even_with_honcho_wired():
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline()
     await pipeline.run(_request(_msg()))
     await _drain(background)
-    assert memory.queries == [("nora", "miles", "nora.000 幾點食飯")]
+    names = {tool.tool_name for tool in pipeline._runner.calls[-1]["tools"]}
+    assert "about" not in names
+    assert {"load_transcript", "send_reply"} <= names
 
 
 # ---------------------------------------------------------------------------
@@ -3143,16 +3115,13 @@ async def test_the_tag_s_room_carries_the_record_row_of_the_message_that_raised_
     assert [r.trigger_message_ids for r in seen] == [(mine,)]
 
 
-async def test_who_said_searches_the_whole_read_window_not_the_prompt_slice():
-    """`[store] prompt_window` trims what `<transcript>` shows; the
-    lookup tool is handed the deeper read, so a lookup never shrinks with the
-    prompt. 12 rows read (`context_window=10` plus the tag), 4 shown."""
+async def test_load_transcript_can_read_before_the_prompt_slice():
+    """The numbered references stay bound to the visible rows."""
     seen: dict = {}
 
     class _Spy(ToolRegistry):
         def surface(self, **kw):
             seen["bound"] = tuple(r.body for r in kw["transcript"])
-            seen["lookup"] = tuple(r.body for r in kw["lookup_window"])
             return super().surface(**kw)
 
     audit = FakeRecordStore()
@@ -3163,7 +3132,7 @@ async def test_who_said_searches_the_whole_read_window_not_the_prompt_slice():
         ))
     memory = _FakeMemory()
     metrics = Metrics()
-    runner = _EchoRunner()
+    runner = _RoomRunner("load_transcript", limit=10)
     pipeline, _m, _a, _mem, background = _build_pipeline(
         audit=audit, memory=memory, metrics=metrics, runner=runner,
         tool_registry=_Spy(),
@@ -3175,9 +3144,10 @@ async def test_who_said_searches_the_whole_read_window_not_the_prompt_slice():
     await pipeline.run(_req(body="q", tag_id="t1", ts=500))
     await _drain(background)
 
-    assert runner.seen_transcripts[0] == ("m8", "m9", "m10", "m11")      # the prompt: 4
-    assert seen["bound"] == ("m8", "m9", "m10", "m11")                   # #n / reply_to: shown
-    assert seen["lookup"] == tuple(f"m{i}" for i in range(2, 12))        # who_said: all 10
+    assert seen["bound"] == ("m8", "m9", "m10", "m11")
+    assert tuple(row["body"] for row in runner.result["messages"]) == tuple(
+        f"m{i}" for i in range(2, 12)
+    )
 
 
 async def test_a_reaction_only_turn_has_no_text_fallback_or_progress_overwrite():

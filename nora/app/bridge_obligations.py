@@ -41,6 +41,7 @@ async def enqueue_downstream(
                 "stream": work.payload.get("stream"),
                 "stream_id": work.payload.get("stream_id"),
                 "message": message_to_dict(message),
+                "message_row_id": row_id,
                 "decision": _decision_dict(decision),
                 # The explicit-command occasion survives durable rehydration.
                 "occasion": "room_command" if command else "tag",

@@ -135,7 +135,7 @@
  {
   "name": "record_query is withheld from turns when its read is not wired",
   "file": "nora/agent/registry.py",
-  "old": "            and spec.name not in self._withheld\n",
+  "old": "            and spec.name not in withheld\n",
   "new": "",
   "target": "tests/unit/test_tool_registry.py::test_record_query_is_offered_only_when_its_record_read_is_wired"
  },

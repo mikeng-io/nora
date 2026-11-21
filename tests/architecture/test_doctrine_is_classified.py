@@ -346,7 +346,7 @@ def test_the_lessons_block_lets_a_lesson_ahead_of_practice_and_never_of_law():
     """Phase 2 of the doctrine refactor (DEC-311; context-plan 11 §7): practice is
     a default a lesson goes ahead of; law always wins. The `<lessons>`
     description names which sections are which, so this holds it to the table:
-    every section on a tag turn is named on exactly one side, and every law part
+    every section on a legacy fire turn is named on exactly one side, and every law part
     is in an always-win section or in a pinned exception the doctrine check
     guards."""
     from nora.doctrine.loader import parse_section
@@ -360,8 +360,8 @@ def test_the_lessons_block_lets_a_lesson_ahead_of_practice_and_never_of_law():
     assert always_win and by_default and not always_win & by_default
 
     store = _store(DOCTRINE_DIR)
-    with_lessons = {  # the audiences `<lessons>` renders on: tag and fire turns
-        s.name for audience in ("tag", "heartbeat", "participation", "proactive")
+    with_lessons = {
+        s.name for audience in ("heartbeat", "proactive")
         for s in store.get(applies_to=audience).sections
     }
     assert with_lessons == always_win | by_default, "every section is named on one side"

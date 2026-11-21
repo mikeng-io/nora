@@ -1,29 +1,16 @@
 """Build a pass's context from its floor and one scoped graph retrieval."""
 
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
 from datetime import datetime
 
 from nora.domain.blocks import ContextBlock
-from nora.domain.blocks import assemble as render_blocks
 from nora.memory.adapters.pass_anchors import AnchorRead, SqlPassAnchors
 from nora.memory.adapters.presentation_blocks import GraphPresentationBlocks
 from nora.memory.app.retrieval import RetrievalService
 from nora.memory.domain.pass_declarations import PassDeclaration, PassName, declaration
-from nora.memory.domain.pass_inputs import DebriefInput, PassInput, PassScope
+from nora.memory.domain.pass_inputs import AssembledPass, DebriefInput, PassInput, PassScope
 from nora.memory.domain.presentations import lessons, related
-from nora.memory.domain.retrieval import RetrievalResult, RetrievalStatus
-
-
-@dataclass(frozen=True, slots=True)
-class AssembledPass:
-    blocks: tuple[ContextBlock, ...]
-    status: RetrievalStatus
-    cause: str | None
-    shown: frozenset[str] = frozenset()
-
-    def render(self) -> str:
-        return render_blocks(tuple(replace(block, order=i) for i, block in enumerate(self.blocks)))
+from nora.memory.domain.retrieval import RetrievalResult
 
 
 class PassAssembler:

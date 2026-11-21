@@ -68,8 +68,8 @@ async def test_context_is_collected_before_the_model_runs(harness_factory):
     await h.drain()
     await h.handler.on_event(group_event(body="nora.000 ?", ts=9))
     await h.drain()
-    assert h.last_prefill is not None
-    assert "m0" in h.last_prefill[1]["content"][0]["text"]
+    assert h.last_model_input is not None
+    assert "m0" in h.last_model_input
 
 
 async def test_a_model_that_writes_nothing_at_all_means_strict_silence(harness_factory):

@@ -321,51 +321,7 @@ _PROFILE_REPLACES = frozenset({
 
 
 def _context_header(header: str = TAG_HEADER) -> str:
-    """How this turn works, told to the model in its own terms.
-
-    `header` is the SITUATION paragraph (why this turn is happening at all)
-    and it is the only part that differs between audiences. Everything after it
-    describes the blocks in front of her, which are the same blocks whether she
-    was called or a reminder came due. The tag default is `TAG_HEADER`; see it
-    for why the fire path passes its own instead of this function growing a
-    branch.
-
-    **Free of anything that changes between tags.** This block is the head of
-    the prompt, and the provider's context cache matches on an exact prefix, so
-    the first byte that differs from the last request ends the hit for
-    everything after it. The static HEAD (this block, the doctrine and the tool
-    schemas) is the bulk of the input and is cached across tags and across
-    within-turn loop calls. Caching is a property of the serving provider and
-    model, not of the prompt, so re-measure `cache_read_input_tokens` on the
-    live route before claiming a saving.
-
-    The ordering rule for this module: static instructions here, every
-    volatile fact (the clock, the transcript, the peer card) in the block
-    `build_prefill` puts AFTER this one.
-
-    The doctrine files say who Nora IS. This says how she is being RUN: she is
-    mid-conversation in a group she has been reading all along, somebody just
-    called her, what each block in front of her means, and how a turn ends.
-    Without it she has voice and character but no situational model, and a
-    model with no situational model invents one.
-
-    **It names no tool** (DEC-29, DEC-150). The model-facing schemas already
-    carry each tool's routing trigger, and the closed-world and sourcing rules
-    live in conduct.md, so a hand-written catalogue here would be a second
-    copy. What is left is what is not derivable: what each BLOCK in front of
-    her is, and where she is. `tests/test_prefill.py::
-    test_the_header_names_no_tool_at_all` keeps the catalogue from growing
-    back.
-    """
-    # No catalogue and no notation. A «What you can see:» list would restate,
-    # in this message, what every block says about itself in the message
-    # after it, and a notation paragraph would describe one block by hand in
-    # the static head, leaving the other fields undefined. A field's meaning
-    # travels with the block that renders it (`nora.domain.block_types`).
-    #
-    # What is left is the SITUATION (why this turn is happening) and the one
-    # sentence telling her the blocks are material rather than scenery. That
-    # sentence says what to DO with what follows, which nothing else says.
+    """Keep the occasion's framing in a stable prefix."""
     return ContextBlock(name="context_header",
         body=legacy_composed(ContextHeader(header).render())).render()
 
@@ -1250,7 +1206,7 @@ def build_prefill(
         ]
 
 
-def _replying_to_block(ctx: TagContext, display_name: str) -> str:
+def _replying_to_block(ctx: TagContext, display_name: str) -> ContextBlock | None:
     """R-20: the quoted text shown to the model is the RESOLVED PARENT ROW's
     text, or nothing.
 
@@ -1269,19 +1225,19 @@ def _replying_to_block(ctx: TagContext, display_name: str) -> str:
     """
     quote = ctx.message.quote
     if quote is None:
-        return ""
+        return None
     # The SAME resolver `_transcript_block` uses, so the quoted text and the
     # `replying_to="n"` pointer name one message rather than two (`_by_ts`).
     parent = _by_ts(ctx.transcript).get(quote.quoted_ts)
     if parent is None:
-        return ""
+        return None
     # CLASS 1: a member's own words, quoted from her record of them (R-20).
     # It says what it is by going through the injector; see
     # `build_tag_message`.
     return ContextBlock(
         name="replying_to", attrs=(("author", _label(parent, display_name)),),
         body=legacy_composed(escape(render_file_links(parent.body or ""))),
-    ).render() + "\n"
+    )
 
 
 def build_tag_message(ctx: TagContext, *, tagger_name: str, display_name: str) -> str:
@@ -1294,8 +1250,14 @@ def build_tag_message(ctx: TagContext, *, tagger_name: str, display_name: str) -
     sent something: sender identity comes from the platform id alone, because
     a name is spoofable and these are not checked against anything.
     """
-    tagger = ctx.tagger
     quoted = _replying_to_block(ctx, display_name)
+    return _tag_block(
+        ctx, tagger_name, f"{quoted.render()}\n" if quoted is not None else "",
+    ).render()
+
+
+def _tag_block(ctx: TagContext, tagger_name: str, quote: str = "") -> ContextBlock:
+    tagger = ctx.tagger
     # Tag and fire turns share this block. Its contents do not establish a
     # direct call; the occasion header says why the turn opened.
     attrs: tuple[tuple[str, str], ...] = (("from", tagger_name),)
@@ -1307,5 +1269,35 @@ def build_tag_message(ctx: TagContext, *, tagger_name: str, display_name: str) -
         # paraphrase: a paraphrase can carry the meaning and still match
         # neither spelling the framing gate accepts, so the block would ship
         # with a marker and a clause the gate cannot see.
-        body=legacy_composed(f"{quoted}{escape(render_file_links(ctx.message.body))}"),
-    ).render()
+        body=compose_body(f"{quote}{escape(render_file_links(ctx.message.body))}"),
+        when_empty="render",
+    )
+
+
+def engagement_floor(
+    ctx: TagContext, *, display_name: str, tagger_name: str, context_window: int,
+    now: datetime, catalogue: str,
+) -> tuple[ContextBlock, ...]:
+    """The declared room context shared by called and ambient passes."""
+    blocks = (
+        _room_members_block(ctx),
+        ContextBlock("clock", compose_body(_now_line(now).strip()),
+                     attrs=(("as_of", now.isoformat()),)),
+        _presence_block(ctx),
+        render_tool_catalogue(catalogue) if catalogue else None,
+        render_computer(ctx.computer),
+        render_documents(ctx.documents),
+        render_subagents(ctx.subagents),
+        _transcript_block(ctx, display_name, now, context_window),
+        _spoken_turn_block(ctx),
+        _replying_to_block(ctx, display_name),
+        _tag_block(ctx, tagger_name),
+    )
+    return tuple(b for b in blocks if b is not None)
+
+
+def engagement_prefill(header: str) -> list[dict]:
+    return [
+        _message("user", _context_header(header)),
+        _message("assistant", CLOSING_LINE),
+    ]

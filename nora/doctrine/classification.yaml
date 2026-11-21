@@ -469,3 +469,13 @@ files:
       bucket: practice
       reason: "the facts once, not a second round"
       sha: "f9a63606ecb7"
+
+  rooms/engagement.md:
+    Engagement stages:
+      bucket: law
+      reason: Grounded commitments and claims are required in any room.
+      sha: 44d6d656b5ac
+    Abduced values:
+      bucket: law
+      reason: Grounded commitments and claims are required in any room.
+      sha: dfca9e1d32f3

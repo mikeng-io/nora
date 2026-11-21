@@ -554,12 +554,9 @@ class EngagementRequest:
     message: NormalizedMessage
     decision: EngageDecision
     tag_id: str
-    # Which occasion the turn is answering. "tag" for everything the
-    # engagement pipeline handles; the recovery branches below gate on it so
-    # that a "relevance_gate" request, should one ever be admitted here, can
-    # never have a draft delivered FOR it: no grounded value is silence there,
-    # not a recovered message.
+    # Recovery is occasion-specific. An ordinary tag can recover its draft.
     occasion: str = "tag"
+    message_row_id: int | None = None
 
 
 @dataclass(frozen=True)

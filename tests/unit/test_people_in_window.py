@@ -35,7 +35,6 @@ import pytest
 from nora.agent.prefill import build_prefill
 from nora.app.fire import (
     FirePath,
-    participation_occasion,
     reminder_occasion,
 )
 from nora.domain.models import (
@@ -45,7 +44,6 @@ from nora.domain.models import (
     TagContext,
     TranscriptRow,
 )
-from nora.domain.ports import Recollection
 from nora.domain.reminders import Reminder, ReminderState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
@@ -134,36 +132,6 @@ def _path(
 # ---------------------------------------------------------------------------
 
 
-async def test_the_participation_turn_carries_what_she_remembers_about_each_speaker(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """The defect itself. Two people speak in the window; both resolve; both
-    get their own conclusions, read as `(observer=nora, observed=them)`."""
-    memory = FakeMemoryStore(conclusions={
-        "miles": ["miles_novak jokingly calls nora 管理員"],
-        "ada": ["ada asks about dinner every week and rarely turns up"],
-    })
-    path = _path(
-        persons, await _records(("+85211", "麻煩管理員處理一下"), ("+85222", "食咩好")),
-        memory, doctrine_store, metrics,
-    )
-
-    ctx = await path.build_context(participation_occasion(
-        platform="signal", conversation_id="conv-1",
-    ))
-
-    assert dict(ctx.people_in_window) == {
-        "Miles Novak": ("miles_novak jokingly calls nora 管理員",),
-        "Ada": ("ada asks about dinner every week and rarely turns up",),
-    }
-    # The OBSERVER matters as much as the observed: her model of
-    # them, never their own self-model. `FakeMemoryStore.queries` is a 3-tuple
-    # for exactly this assertion.
-    observed = {obs for _, obs, _ in memory.queries}
-    assert {"miles", "ada"} <= observed
-    assert all(observer == "nora" for observer, _, _ in memory.queries)
-
-
 async def test_the_block_reaches_the_prompt_under_its_own_tag() -> None:
     """`build_context` filling the field is half the claim; `build_prefill`
     rendering it is the other half, and the two can diverge, as they did on
@@ -201,115 +169,9 @@ async def test_a_reminder_occasion_reads_no_memory_at_all(
     assert memory.queries == []          # not «empty answer» — NO CALL
 
 
-async def test_an_unmapped_speaker_is_not_read_and_not_rendered(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """`honcho_peer_id` is the roster's canonical id; there is no memory under a
-    phone number. An unmapped sender contributes nothing rather than a row keyed
-    on a raw platform identifier (R-18)."""
-    memory = FakeMemoryStore(conclusions={"miles": ["known"]})
-    path = _path(
-        persons, await _records(("+85299", "stranger"), ("+85211", "hi")),
-        memory, doctrine_store, metrics,
-    )
-
-    ctx = await path.build_context(participation_occasion(
-        platform="signal", conversation_id="conv-1",
-    ))
-
-    assert [name for name, _ in ctx.people_in_window] == ["Miles Novak"]
-    assert {obs for _, obs, _ in memory.queries} == {"miles"}
-
-
-async def test_her_own_rows_are_not_read_as_a_speaker(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """Her own account is `<self>`, read separately from the culture store. A
-    Nora row in the window must not produce an entry for her inside
-    `<people_in_window>`, nor a read of her own representation."""
-    store = FakeRecordStore()
-    await store.append(
-        message=NormalizedMessage(
-            "signal", "conv-1", "group", "+85211", "Miles", 1, "麻煩管理員", {},
-        ),
-        person_id=None,
-    )
-    await store.append(
-        message=NormalizedMessage(
-            "signal", "conv-1", "group", "", "Nora", 2, "得，我睇下", {},
-        ),
-        is_nora=True, person_id=None,
-    )
-    memory = FakeMemoryStore(conclusions={"miles": ["known"], "nora": ["hers"]})
-    path = _path(persons, store, memory, doctrine_store, metrics)
-
-    ctx = await path.build_context(participation_occasion(
-        platform="signal", conversation_id="conv-1",
-    ))
-
-    assert [name for name, _ in ctx.people_in_window] == ["Miles Novak"]
-    assert {obs for _, obs, _ in memory.queries} == {"miles"}
-
-
 # ---------------------------------------------------------------------------
 # 2. her own card is not read on this turn
 # ---------------------------------------------------------------------------
-
-
-async def test_the_participation_turn_makes_no_read_of_her_own_representation(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """Her own account is `<self>` (the culture store), not
-    `representation(target=None)` (observer == observed); no Honcho call may be
-    made about her."""
-    memory = FakeMemoryStore(
-        cards={"nora": ["Kind: AI chatbot/assistant"]},
-        conclusions={"nora": ["nora was asked as 管理員 to handle a room matter"]},
-    )
-    path = _path(
-        persons, await _records(("+85211", "麻煩管理員處理一下")),
-        memory, doctrine_store, metrics,
-    )
-
-    ctx = await path.build_context(participation_occasion(
-        platform="signal", conversation_id="conv-1",
-    ))
-
-    assert "nora" not in {obs for _, obs, _ in memory.queries}
-    assert ctx.peer_card == ()
-    assert not hasattr(ctx, "self_card")
-
-
-async def test_the_search_query_is_the_windows_own_text(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """A participation occasion has NO inbound message — `occasion.body` is
-    `""` by construction and the header says so — so the window is the only
-    statement of what the turn is about. Her own rows are excluded from it for
-    an answer she already gave is the loudest self-echo there is."""
-    store = FakeRecordStore()
-    await store.append(
-        message=NormalizedMessage(
-            "signal", "conv-1", "group", "+85211", "Miles", 1, "麻煩管理員處理一下", {},
-        ),
-        person_id=None,
-    )
-    await store.append(
-        message=NormalizedMessage(
-            "signal", "conv-1", "group", "", "Nora", 2, "SELF ECHO", {},
-        ),
-        is_nora=True, person_id=None,
-    )
-    memory = FakeMemoryStore(conclusions={"nora": ["x"], "miles": ["y"]})
-    path = _path(persons, store, memory, doctrine_store, metrics)
-
-    await path.build_context(participation_occasion(
-        platform="signal", conversation_id="conv-1",
-    ))
-
-    queries = {query for _, _, query in memory.queries}
-    assert queries == {"麻煩管理員處理一下"}
-    assert all("SELF ECHO" not in q for q in queries)
 
 
 # ---------------------------------------------------------------------------
@@ -390,194 +252,6 @@ def test_a_forged_closing_tag_inside_a_conclusion_cannot_break_out() -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_no_more_speakers_are_read_than_the_bound_allows(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """The bound is on the READS, not just on the render: one Honcho round trip
-    per speaker, on the front of a turn that already holds the conversation's
-    heartbeat slot. Newest speaker first — a person who spoke at the top of the
-    window and left is exactly who the turn is not deciding about."""
-    memory = FakeMemoryStore(conclusions={"miles": ["m"], "ada": ["a"], "ben": ["b"]})
-    path = _path(
-        persons,
-        await _records(("+85211", "oldest"), ("+85222", "middle"), ("+85233", "newest")),
-        memory, doctrine_store, metrics,
-        people_in_window_speakers=2,
-    )
-
-    ctx = await path.build_context(participation_occasion(
-        platform="signal", conversation_id="conv-1",
-    ))
-
-    assert [name for name, _ in ctx.people_in_window] == ["Ben", "Ada"]
-    assert {obs for _, obs, _ in memory.queries} == {"ben", "ada"}
-
-
-async def test_no_more_conclusions_are_asked_for_than_the_bound_allows(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """`max_conclusions` is the token bound and it is asked of the STORE, not
-    trimmed after — a read that fetched eight and rendered three would pay the
-    latency of eight."""
-    memory = FakeMemoryStore(conclusions={"miles": [f"c{i}" for i in range(10)]})
-    path = _path(
-        persons, await _records(("+85211", "hi")), memory, doctrine_store, metrics,
-        people_in_window_conclusions=2,
-    )
-
-    ctx = await path.build_context(participation_occasion(
-        platform="signal", conversation_id="conv-1",
-    ))
-
-    assert ctx.people_in_window == (("Miles Novak", ("c0", "c1")),)
-
-
-@pytest.mark.parametrize("knob", ["people_in_window_speakers", "people_in_window_conclusions"])
-async def test_zero_turns_the_block_off_without_a_single_read(
-    knob: str, persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """0 is the operator's off switch and it must cost nothing — a block
-    disabled in config that still pays for the round trip is a knob that
-    does not do what it says."""
-    memory = FakeMemoryStore(conclusions={"miles": ["known"]})
-    path = _path(
-        persons, await _records(("+85211", "hi")), memory, doctrine_store, metrics,
-        **{knob: 0},
-    )
-
-    ctx = await path.build_context(participation_occasion(
-        platform="signal", conversation_id="conv-1",
-    ))
-
-    assert ctx.people_in_window == ()
-    assert memory.queries == []          # disabled means no call
-
-
-async def test_a_honcho_failure_costs_the_block_never_the_turn(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """`peer_card`'s rule, applied twice. A raising memory port must leave a
-    TURN standing with a thinner prompt — and must be COUNTED, because a block
-    missing for the life of a deployment with nothing saying so is invisible
-    (`nora_peer_card_empty_total`)."""
-    class _Raises(FakeMemoryStore):
-        async def representation(self, **kw):      # type: ignore[override]
-            raise RuntimeError("honcho is down")
-
-    path = _path(
-        persons, await _records(("+85211", "hi")), _Raises(), doctrine_store, metrics,
-    )
-
-    ctx = await path.build_context(participation_occasion(
-        platform="signal", conversation_id="conv-1",
-    ))
-
-    assert ctx.people_in_window == ()
-    assert ctx.transcript != ()                    # the TURN survived
-    assert metrics.get(
-        "nora_errors_total", stage="fire_people_in_window", platform="signal") == 1
-
-
-async def test_one_speakers_failed_recall_costs_that_speaker_not_the_block(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """`return_exceptions=True`: four speakers are four reads, and one of them
-    raising must not take the other three with it. This is the property a bare
-    `gather` silently loses."""
-    class _OneBadPeer(FakeMemoryStore):
-        async def representation(self, **kw):      # type: ignore[override]
-            if kw.get("target") == "ada":
-                raise RuntimeError("that peer's shard is down")
-            return await super().representation(**kw)
-
-    memory = _OneBadPeer(conclusions={"miles": ["known"], "ada": ["never read"]})
-    path = _path(
-        persons, await _records(("+85211", "hi"), ("+85222", "yo")),
-        memory, doctrine_store, metrics,
-    )
-
-    ctx = await path.build_context(participation_occasion(
-        platform="signal", conversation_id="conv-1",
-    ))
-
-    assert dict(ctx.people_in_window) == {"Miles Novak": ("known",)}
-    assert metrics.get(
-        "nora_errors_total", stage="fire_people_in_window", platform="signal") == 1
-
-
-async def test_an_unreachable_honcho_is_counted_not_reported_as_nothing_known(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """R-27's three states. `Recollection(reachable=False)` is an OUTAGE; the
-    fake distinguishes it from a peer it has never heard of (`reachable=True,
-    conclusions=()`), and folding the two together is `unavailable` wearing
-    `nothing_found`'s face."""
-    path = _path(
-        persons, await _records(("+85211", "hi")),
-        FakeMemoryStore(fail=True), doctrine_store, metrics,
-    )
-
-    ctx = await path.build_context(participation_occasion(
-        platform="signal", conversation_id="conv-1",
-    ))
-
-    assert ctx.people_in_window == ()
-    assert metrics.get(
-        "nora_errors_total", stage="fire_people_in_window", platform="signal") == 1
-
-
-async def test_an_unknown_peer_is_silence_not_an_error(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """The other side of the same distinction: the live instance answers 200
-    with an empty string for a peer it has never heard of, which is a genuinely
-    empty memory and not a failure. Nothing renders, nothing is counted."""
-    path = _path(
-        persons, await _records(("+85211", "hi")),
-        FakeMemoryStore(), doctrine_store, metrics,
-    )
-
-    ctx = await path.build_context(participation_occasion(
-        platform="signal", conversation_id="conv-1",
-    ))
-
-    assert ctx.people_in_window == ()
-    assert metrics.get("nora_errors_total", stage="fire_people_in_window") == 0
-
-
-async def test_a_port_that_never_answers_is_bounded_and_counted(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """The third state, and the one the two `except`s cannot reach: a port that
-    does not raise and does not return. These reads run while the heartbeat
-    holds this conversation's slot — the shape of an unbounded read that wedges
-    a conversation."""
-    import asyncio
-
-    class _Hangs(FakeMemoryStore):
-        async def representation(self, **kw):      # type: ignore[override]
-            # 2s, not 60: long enough that a 0.01s bound must fire, short
-            # enough that the MUTATION of that bound (the entry in
-            # `scripts/mutations/issue-210-participation-reads-memory.json`)
-            # finishes and fails on the counter instead of hanging the sweep.
-            await asyncio.sleep(2)
-            return Recollection(reachable=True)
-
-    path = _path(
-        persons, await _records(("+85211", "hi")), _Hangs(), doctrine_store, metrics,
-        memory_read_timeout_seconds=0.01,
-    )
-
-    ctx = await path.build_context(participation_occasion(
-        platform="signal", conversation_id="conv-1",
-    ))
-
-    assert ctx.people_in_window == ()
-    assert ctx.transcript != ()
-    assert metrics.get(
-        "nora_errors_total", stage="fire_memory", platform="signal") == 1
-
-
 # ---------------------------------------------------------------------------
 # the gate stays blind
 # ---------------------------------------------------------------------------
@@ -638,46 +312,3 @@ def test_the_tag_path_renders_no_people_in_window_block() -> None:
     # after it. So the name appears in the header on every turn; what must
     # not appear is the opening tag.
     assert "<people_in_window" not in rendered
-
-
-async def test_the_query_takes_the_newest_human_rows_not_what_is_left_after_hers(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """Her own rows are dropped BEFORE the window is sliced: slicing first would let
-    a window whose newest six rows were four of her replies yield a two-row
-    retrieval key — not «the window's newest rows» but however many of them she
-    did not write."""
-    store = FakeRecordStore()
-    ts = int(T0.timestamp() * 1000)
-    await store.append(
-        message=NormalizedMessage(
-            "signal", "conv-1", "group", "+85211", "Miles", ts, "OLDEST HUMAN", {},
-        ),
-        person_id=None,
-    )
-    for i in range(6):
-        await store.append(
-            message=NormalizedMessage(
-                "signal", "conv-1", "group", "", "Nora", ts + (i + 1) * 1000,
-                f"HER ROW {i}", {},
-            ),
-            is_nora=True, person_id=None,
-        )
-    await store.append(
-        message=NormalizedMessage(
-            "signal", "conv-1", "group", "+85211", "Miles", ts + 9000,
-            "NEWEST HUMAN", {},
-        ),
-        person_id=None,
-    )
-    memory = FakeMemoryStore(conclusions={"miles": ["x"]})
-    path = _path(persons, store, memory, doctrine_store, metrics)
-
-    await path.build_context(participation_occasion(
-        platform="signal", conversation_id="conv-1",
-    ))
-
-    query = next(q for _, _, q in memory.queries)
-    assert "NEWEST HUMAN" in query
-    assert "OLDEST HUMAN" in query          # both survive; only SIX rows are kept
-    assert "HER ROW" not in query

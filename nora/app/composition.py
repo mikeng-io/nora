@@ -94,6 +94,7 @@ from nora.app.composition_stores import (
 )
 from nora.app.computer_sweeper import ComputerSessionSweeper
 from nora.app.documents_service import DocumentService, room_label, rooms_named
+from nora.app.fire_engagement import AmbientEngagement
 from nora.app.graph_batches import GraphBatchProducer
 from nora.app.graph_observe import GraphObserve, graph_observe
 from nora.app.lifecycle import StartupOwner
@@ -128,6 +129,7 @@ from nora.domain.ports import (
     Speaker,
 )
 from nora.domain.reminders import ReminderStore
+from nora.engagement.graph_context import EngagementGraph
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.self_presence import PresenceReader
 from nora.infra.computer.probe import ComputerdProbe
@@ -909,31 +911,30 @@ async def _compose_dependencies(
         cfg=cfg, clock=clock, compute_jobs=compute_jobs, document_service=document_service
     )
     subagent_desk = _agent_desk.subagent_desk
+    graph_debrief = build_graph_debrief(
+        _memory_wire, dreamer_instructions, cfg, engine, access, lineage,
+        persons_view, allowlist, doctrine_store, content_checks, clock, metrics,
+    )
+    engagement_graph = EngagementGraph(
+        access, _memory_wire.message_graph_ids(engine),
+        _memory_wire.pass_assembler(engine, access, lineage, None, None),
+    )
+    graph_reads = _memory_wire.configured_graph_reads(cfg, engine, access, lineage)
     _agent_registry = build_registry(
         allowlist=allowlist, blobs=blobs,
-        browser=browser,
-        browser_manager=browser_manager,
+        browser=browser, browser_manager=browser_manager,
         cfg=cfg,
-        clock=clock,
-        computer=computer,
-        computer_admission=computer_admission,
+        clock=clock, computer=computer, computer_admission=computer_admission,
         computer_context=computer_context,
-        computer_dm_scope_for=computer_dm_scope_for,
-        computer_events=computer_events,
-        computer_exports=computer_exports,
-        computer_leases=computer_leases,
-        computer_sessions=computer_sessions,
-        computer_settings=computer_settings,
+        computer_dm_scope_for=computer_dm_scope_for, computer_events=computer_events,
+        computer_exports=computer_exports, computer_leases=computer_leases,
+        computer_sessions=computer_sessions, computer_settings=computer_settings,
         content_checks=content_checks,
-        culture_reader=culture_reader,
-        discord_presence=discord_presence,
-        document_service=document_service,
-        engine=engine,
+        culture_reader=culture_reader, discord_presence=discord_presence,
+        document_service=document_service, engine=engine,
         events=events,
-        fetch_client=fetch_client,
-        geocoder=geocoder,
-        giphy_client=giphy_client,
-        image_generator=image_generator,
+        fetch_client=fetch_client, geocoder=geocoder,
+        giphy_client=giphy_client, image_generator=image_generator,
         image_refs_allowed=image_refs_allowed,
         ledger_store=ledger_store, lineage=lineage, mcp_tool_groups=mcp_tool_groups,
         media_descriptions=media_descriptions,
@@ -941,17 +942,19 @@ async def _compose_dependencies(
         media_objects=media_objects,
         memo_store=memo_store,
         memory_search=memory_search,
-        graph_retrieval=_memory_wire.configured_graph_reads(cfg, engine, access, lineage),
+        graph_retrieval=graph_reads,
+        engagement_graph_retrieval=(
+            graph_reads or _memory_wire.graph_read_tools(engine, access, lineage, None, None)
+        ),
+        intention_admission=graph_debrief.admission,
         metrics=metrics,
         mobility=mobility,
         music_bridge=music_bridge,
         note_store=note_store,
-        observation_store=observation_store,
-        persons=persons_view,
+        observation_store=observation_store, persons=persons_view,
         presence_circles=presence_circles,
         presence_reader=presence_reader,
-        presence_store=presence_store,
-        profile_index=profile_index,
+        presence_store=presence_store, profile_index=profile_index,
         profile_reader=profile_reader,
         reaction_picker=reaction_picker,
         refresher=refresher,
@@ -968,8 +971,7 @@ async def _compose_dependencies(
         tool_call_log_store=tool_call_log_store,
         version_manifest=version_manifest,
         video_desk=video_desk,
-        vision_client=vision_client,
-        voice_presence=voice_presence,
+        vision_client=vision_client, voice_presence=voice_presence,
         weather_client=weather_client,
     )
     tool_registry = _agent_registry.tool_registry
@@ -1043,10 +1045,8 @@ async def _compose_dependencies(
         cfg=cfg,
         clock=clock,
         debounce=debounce,
-        debrief_wiring=build_graph_debrief(
-            _memory_wire, standing_replay_wiring, cfg, engine, access, lineage,
-            persons_view, allowlist, doctrine_store, content_checks, clock, metrics,
-        ),
+        debrief_wiring=graph_debrief,
+        graph=engagement_graph,
         standing_replay_wiring=standing_replay_wiring,
         decision_log=decision_log,
         doctrine_store=doctrine_store,
@@ -1078,6 +1078,7 @@ async def _compose_dependencies(
     lost_jobs = _fire_recover.lost_jobs
     _fire_path = path(
         access=access,
+        ambient=AmbientEngagement(engagement_graph, graph_debrief, subagents_context),
         allowlist=allowlist,
         audit=audit,
         background=background,

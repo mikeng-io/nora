@@ -10,6 +10,7 @@ from nora.memory.app.act_scope import record_interrupted_pass_tools as record_in
 from nora.memory.app.act_scope import record_pass_expression as record_pass_expression
 from nora.memory.app.act_scope import record_pass_silence as record_pass_silence
 from nora.memory.app.act_scope import record_pass_tool as record_pass_tool
+from nora.memory.app.act_scope import seed_pass_shown as seed_pass_shown
 from nora.memory.app.acts import ActEnvelope as ActEnvelope
 from nora.memory.app.acts import ActInvocation as ActInvocation
 from nora.memory.app.acts import PassItem as PassItem
@@ -41,12 +42,14 @@ from nora.memory.domain.pass_inputs import (
 from nora.memory.domain.pass_inputs import (
     AnchorItem as AnchorItem,
 )
+from nora.memory.domain.pass_inputs import AssembledPass as AssembledPass
 from nora.memory.domain.pass_inputs import (
     CalledInput as CalledInput,
 )
 from nora.memory.domain.pass_inputs import (
     DebriefInput as DebriefInput,
 )
+from nora.memory.domain.pass_inputs import PassInput as PassInput
 from nora.memory.domain.pass_inputs import (
     PassScope as PassScope,
 )

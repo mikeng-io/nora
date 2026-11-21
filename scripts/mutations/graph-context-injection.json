@@ -7,13 +7,6 @@
     "target": "tests/unit/test_cognition_session_runner.py::test_inspected_wake_injects_implicit_senders_plan"
   },
   {
-    "name": "prefetch expands new graph relations",
-    "file": "nora/engagement/context.py",
-    "old": "                    query=query, depth=2, person_id=None, target=target,",
-    "new": "                    query=query, depth=0, person_id=None, target=target,",
-    "target": "tests/unit/test_memory_prefetch.py::test_prefetch_injects_new_graph_about_without_shared_words"
-  },
-  {
     "name": "mixed agenda retains its room and author",
     "file": "nora/app/cognition_memory.py",
     "old": "            if loaded_items:\n                item = replace(item, author=item.author or loaded_items[0].author,\n                    reply_parent=next((v.reply_parent for v in loaded_items\n                        if v.platform == item.platform and v.room == item.room), None),\n                    urls=tuple(dict.fromkeys(u for v in loaded_items for u in v.urls)),\n                    accounts=tuple(dict.fromkeys(a for v in loaded_items for a in v.accounts)),\n                    faces=tuple(dict.fromkeys(p for v in loaded_items for p in v.faces)),\n                    mentions=tuple(dict.fromkeys(p for v in [item, *loaded_items]\n                        for p in (v.author, *v.mentions, *v.faces) if p)), snapshot=item.snapshot)\n",
@@ -26,12 +19,5 @@
     "old": "        if scan_identifiers(state.graph_text, content_checks=self.content_checks):\n            # A withheld block contributes nothing: its keys and its correction\n            # catalogue are withheld with it.\n            state.graph_text = \"\"\n            shown_keys.clear()\n            shown_relations.clear()\n            self.metrics.inc(\"nora_errors_total\", stage=\"wake_prefetch\")",
     "new": "        # Previous behavior: graph preview was not screened.",
     "target": "tests/unit/test_cognition_session_runner.py::test_identifier_graph_node_is_dropped_from_wake_input"
-  },
-  {
-    "name": "prefetch overlaps remaining context reads",
-    "file": "nora/engagement/context.py",
-    "old": "        async def transcript_and_prefetch() -> Any:\n            transcript, character, profiles = await self._recent_with_character(msg, ref)\n            prefetch = await self._prefetch(msg, ref, transcript)\n            return transcript, character, profiles, prefetch\n\n        (\n            ((transcript, character, profiles, prefetch),\n             card, tagger_card, notes,\n             (source_events, source_objects, source_failed,\n              source_events_more, source_objects_more)),\n            presence,\n            culture,\n            (unit_culture, self_account, lessons),\n            (computer, documents, subagents, memos),\n            shared,\n        ) = await asyncio.gather(\n            asyncio.gather(\n                transcript_and_prefetch(),\n                self._peer_card(ref, msg),\n                self._recall_tagger(ref, msg),\n                self._notes(msg),\n                self._observation_reads(msg),\n            ),\n            self._presence(msg),\n            self._culture(msg),\n            asyncio.gather(\n                self._unit_culture(msg), self._self_account(msg), self._lessons(msg),\n            ),\n            asyncio.gather(\n                self._computer(msg),\n                self._documents(msg, ref),\n                self._subagents(msg, ref),\n                self._memos(msg),\n            ),\n            self._shared(msg, ref),\n        )\n",
-    "new": "        async def transcript_and_prefetch() -> Any:\n            transcript, character, profiles = await self._recent_with_character(msg, ref)\n            prefetch = None\n            return transcript, character, profiles, prefetch\n\n        (\n            ((transcript, character, profiles, prefetch),\n             card, tagger_card, notes,\n             (source_events, source_objects, source_failed,\n              source_events_more, source_objects_more)),\n            presence,\n            culture,\n            (unit_culture, self_account, lessons),\n            (computer, documents, subagents, memos),\n            shared,\n        ) = await asyncio.gather(\n            asyncio.gather(\n                transcript_and_prefetch(),\n                self._peer_card(ref, msg),\n                self._recall_tagger(ref, msg),\n                self._notes(msg),\n                self._observation_reads(msg),\n            ),\n            self._presence(msg),\n            self._culture(msg),\n            asyncio.gather(\n                self._unit_culture(msg), self._self_account(msg), self._lessons(msg),\n            ),\n            asyncio.gather(\n                self._computer(msg),\n                self._documents(msg, ref),\n                self._subagents(msg, ref),\n                self._memos(msg),\n            ),\n            self._shared(msg, ref),\n        )\n        prefetch = await self._prefetch(msg, ref, transcript)\n",
-    "target": "tests/unit/test_memory_prefetch.py::test_slow_documents_do_not_delay_prefetch_start"
   }
 ]

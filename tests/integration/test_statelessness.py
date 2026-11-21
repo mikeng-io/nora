@@ -15,7 +15,7 @@ async def test_two_tags_produce_two_independent_invocations(harness_factory):
 
     assert h.sink.texts == ["first", "second"]
     assert h.agents_constructed == 2
-    assert all(len(pf) == 3 for pf in h.prefills)     # no carry-over into agent.messages
+    assert all(len(pf) == 2 for pf in h.prefills)     # no carry-over into agent.messages
 
 
 async def test_restart_statelessness(harness_factory):
@@ -30,7 +30,7 @@ async def test_restart_statelessness(harness_factory):
 
     assert h2.sink.texts == ["after"]
     # the second agent still sees the first exchange, because it came from the database
-    transcript = h2.prefills[-1][1]["content"][0]["text"]
+    transcript = h2.last_model_input
     assert "before" in transcript
 
 

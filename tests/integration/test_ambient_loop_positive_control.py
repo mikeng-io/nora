@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -284,15 +284,8 @@ async def _drive(tmp_path: Path, engine: AsyncEngine) -> _Journey:
         transcript_limit=cfg.relevance_gate.transcript_rows,
     )
     debrief_client = _ScriptedDebriefClient()
-    standing_wiring = debrief.Wiring(
-        store=standing_store,
-        client=debrief_client, objective=shipped_objectives(), record_store=audit,
-        max_chars=cfg.standing.max_chars, fold_batch=cfg.standing.fold_batch,
-        timeout_seconds=cfg.standing.timeout_seconds,
-        store_timeout_seconds=cfg.standing.store_timeout_seconds,
-    )
     debrief_wiring = build_graph_debrief(
-        memory_wire, standing_wiring, cfg, engine, access,
+        memory_wire, shipped_objectives(), cfg, engine, access,
         lineage_policy(cfg, policy=policy, persons=persons, access=access),
         persons, policy, doctrine_store, cfg.content_checks.enabled,
         # Graph bounds compare against Postgres assertion time.
@@ -304,7 +297,7 @@ async def _drive(tmp_path: Path, engine: AsyncEngine) -> _Journey:
         access=access, room_policy=policy,
         doctrine_store=doctrine_store, runner=tag_runner, metrics=metrics,
         notes=note_store, standing=standing_store,
-        debrief_wiring=debrief_wiring,
+        debrief_wiring=replace(debrief_wiring, client=debrief_client),
         extra_engage_policies=(RelevanceGatePolicy(policy),),
         participation_runner=participation_runner,
         participation_clock=clock.monotonic,

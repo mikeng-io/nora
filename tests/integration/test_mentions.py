@@ -45,7 +45,7 @@ def _reply(text="ok"):
 
 
 def _transcript(h) -> str:
-    return h.last_prefill[1]["content"][0]["text"]
+    return h.last_model_input
 
 
 async def test_a_stored_mention_renders_the_persons_name(harness_factory):

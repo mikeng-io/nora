@@ -29,6 +29,7 @@ DOCTRINE_DIR = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 # so it can never leak into a turn she reads. A file quietly gaining or
 # losing an audience is the failure this column exists to catch.
 EXPECTED = {
+    "engagement": ("constraint", 37, ("tag", "participation")),
     # `proactive` (DEC-162) joins every
     # occasion-neutral file: a proactive act turn is an offered floor, Nora's
     # own earlier intention put back to her, and `ProactiveHeader` says so.
@@ -72,13 +73,9 @@ EXPECTED = {
 }
 
 
-# section name -> (scope folder, file stem): the file is
-# `nora/doctrine/<folder>/<stem>.md`. `tests/architecture/test_doctrine_scope_
-# folders.py` pins the folder -> allowed-audience table this mirrors; this dict
-# only needs to resolve a real path. The stem is the name everywhere except
-# `public/` and `rooms/constraints.md`, whose files drop the `public-` and
-# `room-` prefix because the folder says it.
+# Map each unique doctrine section to its file.
 _SCOPE_FOLDER = {
+    "engagement": ("rooms", "engagement"),
     "identity": ("core", "identity"), "constraints": ("core", "constraints"),
     "belonging": ("rooms", "belonging"), "voice": ("rooms", "voice"),
     "conduct": ("rooms", "conduct"),
@@ -128,7 +125,7 @@ def test_each_file_has_the_expected_name_kind_order_and_audience(name, kind, ord
 def test_the_shipped_doctrine_assembles_in_strict_mode():
     doctrine = _shipped().get()
     assert [s.name for s in doctrine.sections] == \
-        ["identity", "belonging", "voice", "conduct", "pictures", "constraints",
+        ["identity", "belonging", "voice", "conduct", "engagement", "pictures", "constraints",
          "room-constraints"]
 
 

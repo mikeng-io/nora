@@ -58,9 +58,9 @@ AUTHORED = (
 # four parameters over three distinct assemblies — not four independent checks.
 # They stay separate so a divergence between them is caught per audience.
 HER_AUDIENCES: dict[str, tuple[str, ...]] = {
-    "tag": AUTHORED,
+    "tag": (*AUTHORED, "engagement"),
     "heartbeat": AUTHORED,
-    "participation": (*AUTHORED, "participation-conduct"),
+    "participation": (*AUTHORED, "participation-conduct", "engagement"),
     "proactive": AUTHORED,
     # The public summons: who she is and the hard
     # rules from core/, and the public/ files — and nothing written for a room.
