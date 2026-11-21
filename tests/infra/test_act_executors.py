@@ -20,7 +20,8 @@ from nora.domain.audience import ONE_TIME_CODE
 from nora.domain.models import ConversationTarget, DeliveryStatus, NormalizedMessage, TranscriptRow
 from nora.domain.ports import LaunchRequest, OutboundQuote, ReactionResult
 from nora.engagement.stages.indicate import ACK, begin
-from nora.infra.computer.browser import CdpConnection, connect_browser_cdp
+from nora.infra.computer.browser import BrowserPage, CdpConnection, connect_browser_cdp
+from nora.infra.computer.browser_retrieval import RetrievalAction, dispatch
 from nora.infra.computer.client import ComputerdRuntime
 from nora.infra.computer.lifecycle import HostLifecycleClient
 from nora.infra.computer.manager import ScopeBrowserManager
@@ -368,6 +369,44 @@ async def test_computer_and_browser_executors(acts, executor, monkeypatch):
                 assert isinstance(cdp, CdpConnection)
     wire.assert_awaited_once()
     await _recorded(engine, executor)
+
+
+async def test_web_browse_dispatch_records_a_browser_mutation(acts, monkeypatch):
+    envelope, engine = acts
+    stopped = asyncio.Event()
+    socket = SimpleNamespace(close=AsyncMock(), receive=stopped.wait)
+    client = CdpConnection(socket, effects=EffectRecorder(envelope), scope="fixture")
+    calls: list[str] = []
+
+    async def wire(method, params=None, *, session_id=None, wait_s=0):
+        calls.append(method)
+        if method == "Page.getFrameTree":
+            moved = "Runtime.callFunctionOn" in calls
+            return {"frameTree": {"frame": {
+                "id": "fixture-frame", "loaderId": "L2" if moved else "L1",
+            }}}
+        if method == "Page.createIsolatedWorld":
+            return {"executionContextId": 7}
+        if method == "DOM.resolveNode":
+            return {"object": {"objectId": "fixture-object"}}
+        if method == "Runtime.callFunctionOn":
+            return {"result": {"value": True}}
+        if method == "Runtime.evaluate":
+            return {"result": {"value": "complete"}}
+        raise AssertionError(f"unexpected CDP call {method}")
+
+    monkeypatch.setattr(client, "_request", wire)
+    page = BrowserPage(cdp=client, session_id="fixture-session")
+    page.refs["e1"] = 1
+    try:
+        with act_pass(AUTHORITY):
+            assert await dispatch(
+                page, RetrievalAction("e1", "Click fixture", ["button", "fixture", "", []]),
+            )
+        assert "Runtime.callFunctionOn" in calls
+        await _recorded(engine, "browser.mutation")
+    finally:
+        await client.close()
 
 
 async def test_subagent_launch_executor(acts):
