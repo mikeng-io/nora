@@ -306,24 +306,24 @@ cases:
     metadata: {tools: [computer_read], not_tools: [note_read, web_fetch]}
 
   # --- the scoped computer's own browser verbs ---------------------------------
-  # `computer_browse`/`computer_capture`/`computer_export` are the scoped
+  # `web_browse`/`computer_capture`/`computer_export` are the scoped
   # computer's surface: the same anchored room, the case asks for a page the
   # model must reach for, a picture of the tab it owns, and a file kept out.
   # With [computer.scoped] off every draw answers unavailable — valid on both
   # arms; on, they are the model-facing journey the tools exist for.
-  - name: route_computer_browse_a_page
+  - name: route_web_browse_a_page
     entry: tag
     expect: reply
     mention: true
     input: 去 https://example.com 撳入「More information」條連結，話我知跳咗去邊一頁
-    metadata: {tools: [computer_browse], not_tools: [web_fetch, computer_run]}
+    metadata: {tools: [web_browse], not_tools: [web_fetch, computer_run]}
     snapshot: *room_a
   - name: route_computer_capture_the_page
     entry: tag
     expect: reply
     mention: true
     input: screenshot 一下我頭先開嗰頁，影低俾我睇
-    metadata: {tools: [computer_capture], not_tools: [computer_browse, computer_run]}
+    metadata: {tools: [computer_capture], not_tools: [web_browse, computer_run]}
     snapshot: *room_a
   - name: route_computer_export_keep_file
     entry: tag
@@ -339,15 +339,15 @@ cases:
   # the owner handle from browse's reply into capture's `task` input; the
   # grader verifies the sequence ran, the digest/audit chain stays the
   # deterministic guest test's proof, not a routing corpus's.
-  - name: route_computer_browse_capture_export_journey
+  - name: route_web_browse_capture_export_journey
     entry: tag
     expect: reply
     mention: true
     input: 去 https://example.com，開完個頁影低佢，跟住 export 俾我 keep 住
     metadata:
-      tools: [computer_browse]
-      required_tools: [computer_browse, computer_capture, computer_export]
-      before: {computer_browse: [computer_capture], computer_capture: [computer_export]}
+      tools: [web_browse]
+      required_tools: [web_browse, computer_capture, computer_export]
+      before: {web_browse: [computer_capture], computer_capture: [computer_export]}
       journey: true
       not_tools: [web_fetch, computer_run]
     snapshot: *room_a
@@ -365,7 +365,15 @@ cases:
     expect: reply
     mention: true
     input: 睇下呢頁講咩，簡單講俾我知 https://en.wikipedia.org/wiki/Victoria_Harbour
-    metadata: {tools: [web_fetch], not_tools: [computer_run, computer_browse]}
+    metadata: {tools: [web_fetch], not_tools: [computer_run, web_browse]}
+    snapshot: *room_a
+
+  - name: route_web_browse_interactive_evidence
+    entry: tag
+    expect: reply
+    mention: true
+    input: On https://offers.example.org/item, select the Wan Chai branch and check whether the page publishes stock.
+    metadata: {tools: [web_browse], not_tools: [web_fetch, web_search, computer_run]}
     snapshot: *room_a
 
   # file_fetch (design/external-files/00-design.md §3, S3): a shared document, sheet or
@@ -427,24 +435,24 @@ cases:
     metadata: {tools: [web_fetch], not_tools: [file_fetch]}
     snapshot: *room_a
 
-  # computer_browse (design/browser-runtime/browser.md, ADR 0022): a task that
+  # web_browse (design/browser-runtime/browser.md, ADR 0022): a task that
   # needs a page operated, not read. Offered only under `[computer.browse]`
   # enabled, so these measure only an arm whose deployment config has it on;
   # the control above keeps a plain link with web_fetch.
-  - name: route_computer_browse_search_box
+  - name: route_web_browse_search_box
     entry: tag
     expect: reply
     mention: true
     input: 去 Wikipedia 用佢個搜尋框搵「維多利亞港」，入咗篇文之後話我知面積幾大
-    metadata: {tools: [computer_browse], not_tools: [web_search, computer_run]}
+    metadata: {tools: [web_browse], not_tools: [web_search, computer_run]}
     snapshot: *room_a
 
-  - name: route_computer_browse_click_through
+  - name: route_web_browse_click_through
     entry: tag
     expect: reply
     mention: true
     input: 喺 https://www.timeanddate.com/worldclock/ 度撳入東京嗰格，睇下而家東京幾點同埋係咪夏令時間
-    metadata: {tools: [computer_browse], not_tools: [computer_run]}
+    metadata: {tools: [web_browse], not_tools: [computer_run]}
     snapshot: *room_a
 
   - name: route_generate_image_not_the_computer
@@ -748,7 +756,7 @@ cases:
     expect: reply
     mention: true
     input: 幫我search下iPhone 17 Pro香港幾錢
-    metadata: {tools: [web_search]}
+    metadata: {tools: [web_search], not_tools: [web_browse]}
     snapshot: *room_a
 
   # --- per-network social reads (design/instagram-adoption/social.md) -------

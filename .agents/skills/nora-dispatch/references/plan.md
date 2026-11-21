@@ -11,7 +11,7 @@ The plan lists units. Each unit states:
 |---|---|
 | items | the Done-when items it addresses, each with its named check |
 | write set | the paths it may change, as directories or globs |
-| base | the integration head, or the branch of the unit it stacks on |
+| base | the integration head, or the branch of the unit it stacks on, plus the native stack number it joins |
 | side effects | anything outside the repository it touches: hosts, accounts, paid calls; "none" is valid |
 | rollback | how its effect is undone: reverting the PR, a config flip or a backup |
 | worker | the builder or the orchestrator, by the policy in `ORCHESTRATION.md` |
@@ -23,7 +23,8 @@ addresses is a plan defect.
 
 - Units whose write sets overlap are sequenced, never run at the same time.
 - A unit that depends on another stacks as a PR on that unit's branch, so both
-  progress without waiting for a merge (`nora-land/reference.md` «Stacked delivery»).
+  progress without waiting for a merge. The PR joins the outcome's native stack:
+  a base branch alone is not membership (`nora-land/reference.md` «Stacked delivery»).
 - Independent units branch from the integration head and may run in parallel,
   within the brief's builder limit.
 - A shared seam with another active outcome is agreed with its owner first

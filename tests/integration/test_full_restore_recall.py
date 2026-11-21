@@ -28,7 +28,6 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 
-from evals.backbone import _close
 from evals.recall import recall_facts
 from nora.domain.media_join import HANDLE_CHARS
 from nora.infra.sql import create_sql_engine
@@ -39,13 +38,12 @@ from nora.subject import (
     Message,
     NoteSeed,
     SubjectSpec,
-    obtain,
     restored_room,
     sandbox_as_of,
 )
 from nora.subject.evidence import EvidenceUnavailableError
 from tests.infra.rollup_fixtures import insert_rollup_row
-from tests.sandbox_fixtures import ROOM, seed_source
+from tests.sandbox_fixtures import ROOM, offline_subject, seed_source
 
 MINUTE = 60_000
 DAY = 86_400_000
@@ -169,77 +167,76 @@ async def test_a_full_restore_hands_the_drive_an_identity_map_and_the_evidence_a
         ), {"ts": at_ms + MINUTE})).scalar_one())
 
     at = datetime.fromtimestamp(at_ms / 1000, tz=UTC)
-    async with sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, _report):
-        subject = await obtain(_spec(url, tmp_path, at_ms))
-        try:
-            seeded = await restored_room(subject, source_url=clean_pg_url, before_ms=at_ms)
-            assert seeded.now_ms == at_ms
-            assert seeded.rows == {i: i for i in seed["ids"]}, "ids are copied verbatim"
-            assert late not in seeded.rows
-            shown = "\n".join(seeded.transcript)
-            assert READING in shown, "the image row carries its restored reading"
+    async with (
+        sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, _report),
+        offline_subject(_spec(url, tmp_path, at_ms)) as subject,
+    ):
+        seeded = await restored_room(subject, source_url=clean_pg_url, before_ms=at_ms)
+        assert seeded.now_ms == at_ms
+        assert seeded.rows == {i: i for i in seed["ids"]}, "ids are copied verbatim"
+        assert late not in seeded.rows
+        shown = "\n".join(seeded.transcript)
+        assert READING in shown, "the image row carries its restored reading"
 
-            # THE TURN WRITES: a revision recorded now, long after the instant.
-            sandbox = create_sql_engine(url)
-            try:
-                notes = SqlNoteStore(sandbox)
-                [note] = await notes.standing(unit=subject.unit)
-                await notes.append_revision(
-                    unit=subject.unit, note_id=note.id, body=LATER,
-                    parent_revision_id=note.head_revision_id, established_by="turn",
+        # THE TURN WRITES: a revision recorded now, long after the instant.
+        sandbox = create_sql_engine(url)
+        try:
+            notes = SqlNoteStore(sandbox)
+            [note] = await notes.standing(unit=subject.unit)
+            await notes.append_revision(
+                unit=subject.unit, note_id=note.id, body=LATER,
+                parent_revision_id=note.head_revision_id, established_by="turn",
+                now_ms=at_ms,
+            )
+        finally:
+            await sandbox.dispose()
+
+        md = {"criteria": ["recall_grounded"], "evidence": {
+            "messages": [seed["photo"]],
+            "media": [_photo_sha(1)],
+            "notes": [seed["note"]],
+            "rollup_outings": [seed["inside"]],
+            "rollup_window_days": 7,
+        }}
+        facts = await recall_facts(subject, md, now_ms=at_ms)
+        assert facts is not None
+        assert READING in facts
+        assert "(current) written" in facts and PLAN in facts
+        assert LATER not in facts, "a revision the turn wrote is not evidence"
+        assert "Miles" in facts and "miles_novak" not in facts
+        assert "someone outside this group's roster" in facts
+        assert PLACE in facts and str(LAT) not in facts, "no coordinate reaches the judge"
+        window = facts.split("days before the moment:")[1]
+        assert f"outing {seed['inside']}:" in window
+        assert f"outing {seed['outside']}:" not in window
+        assert f"outing {seed['foreign']}:" not in window
+
+        # Not a recall case: nothing is read.
+        assert await recall_facts(subject, {"criteria": ["presence"]}, now_ms=at_ms) is None
+        # FAIL-CLOSED: a record the sandbox did not hold at the instant, and
+        # one outside the case's unit.
+        for evidence in (
+            {"messages": [late]},
+            {"notes": ["00000000"]},
+            {"rollup_outings": [seed["foreign"]]},
+        ):
+            with pytest.raises(EvidenceUnavailableError):
+                await recall_facts(
+                    subject, {"criteria": ["recall_grounded"], "evidence": evidence},
                     now_ms=at_ms,
                 )
-            finally:
-                await sandbox.dispose()
 
-            md = {"criteria": ["recall_grounded"], "evidence": {
-                "messages": [seed["photo"]],
-                "media": [_photo_sha(1)],
-                "notes": [seed["note"]],
-                "rollup_outings": [seed["inside"]],
-                "rollup_window_days": 7,
-            }}
-            facts = await recall_facts(subject, md, now_ms=at_ms)
-            assert facts is not None
-            assert READING in facts
-            assert "(current) written" in facts and PLAN in facts
-            assert LATER not in facts, "a revision the turn wrote is not evidence"
-            assert "Miles" in facts and "miles_novak" not in facts
-            assert "someone outside this group's roster" in facts
-            assert PLACE in facts and str(LAT) not in facts, "no coordinate reaches the judge"
-            window = facts.split("days before the moment:")[1]
-            assert f"outing {seed['inside']}:" in window
-            assert f"outing {seed['outside']}:" not in window
-            assert f"outing {seed['foreign']}:" not in window
-
-            # Not a recall case: nothing is read.
-            assert await recall_facts(subject, {"criteria": ["presence"]}, now_ms=at_ms) is None
-            # FAIL-CLOSED: a record the sandbox did not hold at the instant, and
-            # one outside the case's unit.
-            for evidence in (
-                {"messages": [late]},
-                {"notes": ["00000000"]},
-                {"rollup_outings": [seed["foreign"]]},
-            ):
-                with pytest.raises(EvidenceUnavailableError):
-                    await recall_facts(
-                        subject, {"criteria": ["recall_grounded"], "evidence": evidence},
-                        now_ms=at_ms,
-                    )
-
-            # A restore that lost a row is not an identity map: refused.
-            sandbox = create_sql_engine(url)
-            try:
-                async with sandbox.begin() as conn:
-                    await conn.execute(
-                        sa.text("DELETE FROM messages WHERE id = :i"), {"i": seed["ids"][0]},
-                    )
-            finally:
-                await sandbox.dispose()
-            with pytest.raises(ValueError, match="identity"):
-                await restored_room(subject, source_url=clean_pg_url, before_ms=at_ms)
+        # A restore that lost a row is not an identity map: refused.
+        sandbox = create_sql_engine(url)
+        try:
+            async with sandbox.begin() as conn:
+                await conn.execute(
+                    sa.text("DELETE FROM messages WHERE id = :i"), {"i": seed["ids"][0]},
+                )
         finally:
-            await _close(subject)
+            await sandbox.dispose()
+        with pytest.raises(ValueError, match="identity"):
+            await restored_room(subject, source_url=clean_pg_url, before_ms=at_ms)
 
 
 @pytest.mark.asyncio
@@ -251,20 +248,14 @@ async def test_a_full_restore_refuses_a_room_that_held_nothing_and_a_clock_off_t
     at_ms = seed["at_ms"]
     at = datetime.fromtimestamp(at_ms / 1000, tz=UTC)
     async with sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, _report):
-        empty = await obtain(_spec(url, tmp_path, at_ms, room=("signal", "g2")))
-        try:
+        async with offline_subject(_spec(url, tmp_path, at_ms, room=("signal", "g2"))) as empty:
             with pytest.raises(ValueError, match="held no row"):
                 await restored_room(empty, source_url=clean_pg_url, before_ms=at_ms)
-        finally:
-            await _close(empty)
-        subject = await obtain(_spec(url, tmp_path, at_ms))
-        try:
+        async with offline_subject(_spec(url, tmp_path, at_ms)) as subject:
             with pytest.raises(ValueError, match="clock"):
                 await restored_room(subject, source_url=clean_pg_url, before_ms=at_ms - 1)
             with pytest.raises(ValueError, match="own database"):
                 await restored_room(subject, source_url=url, before_ms=at_ms)
-        finally:
-            await _close(subject)
 
 
 def _uuid(head: str, tail: int) -> str:
@@ -343,41 +334,40 @@ async def test_every_scope_and_screen_on_the_evidence_holds(
     at_ms = seed["at_ms"]
     events = seed["events"]
     at = datetime.fromtimestamp(at_ms / 1000, tz=UTC)
-    async with sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, _report):
-        subject = await obtain(_spec(url, tmp_path, at_ms))
-        try:
-            async def facts(evidence: dict[str, Any]) -> str:
-                out = await recall_facts(
-                    subject, {"criteria": ["recall_grounded"], "evidence": evidence},
-                    now_ms=at_ms,
-                )
-                assert out is not None
-                return out
+    async with (
+        sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, _report),
+        offline_subject(_spec(url, tmp_path, at_ms)) as subject,
+    ):
+        async def facts(evidence: dict[str, Any]) -> str:
+            out = await recall_facts(
+                subject, {"criteria": ["recall_grounded"], "evidence": evidence},
+                now_ms=at_ms,
+            )
+            assert out is not None
+            return out
 
-            # Held, in scope: an event in the room and one unit-wide, each in
-            # the deployment's timezone with its distance, never a raw ISO.
-            shown = await facts({"events": [events["in_room"][:8], events["in_unit"][:8]]})
-            stamp = r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} \(\w{3}\)"
-            assert len(re.findall(
-                rf"- event «dinner», confirmed, when {stamp}, [^,]+ after she was asked "
-                rf"to {stamp}, [^,]+ after she was asked, at no venue set, with Miles",
-                shown,
-            )) == 2, shown
-            assert "+00:00" not in shown
+        # Held, in scope: an event in the room and one unit-wide, each in
+        # the deployment's timezone with its distance, never a raw ISO.
+        shown = await facts({"events": [events["in_room"][:8], events["in_unit"][:8]]})
+        stamp = r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} \(\w{3}\)"
+        assert len(re.findall(
+            rf"- event «dinner», confirmed, when {stamp}, [^,]+ after she was asked "
+            rf"to {stamp}, [^,]+ after she was asked, at no venue set, with Miles",
+            shown,
+        )) == 2, shown
+        assert "+00:00" not in shown
 
-            withheld = await facts({"media": ["c" * 64]})
-            assert "is withheld here" in withheld and seed["secret"] not in withheld
+        withheld = await facts({"media": ["c" * 64]})
+        assert "is withheld here" in withheld and seed["secret"] not in withheld
 
-            for evidence, why in (
-                ({"messages": [seed["other_room"]]}, "own room"),
-                ({"events": [events["outside"][:8]]}, "neither in the case's room"),
-                ({"events": ["e4e4e4e4"]}, "2 events rows"),
-                ({"rollup_outings": [seed["stale"]]}, "build"),
-            ):
-                with pytest.raises(EvidenceUnavailableError, match=why):
-                    await facts(evidence)
-        finally:
-            await _close(subject)
+        for evidence, why in (
+            ({"messages": [seed["other_room"]]}, "own room"),
+            ({"events": [events["outside"][:8]]}, "neither in the case's room"),
+            ({"events": ["e4e4e4e4"]}, "2 events rows"),
+            ({"rollup_outings": [seed["stale"]]}, "build"),
+        ):
+            with pytest.raises(EvidenceUnavailableError, match=why):
+                await facts(evidence)
 
 
 @pytest.mark.asyncio
@@ -397,30 +387,29 @@ async def test_a_rollup_with_two_current_builds_answers_no_outing(
     seed = await _seed(clean_pg_url, pg_template, engine, tmp_path)
     at_ms = seed["at_ms"]
     at = datetime.fromtimestamp(at_ms / 1000, tz=UTC)
-    async with sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, _report):
-        subject = await obtain(_spec(url, tmp_path, at_ms))
+    async with (
+        sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, _report),
+        offline_subject(_spec(url, tmp_path, at_ms)) as subject,
+    ):
+        for evidence in ({"rollup_window_days": 7}, {"rollup_outings": [seed["inside"]]}):
+            assert await recall_facts(
+                subject, {"criteria": ["recall_grounded"], "evidence": evidence},
+                now_ms=at_ms,
+            ), "one current build: read"
+        sandbox = create_sql_engine(url)
         try:
-            for evidence in ({"rollup_window_days": 7}, {"rollup_outings": [seed["inside"]]}):
-                assert await recall_facts(
+            async with sandbox.begin() as conn:
+                await conn.execute(sa.text(
+                    "INSERT INTO row_history (table_name, row_key, op, image, recorded_at) "
+                    "VALUES ('rollup_build', '{\"id\": 999999}'::jsonb, 'backfill', "
+                    "jsonb_build_object('id', 999999, 'status', 'current'), "
+                    "CAST(:at AS timestamptz) - interval '1 minute')"
+                ), {"at": at})
+        finally:
+            await sandbox.dispose()
+        for evidence in ({"rollup_window_days": 7}, {"rollup_outings": [seed["inside"]]}):
+            with pytest.raises(EvidenceUnavailableError, match="2 Rollup builds"):
+                await recall_facts(
                     subject, {"criteria": ["recall_grounded"], "evidence": evidence},
                     now_ms=at_ms,
-                ), "one current build: read"
-            sandbox = create_sql_engine(url)
-            try:
-                async with sandbox.begin() as conn:
-                    await conn.execute(sa.text(
-                        "INSERT INTO row_history (table_name, row_key, op, image, recorded_at) "
-                        "VALUES ('rollup_build', '{\"id\": 999999}'::jsonb, 'backfill', "
-                        "jsonb_build_object('id', 999999, 'status', 'current'), "
-                        "CAST(:at AS timestamptz) - interval '1 minute')"
-                    ), {"at": at})
-            finally:
-                await sandbox.dispose()
-            for evidence in ({"rollup_window_days": 7}, {"rollup_outings": [seed["inside"]]}):
-                with pytest.raises(EvidenceUnavailableError, match="2 Rollup builds"):
-                    await recall_facts(
-                        subject, {"criteria": ["recall_grounded"], "evidence": evidence},
-                        now_ms=at_ms,
-                    )
-        finally:
-            await _close(subject)
+                )
