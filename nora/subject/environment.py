@@ -73,6 +73,7 @@ class IsolatedServices:
         self._directory: TemporaryDirectory[str] | None = None
         self._patches = contextlib.ExitStack()
         self._active = False
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._addresses: set[tuple[str, int]] = set()
         self._database_alias: tuple[str, int] | None = None
         self._database_addresses: set[str] = set()
@@ -230,10 +231,10 @@ class IsolatedServices:
     async def __aenter__(self) -> IsolatedServices:
         if self._active or self._runners:
             raise RuntimeError("an evaluation environment cannot be re-entered")
-        if getattr(socket.socket.connect, "_nora_eval_guard", False):
-            holder = getattr(socket.socket.connect, "_nora_eval_case", "")
+        holder = getattr(socket.socket.connect, "_nora_eval_environment", None)
+        if holder is not None and not holder._released():
             raise RuntimeError("evaluation cases must not share a network context"
-                               + (f"; held by {holder}" if holder else ""))
+                               + (f"; held by {holder._case}" if holder._case else ""))
         try:
             self._case = os.environ.get("PYTEST_CURRENT_TEST", "")
             # OpenAI's SDK lazily reads platform.platform() for its user-agent.
@@ -280,6 +281,7 @@ class IsolatedServices:
                 # Real resolution, before the guard installs: the declared
                 # upstream's addresses are pinned for the case's lifetime.
                 self._egress = self._gateway.resolve()
+            self._loop = asyncio.get_running_loop()
             self._guard_network()
             self._before_tasks = asyncio.all_tasks()
             self._active = True
@@ -321,13 +323,20 @@ class IsolatedServices:
                 if b"ready to accept connections" in line.lower():
                     break
 
+    def _released(self) -> bool:
+        """True when the guard no longer protects: unwound, or its owner loop
+        is gone — a teardown abandoned mid-suspension on a dead loop cannot
+        protect anything, and its flag must not poison the process."""
+        return (not self._active
+                or (self._loop is not None and self._loop.is_closed()))
+
     def _guard_network(self) -> None:
         # ponytail: one case per process, as SDK max_workers=1 requires;
         # parallel case execution needs separate worker processes.
-        if getattr(socket.socket.connect, "_nora_eval_guard", False):
-            holder = getattr(socket.socket.connect, "_nora_eval_case", "")
+        holder = getattr(socket.socket.connect, "_nora_eval_environment", None)
+        if holder is not None and not holder._released():
             raise RuntimeError("evaluation cases must not share a network context"
-                               + (f"; held by {holder}" if holder else ""))
+                               + (f"; held by {holder._case}" if holder._case else ""))
 
         def allowed(address: Any) -> bool:
             if isinstance(address, tuple) and len(address) >= 2:
@@ -348,6 +357,8 @@ class IsolatedServices:
         original_lookup = socket.getaddrinfo
 
         def lookup(host: Any, port: Any, *args: Any, **kwargs: Any) -> Any:
+            if self._released():
+                return original_lookup(host, port, *args, **kwargs)
             if self._database_alias == (host, port):
                 result = []
                 for address in sorted(self._database_addresses):
@@ -389,7 +400,11 @@ class IsolatedServices:
         }))
         self._guard_requests()
 
+        original_popen_init = subprocess.Popen.__init__
+
         def subprocess_refused(*args: Any, **kwargs: Any) -> Any:
+            if self._released():
+                return original_popen_init(*args, **kwargs)
             refuse("subprocess")
 
         # SSH/browser/codec helpers otherwise escape the Python socket boundary.
@@ -399,6 +414,8 @@ class IsolatedServices:
 
             def connect(sock: socket.socket, address: Any, *args: Any,
                         _original: Any = original, **kwargs: Any) -> Any:
+                if self._released():
+                    return _original(sock, address, *args, **kwargs)
                 if not allowed(address):
                     refuse("connect")
                 return _original(sock, address, *args, **kwargs)
@@ -430,7 +447,8 @@ class IsolatedServices:
 
                 def send(sock: socket.socket, *args: Any,
                          _original: Any = original, **kwargs: Any) -> Any:
-                    check_connected(sock)
+                    if not self._released():
+                        check_connected(sock)
                     return _original(sock, *args, **kwargs)
 
                 self._patches.enter_context(patch.object(cls, name, send))
@@ -438,6 +456,8 @@ class IsolatedServices:
         original_sendto = socket.socket.sendto
 
         def sendto(sock: socket.socket, data: Any, *args: Any) -> Any:
+            if self._released():
+                return original_sendto(sock, data, *args)
             if not args or not allowed(args[-1]):
                 refuse("sendto")
             return original_sendto(sock, data, *args)
@@ -453,6 +473,8 @@ class IsolatedServices:
 
             async def request_async(client: Any, request: Any,
                                     _original: Any = original_async) -> Any:
+                if self._released():
+                    return await _original(client, request)
                 if self.owns(str(request.url)):
                     return await _original(client, request)
                 cause = await self._model_refusal_async(client, request)
@@ -467,6 +489,8 @@ class IsolatedServices:
 
             def request_sync(client: Any, request: Any,
                              _original: Any = original_sync) -> Any:
+                if self._released():
+                    return _original(client, request)
                 if self.owns(str(request.url)):
                     return _original(client, request)
                 cause = self._model_refusal(client, request)

@@ -87,3 +87,42 @@ async def test_a_close_that_never_finishes_still_releases_the_guard(
     assert subprocess.Popen.__init__ is popen_init
     with pytest.raises(TimeoutError):
         await exit_task
+
+
+def test_a_guard_abandoned_on_a_dead_loop_goes_inert() -> None:
+    """A teardown abandoned mid-suspension leaves the flag installed, but a
+    dead owner loop cannot protect anything: the next case must still
+    enter, and the zombie's closures must pass through, not refuse."""
+    connect, popen_init = socket.socket.connect, subprocess.Popen.__init__
+
+    async def suspend_mid_exit() -> tuple[IsolatedServices, Any, Any]:
+        environment = await _open()
+        held = asyncio.ensure_future(_uncancellable())
+        exit_coroutine = environment.__aexit__(None, None, None)
+        exit_coroutine.send(None)
+        return environment, exit_coroutine, held
+
+    loop = asyncio.new_event_loop()
+    environment, exit_coroutine, _held = loop.run_until_complete(suspend_mid_exit())
+    assert getattr(socket.socket.connect, "_nora_eval_guard", False)
+    loop.close()
+    try:
+        async def enter_and_exit() -> None:
+            later = await _open()
+            await later.__aexit__(None, None, None)
+
+        asyncio.run(enter_and_exit())
+        sock = socket.socket()
+        sock.settimeout(1)
+        try:
+            sock.connect(("127.0.0.1", 1))
+        except PermissionError:
+            pytest.fail("the dead owner's guard refused")
+        except OSError:
+            pass
+    finally:
+        exit_coroutine.close()
+        environment._unwind_guard()
+    assert socket.socket.connect is connect
+    assert subprocess.Popen.__init__ is popen_init
+    sock.close()
