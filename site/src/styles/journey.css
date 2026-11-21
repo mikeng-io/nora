@@ -237,7 +237,7 @@
   display: block;
 }
 
-.chat.live .msg.her:not(.own):not(.shown) .how {
+.chat.live .msg.her:not(.own) .how {
   display: inline;
 }
 
@@ -351,14 +351,27 @@
   display: none;
 }
 
+/* ahead of the paintings, the scene's still stands in */
+.stage-on.stage-waiting .beat.on::before,
+.stage-on.stage-waiting .beat.on .still {
+  display: block;
+}
+
 .stage-on .beat .copy {
   max-width: min(58vw, 60rem);
 }
 
+.stage-on .beat.on .display,
+.stage-on .beat.on .eyebrow,
+.stage-on .beat.on .lede,
 .stage-on .beat a,
 .stage-on .beat button,
 .stage-on .chat {
   pointer-events: auto;
+}
+
+.stage-on .beat.on .display {
+  user-select: text;
 }
 
 .stage-on .display .w {

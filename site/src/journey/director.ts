@@ -79,7 +79,7 @@ export class Director {
     const plate = s.plates[spot.layer];
     const h = (plate.geometry as THREE.PlaneGeometry).parameters.height * spot.height;
     this.nora.place(s.group, this.stage.at(plate, spot.feet[0], spot.feet[1], 0.03), h, hop);
-    this.stage.order(s.group, 0, [s.plates[s.plates.length - 1]]);
+    this.world.order(station);
   }
 
   run(id: SceneId, l: number, p: number, f: Frame, t: number): void {

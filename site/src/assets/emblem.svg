@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Nora">
+  <!-- Her five-petal Bauhinia clasp, with one thread leaving a petal and tying off: a promise held.
+       The project's emblem, never a stand-in for her face (DESIGN.md §2). Paper colours; NoraMark.astro recolours it for night. -->
+  <defs>
+    <path id="p" d="M50 50 C 40 43, 35 27, 43 17 C 47 12, 55 11, 59 16 C 66 25, 60 41, 50 50 Z"/>
+    <path id="v" d="M50 47 C 49 37, 49.5 27, 51 18"/>
+  </defs>
+  <g fill="#bb6954">
+    <use href="#p"/><use href="#p" transform="rotate(72 50 50)"/><use href="#p" transform="rotate(144 50 50)"/><use href="#p" transform="rotate(216 50 50)"/><use href="#p" transform="rotate(288 50 50)"/>
+  </g>
+  <g fill="none" stroke="#7a3a1d" stroke-width="1.6" stroke-linecap="round" opacity="0.55">
+    <use href="#v"/><use href="#v" transform="rotate(72 50 50)"/><use href="#v" transform="rotate(144 50 50)"/><use href="#v" transform="rotate(216 50 50)"/><use href="#v" transform="rotate(288 50 50)"/>
+  </g>
+  <circle cx="50" cy="50" r="5.2" fill="#7a3a1d"/>
+  <circle cx="50" cy="50" r="2" fill="#f4f1ea"/>
+  <path d="M66 70 C 75 80, 87 79, 92 69 C 95 62, 90 57, 85.5 61" fill="none" stroke="#af5321" stroke-width="2.6" stroke-linecap="round"/>
+  <circle cx="85.5" cy="61" r="2.2" fill="#af5321"/>
+</svg>

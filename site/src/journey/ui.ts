@@ -10,7 +10,8 @@ export class Ui {
   lit = 0;
   split = 0.5;
   private holding = false;
-  private lastPointer = -1;
+  private dragX = -1;
+  private dragging = false;
   private done = false;
   private readonly hold = $<HTMLButtonElement>("[data-hold]");
   private readonly cursor = $<HTMLElement>("[data-cursor]");
@@ -26,8 +27,15 @@ export class Ui {
     if (this.cursor && fine) document.documentElement.classList.add("own-cursor");
     addEventListener("pointermove", (e) => {
       if (this.cursor) this.cursor.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0)`;
-      this.lastPointer = e.clientX / innerWidth;
+      if (this.dragging) this.dragX = e.clientX / innerWidth;
     });
+    // the soulbound split is dragged: press, move, release
+    addEventListener("pointerdown", (e) => {
+      if (!this.splitEl?.classList.contains("on")) return;
+      this.dragging = true;
+      this.dragX = e.clientX / innerWidth;
+    });
+    for (const ev of ["pointerup", "pointercancel", "blur"]) addEventListener(ev, () => (this.dragging = false));
     if (this.hold) {
       const on = (e: Event) => {
         e.preventDefault();
@@ -89,7 +97,8 @@ export class Ui {
   splitFrame(active: boolean, l: number): number {
     if (this.splitEl) this.splitEl.classList.toggle("on", active);
     const auto = 0.78 - 0.3 * Math.min(1, l * 1.6);
-    const want = this.lastPointer >= 0 && active ? Math.min(0.92, Math.max(0.08, this.lastPointer)) : auto;
+    if (!active) this.dragX = -1;
+    const want = this.dragX >= 0 && active ? Math.min(0.92, Math.max(0.08, this.dragX)) : auto;
     this.split += (want - this.split) * 0.12;
     this.splitEl?.style.setProperty("--x", `${(this.split * 100).toFixed(2)}%`);
     return this.split;

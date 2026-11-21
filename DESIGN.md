@@ -158,7 +158,8 @@ clothing of the identity anchors. Mini is the ordinary representation.
 |---|---|---|
 | site, portal, chat, reactions, stickers, runtime self-images | **Mini Nora** | `assets/nora-canonical-self.png`, `assets/nora-character-reference-sheet.png` |
 | cinematic art: the site's world, social banner and icon | **Mini Nora**, dimensional soft materials in the Lingnan mountain-and-sea world | `assets/cinematic/mini-nora-master.png`, `assets/cinematic/README.md` |
-| small or square slots: favicon, PWA icon, avatar, notification | **Mini Nora**, cut-out, bare (§7) | `assets/nora-mini-icon.png` |
+| beside the wordmark; favicon, app icon, project avatar | **the clasp emblem** (below), not her | `site/src/assets/emblem.svg` |
+| where she appears as herself among people: a transcript, a member list | **Mini Nora**, cut-out (§7) | `assets/nora-mini-icon.png` |
 | her live form on the site | **Mini Nora**, a layered 2D rig (§6) | drawn from the canonical and cinematic sources |
 | adult illustration | **Adult Nora**, 2D anime | `assets/nora-human-bauhinia-reference.png` |
 | 3D modeling of either form | Meshy reference inputs; no validated mesh | `assets/modeling/bauhinia/v2/` |
@@ -175,7 +176,10 @@ Rules on every surface:
 - **Calm, slightly deadpan, never over-acted.** Every expression she makes is
   one of her character sheet's.
 - **Never logo-ise her.** No vector mark or monogram stands in for her face.
-  Too small for the cut-out, use the wordmark.
+  The project's mark is the **clasp emblem**: her five-petal Bauhinia clasp in
+  petal, with one copper thread leaving a petal and tying off (a promise held).
+  It stands for the project beside the NORA wordmark and in icon slots; it is
+  never drawn as her, given a face, or used where she speaks.
 - **Generated art of her** is made from the canonical and cinematic sources,
   checked by eye against the anchors, and kept with its prompt and references.
   A render that drifts is regenerated, never used.
@@ -369,9 +373,9 @@ real links to each scene.
 ### Nora in the UI
 - Among other people's round avatars (a transcript, a member list): the cut-out
   on a petal-wash disc, with a 2px petal ring while she is active.
-- Everywhere else the cut-out is bare: beside the wordmark, as the favicon, as
-  the PWA icon. A platform that forbids transparency gets a full-bleed paper
-  square with her inside it, never a circle.
+- Beside the wordmark, as the favicon and as the app icon: the clasp emblem,
+  never her cut-out. A platform that forbids transparency gets a full-bleed
+  paper square with the emblem inside it, never a circle.
 - Her words sit on petal wash; everyone else's on surface. Her presence dot is
   petal; other people's are their person hue.
 

@@ -3,12 +3,16 @@
 // morning. "How she knew" draws a copper thread from her answer to the very
 // lines it rests on (DESIGN.md §9; design/cognition: claims cite what was seen).
 // Without script the whole transcript is already on the page.
+//
+// The chat follows the scroll both ways: scrolling back past the questions
+// takes back what was asked, so the scene replays cleanly.
 export class Chat {
   private readonly root: HTMLElement | null;
   private readonly seed: HTMLElement[];
   private readonly own: HTMLElement | null;
   private readonly svg: SVGSVGElement | null;
-  private busy = false;
+  private timers: number[] = [];
+  private asked = false;
   onEvent: (kind: "ask" | "reply" | "own") => void = () => {};
 
   constructor() {
@@ -27,9 +31,8 @@ export class Chat {
   /** Lines arrive with scroll; her own message comes the next morning. */
   frame(active: boolean, l: number): void {
     if (!this.root) return;
+    if ((!active || l < 0.3) && this.asked) this.reset();
     this.seed.forEach((el, i) => el.classList.toggle("in", active && l > 0.08 + i * 0.045));
-    const log = this.root.querySelector<HTMLElement>(".log");
-    if (log && active) log.scrollTop = log.scrollHeight;
     this.root.querySelector("[data-asks]")?.classList.toggle("in", active && l > 0.3);
     const own = active && l > 0.68;
     if (this.own && own !== this.own.classList.contains("in")) {
@@ -37,28 +40,36 @@ export class Chat {
       this.root.querySelector("[data-morning]")?.classList.toggle("in", own);
       if (own) this.onEvent("own");
     }
+    const log = this.root.querySelector<HTMLElement>(".log");
+    if (log && active) log.scrollTop = log.scrollHeight;
     if (!active) this.clear();
   }
 
-  private async ask(b: HTMLButtonElement): Promise<void> {
-    if (this.busy || b.disabled || !this.root) return;
-    this.busy = true;
-    b.disabled = true;
+  private ask(b: HTMLButtonElement): void {
+    if (b.disabled || !this.root) return;
+    for (const x of this.root.querySelectorAll<HTMLButtonElement>("[data-ask]")) x.disabled = true;
+    this.asked = true;
     const id = b.dataset.ask!;
     this.root.querySelector(`[data-you="${id}"]`)?.classList.add("in");
     this.onEvent("ask");
     const typing = this.root.querySelector("[data-typing]");
     typing?.classList.add("in");
-    await new Promise((r) => setTimeout(r, 1100));
-    typing?.classList.remove("in");
-    const reply = this.root.querySelector<HTMLElement>(`[data-reply="${id}"]`);
-    reply?.classList.add("in");
-    this.onEvent("reply");
-    if (reply) setTimeout(() => this.how(reply), 600);
-    this.busy = false;
+    this.timers.push(
+      window.setTimeout(() => {
+        typing?.classList.remove("in");
+        const reply = this.root?.querySelector<HTMLElement>(`[data-reply="${id}"]`);
+        reply?.classList.add("in");
+        this.onEvent("reply");
+        if (reply) this.timers.push(window.setTimeout(() => this.how(reply), 600));
+        // the other question stays open
+        for (const x of this.root?.querySelectorAll<HTMLButtonElement>("[data-ask]") ?? []) {
+          if (!this.root?.querySelector(`[data-reply="${x.dataset.ask}"].in`)) x.disabled = false;
+        }
+      }, 1100),
+    );
   }
 
-  /** Draw her answer's threads back to the lines it rests on. */
+  /** Draw her answer's threads back to the lines it rests on. Can be opened again. */
   private how(reply: HTMLElement): void {
     if (!this.svg || !this.root) return;
     this.clear();
@@ -79,6 +90,17 @@ export class Chat {
       this.svg.appendChild(path);
     }
     reply.classList.add("shown");
+  }
+
+  /** Take back what was asked: questions open again, answers and threads gone. */
+  private reset(): void {
+    for (const t of this.timers) clearTimeout(t);
+    this.timers = [];
+    this.asked = false;
+    if (!this.root) return;
+    for (const el of this.root.querySelectorAll("[data-you], [data-reply], [data-typing]")) el.classList.remove("in", "shown");
+    for (const x of this.root.querySelectorAll<HTMLButtonElement>("[data-ask]")) x.disabled = false;
+    this.clear();
   }
 
   private clear(): void {

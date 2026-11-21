@@ -40,7 +40,8 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
   scrollTo(0, 0);
   const stage = new Stage(canvas);
   const words = (story.dataset.nodes ?? "").split("|").filter(Boolean);
-  const world = new World(stage, words);
+  const slips = JSON.parse(story.dataset.slips ?? "{}") as { path: string[]; lifted: string; traveller: string };
+  const world = new World(stage, words, slips);
   const [nora] = await Promise.all([Nora.create(noraCanvas, noraUrl), world.loadHero()]);
   const veil = new Veil(stage.camera, world.transit);
   const type = new Type(story);
@@ -48,7 +49,18 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
   const chat = new Chat();
   const director = new Director(stage, world, nora);
   let rest = false;
-  world.loadRest().then(() => (rest = true));
+  let failed = false;
+  world.loadRest().then(
+    () => (rest = true),
+    (e) => {
+      // a required painting failed: give the visitor the whole story as stills and words
+      console.error(e);
+      failed = true;
+      root.classList.remove("stage-on", "stage-loading", "stage-waiting");
+      nora.player.dispose({ release: true });
+      stage.renderer.dispose();
+    },
+  );
 
   ui.onLit = () => {
     nora.player.act("nod");
@@ -65,7 +77,7 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
 
   const lenis = new Lenis({ lerp: 0.08, wheelMultiplier: 0.85 });
   const max = () => document.documentElement.scrollHeight - innerHeight;
-  for (const a of document.querySelectorAll<HTMLAnchorElement>("[data-rail] a")) {
+  for (const a of document.querySelectorAll<HTMLAnchorElement>("a[data-scene]")) {
     a.addEventListener("click", (e) => {
       const s = SCENES.find((x) => x.id === a.dataset.scene);
       if (!s) return;
@@ -82,12 +94,15 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
   const t0 = last;
 
   const frame = (now: number) => {
+    if (failed) return lenis.destroy();
     lenis.raf(now);
     const t = (now - t0) / 1000, dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     const p = Math.min(1, Math.max(0, scrollY / Math.max(1, max())));
-    let { scene, l, index } = sceneAt(p);
-    if (!rest && scene.station !== "hero") ({ scene, l, index } = { scene: SCENES[0], l: 1, index: 0 });
+    const { scene, l, index } = sceneAt(p);
+    // ahead of the paintings: show this scene's still and words until its station arrives
+    const waiting = !rest && scene.station !== "hero";
+    root.classList.toggle("stage-waiting", waiting);
     // the page opens inside the cloud and leaves it on its own, then scroll takes over
     if (!opened) opened = now;
     const intro = Math.min(1, (now - opened) / 2400);
@@ -95,7 +110,7 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
     veil.set(intro < 1 ? 0.5 + 0.5 * intro : b.k, intro < 1 ? true : b.warm);
 
     const f = { lit: ui.lit, split: ui.split };
-    director.run(scene.id, l, p, f, t);
+    if (!waiting) director.run(scene.id, l, p, f, t);
     if (rest) overlays(scene.id, l, dt);
     if (scene.id === "soulbound" && rest) {
       // the left of the frame is the same night without her: render it, then restore
@@ -104,10 +119,11 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
       stage.renderer.setRenderTarget(rt);
       stage.renderer.render(stage.scene, stage.camera);
       stage.renderer.setRenderTarget(null);
-      director.run(scene.id, l, p, f, t);
+      if (!waiting) director.run(scene.id, l, p, f, t);
       stage.grade.uniforms.tAlt.value = rt.texture;
     }
-    type.show(scene.id, scene.id === "hero" ? Math.max(l, 0.26 * ease(ramp(intro, 0.35, 1))) : l);
+    const lt = scene.id === "hero" ? Math.max(l, 0.26 * ease(ramp(intro, 0.35, 1))) : scene.id === "gate" ? Math.min(l, 0.75) : l;
+    type.show(scene.id, lt);
     type.hideAll(new Set([scene.id]));
     ui.railFrame(index);
     stage.render(t);

@@ -1709,20 +1709,18 @@
     {
       "id": "site.public._site.apple-touch-icon",
       "path": "site/public/_site/apple-touch-icon.png",
-      "form": "mini",
+      "form": "ui",
       "role": "derivative",
       "status": "active",
-      "eyes": "mini08",
-      "parents": [
-        "assets/nora-mini-icon.png"
-      ],
+      "eyes": "no-eyes",
+      "parents": [],
       "recipe": "site-images",
       "consumers": [
         "site/src/layouts/Base.astro (URL /_site/apple-touch-icon.png)"
       ],
-      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "provenance": "The clasp emblem (site/src/assets/emblem.svg: her five-petal Bauhinia clasp with a thread tied off; DESIGN.md \u00a72, the project's mark, never her face), rendered by site/scripts/make_images.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
-      "sha256": "3e41cb1ffefc6f4f936eeb46ff9df28ea893bad743831e2425e8d1950396f51b",
+      "sha256": "d47ad3cfca966c41f29b2d736ca4510ab05e3d73edada7135929455ccd66fc04",
       "size": [
         180,
         180
@@ -1732,20 +1730,18 @@
     {
       "id": "site.public._site.icon-512",
       "path": "site/public/_site/icon-512.png",
-      "form": "mini",
+      "form": "ui",
       "role": "derivative",
       "status": "active",
-      "eyes": "mini08",
-      "parents": [
-        "assets/nora-mini-icon.png"
-      ],
+      "eyes": "no-eyes",
+      "parents": [],
       "recipe": "site-images",
       "consumers": [
         "site/public/_site/site.webmanifest (URL /_site/icon-512.png)"
       ],
-      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "provenance": "The clasp emblem (site/src/assets/emblem.svg: her five-petal Bauhinia clasp with a thread tied off; DESIGN.md \u00a72, the project's mark, never her face), rendered by site/scripts/make_images.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
-      "sha256": "77b5410b2bf0f3ec09aae7e418bdefb2d7c62c77cf062f9741f2747bcf0595a2",
+      "sha256": "f5d4d41ae87b0b0c411c7450dfad4c2fd08e5c2b32196ee5405fd3e347464721",
       "size": [
         512,
         512
@@ -1755,20 +1751,18 @@
     {
       "id": "site.public._site.icon-maskable",
       "path": "site/public/_site/icon-maskable.png",
-      "form": "mini",
+      "form": "ui",
       "role": "derivative",
       "status": "active",
-      "eyes": "mini08",
-      "parents": [
-        "assets/nora-mini-icon.png"
-      ],
+      "eyes": "no-eyes",
+      "parents": [],
       "recipe": "site-images",
       "consumers": [
         "site/public/_site/site.webmanifest (URL /_site/icon-maskable.png)"
       ],
-      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "provenance": "The clasp emblem (site/src/assets/emblem.svg: her five-petal Bauhinia clasp with a thread tied off; DESIGN.md \u00a72, the project's mark, never her face), rendered by site/scripts/make_images.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
-      "sha256": "84477686cba84d316df1bbad0ae82aa6226cc3bccd14cbdb26b327169370c4ee",
+      "sha256": "b932a3f843258a78e0d4b791a0db2034a607f6e5c889778c001f043c97694c8b",
       "size": [
         512,
         512
@@ -1778,21 +1772,19 @@
     {
       "id": "site.public._site.icon",
       "path": "site/public/_site/icon.png",
-      "form": "mini",
+      "form": "ui",
       "role": "derivative",
       "status": "active",
-      "eyes": "mini08",
-      "parents": [
-        "assets/nora-mini-icon.png"
-      ],
+      "eyes": "no-eyes",
+      "parents": [],
       "recipe": "site-images",
       "consumers": [
         "site/public/_site/site.webmanifest (URL /_site/icon.png)",
         "site/src/layouts/Base.astro (URL /_site/icon.png)"
       ],
-      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "provenance": "The clasp emblem (site/src/assets/emblem.svg: her five-petal Bauhinia clasp with a thread tied off; DESIGN.md \u00a72, the project's mark, never her face), rendered by site/scripts/make_images.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
-      "sha256": "05ac4950b9c1e8902ff306451ecefeef0b2f37a8f030ae88b412a25fd9081e50",
+      "sha256": "6bf92f1e5c370ecca2365df344964411303224a428aca4cf14b598991cd1db34",
       "size": [
         192,
         192
@@ -1816,7 +1808,7 @@
       ],
       "provenance": "Existing icon/OG processor; no external profile publication.",
       "unchanged_reason": null,
-      "sha256": "b2b205916ebe2e1d2bce1cc4cf744dd67f4ee6988432517461d4d6b4bf59ceca",
+      "sha256": "bfdbafb0685acf2571ed05ed09fd39a8470b5c7326abaef87c248f1424bb3c54",
       "size": [
         1200,
         630
@@ -1840,7 +1832,7 @@
       ],
       "provenance": "Existing icon/OG processor; no external profile publication.",
       "unchanged_reason": null,
-      "sha256": "961b4ac931975ecb2e0a806153aeafa808359ef05fa899bd4382cbb1ca396012",
+      "sha256": "18b3b460f0bef45f34ddab3113a3928f75613c5317c10829aadeb109c61ddc54",
       "size": [
         1200,
         630
@@ -1850,22 +1842,20 @@
     {
       "id": "site.public.favicon",
       "path": "site/public/favicon.ico",
-      "form": "mini",
+      "form": "ui",
       "role": "derivative",
       "status": "active",
-      "eyes": "mini08",
-      "parents": [
-        "assets/nora-mini-icon.png"
-      ],
+      "eyes": "no-eyes",
+      "parents": [],
       "recipe": "site-images",
       "consumers": [
         "app/public/offline.html (shared-host /favicon.ico resolves to site; standalone app has its own fallback)",
         "app/public/sw.js (shared-host /favicon.ico precache resolves to site)",
         "site/src/layouts/Base.astro (URL /favicon.ico)"
       ],
-      "provenance": "Existing icon/OG processor; no external profile publication.",
+      "provenance": "The clasp emblem (site/src/assets/emblem.svg: her five-petal Bauhinia clasp with a thread tied off; DESIGN.md \u00a72, the project's mark, never her face), rendered by site/scripts/make_images.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
-      "sha256": "5fe787ea6f17abac7d67c889c3e00a1b507512a790c6167c83b92c3a287ddf57",
+      "sha256": "9d5590ec43a1251bea9837fe9b53889507bb16501f512ca481f4288c26d4576c",
       "size": [
         64,
         64
@@ -3354,9 +3344,9 @@
       "consumers": [
         "site/src/components/Journey.astro (scene still, shown without the stage)"
       ],
-      "provenance": "Composite of the station's depth plates with Nora's 2D anime master placed where the stage stands her; anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
+      "provenance": "The night path split down the middle: without her (cold lanterns, nobody there) on the left, with her (lanterns lit, Nora's 2D anime master on the landing) on the right, composed by site/scripts/make_journey.py from the station's depth plates and the lantern props; anime background-medium paintings generated for the public site with Codex. Source PNGs and prompts retained privately.",
       "unchanged_reason": null,
-      "sha256": "4e13fe264c5ddad1c7ee1fc5926c3ab33c1d3c37be087589a48ad28dde8d21b2",
+      "sha256": "13f759528a3ad0486cf28ac3e8a78a5a52d71c75bae14b3d3be089843a3b17d0",
       "size": [
         1600,
         900

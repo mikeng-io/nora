@@ -5,15 +5,17 @@
 
 Outputs are committed under site/public/_site/ (favicon.ico at the root);
 rerun after changing the headline copy or the icon source. Sources, per DESIGN.md:
-  - icons: assets/nora-mini-icon.png bare, transparent, no disc (§2, operator
-    2026-09-26); a studio square only where a platform forbids transparency
-  - link previews: the wordmark, the headline and a Mini Nora cut-out (§2:
-    Mini Nora is the form on every internet surface)
+  - icons: the clasp emblem, site/src/assets/emblem.svg (DESIGN.md §2: the
+    project's mark, never her face), transparent; a paper square where a
+    platform forbids transparency
+  - link previews: the wordmark, the headline and a Mini Nora cut-out
 """
 
 from __future__ import annotations
 
 import io
+import shutil
+import subprocess
 from pathlib import Path
 
 from fontTools.ttLib import TTFont
@@ -22,12 +24,13 @@ from PIL import Image, ImageDraw, ImageFont
 SITE = Path(__file__).resolve().parent.parent
 REPO = SITE.parent
 PUBLIC = SITE / "public" / "_site"
-ICON = REPO / "assets" / "nora-mini-icon.png"
+EMBLEM = SITE / "src" / "assets" / "emblem.svg"   # the clasp emblem (DESIGN.md §2)
 FONTS = SITE / "node_modules" / "@fontsource-variable"
 CJK = SITE / ".cache" / "NotoSansHK-wght.ttf"
 
 # DESIGN.md tokens (light, "studio").
 STUDIO = (0xF4, 0xF2, 0xF2)
+PAPER = (0xF4, 0xF1, 0xEA)  # paper 3, the icons' ground
 HOODIE = (0xEC, 0xE8, 0xE8)
 INK = (0x2B, 0x22, 0x20)
 INK_MUTED = (0x6E, 0x63, 0x62)
@@ -36,20 +39,19 @@ HAIRLINE = (0xDC, 0xD5, 0xD5)
 
 
 def bare_icon(size: int) -> Image.Image:
-    """The cut-out icon itself: transparent, no disc, trimmed and squared."""
-    art = Image.open(ICON).convert("RGBA")
-    art = art.crop(art.getchannel("A").point(lambda v: 255 if v > 24 else 0).getbbox())
-    side = max(art.size)
-    square = Image.new("RGBA", (side, side), (0, 0, 0, 0))
-    square.alpha_composite(art, ((side - art.width) // 2, (side - art.height) // 2))
-    return square.resize((size, size), Image.LANCZOS)
+    """The emblem itself, transparent, rendered from its SVG (rsvg-convert)."""
+    png = subprocess.run(  # noqa: S603 -- fixed local tool and repo file
+        [shutil.which("rsvg-convert") or "rsvg-convert", "-w", str(size * 4), "-h", str(size * 4), str(EMBLEM)],
+        check=True, capture_output=True,
+    ).stdout
+    return Image.open(io.BytesIO(png)).convert("RGBA").resize((size, size), Image.LANCZOS)
 
 
 def on_studio(size: int, fill: float) -> Image.Image:
     """For platforms that forbid transparency (iOS paints it black, a maskable
     icon must be full bleed): a studio square, never a circle, with her inside
     `fill` of it."""
-    canvas = Image.new("RGBA", (size, size), (*STUDIO, 255))
+    canvas = Image.new("RGBA", (size, size), (*PAPER, 255))
     inner = bare_icon(round(size * fill))
     canvas.alpha_composite(inner, ((size - inner.width) // 2, (size - inner.height) // 2))
     return canvas
@@ -94,7 +96,7 @@ def og(lang: str, headline: list[str], out: Path) -> None:
     s = 2  # draw at 2x, downsample at the end
 
     inter = FONTS / "inter" / "files" / "inter-latin-opsz-normal.woff2"
-    grotesk = SITE / "src" / "fonts" / "space-grotesk-nora.woff2"
+    grotesk = FONTS / "bricolage-grotesque" / "files" / "bricolage-grotesque-latin-opsz-normal.woff2"
     mono = FONTS / "jetbrains-mono" / "files" / "jetbrains-mono-latin-wght-normal.woff2"
     if lang == "zh":
         head = ttf_font(CJK, 76 * s, 650)
@@ -115,7 +117,7 @@ def og(lang: str, headline: list[str], out: Path) -> None:
     x = 80 * s
     mark = bare_icon(68 * s)
     img.paste(mark, (x, 68 * s), mark)
-    d.text((x + 84 * s, 102 * s), "Nora", font=word, fill=BUN, anchor="lm")
+    d.text((x + 84 * s, 102 * s), "NORA", font=word, fill=BUN, anchor="lm")
 
     y = 210 * s
     line_h = (92 if lang == "zh" else 88) * s

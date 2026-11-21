@@ -134,7 +134,18 @@ export class World {
   constructor(
     private readonly stage: Stage,
     private readonly words: string[],
+    /** The slips' words, in the page's language: three path slips, the lifted slip, the night traveller. */
+    private readonly slips: { path: string[]; lifted: string; traveller: string },
   ) {}
+
+  /** A station's draw order: its stack, with the foreground (and on the path its night twin after it) last. */
+  order(name: string): void {
+    const s = this.station(name);
+    const fore = s.plates[s.plates.length - 1];
+    const last = name === "path" && this.night.length ? [fore, this.night[this.night.length - 1]] : [fore];
+    this.stage.order(s.group, 0, last);
+    last.forEach((o, i) => o.traverse((c) => (c.renderOrder = 900 + i)));
+  }
 
   station(name: string): Station {
     return this.stations.get(name)!;
@@ -150,16 +161,18 @@ export class World {
   async loadRest(): Promise<void> {
     for (const n of ["unlit", "lit"]) this.maps[n] = await this.stage.texture(art(`props/lantern-${n}`));
     this.maps.slip = await this.stage.texture(art("props/slip"));
+    if (Object.values(this.maps).some((m) => !m)) throw new Error("props: a painting failed to load");
     await Promise.all(["circles", "memory", "ridge", "path", "terrace", "gate"].map((n) => this.build(n)));
     await this.dressPath();
     this.dressMemory();
     this.dressRidge();
     this.dressCircles();
-    for (const s of this.stations.values()) this.stage.order(s.group, 0, [s.plates[s.plates.length - 1]]);
+    for (const name of this.stations.keys()) this.order(name);
   }
 
   private async build(name: string): Promise<void> {
     const s = await this.stage.station(name, LAYERS[name].map(([f, z, o]) => [art(`${name}/${f}`), z, o] as [string, number, number?]));
+    if (s.plates.some((p) => !p.visible)) throw new Error(`station ${name}: a painting failed to load`);
     this.stage.fog(s.group, -22, name === "memory" || name === "ridge" ? 0.42 : 0.3, name === "hero" ? "#f1d9cc" : "#aebcd8", 0.55);
     this.stations.set(name, s);
   }
@@ -169,6 +182,7 @@ export class World {
     const s = this.station("path");
     const nightFiles = LAYERS.path.map(([f]) => f);
     const maps = await Promise.all(nightFiles.map((f) => this.stage.texture(art(`night/${f}`))));
+    if (maps.some((m) => !m)) throw new Error("night: a painting failed to load");
     // each night plate draws right after its day plate, so night can fade in layer by layer
     const order = [...s.group.children];
     s.group.clear();
@@ -196,7 +210,7 @@ export class World {
       s.group.add(l.group);
       this.rail.push(l);
     }
-    const lines = ["Alex: someone should sort this before Friday", "Sam: I can do Thursday too", "Alex: ok. I’ll book"];
+    const lines = this.slips.path;
     const at: [number, number][] = [[0.67, 0.22], [0.6, 0.31], [0.71, 0.4]];
     lines.forEach((text, i) => {
       const p = this.stage.at(pp, at[i][0], at[i][1], 0.05 + i * 0.03);
@@ -209,7 +223,7 @@ export class World {
       this.threads.push(t);
     });
     // the slip that comes in the night, from another conversation
-    this.traveller = new THREE.Mesh(new THREE.PlaneGeometry(LS * 1.5, LS * 0.42), new THREE.MeshBasicMaterial({ map: slip(this.maps.slip, "Mia: can we do Thursday instead?"), transparent: true, depthWrite: false, opacity: 0 }));
+    this.traveller = new THREE.Mesh(new THREE.PlaneGeometry(LS * 1.5, LS * 0.42), new THREE.MeshBasicMaterial({ map: slip(this.maps.slip, this.slips.traveller), transparent: true, depthWrite: false, opacity: 0 }));
     const end = this.lantern.group.position.clone().add(new THREE.Vector3(LS * 0.9, LS * 0.35, 0.1));
     this.travelPath = new THREE.CatmullRomCurve3([this.stage.at(pp, 1.15, 0.12, 1.5), this.stage.at(pp, 0.85, 0.25, 0.8), this.stage.at(pp, 0.62, 0.42, 0.3), end]);
     s.group.add(this.traveller);
@@ -232,7 +246,7 @@ export class World {
       s.group.add(m);
       this.falling.push({ mesh: m, x, speed: 0.6 + (i % 7) * 0.08, phase: i * 0.37 });
     }
-    this.lifted = new THREE.Mesh(new THREE.PlaneGeometry(size * 2.6, size * 0.73), new THREE.MeshBasicMaterial({ map: slip(this.maps.slip, "Alex: someone should sort this before Friday"), transparent: true, depthWrite: false, color: new THREE.Color(0.86, 0.88, 0.94), opacity: 0 }));
+    this.lifted = new THREE.Mesh(new THREE.PlaneGeometry(size * 2.6, size * 0.73), new THREE.MeshBasicMaterial({ map: slip(this.maps.slip, this.slips.lifted), transparent: true, depthWrite: false, color: new THREE.Color(0.86, 0.88, 0.94), opacity: 0 }));
     this.liftFrom.copy(this.stage.at(cliff, 0.79, 0.75, 1.5));
     this.lifted.position.copy(this.liftFrom);
     s.group.add(this.lifted);

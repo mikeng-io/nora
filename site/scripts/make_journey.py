@@ -1,6 +1,6 @@
 """The stage's painted world, from its source paintings.
 
-    uv run --no-project --with pillow python site/scripts/make_journey.py <art-root>
+    uv run --no-project --with pillow python site/scripts/make_journey.py <art-root> [--stills]
 
 <art-root> holds the source PNGs, painted for the site in one anime
 background medium (DESIGN.md §2, §8) and kept outside the repository with
@@ -88,15 +88,57 @@ def still(station: str, with_nora: bool, layers: list[Image.Image]) -> Image.Ima
     return frame.convert("RGB")
 
 
+# The path's lanterns, as in src/journey/world.ts: (u, v, size factor) of each
+# rail post; a lantern's size is 0.17 of the frame height times its factor.
+LANTERNS = [(0.452, 0.7, 1.0), (0.635, 0.69, 0.78), (0.775, 0.62, 0.6), (0.868, 0.565, 0.47), (0.937, 0.5, 0.38)]
+
+
+def soulbound(layers: list[Image.Image]) -> Image.Image:
+    """The night path split down the middle: without her (cold lanterns, nobody
+    there) on the left, with her (lanterns lit, Nora on the landing) on the right."""
+    sides = []
+    for lit in (False, True):
+        frame = layers[0].copy()
+        for i, layer in enumerate(layers[1:], start=1):
+            frame.alpha_composite(layer.resize(frame.size))
+            if i == SPOTS["night"]["layer"]:
+                sprite = Image.open(ROOT / "anime/props" / ("lantern-lit.png" if lit else "lantern-unlit.png")).convert("RGBA")
+                for u, v, k in LANTERNS:
+                    size = round(frame.height * 0.17 * k)
+                    sp = sprite.resize((size, size), Image.LANCZOS)
+                    if not lit:
+                        sp = Image.merge("RGBA", [*(c.point(lambda x, f=f: int(x * f)) for c, f in zip(sp.split()[:3], (0.55, 0.6, 0.78))), sp.split()[3]])
+                    x = round(frame.width * u - 0.32 * size - size / 2)
+                    y = round(frame.height * v + 0.3 * size - size / 2)
+                    frame.alpha_composite(sp, (x, y))
+                if lit:
+                    spot = SPOTS["night"]
+                    her = nora_cutout()
+                    h = round(frame.height * spot["height"] * 0.62)
+                    her = her.resize((round(her.width * h / her.height), h), Image.LANCZOS)
+                    frame.alpha_composite(her, (round(frame.width * spot["feet"][0] - her.width / 2), round(frame.height * spot["feet"][1] - her.height)))
+        sides.append(frame)
+    out = sides[0].copy()
+    half = out.width // 2
+    out.paste(sides[1].crop((half, 0, out.width, out.height)), (half, 0))
+    line = Image.new("RGBA", (2, out.height), (248, 178, 132, 255))
+    out.alpha_composite(line, (half - 1, 0))
+    return out.convert("RGB")
+
+
 def main() -> int:
+    stills_only = "--stills" in sys.argv   # recompose the scene stills without rewriting the plates
     loaded: dict[str, list[Image.Image]] = {}
     for station, (folder, names) in STATIONS.items():
+        if stills_only:
+            loaded[station] = [Image.open(ROOT / folder / f"{n}.png").convert("RGBA") for n in names]
+            continue
         loaded[station] = [webp(ROOT / folder / f"{n}.png", OUT / station / f"{n}.webp") for n in names]
-    for group, (folder, names) in SINGLES.items():
+    for group, (folder, names) in {} if stills_only else SINGLES.items():
         for n in names:
             webp(ROOT / folder / f"{n}.png", OUT / group / f"{n}.webp", width=1600 if group == "transit" else 900)
     for scene, (station, with_nora) in STILLS.items():
-        im = still(station, with_nora, loaded[station])
+        im = soulbound(loaded[station]) if scene == "soulbound" else still(station, with_nora, loaded[station])
         im.thumbnail((1600, 900))
         (OUT / "stills").mkdir(parents=True, exist_ok=True)
         im.save(OUT / "stills" / f"{scene}.webp", "WEBP", quality=79, method=6)
