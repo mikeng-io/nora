@@ -9,14 +9,15 @@ The lifecycle, routes and gates: [references/lifecycle.md](references/lifecycle.
 Ownership and policy: [ORCHESTRATION.md](../../../ORCHESTRATION.md#the-lifecycle).
 This skill is the entry router; it does not repeat the other procedures.
 
-1. **Recover the work.** Run `make gc` and retire what it lists
-   (`make gc APPLY=1`, a standing authority). Read the operator request, the current work brief, the
-   project's Intent, holds and the latest handoff. Follow only the references
+1. **Recover the work.** Read the operator request, the current work brief, the
+   project's Intent, holds and the latest handoff. The orchestrator, not a
+   delegated worker, then retires settled artifacts (`make gc APPLY=1`, a
+   standing authority; `docs/maintainers/conventions.md` «Cleanup»). Follow only the references
    needed to settle the current question. Check the checkout, head and actual
    artifacts before treating recorded progress as current.
    Check: state the intended outcome, what remains and the next action briefly.
-2. **Triage to a route.** Apply the route table and full triggers in
-   `references/lifecycle.md`, and record exactly one route: in the brief, or in
+2. **Triage to a route.** Apply the ordered triage rule in
+   `references/lifecycle.md` «Triage», and record exactly one route: in the brief, or in
    the PR body for direct and light work. `clarify` stops and asks Mike.
    Check: the route is the highest one any trigger requires; the first
    independent reviewer confirms it, and you never confirm your own route.

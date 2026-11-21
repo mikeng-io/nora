@@ -77,7 +77,7 @@ the routes, the transition table and the re-triage triggers.
   CI checks itself; a standing authority is never asked again; a turn that names
   its next action takes it or names the blocker, never a "continue".
 - **Ceiling.** The gates are policy-level stops held by skills, not an
-  unskippable control; the reviewer and the operator's merge refuse when the
+  unskippable control; the reviewer and whoever merges refuse when the
   route's required artifact is missing.
 - An implementation request continues through delivery; a design-only request
   stops at its design. Agreement grants no new spending or deployment.
