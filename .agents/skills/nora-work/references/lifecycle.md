@@ -36,31 +36,32 @@ The route is the first rule that applies, in this order:
 6. all low, at most two files, no behaviour change: **direct**; otherwise **light**.
 
 Triage also picks the **track**: *is success a checkable
-artifact before execute starts?* Yes is `standard`; no (an eval, a spike, a
-benchmark, a prompt or quality goal) is `goal-driven` («Goal-driven track»).
+artifact before execute starts?* Yes is `standard`; no (a prompt, doctrine or
+quality change judged by an eval) is `goal-driven` («Goal-driven track»).
 Read `docs/maintainers/lessons.md` for the area before scoring. Record the
-factors, route and track in the brief, or the PR body for direct and light work
-(the issue, for evidence-only work).
+factors, route and track in the brief, or the PR body for light work; direct
+work records a one-line route, and factors are scored only if it is disputed.
+
+**Not admitted.** Work that ships no change (a spike, benchmark, model
+comparison or research) does not enter the lifecycle: it runs in the
+conversation or its issue until it produces a decision, under the standing
+spend authorities (`.agents/lanes.md`) and `nora-eval`, and stops at the third
+failed round on a target («Escalation»). A change it leads to enters triage.
 
 ## Routes
 
 | route | when | gates |
 |---|---|---|
-| **direct** | rule 6 | the PR review at its tier, and CI (shipping work) |
-| **light** | rule 5, or rule 6's remainder | the brief in the PR body (shipping work); the reviewer at verify reads it with the diff; merge on green under the standing authorities (`.agents/lanes.md`) |
+| **direct** | rule 6 | the PR review at its tier, and CI |
+| **light** | rule 5, or rule 6's remainder | the brief in the PR body; the reviewer at verify reads it with the diff; merge on green under the standing authorities (`.agents/lanes.md`) |
 | **standard** | rule 4 | the reviewer by rule closes brief review of the brief and plan with no BLOCKER before the first dispatch |
 | **full** | rule 3 | as standard, with the full review tier |
 | **split** | rule 2 | a Linear project holding the Intent, a milestone per phase, and one issue per child brief of at most 6 items, each taking its own route |
 | **clarify** | rule 1 | stop and ask Mike |
 
-**Evidence-only work.** On any route, a goal-driven outcome that ships no change
-(a spike, benchmark or measurement) replaces every PR, PR-body brief, reviewed
-head and CI requirement in this file with: its brief in the issue, the
-checkpoint record, and an independent reviewer's goal mark («Goal-driven track»).
-That reviewer is its first independent checker on direct and light.
-
 **Full triggers:** disclosure, security, auth or identity, a migration, locks
-or concurrency, model spending, or more than one area. An **area** is one
+or concurrency, a change that adds or raises Nora's model spend (running an
+eval to confirm a change is not one), or more than one area. An **area** is one
 `nora/<area>` package or one design bundle. Choosing a lower route than the
 triggers give is a finding against the work, not a judgement call.
 
@@ -68,15 +69,13 @@ triggers give is a finding against the work, not a judgement call.
 
 | transition | routes | input | checker | pass | block | escalation |
 |---|---|---|---|---|---|---|
-| triage → propose | all | the request and the route the orchestrator recorded | the first independent reviewer the route has: the brief reviewer on standard and full, the PR reviewer on direct and light (the checkpoint reviewer for evidence-only work) | the reviewer confirms the route against the ordered triage rule | a lower route than the triggers give: the work returns to triage | Mike |
+| triage → propose | all | the request and the route the orchestrator recorded | the first independent reviewer the route has: the brief reviewer on standard and full, the PR reviewer on direct and light | the reviewer confirms the route against the ordered triage rule | a lower route than the triggers give: the work returns to triage | Mike |
 | propose → plan | standard, full | the brief and its attached plan (`nora-dispatch/references/brief.md`, `plan.md`) | the reviewer by rule, in brief review | the round closes with no BLOCKER and locks Done-when | a BLOCKER, returned to the author | Mike for intent, authority or redesign («When Mike is asked») |
 | plan → execute | standard, full | the plan, validated in that brief review | the reviewer by rule | the plan passed brief review's «Mapped» check | a plan BLOCKER: nothing is dispatched | — |
 | execute → verify | standard, full | the handoff PR with its execution receipt; on the goal-driven track, the checkpoint record whose final `keep` evidence is the receipt | the reviewer by rule | the receipt names evidence for each item addressed | a missing receipt or missing evidence, returned to the builder | the orchestrator |
-| execute → verify | light, direct, shipping a change | the PR, with its brief in the body on light | the PR reviewer at the route's tier | the brief (light) and the diff are present | no brief on light | the orchestrator |
-| execute → verify | any route, evidence-only goal-driven work | the checkpoint record; its final `keep` checkpoint's evidence artifact | an independent reviewer at the route's tier | the evidence decides the goal | no `keep` checkpoint, or evidence that is not a real artifact | the orchestrator |
-| verify → resolve | any route, evidence-only goal-driven work | the reviewer's goal mark on the checkpoint record | the reviewer | goal met, no BLOCKER; no PR or CI applies | goal unmet or a BLOCKER | Mike |
-| verify → resolve | all, shipping a change | the reviewed head, CI, and the route's required artifacts | the reviewer, then the merge under the standing authorities | the reviewer marks each item met (light: each brief item; direct: the change's stated property), no BLOCKER, green CI | an unmet item, a BLOCKER, or a required artifact missing | Mike |
-| resolve → closed | all | the merge, or for evidence-only work the result recorded in the issue and `make archive` | the orchestrator, then `make gc` | branch merged or archived, the worktree retired, Linear updated | an unsettled artifact | — |
+| execute → verify | light, direct | the PR, with its brief in the body on light | the PR reviewer at the route's tier | the brief (light) and the diff are present | no brief on light | the orchestrator |
+| verify → resolve | all | the reviewed head, CI, and the route's required artifacts | the reviewer, then the merge under the standing authorities | the reviewer marks each item met (light: each brief item; direct: the change's stated property), no BLOCKER, green CI | an unmet item, a BLOCKER, or a required artifact missing | Mike |
+| resolve → closed | all | the merge or archive | the orchestrator, then `make gc` | branch merged or archived, the worktree retired, Linear updated | an unsettled artifact | — |
 
 The orchestrator records the route; it never confirms its own route.
 
@@ -113,29 +112,29 @@ a request; the work goes on unless he stops it.
 
 ## Goal-driven track
 
-For work whose success is found rather than specified. The brief states a
-**goal** that does not move (the success condition, its scenario budget) and a
-**convergence budget**: at most three failed checkpoints on one target. Execute
+For a change whose success is found rather than specified, such as a prompt,
+doctrine or memory-quality change judged by an eval. The brief states a **goal**
+that does not move (the success condition and its scenario budget, which may be
+"unbounded") and a **convergence budget**: at most three checkpoints on one
+target that are not `keep`. Execute
 is a loop of probes; each records a checkpoint (what changed, why, the evidence
 artifact, the verdict `keep`, `roll back` or `restart`). Nothing lands until a
 probe is `keep`. Probes run by their own procedure (an eval uses `nora-eval`'s
 worktree and exact arm SHA) on one branch with no handoff PRs. Verify reads the
 checkpoint record in the issue, and the final `keep` checkpoint's evidence is
-the execution receipt. An outcome that ships a change ends in one PR and takes
-the normal verify and merge gates; an evidence-only outcome (a spike, benchmark
-or measurement) has no PR or CI gate: the independent reviewer marks the goal
-met from the checkpoint record, and resolve records the result in the issue and
-archives the branch (`make archive`). Smoke
+the execution receipt. The outcome ends in one PR and takes the normal verify
+and merge gates. Smoke
 the real path at zero cost before a paid probe.
 Grading criteria are frozen for the run; changing them is Mike's call.
 
 ## Escalation
 
-The same target failing a third checkpoint, a new blocker class in the focused
-re-check, or a finding still open after its second repair is an **architecture verdict**: the design, not the code, is wrong.
-Stop tuning. Run `nora-diagnose` at full scale, across the evaluated code, the
-eval or test harness, the runtime and the context the model sees, then bring
-Mike the root cause and the redesign it implies.
+The same target reaching a third checkpoint that is not `keep`, a new blocker
+class in the focused re-check, or a finding still open after its second repair
+is an **architecture verdict**: the design, not the code, is wrong. Stop
+tuning. Run `nora-diagnose` at full scale, across the evaluated code, the eval
+or test harness, the runtime and the context the model sees, then bring Mike
+the root cause and the redesign it implies.
 
 ## Ceiling and backstop
 
@@ -148,9 +147,7 @@ verify and the merge then refuse:
 - standard and full: without a brief review that closes with no BLOCKER and
   an execution receipt;
 - light: without a brief in the PR body;
-- direct: nothing beyond its PR review and CI;
-- evidence-only work, on any route: without the checkpoint record and an
-  independent reviewer's goal mark, in place of the PR and CI requirements.
+- direct: nothing beyond its PR review and CI.
 
 A skipped gate therefore stops the work at verify or merge, at the latest.
 

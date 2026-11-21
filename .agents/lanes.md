@@ -29,8 +29,8 @@ Granted without asking:
 
 | action | condition |
 |---|---|
-| merge a PR | its route's required review passed with no BLOCKER and required checks are green; report the merge, which releases and deploys |
-| paid eval, replay, judge-only calibration or spike | inside the scenario budget the brief states; a goal-driven rerun needs both it and the convergence budget left; each receipt records its effective cutoff (`docs/eval-sop.md`) |
+| merge a PR | its route's required review passed with no BLOCKER and required checks are green (enable auto-merge, or end the turn and resume on the checks, never wait); report the merge, which releases and deploys |
+| paid eval, replay, judge-only calibration or spike | inside the scenario budget the brief or issue states ("unbounded" is a budget); a goal-driven rerun needs both it and the convergence budget left; each receipt records its effective cutoff (`docs/eval-sop.md`) |
 | re-run after the agent's own fix | same cases, inside the same budget, criteria unchanged; rescoring is not a re-run |
 | switch to the next fallback lane | as above |
 | retire merged or archived artifacts | `make gc APPLY=1` |

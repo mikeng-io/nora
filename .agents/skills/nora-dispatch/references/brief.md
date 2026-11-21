@@ -2,8 +2,7 @@
 
 The brief is the propose phase's output. On the standard and full routes it is
 the Linear issue description; on the light route it is the PR body. A direct
-change needs none. Evidence-only work keeps its brief in the issue on every
-route (`nora-work/references/lifecycle.md` «Evidence-only work»). The lifecycle and its routes: `nora-work/references/lifecycle.md`.
+change needs none. The lifecycle and its routes: `nora-work/references/lifecycle.md`.
 
 ## Template
 
