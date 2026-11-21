@@ -50,7 +50,7 @@ export const en = {
     still: "A ridge above a sea of clouds at dusk, paper slips linked into a still constellation.",
   },
   rewind: {
-    title: "Take three.",
+    title: "Once more, *with Nora.*",
     label: "Rewind",
     still: "The scenes running backwards.",
   },

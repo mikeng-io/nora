@@ -12,10 +12,16 @@ interface Props {
 }
 
 const { size = 36, tone = "night" } = Astro.props;
+// Two marks on one page must not share ids: prefix this one's (a build-wide counter, so builds repeat).
+const g = globalThis as { __noraMarks?: number };
+g.__noraMarks = (g.__noraMarks ?? 0) + 1;
+const uid = `m${g.__noraMarks}`;
 const NIGHT: Record<string, string> = { "#bb6954": "#eda28d", "#7a3a1d": "#7a3a1d", "#af5321": "#f8b284", "#f4f1ea": "#0d0e10" };
 const svg = (tone === "night" ? emblem.replace(/#[0-9a-f]{6}/g, (c) => NIGHT[c] ?? c) : emblem)
   .replace('role="img" aria-label="Nora"', 'aria-hidden="true" focusable="false"')
-  .replace("<svg ", `<svg width="${size}" height="${size}" class="mark" `);
+  .replace("<svg ", `<svg width="${size}" height="${size}" class="mark" `)
+  .replace(/id="(\w+)"/g, `id="${uid}-$1"`)
+  .replace(/href="#(\w+)"/g, `href="#${uid}-$1"`);
 ---
 
 <Fragment set:html={svg} />

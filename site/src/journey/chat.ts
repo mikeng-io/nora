@@ -15,16 +15,16 @@ export class Chat {
   private asked = false;
   onEvent: (kind: "ask" | "reply" | "own") => void = () => {};
 
-  constructor() {
+  constructor(private readonly signal: AbortSignal) {
     this.root = document.querySelector("[data-chat]");
     this.seed = [...document.querySelectorAll<HTMLElement>("[data-chat-line]")];
     this.own = document.querySelector("[data-chat-own]");
     this.svg = document.querySelector("[data-chat-threads]");
     if (!this.root) return;
     this.root.classList.add("live");
-    for (const b of this.root.querySelectorAll<HTMLButtonElement>("[data-ask]")) b.addEventListener("click", () => this.ask(b));
+    for (const b of this.root.querySelectorAll<HTMLButtonElement>("[data-ask]")) b.addEventListener("click", () => this.ask(b), { signal: this.signal });
     for (const r of this.root.querySelectorAll<HTMLElement>("[data-reply]")) {
-      r.querySelector("[data-how]")?.addEventListener("click", () => this.how(r));
+      r.querySelector("[data-how]")?.addEventListener("click", () => this.how(r), { signal: this.signal });
     }
   }
 
@@ -101,6 +101,14 @@ export class Chat {
     for (const el of this.root.querySelectorAll("[data-you], [data-reply], [data-typing]")) el.classList.remove("in", "shown");
     for (const x of this.root.querySelectorAll<HTMLButtonElement>("[data-ask]")) x.disabled = false;
     this.clear();
+  }
+
+  /** Back to the written transcript: everything shown, nothing live. */
+  detach(): void {
+    for (const t of this.timers) clearTimeout(t);
+    this.root?.classList.remove("live");
+    for (const el of this.root?.querySelectorAll(".in, .shown, .cited") ?? []) el.classList.remove("in", "shown", "cited");
+    this.svg?.replaceChildren();
   }
 
   private clear(): void {

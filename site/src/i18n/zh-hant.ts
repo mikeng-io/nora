@@ -47,7 +47,7 @@ export const zhHant = {
     still: "黃昏雲海上嘅山脊，紙條連成一個靜止嘅星圖。",
   },
   rewind: {
-    title: "第三次。",
+    title: "再嚟一次，*有 Nora。*",
     label: "倒帶",
     still: "啱啱嘅場景倒轉播返。",
   },

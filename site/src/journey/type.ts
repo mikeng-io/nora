@@ -58,12 +58,14 @@ function split(h: HTMLElement): HTMLElement[] {
 
 export class Type {
   private readonly beats = new Map<string, Beat>();
+  private readonly originals: [HTMLElement, string][] = [];
 
   constructor(root: HTMLElement) {
     for (const el of root.querySelectorAll<HTMLElement>("[data-beat]")) {
       const style = (el.dataset.style ?? "rise") as Style;
       const lines = [...el.querySelectorAll<HTMLElement>("[data-line]")];
       const titles = lines.length ? lines : [...el.querySelectorAll<HTMLElement>("[data-split]")];
+      for (const t of titles) this.originals.push([t, t.innerHTML]);
       const chars = titles.flatMap(split);
       this.beats.set(el.dataset.beat!, {
         el,
@@ -89,6 +91,18 @@ export class Type {
     for (const e of b.rest) {
       e.style.opacity = String(r);
       e.style.transform = `translate3d(0, ${((1 - r) * 16).toFixed(1)}px, 0)`;
+    }
+  }
+
+  /** Put every title and its words back as they were written: the static story. */
+  restore(): void {
+    for (const [el, html] of this.originals) {
+      el.innerHTML = html;
+      el.removeAttribute("aria-label");
+    }
+    for (const b of this.beats.values()) {
+      b.el.classList.remove("on");
+      for (const e of b.rest) e.removeAttribute("style");
     }
   }
 

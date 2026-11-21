@@ -22,20 +22,19 @@ export class Ui {
   private readonly rail = [...document.querySelectorAll<HTMLAnchorElement>("[data-rail] a")];
   onLit: () => void = () => {};
 
-  constructor() {
+  constructor(signal: AbortSignal) {
+    const opt = { signal };
     const fine = matchMedia("(pointer: fine)").matches;
     if (this.cursor && fine) document.documentElement.classList.add("own-cursor");
     addEventListener("pointermove", (e) => {
       if (this.cursor) this.cursor.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0)`;
-      if (this.dragging) this.dragX = e.clientX / innerWidth;
-    });
+      if (this.dragging && e.buttons & 1) this.dragX = e.clientX / innerWidth;
+    }, opt);
     // the soulbound split is dragged: press, move, release
     addEventListener("pointerdown", (e) => {
-      if (!this.splitEl?.classList.contains("on")) return;
-      this.dragging = true;
-      this.dragX = e.clientX / innerWidth;
-    });
-    for (const ev of ["pointerup", "pointercancel", "blur"]) addEventListener(ev, () => (this.dragging = false));
+      if (this.splitEl?.classList.contains("on") && e.button === 0) this.dragging = true;
+    }, opt);
+    for (const ev of ["pointerup", "pointercancel", "blur"]) addEventListener(ev, () => (this.dragging = false), opt);
     if (this.hold) {
       const on = (e: Event) => {
         e.preventDefault();
@@ -45,12 +44,12 @@ export class Ui {
       const off = () => {
         this.holding = false;
       };
-      this.hold.addEventListener("pointerdown", on);
-      this.hold.addEventListener("keydown", (e) => (e.key === " " || e.key === "Enter") && on(e));
-      this.hold.addEventListener("keyup", off);
-      addEventListener("pointerup", off);
-      this.hold.addEventListener("pointerleave", () => this.cursor?.classList.remove("big"));
-      this.hold.addEventListener("pointerenter", () => this.cursor?.classList.add("big"));
+      this.hold.addEventListener("pointerdown", on, opt);
+      this.hold.addEventListener("keydown", (e) => (e.key === " " || e.key === "Enter") && on(e), opt);
+      this.hold.addEventListener("keyup", off, opt);
+      addEventListener("pointerup", off, opt);
+      this.hold.addEventListener("pointerleave", () => this.cursor?.classList.remove("big"), opt);
+      this.hold.addEventListener("pointerenter", () => this.cursor?.classList.add("big"), opt);
     }
   }
 
@@ -84,16 +83,51 @@ export class Ui {
     this.tag.classList.toggle("moved", moved > 0.5);
   }
 
-  /** Labels on painted things; one that would sit under the scene's words fades back to a faint mark. */
+  /** Labels on painted things. The dot stays on its pavilion; the card goes to the
+      first clear spot near it (not over the scene's words or the rail), above or
+      below, and the stem runs from the dot to the card. With no clear spot it
+      fades back to a faint mark. */
   labelFrame(points: (THREE.Vector3 | null)[], k: number[]): void {
-    const words = [...document.querySelectorAll<HTMLElement>(".beat.on .display, .beat.on .lede, .beat.on .eyebrow")].map((e) => e.getBoundingClientRect());
+    // the words' own boxes (a heading's block is far wider than its letters), and the rail
+    const keep: DOMRect[] = [document.querySelector("[data-rail]")?.getBoundingClientRect()].filter((r): r is DOMRect => !!r);
+    for (const el of document.querySelectorAll<HTMLElement>(".beat.on .display, .beat.on .lede, .beat.on .eyebrow")) {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      keep.push(...range.getClientRects());
+    }
+    const GAP = 34;
+    const spots: [number, number][] = [[0, 0], [110, 0], [-110, 0], [0, -60], [110, -60], [-110, -60], [0, 1], [110, 1], [-110, 1], [220, 0], [-220, 0], [220, 1], [-220, 1], [340, -60], [340, 0], [340, 1], [460, 0]];
     this.labels.forEach((el, i) => {
       const at = points[i];
       el.classList.toggle("on", (k[i] ?? 0) > 0.01 && !!at);
-      if (at) this.place(el, at);
-      const r = el.getBoundingClientRect();
-      const under = words.some((w) => r.left < w.right && r.right > w.left && r.top < w.bottom && r.bottom > w.top);
-      el.style.opacity = String((k[i] ?? 0) * (under ? 0.18 : 1));
+      const card = el.querySelector<HTMLElement>(".label");
+      const stem = el.querySelector<HTMLElement>(".stem");
+      if (!at || !card || !stem) {
+        el.style.opacity = "0";
+        return;
+      }
+      this.place(el, at);
+      const px = parseFloat(el.style.left), py = parseFloat(el.style.top);
+      const w = card.offsetWidth, h = card.offsetHeight;
+      // a spot is [dx, dy]; dy 1 means "below the pavilion"
+      const box = ([dx, dy]: [number, number]) => {
+        const below = dy === 1;
+        const top = below ? GAP : -GAP - h + dy;
+        return { left: px + dx - w / 2, top: py + top, right: px + dx + w / 2, bottom: py + top + h, below, dx, y: top };
+      };
+      const fits = (b: ReturnType<typeof box>) =>
+        b.left > 8 && b.right < innerWidth - 8 && b.top > 64 && b.bottom < innerHeight - 8 &&
+        !keep.some((r) => b.left < r.right && b.right > r.left && b.top < r.bottom && b.bottom > r.top);
+      const spot = spots.map(box).find(fits);
+      const use = spot ?? box([0, 0]);
+      card.style.left = `${use.dx - w / 2}px`;
+      card.style.top = `${use.y}px`;
+      // the stem: from the dot to the card's nearest edge, at its middle
+      const tx = use.dx, ty = use.below ? use.y : use.y + h;
+      const len = Math.hypot(tx, ty);
+      stem.style.height = `${len}px`;
+      stem.style.transform = `rotate(${Math.atan2(-tx, ty)}rad)`;
+      el.style.opacity = String((k[i] ?? 0) * (spot ? 1 : 0.18));
     });
   }
 

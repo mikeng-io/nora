@@ -44,11 +44,11 @@ NORA = "anime/nora/00-master.png"
 # Where Nora stands in a station: the layer she stands on, her feet as
 # fractions of the frame, and her height as a fraction of the frame height.
 SPOTS = {
-    "hero": {"layer": 3, "feet": [0.74, 0.9], "height": 0.41},
-    "path": {"layer": 3, "feet": [0.63, 0.885], "height": 0.5},
-    "night": {"layer": 3, "feet": [0.63, 0.885], "height": 0.5},
-    "terrace": {"layer": 2, "feet": [0.8, 0.93], "height": 0.46},
-    "gate": {"layer": 3, "feet": [0.64, 0.9], "height": 0.36},
+    "hero": {"layer": 3, "feet": [0.74, 0.9], "height": 0.5},
+    "path": {"layer": 3, "feet": [0.63, 0.885], "height": 0.6},
+    "night": {"layer": 3, "feet": [0.63, 0.885], "height": 0.6},
+    "terrace": {"layer": 2, "feet": [0.8, 0.93], "height": 0.56},
+    "gate": {"layer": 3, "feet": [0.64, 0.9], "height": 0.44},
 }
 # Scene stills: which station, and whether Nora is in it (DESIGN.md §9).
 STILLS = {

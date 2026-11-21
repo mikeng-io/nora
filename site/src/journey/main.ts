@@ -45,8 +45,10 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
   const [nora] = await Promise.all([Nora.create(noraCanvas, noraUrl), world.loadHero()]);
   const veil = new Veil(stage.camera, world.transit);
   const type = new Type(story);
-  const ui = new Ui();
-  const chat = new Chat();
+  const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+  const life = new AbortController();   // every stage listener ends with the stage
+  const ui = new Ui(life.signal);
+  const chat = new Chat(life.signal);
   const director = new Director(stage, world, nora);
   let rest = false;
   let failed = false;
@@ -56,11 +58,32 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
       // a required painting failed: give the visitor the whole story as stills and words
       console.error(e);
       failed = true;
-      root.classList.remove("stage-on", "stage-loading", "stage-waiting");
-      nora.player.dispose({ release: true });
-      stage.renderer.dispose();
+      teardown();
     },
   );
+
+  /** Back to the written page: listeners off, words and chat as written, GPU and rig released. */
+  const teardown = () => {
+    life.abort();
+    lenis.destroy();
+    type.restore();
+    chat.detach();
+    root.classList.remove("stage-on", "stage-loading", "stage-waiting", "own-cursor");
+    nora.player.dispose({ release: true });
+    stage.scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      m.geometry?.dispose();
+      for (const mat of [m.material].flat()) {
+        if (!mat) continue;
+        for (const v of Object.values(mat)) if (v instanceof THREE.Texture) v.dispose();
+        mat.dispose();
+      }
+    });
+    rt.dispose();
+    stage.composer.dispose();
+    stage.renderer.dispose();
+    stage.renderer.forceContextLoss();
+  };
 
   ui.onLit = () => {
     nora.player.act("nod");
@@ -83,18 +106,17 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
       if (!s) return;
       e.preventDefault();
       lenis.scrollTo(Math.ceil((s.a + 0.006) * max()), { duration: 2.2 });
-    });
+    }, { signal: life.signal });
   }
-  addEventListener("resize", () => stage.resize());
+  addEventListener("resize", () => stage.resize(), { signal: life.signal });
 
-  const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
   const land = world.station("hero");
   let opened = 0;
   let last = performance.now();
   const t0 = last;
 
   const frame = (now: number) => {
-    if (failed) return lenis.destroy();
+    if (failed) return;
     lenis.raf(now);
     const t = (now - t0) / 1000, dt = Math.min(0.05, (now - last) / 1000);
     last = now;
@@ -122,7 +144,8 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
       if (!waiting) director.run(scene.id, l, p, f, t);
       stage.grade.uniforms.tAlt.value = rt.texture;
     }
-    const lt = scene.id === "hero" ? Math.max(l, 0.26 * ease(ramp(intro, 0.35, 1))) : scene.id === "gate" ? Math.min(l, 0.75) : l;
+    const lt = waiting ? 0.5 : scene.id === "hero" ? Math.max(l, 0.26 * ease(ramp(intro, 0.35, 1))) : scene.id === "gate" ? Math.min(l, 0.75) : l;
+    if (waiting) chat.frame(scene.id === "act", 0.9);
     type.show(scene.id, lt);
     type.hideAll(new Set([scene.id]));
     ui.railFrame(index);
@@ -134,7 +157,7 @@ async function start(canvas: HTMLCanvasElement, noraCanvas: HTMLCanvasElement, s
   /** The HTML that rides on the world: the hold, the tag, the labels, the split, the counter, the chat. */
   const overlays = (id: string, l: number, dt: number) => {
     const project = ui.project(stage.camera);
-    const lantern = world.lantern.group.getWorldPosition(new THREE.Vector3());
+    const lantern = world.lantern.group.localToWorld(world.lantern.body.clone());
     ui.holdFrame(id === "nora", l, id === "nora" ? project(lantern) : null, dt);
     const tagOn = (id === "nora" && ui.lit > 0.9) || (id === "shift" && l > 0.1 && l < 0.9);
     ui.tagFrame(tagOn, tagOn ? project(lantern.clone().add(new THREE.Vector3(0.05, -0.55, 0))) : null, id === "shift" ? ramp(l, 0.66, 0.72) : 0);

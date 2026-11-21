@@ -138,7 +138,7 @@ export class Director {
     const lift = ease(ramp(l, 0.35, 0.55)) * (1 - ease(ramp(l, 0.7, 0.88)));
     const cam = this.stage.camera.position;
     const m = this.world.lifted;
-    m.position.copy(this.world.liftFrom).lerp(new THREE.Vector3(cam.x + 0.9, cam.y + 0.25, cam.z - 7.5), lift);
+    m.position.copy(this.world.liftFrom).lerp(new THREE.Vector3(cam.x + 2.1, cam.y + 0.55, cam.z - 7.5), lift);
     m.position.y -= ease(ramp(l, 0.7, 0.88)) * 1.2;
     m.rotation.z = (1 - lift) * 0.4;
     (m.material as THREE.MeshBasicMaterial).opacity = ramp(l, 0.3, 0.38) * (1 - ramp(l, 0.86, 0.94));
@@ -279,7 +279,7 @@ export class Director {
         continue;
       }
       m.color.copy(PALE).lerp(COPPER, ease(k));
-      m.opacity = 0.5 + 0.45 * ease(k);
+      m.opacity = 0.3 + 0.6 * ease(k);
     }
   }
 }

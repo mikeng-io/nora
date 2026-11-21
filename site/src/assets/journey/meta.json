@@ -6,7 +6,7 @@
     0.74,
     0.9
    ],
-   "height": 0.41
+   "height": 0.5
   },
   "path": {
    "layer": 3,
@@ -14,7 +14,7 @@
     0.63,
     0.885
    ],
-   "height": 0.5
+   "height": 0.6
   },
   "night": {
    "layer": 3,
@@ -22,7 +22,7 @@
     0.63,
     0.885
    ],
-   "height": 0.5
+   "height": 0.6
   },
   "terrace": {
    "layer": 2,
@@ -30,7 +30,7 @@
     0.8,
     0.93
    ],
-   "height": 0.46
+   "height": 0.56
   },
   "gate": {
    "layer": 3,
@@ -38,7 +38,7 @@
     0.64,
     0.9
    ],
-   "height": 0.36
+   "height": 0.44
   }
  },
  "pavilions": {

@@ -358,7 +358,31 @@
 }
 
 .stage-on .beat .copy {
+  position: relative;
   max-width: min(58vw, 60rem);
+}
+
+/* a soft darkening behind the words, as if the painting dimmed there */
+.stage-on .beat .copy::before {
+  content: "";
+  position: absolute;
+  inset: -12% -18% -16% -22%;
+  z-index: -1;
+  background: radial-gradient(closest-side, #0d0e10a6, #0d0e1052 55%, transparent);
+  pointer-events: none;
+}
+
+.stage-on .beat .lede {
+  color: var(--ink);
+  font-weight: 450;
+  text-shadow:
+    0 1px 2px #0d0e10cc,
+    0 0 18px #0d0e1099;
+}
+
+.stage-on .beat .eyebrow {
+  color: var(--ink);
+  text-shadow: 0 1px 2px #0d0e10cc;
 }
 
 .stage-on .beat.on .display,
@@ -411,7 +435,7 @@
 }
 
 .stage-on .beat-rewind .display {
-  font-size: clamp(4rem, 14vw, 16rem);
+  font-size: clamp(3rem, 8vw, 9rem);
 }
 
 .stage-on .beat-act {
@@ -420,7 +444,7 @@
 }
 
 .stage-on .chat .log {
-  max-height: 44vh;
+  max-height: min(30vh, 300px);
   overflow-y: auto;
   scrollbar-width: none;
 }
@@ -438,6 +462,13 @@
   font-size: clamp(3rem, 9.5vw, 11rem);
 }
 
+.stage-on .beat-soulbound .display,
+.stage-on .beat-soulbound .eyebrow {
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+}
+
 .stage-on .beat-soulbound .copy {
   max-width: none;
   justify-items: center;
@@ -450,6 +481,20 @@
 
 .stage-on .beat-gate .copy {
   justify-items: center;
+  padding: clamp(24px, 4vw, 44px) clamp(28px, 5vw, 64px);
+  border-radius: var(--radius-sheet);
+  background: #f4f1eacc;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 30px 60px -24px #0d0e1066;
+}
+
+.stage-on .beat-gate .copy::before {
+  display: none;
+}
+
+.stage-on .beat-gate .lede {
+  color: var(--ink-day);
+  text-shadow: none;
 }
 
 .stage-on .beat-gate .display {
@@ -589,19 +634,22 @@
   display: inline;
 }
 
-/* the labels ride on the painted world, under the story's words */
+/* the labels ride on the painted world, under the story's words: the element
+   sits on the pavilion; its dot, stem and card are placed around it (ui.ts) */
 .pavilion {
   z-index: 1;
-  display: grid;
-  justify-items: center;
-  transform: translate(-50%, -100%);
+  width: 0;
+  height: 0;
+  transform: none;
 }
 
 .pavilion .label {
+  position: absolute;
   display: grid;
   grid-template-columns: auto auto;
   column-gap: 8px;
   align-items: baseline;
+  white-space: nowrap;
   padding: 8px 14px 9px;
   border-radius: 14px;
   background: linear-gradient(180deg, #13182599, #0d0e10b3);
@@ -632,15 +680,20 @@
 }
 
 .pavilion .stem {
+  position: absolute;
+  left: 0;
+  top: 0;
   width: 1px;
-  height: 34px;
-  background: linear-gradient(180deg, #e8edf866, #f8b284);
+  transform-origin: 0 0;
+  background: linear-gradient(180deg, #f8b284, #e8edf866);
 }
 
 .pavilion .dot {
+  position: absolute;
+  left: -4.5px;
+  top: -4.5px;
   width: 9px;
   height: 9px;
-  margin-top: -1px;
   border-radius: 50%;
   background: #fff3e6;
   box-shadow: 0 0 0 4px #f8b28433, 0 0 18px 4px #f8b28499;

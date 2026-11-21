@@ -1713,7 +1713,9 @@
       "role": "derivative",
       "status": "active",
       "eyes": "no-eyes",
-      "parents": [],
+      "parents": [
+        "site/src/assets/emblem.svg"
+      ],
       "recipe": "site-images",
       "consumers": [
         "site/src/layouts/Base.astro (URL /_site/apple-touch-icon.png)"
@@ -1734,7 +1736,9 @@
       "role": "derivative",
       "status": "active",
       "eyes": "no-eyes",
-      "parents": [],
+      "parents": [
+        "site/src/assets/emblem.svg"
+      ],
       "recipe": "site-images",
       "consumers": [
         "site/public/_site/site.webmanifest (URL /_site/icon-512.png)"
@@ -1755,7 +1759,9 @@
       "role": "derivative",
       "status": "active",
       "eyes": "no-eyes",
-      "parents": [],
+      "parents": [
+        "site/src/assets/emblem.svg"
+      ],
       "recipe": "site-images",
       "consumers": [
         "site/public/_site/site.webmanifest (URL /_site/icon-maskable.png)"
@@ -1776,7 +1782,9 @@
       "role": "derivative",
       "status": "active",
       "eyes": "no-eyes",
-      "parents": [],
+      "parents": [
+        "site/src/assets/emblem.svg"
+      ],
       "recipe": "site-images",
       "consumers": [
         "site/public/_site/site.webmanifest (URL /_site/icon.png)",
@@ -1799,8 +1807,8 @@
       "status": "active",
       "eyes": "mini08",
       "parents": [
-        "assets/nora-mini-icon.png",
-        "site/src/assets/art/group-chat.webp"
+        "site/src/assets/art/group-chat.webp",
+        "site/src/assets/emblem.svg"
       ],
       "recipe": "site-images",
       "consumers": [
@@ -1823,8 +1831,8 @@
       "status": "active",
       "eyes": "mini08",
       "parents": [
-        "assets/nora-mini-icon.png",
-        "site/src/assets/art/group-chat.webp"
+        "site/src/assets/art/group-chat.webp",
+        "site/src/assets/emblem.svg"
       ],
       "recipe": "site-images",
       "consumers": [
@@ -1846,7 +1854,9 @@
       "role": "derivative",
       "status": "active",
       "eyes": "no-eyes",
-      "parents": [],
+      "parents": [
+        "site/src/assets/emblem.svg"
+      ],
       "recipe": "site-images",
       "consumers": [
         "app/public/offline.html (shared-host /favicon.ico resolves to site; standalone app has its own fallback)",
@@ -3168,7 +3178,7 @@
       ],
       "provenance": "Composite of the station's depth plates with Nora's 2D anime master placed where the stage stands her; anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
       "unchanged_reason": null,
-      "sha256": "5f3164f63239fb2a0ed2ad498f54b20691712b4d3a47f11cb1773f7b712eef97",
+      "sha256": "7263a6f9f041e60ff15c5550dc8956caaaa2ba810c8145a45fe43a9c8ee69f23",
       "size": [
         1600,
         900
@@ -3212,7 +3222,7 @@
       ],
       "provenance": "Composite of the station's depth plates with Nora's 2D anime master placed where the stage stands her; anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
       "unchanged_reason": null,
-      "sha256": "b54e4a830ad3c262a2d3e2bceb4d8d836e468030fa9f6f3260296c2b4bd18ba2",
+      "sha256": "2ffc412cef35de58e648f8003aff31b7612788caf4b9dff196e7b345c6aed207",
       "size": [
         1600,
         900
@@ -3235,7 +3245,7 @@
       ],
       "provenance": "Composite of the station's depth plates with Nora's 2D anime master placed where the stage stands her; anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
       "unchanged_reason": null,
-      "sha256": "7a631bb2c7bb9c494f3c3247e8e202d3a3a2c52086b8b35fa06dc731fe296942",
+      "sha256": "518000e400c3b091bb89d276d16ad17a6a4107392b0eecdec809ff02592f80d9",
       "size": [
         1599,
         900
@@ -3300,7 +3310,7 @@
       ],
       "provenance": "Composite of the station's depth plates with Nora's 2D anime master placed where the stage stands her; anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
       "unchanged_reason": null,
-      "sha256": "310390fa06db8b4c0295cbdabadc0a967cdc998a9802b2e4a67aad95e4a5c2e3",
+      "sha256": "1660b848bf2a8e43fe22eb18e9819f100a03145ebd20d39b283fb6f1fbaae490",
       "size": [
         1600,
         900
@@ -3323,7 +3333,7 @@
       ],
       "provenance": "Composite of the station's depth plates with Nora's 2D anime master placed where the stage stands her; anime background-medium painting generated for the public site with Codex's built-in image tool from the canonical, cinematic and accepted station references; converted to WebP by site/scripts/make_journey.py. Source PNGs and prompts retained privately.",
       "unchanged_reason": null,
-      "sha256": "4e13fe264c5ddad1c7ee1fc5926c3ab33c1d3c37be087589a48ad28dde8d21b2",
+      "sha256": "72ce5ca6184b83a6c598408300911efb4dcc74630e0efb665d9b24fbbc426f6a",
       "size": [
         1600,
         900
@@ -3346,7 +3356,7 @@
       ],
       "provenance": "The night path split down the middle: without her (cold lanterns, nobody there) on the left, with her (lanterns lit, Nora's 2D anime master on the landing) on the right, composed by site/scripts/make_journey.py from the station's depth plates and the lantern props; anime background-medium paintings generated for the public site with Codex. Source PNGs and prompts retained privately.",
       "unchanged_reason": null,
-      "sha256": "13f759528a3ad0486cf28ac3e8a78a5a52d71c75bae14b3d3be089843a3b17d0",
+      "sha256": "8e3aaff2a7a5b1dd24dbcbbfebd93b8822ddaa7d2026920216b34ac43da4ab96",
       "size": [
         1600,
         900
@@ -3544,6 +3554,28 @@
       ],
       "mode": "RGBA",
       "visual_review": "PASS, 2026-10-26: parent personally inspected the current 2D Bauhinia production tree in the browser; see verification.shader_and_rig and local_browser_smoke. No 3D model/rig acceptance."
+    },
+    {
+      "id": "site.src.assets.emblem",
+      "path": "site/src/assets/emblem.svg",
+      "form": "ui",
+      "role": "shared-master",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [],
+      "recipe": "source",
+      "consumers": [
+        "site/src/components/NoraMark.astro (inline, beside the wordmark)",
+        "site/scripts/make_images.py (favicon, app icons, link previews)"
+      ],
+      "provenance": "The project's clasp emblem: her five-petal Bauhinia clasp with one copper thread tied off, drawn as vector for the public site (DESIGN.md \u00a72: the project's mark, never her face). Chosen by the operator from three rendered candidates.",
+      "unchanged_reason": null,
+      "sha256": "3aec4d11e3d69e4f5a2683d811ba659a43e7ebe3cd560960f8ddf00386e5530b",
+      "size": [
+        100,
+        100
+      ],
+      "mode": "vector"
     }
   ],
   "historical_exports": [

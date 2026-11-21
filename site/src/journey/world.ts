@@ -83,19 +83,23 @@ function chip(text: string, hub: boolean): THREE.CanvasTexture {
   return t;
 }
 
+/** A fine filament that sags a little between two points, drawn additively so it glows rather than sits. */
 function thread(from: THREE.Vector3, to: THREE.Vector3, lift: number, width: number): THREE.Mesh {
   const mid = from.clone().lerp(to, 0.5).add(new THREE.Vector3(0, lift, 0.2));
   return new THREE.Mesh(
-    new THREE.TubeGeometry(new THREE.CatmullRomCurve3([from, mid, to]), 80, width, 6, false),
-    new THREE.MeshBasicMaterial({ color: PALE.clone(), transparent: true, opacity: 0.5 }),
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3([from, mid, to]), 120, width, 5, false),
+    new THREE.MeshBasicMaterial({ color: PALE.clone(), transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }),
   );
 }
 
 export class Lantern {
   readonly group = new THREE.Group();
+  /** Where the paper body sits in the sprite (which also holds the bracket), from the sprite's centre. */
+  readonly body: THREE.Vector3;
   private readonly lit: THREE.Mesh;
   private readonly spill: THREE.Mesh;
   constructor(unlit: THREE.Texture | null, litMap: THREE.Texture | null, size: number) {
+    this.body = new THREE.Vector3(-0.13 * size, -0.11 * size, 0);
     const cool = new THREE.MeshBasicMaterial({ map: unlit, transparent: true, depthWrite: false, color: new THREE.Color(0.55, 0.6, 0.78) });
     this.group.add(new THREE.Mesh(new THREE.PlaneGeometry(size, size), cool));
     this.lit = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshBasicMaterial({ map: litMap, transparent: true, depthWrite: false, opacity: 0 }));
@@ -218,7 +222,9 @@ export class World {
       m.position.copy(p);
       m.rotation.z = (i - 1) * 0.05;
       s.group.add(m);
-      const t = thread(p.clone().add(new THREE.Vector3(-LS * 0.7, 0, 0)), this.lantern.group.position.clone().add(new THREE.Vector3(0, LS * 0.1, 0)), LS * (0.4 - i * 0.25), LS * 0.012);
+      const eyelet = p.clone().add(new THREE.Vector3(-LS * 0.62, 0, 0));
+      const body = this.lantern.group.position.clone().add(this.lantern.body).add(new THREE.Vector3(0, LS * 0.12, 0));
+      const t = thread(eyelet, body, -LS * (0.18 + i * 0.08), LS * 0.0045);
       s.group.add(t);
       this.threads.push(t);
     });
@@ -261,16 +267,6 @@ export class World {
     const edges: [number, number][] = [[0, 2], [7, 2], [0, 7], [2, 1], [2, 6], [3, 4], [5, 4], [4, 2]];
     const Z = -6;
     const pts = at.map(([x, y]) => new THREE.Vector3(x, y, Z));
-    this.words.slice(0, at.length).forEach((word, i) => {
-      const tex = chip(word, i === 2);
-      const h = i === 2 ? 0.46 : 0.36;
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(h * (tex.image.width / tex.image.height), h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 }));
-      const to = pts[i];
-      const from = new THREE.Vector3(to.x * 0.4, to.y - 3.4, Z + 1.2);
-      m.position.copy(from);
-      s.group.add(m);
-      this.stars.push({ mesh: m, from, to });
-    });
     for (const [a, b] of edges) {
       const mid = pts[a].clone().lerp(pts[b], 0.5).add(new THREE.Vector3(0, 0.25, -0.2));
       const tube = new THREE.Mesh(
@@ -281,6 +277,16 @@ export class World {
       s.group.add(tube);
       this.links.push(tube);
     }
+    this.words.slice(0, at.length).forEach((word, i) => {
+      const tex = chip(word, i === 2);
+      const h = i === 2 ? 0.46 : 0.36;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(h * (tex.image.width / tex.image.height), h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 }));
+      const to = pts[i];
+      const from = new THREE.Vector3(to.x * 0.4, to.y - 3.4, Z + 1.2);
+      m.position.copy(from);
+      s.group.add(m);
+      this.stars.push({ mesh: m, from, to });
+    });
   }
 
   /** A warm light at each pavilion, and a lantern for when the circles are shown apart. */
