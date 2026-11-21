@@ -162,7 +162,9 @@ Preserve originals; posthoc regrades are calibration. Replays, diagnostics and r
    anchor and expectation. A wrong expectation fails every draw.
    Check: every number you will quote has its n, draw split and arm beside it.
 
-9. **Write it into the PR body** (a `What` block, per `CONTRIBUTING.md`):
+9. **Write the receipt where the decision lives:** the delivery PR body (a `What`
+   block, per `CONTRIBUTING.md`) for an eval that confirms a change; otherwise the
+   conversation or issue, or the goal-driven checkpoint:
    ```
    Eval: `python -m evals <corpus> --grading-contract FILE --grading-contract-sha256 SHA [--case …] --sample N [--judge]`, on nora-host,
    source refreshed <newest_ts>, one run on the host at a time.

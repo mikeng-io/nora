@@ -13,7 +13,8 @@ missing gate output itself.
 ## Triage
 
 Triage is admission control: it decides how much process the work earns, never
-what the work is. Score five factors low, medium or high, each with the
+what the work is. Work that is plainly direct (rule 6 below) records one line;
+otherwise, or when its route is disputed, score five factors low, medium or high, each with the
 observable it was read from (a path, the diff size, a design bundle, a side
 effect). A factor that cannot be grounded is unknown, and unknown impact or
 authority routes to `clarify`, not to a confident guess.
