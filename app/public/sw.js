@@ -38,7 +38,7 @@
  * on a device and is handed the last person's pages.
  */
 
-const VERSION = "v2-2026-10-20";
+const VERSION = "v3-2026-11-22";
 const TILES_VERSION = "t1";
 
 const PAGES = `nora-pages-${VERSION}`;

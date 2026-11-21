@@ -3565,6 +3565,7 @@
       "parents": [],
       "recipe": "source",
       "consumers": [
+        "app/src/assets/nora-emblem.svg (copy for the portal)",
         "DESIGN.md (explicit path reference)",
         "README.md (project mark)",
         "site/src/components/NoraMark.astro (inline, beside the wordmark)",
@@ -3572,6 +3573,29 @@
         "app/scripts/make-icons.py (favicon, app icons)"
       ],
       "provenance": "The project's canonical mark, the clasp emblem: her five-petal Bauhinia clasp with one copper thread tied off, drawn as vector (DESIGN.md \u00a72: the project's mark, never her face). Chosen by the operator from three rendered candidates; made canonical by the operator.",
+      "unchanged_reason": null,
+      "sha256": "226340b9d5685634e28134e859689569985f8b8cedbc561ce14483b20e467df5",
+      "size": [
+        100,
+        100
+      ],
+      "mode": "vector"
+    },
+    {
+      "id": "app.src.assets.nora-emblem",
+      "path": "app/src/assets/nora-emblem.svg",
+      "form": "ui",
+      "role": "derivative",
+      "status": "active",
+      "eyes": "no-eyes",
+      "parents": [
+        "assets/nora-emblem.svg"
+      ],
+      "recipe": "copy",
+      "consumers": [
+        "app/src/components/ui/avatar.tsx (NoraMark, beside the wordmark)"
+      ],
+      "provenance": "Byte copy of the canonical clasp emblem for the portal's bundle.",
       "unchanged_reason": null,
       "sha256": "226340b9d5685634e28134e859689569985f8b8cedbc561ce14483b20e467df5",
       "size": [

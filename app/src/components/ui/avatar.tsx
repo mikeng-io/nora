@@ -1,6 +1,7 @@
 import Image from "next/image";
 import type { CSSProperties } from "react";
 import { art } from "@/components/nora/art";
+import emblem from "@/assets/nora-emblem.svg";
 import { cn } from "@/lib/cn";
 import { initials, personStyle } from "@/lib/person";
 
@@ -44,8 +45,8 @@ export function PersonAvatar({
 
 // Nora among other people's round avatars: her cut-out on a blush-wash
 // disc, a 2px blush ring while she is active, a blush presence dot
-// (DESIGN.md §7 "Nora in the UI"). Beside the wordmark she is bare instead:
-// NoraMark.
+// (DESIGN.md §7 "Nora in the UI"). Beside the wordmark stands the clasp
+// emblem instead: NoraMark.
 export function NoraAvatar({
   size = 36,
   active = false,
@@ -85,17 +86,18 @@ export function NoraAvatar({
   );
 }
 
-/** Her cut-out icon, bare: transparent, no disc, no ring. Beside the
- * wordmark, and anywhere she stands for the app itself. */
+/** The clasp emblem, the project's canonical mark (DESIGN.md §2): beside
+ * the wordmark and anywhere the app stands for itself, never her face. */
 export function NoraMark({ size = 32, className }: { size?: number; className?: string }) {
   return (
     <Image
-      src={art.icon}
+      src={emblem}
       alt=""
-      sizes={`${size}px`}
+      width={size}
+      height={size}
+      unoptimized
       priority
-      className={cn("h-auto shrink-0", className)}
-      style={{ width: size }}
+      className={cn("shrink-0", className)}
     />
   );
 }

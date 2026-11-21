@@ -2,13 +2,13 @@
 """Inventory and synchronize tracked visual assets; no model calls or video renders.
 
 uv run python scripts/visual_assets.py check|report|sync
-sync reuses existing icon, showreel and rig processors (see their prerequisites).
+sync reuses the existing app icon, site image and showreel processors (see their prerequisites).
 Optional --sources JSON maps repository master paths to local generated PNGs.
 Full sync prerequisites (already used by those processors):
-uv run --no-project --python 3.12 --with pillow --with numpy --with scipy \
-    --with pymatting --with "rembg[cpu]" --with fonttools --with brotli \
+uv run --no-project --python 3.12 --with pillow --with numpy --with fonttools --with brotli \
     python scripts/visual_assets.py sync --sources /tmp/mini08-sources.json
-The site needs npm ci and site/.cache/NotoSansHK-wght.ttf for OG typography.
+Icons need rsvg-convert; the site needs npm ci and site/.cache/NotoSansHK-wght.ttf
+for OG typography.
 """
 
 from __future__ import annotations
