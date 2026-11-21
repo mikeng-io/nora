@@ -179,10 +179,10 @@ A delegated agent told "run the eval if you can" burns tokens waiting: hours
 of poll loops, a second arm queued before the first was read. The brief
 carries the budget and the ending:
 
-- State each arm's `estimate:` line; never `--allow-long` unless the operator asked.
-- Launch with `run_in_background` (Tool notes) and END the turn. No sleep-polling,
-  no holding a subagent open: the parent reads `/tmp/eval-<arm>.rc` at the
-  computed finish, then the log.
+- State each arm's `estimate:` line; never `--allow-long` unless the operator asked;
+  spend, re-runs and escalation: [reference.md](reference.md#budget-repeats-and-escalation).
+- Launch with `run_in_background` (Tool notes) and END the turn. No sleep-polling or
+  open subagent: the parent reads `/tmp/eval-<arm>.rc` at the computed finish, then the log.
 - A brand-new tool has no before arm that can pass: that arm only proves the arms
   differ (step 5). Spend draws on the after arm and the negatives.
 - A positive failing every draw (`0 pass / 5 fail`) is an input or budget defect:

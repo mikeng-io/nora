@@ -74,6 +74,11 @@ a brief review that the reviewer by rule closes with no BLOCKER. If the
 review is missing or blocked, halt and report. Ask Mike only under
 `nora-work/references/lifecycle.md` «When Mike is asked».
 
+Acting is the default. When the brief, plan or lanes table already settles the
+next step (a test, a PR, a merge on green, a fallback reviewer, a re-run inside
+the budget), take it; never end a turn on "next I will…". A goal-driven outcome
+runs its checkpoint loop instead of handoff PRs (lifecycle «Goal-driven track»).
+
 For direct work, load `nora-land` and the relevant specialist procedure.
 For delegation, follow the policy's worker selection. Link the work brief and
 add only execution context: base/head, prepared checkout, allowed area, skills,

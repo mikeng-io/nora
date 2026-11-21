@@ -9,7 +9,8 @@ The lifecycle, routes and gates: [references/lifecycle.md](references/lifecycle.
 Ownership and policy: [ORCHESTRATION.md](../../../ORCHESTRATION.md#the-lifecycle).
 This skill is the entry router; it does not repeat the other procedures.
 
-1. **Recover the work.** Read the operator request, the current work brief, the
+1. **Recover the work.** Run `make gc` and retire what it lists
+   (`make gc APPLY=1`, a standing authority). Read the operator request, the current work brief, the
    project's Intent, holds and the latest handoff. Follow only the references
    needed to settle the current question. Check the checkout, head and actual
    artifacts before treating recorded progress as current.

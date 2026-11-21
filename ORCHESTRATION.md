@@ -57,9 +57,8 @@ delegate, reconcile evidence, triage, land and report.
 - **Delegate only for a reason**: a worker's capability outweighs the briefing
   cost and lost context, or the operator asks; file count alone is not one. Any
   delegation mechanism follows the same brief and read-back rules.
-- **Claude models are never a delegated builder or an independent reviewer.**
-  A Claude orchestrator makes small changes directly and hands substantial
-  implementation to a non-Claude builder.
+- **Lanes are the operator's table.** Which model orchestrates, builds and
+  reviews, its fallbacks and the standing authorities: [.agents/lanes.md](.agents/lanes.md).
 - One committing agent per isolated worktree; reviews run read-only in their
   own checkout of the exact head. Read back `pwd`, head and clean status rather
   than trusting a worker's report.
@@ -75,7 +74,8 @@ the routes, the transition table and the re-triage triggers.
   other than the doer (the operator, the reviewer by rule, CI or the next
   agent) records pass or block. A skill halts when that output is missing.
 - **Ask only for intent, authority or redesign.** The agent obtains reviewer and
-  CI checks itself; only an operator-held gate waits, never a "continue".
+  CI checks itself; a standing authority is never asked again; a turn that names
+  its next action takes it or names the blocker, never a "continue".
 - **Ceiling.** The gates are policy-level stops held by skills, not an
   unskippable control; the reviewer and the operator's merge refuse when the
   route's required artifact is missing.
@@ -150,13 +150,12 @@ never relabelled as a run on a new tree.
   what launched. Never silently lower effort or weaken requirements for quota;
   a fallback meets the same bar, and a changed model is a new, linked launch.
 - On observed failure or ambiguity, reread the input and spec before another run.
-- Model exclusions: never MiniMax M3; M3.1-Flash only when the operator names it.
 
 **Reviewer independence.** A reviewer is a fresh session, neither the builder
 nor the brief-author, whose vendor differs from every author's — an
 orchestrator that commits is one; a same-vendor endpoint is not independence.
-Default: GPT-6.1 Terra (Codex); an OpenAI author means Kimi K3.1 Pro
-(kimi-code/k3.1-pro). No qualifying reviewer available means Blocked, with why.
+The lanes table names the reviewer and its fallback chain; the next qualifying
+one replaces an unavailable one unasked. Blocked only when the chain is exhausted.
 
 **Execution briefs and handoffs** follow `nora-dispatch`: the worker owns its
 slice, the orchestrator integration and acceptance. Reviews spawn no agents; a
@@ -179,13 +178,14 @@ ones go into one PR summary comment, at most six classes, and open no round.
   chooses the disposition and never re-grades it. Recurrence alone never makes
   a blocker; a material failure needs its scenario and impact.
 - Verify each finding at the cited line with the right check (`nora-prove-fix`
-  for production fixes); a clean review never replaces the gate or read-back.
+  for production fixes); a clean review never replaces the gate or read-back,
+  and a reviewer that repairs a finding never approves its own repair.
 - A round with no BLOCKER ends review once required evidence is in; waiting
   for evidence is not a round. One re-check covers
   `git diff <reviewed-sha>..HEAD`, unresolved findings and previously
-  unavailable required evidence. Rounds continue while each closes a blocker
-  class. A re-check that leaves blockers open and closes none, or a repair
-  that introduces a new blocker class, goes to the operator.
+  unavailable required evidence. One focused re-check follows a repair; a
+  BLOCKER after it, or one target failing three rounds, is an architecture
+  verdict for the operator («Escalation», `nora-work`), never another patch.
 - A class is one remedy fixing all its instances: first report names the
   structural remedy and every sibling instance in that round, then no new
   input shapes. A repair-induced finding names its origin; same class unless

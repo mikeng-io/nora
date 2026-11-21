@@ -10,15 +10,36 @@ output of the previous gate its route requires exists, and halts when it does
 not. A halt is reported, never worked around: the doer does not produce a
 missing gate output itself.
 
-## Routes
+## Triage
 
-Triage records exactly one route in the work brief, or in the PR body for
-direct and light work.
+Triage is admission control: it decides how much process the work earns, never
+what the work is. Score five factors low, medium or high, each with the
+observable it was read from (a path, the diff size, a design bundle, a side
+effect). A factor that cannot be grounded is unknown, and unknown impact or
+authority routes to `clarify`, not to a confident guess.
+
+| factor | high when |
+|---|---|
+| impact | live behaviour changes on merge: prompts, doctrine, tool text, routing, defaults |
+| reversibility | undoing it needs more than a revert: data, a migration, an external post |
+| areas | more than one `nora/<area>` package or design bundle |
+| side effects | hosts, live accounts, paid calls, deploys |
+| verification difficulty | the property can only be shown by a live read-back or an eval |
+
+All low is direct or light; any high is standard; a full trigger is full. The
+route sets review depth: none or light review below standard, brief review on
+standard and full. Triage also picks the **track**: *is success a checkable
+artifact before execute starts?* Yes is `standard`; no (an eval, a spike, a
+benchmark, a prompt or quality goal) is `goal-driven` («Goal-driven track»).
+Read `docs/maintainers/lessons.md` for the area before scoring. Record the
+factors, route and track in the brief, or the PR body for direct and light work.
+
+## Routes
 
 | route | when | gates |
 |---|---|---|
 | **direct** | at most two files, no behaviour change, no full trigger | the PR review at its tier, and CI |
-| **light** | a bounded change with no full trigger | the brief in the PR body; the reviewer at verify reads it with the diff; Mike's merge approves |
+| **light** | a bounded change with no full trigger | the brief in the PR body; the reviewer at verify reads it with the diff; merge on green under the standing authorities (`.agents/lanes.md`) |
 | **standard** | a change that needs dispatch or more than one unit | the reviewer by rule closes brief review of the brief and plan with no BLOCKER before the first dispatch |
 | **full** | any full trigger | as standard, with the full review tier |
 | **split** | more than 6 Done-when items | a Linear project holding the Intent, a milestone per phase, and one issue per child brief of at most 6 items, each taking its own route |
@@ -38,7 +59,7 @@ triggers give is a finding against the work, not a judgement call.
 | plan → execute | standard, full | the plan, validated in that brief review | the reviewer by rule | the plan passed brief review's «Mapped» check | a plan BLOCKER: nothing is dispatched | — |
 | execute → verify | standard, full | the handoff PR with its execution receipt | the reviewer by rule | the receipt names evidence for each item addressed | a missing receipt or missing evidence, returned to the builder | the orchestrator |
 | execute → verify | light, direct | the PR, with its brief in the body on light | the PR reviewer at the route's tier | the brief (light) and the diff are present | no brief on light | the orchestrator |
-| verify → resolve | all | the reviewed head, CI, and the route's required artifacts | the reviewer, then Mike at merge | the reviewer marks each item met (light: each brief item; direct: the change's stated property), no BLOCKER, green CI | an unmet item, a BLOCKER, or a required artifact missing | Mike |
+| verify → resolve | all | the reviewed head, CI, and the route's required artifacts | the reviewer, then the merge under the standing authorities | the reviewer marks each item met (light: each brief item; direct: the change's stated property), no BLOCKER, green CI | an unmet item, a BLOCKER, or a required artifact missing | Mike |
 | resolve → closed | all | the merge or archive | the orchestrator, then `make gc` | branch merged or archived, the worktree retired, Linear updated | an unsettled artifact | — |
 
 The orchestrator records the route; it never confirms its own route.
@@ -53,7 +74,7 @@ Mike is asked only when one of these appears («When Mike is asked»):
 
 - **Intent:** a disputed brief item or a Done-when item the locked list does not contain.
 - **Authority:** a missing authority, or a side effect beyond what the brief grants.
-- **Redesign:** a re-check leaves blockers open and closes no class, or a repair introduces a new blocker class.
+- **Redesign:** an architecture verdict («Escalation»).
 
 When a brief review round closes with no BLOCKER, the Done-when list locks.
 Only Mike changes it. A finding outside the locked items is a follow-up, never
@@ -64,16 +85,34 @@ a blocker.
 Mike is asked only for what only he holds. Everything else proceeds without him.
 
 - **Intent:** a disputed brief item, amending a locked Done-when list, or `clarify`.
-- **Authority:** merge, deploy, paid probes or evals, live accounts, and a side
-  effect beyond what the brief grants.
-- **Redesign:** a re-check leaves blockers open and closes no class, or a repair
-  introduces a new blocker class.
+- **Authority:** anything beyond the standing authorities in
+  [.agents/lanes.md](../../../lanes.md), and a side effect beyond the brief.
+- **Redesign:** an architecture verdict («Escalation»).
 
-He is never asked to continue. Moving from one Done-when item to the next,
-starting another review round while each round closes blocker classes, and
-proceeding past a gate whose checker is a reviewer or CI need no go. The agent
+He is never asked to continue. Moving from one Done-when item to the next, a
+re-check after a repair, a fallback lane, a merge or paid run the standing
+authorities grant, and a gate whose checker is a reviewer or CI need no go. The agent
 obtains those checks itself. A report at an item boundary is information, not
 a request; the work goes on unless he stops it.
+
+## Goal-driven track
+
+For work whose success is found rather than specified. The brief states a
+**goal** that does not move (the success condition, its scenario budget) and a
+**convergence budget**: at most three failed checkpoints on one target. Execute
+is a loop of probes; each records a checkpoint (what changed, why, the evidence
+artifact, the verdict `keep`, `roll back` or `restart`). Nothing lands until a
+probe is `keep`. Work stays on one branch: push, `git pull` on the host, run; one
+PR when the goal is met. Smoke the real path at zero cost before a paid probe.
+Grading criteria are frozen for the run; changing them is Mike's call.
+
+## Escalation
+
+The same target failing a third checkpoint, or a BLOCKER after the one focused
+re-check, is an **architecture verdict**: the design, not the code, is wrong.
+Stop tuning. Run `nora-diagnose` at full scale, across the evaluated code, the
+eval or test harness, the runtime and the context the model sees, then bring
+Mike the root cause and the redesign it implies.
 
 ## Ceiling and backstop
 
@@ -81,7 +120,7 @@ These gates are policy-level stops held by skills. A cooperative agent halts
 at them; they cannot prevent an agent from skipping one, for example by
 choosing a lower route or executing before the plan passes brief review. A
 skipped gate leaves its route's required artifact missing. The reviewer at
-verify and Mike at merge then refuse:
+verify and the merge then refuse:
 
 - standard and full: without a brief review that closes with no BLOCKER and
   an execution receipt;
