@@ -21,7 +21,6 @@ from nora.infra.sql.schema import (
     METADATA,
     PRESENCE_DERIVED_PLACES,
     PRESENCE_STAYS,
-    ROLLUP_BUILD,
     ROLLUP_RESPONSE,
     SOCIAL_ITEM,
 )
@@ -34,6 +33,7 @@ _PRESENCE_INTERVAL = frozenset(
         "presence_corridors",
     }
 )
+_GROWING_SPANS = frozenset({"presence_derived_places", "presence_corridors"})
 _POSITIONS = {
     "presence_stays": ("subject_id", "circle_id"),
     "presence_trips": ("subject_id", "circle_id"),
@@ -104,10 +104,13 @@ class AggregateWrites:
         unit: str | None,
         inputs: Iterable[RowData] = (),
         asserted_at: datetime | None = None,
-        existing_id: str | None = None,
         live: bool = True,
     ) -> dict[str, Any]:
         interval = _interval(row, table.name)
+        identity_interval = interval
+        if interval is not None and table.name in _GROWING_SPANS:
+            # A growing span keeps the identity of its first observed point.
+            identity_interval = (interval[0], interval[0])
         occurred_at = interval[0] if interval else epoch_ms(row["updated_ts"])
         recorded_at = asserted_at or row.get("recorded_at")
         if recorded_at is None:
@@ -125,6 +128,7 @@ class AggregateWrites:
             unit=unit,
             key=key,
             interval=interval,
+            identity_interval=identity_interval,
             occurred_at=occurred_at,
             asserted_at=recorded_at,
             room=row.get("conversation_id"),
@@ -133,7 +137,6 @@ class AggregateWrites:
             build_lineage=row.get("build_lineage"),
             inputs=inputs,
             revisions=self.registration.revisions() if live and self.registration else None,
-            existing_id=existing_id,
         )
         return {"recorded_at": recorded_at, **values} if "recorded_at" in table.c else values
 
@@ -236,7 +239,6 @@ class AggregateWrites:
         *,
         unit: str | None,
         existing: RowData | None = None,
-        graph_id: str | None = None,
     ) -> dict[str, Any]:
         from nora.infra.sql.schema import PRESENCE_FIXES, PRESENCE_TRIPS
 
@@ -264,7 +266,8 @@ class AggregateWrites:
                 source.c.state == "live",
                 source.c.started_ts.between(row["first_seen_ts"], row["last_seen_ts"]),
             )
-            semantic_key = (*self._span_key(table, row), unit)
+            # The first trip identifies the corridor; the representative can change.
+            semantic_key = (subject, row["first_seen_ts"], unit)
         elif family == "presence_derived_places":
             source = PRESENCE_STAYS
             source_query = sa.select(source).where(
@@ -311,7 +314,6 @@ class AggregateWrites:
             unit=unit,
             inputs=inputs,
             asserted_at=existing["recorded_at"] if existing else None,
-            existing_id=existing["graph_id"] if existing else graph_id,
         )
 
     async def store_presence(
@@ -355,8 +357,6 @@ class AggregateWrites:
                         values,
                         unit=unit,
                         existing=existing,
-                        graph_id=await self._current_span_identity(conn, table, values, unit)
-                        if existing is None else None,
                     ),
                 }
             if existing is None:
@@ -373,26 +373,16 @@ class AggregateWrites:
                     )
                     .values(**data)
                 )
+                prior_id = existing["graph_id"]
+                if prior_id is not None and prior_id != data.get("graph_id"):
+                    live_copy = await conn.scalar(sa.select(sa.exists().where(
+                        table.c.graph_id == prior_id, table.c.unit == unit, table.c.state == "live",
+                    )))
+                    if not live_copy:
+                        await self.retire(conn, table, (existing,))
                 if picked is None:
                     picked = existing.get("id")
         return picked
-
-    async def _current_span_identity(
-        self, conn: AsyncConnection, table: sa.Table,
-        row: RowData, unit: str | None,
-    ) -> str | None:
-        if unit is None or table.name not in ("presence_derived_places", "presence_corridors"):
-            return None
-        return await conn.scalar(
-            sa.select(table.c.graph_id)
-            .join(ROLLUP_BUILD, ROLLUP_BUILD.c.id == table.c.build_id)
-            .where(
-                ROLLUP_BUILD.c.status == "current", table.c.build_id != row["build_id"],
-                *(table.c[name] == row[name] for name in _POSITIONS[table.name]),
-                table.c.state == "live", table.c.unit == unit, table.c.graph_id.is_not(None),
-            )
-            .order_by(table.c.id).limit(1)
-        )
 
     async def span_copies(
         self,

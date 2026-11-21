@@ -95,6 +95,7 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
     ("claim", "lineage"): _LINEAGE,
     ("edge", "lineage"): _LINEAGE,
     ("entity", "lineage"): _LINEAGE,
+    ("watch_result", "lineage"): _LINEAGE,
     ("intention", "done_when"): "condition form and operands, never blob custody",
     ("intention", "drop_when"): "condition form and operands, never blob custody",
     ("intention", "holds_while"): "condition form and operands, never blob custody",

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass, is_dataclass, replace
 from dataclasses import fields as data_fields
+from urllib.parse import unquote
 
 from nora.agent.egress import LeakGuard, scan_identifiers, scan_reply
+from nora.agent.security import looks_like_coordinate
 from nora.memory.app.admission_identity import AdmissionIdentity
 from nora.memory.domain.admission import Refusal, admit_batch, fields, row_references
 from nora.memory.domain.admission_ports import AdmissionStore, AdmissionUnavailableError, Stored
@@ -19,6 +21,7 @@ from nora.memory.domain.admission_proposals import (
     ResolvedReferences,
     Retire,
     Revise,
+    SourceReference,
 )
 from nora.memory.domain.graph import StaleBaseError
 
@@ -44,11 +47,13 @@ class AdmissionService:
         leak_guard: LeakGuard,
         *,
         content_checks: bool,
+        watch_kinds: Collection[str] = (),
     ) -> None:
         self._store = store
         self._identity = identity
         self._leak_guard = leak_guard
         self._content_checks = content_checks
+        self._watch_kinds = watch_kinds
 
     async def admit(
         self,
@@ -134,9 +139,17 @@ class AdmissionService:
                 shown,
                 rows,
                 ResolvedReferences(rooms, persons),
+                watch_kinds=self._watch_kinds,
             )
             if isinstance(choice, Refusal):
                 return choice
+            references = [choice.row.source_ref]
+            references.extend(
+                rows[link.target].source_ref
+                for link in choice.links if link.type == "watches" and link.target != choice.row.id
+            )
+            if any(_unsafe_page(ref) for ref in references):
+                return Refusal("unsafe_page_reference", "source_ref")
             stored = Stored(choice.row.id, choice.base.id if choice.base is not None else None)
             await self._store.persist_admitted_proposal(choice, context, stored)
         except StaleBaseError:
@@ -154,6 +167,13 @@ class AdmissionService:
             if self._content_checks and scan_reply(text, content_checks=True):
                 return Refusal("content", field)
         return None
+
+
+def _unsafe_page(ref: SourceReference | None) -> bool:
+    if ref is None or ref.kind != "page":
+        return False
+    decoded = unquote(ref.value)
+    return scan_identifiers(decoded) is not None or looks_like_coordinate(decoded)
 
 
 def _text(value: object, field: str = "") -> Iterable[tuple[str, str]]:

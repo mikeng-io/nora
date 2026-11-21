@@ -31,7 +31,8 @@ PLANES = {
     "valid_from", "valid_to", "replaces", "state",
 }
 EXTRAS = {
-    "entity": {"name", "aliases", "pointer_kind", "pointer_ref"},
+    "entity": {"name", "aliases", "pointer_kind", "pointer_ref",
+               "source_ref_kind", "source_ref_value"},
     "claim": {"part", "content", "prediction", "window_end"},
     "intention": {
         "owner", "owed_to", "form", "done_when_form", "done_when",

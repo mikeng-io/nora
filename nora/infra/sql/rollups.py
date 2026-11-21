@@ -31,9 +31,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.cognition_remind import INTENTS
+from nora.domain.graph_stimuli import GraphStimulus
 from nora.domain.models import parse_mentions_json
 from nora.domain.rollup import (
     FOLLOW_NAMES,
@@ -41,6 +43,7 @@ from nora.domain.rollup import (
     Citation,
     Colocation,
     Daybook,
+    Deviation,
     FollowCandidate,
     HealthRow,
     Home,
@@ -61,8 +64,10 @@ from nora.domain.rollup import (
 from nora.infra.sql import memory_index
 from nora.infra.sql.aggregate_writes import AggregateWrites
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
+from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.infra.sql.item_registration import SqlItemRegistration
 from nora.infra.sql.mobility import current_build_id
+from nora.infra.sql.projection_time import ProjectionInputs, projection_time
 from nora.infra.sql.rollup_writes import (
     colocation_values,
     daybook_values,
@@ -145,7 +150,22 @@ class SqlRollupStore:
     ) -> None:
         self._engine = engine
         self._metrics = metrics
-        self._computed = AggregateWrites(SqlCognitiveGraph(engine), registration)
+        self._graph = SqlCognitiveGraph(engine)
+        self._computed = AggregateWrites(self._graph, registration)
+
+    async def read_projection_frontier(self, inputs: Sequence[ProjectionInputs]) -> int | None:
+        async with self._engine.connect() as conn:
+            return await projection_time(conn, inputs)
+
+    async def append_absence(self, deviation: Deviation) -> None:
+        async with self._engine.begin() as conn:
+            person = await self._graph.person_pointer_in(conn, deviation.unit, deviation.person_id)
+            if person is None:
+                return
+            await SqlGraphStimuli.append_in(conn, GraphStimulus(
+                deviation.unit, "absence", person, _at(deviation.end_ms), "rollup",
+                person=deviation.person_id, occurrence=deviation.ref,
+            ))
 
     # -- builds --------------------------------------------------------------
 
@@ -538,19 +558,25 @@ class SqlRollupStore:
 
     async def health_rows(
         self, *, sources: Sequence[str], start_ms: int, through_ms: int,
+        graph_unit: str | None = None,
     ) -> list[HealthRow]:
         """Source health for `sources`, from the newest row at or before
         `start_ms` of each (the state a span begins in) to `through_ms`,
         recorded at or before the watermark."""
         if not sources:
             return []
-        recorded = SOURCE_HEALTH.c.recorded_at <= _at(through_ms)
+        h = SOURCE_HEALTH.c
+        filters = [h.recorded_at <= _at(through_ms)]
+        if graph_unit is None:
+            filters.append(sa.or_(h.source == "presence", h.event == "transition"))
+        else:
+            filters.extend((h.unit == graph_unit, h.state == "live", h.graph_id.is_not(None)))
+        starts = h.at_ms > start_ms if graph_unit is None else h.at_ms >= start_ms
+        precedes = h.at_ms <= start_ms if graph_unit is None else h.at_ms < start_ms
         inside = (
             sa.select(SOURCE_HEALTH)
             .where(
-                SOURCE_HEALTH.c.source.in_(list(sources)),
-                SOURCE_HEALTH.c.at_ms > start_ms, SOURCE_HEALTH.c.at_ms <= through_ms,
-                recorded,
+                h.source.in_(list(sources)), starts, h.at_ms <= through_ms, *filters,
             )
             .order_by(SOURCE_HEALTH.c.at_ms, SOURCE_HEALTH.c.id)
         )
@@ -559,15 +585,18 @@ class SqlRollupStore:
             for source in sorted(set(sources)):
                 before = (
                     sa.select(SOURCE_HEALTH)
-                    .where(
-                        SOURCE_HEALTH.c.source == source, SOURCE_HEALTH.c.at_ms <= start_ms,
-                        recorded,
-                    )
-                    .order_by(SOURCE_HEALTH.c.at_ms.desc(), SOURCE_HEALTH.c.id.desc())
+                    .where(h.source == source, precedes, *filters)
                 )
+                if graph_unit is not None:
+                    before = before.ext(distinct_on(h.scope)).order_by(
+                        h.scope, h.at_ms.desc(), h.id.desc(),
+                    )
+                    rows.extend((await conn.execute(before)).all())
+                    continue
                 # The newest row per scope at or before the span's start.
                 seen: set[str] = set()
-                for r in (await conn.execute(before.limit(200))).all():
+                legacy = before.order_by(h.at_ms.desc(), h.id.desc()).limit(200)
+                for r in (await conn.execute(legacy)).all():
                     if r.scope not in seen:
                         seen.add(r.scope)
                         rows.append(r)

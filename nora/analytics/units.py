@@ -66,6 +66,7 @@ from nora.domain.rollup import (
     ties,
 )
 from nora.domain.stimuli import NewStimulus
+from nora.infra.sql.projection_time import ProjectionInputs
 from nora.infra.sql.rollups import RecordMark, SqlRollupStore, UnitRooms
 from nora.infra.sql.social_stream import SqlSocialStreamStore
 
@@ -167,6 +168,16 @@ class UnitRollups:
     def _subject_of(self) -> dict[str, str]:
         return {pid: subject for subject, scope in self._people.items()
                 for pid in (subject, *scope.former_ids)}
+
+    async def projection_time(self) -> int | None:
+        return await self._store.read_projection_frontier(tuple(
+            ProjectionInputs(unit.unit, unit.rooms, tuple(
+                (circle, (person, *scope.former_ids))
+                for person in unit.members if (scope := self._people.get(person)) is not None
+                for circle in scope.circles
+            ))
+            for unit in self._units
+        ))
 
     async def run(
         self, *, build_id: int, mark: RecordMark, logical_now: Mapping[str, int],
@@ -319,7 +330,8 @@ class UnitRollups:
                             sink, unit.unit, "arrival", item="arrival", ref=ref, at_ms=s.started_ts,
                             person_id=s.person_id,
                         )))
-        for deviation in self._deviations(unit.unit, members, as_of, books, anomalous):
+        deviations = self._deviations(unit.unit, members, as_of, books, anomalous)
+        for deviation in deviations:
             healthy = await self._healthy(
                 deviation, platforms=platforms, through_ms=mark.through_ms,
             )
@@ -335,6 +347,11 @@ class UnitRollups:
                 sink, unit.unit, "deviation", item=f"deviation_{deviation.kind}", ref=deviation.ref,
                 at_ms=deviation.end_ms, person_id=deviation.person_id,
             )))
+        for deviation in deviations:
+            if deviation.kind == "silence" and await self._healthy(
+                deviation, platforms=platforms, through_ms=mark.through_ms, graph=True,
+            ):
+                await self._store.append_absence(deviation)
         return out
 
     async def _capped(self, sink: StimulusStore, unit: str, deviation: Deviation) -> bool:
@@ -384,6 +401,7 @@ class UnitRollups:
 
     async def _healthy(
         self, deviation: Deviation, *, platforms: Sequence[str], through_ms: int,
+        graph: bool = False,
     ) -> bool:
         """D3: every source the deviation rests on proved healthy for its
         span. Presence always (both kinds place a person); the unit's
@@ -394,18 +412,20 @@ class UnitRollups:
         rows: list[HealthRow] = await self._store.health_rows(
             sources=["presence", *platforms] if deviation.kind == "silence" else ["presence"],
             start_ms=deviation.start_ms, through_ms=through_ms,
+            graph_unit=deviation.unit if graph else None,
         )
         gap = int(self._cfg.health_max_poll_gap_seconds * 1000)
-        if not any(
+        covered = all if graph else any
+        if not covered(
             polls_healthy(rows, scope=circle, start_ms=deviation.start_ms,
-                          end_ms=deviation.end_ms, max_gap_ms=gap)
+                          end_ms=deviation.end_ms, max_gap_ms=gap, require_preceding=graph)
             for circle in scope.circles
         ):
             return False
         if deviation.kind == "silence":
             return all(
                 adapter_up(rows, platform=p, start_ms=deviation.start_ms,
-                           end_ms=deviation.end_ms)
+                           end_ms=deviation.end_ms, require_preceding=graph)
                 for p in platforms
             )
         return True

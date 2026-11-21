@@ -1458,7 +1458,7 @@ async def _compose_dependencies(
         social_poller=social_poller,
         social_perception=social_perception,
         story_expiry=story_expiry,
-        graph_observe=graph_observe(engine, op_clock, metrics),
+        graph_observe=graph_observe(engine, op_clock, metrics, fetch_client or search_client),
         graph_batches=(
             GraphBatchProducer(engine, metrics=metrics) if cfg.memory.graph.enabled else None
         ),

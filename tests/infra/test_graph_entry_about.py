@@ -199,7 +199,7 @@ async def test_a_profile_line_is_reachable_from_its_subject(engine):
     got = await SqlMemoryGraph(engine).walk(
         (("person", entity.id),), Walk(_UNIT, frozenset({"member-b"}))
     )
-    assert any(n.key == ("profile_line", str(sid)) for n in got.nodes)
+    assert any(n.key == ("profile_line", str(sid)) for n in got.nodes), got.status
 
 
 async def test_a_character_is_reachable_from_its_subject(engine):

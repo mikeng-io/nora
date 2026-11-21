@@ -12,6 +12,7 @@ from typing import Any, Literal
 from nora.domain.lineage import ROW, Lineage, LineageEntry
 
 Exposure = Literal["external", "internal", "operator"]
+SourceKind = Literal["page", "account", "place"]
 _EXPOSURE = ("external", "internal", "operator")
 
 

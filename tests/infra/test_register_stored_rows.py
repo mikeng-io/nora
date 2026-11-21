@@ -6,7 +6,7 @@ from time import monotonic
 import pytest
 import sqlalchemy as sa
 
-from nora.infra.sql.cognitive_graph_schema import ENTITY, GRAPH_STIMULUS, REGISTRY
+from nora.infra.sql.cognitive_graph_schema import GRAPH_STIMULUS, REGISTRY
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import MESSAGES, METADATA, SOURCE_HEALTH
 from nora.memory.adapters.stored_row_registration import SqlStoredRows
@@ -21,14 +21,13 @@ from tests.infra.test_aggregate_registration import (
     _rollup_registration,
     _store,
 )
+from tests.infra.test_cognitive_graph_schema import PLANES as KIND_PLANES
 from tests.infra.test_item_registration import _SECOND, _UNIT, _registration, _Writer
 
 pytestmark = pytest.mark.fresh_database
 
 TABLES = (*BACKFILL_ITEM_SOURCES, *AGGREGATE_FAMILIES)
-PLANES = (set(ENTITY.c.keys()) - {"id", "name", "aliases", "pointer_kind", "pointer_ref"}) | {
-    "graph_id",
-}
+PLANES = (KIND_PLANES - {"id"}) | {"graph_id"}
 COMPARED = PLANES - {"asserted_at", *(name for name in PLANES if name.startswith("rev_"))}
 AT = datetime(2026, 1, 1, tzinfo=UTC)
 ROOM = f"room-{_UNITS[0]}"

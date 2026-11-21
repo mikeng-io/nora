@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.app.tick_grid import aligned_ticks
+from nora.domain.ports import SearchProvider
 from nora.domain.ticks import TICK_SECONDS
 
 log = logging.getLogger(__name__)
@@ -18,13 +19,16 @@ class _Executor(Protocol):
 
 
 class GraphObserve:
-    def __init__(self, *, clock: _Executor, matcher: _Executor, metrics: Any) -> None:
-        self._clock = clock
-        self._matcher = matcher
+    def __init__(self, *, clock: _Executor, matcher: _Executor, watches: _Executor | None,
+                 metrics: Any) -> None:
+        self._executors = (("graph_clock", clock), ("condition_matcher", matcher),
+                           ("watch_poller", watches))
         self._metrics = metrics
 
     async def tick(self) -> None:
-        for stage, executor in (("graph_clock", self._clock), ("condition_matcher", self._matcher)):
+        for stage, executor in self._executors:
+            if executor is None:
+                continue
             try:
                 await executor.run_once()
             except Exception:
@@ -36,11 +40,15 @@ class GraphObserve:
             await self.tick()
 
 
-def graph_observe(engine: AsyncEngine, clock: Callable[[], datetime], metrics: Any) -> GraphObserve:
+def graph_observe(
+    engine: AsyncEngine, clock: Callable[[], datetime], metrics: Any,
+    provider: SearchProvider | None = None,
+) -> GraphObserve:
     import nora.memory as memory
 
     return GraphObserve(
         clock=memory.wire.graph_clock(engine, clock),
         matcher=memory.wire.condition_matcher(engine),
+        watches=memory.wire.watch_poller(engine, clock, provider) if provider is not None else None,
         metrics=metrics,
     )
