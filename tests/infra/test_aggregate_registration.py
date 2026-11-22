@@ -326,6 +326,14 @@ async def _build_mobility(engine: AsyncEngine, build: int, reg: SqlItemRegistrat
     )
 
 
+async def _trip(store) -> None:
+    from nora.domain.mobility import Trip
+    from nora.domain.rollup import FoldState
+
+    trip = Trip(_PERSON, _PERSON, _CIRCLE, _UPDATED, _END, 10.0, 5.0, 2, ("Generated way",))
+    await store.commit_fold(subject_id=_PERSON, state=FoldState(), stays=[], trips=[trip])
+
+
 async def _build_rollup(
     engine: AsyncEngine,
     reg: SqlItemRegistration,
@@ -742,6 +750,8 @@ async def test_growing_presence_span_keeps_the_first_registered_identity(
     async def save(build: int, id_: int | None, end: int) -> int:
         mobility = SqlMobilityStore(engine, build_id=build, registration=registration)
         if family == "presence_corridors":
+            if id_ is None:  # a corridor is placed by the circles of the trips it rests on
+                await _trip(mobility)
             return await mobility.save_corridor(
                 subject_id=_PERSON, corridor_id=id_, sequence=("Generated way",),
                 sample_count=2, first_seen_ts=_UPDATED, last_seen_ts=end,

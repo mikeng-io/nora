@@ -103,5 +103,26 @@
     "old": "            units = set()\n            for each in sorted(c for c in circles if c is not None):\n                for unit, members in (await self.circle_placements(each) or {}).items():\n                    if unit is not None and subject in {await self._subject(m) for m in members}:\n                        units.add(unit)\n        except Exception:  # noqa: BLE001 — unknown membership must stay unscoped\n            log.warning(\"graph registration circle membership unavailable\")\n            return ()\n        return tuple(sorted(units))",
     "new": "        except Exception:  # noqa: BLE001 — unknown membership must stay unscoped\n            log.warning(\"graph registration circle membership unavailable\")\n            return ()\n        units = set()\n        for each in sorted(c for c in circles if c is not None):\n            for unit, members in (await self.circle_placements(each) or {}).items():\n                if unit is not None and subject in {await self._subject(m) for m in members}:\n                    units.add(unit)\n        return tuple(sorted(units))",
     "target": "tests/infra/test_item_registration.py::test_a_member_identity_error_stores_the_presence_fix_unscoped"
+  },
+  {
+    "name": "stored registration places a presence aggregate by its inputs' circles, not every circle of the person",
+    "file": "nora/memory/adapters/stored_aggregate_planes.py",
+    "old": "return await self.writes.presence_units(conn, self.scope, table, row)",
+    "new": "return await self.scope.presence_units(row[\"subject_id\"], row.get(\"circle_id\"))",
+    "target": "tests/infra/test_presence_circle_placement.py::test_a_presence_aggregate_reaches_only_units_its_inputs_circles_cover[one-circle-stored]"
+  },
+  {
+    "name": "a live corridor is placed by its trips' circles, not every circle of the person",
+    "file": "nora/infra/sql/aggregate_writes.py",
+    "old": "return tuple(sorted(set.intersection(*placed))) if placed else ()",
+    "new": "return await scope.presence_units(values[\"subject_id\"])",
+    "target": "tests/infra/test_presence_circle_placement.py::test_a_presence_aggregate_reaches_only_units_its_inputs_circles_cover[one-circle-live]"
+  },
+  {
+    "name": "a corridor from trips in two circles is placed only where both circles are shared",
+    "file": "nora/infra/sql/aggregate_writes.py",
+    "old": "return tuple(sorted(set.intersection(*placed))) if placed else ()",
+    "new": "return tuple(sorted(set.union(*placed))) if placed else ()",
+    "target": "tests/infra/test_presence_circle_placement.py::test_a_presence_aggregate_reaches_only_units_its_inputs_circles_cover[two-circles-stored]"
   }
 ]

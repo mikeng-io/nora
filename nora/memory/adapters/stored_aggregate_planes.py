@@ -23,7 +23,9 @@ class AggregatePlanes:
         self.scope = scope
         self._circle_placements: dict[str, dict[str | None, tuple[str, ...]]] = {}
 
-    async def units_for(self, table: sa.Table, row: RowData) -> tuple[str, ...]:
+    async def units_for(
+        self, conn: AsyncConnection, table: sa.Table, row: RowData,
+    ) -> tuple[str, ...]:
         if table.name.startswith("rollup_"):
             return (row["unit"],)
         if table.name == "platform_object_state":
@@ -32,7 +34,7 @@ class AggregatePlanes:
         if table.name == "presence_places":
             return tuple(unit for unit in await self._places(row["circle_id"]) if unit is not None)
         if table.name.startswith("presence_"):
-            return await self.scope.presence_units(row["subject_id"], row.get("circle_id"))
+            return await self.writes.presence_units(conn, self.scope, table, row)
         return await self.scope.person_units(row["subject_id"])
 
     async def _places(self, circle: str) -> dict[str | None, tuple[str, ...]]:

@@ -157,7 +157,7 @@ class SqlStoredRows:
     ) -> tuple[int, int]:
         registered = unscoped = 0
         for row in batch:
-            units = await self._aggregates.units_for(table, row)
+            units = await self._aggregates.units_for(conn, table, row)
             if not units:
                 unscoped += 1
                 continue
