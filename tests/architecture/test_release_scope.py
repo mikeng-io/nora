@@ -60,7 +60,7 @@ def commit(repo, path, subject):
         (".mcp.json", "chore: update agent tools", False),
         ("SECURITY.md", "docs: clarify reporting", False),
         ("docs/x.md", "fix!: remove supported behavior", True),
-        ("docs/x.md", "docs: milestone\n\nRelease-Bump: minor", True),
+        ("docs/x.md", "docs: milestone\n\nRelease-Bump: minor", False),
         ("unknown/new.py", "chore: add an unknown input", True),
         ("uv.lock", "security: update a vulnerable dependency", True),
     ],

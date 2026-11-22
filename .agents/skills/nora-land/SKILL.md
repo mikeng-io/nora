@@ -110,11 +110,11 @@ git log -1 --format='%h %s'
 
 ## 5. The subject is the release note
 
-Follow `nora-release`: ordinary master pushes automatically prepare patch/minor;
+Follow `nora-release`: every releasable master push prepares a patch;
 generated metadata auto-merges; an application PR merges on green once its
 route's review passes, under the standing authorities (`.agents/lanes.md`).
-PATCH is default; a complete new capability/supported API uses `Release-Bump: minor`.
-Breaking markers stop automatic writes; major requires owner dispatch at an exact SHA.
+Minor and major are owner milestones at an exact SHA. A change the host must follow
+marks `!` or `BREAKING CHANGE:` with what the host must do; it still ships as a patch.
 
 ## 6. Merged tree, push, PR
 

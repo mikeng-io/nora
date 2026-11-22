@@ -1,4 +1,4 @@
-"""Prepare an automatic patch/minor release, or the owner-selected bump for a break.
+"""Prepare the automatic patch release, or the owner-selected milestone bump.
 
 release-please walks history in committer-date order and stops at the last release
 commit, so a branch whose commits were written before that release and merged after
@@ -31,7 +31,6 @@ MANIFEST = ".release-please-manifest.json"
 PR_HEAD = "release-please--branches--master--components--nora"
 CONVENTIONAL = re.compile(r"^(?P<type>[a-z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?: (?P<text>.+)$")
 BREAKING_FOOTER = re.compile(r"^BREAKING[ -]CHANGE:", re.M)
-MINOR_FOOTER = re.compile(r"^Release-Bump: minor[ \t]*$", re.M)
 SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 INTRO = ":robot: I have created a release *beep* *boop*\n---\n\n\n"
 OUTRO = (
@@ -48,7 +47,6 @@ class Entry:
     scope: str
     text: str
     breaking: bool
-    minor: bool = False
 
 
 def entries(base: str, head: str = "HEAD") -> list[Entry]:
@@ -62,34 +60,20 @@ def entries(base: str, head: str = "HEAD") -> list[Entry]:
         else:
             kind = "revert" if subject.startswith('Revert "') else "chore"
             scope, text, breaking = "", subject, bool(BREAKING_FOOTER.search(message))
-        result.append(Entry(sha, kind, scope, text, breaking, bool(MINOR_FOOTER.search(message))))
+        result.append(Entry(sha, kind, scope, text, breaking))
     return result
 
 
 def bump(current: str, found: list[Entry], requested: str | None = None) -> str:
+    """Every automatic release is a patch. Minor and major are the owner's
+    milestones, chosen at an exact SHA; no commit type, footer or breaking
+    marker selects them. A breaking marker lists a host change in the notes,
+    and the deploy, not the version, refuses a host that is not ready."""
     match = SEMVER.match(current)
     if not match:
         raise ValueError(f"manifest version {current!r} is not X.Y.Z")
     major, minor, patch = (int(part) for part in match.groups())
-    # Product policy: a feat may improve an existing capability. Its label alone
-    # cannot require minor; the assessed explicit bump selects that milestone.
-    minimum = (
-        "major"
-        if any(e.breaking for e in found)
-        else "minor"
-        if any(e.minor for e in found)
-        else "patch"
-    )
-    levels = ("patch", "minor", "major")
-    if minimum == "major":
-        if requested is None:
-            raise ValueError("breaking changes require an owner-selected bump at an exact SHA")
-        # The owner judges a break's reach: one that moves only the operator's
-        # own host may ship as patch/minor. The marker floor still binds below.
-        minimum = "minor" if any(e.minor for e in found) else "patch"
-    selected = requested or minimum
-    if levels.index(selected) < levels.index(minimum):
-        raise ValueError(f"{selected} bump is below the {minimum} required by unreleased commits")
+    selected = requested or "patch"
     if selected == "major":
         return f"{major + 1}.0.0"
     if selected == "minor":
@@ -175,7 +159,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--bump",
         choices=("patch", "minor", "major"),
-        help="owner-selected override; automatic processing defaults to patch/minor",
+        help="owner-selected milestone; automatic processing is always patch",
     )
     parser.add_argument("--candidate", help="full commit SHA already assessed for this preparation")
     parser.add_argument(
