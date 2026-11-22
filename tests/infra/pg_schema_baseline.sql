@@ -219,6 +219,7 @@ $_$;
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -330,6 +331,8 @@ ADD CONSTRAINT fk_entity_registry FOREIGN KEY (id, unit, kind) REFERENCES public
 ADD CONSTRAINT fk_entity_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT fk_fetched_pages_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT fk_fetched_pages_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_graph_stimulus_revision FOREIGN KEY (revision_id, unit) REFERENCES public.registry(id, unit);
+ADD CONSTRAINT fk_graph_stimulus_row FOREIGN KEY (graph_id, unit) REFERENCES public.registry(id, unit);
 ADD CONSTRAINT fk_intention_registry FOREIGN KEY (id, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT fk_intention_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT fk_message_delete_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
@@ -465,6 +468,7 @@ ADD CONSTRAINT pk_claim PRIMARY KEY (id, unit);
 ADD CONSTRAINT pk_document_revision PRIMARY KEY (document_id, revision);
 ADD CONSTRAINT pk_edge PRIMARY KEY (id, unit);
 ADD CONSTRAINT pk_entity PRIMARY KEY (id, unit);
+ADD CONSTRAINT pk_graph_stimulus PRIMARY KEY (unit, kind, graph_id, occurrence);
 ADD CONSTRAINT pk_intention PRIMARY KEY (id, unit);
 ADD CONSTRAINT pk_managed_authority_block PRIMARY KEY (person_id, scope_kind, scope_id);
 ADD CONSTRAINT pk_managed_identifier PRIMARY KEY (platform, kind, value);
@@ -685,6 +689,9 @@ ALTER TABLE ONLY public.fetched_pages
 ALTER TABLE ONLY public.fetched_pages
 ALTER TABLE ONLY public.fetched_pages
 ALTER TABLE ONLY public.geocode_cache
+ALTER TABLE ONLY public.graph_stimulus
+ALTER TABLE ONLY public.graph_stimulus
+ALTER TABLE ONLY public.graph_stimulus
 ALTER TABLE ONLY public.instagram_summons
 ALTER TABLE ONLY public.instagram_summons
 ALTER TABLE ONLY public.instagram_summons
@@ -1177,6 +1184,7 @@ CONSTRAINT ck_fetched_pages_graph_kind CHECK ((kind = 'item'::text)),
 CONSTRAINT ck_fetched_pages_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
 CONSTRAINT ck_fetched_pages_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
 CONSTRAINT ck_fetched_pages_tombstone_content CHECK (((state = 'tombstoned'::text) OR ((blob_key IS NOT NULL) AND (provenance IS NOT NULL))))
+CONSTRAINT ck_graph_stimulus_kind CHECK ((kind = ANY (ARRAY['new_item'::text, 'strong_cue'::text, 'failed_act'::text, 'dependency'::text, 'aggregate_crossing'::text, 'intention_due'::text, 'review_time'::text, 'valid_to'::text, 'deadline'::text, 'watched_source_changed'::text, 'absence'::text, 'verdict'::text, 'presence_change'::text])))
 CONSTRAINT ck_instagram_summons_mode CHECK ((mode = ANY (ARRAY['dry_run'::text, 'live'::text]))),
 CONSTRAINT ck_instagram_summons_state CHECK ((state = ANY (ARRAY['claimed'::text, 'unresolved'::text, 'ignored_summoner'::text, 'stale'::text, 'unreadable'::text, 'silent'::text, 'staged'::text, 'flushing'::text, 'published'::text, 'refused'::text, 'capped'::text, 'duplicate'::text, 'ambiguous'::text, 'failed'::text])))
 CONSTRAINT ck_intention_achieve_ending CHECK (((form <> 'achieve'::text) OR (ending IS NULL) OR (ending = ANY (ARRAY['achieved'::text, 'dropped'::text, 'leaked'::text, 'unknown'::text])))),
@@ -1752,6 +1760,7 @@ CREATE INDEX idx_fact_disputed ON public.fact USING btree (unit) WHERE (disputed
 CREATE INDEX idx_fact_premise_premise_fact_id ON public.fact_premise USING btree (premise_fact_id);
 CREATE INDEX idx_fact_standing ON public.fact USING btree (unit, subject_id) WHERE (superseded_at IS NULL);
 CREATE INDEX idx_graph_arrival_pending ON public.legacy_graph_arrival USING btree (unit, room, queued_at) WHERE (batched IS FALSE);
+CREATE INDEX idx_graph_stimulus_eligible ON public.graph_stimulus USING btree (unit, eligible_at);
 CREATE INDEX idx_instagram_summons_state ON public.instagram_summons USING btree (state, mode);
 CREATE INDEX idx_language_observation_scope ON public.language_observation USING btree (scope_id);
 CREATE INDEX idx_lesson_unit ON public.lesson USING btree (unit);
@@ -1896,6 +1905,7 @@ CREATE TABLE public.fact_entity (
 CREATE TABLE public.fact_premise (
 CREATE TABLE public.fetched_pages (
 CREATE TABLE public.geocode_cache (
+CREATE TABLE public.graph_stimulus (
 CREATE TABLE public.instagram_summons (
 CREATE TABLE public.intention (
 CREATE TABLE public.language_observation (
@@ -2961,6 +2971,7 @@ created_by text NOT NULL,
 created_by text NOT NULL,
 created_by_tag text NOT NULL,
 cues text[] DEFAULT '{}'::text[] CONSTRAINT signal_cues_not_null NOT NULL,
+cues text[] DEFAULT '{}'::text[] NOT NULL,
 culture_key text NOT NULL,
 cursor text,
 cut_cooldown integer DEFAULT 0 NOT NULL,
@@ -2973,6 +2984,7 @@ delivered_at timestamp with time zone,
 delivered_message_id bigint,
 delivery_mode text NOT NULL,
 delivery_status text DEFAULT 'pending'::text NOT NULL,
+dependents text[] DEFAULT '{}'::text[] NOT NULL,
 deriver_name text NOT NULL,
 describe_model text,
 description text DEFAULT ''::text NOT NULL,
@@ -3034,6 +3046,7 @@ dwell_ms bigint DEFAULT 0,
 edits integer,
 effect text NOT NULL,
 effect_id text NOT NULL,
+eligible_at timestamp with time zone NOT NULL,
 eligible_count integer NOT NULL,
 embed_attempts integer DEFAULT 0 NOT NULL,
 embed_error text,
@@ -3208,6 +3221,7 @@ from_stimulus_id bigint NOT NULL,
 frontier_ts bigint NOT NULL,
 generation integer DEFAULT 0 NOT NULL,
 git_sha text,
+graph_id text NOT NULL,
 graph_id text,
 graph_id text,
 graph_id text,
@@ -3440,6 +3454,7 @@ kind text DEFAULT 'item'::text NOT NULL,
 kind text DEFAULT 'item'::text NOT NULL,
 kind text DEFAULT 'miss'::text NOT NULL,
 kind text DEFAULT 'reminder'::text NOT NULL,
+kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
 kind text NOT NULL,
@@ -3793,6 +3808,7 @@ occurred_at timestamp with time zone,
 occurred_at timestamp with time zone,
 occurred_ms bigint,
 occurrence integer DEFAULT 0 NOT NULL,
+occurrence text DEFAULT ''::text NOT NULL,
 occurrence_count integer DEFAULT 0 NOT NULL,
 occurrence_count integer DEFAULT 0 NOT NULL,
 occurrence_count integer DEFAULT 1 NOT NULL,
@@ -3962,6 +3978,7 @@ people text[] DEFAULT '{}'::text[] NOT NULL,
 person text NOT NULL,
 person text NOT NULL,
 person text NOT NULL,
+person text,
 person_a text NOT NULL,
 person_b text NOT NULL,
 person_id text NOT NULL,
@@ -4238,6 +4255,7 @@ recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT now() NOT NULL
+recorded_at timestamp with time zone DEFAULT now() NOT NULL,
 recorded_at timestamp with time zone DEFAULT now() NOT NULL,
 recorded_at timestamp with time zone DEFAULT now() NOT NULL,
 recorded_at timestamp with time zone NOT NULL,
@@ -4545,12 +4563,14 @@ revision integer NOT NULL,
 revision integer NOT NULL,
 revision integer NOT NULL,
 revision text CONSTRAINT graph_arrival_revision_not_null NOT NULL,
+revision_id text,
 revision_scope text,
 revision_scope text,
 revisit_at bigint,
 revoked_at timestamp with time zone,
 role text CONSTRAINT relation_evidence_role_not_null NOT NULL,
 room text CONSTRAINT graph_arrival_room_not_null NOT NULL,
+room text,
 rooms jsonb,
 row_key jsonb NOT NULL,
 row_key text NOT NULL,
@@ -4642,6 +4662,7 @@ snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
 snapshot jsonb NOT NULL
 snapshot jsonb NOT NULL,
 source text DEFAULT 'fold'::text NOT NULL,
+source text NOT NULL,
 source text NOT NULL,
 source text NOT NULL,
 source text NOT NULL,
@@ -4935,6 +4956,7 @@ unit text CONSTRAINT memory_work_item_unit_not_null NOT NULL,
 unit text CONSTRAINT relation_unit_not_null NOT NULL,
 unit text CONSTRAINT signal_unit_not_null NOT NULL,
 unit text DEFAULT ''::text NOT NULL,
+unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,

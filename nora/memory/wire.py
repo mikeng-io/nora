@@ -1,6 +1,7 @@
 import functools
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -33,6 +34,8 @@ from nora.infra.sql.standing_ledger import SqlStandingLedger
 from nora.memory.adapters.act_store import SqlActStore
 from nora.memory.adapters.admission_rows import SqlAdmissionRows
 from nora.memory.adapters.admission_store import SqlAdmissionStore
+from nora.memory.adapters.condition_matcher import SqlConditionMatcher
+from nora.memory.adapters.graph_clock import SqlDueSchedules
 from nora.memory.adapters.graph_store import SqlCognitiveGraph
 from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
@@ -40,6 +43,7 @@ from nora.memory.adapters.tools.session import session_verbs as _session_verbs
 from nora.memory.app.acts import ActEnvelope
 from nora.memory.app.admission import AdmissionService
 from nora.memory.app.admission_identity import AdmissionIdentity
+from nora.memory.app.graph_clock import GraphClock
 from nora.persons import Persons
 from nora.policy import Policy
 
@@ -343,3 +347,11 @@ def admission(
     identity = AdmissionIdentity(persons, policy, access=access, nora_accounts=nora_accounts)
     store = SqlAdmissionStore(SqlAdmissionRows(engine, identity), SqlCognitiveGraph(engine))
     return AdmissionService(store, identity, leak_guard, content_checks=content_checks)
+
+
+def condition_matcher(engine: AsyncEngine) -> SqlConditionMatcher:
+    return SqlConditionMatcher(engine, SqlCognitiveGraph(engine))
+
+
+def graph_clock(engine: AsyncEngine, clock: Callable[[], datetime]) -> GraphClock:
+    return GraphClock(SqlDueSchedules(engine), clock)

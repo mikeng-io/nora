@@ -30,7 +30,8 @@ from nora.app.cognition_session import (
     CognitionSessionRunner,
 )
 from nora.app.cognition_wiring import CognitionShutdown
-from nora.app.wake import WakeEvaluator, wake_loop
+from nora.app.tick_grid import wake_loop
+from nora.app.wake import WakeEvaluator
 from nora.domain.cognition_session import Room
 from nora.domain.stimuli import NewStimulus, WakePolicy
 from nora.infra.sql.engine import create_sql_engine

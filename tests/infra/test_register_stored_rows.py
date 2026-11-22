@@ -6,7 +6,7 @@ from time import monotonic
 import pytest
 import sqlalchemy as sa
 
-from nora.infra.sql.cognitive_graph_schema import ENTITY, REGISTRY
+from nora.infra.sql.cognitive_graph_schema import ENTITY, GRAPH_STIMULUS, REGISTRY
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import MESSAGES, METADATA, SOURCE_HEALTH
 from nora.memory.adapters.stored_row_registration import SqlStoredRows
@@ -88,6 +88,7 @@ async def _legacy_fixture(engine):
                 f"ALTER TABLE {actual} ADD CONSTRAINT {check} "
                 "CHECK ((unit IS NULL) = (graph_id IS NULL)) NOT VALID",
             ))
+        await conn.execute(sa.delete(GRAPH_STIMULUS))
         await conn.execute(sa.delete(REGISTRY))
     assert all(expected[name] for name in TABLES)
     return expected

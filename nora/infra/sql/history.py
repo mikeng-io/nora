@@ -237,6 +237,7 @@ APPEND_ONLY: dict[str, str] = {
     # 0069 (DEC-234): the cognition loop's stimuli,
     # its wake log (a unit's watermark is its newest row).
     "stimulus": "recorded_at",
+    "graph_stimulus": "recorded_at",
     "cognition_wake": "recorded_at",
     # 0074_event_revision: the chain `events` is a compare-and-swap cache
     # over, and RSVPs, append-only — a repeat RSVP is an INSERT, never an
