@@ -172,6 +172,8 @@ from nora.domain.memory_index import (
 from nora.domain.models import parse_mentions_json
 from nora.domain.rollup import days_touched, episode_key, iso, local_date, room_key
 from nora.domain.social_stream import HIDING_STATES, PLACE_STATE
+from nora.infra.sql.embed_schedule import EMBED_MAX_ATTEMPTS as EMBED_MAX_ATTEMPTS
+from nora.infra.sql.embed_schedule import embed_due, failed_attempts
 from nora.infra.sql.schema import (
     CULTURE,
     CULTURE_REVISION,
@@ -2239,18 +2241,6 @@ async def _count(engine: AsyncEngine) -> RebuildReport:
 
 # --- the vectors ----------------------------------------------------------
 
-#: A failed node waits `BASE * 2^(attempts - 1)`, at most `CAP`, before the
-#: worker tries it again: a node the embedder keeps refusing costs one call
-#: every few hours, never one per tick.
-EMBED_BACKOFF_BASE_MS = 60_000
-EMBED_BACKOFF_CAP_MS = 6 * 3_600_000
-#: After this many failed attempts a node is never picked again until its
-#: input changes or the operator clears vectors: an input that crashes the
-#: shared server must not crash it every 6 hours forever. `embed_counts`
-#: reports these as `given_up`.
-EMBED_MAX_ATTEMPTS = 8
-
-
 def _literal_in(column: str, values: tuple[str, ...]) -> Any:
     """`column IN (...)` with the values as SQL literals, never parameters:
     `idx_memory_node_unembedded` is a partial index, and the planner can use
@@ -2300,14 +2290,9 @@ async def embed_pick(
 def _pick_statement(*, limit: int, now_ms: int, media: bool) -> sa.Select[Any]:
     """`embed_pick`'s query, apart so a test can ask the planner about it."""
     node = MEMORY_NODE.c
-    wait = sa.cast(sa.func.least(
-        EMBED_BACKOFF_BASE_MS * sa.func.power(2, sa.func.least(node.embed_attempts - 1, 30)),
-        EMBED_BACKOFF_CAP_MS,
-    ), sa.BigInteger)
     where = [
         node.embedding.is_(None), *_embeddable(),
-        node.embed_attempts < EMBED_MAX_ATTEMPTS,
-        sa.or_(node.embed_attempts == 0, node.embedded_at <= now_ms - wait),
+        embed_due(node, now_ms),
     ]
     if not media:
         where.append(node.kind.not_in(ATTACHMENT_KINDS))
@@ -2358,10 +2343,7 @@ async def embed_failed(
     node off, but never to `EMBED_MAX_ATTEMPTS`, so an outage gives up on
     nothing. Only a failure of the input itself (rejected,
     empty, error) can reach the cap."""
-    bumped = MEMORY_NODE.c.embed_attempts + 1
-    attempts = bumped if counts else sa.func.greatest(
-        MEMORY_NODE.c.embed_attempts, sa.func.least(bumped, EMBED_MAX_ATTEMPTS - 1),
-    )
+    attempts = failed_attempts(MEMORY_NODE.c.embed_attempts, counts=counts)
     result = (await conn.execute(
         sa.update(MEMORY_NODE).where(_same_input(item, by_bytes)).values(
             embedding=None, embedding_model=None, embedded_at=now_ms,

@@ -37,7 +37,13 @@ from nora.infra.sql.cognitive_graph_schema import (
 
 RowData = Mapping[str, Any] | sa.RowMapping
 # person_pointer_in, _admission_base and _merge support writes and use raw identities.
-GRAPH_READERS = ("nora.memory.adapters.claim_support",)
+GRAPH_READERS = (
+    "nora.memory.adapters.claim_support",
+    "nora.memory.adapters.retrieval_load",
+    "nora.memory.adapters.retrieval_rows",
+    "nora.memory.adapters.retrieval_scope",
+    "nora.memory.adapters.retrieval_store",
+)
 
 
 #: The content a tombstone clears per kind; identity, basis, scope,
@@ -160,22 +166,26 @@ def content_digest(source: str, row: RowData) -> str:
     return hashlib.sha256(encoded.encode()).hexdigest()
 
 
-def visible_to_reads(table: FromClause) -> sa.ColumnElement[bool]:
+def visible_to_reads(
+    table: FromClause, *, registry_at: FromClause | None = None,
+    registry_state: str = "live",
+) -> sa.ColumnElement[bool]:
     """Visibility for a registered row on a subject-facing read or tally."""
     c = table.c
     identity = c.graph_id if "graph_id" in c else c.id
-    registry = REGISTRY.alias().c
+    registry = (registry_at if registry_at is not None else REGISTRY.alias()).c
     claim = CLAIM.alias().c
+    excluded_claim_states = ("hidden", "tombstoned") if registry_at is None else ("hidden",)
     request = FORGET_REQUEST.alias().c
     targets: list[sa.ColumnElement[str]] = [identity]
     if "support_count" in c:
         targets.append(c.claim_id)
     return sa.and_(
         sa.exists().where(
-            registry.id == identity, registry.unit == c.unit, registry.state == "live",
+            registry.id == identity, registry.unit == c.unit, registry.state == registry_state,
         ),
         ~sa.exists().where(
-            claim.id.in_(targets), claim.unit == c.unit, claim.state.in_(("hidden", "tombstoned")),
+            claim.id.in_(targets), claim.unit == c.unit, claim.state.in_(excluded_claim_states),
         ),
         ~sa.exists().where(
             request.unit == c.unit, request.state == "live",
