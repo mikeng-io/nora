@@ -123,7 +123,7 @@ from nora.tag import Debounce
 
 from .graph_context import EngagementGraph
 from .mentions import MentionRenderer
-from .slots import ConversationSlots
+from .slots import ConversationSlots, Key
 from .stages import admission, command, debrief, deliver, feedback, graph_debrief, indicate, invoke
 from .stages.admission import Admission
 from .stages.indicate import Indicator
@@ -338,7 +338,7 @@ class EngagementPipeline:
         """
         message = request.message
         identity = await self._adapter_for(message.platform).resolve_identity()
-        key = (message.platform, message.conversation_id)
+        key = self._slots.key((message.platform, message.conversation_id))
         # THE ROOT. Everything this tag opens hangs under it, so one
         # tagged message is one Langfuse trace instead of three — see this
         # module's docstring for why the queued half needs a captured context
@@ -363,7 +363,7 @@ class EngagementPipeline:
             with span("engagement.admission"):
                 verdict = admission.run(
                     message=message, identity=identity, debounce=self._debounce,
-                    slots=self._slots, metrics=self._metrics,
+                    slots=self._slots, metrics=self._metrics, slot_key=key,
                 )
             annotate(**{"nora.admission": verdict.name})
             if verdict is Admission.REJECTED or verdict is Admission.QUEUE_FULL:
@@ -389,7 +389,7 @@ class EngagementPipeline:
                 # otherwise inherit belongs to a different person's tag.
                 carrier = capture_context()
                 self._slots.enqueue(
-                    key, lambda: self._run_queued(request, indicator, carrier),
+                    key, lambda: self._run_queued(request, indicator, carrier, slot_key=key),
                 )
                 return
             # RUN_NOW. `identity` is threaded on rather than re-resolved: the
@@ -398,13 +398,13 @@ class EngagementPipeline:
             # same flattened set R-12 tests membership in — the
             # one set that survives a member arriving as a phone number here and
             # an ACI there.
-            await self._run_admitted(request, identity, indicator)
+            await self._run_admitted(request, identity, indicator, slot_key=key)
 
     async def run_durable(
         self, request: EngagementRequest, *, bound_adapter: Any = None,
         persisted_admission: dict[str, Any] | None = None,
         admission_sink: Callable[[str], Awaitable[None]] | None = None,
-        queue_link: dict[str, Any] | None = None,
+        queue_link: dict[str, Any] | None = None, slot_key: Key | None = None,
     ) -> str:
         """The bridge-work path (design/platform-bridges).
 
@@ -447,7 +447,7 @@ class EngagementPipeline:
                     verdict = admission.run(
                         message=message, identity=identity,
                         debounce=self._debounce, slots=self._slots,
-                        metrics=self._metrics,
+                        metrics=self._metrics, slot_key=slot_key,
                     )
                 annotate(**{"nora.admission": verdict.name})
                 if admission_sink is not None:
@@ -465,7 +465,7 @@ class EngagementPipeline:
             # dispatcher to free it.
             disposition: dict[str, str] = {}
             await self._run_admitted(request, identity, indicator,
-                                     adapter=adapter, disposition=disposition)
+                                     adapter=adapter, disposition=disposition, slot_key=slot_key)
             return disposition.get("value", "handler_error")
 
     def _begin_indicator(self, request: EngagementRequest,
@@ -489,7 +489,7 @@ class EngagementPipeline:
 
     async def _run_queued(
         self, request: EngagementRequest, indicator: Indicator | None,
-        carrier: TraceCarrier | None = None,
+        carrier: TraceCarrier | None = None, *, slot_key: Key | None = None,
     ) -> None:
         """Run a tag that waited in the FIFO queue. Its context is assembled
         fresh inside `_run_admitted`, at THIS point — so it sees the replies of
@@ -499,17 +499,14 @@ class EngagementPipeline:
 
         `carrier` is this tag's TRACE context, captured at its own admission and
         re-attached here so its spans join the trace that admitted it. It is the
-        one thing that IS carried through the queue, and the module docstring
-        says why the alternative — inheriting whatever the dispatching task had
-        current — files this turn under the previous person's tag.
+        trace the queued turn retains alongside its slot key.
 
-        Defaulted to `None`; `attached(None)` starts a fresh trace, which is the
-        fail-closed answer rather than a borrowed parent.
+        `attached(None)` starts a fresh trace.
         """
         with attached(carrier):
             identity = await self._adapter_for(
                 request.message.platform).resolve_identity()
-            await self._run_admitted(request, identity, indicator)
+            await self._run_admitted(request, identity, indicator, slot_key=slot_key)
 
     async def _debrief(self, authority: ActAuthority | None, ctx: TagContext | None) -> None:
         if self._debrief_wiring is not None and ctx is not None and authority is not None:
@@ -518,6 +515,7 @@ class EngagementPipeline:
     async def _run_admitted(
         self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
         adapter: Any = None, disposition: dict[str, str] | None = None,
+        *, slot_key: Key | None = None,
     ) -> None:
         """The turn's own span, wrapping the body — the same `run`/`_run` split
         `nora.ingest.pipeline` uses, and for a reason this path has and ingest
@@ -550,14 +548,15 @@ class EngagementPipeline:
             if request.occasion == "room_command":
                 await self._run_room_command(request, identity, indicator,
                                              adapter=adapter,
-                                             disposition=disposition)
+                                             disposition=disposition, slot_key=slot_key)
             else:
                 await self._run_turn(request, identity, indicator, adapter=adapter,
-                                     disposition=disposition)
+                                     disposition=disposition, slot_key=slot_key)
 
     async def _run_room_command(
         self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
         adapter: Any = None, disposition: dict[str, str] | None = None,
+        *, slot_key: Key | None = None,
     ) -> None:
         """The `!!!member` occasion — its body is `stages/command.py`."""
         await command.run(
@@ -571,23 +570,20 @@ class EngagementPipeline:
             preview_source=self._preview_source, spawn=self._spawn,
             reasoning_strip_store=self._reasoning_strip_store,
             tool_call_log_store=self._tool_call_log_store,
-            slots=self._slots)
+            slots=self._slots, slot_key=slot_key)
 
     async def _run_turn(
         self, request: EngagementRequest, identity: Any, indicator: Indicator | None,
-        adapter: Any = None, disposition: dict[str, str] | None = None,
+        adapter: Any = None, disposition: dict[str, str] | None = None, *,
+        slot_key: Key | None = None,
     ) -> None:
         msg = request.message
-        key = (msg.platform, msg.conversation_id)
+        key = slot_key if slot_key is not None else (msg.platform, msg.conversation_id)
         started = time.perf_counter()
         llm_elapsed = 0.0
         delivered = False
-        # Both bound BEFORE the `try` for the same reason `handle` is: the
-        # `finally` reads them on every exit path, including one that faults
-        # before the model is ever invoked. `completed` flips at the END of the
-        # try block — it is the only thing that distinguishes "the pipeline ran
-        # to the end" from "something raised past it", which
-        # `deliver.truncation_reason` needs and no stop reason can express.
+        # The finally block reads these even if setup fails before the model.
+        # `completed` distinguishes a normal end from an unhandled fault.
         stop_reason: str | None = None
         completed = False
         # Bound BEFORE the `try` so the `finally` can read the tag's delivery

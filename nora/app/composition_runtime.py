@@ -60,12 +60,14 @@ class SlotsWiring:
     slots: Any
 
 
-def build_slots(background: Any, cfg: Any)-> SlotsWiring:
+def build_slots(background: Any, cfg: Any, policy: Any) -> SlotsWiring:
 
     # R-10's per-conversation lock and R-30's FIFO queue, built ONCE here. Every path that
     # may speak into a conversation holds this same instance — two would be two locks and no
     # serialisation at all. Built HERE, above the registry, because the relay below needs…
-    slots = ConversationSlots(maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn)
+    slots = ConversationSlots(
+        maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn, policy=policy,
+    )
     return SlotsWiring(slots=slots)
 
 

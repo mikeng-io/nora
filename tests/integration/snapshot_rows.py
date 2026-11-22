@@ -62,7 +62,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
     },
     "debrief_obligation": lambda n: {
         "unit": "u", "room": "signal:generated-room", "pass_id": f"generated-pass-{n}",
-        "occasion": "called", "created": T0,
+        "occasion": "called", "created": T0, "state": "parked", "attempts": 6,
     },
     "watch_result": lambda n: {
         "id": 93000 + n, "unit": "u", "graph_id": f"generated-watch-item-{n}",
@@ -402,7 +402,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
 
 #: The column each revision moves, and to what.
 REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
-    "debrief_obligation": ("attempts", lambda n: n + 1),
+    "debrief_obligation": ("attempts", lambda n: n + 7),
     "graph_stimulus_claim": ("settled", lambda n: T0 + timedelta(seconds=n)),
     "tool_call_log": ("tool_result", lambda i: {"revised": i}),
     "watch_result": ("content_hash", lambda i: f"generated-watch-hash-revised-{i}"),

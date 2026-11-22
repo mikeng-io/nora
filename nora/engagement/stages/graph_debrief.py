@@ -38,7 +38,7 @@ from nora.memory import (
     without_reasoning,
 )
 from nora.obs.metrics import Metrics
-from nora.obs.tracing import annotate, current_trace_id, span
+from nora.obs.tracing import TRACE_KIND, annotate, current_trace_id, root_span, span
 
 _OBJECTIVE = "debrief"
 _BLOCKS: tuple[BlockDeclaration, ...] = (
@@ -132,6 +132,13 @@ async def run_finished(wiring: Wiring, row: DebriefObligation) -> None:
     await _run(wiring, unit=row.unit, room=row.room, pass_id=row.pass_id)
 
 
+async def run_retry(wiring: Wiring, row: DebriefObligation) -> None:
+    with root_span(
+        "debrief", links=(), parent=None, **{TRACE_KIND: "generation", "nora.tag_id": row.pass_id},
+    ):
+        await _run(wiring, retry_row=row)
+
+
 def obligation(
     authority: ActAuthority, message: NormalizedMessage, transcript: Sequence[TranscriptRow],
     began: datetime,
@@ -149,18 +156,22 @@ def obligation(
 async def _run(
     wiring: Wiring, *, unit: str = "", room: str = "", pass_id: str | None = None,
     finished: tuple[ActAuthority, NormalizedMessage, Sequence[TranscriptRow]] | None = None,
+    retry_row: DebriefObligation | None = None,
 ) -> None:
     started = time.perf_counter()
     outcome: str | None = "error"
     with span("engagement.debrief"):
         try:
-            if finished is None:
+            if retry_row is not None:
+                row = retry_row
+            elif finished is None:
                 pending = (wiring.store.take_oldest(unit, room) if pass_id is None
                            else wiring.store.take_oldest(unit, room, pass_id=pass_id))
-                row = await _bounded(wiring, pending)
-                if row is None:
+                candidate = await _bounded(wiring, pending)
+                if candidate is None:
                     outcome = None
                     return
+                row = candidate
             else:
                 row = obligation(*finished, wiring.clock())
                 if not await _bounded(wiring, wiring.store.begin(row)):
@@ -180,6 +191,8 @@ async def _run(
             outcome = "timeout"
         except asyncio.CancelledError:
             outcome = "cancelled"
+            if retry_row is not None:
+                raise
         except BaseException:
             log.exception("Graph debrief failed")
         finally:

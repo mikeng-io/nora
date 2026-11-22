@@ -44,6 +44,7 @@ from nora.memory.wire import admission
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import Conversation, Policy
+from nora.testing.room_slots import FakeRoomSlots
 from tests.fakes import FakeClock
 
 _URL = "https://public.example/notice"
@@ -165,7 +166,9 @@ async def world(clean_pg_url: str) -> AsyncIterator[_World]:
     )
     try:
         yield _World(
-            engine, registration, admission(engine, persons, policy, guard, content_checks=False)
+            engine, registration, admission(
+                engine, persons, policy, guard, content_checks=False, room_slots=FakeRoomSlots({}),
+            )
         )
     finally:
         await engine.dispose()

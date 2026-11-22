@@ -1548,15 +1548,15 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     _CounterSpec(
         "nora_proactive_spoke_total",
-        "Proactive act turns that spoke and delivered, by platform. Read "
-        "against nora_proactive_silence_total.",
-        ("platform",),
+        "Proactive act turns that spoke and delivered, by platform.", ("platform",),
     ),
     _CounterSpec(
         "nora_proactive_stimulus_parked_total",
         "Due intention occurrences parked after repeated unavailable delivery rechecks.",
         (),
     ),
+    _CounterSpec("nora_wake_stimulus_parked_total",
+                 "Reflection stimuli parked after repeated counted failures.", ()),
     # The Relevance Gate has TWO series, and the split is the point: this one
     # moves only when the gate actually decided, the one below only when it could
     # not. Both outcomes are a `no_go` at the trigger, and folding them together
