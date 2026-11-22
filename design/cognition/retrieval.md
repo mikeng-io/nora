@@ -7,7 +7,7 @@ first, resolve what is asked once, find seeds, walk edges, load current rows.
 
 | step | actor | does |
 |---|---|---|
-| **scope** | code | fixes the units (the room's, and its primary when the room is an affiliate's), room, persons, exclusions and exposure the read may see, before any search |
+| **scope** | code | fixes the units (the room's; its primary when the room is an affiliate's; for a DM, the primary and the affiliates that list its owner), room, persons, exclusions and exposure the read may see, before any search |
 | **resolve** | model | turns "that image", "we", "back then" into a reference with handles, time constraints and what stays ambiguous |
 | **seed** | code | exact references first, then keyword and vector search inside the scope |
 | **walk** | code | follows edges from the seeds, bounded in depth, fan-out, rows and time |

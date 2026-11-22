@@ -69,7 +69,8 @@ budget. Small needs are satisfied first, quiet rooms keep a floor and unused
 space flows to bursts that need it. Truncation and omitted subjects are explicit;
 a small pushed block cannot conceal what it left out.
 
-The unit remains the read boundary. Each item's disclosure resolves through its
+The unit remains the read boundary, and an affiliate inherits its primary
+read-only ([scope](../cognition/graph.md#scope)). Each item's disclosure resolves through its
 own room, and derived rows pass the same checks used elsewhere. Cross-room
 transcript visibility does not widen what any destination may later be told.
 

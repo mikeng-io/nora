@@ -9,8 +9,8 @@ authored text, the scope of every row, and what may leave Nora.
 |---|---|---|
 | **law**: truth, people, trust boundaries, honest capability; one for every agent | authored | the operator only |
 | **seed**: an agent's authored name, identity and temperament; one per agent | authored | the operator only |
-| **practice**: default ways of acting | authored | the operator; a unit's lessons may refine it |
-| **lessons** and Nora's **profile** | inferred | evidence, through the reflection loop |
+| **practice**: default ways of acting; one per agent | authored | the operator; a unit's lessons may refine it |
+| **lessons** and Nora's **profile**, per unit; an affiliate also reads its primary's, its own first | inferred | evidence, through the reflection loop |
 
 - Learned content renders below authored doctrine and never loosens law.
 - A lesson that narrows or contradicts law is refused by an independent
@@ -29,10 +29,17 @@ inside this one.
 
 - Every agent runs in one deployment: one database, one set of executors and
   brakes. An agent is a scope, never a process or a container.
-- An agent speaks only through its own accounts. A room is bound to one unit,
-  so to one agent; another agent's account in that room is a stranger to it.
-- A person known to two agents is two independent states that never meet;
-  only authored identity is shared.
+- An agent speaks only through its own accounts. One platform conversation
+  binds to one room, so to one agent: binding it to two agents' units is
+  refused at startup, the other agent's account drops it before ingest, and
+  that account is a stranger in the room.
+- A person known to two agents is two independent states that never meet:
+  their DM grants, opt-outs and budgets are each agent's own, and only
+  authored identity is shared.
+- A public surface without a unit belongs to the agent whose account it is,
+  with that agent's seed and public ledger.
+- Inheritance covers the graph, never live rooms: room and presence tools
+  reach only the current unit's rooms.
 
 Each agent is an entity like any other. Her acts are items, beliefs about her
 are claims, and her commitments are intentions. Her profile and lessons need
@@ -40,8 +47,9 @@ people's responses to her acts, never only her own earlier words.
 
 ## Scope
 
-- The **unit** is the read boundary. Two rooms that must not share what is
-  said belong to different units.
+- The **unit** is the read boundary, and it shares its rows unit-wide. Two
+  rooms that must not share what is said belong to different units; an
+  affiliate inherits its primary read-only ([graph](graph.md#scope)).
 - The **origin room** binds where a row may render and where an act about it
   lands; a row whose room does not resolve is refused, never redirected.
 - **Excluded persons** are never revealed to or through: not in a reply, a
@@ -53,7 +61,9 @@ people's responses to her acts, never only her own earlier words.
 - **A DM is a room of the receiving agent's primary unit**, the agent whose
   account received it. It reads that unit and each affiliate that lists its
   owner, for an audience of that person only, through the ordinary disclosure
-  rules ([private DM](../private-dm/admission.md)). Its raw items are never
+  rules ([private DM](../private-dm/admission.md)). It is the one read from the
+  primary side into an affiliate, and nothing it reads there is published to
+  the primary. Its raw items are never
   shown outside the DM. A claim citing DM items carries the DM as its origin:
   it may be shown to the model in any room that reads the primary unit, marked
   with that origin, and doctrine governs whether anything drawn from it is

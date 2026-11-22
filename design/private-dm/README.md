@@ -30,7 +30,7 @@ There is no separate private profile, private synthetic unit, second Cognition
 engine or automatic shared-memory feed. The canonical person profile remains
 one per unit. A DM may read its agent's primary unit and each of that agent's
 affiliates that lists its owner, never another agent's units, and only through
-the per-room disclosure predicates; publication remains anchored to the
+the ordinary disclosure rules for an audience of that person; publication remains anchored to the
 primary unit.
 
 Raw messages, quotations, attachments, transcripts, activity patterns, cookies
