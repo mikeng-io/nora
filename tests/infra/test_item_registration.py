@@ -500,3 +500,36 @@ async def test_a_social_item_of_an_account_not_known_public_reaches_no_unit(
     assert units == [None]
     assert registered == 0
     assert await _stimuli(engine, name) == []
+
+
+class _BrokenMemberAccess:
+    """Managed identity that cannot resolve one circle member."""
+
+    is_file_backend = False
+
+    async def canonical_person(self, person_id: str) -> str | None:
+        if person_id == "test-broken-member":
+            raise RuntimeError("generated identity outage")
+        return person_id
+
+
+class _CircleWithBrokenMember(RegistrationScope):
+    async def circle_placements(
+        self, circle: str, **_: object,
+    ) -> dict[str | None, tuple[str, ...]]:
+        return {_UNIT: (_PERSON, "test-broken-member")}
+
+
+async def test_a_member_identity_error_stores_the_presence_fix_unscoped(
+    engine: AsyncEngine,
+) -> None:
+    room = Conversation("signal", frozenset({_ROOM}), frozenset({_PERSON}), unit=_UNIT)
+    scope = _CircleWithBrokenMember(
+        Policy((room,), _by_id={("signal", _ROOM): room}), None,
+        access=_BrokenMemberAccess(),  # type: ignore[arg-type]
+    )
+    await _Writer(engine, SqlItemRegistration(scope, _FixedRevisions())).write("presence_fixes")
+    async with engine.connect() as conn:
+        fixes = METADATA.tables["presence_fixes"]
+        units = (await conn.execute(sa.select(fixes.c.unit))).scalars().all()
+    assert units == [None]

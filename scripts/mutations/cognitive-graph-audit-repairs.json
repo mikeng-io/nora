@@ -89,5 +89,19 @@
     "old": "            self._public[person] = times.public\n",
     "new": "",
     "target": "tests/integration/test_social_poller.py::test_a_restarted_poller_places_backfill_items_from_the_recorded_probe"
+  },
+  {
+    "name": "stored registration places a social row only from an account last probed public",
+    "file": "nora/memory/adapters/stored_item_planes.py",
+    "old": "placed = name not in _SOCIAL_ITEMS or self._public.get((row[\"network\"], person), False)",
+    "new": "placed = True",
+    "target": "tests/infra/test_register_stored_rows.py::test_stored_social_rows_reach_units_only_from_an_account_last_probed_public"
+  },
+  {
+    "name": "a member identity error inside presence placement stores the fix unscoped",
+    "file": "nora/infra/sql/item_registration.py",
+    "old": "            units = set()\n            for each in sorted(c for c in circles if c is not None):\n                for unit, members in (await self.circle_placements(each) or {}).items():\n                    if unit is not None and subject in {await self._subject(m) for m in members}:\n                        units.add(unit)\n        except Exception:  # noqa: BLE001 — unknown membership must stay unscoped\n            log.warning(\"graph registration circle membership unavailable\")\n            return ()\n        return tuple(sorted(units))",
+    "new": "        except Exception:  # noqa: BLE001 — unknown membership must stay unscoped\n            log.warning(\"graph registration circle membership unavailable\")\n            return ()\n        units = set()\n        for each in sorted(c for c in circles if c is not None):\n            for unit, members in (await self.circle_placements(each) or {}).items():\n                if unit is not None and subject in {await self._subject(m) for m in members}:\n                    units.add(unit)\n        return tuple(sorted(units))",
+    "target": "tests/infra/test_item_registration.py::test_a_member_identity_error_stores_the_presence_fix_unscoped"
   }
 ]
