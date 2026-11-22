@@ -18,10 +18,10 @@ from nora.web.api import register_web_routes
 from tests.conftest import build_test_doctrine_store
 from tests.web.test_memory import _line, _Profile
 
-MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
-ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
-DAISY = PersonRef(person_id="daisy", name="Daisy", honcho_peer_id="daisy")
-SAM = PersonRef(person_id="sam", name="Sam", honcho_peer_id="sam")
+MILES = PersonRef(person_id="miles", name="Miles")
+ADA = PersonRef(person_id="ada", name="Ada")
+DAISY = PersonRef(person_id="daisy", name="Daisy")
+SAM = PersonRef(person_id="sam", name="Sam")
 # Deliberately absent — build_skills_payload's own "no skills configured"
 # state, not a fixture that needs real files on disk for tests unrelated
 # to /app/v1/skills.

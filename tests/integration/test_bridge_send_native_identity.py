@@ -60,7 +60,7 @@ def _deliverer(store: FakeRecordStore, adapter: BridgeAdapter) -> Deliverer:
 def _persons() -> Persons:
     return Persons(
         by_person={"miles": PersonRef(
-            person_id="miles", name="Miles", honcho_peer_id="miles")},
+            person_id="miles", name="Miles")},
         index={("instagram", "+852111"): "miles"},
     )
 

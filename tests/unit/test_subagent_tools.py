@@ -60,8 +60,8 @@ NOW = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
 OTHER_ROOM = "g-other"
 PUBLIC = "https://nora.example"
 DOC_ID = "11111111-1111-1111-1111-111111111111"
-KEN = PersonRef(person_id="ken", name="Ken", honcho_peer_id="ken")
-MEI = PersonRef(person_id="mei", name="Mei", honcho_peer_id="mei")
+KEN = PersonRef(person_id="ken", name="Ken")
+MEI = PersonRef(person_id="mei", name="Mei")
 
 
 class _FakeWorker:

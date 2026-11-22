@@ -179,7 +179,7 @@ async def test_canonical_name_reaches_transcript_tools_and_note_validation(
         is_nora=True,
         delivery_status=DeliveryStatus.SENT,
     )
-    person = PersonRef("generated-person", "Ada", "generated-person")
+    person = PersonRef("generated-person", "Ada")
     persons = Persons(by_person={person.person_id: person}, index={})
     room = Room(
         platform="signal",

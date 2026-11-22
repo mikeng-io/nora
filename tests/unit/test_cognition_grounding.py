@@ -393,8 +393,8 @@ def _hit(mid: int, room: Room, *, name: str = "Self Set", sender: str = "+852000
 
 _PERSONS = Persons(
     by_person={
-        "ada": PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada"),
-        "ben": PersonRef(person_id="ben", name="Ben", honcho_peer_id="ben"),
+        "ada": PersonRef(person_id="ada", name="Ada"),
+        "ben": PersonRef(person_id="ben", name="Ben"),
     },
     index={("signal", "+852111"): "ada"},
 )

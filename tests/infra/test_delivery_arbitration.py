@@ -47,7 +47,7 @@ from tests.infra.test_cognitive_graph_admission import (
 from tests.infra.test_intention_commit import _open
 from tests.test_room_tools import _call
 
-_RECIPIENT = PersonRef("second-recipient", "Generated Recipient", "generated-recipient")
+_RECIPIENT = PersonRef("second-recipient", "Generated Recipient")
 _A = "signal:room-1"
 _B = "signal:room-b"
 _CONTEXT = replace(PASS, occasion="called")

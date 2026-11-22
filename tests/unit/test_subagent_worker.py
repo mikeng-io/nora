@@ -55,7 +55,7 @@ from nora.testing import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
+MILES = PersonRef(person_id="miles", name="Miles Novak")
 PLATFORM, ROOM = "signal", "g-worker"
 SCOPE = computer_unit_scope(ROOM)
 

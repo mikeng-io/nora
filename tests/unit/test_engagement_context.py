@@ -48,7 +48,7 @@ def _request(msg: NormalizedMessage | None = None, tag_id: str = "tag-1") -> Eng
 
 
 _MILES = Persons(
-    by_person={"miles": PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")},
+    by_person={"miles": PersonRef(person_id="miles", name="Miles")},
     index={("signal", "+852111"): "miles"},
 )
 

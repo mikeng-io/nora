@@ -662,7 +662,7 @@ async def test_remind_writes_a_real_row_through_the_registry_the_root_builds(cfg
         # silently fell back to its defaults would ignore every operator value.
         assert registry._caps == ReminderCaps(**cfg.reminders.model_dump())
 
-        miles = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
+        miles = PersonRef(person_id="miles", name="Miles")
         specs = registry.specs(
             store=deps.audit, conversation_id="g1", conversation_type="group",
             persons=deps.persons, deliverer=None,

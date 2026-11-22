@@ -46,8 +46,8 @@ SHA = "ab" * 32
 
 _PERSONS = Persons(
     by_person={
-        "miles": PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles"),
-        "kit": PersonRef(person_id="kit", name="Kit", honcho_peer_id="kit"),
+        "miles": PersonRef(person_id="miles", name="Miles"),
+        "kit": PersonRef(person_id="kit", name="Kit"),
     },
     index={("signal", "+852111"): "miles", ("signal", "kit-uuid"): "kit"},
 )
@@ -230,7 +230,7 @@ async def test_an_unlisted_mention_does_not_seed_person_facts() -> None:
     persons = replace(
         _PERSONS,
         by_person={**_PERSONS.by_person,
-                   "rin": PersonRef(person_id="rin", name="Rin", honcho_peer_id="rin")},
+                   "rin": PersonRef(person_id="rin", name="Rin")},
         index={**_PERSONS.index, ("signal", "rin-uuid"): "rin"},
     )
     index = FakeMemoryIndex(

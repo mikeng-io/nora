@@ -6,8 +6,8 @@ from nora.domain.profile import ProfileDispute, ProfileLine
 from nora.persons import Persons
 from nora.web.memory import build_memory_payload
 
-MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
-ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
+MILES = PersonRef(person_id="miles", name="Miles")
+ADA = PersonRef(person_id="ada", name="Ada")
 
 
 def _persons(*refs: PersonRef) -> Persons:

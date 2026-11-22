@@ -60,7 +60,7 @@ PASS = PassContext(
     "policy-1",
 )
 DOCTRINE = "A synthetic instruction for the fixture that must stay inside the doctrine."
-PERSON = PersonRef("fixture-person", "Fixture Person", "fixture-person")
+PERSON = PersonRef("fixture-person", "Fixture Person")
 ACCOUNT = str(uuid5(NAMESPACE_DNS, "admission.sender.fixture"))
 SELF_ACCOUNT = str(uuid5(NAMESPACE_DNS, "admission.self.fixture"))
 CLAIM_PROPOSAL = CreateClaim(

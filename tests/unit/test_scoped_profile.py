@@ -416,7 +416,7 @@ async def test_the_file_backend_refuses_the_write_and_reads_absent():
 
     store = FileBindingStore(Persons(
         by_person={PERSON: PersonRef(
-            person_id=PERSON, name=GLOBAL, honcho_peer_id="generated-peer")},
+            person_id=PERSON, name=GLOBAL)},
         index={}))
     outcome = await store.set_scoped_name(
         person_id=PERSON, scope=ROOM, nickname=NICK,

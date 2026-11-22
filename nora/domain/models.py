@@ -237,7 +237,6 @@ class NormalizedMessage:
 class PersonRef:
     person_id: str
     name: str
-    honcho_peer_id: str            # == person_id, by construction
     first_name: str = ""
     last_name: str = ""
     # Other names the GROUP calls this person — 阿Miles, 米高, a handle. Shown to

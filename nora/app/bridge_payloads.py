@@ -2,8 +2,9 @@
 is the ONE dict shape a record crosses a boundary in.
 
 `_person_dict`/`_decision_dict` are the handoff snapshots a `PersonRef` /
-`EngageDecision` is rebuilt from on the far side of a work row or an event
-snapshot — the field sets a turn payload and the ingest handoff both persist.
+`EngageDecision` is rebuilt from (`_person_from_dict` for the person) on the far
+side of a work row or an event snapshot — the field sets a turn payload and the
+ingest handoff both persist.
 `_payload_trace` is the producer's W3C carrier wherever the work kind carries
 it: `envelope.trace` for ingest, propagated `trace` for the kinds ingest
 enqueued downstream. `_queue_wait_ms` is the enqueue→claim latency in ms: the
@@ -16,9 +17,12 @@ the wall-clock stamp every obligation reads.
 from __future__ import annotations
 
 import time
+from dataclasses import fields
 from typing import Any
 
 from opentelemetry.trace import Link
+
+from nora.domain.models import PersonRef
 
 
 def _now_ms() -> int:
@@ -30,9 +34,15 @@ def _person_dict(person: Any) -> dict[str, Any] | None:
     if person is None:
         return None
     return {"person_id": person.person_id, "name": person.name,
-            "honcho_peer_id": person.honcho_peer_id,
             "first_name": person.first_name, "last_name": person.last_name,
             "aliases": list(person.aliases)}
+
+
+def _person_from_dict(data: dict[str, Any]) -> PersonRef:
+    """Rebuild a `PersonRef` from a queued handoff dict, ignoring keys the model no
+    longer has: a row queued before a field was removed still carries it."""
+    known = {f.name for f in fields(PersonRef)}
+    return PersonRef(**{k: v for k, v in data.items() if k in known})
 
 
 def _decision_dict(decision: Any) -> dict[str, Any] | None:

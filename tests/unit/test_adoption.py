@@ -19,7 +19,7 @@ from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.testing.fakes import FakeRecordStore
 
-MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
+MILES = PersonRef(person_id="miles", name="Miles")
 
 
 def _persons(*, mapped: bool = True) -> Persons:

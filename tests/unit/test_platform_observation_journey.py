@@ -70,7 +70,7 @@ def _stim(sid: int, obs_id: int, kind: str, ago: float) -> Stimulus:
 
 
 _PERSONS = Persons(
-    by_person={"ada": PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")},
+    by_person={"ada": PersonRef(person_id="ada", name="Ada")},
     index={("signal", "+852111"): "ada"},
 )
 

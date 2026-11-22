@@ -15,7 +15,7 @@ TS = int(NOW.timestamp() * 1000)
 
 
 def render_default_prefill():
-    person = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
+    person = PersonRef(person_id="ada", name="Ada")
     message = NormalizedMessage(
         platform="signal", conversation_id="synthetic-room", conversation_type="group",
         sender_id="synthetic-sender", sender_name="Ada", timestamp=TS,

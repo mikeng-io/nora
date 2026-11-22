@@ -1336,8 +1336,7 @@ async def _deliver_a_finished_clip(
 ) -> dict[str, Any]:
     """Through the real backend, poller, `FirePath.speak` and deliverer, with the provider
     answering `clips` to the fetch. `reply` is what she sends; she never writes a link."""
-    persons = Persons(by_person={"miles": PersonRef(person_id="miles", name="Miles",
-                                                    honcho_peer_id="miles")},
+    persons = Persons(by_person={"miles": PersonRef(person_id="miles", name="Miles")},
                       index={("signal", "+85212345678"): "miles"})
     adapter = _AttachingAdapter()
     prompts: list[str] = []

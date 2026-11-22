@@ -25,7 +25,7 @@ from nora.obs.metrics import Metrics
 from nora.testing import FakeSocialProvider
 from tests.fakes import SinkSender
 
-MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
+MILES = PersonRef(person_id="miles", name="Miles Novak")
 _OK = {"status": "ok", "text": "<social_post>a profile</social_post>"}
 _ROWS = frozenset({
     ("linkedin", "profile"), ("linkedin", "experience"), ("linkedin", "posts"),

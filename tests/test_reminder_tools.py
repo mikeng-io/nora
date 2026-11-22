@@ -57,8 +57,8 @@ UNIT = "friends"
 T0 = datetime(2026, 8, 8, 11, 0, tzinfo=UTC)
 SOON = (T0 + timedelta(hours=2)).isoformat()
 
-MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
-TYLER = PersonRef(person_id="tyler", name="Tyler Cortez", honcho_peer_id="tyler")
+MILES = PersonRef(person_id="miles", name="Miles Novak")
+TYLER = PersonRef(person_id="tyler", name="Tyler Cortez")
 
 
 class _FakeStore:

@@ -56,7 +56,7 @@ class RollupFixture:
             conversations, _by_id={(room.platform, room.primary_id): room for room in conversations}
         )
         accounts = {(platform, p): p for platform, _ in self.rooms for p in people}
-        persons = Persons({p: PersonRef(p, p, p) for p in people}, accounts)
+        persons = Persons({p: PersonRef(p, p) for p in people}, accounts)
         self.registration = SqlItemRegistration(
             RegistrationScope(policy, persons), RuntimeRevisions({}, policy, persons)
         )

@@ -27,7 +27,7 @@ from .domain.identity import (
     metadata_keys,
 )
 
-# Honcho requires ^[a-zA-Z0-9_-]+$ for peer ids, and honcho_peer_id == person_id.
+# Honcho requires ^[a-zA-Z0-9_-]+$ for peer ids.
 _PERSON_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 # The platform sub-table names `_PersonEntry` accepts, in the order the reverse
