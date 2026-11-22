@@ -611,61 +611,9 @@ async def _run_briefly(app, *, until, polls: int = 100) -> None:
             await task
 
 
-async def test_app_run_releases_what_a_previous_process_left_before_the_wake_loop_starts(
-    env, monkeypatch,
-):
-    """The ORDER is the claim: a tick that read the unit before the release would see
-    it held. The reclaim is awaited, then the loop is spawned, and it is handed THIS
-    process's start (so a wake this process records is never released)."""
-    import time
-
-    import nora.__main__ as main_module
-
-    cfg = tomllib.loads(env.read_text())
-    cfg["cognition"] = {"enabled": True}
-    cfg["dreamer"]["enabled"] = True
-    cfg["notes"] = {"enabled": True}
-    cfg["dreamer"].setdefault("budgets", {})["cognition"] = {
-        "turns": 200, "total_tokens": 10240000, "output_tokens": 120000,
-        "timeout_seconds": 3600.0,
-    }
-    env.write_text(tomli_w.dumps(cfg))
-    policy = env.parent / "policy.toml"
-    policy.write_text(policy.read_text() + 'unit = "friends"\nhome_room = true\n')
-    order: list[str] = []
-    started: list[int] = []
-
-    async def _never(*args, **kwargs) -> None:
-        import asyncio
-        await asyncio.sleep(3600)
-
-    def _loop_spy(*args, **kwargs):
-        order.append("wake_loop")
-        return _never()
-
-    monkeypatch.setattr(main_module.tick_grid, "wake_loop", _loop_spy)
-    app = await build_app(env)
-    assert app.deps.wake_evaluator is not None
-
-    async def _reclaim(*, process_started_ms: int) -> int:
-        order.append("reclaim")
-        started.append(process_started_ms)
-        return 0
-
-    monkeypatch.setattr(app.deps.wake_evaluator, "reclaim_orphans", _reclaim)
-    try:
-        before = int(time.time() * 1000)
-        await _run_briefly(app, until=lambda: "wake_loop" in order)
-    finally:
-        await app.shutdown()
-    assert order == ["reclaim", "wake_loop"]
-    assert before <= started[0] <= int(time.time() * 1000)
-
-
-async def test_no_reclaim_and_no_wake_loop_when_cognition_is_off(env, monkeypatch):
-    """The control: with `[cognition] enabled = false` there is no evaluator to ask."""
+async def test_no_wake_poller_when_cognition_is_off(env):
     app = await build_app(env)
     try:
-        assert app.deps.wake_evaluator is None
+        assert app.deps.wake_poller is None
     finally:
         await app.shutdown()

@@ -21,6 +21,7 @@ import redis.asyncio as redis
 from aiohttp import web
 
 from nora.app.composition import Dependencies
+from nora.app.wake_poller import WakePoller
 from nora.domain.actions import ActionOwner
 from nora.domain.models import ConversationTarget
 from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint, BridgeUnavailableError
@@ -111,8 +112,15 @@ def spec(tmp_path, clean_pg_url, monkeypatch, evaluation_config) -> SubjectSpec:
 
 
 @pytest.mark.asyncio
-async def test_obtain_returns_the_production_graph(spec, clean_pg_url) -> None:
+@pytest.mark.parametrize("cognition", [False, True])
+async def test_obtain_returns_the_production_graph(spec, clean_pg_url, cognition) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
+    if cognition:
+        assert spec.policy is not None
+        spec = replace(
+            spec, policy=spec.policy + "home_room = true\n",
+            overrides={"cognition.enabled": True, "dreamer.enabled": True, "notes.enabled": True},
+        )
     requests: list[dict] = []
     daemon = FakeSignalDaemon()
     applications = {
@@ -128,8 +136,14 @@ async def test_obtain_returns_the_production_graph(spec, clean_pg_url) -> None:
         subject = await obtain(replace(spec, environment=environment))
     assert isinstance(subject.deps, Dependencies)
     fields = {f.name for f in dataclasses.fields(Dependencies)}
-    assert len(fields) == 87, "Dependency shape changed; reconcile the production subject."
+    assert len(fields) == 86, "Dependency shape changed; reconcile the production subject."
     assert {"access", "managed_services", "managed_session", "graph_observe"} <= fields
+    assert "wake_poller" in fields
+    if cognition:
+        assert isinstance(subject.deps.wake_poller, WakePoller)
+    else:
+        assert subject.deps.wake_poller is None
+    assert not requests
     assert subject.deps.graph_observe is not None
     assert subject.deps.access is subject.deps.ingest._access
     assert subject.deps.managed_link_delivery is None  # the generated subject uses file identity

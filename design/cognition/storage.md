@@ -16,7 +16,7 @@ rebuildable; it is never the truth.
 | claims | one table | revisions append; a stale base is refused |
 | intentions | one table | revisions append; ended with its outcome, and with a closed-by edge to its witness wherever its condition has one (a deadline ending has none: verify records the clock instant) |
 | registry | one row per graph row: its id, kind and unit | written with the row |
-| edges | **one table for every edge between any two rows**, citations included | revisions append |
+| edges | **one table for every edge between any two rows**, citations included | revisions append and carry live inferred about edges unless the revision supplies its own about links |
 
 Every table carries the planes under the same names and meanings: identity,
 basis, scope, provenance, time, revision, lifecycle. A column specific to a

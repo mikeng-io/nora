@@ -130,7 +130,7 @@ async def _settle_claims(
     count_recheck: bool = False,
 ) -> list[tuple[str, str, str]]:
     recorded = _reply_recorded(C.unit, C.pass_id)
-    attempts = C.attempts
+    attempts: sa.ColumnElement[int] = C.attempts
     if count_recheck:
         incomplete = _silence(C.unit, C.pass_id, P.silence_reason == RECHECK_UNAVAILABLE)
         attempts = C.attempts + sa.case((~recorded & incomplete, 1), else_=0)

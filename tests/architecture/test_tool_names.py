@@ -254,3 +254,10 @@ async def test_a_seeded_misnamed_session_tool_fails_the_live_check(monkeypatch) 
     monkeypatch.setattr(CognitionSessionRunner, "_build_tools", seeded)
     with pytest.raises(AssertionError, match="read_notebook"):
         await test_session_built_tools_use_domain_then_verb()
+
+
+def test_wake_pass_verbs_use_domain_then_verb():
+    from nora.memory.adapters.tools.wake import WAKE_VERB_NAMES
+
+    assert set(WAKE_VERB_NAMES) == {"graph_propose", "intention_commit"}
+    assert all(_CHARSET.fullmatch(name) and _shape().fullmatch(name) for name in WAKE_VERB_NAMES)

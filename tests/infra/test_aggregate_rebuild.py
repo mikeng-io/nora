@@ -28,6 +28,7 @@ from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.schema import MESSAGES, METADATA, PRESENCE_CORRIDORS, PRESENCE_DERIVED_PLACES
 from nora.memory.domain.registration import AGGREGATE_FAMILIES
 from nora.memory.wire import claim_support, intention_verifier
+from nora.testing.room_slots import FakeRoomSlots
 from tests.infra.rollup_fixtures import RollupFixture
 from tests.infra.test_condition_matcher import _intention
 from tests.infra.test_support import _evidence
@@ -289,7 +290,9 @@ async def _verdict_head(record, table):
         unit=record.unit, asserted_at=epoch_ms(_START), deadline=at,
         origin_room=f"signal:{dict(record.rooms)['signal']}",
     )
-    verifier = intention_verifier(record.engine, lambda: at, max_poll_gap_seconds=900)
+    verifier = intention_verifier(
+        record.engine, lambda: at, max_poll_gap_seconds=900, room_slots=FakeRoomSlots({}),
+    )
     await verifier.run_once()
     folded = await _snapshot(record.engine, table)
     async with record.engine.begin() as conn:

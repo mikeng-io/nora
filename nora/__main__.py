@@ -23,7 +23,7 @@ from typing import Any, Protocol
 
 from . import config
 from .agent.telemetry import setup_agent_tracing
-from .app import adoption, cli, lifecycle, runtime, tick_grid
+from .app import adoption, cli, lifecycle, runtime
 from .app.composition import Dependencies, StartupError, build_dependencies
 from .app.management import mount_management
 from .app.revisions import RevisionRecorder
@@ -316,21 +316,12 @@ class App:
             )
         else:
             log.info("dream loop disabled (dreamer.enabled = false)")
-        # The cognition loop's wake evaluator: it records wakes and hands each
-        # to the Cognition session, the one background writer (DEC-277).
-        # `None` under `[cognition] enabled = false`.
-        if deps.wake_evaluator is not None:
-            # BEFORE the loop starts, and awaited, for the reason the watermarks
-            # above are: whatever a previous process left open is released before
-            # a tick reads it, so a restart never holds a unit for the rest of a
-            # session timeout. Never raises (it counts and logs); a wake it could
-            # not release expires on its own clock.
-            await deps.wake_evaluator.reclaim_orphans(process_started_ms=int(started_at * 1000))
-            deps.background.spawn(tick_grid.wake_loop(
-                deps.wake_evaluator, deps.metrics,
-                tick_seconds=deps.wake_tick_seconds))
+        # Eval subjects compose the graph without starting its wake poller.
+        if deps.wake_poller is not None:
+            await deps.wake_poller.recover()
+            deps.background.spawn(deps.wake_poller.run())
         else:
-            log.info("cognition loop disabled ([cognition] enabled = false)")
+            log.info("graph wake disabled ([cognition] enabled = false)")
         # The OAuth keepalive (DEC-308): HERE and not in composition, because
         # the eval subject composes the same graph and must not spend the
         # deployment's rotating refresh tokens. `None` with image generation

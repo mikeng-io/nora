@@ -102,7 +102,7 @@ class SqlWakeClaims:
             return claim
 
     async def settle(self, claim: WakeClaim, outcome: WakeOutcome, now: datetime) -> int:
-        attempts = C.attempts
+        attempts: sa.ColumnElement[int] = C.attempts
         state: str | sa.ColumnElement = "closed"
         if outcome.state == "failed":
             attempts = C.attempts + int(outcome.cause != "room_busy")

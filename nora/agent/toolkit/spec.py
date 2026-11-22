@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from nora.agent.catalog.entries import NATIVE_TOOLS
+from nora.agent.catalog.model import NativeTool
 from nora.agent.ports import ToolSpec
 
 
-def _spec(name: str, call) -> ToolSpec:
-    """One `ToolSpec`, with every declared field taken from `NATIVE_TOOLS[name]`."""
-    declared = NATIVE_TOOLS[name]
+def _spec(name: str, call, *, declared: NativeTool | None = None) -> ToolSpec:
+    """One `ToolSpec`, with every declared field taken from the tool catalogue."""
+    declared = NATIVE_TOOLS[name] if declared is None else declared
     return ToolSpec(
         name=name,
         description="",

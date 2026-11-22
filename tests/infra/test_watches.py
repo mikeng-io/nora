@@ -355,7 +355,9 @@ async def test_observe_extracts_only_the_admitted_url_via_the_local_provider(wor
         api_key="local-fixture", extract_url=str(server.make_url("/extract"))
     )
     edge = await world.watch()
-    observe = graph_observe(world.engine, lambda: _AT, Metrics(), provider)
+    observe = graph_observe(
+        world.engine, lambda: _AT, Metrics(), provider, room_slots=FakeRoomSlots({}),
+    )
     await observe.tick()
     assert sent == [
         {"urls": [_URL], "extract_depth": "basic", "format": "markdown", "include_images": True}

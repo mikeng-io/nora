@@ -23,7 +23,7 @@
   {
     "name": "the session's guard drops R-99 (no accepted argument names)",
     "file": "nora/app/cognition_agent_runner.py",
-    "old": "            param_names=self._param_names,\n            per_tool_ceilings=False,",
+    "old": "            param_names=param_names,\n            per_tool_ceilings=False,",
     "new": "            per_tool_ceilings=False,",
     "target": "tests/unit/test_cognition_no_call_ceilings.py::test_a_session_still_refuses_an_argument_the_tool_does_not_declare"
   },
@@ -102,7 +102,7 @@
     "file": "nora/app/composition_cognition.py",
     "old": "            budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),",
     "new": "budget=cognition_budget(DreamBudgetConfig()),",
-    "target": "tests/test_composition.py::test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluator"
+    "target": "tests/test_composition.py::test_cognition_on_builds_one_runner_for_backfill_alongside_graph_wake"
   },
   {
     "name": "a limit stop closes the session like any other end (strikes the unreached items)",

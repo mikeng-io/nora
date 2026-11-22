@@ -202,8 +202,10 @@ class _AnchorQueries:
             r.graph_id, r.kind, r.origin_room, r.image["persons"],
         ).where(r.graph_id.in_(refs)))
         visible = {graph_id: (kind, room, people) for graph_id, kind, room, people in rows}
+        claimed_ids = {stimulus.graph_id for stimulus in stimuli}
         ids = tuple(
-            ref for ref in refs if ref in visible and visible[ref][0] in ("item", "intention")
+            ref for ref in refs if ref in visible
+            and (ref in claimed_ids or visible[ref][0] in ("item", "intention"))
         )
         links = await self._touched_intentions(tuple(visible))
         return _Seeds(
@@ -219,7 +221,7 @@ class _AnchorQueries:
         link = self._graph.alias("stimulus_links").c
         src, dst = link.image["src_id"].astext, link.image["dst_id"].astext
         return tuple(await self._conn.scalars(sa.select(r.graph_id).where(
-            r.kind == "intention", sa.exists(sa.select(1).where(
+            r.kind == "intention", r.state == "open", sa.exists(sa.select(1).where(
                 link.kind == "edge", link.state == "live",
                 sa.or_(sa.and_(src == r.graph_id, dst.in_(refs)),
                        sa.and_(dst == r.graph_id, src.in_(refs))),

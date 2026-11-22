@@ -11,6 +11,7 @@ from nora.app.tick_grid import aligned_ticks
 from nora.config import AnalyticsConfig
 from nora.domain.ports import SearchProvider
 from nora.domain.ticks import TICK_SECONDS
+from nora.memory import RoomSlots
 
 log = logging.getLogger(__name__)
 
@@ -45,7 +46,8 @@ class GraphObserve:
 
 def graph_observe(
     engine: AsyncEngine, clock: Callable[[], datetime], metrics: Any,
-    provider: SearchProvider | None = None, *, analytics: AnalyticsConfig | None = None,
+    provider: SearchProvider | None = None, *, room_slots: RoomSlots,
+    analytics: AnalyticsConfig | None = None,
 ) -> GraphObserve:
     import nora.memory as memory
 
@@ -55,6 +57,7 @@ def graph_observe(
         matcher=memory.wire.condition_matcher(engine),
         verifier=memory.wire.intention_verifier(
             engine, clock, max_poll_gap_seconds=analytics.health_max_poll_gap_seconds,
+            room_slots=room_slots,
         ),
         watches=memory.wire.watch_poller(engine, clock, provider) if provider is not None else None,
         metrics=metrics,

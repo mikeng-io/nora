@@ -54,6 +54,8 @@ from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
 from nora.memory.adapters.tools.search import GraphReadTools
 from nora.memory.adapters.tools.session import session_verbs as _session_verbs
+from nora.memory.adapters.tools.wake import WAKE_TOOLS as WAKE_TOOLS
+from nora.memory.adapters.tools.wake import WakeToolSurface as WakeToolSurface
 from nora.memory.adapters.verify import SqlIntentionVerification
 from nora.memory.adapters.wake_claims import SqlWakeClaims
 from nora.memory.adapters.watch_page import WATCH_ADAPTERS
@@ -67,6 +69,7 @@ from nora.memory.app.retrieval import RetrievalService
 from nora.memory.app.verify import IntentionVerifier
 from nora.memory.app.watches import WatchPoller
 from nora.memory.domain.admission_ports import RoomSlots
+from nora.memory.domain.graph_operations import WAKE_OPERATIONS as WAKE_OPERATIONS
 from nora.persons import Persons
 from nora.policy import Policy
 
@@ -386,10 +389,11 @@ def condition_matcher(engine: AsyncEngine) -> SqlConditionMatcher:
 
 def intention_verifier(
     engine: AsyncEngine, clock: Callable[[], datetime], *, max_poll_gap_seconds: float,
+    room_slots: RoomSlots,
 ) -> IntentionVerifier:
     return IntentionVerifier(
         SqlIntentionVerification(engine, SqlCognitiveGraph(engine)), SqlRollupStore(engine), clock,
-        max_poll_gap_ms=int(max_poll_gap_seconds * 1000),
+        max_poll_gap_ms=int(max_poll_gap_seconds * 1000), room_slots=room_slots,
     )
 
 

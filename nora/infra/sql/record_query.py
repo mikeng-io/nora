@@ -79,11 +79,14 @@ class SqlRecordQuery:
         q: RecordQuery,
         *,
         as_of_ms: int,
+        unit: str | None = None,
     ) -> tuple[tuple[RecordHit, ...], bool, frozenset[int]]:
         """Code-selected context read. Its dynamic limit comes from the rendered
         character budget; model-facing query retains its existing row ceiling.
         """
-        return await self._query(q, as_of_ms=as_of_ms, limit=max(0, q.limit), known_before=as_of_ms)
+        return await self._query(
+            q, as_of_ms=as_of_ms, limit=max(0, q.limit), known_before=as_of_ms, unit=unit,
+        )
 
     async def _query(
         self,
@@ -92,13 +95,16 @@ class SqlRecordQuery:
         as_of_ms: int | None,
         limit: int,
         known_before: int | None = None,
+        unit: str | None = None,
     ) -> tuple[tuple[RecordHit, ...], bool, frozenset[int]]:
         if not q.rooms or limit == 0 or q.end_ms <= q.start_ms:
             return (), False, frozenset()
-        in_rooms = sa.or_(*(
+        in_rooms: sa.ColumnElement[bool] = sa.or_(*(
             sa.and_(MESSAGES.c.platform == platform, MESSAGES.c.conversation_id == cid)
             for platform, cid in q.rooms
         ))
+        if unit is not None:
+            in_rooms = sa.and_(in_rooms, MESSAGES.c.unit == unit)
         stmt = (
             transcript_select(edits_before=as_of_ms, known_before=known_before)
             .add_columns(MESSAGES.c.platform, MESSAGES.c.conversation_id)
@@ -219,7 +225,7 @@ class SqlRecordQuery:
         state."""
         if not refs or not rooms:
             return ()
-        in_rooms = sa.or_(*(
+        in_rooms: sa.ColumnElement[bool] = sa.or_(*(
             sa.and_(MESSAGES.c.platform == platform, MESSAGES.c.conversation_id == cid)
             for platform, cid in rooms
         ))
@@ -301,7 +307,7 @@ class SqlRecordQuery:
         bounds the window itself."""
         if not rooms or limit <= 0 or end_ms <= start_ms:
             return ()
-        in_rooms = sa.or_(*(
+        in_rooms: sa.ColumnElement[bool] = sa.or_(*(
             sa.and_(MESSAGES.c.platform == platform, MESSAGES.c.conversation_id == cid)
             for platform, cid in rooms
         ))

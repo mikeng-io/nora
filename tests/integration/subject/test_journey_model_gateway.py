@@ -20,6 +20,8 @@ from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from evals.services import load_services
 from nora.agent import factory
 from nora.agent.speech_format import render_input
+from nora.instructions.dreamer import DreamerInstructions
+from nora.obs.metrics import Metrics
 from nora.subject.eval_evidence import EvidenceError
 from nora.subject.journey_world import make_causal_protocol
 from nora.subject.obtain import SubjectSpec, build_config
@@ -233,9 +235,21 @@ def test_generated_subject_answers_every_production_declaration(tmp_path, evalua
     def tool_spec(name, arg, arg_type):
         return name, {"type": "object", "required": [arg], "properties": {arg: {"type": arg_type}}}
 
+    wake_instructions = DreamerInstructions(cfg.dreamer.dir, metrics=Metrics())
     cases = {
         **_foreground_declarations(cfg, request, tool_spec),
         **_language_declarations(cfg, request, background, tool_spec),
+        "nora/app/wake_pass.py": [
+            (
+                request(
+                    "dreamer", cfg.dreamer_model(), "<agenda/>\n<lesson_evidence/>",
+                    system=wake_instructions.for_objective("wake").text,
+                    tools=(tool_spec("graph_propose", "operations", "array"),),
+                ),
+                "wake",
+                "Generated protocol retains the previous account.",
+            ),
+        ],
     }
     # These three builders share the scripted turn, cognition and fold journey.
     scripted = {

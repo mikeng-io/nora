@@ -62,6 +62,7 @@ def make_causal_protocol(cfg: Config) -> CausalProtocol:
             PROFILE_PERSON_ADAPTOR_NAME: "profile",
             **dict.fromkeys(PROFILE_COLLECTIVE_ADAPTOR_NAMES, "profile"),
             PROFILE_VERDICT_ADAPTOR_NAME: "profile_verdict",
+            "wake": "session_close",
         },
     )
 

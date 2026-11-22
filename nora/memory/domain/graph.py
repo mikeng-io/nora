@@ -84,7 +84,7 @@ class EdgeDeclaration:
 EDGES: dict[str, EdgeDeclaration] = {
     "cites": EdgeDeclaration(
         family="cites",
-        source_kinds=frozenset({"claim", "intention", "aggregate", "entity"}),
+        source_kinds=frozenset({"claim", "intention", "aggregate", "entity", "edge"}),
         target_kinds=frozenset({"item", "aggregate", "entity"}),
         bases=frozenset({"computed", "inferred", "committed"}),
     ),

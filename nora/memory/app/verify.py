@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Literal, Protocol
 
 from nora.domain.rollup import HealthRow, adapter_up, polls_healthy
+from nora.memory.domain.admission_ports import RoomSlots
 
 ClockEnding = Literal["dropped", "leaked", "unknown"]
 
@@ -17,6 +18,7 @@ class DueIntention:
     id: str
     deadline: datetime
     drops: bool
+    origin_room: str | None
 
 
 class VerificationBatch(Protocol):
@@ -43,23 +45,34 @@ class HealthReader(Protocol):
 class IntentionVerifier:
     def __init__(
         self, store: VerificationStore, health: HealthReader, clock: Callable[[], datetime],
-        *, max_poll_gap_ms: int,
+        *, max_poll_gap_ms: int, room_slots: RoomSlots,
     ) -> None:
         self._store = store
         self._health = health
         self._clock = clock
         self._max_poll_gap_ms = max_poll_gap_ms
+        self._room_slots = room_slots
 
     async def run_once(self) -> None:
         async with self._store.batch() as batch:
             for due in await batch.due_intention_heads(self._clock()):
+                if self._room_busy(due):
+                    continue
                 if due.drops:
                     ending: ClockEnding = "dropped"
                 else:
                     opened, sources = await batch.window(due)
                     ending = "leaked" if await self._healthy(due, opened, sources) else "unknown"
+                    if self._room_busy(due):
+                        continue
                 await batch.end(due, ending)
             await batch.record_verdicts(self._clock)
+
+    def _room_busy(self, due: DueIntention) -> bool:
+        if due.origin_room is None:
+            return False
+        room = self._room_slots.resolve(due.origin_room, due.unit)
+        return room is not None and self._room_slots.held(room)
 
     async def _healthy(
         self, due: DueIntention, opened: datetime, sources: set[tuple[str, str]],
