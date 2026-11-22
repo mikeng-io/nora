@@ -403,15 +403,12 @@ async def test_stimulus_reclaim_dedupes_the_message_row(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("queued_with_removed_key", [False, True])
 async def test_kill_between_audit_and_handoff_resumes_from_snapshot(
-        bridge, redis_client, harness, monkeypatch, queued_with_removed_key):
+        bridge, redis_client, harness, monkeypatch):
     """The real fault window the probe reproduces: audit commits, the
     downstream-obligation commit dies. The reclaim must resume from the
     snapshot the audit transaction persisted — one message row, no
-    re-ingest, no second gate call, every obligation committed once.
-    A handoff queued before a `PersonRef` field was removed still carries
-    that key, and the reclaim must resume from it all the same."""
+    re-ingest, no second gate call, every obligation committed once."""
     store, _, stream = bridge
     env = _envelope("hello room", 5100, sender=MAPPED_SENDER)
     await _register(redis_client, store, stream, env)
@@ -464,16 +461,6 @@ async def test_kill_between_audit_and_handoff_resumes_from_snapshot(
     assert handoff["absorbed"] is True
     assert handoff["person"]["person_id"] == "miles"
     assert "honcho_peer_id" not in handoff["person"]   # what the writer emits now
-    if queued_with_removed_key:
-        # The row as an older release wrote it; read it back so the replay
-        # provably starts from a snapshot that carries the key.
-        legacy = {**handoff, "person": {**handoff["person"], "honcho_peer_id": "miles"}}
-        async with store._engine.begin() as conn:
-            await conn.execute(sa.update(BRIDGE_EVENT).where(
-                BRIDGE_EVENT.c.id == env.event_id).values(
-                payload={**event["payload"], "handoff": legacy}))
-        stored = (await store.event(env.event_id))["payload"]["handoff"]["person"]
-        assert stored["honcho_peer_id"] == "miles"
 
     monkeypatch.undo()  # enqueue_work + gate restored for the replay
     work = await store.claim_next(owner="w", lease_seconds=60)

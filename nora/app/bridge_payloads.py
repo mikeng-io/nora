@@ -39,8 +39,7 @@ def _person_dict(person: Any) -> dict[str, Any] | None:
 
 
 def _person_from_dict(data: dict[str, Any]) -> PersonRef:
-    """Rebuild a `PersonRef` from a queued handoff dict, ignoring keys the model no
-    longer has: a row queued before a field was removed still carries it."""
+    """A `PersonRef` from a queued handoff, dropping keys a removed field left in old rows."""
     known = {f.name for f in fields(PersonRef)}
     return PersonRef(**{k: v for k, v in data.items() if k in known})
 
