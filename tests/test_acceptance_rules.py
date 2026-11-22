@@ -38,8 +38,8 @@ _R90_PERSONS = Persons(
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-
 RULE_TESTS = {
+    "proactive-claim": "test_a_due_intention_delivers_once_and_closes_only_on_a_reply_outcome",
     "debrief-pass-items": "test_debrief_writes_only_commit_operations_citing_its_pass_items",
     "DEC-97": "test_running_identity_is_independent_of_the_latest_release",
     "DEC-324": "test_a_server_entry_admits_a_discovered_channel_by_guild_id",

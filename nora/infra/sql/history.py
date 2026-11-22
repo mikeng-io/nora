@@ -65,6 +65,7 @@ CAPTURE_SETTING = "nora.row_history"
 #: `message_edit` (deleted by cascade when a message is pruned).
 HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     "debrief_obligation": ("unit", "pass_id"),
+    "graph_stimulus_claim": ("unit", "kind", "graph_id", "occurrence", "claimant"),
     "managed_person": ("person_id",),
     "managed_account": ("account_id",),
     "managed_identifier": ("platform", "kind", "value"),

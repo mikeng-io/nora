@@ -44,6 +44,19 @@ class GraphPresentationBlocks:
             rows, now=self._now, reading_room=self._room, dm_rooms=self._dm_rooms,
         )
 
+    def due_intention(
+        self, result: RetrievalResult, intention: str,
+    ) -> tuple[ContextBlock, frozenset[str]]:
+        head = next((row for row in result.rows if row.graph_id == intention
+                     and row.state == "open" and row.unavailable is None), None)
+        related = {edge.target for edge in head.edges if edge.source == intention
+                   and edge.type in ("rests_on", "serves")} if head is not None else set()
+        rows = () if head is None else (head, *(
+            row for row in result.rows if row.graph_id in related and row.unavailable is None
+        ))
+        block = _graph_block(result, self._rows(rows), name="due_intention")
+        return block, frozenset(row.graph_id for row in rows)
+
     def profile_block(
         self, result: RetrievalResult, subject: EntityAnchor, names: Mapping[str, str],
     ) -> tuple[ContextBlock, tuple[str, ...]]:

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Collection, Mapping
+from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -84,7 +84,7 @@ def build(
     cacheable_tools: frozenset[str] = frozenset(),
     tool_call_log_store: Any = None,
     reasoning_strip_store: Any = None,
-    send_permitted: bool = True,
+    send_permitted: bool | Callable[[], Awaitable[bool]] = True,
     lookups: Collection[str] | None = None,
     param_names: Mapping[str, frozenset[str]] | None = None,
     intent: str | None = None,

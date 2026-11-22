@@ -121,13 +121,15 @@ class SqlIntentionBatch:
             .order_by(_OUTCOME.id.desc()).limit(1)
         )
         row = (await self._conn.execute(stmt)).mappings().one_or_none()
-        if row is None or not await self._healthy(unit, (row["executor"], "")):
+        if row is None or row["verdict"] == "uncertain":
             return Evaluation("unknown")
-        if row["verdict"] == "uncertain":
+        done = row["verdict"] == "done"
+        # The recorded success is the witness for the intention's own delivery.
+        if not (done and isinstance(condition, OwnDelivery)) and not await self._healthy(
+            unit, (row["executor"], ""),
+        ):
             return Evaluation("unknown")
-        if row["verdict"] != "done":
-            return Evaluation("false", _witness(row, row["asserted_at"]))
-        return Evaluation("true", _witness(row, row["asserted_at"]))
+        return Evaluation("true" if done else "false", _witness(row, row["asserted_at"]))
 
     async def _person(self, intention: Mapping[str, Any], condition: PersonEvent) -> Evaluation:
         unit = intention["unit"]

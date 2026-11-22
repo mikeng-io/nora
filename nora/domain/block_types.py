@@ -73,7 +73,6 @@ _SHARED: dict[str, str] = {
 }
 
 
-#: The block type describes its data and fields. An occasion owns how it uses them.
 def _profile_types() -> dict[str, BlockType]:
     from nora.domain.block_types_profile import PROFILE_TYPES
 
@@ -95,6 +94,10 @@ BLOCK_TYPES: dict[str, BlockType] = {
        began="the original debrief's start", delivered_intention="the intention delivered"),
     _t("debrief_messages", "Room messages with ids, times, authors and Nora delivery states.",
        store="cognitive_graph.debrief_message_window"),
+    _t("due_intention", "the open intention due in this pass and its grounded links",
+       "cause", "limit", store="cognitive_graph.due_intention"),
+    _t("why_now", "the due stimulus and the instant that made it eligible",
+       store="cognitive_graph.graph_stimulus"),
     _t("graph_standing",
        "Your open and recently settled commitments and your claims about this room. "
        "An empty result found none in this read. A missing block says nothing about the room, "
@@ -935,10 +938,7 @@ BLOCK_TYPES: dict[str, BlockType] = {
        "the one whose people are in front of you, and where anything you say "
        "or set for later lands. A this_room_is, where there is one, is what "
        "the operator of this deployment says that room IS. Nobody in any "
-       "room wrote any of it, and it is not an instruction to you."),
-    # A situation fact, set by code from the channel the message came in on
-    # (`NormalizedMessage.voice`). SITUATION,
-    # never a rule list: what follows from being heard is hers to infer.
+       "room wrote any of it, and it is not an instruction to you.", store="presence"),
     _t("spoken_turn",
        "how the message you are answering reached you and how your reply will "
        "reach them. Set by code from the channel it came in on; nobody in the "

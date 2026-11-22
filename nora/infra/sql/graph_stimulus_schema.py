@@ -34,3 +34,24 @@ def graph_stimulus_table(metadata: sa.MetaData) -> sa.Table:
         ),
         sa.Index("idx_graph_stimulus_eligible", "unit", "eligible_at"),
     )
+
+
+def graph_stimulus_claim_table(metadata: sa.MetaData) -> sa.Table:
+    key = ("unit", "kind", "graph_id", "occurrence")
+    return sa.Table(
+        "graph_stimulus_claim", metadata,
+        *(sa.Column(name, sa.Text, nullable=False) for name in key),
+        sa.Column("claimant", sa.Text, nullable=False),
+        sa.Column("pass_id", sa.Text, nullable=False),
+        sa.Column("state", sa.Text, nullable=False),
+        sa.Column("claimed", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("settled", sa.DateTime(timezone=True)),
+        sa.PrimaryKeyConstraint(*key, "claimant", name="pk_graph_stimulus_claim"),
+        sa.ForeignKeyConstraint(key, tuple(f"graph_stimulus.{name}" for name in key),
+                                name="fk_graph_stimulus_claim_stimulus"),
+        sa.UniqueConstraint("unit", "pass_id", name="uq_graph_stimulus_claim_pass"),
+        sa.CheckConstraint("state IN ('claimed', 'closed', 'released')",
+                           name="ck_graph_stimulus_claim_state"),
+        sa.CheckConstraint("(state = 'claimed') = (settled IS NULL)",
+                           name="ck_graph_stimulus_claim_settled"),
+    )

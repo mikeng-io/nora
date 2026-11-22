@@ -135,6 +135,7 @@ NON_GRAPH_TABLES: MappingProxyType[str, NonGraphReason] = MappingProxyType({
     "geocode_cache": "operational",
     "debrief_obligation": "operational",
     "graph_stimulus": "graph kind",
+    "graph_stimulus_claim": "operational",
     "instagram_summons": "transport",
     "intention": "graph kind",
     "language_observation": "legacy",
