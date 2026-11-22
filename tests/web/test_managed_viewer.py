@@ -10,6 +10,7 @@ import pytest
 from aiohttp import web
 
 from nora.agent.whereis import Circle
+from nora.domain.culture import character_key
 from nora.domain.identity import Identifier
 from nora.domain.managed import AccountState, ManagedAccount, ManagedPerson, PersonLifecycle
 from nora.domain.management import Scope, ScopeKind
@@ -33,6 +34,7 @@ from tests.unit.test_management_authentication import ISSUER, claims, signed
 from tests.web.test_api import NO_SKILLS_DIR, _fake_events
 from tests.web.test_documents_api import JO, KEN, MEI, _seed, _World
 from tests.web.test_management_sessions import sign_in
+from tests.web.test_memory import _line, _Profile
 
 
 def proof(value, path, body=b"", method="GET"):
@@ -82,7 +84,11 @@ async def surface(aiohttp_client, request):
                                                      index={}), ai_peer="nora", started_at=0.0,
         presence=None, presence_circles=(Circle("generated-circle", frozenset({"ken", "jo"})),),
         skills_dir=NO_SKILLS_DIR, events=_fake_events(),
-        doctrine_store=build_test_doctrine_store(), documents=world.store, rooms_of=world.rooms_of)
+        doctrine_store=build_test_doctrine_store(), documents=world.store, rooms_of=world.rooms_of,
+        profile=_Profile(heads={character_key(unit, "ken"): (
+            _line("l-" + unit, "cycles to work", unit=unit,
+                  profile_key=character_key(unit, "ken")),)
+            for unit in ("generated-unit-a", "generated-unit-b")}))
     verifier = AuthenticationVerifier([ISSUER])
     register_session_routes(app, sessions=AccountSessions(store, registry), verifier=verifier)
     register_managed_viewer(app, bindings=store, registry=registry,
@@ -175,20 +181,21 @@ async def test_managed_roster_and_documents_follow_current_unit_access_not_the_f
     assert (await client.get(document, headers=proof(authentication, document))).status == 503
 
 
-async def test_memory_workspace_routing_follows_authorized_units(surface):
+async def test_memory_accounts_follow_authorized_units(surface):
+    """The store holds ken an account in each of two units; the portal shows
+    only the units whose rooms he can currently see."""
     client, _, _, _, authentication = surface
     path = "/app/v1/memory?personId=ken"
     body = await (await client.get(path, headers=proof(authentication, path))).json()
-    assert [entry["workspace"] for entry in body] == ["generated-workspace-a"]
+    assert [account["unit"] for account in body] == ["generated-unit-a"]
     backend = client.server.app["test_authority"]
     scope = Scope(ScopeKind.ROOM, "signal/r3")
     await backend.put_relation(scope=scope, relation="grant_view", person_id="ken")
     body = await (await client.get(path, headers=proof(authentication, path))).json()
-    assert [entry["workspace"] for entry in body] == [
-        "generated-workspace-a", "generated-workspace-b"]
+    assert [account["unit"] for account in body] == ["generated-unit-a", "generated-unit-b"]
     await backend.drop_relation(scope=scope, relation="grant_view", person_id="ken")
     body = await (await client.get(path, headers=proof(authentication, path))).json()
-    assert [entry["workspace"] for entry in body] == ["generated-workspace-a"]
+    assert [account["unit"] for account in body] == ["generated-unit-a"]
 
 
 async def test_visible_profile_aliases_resolve_without_exposing_other_units(surface):

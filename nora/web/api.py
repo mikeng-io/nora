@@ -240,8 +240,7 @@ def register_web_routes(
     async def memory(request: web.Request) -> web.Response:
         a = _ctx(request)
         body = await build_memory_payload(
-            honcho=a["web_honcho"], persons=a["web_persons"], ai_peer=a["web_ai_peer"],
-            person_id=request.query.get("personId"),
+            persons=a["web_persons"], person_id=request.query.get("personId"),
             workspaces_of=a["web_workspaces_of"],
             profile=a["web_profile"], profile_scopes_of=a["web_profile_scopes_of"],
             cited=a["web_profile_cited"], rooms_of=a["web_rooms_of"],

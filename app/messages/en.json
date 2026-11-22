@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Nora",
-    "description": "Nora's portal: where the circle is, what's coming up, what she remembers."
+    "description": "Nora's portal: where the circle is, what's coming up."
   },
   "app": {
     "skip": "Skip to content",
@@ -41,7 +41,7 @@
     "downloads": "Downloads",
     "more": "More",
     "nora": "About her",
-    "memory": "Her memory of you",
+    "memory": "Her account of you",
     "doctrine": "How she behaves",
     "abilities": "What she can do",
     "search": "Search",
@@ -185,8 +185,8 @@
     "metaTitle": "Sign in",
     "status": "For the circle",
     "title": "The circle's side of Nora.",
-    "lede": "Where everyone is, what's coming up, what she remembers about you. Sign in with the Discord account she already knows.",
-    "ledeWithCode": "Where everyone is, what's coming up, what she remembers about you. Sign in with the Discord account she already knows, or a code she sends you on Signal or WhatsApp.",
+    "lede": "Where everyone is, what's coming up. Sign in with the Discord account she already knows.",
+    "ledeWithCode": "Where everyone is, what's coming up. Sign in with the Discord account she already knows, or a code she sends you on Signal or WhatsApp.",
     "discord": "Sign in with Discord",
     "telegram": "Sign in with Telegram",
     "redirectingTelegram": "Opening Telegram…",
@@ -303,10 +303,6 @@
       "proposed": "Proposed",
       "staged": "Not yet proposed",
       "reminders": "{count, plural, one {# reminder} other {# reminders}} waiting across the rooms, next {when}"
-    },
-    "notes": {
-      "title": "From her notes about you",
-      "more": "Everything she remembers"
     },
     "circle": {
       "title": "The circle",
@@ -604,8 +600,8 @@
     "onMap": "On the map",
     "sections": "About this person",
     "overview": "Overview",
-    "memory": "Her memory of you",
-    "memoryLink": "What Nora remembers about you",
+    "memory": "Her account of you",
+    "memoryLink": "Her account of you",
     "memoryLinkLede": "Only you can see it.",
     "today": "Last 24 hours",
     "todayLede": "Where {name} has been since yesterday.",
@@ -682,23 +678,11 @@
     }
   },
   "memory": {
-    "title": "Her memory of you",
-    "lede": "What Nora has written down about you from the group chats. Only you can see this page.",
-    "workspaces": "Circles",
-    "private": "Only you can see this. Nobody else in the circle can open your page's memory, and Nora won't describe it to anyone.",
-    "partial": "Part of her memory didn't answer just now, so this may be missing things.",
-    "unreachable": "Her memory didn't answer. This isn't the same as there being nothing.",
-    "emptyTitle": "Nothing written down yet",
-    "empty": "She hasn't concluded anything about you yet. It builds slowly from what you say in the rooms.",
-    "identityTitle": "Who you are to her",
-    "identityLede": "What she has taken as fact about you.",
-    "identityEmpty": "Nothing she's sure of yet.",
-    "episodesTitle": "What she remembers",
-    "episodesLede": "{count, plural, one {# thing} other {# things}}, newest first.",
-    "episodesEmpty": "Nothing yet.",
-    "search": "Search her notes",
-    "noMatch": "Nothing in her notes matches that.",
-    "more": "Show {count} more",
+    "title": "Her account of you",
+    "lede": "The account Nora keeps of you from the group chats. Only you can see this page.",
+    "private": "Only you can see this. Nobody else in the circle can open this page, and Nora won't describe it to anyone.",
+    "emptyTitle": "Nothing to show here",
+    "empty": "This page doesn't show everything she holds about you, so an empty page isn't the same as her holding nothing.",
     "profileTitle": "Her account of you",
     "profileLede": "Every line she holds, and what each one rests on. If a line is wrong, say so in the room — only you can correct it.",
     "profileIdentity": "Who you are",
@@ -751,8 +735,7 @@
     "remindersPrivacy": "What a reminder says, and who asked for it, stays in the room it was set in. Only the time and the platform show here.",
     "waysIn": "More about her",
     "countUnknown": "Couldn't check just now",
-    "memoryLede": "What she has concluded about you. Only you can see it.",
-    "memoryCount": "{n, plural, one {# thing remembered} other {# things remembered}}",
+    "memoryLede": "Each line she holds about you, and what it rests on. Only you can see it.",
     "doctrineLede": "The words every reply of hers is held to, as she reads them now.",
     "doctrineCount": "{n, plural, one {# part} other {# parts}}",
     "abilitiesLede": "Every tool she can use and every skill she can load, straight from what's running.",

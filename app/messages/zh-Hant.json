@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Nora",
-    "description": "Nora 嘅入口：大家喺邊、有咩搞緊，同埋佢記得啲咩。"
+    "description": "Nora 嘅入口：大家喺邊、有咩搞緊。"
   },
   "app": {
     "skip": "跳到內容",
@@ -41,7 +41,7 @@
     "downloads": "下載",
     "more": "更多",
     "nora": "關於佢",
-    "memory": "佢記得你乜",
+    "memory": "佢筆下嘅你",
     "doctrine": "佢點做人",
     "abilities": "佢識做咩",
     "search": "搜尋",
@@ -185,8 +185,8 @@
     "metaTitle": "登入",
     "status": "俾班朋友用",
     "title": "Nora 屬於班朋友嗰一面。",
-    "lede": "大家而家喺邊、有咩約緊，同埋佢記得你啲咩。用佢已經識嘅 Discord 帳號登入。",
-    "ledeWithCode": "大家而家喺邊、有咩約緊，同埋佢記得你啲咩。用佢已經識嘅 Discord 帳號，或者佢喺 Signal、WhatsApp send 俾你嘅碼登入。",
+    "lede": "大家而家喺邊、有咩約緊。用佢已經識嘅 Discord 帳號登入。",
+    "ledeWithCode": "大家而家喺邊、有咩約緊。用佢已經識嘅 Discord 帳號，或者佢喺 Signal、WhatsApp send 俾你嘅碼登入。",
     "discord": "用 Discord 登入",
     "telegram": "用 Telegram 登入",
     "redirectingTelegram": "開緊 Telegram…",
@@ -303,10 +303,6 @@
       "proposed": "提議中",
       "staged": "未提出",
       "reminders": "各個房有 {count} 個提醒等緊，下一個{when}"
-    },
-    "notes": {
-      "title": "佢記低你嘅嘢",
-      "more": "佢記得嘅所有嘢"
     },
     "circle": {
       "title": "班朋友",
@@ -604,8 +600,8 @@
     "onMap": "喺地圖睇",
     "sections": "關於呢個人",
     "overview": "概覽",
-    "memory": "佢記得你乜",
-    "memoryLink": "Nora 記得你啲咩",
+    "memory": "佢筆下嘅你",
+    "memoryLink": "佢筆下嘅你",
     "memoryLinkLede": "淨係你睇到。",
     "today": "過去 24 小時",
     "todayLede": "{name} 由尋日到而家去過邊。",
@@ -682,23 +678,11 @@
     }
   },
   "memory": {
-    "title": "佢記得你乜",
-    "lede": "Nora 喺群組對話入面記低咗你啲咩。淨係你睇到呢頁。",
-    "workspaces": "圈子",
-    "private": "淨係你睇到。班入面冇其他人可以打開你嘅記憶，Nora 亦唔會同任何人講。",
-    "partial": "佢部分記憶啱啱冇應，所以可能唔齊。",
-    "unreachable": "佢嘅記憶冇應。呢個唔等於乜都冇。",
-    "emptyTitle": "未記低任何嘢",
-    "empty": "佢仲未對你有咩結論。會由你喺群組講嘅嘢慢慢累積。",
-    "identityTitle": "你喺佢眼中係邊個",
-    "identityLede": "佢當係事實嘅嘢。",
-    "identityEmpty": "未有佢肯定嘅嘢。",
-    "episodesTitle": "佢記得嘅事",
-    "episodesLede": "{count} 件事，最新嘅排先。",
-    "episodesEmpty": "未有。",
-    "search": "搜尋佢嘅筆記",
-    "noMatch": "佢嘅筆記冇相關嘅嘢。",
-    "more": "再睇多 {count} 件",
+    "title": "佢筆下嘅你",
+    "lede": "Nora 喺群組對話入面為你寫低嘅記錄。淨係你睇到呢頁。",
+    "private": "淨係你睇到。班入面冇其他人可以打開呢頁，Nora 亦唔會同任何人講。",
+    "emptyTitle": "呢度冇嘢可以顯示",
+    "empty": "呢頁唔會顯示佢對你嘅所有記錄，所以空白唔等於佢乜都冇。",
     "profileTitle": "她筆下的你",
     "profileLede": "她記下的每一句，以及每一句的依據。哪句不對，在群組裡告訴她——只有你能更正。",
     "profileIdentity": "你是誰",
@@ -751,8 +735,7 @@
     "remindersPrivacy": "提醒講咩、邊個叫佢設，都留喺設嗰個房入面。呢度淨係顯示時間同平台。",
     "waysIn": "關於佢嘅更多",
     "countUnknown": "啱啱查唔到",
-    "memoryLede": "佢對你嘅結論。淨係你睇到。",
-    "memoryCount": "記得 {n} 件事",
+    "memoryLede": "佢對你記低嘅每一句，同每一句嘅依據。淨係你睇到。",
     "doctrineLede": "佢每個回覆都要守嘅說話，係佢而家讀緊嘅版本。",
     "doctrineCount": "{n} 部分",
     "abilitiesLede": "佢用得嘅每個工具、載得嘅每個技能，直接由運行緊嘅版本讀出嚟。",

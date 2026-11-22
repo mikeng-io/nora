@@ -14,7 +14,7 @@ const PAGES: Array<{ path: string; heading: RegExp }> = [
   { path: "/en/plans", heading: /^Plans$/ },
   { path: "/en/downloads", heading: /^Downloads$/ },
   { path: "/en/nora", heading: /Nora/ },
-  { path: "/en/nora/memory", heading: /memory/i },
+  { path: "/en/nora/memory", heading: /account/i },
   { path: "/en/nora/doctrine", heading: /.+/ },
   { path: "/en/nora/abilities", heading: /.+/ },
 ];
@@ -76,6 +76,8 @@ test("the API proxy never serves another person's memory", async ({ page }) => {
   await signIn(page, "Ken");
   const res = await page.request.get("/api/v1/memory?personId=miles");
   expect(res.ok()).toBe(true);
-  const body = (await res.json()) as Array<{ person_id: string }>;
-  expect(body.map((e) => e.person_id)).toEqual(["ken"]);
+  const body = (await res.json()) as Array<{ lines: Array<{ text: string }> }>;
+  const texts = body.flatMap((account) => account.lines.map((line) => line.text));
+  expect(texts).toContain("Name: Ken");
+  expect(texts).not.toContain("Name: Miles");
 });

@@ -6,6 +6,7 @@ from aiohttp import web
 
 from nora.agent.whereis import Circle
 from nora.app.gatherings import GatheringService
+from nora.domain.culture import character_key
 from nora.domain.gatherings import RSVPResponse
 from nora.domain.models import PersonRef
 from nora.domain.presence import PresenceFix, WireState
@@ -15,6 +16,7 @@ from nora.testing.gatherings import FakeGatheringStore
 from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from tests.conftest import build_test_doctrine_store
+from tests.web.test_memory import _line, _Profile
 
 MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
 ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
@@ -80,6 +82,12 @@ async def client(aiohttp_client):
         skills_dir=NO_SKILLS_DIR,
         events=_fake_events(),
         doctrine_store=build_test_doctrine_store(),
+        profile=_Profile(heads={
+            character_key("friends", "miles"): (_line("m1", "cycles to work"),),
+            character_key("friends", "ada"): (
+                _line("a1", "plays guitar", profile_key=character_key("friends", "ada")),),
+        }),
+        profile_scopes_of=lambda _pid: (("friends", "67"),),
     )
     return await aiohttp_client(app)
 
@@ -126,19 +134,18 @@ async def test_tools_route_returns_the_live_catalog(client):
     assert "skills" not in names
 
 
-async def test_memory_route_returns_only_the_requested_person(client):
+async def test_memory_route_returns_only_the_requested_persons_profile_accounts(client):
     resp = await client.get("/app/v1/memory?personId=miles")
     assert resp.status == 200
     body = await resp.json()
-    assert body == [
-        {
-            "person_id": "miles",
-            "display_name": "Miles",
-            "reachable": True,
-            "identity": [],
-            "episodes": ["x"],
-        },
-    ]
+    [account] = body
+    assert account["unit"] == "friends"
+    assert [line["text"] for line in account["lines"]] == ["legacy untyped: cycles to work"]
+    assert set(account) == {"unit", "card", "lines", "disputes"}
+    # The store behind the fixture holds a conclusion for miles; the route
+    # neither shows it nor asks for it.
+    honcho = client.server.app["web_honcho"]
+    assert honcho.queries == [] and honcho.workspace_reads == []
 
 
 async def test_memory_route_with_no_person_id_returns_empty_not_everyone(client):

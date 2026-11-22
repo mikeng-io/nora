@@ -150,10 +150,6 @@ function hkIso(ms) {
   return `${Y}-${Mo}-${D}T${h}:${m}:${s}+08:00`;
 }
 
-function hkDate(ms) {
-  return hkIso(ms).slice(0, 10);
-}
-
 /** The next occurrence of `hour` (HKT, 24h) that is at least `minDays` away
  * on `weekday` (0=Sunday .. 6=Saturday), as an epoch-ms instant. Used for
  * "next Sunday 19:00", "next Saturday", etc. */
@@ -432,7 +428,7 @@ const TOOLS = [
   {
     name: "saved_places",
     description:
-      "The names this household has saved for places, for THIS conversation. Call this the moment someone routes to, or asks WHERE, a place by a PERSONAL name.\n\nA personal name is one Google doesn't know: home, someone's home, work, school. Asked where someone works or lives, use this, not `about` or `search_memory`.\n\nReturns `status`: ok or unavailable, with a `note` on how to report it.",
+      "The names this household has saved for places, for THIS conversation. Call this the moment someone routes to, or asks WHERE, a place by a PERSONAL name.\n\nA personal name is one Google doesn't know: home, someone's home, work, school. Asked where someone works or lives, use this.\n\nReturns `status`: ok or unavailable, with a `note` on how to report it.",
     budget: 1, terminal: false, time_shiftable: null, source_tier: "remembered",
     cacheable: false, read_only: true, side_effect_state: "none",
     idempotency: "idempotent", retry: "safe", output_contract: "three_state",
@@ -448,7 +444,7 @@ const TOOLS = [
   {
     name: "who_said",
     description:
-      "Check who said something, in the messages you can see right now. Call this BEFORE you put words in somebody's mouth.\n\nIt searches only what you were already shown, where the line usually is. For older lines, `load_transcript` reads further back in this conversation and `search_memory` further still. Give it the words as written, not a paraphrase.\n\nReturns `status`: ok (`said_by`, oldest first), nothing_found or unavailable, with a `note` on how to report the last two.",
+      "Check who said something, in the messages you can see right now. Call this BEFORE you put words in somebody's mouth.\n\nIt searches only what you were already shown, where the line usually is. For older lines, `load_transcript` reads further back in this conversation. Give it the words as written, not a paraphrase.\n\nReturns `status`: ok (`said_by`, oldest first), nothing_found or unavailable, with a `note` on how to report the last two.",
     budget: 4, terminal: false, time_shiftable: null, source_tier: "remembered",
     cacheable: false, read_only: true, side_effect_state: "none",
     idempotency: "idempotent", retry: "safe", output_contract: "three_state",
@@ -478,22 +474,6 @@ const TOOLS = [
     idempotency: "idempotent", retry: "safe", output_contract: "three_state",
   },
   {
-    name: "ask_memory",
-    description:
-      "Work out an answer to a specific QUESTION about someone, not a profile dump. Reach for it when a profile lookup is not enough.\n\nIt reasons over everything you have gathered about the person, where `about` returns the stored conclusions: use it for a judgement that has to be pieced together. It is slow (several seconds or more), so call it only when `about` would not answer. It knows only people in THIS conversation.\n\nSHOULD: write `query` yourself, as the question you need answered, not the raw tag message.\n\nReturns `status`: ok (`answer`), nothing_known, unavailable, not_found or ambiguous, with a `note` on how to report it.",
-    budget: 4, terminal: false, time_shiftable: null, source_tier: "remembered",
-    cacheable: false, read_only: true, side_effect_state: "none",
-    idempotency: "idempotent", retry: "safe", output_contract: "three_state",
-  },
-  {
-    name: "search_memory",
-    description:
-      "Find where something was actually SAID in this group's history, in the exact words. Use it to recall a specific thing somebody said a long time ago.\n\nIt reaches past `load_transcript`, and returns words, not a profile (`about`) or a judgement (`ask_memory`).\n\nReturns `status`: ok, nothing_found, withheld or unavailable, with a `note`.",
-    budget: 4, terminal: false, time_shiftable: null, source_tier: "remembered",
-    cacheable: false, read_only: true, side_effect_state: "none",
-    idempotency: "idempotent", retry: "safe", output_contract: "three_state",
-  },
-  {
     name: "media_fetch",
     description:
       "Look at an image or video and say what it shows. Call this when answering means knowing what is IN a picture or a video.\n\nPass exactly one: `code`, from an `[image ...]` or `[video ...]` marker in view here, or `url`, an http(s) link to a picture or video found elsewhere. It cannot open a file; a voice note gives back what was said.\n\nLeave `question` empty for the stored reading (what it shows, all its text), free and instant. Ask one only when that reading cannot answer it; each costs a fresh look.\n\nReturns `status`: ok, nothing_found, ambiguous, not_an_image or unavailable, with a `note` on how to report it.",
@@ -512,7 +492,7 @@ const TOOLS = [
   {
     name: "web_search",
     description:
-      "Look something up on the web. Call this when the answer is not in the conversation and no other tool covers it. Returns ranked links with a snippet each.\n\nOther tools come first: `transit`, `route`, `weather`, `about` for a person you know, `place_info` for a shop's hours or rating, and `parking_status` or `find_parking` for car park vacancy.\n\nNever search a post's ID (a tweet or video id, a status number): the engine cannot resolve one. Read the post with `x_read`, or ask for the link.\n\nReturns `status`: ok, nothing_found or unavailable, with a `note` on how to report it.",
+      "Look something up on the web. Call this when the answer is not in the conversation and no other tool covers it. Returns ranked links with a snippet each.\n\nOther tools come first: `transit`, `route`, `weather`, `place_info` for a shop's hours or rating, and `parking_status` or `find_parking` for car park vacancy.\n\nNever search a post's ID (a tweet or video id, a status number): the engine cannot resolve one. Read the post with `x_read`, or ask for the link.\n\nReturns `status`: ok, nothing_found or unavailable, with a `note` on how to report it.",
     budget: 4, terminal: false, time_shiftable: null, source_tier: "web",
     cacheable: true, read_only: true, side_effect_state: "none",
     idempotency: "idempotent", retry: "safe", output_contract: "three_state",
@@ -584,7 +564,7 @@ const TOOLS = [
   {
     name: "remember",
     description:
-      "Record a settled fact about the person speaking. Call this when somebody tells you something about themselves that is now just TRUE.\n\nThe trigger word is «記低». It writes to your long-term memory of THAT person, which `about` and `ask_memory` read back; nothing else can write a person's settled fact.\n\nReturns `status`: ok, refused or unavailable, with a `note` on how to report it.",
+      "Record a settled fact about the person speaking. Call this when somebody tells you something about themselves that is now just TRUE.\n\nThe trigger word is «記低». It writes to your long-term memory of THAT person; nothing else can write a person's settled fact.\n\nReturns `status`: ok, refused or unavailable, with a `note` on how to report it.",
     budget: 1, terminal: false, time_shiftable: null, source_tier: null,
     cacheable: false, read_only: false, side_effect_state: "confirmed",
     idempotency: "non_idempotent", retry: "never", output_contract: "three_state",
@@ -629,10 +609,13 @@ function buildStatus(now) {
 }
 
 // ==========================================================================
-// 9. /memory — at most one entry, for the requested personId only.
+// 9. /memory — the caller's own Profile accounts, for the requested personId only.
 // ==========================================================================
 
-const MEMORY_IDENTITY_TEMPLATES = {
+// Invented settled facts, one account of them per person: the Profile half of
+// the real payload (nora/web/memory.py). Each fact is also how a test tells one
+// person's account from another's.
+const PROFILE_FACTS = {
   miles: ["Name: Miles", "Goes by Miles", "Speaks Cantonese and English", "Likes hotpot more than anyone else in the room", "Plays Abiotic Factor and The Big Walk"],
   ken: ["Name: Ken", "Goes by Ken", "Speaks Cantonese and English", "Drives most days", "Plays Abiotic Factor"],
   mei: ["Name: Mei", "Goes by Mei", "Speaks Cantonese and English", "Lives near Sha Tin"],
@@ -641,58 +624,26 @@ const MEMORY_IDENTITY_TEMPLATES = {
   sam: ["Name: Sam", "Goes by Sam", "Speaks English"],
 };
 
-// Short, bland, invented episode fragments — mixed English/Cantonese, in
-// the style the task asked for. Picked per person from a shared pool by a
-// seeded shuffle, so the set is stable per person but not identical across
-// people.
-const EPISODE_POOL = [
-  "asked where to get hotpot in Yuen Long",
-  "問邊間茶記早餐好食",
-  "asked about bus times to Sha Tin",
-  "mentioned a new pair of headphones",
-  "asked how to get to Central after 11pm",
-  "話想去行山但唔知邊條路線",
-  "asked for a good ramen place open late",
-  "mentioned their phone battery draining fast",
-  "asked whether it will rain this weekend",
-  "問邊個牌子嘅風扇好",
-  "asked for help splitting a dinner bill",
-  "mentioned finishing a work project",
-  "asked what time the gym closes",
-  "話想換部新手機",
-  "asked about a parking space near Mong Kok",
-  "mentioned watching a movie over the weekend",
-  "asked for a recipe for claypot rice",
-  "問邊度有得買到二手單車",
-  "asked whether the MTR was delayed this morning",
-  "mentioned a birthday coming up soon",
-];
-
-function episodesFor(personId, now) {
-  const { pick } = rngStream(`memory-episodes-${personId}`);
-  const shuffled = [...EPISODE_POOL];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(rngStream(`memory-shuffle-${personId}-${i}`).float() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  const dayOffsets = [1, 2, 3, 5, 7, 9, 11, 14, 17, 20, 24, 28, 33, 40];
-  return dayOffsets.map((d, i) => `${hkDate(now - d * DAY_MS)} — ${shuffled[i % shuffled.length]}`);
-}
-
 function buildMemory(now, personId) {
   if (!personId) return [];
   const ref = ROSTER_BY_ID.get(personId);
   if (!ref) return [];
-  if (isEmptied("memory")) {
-    return [{ person_id: personId, display_name: ref.displayName, reachable: true, identity: [], episodes: [] }];
-  }
+  if (isEmptied("memory")) return [];
+  const facts = PROFILE_FACTS[personId] ?? [`Name: ${ref.displayName}`];
   return [
     {
-      person_id: personId,
-      display_name: ref.displayName,
-      reachable: true,
-      identity: MEMORY_IDENTITY_TEMPLATES[personId] ?? [`Name: ${ref.displayName}`],
-      episodes: episodesFor(personId, now),
+      unit: "mock-circle",
+      lines: facts.map((text, i) => ({
+        part: "facts",
+        kind: "attribute",
+        text,
+        mode: "told",
+        state: "current",
+        told_by: ref.displayName,
+        written_at: now - (i + 1) * DAY_MS,
+        evidence: [],
+      })),
+      disputes: [],
     },
   ];
 }
