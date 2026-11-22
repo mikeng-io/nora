@@ -79,8 +79,15 @@
   {
     "name": "the poller places an item only when its account probed public",
     "file": "nora/app/social_poller.py",
-    "old": "public=probe is not None and probe.is_private is False,",
+    "old": "public=self._public.get(member.person, False),",
     "new": "public=True,",
     "target": "tests/integration/test_social_poller.py::test_an_item_is_placed_in_a_unit_only_when_its_account_probed_public"
+  },
+  {
+    "name": "a restarted poller reads account privacy from the recorded probe",
+    "file": "nora/app/social_poller.py",
+    "old": "            self._public[person] = times.public\n",
+    "new": "",
+    "target": "tests/integration/test_social_poller.py::test_a_restarted_poller_places_backfill_items_from_the_recorded_probe"
   }
 ]

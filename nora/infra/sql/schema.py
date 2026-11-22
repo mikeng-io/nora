@@ -4981,6 +4981,8 @@ SOCIAL_POLL = sa.Table(
     # 0111: a back-fill page's next cursor (null: the walk ended there).
     sa.Column("cursor", sa.Text),
     sa.Column("end_reason", sa.Text),
+    # A probe's answered account privacy; NULL when the probe did not say.
+    sa.Column("is_private", sa.Boolean),
     sa.CheckConstraint(
         "stage IN ('probe', 'story', 'items', 'item', 'backfill', 'relist', 'recount')",
         name="ck_social_poll_stage",

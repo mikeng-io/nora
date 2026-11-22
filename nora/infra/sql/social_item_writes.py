@@ -88,17 +88,18 @@ class SocialItemWrites:
         total_clips_count: int | None = None, advanced_marker: bool = False,
         advanced_counts: bool = False, latency_ms: int | None = None,
         id: str | None = None, cursor: str | None = None,
-        end_reason: BackfillEnd | None = None,
+        end_reason: BackfillEnd | None = None, is_private: bool | None = None,
     ) -> None:
         """Append one probe or read. A read passes its own `id`, the
         `read_id` its items were recorded with; a back-fill page its next
-        `cursor`, None when the walk ended on it, and its `end_reason`."""
+        `cursor`, None when the walk ended on it, and its `end_reason`; a
+        probe the account privacy it answered."""
         values = {
             "network": network, "person": person, "stage": stage, "outcome": outcome,
             "latest_reel_media": latest_reel_media, "media_count": media_count,
             "total_clips_count": total_clips_count, "advanced_marker": advanced_marker,
             "advanced_counts": advanced_counts, "latency_ms": latency_ms,
-            "cursor": cursor, "end_reason": end_reason,
+            "cursor": cursor, "end_reason": end_reason, "is_private": is_private,
         }
         if id is not None:
             values["id"] = id
