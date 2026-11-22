@@ -1,0 +1,72 @@
+[
+  {
+    "name": "the composed verifier resolves rooms through the room policy",
+    "file": "nora/app/composition.py",
+    "old": "room_slots=WakeRoomSlots(allowlist, slots)),",
+    "new": "room_slots=WakeRoomSlots(policy, slots)),",
+    "target": "tests/integration/test_composed_graph_wiring.py::test_the_composed_verifier_resolves_an_origin_room_through_the_room_policy"
+  },
+  {
+    "name": "a steady source_health poll raises no stimulus",
+    "file": "nora/infra/sql/source_health.py",
+    "old": "own=silent_scope is not None or event == \"poll\",",
+    "new": "own=silent_scope is not None,",
+    "target": "tests/infra/test_item_registration.py::test_a_routine_probe_registers_without_waking_its_unit[source_health]"
+  },
+  {
+    "name": "a social_poll row raises no stimulus",
+    "file": "nora/infra/sql/social_item_writes.py",
+    "old": "                    own=table is SOCIAL_POLL,  # a routine probe; its items are the stimulus\n",
+    "new": "",
+    "target": "tests/infra/test_item_registration.py::test_a_routine_probe_registers_without_waking_its_unit[social_poll]"
+  },
+  {
+    "name": "a current read hides a withdrawn message",
+    "file": "nora/infra/sql/cognitive_graph_store.py",
+    "old": "not_withdrawn = c.hidden_at.is_(None)",
+    "new": "not_withdrawn = sa.true()",
+    "target": "tests/infra/test_retrieval_scope.py::test_a_withdrawn_message_is_never_read_or_found_even_as_of_before_it"
+  },
+  {
+    "name": "an as-of read hides a message withdrawn since",
+    "file": "nora/infra/sql/cognitive_graph_store.py",
+    "old": "elif \"image\" in c:",
+    "new": "elif False:",
+    "target": "tests/infra/test_retrieval_scope.py::test_a_withdrawn_message_is_never_read_or_found_even_as_of_before_it"
+  },
+  {
+    "name": "a circle source skips a unit it only partly covers",
+    "file": "nora/infra/sql/item_registration.py",
+    "old": "if members and members <= sharing.keys():",
+    "new": "if members:",
+    "target": "tests/infra/test_item_registration.py::test_a_circle_source_reaches_only_units_whose_members_all_share_it"
+  },
+  {
+    "name": "a live fix is placed by circle, not by every unit of the person",
+    "file": "nora/infra/sql/presence.py",
+    "old": "await registration.scope.presence_units(fix.person_id, fix.circle_id)",
+    "new": "await registration.scope.person_units(fix.person_id)",
+    "target": "tests/infra/test_item_registration.py::test_a_circle_source_reaches_only_units_whose_members_all_share_it[presence_fixes]"
+  },
+  {
+    "name": "managed unit membership counts every member of the unit's rooms",
+    "file": "nora/access.py",
+    "old": "        for each in (scope, *rooms):\n",
+    "new": "        for each in (scope,):\n",
+    "target": "tests/integration/test_managed_presence.py::test_graph_places_no_fix_in_a_unit_the_circle_only_partly_covers"
+  },
+  {
+    "name": "every unfinished proactive turn counts toward parking",
+    "file": "nora/memory/adapters/proactive_claims.py",
+    "old": "attempts = C.attempts + sa.case((~recorded, 1), else_=0)",
+    "new": "attempts = C.attempts + sa.case((~recorded & _silence(\n            C.unit, C.pass_id, P.silence_reason == RECHECK_UNAVAILABLE), 1), else_=0)",
+    "target": "tests/infra/test_proactive_pass.py::test_three_failed_turns_park_instead_of_rerunning_every_tick"
+  },
+  {
+    "name": "the composed prefetch carries the configured embedder",
+    "file": "nora/memory/wire.py",
+    "old": "return pass_assembler(engine, access, lineage, *query_embedder(cfg))",
+    "new": "return pass_assembler(engine, access, lineage, None, None)",
+    "target": "tests/integration/test_composed_graph_wiring.py::test_the_composed_prefetch_reads_an_empty_graph_as_nothing_found"
+  }
+]
