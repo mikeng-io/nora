@@ -152,7 +152,7 @@ Either form carries:
 met), **dropped** (its drop-when was met), **leaked** (its time passed with
 neither, while every source that could have closed it was healthy) or
 **unknown** (its time passed and a source it depended on was not healthy).
-An outage is never a leak.
+An outage is never a leak. The deadline ends an achieve intention’s window.
 
 A maintain intention ends **ceased** (its holds-while was observed false) or
 **dropped** (its drop-when was met); its watches stop when it ends. While its

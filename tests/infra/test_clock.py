@@ -10,6 +10,7 @@ import sqlalchemy as sa
 
 from nora.app.graph_observe import graph_observe
 from nora.domain.graph_stimuli import GraphStimulus
+from nora.domain.ticks import TICK_SECONDS
 from nora.infra.sql.cognitive_graph_schema import CLAIM, INTENTION
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
@@ -109,19 +110,23 @@ async def test_deadline_keeps_its_stored_instant_when_display_zone_changes(engin
 
 
 async def test_due_detection_runs_without_a_model_pass_or_legacy_time_stimulus(engine):
-    await _schedule(engine, "deadline", _INSTANT + timedelta(seconds=30))
+    deadline = _INSTANT + timedelta(seconds=TICK_SECONDS // 2)
+    await _schedule(engine, "deadline", deadline)
     clock = FakeClock(_INSTANT.timestamp())
     observe = graph_observe(engine, lambda: datetime.fromtimestamp(clock(), UTC), Metrics())
     await observe.tick()
-    clock.advance(30)
-    await observe.tick()
     assert await SqlGraphStimuli(engine).read(_UNIT) == ()
-    clock.advance(30)
+    clock.advance(TICK_SECONDS)
     await observe.tick()
-    assert await SqlGraphStimuli(engine).read(_UNIT) == (
-        _expected("deadline", _INSTANT + timedelta(seconds=30)),
+
+    stimuli = await SqlGraphStimuli(engine).read(_UNIT)
+    assert [stimulus.kind for stimulus in stimuli] == ["deadline", "verdict"]
+    assert stimuli[0] == _expected("deadline", deadline)
+    assert stimuli[1].eligible_at == datetime.fromtimestamp(clock(), UTC)
+    intention = (await _rows(engine, INTENTION))[_EVENT]
+    assert (intention["state"], intention["ending"], intention["ended_at"]) == (
+        "ended", "unknown", deadline,
     )
-    assert (await _rows(engine, INTENTION))[_EVENT]["state"] == "open"
     async with engine.connect() as conn:
         for table in (STIMULUS, COGNITION_SESSION):
             assert await conn.scalar(sa.select(sa.func.count()).select_from(table)) == 0

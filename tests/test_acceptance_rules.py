@@ -39,19 +39,19 @@ _R90_PERSONS = Persons(
 
 ROOT = Path(__file__).resolve().parents[1]
 RULE_TESTS = {
+    "verify-clock": "test_the_first_clock_ending_has_the_deadline_and_no_witness",
+    "verify-health": "test_every_source_must_be_healthy_over_the_whole_lineage_window",
+    "computed-verdict": "test_every_ended_achieve_head_has_one_verdict_and_stimulus",
     "proactive-claim": "test_a_due_intention_delivers_once_and_closes_only_on_a_reply_outcome",
     "debrief-pass-items": "test_debrief_writes_only_commit_operations_citing_its_pass_items",
     "DEC-97": "test_running_identity_is_independent_of_the_latest_release",
     "DEC-324": "test_a_server_entry_admits_a_discovered_channel_by_guild_id",
     "DEC-323": "test_policy_reload_admits_the_next_message_from_a_new_room",
     "DEC-329": "test_cognition_is_the_live_topic_writer",
-    # R-1: untagged ambient traffic reaches the agent ONLY under the participation
-    # occasion's gating: an operator-opted-in room, one quiescence-closed window, one
-    # evaluation through `FirePath.speak`. The named test pins that ordinary ambient
-    # traffic constructs ZERO agents; its sibling pins the exception's gating.
+    # R-1: ordinary ambient traffic constructs no agents. The participation exception
+    # requires an opted-in room, a quiescence-closed window and one `FirePath.speak` evaluation.
     "R-1": "test_ambient_reaches_the_agent_only_through_participation_gating",
-    # R-1b: the send-path clause of R-1. `nora.app.fire.FirePath` makes "only the
-    # tagging path may cause a send" false — a fire turn is a send not caused by a tag.
+    # R-1b: the send-path clause of R-1 includes the untagged `nora.app.fire.FirePath`.
     # R-1's test harnesses only ambient input, so it stays green no matter how many non-tag
     # send paths exist and is no brake on this clause. R-1b is that brake: `Deliverer` is
     # the only caller of `adapter.send`, it is constructed only by `deliver.build`, and

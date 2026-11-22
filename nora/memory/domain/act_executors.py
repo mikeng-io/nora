@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from types import MappingProxyType
 
+from nora.domain.lineage import split_room
 from nora.memory.domain.acts import ActKind, Guarantee
 
 
@@ -40,3 +41,14 @@ EXECUTORS = MappingProxyType({
     "browser.stop": Executor("effect", "unknown"),
     "mcp.invoke": Executor("effect", "unknown"),
 })
+
+
+def executor_health_platform(executor: str, destination: str) -> str | None:
+    """Resolve an act to a recorded adapter-health source."""
+    if executor not in EXECUTORS or not executor.startswith(("platform.", "discord.", "signal.")):
+        return None
+    if executor.startswith("discord."):
+        prefix, _, target = destination.partition(":")
+        if target and prefix in {"discord-commands", "discord-channel"}:
+            return "discord"
+    return split_room(destination)[0]

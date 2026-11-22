@@ -34,30 +34,37 @@ from tests.infra.test_item_registration import (
 
 
 async def _intention(
-    engine, id_, form, value, *, mode="achieve", drop=None, unit=_UNIT, **times,
+    engine, id_, form, value, *, mode="achieve", drop=None, unit=_UNIT,
+    origin_room=_ROOM, asserted_at=_AT, exposure="internal", **fields,
 ):
     role = "done_when" if mode == "achieve" else "holds_while"
     graph = SqlCognitiveGraph(engine)
     await graph.create(INTENTION, {
         "id": id_, "unit": unit, "kind": "intention", "basis": "committed",
-        "state": "open", "writer": "fixture", "exposure": "internal",
-        "origin_room": _ROOM, "owner": "generated-nora", "owed_to": _PERSON,
-        "form": mode, role: value, f"{role}_form": form, "asserted_at": _AT,
-        "delivery_mode": "choose_moment" if times.get("trigger") else "when_it_comes_up",
-        **({"drop_when": drop[1], "drop_when_form": drop[0]} if drop else {}), **times,
+        "state": "open", "writer": "fixture", "exposure": exposure,
+        "origin_room": origin_room, "owner": "generated-nora", "owed_to": _PERSON,
+        "form": mode, role: value, f"{role}_form": form, "asserted_at": asserted_at,
+        "delivery_mode": "choose_moment" if fields.get("trigger") else "when_it_comes_up",
+        **({"drop_when": drop[1], "drop_when_form": drop[0]} if drop else {}), **fields,
     })
 
 
-async def _health(engine, source, outcome, unit=_UNIT, scope=""):
+async def _health(engine, source, outcome, unit=_UNIT, scope="", *, at=_AT, event="transition"):
     async with engine.begin() as conn:
         values = {
-            "source": source, "scope": scope, "event": "transition", "outcome": outcome,
-            "detail": "", "at_ms": _MS,
+            "source": source, "scope": scope, "event": event, "outcome": outcome,
+            "detail": "", "at_ms": int(at.timestamp() * 1000), "recorded_at": at,
         }
         planes = await _registration().planes(
-            conn, SOURCE_HEALTH, unit=unit, occurred_at=_AT,
+            conn, SOURCE_HEALTH, unit=unit, occurred_at=at,
         )
         await conn.execute(sa.insert(SOURCE_HEALTH).values(**values, **planes))
+
+
+def _platform_act(*, destination=f"signal:{_ROOM}"):
+    act = _act(context=None)
+    return replace(act, identity=replace(act.identity, executor="platform.reply"),
+                   destination=destination)
 
 
 async def _endings(engine):
@@ -73,12 +80,12 @@ async def _edges(engine, edge_type="closed_by"):
 
 @pytest.mark.parametrize("verdict", ["done", "failed", "uncertain"])
 async def test_only_the_named_done_act_closes_its_intention(engine, verdict):
-    act = _act(context=None)
+    act = _platform_act()
     act = replace(act, authority=replace(act.authority, unit=_UNIT, intention="waiting"))
     store = SqlActStore(engine, _registration())
     await _intention(engine, "waiting", "act_event", {"act_id": act.identity.id})
     await _intention(engine, "unrelated", "act_event", {"act_id": "generated-other"})
-    await _health(engine, act.identity.executor, "up")
+    await _health(engine, "signal", "up")
     assert await store.reserve(act)
     await store.observe(act, Outcome(cast(Verdict, verdict)))
     matcher = condition_matcher(engine)
@@ -99,13 +106,13 @@ async def test_only_the_named_done_act_closes_its_intention(engine, verdict):
 
 
 async def test_failed_act_ends_maintain_intention_with_its_outcome_as_witness(engine):
-    act = _act(context=None)
+    act = _platform_act()
     act = replace(act, authority=replace(act.authority, unit=_UNIT, intention="maintaining"))
     store = SqlActStore(engine, _registration())
     await _intention(
         engine, "maintaining", "act_event", {"act_id": act.identity.id}, mode="maintain",
     )
-    await _health(engine, act.identity.executor, "up")
+    await _health(engine, "signal", "up")
     assert await store.reserve(act)
     matcher = condition_matcher(engine)
     await matcher.run_once()
@@ -269,11 +276,11 @@ async def test_deadline_and_untyped_intentions_are_left_for_verify(engine):
 async def test_own_delivery_matches_only_the_intentions_latest_delivery_outcome(
     engine, authority, kind, verdict, ending,
 ):
-    act = _act(context=None)
+    act = _platform_act()
     act = replace(act, kind=kind, authority=replace(act.authority, unit=_UNIT, intention=authority))
     store = SqlActStore(engine, _registration())
     await _intention(engine, "waiting", "act_event", {"own_delivery": True})
-    await _health(engine, act.identity.executor, "up")
+    await _health(engine, "signal", "up")
     assert await store.reserve(act)
     await store.observe(act, Outcome(verdict))
     await condition_matcher(engine).run_once()
@@ -282,12 +289,12 @@ async def test_own_delivery_matches_only_the_intentions_latest_delivery_outcome(
 
 
 async def test_own_delivery_uses_the_latest_live_outcome_across_acts(engine):
-    act = _act(context=None)
+    act = _platform_act()
     act = replace(act, authority=replace(act.authority, unit=_UNIT, intention="waiting"))
     later = replace(act, identity=replace(act.identity, ordinal=1))
     store = SqlActStore(engine, _registration())
     await _intention(engine, "waiting", "act_event", {"own_delivery": True}, mode="maintain")
-    await _health(engine, act.identity.executor, "up")
+    await _health(engine, "signal", "up")
     assert await store.reserve(act)
     await store.observe(act, Outcome("failed"))
     assert await store.reserve(later)

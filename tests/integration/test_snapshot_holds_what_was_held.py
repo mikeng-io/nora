@@ -84,6 +84,13 @@ async def _write(conn: Any, table: str, i: int) -> None:
             id=claim["id"], unit=claim["unit"], kind="claim",
         ))
         await conn.execute(sa.insert(_table("claim")).values(claim))
+    if table == "intention_verdict":
+        intention = dict(ROWS["intention"](i), id=row["intention_id"], state="ended",
+                         ending=row["ending"], ended_at=row["ended_at"])
+        await conn.execute(sa.insert(_table("registry")).values(
+            id=intention["id"], unit=intention["unit"], kind="intention",
+        ))
+        await conn.execute(sa.insert(_table("intention")).values(intention))
     if table == "graph_stimulus_claim":
         await conn.execute(sa.insert(_table("registry")).values(
             id=row["graph_id"], unit=row["unit"], kind="intention",
@@ -94,10 +101,10 @@ async def _write(conn: Any, table: str, i: int) -> None:
         ))
     if table == "watch_result":
         await _seed_watch(conn, row["watch_edge"], i)
-    if table in {"forget_request", "dispute", "claim_support", "watch_result"}:
+    if table in {"forget_request", "dispute", "claim_support", "intention_verdict", "watch_result"}:
         await conn.execute(sa.insert(_table("registry")).values(
             id=row["graph_id"], unit=row["unit"],
-            kind="aggregate" if table == "claim_support" else "item",
+            kind="aggregate" if table in {"claim_support", "intention_verdict"} else "item",
         ))
     await conn.execute(sa.insert(_table(table)).values(row))
 
