@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 from types import SimpleNamespace
 
-from nora.agent.security import _names_a_person, scan_identifiers
+from nora.agent.egress import scan_outside
+from nora.agent.security import _names_a_person
 from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
 from nora.agent.whereis import (
     DisclosureGuard,
@@ -83,6 +84,7 @@ def _make_reverse_geocode(deps):
 
 
 def _make_weather(deps):
+    content_checks = deps.content_checks
     metrics = deps.metrics
     weather_source = deps.weather_source
 
@@ -99,6 +101,9 @@ def _make_weather(deps):
             place: the district or place they asked about, in their words (optional).
             forecast: True to add the 9-day forecast; default False.
         """
+        if kind := scan_outside(place or "", content_checks=content_checks):
+            _record(metrics, "weather", "unavailable", reason=kind)
+            return {"status": "unavailable", "note": "Give a public district or place name."}
         if weather_source is None:
             _record(metrics, "weather", "unavailable")
             return dict(_WEATHER_OFF)
@@ -117,6 +122,7 @@ def _make_weather(deps):
 
 
 def _make_parking_status(deps):
+    content_checks = deps.content_checks
     metrics = deps.metrics
     parking_source = deps.parking_source
 
@@ -132,6 +138,9 @@ def _make_parking_status(deps):
         Args:
             name: the venue or car park name, in the group's words.
         """
+        if kind := scan_outside(name, content_checks=content_checks):
+            _record(metrics, "parking_status", "unavailable", reason=kind)
+            return {"status": "unavailable", "note": "Give a public car park name."}
         if parking_source is None:
             _record(metrics, "parking_status", "unavailable")
             return {
@@ -266,7 +275,7 @@ async def _find_parking__wired(c):
 
 
 async def _find_parking__validate(c):
-    if scan_identifiers(c.place, content_checks=c.content_checks) is not None or (
+    if scan_outside(c.place, content_checks=c.content_checks) is not None or (
         c.content_checks and _looks_like_coordinate(c.place)
     ):
         _record(c.metrics, "find_parking", "refused")

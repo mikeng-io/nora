@@ -5,6 +5,7 @@ import urllib.parse
 from types import SimpleNamespace
 from typing import Any, Literal
 
+from nora.agent.egress import scan_outside
 from nora.agent.security import _names_a_person, scan_identifiers
 from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
 from nora.agent.security import screen_and_resolve_place as _screen_and_resolve_place
@@ -39,6 +40,10 @@ def _make_transit(deps):
             near: The stop or place name exactly as the person said it, for times
                 at that stop. Leave it out unless they named one.
         """
+        if kind := (scan_outside(route, content_checks=content_checks)
+                    or scan_outside(near, content_checks=content_checks)):
+            _record(metrics, "transit", "unavailable", reason=kind)
+            return {"status": "unavailable", "note": "Give a public bus route and stop name."}
         try:
             out = await transit_source.arrivals(route, near=near)
         except Exception:
@@ -388,7 +393,7 @@ async def _route__normalize(c):
             )
         if str(c.place).strip().casefold() in c._bound_places:
             continue
-        if scan_identifiers(c.place, content_checks=c.content_checks) is not None:
+        if scan_outside(c.place, content_checks=c.content_checks) is not None:
             _record(c.metrics, "route", "refused", reason="identifier")
             return (
                 True,

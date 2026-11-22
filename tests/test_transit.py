@@ -739,20 +739,13 @@ async def test_the_tool_passes_near_through_to_the_resolver(operators):
 
 
 async def test_the_tool_never_echoes_an_identifier_from_the_near_argument(operators):
-    """`near` is the fourth MODEL-SUPPLIED string handed back inside a tool
-    result (after `lookup_person`'s name, `calculate`'s expression and
-    `route`). Same hole, same fix: an identifier is dropped from the echo, and
-    the resolution outcome survives without it."""
-    class _Parroting:
-        async def arrivals(self, route: str, near: str = "") -> dict:
-            return {"status": "ok", "route": route, "known_route": True,
-                    "near": {"status": "not_found", "asked": near},
-                    "directions": [], "note": "n"}
-
-    wiring = _tool_wiring(_Parroting())          # type: ignore[arg-type]
-    out = await _call(wiring["transit"], route="68X", near="+85290000101")
-    assert "asked" not in out["near"]
-    assert out["near"]["status"] == "not_found"
+    """Refuse a private stop argument without echoing it in the tool result."""
+    phone = f"+1{202}{555}{101:04d}"
+    wiring = _tool_wiring(operators.client)
+    out = await _call(wiring["transit"], route="68X", near=phone)
+    assert out["status"] == "unavailable"
+    assert out["note"] == "Give a public bus route and stop name."
+    assert phone not in json.dumps(out)
 
 
 # ---- ADR 0015 §3: how to report a status rides in the result ----------------

@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 import logging
 
+from nora.agent.egress import scan_outside
 from nora.agent.reaction import render_recent
-from nora.agent.security import scan_identifiers
 from nora.agent.toolkit.results import HELD, _record, _send_status
 from nora.agent.toolkit.transcript import ALONE_MAX_CHARS, _strip_media_markers
 from nora.conversation.adapters.tools.shared import platform_message_id_of
@@ -158,7 +158,7 @@ def _make_send_reply(deps):
         publishing you owe BEFORE your answer when you can; anything you still
         do after it needs `more=true`.
 
-        Returns one of three words. Read the middle one carefully.
+        Returns one of these statuses.
           - `sent`: it reached the room.
           - `held_for_review`: your part is done. The message was complete and
             correct, and something outside this turn held it (a review mode, or
@@ -167,6 +167,7 @@ def _make_send_reply(deps):
             through. Do not call this tool again.
           - `refused`: a guard stopped it and it will not go. The same text will
             be refused again.
+          - `unavailable`: this pass cannot deliver a reply.
 
         Args:
             text: One message, in your own voice. An @ right before the name the
@@ -203,7 +204,7 @@ def _make_send_reply(deps):
                 record_metadata=_gif_record(reaction),
                 quote=_resolve_quote(reply_to),
             )
-            if not sent and deliverer.held_count == held_before:
+            if _send_status(deliverer, sent=sent, held_before=held_before) == "refused":
                 # The GIF made it fail (a platform that refused the attachment,
                 # a send error): her words still go, as written. A hold is not
                 # a failure and is not retried.
@@ -239,7 +240,7 @@ def _make_send_reply(deps):
         _record(
             metrics,
             "send_reply",
-            "ok" if sent else ("held" if status == HELD else "refused"),
+            "ok" if sent else ("held" if status == HELD else status),
             chars=len(text or ""),
         )
         return status
@@ -268,7 +269,7 @@ def _make_search_gifs(deps):
             not query
             or len(query) > 120
             or len(query.split()) > 12
-            or scan_identifiers(query, content_checks=content_checks) is not None
+            or scan_outside(query, content_checks=content_checks) is not None
             or giphy_source is None
         ):
             return {"status": "unavailable", "note": "Reply in words instead."}
@@ -347,7 +348,10 @@ def _make_send_gif(deps):
         # A HOLD must not raise. The raise below tells the model the GIF failed and to
         # "reply in words instead" — but a hold holds the words too, so the fallback
         # would be a second held send and another model call: a loop.
-        if _send_status(deliverer, sent=sent, held_before=held_before) == HELD:
+        status = _send_status(deliverer, sent=sent, held_before=held_before)
+        if status == "unavailable":
+            return {"status": "unavailable", "note": "This pass cannot deliver a reply."}
+        if status == HELD:
             return {
                 "status": "held_for_review",
                 "note": "The GIF is chosen and my part is DONE. A review mode "

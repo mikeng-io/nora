@@ -112,6 +112,7 @@ TOOLS = {
     ),
     "search_gifs": NativeTool(
         1,
+        outside=True,
         read_only=True,
         side_effect_state="none",
         idempotency="idempotent",

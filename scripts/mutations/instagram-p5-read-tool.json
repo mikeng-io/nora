@@ -156,8 +156,8 @@
   {
     "name": "instagram_read declares no level (ADR 0015 \u00a73)",
     "file": "nora/agent/catalog/entries/social.py",
-    "old": "    \"instagram_read\": NativeTool(\n        2,\n        time_shiftable=False,\n        source_tier=\"web\",\n        cacheable=False,\n        read_only=True,\n        side_effect_state=\"none\",\n        idempotency=\"idempotent\",\n        retry=\"safe\",\n        output_contract=\"three_state\",\n        level=3,\n",
-    "new": "    \"instagram_read\": NativeTool(\n        2,\n        time_shiftable=False,\n        source_tier=\"web\",\n        cacheable=False,\n        read_only=True,\n        side_effect_state=\"none\",\n        idempotency=\"idempotent\",\n        retry=\"safe\",\n        output_contract=\"three_state\",\n",
+    "old": "    \"instagram_read\": NativeTool(\n        2,\n        outside=True,\n        time_shiftable=False,\n        source_tier=\"web\",\n        cacheable=False,\n        read_only=True,\n        side_effect_state=\"none\",\n        idempotency=\"idempotent\",\n        retry=\"safe\",\n        output_contract=\"three_state\",\n        level=3,\n",
+    "new": "    \"instagram_read\": NativeTool(\n        2,\n        outside=True,\n        time_shiftable=False,\n        source_tier=\"web\",\n        cacheable=False,\n        read_only=True,\n        side_effect_state=\"none\",\n        idempotency=\"idempotent\",\n        retry=\"safe\",\n        output_contract=\"three_state\",\n",
     "target": "tests/test_tool_surface_policy.py::test_every_rewritten_tool_declares_a_level"
   },
   {

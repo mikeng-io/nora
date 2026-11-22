@@ -39,10 +39,11 @@ from ..domain.models import (
 )
 from ..domain.notes import note_handle
 from ..domain.ports import OutboundAttachment, OutboundQuote, SendResult, Styled
+from ..memory import ActRefused
 from ..obs.metrics import Metrics
 from . import tool_choice
 from .call_ledger import CallLedger
-from .egress import LeakGuard, scan_reply
+from .egress import LeakGuard, internal_span, scan_reply
 from .links import LinkCarry
 from .markdown import render_markdown
 from .outbound import Outbound, OutboundComposer
@@ -340,7 +341,7 @@ class Deliverer:
                               platform=self._target.platform, audience=self._audience)
             self._last_outcome = "doctrine_leak"
             return False
-        kind = scan_reply(emoji, content_checks=self._content_checks)
+        kind = internal_span(emoji) or scan_reply(emoji, content_checks=self._content_checks)
         if kind:
             self._metrics.inc("nora_egress_blocks_total", kind=kind)
             self._metrics.inc("nora_silent_failures_total", reason="egress_block",
@@ -509,19 +510,11 @@ class Deliverer:
             self._last_outcome = "doctrine_leak"
             return False
 
-        # R-18: see `nora.agent.egress` for what it deliberately does not match. This
-        # is the one caller of `scan_reply`: `text` here is addressed to the group,
-        # so the identifier floor applies at its strictest. The model-name veto is
-        # disabled (`x_read` relays third-party content that names models).  BOTH
-        # forms, as with R-6, and this is the sharper case. Every identifier pattern
-        # is `\b`-anchored, and removing an asterisk BETWEEN two word characters
-        # joins them and destroys the boundary:  "*a*deadbeef-1234-5678-9abc-
-        # def012345678"  raw->uuid   converted->None "*+85298765432*a"
-        # raw->phone  converted->None  so a member's real number wrapped in emphasis
-        # would otherwise be sent (in bold). A text transformation must never sit in
-        # front of a fail-closed guard without the guard seeing both sides.
-        kind = scan_reply(styled.text, content_checks=self._content_checks) or scan_reply(
-            drafted, content_checks=self._content_checks
+        # Markdown can uncover a span or destroy an identifier boundary.
+        kind = (
+            internal_span(styled.text) or internal_span(drafted)
+            or scan_reply(styled.text, content_checks=self._content_checks)
+            or scan_reply(drafted, content_checks=self._content_checks)
         )
         if kind:
             log.error("egress_blocked: %s (tag=%s)", kind, self._tag_id)
@@ -593,6 +586,7 @@ class Deliverer:
         if bind_owner is not None and getattr(adapter, "action_owner", None) is None:
             adapter = bind_owner(ActionOwner(kind="live_invocation", id=str(row_id)))
         self.send_unresolved += 1
+        act_refusal = None
         try:
             async def send() -> SendResult:
                 return await adapter.send(
@@ -611,6 +605,9 @@ class Deliverer:
                     self._attempts - 1, send, from_pass=not otp,
                     author=self._target.conversation_id if otp else None,
                 )) or SendResult(ok=False)
+        except ActRefused as refusal:
+            act_refusal = str(refusal)
+            result = SendResult(ok=False)
         except Exception:
             log.exception("send raised (tag=%s)", self._tag_id)
             result = SendResult(ok=False)
@@ -683,8 +680,10 @@ class Deliverer:
         # and invite a blind second send; calling it failed misreports an
         # outcome nobody disproved). The durable truth is the action row's,
         # and the outcome name keeps the in-process view equally honest.
-        self._last_outcome = ("sent" if result.ok else "send_uncertain"
-                              if getattr(result, "uncertain", False) else "send_failed")
+        self._last_outcome = act_refusal or (
+            "sent" if result.ok else "send_uncertain"
+            if getattr(result, "uncertain", False) else "send_failed"
+        )
         self.send_unresolved -= 1
         return result.ok
 

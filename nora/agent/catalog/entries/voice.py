@@ -5,6 +5,7 @@ from nora.agent.catalog.model import NativeTool
 TOOLS = {
     "play_music": NativeTool(
         2,
+        outside=True,
         side_effect_state="unknown",
         idempotency="non_idempotent",
         retry="never",

@@ -22,10 +22,26 @@ class ActPass:
     ordinals: Counter[str] = field(default_factory=Counter)
     requests: dict[tuple[str, str], int] = field(default_factory=dict)
     shown: set[str] = field(default_factory=set)
+    internal: set[str] = field(default_factory=set)
     running_tools: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 _active_pass: ContextVar[ActPass | None] = ContextVar("act_pass", default=None)
+
+
+class ActRefused(RuntimeError):  # noqa: N818
+    """A declaration that cannot enter the act envelope."""
+
+
+def remember_internal(text: str) -> None:
+    active = _active_pass.get()
+    if active is not None and text:
+        active.internal.add(text)
+
+
+def internal_corpus() -> frozenset[str]:
+    active = _active_pass.get()
+    return frozenset(active.internal) if active is not None else frozenset()
 
 
 @contextmanager
@@ -113,6 +129,9 @@ def declare_act(
     active = _active_pass.get() if from_pass else None
     if active is not None:
         authority = active.authority
+        context = authority.pass_context
+        if context is not None and context.occasion in {"debrief", "wake", "review"}:
+            raise ActRefused("non_engagement_pass")
         event = active.trigger_id
         request = (executor, request_id) if request_id else None
         if request is not None and request in active.requests:

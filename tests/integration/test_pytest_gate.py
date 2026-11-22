@@ -245,12 +245,8 @@ def test_phases_preserve_selected_targets_and_keep_timing_out_of_parallel(
     expected_serial = {
         (): [str(tmp_path / name) for name in gate.TIMING_TESTS],
         ("tests",): [str(tmp_path / name) for name in gate.TIMING_TESTS],
-        ("tests/integration",): [str(tmp_path / name) for name in (
-            "tests/integration/test_latency.py",
-            "tests/integration/test_bridge_queue_telemetry.py",
-            "tests/integration/subject/test_autonomous_journey_sdk.py",
-            "tests/integration/test_managed_circle_cost.py",
-        )],
+        ("tests/integration",): [str(tmp_path / name) for name in gate.TIMING_TESTS
+                                  if name.startswith("tests/integration/")],
         ("tests/integration/test_latency.py::test_specific",): [
             "tests/integration/test_latency.py::test_specific"],
         ("tests/integration/subject/test_autonomous_journey_sdk.py",

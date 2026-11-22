@@ -33,6 +33,7 @@ SENT: Literal["sent"] = "sent"
 HELD: Literal["held_for_review"] = "held_for_review"
 
 REFUSED: Literal["refused"] = "refused"
+UNAVAILABLE: Literal["unavailable"] = "unavailable"
 
 
 class _Holds(Protocol):
@@ -47,10 +48,12 @@ def _send_status(
     *,
     sent: bool,
     held_before: int,
-) -> Literal["sent", "held_for_review", "refused"]:
-    """`sent` / `held_for_review` / `refused` for ONE `deliver` call."""
+) -> Literal["sent", "held_for_review", "refused", "unavailable"]:
+    """Translate one delivery outcome for the calling tool."""
     if sent:
         return SENT
+    if getattr(deliverer, "last_outcome", None) == "non_engagement_pass":
+        return UNAVAILABLE
     return HELD if deliverer.held_count > held_before else REFUSED
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 
+from nora.agent.egress import scan_outside
 from nora.agent.toolkit.results import _record
 from nora.agent.toolkit.spec import _spec
 from nora.domain.ports import (
@@ -72,6 +73,8 @@ def _make_play_music(deps):
     room = deps.room
     _music_sender_ids = _make__music_sender_ids(deps)
 
+    content_checks = deps.content_checks
+
     async def play_music(query: str) -> dict:
         """Play a search term or a YouTube link in the asker's Discord voice
         channel. Call this when someone asks you to play music.
@@ -99,6 +102,9 @@ def _make_play_music(deps):
         if not sender_ids:
             _record(metrics, "play_music", "unavailable")
             return dict(_MUSIC_NO_TAGGER)
+        if kind := scan_outside(query, content_checks=content_checks):
+            _record(metrics, "play_music", "unavailable", reason=kind)
+            return {"status": "unavailable", "note": "Give a public song name or link."}
         try:
             outcome = await music.play(
                 conversation_id=conversation_id,
