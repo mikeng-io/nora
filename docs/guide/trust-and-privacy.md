@@ -13,8 +13,10 @@ and never decided by the AI model alone.
   personality, sets the rules and decides who she knows. There is no central
   service and no shared account.
 - **Outside queries stay minimal.** When she searches the web or asks a map
-  service for a route, the request carries only the public question, never a
-  private person's name, account, address or location.
+  service for a route, the request is meant to carry only the public question,
+  never a private person's name, account, address or location. Saved places
+  never leave in a query. The extra filters that screen names and identifiers
+  are off by default, and the operator can turn them on.
 
 ## Rooms and circles
 
@@ -62,7 +64,8 @@ Your private conversations with Nora belong to her home circle.
 | her beliefs about people and rooms | evidence, through the reflection loop |
 | her lessons about how to act | outcomes and corrections, through the reflection loop |
 
-What she learns sits below what people wrote and can never loosen it. A lesson
+What she learns sits below what people wrote. It may refine her default
+conduct for a circle, but never loosens her values or rules. A lesson
 that would contradict her written rules is refused by an independent check.
 
 ## When she is unsure, she holds back

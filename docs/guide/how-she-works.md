@@ -107,8 +107,8 @@ whether learning actually changed her decisions.
 
 ## Why there are no special features
 
-Suggestions, follow-through, planning and noticing that someone has gone quiet
-have no code of their own. They come from the same loops working on the same
+Recommendations, follow-through and noticing that someone has gone quiet have
+no code of their own. They come from the same loops working on the same
 graph. For example, a room keeps sharing links to the same few games; a
 pattern rises above the room's usual level; she forms the belief that the room
 is into them, starts watching their prices, and when one goes on sale, makes a

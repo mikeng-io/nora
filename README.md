@@ -77,7 +77,7 @@ the rooms and features each deployment allows.
 | **Keep track** | Reminders, plans and follow-ups, yours, hers and a chat's. Each one stays open until something real closes it, so nothing is "done" because she said so. |
 | **Join in, or not** | She reads a conversation she was not called into and decides whether to speak. Staying silent is a normal outcome. |
 | **Suggest things** | A game on sale, a restaurant that suits everyone coming, an event worth knowing about, based on what you and each group actually take up. |
-| **Plan together** | Events with RSVPs, polls, shared documents. |
+| **Plan together** | Events with RSVPs, reading polls, shared documents. |
 | **Get around** | Maps, routes, transit, parking and weather, and location with consent. |
 | **Make things** | Images, short videos, GIFs and documents. |
 | **Do real work** | A persistent computer workspace, a browser and helper agents for longer jobs. She reports back when they finish. |
