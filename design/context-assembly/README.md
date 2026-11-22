@@ -5,10 +5,6 @@ assembled through one mechanism. The declaration names what an occasion may
 read, in which order and under which scope; the occasion's decisions explain
 why each block earns its place.
 
-**Status:** building
-
-[Open issues](https://github.com/mikeng-io/nora/issues?q=is%3Aopen+%22design%2Fcontext-assembly%2F%22)
-
 ## Parts
 
 - **The block registry** declares an occasion's blocks as data. It is not a list
@@ -16,6 +12,8 @@ why each block earns its place.
 - **Block types and builders** say what a block is, how to read it and which
   values it may carry. One store has one meaning and one builder, even where
   occasions need different slices of it.
+- **The presentation layer** selects fixed blocks from a pass's one bounded
+  graph retrieval. The assembler places them around the pass's floor.
 - **The assembler** renders declared blocks in order, escaping untrusted text
   and preserving explicit empty and unavailable states. No model prompt is
   hand-built beside it.

@@ -1,10 +1,21 @@
 # Registry, builders and rendering
 
+## A pass's four context layers
+
+The **floor** contains what a pass always needs. Code runs one **prefetch**
+from resolved anchors within the reading scope. **Presentations** are fixed
+selections from that retrieval, ordered with the floor for prefix caching.
+**Pull** offers read tools for deeper questions the model chooses.
+
+A pass's occasion declares its anchors, presentations and bounds. The
+[cognition context design](../cognition/context.md#per-pass) owns the per-pass
+inventory.
+
 ## Declaration as the review boundary
 
-An occasion's `_BLOCKS` table declares each block's name, order and scope. The
-assembler walks it. This makes the occasion's input readable and ensures a new
-block is a deliberate row, not an accidental side effect of another feature.
+An occasion declares each block's name, order and scope. The assembler uses
+that declaration to make the occasion's input readable and to ensure changes
+to what it reads are deliberate.
 
 The registry does not give every occasion the same context. A gate can remain
 closed to everything except the few blocks its verdict requires; a test holds
@@ -85,8 +96,8 @@ permitted exceptions.
 An occasion is anywhere a prompt reaches a model. Joining the assembly is the
 same contract for all of them, in order:
 
-1. Declare the occasion's `_BLOCKS` table: one row per block, in the order the
-   model reads.
+1. Declare the occasion's inputs and rendered order. For a pass, use its
+   anchors, presentations and bounds to drive prefetch and presentation.
 2. Walk it with `assemble`; a hand-rolled join of rendered blocks is a hand
    join whatever it is named.
 3. Build a shared block through its owning builder; a second builder for a

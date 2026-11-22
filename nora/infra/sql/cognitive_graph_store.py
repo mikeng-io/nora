@@ -49,6 +49,7 @@ class AdmissionTopic:
 # person_pointer_in, _admission_base and _merge support writes and use raw identities.
 GRAPH_READERS = (
     "nora.memory.adapters.claim_support",
+    "nora.memory.adapters.pass_anchors",
     "nora.memory.adapters.retrieval_load",
     "nora.memory.adapters.retrieval_rows",
     "nora.memory.adapters.retrieval_scope",
