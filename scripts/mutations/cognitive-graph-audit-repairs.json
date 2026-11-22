@@ -93,8 +93,8 @@
   {
     "name": "stored registration places a social row only from an account last probed public",
     "file": "nora/memory/adapters/stored_item_planes.py",
-    "old": "placed = name not in _SOCIAL_ITEMS or self._public.get((row[\"network\"], person), False)",
-    "new": "placed = True",
+    "old": "placed = name not in _SOCIAL_ITEMS or (",
+    "new": "placed = True or (",
     "target": "tests/infra/test_register_stored_rows.py::test_stored_social_rows_reach_units_only_from_an_account_last_probed_public"
   },
   {

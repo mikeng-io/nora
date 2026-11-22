@@ -126,7 +126,9 @@ class ItemPlanes:
             persons = [person] if person else []
             # As its writer: a social item reaches units only from an account
             # whose latest recorded probe said public.
-            placed = name not in _SOCIAL_ITEMS or self._public.get((row["network"], person), False)
+            placed = name not in _SOCIAL_ITEMS or (
+                person is not None and self._public.get((row["network"], person), False)
+            )
             units = await self._person(person) if person and placed else ()
         return units, origin, sorted({person for person in persons if person})
 
