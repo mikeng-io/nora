@@ -15,10 +15,14 @@ from nora.web.managed_viewer import register_managed_viewer
 from nora.web.management_api import ProvisioningCredential, register_management_routes
 
 
-async def mount_management(app: web.Application, *, cfg: Config, services: Any) -> None:
+async def mount_management(
+    app: web.Application, *, cfg: Config, services: Any, link_delivery: Any = None,
+) -> None:
     if cfg.identity.backend != "managed":
         return
-    authentication = mount_authentication(app, cfg=cfg, services=services)
+    authentication = mount_authentication(
+        app, cfg=cfg, services=services, link_delivery=link_delivery,
+    )
     register_managed_viewer(app, bindings=services.bindings, registry=services.registry,
         scopes=PortalScopes(services.bindings, services.topology, services.authority),
         verifier=authentication)

@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 import sqlalchemy as sa
@@ -11,8 +12,10 @@ from nora.domain.models import NormalizedMessage, PersonRef
 from nora.domain.observations import Observation, PollPayload, SourceScope
 from nora.domain.presence import PresenceFix, WireState
 from nora.domain.social_stream import ItemCounts, SocialItem
+from nora.domain.tool_call_log import ToolCallLogEntry
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.cognitive_graph_schema import REGISTRY
+from nora.infra.sql.computer_events import SqlComputerEventStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.fetched_pages import SqlFetchedPageStore
 from nora.infra.sql.item_registration import RegistrationScope, SqlItemRegistration
@@ -22,9 +25,16 @@ from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.schema import METADATA
 from nora.infra.sql.social_stream import SqlSocialStreamStore
 from nora.infra.sql.source_health import SqlSourceHealthLog
-from nora.memory.domain.registration import AGGREGATE_FAMILIES, ITEM_SOURCES
+from nora.infra.sql.tool_call_log import SqlToolCallLogStore
+from nora.memory.adapters.act_store import SqlActStore
+from nora.memory.app.act_scope import act_pass
+from nora.memory.app.acts import ActEnvelope
+from nora.memory.domain.acts import Act, ActAuthority, ActIdentity, Outcome
+from nora.memory.domain.admission_proposals import PassContext
+from nora.memory.domain.registration import AGGREGATE_FAMILIES, BACKFILL_ITEM_SOURCES, ITEM_SOURCES
 from nora.persons import Life360Membership, Persons
 from nora.policy import Conversation, Policy
+from tests.contract.test_computer_event_store_contract import _event
 
 
 @pytest.fixture
@@ -72,7 +82,12 @@ _ROOM_SOURCES = frozenset({
     "messages", "message_edit", "message_reaction", "message_delete",
     "fetched_pages", "platform_observation",
 })
-_FANOUT_SOURCES = tuple(source for source in ITEM_SOURCES if source not in _ROOM_SOURCES)
+_FANOUT_SOURCES = tuple(source for source in BACKFILL_ITEM_SOURCES if source not in _ROOM_SOURCES)
+_FORWARD_SOURCES = tuple(source for source in ITEM_SOURCES if source not in BACKFILL_ITEM_SOURCES)
+_PASS = PassContext(
+    _UNIT, _ROOM, False, "called", "engagement", "test-pass", "test-trace", "test-model",
+    rev_instruction="test-instruction", rev_skill="test-skill", **_REVISIONS,
+)
 
 
 class _FixedRevisions:
@@ -147,6 +162,38 @@ class _Writer:
         elif table == "social_item_count":
             await store.record_counts(network=item.network, items=[item], read_id=None)
 
+    async def _executor_evidence(self, table: str) -> None:
+        authority = ActAuthority(_UNIT, _PERSON, room=_ROOM, pass_context=_PASS)
+        if table in {"nora_act", "nora_act_outcome", "nora_pass_output"}:
+            store = SqlActStore(self.engine, self.registration)
+            if table == "nora_pass_output":
+                await ActEnvelope(store).record_expression(authority, [
+                    {"role": "assistant", "content": [{"text": "Generated draft"}]},
+                ])
+                return
+            act = Act(ActIdentity("test-executor", _PASS.pass_id, 0),
+                      "delivery", "test-destination", authority, "unknown")
+            assert await store.reserve(act)
+            if table == "nora_act_outcome":
+                await store.observe(act, Outcome("done", {"status": "generated"}))
+            return
+
+        self.engine.update_execution_options(item_registration=self.registration)
+        with act_pass(authority):
+            if table == "tool_call_log":
+                await SqlToolCallLogStore(self.engine).append(ToolCallLogEntry(
+                    id=uuid4(), conversation_id=_ROOM, conversation_type="group",
+                    tag_id=_PASS.pass_id, tool_name="test-tool", tool_input={},
+                    tool_result={"status": "generated"}, created_at=_AT,
+                ))
+            elif table == "computer_events":
+                await SqlComputerEventStore(self.engine).append(_event(
+                    conversation_id=_ROOM, tag_id=_PASS.pass_id, requester_person_id=_PERSON,
+                    created_at=_AT,
+                ))
+            else:
+                raise AssertionError(f"Missing writer fixture for {table}")
+
     async def write(self, table: str) -> None:
         if table == "messages" or table.startswith("message_"):
             await self._message_event(table)
@@ -178,11 +225,13 @@ class _Writer:
                 ),
                 event_id="test-observation", source_digest="test-digest",
             )
+        elif table in _FORWARD_SOURCES:
+            await self._executor_evidence(table)
         else:
             raise AssertionError(f"Missing writer fixture for {table}")
 
 
-@pytest.mark.parametrize("name", ITEM_SOURCES)
+@pytest.mark.parametrize("name", BACKFILL_ITEM_SOURCES)
 async def test_item_writer_registers_with_its_planes(engine: AsyncEngine, name: str) -> None:
     before = datetime.now(UTC)
     await _Writer(engine, _registration()).write(name)
@@ -214,6 +263,28 @@ async def test_item_writer_registers_with_its_planes(engine: AsyncEngine, name: 
         "rev_instruction", "rev_skill",
     ):
         assert row[null] is None
+
+
+@pytest.mark.parametrize("name", _FORWARD_SOURCES)
+async def test_executor_writer_registers_with_its_pass_planes(
+    engine: AsyncEngine, name: str,
+) -> None:
+    before = datetime.now(UTC)
+    await _Writer(engine, _registration(multiple=True)).write(name)
+    table = METADATA.tables[name]
+    async with engine.connect() as conn:
+        row = (await conn.execute(sa.select(table))).mappings().one()
+        registered = (await conn.execute(sa.select(REGISTRY).where(
+            REGISTRY.c.id == row["graph_id"], REGISTRY.c.unit == _UNIT,
+        ))).mappings().one()
+
+    assert (row["unit"], row["origin_room"], row["persons"]) == (_UNIT, _ROOM, [_PERSON])
+    assert registered["kind"] == row["kind"] == "item"
+    assert registered["state"] == row["state"] == "live"
+    assert row["basis"] == "observed"
+    assert row["valid_from"] == row["occurred_at"]
+    assert before <= row["asserted_at"] <= datetime.now(UTC)
+    assert {key: row[key] for key in _PASS.provenance()} == _PASS.provenance()
 
 
 @pytest.mark.fresh_database
@@ -249,7 +320,7 @@ async def test_item_writer_rolls_back_after_registry_insert(
         registered = await conn.scalar(sa.select(sa.func.count()).select_from(REGISTRY))
     prerequisites = int(name in {
         "message_edit", "message_reaction", "message_delete",
-        "social_item_count", "social_item_state",
+        "social_item_count", "social_item_state", "nora_act_outcome",
     })
     assert count == 0
     assert registered == prerequisites
@@ -263,8 +334,19 @@ async def test_item_insert_with_unit_and_no_registry_is_refused(
     table = METADATA.tables[name]
     async with engine.begin() as conn:
         row = dict((await conn.execute(sa.select(table))).mappings().one())
-        await conn.execute(sa.delete(table))
-        row.update(unit="test-unregistered", graph_id="test-no-registry")
+        if name in _FORWARD_SOURCES:
+            if name == "nora_act_outcome":
+                row.pop("id")
+            elif name in {"computer_events", "tool_call_log"}:
+                row["id"] = uuid4()
+            else:
+                row["id"] += "-unregistered"
+        else:
+            await conn.execute(sa.delete(table))
+            row["unit"] = "test-unregistered"
+        if name == "computer_events":
+            row["operation_id"] = uuid4()
+        row["graph_id"] = "test-no-registry"
         with pytest.raises(sa.exc.IntegrityError, match=f"fk_{name}_graph_registry"):
             async with conn.begin_nested():
                 await conn.execute(sa.insert(table).values(row))

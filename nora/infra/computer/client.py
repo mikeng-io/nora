@@ -27,6 +27,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, TypeVar
+from uuid import uuid4
 
 import aiohttp
 
@@ -44,6 +45,7 @@ from nora.domain.computer import (
     StateResult,
     TmuxSession,
 )
+from nora.memory import ActAuthority, EffectRecorder, Outcome
 
 log = logging.getLogger("nora.computer")
 
@@ -87,6 +89,9 @@ def _opt_str(raw: Any) -> str | None:
     return raw if isinstance(raw, str) else None
 
 
+_WRITES = {"run", "write", "edit", "put"}
+
+
 class ComputerdRuntime:
     """Satisfies `nora.domain.ports.SandboxRuntime`."""
 
@@ -94,6 +99,7 @@ class ComputerdRuntime:
         self, *, base_url: str, token: str, timeout_seconds: float = 30.0,
         max_output_chars: int = 8000, observer: ComputerCallObserver | None = None,
         instance: str | None = None,
+        effects: EffectRecorder | None = None,
     ) -> None:
         self._base = base_url.rstrip("/") + "/v1"
         self._headers = {"Authorization": f"Bearer {token}"}
@@ -111,6 +117,7 @@ class ComputerdRuntime:
         # and whether computerd answered at all. Never raises into a call: a
         # broken observer must not turn a computer answer into a failure.
         self._observer = observer
+        self._effects = effects
 
     def _check_instance(self, response: aiohttp.ClientResponse) -> None:
         """The reply must be stamped by the admitted instance: a computerd
@@ -352,7 +359,19 @@ class ComputerdRuntime:
         status says what was wrong."""
         answered = True
         try:
-            result = await body()
+            if self._effects is not None and op in _WRITES:
+                result = await self._effects.invoke(
+                    "computer.run" if op == "run" else "computer.workspace",
+                    f"computerd:{self._instance or 'shared'}", str(uuid4()), ActAuthority(None),
+                    body, judge=lambda value: Outcome(
+                        "done" if getattr(value, "status", None) is SandboxStatus.OK
+                        else "uncertain" if getattr(value, "status", None) is
+                        SandboxStatus.UNAVAILABLE
+                        else "failed"
+                    ),
+                )
+            else:
+                result = await body()
         except _NoAnswerError as exc:
             answered, result = False, unavailable(str(exc))
         except _UnavailableError as exc:

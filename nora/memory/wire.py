@@ -18,6 +18,11 @@ from nora.domain.live import LiveMapping
 from nora.infra.embedder import QUERY_TIMEOUT_SECONDS, LlamaEmbedder, fingerprint, model_file
 from nora.infra.honcho import HonchoClient
 from nora.infra.sql import SqlEntryStore
+from nora.infra.sql.item_registration import (
+    RegistrationScope,
+    RuntimeRevisions,
+    SqlItemRegistration,
+)
 from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.memory_graph import SqlMemoryGraph
 from nora.infra.sql.memory_read import SqlMemoryIndex
@@ -25,12 +30,14 @@ from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.profile import SqlProfileStore
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.standing_ledger import SqlStandingLedger
+from nora.memory.adapters.act_store import SqlActStore
 from nora.memory.adapters.admission_rows import SqlAdmissionRows
 from nora.memory.adapters.admission_store import SqlAdmissionStore
 from nora.memory.adapters.graph_store import SqlCognitiveGraph
 from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
 from nora.memory.adapters.tools.session import session_verbs as _session_verbs
+from nora.memory.app.acts import ActEnvelope
 from nora.memory.app.admission import AdmissionService
 from nora.memory.app.admission_identity import AdmissionIdentity
 from nora.persons import Persons
@@ -49,6 +56,20 @@ def session_verbs(deps):
 
 def make_resolve(deps):
     return _make__resolve(deps)
+
+
+def act_envelope(
+    engine: AsyncEngine, registration: SqlItemRegistration | None = None,
+) -> ActEnvelope:
+    item_registration = registration or engine.get_execution_options()["item_registration"]
+    return ActEnvelope(SqlActStore(engine, item_registration))
+
+
+def bridge_act_envelope(engine: AsyncEngine) -> ActEnvelope:
+    policy, persons = Policy(()), Persons({}, {})
+    return act_envelope(engine, SqlItemRegistration(
+        RegistrationScope(policy, persons), RuntimeRevisions({}, policy, persons),
+    ))
 
 
 @dataclass(frozen=True)

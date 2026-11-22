@@ -5,16 +5,31 @@ import logging
 
 import aiohttp
 
+from nora.memory import ActAuthority, EffectRecorder, Outcome
+
 log = logging.getLogger("nora.computer.lifecycle")
 
 
 class HostLifecycleClient:
-    def __init__(self, *, socket: str, token: str, timeout_seconds: float = 240) -> None:
+    def __init__(
+        self, *, socket: str, token: str, timeout_seconds: float = 240,
+        effects: EffectRecorder | None = None,
+    ) -> None:
         self._socket = socket
         self._token = token
         self._timeout = timeout_seconds
+        self._effects = effects
 
     async def request(self, action: str, scope: str, operation: str) -> dict[str, object]:
+        if self._effects is None or action == "observe":
+            return await self._request(action, scope, operation)
+        return await self._effects.invoke(
+            "computer.lifecycle", f"computerd-lifecycle:{scope}", f"{operation}:{action}",
+            ActAuthority(None), lambda: self._request(action, scope, operation),
+            judge=lambda value: Outcome("done" if value.get("status") == "ok" else "uncertain"),
+        )
+
+    async def _request(self, action: str, scope: str, operation: str) -> dict[str, object]:
         try:
             async with aiohttp.ClientSession(
                 connector=aiohttp.UnixConnector(path=self._socket),

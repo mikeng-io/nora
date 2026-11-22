@@ -3,6 +3,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+import nora.memory as memory
 from nora.app.composition_helpers import _music_channel_of, _reasoning_effort
 from nora.app.raw_clients import _DebriefModelClient, _NormaliseOnly
 from nora.app.voice_events import VoiceEventConsumer
@@ -48,6 +49,7 @@ def speech(_discord_bridge, allowlist, cfg, engine, metrics) -> SpeechWiring:
     # secret (the LLM key, the route key) follows: composition.py reads the environment once
     # and hands the already-resolved value to whatever constructs the client that needs it.
     discord_token = cfg.credentials.get(cfg.platforms.discord.token_env, "")
+    effects = memory.EffectRecorder(memory.wire.act_envelope(engine))
     # The audio-controllers: ONE PER GUILD, because Discord's limit is one voice connection
     # per bot token per guild and each connection stays single. `[speech.tts] sidecars`
     # lists a controller endpoint per guild — usually the SAME one, since a single sidecar…
@@ -58,7 +60,7 @@ def speech(_discord_bridge, allowlist, cfg, engine, metrics) -> SpeechWiring:
         # mounted config.toml) — the app forwards voice work to the bridge and never owns a…
         voice_hub = VoiceControllerHub(
             {
-                guild_id: VoiceControllerClient(endpoint)
+                guild_id: VoiceControllerClient(endpoint, effects=effects)
                 for guild_id, endpoint in cfg.speech.tts.sidecars_by_guild.items()
             }
         )
@@ -67,7 +69,7 @@ def speech(_discord_bridge, allowlist, cfg, engine, metrics) -> SpeechWiring:
     # reference to every task it spawns (`self._idle_tasks`), the exact GC-mid-flight bug…
     music_manager = (
         MusicPlayerManager(
-            queue_store=SqlMusicQueueStore(engine),
+            queue_store=SqlMusicQueueStore(engine, effects=effects),
             session_store=SqlMusicSessionStore(engine),
             track_source=YtDlpSource(),
             idle_timeout_seconds=cfg.music.idle_timeout_seconds,
@@ -246,6 +248,7 @@ def platforms(
                 hub=voice_hub,
                 voice_guild_ids=voice_guild_ids,
                 resolve_music_channel=resolve_music_channel,
+                command_acts=discord_adapter.command_acts,
             )
         else:
             log.error(

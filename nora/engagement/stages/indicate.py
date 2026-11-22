@@ -10,11 +10,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
 from typing import Any
 
 from nora.domain.models import ConversationTarget, NormalizedMessage
+from nora.domain.ports import ReactionResult
 
 log = logging.getLogger("nora.engagement.indicate")
 
@@ -51,6 +52,8 @@ class Indicator:
     reaction_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     authored_reaction: bool = False
     reaction_confirmed: bool = False
+    delivery_acts: Any = None
+    ordinal: int = 0
 
 
 async def _react(indicator: Indicator, emoji: str, *, phase: str, remove: bool = False) -> None:
@@ -63,7 +66,9 @@ async def _react(indicator: Indicator, emoji: str, *, phase: str, remove: bool =
     must degrade here — asking the port whether it *should* have the method
     answers the wrong question.
     """
-    react = getattr(indicator.adapter, "react", None)
+    react: Callable[..., Awaitable[ReactionResult]] | None = getattr(
+        indicator.adapter, "react", None,
+    )
     platform = indicator.target.platform
     if react is None:
         indicator.metrics.inc(
@@ -71,12 +76,25 @@ async def _react(indicator: Indicator, emoji: str, *, phase: str, remove: bool =
         )
         return
     try:
-        result = await react(
-            target=indicator.target, emoji=emoji, to_author=indicator.author,
-            to_timestamp=indicator.timestamp, to_message_id=indicator.message_id,
-            remove=remove,
+        async def call() -> ReactionResult:
+            return await react(
+                target=indicator.target, emoji=emoji, to_author=indicator.author,
+                to_timestamp=indicator.timestamp, to_message_id=indicator.message_id,
+                remove=remove,
+            )
+
+        ordinal = indicator.ordinal
+        indicator.ordinal += 1
+        acts = indicator.delivery_acts
+        result = await call() if acts is None else await acts.run(
+            "platform.progress", indicator.target, indicator.tag_id, ordinal, call,
+            author=indicator.author, from_pass=False,
         )
-        status = "sent" if result.ok else ("failed" if result.supported else "unsupported")
+        status = (
+            "sent" if result is not None and result.ok
+            else "unsupported" if result is not None and not result.supported
+            else "failed"
+        )
     except Exception:
         # R-5: decoration failing is never allowed to become the group's problem,
         # or the tag's. Logged for the operator, counted, and dropped.
@@ -129,6 +147,7 @@ def begin(
     tag_id: str,
     metrics: Any,
     spawn: Callable[[Coroutine[Any, Any, None]], Any],
+    delivery_acts: Any = None,
 ) -> Indicator | None:
     """Schedule the 👀 on the tagging message. Returns the handle `resolve`
     needs, or None if this message cannot be reacted to at all.
@@ -152,6 +171,7 @@ def begin(
         adapter=adapter, target=message.target(), author=message.sender_id,
         timestamp=message.timestamp, tag_id=tag_id, metrics=metrics,
         message_id=message.message_id,
+        delivery_acts=delivery_acts,
     )
     spawn(_place(indicator))
     return indicator

@@ -39,9 +39,9 @@ from __future__ import annotations
 
 import copy
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
-from typing import Any, Literal, cast
+from typing import Any, Literal, TypeVar, cast
 from uuid import UUID, uuid4
 
 from nora.agent.security import PlaceLocator
@@ -61,6 +61,7 @@ from nora.domain.documents import (
     may_read,
 )
 from nora.domain.ports import MediaObjectStore, RecordStore
+from nora.memory import ActAuthority, EffectRecorder, Outcome
 from nora.policy import Policy
 
 _HANDLE_TRIES = 5
@@ -151,6 +152,9 @@ def room_label(policy: Policy, platform: str, conversation_id: str) -> str:
     return ""
 
 
+_T = TypeVar("_T")
+
+
 class DocumentService:
     def __init__(
         self,
@@ -172,11 +176,15 @@ class DocumentService:
         content_checks: bool = True,
         shared_room: Callable[[str, str, str], bool] | None = None,
         autonomous_screen: Callable[[str], str | None] | None = None,
+        writes: EffectRecorder | None = None,
+        room_unit: Callable[[str, str], str | None] | None = None,
     ) -> None:
         self._autonomous_screen = autonomous_screen
         self._shared_room = shared_room
         self._content_checks = content_checks
         self._store = store
+        self._writes = writes
+        self._room_unit = room_unit
         self._rooms_of = rooms_of
         self._records = records
         self._media = media
@@ -395,8 +403,12 @@ class DocumentService:
             previous = current.summary.state
             target = current.summary.id
             if previous != wanted:
-                written = await self._store.set_state(
-                    document_id=target, state=wanted, set_by=person_id
+                written = await self._write(
+                    target, platform, conversation_id, person_id,
+                    lambda: self._store.set_state(
+                        document_id=target, state=wanted, set_by=person_id,
+                    ),
+                    succeeded=bool,
                 )
                 if not written:
                     return StateResult("refused", findings=_no_such_document().findings)
@@ -412,6 +424,19 @@ class DocumentService:
             changed=previous != wanted,
             title=current.summary.title,
             url="" if wanted == "deleted" else self._link(target),
+        )
+
+    async def _write(
+        self, document_id: UUID, platform: str, room: str, person_id: str | None,
+        call: Callable[[], Awaitable[_T]], *, succeeded: Callable[[_T], bool] = bool,
+    ) -> _T:
+        if self._writes is None:
+            return await call()
+        unit = self._room_unit(platform, room) if self._room_unit is not None else None
+        return await self._writes.invoke(
+            "document.write", f"document:{document_id}", str(uuid4()),
+            ActAuthority(unit, person_id, room=room), call,
+            judge=lambda result: Outcome("done" if succeeded(result) else "failed"),
         )
 
     async def _fresh_id(self, platform: str, conversation_id: str, person_id: str) -> UUID:
@@ -593,8 +618,6 @@ class DocumentService:
                 ),
             )
         if document_id is not None and base_revision is None:
-            # A revision that does not say which revision it started from would silently
-            # replace newer work.
             return PublishResult(
                 "refused",
                 findings=(
@@ -626,12 +649,9 @@ class DocumentService:
         if findings:
             return PublishResult("refused", findings=tuple(findings))
         if document_maps(rewritten):
-            # The target's cheap checks first: a stale `base_revision` or another room's id is
-            # answered before any billed lookup, so the model's «read it again and publish
-            # again» after a conflict does not pay for the same places twice.
+            # Refuse stale or inaccessible targets before a billed lookup.
             early = await self._target_problem(
-                platform, conversation_id, document_id, base_revision, person_id
-            )
+                platform, conversation_id, document_id, base_revision, person_id)
             if early is not None:
                 return early
         rewritten, findings, down = await ground_maps(
@@ -666,12 +686,13 @@ class DocumentService:
             if document_id is None:
                 if not isinstance(person_id, str):
                     return _no_such_document()
-                made = await self._store.create(
-                    document_id=await self._fresh_id(platform, conversation_id, person_id),
-                    platform=platform,
-                    conversation_id=conversation_id,
-                    created_by=person_id,
-                    revision=revision,
+                new_id = await self._fresh_id(platform, conversation_id, person_id)
+                made = await self._write(
+                    new_id, platform, conversation_id, person_id,
+                    lambda: self._store.create(
+                        document_id=new_id, platform=platform, conversation_id=conversation_id,
+                        created_by=person_id, revision=revision,
+                    ),
                 )
                 return self._ok(made.summary.id, made.summary.revision)
             current = await self._revision_target(
@@ -679,10 +700,14 @@ class DocumentService:
             )
             if isinstance(current, PublishResult):
                 return current
-            stored = await self._store.add_revision(
-                document_id=document_id,
-                base_revision=current.summary.revision,
-                revision=revision,
+            stored = await self._write(
+                document_id, platform, conversation_id,
+                person_id if isinstance(person_id, str) else None,
+                lambda: self._store.add_revision(
+                    document_id=document_id, base_revision=current.summary.revision,
+                    revision=revision,
+                ),
+                succeeded=lambda result: result.status == "ok",
             )
         except Exception:  # noqa: BLE001 - a store that is down is `unavailable`
             return PublishResult(

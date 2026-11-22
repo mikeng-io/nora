@@ -9,7 +9,7 @@
   {
     "name": "unchanged permissive projection is healed",
     "file": "nora/platform/bridge/projection.py",
-    "old": "            if stat.S_IMODE(self.target.stat().st_mode) != 0o600:\n                return True\n",
+    "old": "            if any(stat.S_IMODE(path.stat().st_mode) != 0o600 for path in (self.target, artifact)):\n                return True\n",
     "new": "",
     "target": "tests/unit/test_bridge_projection.py::test_projection_permissions_are_private_and_legacy_files_heal"
   }

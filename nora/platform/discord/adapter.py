@@ -33,6 +33,7 @@ from ...domain.ports import (
 )
 from ...infra.voice.hub import VoiceControllerHub
 from .channels import ClientChannelDirectory
+from .command_acts import DiscordCommandActs
 from .listener import DiscordListener
 from .music_commands import register as register_music_commands
 from .music_commands import resume_persisted_sessions as resume_persisted_music_sessions
@@ -67,8 +68,10 @@ class DiscordAdapter:
         voice_hub: VoiceControllerHub | None = None,
         voice_guild_ids: frozenset[str] = frozenset(),
         resolve_music_channel: ResolveMusicChannel = no_music_channel,
+        command_acts: DiscordCommandActs | None = None,
     ) -> None:
         self._token = token
+        self._command_acts = command_acts
         self._base_url = base_url
         self._sender = DiscordSender(token, base_url=base_url)
         self._reactor = DiscordReactor(token, base_url=base_url)
@@ -174,10 +177,7 @@ class DiscordAdapter:
         self._current_client = client
 
         async def _register_music_commands() -> None:
-            # The CommandTree is built fresh alongside `client`, every
-            # attempt, same lifecycle. Not independently testable (a real
-            # `discord.Client`/`CommandTree`) -- `music_commands.py`'s own
-            # docstring is explicit about that boundary.
+            # The command tree shares the gateway client's lifecycle.
             if self._music_manager is not None:
                 await register_music_commands(
                     client, self._music_manager,
@@ -185,6 +185,7 @@ class DiscordAdapter:
                     voice_guild_ids=frozenset(self._voice_guild_ids),
                     resolve_music_channel=self._resolve_music_channel,
                     client_getter=self.current_client,
+                    command_acts=self._command_acts,
                 )
                 # Safe to run on every on_ready, not just a genuine boot
                 # (resume_persisted_sessions's own guard against clobbering
@@ -193,6 +194,7 @@ class DiscordAdapter:
                     client, self._music_manager, hub=self._voice_hub,
                     resolve_music_channel=self._resolve_music_channel,
                     client_getter=self.current_client,
+                    command_acts=self._command_acts,
                 )
                 # Idempotent, so every on_ready is safe: the watch asks the
                 # controller whether sound is actually moving, because
@@ -312,6 +314,10 @@ class DiscordAdapter:
         top of this must treat that as `unavailable`, the same as any
         other wiring gap this codebase's provider ports already do."""
         return self._current_client
+
+    @property
+    def command_acts(self) -> DiscordCommandActs | None:
+        return self._command_acts
 
     async def send(
         self,

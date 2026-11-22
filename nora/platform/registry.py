@@ -48,6 +48,7 @@ from typing import Any, Protocol
 from nora.domain.ports import MediaSource, PlatformAdapter, PlatformIdentity
 from nora.domain.summons import SummonsSink
 from nora.infra.voice.hub import VoiceControllerHub
+from nora.memory import EffectRecorder
 from nora.platform.bridge.client import (
     BridgeAdapter,
     BridgeEndpoint,
@@ -59,6 +60,7 @@ from nora.platform.discord.bridge_control import (
     BridgeControlClient,
     BridgeDiscordAdapter,
 )
+from nora.platform.discord.command_acts import DiscordCommandActs
 from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.discord.music_notify import ResolveMusicChannel, no_music_channel
 from nora.platform.instagram.adapter import InstagramAdapter
@@ -256,6 +258,8 @@ class AdapterRegistry:
         voice_hub: VoiceControllerHub | None = None,
         voice_guild_ids: frozenset[str] = frozenset(),
         resolve_music_channel: ResolveMusicChannel = no_music_channel,
+        discord_command_acts: DiscordCommandActs | None = None,
+        discord_control_effects: EffectRecorder | None = None,
         instagram_summons: SummonsSink | None = None,
         dm_recipients: Mapping[str, Set[str]] | None = None,
         signal_consent: Callable[
@@ -267,13 +271,7 @@ class AdapterRegistry:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], float] = time.monotonic,
     ) -> AdapterRegistry:
-        """Build+resolve every enabled platform — Signal, Discord, WhatsApp,
-        Instagram; each one more `if platforms.<x>.enabled:` block, not a
-        rewrite of this method's shape. Instagram's block is the one that
-        degrades instead of raising — see this module's docstring.
-
-        `platforms` is `cfg.platforms`, not `cfg` itself — see
-        `_PlatformsConfig`'s docstring.
+        """Build enabled platform adapters and resolve their identities.
 
         `discord_token` is the one exception to "this module never reads
         secrets": it arrives already resolved from `platforms.discord.
@@ -385,7 +383,7 @@ class AdapterRegistry:
             endpoint = BridgeEndpoint(discord_cfg.base_url, bridge_token)
             discord_adapter: PlatformAdapter = BridgeDiscordAdapter(
                 delegate=BridgeAdapter("discord", endpoint),
-                control=BridgeControlClient(endpoint),
+                control=BridgeControlClient(endpoint, effects=discord_control_effects),
                 speaker=discord_speaker)
             _register(discord_adapter)
             discord_identity = await _resolve_or_refuse(
@@ -405,6 +403,7 @@ class AdapterRegistry:
                 voice_hub=voice_hub,
                 voice_guild_ids=voice_guild_ids,
                 resolve_music_channel=resolve_music_channel,
+                command_acts=discord_command_acts,
             )
             _register(discord_adapter)
             discord_identity = await _resolve_or_refuse(

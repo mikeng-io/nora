@@ -67,6 +67,9 @@ def test_post_comment_has_exactly_one_call_site_and_it_is_the_flush():
     )
     flush = _function(ast.parse(OCCASION.read_text()), "_flush")
     assert len(_calls_named(flush, "post_comment")) == 1
+    # Public summons authorization and outcome remain in its own ledger.
+    assert len(_calls_named(flush, "take_for_flush")) == 1
+    assert _calls_named(flush, "finish")
 
 
 def test_the_flush_is_handed_the_first_held_reply_or_its_stored_row():

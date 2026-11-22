@@ -16,8 +16,8 @@
   {
     "name": "a signal challenge is pushed to its own side's account only",
     "file": "nora/people/app/holder_link.py",
-    "old": "                await self._signal_delivery.deliver(\n                    account=account, text=_challenge_text(link, side, nonce))",
-    "new": "                await self._signal_delivery.deliver(\n                    account=link.pair.account(LinkSide.INITIATING),\n                    text=_challenge_text(link, side, nonce))",
+    "old": "                    await self._signal_delivery.deliver(\n                        account=account, text=_challenge_text(link, side, nonce))",
+    "new": "                    await self._signal_delivery.deliver(\n                        account=link.pair.account(LinkSide.INITIATING),\n                        text=_challenge_text(link, side, nonce))",
     "target": "tests/unit/test_holder_link.py::test_request_persists_the_bound_request_and_pushes_the_signal_challenge"
   },
   {

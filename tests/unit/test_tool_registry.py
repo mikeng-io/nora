@@ -769,11 +769,7 @@ def _mcp_groups() -> dict[str, McpToolGroup]:
 
 
 def test_budgets_excludes_mcp_tools_not_in_allowed_mcp():
-    """R-7's default-deny must actually cover an unauthorized server's tool
-    names: `budgets()` called with no `allowed_mcp`
-    (the default, matching an unauthorized conversation) must not admit
-    `demo_server_status`/`demo_weekly` at all — not merely leave them
-    un-callable elsewhere."""
+    """The default budget surface excludes tools from unauthorized MCP servers."""
     registry = ToolRegistry(mcp_tools=_mcp_groups())
     budgets = registry.budgets()
     assert "demo_server_status" not in budgets
@@ -792,11 +788,7 @@ def test_budgets_includes_mcp_tools_only_for_allowed_servers():
 
 
 def test_unauthorized_conversations_veto_message_never_names_mcp_tools():
-    """The R-7 unknown-tool veto message is built from `ReplyGuard`'s
-    `budgets` dict (`guards.py::_list_tool_names`). A conversation not
-    authorized for `demo` must never have that server's tool names appear in
-    the message the MODEL sees when it hallucinates a wrong tool name —
-    a non-disclosure claim, stated concretely."""
+    """ReplyGuard's unknown-tool veto leaves unauthorized tool names private."""
     registry = ToolRegistry(mcp_tools=_mcp_groups())
     budgets = registry.budgets()  # allowed_mcp defaults empty: unauthorized
     guard = ReplyGuard(
@@ -822,6 +814,11 @@ class _SpyMcpTool:
         yield {"ok": self.tool_name}
 
 
+class _BudgetTestEnvelope:
+    def stream(self, _act, call, _judge, _duplicate):
+        return call()
+
+
 async def test_a_servers_aggregate_budget_refuses_the_call_past_it_spread_over_its_tools():
     """Aikido 8765_44785: the server-wide budget was the per-tool budget copied onto each tool,
     so calls spread over two tools could exceed it. With budget 2 the third call is refused
@@ -830,7 +827,7 @@ async def test_a_servers_aggregate_budget_refuses_the_call_past_it_spread_over_i
     group = McpToolGroup(budget=2, tools=(
         _SpyMcpTool("demo_server_status", ran), _SpyMcpTool("demo_weekly", ran),
     ))
-    first, second = aggregate_budgeted_tools(group)
+    first, second = aggregate_budgeted_tools(group, _BudgetTestEnvelope())
 
     async def call(tool: Any, ref: str) -> list[Any]:
         return [e async for e in tool.stream({"toolUseId": ref, "input": {}}, {})]
@@ -846,9 +843,12 @@ async def test_the_built_surface_gates_a_servers_tools_on_its_aggregate_budget()
     """The same budget, reached the way a turn reaches it: `build` hands the model the
     server's tools, and calls through those handed-over tools are counted together."""
     ran: list[str] = []
-    registry = ToolRegistry(mcp_tools={"demo": McpToolGroup(budget=1, tools=(
-        _SpyMcpTool("demo_server_status", ran), _SpyMcpTool("demo_weekly", ran),
-    ))})
+    registry = ToolRegistry(
+        mcp_act_envelope=_BudgetTestEnvelope(),
+        mcp_tools={"demo": McpToolGroup(budget=1, tools=(
+            _SpyMcpTool("demo_server_status", ran), _SpyMcpTool("demo_weekly", ran),
+        ))},
+    )
     tools = {t.tool_name: t for t in registry.build(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
         persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),

@@ -14,6 +14,10 @@ from dataclasses import dataclass, field
 from nora.domain.identity import Identifier
 from nora.domain.managed import Outcome, OutcomeStatus
 from nora.domain.models import ConversationTarget
+from nora.domain.ports import SendResult
+from nora.memory import ActAuthority, ActEnvelope, act_event, declare_act
+from nora.memory import Outcome as ActOutcome
+from nora.platform.bridge.envelope import canonical_digest, canonical_source_key
 
 from .parser import extract_envelope
 from .send import SignalSender
@@ -112,9 +116,13 @@ class SignalLinkDelivery:
     challenge through the authenticated view instead.
     """
 
-    def __init__(self, base_url: str, *, sender: SignalSender | None = None) -> None:
+    def __init__(
+        self, base_url: str, *, sender: SignalSender | None = None,
+        envelope: ActEnvelope | None = None,
+    ) -> None:
         self._sender = sender if sender is not None else SignalSender(
             base_url, dm_recipients=None)
+        self._envelope = envelope
 
     async def deliver(self, *, account: Identifier, text: str) -> bool:
         if account.platform != "signal" or not account.value.strip():
@@ -122,8 +130,18 @@ class SignalLinkDelivery:
         target = ConversationTarget(
             platform="signal", conversation_id=account.value,
             conversation_type="dm")
-        result = await self._sender.send(target, text)
-        return result.ok
+        async def send() -> SendResult:
+            return await self._sender.send(target, text)
+
+        if self._envelope is None:
+            return (await send()).ok
+        act = declare_act(
+            "signal.private_link", "signal:private-link", event="", authority=ActAuthority(None),
+        )
+        result = await self._envelope.perform(act, send, lambda sent: ActOutcome(
+            "done" if sent.ok else "uncertain" if sent.uncertain else "failed",
+        ))
+        return result is not None and result.ok
 
 
 def _reply_address(sender: frozenset[Identifier]) -> Identifier | None:
@@ -167,8 +185,12 @@ class SignalLinkConsent:
             outcome = Outcome(OutcomeStatus.UNAVAILABLE, "decision-unavailable")
         if (address := _reply_address(decision.sender)) is not None:
             try:
-                await self._delivery.deliver(
-                    account=address, text=_reply_text(decision, outcome))
+                event_id = canonical_digest(canonical_source_key(
+                    "signal", self._own_account, address.value, "message", str(decision.timestamp),
+                ))
+                with act_event(event_id, ActAuthority(None)):
+                    await self._delivery.deliver(
+                        account=address, text=_reply_text(decision, outcome))
             except Exception:  # noqa: BLE001 — a lost reply never re-opens the decision
                 log.warning("link consent reply delivery failed")
         return True

@@ -39,10 +39,24 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 import discord
 
+from nora.platform.discord.command_acts import DiscordCommandActs
+
 log = logging.getLogger("nora.music")
+_NOTICE_ID: ContextVar[str] = ContextVar("music_notice_id", default="")
+
+
+@contextmanager
+def notice_event(identity: str):
+    token = _NOTICE_ID.set(identity)
+    try:
+        yield
+    finally:
+        _NOTICE_ID.reset(token)
 
 #: A Discord snowflake is a 64-bit id, so 17-20 decimal digits in practice.
 #: The bound is a sanity check on a hand-copied value, not a parser.
@@ -97,6 +111,7 @@ def make_notify(
     guild_id: str,
     fallback_channel_id: str | None,
     resolve_music_channel: ResolveMusicChannel = no_music_channel,
+    command_acts: DiscordCommandActs | None = None,
 ):
     """The `MusicPlayerManager.Notify` closure for one guild's session.
 
@@ -161,7 +176,7 @@ def make_notify(
                 guild_id, routed, fallback_channel_id, text,
             )
             return
-        if await _send(channel, text, guild_id) != _REFUSED:
+        if await send(channel, text, ordinal=0) != _REFUSED:
             # Sent, or UNKNOWN (a 5xx / dropped connection): the message may
             # already be in the channel, and posting it to a second channel
             # would duplicate it. Only a definite refusal falls back.
@@ -177,7 +192,16 @@ def make_notify(
                 "retrying the session's own channel %s",
                 guild_id, routed, fallback_channel_id,
             )
-            await _send(fallback, text, guild_id)
+            await send(fallback, text, ordinal=1)
+
+    async def send(channel, text: str, *, ordinal: int) -> str:
+        if command_acts is None:
+            return await _send(channel, text, guild_id)
+        origin = f"{guild_id}/{fallback_channel_id}" if fallback_channel_id else None
+        return await command_acts.notice(
+            channel, lambda: _send(channel, text, guild_id), room=origin,
+            ordinal=ordinal, event=_NOTICE_ID.get(),
+        )
 
     return notify
 

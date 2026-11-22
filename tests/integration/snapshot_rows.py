@@ -443,6 +443,19 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
 #: One append-only row, number `n`, citing the stable key-0 parents.
 APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     **managed_rows.APPEND,
+    "nora_act": lambda n: {
+        "id": f"generated-act-{n}", "graph_id": f"generated-act-item-{n}", "unit": "u",
+        "executor": "test.deliver", "trigger_id": f"generated-trigger-{n}", "ordinal": 0,
+        "destination": "test-destination", "act_kind": "delivery", "guarantee": "unknown",
+    },
+    "nora_act_outcome": lambda n: {
+        "id": n, "act_id": f"generated-act-{n}", "unit": "u",
+        "graph_id": f"generated-outcome-item-{n}", "verdict": "done",
+    },
+    "nora_pass_output": lambda n: {
+        "id": f"generated-output-{n}", "graph_id": f"generated-output-item-{n}", "unit": "u",
+        "pass": f"generated-pass-{n}", "output_kind": "expression", "content": ["Generated draft"],
+    },
     "notebook_entry_revision": lambda i: {
         "id": f"generated-entry-revision-{i}", "entry_id": "generated-entry-0", "seq": i,
         "base_revision_id": f"generated-entry-revision-{i - 1}" if i > 1 else None,

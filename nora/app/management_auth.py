@@ -12,7 +12,7 @@ from nora.web.management_sessions import register_session_routes
 
 
 def mount_authentication(
-    app: web.Application, *, cfg: Config, services: Any,
+    app: web.Application, *, cfg: Config, services: Any, link_delivery: Any = None,
 ) -> AuthenticationVerifier | None:
     if not cfg.identity.authentication:
         return None
@@ -42,15 +42,10 @@ def mount_authentication(
 
     from nora.web.holder_links import register_holder_routes
 
-    signal = cfg.platforms.signal
-    delivery = None
-    if signal.enabled and getattr(signal, "mode", "direct") == "direct":
-        from nora.platform.signal.consent import SignalLinkDelivery
-        delivery = SignalLinkDelivery(signal.base_url)
     register_holder_routes(
         app,
         holder=importlib.import_module("nora.people").wire.holder_links(
-            services, signal_delivery=delivery),
+            services, signal_delivery=link_delivery),
         verifier=verifier)
     # The holder's own global display-name update — the same verified
     # session, the same retained-binding revalidation.
