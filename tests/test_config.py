@@ -63,7 +63,7 @@ def toml_path(example_config_path, monkeypatch):
 
 
 @pytest.mark.parametrize(("section", "body"), [  # a typo, and the host's removed section
-    ("tagg", 'trigger = "x"'), ("honcho", 'base_url = "http://generated.invalid:8000"')])
+    ("tagg", 'trigger = "x"'), ("honcho", 'base_url = "http://g.invalid"')], ids=["typo", "gone"])
 def test_unknown_key_is_a_startup_failure(toml_path, section, body):
     toml_path.write_text(toml_path.read_text() + f'\n[{section}]\n{body}\n')
     with pytest.raises(ConfigError, match=rf"(?m)^{section}$"):

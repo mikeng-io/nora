@@ -4,7 +4,7 @@
     "file": "nora/config.py",
     "old": "    model_config = ConfigDict(extra=\"forbid\", frozen=True)\n\n    @model_validator(mode=\"before\")\n    @classmethod\n    def reject_retired_memory_names",
     "new": "    model_config = ConfigDict(extra=\"ignore\", frozen=True)\n\n    @model_validator(mode=\"before\")\n    @classmethod\n    def reject_retired_memory_names",
-    "target": "tests/test_config.py::test_unknown_key_is_a_startup_failure -k honcho"
+    "target": "tests/test_config.py::test_unknown_key_is_a_startup_failure[gone]"
   },
   {
     "name": "a removed identity table is refused by _PersonsFile's own extra=forbid",
