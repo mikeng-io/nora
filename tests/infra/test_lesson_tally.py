@@ -174,6 +174,7 @@ async def test_tally_inherits_restrictions_from_the_resting_verdict(scenario, he
 
     assert await tallies(scenario) == {lesson: (0, 1)}
     assert (await tally_rows(scenario))[lesson]["exposure"] == "operator"
+    assert await dependencies(scenario) == ()
     view = await _assembler(scenario).assemble("wake", WakeInput(()), (), SCOPE, now)
     assert lesson in view.shown
     assert "support=0, contradiction=1" not in view.render()

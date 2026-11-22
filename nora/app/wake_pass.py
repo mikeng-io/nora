@@ -128,10 +128,13 @@ class WakePassRunner:
             )
             if assembled.status == "unavailable":
                 return WakeFailed("error")
-            if context.clock is not None and tuple(id_ for id_, _ in assembled.observed) != tuple(
-                stimulus.graph_id for stimulus in claimed.stimuli
-            ):
+            claimed_ids = tuple(stimulus.graph_id for stimulus in claimed.stimuli)
+            if assembled.agenda_stimuli != claimed_ids:
                 return WakeFailed("error")
+            if context.clock is not None:
+                observed_ids = tuple(id_ for id_, _ in assembled.observed)
+                if observed_ids != claimed_ids:
+                    return WakeFailed("error")
             seed_pass_shown(assembled.shown)
             tools = as_strands_tools(self._surface.bind(scope, now, room_busy))
             surface = deferred_surface(tools, resident=(tool.tool_name for tool in tools))

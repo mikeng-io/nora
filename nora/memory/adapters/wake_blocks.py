@@ -11,9 +11,9 @@ from nora.memory.domain.retrieval import RetrievalResult
 def wake_blocks(
     data: WakeInput, result: RetrievalResult, builder: GraphPresentationBlocks,
     anchors: tuple[str, ...],
-) -> tuple[tuple[ContextBlock, ...], frozenset[str]]:
+) -> tuple[tuple[ContextBlock, ...], frozenset[str], tuple[str, ...]]:
     if result.status == "unavailable":
-        return (), frozenset()
+        return (), frozenset(), ()
     rows = {row.graph_id: row for row in result.rows if row.unavailable is None}
     stimuli = tuple(
         stimulus for stimulus in data.stimuli if stimulus.graph_id in rows
@@ -65,4 +65,5 @@ def wake_blocks(
         ),
     )
     shown = {s.graph_id for s in stimuli} | {row.graph_id for row in open_intentions}
-    return blocks, frozenset(shown | {row.graph_id for row in previous})
+    shown.update(row.graph_id for row in previous)
+    return blocks, frozenset(shown), tuple(s.graph_id for s in stimuli)

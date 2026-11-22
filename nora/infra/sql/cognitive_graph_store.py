@@ -434,12 +434,13 @@ class SqlCognitiveGraph:
 
     async def end_intention_by_clock_in(
         self, conn: AsyncConnection, intention: RowData, ending: str, *, ended_at: datetime,
+        room_busy: Callable[[], bool],
     ) -> None:
         row = INTENTION.c
         locked = sa.select(row.id).where(
             row.unit == intention["unit"], row.id == intention["id"], row.state == "open",
         ).with_for_update(skip_locked=True)
-        if await conn.scalar(locked) is None:
+        if await conn.scalar(locked) is None or room_busy():
             return
         await conn.execute(sa.update(INTENTION).where(
             row.unit == intention["unit"], row.id == intention["id"],

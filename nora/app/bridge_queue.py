@@ -521,6 +521,8 @@ class WorkRunner:
 
     async def _execute(self, work: Any) -> None:
         key = (work.platform, work.conversation_id)
+        if work.kind in ("turn", "participation_fire"):
+            key = self._slots.key(key)
         attempt_id = bt.attempt_identity(work.id, work.generation)
         carrier = _payload_trace(work.payload)
         producer_ctx = bt.remote_context(
@@ -612,7 +614,6 @@ class WorkRunner:
         if work.kind == "ingest":
             await self._run_ingest(work)
         elif work.kind == "turn":
-            key = self._slots.key(key)
             if not self._slots.try_acquire(key):
                 await self._repark(work, seconds=2, reason="speaking_slot_busy")
                 return
@@ -630,7 +631,7 @@ class WorkRunner:
         elif work.kind == "participation":
             await self._run_participation(work)
         elif work.kind == "participation_fire":
-            await self._run_participation_fire(work)
+            await self._run_participation_fire(work, key)
         elif work.kind == "memory_feed":
             await self._run_memory_feed(work)
         elif work.kind == "stimulus":
@@ -1550,7 +1551,7 @@ class WorkRunner:
                      else "retryable_failure")
             await self._finish(work, state, {"reason": reason or "failed"})
 
-    async def _run_participation_fire(self, work: Any) -> None:
+    async def _run_participation_fire(self, work: Any, key: tuple[str, str]) -> None:
         """The claimed window turn: persisted admission first, then the same
         slot/lock/cooldown/speak sequence the live trigger runs — owned by the
         work's generation so a kill can never orphan it."""
@@ -1560,7 +1561,6 @@ class WorkRunner:
             await self._finish(work, "failed_retained",
                                {"reason": "fire collaborator missing"})
             return
-        key = (work.platform, work.conversation_id)
         owner = ActionOwner(kind="work", id=f"w-{work.id}",
                             generation=work.generation)
         prior = await self._store.owner_actions("work", f"w-{work.id}")
@@ -1650,7 +1650,7 @@ class WorkRunner:
                         state="done", result=self._attempt_patch(
                             work, "done", {"outcome": "sent"}))
                 if ok:
-                    self._participation.mark_sent(key)
+                    self._participation.mark_sent((work.platform, work.conversation_id))
                     self._emit_terminal(work, "done")
                     await self._ack(work)
             else:
