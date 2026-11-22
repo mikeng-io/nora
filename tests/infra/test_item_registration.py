@@ -23,7 +23,7 @@ from nora.infra.sql.item_registration import RegistrationScope, SqlItemRegistrat
 from nora.infra.sql.migrations_runner import sync_url_for
 from nora.infra.sql.observations import SqlObservationStore
 from nora.infra.sql.presence import PresenceStore
-from nora.infra.sql.schema import METADATA
+from nora.infra.sql.schema import METADATA, SOCIAL_POLL
 from nora.infra.sql.social_stream import SqlSocialStreamStore
 from nora.infra.sql.source_health import SqlSourceHealthLog
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
@@ -159,9 +159,11 @@ class _Writer:
                 network=item.network, person=_PERSON, stage="probe", outcome="unchanged",
             )
             return
-        await store.insert_item(
-            item, person=_PERSON, origin="poll", seen_at=_AT, public=self.public,
+        await store.record_poll(  # the probe its placement reads
+            network=item.network, person=_PERSON, stage="probe", outcome="unchanged",
+            is_private=not self.public,
         )
+        await store.insert_item(item, person=_PERSON, origin="poll", seen_at=_AT)
         if table == "social_item_state":
             await store.record_state(network=item.network, item_id=item.item_id, state="hidden")
         elif table == "social_item_count":
@@ -364,7 +366,7 @@ async def test_item_writer_rolls_back_after_registry_insert(
     prerequisites = 3 if name == "watch_result" else int(name in {
         "message_edit", "message_reaction", "message_delete",
         "social_item_count", "social_item_state", "nora_act_outcome", "dispute",
-    })
+    }) + int(name.startswith("social_item"))  # the account's probe
     assert count == 0
     assert registered == prerequisites
 
@@ -496,9 +498,10 @@ async def test_a_social_item_of_an_account_not_known_public_reaches_no_unit(
     table = METADATA.tables[name]
     async with engine.connect() as conn:
         units = (await conn.execute(sa.select(table.c.unit))).scalars().all()
-        registered = await conn.scalar(sa.select(sa.func.count()).select_from(REGISTRY))
+        registered = set((await conn.execute(sa.select(REGISTRY.c.id))).scalars())
+        probes = set((await conn.execute(sa.select(SOCIAL_POLL.c.graph_id))).scalars())
     assert units == [None]
-    assert registered == 0
+    assert registered == probes and len(probes) == 2  # only the private probe, in each unit
     assert await _stimuli(engine, name) == []
 
 

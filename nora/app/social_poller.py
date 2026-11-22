@@ -247,9 +247,6 @@ class SocialPoller:
         self._listed: set[str] = set()
         # Latest answered access flags; an absent probe remains unknown.
         self._probes: dict[str, Probe] = {}
-        # Person -> whether their latest probe, recorded or this process's,
-        # answered public; absent is not public.
-        self._public: dict[str, bool] = {}
 
     async def run(self) -> None:
         log.info(
@@ -402,7 +399,6 @@ class SocialPoller:
             raise RuntimeError("social poller: login transitions unreadable")
         for person, times in probes.items():
             self._attempted[person] = times.attempted
-            self._public[person] = times.public
             if times.answered is not None:
                 self._answered[person] = times.answered
             if times.answered is None or times.attempted > times.answered:
@@ -1061,12 +1057,9 @@ class SocialPoller:
         origin: Literal["poll", "backfill"] = "poll",
     ) -> None:
         media_ref = await self._keep(item, now)
-        # A private account's audience is not recorded, so its items reach no
-        # unit; an unanswered or unrecorded privacy is treated as private.
         await self._store.insert_item(
             item, person=member.person, origin=origin, seen_at=now, media_ref=media_ref,
             location=item.location, read_id=read_id,
-            public=self._public.get(member.person, False),
         )
 
     async def _keep(self, item: SocialItem, now: datetime) -> str | None:
@@ -1127,15 +1120,12 @@ class SocialPoller:
         if probe is not None:
             latest_reel_media = probe.latest_reel_media
             media_count, total_clips_count = probe.media_count, probe.total_clips_count
-        is_private = probe.is_private if stage == "probe" and probe is not None else None
-        if stage == "probe":
-            self._public[member.person] = is_private is False
         await self._store.record_poll(
             network=self._network, person=member.person, stage=stage, outcome=outcome,
             latest_reel_media=latest_reel_media, media_count=media_count,
             total_clips_count=total_clips_count, advanced_marker=advanced_marker,
             advanced_counts=advanced_counts, latency_ms=ms, id=read_id, cursor=cursor,
-            end_reason=end_reason, is_private=is_private,
+            end_reason=end_reason, is_private=probe.is_private if probe else None,
         )
         self._metrics.inc(
             "nora_social_polls_total", network=self._network, stage=stage, outcome=outcome,

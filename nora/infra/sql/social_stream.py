@@ -64,7 +64,7 @@ from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.live import LiveSet
 from nora.domain.rollup import SocialFact, SocialInput
@@ -165,32 +165,6 @@ class SettledRead:
     announced: frozenset[str] = frozenset()
 
 
-def _latest_private() -> Any:
-    """Grouped over probe rows: the latest one's answered privacy, NULL when
-    it did not say."""
-    p = SOCIAL_POLL
-    return sa.func.array_agg(
-        pg.aggregate_order_by(p.c.is_private, p.c.recorded_at.desc(), p.c.id.desc()),
-    )[1]
-
-
-async def public_accounts(
-    conn: AsyncConnection, pairs: Collection[tuple[str, str]],
-) -> frozenset[tuple[str, str]]:
-    """The `(network, person)` pairs among `pairs` whose latest recorded probe
-    answered public: the only accounts whose items are placed in units."""
-    if not pairs:
-        return frozenset()
-    p = SOCIAL_POLL
-    stmt = (
-        sa.select(p.c.network, p.c.person)
-        .where(p.c.stage == "probe", sa.tuple_(p.c.network, p.c.person).in_(list(pairs)))
-        .group_by(p.c.network, p.c.person)
-        .having(_latest_private().is_(False))
-    )
-    return frozenset((r.network, r.person) for r in (await conn.execute(stmt)).all())
-
-
 def _media(ref: str | None) -> tuple[str, ...]:
     return tuple(filter(None, (ref or "").split(",")))
 
@@ -222,12 +196,10 @@ class ExpiringFrame:
 class ProbeTimes:
     """When a person was last probed at all, and last probed with an answer
     (`recorded_at`, the database's clock). `answered` is None when no probe of
-    theirs has been answered. `public` is whether the latest probe answered
-    that the account is public."""
+    theirs has been answered."""
 
     attempted: datetime
     answered: datetime | None
-    public: bool = False
 
 
 @dataclass(frozen=True)
@@ -461,22 +433,18 @@ class SqlSocialStreamStore(SocialItemWrites):
 
     async def last_probes(self, *, network: str) -> dict[str, ProbeTimes]:
         """Per person, when they were last probed and last probed with an
-        answer, and whether that latest probe said public: what a poller that
-        has just started schedules and places items from, so a restart keeps
-        the cadence's floor and ceiling and the account's privacy."""
+        answer: what a poller that has just started schedules from, so a
+        restart keeps the cadence's floor and ceiling."""
         p = SOCIAL_POLL
         answered = sa.func.max(p.c.recorded_at).filter(p.c.outcome.not_in(_UNANSWERED))
         stmt = (
-            sa.select(p.c.person, sa.func.max(p.c.recorded_at), answered, _latest_private())
+            sa.select(p.c.person, sa.func.max(p.c.recorded_at), answered)
             .where(p.c.network == network, p.c.stage == "probe")
             .group_by(p.c.person)
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return {
-            person: ProbeTimes(attempted, ok, public=private is False)
-            for person, attempted, ok, private in rows
-        }
+        return {person: ProbeTimes(attempted, ok) for person, attempted, ok in rows}
 
     async def calls_since(
         self, *, network: str, since: datetime,

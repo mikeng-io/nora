@@ -26,6 +26,7 @@ from nora.infra.sql import memory_index
 from nora.infra.sql.item_registration import SqlItemRegistration
 from nora.infra.sql.memory_index import social_source_id
 from nora.infra.sql.schema import SOCIAL_ITEM, SOCIAL_ITEM_COUNT, SOCIAL_ITEM_STATE, SOCIAL_POLL
+from nora.infra.sql.social_privacy import public_accounts
 
 
 class SocialItemWrites:
@@ -44,13 +45,13 @@ class SocialItemWrites:
         self, item: SocialItem, *, person: str, origin: Origin, seen_at: datetime,
         media_ref: str | None = None, location: str | None = None,
         tagged: tuple[str, ...] = (), mentioned: tuple[str, ...] = (),
-        read_id: str | None = None, public: bool = False,
+        read_id: str | None = None,
     ) -> bool:
         """Record one item. True when it is new; False when `(network, item_id)`
         was already recorded, in which case nothing was written and the first
-        row stands unchanged. Only a `public` account's item is placed in the
-        person's units; any other is stored unscoped, and so are the count and
-        state rows that follow it."""
+        row stands unchanged. Only an account whose latest recorded probe answered
+        public has its item placed in the person's units; any other is stored
+        unscoped, and so are the count and state rows that follow it."""
         stmt = (
             pg_insert(SOCIAL_ITEM)
             .values(
@@ -68,6 +69,8 @@ class SocialItemWrites:
             if (reg := self._registration) is None:
                 wrote = bool((await conn.execute(stmt)).rowcount)
             else:
+                account = (item.network, person)
+                public = account in await public_accounts(conn, (account,))
                 units = await reg.scope.person_units(person) if public else ()
                 for unit in units or (None,):
                     inserted = await reg.insert_once(
@@ -92,8 +95,8 @@ class SocialItemWrites:
     ) -> None:
         """Append one probe or read. A read passes its own `id`, the
         `read_id` its items were recorded with; a back-fill page its next
-        `cursor`, None when the walk ended on it, and its `end_reason`; a
-        probe the account privacy it answered."""
+        `cursor`, None when the walk ended on it, and its `end_reason`; and
+        `is_private`, the account privacy its probe answered."""
         values = {
             "network": network, "person": person, "stage": stage, "outcome": outcome,
             "latest_reel_media": latest_reel_media, "media_count": media_count,

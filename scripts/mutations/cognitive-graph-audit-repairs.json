@@ -77,18 +77,18 @@
     "target": "tests/infra/test_item_registration.py::test_a_social_item_of_an_account_not_known_public_reaches_no_unit"
   },
   {
-    "name": "the poller places an item only when its account probed public",
+    "name": "the poller records the privacy its probe answered",
     "file": "nora/app/social_poller.py",
-    "old": "public=self._public.get(member.person, False),",
-    "new": "public=True,",
-    "target": "tests/integration/test_social_poller.py::test_an_item_is_placed_in_a_unit_only_when_its_account_probed_public"
+    "old": "is_private=probe.is_private if probe else None,",
+    "new": "is_private=None,",
+    "target": "tests/integration/test_social_poller_privacy.py::test_an_item_is_placed_in_a_unit_only_when_its_account_probed_public"
   },
   {
-    "name": "a restarted poller reads account privacy from the recorded probe",
-    "file": "nora/app/social_poller.py",
-    "old": "            self._public[person] = times.public\n",
-    "new": "",
-    "target": "tests/integration/test_social_poller.py::test_a_restarted_poller_places_backfill_items_from_the_recorded_probe"
+    "name": "an item's placement reads its account's latest recorded probe, across a restart",
+    "file": "nora/infra/sql/social_privacy.py",
+    "old": ".having(latest_private.is_(False))",
+    "new": ".having(latest_private.is_not(None))",
+    "target": "tests/integration/test_social_poller_privacy.py::test_a_restarted_poller_places_backfill_items_from_the_recorded_probe"
   },
   {
     "name": "stored registration places a social row only from an account last probed public",

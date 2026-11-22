@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from nora.infra.sql.cognitive_graph_store import RowData
 from nora.infra.sql.item_registration import RegistrationScope, epoch_ms, item_graph_id
 from nora.infra.sql.schema import MESSAGES, SOCIAL_ITEM
-from nora.infra.sql.social_stream import public_accounts
+from nora.infra.sql.social_privacy import public_accounts
 from nora.memory.domain.registration import BACKFILL_ITEM_SOURCES
 
 _SOCIAL_ITEMS = frozenset({"social_item", "social_item_count", "social_item_state"})
