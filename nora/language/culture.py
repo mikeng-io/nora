@@ -181,8 +181,8 @@ CULTURE_TOOLS: frozenset[str] = frozenset({
     # names no `acts`, so it is refused twice (`culture_grant`).
     # `load_transcript`: the adaptor is HANDED its room's batch. A verb that
     # re-reads the same room is turns spent to arrive where it started.
-    # `route` / `transit` / `parking_status` / `find_parking` / `weather` /
-    # `suggest_venue`: these answer a question somebody is asking NOW. An
+    # `route` / `transit` / `parking_status` / `find_parking` / `weather`:
+    # these answer a question somebody is asking NOW. An
     # account is about what a room IS, and a background pass that looked up
     # tonight's traffic would be doing the participation turn's job a day
     # early.

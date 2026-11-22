@@ -192,9 +192,8 @@ def test_every_declared_tool_is_built(wiring):
         "remind",
         "list_reminders",
         "cancel_reminder",
-        # The Event module (gatherings/RSVP/venue suggestions).
+        # The Event module (gatherings/RSVP).
         "event_propose", "event_revise", "event_rsvp", "event_set_status", "event_search",
-        "suggest_venue",
         # Nora's computer (DEC-243).
         "computer_run",
         "computer_read",

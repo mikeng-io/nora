@@ -140,6 +140,8 @@ _RENAMED_SINCE: frozenset[str] = frozenset({
     # The Honcho-backed memory verbs left with Honcho's readers; the graph's
     # `memory_search`/`memory_read` meet the pattern.
     "about", "ask_memory", "search_memory", "search_memory_workspace",
+    # Retired: a venue suggestion needs a place entity type and a trait polarity.
+    "suggest_venue",
 })
 
 _PREDATES_THE_RULE = _SNAPSHOT_2026_09_24 - _RENAMED_SINCE

@@ -77,13 +77,4 @@ TOOLS = {
         output_contract="three_state",
         level=1,
     ),
-    "suggest_venue": NativeTool(
-        4,
-        read_only=True,
-        side_effect_state="none",
-        idempotency="idempotent",
-        retry="safe",
-        output_contract="three_state",
-        level=1,
-    ),
 }

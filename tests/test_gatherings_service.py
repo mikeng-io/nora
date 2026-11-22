@@ -476,22 +476,6 @@ async def test_rsvp_refuses_a_mismatched_conversation_id():
         )
 
 
-async def test_suggest_venue_refuses_a_mismatched_conversation_id():
-    svc = _service()
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        platform="signal",
-    )
-    with pytest.raises(GatheringNotFoundError):
-        await svc.suggest_venue(
-            event_id=ev.id,
-            conversation_id="signal:some-other-group", platform="signal",
-            roster_person_ids=["miles"],
-        )
-
-
 # ── the FULL R-28 screen-call-screen sandwich, not just the half ────────────
 
 
@@ -771,10 +755,6 @@ def _event_mutations(
             event_id=event_id, conversation_id="signal:room-a",
             status=GatheringStatus.CONFIRMED,
             platform=platform, unit_id=unit_id,
-        ),
-        "suggest_venue": lambda: svc.suggest_venue(
-            event_id=event_id, conversation_id="signal:room-a",
-            roster_person_ids=(), platform=platform, unit_id=unit_id,
         ),
     }
 

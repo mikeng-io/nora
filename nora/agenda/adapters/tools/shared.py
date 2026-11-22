@@ -292,15 +292,3 @@ _NOT_AN_EVENT_ID: Mapping[str, object] = {
     "status": "refused",
     "note": "That doesn't look like an event id. Use one from event_search.",
 }
-
-_VENUE_REPORT: Mapping[str, str] = {
-    "ok": "These are places people here are remembered to care about; the memory "
-    "does not say whether someone likes or avoids one. Offer them as options and "
-    "ask if anyone objects.",
-    "nothing_found": "No place people here are remembered to care about turned up. "
-    "Say so, and don't invent a pick.",
-    "unavailable": "I can't read what people here like right now, or could not read "
-    "all of it. Say you couldn't check, and don't guess a venue.",
-}
-
-_VENUE_PARTIAL = " Not everyone's memory could be read, so someone may be left out."

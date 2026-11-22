@@ -669,7 +669,7 @@ def test_the_situational_verbs_and_a_second_read_of_its_own_room_stay_OUT():
     where it started."""
     assert CULTURE_TOOLS.isdisjoint({
         "route", "transit", "parking_status", "find_parking", "weather",
-        "suggest_venue", "load_transcript",
+        "load_transcript",
     })
 
 

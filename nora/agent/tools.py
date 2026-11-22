@@ -197,7 +197,6 @@ _ORDER = [
     "event_revise",
     "event_rsvp",
     "event_set_status",
-    "suggest_venue",
     "note_read",
     "note_search",
     "memo_read",

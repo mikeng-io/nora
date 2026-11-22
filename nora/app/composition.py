@@ -794,6 +794,15 @@ async def _compose_dependencies(
     event_store = _agenda_event_store.event_store
     _location_place_areas = _location_wire.place_areas(cfg=cfg, route_client=route_client)
     place_areas = _location_place_areas.place_areas
+    _agenda_events = _agenda_wire.events(
+        cfg=cfg,
+        content_checks=content_checks,
+        event_store=event_store,
+        memory=memory,
+        place_areas=place_areas,
+        route_client=route_client,
+    )
+    events = _agenda_events.events
     _media_describers = _media_wire.describers(
         _spawn=_spawn,
         blobs=blobs,
@@ -916,11 +925,6 @@ async def _compose_dependencies(
         _memory_wire.pass_assembler(engine, access, lineage, None, None),
     )
     graph_reads = _memory_wire.configured_graph_reads(cfg, engine, access, lineage)
-    read_tools = graph_reads or _memory_wire.graph_read_tools(engine, access, lineage, None, None)
-    events = _agenda_wire.events(
-        cfg=cfg, content_checks=content_checks, event_store=event_store, memory=memory,
-        place_areas=place_areas, route_client=route_client, likes=read_tools,
-    ).events
     _agent_registry = build_registry(
         allowlist=allowlist, blobs=blobs,
         browser=browser, browser_manager=browser_manager,
@@ -944,7 +948,9 @@ async def _compose_dependencies(
         memo_store=memo_store,
         memory_search=memory_search,
         graph_retrieval=graph_reads,
-        engagement_graph_retrieval=read_tools,
+        engagement_graph_retrieval=(
+            graph_reads or _memory_wire.graph_read_tools(engine, access, lineage, None, None)
+        ),
         intention_admission=graph_debrief.admission,
         metrics=metrics,
         mobility=mobility,

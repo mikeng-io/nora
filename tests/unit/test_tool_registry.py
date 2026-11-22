@@ -237,7 +237,6 @@ def test_the_registry_exposes_every_declared_tool():
         "event_rsvp",
         "event_set_status",
         "event_search",
-        "suggest_venue",
         # Nora's computer (DEC-243).
         "computer_run", "computer_read", "computer_write", "computer_edit", "computer_export",
         "computer_import", "computer_session_list",
@@ -474,17 +473,14 @@ def test_budgets_match_todays_table():
         # `remind`, which no budget can substitute for.
         "remind": 2, "list_reminders": 2, "cancel_reminder": 2,
         # The Event module: `list_events` is 1 like `group_members` (a
-        # room-scoped read, same answer if called twice). `create_event`/
-        # `suggest_venue` are the ones that reach further — `suggest_venue`
-        # asks Honcho's dialectic once per roster member and resolves venues
-        # after, sized like `media_fetch`'s old 4; `event_propose` is 3, between
-        # `remind`'s 2 and `suggest_venue`'s 4, for the same round-trip
-        # reason (DEC-237).
+        # room-scoped read, same answer if called twice). `event_propose` is 3,
+        # the one that reaches further, for the same round-trip reason as
+        # `remind`'s 2 (DEC-237).
         # `event_revise`/`event_set_status` are 2, sized like the
         # reminder verbs. `event_rsvp` is 1 — a single yes/no/maybe, and a
         # second call in the same turn is a model looping on its own write.
         "event_search": 1, "event_propose": 3, "event_revise": 2,
-        "event_rsvp": 1, "event_set_status": 2, "suggest_venue": 4,
+        "event_rsvp": 1, "event_set_status": 2,
         # One metadata list, then notes for up to two selected releases.
         "version_list": 1, "version_read": 2,
         # The four note verbs. The RATIO is the
@@ -1004,7 +1000,7 @@ READ_ONLY = frozenset({"document_list",
     # reads a shared file; the account cannot write.
     "file_fetch", "media_search",
     "web_search", "web_fetch", "weather", "list_reminders", "event_search",
-    "suggest_venue", "version_list", "version_read", "search_gifs",
+    "version_list", "version_read", "search_gifs",
     # The two parking verbs: live reads that act on nothing —
     # vacancy lookups and nearby discovery, no writes anywhere.
     "parking_status", "find_parking",

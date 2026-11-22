@@ -8,8 +8,6 @@ from nora.agenda.adapters.tools.shared import (
     _EVENTS_OFF,
     _NO_SUCH_EVENT,
     _NOT_AN_EVENT_ID,
-    _VENUE_PARTIAL,
-    _VENUE_REPORT,
 )
 from nora.agent.toolkit.clock import _parse_when
 from nora.agent.toolkit.results import _record
@@ -430,91 +428,3 @@ def _make_event_set_status(deps):
         }
 
     return event_set_status
-
-
-def _make_suggest_venue(deps):
-    events = deps.events
-    metrics = deps.metrics
-    room = deps.room
-    _route_person_names = deps._route_person_names
-    _unit = deps._unit
-    bound_conversation_id = deps.bound_conversation_id
-
-    async def suggest_venue(event_id: str) -> dict:
-        """Suggest venues for an event already proposed here, from places people
-        in this conversation are remembered to care about. Call this when
-        somebody wants a place.
-
-        Returns `status`: ok (up to three `candidates`, each with name, address,
-        rating, price_level, maps_url and why), nothing_found, refused or
-        unavailable, with a `note`.
-
-        Args:
-            event_id: The event's id, from event_search.
-        """
-        if events is None:
-            _record(metrics, "suggest_venue", "unavailable")
-            return dict(_EVENTS_OFF)
-        try:
-            roster = await room.members()
-        except Exception:
-            # `Room.members` is documented never to raise (its own docstring:
-            # "available=False if it could not be read"). This is the belt for
-            # those braces, landing on `unavailable` rather than an unhandled
-            log.exception("suggest_venue couldn't read the room")
-            roster = None
-        if roster is None or not roster.available:
-            _record(metrics, "suggest_venue", "unavailable", reason="roster")
-            return {
-                "status": "unavailable",
-                "note": "I couldn't read who's in this conversation right now. Say "
-                "you couldn't check, and don't guess a venue.",
-            }
-        try:
-            out = await events.suggest_venue(
-                event_id=UUID(event_id),
-                conversation_id=bound_conversation_id,
-                roster_person_ids=[p.person_id for p in roster.people],
-                person_names=_route_person_names,
-                platform=room.platform,
-                unit_id=_unit() or "",
-            )
-        except GatheringNotFoundError:
-            _record(metrics, "suggest_venue", "refused", reason="not_found")
-            return dict(_NO_SUCH_EVENT)
-        except ValueError:
-            _record(metrics, "suggest_venue", "refused", reason="bad_id")
-            return dict(_NOT_AN_EVENT_ID)
-        except Exception:
-            log.exception("suggest_venue failed")
-            _record(metrics, "suggest_venue", "unavailable")
-            return {
-                "status": "unavailable",
-                "note": "I couldn't work out a suggestion. Say you couldn't "
-                "check, and don't guess a venue.",
-            }
-        _record(metrics, "suggest_venue", out.status)
-        result: dict = {
-            "status": out.status,
-            "candidates": [
-                {
-                    "venue_text": c.venue_text,
-                    "name": c.name,
-                    "address": c.address,
-                    "rating": c.rating,
-                    "price_level": c.price_level,
-                    "maps_url": c.maps_url,
-                    "why": c.source,
-                }
-                for c in out.candidates
-            ],
-        }
-        # How to report an answer (ADR 0015 §3): the service returns its status
-        # with no words of its own; `ok` says what the candidates rest on.
-        if out.status in _VENUE_REPORT:
-            result["note"] = _VENUE_REPORT[out.status]
-            if out.status == "ok" and not out.complete:
-                result["note"] += _VENUE_PARTIAL
-        return result
-
-    return suggest_venue

@@ -842,7 +842,7 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         "who_said",
         "load_transcript", "group_members", "lookup_person",
         "recall_lookups", "media_fetch",
-        "list_reminders", "event_search", "suggest_venue", "search_gifs",
+        "list_reminders", "event_search", "search_gifs",
         # `music_status` reports on
         # ONE Discord conversation's voice session — the exact shape
         # `load_transcript`/`where_is` are room-scoped for, not a

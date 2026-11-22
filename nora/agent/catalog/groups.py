@@ -91,7 +91,7 @@ LEGACY_ENGAGEMENT_TOOLS: frozenset[str] = frozenset({
     "event_propose", "event_revise", "event_rsvp", "event_search", "event_set_status",
     "list_reminders", "memo_read", "note_create", "note_read", "note_revise", "note_search",
     "profile_dispute", "recall_lookups", "remember", "remind", "standing_read",
-    "suggest_venue", "who_said",
+    "who_said",
 })
 
 ROOM_ONLY_MEMORY_ADAPTORS: frozenset[str] = frozenset({CULTURE_ADAPTOR_NAME})

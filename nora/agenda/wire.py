@@ -71,14 +71,11 @@ class EventsWiring:
     events: Any
 
 
-def events(
-    cfg, content_checks, event_store, memory, place_areas, route_client, likes,
-) -> EventsWiring:
+def events(cfg, content_checks, event_store, memory, place_areas, route_client) -> EventsWiring:
     events = GatheringService(
         store=event_store,
         route_source=route_client,
         honcho=memory,
-        likes=likes,
         ai_peer=cfg.honcho.ai_peer,
         place_areas=place_areas,
         content_checks=content_checks,

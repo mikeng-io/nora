@@ -77,7 +77,6 @@ from nora.memory.domain.pass_inputs import (
 from nora.memory.domain.pass_inputs import (
     WakeInput as WakeInput,
 )
-from nora.memory.domain.presentations import PersonLikes as PersonLikes
 from nora.memory.domain.proactive import RECHECK_UNAVAILABLE as RECHECK_UNAVAILABLE
 from nora.memory.domain.proactive import DueIntention as DueIntention
 from nora.memory.domain.proactive import ProactiveClaim as ProactiveClaim

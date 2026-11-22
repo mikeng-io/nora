@@ -179,10 +179,7 @@ async def test_dependencies_exposes_the_reminders_store(cfg):
     assert isinstance(deps.reminders, SqlReminderStore)
 
 
-async def test_the_events_service_is_wired_with_the_graph_likes_read(cfg):
-    """`suggest_venue` answers unavailable when the service holds no likes read."""
-    deps = await build_dependencies(cfg)
-    assert deps.events._likes is not None
+
 
 
 

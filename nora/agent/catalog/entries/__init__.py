@@ -89,7 +89,6 @@ _KEY_ORDER = [
     "event_rsvp",
     "event_set_status",
     "event_search",
-    "suggest_venue",
     "note_read",
     "note_search",
     "memo_read",

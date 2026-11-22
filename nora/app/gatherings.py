@@ -3,11 +3,10 @@
 Gathering has two adapters (the agent tools and the web read routes); both call
 these functions rather than each re-implementing what makes an event valid.
 
-Reuses three existing pieces:
+Reuses two existing pieces:
 - the reminders domain, for an event's linked one-shot notification;
 - the SAME `route_source` (`RouteClient`/`PlaceResolver`) the `place_info`
-  tool already uses, for venue resolution — behind the same R-28 screen;
-- the graph's likes read, for `suggest_venue`'s per-person candidates.
+  tool already uses, for venue resolution — behind the same R-28 screen.
 """
 
 from __future__ import annotations
@@ -35,8 +34,6 @@ from nora.domain.gatherings import (
     GatheringStore,
     RoomClaims,
     RSVPResponse,
-    VenueCandidate,
-    VenueSuggestions,
     event_in_scope,
     merge_field_meta,
     still_open_gatherings,
@@ -53,13 +50,11 @@ from nora.domain.gatherings import (
 from nora.domain.gatherings import (
     StaleEventRevisionError as StaleEventRevisionError,
 )
-from nora.domain.lineage import LiveRoom
 from nora.domain.ports import PlaceArea
 from nora.domain.reminders import (
     ensure_utc,
 )
 from nora.domain.rollup import room_key
-from nora.memory import PersonLikes, ReadingRoom
 
 #: The statuses the tag path's `event_set_status` tool may set: the lifecycle
 #: minus `staged`/`proposed` (`event_propose`'s own outcomes) and `evicted`
@@ -69,11 +64,6 @@ TAG_SETTABLE_STATUSES: frozenset[GatheringStatus] = frozenset({
     GatheringStatus.CONFIRMED, GatheringStatus.CANCELLED,
     GatheringStatus.HAPPENED, GatheringStatus.LAPSED,
 })
-
-# ponytail: at most this many liked topics are looked up as places per
-# suggestion, bounding the Places calls; a longer tail is not checked.
-_VENUE_LOOKUPS = 8
-_VENUE_CANDIDATES = 3
 
 log = logging.getLogger("nora.app.gatherings")
 
@@ -106,12 +96,6 @@ class _PlaceAreas(Protocol):
     (`nora.infra.geocode.GoogleGeocoder.area_of_place`); None on a failure."""
 
     async def area_of_place(self, place_id: str) -> PlaceArea | None: ...
-
-
-class _Likes(Protocol):
-    async def likes_of(
-        self, reading: ReadingRoom, persons: Sequence[str], now: datetime, *, unit: str = "",
-    ) -> Sequence[PersonLikes]: ...
 
 
 def _tag_evidence(
@@ -166,7 +150,6 @@ class GatheringService:
         route_source: _RouteSource | None,
         honcho: object | None,
         ai_peer: str,
-        likes: _Likes | None = None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         place_areas: _PlaceAreas | None = None,
         content_checks: bool = True,
@@ -178,7 +161,6 @@ class GatheringService:
         # (`GoogleGeocoder.area_of_place`); `None` (no Maps key) resolves
         # venues with no area, so the memory index gives them no `located_in`.
         self._place_areas = place_areas
-        self._likes = likes
         self._honcho = honcho  # kept wired and unread until the port is removed
         self._ai_peer = ai_peer
         self._now = now
@@ -470,71 +452,6 @@ class GatheringService:
         underscore into `self._store` directly."""
         return await self._store.rsvps_for(event_id)
 
-    async def suggest_venue(
-        self, *, event_id: UUID, conversation_id: str,
-        roster_person_ids: Sequence[str],
-        person_names: frozenset[str] | None = None,
-        platform: str = "",
-        unit_id: str = "",
-    ) -> VenueSuggestions:
-        await self._require_in_conversation(
-            event_id,
-            conversation_id,
-            unit_id=unit_id,
-            platform=platform,
-        )
-        if self._likes is None:
-            return VenueSuggestions(status="unavailable")
-
-        # The audience is the room's live roster, the people who will read the
-        # suggestion; each person is read for that one audience.
-        reading = ReadingRoom(
-            platform, conversation_id,
-            LiveRoom(frozenset(roster_person_ids)),
-        )
-        reads = await self._likes.likes_of(
-            reading, roster_person_ids, self._now(), unit=unit_id,
-        )
-        # A person whose read is not `ok` (unresolved, unavailable or partial)
-        # is unknown, never "no preference".
-        complete = bool(reads) and all(read.status in ("ok", "nothing_found") for read in reads)
-        holders: dict[str, tuple[str, set[str]]] = {}
-        for read in reads:
-            for like in read.likes:
-                if (name := like.topic_name) is not None:
-                    holders.setdefault(name.casefold(), (name, set()))[1].add(read.person)
-        # A liked topic is a venue only when the place resolver names one
-        # place for it; a food, a hobby or a category does not resolve.
-        ranked = sorted(holders.values(), key=lambda held: len(held[1]), reverse=True)
-        candidates: list[VenueCandidate] = []
-        for lookups, (name, people) in enumerate(ranked):
-            if len(candidates) == _VENUE_CANDIDATES:
-                break
-            if lookups == _VENUE_LOOKUPS:
-                complete = False
-                break
-            verdict, resolved = await self._lookup_place(name, person_names=person_names)
-            if verdict == "unknown":
-                complete = False
-            if resolved is None:
-                continue
-            candidates.append(
-                VenueCandidate(
-                    venue_text=name,
-                    place_id=resolved.get("place_id"),
-                    name=resolved.get("name"),
-                    address=resolved.get("address"),
-                    rating=resolved.get("rating"),
-                    price_level=resolved.get("price_level", ""),
-                    maps_url=resolved.get("maps_url"),
-                    source="mention_frequency" if len(people) > 1 else "explicit_callback",
-                )
-            )
-        if candidates:
-            return VenueSuggestions(status="ok", candidates=tuple(candidates), complete=complete)
-        # No candidate: "nothing found" only when every read and lookup completed.
-        return VenueSuggestions(status="nothing_found" if complete else "unavailable")
-
     # ── internals ────────────────────────────────────────────────────────
 
     async def _require(self, event_id: UUID) -> Gathering:
@@ -552,7 +469,7 @@ class GatheringService:
         """`_require`, plus the scope check `ReminderStore.cancel`
         (`nora.domain.reminders`) already documents the reasoning for: "a
         uuid carries no scope of its own — the STORE enforces the scope."
-        `update_event`/`cancel_event`/`rsvp`/`suggest_venue` all
+        `update_event`/`cancel_event`/`rsvp` all
         accept a bare event id from the model with no prior proof it belongs
         to the room asking — an id from ANOTHER conversation refuses exactly
         like an unknown one (`GatheringNotFoundError`), never a distinct "wrong
@@ -629,20 +546,11 @@ class GatheringService:
     async def _resolve_place(
         self, text: str, *, person_names: frozenset[str] | None = None,
     ) -> dict[str, Any] | None:
-        return (await self._lookup_place(text, person_names=person_names))[1]
-
-    async def _lookup_place(
-        self, text: str, *, person_names: frozenset[str] | None = None,
-    ) -> tuple[str, dict[str, Any] | None]:
         """The FULL R-28 screen-call-screen sandwich, via the SAME
         `nora.agent.security.screen_and_resolve_place` `place_info`'s own
         tool closure calls, including the person-name check, the
         `try/except` around the call, and the return-path screen on Google's
         own `name`/`address` before they are persisted.
-
-        Returns `("place", data)` when one place resolved, `("not_a_place",
-        None)` when the screen refused the text or Google found none or a
-        crowded category, and `("unknown", None)` when it could not be asked.
 
         `person_names` is optional because `GatheringService` is built once at
         process start and has no per-tag address book of its own — callers
@@ -653,15 +561,16 @@ class GatheringService:
             text, route_source=self._route_source, person_names=person_names,
             content_checks=self._content_checks,
         )
-        if result.status == "refused":
-            return "not_a_place", None
+        if result.status != "resolved":
+            return None
         out = result.data
-        if result.status != "resolved" or out is None:
-            return "unknown", None
-        if out.get("status") in ("ambiguous", "not_found"):
-            return "not_a_place", None
+        if out is None:
+            # Unreachable in practice — `status == "resolved"` always
+            # carries `data` by construction — but degrades honestly (R-5)
+            # rather than trusting that invariant with an `assert`.
+            return None
         if out.get("status") != "ok":
-            return "unknown", None
+            return None
         # The real `RouteClient.place_info` never returns `maps_url` — it is
         # synthesized only inside the `place_info` TOOL wrapper, a layer this
         # service never touches. Mint the identical link here: the resolved
@@ -672,7 +581,7 @@ class GatheringService:
             "https://www.google.com/maps/search/?api=1&query="
             + urllib.parse.quote(maps_name)
         )
-        return "place", out
+        return out
 
 
 #: The event fields a room's view shows, the same four the Cognition session's
