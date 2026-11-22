@@ -444,6 +444,7 @@ NORA_PASS_OUTPUT = sa.Table(
     sa.Column("id", sa.Text, primary_key=True),
     sa.Column("output_kind", sa.Text, nullable=False),
     sa.Column("silence_reason", sa.Text),
+    sa.Column("recheck_reason", sa.Text),
     sa.Column("authority_intention", sa.Text),
     sa.Column("content", pg.JSONB(none_as_null=True)),
     sa.CheckConstraint(

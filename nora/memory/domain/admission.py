@@ -27,6 +27,7 @@ from nora.memory.domain.admission_proposals import (
     RowFacts,
     SourceReference,
 )
+from nora.memory.domain.conditions import decode_condition_trigger
 
 FormRefusal = Literal[
     "unknown_kind",
@@ -481,6 +482,9 @@ class _Admission:
         if data.delivery_mode not in get_args(graph.DeliveryMode) or (
             (data.delivery_mode == "choose_moment") != (data.trigger is not None)
         ):
+            raise _RefusalError("invalid_field", "trigger")
+        if (isinstance(data.trigger, Mapping) and data.trigger.get("kind") == "condition"
+                and decode_condition_trigger(data.trigger) is None):
             raise _RefusalError("invalid_field", "trigger")
 
     def _scope(

@@ -7,9 +7,16 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from nora.domain.graph_stimuli import GraphStimulus
 from nora.domain.lineage import ROW, Lineage, split_room
-from nora.infra.sql.cognitive_graph_schema import INTENTION, NORA_ACT, NORA_ACT_OUTCOME
+from nora.infra.sql.cognitive_graph_schema import (
+    GRAPH_STIMULUS,
+    INTENTION,
+    NORA_ACT,
+    NORA_ACT_OUTCOME,
+)
 from nora.infra.sql.cognitive_graph_store import RowData, SqlCognitiveGraph
+from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.infra.sql.history import HISTORY_TABLES
 from nora.infra.sql.item_retention import expired_between
 from nora.infra.sql.schema import (
@@ -69,7 +76,10 @@ class SqlIntentionBatch:
         table = INTENTION
         stmt = sa.select(table).where(
             _INTENT.state == "open",
-            sa.or_(*(
+            sa.or_(sa.and_(
+                _INTENT.delivery_mode == "choose_moment",
+                _INTENT.trigger["kind"].astext == "condition",
+            ), *(
                 _INTENT[f"{role}_form"].in_(_FORMS)
                 for role in ("done_when", "holds_while", "drop_when")
             )),
@@ -77,12 +87,12 @@ class SqlIntentionBatch:
         return [dict(row) for row in (await self._conn.execute(stmt)).mappings()]
 
     async def evaluate(
-        self, intention: Mapping[str, Any], condition: ConditionValue,
+        self, intention: Mapping[str, Any], condition: ConditionValue, *, trigger: bool = False,
     ) -> Evaluation:
         if isinstance(condition, (ActEvent, OwnDelivery)):
-            return await self._act(intention, condition)
+            return await self._act(intention, condition, trigger=trigger)
         if isinstance(condition, PersonEvent):
-            return await self._person(intention, condition)
+            return await self._person(intention, condition, trigger=trigger)
         return await self._predicate(intention, condition)
 
     async def _healthy(self, unit: str, source: _Source) -> bool:
@@ -97,7 +107,7 @@ class SqlIntentionBatch:
         return self._health[key]
 
     async def _act(
-        self, intention: Mapping[str, Any], condition: ActEvent | OwnDelivery,
+        self, intention: Mapping[str, Any], condition: ActEvent | OwnDelivery, *, trigger: bool,
     ) -> Evaluation:
         unit = intention["unit"]
         if isinstance(condition, OwnDelivery):
@@ -125,13 +135,16 @@ class SqlIntentionBatch:
             return Evaluation("unknown")
         done = row["verdict"] == "done"
         # The recorded success is the witness for the intention's own delivery.
-        if not (done and isinstance(condition, OwnDelivery)) and not await self._healthy(
+        recorded_delivery = done and isinstance(condition, OwnDelivery) and not trigger
+        if not recorded_delivery and not await self._healthy(
             unit, (row["executor"], ""),
         ):
             return Evaluation("unknown")
         return Evaluation("true" if done else "false", _witness(row, row["asserted_at"]))
 
-    async def _person(self, intention: Mapping[str, Any], condition: PersonEvent) -> Evaluation:
+    async def _person(
+        self, intention: Mapping[str, Any], condition: PersonEvent, *, trigger: bool,
+    ) -> Evaluation:
         unit = intention["unit"]
         if not await self._healthy(unit, (condition.platform, "")):
             return Evaluation("unknown")
@@ -141,7 +154,14 @@ class SqlIntentionBatch:
             m.conversation_id == condition.room, m.is_nora == 0, m.state == "live",
             m.graph_id.is_not(None), m.asserted_at >= intention["asserted_at"],
             m.body == condition.text,
-        ).order_by(m.asserted_at, m.id).limit(1).with_for_update(read=True)
+        )
+        if trigger:
+            stimulus = GRAPH_STIMULUS.c
+            stmt = stmt.where(~sa.exists().where(
+                stimulus.unit == unit, stimulus.graph_id == intention["id"],
+                stimulus.kind == "intention_due", stimulus.occurrence == m.graph_id,
+            ))
+        stmt = stmt.order_by(m.asserted_at, m.id).limit(1).with_for_update(read=True)
         row = (await self._conn.execute(stmt)).mappings().one_or_none()
         if row is None:
             expired = await self._conn.scalar(sa.select(expired_between(
@@ -262,6 +282,13 @@ class SqlIntentionBatch:
             witness_id=witness.graph_id, witness_at=witness.recorded_at,
             witness_scope=witness.scope,
         )
+
+    async def publish_due(self, intention: Mapping[str, Any], witness: Witness) -> None:
+        await SqlGraphStimuli.append_in(self._conn, GraphStimulus(
+            intention["unit"], "intention_due", intention["id"], witness.recorded_at,
+            "condition_matcher", intention["origin_room"], intention["owed_to"],
+            occurrence=witness.graph_id,
+        ))
 
 
 def _witness(row: RowData, recorded_at: datetime) -> Witness:

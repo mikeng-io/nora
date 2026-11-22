@@ -89,6 +89,18 @@ class TimeTriggerInput(TypedDict):
     recurrence: NotRequired[RecurrenceInput]
 
 
+class ActEventTriggerInput(ActEventInput):
+    kind: Literal["condition"]
+
+
+class PersonEventTriggerInput(PersonEventInput):
+    kind: Literal["condition"]
+
+
+class PredicateTriggerInput(PredicateInput):
+    kind: Literal["condition"]
+
+
 class IntentionFields(TypedDict):
     form: IntentionForm
     condition: ConditionInput
@@ -96,7 +108,9 @@ class IntentionFields(TypedDict):
     deadline: NotRequired[str]
     review_time: NotRequired[str]
     delivery: DeliveryMode
-    trigger: NotRequired[TimeTriggerInput]
+    trigger: NotRequired[
+        TimeTriggerInput | ActEventTriggerInput | PersonEventTriggerInput | PredicateTriggerInput
+    ]
     owner: str
     owed_to: str
     rests_on: NotRequired[list[str]]
@@ -199,7 +213,10 @@ def _intention(raw: Mapping[str, object], context: PassContext) -> CreateIntenti
     mode, trigger = raw.get("delivery"), raw.get("trigger")
     if mode not in ("when_it_comes_up", "choose_moment"):
         raise _InvalidFieldError("delivery")
-    if (mode == "choose_moment" and decode_time_trigger(trigger) is None) or (
+    has_trigger = (
+        isinstance(trigger, Mapping) and trigger.get("kind") == "condition"
+    ) or decode_time_trigger(trigger) is not None
+    if (mode == "choose_moment" and not has_trigger) or (
         mode == "when_it_comes_up" and "trigger" in raw
     ):
         raise _InvalidFieldError("trigger")

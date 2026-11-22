@@ -316,26 +316,105 @@ async def test_a_due_reminder_closes_by_its_recorded_delivery_and_cannot_be_clai
     assert len(runner.calls) == len(sender.sent) == 1
 
 
-@pytest.mark.parametrize("reason", ["room_not_allowed", "read_failed"])
-async def test_the_real_recheck_records_silence_when_it_cannot_deliver(scenario, reason):
+async def test_a_withhold_recheck_records_silence_and_closes_the_claim(scenario):
     await seed_due(scenario)
     runner = ScriptedRunner((_SEND,))
-    worker, sender, debrief = setup(scenario, runner, [], proactive=reason != "room_not_allowed")
-    if reason == "read_failed":
-        with refuse_count(scenario.engine, "SELECT intention.owed_to, intention.asserted_at"):
-            await worker.poll()
-    else:
-        await worker.poll()
+    worker, sender, debrief = setup(scenario, runner, [], proactive=False)
+    await worker.poll()
 
     [claim] = await claim_rows(scenario)
-    assert claim["state"] == "closed"
+    assert (claim["state"], claim["attempts"]) == ("closed", 0)
     assert len(runner.calls) == 1 and sender.sent == []
     assert not await _rows(scenario.engine, NORA_ACT)
     [output] = (await _rows(scenario.engine, NORA_PASS_OUTPUT)).values()
-    assert (output["output_kind"], output["silence_reason"], output["pass"]) == (
-        "silence", reason, claim["pass_id"],
+    assert (output["output_kind"], output["silence_reason"], output["recheck_reason"],
+            output["pass"]) == (
+        "silence", "room_not_allowed", None, claim["pass_id"],
     )
     assert len(debrief.client.prompts) == 1
+
+
+async def _unavailable_poll(scenario, worker):
+    with refuse_count(scenario.engine, "SELECT intention.owed_to, intention.asserted_at"):
+        await worker.poll()
+
+
+async def test_an_unavailable_recheck_releases_without_sending_and_records_why(scenario):
+    await seed_due(scenario)
+    runner = ScriptedRunner((_SEND,))
+    worker, sender, debrief = setup(scenario, runner)
+
+    await _unavailable_poll(scenario, worker)
+
+    [claim] = await claim_rows(scenario)
+    assert (claim["state"], claim["attempts"]) == ("released", 1)
+    assert len(runner.calls) == 1 and sender.sent == []
+    assert not await _rows(scenario.engine, NORA_ACT)
+    [output] = (await _rows(scenario.engine, NORA_PASS_OUTPUT)).values()
+    assert (output["output_kind"], output["silence_reason"], output["recheck_reason"],
+            output["pass"]) == (
+        "silence", "recheck_unavailable", "read_failed", claim["pass_id"],
+    )
+    assert debrief.client.prompts == []
+
+
+async def test_a_released_recheck_can_deliver_once_on_a_later_poll(scenario):
+    await seed_due(scenario)
+    runner = ScriptedRunner((_SEND,), (_SEND,))
+    worker, sender, _ = setup(scenario, runner, [])
+    await _unavailable_poll(scenario, worker)
+    [first] = await claim_rows(scenario)
+    assert sender.sent == []
+
+    await worker.poll()
+    [closed] = await claim_rows(scenario)
+    assert (closed["state"], closed["attempts"]) == ("closed", 1)
+    assert closed["pass_id"] != first["pass_id"]
+    await worker.poll()
+    assert len(runner.calls) == 2 and len(sender.sent) == 1
+    assert await claim_rows(scenario) == [closed]
+
+
+async def test_three_unavailable_rechecks_park_and_discard_the_staged_debrief(scenario):
+    await seed_due(scenario)
+    runner = ScriptedRunner((_SEND,), (_SEND,), (_SEND,))
+    worker, sender, debrief = setup(scenario, runner)
+    for attempt, state in enumerate(("released", "released", "parked"), 1):
+        await _unavailable_poll(scenario, worker)
+        [claim] = await claim_rows(scenario)
+        assert (claim["state"], claim["attempts"]) == (state, attempt)
+    await worker.poll()
+
+    assert len(runner.calls) == 3 and sender.sent == []
+    assert await claim_rows(scenario) == [claim]
+    async with scenario.engine.connect() as conn:
+        obligations = await conn.scalars(sa.select(DEBRIEF_OBLIGATION.c.pass_id))
+        assert obligations.all() == []
+    assert debrief.client.prompts == []
+    assert debrief.metrics.get("nora_proactive_stimulus_parked_total") == 1
+
+
+async def test_restart_recovery_releases_an_incomplete_recheck_without_counting_it(scenario):
+    await seed_due(scenario)
+    claims = SqlProactiveClaims(scenario.engine)
+    [due] = await claims.due_intentions(NOW)
+    claim = await claims.claim(due, NOW)
+    assert claim is not None
+    _, store = wiring(scenario)
+    context = replace(CONTEXT, pass_id=claim.pass_id, occasion="proactive")
+    authority = ActAuthority(UNIT, intention=due.intention, room=ROOM, pass_context=context)
+    await ActEnvelope(store).record_silence(
+        authority, reason="recheck_unavailable", recheck_reason="unresolved_destination",
+    )
+    [output] = (await _rows(scenario.engine, NORA_PASS_OUTPUT)).values()
+    assert (output["pass"], output["recheck_reason"]) == (claim.pass_id, "unresolved_destination")
+
+    expiry = timedelta(seconds=4)
+    await claims.recover(NOW + expiry, expiry)
+
+    [recovered] = await claim_rows(scenario)
+    assert (recovered["state"], recovered["attempts"]) == ("released", 0)
+    assert await claims.due_intentions(NOW + expiry) == (due,)
 
 
 class UncertainSender(SinkSender):

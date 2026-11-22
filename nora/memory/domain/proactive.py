@@ -5,6 +5,8 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+RECHECK_UNAVAILABLE = "recheck_unavailable"
+
 
 @dataclass(frozen=True, slots=True)
 class DueIntention:
