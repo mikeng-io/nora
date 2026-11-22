@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from nora.domain.graph_registration import Exposure, InputScope, inherited_scope
 from nora.domain.graph_stimuli import GraphStimulus
 from nora.domain.lineage import Lineage
-from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY, REGISTRY
+from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY, INTENTION, REGISTRY
 from nora.infra.sql.cognitive_graph_store import (
     AdmissionTopic,
     GraphWriteError,
@@ -23,6 +23,11 @@ from nora.infra.sql.cognitive_graph_store import (
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.memory.adapters.admission_rows import GRAPH_TABLES, SqlAdmissionRows
 from nora.memory.adapters.condition_matcher import SqlIntentionBatch
+from nora.memory.adapters.delivery_arbitration import (
+    DeliveryReadError,
+    check_deliveries,
+    lock_deliveries,
+)
 from nora.memory.app.condition_matcher import ConditionMatcher
 from nora.memory.domain.admission import Admitted, Refusal, fields
 from nora.memory.domain.admission_ports import AdmissionUnavailableError, Stored
@@ -80,10 +85,20 @@ class SqlAdmissionStore:
         base, survivor = decision.base, decision.survivor
         derive_about = isinstance(fields(decision.proposal), (CreateClaim, CreateIntention))
         revisions = isinstance(decision.proposal, (Revise, Retire))
+        scheduled = (
+            decision.row.kind == "intention" and decision.row.state == "open"
+            and decision.row.delivery_mode == "choose_moment"
+        )
 
         async def after_write(conn: AsyncConnection) -> None:
+            if decision.deliveries:
+                await _additional_deliveries(conn, decision.deliveries, context)
             if derive_about:
-                await _computed_about(conn, decision.row, context)
+                for part in (decision, *decision.deliveries):
+                    await _computed_about(conn, part.row, context)
+            if scheduled:
+                await lock_deliveries(conn, context.unit)
+                await check_deliveries(conn, context.unit, (stored.id, *stored.other_deliveries))
             if revisions:
                 await _dependency(conn, stored, row)
 
@@ -96,10 +111,30 @@ class SqlAdmissionStore:
                 retire=isinstance(decision.proposal, Retire),
                 merge=(base.id, survivor.id) if base is not None and survivor is not None else None,
                 topics=topics,
-                after_write=after_write if derive_about or revisions else None,
+                after_write=after_write if derive_about or revisions or scheduled else None,
             )
         except GraphWriteError as exc:
             raise AdmissionUnavailableError(commit_uncertain=exc.commit_uncertain) from exc
+        except DeliveryReadError as exc:
+            raise AdmissionUnavailableError(commit_uncertain=False) from exc
+
+
+async def _additional_deliveries(
+    conn: AsyncConnection, decisions: tuple[Admitted, ...], context: PassContext,
+) -> None:
+    writes = [_serialize(decision, context) for decision in decisions]
+    rows = [row for row, _ in writes]
+    edges = [edge for _, links in writes for edge in links]
+    await _register(conn, rows + edges)
+    await conn.execute(sa.insert(INTENTION).values(rows))
+    if edges:
+        await conn.execute(sa.insert(EDGE), edges)
+
+
+async def _register(conn: AsyncConnection, rows: list[dict[str, Any]]) -> None:
+    await conn.execute(sa.insert(REGISTRY), [
+        {name: row[name] for name in ("id", "unit", "kind")} for row in rows
+    ])
 
 
 async def _computed_about(conn: AsyncConnection, row: RowFacts, context: PassContext) -> None:
@@ -132,9 +167,7 @@ async def _computed_about(conn: AsyncConnection, row: RowFacts, context: PassCon
             "excluded_persons": list(scope.excluded_persons), "exposure": scope.exposure,
             "lineage": scope.lineage.to_json(),
         })
-    await conn.execute(sa.insert(REGISTRY), [
-        {name: edge[name] for name in ("id", "unit", "kind")} for edge in edges
-    ])
+    await _register(conn, edges)
     await conn.execute(sa.insert(EDGE), edges)
 
 

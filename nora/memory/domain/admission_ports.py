@@ -17,6 +17,7 @@ class AdmissionUnavailableError(Exception):
 class Stored:
     id: str
     base: str | None = None
+    other_deliveries: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

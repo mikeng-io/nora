@@ -6,11 +6,13 @@ from collections.abc import Collection, Iterable, Mapping
 from dataclasses import fields as data_fields
 from dataclasses import is_dataclass, replace
 from urllib.parse import unquote
+from uuid import uuid4
 
 from nora.agent.egress import LeakGuard, scan_identifiers, scan_reply
 from nora.agent.security import looks_like_coordinate
 from nora.memory.app.admission_identity import AdmissionIdentity
 from nora.memory.domain.admission import (
+    Admitted,
     Refusal,
     decide_admission,
     fields,
@@ -39,8 +41,10 @@ from nora.memory.domain.admission_proposals import (
     ResolvedReferences,
     Retire,
     Revise,
+    RowFacts,
     SourceReference,
 )
+from nora.memory.domain.delivery_identity import DuplicateDeliveryError
 from nora.memory.domain.graph import StaleBaseError
 
 
@@ -110,7 +114,7 @@ class AdmissionService:
                         unknown.add(topic.base)
                     outcomes[pending.pop(topic.id)] = Unavailable(topic.id, commit_uncertain=True)
             if isinstance(outcome, Stored):
-                shown_ids.add(outcome.id)
+                shown_ids.update((outcome.id, *outcome.other_deliveries))
                 for topic in related:
                     shown_ids.add(topic.id)
                     outcomes[pending.pop(topic.id)] = topic
@@ -151,6 +155,11 @@ class AdmissionService:
             return Unavailable(data.id, commit_uncertain=False), ()
         if isinstance(proposal, CloseIntention):
             return await self._close(proposal, context, shown), ()
+        destinations = data.rooms if isinstance(data, CreateIntention) else ()
+        if isinstance(data, CreateIntention) and destinations and (
+            not isinstance(proposal, CreateIntention) or data.delivery_mode != "choose_moment"
+        ):
+            return Refusal("invalid_field", "rooms"), ()
         # IDs supplied by the model grant no additional reads.
         readable = ids & shown
         related: tuple[Stored, ...] = ()
@@ -158,21 +167,15 @@ class AdmissionService:
         try:
             rooms, persons = await self._identity.references(
                 context.unit,
-                rooms=tuple(part.scope.origin_room for part in inputs
-                            if part.scope.origin_room is not None),
+                rooms=(*destinations, *(part.scope.origin_room for part in inputs
+                                       if part.scope.origin_room is not None)),
                 persons=tuple(ref for part in inputs
                               for ref in (*part.scope.persons, *part.scope.excluded_persons)),
                 principals=(data.owner, data.owed_to) if isinstance(data, CreateIntention) else (),
             )
             rows = await self._store.read(context.unit, frozenset(readable))
-            choice = decide_admission(
-                proposal,
-                context,
-                shown,
-                rows,
-                ResolvedReferences(rooms, persons),
-                watch_kinds=self._watch_kinds,
-                topics=topics,
+            choice = self._choose(
+                proposal, context, shown, rows, ResolvedReferences(rooms, persons), topics,
             )
             if isinstance(choice, Refusal):
                 return choice, ()
@@ -183,15 +186,47 @@ class AdmissionService:
             )
             if any(_unsafe_page(ref) for ref in references):
                 return Refusal("unsafe_page_reference", "source_ref"), ()
-            stored = Stored(choice.row.id, choice.base.id if choice.base is not None else None)
+            stored = Stored(
+                choice.row.id, choice.base.id if choice.base is not None else None,
+                tuple(extra.row.id for extra in choice.deliveries),
+            )
             related = tuple(Stored(topic.row.id, topic.base.id if topic.base else None)
                             for topic in choice.topics)
             await self._store.persist_admitted_proposal(choice, context, stored)
         except StaleBaseError:
             return Refusal("stale_base", "base"), ()
+        except DuplicateDeliveryError as exc:
+            return Refusal("duplicate_delivery", exc.intention), ()
         except AdmissionUnavailableError as exc:
             return Unavailable(data.id, exc.commit_uncertain), related
         return stored, related
+
+    def _choose(
+        self, proposal: Proposal, context: PassContext, shown: set[str],
+        rows: Mapping[str, RowFacts], refs: ResolvedReferences, topics: tuple[Proposal, ...],
+    ) -> Admitted | Refusal:
+        if not isinstance(proposal, CreateIntention) or not proposal.rooms:
+            return decide_admission(
+                proposal, context, shown, rows, refs, watch_kinds=self._watch_kinds, topics=topics,
+            )
+        choices: list[Admitted] = []
+        destinations: set[str] = set()
+        for index, room in enumerate(proposal.rooms):
+            graph_id = proposal.id if index == 0 else f"intention:{uuid4().hex}"
+            part = _in_room(proposal, room, graph_id)
+            choice = decide_admission(
+                part, context, shown, rows, refs, watch_kinds=self._watch_kinds, topics=topics,
+            )
+            if isinstance(choice, Refusal):
+                return choice
+            destination = refs.rooms[room]
+            if destination is None or choice.row.origin_room != destination.id:
+                return Refusal("scope_widening", "rooms")
+            if destination.id in destinations:
+                return Refusal("invalid_field", "rooms")
+            destinations.add(destination.id)
+            choices.append(choice)
+        return replace(choices[0], deliveries=tuple(choices[1:]))
 
     async def _close(
         self, proposal: CloseIntention, context: PassContext, shown: set[str],
@@ -214,6 +249,18 @@ class AdmissionService:
             if self._content_checks and scan_reply(text, content_checks=True):
                 return Refusal("content", field)
         return None
+
+
+def _in_room(proposal: CreateIntention, room: str, graph_id: str) -> CreateIntention:
+    links = tuple(replace(
+        link,
+        source=graph_id if link.source == proposal.id else link.source,
+        target=graph_id if link.target == proposal.id else link.target,
+    ) for link in proposal.links)
+    return replace(
+        proposal, id=graph_id, links=links, rooms=(),
+        scope=replace(proposal.scope, origin_room=room),
+    )
 
 
 def _unsafe_page(ref: SourceReference | None) -> bool:

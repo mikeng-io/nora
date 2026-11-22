@@ -75,10 +75,12 @@ connects or a bound stops it. Study repeats on its timescales.
 ## Delivery arbitration
 
 - When a delivery is scheduled, code resolves the act's subject and action and
-  checks it atomically against the unit's pending, firing and delivered acts,
-  whatever their destination or citations. A duplicate is refused; an
-  ambiguous identity stays unresolved, never a guessed unique act. A
-  delivery to several rooms is explicit and admitted all-or-none.
+  checks it atomically against the unit's pending and firing acts across
+  destinations and citations. A duplicate is refused. A delivery to several
+  rooms is explicit and admitted all-or-none.
+- The subject is its non-pointer about rows and its parent, each at its live head.
+  The action is telling its owed-to person. An empty subject stays unresolved.
+  A delivered act blocks only at its own destination.
 - At delivery, code rechecks the same resolved act against what was delivered
   or superseded and the destination's current eligibility. An incomplete check
   withholds.

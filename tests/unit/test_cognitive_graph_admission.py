@@ -462,6 +462,7 @@ def test_refusal_literal_covers_all_reachable_form_and_write_reasons() -> None:
         "doctrine",
         "content",
         "unsafe_page_reference",
+        "duplicate_delivery",
         "not_open",
         "witness_not_met",
         "untyped_condition",

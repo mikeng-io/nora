@@ -163,6 +163,7 @@ class CreateIntention(ProposalFields):
     delivery_mode: str = "when_it_comes_up"
     trigger: object = None
     links: tuple[Link, ...] = ()
+    rooms: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
