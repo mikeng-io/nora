@@ -61,8 +61,13 @@ describe("status/memory/doctrine/skills/tools", () => {
     const texts = data.flatMap((account) => account.lines.map((line) => line.text));
     expect(texts).toContain("Name: Miles");
     expect(texts).not.toContain("Name: Ken");
-    // Nothing of the removed Honcho read rides along.
-    expect(Object.keys(data[0]).sort()).toEqual(["disputes", "lines", "unit"]);
+  });
+
+  it("GET /memory sends no field of the removed Honcho read (checked on the raw body, before zod strips unknown keys)", () => {
+    const { body } = call("/app/v1/memory", { personId: "miles" });
+    const accounts = body as Array<Record<string, unknown>>;
+    expect(accounts).toHaveLength(1);
+    for (const account of accounts) expect(Object.keys(account).sort()).toEqual(["disputes", "lines", "unit"]);
   });
 
   it("GET /memory with no personId is the fail-closed empty list, never everyone's data", () => {
