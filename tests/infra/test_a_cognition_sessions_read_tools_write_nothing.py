@@ -34,6 +34,7 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 
+from nora.access import IdentityAccess
 from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS
 from nora.agent.dreamer import HomeRoom, RegistryToolSource, cognition_grant
 from nora.agent.lineage import LineagePolicy
@@ -212,7 +213,13 @@ class World:
             people=tuple(self.persons.by_person[p] for p in ("p1", "p2")),
         )
         from nora.engagement.self_presence import PresenceReader
+        from nora.memory import wire
+        from nora.testing.memory_index import FakeQueryEmbedder
 
+        access = IdentityAccess.for_files(self.persons, self.policy)
+        lineage = LineagePolicy.from_policy(
+            self.policy, circles=(circle,), mode="on", access=access,
+        )
         registry = ToolRegistry(
             rooms=PresenceReader(policy=self.policy, adapters={}) if room_directory else None,
             content_checks=not graph,
@@ -229,10 +236,10 @@ class World:
             # write this test must see, and an unwired one would only ever
             # answer `unavailable`, which is not running the tool at all.
             observations=SqlObservationStore(engine),
-            lineage=LineagePolicy.from_policy(self.policy, circles=(circle,), mode="on"),
-            notes=self.notes, memos=self.memos,
-            # The memory graph's surface (DEC-316): `memory_search` over the
-            # real index read, and no Honcho memory verb.
+            lineage=lineage, notes=self.notes, memos=self.memos,
+            graph_retrieval=wire.graph_read_tools(
+                engine, access, lineage, FakeQueryEmbedder(), None,
+            ) if graph else None,
             memory_search=(
                 MemorySearch(SqlMemoryIndex(engine), self.metrics, graph=SqlMemoryGraph(engine))
                 if graph else None
@@ -307,11 +314,10 @@ CALLS: dict[str, list[dict[str, Any]]] = {
     "search_memory_workspace": [{"query": "dinner"}],
     # The graph surface's (DEC-316): a plain search, and one narrowed every
     # way it can be, so each filter's SQL runs.
-    "memory_read": [{"kind": "message", "id": "MEMORY", "depth": 0}],
+    "memory_read": [{"id": "MEMORY", "depth": 0}],
     "memory_search": [
         {"query": "dinner"},
-        {"query": "dinner", "person": "Ada", "since": "2026-09-01", "until": "2026-10-30",
-         "kinds": ["messages", "places"]},
+        {"query": "dinner", "person": "Ada", "since": "2026-09-01", "until": "2026-10-30"},
     ],
     # The room roster read: no args at all (DEC-24).
     "group_members": [{}],
@@ -423,26 +429,20 @@ async def world(request, engine, tmp_path):
         mid = await _say(engine, platform=room.platform, room=room.conversation_id, person=who,
                    sender=sender, ts=NOW_MS - 3 * 86_400_000 + i * 60_000,
                    body=f"dinner plans number {i}")
-        if i == 0:
-            w.memory_id = str(mid)
         if request.param:
-            from nora.domain.memory_graph import Relation, pointer_entity
-            from nora.infra.sql.schema import MEMORY_NODE
+            from nora.infra.sql.cognitive_graph_schema import REGISTRY
+            from nora.infra.sql.schema import MESSAGES
+
+            graph_id = f"item:generated-read-{mid}"
+            at = datetime.fromtimestamp((NOW_MS - 3 * 86_400_000 + i * 60_000) / 1000, UTC)
             async with engine.begin() as conn:
-                await conn.execute(sa.insert(MEMORY_NODE).values(
-                    kind="message", source_id=str(mid), text=f"dinner plans number {i}",
-                    at_ms=NOW_MS - 3 * 86_400_000 + i * 60_000, unit="u1",
-                    origin_room=f"{room.platform}:{room.conversation_id}", persons=[who],
-                    exclude_persons=[], lineage=[]))
-            pointer = pointer_entity("room", "u1", f"{room.platform}:{room.conversation_id}",
-                                     room.conversation_id)
-            graph = SqlMemoryGraph(engine)
-            admitted = await graph.stage_and_admit(entities=(pointer,), relations=(Relation(
-                f"generated-read-{mid}", ("message", str(mid)), "in_room", pointer.key,
-                "record", "u1", (who,), asserted_at=datetime.fromtimestamp(
-                    (NOW_MS - 3 * 86_400_000 + i * 60_000) / 1000, UTC)),),
-                evidence=(), sources={})
-            assert admitted.relations
+                await conn.execute(sa.insert(REGISTRY).values(id=graph_id, unit="u1", kind="item"))
+                await conn.execute(sa.update(MESSAGES).where(MESSAGES.c.id == mid).values(
+                    graph_id=graph_id, unit="u1", origin_room=room.conversation_id,
+                    persons=[who], occurred_at=at, asserted_at=at, valid_from=at,
+                ))
+            if i == 0:
+                w.memory_id = graph_id
     return w
 
 

@@ -110,6 +110,7 @@ from nora.infra.vision.preprocess import (
     VIDEO_MAX_CHUNKS,
 )
 from nora.language.profile_render import ProfileHeads
+from nora.memory import PassScope
 
 log = logging.getLogger("nora.tools")
 
@@ -220,6 +221,9 @@ class ToolDeps:
     # note so the owner knows who to share with. "" → a generic phrasing.
     google_account: str = ""
     memory_retrieval: MemorySearch | None = None
+    graph_retrieval: Any = None
+    pass_scope: PassScope | None = None
+    intention_admission: Any = None
     all_memory_surfaces: bool = False
     profile: ProfileWriter | None = None
     profile_read: ProfileHeads | None = None
@@ -232,7 +236,6 @@ class ToolDeps:
     lookup_rows: Any = field(init=False, default=None)
     _obs_off: Any = field(init=False, default=None)
     by_id: Any = field(init=False, default=None)
-    graph_reads: Any = field(init=False, default=None)
     _route_person_names: Any = field(init=False, default=None)
     _disclosed_live_addresses: Any = field(init=False, default=None)
     _bound_places: Any = field(init=False, default=None)
@@ -293,8 +296,6 @@ class ToolDeps:
         object.__setattr__(self, "_obs_off", _obs_off)
         by_id = self.dream_adaptor == COGNITION_ADAPTOR
         object.__setattr__(self, "by_id", by_id)
-        graph_reads: dict[str, Any] = {}
-        object.__setattr__(self, "graph_reads", graph_reads)
         _route_person_names = _known_names(self.persons)
         object.__setattr__(self, "_route_person_names", _route_person_names)
         _disclosed_live_addresses: set[str] = set()

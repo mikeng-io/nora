@@ -305,8 +305,7 @@ def test_non_discord_catalog_omits_music_tools():
 
 def test_budgets_match_todays_table():
     assert dict(ToolRegistry().budgets()) == {
-        # 3 calls of up to 4 names covers 2 cold tools per turn at p90, with a
-        # retry after `unknown`.
+        # Three batches of four names cover cold tools and a retry.
         "load_tools": 3,
         # 4, sized like `lookup_person`: one reply routinely carries more than
         # one attribution and each is a separate question. The call is free — a
@@ -341,6 +340,7 @@ def test_budgets_match_todays_table():
         # above while `[memory.index] read`; `ask_memory`'s number.
         "memory_search": 8,
         "memory_read": 8,
+        "intention_commit": 4,
         # 2: the same shape `ask_memory`'s own
         # note describes for a recall verb — run once, notice a different
         # `limit` is needed, run once more.
@@ -562,11 +562,10 @@ def test_specs_carry_the_same_budgets_as_budgets():
     # it also carries the plugin-provided `skills` budget (DEC-50), which R-7
     # admits but `build_tool_specs` does not build — so compare against the
     # non-plugin budgets, which are exactly the specs.
-    # No index wired, so the Honcho memory surface: `memory_search` is the
-    # graph surface's and is not built here (DEC-316).
+    # No Cognitive Graph reader or active intention surface is wired here.
     non_plugin_budgets = {
         name: spec.budget for name, spec in NATIVE_TOOLS.items()
-        if not spec.plugin and name not in GRAPH_MEMORY_TOOLS
+        if not spec.plugin and name not in {*GRAPH_MEMORY_TOOLS, "intention_commit"}
     }
     assert {s.name: s.budget for s in specs} == non_plugin_budgets
 
@@ -603,12 +602,13 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
         set(ToolRegistry().tool_names())
         - {LOADER_TOOL, *SUBAGENT_TOOLS, *VIDEO_TOOLS, *WORKER_ONLY_TOOLS, "member_update"}
         # no index wired: the Honcho memory surface (DEC-316)
-        - GRAPH_MEMORY_TOOLS
+        - {*GRAPH_MEMORY_TOOLS, "intention_commit"}
         - {"poll_list", "poll_read", "room_state_read"}  # observation store unwired
     )
     assert set(agent.tool_names) == set(NATIVE_TOOL_BUDGETS) - {
         "skills", LOADER_TOOL, *SUBAGENT_TOOLS, *VIDEO_TOOLS, *WORKER_ONLY_TOOLS,
-        *GRAPH_MEMORY_TOOLS, "poll_list", "poll_read", "room_state_read", "member_update",
+        *GRAPH_MEMORY_TOOLS, "intention_commit",
+        "poll_list", "poll_read", "room_state_read", "member_update",
     }
     assert "skills" in NATIVE_TOOL_BUDGETS
 
@@ -637,7 +637,7 @@ def test_every_tool_declares_whether_it_can_be_asked_about_another_moment():
         for name, spec in NATIVE_TOOLS.items()
         if not spec.plugin  # `skills` is not built as a spec (DEC-50)
         # the Honcho memory surface: no index wired (DEC-316)
-        and name not in GRAPH_MEMORY_TOOLS
+        and name not in {*GRAPH_MEMORY_TOOLS, "intention_commit"}
     }
     assert {s.time_shiftable for s in specs} <= {None, False, True}
 
@@ -936,7 +936,7 @@ def test_cacheable_tools_is_a_frozenset_not_a_list():
 # Hand-listed HERE, in the test, and DERIVED in the code: a hand-copied list of
 # act verbs goes stale as verbs are added (the events family, DEC-117), and a
 # stale list would hand a background agent write verbs.
-ACT_VERBS = frozenset({"document_revise",
+ACT_VERBS = frozenset({"document_revise", "intention_commit",
     "remind", "cancel_reminder",
     "event_propose", "event_revise", "event_rsvp", "event_set_status",
     # a command, a file write and a file edit all

@@ -20,6 +20,7 @@ class ActPass:
     envelope: ActEnvelope | None = None
     ordinals: Counter[str] = field(default_factory=Counter)
     requests: dict[tuple[str, str], int] = field(default_factory=dict)
+    shown: set[str] = field(default_factory=set)
 
 
 _active_pass: ContextVar[ActPass | None] = ContextVar("act_pass", default=None)
@@ -28,19 +29,29 @@ _active_pass: ContextVar[ActPass | None] = ContextVar("act_pass", default=None)
 @contextmanager
 def act_event(
     trigger_id: str, authority: ActAuthority, envelope: ActEnvelope | None = None,
+    *, shown: frozenset[str] = frozenset(),
 ) -> Iterator[None]:
-    token = _active_pass.set(ActPass(authority, trigger_id, envelope))
+    token = _active_pass.set(ActPass(authority, trigger_id, envelope, shown=set(shown)))
     try:
         yield
     finally:
         _active_pass.reset(token)
 
 
-def act_pass(authority: ActAuthority, envelope: ActEnvelope | None = None):
+def act_pass(
+    authority: ActAuthority, envelope: ActEnvelope | None = None,
+    *, shown: frozenset[str] = frozenset(),
+):
     context = authority.pass_context
     if context is None:
         raise ValueError("pass authority requires its provenance")
-    return act_event(context.pass_id, authority, envelope)
+    return act_event(context.pass_id, authority, envelope, shown=shown)
+
+
+def pass_shown() -> set[str] | None:
+    """Return the graph IDs the active pass has seen."""
+    active = _active_pass.get()
+    return active.shown if active is not None else None
 
 
 async def record_pass_expression(raw: object) -> None:

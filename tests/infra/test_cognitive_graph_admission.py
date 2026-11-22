@@ -120,7 +120,7 @@ def _service(engine: AsyncEngine, *, content_checks: bool = False) -> AdmissionS
 def _fault_service(engine: AsyncEngine, writer: SqlCognitiveGraph) -> AdmissionService:
     persons, policy, guard = _authority()
     identity = AdmissionIdentity(persons, policy)
-    store = SqlAdmissionStore(SqlAdmissionRows(engine, identity), writer)
+    store = SqlAdmissionStore(SqlAdmissionRows(engine, identity), writer, engine)
     return AdmissionService(store, identity, guard, content_checks=False)
 
 

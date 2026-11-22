@@ -69,6 +69,7 @@ def _build_with(
         metrics=metrics or Metrics(),
         room=room, transit_source=_UNREACHABLE_TRANSIT, question="佢鍾唔鍾意踢波",
         context_window=40, lineage=_LINEAGE, memory_retrieval=search,
+        graph_retrieval=object() if search is not None else None,
     )
     return {t.tool_name: t for t in built}
 
@@ -103,7 +104,7 @@ async def test_flag_off_calls_honcho_and_answers_as_before(persons: Any) -> None
 
 async def test_flag_on_ask_memory_is_not_built(persons: Any) -> None:
     """DEC-316: with the index wired, the memory surface is the graph's, so
-    `ask_memory` is not offered at all (the index answers through `memory_search`,
+    `ask_memory` is not offered at all (the graph answers through `memory_search`,
     tests/unit/test_memory_search_tool.py). The whole-surface pins are
     tests/unit/test_memory_surfaces.py."""
     tools = _build_with(persons, FakeMemoryStore(), _dense(_index(), Metrics()))

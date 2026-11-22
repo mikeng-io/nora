@@ -47,6 +47,7 @@ from nora.memory.adapters.pass_assembly import PassAssembler
 from nora.memory.adapters.retrieval_store import SqlRetrieval
 from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
+from nora.memory.adapters.tools.search import GraphReadTools
 from nora.memory.adapters.tools.session import session_verbs as _session_verbs
 from nora.memory.adapters.watch_page import WATCH_ADAPTERS
 from nora.memory.adapters.watch_results import SqlWatchResults
@@ -357,7 +358,7 @@ def admission(
     access: IdentityAccess | None = None,
 ) -> AdmissionService:
     identity = AdmissionIdentity(persons, policy, access=access, nora_accounts=nora_accounts)
-    store = SqlAdmissionStore(SqlAdmissionRows(engine, identity), SqlCognitiveGraph(engine))
+    store = SqlAdmissionStore(SqlAdmissionRows(engine, identity), SqlCognitiveGraph(engine), engine)
     return AdmissionService(
         store, identity, leak_guard, content_checks=content_checks,
         watch_kinds=WATCH_ADAPTERS.keys(),
@@ -400,6 +401,26 @@ def retrieval(
 ) -> RetrievalService:
     """Build the shared scoped graph reader for a pass."""
     return RetrievalService(SqlRetrieval(engine, access, lineage, embedding_model), embedder)
+
+
+def configured_graph_reads(cfg, engine, access, lineage) -> GraphReadTools | None:
+    if not cfg.memory.index.read:
+        return None
+    index = cfg.memory.index
+    embedder = LlamaEmbedder(
+        index.embedder_url, timeout_seconds=QUERY_TIMEOUT_SECONDS,
+        query_model_file=model_file(index.embedder_model),
+    ) if index.embed else None
+    model = fingerprint(index.embedder_model) if index.embed else None
+    return graph_read_tools(engine, access, lineage, embedder, model)
+
+
+def graph_read_tools(
+    engine: AsyncEngine, access: IdentityAccess, lineage: LineagePolicy,
+    embedder: QueryEmbedder | None, embedding_model: str | None,
+) -> GraphReadTools:
+    return GraphReadTools(retrieval(engine, access, lineage, embedder, embedding_model),
+                          engine, access, lineage)
 
 
 def pass_assembler(

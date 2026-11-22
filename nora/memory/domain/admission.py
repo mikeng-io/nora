@@ -53,7 +53,10 @@ FormRefusal = Literal[
     "unbacked_page_reference",
     "unpollable_watch_target",
 ]
-WriteRefusal = Literal["stale_base", "credential", "doctrine", "content", "unsafe_page_reference"]
+WriteRefusal = Literal[
+    "stale_base", "credential", "doctrine", "content", "unsafe_page_reference",
+    "not_open", "witness_not_met", "untyped_condition",
+]
 RefusalReason = Literal[FormRefusal, WriteRefusal]
 
 
@@ -498,7 +501,7 @@ class _Admission:
                 raise _RefusalError("wrong_unit", "origin_room")
             room, dm = answer.id, answer.is_dm
         ranked = ExposureOrder
-        if scope.exposure not in ranked:
+        if scope.exposure is not None and scope.exposure not in ranked:
             raise _RefusalError("invalid_field", "exposure")
         excluded = tuple(self._person(ref, "excluded_persons") for ref in scope.excluded_persons)
         inherited = (*inputs, base) if base is not None else inputs
@@ -517,8 +520,11 @@ class _Admission:
             build_lineage=Lineage(),
             minimum="external",
         )
-        if ranked.index(scope.exposure) < ranked.index(restrictions.exposure):
+        exposure = scope.exposure or restrictions.exposure
+        if ranked.index(exposure) < ranked.index(restrictions.exposure):
             raise _RefusalError("scope_widening", "exposure")
+        if scope.exposure is None:
+            excluded = tuple(dict.fromkeys((*excluded, *restrictions.excluded_persons)))
         if not set(restrictions.excluded_persons).issubset(excluded):
             raise _RefusalError("scope_widening", "excluded_persons")
         persons = tuple(self.refs.persons.get(ref) for ref in scope.persons)
@@ -532,7 +538,7 @@ class _Admission:
             dm,
             persons,
             excluded,
-            scope.exposure,
+            exposure,
             restrictions.lineage,
             form=data.form if isinstance(data, CreateIntention) else None,
             trigger=data.trigger if isinstance(data, CreateIntention) else None,

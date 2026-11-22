@@ -258,3 +258,40 @@ async def test_deadline_and_untyped_intentions_are_left_for_verify(engine):
     await condition_matcher(engine).run_once()
     assert await _endings(engine) == {"left-open": None, "positive-control": "achieved"}
     assert set(await _edges(engine)) == {"positive-control"}
+
+
+@pytest.mark.parametrize(("authority", "kind", "verdict", "ending"), (
+    ("waiting", "delivery", "done", "achieved"),
+    ("different", "delivery", "done", None),
+    ("waiting", "effect", "done", None),
+    ("waiting", "delivery", "uncertain", None),
+))
+async def test_own_delivery_matches_only_the_intentions_latest_delivery_outcome(
+    engine, authority, kind, verdict, ending,
+):
+    act = _act(context=None)
+    act = replace(act, kind=kind, authority=replace(act.authority, unit=_UNIT, intention=authority))
+    store = SqlActStore(engine, _registration())
+    await _intention(engine, "waiting", "act_event", {"own_delivery": True})
+    await _health(engine, act.identity.executor, "up")
+    assert await store.reserve(act)
+    await store.observe(act, Outcome(verdict))
+    await condition_matcher(engine).run_once()
+    assert await _endings(engine) == {"waiting": ending}
+    assert set(await _edges(engine)) == ({"waiting"} if ending else set())
+
+
+async def test_own_delivery_uses_the_latest_live_outcome_across_acts(engine):
+    act = _act(context=None)
+    act = replace(act, authority=replace(act.authority, unit=_UNIT, intention="waiting"))
+    later = replace(act, identity=replace(act.identity, ordinal=1))
+    store = SqlActStore(engine, _registration())
+    await _intention(engine, "waiting", "act_event", {"own_delivery": True}, mode="maintain")
+    await _health(engine, act.identity.executor, "up")
+    assert await store.reserve(act)
+    await store.observe(act, Outcome("failed"))
+    assert await store.reserve(later)
+    await store.observe(later, Outcome("uncertain"))
+    await condition_matcher(engine).run_once()
+    assert await _endings(engine) == {"waiting": None}
+    assert await _edges(engine) == {}

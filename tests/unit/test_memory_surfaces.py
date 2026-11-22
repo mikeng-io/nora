@@ -105,10 +105,10 @@ def persons(tmp_path: Any) -> Any:
 
 
 def _registry(graph: bool) -> ToolRegistry:
-    """The registry as `build_dependencies` builds it: a `MemorySearch`
-    exactly when `[memory.index] read`."""
+    """The registry offers the Cognitive Graph reads when their service is wired."""
     return ToolRegistry(
         memory_search=MemorySearch(FakeMemoryIndex([]), Metrics()) if graph else None,
+        graph_retrieval=object() if graph else None,
     )
 
 

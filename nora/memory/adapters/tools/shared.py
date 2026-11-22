@@ -89,54 +89,6 @@ _STANDING_WITHHELD = (
     "Some sections are not shown in this conversation. Do not read the rest as complete."
 )
 
-_GRAPH_READ_NOTES: Mapping[str, str] = {
-    "ok": "Scoped node and its evidence.",
-    "partial": "More memory is available.",
-    "nothing_found": "No node matched in this scope.",
-    "unavailable": "The graph could not be read.",
-}
-
-_INDEX_OK = (
-    "Each item is something said or written here, with the path that linked "
-    "it to the question. Answer from these; an item is evidence, not a fact."
-)
-
-_INDEX_PARTIAL = (
-    "My memory is still being rebuilt, so this may be incomplete. Use what is "
-    "here; if it is empty, say you can't fully check right now, never that it "
-    "did not happen."
-)
-
-_INDEX_NOTHING = (
-    "I searched what is remembered here and found nothing on that. Say you "
-    "don't recall it, not that it never happened."
-)
-
-_INDEX_WITHHELD = (
-    "I found something but can't repeat it here. Answer from what you already "
-    "know, or say you're not sure."
-)
-
-_INDEX_UNAVAILABLE = (
-    "My memory is not answering. Say you can't check right now, and do not say you don't know."
-)
-
-_MEMORY_BAD_DATE: Mapping[str, str] = MappingProxyType(
-    {
-        "status": "unavailable",
-        "note": "I couldn't read that date, so I didn't search. Give since and until "
-        "as YYYY-MM-DD and call again.",
-    }
-)
-
-_MEMORY_BAD_SPAN: Mapping[str, str] = MappingProxyType(
-    {
-        "status": "unavailable",
-        "note": "That span ends before it starts, so I didn't search. Swap since and "
-        "until and call again.",
-    }
-)
-
 _PROFILE_UNAVAILABLE: Mapping[str, str] = MappingProxyType(
     {
         "status": "unavailable",
@@ -187,22 +139,5 @@ _PROFILE_DISPUTE_REFUSED_NOTES: Mapping[str, str] = MappingProxyType(
         "keep. Say it without that, then call again.",
         "coordinate": "Nothing was recorded: it carries a location I never keep. "
         "Say it without that, then call again.",
-    }
-)
-
-_MEMORY_BAD_KIND: Mapping[str, str] = MappingProxyType(
-    {
-        "status": "unavailable",
-        "note": "I don't know that kind of memory, so I didn't search. Use messages, "
-        "media, notes, events or places, or leave kinds out.",
-    }
-)
-
-_MEMORY_UNLISTED: Mapping[str, str] = MappingProxyType(
-    {
-        "status": "unavailable",
-        "note": "That person is not one of this room's members, so I can't search "
-        "for what is theirs here. Say you can't check, and do not say "
-        "there was nothing.",
     }
 )
