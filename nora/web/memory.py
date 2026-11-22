@@ -123,6 +123,9 @@ async def _attach_profile(
     )
     accounts: list[dict[str, Any]] = []
     for unit, workspace in scopes:
+        # ponytail: never changes the answer in production, since `workspaces_of` and
+        # `profile_scopes_of` both derive from the same person_units; kept only because
+        # this whole endpoint leaves with the legacy Profile page.
         if member_of is not None and workspace not in member_of:
             continue
         def identity_name(pid: str, current_unit: str = unit) -> str:
