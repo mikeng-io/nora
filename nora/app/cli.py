@@ -1167,7 +1167,7 @@ async def cmd_unified_backfill(args: argparse.Namespace) -> int:
                 self_ids=deps.registry.self_aliases(),
                 now_ms=int(datetime.now(UTC).timestamp() * 1000),
                 pending_reminds=(
-                    (lambda: deps.reminders.pending_of(cfg.honcho.ai_peer))
+                    (lambda: deps.reminders.pending_of(cfg.agent.name))
                     if deps.reminders is not None else None),
             )
         finally:

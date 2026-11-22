@@ -131,7 +131,6 @@ async def env(tmp_path, monkeypatch, aiohttp_server, clean_pg_url,
     cfg["platforms"]["discord"]["base_url"] = str(
         discord_bridge.make_url("")).rstrip("/")
     cfg["platforms"]["discord"]["account_key"] = "dc-1"
-    cfg["honcho"]["base_url"] = str(signal_bridge.make_url("")).rstrip("/")
     cfg["store"]["data_dir"] = str(tmp_path)
     cfg["doctrine"]["dir"] = str(ROOT / "nora" / "doctrine")
     cfg["dreamer"]["dir"] = str(ROOT / "nora" / "dreamer")

@@ -132,8 +132,10 @@ async def test_identity_reload_resolves_a_new_person_and_keeps_last_good(running
     assert "nora" not in running.persons.by_person
 
 
-async def test_identity_binding_change_requires_restart_without_changing_people(running, cfg):
-    # A declared unit permits a valid Honcho binding. Establish it before composing.
+async def test_a_reload_carrying_a_removed_identity_table_is_refused_without_changing_people(
+    running, cfg,
+):
+    # The host's shape arriving on a hot reload: refused, the last good file kept.
     await running.background.cancel_all()
     cfg.policy_file.write_text(
         'default = "deny"\n[units.nora]\nworkspace = "home"\n' + room("g1", "First")
@@ -144,7 +146,7 @@ async def test_identity_binding_change_requires_restart_without_changing_people(
             '[workspaces.home]\nhoncho_workspace = "nora-home"\n'
             '[persons.miles_old_id]\nname = "Miles"\n'
         )
-        await reloaded(deps, "identity.toml", "restart_required")
+        await reloaded(deps, "identity.toml", "refused")
         assert "miles" in deps.persons.by_person
         assert "miles_old_id" not in deps.persons.by_person
     finally:
@@ -202,11 +204,7 @@ async def test_removing_the_last_room_keeps_its_declared_workspace_binding(cfg, 
     )
     second = room("g2", "Second") + 'unit = "work"\n'
     cfg.policy_file.write_text(declarations + room("g1", "First") + second)
-    cfg.identity_file.write_text(
-        '[persons.miles]\nname = "Miles"\n'
-        '[workspaces.home]\nhoncho_workspace = "nora-home"\n'
-        '[workspaces.work]\nhoncho_workspace = "nora-work"\n'
-    )
+    cfg.identity_file.write_text('[persons.miles]\nname = "Miles"\n')
     deps = await build_dependencies(cfg)
     try:
         cfg.policy_file.write_text(declarations + second)

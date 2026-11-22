@@ -7,7 +7,8 @@ and ingest continues (D6).
 It is nonetheless COUNTED. Its symptom set is otherwise empty — the message is
 still audited, the gate still runs, and `Persons.display_name` still renders
 the sender's platform display name into the prefill, so Nora replies normally
-and addresses them by name while nothing at all reaches Honcho. That is the
+and addresses them by name while they have no person_id, so nothing keyed by
+one can hold them. That is the
 wrong-silence shape this project keeps shipping, and here it is worse than
 usual: the display-name fallback fabricates the appearance that identity
 worked.
@@ -50,8 +51,8 @@ async def run(
         # `nora persons pending` is where the operator gets a pasteable copy.
         # Logs are a separate exposure surface and do not need it.
         log.warning(
-            "unmapped sender (platform=%s sender=%s) — no Honcho memory is "
-            "being written for them; check identity.toml and its reload outcome",
+            "unmapped sender (platform=%s sender=%s) — no person_id, so nothing "
+            "keyed by one is written for them; check identity.toml and its reload outcome",
             message.platform,
             sanitize_unmapped(message.sender_id),
         )

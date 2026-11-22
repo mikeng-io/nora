@@ -15,7 +15,7 @@ and answers under the one the card's SENDER wrote that tags her
 ledger row is claimed on the card's message id before anything is read; the
 comment id is bound to it once found, and stays unique across rows. It reuses the model loop, the
 tool surface and the guards of every other occasion, and it constructs NO
-ROOM and writes NO MEMORY: no Honcho, no audit row, no roster, no notes, no
+ROOM and writes NO MEMORY: no audit row, no roster, no notes, no
 transcript. What it holds is the bridge, the ledger, the person index (for the
 summoner gate and nothing else), the doctrine, the tool registry under
 `PUBLIC_GRANT`, and a runner.

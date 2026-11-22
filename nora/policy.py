@@ -40,16 +40,11 @@ log = logging.getLogger("nora.policy")
 #: The Nora WORKSPACE every unit belongs to when `policy.toml` has no `[units]`
 #: table at all (DEC-214). A workspace holds units,
 #: a unit holds rooms; a policy written before the hierarchy existed names no
-#: workspace, so all of its units share this implicit one, and that one is
-#: bound to `config.toml`'s `honcho.workspace_id` rather than to its own name
-#: (`nora.app.memory_routing`). Not a Honcho workspace id: a Nora workspace
-#: and a Honcho workspace are separate names for separate things.
+#: workspace, so all of its units share this implicit one.
 DEFAULT_WORKSPACE = "default"
 
-#: A Nora workspace name may be used verbatim as a Honcho workspace id (when
-#: `identity.toml` binds it to nothing), and Honcho refuses any resource id
-#: outside this alphabet with a 422 — at feed time, silently, off the reply
-#: path. Refused here, at startup, instead.
+#: A Nora workspace name is used verbatim as a scope id wherever membership is
+#: stored (`nora.people`), so it takes the person-id alphabet; refused at startup.
 _WORKSPACE_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
@@ -122,9 +117,9 @@ class Conversation:
     # groups and may never be relayed between, however trusted each is on its
     # own.
     #
-    # Defaults to `honcho.workspace_id`'s shipped value rather than being
-    # required, so an existing policy.toml keeps working — but the default is
-    # the LOOSE direction, so an operator who runs two real social units must
+    # Defaults to `"nora"` rather than being required, so an existing
+    # policy.toml keeps working — but the default is the LOOSE direction, so
+    # an operator who runs two real social units must
     # say so. That is why `send_to` also requires the requester to be allowed
     # in the destination independently: the unit bounds WHICH rooms may
     # ever be paired, and the persons list still decides who may use the pair.
@@ -250,7 +245,7 @@ class Conversation:
     def absorbed(self) -> bool:
         """Whether this room's traffic enters memory/ambient processing.
 
-        A listed room is always absorbed (fed to Honcho, stimulated, folded):
+        A listed room is always absorbed (stimulated, folded):
         listing it was the opt-in. A discovered channel is absorbed only when
         the entry's `ambient` names it — mention-only is the server-entry
         default, so an undiscovered-by-name channel records and answers tags
@@ -338,7 +333,7 @@ class Policy:
         `conversations` is the FILE: its `guild` entries name servers, not
         rooms. `rooms()` adds the channels the directory knows, each as the
         `Conversation` `conversation()` would synthesize — so a consumer that
-        enumerates rooms (the Honcho router, lineage, the fold scopes) sees
+        enumerates rooms (lineage, the fold scopes) sees
         the same set the grant predicate admits, and reloads see new entries.
         """
         out = [c for c in self.conversations if not c.guild]
@@ -549,8 +544,8 @@ class Policy:
 
         `persons = "*"` admits an UNMAPPED sender too. The room is the trust
         boundary the operator drew, and D6 already settled that an unmapped
-        sender is answered but never remembered (no `person_id`, so nothing is
-        fed to Honcho). Refusing them here would both reverse that and make
+        sender is answered but never remembered (no `person_id`, so nothing
+        keyed by one holds them). Refusing them here would both reverse that and make
         `"*"` almost pointless — it would then admit only people who are
         already mapped, which is what an explicit list is for.
 
@@ -725,12 +720,7 @@ class _ConversationEntry(BaseModel):
 
 
 class _UnitEntry(BaseModel):
-    """One `[units.<unit>]` table: which Nora workspace the unit belongs to.
-
-    Only the STRUCTURE lives here. Which Honcho workspace a Nora workspace is
-    bound to is an external binding and lives in `identity.toml`'s
-    `[workspaces.<name>]` (`nora.persons_file`), for DEC-8's reason: this file
-    changes when trust changes, and a Honcho id is not a trust answer."""
+    """One `[units.<unit>]` table: which Nora workspace the unit belongs to."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -742,8 +732,8 @@ class _UnitEntry(BaseModel):
         if not _WORKSPACE_NAME.match(value):
             raise ValueError(
                 f"workspace {value!r} must match ^[a-zA-Z0-9_-]+$ — a workspace "
-                "with no binding in identity.toml is used verbatim as its "
-                "Honcho workspace id, and Honcho refuses any other character"
+                "name is used verbatim as a scope id wherever membership is "
+                "stored, like a person_id"
             )
         return value
 
@@ -1097,9 +1087,8 @@ def _unit_workspaces(
     ABSENT table: `{}`, and `Policy.workspace_of` answers `DEFAULT_WORKSPACE`
     for every unit — the policy that existed before the hierarchy keeps
     loading unchanged. PRESENT: it must cover every room's unit. A room whose
-    unit has no entry would belong to no workspace, which means no Honcho
-    workspace could be named for it, so it is a startup error rather than a
-    guess (R-5's refuse-to-start shape). A declared unit may temporarily hold
+    unit has no entry would belong to no workspace, so it is a startup error
+    rather than a guess (R-5's refuse-to-start shape). A declared unit may temporarily hold
     no rooms: its workspace is admitted at boot so removing its last room and
     adding a room back can both reload without changing workspace bindings."""
     if units is None:

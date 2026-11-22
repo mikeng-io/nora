@@ -802,9 +802,7 @@ async def know(
                     continue
                 await notes.create(
                     # The ROOM'S unit, resolved from its policy entry at
-                    # `obtain()` — not `honcho.workspace_id`, which is
-                    # Honcho's per-deployment workspace and in production is
-                    # not the unit of any room.
+                    # `obtain()`.
                     unit=subject.unit,
                     title=note.title,
                     description=note.description,

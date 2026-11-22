@@ -491,8 +491,7 @@ class ProjectionPublisher:
                 self._reloads = ReloadFiles(
                     policy_path=self._cfg.policy_file,
                     identity_path=self._cfg.identity_file,
-                    ai_peer=self._cfg.honcho.ai_peer,
-                    default_workspace=self._cfg.honcho.workspace_id,
+                    ai_peer=self._cfg.agent.name,
                     metrics=self.metrics,
                     policy_channels=self._directory,
                 )

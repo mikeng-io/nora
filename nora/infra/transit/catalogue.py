@@ -264,8 +264,8 @@ async def get_text(
     """One HTTP call — GET, or POST when `payload` is given — or None. NEVER raises.
 
     Shared by the catalogues and by both ETA endpoints so there is exactly one
-    place that decides what a failure looks like. A session per call, like
-    `nora.infra.honcho.client`: these are three different hosts reached a
+    place that decides what a failure looks like. A session per call: these
+    are three different hosts reached a
     handful of times an hour, and a pooled session would be state to own for
     no benefit.
     """

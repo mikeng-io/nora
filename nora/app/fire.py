@@ -855,7 +855,7 @@ class FirePath:
             unit = self._unit_for(occasion)
 
         # THE SWITCH (45 §5): the turn's Profile accounts, keyed like the
-        # culture reads they replace. Empty on the Honcho surface.
+        # culture reads they replace. Empty with `[memory.profile] read` off.
         profiles = await self._read_profiles(occasion, ref, transcript)
 
         # CONCURRENT, for `TranscriptInjection.assemble`'s reason: these are
@@ -1281,7 +1281,7 @@ class FirePath:
         (`stage="fire_profile_*"`), a failed read drops that account's view
         and is counted (R-27), and a line whose `exclude_persons` names a
         member of this room is dropped before the view is built. `()` with no
-        reader wired (the Honcho surface) or a room outside the policy."""
+        reader wired (`[memory.profile] read` off) or a room outside the policy."""
         if self._profile_reader is None or self._policy is None:
             return ()
         convo = self._policy.conversation(

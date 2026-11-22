@@ -560,7 +560,7 @@ class ToolRegistry:
         # offline/eval compositions, where the tool answers `unavailable`
         # rather than a guessed empty (R-5).
         self._mobility = mobility
-        # The OBSERVER peer: Nora's Honcho peer id (cfg.honcho.ai_peer).
+        # Nora's own id, the owner of every reminder she sets: `[agent].name`.
         self._ai_peer = ai_peer
         # The reminders store: a per-process collaborator like `transit` and
         # `search`, NOT default-constructed for the reason `route` is not: there

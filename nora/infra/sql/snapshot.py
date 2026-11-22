@@ -28,10 +28,6 @@ instant after migration `0068` (before it, its backfill says what is known).
 
 WHAT IT CANNOT FREEZE, stated rather than left to be discovered:
 
-- **Honcho-backed state** — the peer card, the representation, anything the
-  dialectic answers. It is live and mutable by design and has no revision
-  chain to read backwards. A snapshot that returned TODAY's peer card beside a
-  year-old transcript would be the worst of both, so it returns none at all.
 - **A note's loop state.** `note` has no history table, only `note_revision`,
   so anything `UPDATE`d on the row after creation reads CURRENT here unless
   this module gates it. Seven columns move, from the `sa.update(NOTE)` sites in

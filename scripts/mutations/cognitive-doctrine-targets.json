@@ -2,8 +2,8 @@
   {
     "name": "the assembler forwards the Markdown name to observation targets",
     "file": "nora/app/assembler.py",
-    "old": "ai_peer=cfg.honcho.ai_peer, display_name=cfg.doctrine.display_name,",
-    "new": "ai_peer=cfg.honcho.ai_peer,",
+    "old": "ai_peer=cfg.agent.name, display_name=cfg.doctrine.display_name,",
+    "new": "ai_peer=cfg.agent.name,",
     "target": "tests/unit/test_platform_observation_wired.py::test_an_off_window_target_uses_the_markdown_self_name"
   },
   {
