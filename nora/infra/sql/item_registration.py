@@ -189,7 +189,7 @@ class RegistrationScope:
             for unit in sorted(candidates):
                 members = await self._unit_members(unit)
                 if members and members <= sharing.keys():
-                    placements[unit] = tuple(sorted(sharing[m] for m in members))
+                    placements[unit] = tuple(sorted(sharing[m] for m in members if m in sharing))
             return placements or {None: people}
         except Exception:  # noqa: BLE001 — unknown membership must stay unscoped
             log.warning("graph registration circle membership unavailable")
