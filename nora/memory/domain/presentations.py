@@ -245,10 +245,14 @@ def _open_intentions(
 
 def standing(
     result: RetrievalResult, room: str, room_entity: str, now: datetime,
+    *, open_room_and_unit: bool = False,
 ) -> Standing:
     """Read the room's open intentions, recent endings and situation claims."""
     room_intentions = tuple(
-        row for row in result.rows if row.kind == "intention" and _in_room(row, room)
+        row for row in result.rows if row.kind == "intention" and (
+            (_in_room(row, room) or row.origin_room is None) and row.state == "open"
+            if open_room_and_unit else _in_room(row, room)
+        )
     )
     due = {row.graph_id for row in room_intentions if intention_is_due(row, now)}
     intentions = order_rows(room_intentions, due=due)
@@ -261,7 +265,7 @@ def standing(
             settled.append(SettledIntention(
                 row, ending if isinstance(ending, str) else None, witness,
             ))
-    situations = tuple(
+    situations = () if open_room_and_unit else tuple(
         Situation(row, now - row.asserted_at, row.items_since)
         for row in order_rows(
             row for row in result.rows if row.kind == "claim" and row.part == "situation"

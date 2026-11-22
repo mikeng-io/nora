@@ -173,6 +173,14 @@ def parse_intention_operation(raw: object, context: PassContext) -> IntentionPro
         return Refusal("invalid_field", str(exc))
 
 
+def limit_to_delivery(proposal: IntentionProposal, intention: str) -> Refusal | None:
+    """Restrict a proactive pass to changing the intention it delivered."""
+    if isinstance(proposal, CreateIntention):
+        return Refusal("not_this_delivery", "op")
+    base = proposal.id if isinstance(proposal, CloseIntention) else proposal.base
+    return None if base == intention else Refusal("not_this_delivery", "base")
+
+
 def _intention(raw: Mapping[str, object], context: PassContext) -> CreateIntention:
     form = raw.get("form")
     if form not in ("achieve", "maintain"):

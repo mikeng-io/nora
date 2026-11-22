@@ -64,6 +64,7 @@ CAPTURE_SETTING = "nora.row_history"
 #: trigger's arguments). Includes `sticker_index` (an in-place cache) and
 #: `message_edit` (deleted by cascade when a message is pruned).
 HISTORY_TABLES: dict[str, tuple[str, ...]] = {
+    "debrief_obligation": ("unit", "pass_id"),
     "managed_person": ("person_id",),
     "managed_account": ("account_id",),
     "managed_identifier": ("platform", "kind", "value"),

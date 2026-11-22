@@ -59,8 +59,10 @@ class GraphPresentationBlocks:
 
     def standing_block(
         self, result: RetrievalResult, room: str, room_entity: str,
+        *, open_room_and_unit: bool = False,
     ) -> tuple[ContextBlock, tuple[str, ...]]:
-        selected = standing(result, room, room_entity, self._now)
+        selected = standing(result, room, room_entity, self._now,
+                            open_room_and_unit=open_room_and_unit)
         rows: list[RetrievedRow] = []
         lines: list[str] = []
 

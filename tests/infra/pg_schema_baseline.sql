@@ -235,6 +235,7 @@ $_$;
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -296,6 +297,7 @@ ADD CONSTRAINT consolidation_watermark_pkey PRIMARY KEY (consolidator_name, scop
 ADD CONSTRAINT culture_head_revision_id_fkey FOREIGN KEY (head_revision_id) REFERENCES public.culture_revision(id);
 ADD CONSTRAINT culture_pkey PRIMARY KEY (key);
 ADD CONSTRAINT culture_revision_pkey PRIMARY KEY (id);
+ADD CONSTRAINT debrief_obligation_pkey PRIMARY KEY (unit, pass_id);
 ADD CONSTRAINT decision_log_pkey PRIMARY KEY (id);
 ADD CONSTRAINT deploy_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT dispute_pkey PRIMARY KEY (id);
@@ -677,6 +679,7 @@ ALTER TABLE ONLY public.consolidation_watermark
 ALTER TABLE ONLY public.culture
 ALTER TABLE ONLY public.culture
 ALTER TABLE ONLY public.culture_revision
+ALTER TABLE ONLY public.debrief_obligation
 ALTER TABLE ONLY public.decision_log
 ALTER TABLE ONLY public.deploy_revision
 ALTER TABLE ONLY public.dispute
@@ -1214,6 +1217,10 @@ CONSTRAINT ck_computer_sessions_status CHECK ((status = ANY (ARRAY['expired'::te
 CONSTRAINT ck_computer_tasks_kind CHECK ((kind = ANY (ARRAY['browse'::text, 'capture'::text, 'maintenance'::text, 'native'::text, 'worker'::text]))),
 CONSTRAINT ck_computer_tasks_status CHECK ((status = ANY (ARRAY['cancelled'::text, 'done'::text, 'failed'::text, 'interrupted'::text, 'queued'::text, 'running'::text, 'unavailable'::text])))
 CONSTRAINT ck_corridor_speed_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
+CONSTRAINT ck_debrief_obligation_attempts CHECK ((attempts >= 0)),
+CONSTRAINT ck_debrief_obligation_settled CHECK (((state = 'settled'::text) = (settled IS NOT NULL))),
+CONSTRAINT ck_debrief_obligation_state CHECK ((state = ANY (ARRAY['pending'::text, 'settled'::text]))),
+CONSTRAINT ck_debrief_obligation_window CHECK (((first_message_id IS NULL) = (last_message_id IS NULL)))
 CONSTRAINT ck_derived_places_kind CHECK ((source_kind = ANY (ARRAY['home'::text, 'work'::text, 'unlabeled'::text]))),
 CONSTRAINT ck_dispute_graph_basis CHECK ((basis = 'observed'::text)),
 CONSTRAINT ck_dispute_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
@@ -1400,7 +1407,7 @@ CONSTRAINT ck_nora_act_outcome_graph_pair CHECK (((unit IS NULL) = (graph_id IS 
 CONSTRAINT ck_nora_act_outcome_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
 CONSTRAINT ck_nora_act_outcome_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
 CONSTRAINT ck_nora_act_outcome_verdict CHECK ((verdict = ANY (ARRAY['done'::text, 'failed'::text, 'uncertain'::text])))
-CONSTRAINT ck_nora_pass_output_content CHECK (((output_kind = 'expression'::text) = (content IS NOT NULL))),
+CONSTRAINT ck_nora_pass_output_content CHECK (((output_kind <> 'silence'::text) = (content IS NOT NULL))),
 CONSTRAINT ck_nora_pass_output_graph_basis CHECK ((basis = 'observed'::text)),
 CONSTRAINT ck_nora_pass_output_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_nora_pass_output_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
@@ -1409,7 +1416,7 @@ CONSTRAINT ck_nora_pass_output_graph_kind CHECK ((kind = 'item'::text)),
 CONSTRAINT ck_nora_pass_output_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))),
 CONSTRAINT ck_nora_pass_output_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
 CONSTRAINT ck_nora_pass_output_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
-CONSTRAINT ck_nora_pass_output_kind CHECK ((output_kind = ANY (ARRAY['expression'::text, 'silence'::text])))
+CONSTRAINT ck_nora_pass_output_kind CHECK ((output_kind = ANY (ARRAY['expression'::text, 'silence'::text, 'tool_call'::text])))
 CONSTRAINT ck_occupancy_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168))),
 CONSTRAINT ck_otp_challenge_code_hash CHECK ((code_hash ~ '^[0-9a-f]{64}$'::text)),
 CONSTRAINT ck_otp_challenge_expiry CHECK ((expires_at > issued_at)),
@@ -1851,6 +1858,7 @@ CREATE INDEX idx_computer_sessions_room ON public.computer_sessions USING btree 
 CREATE INDEX idx_computer_tasks_scope_open ON public.computer_tasks USING btree (scope, created_at) WHERE (status = ANY (ARRAY['queued'::text, 'running'::text]));
 CREATE INDEX idx_config_revision_file_loaded ON public.config_revision USING btree (file, loaded_at);
 CREATE INDEX idx_culture_revision_key_written ON public.culture_revision USING btree (culture_key, written_at DESC, id DESC);
+CREATE INDEX idx_debrief_obligation_room ON public.debrief_obligation USING btree (unit, room, created);
 CREATE INDEX idx_decision_log_conv_ts ON public.decision_log USING btree (conversation_id, ts DESC, id DESC);
 CREATE INDEX idx_decision_log_unit_ts ON public.decision_log USING btree (unit, ts DESC, id DESC);
 CREATE INDEX idx_doctrine_revision_corpus_loaded ON public.doctrine_revision USING btree (corpus, loaded_at);
@@ -1998,6 +2006,7 @@ CREATE TABLE public.config_revision (
 CREATE TABLE public.consolidation_watermark (
 CREATE TABLE public.culture (
 CREATE TABLE public.culture_revision (
+CREATE TABLE public.debrief_obligation (
 CREATE TABLE public.decision_log (
 CREATE TABLE public.deploy_revision (
 CREATE TABLE public.dispute (
@@ -2159,6 +2168,7 @@ CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.compu
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.computer_sessions FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.consolidation_watermark FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('consolidator_name', 'scope_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.culture FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('key');
+CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.debrief_obligation FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('unit', 'pass_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.dispute FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.dream_schedule_state FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('adaptor_name', 'scope_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.edge FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id', 'unit');
@@ -2244,6 +2254,7 @@ CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.compute_jobs 
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.computer_sessions FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.consolidation_watermark FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.culture FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
+CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.debrief_obligation FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.dispute FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.dream_schedule_state FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
 CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.edge FOR EACH STATEMENT EXECUTE FUNCTION public.nora_row_history_refuse_truncate();
@@ -2865,6 +2876,7 @@ attempts integer DEFAULT 0 NOT NULL,
 attempts integer DEFAULT 0 NOT NULL,
 attempts integer DEFAULT 0 NOT NULL,
 attempts integer DEFAULT 0 NOT NULL,
+attempts integer DEFAULT 0 NOT NULL,
 attempts integer DEFAULT 1 NOT NULL,
 attribute text,
 attributes jsonb DEFAULT '{}'::jsonb CONSTRAINT entity_attributes_not_null NOT NULL,
@@ -3129,6 +3141,7 @@ corridor_id integer NOT NULL,
 corridor_id integer,
 coverage jsonb DEFAULT '{}'::jsonb,
 coverage jsonb,
+created timestamp with time zone NOT NULL,
 created_at bigint NOT NULL
 created_at bigint NOT NULL,
 created_at bigint NOT NULL,
@@ -3428,6 +3441,7 @@ finished_at timestamp with time zone,
 finished_at timestamp with time zone,
 fired_at timestamp with time zone,
 first_failed_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+first_message_id bigint,
 first_seen timestamp with time zone DEFAULT now() NOT NULL,
 first_seen_at bigint NOT NULL,
 first_seen_at bigint NOT NULL,
@@ -3640,6 +3654,7 @@ instruction_sha256 text,
 instruction_sha256 text,
 instruction_sha256 text,
 intent text,
+intention text,
 is_driving integer,
 is_nora integer DEFAULT 0 NOT NULL,
 is_source boolean DEFAULT true NOT NULL,
@@ -3730,6 +3745,7 @@ last_fix_id integer DEFAULT 0 NOT NULL,
 last_folded_row_id bigint,
 last_folded_row_id bigint,
 last_message_id bigint DEFAULT 0 NOT NULL,
+last_message_id bigint,
 last_moved_at bigint,
 last_moved_at bigint,
 last_played_locator text,
@@ -3993,6 +4009,7 @@ observed_in text[] DEFAULT '{}'::text[] NOT NULL,
 observed_ms bigint NOT NULL,
 observed_ms bigint,
 occasion text DEFAULT 'tag'::text NOT NULL,
+occasion text NOT NULL,
 occasion text,
 occasion text,
 occasion text,
@@ -4235,6 +4252,7 @@ pass text,
 pass text,
 pass text,
 pass text,
+pass_id text NOT NULL,
 path text NOT NULL,
 path text NOT NULL,
 path text NOT NULL,
@@ -4384,6 +4402,7 @@ profile_key text NOT NULL,
 profile_key text NOT NULL,
 projected_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 projection_rev integer DEFAULT 1 NOT NULL,
+proposal_ids jsonb,
 provenance jsonb DEFAULT '{}'::jsonb NOT NULL,
 provenance jsonb DEFAULT '{}'::jsonb,
 provenance text NOT NULL,
@@ -4881,6 +4900,7 @@ revisit_at bigint,
 revoked_at timestamp with time zone,
 role text CONSTRAINT relation_evidence_role_not_null NOT NULL,
 room text CONSTRAINT graph_arrival_room_not_null NOT NULL,
+room text NOT NULL,
 room text,
 rooms jsonb,
 row_key jsonb NOT NULL,
@@ -4950,6 +4970,7 @@ session_id bigint,
 session_id uuid,
 session_id uuid,
 set_by text NOT NULL,
+settled timestamp with time zone,
 settled_at bigint,
 settled_at timestamp with time zone,
 sha256 text NOT NULL,
@@ -5074,6 +5095,7 @@ state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'open'::text NOT NULL,
 state text DEFAULT 'pending'::text CONSTRAINT memory_work_item_state_not_null NOT NULL,
+state text DEFAULT 'pending'::text NOT NULL,
 state text DEFAULT 'pending'::text NOT NULL,
 state text DEFAULT 'pending'::text NOT NULL,
 state text DEFAULT 'pending'::text NOT NULL,
@@ -5281,6 +5303,7 @@ unit text CONSTRAINT memory_work_item_unit_not_null NOT NULL,
 unit text CONSTRAINT relation_unit_not_null NOT NULL,
 unit text CONSTRAINT signal_unit_not_null NOT NULL,
 unit text DEFAULT ''::text NOT NULL,
+unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,

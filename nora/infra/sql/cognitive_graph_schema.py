@@ -444,12 +444,37 @@ NORA_PASS_OUTPUT = sa.Table(
     sa.Column("output_kind", sa.Text, nullable=False),
     sa.Column("content", pg.JSONB(none_as_null=True)),
     sa.CheckConstraint(
-        "output_kind IN ('expression', 'silence')", name="ck_nora_pass_output_kind",
+        "output_kind IN ('expression', 'silence', 'tool_call')", name="ck_nora_pass_output_kind",
     ),
     sa.CheckConstraint(
-        "(output_kind = 'expression') = (content IS NOT NULL)", name="ck_nora_pass_output_content",
+        "(output_kind <> 'silence') = (content IS NOT NULL)", name="ck_nora_pass_output_content",
     ),
 )
+
+DEBRIEF_OBLIGATION = sa.Table(
+    "debrief_obligation", METADATA,
+    sa.Column("unit", sa.Text, primary_key=True),
+    sa.Column("pass_id", sa.Text, primary_key=True),
+    sa.Column("room", sa.Text, nullable=False),
+    sa.Column("occasion", sa.Text, nullable=False),
+    sa.Column("intention", sa.Text),
+    sa.Column("state", sa.Text, nullable=False, server_default="pending"),
+    sa.Column("attempts", sa.Integer, nullable=False, server_default="0"),
+    sa.Column("created", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("settled", sa.DateTime(timezone=True)),
+    sa.Column("first_message_id", sa.BigInteger),
+    sa.Column("last_message_id", sa.BigInteger),
+    sa.Column("proposal_ids", pg.JSONB(none_as_null=True)),
+    sa.CheckConstraint("state IN ('pending', 'settled')", name="ck_debrief_obligation_state"),
+    sa.CheckConstraint("(state = 'settled') = (settled IS NOT NULL)",
+                       name="ck_debrief_obligation_settled"),
+    sa.CheckConstraint("attempts >= 0", name="ck_debrief_obligation_attempts"),
+    sa.CheckConstraint("(first_message_id IS NULL) = (last_message_id IS NULL)",
+                       name="ck_debrief_obligation_window"),
+)
+sa.Index("idx_debrief_obligation_room", DEBRIEF_OBLIGATION.c.unit,
+         DEBRIEF_OBLIGATION.c.room, DEBRIEF_OBLIGATION.c.created)
+
 
 _ITEM_WRITERS = {
     "messages": ("SqlRecordStore", "external"),

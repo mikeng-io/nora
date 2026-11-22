@@ -463,6 +463,7 @@ def test_no_shipped_description_reaches_the_model():
 # difference alone cannot tell an accidental file apart from an honest new one;
 # naming each objective here makes adding one a deliberate act.
 NATIVELY_AUTHORED = {
+    "debrief",
     "standing-debrief",
     # The culture tier's only pass (DEC-182).
     "culture",

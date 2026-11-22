@@ -36,8 +36,8 @@ from nora.domain.standing import (
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
     DEFAULT_WORKING_SET_MAX_CHARS,
     DEFAULT_WORKING_SET_MAX_ITEMS,
+    GRAPH_DEBRIEF_STORE_CALLS,
     STANDING_BODY_CEILING_CHARS,
-    STANDING_STORE_CALLS_PER_FOLD,
     WORKING_SET_CEILING_BYTES,
     WORKING_SET_CEILING_ITEMS,
 )
@@ -2475,29 +2475,8 @@ class StandingConfig(BaseModel):
     ] = ""
 
 
-    # The WHOLE hold this stage can add to a conversation's slot, asserted at startup
-    # rather than reasoned about in prose. `[llm] timeout_seconds` is a REQUIRED field
-    # with no default, so a worst case argued in prose against an assumed value drifts;
-    # the sum is checked instead.
-    #
-    # **What this does NOT cover, stated because the field name overclaims.** It
-    # bounds every AWAIT the stage makes. `objective.objective_body(...)` is a
-    # SYNCHRONOUS call that stats the bind-mounted `nora/dreamer` tree on every fold
-    # (`[dreamer] reload = "mtime"`), so `asyncio.wait_for` cannot bound it and it is
-    # not in this sum; because it blocks rather than awaits, it stalls the whole event
-    # loop rather than one conversation's slot. Unmeasured, and a `git checkout` on
-    # the host mid-fold is the trigger.
-    #
-    # The validator (`Config._the_standing_slot_hold_fits_its_budget`) sums
-    # `timeout_seconds + STANDING_STORE_CALLS_PER_FOLD x store_timeout_seconds`, 40s at
-    # the defaults (20 + 4x5); `[llm] timeout_seconds` is not in the sum because the
-    # fold's model call never sees it. The validator's job is to make the arithmetic
-    # impossible to get wrong silently; lower this and the startup refusal tells the
-    # operator exactly which numbers no longer fit. The default (60) is headroom, not
-    # a fit to any one stage: it admits a config with no `[standing]` section, and the
-    # next stage added to this slot fails the GATE with a number to reason about
-    # rather than failing every deployment that never set the key.
-    max_slot_hold_seconds: float = Field(default=60.0, gt=0)
+    # Covers one pending retry and the current pass's debrief, including store waits.
+    max_slot_hold_seconds: float = Field(default=100.0, gt=0)
 
     @model_validator(mode="after")
     def _max_chars_stays_under_the_database_ceiling(self) -> StandingConfig:
@@ -4435,47 +4414,18 @@ class Config(BaseModel):
 
     @model_validator(mode="after")
     def _the_standing_slot_hold_fits_its_budget(self) -> Config:
-        """The debrief HOLDS the conversation's slot, so the number that
-        matters is the SUM of every bound on that hold, not any one of them.
-
-        `[llm] timeout_seconds` is a REQUIRED field with no default, and the
-        stage's store calls need bounds of their own, so a worst case argued in
-        prose drifts. A stage that can stop a live conversation answering, on a
-        turn that already delivered its reply, is checked here instead: the same
-        refuse-to-start posture `policy.toml` and `max_chars`-above-the-ceiling
-        use.
-
-        **NOT gated on `enabled`**: a number which lies is wrong on the page
-        whether or not it is running, and «the moment it IS switched on is the
-        worst time to discover it meant something else». Gated, setting
-        `max_slot_hold_seconds = 60` while the tier is off boots fine, and then
-        flipping `enabled = true` refuses to start at exactly the moment least
-        wanted. Ungated, the same edit fails on the next restart, while the
-        operator is still holding the config file.
-        """
-        hold = (
-            # **`[llm] timeout_seconds` IS NOT IN THIS SUM.** It bounds nothing in
-            # this stage: the fold's model call is built with `[standing]
-            # timeout_seconds` AND wrapped in a `wait_for` on the same value, and
-            # never sees the `[llm]` figure at all. Including it would make an
-            # operator-facing budget read a longer hold than the real bounded one;
-            # erring safe does not excuse a number that lies about the deployment.
+        """Reject a slot budget that cannot fit a retry plus the pass's own debrief."""
+        one_debrief = (
             self.standing.timeout_seconds
-            # The stage's bounded store awaits, counted by the constant and nowhere
-            # else: a count named in a comment goes stale when the stage changes. The
-            # stage's own test counts the awaits against the constant.
-            + STANDING_STORE_CALLS_PER_FOLD * self.standing.store_timeout_seconds
+            + GRAPH_DEBRIEF_STORE_CALLS * self.standing.store_timeout_seconds
         )
+        hold = 2 * one_debrief
         if hold > self.standing.max_slot_hold_seconds:
             raise ValueError(
-                f"[standing] would hold a conversation's slot for up to "
-                f"{hold:g}s — [standing] timeout_seconds "
-                f"({self.standing.timeout_seconds:g})"
-                f" + {STANDING_STORE_CALLS_PER_FOLD} x store_timeout_seconds "
-                f"({self.standing.store_timeout_seconds:g}) — which is over "
-                f"[standing] max_slot_hold_seconds "
-                f"({self.standing.max_slot_hold_seconds:g}). Lower a timeout or "
-                f"raise the budget deliberately; do not leave them disagreeing."
+                f"[standing] would hold a conversation's slot for up to {hold:g}s "
+                f"(two debriefs at {one_debrief:g}s each), over [standing] "
+                f"max_slot_hold_seconds ({self.standing.max_slot_hold_seconds:g}). "
+                "Lower a timeout or raise the budget deliberately."
             )
         return self
 

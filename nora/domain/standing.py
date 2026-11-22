@@ -82,6 +82,9 @@ DEFAULT_STANDING_STORE_TIMEOUT_SECONDS = 5.0
 #: fifth fails a test instead of silently widening the hold.
 STANDING_STORE_CALLS_PER_FOLD = 4
 
+#: Begin or claim, assemble, remember, admit, and settle or retain unresolved IDs.
+GRAPH_DEBRIEF_STORE_CALLS = 5
+
 #: The ABSOLUTE ceiling on how many items `Standing.working_set` may hold —
 #: the `working_set` sibling of `STANDING_BODY_CEILING_CHARS`: asserted HERE,
 #: in `Standing.__post_init__`, and again as

@@ -205,19 +205,19 @@ def _drive(protocol):
     assert (name, args["text"]) == ("send_reply", ANSWER)
     fold = _serve(
         protocol,
-        _body(protocol.cfg.llm.model, "<standing_prior>prev</standing_prior>", role="system"),
+        _body(protocol.cfg.llm.model, '<debrief_items occasion="called"/>'),
     )
-    assert json.loads(_content(fold))["standing"]
+    assert json.loads(_content(fold)) == {"operations": []}
 
 
 def test_every_scenario_phase_gets_its_own_production_contract(protocol):
     """The 11-call plan answers tool calls against the offered schemas,
-    text on the close calls, `items` on the unit folds and `standing` on
-    the room fold — no phase borrows another phase's answer."""
+    text on the close calls, `items` on the unit folds and `operations` on
+    the tag debrief."""
     _drive(protocol)
     assert protocol.phase == 11 and not protocol.errors
     assert len(protocol.requests) == 11
-    assert protocol.occasions == {"cognition": 6, "turn": 2, "fold_unit": 2, "fold_room": 1}
+    assert protocol.occasions == {"cognition": 6, "turn": 2, "fold_unit": 2, "debrief": 1}
 
 
 def test_an_interleaved_background_pass_cannot_consume_scenario_progress(protocol):
