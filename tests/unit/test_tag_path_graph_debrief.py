@@ -37,7 +37,7 @@ async def test_the_tag_debrief_runs_once_after_reply_settlement_inside_the_slot(
     monkeypatch.setattr(debrief, "run", legacy)
     _patch_debrief(monkeypatch, record, retry=retry)
     turns = [ScriptedTurn(final_text="")] if silent else _reply_turns()
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         runner=ScriptedRunner(turns), debrief_wiring=_wiring(),
     )
     await pipeline.run(_request(replace(_msg(), admitted_unit="fixture-unit")))
@@ -57,7 +57,7 @@ async def test_a_command_slot_retries_before_its_command(monkeypatch):
         calls.append(("command", _held(pipeline), "fixture-unit"))
 
     _patch_debrief(monkeypatch, None, retry=retry)
-    pipeline, _, _, _, background = _build_pipeline(debrief_wiring=_wiring())
+    pipeline, _, _, background = _build_pipeline(debrief_wiring=_wiring())
     monkeypatch.setattr(pipeline, "_run_room_command", command)
     request = _request(replace(_msg(), admitted_unit="fixture-unit"))
     await pipeline.run(replace(request, occasion="room_command"))
@@ -79,7 +79,7 @@ async def test_a_started_pass_debriefs_when_no_trace_can_be_attributed(monkeypat
 
     monkeypatch.setattr(invoke, "run", invocation_fault)
     _patch_debrief(monkeypatch, record)
-    pipeline, _, _, _, background = _build_pipeline(debrief_wiring=_wiring())
+    pipeline, _, _, background = _build_pipeline(debrief_wiring=_wiring())
     await pipeline.run(_request())
     await _drain(background)
 

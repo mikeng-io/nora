@@ -1,12 +1,12 @@
 """The ONE place that reads Settings. Everything else receives dependencies.
 
-A stage never sees Config; it receives a RecordStore, a MemoryStore, a Persons.
+A stage never sees Config; it receives a RecordStore, a Persons.
 That is what makes stages testable in isolation and what stops the god object
 from reforming. Enforced by import-linter (DEC-12).
 
 `build_dependencies` is the whole composition root: it owns the ordered, fatal
 startup validation (`StartupError`, one `except` clause per fallible step) and
-builds the full object graph: `audit`/`memory`/`persons`/`metrics`, the
+builds the full object graph: `audit`/`persons`/`metrics`, the
 `EngagePolicy`, the `ContextAssembler`, both pipelines, the `Dispatcher` that
 glues them, and the runtime pieces (`BackgroundTasks`, `Debounce`).
 `nora.__main__.build_app` has exactly three steps: load config, await this
@@ -133,7 +133,6 @@ from nora.domain.ports import (
     ContextAssembler,
     DreamAdaptor,
     EngagePolicy,
-    MemoryStore,
     RecordStore,
     Speaker,
 )
@@ -188,9 +187,9 @@ class Dependencies:
     whole config is a stage that eventually will — that is how a god object
     grows. Add a named collaborator here instead of widening this type's reach.
 
-    `audit`, `memory`, `policy`, `assembler` are annotated with their ports
-    (`RecordStore`, `MemoryStore`, `EngagePolicy`, `ContextAssembler`), not
-    their concrete classes — all four live inside mypy's strict override
+    `audit`, `policy`, `assembler` are annotated with their ports
+    (`RecordStore`, `EngagePolicy`, `ContextAssembler`), not
+    their concrete classes — all three live inside mypy's strict override
     (`nora.app.*`), so each is a permanent, statically-checked proof that its
     concrete class conforms to the port, not just a one-time `isinstance`
     name-check. `adapter` stays concrete (`SignalAdapter`, not
@@ -209,7 +208,6 @@ class Dependencies:
     """
 
     audit: RecordStore
-    memory: MemoryStore
     persons: Persons
     access: IdentityAccess
     config_reload: ReloadFiles
@@ -678,9 +676,6 @@ async def _compose_dependencies(
     registry = _platforms_adapters.registry
     _stores_instructions = instructions(cfg=cfg, metrics=metrics)
     dreamer_instructions = _stores_instructions.dreamer_instructions
-    _memory_honcho = await _memory_wire.honcho(
-        allowlist=allowlist, cfg=cfg, persons=persons, owner=owner)
-    memory = _memory_honcho.memory
     _runtime_tasks = await tasks(
         cfg=cfg, channel_directory=channel_directory, engine=engine,
         reload_files=reload_files, owner=owner,
@@ -730,7 +725,6 @@ async def _compose_dependencies(
         lessons_reader=lessons_reader,
         media_join=media_join,
         memo_store=memo_store,
-        memory=memory,
         memory_search=memory_search,
         metrics=metrics,
         note_store=note_store,
@@ -795,10 +789,8 @@ async def _compose_dependencies(
     _location_place_areas = _location_wire.place_areas(cfg=cfg, route_client=route_client)
     place_areas = _location_place_areas.place_areas
     _agenda_events = _agenda_wire.events(
-        cfg=cfg,
         content_checks=content_checks,
         event_store=event_store,
-        memory=memory,
         place_areas=place_areas,
         route_client=route_client,
     )
@@ -811,7 +803,6 @@ async def _compose_dependencies(
         engine=engine,
         extra_model_clients=extra_model_clients,
         media_objects=media_objects,
-        memory=memory,
         metrics=metrics,
         model_client_for=model_client_for,
         route_model=route_model,
@@ -837,7 +828,6 @@ async def _compose_dependencies(
         comprehension=comprehension,
         media_objects=media_objects,
         media_sources=media_sources,
-        memory=memory,
         metrics=metrics,
         policy=policy,
         sticker_reader=sticker_reader,
@@ -991,7 +981,6 @@ async def _compose_dependencies(
         compute_jobs=compute_jobs,
         computer_admission=computer_admission,
         computer_scope_for=computer_scope_for,
-        memory=memory,
         metrics=metrics,
         model_client_for=model_client_for,
         persons=persons,
@@ -1013,7 +1002,6 @@ async def _compose_dependencies(
         computer_queue_runner=computer_queue_runner,
         computer_scope_for=computer_scope_for,
         computer_task_backend=computer_task_backend,
-        memory=memory,
         metrics=metrics,
         persons=persons,
         registry=registry,
@@ -1057,7 +1045,6 @@ async def _compose_dependencies(
         doctrine_store=doctrine_store,
         limits=limits,
         llm_state=llm_state,
-        memory=memory,
         metrics=metrics,
         persons=persons,
         preview_source=preview_source,
@@ -1100,7 +1087,6 @@ async def _compose_dependencies(
         lost_jobs=lost_jobs,
         media_join=media_join,
         memo_store=memo_store,
-        memory=memory,
         metrics=metrics,
         note_store=note_store,
         participation_runner=participation_runner,
@@ -1218,7 +1204,6 @@ async def _compose_dependencies(
         engine=engine,
         fire_path=fire_path,
         ingest=ingest,
-        memory=memory,
         metrics=metrics,
         observation_store=observation_store,
         onboarding=onboarding_runner,
@@ -1284,7 +1269,6 @@ async def _compose_dependencies(
         lineage=lineage,
         media_join=media_join,
         memo_store=memo_store,
-        memory=memory,
         metrics=metrics,
         mobility=mobility,
         model_client_for=model_client_for,
@@ -1352,7 +1336,6 @@ async def _compose_dependencies(
     return Dependencies(
         config_reload=reload_files, discord_control=discord_control,
         audit=audit,
-        memory=memory,
         persons=persons_view, access=access,
         managed_services=_stores_managed.services, managed_session=_stores_managed.session,
         managed_link_delivery=link_delivery,

@@ -54,7 +54,7 @@ def specs(scenario, *, clock=lambda: NOW, room_id=ROOM, scope=SCOPE, metrics=Non
     ) if graph else None
     built = build_tool_specs(
         store=None, conversation_id=room_id, conversation_type="group", room=room,
-        persons=people, honcho=None, deliverer=SinkSender(),
+        persons=people, deliverer=SinkSender(),
         metrics=metrics or Metrics(), transit_source=_UNREACHABLE_TRANSIT, clock=clock,
         graph_retrieval=graph_retrieval, pass_scope=scope, memory_retrieval=memory_retrieval,
         content_checks=content_checks,
@@ -299,7 +299,7 @@ def _managed_tools(scenario, access, roster):
     return {
         spec.name: spec.call for spec in build_tool_specs(
             store=None, conversation_id=ROOM, conversation_type="group", room=room,
-            persons=access.persons_view(), honcho=None, deliverer=SinkSender(),
+            persons=access.persons_view(), deliverer=SinkSender(),
             metrics=Metrics(), transit_source=_UNREACHABLE_TRANSIT, clock=lambda: NOW,
             graph_retrieval=reader,
         )

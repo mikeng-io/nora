@@ -4,9 +4,7 @@ ordering and port conformance.
 `nora.testing.FakeRecordStore` is the audit double throughout, per the same
 project rule `tests/unit/test_ingest_stages.py` documents: a port never
 gains a second implementation without a shared contract suite, and
-`FakeRecordStore` already has one. `MemoryStore` has no such suite yet, so
-`FakeMemory` below stays local to this test module, matching
-`test_ingest_stages.py`'s `FakeMemory`.
+`FakeRecordStore` already has one.
 """
 
 from __future__ import annotations
@@ -21,8 +19,6 @@ from nora.domain.ports import (
     ContextAssembler,
     EngageDecision,
     EngagementRequest,
-    MemoryHealth,
-    Recollection,
 )
 from nora.domain.quote_window import QuoteWindow
 from nora.engagement.context import TranscriptInjection
@@ -51,48 +47,6 @@ def _request(msg: NormalizedMessage | None = None, tag_id: str = "tag-1") -> Eng
     return EngagementRequest(message=msg or _msg(), decision=decision, tag_id=tag_id)
 
 
-class FakeMemory:
-    """Local `MemoryStore` double — see module docstring."""
-
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, str]] = []
-        self.queries: list[str] = []
-        self.representation_unreachable = False
-
-    async def ensure_workspace(self) -> None:
-        return None
-
-    async def ensure_peer(self, *, peer_id: str, **_route: str | None) -> None:
-        self.calls.append(("ensure_peer", peer_id))
-
-    async def feed(self, *, peer_id: str, text: str) -> bool:
-        self.calls.append(("feed", peer_id))
-        return True
-
-    async def peer_card(self, *, peer_id: str, **_route: str | None) -> list[str]:
-        self.calls.append(("peer_card", peer_id))
-        return ["likes coffee"]
-
-    async def representation(
-        self, *, peer_id: str, search_query: str, max_conclusions: int = 5,
-        target: str | None = None, **_route: str | None,
-    ) -> Recollection:
-        # Records the QUERY, not just the call: `_recall_tagger` curates its
-        # conclusions to the inbound message, and a double that ignores the
-        # argument cannot tell a working call from one passing "".
-        self.calls.append(("representation", peer_id))
-        self.queries.append(search_query)
-        if self.representation_unreachable:
-            return Recollection(reachable=False)
-        return Recollection(reachable=True, conclusions=("nora told Aaron they would talk",))
-
-    async def health(self) -> MemoryHealth:
-        return MemoryHealth(reachable=True)
-
-    async def aclose(self) -> None:
-        return None
-
-
 _MILES = Persons(
     by_person={"miles": PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")},
     index={("signal", "+852111"): "miles"},
@@ -103,7 +57,7 @@ async def test_a_transcript_read_failure_yields_an_empty_transcript_not_an_error
     store = FakeRecordStore()
     store.fail_on_recent = True
     assembler = TranscriptInjection(
-        audit=store, memory=FakeMemory(), persons=_MILES, context_window=10, metrics=Metrics(),
+        audit=store, persons=_MILES, context_window=10, metrics=Metrics(),
     )
 
     ctx = await assembler.assemble(request=_request())
@@ -116,7 +70,7 @@ async def test_a_transcript_read_failure_counts_nora_errors_total_stage_context(
     store.fail_on_recent = True
     metrics = Metrics()
     assembler = TranscriptInjection(
-        audit=store, memory=FakeMemory(), persons=_MILES, context_window=10, metrics=metrics,
+        audit=store, persons=_MILES, context_window=10, metrics=metrics,
     )
 
     await assembler.assemble(request=_request())
@@ -124,10 +78,9 @@ async def test_a_transcript_read_failure_counts_nora_errors_total_stage_context(
     assert metrics.get("nora_errors_total", stage="context") == 1
 
 
-async def test_an_unmapped_tagger_yields_no_peer_card_and_no_honcho_call():
-    memory = FakeMemory()
+async def test_an_unmapped_tagger_yields_no_tagger_and_no_peer_card():
     assembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=memory,
+        audit=FakeRecordStore(),
         persons=Persons(by_person={}, index={}),   # nobody mapped
         context_window=10, metrics=Metrics(),
     )
@@ -136,7 +89,6 @@ async def test_an_unmapped_tagger_yields_no_peer_card_and_no_honcho_call():
 
     assert ctx.tagger is None
     assert ctx.peer_card == ()
-    assert memory.calls == []
 
 
 async def test_the_transcript_is_oldest_first_and_window_bounded():
@@ -147,7 +99,7 @@ async def test_the_transcript_is_oldest_first_and_window_bounded():
             sender_id="+852111", sender_name="Miles", timestamp=i, body=f"m{i}", raw={},
         ))
     assembler = TranscriptInjection(
-        audit=store, memory=FakeMemory(), persons=_MILES, context_window=3, metrics=Metrics(),
+        audit=store, persons=_MILES, context_window=3, metrics=Metrics(),
     )
 
     ctx = await assembler.assemble(request=_request())
@@ -172,7 +124,7 @@ async def _seeded(
             sender_id="+852111", sender_name="Miles", timestamp=i, body=f"m{i}", raw={},
         ))
     assembler = TranscriptInjection(
-        audit=store, memory=FakeMemory(), persons=_MILES,
+        audit=store, persons=_MILES,
         context_window=context_window, metrics=Metrics(), quote_window=quote_window,
     )
     msg = NormalizedMessage(
@@ -202,7 +154,7 @@ async def test_a_quote_outside_the_window_pulls_the_parent_back_into_it():
             sender_id="+852111", sender_name="Miles", timestamp=i, body=f"m{i}", raw={},
         ))
     assembler = TranscriptInjection(
-        audit=store, memory=FakeMemory(), persons=_MILES, context_window=10, metrics=Metrics(),
+        audit=store, persons=_MILES, context_window=10, metrics=Metrics(),
         quote_window=_quote_window(store),
     )
     msg = NormalizedMessage(
@@ -237,7 +189,7 @@ async def test_a_resolvable_quote_inside_the_window_does_not_grow_it():
             sender_id="+852111", sender_name="Miles", timestamp=i, body=f"m{i}", raw={},
         ))
     assembler = TranscriptInjection(
-        audit=store, memory=FakeMemory(), persons=_MILES, context_window=10, metrics=Metrics(),
+        audit=store, persons=_MILES, context_window=10, metrics=Metrics(),
         quote_window=_quote_window(store),
     )
     msg = NormalizedMessage(
@@ -264,7 +216,7 @@ async def test_a_quote_beyond_the_cap_falls_back_to_the_plain_window():
             sender_id="+852111", sender_name="Miles", timestamp=i, body=f"m{i}", raw={},
         ))
     assembler = TranscriptInjection(
-        audit=store, memory=FakeMemory(), persons=_MILES, context_window=10, metrics=Metrics(),
+        audit=store, persons=_MILES, context_window=10, metrics=Metrics(),
         quote_window=_quote_window(store, quote_window_multiplier=2),
     )
     msg = NormalizedMessage(
@@ -290,7 +242,7 @@ async def test_a_quote_with_no_resolvable_parent_falls_back_to_the_plain_window(
             sender_id="+852111", sender_name="Miles", timestamp=i, body=f"m{i}", raw={},
         ))
     assembler = TranscriptInjection(
-        audit=store, memory=FakeMemory(), persons=_MILES, context_window=3, metrics=Metrics(),
+        audit=store, persons=_MILES, context_window=3, metrics=Metrics(),
         quote_window=_quote_window(store),
     )
     msg = NormalizedMessage(
@@ -320,7 +272,7 @@ async def test_the_transcript_carries_the_identity_name_not_the_profile_name():
         sender_id="+852111", sender_name="陳志明 Chi Ming", timestamp=1, body="hi", raw={},
     ))
     assembler = TranscriptInjection(
-        audit=store, memory=FakeMemory(), persons=_MILES, context_window=10, metrics=Metrics(),
+        audit=store, persons=_MILES, context_window=10, metrics=Metrics(),
     )
 
     ctx = await assembler.assemble(request=_request())
@@ -340,7 +292,7 @@ async def test_an_unmapped_speaker_keeps_a_null_person_name():
         sender_id="+85299999999", sender_name="A Stranger", timestamp=1, body="hi", raw={},
     ))
     assembler = TranscriptInjection(
-        audit=store, memory=FakeMemory(), persons=_MILES, context_window=10, metrics=Metrics(),
+        audit=store, persons=_MILES, context_window=10, metrics=Metrics(),
     )
 
     ctx = await assembler.assemble(request=_request())
@@ -351,7 +303,7 @@ async def test_an_unmapped_speaker_keeps_a_null_person_name():
 
 def test_it_satisfies_the_context_assembler_port():
     assembler: ContextAssembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES, context_window=10,
+        audit=FakeRecordStore(), persons=_MILES, context_window=10,
         metrics=Metrics(),
     )
     assert isinstance(assembler, ContextAssembler)
@@ -364,7 +316,7 @@ def test_it_satisfies_the_context_assembler_port():
 
 def _assembler(memory, **kw):
     return TranscriptInjection(
-        audit=FakeRecordStore(), memory=memory, persons=_MILES,
+        audit=FakeRecordStore(), persons=_MILES,
         context_window=10, metrics=kw.pop("metrics", Metrics()),
         ai_peer=kw.pop("ai_peer", "nora"),
     )
@@ -457,7 +409,7 @@ async def test_the_position_is_read_by_platform_and_conversation():
         fold_count=1, updated_at=1,
     ))
     assembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        audit=FakeRecordStore(), persons=_MILES,
         context_window=10, metrics=Metrics(), policy=_policy(),
         shared=shared_reader(
             standing=store, ai_peer="nora",
@@ -484,11 +436,11 @@ async def test_the_tag_path_reads_presence_at_turn_start():
             return Presence(platform=platform, label="Friends", here_state="up")
 
     wired = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        audit=FakeRecordStore(), persons=_MILES,
         context_window=10, metrics=Metrics(), presence=_Reader(),
     )
     bare = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        audit=FakeRecordStore(), persons=_MILES,
         context_window=10, metrics=Metrics(),
     )
 
@@ -519,10 +471,9 @@ async def test_a_called_floor_reads_no_legacy_store_even_when_wired(exported_spa
 
     store = FakeRecordStore()
     await store.append(message=_msg())
-    memory = FakeMemory()
     assembler = TranscriptInjection(
-        audit=store, memory=memory, persons=_MILES, context_window=10, metrics=Metrics(),
-        ai_peer="nora", tagger_card_conclusions=3, policy=_policy(),
+        audit=store, persons=_MILES, context_window=10, metrics=Metrics(),
+        ai_peer="nora", policy=_policy(),
     )
     for method in (
         "_prefetch", "_notes", "_memos", "_shared",
@@ -550,7 +501,7 @@ async def test_a_store_read_span_carries_row_count_and_duration(exported_spans):
     await store.append(message=_msg())
     await store.append(message=_msg())
     assembler = TranscriptInjection(
-        audit=store, memory=FakeMemory(), persons=_MILES,
+        audit=store, persons=_MILES,
         context_window=10, metrics=Metrics(),
     )
 
@@ -572,7 +523,7 @@ async def test_the_called_presence_read_is_traced(exported_spans):
             return Presence(platform=platform, label=conversation_id, here_state="up")
 
     assembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        audit=FakeRecordStore(), persons=_MILES,
         context_window=10, metrics=Metrics(), presence=Reader(), policy=_policy(),
     )
 
@@ -594,7 +545,7 @@ async def test_a_failing_read_ends_its_span_with_error_status(exported_spans):
     store = FakeRecordStore()
     store.fail_on_recent = True
     assembler = TranscriptInjection(
-        audit=store, memory=FakeMemory(), persons=_MILES,
+        audit=store, persons=_MILES,
         context_window=10, metrics=Metrics(),
     )
 
@@ -621,7 +572,7 @@ async def _seeded_prompt(count: int, *, context_window: int, prompt_window: int,
             sender_id="+852111", sender_name="Miles", timestamp=i, body=f"m{i}", raw={},
         ))
     assembler = TranscriptInjection(
-        audit=store, memory=FakeMemory(), persons=_MILES, context_window=context_window,
+        audit=store, persons=_MILES, context_window=context_window,
         prompt_window=prompt_window, metrics=Metrics(),
         quote_window=_quote_window(store) if quote_window_for_store else None,
     )
@@ -674,7 +625,7 @@ def test_the_composition_root_hands_the_configured_prompt_window_to_the_assemble
     from nora.policy import permissive_policy
 
     assembler = build_assembler(
-        example_config, audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        example_config, audit=FakeRecordStore(), persons=_MILES,
         metrics=Metrics(), policy=permissive_policy(),
     )
     assert assembler._prompt_window == example_config.store.effective_prompt_window == 20

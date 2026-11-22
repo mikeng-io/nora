@@ -68,7 +68,6 @@ from nora.domain.ports import (
     MediaDescription,
     MediaInterpreter,
     MediaObjectStore,
-    MemoryStore,
 )
 from nora.obs.tracing import TRACE_KIND, annotate, attached, span
 
@@ -139,7 +138,6 @@ class MediaComprehension:
         blobs: BlobStore,
         store: MediaObjectStore,
         interpreter: MediaInterpreter,
-        memory: MemoryStore,
         metrics: Any,
         spawn: Callable[[Coroutine[Any, Any, None]], None],
         stickers_enabled: bool = True,
@@ -148,7 +146,6 @@ class MediaComprehension:
         self._blobs = blobs
         self._store = store
         self._interpreter = interpreter
-        self._memory = memory
         self._metrics = metrics
         self._spawn = spawn
         # `[media] sticker_descriptions`. Off excludes stickers from the read

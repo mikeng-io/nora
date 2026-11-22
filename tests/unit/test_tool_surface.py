@@ -39,7 +39,6 @@ from nora.agent.surface import (
     load_onto,
 )
 from nora.obs.metrics import Metrics
-from nora.testing.fakes import FakeMemoryStore
 from tests.unit.test_tool_registry import _deliverer, _FakePersons, _FakeStore
 
 
@@ -48,7 +47,7 @@ def _surface(platform: str = "signal", **kw: Any):
                 persons=_FakePersons())
     return ToolRegistry().surface(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         metrics=Metrics(), room=room, **kw,
     )
 
@@ -74,7 +73,7 @@ def test_build_is_the_surface_without_deferral():
                 persons=_FakePersons())
     built = ToolRegistry().build(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         metrics=Metrics(), room=room,
     )
     assert _names(built) == _names(_surface().tools)

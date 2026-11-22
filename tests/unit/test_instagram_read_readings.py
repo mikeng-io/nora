@@ -53,7 +53,6 @@ from nora.policy import Conversation, Policy
 from nora.testing import (
     FakeBlobStore,
     FakeMediaDescriptionStore,
-    FakeMemoryStore,
     FakeRosterSource,
     FakeVideoReadingStore,
 )
@@ -627,7 +626,7 @@ def world(bridge, tmp_path, monkeypatch):
         )
         specs = registry.specs(
             store=_NoStore(), conversation_id="g1", conversation_type="group",
-            persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+            persons=persons, deliverer=SinkSender(),
             metrics=metrics, room=room, **turn,
         )
         return {s.name: s.call for s in specs}

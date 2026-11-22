@@ -21,7 +21,7 @@ from nora.app.documents_service import DocumentService
 from nora.domain.documents import handle_of
 from nora.domain.models import PersonRef
 from nora.obs.metrics import Metrics
-from nora.testing import FakeDocumentStore, FakeMediaObjectStore, FakeMemoryStore, FakeRosterSource
+from nora.testing import FakeDocumentStore, FakeMediaObjectStore, FakeRosterSource
 from tests.fakes import SinkSender
 
 MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
@@ -76,7 +76,6 @@ def _tools(
         conversation_id=conversation_id,
         conversation_type="group",
         persons=_Persons(),
-        honcho=FakeMemoryStore(),
         deliverer=SinkSender(),
         metrics=metrics or Metrics(),
         room=room,

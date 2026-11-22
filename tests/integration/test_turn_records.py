@@ -12,7 +12,7 @@ from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import Conversation, Policy
-from nora.testing import FakeAdapter, FakeAgentRunner, FakeMemoryStore, ScriptedTurn
+from nora.testing import FakeAdapter, FakeAgentRunner, ScriptedTurn
 from tests.infra.test_tag_trace_store import _tag_trace_db as _tag_trace_db
 from tests.infra.test_tag_trace_store import tag_trace_engine as tag_trace_engine
 from tests.unit.cognition_rig import session as run_cognition
@@ -36,7 +36,7 @@ async def test_tag_and_fire_write_the_trace_and_link_their_sent_rows(
     traces = SqlTagTraceStore(tag_trace_engine)
     audit = SqlRecordStore(tag_trace_engine)
     if occasion == "tag":
-        pipeline, _, _, _, background = _build_pipeline(
+        pipeline, _, _, background = _build_pipeline(
             audit=audit, runner=_agent(), tag_trace_store=traces, policy=_policy(),
         )
         msg = NormalizedMessage(
@@ -48,7 +48,7 @@ async def test_tag_and_fire_write_the_trace_and_link_their_sent_rows(
         await _drain(background)
     else:
         path = FirePath(
-            persons=Persons(by_person={}, index={}), records=audit, memory=FakeMemoryStore(),
+            persons=Persons(by_person={}, index={}), records=audit,
             doctrine_store=doctrine_store, metrics=Metrics(), runner=_agent(),
             adapters={"signal": FakeAdapter(account="self")}, registry=ToolRegistry(),
             canary="test-canary", display_name="Nora", ai_peer="nora", context_window=10,

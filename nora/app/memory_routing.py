@@ -1,40 +1,14 @@
-"""Where each unit's memory lives: workspace > unit > room, resolved once
-(DEC-214).
+"""Which Nora workspaces and (unit, workspace) scopes a person belongs to,
+read from `policy.toml` alone: the portal's page of a person's accounts.
 
-Three files each hold one part, and this is the one place they meet:
-
-- `policy.toml` holds the STRUCTURE — which Nora workspace each unit belongs
-  to (`[units.<unit>] workspace = "..."`), and which unit each room belongs
-  to (`[[conversations]] unit = "..."`).
-- `identity.toml` holds the external BINDING — which Honcho workspace a Nora
-  workspace's person models live in (`[workspaces.<name>] honcho_workspace
-  = "..."`). A Nora workspace with no binding uses its own name.
-- `config.toml`'s `honcho.workspace_id` is only the back-compat default: the
-  Honcho workspace of the IMPLICIT workspace a policy with no `[units]`
-  table puts every unit in.
-
-A Nora workspace and a Honcho workspace are different things with different
-names (GLOSSARY.md): the first is the operator's grouping of units, the
-second is the Honcho tenant whose peers are that grouping's people. This
-module is what keeps them from being confused — `nora.infra.honcho` only ever
-sees Honcho ids, and the policy never names one.
-
-Here, in the composition layer, because `nora.infra` may not import the
-policy (the import-linter contract «the room policy is composed in»).
+Here, in the composition layer, because it reads the room policy, which
+`nora.infra` may not import (the import-linter contract «the room policy is
+composed in»).
 """
 
 from __future__ import annotations
 
-from nora.memory_routing import MemoryRoutingError, build_workspace_router, honcho_workspaces
 from nora.policy import DEFAULT_WORKSPACE, Policy
-
-__all__ = [
-    "MemoryRoutingError",
-    "build_workspace_router",
-    "honcho_workspaces",
-    "profile_scopes_of_person",
-    "workspaces_of_person",
-]
 
 
 def workspaces_of_person(policy: Policy, person_id: str) -> tuple[str, ...]:

@@ -17,7 +17,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from nora.domain.ports import MemoryStore, RecordStore
+from nora.domain.ports import RecordStore
 from nora.domain.reminders import ReminderStore
 
 # All-pending, not due(): the operator's-eye-view nora/app/cli.py's
@@ -32,7 +32,7 @@ _UPCOMING_SHOWN = 10
 
 
 async def build_status_payload(
-    *, store: RecordStore, honcho: MemoryStore, reminders: ReminderStore,
+    *, store: RecordStore, reminders: ReminderStore,
     started_at: float,
 ) -> dict[str, Any]:
     try:

@@ -173,7 +173,7 @@ def _parking_status_tool(parking_source):
 
     specs = build_tool_specs(
         store=None, conversation_id="c", conversation_type="group",
-        persons=None, honcho=None, deliverer=None, room=None,
+        persons=None, deliverer=None, room=None,
         transit_source=None, parking_source=parking_source, metrics=Metrics(),
     )
     return next(s for s in specs if s.name == "parking_status")

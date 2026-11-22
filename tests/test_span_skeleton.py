@@ -466,8 +466,8 @@ async def test_traced_read_records_row_count_and_duration_on_success(spans):
 
 
 async def test_traced_read_uses_count_when_the_result_has_no_len(spans):
-    """`MemoryStore.representation` answers a `Recollection`, which has no `__len__`, so
-    `_row_count` alone would leave it unmeasured forever even though the read plainly has
+    """A read that answers an object with no `__len__` (a recollection of conclusions) would
+    be left unmeasured forever by `_row_count` alone, even though the read plainly has
     a count. `count=` is the caller's own answer to "how many", for a result `_row_count`
     cannot read.
 

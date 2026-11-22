@@ -28,7 +28,7 @@ from nora.testing.managed import (
     FakeLinkRequests,
     FakeTopologySource,
 )
-from tests.unit.test_engagement_context import FakeMemory, _request
+from tests.unit.test_engagement_context import _request
 
 _M_ROOM = Scope(ScopeKind.ROOM, room_scope_id("signal", "g1"))
 _M_SIBLING = Scope(ScopeKind.ROOM, room_scope_id("signal", "g2"))
@@ -69,7 +69,7 @@ async def _managed_person(
 
 def _managed_assembler(store: FakeRecordStore, access) -> TranscriptInjection:
     return TranscriptInjection(
-        audit=store, memory=FakeMemory(),
+        audit=store,
         persons=Persons(by_person={}, index={}),   # unused under managed
         context_window=10, metrics=Metrics(), access=access)
 

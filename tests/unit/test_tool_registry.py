@@ -26,7 +26,7 @@ from nora.agent.surface import WORKER_ONLY_TOOLS
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget
 from nora.obs.metrics import Metrics
-from nora.testing import FakeBrowserRunner, FakeMemoryStore, FakeSandboxRuntime
+from nora.testing import FakeBrowserRunner, FakeSandboxRuntime
 from tests.fakes import SinkSender
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -118,7 +118,7 @@ def test_the_document_tools_are_offered_only_when_documents_are_wired():
 def _surface(registry: ToolRegistry, *, defer: bool):
     return registry.surface(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         metrics=Metrics(), room=_room(), defer=defer,
     )
 
@@ -170,7 +170,7 @@ def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") ->
     """
     return registry.build(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         metrics=Metrics(), room=_room(), dream_adaptor=dream_adaptor,
     )
 
@@ -282,7 +282,7 @@ def test_non_discord_catalog_omits_music_tools():
              "music_status", "set_music_volume"}
     signal = registry.surface(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         metrics=Metrics(), room=signal_room,
     )
     assert not {t.tool_name for t in signal.tools} & music
@@ -291,7 +291,7 @@ def test_non_discord_catalog_omits_music_tools():
     assert not signal.admitted & music
     discord = registry.surface(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         metrics=Metrics(), room=_room(),
     )
     assert music <= {t.tool_name for t in discord.tools}
@@ -535,7 +535,7 @@ def test_specs_carry_the_same_budgets_as_budgets():
     registry = ToolRegistry()
     specs = registry.specs(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         # The DECLARED surface — see `_built_tools`.
         metrics=Metrics(), room=_room(), dream_adaptor="proactive",
     )
@@ -607,7 +607,7 @@ def test_every_tool_declares_whether_it_can_be_asked_about_another_moment():
     registry = ToolRegistry()
     specs = registry.specs(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         # The DECLARED surface — see `_built_tools`.
         metrics=Metrics(), room=_room(), dream_adaptor="proactive",
     )
@@ -830,7 +830,7 @@ async def test_the_built_surface_gates_a_servers_tools_on_its_aggregate_budget()
     )
     tools = {t.tool_name: t for t in registry.build(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         metrics=Metrics(), room=_room(), allowed_mcp=frozenset({"demo"}),
     ) if t.tool_name.startswith("demo_")}
     assert set(tools) == {"demo_server_status", "demo_weekly"}
@@ -858,7 +858,7 @@ def test_build_includes_only_the_allowed_mcp_servers_tools():
     registry = ToolRegistry(mcp_tools=_mcp_groups())
     tools = registry.build(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         metrics=Metrics(), room=_room(), allowed_mcp=frozenset({"demo"}),
     )
     names = {t.tool_name for t in tools}

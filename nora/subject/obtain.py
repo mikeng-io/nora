@@ -407,15 +407,6 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     return cfg
 
 
-def memory_endpoint() -> tuple[str, str]:
-    """The template's external-memory origin and default workspace."""
-    cfg = _load_config(_TEMPLATE, require_secrets=False)
-    base_url = cfg.honcho.base_url
-    if not _resolves(_DOCKER_HOST):
-        base_url = _from_host(base_url)
-    return base_url, cfg.honcho.workspace_id
-
-
 def build_config(spec: SubjectSpec) -> Config:
     """The template, copied into `spec.workdir`, baselined, then overridden.
 

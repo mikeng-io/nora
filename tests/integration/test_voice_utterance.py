@@ -28,7 +28,7 @@ from nora.ingest.policy import TriggerTextPolicy
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import load_policy
-from nora.testing import FakeAgentRunner, FakeMemoryStore
+from nora.testing import FakeAgentRunner
 from nora.web.voice import register_voice
 from tests.builders import load_example_config, override_config
 from tests.conftest import build_test_doctrine_store
@@ -97,12 +97,10 @@ async def client(tmp_path, monkeypatch, clean_pg_url, aiohttp_client):
     run_migrations(database_url)
     engine = create_sql_engine(database_url)
     store = SqlRecordStore(engine)
-    memory = FakeMemoryStore()
     dispatcher, _engagement, background, _trigger = build_offline_pipeline(
         cfg,
         adapter=SinkSender(),
         audit=store,
-        memory=memory,
         access=IdentityAccess.for_files(
             persons=load_persons(persons_path), policy=load_policy(policy_path)),
         doctrine_store=build_test_doctrine_store(),
@@ -190,10 +188,9 @@ async def test_an_utterance_from_an_unmarked_guild_records_nothing(
     run_migrations(database_url)
     engine = create_sql_engine(database_url)
     store = SqlRecordStore(engine)
-    memory = FakeMemoryStore()
     background = BackgroundTasks()
     ingest = IngestPipeline(
-        audit=store, memory=memory,
+        audit=store,
         access=IdentityAccess.for_files(
             load_persons(persons_path), load_policy(policy_path)),
         policy=TriggerTextPolicy(cfg.engagement.trigger.text),

@@ -55,7 +55,7 @@ def _room(access, tagger=None, members=("+852111",)):
 def _tools(room, store):
     deps = ToolDeps(
         store=None, conversation_id="g1", conversation_type="group",
-        persons=room.access.persons_view(), honcho=None, deliverer=None,
+        persons=room.access.persons_view(), deliverer=None,
         metrics=Metrics(), room=room, transit_source=None,
         reminders=store, clock=lambda: _T0)
     return {tool.name: tool.call for tool in build(deps)}

@@ -23,7 +23,6 @@ from nora.testing import (
     FakeMediaInterpreter,
     FakeMediaObjectStore,
     FakeMediaSource,
-    FakeMemoryStore,
     FakeRecordStore,
 )
 
@@ -588,11 +587,10 @@ async def test_r51_a_media_description_is_never_invented():
         (FakeMediaInterpreter("", title="", content=""), "empty"),
     ):
         store = FakeMediaObjectStore()
-        memory = FakeMemoryStore()
         metrics = Metrics()
         spawn = _CollectingSpawn()
         job = MediaComprehension(
-            blobs=blobs, store=store, interpreter=interpreter, memory=memory,
+            blobs=blobs, store=store, interpreter=interpreter,
             metrics=metrics, spawn=spawn,
         )
         job.schedule(
@@ -616,7 +614,7 @@ async def test_r51_a_media_description_is_never_invented():
     spawn = _CollectingSpawn()
     job = MediaComprehension(
         blobs=blobs, store=store, interpreter=FakeMediaInterpreter("a cartoon cat"),
-        memory=FakeMemoryStore(), metrics=Metrics(), spawn=spawn,
+        metrics=Metrics(), spawn=spawn,
     )
     job.schedule(
         subjects=(subject,), platform="signal", conversation_id="g1",
@@ -1022,7 +1020,7 @@ async def test_r90_the_body_carries_the_handle_and_the_render_carries_the_readin
         content="生記粥麵", created_at_ms=1,
     )])
     assembler = TranscriptInjection(
-        audit=audit, memory=FakeMemoryStore(), persons=_R90_PERSONS,
+        audit=audit, persons=_R90_PERSONS,
         context_window=10, metrics=Metrics(),
         # The SHARED join, with the REAL screen — the same object every other
         # transcript builder is handed (`tests/architecture/

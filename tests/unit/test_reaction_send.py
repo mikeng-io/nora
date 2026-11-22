@@ -23,7 +23,7 @@ def rig(*, fails=False, permitted=True, observer=None, cap=3, metrics=None):
                          message_cap=cap, audience='tag', metrics=metrics,
                          send_permitted=permitted, on_delivered=observer)
     specs = ToolRegistry().specs(store=store, conversation_id='room',
-                                conversation_type='group', persons=None, honcho=None,
+                                conversation_type='group', persons=None,
                                 deliverer=delivery, metrics=metrics,
                                 room=SimpleNamespace(platform='signal', conversation_id='room',
                                                      tagger=None), transcript=(ROW,))

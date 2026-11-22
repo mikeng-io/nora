@@ -5,7 +5,7 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.obs.health import LLMState, build_health_app
 from nora.obs.metrics import Metrics
-from nora.testing import FakeMemoryStore, FakeRecordStore
+from nora.testing import FakeRecordStore
 from tests.fakes import SinkSender
 
 
@@ -28,14 +28,13 @@ async def client(aiohttp_client, store):
 
     metrics = Metrics()
     app = build_health_app(
-        adapter=SinkSender(), store=store, honcho=FakeMemoryStore(),
+        adapter=SinkSender(), store=store,
         doctrine_store=DoctrineStore(
             __import__("pathlib").Path("nora/doctrine"), canary="C", metrics=metrics),
         metrics=metrics, started_at=0.0, llm_state=LLMState(),
     )
     c = await aiohttp_client(app)
     c.metrics = metrics
-    c.honcho = app["honcho"]
     return c
 
 
@@ -65,21 +64,12 @@ async def test_health_returns_503_when_the_store_is_unreachable(aiohttp_client):
 
     metrics = Metrics()
     app = build_health_app(adapter=SinkSender(), store=_BrokenStore(),
-                           honcho=FakeMemoryStore(), metrics=metrics,
+                           metrics=metrics,
                            doctrine_store=DoctrineStore(Path("nora/doctrine"), canary="C",
                                                        metrics=metrics),
                            started_at=0.0, llm_state=LLMState())
     c = await aiohttp_client(app)
     assert (await c.get("/health")).status == 503
-
-
-async def test_health_does_not_read_the_memory_backend(client):
-    """The container healthcheck path: a backend that is down must not make the
-    service report unhealthy, and nothing in the body may say it was asked."""
-    client.honcho.fail = True
-    response = await client.get("/health")
-    assert response.status == 200
-    assert "honcho" not in await response.json()
 
 
 async def test_health_reports_the_doctrine_sha256(client):
@@ -101,7 +91,7 @@ async def test_health_reports_the_last_omniroute_success(aiohttp_client, store):
     state.last_success_at = 1700.0
     metrics = Metrics()
     app = build_health_app(adapter=SinkSender(), store=store,
-                           honcho=FakeMemoryStore(), metrics=metrics,
+                           metrics=metrics,
                            doctrine_store=DoctrineStore(Path("nora/doctrine"), canary="C",
                                                        metrics=metrics),
                            started_at=0.0, llm_state=state)
@@ -180,7 +170,7 @@ async def test_health_reports_every_enabled_platform(aiohttp_client, store):
     signal = SinkSender()
     app = build_health_app(
         adapter=signal, adapters={"signal": signal, "discord": _DeafAdapter()},
-        store=store, honcho=FakeMemoryStore(),
+        store=store,
         doctrine_store=DoctrineStore(
             __import__("pathlib").Path("nora/doctrine"), canary="C", metrics=metrics),
         metrics=metrics, started_at=0.0, llm_state=LLMState(),
@@ -237,7 +227,7 @@ async def test_health_REPORTS_a_degraded_platform_and_stays_200(aiohttp_client, 
     signal = SinkSender()
     app = build_health_app(
         adapter=signal, adapters={"signal": signal, "instagram": _DegradedAdapter()},
-        store=store, honcho=FakeMemoryStore(),
+        store=store,
         doctrine_store=DoctrineStore(
             __import__("pathlib").Path("nora/doctrine"), canary="C", metrics=metrics),
         metrics=metrics, started_at=0.0, llm_state=LLMState(),
@@ -263,7 +253,7 @@ async def test_a_merely_DISCONNECTED_platform_is_still_unhealthy(aiohttp_client,
     signal = SinkSender()
     app = build_health_app(
         adapter=signal, adapters={"signal": signal, "discord": _DeafAdapter()},
-        store=store, honcho=FakeMemoryStore(),
+        store=store,
         doctrine_store=DoctrineStore(
             __import__("pathlib").Path("nora/doctrine"), canary="C", metrics=metrics),
         metrics=metrics, started_at=0.0, llm_state=LLMState(),
@@ -290,7 +280,7 @@ def _fake_health_app(**kw):
 
     metrics = Metrics()
     return build_health_app(
-        adapter=SinkSender(), store=FakeRecordStore(), honcho=FakeMemoryStore(),
+        adapter=SinkSender(), store=FakeRecordStore(),
         doctrine_store=DoctrineStore(Path("nora/doctrine"), canary="C", metrics=metrics),
         metrics=metrics, started_at=0.0, llm_state=LLMState(), **kw,
     )

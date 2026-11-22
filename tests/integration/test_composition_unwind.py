@@ -35,7 +35,6 @@ from nora.app.lifecycle import StartupOwner, close_dependencies
 from nora.config import load
 from nora.config_reload import ReloadFiles
 from nora.infra.computer.manager import ScopeBrowserManager
-from nora.infra.honcho import HonchoClient
 from nora.infra.sql.audit import SqlRecordStore
 from nora.obs.metrics import Metrics
 from nora.platform.bridge.client import BridgeAdapter
@@ -161,7 +160,7 @@ def unwind_spies(monkeypatch):
     """One spy per acquisition owner the unwind must reach — each calls the
     REAL close through, so "called" means "actually closed"."""
     seen = SimpleNamespace(
-        audit=[], memory=[], created_clients=[], closed_clients=[],
+        audit=[], created_clients=[], closed_clients=[],
         created_redis=[], closed_redis=[], reload_started=None,
         reload_cancelled=None,
     )
@@ -171,12 +170,6 @@ def unwind_spies(monkeypatch):
         seen.audit.append(self)
         await orig_aclose(self)
     monkeypatch.setattr(SqlRecordStore, "aclose", audit)
-
-    orig_maclose = HonchoClient.aclose
-    async def memory(self):
-        seen.memory.append(self)
-        await orig_maclose(self)
-    monkeypatch.setattr(HonchoClient, "aclose", memory)
 
     orig_create = factory.create_client
     def create_client(*args, **kwargs):
@@ -372,27 +365,6 @@ async def test_replacing_a_registration_closes_only_the_latest():
     assert closes == ["full"]
 
 
-async def test_close_dependencies_closes_memory():
-    """`memory.aclose` (declared on the port, called by `nora.app.cli`) was
-    never in the shutdown list — a grounded hole this change fixes."""
-    calls: list[str] = []
-
-    async def mark(name: str) -> None:
-        calls.append(name)
-
-    deps = SimpleNamespace(
-        audit=SimpleNamespace(aclose=lambda: mark("audit")),
-        memory=SimpleNamespace(aclose=lambda: mark("memory")),
-        model_clients=[], client=SimpleNamespace(close=lambda: mark("client")),
-        computer_lifecycle=None, discord_control=None,
-        registry=SimpleNamespace(adapters={}), bridge_runtime=None,
-        background=SimpleNamespace(cancel_all=lambda: mark("background")),
-        subagent_backend=None, cognition_shutdown=None,
-    )
-    await close_dependencies(deps)
-    assert "memory" in calls
-
-
 # --------------------------------------------------- build_dependencies
 
 
@@ -417,10 +389,9 @@ async def test_a_mid_build_failure_unwinds_everything_acquired(
     # abandoned on the loop.
     assert unwind_spies.reload_started is not None
     assert unwind_spies.reload_cancelled is not None
-    # The real resources closed: adapter session, honcho handle, engine.
+    # The real resources closed: adapter session, engine.
     assert track_bridge_sessions.sessions
     assert all(s.closed for s in track_bridge_sessions.sessions)
-    assert unwind_spies.memory
     assert unwind_spies.audit
 
 
@@ -451,7 +422,6 @@ async def test_cancelling_the_build_unwinds_and_keeps_cancellation(
     assert unwind_spies.reload_cancelled is not None
     assert track_bridge_sessions.sessions
     assert all(s.closed for s in track_bridge_sessions.sessions)
-    assert unwind_spies.memory
     assert unwind_spies.audit
 
 
@@ -509,14 +479,13 @@ async def test_a_late_build_failure_unwinds_bridge_and_model_resources(
     assert len(unwind_spies.created_redis) == 1
     assert unwind_spies.created_redis[0] in unwind_spies.closed_redis
 
-    # The model lane's client closed; the adapter session, memory handle
-    # and engine are all unwound PAST the failing `cancel_all`.
+    # The model lane's client closed; the adapter session and engine are all
+    # unwound PAST the failing `cancel_all`.
     assert unwind_spies.created_clients
     assert all(
         c in unwind_spies.closed_clients for c in unwind_spies.created_clients)
     assert track_bridge_sessions.sessions
     assert all(s.closed for s in track_bridge_sessions.sessions)
-    assert unwind_spies.memory
     assert unwind_spies.audit
 
 
@@ -551,7 +520,6 @@ async def test_a_successful_build_transfers_each_resource_once(
         c in unwind_spies.closed_clients for c in unwind_spies.created_clients)
     assert len(unwind_spies.closed_redis) == len(unwind_spies.created_redis)
     assert len(unwind_spies.audit) == 1
-    assert len(unwind_spies.memory) == 1
     assert unwind_spies.reload_cancelled is not None
 
 
@@ -611,17 +579,19 @@ async def test_a_cleanup_cancellation_preserves_the_build_error(
             raise RuntimeError("hydrate broke")
         monkeypatch.setattr(Debounce, "hydrate", hydrate_fails)
 
-        async def memory_close_cancels(self):
-            unwind_spies.memory.append(self)
+        orig_adapter_close = BridgeAdapter.close
+
+        async def adapter_close_cancels(self):
+            track_bridge_sessions.closed.append(self)
+            await orig_adapter_close(self)
             raise asyncio.CancelledError()
-        monkeypatch.setattr(HonchoClient, "aclose", memory_close_cancels)
+        monkeypatch.setattr(BridgeAdapter, "close", adapter_close_cancels)
 
         with pytest.raises(RuntimeError, match="hydrate broke"):
             await composition.build_dependencies(bridge)
 
-    assert unwind_spies.memory, "the cancelled close itself ran"
-    # Both sides of it kept unwinding: the adapter session before it and
-    # the audit engine after it.
+    assert track_bridge_sessions.closed, "the cancelled close itself ran"
+    # The close after it kept unwinding: the audit engine.
     assert track_bridge_sessions.sessions
     assert all(s.closed for s in track_bridge_sessions.sessions)
     assert unwind_spies.audit
@@ -656,7 +626,6 @@ async def test_a_close_failure_during_cancellation_keeps_the_cancellation(
 
     assert attempts, "the audit close ran and failed — the swallowed error"
     # Everything before it in the unwind still ran.
-    assert unwind_spies.memory
     assert track_bridge_sessions.sessions
     assert all(s.closed for s in track_bridge_sessions.sessions)
 

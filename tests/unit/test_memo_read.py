@@ -9,7 +9,7 @@ from typing import Any
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.obs.metrics import Metrics
-from nora.testing import FakeMemoryStore, FakeRosterSource
+from nora.testing import FakeRosterSource
 from nora.testing.memo_store import InMemoryMemoStore
 from tests.fakes import SinkSender
 
@@ -40,7 +40,7 @@ def _tools(memos: InMemoryMemoStore | None, unit: str | None = "u") -> dict[str,
     )
     specs = registry.specs(
         store=_NullStore(), conversation_id=GROUP, conversation_type="group",
-        persons=_Persons(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=_Persons(), deliverer=SinkSender(),
         metrics=Metrics(), room=room,
     )
     return {spec.name: spec.call for spec in specs}

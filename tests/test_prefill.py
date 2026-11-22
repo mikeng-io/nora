@@ -401,25 +401,6 @@ def test_the_peer_history_says_its_lines_are_undated_too():
     assert "none of it is current" in tag
 
 
-def test_the_strip_and_the_undated_note_are_one_decision():
-    """A PAIR, and neither half is correct alone. The client strips the batch
-    stamp — restoring it would put a date shared by many conclusions beside one
-    of them — and the block says «undated» because of it. Stripping without
-    saying so is wrong; saying «undated» while a date renders would be a lie.
-    Removing EITHER half reds this."""
-    from nora.infra.honcho.client import _STAMP
-
-    stored = "[2026-08-19 10:17:08] nora agreed to speak all Chinese after miles asked."
-    injected = _STAMP.sub("", stored)
-    assert injected == "nora agreed to speak all Chinese after miles asked."
-
-    body = build_prefill(_ctx(_rows("hi"), tagger_card=(injected,)),
-                         display_name="Nora", context_window=40)[1]["content"][0]["text"]
-    assert injected in body
-    assert "2026-08-19" not in body
-    assert "undated" in _opening_tag(body, "peer_history")
-
-
 def test_prefill_escapes_angle_brackets():
     text = build_prefill(_ctx(_rows("2 < 3 & 4 > 1")), display_name="Nora",
                          context_window=40)[1]["content"][0]["text"]

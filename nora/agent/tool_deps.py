@@ -121,7 +121,6 @@ class ToolDeps:
     conversation_id: str
     conversation_type: str
     persons: Any
-    honcho: Any
     deliverer: Any
     metrics: Any
     room: Room

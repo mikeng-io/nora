@@ -158,7 +158,7 @@ def _world(*, content_checks=True):
                 persons=persons, tagger=PERSON)
     tools = {tool.name: tool.call for tool in build_tool_specs(
         store=FakeRecordStore(), conversation_id="guild/room", conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(), room=room,
+        persons=persons, deliverer=None, metrics=Metrics(), room=room,
         content_checks=content_checks,
         unit_for=lambda *_: "unit", transit_source=SimpleNamespace(arrivals=calls["arrivals"]),
         route_source=SimpleNamespace(

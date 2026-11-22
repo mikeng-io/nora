@@ -54,8 +54,6 @@ def _service(
     return GatheringService(
         store=store or FakeGatheringStore(),
         route_source=route_source or _FakeRouteSource(),
-        honcho=honcho or _NoHoncho(),
-        ai_peer="nora",
         now=lambda: NOW,
         place_areas=place_areas,
     )
@@ -717,7 +715,7 @@ async def test_a_room_moved_to_another_unit_does_not_take_its_old_events():
         conversation_id="signal:room-a", requester_person_id="miles",
         title="Work dinner", platform="signal", unit_id="work",
     )
-    friends = _service(store=store, honcho=_NoHoncho())
+    friends = _service(store=store)
 
     assert not await friends.list_events(
         conversation_id="signal:room-a", unit_id="friends", platform="signal",
@@ -768,7 +766,7 @@ async def test_every_event_mutation_refuses_the_same_room_id_on_another_platform
         conversation_id="signal:room-a", requester_person_id="miles",
         title="Work dinner", platform="signal", unit_id="work",
     )
-    svc = _service(store=store, honcho=_NoHoncho())
+    svc = _service(store=store)
     for name, call in _event_mutations(
         svc, event.id, platform="whatsapp", unit_id="work",
     ).items():
@@ -785,7 +783,7 @@ async def test_every_event_mutation_refuses_another_units_event_with_the_same_ro
         conversation_id="signal:room-a", requester_person_id="miles",
         title="Work dinner", platform="signal", unit_id="work",
     )
-    svc = _service(store=store, honcho=_NoHoncho())
+    svc = _service(store=store)
     for name, call in _event_mutations(svc, foreign.id).items():
         with pytest.raises(GatheringNotFoundError):
             await call()
@@ -800,7 +798,7 @@ async def test_every_event_mutation_refuses_a_row_with_no_stored_platform():
     legacy = await store.create(_legacy_event(
         conversation_id="signal:room-a", title="Pre-migration dinner",
     ))
-    svc = _service(store=store, honcho=_NoHoncho())
+    svc = _service(store=store)
     for _name, call in _event_mutations(svc, legacy.id).items():
         with pytest.raises(GatheringNotFoundError):
             await call()

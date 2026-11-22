@@ -70,7 +70,7 @@ def _specs(*, platform: str, persons=None, music=None, tagger=None) -> dict:
     )
     specs = build_tool_specs(
         store=None, conversation_id="g1/c1", conversation_type="group",
-        persons=persons or _FakePersons(), honcho=None, deliverer=None,
+        persons=persons or _FakePersons(), deliverer=None,
         metrics=Metrics(), room=room, transit_source=None,
         music=music,
     )

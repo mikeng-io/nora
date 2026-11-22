@@ -87,13 +87,6 @@ def _request(msg: NormalizedMessage) -> EngagementRequest:
     )
 
 
-class _Memory:
-    """The Honcho port, inert: the pre-fetch never reads it."""
-
-    async def peer_card(self, **_: object) -> list[str]:
-        return []
-
-
 def _search(index: FakeMemoryIndex, metrics: Metrics) -> MemorySearch:
     graph = FakeMemoryGraph()
     graph.indexed.update(index.nodes)
@@ -114,7 +107,7 @@ async def _assemble(
     metrics = metrics or Metrics()
     policy = _policy()
     assembler = TranscriptInjection(
-        audit=audit or FakeRecordStore(), memory=_Memory(),  # type: ignore[arg-type]
+        audit=audit or FakeRecordStore(), # type: ignore[arg-type]
         persons=persons, context_window=10, metrics=metrics, policy=policy,
         lineage=LineagePolicy.from_policy(policy),
         memory_search=_search(index, metrics) if index is not None else None,

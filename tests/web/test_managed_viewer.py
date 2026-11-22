@@ -17,7 +17,7 @@ from nora.domain.management import Scope, ScopeKind
 from nora.people import AccountSessions, PortalScopes
 from nora.people.app.managed_authority import AuthorityService
 from nora.persons import Persons
-from nora.testing import FakeMemoryStore, FakeRecordStore
+from nora.testing import FakeRecordStore
 from nora.testing.managed import (
     FakeAuthorityBackend,
     FakeBindingStore,
@@ -79,9 +79,9 @@ async def surface(aiohttp_client, request):
     app = web.Application(middlewares=[observe_write])
     app["test_write_started"] = entered
     app["test_authority"] = backend
-    register_web_routes(app, store=FakeRecordStore(), honcho=FakeMemoryStore(),
+    register_web_routes(app, store=FakeRecordStore(),
         reminders=FakeReminderStore(), persons=Persons(by_person={"ken": KEN, "mei": MEI, "jo": JO},
-                                                     index={}), ai_peer="nora", started_at=0.0,
+                                                     index={}), started_at=0.0,
         presence=None, presence_circles=(Circle("generated-circle", frozenset({"ken", "jo"})),),
         skills_dir=NO_SKILLS_DIR, events=_fake_events(),
         doctrine_store=build_test_doctrine_store(), documents=world.store, rooms_of=world.rooms_of,

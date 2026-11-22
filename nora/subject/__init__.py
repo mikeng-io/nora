@@ -47,12 +47,6 @@ from .knowledge import (
     silent_failures,
     watch,
 )
-from .memory_workspace import (
-    DrawWorkspace,
-    draw_workspace,
-    new_run_id,
-    sweep_stale_draw_workspaces,
-)
 from .model_gateway import ModelGateway
 from .obtain import (
     DEFAULT_ROOM,
@@ -64,6 +58,7 @@ from .obtain import (
     obtain,
 )
 from .proactive import ActPass, act, owe
+from .run_id import new_run_id
 from .sandbox import (
     Sandboxed,
     SharedDatabaseMutatedError,
@@ -103,7 +98,6 @@ __all__ = [
     "AccountSeed",
     "ActPass",
     "Coverage",
-    "DrawWorkspace",
     "GraphIndexRefusedError",
     "IndexCache",
     "JourneyState",
@@ -133,7 +127,6 @@ __all__ = [
     "config_default",
     "config_member_of_runtime_map",
     "deliver",
-    "draw_workspace",
     "dream",
     "heard",
     "index_sandbox",
@@ -154,7 +147,6 @@ __all__ = [
     "shared_database_versions",
     "silent_failures",
     "source_coverage",
-    "sweep_stale_draw_workspaces",
     "sweep_stale_private_blank_templates",
     "watch",
 ]

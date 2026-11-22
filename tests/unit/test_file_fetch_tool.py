@@ -21,7 +21,6 @@ from nora.domain.models import NormalizedMessage
 from nora.infra.external_files.google_drive import GoogleDriveSource
 from nora.infra.google.auth import GoogleCredentials
 from nora.obs.metrics import Metrics
-from nora.testing import FakeMemoryStore
 from nora.testing.external_files import FakeExternalFilesSource, FakeFile
 from nora.testing.fakes import FakeRecordStore
 from nora.testing.google_drive import GDOC, GSHEET, DriveFile, FakeDriveServer
@@ -82,7 +81,7 @@ def _tool(source, store=None, metrics: Metrics | None = None):
                 persons=_NoPersons())
     specs = ToolRegistry(external_files=source, google_account="nora@example.org").specs(
         store=store or FakeRecordStore(), conversation_id="g1", conversation_type="group",
-        persons=_NoPersons(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=_NoPersons(), deliverer=SinkSender(),
         metrics=metrics or Metrics(), room=room,
     )
     return {s.name: s.call for s in specs}["file_fetch"]

@@ -144,12 +144,10 @@ from nora.domain.models import (
 )
 from nora.domain.notes import Note
 from nora.domain.ports import (
-    DEFAULT_MEMORY_READ_TIMEOUT_SECONDS,
     CultureReader,
     JobResult,
     JobStatus,
     LinkPreviewSource,
-    MemoryStore,
     OutboundAttachment,
     PlatformAdapter,
     RecordStore,
@@ -560,7 +558,6 @@ class FirePath:
         *,
         persons: Persons,
         records: RecordStore,
-        memory: MemoryStore,
         doctrine_store: DoctrineStore,
         metrics: Metrics,
         runner: AgentRunner,
@@ -587,9 +584,6 @@ class FirePath:
         lessons: ActiveLessons | None = None,
         standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
         ambient: AmbientEngagement | None = None,
-        people_in_window_conclusions: int = 0,
-        people_in_window_speakers: int = 0,
-        memory_read_timeout_seconds: float = DEFAULT_MEMORY_READ_TIMEOUT_SECONDS,
         notes: StandingNotesReader | None = None,
         policy: Policy | None = None,
         participation_runner: AgentRunner | None = None,
@@ -662,11 +656,6 @@ class FirePath:
         # here wedges the conversation exactly as the unbounded read in
         # `debrief.run` did.
         self._standing_store_timeout_seconds = standing_store_timeout_seconds
-        # ponytail: accepted and read by nothing; they leave with the `[honcho]` keys
-        # that feed them.
-        self._people_in_window_conclusions = people_in_window_conclusions
-        self._people_in_window_speakers = people_in_window_speakers
-        self._memory_read_timeout_seconds = memory_read_timeout_seconds
         # The note tier on the fire path. A participation determination
         # grounds on «transcript + standing/notes», so `build_context` passes
         # the notes reader for every occasion kind: one `build_context` shape,
@@ -699,7 +688,6 @@ class FirePath:
         # nobody is watching when it fires — the argument the
         # `name_transcript` projection below already makes.
         self._media_join = media_join
-        self._memory = memory
         self._doctrine_store = doctrine_store
         self._metrics = metrics
         self._runner = runner
@@ -1809,7 +1797,7 @@ class FirePath:
                 engagement=participation,
                 store=self._records, conversation_id=occasion.conversation_id,
                 conversation_type=occasion.conversation_type, persons=self._persons,
-                honcho=self._memory, deliverer=handle.deliverer, room=room,
+                deliverer=handle.deliverer, room=room,
                 question=render_file_links(ctx.message.body),
                 context_window=self._context_window,
                 metrics=self._metrics,

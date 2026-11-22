@@ -26,7 +26,7 @@ from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.profile import SqlProfileStore
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
-from nora.testing import FakeMemoryStore, FakeRosterSource
+from nora.testing import FakeRosterSource
 from nora.testing.memory_index import FakeMemoryIndex
 from tests.fakes import SinkSender
 from tests.test_room_tools import (
@@ -101,7 +101,6 @@ def _remember(
         conversation_id=GROUP,
         conversation_type="group",
         persons=persons,
-        honcho=FakeMemoryStore(),
         deliverer=SinkSender(),
         metrics=Metrics(),
         room=room,
@@ -187,7 +186,7 @@ async def test_without_a_known_speaker_nothing_is_saved(persons: Any, store: Any
     )
     tool = {t.tool_name: t for t in build_tools(
         store=_NullStore(), conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=persons, deliverer=SinkSender(),
         metrics=Metrics(), room=room, transit_source=_UNREACHABLE_TRANSIT,
         question="", context_window=40, lineage=_LINEAGE, supplied_unit=UNIT,
         memory_retrieval=MemorySearch(FakeMemoryIndex([]), Metrics()), profile=store,
@@ -240,7 +239,6 @@ def _dispute(
         conversation_id=GROUP,
         conversation_type="group",
         persons=persons,
-        honcho=FakeMemoryStore(),
         deliverer=SinkSender(),
         metrics=Metrics(),
         room=room,
@@ -326,7 +324,7 @@ async def test_profile_dispute_is_not_on_the_honcho_surface(persons: Any, store:
     )
     built = build_tools(
         store=_NullStore(), conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=persons, deliverer=SinkSender(),
         metrics=Metrics(), room=room, transit_source=_UNREACHABLE_TRANSIT,
         question="", context_window=40, lineage=_LINEAGE, supplied_unit=UNIT,
     )

@@ -301,9 +301,6 @@ PATHS = {
     # The eval seam's JUDGE source: the seeded window, rendered as she
     # was shown it, for a model that grades her reply against it.
     "nora/subject/sandbox.py": "judge_source",
-    # `nora memory backfill` (DEC-214): a unit's history replayed into its own
-    # Honcho workspace — memory's deriver reads what it feeds.
-    "nora/app/memory_backfill.py": "memory_backfill",
 }
 
 BUILDERS = {

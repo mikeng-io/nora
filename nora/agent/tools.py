@@ -237,7 +237,6 @@ def build_tool_specs(
     conversation_id: str,
     conversation_type: str,
     persons,
-    honcho,
     deliverer,
     metrics,
     room: Room,
@@ -469,7 +468,6 @@ def build_tool_specs(
         conversation_id=conversation_id,
         conversation_type=conversation_type,
         persons=persons,
-        honcho=honcho,
         deliverer=deliverer,
         metrics=metrics,
         room=room,
@@ -620,7 +618,6 @@ def build_tools(
     conversation_id: str,
     conversation_type: str,
     persons,
-    honcho,
     deliverer,
     metrics,
     room: Room,
@@ -717,7 +714,7 @@ def build_tools(
     """Adapt native specs to Strands, deriving missing descriptions/schemas from callables."""
     specs = build_tool_specs(
         store=store, conversation_id=conversation_id, conversation_type=conversation_type,
-        persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics, room=room,
+        persons=persons, deliverer=deliverer, metrics=metrics, room=room,
         transit_source=transit_source, route_source=route_source, vision_source=vision_source,
         blob_store=blob_store, vision_cache=vision_cache, video_readings=video_readings,
         describe_models=describe_models, describe_providers=describe_providers,

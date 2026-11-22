@@ -136,8 +136,8 @@ from nora.infra.sql.snapshot_at import SeedReport
 from nora.persons import Persons
 
 from .knowledge import AccountSeed, Knowledge, Message, NoteSeed, ReminderSeed, know
-from .memory_workspace import new_run_id
 from .obtain import Subject
+from .run_id import new_run_id
 
 __all__ = [
     "EVAL_HOST_LOCK", "EvalLockHeldError", "Sandboxed", "SharedDatabaseMutatedError",
@@ -332,15 +332,14 @@ async def close_private_blank_templates() -> None:
 
 
 #: How old a private blank template (`<blank>_run_<ts>-<nonce>`) must be
-#: before the startup sweep will even consider it — the SAME reasoning
-#: `nora.subject.memory_workspace.STALE_AFTER` uses for Honcho draw
-#: workspaces: a single run's own private copy lives for the run, which is
-#: minutes to a few hours; six hours is far outside any run and inside a
-#: day, so another session's LIVE copy is never old enough to match.
+#: before the startup sweep will even consider it: a single run's own
+#: private copy lives for the run, which is minutes to a few hours; six hours
+#: is far outside any run and inside a day, so another session's LIVE copy is
+#: never old enough to match.
 STALE_PRIVATE_BLANK_AFTER = timedelta(hours=6)
 
 #: `<anything>_run_YYYYMMDDTHHMMSS-hex` — `new_run_id()`'s own shape
-#: (`nora.subject.memory_workspace.new_run_id`), read back by
+#: (`nora.subject.run_id.new_run_id`), read back by
 #: `_private_blank_created_at`. Anchored at the end (`$`): `_run_` cannot
 #: appear earlier by construction (`_blank_template` only ever appends this
 #: suffix once), but anchoring costs nothing and refuses to guess at a name
@@ -369,8 +368,7 @@ async def sweep_stale_private_blank_templates(
 ) -> tuple[str, ...]:
     """Drop private blank templates (`_blank_template`'s own,
     `<template>_run_<ts>-<nonce>`) a KILLED run left behind. Called once, at
-    run start (`evals.__main__.main`, before any case — the same point
-    `_sweep_stale_workspaces` already sweeps Honcho's leftovers from), so a
+    run start (`evals.__main__.main`, before any case), so a
     run that was `kill -9`'d (bypassing `close_private_blank_templates`'s
     own `finally` entirely — see `evals.__main__._raise_on_sigterm` for the
     ordinary `SIGTERM` case, which this sweep backstops) does not leak a

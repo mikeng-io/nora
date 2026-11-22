@@ -309,7 +309,7 @@ class ProactiveFire:
             policy_room = room.policy.conversation(platform, room_id)
             surface = registry.surface(
                 store=room.records, conversation_id=room_id,
-                conversation_type=message.conversation_type, persons=room.persons, honcho=None,
+                conversation_type=message.conversation_type, persons=room.persons,
                 deliverer=handle.deliverer, metrics=agent.metrics,
                 room=Room(platform=platform, conversation_id=room_id, access=room.access,
                           roster_source=room.rosters.get(platform), tagger=None),

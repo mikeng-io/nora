@@ -130,7 +130,7 @@ async def enabled(
     dreamer_instructions: Any, dreamer_runtime: Any, engine: Any, entry_store: Any,
     event_store: Any,
     events: Any, ledger_store: Any, lineage: Any, media_join: Any,
-    memo_store: Any, memory: Any, metrics: Any, mobility: Any,
+    memo_store: Any, metrics: Any, mobility: Any,
     model_client_for: Any, note_store: Any, observation_store: Any, persons: Any,
     presence_circles: Any, presence_reader: Any, proactive_homes: Any, profile_index: Any,
     profile_reader: Any, reasoning_strip_store: Any, registry: Any, reminder_caps: Any,
@@ -167,7 +167,7 @@ async def enabled(
             allowlist=allowlist, audit=audit, cfg=cfg,
             content_checks=content_checks, dream_adaptors=dream_adaptors,
             dream_schedules=dream_schedules,
-            dreamer_instructions=dreamer_instructions, memory=memory,
+            dreamer_instructions=dreamer_instructions,
             metrics=metrics, model_client_for=model_client_for,
             persons=persons, proactive_homes=proactive_homes, access=access,
             reasoning_strip_store=reasoning_strip_store, registry=registry,
@@ -268,7 +268,7 @@ def dreamer_model_source(cfg: Any, tier: Any, dream_model: str, client: Any) -> 
 
 def _dreamer_runtime(
     allowlist: Any, audit: Any, cfg: Any, content_checks: Any,
-    dream_adaptors: Any, dream_schedules: Any, dreamer_instructions: Any, memory: Any,
+    dream_adaptors: Any, dream_schedules: Any, dreamer_instructions: Any,
     metrics: Any, model_client_for: Any, persons: Any, proactive_homes: Any,
     reasoning_strip_store: Any, registry: Any, rosters: Any, route_model: Any,
     tier: Any, tool_registry: Any, access: Any,
@@ -277,7 +277,7 @@ def _dreamer_runtime(
     dream_model = route_model("dreamer", cfg.dreamer_model())
     dream_models = dreamer_model_source(cfg, tier, dream_model, model_client_for("dreamer"))
     dream_tools = _dream_tool_source(
-        allowlist=allowlist, audit=audit, cfg=cfg, memory=memory,
+        allowlist=allowlist, audit=audit, cfg=cfg,
         metrics=metrics, persons=persons, proactive_homes=proactive_homes,
         registry=registry, rosters=rosters, tool_registry=tool_registry, access=access,
     )

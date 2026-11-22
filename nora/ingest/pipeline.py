@@ -37,7 +37,6 @@ from nora.domain.ports import (
     EngageDecision,
     EngagePolicy,
     MediaObjectStore,
-    MemoryStore,
     RecordStore,
     Transcriber,
 )
@@ -186,7 +185,6 @@ class IngestPipeline:
         self,
         *,
         audit: RecordStore,
-        memory: MemoryStore,
         policy: EngagePolicy,
         allowlist: Policy,
         access: IdentityAccess,
@@ -243,7 +241,6 @@ class IngestPipeline:
         appends one stimulus row with its cues.
         """
         self._audit = audit
-        self._memory = memory
         self._access = access
         self._policy = policy
         self._allowlist = allowlist

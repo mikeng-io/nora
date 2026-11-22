@@ -484,7 +484,7 @@ class SubagentBackendWiring:
 
 def backend(
     audit: Any, cfg: Any, clock: Any, compute_backends: Any,
-    compute_jobs: Any, computer_admission: Any, computer_scope_for: Any, memory: Any,
+    compute_jobs: Any, computer_admission: Any, computer_scope_for: Any,
     metrics: Any, model_client_for: Any, persons: Any, registry: Any,
     rosters: Any, route_model: Any, subagent_desk: Any, subagents_context: Any,
     tier: Any, tool_registry: Any, access: Any = None,
@@ -502,7 +502,6 @@ def backend(
             registry=tool_registry,
             store=audit,
             persons=persons,
-            honcho=memory,
             metrics=metrics,
             rosters=rosters,
             self_ids=registry.self_aliases(),

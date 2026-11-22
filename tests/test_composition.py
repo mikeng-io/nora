@@ -122,7 +122,6 @@ async def test_build_dependencies_returns_the_wired_graph(cfg, tmp_path):
     deps = await build_dependencies(cfg)
     assert isinstance(deps, Dependencies)
     assert deps.audit is not None
-    assert deps.memory is not None
     assert deps.persons is not None
     assert deps.metrics is not None
     assert deps.policy is not None
@@ -666,7 +665,7 @@ async def test_remind_writes_a_real_row_through_the_registry_the_root_builds(cfg
         miles = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
         specs = registry.specs(
             store=deps.audit, conversation_id="g1", conversation_type="group",
-            persons=deps.persons, honcho=deps.memory, deliverer=None,
+            persons=deps.persons, deliverer=None,
             metrics=deps.metrics,
             room=Room(platform="signal", conversation_id="g1", roster_source=None,
                       persons=deps.persons, tagger=miles),
@@ -2170,7 +2169,7 @@ async def test_markdown_identity_reaches_live_tools_and_cognition_writers(cfg, t
                         delivery_status=DeliveryStatus.SENT, raw_json=None)
     tools = {t.name: t.call for t in registry.specs(
         store=deps.audit, conversation_id="g1", conversation_type="group",
-        persons=deps.persons, honcho=None, deliverer=None, metrics=deps.metrics,
+        persons=deps.persons, deliverer=None, metrics=deps.metrics,
         room=Room(platform="signal", conversation_id="g1", roster_source=None,
                   persons=deps.persons), transcript=(own,),
     )}

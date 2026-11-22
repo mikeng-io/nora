@@ -516,7 +516,7 @@ class SummonsOccasion:
         turn_tools: dict[str, Any] = {
             "store": _NoTranscript(), "conversation_id": conversation_id,
             "conversation_type": CONVERSATION_TYPE, "persons": self._persons,
-            "honcho": None, "deliverer": handle.deliverer, "metrics": self._metrics,
+            "deliverer": handle.deliverer, "metrics": self._metrics,
             "room": room, "question": question, "transcript": (),
             # Not a tag: `send_reply` asks no reaction picker for a GIF.
             "fire_turn": True, "links": handle.links,

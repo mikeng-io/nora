@@ -403,7 +403,7 @@ async def location(case):
         store = SelectedPresenceStore(case.engine, access=access)
         deps = ToolDeps(store=None, conversation_id="generated-location-room",
             conversation_type="group",
-            persons=access.persons_view(), honcho=None, deliverer=None, metrics=Metrics(),
+            persons=access.persons_view(), deliverer=None, metrics=Metrics(),
             room=room, transit_source=None, presence_source=store, presence_circles=(),
             content_checks=True, location_trusted=True)
         yield SimpleNamespace(access=access, deps=deps, room=room, server=server,

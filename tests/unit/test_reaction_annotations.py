@@ -501,7 +501,6 @@ async def test_the_tool_result_note_explains_the_counts_are_recorded_only(tmp_pa
     from nora.infra.transit import TransitClient
     from nora.obs.metrics import Metrics
     from nora.persons import load_persons
-    from nora.testing import FakeMemoryStore
     from tests.fakes import SinkSender
 
     (tmp_path / "identity.toml").write_text("")
@@ -517,7 +516,7 @@ async def test_the_tool_result_note_explains_the_counts_are_recorded_only(tmp_pa
     tools = {
         t.tool_name: t for t in build_tools(
             store=store, conversation_id="g1", conversation_type="group",
-            persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+            persons=persons, deliverer=SinkSender(),
             metrics=Metrics(),
             room=AgentRoom(
                 platform="signal", conversation_id="g1",

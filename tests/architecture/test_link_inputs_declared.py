@@ -29,7 +29,6 @@ from nora.agent.link_owners import LINK_OWNERS
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.obs.metrics import Metrics
-from nora.testing import FakeMemoryStore
 from tests.fakes import SinkSender
 
 _OWNER_TOOLS = {owner.tool for owner in LINK_OWNERS}
@@ -51,7 +50,7 @@ def _built_specs():
     room = Room(platform="signal", conversation_id="g1", roster_source=None, persons=_NoPersons())
     return ToolRegistry().specs(
         store=_NoStore(), conversation_id="g1", conversation_type="group",
-        persons=_NoPersons(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=_NoPersons(), deliverer=SinkSender(),
         metrics=Metrics(), room=room,
     )
 

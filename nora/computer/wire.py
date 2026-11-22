@@ -569,7 +569,7 @@ class DispatchWiring:
 
 def dispatch(
     allowlist: Any, audit: Any, compute_backends: Any, computer_queue_runner: Any,
-    computer_scope_for: Any, computer_task_backend: Any, memory: Any, metrics: Any,
+    computer_scope_for: Any, computer_task_backend: Any, metrics: Any,
     persons: Any, registry: Any, rosters: Any, tool_registry: Any,
     access: Any = None,
 ) -> DispatchWiring:
@@ -583,7 +583,6 @@ def dispatch(
             registry=tool_registry,
             store=audit,
             persons=persons,
-            honcho=memory,
             metrics=metrics,
             rosters=rosters,
             self_ids=registry.self_aliases(),

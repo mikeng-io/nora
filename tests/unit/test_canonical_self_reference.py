@@ -97,7 +97,7 @@ def persons(tmp_path):
 def _tool(persons, *, store, media_store, blob_store, generator, refs_allowed=True):
     specs = build_tool_specs(
         store=store, conversation_id=HERE, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=Room(platform="signal", conversation_id=HERE,
                   roster_source=FakeRosterSource(groups={}), persons=persons),
         transit_source=None, image_generator=generator,

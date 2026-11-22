@@ -58,7 +58,6 @@ from nora.policy import permissive_policy
 from nora.testing import (
     FakeAdapter,
     FakeAgentRunner,
-    FakeMemoryStore,
     FakeObservationStore,
     FakeRecordStore,
     FakeRosterSource,
@@ -501,11 +500,10 @@ async def run_case(
         persons = load_persons(identity_path)
 
         audit = FakeRecordStore()
-        memory = FakeMemoryStore()
         if seed is not None:
-            # Production-shape start state: real transcript rows + real Honcho
-            # read surfaces, so the model's prompt LOOKS like production's
-            # without any of this run's writes leaving the fakes. Rows are
+            # Production-shape start state: real transcript rows, so the model's
+            # prompt LOOKS like production's without any of this run's writes
+            # leaving the fakes. Rows are
             # seeded through the store's append-shaped in-memory list; they
             # must be transcript rows already remapped onto the eval room
             # (`_EVAL_GROUP_ID`), which `build_production_seed` does.
@@ -524,8 +522,6 @@ async def run_case(
                     "quoted_ts": row.quoted_ts, "raw_json": row.raw_json,
                     "media_json": row.media_json,
                 })
-            memory = FakeMemoryStore(cards=dict(seed.cards),
-                                 conclusions=dict(seed.conclusions))
         # The note/standing tiers, gated the same way `nora.app.
         # composition.build_dependencies` gates them — `cfg` here is the same
         # shipped `config.toml`/`config.example.toml` production reads, so a
@@ -605,7 +601,7 @@ async def run_case(
         )
         try:
             dispatcher, _engagement, background, trigger = build_offline_pipeline(
-                cfg, adapter=adapter, audit=audit, memory=memory,
+                cfg, adapter=adapter, audit=audit,
                 access=IdentityAccess.for_files(persons, permissive_policy()),
                 doctrine_store=doctrine_store, runner=runner, metrics=metrics,
                 tool_registry=tool_registry, roster_source=roster,

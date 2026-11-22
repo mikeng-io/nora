@@ -108,7 +108,7 @@ async def test_registry_routes_known_names_and_coordinates_through_the_configure
     registry = ToolRegistry(route=source, content_checks=enabled)
     tools = {s.name: s.call for s in registry.specs(
         store=None, conversation_id="room", conversation_type="group", persons=persons,
-        honcho=None, deliverer=None, metrics=Metrics(), room=room,
+        deliverer=None, metrics=Metrics(), room=room,
     )}
     for origin in ("Juniper Cafe", PHONE, IDENTIFIER, COORDINATE):
         result = await tools["route"](origin=origin, destination="Library")

@@ -48,7 +48,7 @@ from nora.testing import (
     FakeSocialSource,
     FakeSocialSubjectIndex,
 )
-from nora.testing.fakes import FakeMediaInterpreter, FakeMemoryStore
+from nora.testing.fakes import FakeMediaInterpreter
 from nora.testing.stimuli import InMemorySourceHealthLog
 
 HK = ZoneInfo("Asia/Hong_Kong")
@@ -111,7 +111,7 @@ class World:
     def comprehension(self) -> MediaComprehension:
         return MediaComprehension(
             blobs=self.blobs, store=self.media_objects, interpreter=self.interpreter,
-            memory=FakeMemoryStore(), metrics=self.metrics, spawn=_spawn,
+            metrics=self.metrics, spawn=_spawn,
         )
 
     def perception(self, *, cap: int = 200, batch: int = 50,

@@ -28,7 +28,6 @@ from nora.persons import Persons, load_persons
 from nora.testing import (
     FakeBlobStore,
     FakeMediaObjectStore,
-    FakeMemoryStore,
     FakeRosterSource,
 )
 from tests.fakes import SinkSender
@@ -66,7 +65,7 @@ def wiring_with(wiring):
         tools = build_tools(
             store=wiring["store"], conversation_id="g1",
             conversation_type="group", persons=wiring["persons"],
-            honcho=wiring["honcho"], deliverer=wiring["deliverer"],
+            deliverer=wiring["deliverer"],
             metrics=wiring["metrics"], room=wiring["room"],
             transit_source=UNREACHABLE_TRANSIT,
             question="who is here", context_window=40,
@@ -102,7 +101,6 @@ async def wiring(record_pg_url, tmp_path):
     write(pdir, "identity.md", name="soul", order=10, body="You are Nora.")
     doctrine = DoctrineStore(pdir, canary="C", metrics=Metrics()).get()
     sink = SinkSender()
-    honcho = FakeMemoryStore(cards={"miles": ["likes espresso"]})
     deliverer = Deliverer(store=store, adapter=sink, target=TARGET, doctrine=doctrine,
                           canary="C", tag_id="t1", nora_sender_id="nora",
                           message_cap=NATIVE_TOOL_BUDGETS["send_reply"],
@@ -115,13 +113,13 @@ async def wiring(record_pg_url, tmp_path):
     # exercised against a real roster.
     room = Room(platform="signal", conversation_id="g1", roster_source=None, persons=persons)
     tools = build_tools(store=store, conversation_id="g1", conversation_type="group",
-                        persons=persons, honcho=honcho,
+                        persons=persons,
                         deliverer=deliverer, metrics=metrics, room=room,
                         transit_source=UNREACHABLE_TRANSIT,
                         question="who is here", context_window=40, display_name="Nora")
     try:
         yield {"tools": {t.tool_name: t for t in tools}, "sink": sink,
-               "honcho": honcho, "deliverer": deliverer, "store": store, "metrics": metrics,
+               "deliverer": deliverer, "store": store, "metrics": metrics,
                "persons": persons, "room": room, "doctrine": doctrine}
     finally:
         await store.aclose()
@@ -867,7 +865,7 @@ async def test_calculate_needs_none_of_the_tags_collaborators(wiring):
     async def boom(*a, **kw):
         raise RuntimeError("everything is down")
 
-    for dep in (wiring["store"], wiring["honcho"], wiring["deliverer"]):
+    for dep in (wiring["store"], wiring["deliverer"]):
         for attr in ("recent", "peer_card", "representation", "deliver"):
             if hasattr(dep, attr):
                 setattr(dep, attr, boom)
@@ -934,7 +932,7 @@ async def test_gif_tools_bind_turn_candidate_and_audit_a_gif_only_reply(wiring):
     source = _GifSource()
     tools = {tool.tool_name: tool for tool in build_tools(
         store=wiring["store"], conversation_id="g1", conversation_type="group",
-        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=wiring["deliverer"],
+        persons=wiring["persons"], deliverer=wiring["deliverer"],
         metrics=wiring["metrics"], room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
         giphy_source=source,
     )}
@@ -960,7 +958,7 @@ async def test_a_gif_caption_is_stripped_of_media_markers_like_a_reply(wiring):
     source = _GifSource()
     tools = {tool.tool_name: tool for tool in build_tools(
         store=wiring["store"], conversation_id="g1", conversation_type="group",
-        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=wiring["deliverer"],
+        persons=wiring["persons"], deliverer=wiring["deliverer"],
         metrics=wiring["metrics"], room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
         giphy_source=source,
     )}
@@ -983,7 +981,7 @@ async def test_gif_send_failure_raises_so_the_agent_can_send_a_text_reply(wiring
     source.attachment = None
     tools = {tool.tool_name: tool for tool in build_tools(
         store=wiring["store"], conversation_id="g1", conversation_type="group",
-        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=wiring["deliverer"],
+        persons=wiring["persons"], deliverer=wiring["deliverer"],
         metrics=wiring["metrics"], room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
         giphy_source=source,
     )}
@@ -1058,7 +1056,7 @@ async def test_a_held_reply_gets_no_gif_after_it(wiring):
     )
     tools = {t.tool_name: t for t in build_tools(
         store=store, conversation_id="g1", conversation_type="group",
-        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=held,
+        persons=wiring["persons"], deliverer=held,
         metrics=Metrics(), room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
         giphy_source=_GifSource(), reaction_picker=picker,
     )}
@@ -1095,7 +1093,7 @@ async def test_a_gif_the_platform_refuses_still_sends_her_words(wiring):
     )
     tools = {t.tool_name: t for t in build_tools(
         store=wiring["store"], conversation_id="g1", conversation_type="group",
-        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=deliverer,
+        persons=wiring["persons"], deliverer=deliverer,
         metrics=Metrics(), room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
         giphy_source=_GifSource(), reaction_picker=_Picker(_nod("alone")),
     )}
@@ -1107,7 +1105,7 @@ async def test_a_fire_turn_never_asks_the_picker(wiring):
     picker = _Picker(_nod("with"))
     specs = build_tool_specs(
         store=wiring["store"], conversation_id="g1", conversation_type="group",
-        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=wiring["deliverer"],
+        persons=wiring["persons"], deliverer=wiring["deliverer"],
         metrics=wiring["metrics"], room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
         giphy_source=_GifSource(), reaction_picker=picker, fire_turn=True,
     )
@@ -1146,7 +1144,7 @@ def _with_image_tools(wiring, *, generator=None, refs_allowed=False,
                       media_store=None, blob_store=None):
     return {tool.tool_name: tool for tool in build_tools(
         store=wiring["store"], conversation_id="g1", conversation_type="group",
-        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=wiring["deliverer"],
+        persons=wiring["persons"], deliverer=wiring["deliverer"],
         metrics=wiring["metrics"], room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
         image_generator=generator, image_refs_allowed=refs_allowed,
         media_store=media_store, blob_store=blob_store,
@@ -1451,7 +1449,7 @@ def _deliverer(wiring, *, adapter=None, send_permitted: bool = True) -> Delivere
 def _tools_over(wiring, deliverer, **extra) -> dict:
     return {t.tool_name: t for t in build_tools(
         store=wiring["store"], conversation_id="g1", conversation_type="group",
-        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=deliverer,
+        persons=wiring["persons"], deliverer=deliverer,
         metrics=Metrics(), room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
         **extra,
     )}
@@ -1653,7 +1651,7 @@ def _held_tools(wiring):
     )
     tools = build_tools(
         store=store, conversation_id="g1", conversation_type="group",
-        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=held,
+        persons=wiring["persons"], deliverer=held,
         metrics=Metrics(), room=wiring["room"],
         transit_source=UNREACHABLE_TRANSIT, question="who is here",
         context_window=40, unit_for=lambda *_a: "ws-main",
@@ -1685,7 +1683,7 @@ async def test_send_reply_still_says_refused_when_a_guard_stops_it(wiring):
     )
     tools = {t.tool_name: t for t in build_tools(
         store=wiring["store"], conversation_id="g1", conversation_type="group",
-        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=capped,
+        persons=wiring["persons"], deliverer=capped,
         metrics=Metrics(), room=wiring["room"],
         transit_source=UNREACHABLE_TRANSIT, question="who is here",
         context_window=40, unit_for=lambda *_a: "ws-main",

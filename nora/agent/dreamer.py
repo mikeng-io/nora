@@ -867,7 +867,7 @@ class RegistryToolSource:
     """
 
     def __init__(
-        self, *, registry: ToolRegistry, store: Any, persons: Any, honcho: Any,
+        self, *, registry: ToolRegistry, store: Any, persons: Any,
         metrics: Metrics, ai_peer: str = "nora", access: Any = None,
         home_rooms: Mapping[str, HomeRoom] | None = None,
         scope_rooms: Mapping[str, HomeRoom] | None = None,
@@ -878,7 +878,6 @@ class RegistryToolSource:
         self._store = store
         self._access = access
         self._persons = access.persons_view() if access is not None else persons
-        self._honcho = honcho
         self._metrics = metrics
         self._ai_peer = ai_peer
         # Unit -> home room from `Policy.home_rooms()`; empty when none is declared.
@@ -995,7 +994,6 @@ class RegistryToolSource:
             conversation_id=home.conversation_id if home is not None else key,
             conversation_type=home.conversation_type if home is not None else "group",
             persons=self._persons,
-            honcho=self._honcho,
             # No deliverer, ever. Nothing the Dreamer holds speaks to anybody, and
             # the filter below cannot admit a tool that would; the absence is
             # stated here too so a `None` is not replaced by a deliverer.

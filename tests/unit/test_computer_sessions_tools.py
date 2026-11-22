@@ -66,7 +66,7 @@ def _tools(persons, *, runtime, events, sessions, leases=None, question="",
     specs = build_tool_specs(
         unit_for=lambda platform, cid: cid,
         store=None, conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None,
+        persons=persons, deliverer=None,
         metrics=metrics if metrics is not None else Metrics(),
         room=room, transit_source=None, blob_store=FakeBlobStore(),
         question=question, fire_turn=fire_turn, dream_adaptor=dream_adaptor,

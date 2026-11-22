@@ -3,7 +3,7 @@
 The seam this module covers is the *stores*: the data store, the state store
 and the fake store are things you configure BEHIND her. A case saying what she
 knows is stating INPUT. It is not substituting a collaborator: seeding fakes
-(`FakeRecordStore`, `FakeMemoryStore`, `InMemoryNoteStore`) into a
+(`FakeRecordStore`, `InMemoryNoteStore`) into a
 hand-assembled pipeline would measure a graph nothing deploys. This writes the
 same rows into the SAME Postgres the subject was composed against, through the
 same store classes production runs, and then gets out of the way.

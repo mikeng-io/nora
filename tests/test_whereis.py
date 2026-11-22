@@ -499,7 +499,7 @@ def _whereis_tool(persons, *, room, presence_source=None, presence_circles=(),
                   metrics=None, location_trusted=False):
     specs = build_tool_specs(
         store=None, conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None,
+        persons=persons, deliverer=None,
         metrics=metrics if metrics is not None else Metrics(),
         room=room, transit_source=None,
         presence_source=presence_source, presence_circles=presence_circles,
@@ -661,7 +661,7 @@ async def test_location_trust_threads_through_the_registry_build(persons, store)
     room = _room(persons, members=(MILES, GRANT, STRANGER, NORA))
     common = {
         "store": None, "conversation_id": GROUP, "conversation_type": "group",
-        "persons": persons, "honcho": None, "deliverer": None, "room": room,
+        "persons": persons, "deliverer": None, "room": room,
         "metrics": Metrics(),
     }
     def _where_is(tools):
@@ -988,7 +988,7 @@ def _route_tool(persons, store, *, members):
     rec = _RecordingRoute()
     tools = build_tools(
         store=None, conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=_room(persons, members=members),
         transit_source=None, route_source=rec,
         presence_source=store, presence_circles=(CIRCLE,),
@@ -1026,7 +1026,7 @@ def _saved_places_tool(persons, store, *, members, location_trusted=False,
                        metrics=None):
     tools = build_tools(
         store=None, conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None,
+        persons=persons, deliverer=None,
         metrics=metrics if metrics is not None else Metrics(),
         room=_room(persons, members=members),
         transit_source=None,
@@ -1101,7 +1101,7 @@ async def test_saved_places_says_unavailable_when_the_read_fails(persons):
 async def test_saved_places_unavailable_when_presence_not_wired(persons):
     tools = build_tools(
         store=None, conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=_room(persons, members=(MILES, NORA)),
         transit_source=None, question="", context_window=40,
     )
@@ -1115,7 +1115,7 @@ async def test_every_non_ok_saved_places_carries_a_dash_free_note(persons):
     is the result's `note`. Both unavailable paths (unwired, failed read)."""
     unwired = {t.tool_name: t for t in build_tools(
         store=None, conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=_room(persons, members=(MILES, NORA)),
         transit_source=None, question="", context_window=40,
     )}["saved_places"]

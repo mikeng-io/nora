@@ -18,7 +18,6 @@ def _push_close_order(
     *,
     audit: Any = None,
     managed_session: Any = None,
-    memory: Any = None,
     blobs: Any = None,
     model_clients: Iterable[Any] = (),
     client: Any = None,
@@ -40,9 +39,6 @@ def _push_close_order(
     blob_close = getattr(blobs, "aclose", None)
     if blob_close is not None:
         stack.push_async_callback(blob_close)
-    memory_close = getattr(memory, "aclose", None)
-    if memory_close is not None:
-        stack.push_async_callback(memory_close)
     for model_client in reversed(tuple(model_clients)):
         stack.push_async_callback(model_client.close)
     if client is not None:
@@ -75,7 +71,6 @@ async def close_dependencies(deps: Any, *, health_runner: Any = None) -> None:
             audit=deps.audit,
             managed_session=getattr(deps, "managed_session", None),
             blobs=getattr(deps, "blobs", None),
-            memory=getattr(deps, "memory", None),
             model_clients=deps.model_clients,
             client=deps.client,
             computer_close=(
@@ -146,7 +141,6 @@ class StartupOwner:
     def __init__(self) -> None:
         self._audit: Any = None
         self._managed_session: Any = None
-        self._memory: Any = None
         self._blobs: Any = None
         self._model_clients: list[Any] | None = None
         self._client: Any = None
@@ -167,9 +161,6 @@ class StartupOwner:
 
     def own_blobs(self, blobs: Any) -> None:
         self._blobs = blobs
-
-    def own_memory(self, memory: Any) -> None:
-        self._memory = memory
 
     def own_client(self, client: Any) -> None:
         self._client = client
@@ -209,7 +200,6 @@ class StartupOwner:
                 audit=self._audit,
                 managed_session=self._managed_session,
                 blobs=self._blobs,
-                memory=self._memory,
                 model_clients=self._model_clients or (),
                 client=self._client,
                 computer_close=self._computer_close,

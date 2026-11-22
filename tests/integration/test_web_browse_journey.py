@@ -165,7 +165,7 @@ async def _dispatch(registry, admission, bindings, unit, args):
     )
     policy = Policy(conversations=(conversation,), _by_id={("signal", room_id): conversation})
     dispatch = ComputerToolDispatch(
-        registry=registry, store=None, persons=bindings["persons"], honcho=None,
+        registry=registry, store=None, persons=bindings["persons"],
         metrics=bindings["metrics"], policy=policy, scope_for=lambda *_: scope,
     )
     task = asyncio.current_task()

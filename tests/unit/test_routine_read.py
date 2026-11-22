@@ -102,7 +102,7 @@ def _tool(persons, mobility, *, members=(MILES, GRANT), fail=False, tagger=None,
           location_trusted=False, metrics=None, with_pat=False):
     specs = build_tool_specs(
         store=None, conversation_id="g", conversation_type="group",
-        persons=persons, honcho=None, deliverer=None,
+        persons=persons, deliverer=None,
         metrics=metrics if metrics is not None else Metrics(),
         room=_room(persons, members=members, fail=fail, tagger=tagger),
         transit_source=None,
@@ -253,7 +253,7 @@ async def test_a_person_known_only_to_a_later_circle_is_still_answered(persons):
     )
     specs = build_tool_specs(
         store=None, conversation_id="g", conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=_room(persons, members=(MILES, GRANT)), transit_source=None,
         presence_circles=circles, location_trusted=False,
         mobility=_FakeMobility(stays=_history(6)),
@@ -373,7 +373,7 @@ class _FakeFixes:
 def _tool_live(persons, mobility, fixes):
     specs = build_tool_specs(
         store=None, conversation_id="g", conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=_room(persons, members=(MILES, GRANT)), transit_source=None,
         presence_circles=(_circle(persons),), location_trusted=False,
         mobility=mobility, clock=lambda: NOW.astimezone(UTC), presence_source=fixes,
@@ -697,7 +697,7 @@ async def test_every_answer_calls_an_unsaved_place_by_the_same_words(persons):
     ]
     specs = build_tool_specs(
         store=None, conversation_id="g", conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=_room(persons, members=(MILES, GRANT)), transit_source=None,
         presence_circles=(_circle(persons),), location_trusted=False,
         mobility=_FakeMobility(stays=stays, places=places),

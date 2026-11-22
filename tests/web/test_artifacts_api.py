@@ -29,7 +29,7 @@ from nora.domain.computer_exports import ComputerExport
 from nora.domain.models import PersonRef
 from nora.persons import Persons
 from nora.policy import Conversation, Policy
-from nora.testing import FakeComputerExportStore, FakeMemoryStore, FakeRecordStore
+from nora.testing import FakeComputerExportStore, FakeRecordStore
 from nora.testing.fakes import FakeBlobStore
 from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
@@ -91,10 +91,10 @@ async def world_client(aiohttp_client):
     world = _World()
     app = web.Application()
     register_web_routes(
-        app, store=FakeRecordStore(), honcho=FakeMemoryStore(),
+        app, store=FakeRecordStore(),
         reminders=FakeReminderStore(),
         persons=Persons(by_person={"ken": KEN, "mei": MEI, "sam": SAM}, index={}),
-        ai_peer="nora", started_at=0.0, presence=None,
+        started_at=0.0, presence=None,
         presence_circles=(), skills_dir=NO_SKILLS_DIR, events=_fake_events(),
         doctrine_store=build_test_doctrine_store(),
         rooms_of=world.rooms_of, blobs=world.blobs, artifacts=world.store,

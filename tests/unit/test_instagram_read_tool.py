@@ -37,7 +37,7 @@ from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import Conversation, Policy
 from nora.social.adapters.tools.shared import social_read_vocabulary
-from nora.testing import FakeMemoryStore, FakeRosterSource, FakeSocialProvider
+from nora.testing import FakeRosterSource, FakeSocialProvider
 from tests.fakes import SinkSender
 
 _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "instagram_bridge"
@@ -178,7 +178,7 @@ def _tools(
     )
     specs = ToolRegistry(social=social).specs(
         store=_NoStore(), conversation_id="g1", conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=persons, deliverer=SinkSender(),
         metrics=metrics or Metrics(), room=room,
         fire_turn=fire_turn, dream_adaptor=dream_adaptor,
     )

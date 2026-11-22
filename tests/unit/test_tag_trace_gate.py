@@ -93,7 +93,7 @@ async def test_reasoning_content_survives_into_a_retained_tag_trace():
         ScriptedTurn(tool_calls=[("send_reply", {"text": "今晚七點半得"})],
                      final_text="今晚七點半得"),
     ])
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(runner=runner)
+    pipeline, _metrics, _audit, background = _build_pipeline(runner=runner)
 
     await pipeline.run(_request())
     await _drain(background)

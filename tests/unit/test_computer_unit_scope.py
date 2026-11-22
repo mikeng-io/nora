@@ -58,7 +58,6 @@ def kit(tmp_path):
             conversation_id=cid,
             conversation_type=kind,
             persons=persons,
-            honcho=None,
             deliverer=None,
             metrics=Metrics(),
             room=room,

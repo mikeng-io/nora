@@ -18,7 +18,7 @@ from nora.domain.documents import DOCUMENT_QUERY_MAX, RevisionIn
 from nora.domain.models import PersonRef
 from nora.persons import Persons
 from nora.policy import Conversation, Policy
-from nora.testing import FakeDocumentStore, FakeMemoryStore, FakeRecordStore
+from nora.testing import FakeDocumentStore, FakeRecordStore
 from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from tests.conftest import build_test_doctrine_store
@@ -77,10 +77,8 @@ async def world_client(aiohttp_client):
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        honcho=FakeMemoryStore(),
         reminders=FakeReminderStore(),
         persons=Persons(by_person={"ken": KEN, "mei": MEI, "jo": JO}, index={}),
-        ai_peer="nora",
         started_at=0.0,
         presence=None,
         presence_circles=(),

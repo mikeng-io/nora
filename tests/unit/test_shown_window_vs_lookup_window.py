@@ -11,7 +11,6 @@ from __future__ import annotations
 from nora.agent.registry import ToolRegistry
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.obs.metrics import Metrics
-from nora.testing import FakeMemoryStore
 from nora.testing.note_store import InMemoryNoteStore
 from tests.fakes import SinkSender
 from tests.test_note_tools import (
@@ -54,7 +53,7 @@ def _tools(deliverer=None, notes=None) -> dict:
     registry = ToolRegistry(notes=notes, note_unit=lambda _p, _c: UNIT)
     specs = registry.specs(
         store=_NullStore(), conversation_id=GROUP, conversation_type="group",
-        persons=_FakePersons(MILES), honcho=FakeMemoryStore(),
+        persons=_FakePersons(MILES),
         deliverer=deliverer or _Deliverer(), metrics=Metrics(), room=_room(),
         transcript=SHOWN, lookup_window=READ,
     )

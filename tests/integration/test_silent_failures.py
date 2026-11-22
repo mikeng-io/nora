@@ -19,7 +19,6 @@ def _script(text="reply"):
         ("db_append_fails", False, "audit_write_failed"),
         ("leak_guard_trips", False, "doctrine_leak"),
         ("no_send_call", False, "no_send_call"),
-        ("honcho_down", True, None),
         ("doctrine_reload_fails", True, None),
         ("context_read_fails", True, None),
         ("send_fails", True, "send_failed"),
@@ -53,13 +52,6 @@ async def test_a_reply_still_happens_with_a_thinner_context(harness_factory):
     await h.drain()
     assert len(h.sink.sent) == 1
     assert h.metrics.get("nora_errors_total", stage="context") == 1
-
-
-async def test_a_reply_still_happens_with_no_peer_card(harness_factory):
-    h = await harness_factory(script=_script(), fault="honcho_down")
-    await h.handler.on_event(group_event(body="nora.000 ?"))
-    await h.drain()
-    assert len(h.sink.sent) == 1
 
 
 async def test_a_broken_doctrine_edit_uses_the_last_good_doctrine(harness_factory):

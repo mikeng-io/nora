@@ -3,7 +3,7 @@
 This is the package `tests/` and `evals/` are meant to share, so there is
 exactly one definition of each fake. `evals/harness.py` and
 `tests/integration/harness.py` both build their pipeline from
-`FakeRecordStore`/`FakeMemoryStore`/`FakeAdapter` plus `ScriptedTurn`/
+`FakeRecordStore`/`FakeAdapter` plus `ScriptedTurn`/
 `FakeAgentRunner`/`group_event` from here. `tests/` outside
 `tests/contract/` imports from here too (`tests/test_health.py` takes
 `FakeRecordStore`).
@@ -11,7 +11,7 @@ exactly one definition of each fake. `evals/harness.py` and
 Every fake that is a second implementation of one of `nora/domain/ports.py`'s
 ports is bound by a contract suite in `tests/contract/` that it and the
 production implementation both pass — `FakeRecordStore` (`RecordStore`),
-`FakeMemoryStore` (`MemoryStore`), `FakeRosterSource` (`RosterSource`,
+`FakeRosterSource` (`RosterSource`,
 bound to `nora.platform.signal.roster.SignalRoster` by
 `tests/contract/test_roster_source_contract.py`), `FakeMediaSource`
 (`MediaSource`, bound to `nora.platform.signal.media.SignalMediaSource` by
@@ -130,7 +130,6 @@ from nora.testing.fakes import (
     FakeMediaInterpreter,
     FakeMediaObjectStore,
     FakeMediaSource,
-    FakeMemoryStore,
     FakeRecordStore,
     FakeReverseGeocoder,
     FakeRosterSource,
@@ -195,7 +194,6 @@ __all__ = [
     "FakeMediaInterpreter",
     "FakeMediaObjectStore",
     "FakeMediaSource",
-    "FakeMemoryStore",
     "FakeObservationStore",
     "FakeRecordStore",
     "FakeReverseGeocoder",

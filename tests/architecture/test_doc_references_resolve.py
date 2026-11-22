@@ -244,6 +244,36 @@ def _tracked_markdown_files() -> list[str]:
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     (
+        "design/09-decision-index.md",
+        "tests/test_honcho_representation.py",
+    ): (
+        "deleted with the memory backend. DEC-38's claim still names it as the test "
+        "that reimplemented the retrieval arithmetic; the record pass (6f) rewrites "
+        "the claim and removes this pin."
+    ),
+    (
+        "design/11-recall-and-threading.md",
+        "nora/infra/honcho/client.py",
+    ): (
+        "deleted with the memory backend. The design page still cites the client; "
+        "the record pass (6f) rewrites the prose and removes this pin."
+    ),
+    (
+        "design/19-media-comprehension.md",
+        "nora/ingest/stages/memory_feed.py",
+    ): (
+        "deleted with the memory backend: its only importer was the backfill. The "
+        "design page still cites it; the record pass (6f) rewrites the prose and "
+        "removes this pin."
+    ),
+    (
+        "docs/adr/0002-honcho-session-binding-deferred.md",
+        "nora/ingest/stages/memory_feed.py",
+    ): (
+        "deleted with the memory backend. The ADR records the earlier state and "
+        "stays historical; the record pass (6f) decides whether to remove this pin."
+    ),
+    (
         'docs/adr/0028-pull-requests-are-labelled-and-assigned-by-a-workflow-and-a-visible-commit-has-a-body.md',
         '.github/workflows/pr-triage.yml',
     ): (

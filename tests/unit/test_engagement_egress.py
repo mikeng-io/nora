@@ -114,7 +114,7 @@ async def test_delivery_act_refusal_reaches_the_tool_before_reservation():
     persons = Persons(by_person={}, index={})
     tools = {tool.name: tool.call for tool in build_tool_specs(
         store=None, conversation_id="room", conversation_type="group", persons=persons,
-        honcho=None, deliverer=delivery, metrics=metrics,
+        deliverer=delivery, metrics=metrics,
         room=Room(platform="signal", conversation_id="room", roster_source=None, persons=persons),
         transit_source=None,
     )}

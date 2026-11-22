@@ -139,7 +139,6 @@ def _stub(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, runs: list[str]) -> N
     written = tmp_path / "config.evaluation.toml"
     written.write_text("", encoding="utf-8")  # the deployment's index off
     monkeypatch.setattr(m, "materialise", lambda **k: str(written))
-    monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: None)
     monkeypatch.setattr(m, "graph_surface_lines", lambda *a: runs.append("graph") or [])
     monkeypatch.setattr(m, "embedder_model_of", lambda text: "m")
     monkeypatch.setattr(m, "_run_one", lambda *a, **k: runs.append("run") or True)

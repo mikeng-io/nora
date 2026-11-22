@@ -218,7 +218,7 @@ def _where_been(
     own clock and the guard's circles threaded exactly as composition does."""
     specs = build_tool_specs(
         store=None, conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None,
+        persons=persons, deliverer=None,
         metrics=metrics if metrics is not None else Metrics(),
         room=_room(persons, members=members, fail=fail, tagger=tagger),
         transit_source=None,
@@ -249,7 +249,7 @@ async def test_where_been_refuses_a_room_not_subset_of_the_circle(persons):
     metrics = Metrics()
     specs = build_tool_specs(
         store=None, conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=metrics,
+        persons=persons, deliverer=None, metrics=metrics,
         room=_room(persons, members=(MILES, GRANT, STRANGER)),
         transit_source=None, presence_circles=(_circle(persons),),
         mobility=mobility,
@@ -271,7 +271,7 @@ async def test_where_been_refuses_an_unnamed_account(persons):
     mobility = _FakeMobility()
     specs = build_tool_specs(
         store=None, conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=_room(persons, members=(MILES, UNNAMED)),
         transit_source=None, presence_circles=(_circle(persons),), mobility=mobility,
         clock=lambda: datetime.fromtimestamp(NOW_MS / 1000, tz=UTC),

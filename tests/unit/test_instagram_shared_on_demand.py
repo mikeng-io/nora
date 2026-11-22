@@ -28,7 +28,6 @@ from nora.testing import (
     FakeMediaInterpreter,
     FakeMediaObjectStore,
     FakeMediaSource,
-    FakeMemoryStore,
 )
 
 THUMB_URL = "https://cdn.example/thumb.jpg"
@@ -112,7 +111,7 @@ class _Wiring:
         self.spawn = _CollectingSpawn()
         self.job = MediaComprehension(
             blobs=self.blobs, store=self.store, interpreter=self.interpreter,
-            memory=FakeMemoryStore(), metrics=Metrics(), spawn=self.spawn,
+            metrics=Metrics(), spawn=self.spawn,
         )
         source = FakeMediaSource({
             f"attachment:{THUMB_URL}": PIXELS,

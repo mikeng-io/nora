@@ -37,17 +37,6 @@ NOW_S = 1_790_000_000.0
 T0 = 1_790_000_000_000 - 60_000          # a minute before NOW
 
 
-class _Memory:
-    async def ensure_workspace(self) -> None:
-        return None
-
-    async def ensure_peer(self, **_: object) -> None:
-        return None
-
-    async def feed(self, **_: object) -> bool:
-        return True
-
-
 def _msg(body: str = "hello", *, sender: str = PERSON, ts: int = T0,
          quote: Quote | None = None, message_id: str = "",
          touch: Touch | None = None, edit_of: EditTarget | None = None) -> NormalizedMessage:
@@ -67,7 +56,7 @@ def _setup(*, wired: bool = True, reply_quiet_seconds: float = 600.0):
         reply_quiet_seconds=reply_quiet_seconds, clock=lambda: NOW_S,
     ) if wired else None
     pipeline = IngestPipeline(
-        audit=audit, memory=_Memory(),  # type: ignore[arg-type]
+        audit=audit, # type: ignore[arg-type]
         access=IdentityAccess.for_files(
             persons=Persons(by_person={}, index={}), policy=permissive_policy()),
         policy=TriggerTextPolicy("nora.000"), allowlist=permissive_policy(),

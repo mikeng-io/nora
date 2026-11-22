@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Any, Generic, TypeVar
 
 from nora.domain.ports import ChannelDirectory
-from nora.memory_routing import build_workspace_router
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, load_persons
 from nora.policy import Policy, load_policy
@@ -118,18 +117,16 @@ class FileReload(Generic[T]):
             self.poll()
 
 
-def validate_pair(policy: Policy, persons: Persons, ai_peer: str, default_workspace: str) -> None:
+def validate_pair(persons: Persons, ai_peer: str) -> None:
     if ai_peer in persons.by_person:
         raise ValueError("identity.toml uses the id reserved for Nora's own aiPeer")
-    build_workspace_router(
-        policy=policy, bindings=persons.honcho_workspaces, default_workspace=default_workspace,
-    )
 
 
 class ReloadFiles:
     def __init__(
         self, *, policy_path: Path, identity_path: Path, ai_peer: str,
-        default_workspace: str, metrics: Metrics,
+        default_workspace: str,  # ponytail: read by nothing; leaves with the config shape
+        metrics: Metrics,
         validate_persons: Callable[[Persons], object] = lambda _: None,
         policy_channels: ChannelDirectory | None = None,
     ) -> None:
@@ -142,19 +139,18 @@ class ReloadFiles:
             else lambda p: load_policy(p, channels=policy_channels)
         )
         self.policy = LivePolicy(policy_loader(policy_path))
-        validate_pair(self.policy, self.persons, ai_peer, default_workspace)
+        validate_pair(self.persons, ai_peer)
         validate_persons(self.persons)
         boot_policy, boot_persons = self.policy.current, self.persons.current
 
         def check_policy(candidate: Policy) -> None:
-            validate_pair(candidate, self.persons, ai_peer, default_workspace)
             if (candidate.units_declared, candidate._unit_workspace) != (
                 boot_policy.units_declared, boot_policy._unit_workspace,
             ):
                 raise RestartRequiredError("policy.units workspace binding")
 
         def check_persons(candidate: Persons) -> None:
-            validate_pair(self.policy, candidate, ai_peer, default_workspace)
+            validate_pair(candidate, ai_peer)
             validate_persons(candidate)
             if candidate.honcho_workspaces != boot_persons.honcho_workspaces:
                 raise RestartRequiredError("identity.workspaces Honcho binding")

@@ -31,7 +31,7 @@ from nora.domain.profile import (
 )
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
-from nora.testing import FakeMemoryStore, FakeRosterSource
+from nora.testing import FakeRosterSource
 from tests.fakes import SinkSender
 from tests.test_room_tools import (
     _UNREACHABLE_TRANSIT,
@@ -96,7 +96,7 @@ def _remember(
     )
     built = build_tools(
         store=_NullStore(), conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=persons, deliverer=SinkSender(),
         metrics=Metrics(), room=room, transit_source=_UNREACHABLE_TRANSIT,
         question="", context_window=40, lineage=_LINEAGE, supplied_unit=UNIT,
         profile=profile,

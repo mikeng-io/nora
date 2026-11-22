@@ -25,7 +25,6 @@ from nora.testing import (
     FakeBlobStore,
     FakeMediaInterpreter,
     FakeMediaObjectStore,
-    FakeMemoryStore,
 )
 
 MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
@@ -73,7 +72,6 @@ def _job(
         blobs=blobs if blobs is not None else _blobs(),
         store=store if store is not None else FakeMediaObjectStore(),
         interpreter=interpreter if interpreter is not None else FakeMediaInterpreter(),
-        memory=memory if memory is not None else FakeMemoryStore(),
         metrics=metrics if metrics is not None else Metrics(),
         spawn=spawn,
         stickers_enabled=stickers_enabled,
@@ -627,7 +625,7 @@ async def test_concurrent_reads_are_bounded():
     spawn = _CollectingSpawn()
     job = MediaComprehension(
         blobs=blobs, store=FakeMediaObjectStore(),
-        interpreter=_Slow(), memory=FakeMemoryStore(), metrics=Metrics(),
+        interpreter=_Slow(), metrics=Metrics(),
         spawn=spawn, max_concurrent=3,
     )
     job.schedule(

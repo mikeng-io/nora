@@ -25,7 +25,7 @@ from nora.agent.tools import build_tools
 from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
-from nora.testing import FakeMemoryStore, FakeRosterSource
+from nora.testing import FakeRosterSource
 from tests.fakes import SinkSender
 
 GROUP = "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="
@@ -109,7 +109,7 @@ def _build(
     )
     tools = build_tools(
         store=_NullStore(), conversation_id=group_id, conversation_type="group",
-        persons=persons, honcho=honcho or FakeMemoryStore(), deliverer=SinkSender(),
+        persons=persons, deliverer=SinkSender(),
         metrics=metrics, room=room, transit_source=_UNREACHABLE_TRANSIT,
         question=question, context_window=40,
     )

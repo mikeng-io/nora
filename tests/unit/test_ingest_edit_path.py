@@ -28,16 +28,6 @@ TRIGGER = "nora.000"
 ORIGINAL = EditTarget(sent_ts=1)
 
 
-class RecordingMemory:
-    """Inert `MemoryStore` double: the pipeline is still handed one."""
-
-    async def ensure_workspace(self) -> None:
-        return None
-
-    async def aclose(self) -> None:
-        return None
-
-
 def _persons() -> Persons:
     """Miles has TWO accounts on one platform — the WhatsApp phone/LID shape."""
     miles = BoundAccount(
@@ -75,7 +65,6 @@ def _pipeline(store: FakeRecordStore, *, policy: Any = None,
               metrics: Metrics | None = None, **kwargs: Any) -> IngestPipeline:
     return IngestPipeline(
         audit=store,
-        memory=RecordingMemory(),
         access=IdentityAccess.for_files(persons=_persons(), policy=permissive_policy()),
         policy=policy or CompositePolicy([
             MentionPolicy(frozenset({NORA})), TriggerTextPolicy(TRIGGER),

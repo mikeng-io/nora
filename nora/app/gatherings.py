@@ -148,8 +148,6 @@ class GatheringService:
         *,
         store: GatheringStore,
         route_source: _RouteSource | None,
-        honcho: object | None,
-        ai_peer: str,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         place_areas: _PlaceAreas | None = None,
         content_checks: bool = True,
@@ -161,8 +159,6 @@ class GatheringService:
         # (`GoogleGeocoder.area_of_place`); `None` (no Maps key) resolves
         # venues with no area, so the memory index gives them no `located_in`.
         self._place_areas = place_areas
-        self._honcho = honcho  # kept wired and unread until the port is removed
-        self._ai_peer = ai_peer
         self._now = now
 
     async def create_event(

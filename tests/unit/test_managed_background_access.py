@@ -29,7 +29,7 @@ async def test_dreamer_tools_use_live_scoped_identity_and_refuse_a_lookup_outage
         nickname="Generated Background Nick", operation_id="generated-background-name")
     registry = _RecordingRegistry()
     source = _dream_tool_source(
-        allowlist=permissive_policy(), audit=None, cfg=example_config, memory=None,
+        allowlist=permissive_policy(), audit=None, cfg=example_config,
         metrics=Metrics(), persons=Persons(by_person={}, index={}),
         proactive_homes={_M_UNIT.id: SimpleNamespace(
             platform="signal", primary_id="g1", location=False)},

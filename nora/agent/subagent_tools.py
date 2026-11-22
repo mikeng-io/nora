@@ -99,7 +99,7 @@ class SubagentToolSource:
     """Builds one job's tools. Holds the process-lifetime collaborators; `build` is per job."""
 
     def __init__(
-        self, *, registry: ToolRegistry, store: Any, persons: Any, honcho: Any,
+        self, *, registry: ToolRegistry, store: Any, persons: Any,
         metrics: Metrics, rosters: Mapping[str, Any] | None = None,
         self_ids: frozenset[str] = frozenset(), access: Any = None,
     ) -> None:
@@ -110,7 +110,6 @@ class SubagentToolSource:
         # The descriptive `Persons` the built tools close over: the selected
         # backend's view — absent under managed, never a stale file answer.
         self._view = access.persons_view() if access is not None else persons
-        self._honcho = honcho
         self._metrics = metrics
         self._rosters = dict(rosters or {})
         self._self_ids = frozenset(self_ids)
@@ -150,7 +149,7 @@ class SubagentToolSource:
         )
         specs = self._registry.specs(
             store=self._store, conversation_id=conversation_id,
-            conversation_type=conversation_type, persons=self._view, honcho=self._honcho,
+            conversation_type=conversation_type, persons=self._view,
             deliverer=None, metrics=self._metrics, room=room, subagent_job=job_id,
         )
         spec = next(s for s in specs if s.name == "computer_run")
@@ -170,7 +169,6 @@ class SubagentToolSource:
         surface = self._registry.surface(
             grant=grant, store=self._store, conversation_id=conversation_id,
             conversation_type=conversation_type, persons=self._view,
-            honcho=self._honcho,
             # No deliverer, ever: nothing the worker holds speaks to anybody.
             deliverer=None, metrics=self._metrics, room=room,
             subagent_job=job_id, checkpoint_sink=checkpoint_sink,

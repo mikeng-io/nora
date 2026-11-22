@@ -25,7 +25,7 @@ from nora.engagement.self_presence import PresenceReader
 from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
 from nora.people.app.managed import ManagedServices
-from nora.testing import FakeMemoryStore, FakeRecordStore, FakeRosterSource
+from nora.testing import FakeRecordStore, FakeRosterSource
 from nora.testing.managed import (
     FakeAuthorityBackend,
     FakeBindingStore,
@@ -72,7 +72,7 @@ async def _tools(policy, *, on_rows=None, services=None, record=None):
         person_id=PERSON, delivery_status=DeliveryStatus.SENT)
     tools = build_tools(
         store=store, conversation_id=ROOM, conversation_type='group',
-        persons=services.access.persons_view(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=services.access.persons_view(), deliverer=SinkSender(),
         metrics=Metrics(), room=room,
         transit_source=TransitClient(kmb_base_url='http://127.0.0.1:1',
             mtr_schedule_url='http://127.0.0.1:1/s', mtr_routes_url='http://127.0.0.1:1/r.csv',

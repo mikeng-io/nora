@@ -46,7 +46,7 @@ from nora.ingest.policy import RelevanceGatePolicy
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import load_policy, permissive_policy
-from nora.testing import FakeAgentRunner, FakeMemoryStore, ScriptedTurn
+from nora.testing import FakeAgentRunner, ScriptedTurn
 from tests.builders import load_example_config, override_config
 from tests.fakes import SinkSender
 from tests.offline_pipeline import build_offline_pipeline
@@ -162,7 +162,6 @@ class _HandlerView:
 class Harness:
     handler: _HandlerView
     sink: SinkSender
-    honcho: FakeMemoryStore
     metrics: Metrics
     own_account: str
     doctrine_store: DoctrineStore
@@ -261,7 +260,7 @@ class Harness:
         """
         await self.store.aclose()
         return await build_handler(
-            self._tmp_path, script=script, honcho=self.honcho,
+            self._tmp_path, script=script,
             identity_toml=self._identity_toml, own_account=self.own_account,
             register=self._register, **kwargs,
         )
@@ -294,7 +293,6 @@ async def build_handler(
     tmp_path: Path,
     *,
     script=None,
-    honcho: FakeMemoryStore | None = None,
     sink: SinkSender | None = None,
     identity_toml: str | None = None,
     own_account: str = OWN_ACCOUNT,
@@ -406,7 +404,6 @@ async def build_handler(
         metrics=metrics,
     )
 
-    honcho_double = honcho if honcho is not None else FakeMemoryStore()
     adapter = sink if sink is not None else _HarnessAdapter(account=own_account)
     calls: list = []
 
@@ -454,8 +451,6 @@ async def build_handler(
         leak_span = re.sub(r"\s+", " ", raw_body).strip()[:60]
         runner = FakeAgentRunner([ScriptedTurn(tool_calls=[("send_reply", {"text": leak_span})],
             final_text=leak_span)], on_call=calls.append)
-    elif fault == "honcho_down":
-        honcho_double.fail = True
     elif fault == "send_fails":
         adapter._succeed = False   # SinkSender's existing succeed flag, flipped post-construction
     elif fault == "db_append_fails":
@@ -483,7 +478,7 @@ async def build_handler(
             else FakeAgentRunner(participation_script, on_call=calls.append)
         )
     dispatcher, engagement, background, participation_trigger = build_offline_pipeline(
-        cfg, adapter=adapter, audit=store, memory=honcho_double,
+        cfg, adapter=adapter, audit=store,
         access=IdentityAccess.for_files(persons, permissive_policy()),
         doctrine_store=doctrine_store, runner=runner, metrics=metrics,
         # Missing roster data is unavailable; generated membership is required for mentions.
@@ -508,7 +503,6 @@ async def build_handler(
     harness = Harness(
         handler=handler,
         sink=adapter,
-        honcho=honcho_double,
         metrics=metrics,
         own_account=getattr(adapter, "_account", own_account),
         doctrine_store=doctrine_store,

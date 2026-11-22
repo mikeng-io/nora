@@ -152,7 +152,7 @@ class _World:
         specs = build_tool_specs(
             unit_for=lambda platform, cid: cid,
             store=store or FakeRecordStore(), conversation_id=GROUP,
-            conversation_type="group", persons=_NoPersons(), honcho=None, deliverer=None,
+            conversation_type="group", persons=_NoPersons(), deliverer=None,
             metrics=Metrics(),
             room=Room(platform="signal", conversation_id=GROUP, roster_source=None,
                       persons=_NoPersons()),

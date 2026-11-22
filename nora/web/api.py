@@ -25,7 +25,7 @@ from nora.app.gatherings import GatheringService
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.computer_exports import ComputerExportStore
 from nora.domain.documents import DOCUMENT_QUERY_MAX, DocumentStore, RoomKey, is_handle
-from nora.domain.ports import BlobStore, MemoryStore, RecordStore
+from nora.domain.ports import BlobStore, RecordStore
 from nora.domain.reminders import ReminderStore
 from nora.domain.rollup import NoRollupBuildError
 from nora.infra.sql.mobility import SqlMobilityStore
@@ -190,8 +190,8 @@ def _corridor_payload(corridor: dict[str, Any]) -> dict[str, Any]:
 
 
 def register_web_routes(
-    app: web.Application, *, store: RecordStore, honcho: MemoryStore,
-    reminders: ReminderStore, persons: Persons, ai_peer: str, started_at: float,
+    app: web.Application, *, store: RecordStore,
+    reminders: ReminderStore, persons: Persons, started_at: float,
     presence: PresenceReader | None, presence_circles: tuple[Circle, ...],
     skills_dir: Path, events: GatheringService, doctrine_store: DoctrineStore,
     mobility: SqlMobilityStore | None = None,
@@ -217,10 +217,8 @@ def register_web_routes(
     app["web_room_event_shown"] = room_event_shown
     app["web_room_label"] = room_label
     app["web_blobs"] = blobs
-    app["web_honcho"] = honcho
     app["web_reminders"] = reminders
     app["web_persons"] = persons
-    app["web_ai_peer"] = ai_peer
     app["web_started_at"] = started_at
     app["web_presence"] = presence
     app["web_presence_circles"] = presence_circles
@@ -232,7 +230,7 @@ def register_web_routes(
     async def status(request: web.Request) -> web.Response:
         a = _ctx(request)
         body = await build_status_payload(
-            store=a["web_store"], honcho=a["web_honcho"], reminders=a["web_reminders"],
+            store=a["web_store"], reminders=a["web_reminders"],
             started_at=a["web_started_at"],
         )
         return web.json_response(body)

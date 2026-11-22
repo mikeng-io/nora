@@ -86,7 +86,6 @@ from nora.domain.observations import (
 from nora.domain.ports import (
     CultureReader,
     EngagementRequest,
-    MemoryStore,
     RecordStore,
     RosterSource,
 )
@@ -181,7 +180,6 @@ class TranscriptInjection:
         self,
         *,
         audit: RecordStore,
-        memory: MemoryStore,
         persons: Persons,
         context_window: int,
         prompt_window: int | None = None,
@@ -189,7 +187,6 @@ class TranscriptInjection:
         quote_window: QuoteWindow | None = None,
         ai_peer: str = "",
         display_name: str = "",
-        tagger_card_conclusions: int = 0,
         notes: StandingNotesReader | None = None,
         policy: Policy | None = None,
 
@@ -235,7 +232,6 @@ class TranscriptInjection:
         # root over the canonical stores, `None` in every harness that wires
         # none — which renders no `<standing>` block.
         self._shared_reader = shared
-        self._memory = memory
         self._access = access or IdentityAccess.for_files(persons, policy)
         self._context_window = context_window
         # `None` renders everything that was read (every harness that predates
@@ -246,7 +242,6 @@ class TranscriptInjection:
         self._metrics = metrics
         self._ai_peer = ai_peer
         self._display_name = display_name
-        self._tagger_card_conclusions = tagger_card_conclusions
         # `notes` is `None` while `[notes] enabled = false`: the note tier is
         # dormant, the same "not configured" shape `ai_peer=""` uses to disable
         # the self/tagger card reads below.

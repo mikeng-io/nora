@@ -277,11 +277,11 @@ async def test_the_cost_is_measured_only_when_the_join_actually_ran():
     # batch paths (the exact ones where N is not 1) saturate `+Inf` and the tag
     # path is the only thing anybody can read. Asserted on the LATENCY series
     # as well as the count, because they are two separate observations.
-    await join.enrich([_row("[image a3f2c1]")], path="memory_backfill")
+    await join.enrich([_row("[image a3f2c1]")], path="judge_source")
     rendered = metrics.render()
-    assert 'nora_media_join_seconds_count{path="memory_backfill"} 1.0' in rendered
+    assert 'nora_media_join_seconds_count{path="judge_source"} 1.0' in rendered
     assert 'nora_media_join_seconds_count{path="tag"} 1.0' in rendered
-    assert 'nora_media_blobs_joined_count{path="memory_backfill"} 1.0' in rendered
+    assert 'nora_media_blobs_joined_count{path="judge_source"} 1.0' in rendered
 
 
 # ---- guards for behaviours a mutation sweep can break ---------------------
@@ -425,7 +425,7 @@ async def test_every_blob_in_a_backfill_is_joined_in_bounded_batches():
     rows = [_row(f"[image {sha[:6]}]", sha=sha, ts=i + 1)
             for i, sha in enumerate(shas)]
 
-    got = await join.enrich(rows, path="memory_backfill")
+    got = await join.enrich(rows, path="judge_source")
 
     assert all(": photo" in (r.body or "") for r in got), (
         "a blob past the query bound rendered bare and its row was then "
@@ -470,10 +470,10 @@ async def test_the_blob_count_is_the_true_count():
     await join.enrich(
         [_row(f"[image {sha[:6]}]", sha=sha, ts=i + 1)
          for i, sha in enumerate(shas)],
-        path="memory_backfill",
+        path="judge_source",
     )
 
-    assert 'nora_media_blobs_joined_sum{path="memory_backfill"} 5.0' in metrics.render()
+    assert 'nora_media_blobs_joined_sum{path="judge_source"} 5.0' in metrics.render()
 
 
 async def test_a_batch_that_cannot_be_read_refuses_the_whole_window():
@@ -501,12 +501,12 @@ async def test_a_batch_that_cannot_be_read_refuses_the_whole_window():
     got = await join.enrich(
         [_row(f"[image {sha[:6]}]", sha=sha, ts=i + 1)
          for i, sha in enumerate(shas)],
-        path="memory_backfill",
+        path="judge_source",
     )
 
     assert all(":" not in (r.body or "") for r in got)
     assert metrics.get(
-        "nora_media_join_total", path="memory_backfill", status="unavailable",
+        "nora_media_join_total", path="judge_source", status="unavailable",
         reason="store") == 1
 
 

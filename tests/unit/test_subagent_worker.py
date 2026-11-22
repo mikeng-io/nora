@@ -50,7 +50,6 @@ from nora.testing import (
     FakeComputerExportStore,
     FakeDocumentStore,
     FakeMediaObjectStore,
-    FakeMemoryStore,
     FakeRosterSource,
     FakeSandboxRuntime,
 )
@@ -147,7 +146,7 @@ class _Rig:
             computer_exports=FakeComputerExportStore(),
         )
         self.source = SubagentToolSource(
-            registry=self.registry, store=_Rows(), persons=_Persons(), honcho=FakeMemoryStore(),
+            registry=self.registry, store=_Rows(), persons=_Persons(),
             metrics=self.metrics, rosters={PLATFORM: FakeRosterSource(groups={ROOM: ()})},
         )
         self.tmp = tmp_path
@@ -180,7 +179,7 @@ class _Rig:
     def specs(self, *, job: str = "", **kw: Any) -> dict[str, Any]:
         found = self.registry.specs(
             store=_Rows(), conversation_id=ROOM, conversation_type="group",
-            persons=_Persons(), honcho=FakeMemoryStore(), deliverer=None,
+            persons=_Persons(), deliverer=None,
             metrics=self.metrics, room=self.room(), subagent_job=job, **kw,
         )
         return {s.name: s.call for s in found}
@@ -533,7 +532,7 @@ def test_the_workers_model_is_built_with_the_configured_reasoning_effort(
     for effort in ("low", "high"):
         backend = build_subagent_backend(
             cfg=cfg, client=object(), tier=SimpleNamespace(temperature=0.0, timeout_seconds=30),
-            registry=rig.registry, store=_Rows(), persons=_Persons(), honcho=FakeMemoryStore(),
+            registry=rig.registry, store=_Rows(), persons=_Persons(),
             metrics=rig.metrics, rosters={}, self_ids=frozenset(),
             clock=lambda: datetime(2026, 10, 4, tzinfo=UTC), result_caps={},
             reasoning_effort=effort,

@@ -13,34 +13,16 @@ acceptance test — the `isinstance` call must return `True`.
 import inspect
 from pathlib import Path
 
-from nora.domain.ports import BlobStore, MediaSource, MemoryStore, PlatformAdapter
+from nora.domain.ports import BlobStore, MediaSource, PlatformAdapter
 from nora.infra.blobs import FilesystemBlobStore
 from nora.infra.blobs.cipher import BlobCipher
-from nora.infra.honcho import HonchoClient
 from nora.obs.metrics import Metrics
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.instagram.adapter import InstagramAdapter
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.media import SignalMediaSource
 from nora.platform.whatsapp.adapter import WhatsAppAdapter
-from nora.testing import FakeBlobStore, FakeMediaSource, FakeMemoryStore
-
-
-def test_honcho_client_satisfies_memory_store_method_names():
-    for method in ("ensure_workspace", "ensure_peer", "feed", "peer_card",
-                   "representation", "health", "aclose"):
-        assert callable(getattr(HonchoClient, method, None)), f"HonchoClient lacks {method}"
-
-
-def test_fake_memory_store_satisfies_memory_store():
-    """`FakeMemoryStore` (`nora/testing/fakes.py`) is `MemoryStore`'s second
-    implementation — `tests/integration/harness.py` and `evals/harness.py` both
-    build their pipeline against it instead of the real, networked `HonchoClient`.
-    `isinstance` against a `runtime_checkable` `Protocol` checks method names
-    only (see `test_runtime_checkable_protocols_only_check_method_names` below);
-    unlike `HonchoClient`, `FakeMemoryStore` is also keyword-only exactly like the
-    port. It is the suite's only memory fake (R-C)."""
-    assert isinstance(FakeMemoryStore(), MemoryStore)
+from nora.testing import FakeBlobStore, FakeMediaSource
 
 
 def test_signal_adapter_resolve_identity_satisfies_the_port_shape():
@@ -127,18 +109,11 @@ def test_runtime_checkable_protocols_only_check_method_names():
     the shapes — which is why DEC-12 adds it."""
 
     class Fake:
-        async def ensure_workspace(self): ...
-        async def ensure_peer(self, **kw): ...
-        async def feed(self, **kw): ...
-        async def conclude(self, **kw): ...
-        async def peer_card(self, **kw): ...
-        async def representation(self, **kw): ...
-        async def chat(self, **kw): ...
-        async def search(self, **kw): ...
-        async def health(self): ...
-        async def aclose(self): ...
+        async def put(self, *args): ...
+        async def get(self, *args): ...
+        async def delete(self, *args): ...
 
-    assert isinstance(Fake(), MemoryStore)
+    assert isinstance(Fake(), BlobStore)
 
 
 def test_the_media_ports_conform_in_both_implementations(tmp_path):

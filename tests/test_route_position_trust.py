@@ -82,7 +82,7 @@ def _tools(*, location_trusted: bool):
     client = _RecordingClient()
     tools = build_tools(
         store=None, conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=room, transit_source=None, route_source=client,
         presence_source=_CannedPresence(), presence_circles=(circle,),
         location_trusted=location_trusted, geocoder=FakeReverseGeocoder("Tsuen Wan Road"),
@@ -194,7 +194,7 @@ async def test_a_bound_place_label_that_is_a_disclosed_live_address_is_still_ref
     client = _RecordingClient()
     tools = build_tools(
         store=None, conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=room, transit_source=None, route_source=client,
         presence_source=_CannedPresence(), presence_circles=(circle,),
         location_trusted=False, geocoder=FakeReverseGeocoder("Tsuen Wan Road"),

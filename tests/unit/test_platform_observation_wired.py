@@ -64,7 +64,7 @@ from nora.platform.bridge.rehydrate import (
     observation_to_dict,
 )
 from nora.policy import Conversation, Policy
-from nora.testing import FakeMemoryStore, FakeRecordStore
+from nora.testing import FakeRecordStore
 from nora.testing.cognition_store import InMemoryCognitionStore
 from nora.testing.note_store import InMemoryNoteStore
 from nora.testing.observations import FakeObservationStore
@@ -140,7 +140,7 @@ async def _seed(store: FakeObservationStore) -> dict[str, int]:
 
 def _assembler(audit: FakeRecordStore, observations: Any) -> TranscriptInjection:
     return TranscriptInjection(
-        audit=audit, memory=FakeMemoryStore(), persons=PERSONS,
+        audit=audit, persons=PERSONS,
         context_window=40, metrics=Metrics(), observations=observations)
 
 
@@ -179,7 +179,7 @@ def _tools(audit: FakeRecordStore, store: Any, cid: str = CID,
            platform: str = "signal") -> dict[str, Any]:
     tools = build_tools(
         store=audit, conversation_id=cid, conversation_type="group",
-        persons=PERSONS, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=PERSONS, deliverer=SinkSender(),
         metrics=Metrics(),
         room=AgentRoom(platform=platform, conversation_id=cid,
                        roster_source=None, persons=PERSONS),
@@ -1232,7 +1232,7 @@ async def _retained_source_view(
     audit: FakeRecordStore, observations: Any, notes: Any, lineage: LineagePolicy | None = None,
 ):
     assembler = TranscriptInjection(
-        audit=audit, memory=FakeMemoryStore(), persons=PERSONS,
+        audit=audit, persons=PERSONS,
         context_window=40, metrics=Metrics(), observations=observations,
         notes=notes, policy=_policy(), lineage=lineage,
     )
@@ -1659,7 +1659,7 @@ async def test_an_off_window_target_uses_the_markdown_self_name(example_config_p
                          target=EditTarget(message_id="older-target")),
         event_id="generated-reaction", source_digest="generated-digest", target_message_id=mid)
     ctx = await build_assembler(
-        cfg, audit=audit, memory=FakeMemoryStore(), persons=PERSONS,
+        cfg, audit=audit, persons=PERSONS,
         metrics=Metrics(), policy=_policy(), observations=observations,
         clock=lambda: NOW,
     ).assemble(request=_request())

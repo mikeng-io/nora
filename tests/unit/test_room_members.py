@@ -129,7 +129,7 @@ async def test_the_fire_path_fills_room_members_through_build_context(tmp_path):
 
     from nora.app.fire import FirePath, reminder_occasion
     from nora.obs.metrics import Metrics
-    from nora.testing import FakeMemoryStore, FakeRecordStore
+    from nora.testing import FakeRecordStore
     from tests.unit.test_fire_path import _reminder
 
     persons, _ = _load(tmp_path)
@@ -137,7 +137,7 @@ async def test_the_fire_path_fills_room_members_through_build_context(tmp_path):
         'default = "deny"\n[[conversations]]\nplatform = "signal"\nid = "conv-1"\n'
         'label = "c"\npersons = ["miles_novak"]\nunit = "u"\n')
     path = FirePath(
-        persons=persons, records=FakeRecordStore(), memory=FakeMemoryStore(),
+        persons=persons, records=FakeRecordStore(),
         doctrine_store=None, metrics=Metrics(),  # type: ignore[arg-type]
         runner=None, adapters={}, registry=None,  # type: ignore[arg-type]
         canary="c", display_name="Nora", ai_peer="nora", context_window=40,

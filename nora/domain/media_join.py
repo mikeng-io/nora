@@ -81,9 +81,6 @@ JoinPath = Literal[
     # window a judge grades a reply against. `nora.subject` is outside the
     # gate's mypy, so an unlisted label is caught only by `_count` at runtime.
     "dreamer_eval", "judge_source",
-    # `nora memory backfill` (DEC-214): a unit's history replayed into its own
-    # Honcho workspace — it feeds memory.
-    "memory_backfill",
     "unknown",
 ]
 JOIN_PATHS: tuple[str, ...] = get_args(JoinPath)

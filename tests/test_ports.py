@@ -69,12 +69,12 @@ def test_ports_are_runtime_checkable_protocols():
 
 
 def test_every_port_is_enumerated():
-    """A sanity check on `_all_ports()` itself: it must find at least the five ports
-    named explicitly elsewhere in this file, so a bug in the enumeration (e.g. an
+    """A sanity check on `_all_ports()` itself: it must find at least the four ports
+    named explicitly below, so a bug in the enumeration (e.g. an
     import that shadows `_is_protocol`) fails loudly instead of silently covering
     fewer ports than intended."""
     found = {p.__name__ for p in _all_ports()}
-    expected = {"PlatformAdapter", "RecordStore", "MemoryStore", "EngagePolicy", "ContextAssembler"}
+    expected = {"PlatformAdapter", "RecordStore", "EngagePolicy", "ContextAssembler"}
     assert expected <= found, f"expected ports missing from enumeration: {expected - found}"
 
 

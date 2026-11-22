@@ -34,7 +34,7 @@ from nora.infra.transit import TransitClient
 from nora.obs.logging import bind_tag_id, clear_tag_id, setup_logging
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
-from nora.testing import FakeMemoryStore, FakeRosterSource
+from nora.testing import FakeRosterSource
 from nora.testing.note_store import InMemoryNoteStore
 from tests.builders import make_logging_config
 from tests.fakes import SinkSender
@@ -161,7 +161,7 @@ def wiring(tmp_path, restore_logging):
     notes = InMemoryNoteStore()
     tools = build_tools(
         store=_Store(), conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(),
+        persons=persons,
         deliverer=deliverer, metrics=metrics, room=room, question="邊個係阿豹",
         transit_source=_UNREACHABLE_TRANSIT, context_window=40,
         notes=notes, note_unit=lambda _platform, _cid: UNIT,

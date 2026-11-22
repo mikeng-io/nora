@@ -11,7 +11,7 @@ from nora.domain.gatherings import RSVPResponse
 from nora.domain.models import PersonRef
 from nora.domain.presence import PresenceFix, WireState
 from nora.persons import Persons
-from nora.testing import FakeMemoryStore, FakeRecordStore
+from nora.testing import FakeRecordStore
 from nora.testing.gatherings import FakeGatheringStore
 from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
@@ -36,8 +36,6 @@ def _fake_events() -> GatheringService:
     return GatheringService(
         store=FakeGatheringStore(),
         route_source=None,
-        honcho=None,
-        ai_peer="nora",
     )
 
 
@@ -72,10 +70,8 @@ async def client(aiohttp_client):
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        honcho=FakeMemoryStore(conclusions={"miles": ["x"]}),
         reminders=FakeReminderStore(),
         persons=Persons(by_person={"miles": MILES}, index={}),
-        ai_peer="nora",
         started_at=0.0,
         presence=None,
         presence_circles=(),
@@ -142,10 +138,6 @@ async def test_memory_route_returns_only_the_requested_persons_profile_accounts(
     assert account["unit"] == "friends"
     assert [line["text"] for line in account["lines"]] == ["legacy untyped: cycles to work"]
     assert set(account) == {"unit", "card", "lines", "disputes"}
-    # The store behind the fixture holds a conclusion for miles; the route
-    # neither shows it nor asks for it.
-    honcho = client.server.app["web_honcho"]
-    assert honcho.queries == [] and honcho.workspace_reads == []
 
 
 async def test_memory_route_with_no_person_id_returns_empty_not_everyone(client):
@@ -237,12 +229,10 @@ async def client_with_presence(aiohttp_client):
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        honcho=FakeMemoryStore(),
         reminders=FakeReminderStore(),
         persons=Persons(
             by_person={"miles": MILES, "ada": ADA, "sam": SAM, "daisy": DAISY}, index={},
         ),
-        ai_peer="nora",
         started_at=0.0,
         presence=reader,
         presence_circles=(circle, other),
@@ -348,8 +338,6 @@ async def client_with_events(aiohttp_client):
     events_service = GatheringService(
         store=FakeGatheringStore(),
         route_source=None,
-        honcho=None,
-        ai_peer="nora",
     )
     event = await events_service.create_event(
         conversation_id="signal:group-1",
@@ -367,13 +355,11 @@ async def client_with_events(aiohttp_client):
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        honcho=FakeMemoryStore(),
         reminders=FakeReminderStore(),
         persons=Persons(
             by_person={"miles": MILES, "daisy": DAISY, "sam": SAM},
             index={},
         ),
-        ai_peer="nora",
         started_at=0.0,
         presence=None,
         presence_circles=(),
@@ -393,7 +379,7 @@ async def test_the_events_routes_show_a_member_every_event_of_their_room(aiohttp
     from nora.app.gatherings import room_event_shown
 
     events_service = GatheringService(
-        store=FakeGatheringStore(), route_source=None, honcho=None, ai_peer="nora",
+        store=FakeGatheringStore(), route_source=None,
     )
     event = await events_service.create_event(
         conversation_id="group-1", requester_person_id="cognition:u",
@@ -401,9 +387,9 @@ async def test_the_events_routes_show_a_member_every_event_of_their_room(aiohttp
     )
     app = web.Application()
     register_web_routes(
-        app, store=FakeRecordStore(), honcho=FakeMemoryStore(), reminders=FakeReminderStore(),
+        app, store=FakeRecordStore(), reminders=FakeReminderStore(),
         persons=Persons(by_person={"miles": MILES, "sam": SAM}, index={}),
-        ai_peer="nora", started_at=0.0, presence=None, presence_circles=(),
+        started_at=0.0, presence=None, presence_circles=(),
         skills_dir=NO_SKILLS_DIR, events=events_service,
         doctrine_store=build_test_doctrine_store(),
         rooms_of=lambda p: frozenset({("signal", "group-1")}) if p == "miles" else frozenset(),
@@ -430,7 +416,7 @@ async def test_the_events_routes_do_not_show_a_rooms_old_event_after_it_moved_un
     from nora.app.gatherings import room_event_shown
 
     events_service = GatheringService(
-        store=FakeGatheringStore(), route_source=None, honcho=None, ai_peer="nora",
+        store=FakeGatheringStore(), route_source=None,
     )
     event = await events_service.create_event(
         conversation_id="group-1", requester_person_id="cognition:u",
@@ -438,9 +424,9 @@ async def test_the_events_routes_do_not_show_a_rooms_old_event_after_it_moved_un
     )
     app = web.Application()
     register_web_routes(
-        app, store=FakeRecordStore(), honcho=FakeMemoryStore(), reminders=FakeReminderStore(),
+        app, store=FakeRecordStore(), reminders=FakeReminderStore(),
         persons=Persons(by_person={"miles": MILES, "sam": SAM}, index={}),
-        ai_peer="nora", started_at=0.0, presence=None,
+        started_at=0.0, presence=None,
         presence_circles=(), skills_dir=NO_SKILLS_DIR, events=events_service,
         doctrine_store=build_test_doctrine_store(),
         rooms_of=lambda p: frozenset({("signal", "group-1")}) if p == "miles" else frozenset(),

@@ -102,7 +102,6 @@ def test_subject_consumers_read_the_pytest_owned_config(
     assert copied == stated
     assert cfg.llm.model == stated["llm"]["model"] == "nora"
     assert cfg.relevance_gate.enabled is True
-    assert module.memory_endpoint()[1] == stated["honcho"]["workspace_id"]
 
 
 def test_each_spec_composes_its_own_declared_config(

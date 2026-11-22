@@ -924,7 +924,7 @@ def test_the_tool_source_never_builds_a_tool_outside_the_ceiling():
     from nora.agent.registry import ToolRegistry
 
     source = RegistryToolSource(
-        registry=ToolRegistry(), store=None, persons=None, honcho=None,
+        registry=ToolRegistry(), store=None, persons=None,
         metrics=Metrics(),
         home_rooms={"friends": HomeRoom(
             unit="friends", platform="signal", conversation_id="g1",
@@ -975,7 +975,7 @@ def test_a_home_room_grant_builds_the_room_the_operator_named():
     registry = _RecordingRegistry()
     roster = object()
     source = RegistryToolSource(
-        registry=registry, store=None, persons=None, honcho=None,
+        registry=registry, store=None, persons=None,
         metrics=Metrics(),
         home_rooms={"friends": HomeRoom(
             unit="friends", platform="signal", conversation_id="g1",
@@ -1010,7 +1010,7 @@ def test_a_home_room_grant_with_no_home_room_falls_back_closed():
     the ungranted build — and never a guessed room."""
     registry = _RecordingRegistry()
     source = RegistryToolSource(
-        registry=registry, store=None, persons=None, honcho=None,
+        registry=registry, store=None, persons=None,
         metrics=Metrics(), home_rooms={},
     )
 
@@ -1040,7 +1040,7 @@ def test_a_SCOPE_keyed_grant_resolves_the_adaptors_OWN_room():
     registry = _RecordingRegistry()
     roster = object()
     source = RegistryToolSource(
-        registry=registry, store=None, persons=None, honcho=None,
+        registry=registry, store=None, persons=None,
         metrics=Metrics(),
         home_rooms={},
         scope_rooms={"g1": HomeRoom(
@@ -1077,7 +1077,7 @@ def test_a_scope_keyed_grant_for_an_unknown_room_falls_back_closed_and_says_so(
     fault the unit branch describes."""
     metrics = Metrics()
     source = RegistryToolSource(
-        registry=_RecordingRegistry(), store=None, persons=None, honcho=None,
+        registry=_RecordingRegistry(), store=None, persons=None,
         metrics=metrics, scope_rooms={},
     )
 
@@ -1100,7 +1100,7 @@ def test_two_broken_scopes_are_logged_SEPARATELY_not_collapsed_onto_one():
     the first broken room would be reported as though it were the only
     one."""
     source = RegistryToolSource(
-        registry=_RecordingRegistry(), store=None, persons=None, honcho=None,
+        registry=_RecordingRegistry(), store=None, persons=None,
         metrics=Metrics(), scope_rooms={},
     )
 
@@ -1147,7 +1147,7 @@ def test_the_missing_home_room_is_counted_every_pass_and_logged_once(caplog):
     """
     metrics = Metrics()
     source = RegistryToolSource(
-        registry=_RecordingRegistry(), store=None, persons=None, honcho=None,
+        registry=_RecordingRegistry(), store=None, persons=None,
         metrics=metrics, home_rooms={},
     )
 
@@ -1180,7 +1180,7 @@ def test_without_a_grant_the_build_is_byte_for_byte_the_old_one():
     granted it."""
     registry = _RecordingRegistry()
     source = RegistryToolSource(
-        registry=registry, store=None, persons=None, honcho=None,
+        registry=registry, store=None, persons=None,
         metrics=Metrics(),
         home_rooms={"friends": HomeRoom(
             unit="friends", platform="signal", conversation_id="g1",
@@ -1215,7 +1215,7 @@ def test_without_a_grant_a_SCOPE_keyed_build_is_the_closed_empty_room():
     happened to record»."""
     registry = _RecordingRegistry()
     source = RegistryToolSource(
-        registry=registry, store=None, persons=None, honcho=None,
+        registry=registry, store=None, persons=None,
         metrics=Metrics(),
         scope_rooms={"g1": HomeRoom(
             unit="friends", platform="discord", conversation_id="g1",
@@ -1242,7 +1242,7 @@ def test_the_tool_source_builds_the_unit_safe_tools():
     from nora.agent.registry import ToolRegistry
 
     source = RegistryToolSource(
-        registry=ToolRegistry(), store=None, persons=None, honcho=None,
+        registry=ToolRegistry(), store=None, persons=None,
         metrics=Metrics(),
     )
 
@@ -1261,7 +1261,7 @@ def test_asking_for_nothing_builds_nothing_and_touches_no_collaborator():
     from nora.agent.registry import ToolRegistry
 
     source = RegistryToolSource(
-        registry=ToolRegistry(), store=None, persons=None, honcho=None,
+        registry=ToolRegistry(), store=None, persons=None,
         metrics=Metrics(),
     )
 

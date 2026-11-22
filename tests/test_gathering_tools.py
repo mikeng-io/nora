@@ -11,7 +11,7 @@ from nora.agent.room import Room
 from nora.app.gatherings import GatheringService
 from nora.domain.models import PersonRef
 from nora.obs.metrics import Metrics
-from nora.testing import FakeMemoryStore, FakeRosterSource
+from nora.testing import FakeRosterSource
 from nora.testing.gatherings import FakeGatheringStore
 from tests.fakes import SinkSender
 
@@ -47,8 +47,6 @@ async def test_r52_two_open_events_refuses_a_third_rather_than_guessing():
     svc = GatheringService(
         store=FakeGatheringStore(),
         route_source=None,
-        honcho=None,
-        ai_peer="nora",
         now=lambda: datetime(2026, 8, 19, tzinfo=UTC),
     )
     await svc.create_event(
@@ -124,7 +122,6 @@ def _tools(
         conversation_id=conversation_id,
         conversation_type="group",
         persons=_FakePersons(MILES),
-        honcho=FakeMemoryStore(),
         deliverer=SinkSender(),
         metrics=metrics or Metrics(),
         room=_room(
@@ -139,8 +136,6 @@ def _events_service(*, store: FakeGatheringStore | None = None) -> GatheringServ
     return GatheringService(
         store=store or FakeGatheringStore(),
         route_source=None,
-        honcho=None,
-        ai_peer="nora",
         now=lambda: datetime(2026, 8, 19, 12, tzinfo=UTC),
     )
 

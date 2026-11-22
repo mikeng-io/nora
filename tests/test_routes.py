@@ -438,7 +438,7 @@ def _tool_wiring(route_source):
     metrics = Metrics()
     tools = build_tools(
         store=None, conversation_id="g1", conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=metrics,
+        persons=persons, deliverer=None, metrics=metrics,
         room=Room(platform="signal", conversation_id="g1", roster_source=None,
                   persons=persons),
         transit_source=None, route_source=route_source,

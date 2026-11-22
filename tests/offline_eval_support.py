@@ -22,7 +22,7 @@ import logging
 import os
 import uuid
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -47,7 +47,6 @@ from nora.domain.notes import Note, NoteRevision
 from nora.domain.reminders import Reminder, ReminderCaps, ReminderState
 from nora.domain.standing import Standing
 from nora.engagement.stages.deliver import BUDGET_STOP_REASONS as _BUDGET_STOP_REASONS
-from nora.infra.honcho import HonchoClient
 from nora.infra.sql.engine import create_sql_engine
 from nora.ingest.relevance_gate import (
     GATE_AUDIENCE,
@@ -76,7 +75,7 @@ from nora.testing import (
     InMemoryStandingStore,
     transcript_rows,
 )
-from nora.testing.fakes import FakeMemoryStore, FakeRecordStore
+from nora.testing.fakes import FakeRecordStore
 
 #: The single person the eval harness identity (`_IDENTITY_TOML`) maps — the
 #: harness's `+852111` sender resolves to this person_id (kept as the REAL
@@ -377,19 +376,17 @@ class ProductionSeed:
 
     `tests.offline_eval_harness.run_case(..., live=True, seed=...)` injects REAL production
     context into the fake stores so the model sees a prompt SHAPE close to what
-    production assembles — real transcript rows and real Honcho cards — while
+    production assembles — real transcript rows — while
     every write the run makes still lands in the fakes (zero contamination of
     the live store, and reproducible across runs because the seed is a fixed
     snapshot, not a live read).
 
     Built by `build_production_seed` (the only place allowed to touch the real
     stores from the eval path) or hand-built in a test. `recents` are
-    `TranscriptRow`s remapped onto the eval room's conversation id; `cards`
-    keyed by person id.
+    `TranscriptRow`s remapped onto the eval room's conversation id.
 
     These are the read surfaces the eval path exercises (`FakeRecordStore` only
-    serves `recent(...)`, `FakeMemoryStore` serves `peer_card` from `cards`,
-    and `InMemoryStandingStore`/`InMemoryNoteStore` serve
+    serves `recent(...)`, and `InMemoryStandingStore`/`InMemoryNoteStore` serve
     `standing`/`notes`), so seeding exactly those is what changes the
     model-visible prompt without pretending the eval is something it is not.
 
@@ -404,8 +401,6 @@ class ProductionSeed:
     """
 
     recents: tuple[TranscriptRow, ...] = ()
-    cards: dict[str, list[str]] = field(default_factory=dict)
-    conclusions: dict[str, list[str]] = field(default_factory=dict)
     standing: Standing | None = None
     notes: tuple[tuple[Note, NoteRevision], ...] = ()
 
@@ -414,13 +409,13 @@ async def build_production_seed(
     cfg: Config, *, recents_limit: int = 12,
 ) -> ProductionSeed:
     """Read a production-shaped context snapshot from the REAL stores
-    (Postgres transcript + Honcho peer card), read-only, for `ProductionSeed`.
+    (the Postgres transcript, standing and notes), read-only, for `ProductionSeed`.
 
     This is the one place the eval path touches the live stores. It reads
     exactly what `TranscriptInjection` would
     assemble in production and returns it as a fixed snapshot — the caller hands
     it to `run_case`, which injects it into the FAKE stores, so no eval run ever
-    writes to the live database or Honcho.
+    writes to the live database.
 
     `recents_limit` rows are taken from the transcript, newest-first across
     EVERY conversation (a production room's id is not the eval room's, and the
@@ -528,51 +523,7 @@ async def build_production_seed(
                 media_json=row.media_json, person_id=row.person_id,
             )
         )
-    # Honcho peer card for the eval person, read-only. Keyed under the eval
-    # person id (`_EVAL_PERSON_ID`) because `FakeMemoryStore` is asked for that
-    # peer in the harness. A dead/missing card is a normal `[]`.
-    cards: dict[str, list[str]] = {}
-    # Honcho conclusions for the eval person — the READ surface `about` serves
-    # in production. Seeding these is what makes the recall journeys
-    # (`about_recall`) testable at all: without them `about` answers "nothing
-    # known" and the model's reasonable fallback (search_memory/search_knowledge)
-    # is counted as a sibling leak + budget overrun — a harness artifact, not a
-    # routing failure. Same read-only constraint: this is the same endpoint the
-    # production `about` tool calls, and nothing writes.
-    #
-    # PERSON-ID NOTE: Honcho keys conclusions under the REAL person id
-    # (`_EVAL_PERSON_ID`, "miles_novak"), not a synthetic one like "miles":
-    # reading a synthetic id returns an empty card/conclusions even though the
-    # person exists. `build_production_seed` keys the seed under the real id;
-    # `FakeMemoryStore` is a plain dict keyed however we choose, so the harness
-    # can serve it under the production id while the R-31 gate still resolves
-    # the synthetic room through `_IDENTITY_TOML`.
-    conclusions: dict[str, list[str]] = {}
-    honcho = HonchoClient(
-        cfg.honcho.base_url, cfg.honcho.workspace_id, ai_peer=cfg.honcho.ai_peer,
-    )
-    try:
-        card = await asyncio.wait_for(
-            honcho.peer_card(peer_id=_EVAL_PERSON_ID), timeout=5.0,
-        )
-        if card:
-            cards[_EVAL_PERSON_ID] = card
-        rec = await asyncio.wait_for(
-            honcho.representation(
-                peer_id=cfg.honcho.ai_peer,
-                search_query="personal facts about this person",
-                # `max_conclusions` deliberately NOT passed — same contract as
-                # the production `about` tool (Honcho splits it three ways).
-                target=_EVAL_PERSON_ID,
-            ),
-            timeout=5.0,
-        )
-        if rec.reachable and rec.conclusions:
-            conclusions[_EVAL_PERSON_ID] = list(rec.conclusions)
-    finally:
-        await honcho.aclose()
-    return ProductionSeed(recents=tuple(recents), cards=cards,
-                          conclusions=conclusions, standing=standing,
+    return ProductionSeed(recents=tuple(recents), standing=standing,
                           notes=tuple(notes))
 
 
@@ -604,24 +555,6 @@ def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> Product
           standing: "where the conversation had got to"
           notes:
             - {title, description, body, uncertainty?, closing_condition?}
-          conclusions:                # Honcho, keyed by HONCHO PEER ID
-            nora: ["..."]             #   -> <self_card> (observer == observed)
-            miles_novak: ["..."]          #   -> <people_in_window> / <peer_history>
-
-    **`conclusions` is keyed by `PersonRef.honcho_peer_id`, which IS the
-    person id** (`nora.domain.models.PersonRef`: "== person_id, by
-    construction"), and the harness identity maps exactly one — `miles_novak`, the
-    sender `+852111` every seeded `"plain body"` row speaks as. A key that is
-    not a peer id, or a speaker who is not in `_IDENTITY_TOML`, seeds a
-    conclusion nothing can ever read: `FakeMemoryStore.representation` looks up
-    `target or peer_id` and an unknown peer is `reachable=True, conclusions=()`
-    — reachable, knowing nothing — so the case would grade a prompt missing the
-    block it is about and its knowledge-cut twin would pass for the wrong
-    reason. That is the same footgun the unit note above describes, on the
-    one tier whose key is a PERSON rather than a unit.
-
-    `nora` is the observer-equals-observed key: `cfg.honcho.ai_peer` on every
-    shipped config, and `<self_card>` is the block it feeds.
 
     **`now_ms`.** Every seeded timestamp is rendered as an age
     (`nora.agent.prefill._age`), so the base they walk forward from has to be
@@ -697,20 +630,7 @@ def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> Product
         )
         notes.append((note, revision))
 
-    # Honcho, straight through: `ProductionSeed.conclusions` is already the
-    # shape `FakeMemoryStore(conclusions=...)` takes, keyed by the OBSERVED
-    # peer. Nothing is derived or defaulted — a case that seeds no conclusions
-    # gets an empty dict, which is the knowledge cut for the memory tier and
-    # is exactly what the `-unknown` twin of a knowledge-cut pair needs.
-    conclusions = {
-        str(peer): [str(line) for line in (lines or [])]
-        for peer, lines in (raw.get("conclusions") or {}).items()
-    }
-
-    return ProductionSeed(
-        recents=tuple(recents), standing=standing, notes=tuple(notes),
-        conclusions=conclusions,
-    )
+    return ProductionSeed(recents=tuple(recents), standing=standing, notes=tuple(notes))
 
 
 # --- the Relevance Gate's eval seam -----------------------------------------
@@ -1116,7 +1036,7 @@ async def run_proactive_act_case(
     )
     adapter = FakeAdapter()
     path = FirePath(
-        persons=_EVAL_PERSONS, records=records, memory=FakeMemoryStore(),
+        persons=_EVAL_PERSONS, records=records,
         doctrine_store=doctrine, metrics=metrics, runner=runner,
         adapters={"signal": cast(Any, adapter)},
         registry=build_eval_tool_registry(

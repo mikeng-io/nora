@@ -100,7 +100,6 @@ from nora.domain.models import TagContext
 from nora.domain.ports import (
     EngagementRequest,
     LinkPreviewSource,
-    MemoryStore,
     RecordStore,
     RosterSource,
 )
@@ -194,7 +193,6 @@ class EngagementPipeline:
         access: Any,
         adapters: Mapping[str, Any],
         audit: RecordStore,
-        memory: MemoryStore,
         persons: Persons,
         doctrine_store: Any,
         context_assembler: Any,
@@ -233,7 +231,7 @@ class EngagementPipeline:
         # the wrong group. Keyed by `NormalizedMessage.platform`, which is
         # the only thing that can answer "where did this come from".
         self._adapters = adapters
-        self._audit, self._memory, self._persons = audit, memory, persons
+        self._audit, self._persons = audit, persons
         self._access = access or IdentityAccess.for_files(persons, policy)
         self._doctrine_store, self._context = doctrine_store, context_assembler
         self._runner, self._tool_registry = runner, tool_registry
@@ -728,7 +726,7 @@ class EngagementPipeline:
                 store=self._audit, conversation_id=msg.conversation_id,
                 conversation_type=msg.conversation_type,
                 persons=self._access.persons_view(),
-                honcho=self._memory, deliverer=handle.deliverer,
+                deliverer=handle.deliverer,
                 room=room, question=render_file_links(msg.body), message=msg,
                 context_window=self._context_window, metrics=self._metrics,
                 transcript=ctx.transcript, engagement=True,

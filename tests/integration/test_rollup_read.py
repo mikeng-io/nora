@@ -32,7 +32,7 @@ from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import load_policy
-from nora.testing import FakeMemoryStore, FakeRecordStore, FakeRosterSource
+from nora.testing import FakeRecordStore, FakeRosterSource
 from tests.fakes import SinkSender
 from tests.integration.test_rollup_builds import _START, _WATERMARK, _runner, _seed, _t
 
@@ -125,7 +125,7 @@ def _tool(engine, tmp_path, *, room_id="group-1", platform="signal", roster=_BOT
                 persons=persons)
     tools = build_tools(
         store=FakeRecordStore(), conversation_id=room_id, conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=persons, deliverer=SinkSender(),
         metrics=metrics or Metrics(), room=room, transit_source=_UNREACHABLE,
         clock=lambda: NOW,
         rollup=SqlRollupRead(engine) if rollup else None,

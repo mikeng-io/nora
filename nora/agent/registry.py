@@ -987,7 +987,6 @@ class ToolRegistry:
             conversation_id="catalog",
             conversation_type="group",
             persons=None,
-            honcho=None,
             deliverer=None,
             metrics=None,
             room=self._catalog_room(),
@@ -1097,7 +1096,6 @@ class ToolRegistry:
         conversation_id: str,
         conversation_type: str,
         persons: Any,
-        honcho: Any,
         deliverer: Any,
         metrics: Any,
         room: Room,
@@ -1123,7 +1121,7 @@ class ToolRegistry:
         return build_tool_specs(
             display_name=self._display_name,
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
-            persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
+            persons=persons, deliverer=deliverer, metrics=metrics,
             room=room, transit_source=self._transit, route_source=self._route,
             vision_source=self._vision, blob_store=self._blobs,
             vision_cache=self._vision_cache, video_readings=self._video_readings,
@@ -1210,7 +1208,6 @@ class ToolRegistry:
         conversation_id: str,
         conversation_type: str,
         persons: Any,
-        honcho: Any,
         deliverer: Any,
         metrics: Any,
         room: Room,
@@ -1236,7 +1233,7 @@ class ToolRegistry:
         never defers, so it is the resident-everything build."""
         return self.surface(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
-            persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
+            persons=persons, deliverer=deliverer, metrics=metrics,
             room=room, question=question, context_window=context_window,
             transcript=transcript, lookup_window=lookup_window,
             fire_turn=fire_turn, allowed_mcp=allowed_mcp,
@@ -1252,7 +1249,6 @@ class ToolRegistry:
         conversation_id: str,
         conversation_type: str,
         persons: Any,
-        honcho: Any,
         deliverer: Any,
         metrics: Any,
         room: Room,
@@ -1289,7 +1285,7 @@ class ToolRegistry:
         shelf = ToolShelf()
         specs = self.specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
-            persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
+            persons=persons, deliverer=deliverer, metrics=metrics,
             room=room, question=question, context_window=context_window,
             transcript=transcript, lookup_window=lookup_window,
             fire_turn=fire_turn, relay_turn=relay_turn,

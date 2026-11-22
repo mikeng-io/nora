@@ -51,7 +51,7 @@ def _turn(persons, routes, mobility, *, circles=None, members=(MILES, GRANT)):
     """One turn's tools, built once, so a read's names reach `route`."""
     specs = build_tool_specs(
         store=None, conversation_id="g", conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=_room(persons, members=members), transit_source=None,
         presence_circles=circles or (_circle(persons),), location_trusted=False,
         mobility=mobility, route_source=routes, clock=lambda: NOW.astimezone(UTC),
@@ -191,7 +191,7 @@ async def test_the_words_are_matched_without_case_and_echoed_as_she_gave_them(pe
 def _where_been_turn(persons, routes, mobility):
     specs = build_tool_specs(
         store=None, conversation_id="g", conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=_room(persons, members=(MILES, GRANT)), transit_source=None,
         presence_circles=(_circle(persons),), location_trusted=False,
         mobility=mobility, route_source=routes, clock=lambda: NOW.astimezone(UTC),
@@ -235,7 +235,7 @@ async def test_a_saved_place_wins_over_a_bound_name_of_the_same_words(persons):
     routes = _Routes()
     specs = build_tool_specs(
         store=None, conversation_id="g", conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=_room(persons, members=(MILES, GRANT)), transit_source=None,
         presence_circles=(_circle(persons),), location_trusted=False,
         mobility=_Mobility(places=[labelled], by_id={SECOND: labelled}),

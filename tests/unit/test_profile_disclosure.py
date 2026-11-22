@@ -29,7 +29,7 @@ from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import Conversation, Policy
-from nora.testing import FakeMemoryStore, FakeRecordStore, FakeRosterSource
+from nora.testing import FakeRecordStore, FakeRosterSource
 from tests.fakes import SinkSender
 
 NOW = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
@@ -96,7 +96,7 @@ def _assembler(
     convo: Conversation, reader: _Heads, roster: FakeRosterSource,
 ) -> TranscriptInjection:
     return TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemoryStore(), persons=_PERSONS,
+        audit=FakeRecordStore(), persons=_PERSONS,
         context_window=10, metrics=Metrics(), policy=_policy(convo),
         profile=reader, rosters={"signal": roster},
         lineage=LineagePolicy.from_policy(_policy(convo)),
@@ -176,7 +176,7 @@ async def test_no_roster_is_read_when_no_line_names_an_exclusion() -> None:
 
 def _fire_path(convo: Conversation, reader: _Heads, roster: FakeRosterSource) -> FirePath:
     return FirePath(
-        persons=_PERSONS, records=FakeRecordStore(), memory=FakeMemoryStore(),
+        persons=_PERSONS, records=FakeRecordStore(),
         doctrine_store=None, metrics=Metrics(),  # type: ignore[arg-type]
         runner=None, adapters={}, registry=None,  # type: ignore[arg-type]
         canary="test-canary", display_name="Nora",
@@ -226,7 +226,7 @@ async def test_each_profile_surface_checks_the_actual_room(surface, case):
     else:
         tools = build_tools(
             store=FakeRecordStore(), conversation_id="g1", conversation_type="group",
-            persons=_PERSONS, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+            persons=_PERSONS, deliverer=SinkSender(),
             metrics=Metrics(), room=Room(platform="signal", conversation_id="g1",
                 roster_source=roster, persons=_PERSONS),
             transit_source=TransitClient(kmb_base_url="http://127.0.0.1:1",

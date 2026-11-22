@@ -60,7 +60,7 @@ def tools(tmp_path, github, *, running='v0.0.1', timeout=5):
     registry = ToolRegistry(versions=VersionManifest(path),
                            releases=GithubReleases(base_url=github['url'], timeout_seconds=timeout))
     specs = registry.specs(store=None, conversation_id='room', conversation_type='group',
-                           persons=None, honcho=None, deliverer=None, metrics=Metrics(), room=None)
+                           persons=None, deliverer=None, metrics=Metrics(), room=None)
     return {s.name: s.call for s in specs}, path
 
 

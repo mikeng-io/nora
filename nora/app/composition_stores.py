@@ -11,7 +11,6 @@ from typing import Any
 from nora.agent.dream_screen import text_offence
 from nora.agent.registry import ToolRegistry
 from nora.app.composition_helpers import _otp_secrets
-from nora.app.memory_routing import MemoryRoutingError
 from nora.app.otp import OtpService
 from nora.app.startup import StartupError
 from nora.config_reload import ReloadFiles
@@ -68,7 +67,7 @@ def identity(cfg: Any, channel_directory: Any, metrics: Any)-> IdentityWiring:
             metrics=metrics,
             policy_channels=channel_directory,
         )
-    except (PersonsError, PolicyError, ValueError, MemoryRoutingError) as exc:
+    except (PersonsError, PolicyError, ValueError) as exc:
         raise StartupError(f"identity/policy error: {exc}") from exc
     persons, allowlist = reload_files.persons, reload_files.policy
     if allowlist.dm_persons:

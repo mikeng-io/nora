@@ -224,7 +224,7 @@ async def test_every_non_ok_weather_carries_a_dash_free_note():
     for source in (None, _Down()):
         specs = build_tool_specs(
             store=None, conversation_id="c", conversation_type="group",
-            persons=None, honcho=None, deliverer=None, room=None,
+            persons=None, deliverer=None, room=None,
             transit_source=None, weather_source=source, metrics=Metrics(),
         )
         out = await next(s for s in specs if s.name == "weather").call()

@@ -73,7 +73,7 @@ def _tools(persons, *, computer=None, events=None, settings=None, metrics=None,
     specs = build_tool_specs(
         unit_for=lambda platform, cid: cid,
         store=None, conversation_id=conversation_id, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None,
+        persons=persons, deliverer=None,
         metrics=metrics if metrics is not None else Metrics(),
         room=room, transit_source=None, blob_store=blobs,
         fire_turn=fire_turn, dream_adaptor=dream_adaptor,

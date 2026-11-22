@@ -479,7 +479,6 @@ def _sent_specs() -> dict[str, str]:
     from nora.agent.registry import ToolRegistry
     from nora.agent.room import Room
     from nora.obs.metrics import Metrics
-    from nora.testing.fakes import FakeMemoryStore
 
     class _Persons:
         def resolve(self, platform: str, sender_id: str):
@@ -493,7 +492,7 @@ def _sent_specs() -> dict[str, str]:
                 persons=_Persons())
     specs = ToolRegistry().specs(
         store=_Store(), conversation_id="g1", conversation_type="group",
-        persons=_Persons(), honcho=FakeMemoryStore(), deliverer=None,
+        persons=_Persons(), deliverer=None,
         metrics=Metrics(), room=room, dream_adaptor="policy",
     )
     return {

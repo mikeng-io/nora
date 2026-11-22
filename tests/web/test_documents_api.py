@@ -18,7 +18,7 @@ from nora.domain.documents import RevisionIn, handle_of
 from nora.domain.models import PersonRef
 from nora.persons import Persons
 from nora.policy import Conversation, Policy
-from nora.testing import FakeDocumentStore, FakeMemoryStore, FakeRecordStore
+from nora.testing import FakeDocumentStore, FakeRecordStore
 from nora.testing.fakes import FakeBlobStore
 from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
@@ -91,10 +91,8 @@ async def world_client(aiohttp_client):
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        honcho=FakeMemoryStore(),
         reminders=FakeReminderStore(),
         persons=Persons(by_person={"ken": KEN, "mei": MEI, "jo": JO, "sam": SAM}, index={}),
-        ai_peer="nora",
         started_at=0.0,
         presence=None,
         presence_circles=(),
@@ -223,10 +221,8 @@ async def test_a_deployment_without_documents_answers_503_not_an_empty_list(aioh
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        honcho=FakeMemoryStore(),
         reminders=FakeReminderStore(),
         persons=Persons(by_person={"ken": KEN}, index={}),
-        ai_peer="nora",
         started_at=0.0,
         presence=None,
         presence_circles=(),
@@ -288,10 +284,8 @@ async def _media_app(aiohttp_client, world: _MediaWorld, *, blobs: Any = "world"
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        honcho=FakeMemoryStore(),
         reminders=FakeReminderStore(),
         persons=Persons(by_person={"ken": KEN, "mei": MEI, "jo": JO, "sam": SAM}, index={}),
-        ai_peer="nora",
         started_at=0.0,
         presence=None,
         presence_circles=(),

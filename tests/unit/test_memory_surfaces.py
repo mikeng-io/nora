@@ -35,7 +35,7 @@ from nora.language.character import CHARACTER_PERSON_ADAPTOR_NAME, CHARACTER_PER
 from nora.language.culture import CULTURE_ADAPTOR_NAME, CULTURE_TOOLS
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
-from nora.testing import FakeMemoryStore, FakeRosterSource
+from nora.testing import FakeRosterSource
 from nora.testing.memory_index import FakeMemoryIndex
 from tests.fakes import SinkSender
 from tests.test_room_tools import GROUP, IDENTITY, MILES, NORA, TYLER, _NullStore
@@ -119,7 +119,7 @@ def _dream_source(registry: ToolRegistry, persons: Any) -> RegistryToolSource:
     here = HomeRoom(unit="u1", platform="signal", conversation_id=GROUP)
     return RegistryToolSource(
         registry=registry, store=_NullStore(), persons=persons,
-        honcho=FakeMemoryStore(), metrics=Metrics(),
+        metrics=Metrics(),
         scope_rooms={GROUP: here}, home_rooms={"u1": here},
         rosters={"signal": FakeRosterSource(groups={GROUP: (MILES, TYLER, NORA)})},
         self_ids=NORA,
@@ -132,7 +132,7 @@ async def _built(where: str, graph: bool, persons: Any) -> set[str]:
     if where in ("tag", "fire"):
         surface = registry.surface(
             store=_NullStore(), conversation_id=GROUP, conversation_type="group",
-            persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+            persons=persons, deliverer=SinkSender(),
             metrics=Metrics(), room=_room(persons), fire_turn=where == "fire",
         )
         return set(surface.admitted)
@@ -162,7 +162,7 @@ async def _built(where: str, graph: bool, persons: Any) -> set[str]:
     assert where == "subagent"
     return _names(await SubagentToolSource(
         registry=registry, store=_NullStore(), persons=persons,
-        honcho=FakeMemoryStore(), metrics=Metrics(),
+        metrics=Metrics(),
         rosters={"signal": FakeRosterSource(groups={GROUP: (MILES, TYLER, NORA)})},
         self_ids=NORA,
     ).build(
@@ -199,7 +199,7 @@ def test_remember_is_the_profile_write_on_both_surfaces(
     """`remember` is the Profile `told` line whether or not the graph is on."""
     specs = build_tool_specs(
         store=_NullStore(), conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=persons, deliverer=SinkSender(),
         metrics=Metrics(), room=_room(persons), question="", context_window=40,
         transit_source=None,
         memory_retrieval=MemorySearch(FakeMemoryIndex([]), Metrics()) if graph else None,

@@ -22,7 +22,7 @@ class RuntimeWiring:
 
 async def runtime(
     allowlist: Any, cfg: Any, engagement: Any, engine: Any,
-    fire_path: Any, ingest: Any, memory: Any, metrics: Any,
+    fire_path: Any, ingest: Any, metrics: Any,
     observation_store: Any, onboarding: Any, participation_trigger: Any,
     persons: Any, policy: Any, registry: Any, slots: Any, stimulus_wiring: Any,
     access: Any = None, room_command: Any = None, owner: Any = None,

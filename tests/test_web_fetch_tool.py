@@ -17,7 +17,6 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.domain.models import PersonRef
 from nora.obs.metrics import Metrics
-from nora.testing import FakeMemoryStore
 from nora.testing.fakes import FakeBlobStore
 from tests.fakes import SinkSender
 
@@ -104,7 +103,7 @@ def _tools(*, search=None, metrics: Metrics | None = None,
         search=search, fetch=fetch, blobs=blobs, fetched_pages=pages)
     specs = registry.specs(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(MILES), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=_FakePersons(MILES), deliverer=SinkSender(),
         metrics=metrics or Metrics(), room=_room(), **turn,
     )
     return {spec.name: spec.call for spec in specs}

@@ -26,7 +26,6 @@ from nora.domain.media_join import MediaJoin
 from nora.domain.memo import MemoStore
 from nora.domain.ports import (
     CultureReader,
-    MemoryStore,
     RecordStore,
     RosterSource,
 )
@@ -61,7 +60,6 @@ def build_assembler(
     cfg: Config,
     *,
     audit: RecordStore,
-    memory: MemoryStore,
     persons: Persons,
     metrics: Metrics,
     policy: Policy,
@@ -86,7 +84,7 @@ def build_assembler(
     access: object = None,
 ) -> TranscriptInjection:
     return TranscriptInjection(
-        audit=audit, memory=memory, persons=persons,
+        audit=audit, persons=persons,
         context_window=cfg.store.context_window, metrics=metrics,
         prompt_window=cfg.store.effective_prompt_window,
         # SHARED (DEC-195) with `nora.app.fire.FirePath`, not built here from
@@ -97,7 +95,6 @@ def build_assembler(
         # growth.
         quote_window=quote_window,
         ai_peer=cfg.honcho.ai_peer, display_name=cfg.doctrine.display_name,
-        tagger_card_conclusions=cfg.honcho.tagger_card_conclusions,
         notes=notes, policy=policy,
         memos=memos,
 

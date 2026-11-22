@@ -196,7 +196,6 @@ async def test_canonical_name_reaches_transcript_tools_and_note_validation(
         "conversation_id": "generated-room",
         "conversation_type": "group",
         "persons": persons,
-        "honcho": None,
         "deliverer": None,
         "metrics": Metrics(),
         "room": room,

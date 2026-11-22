@@ -47,7 +47,7 @@ def _sum_series(metrics, name: str) -> float:
 
 
 def build_health_app(
-    *, adapter, store, honcho, doctrine_store, metrics, started_at: float,
+    *, adapter, store, doctrine_store, metrics, started_at: float,
     llm_state: LLMState,
     adapters=None,
     identity_file: str | Path | None = None, policy_file: str | Path | None = None,
@@ -73,7 +73,6 @@ def build_health_app(
     else:
         app["adapters"] = {adapter.platform: adapter} if adapter is not None else {}
     app["store"] = store
-    app["honcho"] = honcho
     app["doctrine_store"] = doctrine_store
     app["metrics"] = metrics
     app["config_reload"] = config_reload
