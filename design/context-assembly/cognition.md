@@ -60,7 +60,7 @@ association so a cross-room reply reads as one conversation.
 
 A separate room catalogue lists every room of the unit with its purpose and
 recent activity. It makes quiet rooms available as destinations without changing
-the item-specific binding used for disclosure.
+what each item may disclose.
 
 ## One allocation
 
@@ -69,10 +69,10 @@ budget. Small needs are satisfied first, quiet rooms keep a floor and unused
 space flows to bursts that need it. Truncation and omitted subjects are explicit;
 a small pushed block cannot conceal what it left out.
 
-The unit remains the read boundary, and an affiliate inherits its primary
-read-only ([scope](../cognition/graph.md#scope)). Each item's disclosure resolves through its
-own room, and derived rows pass the same checks used elsewhere. Cross-room
-transcript visibility does not widen what any destination may later be told.
+The unit remains the read boundary: it shares its rows unit-wide, and an
+affiliate inherits its primary read-only ([scope](../cognition/graph.md#scope)).
+Raw DM items stay in their DM, exclusions and exposure always apply, and derived
+rows pass the same lineage checks used elsewhere.
 
 ## Naming and empty states
 

@@ -21,7 +21,7 @@ authored text, the scope of every row, and what may leave Nora.
 
 ## Agents
 
-An **agent** is one Nora: an authored profile, with its own seed and its own
+An **agent** is one Nora: an authored profile, with its own seed, practice and
 platform accounts, responsible for one social circle. The circle is its
 primary unit; the sub-groups inside it are its affiliates ([graph](graph.md#scope)).
 Anyone outside the circle belongs to another agent, never to a private silo
@@ -37,7 +37,7 @@ inside this one.
   their DM grants, opt-outs and budgets are each agent's own, and only
   authored identity is shared.
 - A public surface without a unit belongs to the agent whose account it is,
-  with that agent's seed and public ledger.
+  with that agent's seed, practice and public ledger.
 - Inheritance covers the graph, never live rooms: room and presence tools
   reach only the current unit's rooms.
 
@@ -50,8 +50,9 @@ people's responses to her acts, never only her own earlier words.
 - The **unit** is the read boundary, and it shares its rows unit-wide. Two
   rooms that must not share what is said belong to different units; an
   affiliate inherits its primary read-only ([graph](graph.md#scope)).
-- The **origin room** binds where a row may render and where an act about it
-  lands; a row whose room does not resolve is refused, never redirected.
+- The **origin room** binds where an act about a row lands and, for raw DM
+  items, the only room they render in; a row whose room does not resolve is
+  refused, never redirected.
 - **Excluded persons** are never revealed to or through: not in a reply, a
   reminder or its context.
 - **Exposure**: external rows may reach a room through the guards; internal

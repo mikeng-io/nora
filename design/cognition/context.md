@@ -30,8 +30,9 @@ state, and its edges as references to other rows' ids. The model reads meaning
 by block and can follow any id with a read tool. One renderer per kind renders
 a row the same way in every block and occasion.
 
-**Order within a block** is computed, never a model-made score: distance from
-the anchor, then state (due, then open, then closed), then recency.
+**Order within a block** is computed, never a model-made score: the pass's own
+unit before an inherited primary, then distance from the anchor, then state
+(due, then open, then closed), then recency.
 
 **Order between blocks** follows how often they change: steady blocks (Nora's
 profile, lessons, members, the room's profile) first, so the cached prefix
