@@ -40,10 +40,9 @@ def _person_dict(person: Any) -> dict[str, Any] | None:
 
 def _person_from_dict(data: dict[str, Any]) -> PersonRef:
     """A `PersonRef` from a queued handoff, dropping keys a removed field left in old rows."""
-    # ponytail: drops ANY unknown key, not only a removed field's — so a
-    # malformed row rebuilds where it used to raise. Filtering by the field
-    # names is what keeps the removed name out of this file; a missing
-    # REQUIRED key still raises, so the shape a reader depends on is unchanged.
+    # ponytail: drops ANY unknown key, so a malformed row rebuilds where it
+    # raised; filtering by field name is what keeps the retired name out of
+    # this file, and a missing REQUIRED key still raises.
     known = {f.name for f in fields(PersonRef)}
     return PersonRef(**{k: v for k, v in data.items() if k in known})
 
