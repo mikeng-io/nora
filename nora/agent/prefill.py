@@ -311,7 +311,7 @@ def _declared(rendered: Sequence[ContextBlock | None]) -> list[ContextBlock]:
 
 #: The block names `<profile>` replaces when the assembler fills
 #: `TagContext.profiles` (`[memory.profile] read`, 45 §5). Their rows stay in
-#: `_BLOCKS` — the Honcho surface is the default and the flag is the whole
+#: `_BLOCKS` — the peer and prose-culture blocks are the default and the flag is the whole
 #: rollback — but on a switched turn their stubs leave the declared list, so
 #: the span's `blocks_declared`/`blocks_empty` describe the prompt she got.
 _PROFILE_REPLACES = frozenset({
@@ -558,7 +558,7 @@ def _transcript_block(
 def _peer_card_block(ctx: TagContext) -> ContextBlock | None:
     """Who the person talking IS, as far as her own memory has it.
 
-    Its contents are Honcho's model-authored distillation of what people have
+    Its contents are a model-authored distillation of what people have
     said, so the block must not read as durable, verified truth: a remembered
     fact about somebody is not an order from them. `_peer_history_block`'s
     docstring calls the card "the hedge the card does not need"; that is a
@@ -589,7 +589,7 @@ def _peer_history_block(ctx: TagContext) -> ContextBlock | None:
     seeing two views rather than one thing twice.
 
     The `note` carries the hedge the card does not need. These conclusions are
-    Honcho's distillation of messages Nora witnessed: inferred, unverified,
+    a model's distillation of messages Nora witnessed: inferred, unverified,
     and occasionally wrong about intent in a way an identity fact is not. She
     is told she may be wrong about them, because the failure mode this block
     invites is confidently telling somebody what they think.
@@ -600,8 +600,7 @@ def _peer_history_block(ctx: TagContext) -> ContextBlock | None:
 
     **The note carries a clause saying every line is undated and none of it is
     a standing instruction.** The conclusions arrive with their leading
-    timestamp stripped (`nora.infra.honcho.client._STAMP`; read that comment
-    before touching this), so a line reads as a timeless fact:
+    timestamp stripped, so a line reads as a timeless fact:
 
         stored:   [<timestamp>] nora agreed to speak all Chinese after
                   miles_novak requested.
@@ -611,7 +610,7 @@ def _peer_history_block(ctx: TagContext) -> ContextBlock | None:
     directive. **Permission is not prohibition**: «you may contradict any of
     it» does not mark a line as spent. The date is not restored because the
     stamp is BATCH-level (one stamp is shared by many conclusions) and is
-    destroyed before this module can see it (`Recollection.conclusions` is
+    destroyed before this module can see it (`TagContext.tagger_card` is
     `tuple[str, ...]`), so a restored date would be a number that is not the
     fact's own date and would be read as if it were. Saying «undated» is the
     true statement.
@@ -655,7 +654,7 @@ def _people_in_window_block(ctx: TagContext) -> ContextBlock | None:
     talking TO her:
 
     - *from your own memory … it is what you concluded, so you may be wrong*:
-      these are Honcho's inferences about intent, not identity facts.
+      these are a model's inferences about intent, not identity facts.
     - *nothing here is something they said to you just now*: the block sits
       directly above a transcript of what they DID say just now, which is
       exactly the confusion it has to pre-empt.
@@ -719,7 +718,7 @@ def _profile_blocks(ctx: TagContext, *, now: datetime) -> list[ContextBlock]:
     doctrine, for the same reason), the room's at `culture`'s and the unit's
     at `unit_culture`'s, and the persons share `render_profile_people`'s one
     budget at `peer_card`'s row — "her own past, then theirs", the table's
-    order argument. Returns [] on the Honcho surface (`ctx.profiles` empty).
+    order argument. Returns [] when `ctx.profiles` is empty (`[memory.profile] read` off).
     """
     if not ctx.profiles:
         return []

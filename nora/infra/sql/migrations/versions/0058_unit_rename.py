@@ -1,5 +1,5 @@
 """workspace -> unit -- the memory tier's social-unit key stops sharing a word
-with Honcho's tenant.
+with the memory backend's tenant.
 
 **THE COLLISION.** Two unrelated things were both called `workspace`:
 
@@ -7,7 +7,7 @@ with Honcho's tenant.
   are the same group of people reachable in more than one place, which is what
   makes `send_to` between them something other than a leak. It is the key on
   `note`, `note_candidate` and `decision_log`, and it comes from policy.toml.
-- Honcho's: the first path segment of every call the memory client makes
+- The memory backend's: the first path segment of every call the memory client makes
   (`/v3/workspaces/{id}/...`). It is a TENANT -- one per Nora -- and it holds
   every unit at once. Its value is `memory.workspace_id`, shipped as `"nora"`.
 
@@ -15,7 +15,7 @@ They are at different levels and they were never the same set, but they were
 spelled the same, and the resolvers for them were both called `workspace_for`.
 That is how `NoteCurator._discharge` came to pass `note.workspace` as
 `conclude(workspace_id=...)`: a person-claim discharged from a note in the
-`friends` unit was addressed to a Honcho workspace called `friends`, which does
+`friends` unit was addressed to a memory-backend workspace called `friends`, which does
 not exist, while `representation`/`chat` read the default and never looked
 there. On this deployment the same line addressed `ridgeline` -- a workspace that
 DOES exist and belongs to something else. Fixed in the same change; this

@@ -206,7 +206,8 @@ def read_surface(
     and what the registry itself does not offer (`ToolRegistry.
     withheld_tools()`). REQUIRED, so the memory surface (DEC-316) has one
     source, the registry that builds the tools: a caller cannot leave it out
-    and have the catalogue claim the Honcho verbs with the graph's built."""
+    and have the catalogue claim the `read = false` surface's verbs with the
+    graph's built."""
     present = COGNITION_READ_CATALOGUE & read_only
     withheld = frozenset(
         name for name, flag in FLAGGED_READS.items()

@@ -884,7 +884,7 @@ class RecordStore(Protocol):
         unsend of it. Every replay and render reads through `transcript_select`, which
         excludes a hidden row. True when THIS call hid it, False when it already was
         (the first timestamp is kept) or the row does not exist. Nothing derived from
-        the message is touched, and Honcho keeps what it was already fed."""
+        the message is touched."""
         ...
 
     async def unattributed(self, *, limit: int) -> list[UnattributedRow]: ...
@@ -1670,7 +1670,7 @@ class MediaInterpreter(Protocol):
     """Bytes to a comprehension — title, description, content. Never raises.
 
     Stickers and photos are both read automatically. Where the result may go is
-    bounded: the comprehension lands in `media_objects` and in Honcho; the
+    bounded: the comprehension lands in `media_objects`; the
     transcript renders only title and description; `scan_identifiers` runs on
     every render and on every serve, never once at store time.
 
@@ -2138,7 +2138,7 @@ class SocialSubjectIndex(Protocol):
     binding does not degrade the answer, it reads a different human's stories
     silently.
 
-    **Not Honcho, deliberately.** Honcho holds what Nora remembers and infers
+    **Not memory, deliberately.** Memory holds what Nora remembers and infers
     about people, which is the right home for "Miles posts a lot of food
     photos" and the wrong home for "Miles is igid 246967358": the binding is an
     AUTHORIZATION KEY (the tier decision is made on it), and a binding that

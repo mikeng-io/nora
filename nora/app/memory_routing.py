@@ -17,9 +17,8 @@ def workspaces_of_person(policy: Policy, person_id: str) -> tuple[str, ...]:
     one order.
 
     WITHOUT `[units]` there is one workspace and everyone is in it: the
-    answer is `(DEFAULT_WORKSPACE,)` for any person, which reads the one
-    Honcho workspace — including for a person who is only in `persons = "*"`
-    rooms.
+    answer is `(DEFAULT_WORKSPACE,)` for any person — including for a person
+    who is only in `persons = "*"` rooms.
 
     WITH `[units]`, a `persons = "*"` room establishes nobody's membership —
     it admits whoever is in the room, and the policy cannot say who that is —
@@ -48,7 +47,7 @@ def profile_scopes_of_person(policy: Policy, person_id: str) -> tuple[tuple[str,
     than guessed — with one difference: without `[units]` it does NOT answer
     for everybody. A Profile account exists only for a person a room lists
     (`character_person_keys`), so an unlisted person has no scope here, where
-    the Honcho read above still has the one implicit workspace. Sorted by
+    `workspaces_of_person` above still answers the one implicit workspace. Sorted by
     unit, so a page renders them in one order."""
     # ponytail: same file-fact rule as `workspaces_of_person` — the guild
     # entry carries the listing, so `rooms()` would only hide it.

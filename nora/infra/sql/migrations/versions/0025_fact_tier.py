@@ -3,8 +3,8 @@
 
 Three tables, no writer. A fact is a TRIPLE with the source that warrants
 it, scoped to WORKSPACE — never a free-text statement (which no engine can
-ever traverse) and never a claim about a person (Honcho's axis, not this
-one). `fact_candidate` is the extraction stage's negative cache — without
+ever traverse) and never a claim about a person (the person-memory store's axis, not
+this one). `fact_candidate` is the extraction stage's negative cache — without
 `status='not_covered'` the same unprovable claim would be re-extracted and
 re-adjudicated every tick forever. `fact_entity` resolves aliases
 (`big walk` / `Big Walk` / 大步行) to one canonical subject or object so the

@@ -337,7 +337,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # An unmapped sender is an EXPECTED outcome (D6), so it is not an error, but
     # its symptom set is empty: the message is still audited, the gate still runs,
     # the prefill still shows the sender's platform display name, and nothing
-    # reaches Honcho. Counting it separates "nobody talked to her" from "her
+    # keyed by a person_id can hold them. Counting it separates "nobody talked to her" from "her
     # identity file is wrong, or its reload was refused".
     _CounterSpec(
         "nora_unmapped_senders_total",
@@ -442,7 +442,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "NEVER sum `not_found`/`nothing_found` with `unavailable`: the first two "
         "are answers and the third is a failure to answer, and averaging them "
         "hides an outage inside a normal-looking miss rate. Worth alerting on: a "
-        "sustained `unavailable` is Honcho or signal-cli rather than the model, "
+        "sustained `unavailable` is a store or signal-cli rather than the model, "
         "and a climbing `withheld` is the DEC-30 shape — she is being asked "
         "things she can see and cannot say.",
         ("tool", "status"),
@@ -508,7 +508,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     #
     # Invisible to every other series: a turn cut off after message 2 of 4 is not
     # silent. `delivered` is True, `check_outcome` returns True, the group gets the
-    # check mark, Honcho is fed, and `nora_silent_failures_total` never moves.
+    # check mark, and `nora_silent_failures_total` never moves.
     # `nora_messages_per_tag` cannot answer it either: a 2 is a 2 whether she meant
     # to stop there or was stopped.
     #

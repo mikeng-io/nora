@@ -345,10 +345,6 @@ class Subject:
     #: neither is a function of `(platform, conversation_id)`. Carried here
     #: because `know()` writes notes and culture under them and would
     #: otherwise re-derive both from a second reading of the same file.
-    #:
-    #: NOT `cfg.honcho.workspace_id`. That is Honcho's workspace, one per
-    #: deployment (`nora`), while a unit is per room (`friends`, `ridgeline`);
-    #: the two are distinct.
     unit: str
     culture_key: str
 

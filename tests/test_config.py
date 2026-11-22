@@ -2131,7 +2131,7 @@ def test_video_gen_refuses_a_resolution_other_than_480p(toml_path):
     ('culture', 'unit_wake_batch', '[memory.profile.unit] update_every_room_profile_changes'),
     ('culture', 'nora_wake_batch', '[memory.profile.nora] update_every_replies'),
 ])
-def test_retired_memory_config_names_are_refused_with_the_new_home(
+def test_retired_memory_config_names_are_refused_naming_the_new_home_or_the_removal(
     toml_path, section, key, new_home,
 ):
     import tomli_w

@@ -19,8 +19,7 @@ three things, and the pipeline acts on each:
   Losing the rare genuine edit of an unrecorded message is the smaller cost.
   The same ending when the original IS on record but withdrawn (a delete or
   unsend hid it, `EditedMessage.hidden`): an edit after a delete must not fold a
-  new version onto a hidden row, feed Honcho a correction «of» it (which would
-  quote what it first said), or open a turn on it. A late edit event for a
+  new version onto a hidden row or open a turn on it. A late edit event for a
   message its author took back is the common way this arrives.
 * **`edit_stale`** — older than the newest edit on record (see `_is_stale`).
 * **`edit_refused`** — the original is Nora's own (R-12: she never ingests her

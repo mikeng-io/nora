@@ -243,7 +243,7 @@ class EngagementPipeline:
         self._policy = policy
         self._debounce, self._canary = debounce, canary
         self._display_name = display_name
-        # The Nora aiPeer id (Honcho): her replies feed under it.
+        # Nora's own id (`[agent].name`).
         self._ai_peer = ai_peer
         self._context_window = context_window
         self._clock = clock
@@ -808,8 +808,8 @@ class EngagementPipeline:
                 # so this branch cannot fire on a timeout or an API error.
                 # On successful delivery the turn FLOWS THROUGH to
                 # `check_outcome` rather than returning here — it read
-                # `deliverer.delivered` True, corrected the trace, fed Honcho
-                # and marked the turn completed exactly like a normal delivery.
+                # `deliverer.delivered` True, corrected the trace and marked
+                # the turn completed exactly like a normal delivery.
                 salvable = (
                     # Occasion-gated: a
                     # participation turn never delivers a draft on ANY branch —
@@ -832,10 +832,10 @@ class EngagementPipeline:
                         # NO early return and NO `delivered = True` here: the
                         # turn flows through to `check_outcome` below, which
                         # already reads `deliverer.delivered` (True after the
-                        # salvage) and corrects the trace, feeds Honcho and
-                        # marks the turn completed — the same accounting a
-                        # normal delivery gets. An early return here would
-                        # skip exactly those three things.
+                        # salvage) and corrects the trace and marks the turn
+                        # completed — the same accounting a normal delivery
+                        # gets. An early return here would skip exactly those
+                        # two things.
                     else:
                         # Delivery refused (R-2/R-4/R-6/R-18) — nothing went
                         # out, stay silent exactly like the generic paths.
@@ -897,10 +897,10 @@ class EngagementPipeline:
                 # cost the guarantee.
                 #
                 # `source` distinguishes them for `Deliverer`, and that is not
-                # cosmetic: `source="fallback"` is excluded from the Honcho
-                # feed because nobody composed it, while a drafted answer IS
-                # her own sentence and her memory of her own speech should
-                # contain it — exactly the argument DEC-93's recovery makes
+                # cosmetic: `source="fallback"` is excluded from
+                # `Deliverer.sent_texts` because nobody composed it, while a
+                # drafted answer IS her own sentence and the record of what she
+                # said should contain it — exactly the argument DEC-93's recovery makes
                 # below for the same reason.
                 drafted = final_text.strip()
                 if drafted and await handle.deliverer.deliver(
@@ -942,11 +942,11 @@ class EngagementPipeline:
             #     conversion, the link carry and the audit row all apply exactly
             #     as they would have. Nothing is bypassed to rescue it.
             #
-            # It DOES feed Honcho, unlike `_EXHAUSTED_FALLBACK`. `Deliverer`
-            # excludes only `source="fallback"`, and the distinction is real:
-            # the fallback is a canned apology nobody composed, while this is
-            # her own sentence that merely took the wrong exit. The group read
-            # it; her memory of her own speech should contain it.
+            # It IS kept in `Deliverer.sent_texts`, unlike `_EXHAUSTED_FALLBACK`.
+            # `Deliverer` excludes only `source="fallback"`, and the distinction
+            # is real: the fallback is a canned apology nobody composed, while
+            # this is her own sentence that merely took the wrong exit. The
+            # group read it; the record of what she said should contain it.
             #
             # Counted because the honest read of a non-zero value here is «the
             # provider is not honouring `required`», NOT «this feature is
@@ -1224,8 +1224,8 @@ class EngagementPipeline:
                 "nora.llm_seconds": llm_elapsed,
             })
             # DEC-40's observable. A turn that sent SOME of its messages and
-            # then stopped is not a silent turn — `delivered` is True, the
-            # indicator resolves ✅ and Honcho is fed — so nothing R-23 built
+            # then stopped is not a silent turn — `delivered` is True and the
+            # indicator resolves ✅ — so nothing R-23 built
             # can see it. Counted here, in the `finally`, because that is the
             # one point every exit path passes through: the cap-cut loop, the
             # timeout, the llm_error, and the outer `BaseException` alike.

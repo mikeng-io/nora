@@ -251,16 +251,8 @@ class Room:
     def tagger_card_injected(self) -> bool:
         """Whether `<peer_history>` for the tagger is ALREADY in the prompt.
 
-        Read by `about`, and only to answer the tagger's own name with a
-        pointer instead of a second identical `representation` call — the
-        conclusions are already in front of her, and fetching them again would
-        spend a round trip to print the same lines twice.
-
-        Carries whether the block LANDED, never whether it was configured. An
-        unreachable Honcho and `tagger_card_conclusions = 0` both yield no
-        block, and in both cases `about` must do the real lookup rather than
-        point at an empty space — so this is derived from the assembled
-        `TagContext`, not from config.
+        Carries whether the block LANDED, never whether it was configured, so
+        it is derived from the assembled `TagContext`, not from config.
         """
         return self._tagger_card_injected
 

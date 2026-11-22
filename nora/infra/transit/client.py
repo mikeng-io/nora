@@ -17,8 +17,7 @@ holds the argument for why those two must never collapse.
 
 No key, no credentials, no `config.toml` section. The three URLs are published
 government endpoints and the timeout is a property of them rather than of this
-deployment, so both are constants here — the same argument
-`nora.infra.honcho.client` makes for `_MAX_DISTANCE`. They are constructor
+deployment, so both are constants here. They are constructor
 parameters only so a test can point them at a server that behaves like the real
 ones.
 """

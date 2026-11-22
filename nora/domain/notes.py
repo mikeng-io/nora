@@ -1,6 +1,5 @@
 """The note tier's types. A note is TRACKED UNCERTAINTY: never a settled claim
-(which is a fact, with a warrant) and never a conclusion about a person (which
-is Honcho's `(observer, observed)` axis).
+(which is a fact, with a warrant) and never a conclusion about a person.
 
 **The four fields are the point of this module**, and three of them are only
 load-bearing if the wrong thing is *unrepresentable* rather than discouraged:

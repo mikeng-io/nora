@@ -9,8 +9,8 @@ record does not hold.
 the tokens, the latency, the quota. Asking the same call for a title and for the legible content as
 well is
 near-free, so the pass produces all three and each consumer selects what it
-wants at render time: the transcript takes title + description, Honcho takes
-all three, `media_fetch` serves the rest on demand.
+wants at render time: the transcript takes title + description, and `media_fetch`
+serves the rest on demand.
 
 **The prompts are AUTHORED, per modality and per label**, exactly as
 `client.DESCRIBE_PROMPTS` is and for the same reason: what comes back is

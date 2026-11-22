@@ -125,11 +125,10 @@ async def run(
     medium, and every attachment keeps its bare handle. A voice note's
     transcript is still written to `media_objects.content` below, because STT
     already ran on this awaited path and its words are conversation content
-    that needs no model. What the off state does cost is memory: with no job,
-    nothing feeds those words to Honcho. `person` rides along only so a
-    comprehension can be fed to Honcho under the sender's own peer (D6, mapped
-    senders only) — this stage never resolves identity and never reads it for
-    anything else.
+    that needs no model. What the off state does cost is the model read: with
+    no job, the transcript gets no title or description. `person` is passed on
+    to the job untouched — this stage never resolves identity and never reads
+    it.
     """
     if not message.media:
         return message

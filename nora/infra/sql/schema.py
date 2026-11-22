@@ -1428,8 +1428,8 @@ MEDIA_OBJECTS = sa.Table(
     # THE THREE COMPREHENSION FIELDS. One model
     # pass per medium fills all three: `title` is what the thing IS (a few
     # words), `description` what it SHOWS (a sentence or two), `content`
-    # everything legible in it — the transcript renders title+description, the
-    # Honcho feed and `media_fetch` get all three. All three empty is an INDEX
+    # everything legible in it — the transcript renders title+description, and
+    # `media_fetch` gets all three. All three empty is an INDEX
     # ENTRY, not a description: the row says Nora holds the bytes and claims
     # nothing about them.
     sa.Column("title", sa.Text, nullable=False, server_default=""),
@@ -2384,7 +2384,7 @@ FACT_ASSERTER = sa.Table(
               sa.ForeignKey("fact.id", name="fact_asserter_fact_id_fkey",
                             ondelete="CASCADE"),
               primary_key=True),
-    # The Honcho peer (A2/DEC-14), never a platform account: one human with two
+    # The person_id (A2/DEC-14), never a platform account: one human with two
     # accounts is one asserter, and a per-account grain would read as two
     # people corroborating each other.
     sa.Column("person_id", sa.Text, primary_key=True),

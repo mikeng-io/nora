@@ -38,8 +38,8 @@ _PASTE_HINT = (
     "# Paste into identity.toml, EDIT THE person id AND name, then restart Nora.\n"
     "# If an account below is a person already in identity.toml, move only the\n"
     "# [[...]] block under that person and give every one of their blocks on\n"
-    "# that platform a distinct `label` — one human is one person_id and one\n"
-    "# Honcho peer card, and a second [persons.…] entry would split their memory.\n"
+    "# that platform a distinct `label` — one human is one person_id, and a\n"
+    "# second [persons.…] entry would split their memory.\n"
     "# On restart, lazy adoption backfills everything already audited (DEC-16)."
 )
 
@@ -52,9 +52,10 @@ def _when(ts: int) -> str:
 
 
 def slug(name: str, taken: set[str]) -> str:
-    """A person_id candidate matching `^[a-zA-Z0-9_-]+$` — Honcho's peer-id
-    rule, which `nora.persons` enforces. Deliberately plain for an unknown
-    account: `person-2` is meant to be edited, and looks it."""
+    """A person_id candidate matching `^[a-zA-Z0-9_-]+$` — the person-id
+    alphabet `nora.persons` enforces (a person_id is a key in every store).
+    Deliberately plain for an unknown account: `person-2` is meant to be
+    edited, and looks it."""
     base = _SLUG_STRIP_RE.sub("-", name).strip("-").lower() or "person"
     candidate, n = base, 1
     while candidate in taken:

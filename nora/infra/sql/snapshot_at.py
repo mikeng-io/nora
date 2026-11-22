@@ -19,10 +19,6 @@ WHAT IS COPIED, per `nora.infra.sql.history`:
 WHAT IS NOT, and the snapshot says so rather than leaving it empty
 silently (`EXCEPTED`, printed by the CLI):
 
-- **memory** (Honcho): live and mutable by design, with no chain to read
-  backwards. A case runs on its own empty Honcho workspace
-  (`nora/subject/memory_workspace.py`) and seeds memory or declares itself
-  memory-free.
 - **the Rollup before migration 0071**: from 0071 it is versioned
   builds with history, restored like every history table — the build
   `rollup_build` says was current at T, with its rows as they were at T —
@@ -118,9 +114,6 @@ __all__ = [
 
 #: What a restore cannot hold, in the words the CLI prints.
 EXCEPTED: tuple[str, ...] = (
-    "memory (Honcho): live and mutable, no chain to read backwards; a case "
-    "runs on its own empty Honcho workspace and seeds memory or declares "
-    "itself memory-free",
     "the Rollup before migration 0071 (step 2): its history starts there, so a "
     "T before it holds no Rollup rows",
     "events and RSVPs before migration 0074 (step 2b): their history starts "
