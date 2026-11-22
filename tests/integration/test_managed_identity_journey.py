@@ -358,7 +358,7 @@ async def world(pg_module_url, ory, aiohttp_client, tmp_path):
             register_web_routes(
                 app, store=FakeRecordStore(),
                 reminders=FakeReminderStore(),
-                persons=Persons(by_person={}, index={}), 
+                persons=Persons(by_person={}, index={}),
                 started_at=0.0, presence=None, presence_circles=(),
                 skills_dir=NO_SKILLS_DIR, events=_fake_events(),
                 doctrine_store=doctrine, documents=documents,

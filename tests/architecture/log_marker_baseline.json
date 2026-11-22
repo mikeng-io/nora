@@ -143,7 +143,7 @@
  "nora/domain/lessons.py": 2,
  "nora/domain/lineage.py": 4,
  "nora/domain/media.py": 5,
- "nora/domain/media_join.py": 2,
+ "nora/domain/media_join.py": 1,
  "nora/domain/memo.py": 6,
  "nora/domain/memory_graph.py": 1,
  "nora/domain/memory_index.py": 1,
