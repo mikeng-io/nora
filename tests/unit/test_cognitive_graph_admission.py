@@ -121,13 +121,14 @@ MERGE = MergeEntities(
     survivor=SURVIVOR.id,
 )
 ENTITY_LINK = Link(
-    type="interested_in",
+    type="about",
     basis="inferred",
-    source=SURVIVOR.id,
+    source="claim-about-topic",
     target=NEW_ENTITY.id,
     reasoning="deduced",
     confidence="low",
 )
+TOPIC_CLAIM = replace(NEW_CLAIM, id=ENTITY_LINK.source, links=(ENTITY_LINK,))
 
 
 def _batch(
@@ -228,13 +229,14 @@ def test_edges_require_declared_types_endpoints_and_bases() -> None:
     [
         (CLAIM, NEW_CLAIM, "retired"),
         (INTENTION, NEW_INTENTION, "ended"),
-        (ENTITY, replace(NEW_ENTITY, links=(ENTITY_LINK,)), "retired"),
+        (ENTITY, NEW_ENTITY, "retired"),
         (EDGE, NEW_EDGE, "retired"),
     ],
 )
 def test_revision_obeys_the_kind_lifecycle(base, replacement, terminal) -> None:
     proposal = Revise(base=base.id, replacement=replacement)
-    assert isinstance(_one(proposal), Admitted)
+    siblings = (TOPIC_CLAIM,) if isinstance(replacement, CreateEntity) else ()
+    assert isinstance(_batch(proposal, *siblings)[0], Admitted)
     assert _one(proposal, extra=(replace(base, state=terminal),)) == Refusal(
         "illegal_transition",
         "base",
@@ -360,35 +362,27 @@ def test_model_cannot_create_revise_merge_or_retire_pointer_entities(pointer: st
 
 def test_inferred_entity_requires_an_admitted_evidenced_edge_in_its_proposal() -> None:
     assert _one(NEW_ENTITY) == Refusal("orphan_entity", "links")
-    proposal = replace(NEW_ENTITY, links=(ENTITY_LINK,))
-    assert _one(replace(proposal, citations=())) == Refusal("orphan_entity", "links")
-    bad_link = replace(ENTITY_LINK, source=CLAIM.id)
-    assert _one(replace(proposal, links=(bad_link,))) == Refusal("illegal_endpoints", "target")
-    accepted = _one(proposal)
-    assert isinstance(accepted, Admitted)
-    assert tuple((link.type, link.source, link.target) for link in accepted.links) == (
-        ("interested_in", SURVIVOR.id, NEW_ENTITY.id),
-        ("cites", NEW_ENTITY.id, ITEM.id),
-    )
+    orphan, refused = _batch(NEW_ENTITY, replace(TOPIC_CLAIM, citations=()))
+    assert orphan == Refusal("orphan_entity", "links")
+    assert refused == Refusal("missing_evidence", "citations")
+    bad_link = replace(ENTITY_LINK, source=NEW_ENTITY.id, target=CLAIM.id)
+    assert _one(replace(NEW_ENTITY, links=(bad_link,))) == Refusal("illegal_endpoints", "target")
+    entity, claim = _batch(NEW_ENTITY, TOPIC_CLAIM)
+    assert isinstance(claim, Admitted) and claim.links[0] == ENTITY_LINK
+    assert isinstance(entity, Admitted) and claim.topics == (entity,)
 
 
 def test_merge_is_an_evidenced_relation_and_preserves_both_revision_chains() -> None:
-    first = replace(NEW_ENTITY, id="rev-source", links=(replace(ENTITY_LINK, target="rev-source"),))
-    second = replace(
-        NEW_ENTITY,
-        id="rev-survivor",
-        links=(
-            replace(
-                ENTITY_LINK,
-                source=ENTITY.id,
-                target="rev-survivor",
-            ),
-        ),
-    )
-    merge, rev_source, rev_survivor = _batch(
+    first = replace(NEW_ENTITY, id="rev-source")
+    second = replace(NEW_ENTITY, id="rev-survivor")
+    supporter = replace(TOPIC_CLAIM, links=tuple(
+        replace(ENTITY_LINK, target=entry.id) for entry in (first, second)
+    ))
+    merge, rev_source, rev_survivor, _ = _batch(
         MERGE,
         Revise(base=ENTITY.id, replacement=first),
         Revise(base=SURVIVOR.id, replacement=second),
+        supporter,
     )
     assert isinstance(merge, Admitted)
     assert tuple((link.type, link.source, link.target, link.basis) for link in merge.links) == (

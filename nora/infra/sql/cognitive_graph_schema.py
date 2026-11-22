@@ -191,7 +191,9 @@ CLAIM = sa.Table(
     sa.Column("prediction", sa.Text),
     sa.Column("window_end", sa.DateTime(timezone=True)),
     sa.PrimaryKeyConstraint("id", "unit", name="pk_claim"),
-    sa.CheckConstraint("part IN ('fact', 'trait', 'guess')", name="ck_claim_part"),
+    sa.CheckConstraint(
+        "part IN ('fact', 'trait', 'guess', 'lesson', 'situation')", name="ck_claim_part",
+    ),
     sa.CheckConstraint(
         "state = 'tombstoned' OR content IS NOT NULL", name="ck_claim_content"
     ),
@@ -316,7 +318,7 @@ EDGE = sa.Table(
     sa.PrimaryKeyConstraint("id", "unit", name="pk_edge"),
     sa.CheckConstraint(
         "type IN ('cites', 'about', 'draws_on', 'rests_on', 'serves', 'watches',"
-        " 'closed_by', 'interested_in', 'merged_into')",
+        " 'closed_by', 'merged_into')",
         name="ck_edge_type",
     ),
     sa.ForeignKeyConstraint(

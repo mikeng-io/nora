@@ -126,7 +126,7 @@ def test_endpoints_legal() -> None:
     assert graph.endpoints_legal("serves", "intention", "intention")
     assert graph.endpoints_legal("watches", "intention", "entity")
     assert graph.endpoints_legal("closed_by", "intention", "item")
-    assert graph.endpoints_legal("interested_in", "entity", "entity")
+    assert graph.endpoints_legal("merged_into", "entity", "entity")
     assert not graph.endpoints_legal("cites", "item", "claim")
     assert not graph.endpoints_legal("about", "entity", "claim")
     assert not graph.endpoints_legal("rests_on", "claim", "intention")

@@ -10,7 +10,7 @@ from sqlalchemy.sql import FromClause
 
 from nora.access import IdentityAccess
 from nora.memory.adapters.retrieval_rows import tombstoned_ids
-from nora.memory.domain.graph import Kind
+from nora.memory.domain.graph import ClaimPart, Kind, PointerKind
 from nora.memory.domain.registration import ITEM_SOURCES, SEARCHABLE_SOURCES
 from nora.memory.domain.retrieval import (
     EvidenceHandle,
@@ -19,6 +19,7 @@ from nora.memory.domain.retrieval import (
     RetrievedEdge,
     RetrievedPerson,
     RetrievedRow,
+    RetrievedSupport,
 )
 
 _ROLE = {
@@ -120,7 +121,24 @@ async def _relations(
 def _content(source: str, image: Mapping[str, Any]) -> object:
     if source in ("claim", "nora_pass_output"):
         return image.get("content")
+    if source == "edge":
+        return {field: image[field] for field in ("type", "src_id", "dst_id")}
     return {name: image[name] for name in SEARCHABLE_SOURCES.get(source, ()) if name in image}
+
+
+async def _support(
+    conn: AsyncConnection, rows: FromClause, claims: tuple[str, ...],
+) -> dict[str, RetrievedSupport]:
+    if not claims:
+        return {}
+    tally = rows.alias("scoped_claim_support").c
+    claim_id = tally.image["claim_id"].astext
+    count = tally.image["support_count"].astext.cast(sa.Integer)
+    last = tally.image["last_evidenced_at"].astext.cast(sa.DateTime(timezone=True))
+    heads = await conn.execute(sa.select(claim_id, count, last).where(
+        tally.source == "claim_support", claim_id.in_(claims), count > 0,
+    ))
+    return {key: RetrievedSupport(total, at) for key, total, at in heads}
 
 
 async def load_rows(
@@ -143,6 +161,9 @@ async def load_rows(
             sa.select(removed.c.id).where(removed.c.id.in_(distances)),
         ))
     edges, handles = await _relations(conn, rows, distances, scope)
+    support = await _support(conn, rows, tuple(
+        key for key, entry in found.items() if entry["kind"] == "claim"
+    ))
     result = []
     for graph_id, distance in distances.items():
         entry = found[graph_id]
@@ -165,5 +186,9 @@ async def load_rows(
             close_when={} if unavailable else {key: image.get(key) for key in keys},
             distance=distance, already_shown=graph_id in already_shown,
             unavailable="tombstoned_since" if unavailable else None,
+            part=cast(ClaimPart, image["part"]) if kind == "claim" else None,
+            pointer_kind=cast(PointerKind | None, image["pointer_kind"])
+            if kind == "entity" else None,
+            support=support.get(graph_id),
         ))
     return tuple(result)
