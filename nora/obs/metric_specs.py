@@ -485,7 +485,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_tool_calls_total",
         "Native tool calls that have no counter of their own, by tool and how "
-        "the tool answered (ok / not_found / nothing_known / unavailable / "
+        "the tool answered (ok / not_found / nothing_found / unavailable / "
         "refused). The three room-scoped tools are counted by "
         "nora_room_lookups_total instead, never here.",
         ("tool", "status"),

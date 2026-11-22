@@ -209,7 +209,7 @@ async def test_a_turn_that_calls_lookup_person_says_so_in_the_log(wiring):
 
 
 async def test_every_tool_leaves_exactly_one_line_naming_itself(wiring):
-    """All seven, not just the one that was grepped for. The failure is not
+    """All six, not just the one that was grepped for. The failure is not
     "lookup_person is quiet", it is "a tool is not expected to say anything",
     and a test covering one tool would leave the others free to regress.
     """
@@ -218,14 +218,14 @@ async def test_every_tool_leaves_exactly_one_line_naming_itself(wiring):
     await _call(tools["load_transcript"], limit=40)
     await _call(tools["group_members"])
     await _call(tools["lookup_person"], name="阿豹")
-    await _call(tools["about"], person="俊爺")
     await _call(tools["calculate"], expression="1485/7")
     await _call(tools["send_reply"], text="七點半")
     named = [record["tool"] for record in _tool_lines(wiring["log"])]
     assert sorted(named) == sorted([
         "now", "load_transcript", "group_members",
-        "lookup_person", "about", "calculate", "send_reply",
+        "lookup_person", "calculate", "send_reply",
     ])
+    assert len(named) == 6
 
 
 async def test_no_calculate_line_carries_the_expression_the_model_wrote(wiring):
@@ -285,14 +285,14 @@ async def test_a_clamped_limit_is_reported_as_the_clamped_value(wiring):
 async def test_no_tool_line_carries_a_phone_number_or_an_aci(wiring):
     """The log leaves the process unscanned — nothing redacts identifiers on
     the way out.
-    `lookup_person` and `about` take a model-supplied string that has arrived
-    as a phone number or an ACI before (`_asked_about` exists for that) — so
-    both are called here with one."""
+    `lookup_person` takes a model-supplied string that has arrived as a phone
+    number or an ACI before (`_asked_about` exists for that) — so it is called
+    here with each."""
     tools = wiring["tools"]
     await _call(tools["lookup_person"], name="+85290000101")
     await _call(tools["lookup_person"], name="+85260000000")
     await _call(tools["lookup_person"], name="+85290000102")
-    await _call(tools["about"], person="a1000001-0000-4000-8000-000000000001")
+    await _call(tools["lookup_person"], name="a1000001-0000-4000-8000-000000000001")
     # ...and the remaining three, so the scan below covers the whole file
     # rather than the three lines that happened to be written. `now` emits an
     # ISO timestamp with a `+08:00` offset, which is the one detail in here
@@ -305,12 +305,10 @@ async def test_no_tool_line_carries_a_phone_number_or_an_aci(wiring):
     assert "+8529" not in text and "+8526" not in text
 
 
-async def test_no_tool_line_carries_a_conclusion_or_a_transcript_body(wiring):
-    """Counts and statuses only. A conclusion is distilled from what somebody
-    actually said about a person, and a transcript body is the group's own
-    words — neither becomes safe by being written to a different file."""
+async def test_no_tool_line_carries_a_transcript_body_or_a_reply(wiring):
+    """Counts and statuses only. A transcript body is the group's own words and a
+    reply is hers — neither becomes safe by being written to a different file."""
     tools = wiring["tools"]
-    await _call(tools["about"], person="俊爺")
     await _call(tools["load_transcript"], limit=40)
     await _call(tools["send_reply"], text="今晚七點半得")
     text = wiring["log"].read_text()

@@ -427,11 +427,11 @@ def test_the_workers_guard_has_no_call_ceiling_and_every_other_adaptors_keeps_it
     """DEC-247, DEC-282: the sub-agent is exempt BY NAME; the default guard, which is
     what every other adaptor gets, still vetoes the call over a tool's ceiling."""
     rig = _Rig(tmp_path)
-    guard = rig.runner(_Script([]))._guard(["about"])
+    guard = rig.runner(_Script([]))._guard(["lookup_person"])
 
     class _Ev:
         def __init__(self, i: int) -> None:
-            self.tool_use = {"name": "about", "toolUseId": f"t{i}", "input": {}}
+            self.tool_use = {"name": "lookup_person", "toolUseId": f"t{i}", "input": {}}
             self.cancel_tool: Any = None
             self.exception = None
             self.cancel_message = None
@@ -442,7 +442,7 @@ def test_the_workers_guard_has_no_call_ceiling_and_every_other_adaptors_keeps_it
         guard._before_tool(before)
         assert before.cancel_tool is None
         guard._after_tool(_Ev(i))
-    other = DreamGuard(adaptor="proactive", budgets={"about": 4}, metrics=Metrics())
+    other = DreamGuard(adaptor="proactive", budgets={"lookup_person": 4}, metrics=Metrics())
     for i in range(4):
         before = _Ev(i)
         other._before_tool(before)

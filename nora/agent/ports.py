@@ -32,14 +32,13 @@ log = logging.getLogger(__name__)
 R27_CORE_STATES: frozenset[str] = frozenset({"ok", "nothing_found", "unavailable"})
 
 #: The DECLARED EXTENSIONS (ADR 0009 §1). The core is a core, not a ceiling: the
-#: live tool surface carries these ten beside it, each one a distinction the
+#: live tool surface carries these beside it, each one a distinction the
 #: guards and the recall ladder already depend on, and each named here with its
 #: meaning so an extension cannot be added silently. Collapsing `refused` into
 #: `unavailable` would turn «I may not say» into «I couldn't check», which is
 #: the exact conflation R-27 exists to prevent.
 DECLARED_STATUS_EXTENSIONS: Mapping[str, str] = {
     "refused": "disclosure veto (R-31) — may not say, not couldn't check",
-    "withheld": "disclosure veto on the memory axis (R-31)",
     "ambiguous": "the subject did not resolve to ONE thing because there "
                  "are several candidates and no way to pick one, so nothing "
                  "was looked at — two people answering to a name, or a person "
@@ -49,7 +48,6 @@ DECLARED_STATUS_EXTENSIONS: Mapping[str, str] = {
                  "saying no account is on file (design/instagram-adoption/social.md).",
     "not_found": "the thing does not exist (R-27b) — a place a route does not "
                  "serve is not «no such place», so this is not `nothing_found`",
-    "nothing_known": "no durable knowledge yet (the recall ladder)",
     "not_an_image": "media modality refusal",
     "already_present": "the idempotent write had nothing left to do",
     "no_route": "the routing provider found no way between origin and destination",

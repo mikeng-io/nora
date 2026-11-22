@@ -1,9 +1,9 @@
-"""`group_members`, `lookup_person`, `about` — the three room-scoped tools.
+"""`group_members`, `lookup_person` — the room-scoped tools.
 
 The rules under test:
 
-* **The model names WHAT, Nora resolves WHERE** (DEC-21/DEC-24). None of the
-  three declares a conversation, a peer id or a phone number, so there is
+* **The model names WHAT, Nora resolves WHERE** (DEC-21/DEC-24). Neither
+  declares a conversation, a peer id or a phone number, so there is
   nothing for the model to invent and nothing it can address outside this room.
 * **Scope is enforced at ASSEMBLY, not egress.** A person in `identity.toml`
   who is not in this conversation is indistinguishable from a person who does

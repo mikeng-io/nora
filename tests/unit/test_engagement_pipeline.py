@@ -1725,13 +1725,13 @@ async def test_a_pipeline_with_no_roster_source_degrades_instead_of_emptying_the
     assert runner.result["status"] == "unavailable"
 
 
-async def test_the_called_pass_excludes_about_even_with_honcho_wired():
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline()
+async def test_the_called_pass_touches_no_memory_store_even_when_one_is_wired():
+    pipeline, _metrics, _audit, memory, background = _build_pipeline()
     await pipeline.run(_request(_msg()))
     await _drain(background)
     names = {tool.tool_name for tool in pipeline._runner.calls[-1]["tools"]}
-    assert "about" not in names
     assert {"load_transcript", "send_reply"} <= names
+    assert memory.fed == [] and memory.peers == []
 
 
 # ---------------------------------------------------------------------------

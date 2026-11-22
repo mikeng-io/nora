@@ -123,8 +123,8 @@ async def test_the_fire_turn_carries_the_requester(fire_path: FirePath) -> None:
     """The trap this test exists for: blanking sender_id is correct for
     reactions (indicate.begin returns None on a falsy author) and wrong for
     everything that reads it. A blank sender_id resolved through
-    ContextAssembler gives tagger=None, which empties peer_card, makes
-    Room.scope() unavailable, and makes search_memory refuse."""
+    ContextAssembler gives tagger=None, which makes Room.scope() unavailable and every
+    room-scoped tool refuse."""
     reminder = _reminder()
 
     ctx = await fire_path.build_context(reminder_occasion([reminder]))
