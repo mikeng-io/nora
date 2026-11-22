@@ -1,13 +1,9 @@
 """One memory surface per deployment (DEC-316).
 
-Honcho and the memory graph never sit on one tool surface. `[memory.index]
-read` (the registry holding a `MemorySearch`) selects the graph's,
-`memory_search`; off (the shipped default, and the rollback) it is the
-Honcho surface: `ask_memory`, `search_memory`,
-`search_memory_workspace`, `who_said`, `about` and `remember`. The graph
-surface holds no Honcho tool at all: no `about`. `remember` is on both, a
-Honcho conclusion off the graph and a Profile `told` line on it (DEC-317);
-`load_transcript` reads the room's own rows and is on both.
+`[memory.index] read` (the registry holding a `MemorySearch`) selects the
+graph's surface, `memory_search`; off (the shipped default) it is `who_said`
+and no `memory_search`. `remember` is the Profile `told` line on both
+(DEC-317); `load_transcript` reads the room's own rows and is on both.
 
 Pinned at every place tools are assembled, each through its own production
 builder: a tag, a fire turn, the Cognition session, each Dreamer adaptor that
@@ -21,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS
+from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, OFF_GRAPH_ONLY_TOOLS
 from nora.agent.dreamer import (
     HomeRoom,
     RegistryToolSource,
@@ -45,53 +41,48 @@ from tests.fakes import SinkSender
 from tests.test_room_tools import GROUP, IDENTITY, MILES, NORA, TYLER, _NullStore
 
 #: Every verb either surface could carry, so a set below is what one place
-#: offers of them. A literal, not built from `HONCHO_MEMORY_TOOLS`: a tool
+#: offers of them. A literal, not built from `OFF_GRAPH_ONLY_TOOLS`: a tool
 #: dropped from that constant must still be seen here, or the graph test
 #: would pass by no longer looking for it.
 MEMORY_VERBS = frozenset({
-    "ask_memory", "search_memory", "search_memory_workspace", "who_said",
-    "about", "remember", "memory_search", "memory_read", "load_transcript", "profile_dispute",
+    "who_said", "remember", "memory_search", "memory_read", "load_transcript",
+    "profile_dispute",
 })
 
 
 def test_memory_verbs_cover_both_surfaces() -> None:
-    assert HONCHO_MEMORY_TOOLS | GRAPH_MEMORY_TOOLS <= MEMORY_VERBS
+    assert OFF_GRAPH_ONLY_TOOLS | GRAPH_MEMORY_TOOLS <= MEMORY_VERBS
 
 #: What each assembly point offers of `MEMORY_VERBS`, per surface. The graph
-#: column is the Honcho column with every Honcho tool taken out (`about`
-#: included; `remember` stays, as the Profile write) and `memory_search` put
-#: in where that place had a Honcho search verb. The
+#: column is the off-graph column with `who_said` taken out (`remember` stays,
+#: as the Profile write) and `memory_search` put in where that place has it. The
 #: worker holds no `memory_search`: it reads the unit's other rooms, and the
 #: worker's reach is its one room (`NOT_LOOKUPS`).
 EXPECTED: dict[str, dict[bool, frozenset[str]]] = {
     "tag": {
-        False: frozenset({"ask_memory", "search_memory", "who_said", "about",
-                          "remember", "load_transcript"}),
+        False: frozenset({"who_said", "remember", "load_transcript"}),
         True: frozenset({"memory_search", "memory_read", "remember", "profile_dispute",
                          "load_transcript"}),
     },
     "fire": {
-        False: frozenset({"ask_memory", "search_memory", "who_said", "about",
-                          "remember", "load_transcript"}),
+        False: frozenset({"who_said", "remember", "load_transcript"}),
         True: frozenset({"memory_search", "memory_read", "remember", "profile_dispute",
                          "load_transcript"}),
     },
     "cognition": {
-        False: frozenset({"ask_memory", "search_memory", "search_memory_workspace",
-                          "about", "who_said", "load_transcript"}),
+        False: frozenset({"who_said", "load_transcript"}),
         True: frozenset({"memory_search", "memory_read", "load_transcript"}),
     },
     CULTURE_ADAPTOR_NAME: {
-        False: frozenset({"ask_memory", "search_memory", "about"}),
+        False: frozenset(),
         True: frozenset({"memory_search"}),
     },
     CHARACTER_PERSON_ADAPTOR_NAME: {
-        False: frozenset({"ask_memory", "search_memory", "about"}),
+        False: frozenset(),
         True: frozenset({"memory_search"}),
     },
     "subagent": {
-        False: frozenset({"ask_memory", "search_memory", "who_said", "about",
-                          "load_transcript"}),
+        False: frozenset({"who_said", "load_transcript"}),
         True: frozenset({"load_transcript"}),
     },
 }
@@ -181,35 +172,31 @@ async def _built(where: str, graph: bool, persons: Any) -> set[str]:
 
 
 @pytest.mark.parametrize("where", sorted(EXPECTED))
-async def test_the_honcho_surface_is_origin_masters_with_no_memory_search(
+async def test_the_off_graph_surface_has_no_memory_search(
     persons: Any, where: str,
 ) -> None:
-    """`[memory.index]` off: the memory verbs each place held on origin/master,
-    and never the graph's."""
+    """`[memory.index]` off: the memory verbs each place offers, never the graph's."""
     offered = await _built(where, False, persons) & MEMORY_VERBS
     assert offered == EXPECTED[where][False]
     assert not offered & GRAPH_MEMORY_TOOLS
 
 
 @pytest.mark.parametrize("where", sorted(EXPECTED))
-async def test_the_graph_surface_offers_memory_search_and_no_honcho_memory_verb(
+async def test_the_graph_surface_offers_memory_search_and_no_off_graph_tool(
     persons: Any, where: str,
 ) -> None:
-    """`[memory.index]` on: `memory_search`, and none of `ask_memory`,
-    `search_memory`, `search_memory_workspace`, `who_said` or `about`: no
-    Honcho tool at all (`remember` there is the Profile write, below)."""
+    """`[memory.index]` on: `memory_search`, and not `who_said` (`remember` there
+    is the Profile write, below)."""
     offered = await _built(where, True, persons) & MEMORY_VERBS
     assert offered == EXPECTED[where][True]
-    assert not offered & HONCHO_MEMORY_TOOLS
-    assert "about" not in offered
+    assert not offered & OFF_GRAPH_ONLY_TOOLS
 
 
-@pytest.mark.parametrize(("graph", "closure"), [(False, "remember"), (True, "remember_told")])
-def test_remember_is_the_profile_write_on_the_graph_and_honchos_off_it(
-    persons: Any, graph: bool, closure: str,
+@pytest.mark.parametrize("graph", [False, True])
+def test_remember_is_the_profile_write_on_both_surfaces(
+    persons: Any, graph: bool,
 ) -> None:
-    """One name, two writes: off the graph `remember` is Honcho's conclusion,
-    on it the Profile `told` line, never the Honcho closure under the graph."""
+    """`remember` is the Profile `told` line whether or not the graph is on."""
     specs = build_tool_specs(
         store=_NullStore(), conversation_id=GROUP, conversation_type="group",
         persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
@@ -217,23 +204,23 @@ def test_remember_is_the_profile_write_on_the_graph_and_honchos_off_it(
         transit_source=None,
         memory_retrieval=MemorySearch(FakeMemoryIndex([]), Metrics()) if graph else None,
     )
-    assert [s.call.__name__ for s in specs if s.name == "remember"] == [closure]
+    assert [s.call.__name__ for s in specs if s.name == "remember"] == ["remember_told"]
 
 
 def test_cognition_takes_the_memory_surface_from_the_registry() -> None:
     """One source (DEC-316): Cognition's `wired` set is what the
     registry it builds through withholds, never a flag re-derived from
     config beside it. `read_surface` cannot be called without it."""
-    read_only = frozenset(HONCHO_MEMORY_TOOLS | GRAPH_MEMORY_TOOLS | {"about"})
+    read_only = frozenset(OFF_GRAPH_ONLY_TOOLS | GRAPH_MEMORY_TOOLS)
     off = read_surface(read_only=read_only, enabled_flags=(),
                        registry_withheld=_registry(False).withheld_tools())
     on = read_surface(read_only=read_only, enabled_flags=(),
                       registry_withheld=_registry(True).withheld_tools())
     assert "memory_search" in off.withheld and "memory_search" not in off.wired
     assert "memory_search" in on.wired
-    assert not on.wired & HONCHO_MEMORY_TOOLS
-    assert {"ask_memory", "search_memory", "search_memory_workspace", "about"} <= on.withheld
-    assert "about" in off.wired
+    assert not on.wired & OFF_GRAPH_ONLY_TOOLS
+    assert on.withheld >= OFF_GRAPH_ONLY_TOOLS
+    assert off.wired >= OFF_GRAPH_ONLY_TOOLS
     with pytest.raises(TypeError):
         read_surface(read_only=read_only, enabled_flags=())  # type: ignore[call-arg]
 
@@ -245,6 +232,6 @@ def test_the_digest_lists_one_memory_surface(graph: bool) -> None:
     digest = _registry(graph).capability_digest()
     named = {line.split(" — ")[0][2:] for line in digest.splitlines()}
     if graph:
-        assert "memory_search" in named and not named & HONCHO_MEMORY_TOOLS
+        assert "memory_search" in named and not named & OFF_GRAPH_ONLY_TOOLS
     else:
-        assert "memory_search" not in named and "search_memory" in named
+        assert "memory_search" not in named and "who_said" in named

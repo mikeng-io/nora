@@ -35,7 +35,7 @@ import pytest
 import sqlalchemy as sa
 
 from nora.access import IdentityAccess
-from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS
+from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, OFF_GRAPH_ONLY_TOOLS
 from nora.agent.dreamer import HomeRoom, RegistryToolSource, cognition_grant
 from nora.agent.lineage import LineagePolicy
 from nora.agent.memory_search import MemorySearch
@@ -308,10 +308,6 @@ CALLS: dict[str, list[dict[str, Any]]] = {
                     {"person": "Ben", "interval": "2026-09-01"}],
     "where_been": [{"what": "places"}, {"what": "day", "date": "2026-09-30"}],
     "routine_read": [{"date": "2026-10-01", "from_hour": 18, "to_hour": 21}],
-    "about": [{"person": "Ada"}],
-    "ask_memory": [{"person": "Ada"}],
-    "search_memory": [{"query": "dinner"}],
-    "search_memory_workspace": [{"query": "dinner"}],
     # The graph surface's (DEC-316): a plain search, and one narrowed every
     # way it can be, so each filter's SQL runs.
     "memory_read": [{"id": "MEMORY", "depth": 0}],
@@ -453,7 +449,7 @@ async def test_the_call_table_covers_every_wired_tool(world):
     would be «checked» by not being called."""
     assert set(world.surface.wired) <= set(CALLS)
     # what the table holds beyond this surface is the OTHER memory surface's
-    assert set(CALLS) - set(world.surface.wired) <= HONCHO_MEMORY_TOOLS | GRAPH_MEMORY_TOOLS
+    assert set(CALLS) - set(world.surface.wired) <= OFF_GRAPH_ONLY_TOOLS | GRAPH_MEMORY_TOOLS
 
 
 async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, world):
@@ -511,19 +507,15 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
             assert set(results[name]) == {"unavailable"}, (name, results[name])
     # the derived-presence reads reached their SQL (a current build exists)
     assert not {"unavailable"} & set(results["where_been"] + results["routine_read"]), results
-    # No counter that feeds a decision moved, and Honcho was only ever read.
+    # No counter that feeds a decision moved, and Honcho was never touched.
     assert world.memory.fed == [] and world.memory.writes == [] and world.memory.peers == []
+    assert world.memory.chats == [] and world.memory.searches == []
+    assert world.memory.queries == []
     if "memory_search" in world.surface.wired:
-        # The graph surface: the index answered, and Honcho was never read at
-        # all: no Honcho tool sits on it, `about` included (DEC-316).
-        assert not HONCHO_MEMORY_TOOLS & set(world.surface.wired)
+        # The graph surface: the index answered, and no off-graph tool sits on it (DEC-316).
+        assert not OFF_GRAPH_ONLY_TOOLS & set(world.surface.wired)
         assert "unavailable" not in results["memory_search"], results["memory_search"]
         assert results["memory_read"] == ["ok"]
-        assert world.memory.chats == [] and world.memory.searches == []
-        assert world.memory.queries == []
-    else:
-        assert world.memory.chats and world.memory.searches
-        assert world.memory.queries   # and `about` WAS read
 
 
 async def test_the_positive_control_a_live_write_moves_the_snapshot(engine, world):

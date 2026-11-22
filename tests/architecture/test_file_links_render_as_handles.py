@@ -101,17 +101,6 @@ def _memory_backfill() -> str:
     return repr(_items(_row()))
 
 
-def _memory_hits() -> str:
-    """search_memory / search_memory_workspace: Honcho's stored words, which
-    hold raw links for anything fed before links were rendered as handles."""
-    from nora.agent.toolkit.results import _memory_hits_result
-
-    return repr(_memory_hits_result(
-        hits=[("p1", f"budget {URL} pls")], roster={"p1": "A"},
-        record=lambda *_a, **_k: None, partial_view=None,
-    ))
-
-
 def _bullets() -> str:
     """Honcho conclusions and cards (`<peer_card>`, `<people_in_window>`)."""
     from nora.domain.blocks import render_bullets
@@ -175,7 +164,6 @@ RENDERERS = {
     "blocks.render_bullets": _bullets,
     "reaction.render_recent": _reaction,
     "tools._transcript_messages": _tool_result,
-    "tools._memory_hits_result": _memory_hits,
     "memory_backfill._items": _memory_backfill,
     "cognition_render._message_row": _cognition_message,
     "cognition_render._own_row": _cognition_own,
@@ -255,12 +243,7 @@ HAND_BUILT = {
     ("nora/agent/toolkit/transcript.py", "_transcript_messages"):
         "load_transcript / room_read / record_query results",
     ("nora/conversation/adapters/tools/record.py", "who_said"): "who_said hits",
-    ("nora/agent/toolkit/results.py", "_memory_hits_result"): "search_memory(_workspace) hits",
-    ("nora/people/adapters/tools/__init__.py", "about"): "about's Honcho conclusions and card",
-    ("nora/memory/adapters/tools/search.py", "ask_memory"): "ask_memory's Honcho answer",
     ("nora/app/memory_backfill.py", "_items"): "`nora memory backfill`",
-    ("nora/app/fire.py", "_window_query"): "the fire path's recall search key",
-    ("nora/engagement/context.py", "_recall_tagger"): "the tagger recall search key",
     ("nora/language/cognition_render.py", "_words"):
         "the Cognition agenda's message and own-send words (record hits, own_sends)",
     ("nora/domain/blocks.py", "render_rows"): "every line renderer",
@@ -316,8 +299,8 @@ BUILDERS: dict[str, str | tuple[str, ...]] = {
     "nora/conversation/adapters/tools/query.py":
         "renders record hits through the shared _transcript_messages (HAND_BUILT)",
     "nora/app/memory_backfill.py": ("_items",),
-    "nora/app/fire.py": ("_window_query",),
-    "nora/engagement/context.py": ("_recall_tagger",),
+    "nora/app/fire.py": "blocks: prefill.render_transcript (render_messages)",
+    "nora/engagement/context.py": "blocks: prefill.render_transcript (render_messages)",
     "nora/app/cognition_context.py": "blocks: shared context_render through render_messages",
     "nora/app/wake_floor.py": "blocks: shared context_render through render_messages",
     "nora/app/runtime.py": "blocks: the Dreamer's rows reach its adaptors' render_row_window",

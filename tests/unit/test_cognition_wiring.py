@@ -64,7 +64,7 @@ def test_the_catalogue_is_the_designs_and_names_the_enrichment_reads():
     providers', `place_info`) — public fetches the tag path already made,
     now on the session's own surface too."""
     assert {
-        "record_query", "note_read", "about", "event_search",
+        "record_query", "note_read", "memory_search", "event_search",
         "group_members", "poll_list", "poll_read", "room_state_read",
         "room_read", "load_transcript", "who_said", "lookup_person",
         "media_fetch", "media_search", "file_fetch",
@@ -113,7 +113,7 @@ def test_an_act_verb_is_never_wired_even_when_the_catalogue_names_it():
     surface = read_surface(
         read_only=frozenset({"note_read"}), enabled_flags=(), registry_withheld=frozenset())
     assert surface.wired == {"note_read"}
-    assert "about" in surface.missing
+    assert "event_search" in surface.missing
 
 
 # ---- budgets ------------------------------------------------------------------

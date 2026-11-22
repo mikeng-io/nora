@@ -202,19 +202,6 @@ def _miss(name: str, view: RoomView, *, content_checks: bool = True) -> dict:
     }
 
 
-def _about_ok_note(*, identity: bool, profile: bool) -> str:
-    """How to read an `about` answer (ADR 0015 §3), one clause per part that"""
-    parts = []
-    if identity:
-        parts.append("`identity` is who they are, and it stays true.")
-    if profile:
-        parts.append(
-            "`profile` is what you concluded from what happened with them, not "
-            "what they told you, so it can be wrong."
-        )
-    return " ".join(parts)
-
-
 def _speaker(row: TranscriptRow, display_name: str = "") -> str:
     """The one name a transcript row is called by, for both tools that render one."""
     if row.is_nora:

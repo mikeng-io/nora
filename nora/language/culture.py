@@ -154,16 +154,13 @@ CULTURE_TOOLS: frozenset[str] = frozenset({
     # the model to say what the room comes to her for and what it never
     # would; that is a claim about a relationship across months, and the batch
     # is a few days.
-    "ask_memory", "search_memory",
-    # The same reach on the graph surface (DEC-316): built instead of the two
-    # above while `[memory.index] read`, never beside them.
     "memory_search",
     # THE ROSTER — who is actually in this room, and who a handle IS. A batch
     # renders display names; an account that calls one person by two names, or
     # two people by one, is wrong in the way nobody notices. A room's own
     # nicknames («@熱咖啡☕少奶多糖») resolve against an index
     # (`lookup_person`) and not against more occurrences of the same handle.
-    "about", "lookup_person", "group_members",
+    "lookup_person", "group_members",
     # PRESENCE IS OUT (`where_been`, `online_now`). A room's culture is
     # INPUT to accounts that render beyond its room: every person session of
     # the unit and the unit's own account read it, and those render in rooms

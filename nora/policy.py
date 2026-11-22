@@ -138,7 +138,7 @@ class Conversation:
     relevance_gate: bool = False
     # THE UNIT'S HOME ROOM (DEC-162).
     # Default False. A unit has no conversation of its own, and every
-    # room-scoped read — `where_is`, `about`, `ask_memory`, `group_members` —
+    # room-scoped read — `where_is`, `group_members` —
     # resolves through ONE room's roster. `home_room = true` is the operator
     # saying "when Nora acts for this unit with nobody asking, THIS is
     # the room she stands in": the proactive adaptor's `Room` is built from

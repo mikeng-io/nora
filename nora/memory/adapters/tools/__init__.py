@@ -16,12 +16,6 @@ def build(deps):
     from nora.memory.adapters.tools.standing import _make_character_read
 
     character_read = _make_character_read(deps)
-    from nora.memory.adapters.tools.search import _make_ask_memory
-
-    ask_memory = _make_ask_memory(deps)
-    from nora.memory.adapters.tools.search import _make_search_memory
-
-    search_memory = _make_search_memory(deps)
     from nora.memory.adapters.tools.search import _make_memory_search
 
     memory_search = _make_memory_search(deps)
@@ -34,9 +28,6 @@ def build(deps):
     from nora.memory.adapters.tools.meta import _make_recall_lookups
 
     recall_lookups = _make_recall_lookups(deps)
-    from nora.memory.adapters.tools.memos import _make_search_memory_workspace
-
-    search_memory_workspace = _make_search_memory_workspace(deps)
     from nora.memory.adapters.tools.notes import _make_note_read
 
     note_read = _make_note_read(deps)
@@ -52,9 +43,6 @@ def build(deps):
     from nora.memory.adapters.tools.notes import _make_note_revise
 
     note_revise = _make_note_revise(deps)
-    from nora.memory.adapters.tools.profile import _make_remember
-
-    remember = _make_remember(deps)
     from nora.memory.adapters.tools.profile import _make_profile_dispute
 
     profile_dispute = _make_profile_dispute(deps)
@@ -71,21 +59,16 @@ def build(deps):
         _spec("rollup_read", rollup_read),
         _spec("standing_read", standing_read),
         _spec("character_read", character_read),
-        _spec("ask_memory", ask_memory),
-        _spec("search_memory", search_memory),
         _spec("memory_search", memory_search),
         _spec("memory_read", memory_read),
         _spec("intention_commit", intention_commit),
         _spec("recall_lookups", recall_lookups),
-        _spec("search_memory_workspace", search_memory_workspace),
         _spec("note_read", note_read),
         _spec("note_search", note_search),
         _spec("memo_read", memo_read),
         _spec("note_create", note_create),
         _spec("note_revise", note_revise),
-        _spec("remember", remember_told)
-        if deps.graph_retrieval is not None or deps.memory_retrieval is not None
-        else _spec("remember", remember),
+        _spec("remember", remember_told),
         _spec("profile_dispute", profile_dispute),
         _spec("version_list", version_list),
         _spec("version_read", version_read),

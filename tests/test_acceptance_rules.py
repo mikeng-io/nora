@@ -95,7 +95,7 @@ RULE_TESTS = {
     "R-17": "test_degraded_identity_enrichment_is_counted_and_r12_still_holds",
     "R-20": "test_a_forged_quote_cannot_put_words_in_someone_elses_mouth",
     "R-21": "test_not_being_here_is_indistinguishable_from_not_existing",
-    "R-22": "test_nothing_known_is_distinguishable_from_could_not_ask",
+    "R-22": "test_lookup_person_says_unavailable_not_not_found_when_it_could_not_look",
     "R-23": "test_a_budget_stop_is_distinguishable_from_a_silent_model",
     "R-24": "test_no_single_call_can_spend_the_whole_turn_budget",
     "R-27": "test_an_unknown_route_is_never_reported_as_no_service",
@@ -217,10 +217,6 @@ RULE_TESTS = {
     # R-49 (DEC-105): a relay crosses into another room only within one
     # unit, only for somebody allowed in both, and only under their name.
     "R-49": "test_a_room_in_another_unit_is_refused",
-    # R-50 (DEC-106): her memory OF THE TAGGER rides in the prefill, and the
-    # tool that would fetch it again points at the block instead. The duplicate
-    # is the whole risk the block carries, so the guard is the named rule.
-    "R-50": "test_about_the_tagger_points_at_the_block_instead_of_fetching_it",
     # R-90: `messages.body` carries a media label and a handle and nothing else;
     # the comprehension is joined at RENDER time, in the context assembler, and
     # `scan_identifiers` runs on every render. The durable body is read verbatim

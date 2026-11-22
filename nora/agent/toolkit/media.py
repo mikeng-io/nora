@@ -18,8 +18,6 @@ from nora.infra.vision.preprocess import (
 
 _MODALITIES = ("image", "audio", "video")
 
-_CONCLUSION_MAX_CHARS = 65535
-
 
 def _modality_of(media_type: str) -> str | None:
     """Which describer a blob belongs to, or `None` if nothing here reads it."""

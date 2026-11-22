@@ -1,29 +1,18 @@
-"""`<people_in_window>` on the PARTICIPATION turn.
+"""`<people_in_window>` — what the block renders and how it is hedged.
 
-The context for every assertion below:
-`fire.py::participation_occasion` builds `person_id=None` — deliberately,
-«like a version announcement», because the occasion is the room and not a
-person. `FirePath.build_context` reads `peer_card` only `if ref is not None`,
-and `tagger_card` is assembled **only** by
-`nora.engagement.context.TranscriptInjection`, the TAG path. So the one decider
-that holds «notes and the peer card» behind a blind gate would render
-*no Honcho block at all*: it would know the people in the window by display
-name.
+`FirePath` fills no `people_in_window`: its context builder reads no memory
+store for the block, so the prompt carries it only when a `TagContext` is handed
+one. What these tests pin is the renderer and its hedge:
 
-Four properties, and each is a mutation entry in
-`scripts/mutations/issue-210-participation-reads-memory.json`:
-
-1. the block RENDERS, and only on the participation occasion;
-2. the turn makes no read of her own representation: the `<self>` block
-   (her Character · Nora account) stands where `<self_card>` was;
-3. the hedge is `<peer_history>`'s clause for clause — «undated, therefore
+1. the block RENDERS under its own tag, and a reminder occasion reads no memory
+   at all;
+2. the hedge is `<peer_history>`'s clause for clause — «undated, therefore
    not standing» included, which is the whole of what keeps a remembered joke
    («the room calls me 管理員») a record rather than a standing directive;
-4. it is BOUNDED on both axes and FAIL-SOFT on every axis: a Honcho failure
-   costs the block, never the turn, and is counted.
+3. the relevance gate gained no memory reader, and the tag path renders no
+   such block.
 
-No I/O — `unit/`: the memory store is `nora.testing.fakes.FakeMemoryStore`,
-which the contract suite already binds to `HonchoClient`.
+No I/O — `unit/`: the memory store is `nora.testing.fakes.FakeMemoryStore`.
 """
 
 from __future__ import annotations

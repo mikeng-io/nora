@@ -75,6 +75,6 @@ def test_dreamers_read_only_grant_keeps_its_legacy_sources():
         registry=_registry(), store=_FakeStore(), persons=_FakePersons(),
         honcho=FakeMemoryStore(), metrics=Metrics(),
     )
-    expected = {"search_memory", "search_memory_workspace", "load_transcript"}
+    expected = {"load_transcript"}
     built = source.build(key="g1", adaptor="fixture", names=frozenset(expected | {"send_reply"}))
     assert {t.tool_name for t in built} == expected

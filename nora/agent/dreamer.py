@@ -134,14 +134,7 @@ MAX_MEMORY_RESULT_CHARS = 4000
 _TOOL_RESULT_CAPS: Mapping[str, int] = {
     "web_fetch": MAX_TOOL_RESULT_CHARS,
     "web_search": MAX_TOOL_RESULT_CHARS,
-    "search_memory": MAX_MEMORY_RESULT_CHARS,
-    # The unit variant is the same verb at a wider scope: same tighter number,
-    # same reason.
-    "search_memory_workspace": MAX_MEMORY_RESULT_CHARS,
-    "about": MAX_MEMORY_RESULT_CHARS,
-    "ask_memory": MAX_MEMORY_RESULT_CHARS,
-    # The memory graph's one search verb (DEC-316), offered instead of the
-    # Honcho verbs above while `[memory.index] read`: same number.
+    # The memory graph's search and read verbs (DEC-316): the tighter number.
     "memory_search": MAX_MEMORY_RESULT_CHARS,
     "memory_read": MAX_MEMORY_RESULT_CHARS,
 }
@@ -172,18 +165,9 @@ TOOL_RESULT_CAPS: Mapping[str, int] = _TOOL_RESULT_CAPS
 #: body.
 #:
 #: NOT `_TOOL_RESULT_CAPS`' keys, which answers a different question about the
-#: same verbs (how big may one answer be, not how many answers may a pass have)
-#: and includes `search_memory`, the room-scoped sibling no unit-keyed adaptor
-#: holds.
-#:
-#: `memory_search` (DEC-316) is the graph surface's memory verb, offered INSTEAD
-#: of `about`, `ask_memory` and `search_memory_workspace` while `[memory.index]
-#: enabled`.
-#: The ration holds every memory verb of both surfaces, so it binds whichever one
-#: a deployment registers.
+#: same verbs (how big may one answer be, not how many answers may a pass have).
 MEMORY_TOOLS: frozenset[str] = frozenset({
-    "about", "ask_memory", "search_memory_workspace", "lookup_person",
-    "memory_search", "memory_read",
+    "lookup_person", "memory_search", "memory_read",
 })
 
 DreamStatus = Literal["ok", "nothing_found", "unavailable"]
@@ -440,8 +424,8 @@ def culture_grant() -> AdaptorGrant:
     `home_room=True` on a SCOPE-keyed adaptor resolves the adaptor's own
     conversation rather than a chosen one (`AdaptorGrant.home_room`,
     `RegistryToolSource.build`). Without it every room-scoped read the adaptor
-    declares (`ask_memory`, `about`, `group_members`, `lookup_person`,
-    `search_memory`) answers `unavailable` off the empty `Room`, so the grant is
+    declares (`group_members`, `lookup_person`) answers
+    `unavailable` off the empty `Room`, so the grant is
     the difference between a declared tool set and a reachable one.
 
     The culture pass writes one row through its own store and speaks to nobody;
@@ -472,7 +456,7 @@ class DreamToolSource(Protocol):
     contract suite.
 
     It exists because building a tool is not free of context (`load_transcript`
-    needs a store and a conversation, `about` needs Honcho, `web_search` needs the
+    needs a store and a conversation, `web_search` needs the
     provider) and the composition root is the only place that holds all of them.
     The runtime asks for names and gets objects; it never learns what is behind
     them.
@@ -514,8 +498,8 @@ class DreamToolSource(Protocol):
 # exactly this.
 #
 # Every ROOM-scoped read tool stays refused here: `load_transcript` reads one
-# room's record, `group_members`/`lookup_person`/`about`/`ask_memory`/
-# `search_memory` all answer against one room's live roster, and
+# room's record, `group_members`/`lookup_person`
+# answer against one room's live roster, and
 # `recall_lookups`/`media_fetch` replay one room's own calls. A unit has no single
 # room to bind them to, and binding one to an arbitrary room of that unit would be
 # a disclosure decision (R-31) nobody has made.
@@ -578,7 +562,6 @@ UNIT_SAFE_TOOLS: frozenset[str] = frozenset({
     "note_read", "note_search",
     # `memo_read` (DEC-306) resolves its unit the way the note reads do.
     "memo_read",
-    "search_memory_workspace",
     # `memory_search` (DEC-316), the graph surface's memory verb: it reads the
     # memory index through a room's scope, so a unit-keyed run with no home room
     # answers `unavailable` (`media_search`'s shape above), never an empty answer.
@@ -665,7 +648,7 @@ def tool_subset_faults(
     2. **room-scoped vs unit-safe.** A UNIT-keyed adaptor gets a unit name as its
        `key`, which is not a conversation id. Every room-scoped read tool is bound
        to a conversation (`load_transcript` reads one room's record,
-       `about`/`ask_memory`/`search_memory`/`group_members` answer against one
+       `group_members` answers against one
        room's live roster), so handing it a unit does not fail loudly, it returns
        EMPTY. `load_transcript` on an unknown conversation returns
        `{"messages": []}`, which is `unavailable` reported as `nothing_found`: the
@@ -1028,9 +1011,8 @@ class RegistryToolSource:
             # tagger it does not have.
             dream_adaptor=adaptor,
             # The key path: for a UNIT-keyed adaptor `key` IS the unit, so the
-            # runtime SUPPLIES it and the unit-scoped verbs (the note reads; NOT
-            # `search_memory_workspace`, which resolves no unit and reaches
-            # Honcho's whole workspace) read it directly rather than deriving one
+            # runtime SUPPLIES it and the unit-scoped verbs (the note reads)
+            # read it directly rather than deriving one
             # from the synthetic room above, where `unit_for("", key)` can only
             # answer `None`. `None` for a scope-keyed adaptor, whose key is a real
             # conversation id and whose tools resolve through the room: the EMPTY

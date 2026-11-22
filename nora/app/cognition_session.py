@@ -319,7 +319,7 @@ RoomProactive = Callable[[str, str], bool]
 #: routes the read through the item's own room and refuses a `room` value not
 #: on the agenda (DEC-231: each item's reads resolve through its room), built
 #: by the caller. That names the room a read is BOUND to, not the only room it
-#: reads: `record_query scope="all_rooms"` and `search_memory_workspace` reach
+#: reads: `record_query scope="all_rooms"` reaches
 #: the unit's other rooms, which the unit-wide read boundary allows.
 #: `(unit, rooms, *, clock=None)`: `clock` is the historical lane's as-of bind
 #: — a live call passes nothing and the source's own clock stands.

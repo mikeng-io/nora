@@ -15,7 +15,7 @@ that triggers on a real room going quiet rather than on a stored row, and the
 one where silence is a HEALTHY outcome rather than a failure (`SILENT` below).
 Everything between "something made this turn happen" and "the group heard it"
 is identical — the doctrine
-audience, the guards, the audit-first write, the Honcho feed, the Langfuse
+audience, the guards, the audit-first write, the Langfuse
 trace — and R-1b (`tests/architecture/test_only_two_paths_can_send.py`) makes
 that structural rather than optional: `deliver.build` has exactly TWO callers,
 the tag pipeline and this module, so a second unprompted path cannot be built
@@ -218,32 +218,6 @@ SENT = "sent"
 FAILED_POLICY = "failed_policy"
 FAILED_TIMEOUT = "failed_timeout"
 
-# The three `nora_errors_total{stage=...}` labels the participation turn's
-# memory reads raise. NAMED CONSTANTS, not literals at the call
-# site, for the reason `nora/obs/metric_specs.py` states about label
-# vocabularies: an operator filtering on a stage is filtering on a string, and
-# a stage spelled two ways is two series neither of which is the truth. They
-# are declared in `metric_specs`' own `nora_errors_total` description, and
-# `tests/unit/test_metric_specs_stages.py` is what keeps the two from drifting.
-#
-# TWO and not one, because they are two different failures and an operator
-# must not have to guess which half of the context went blind: a speaker's
-# history, or the whole batch hitting its wall clock.
-STAGE_FIRE_PEOPLE = "fire_people_in_window"
-STAGE_FIRE_MEMORY = "fire_memory"
-
-#: How many of the window's newest rows feed the `search_query` of the
-#: participation turn's memory reads, and the character ceiling on the result.
-#:
-#: The tag path passes the INBOUND MESSAGE as its query (`_recall_tagger`)
-#: because there is one. A participation occasion has none —
-#: `participation_occasion` builds `body=""` on purpose — so the window is the
-#: only statement of what this turn is about. The newest rows rather than the
-#: whole window: a twelve-row window curated to its own oldest line retrieves
-#: conclusions about a subject the room has already moved past, which is worse
-#: than retrieving nothing.
-_QUERY_ROWS = 6
-_QUERY_CHARS = 1000
 FAILED_ERROR = "failed_error"
 
 # The participation occasion's two additions to the outcome vocabulary.
@@ -638,9 +612,8 @@ class FirePath:
         memos: MemoStore | None = None,
         # THE SWITCH (45 §5): the Profile accounts' reader, wired only when
         # `[memory.profile] read` is on. Not `None` means a fire turn renders
-        # `<profile>` blocks and none of the reads they replace — the peer
-        # card, `people_in_window`, the culture/unit/self heads and the
-        # character heads — is made at all.
+        # `<profile>` blocks and none of the reads they replace — the
+        # culture/unit/self heads and the character heads — is made at all.
         profile: ProfileHeads | None = None,
         tag_trace_store: Any = None,
         # The unit's shared cognitive state reader (design/notebook-memory-
@@ -689,15 +662,10 @@ class FirePath:
         # here wedges the conversation exactly as the unbounded read in
         # `debrief.run` did.
         self._standing_store_timeout_seconds = standing_store_timeout_seconds
-        # The participation turn reads memory. Every one of these
-        # is 0/inert by default and gated on `occasion.kind == "participation"`
-        # inside `_read_memory`, so no other fire occasion's prompt changes.
+        # ponytail: accepted and read by nothing; they leave with the `[honcho]` keys
+        # that feed them.
         self._people_in_window_conclusions = people_in_window_conclusions
         self._people_in_window_speakers = people_in_window_speakers
-        # BOUNDED for `standing_store_timeout_seconds`' reason, and it is its
-        # OWN knob rather than a reuse of that one: an operator tuning how long
-        # a single-row Postgres read may take must not silently retune how long
-        # an HTTP call to Honcho may take. See `HonchoConfig.read_timeout_seconds`.
         self._memory_read_timeout_seconds = memory_read_timeout_seconds
         # The note tier on the fire path. A participation determination
         # grounds on «transcript + standing/notes», so `build_context` passes
@@ -887,29 +855,6 @@ class FirePath:
                 documents=self._read_documents(occasion), members=self._room_members(occasion),
             )
 
-        card: tuple[str, ...] = ()
-        if ref is not None and self._profile_reader is None:
-            # (The switch: with `[memory.profile] read` the occasion person's
-            # `<profile>` replaces the card and this read is not made.)
-            try:
-                card = tuple(await self._memory.peer_card(
-                    peer_id=ref.honcho_peer_id,
-                    conversation_id=occasion.conversation_id,
-                ))
-            except Exception:
-                # Guarded where `TranscriptInjection`'s equivalent is not:
-                # delivery is at-most-once, so a raise here writes
-                # `failed_error` and the reminder is GONE, while the tag
-                # path's equivalent costs somebody a re-tag.
-                # `HonchoClient.peer_card` returns `[]` on failure, so nothing
-                # normally reaches this.
-                # Its OWN stage, not `fire_context`: an operator asking which
-                # half of the context went blind must not have to guess.
-                log.exception("fire peer_card read failed; continuing without it")
-                self._metrics.inc(
-                    "nora_errors_total", stage="fire_peer_card", platform=occasion.platform,
-                )
-
         # The unit is resolved ONCE per turn and read by several tiers (notes,
         # memos, the decision log), so the `notes` guard is not the whole
         # condition: a turn that skipped the lookup because the note tier was
@@ -921,14 +866,6 @@ class FirePath:
                 or self._memos is not None or self._shared_reader is not None):
             unit = self._unit_for(occasion)
 
-        # Read AFTER the transcript, because both reads are
-        # curated to the window's own text and keyed on the people in it.
-        # The switch: with `[memory.profile] read` the persons' `<profile>` blocks
-        # replace `<people_in_window>` and the Honcho recall is not made.
-        people = (
-            () if self._profile_reader is not None
-            else await self._read_memory(occasion, transcript)
-        )
         # THE SWITCH (45 §5): the turn's Profile accounts, keyed like the
         # culture reads they replace. Empty on the Honcho surface.
         profiles = await self._read_profiles(occasion, ref, transcript)
@@ -971,9 +908,8 @@ class FirePath:
             message=_synthetic_message(occasion, ref),
             tagger=ref,
             transcript=transcript,
-            peer_card=card,
+            peer_card=(),
             started_at=time.perf_counter(),
-            people_in_window=people,
             profiles=profiles,
 
             shared=shared,
@@ -1053,137 +989,6 @@ class FirePath:
                 "nora_errors_total", stage="fire_presence", platform=occasion.platform,
             )
             return None
-
-    async def _read_memory(
-        self, occasion: Event, transcript: Sequence[TranscriptRow],
-    ) -> tuple[tuple[str, tuple[str, ...]], ...]:
-        """`<people_in_window>`, for the PARTICIPATION turn only.
-
-        The participation occasion is built `person_id=None`
-        (`participation_occasion`), so `ref` is `None`, so `peer_card` is `()`;
-        and `tagger_card` is assembled only by
-        `nora.engagement.context.TranscriptInjection` — the TAG path. Without
-        this read the turn would know the people in the window by display name
-        alone.
-
-        **Participation only, and the restriction is the decision** — the
-        narrow half of `_read_decisions`' argument. A reminder or a gathering
-        firing was decided when its row was written, so neither reads either.
-        The proactive act turn reads the decision log, because «the loop
-        already took this floor 31 minutes ago» is a fact about the ROOM, but
-        it does not read memory: «what do I know about these people» is
-        research the Cognition session already did, at Honcho round trips
-        rather than one SQL read, and the split is research at decide time and
-        the room at act time. Participation is the turn deciding whether to
-        speak into a room nobody addressed her in AND holding no earlier pass
-        of its own, which is what makes the memory read change the answer here
-        and nowhere else.
-
-        **Fail-soft in two separate places, which is two states and not
-        one.** The read catches and counts on its OWN stage — an operator
-        asking which half of the context went blind must not have to guess
-        — and the batch as a whole carries the wall-clock bound, on a second
-        stage, because a hung port that never returns is not the same failure
-        as one that raises. In both the cost is the BLOCK, never the turn:
-        this is background she may draw on and never the ground for a claim,
-        so an absent block costs continuity rather than truth.
-        """
-        if occasion.kind != "participation" or not self._ai_peer:
-            return ()
-        query = _window_query(transcript)
-        refs = await self._window_speakers(occasion, transcript)
-        try:
-            people = await asyncio.wait_for(
-                self._recall_people(occasion, refs, query),
-                timeout=self._memory_read_timeout_seconds,
-            )
-        except Exception:
-            # Reachable where the two `except`s below are not: they catch a
-            # RAISE, and this catches a port that simply never answers while
-            # the heartbeat holds this conversation's slot.
-            log.exception("fire memory read exceeded its bound; continuing without it")
-            self._metrics.inc(
-                "nora_errors_total", stage=STAGE_FIRE_MEMORY,
-                platform=occasion.platform,
-            )
-            return ()
-        return people
-
-    async def _window_speakers(
-        self, occasion: Event, transcript: Sequence[TranscriptRow],
-    ) -> tuple[PersonRef, ...]:
-        """Bounded canonical speakers, most recent first; skip self and unmapped senders."""
-        if self._people_in_window_speakers <= 0:
-            return ()
-        scope = Scope(ScopeKind.ROOM, room_scope_id(occasion.platform, occasion.conversation_id))
-        found: dict[str, PersonRef] = {}
-        for row in reversed(tuple(transcript)):
-            if row.is_nora:
-                continue
-            ref = await self._access.resolve_ref(
-                occasion.platform, row.sender_id, scope=scope)
-            if ref is None or ref.person_id in found:
-                continue
-            found[ref.person_id] = ref
-            if len(found) >= self._people_in_window_speakers:
-                break
-        return tuple(found.values())
-
-    async def _recall_people(
-        self, occasion: Event, refs: Sequence[PersonRef], query: str,
-    ) -> tuple[tuple[str, tuple[str, ...]], ...]:
-        """`<people_in_window>` — her own `(observer=nora, observed=them)` model
-        of each speaker, curated to this window.
-
-        **CONCURRENT, and the reason is arithmetic** — `TranscriptInjection`'s
-        gather note, one path over. One `representation` is a round trip, so
-        sequential reads would stack N of them on the front of a turn that
-        already holds the conversation's slot; gathered, the batch costs one
-        and the bound in `_read_memory` covers the lot.
-
-        `return_exceptions=True` rather than a bare gather: one speaker's read
-        raising must cost THAT speaker's row, not the block and not its three
-        siblings. A person whose read failed is simply absent — and the failure
-        is counted, once per failed read, so «her memory of the room went
-        quiet» is something an operator can see rather than notice.
-
-        NO new disclosure, for `_recall_tagger`'s reason: these people spoke in
-        this room, so `about` could already have been asked about any of them
-        on this turn. This surfaces nothing a tool call would not.
-        """
-        if not refs or self._people_in_window_conclusions <= 0:
-            return ()
-        results = await asyncio.gather(*(
-            self._memory.representation(
-                peer_id=self._ai_peer,
-                target=ref.honcho_peer_id,
-                search_query=query,
-                max_conclusions=self._people_in_window_conclusions,
-                conversation_id=occasion.conversation_id,
-            )
-            for ref in refs
-        ), return_exceptions=True)
-        rows: list[tuple[str, tuple[str, ...]]] = []
-        for ref, result in zip(refs, results, strict=True):
-            if isinstance(result, BaseException):
-                log.error(
-                    "fire people-in-window read failed for one speaker; "
-                    "continuing without them", exc_info=result,
-                )
-                self._metrics.inc(
-                    "nora_errors_total", stage=STAGE_FIRE_PEOPLE,
-                    platform=occasion.platform,
-                )
-                continue
-            if not result.reachable:
-                self._metrics.inc(
-                    "nora_errors_total", stage=STAGE_FIRE_PEOPLE,
-                    platform=occasion.platform,
-                )
-                continue
-            if result.conclusions:
-                rows.append((ref.name, result.conclusions))
-        return tuple(rows)
 
     async def _read_decisions(
         self, occasion: Event, unit: str | None,
@@ -1276,7 +1081,7 @@ class FirePath:
         room — is a WIRING GAP, not an empty tier: guessing a unit would
         render another unit's notes into this room. Counted, because a
         block missing for the life of a deployment with nothing saying so is
-        the `nora_peer_card_empty_total` lesson.
+        a silent failure.
         """
         try:
             convo = (
@@ -1289,7 +1094,7 @@ class FirePath:
             # `_read_standing`): a Policy read that raises must
             # not turn a deliverable reminder into a silent no-send. Counted,
             # because a block missing for the life of a deployment with
-            # nothing saying so is the `nora_peer_card_empty_total` lesson.
+            # nothing saying so is a silent failure.
             log.exception(
                 "policy conversation read failed for %s/%s — the note "
                 "tier cannot be scoped to a unit; continuing without it",
@@ -2794,31 +2599,6 @@ class FirePath:
         # admission where the model simply gave no number.
         shown = f"{score:.2f}" if score is not None else "—"
         return f"{room} — {last} — go — {shown}"
-
-
-def _window_query(transcript: Sequence[TranscriptRow]) -> str:
-    """The `search_query` for the participation turn's memory reads: the text
-    of the window's newest rows, oldest-first, bounded.
-
-    Bodies only — no names, no ages, no `Nora:` labels. This string is a
-    RETRIEVAL KEY handed to Honcho, not a prompt: a speaker's display name in
-    it would bias every conclusion toward whoever happened to speak last, and
-    the ages would be noise in an embedding. It is bounded on both axes because
-    it is built from group-authored text, and an unbounded key is a window
-    somebody can make arbitrarily long by typing.
-
-    Her OWN rows are excluded for the same reason `_window_speakers` excludes
-    them: the question is what the ROOM is talking about, and an answer she
-    already gave is the loudest self-echo there is.
-    """
-    # FILTER, then slice: slicing first would let a window whose newest six
-    # rows are four of her own replies yield a two-row retrieval key, which is
-    # not «the window's newest rows».
-    bodies = [
-        render_file_links(row.body).strip() for row in transcript
-        if not row.is_nora and row.body and row.body.strip()
-    ]
-    return "\n".join(bodies[-_QUERY_ROWS:])[:_QUERY_CHARS]
 
 
 def _synthetic_message(

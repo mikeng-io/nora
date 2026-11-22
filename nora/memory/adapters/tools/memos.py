@@ -4,13 +4,10 @@ import logging
 
 from nora.agent.lineage import memo_permits
 from nora.agent.security import scan_identifiers
-from nora.agent.toolkit.results import _memory_hits_result, _record, _superseded
+from nora.agent.toolkit.results import _record, _superseded
 from nora.domain.lineage import (
     ROW,
     UNRESOLVED,
-)
-from nora.domain.ports import (
-    MessageHits,
 )
 from nora.domain.turn_record import turn_handles_in
 
@@ -98,75 +95,3 @@ def _make_memo_read(deps):
         return result
 
     return memo_read
-
-
-def _make_search_memory_workspace(deps):
-    ai_peer = deps.ai_peer
-    content_checks = deps.content_checks
-    honcho = deps.honcho
-    metrics = deps.metrics
-    persons = deps.persons
-    _unit = deps._unit
-
-    async def search_memory_workspace(query: str) -> dict:
-        """Find where something was actually SAID, across EVERY room of this
-        workspace. Call this when the words you need could have been said
-        anywhere the same people talk.
-
-        `search_memory` searches one room; this reaches the whole workspace.
-
-        Returns `status`: ok (`results`), nothing_found, withheld or
-        unavailable, with a `note`.
-
-        Args:
-            query: What to look for: a phrase, a topic, a thing that was said.
-        """
-        by_person = getattr(persons, "by_person", None)
-        if by_person is None:
-            # A WIRING gap (identity.toml was never threaded into this build), not
-            # an empty address book: an empty one is a roster that legitimately
-            # filters every hit, a missing one is «I could not check» — and R-27's
-            _record(metrics, "search_memory_workspace", "unavailable", reason="no_roster")
-            return {
-                "status": "unavailable",
-                "note": "I can't work out who is here, so I can't look back "
-                "through what was said. Say you can't check, and do not "
-                "guess.",
-            }
-        # The roster is identity.toml's WHOLE address book — not a room's live view,
-        # and not a unit's either: `PersonRef` carries no unit, so this filter CANNOT
-        # be unit-shaped. Nora's OWN peer is excluded the same way the room path drops
-        roster = {
-            ref.honcho_peer_id: ref.name
-            for person_id, ref in by_person.items()
-            if person_id != ai_peer
-        }
-        try:
-            # No `conversation_id`, so the client hits Honcho's WORKSPACE
-            # `/search`, narrowed to THIS unit's named scope (DEC-214): `unit` is
-            # the run's own key, never a room, and `None` (a unit that cannot be
-            found = await honcho.search(query=query[:500], unit=_unit())
-        except Exception:
-            # Belt-and-braces, exactly as on the room path: the adapter catches
-            # everything itself and `MessageHits.reachable` is the real signal.
-            log.exception("search_memory_workspace failed")
-            found = MessageHits(reachable=False)
-        if not found.reachable:
-            _record(metrics, "search_memory_workspace", "unavailable")
-            return {
-                "status": "unavailable",
-                "note": "I couldn't look back through what was said. Say you "
-                "couldn't check, and do not say there was nothing.",
-            }
-        # The filter/withhold/status tail is SHARED with `search_memory` —
-        # `_memory_hits_result` — so the two verbs can never drift into two disclosure
-        # decisions. This verb counts on `nora_tool_calls_total` (it has no room, so
-        return _memory_hits_result(
-            hits=found.hits,
-            roster=roster,
-            record=lambda s, **kw: _record(metrics, "search_memory_workspace", s, **kw),
-            partial_view=None,
-            content_checks=content_checks,
-        )
-
-    return search_memory_workspace

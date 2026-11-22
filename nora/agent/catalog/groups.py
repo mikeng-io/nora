@@ -16,7 +16,6 @@ HOT_TOOLS: frozenset[str] = frozenset(
         "note_read",
         "web_fetch",
         "now",
-        "search_memory",
         "memory_search",
         "intention_commit",
     }
@@ -78,15 +77,8 @@ DOCUMENT_TOOLS: frozenset[str] = frozenset(
     {"document_publish", "document_read", "document_set_status", "document_list", "document_revise"}
 )
 
-HONCHO_MEMORY_TOOLS: frozenset[str] = frozenset(
-    {
-        "ask_memory",
-        "search_memory",
-        "search_memory_workspace",
-        "who_said",
-        "about",
-    }
-)
+# Offered only while the graph memory surface is off; withheld wherever it is on.
+OFF_GRAPH_ONLY_TOOLS: frozenset[str] = frozenset({"who_said"})
 
 GRAPH_MEMORY_TOOLS: frozenset[str] = frozenset({"memory_search", "memory_read", "profile_dispute"})
 
@@ -95,11 +87,11 @@ GRAPH_PASS_TOOLS: frozenset[str] = frozenset({"intention_commit"})
 
 # Legacy stores behind engagement's retired memory and agenda tools.
 LEGACY_ENGAGEMENT_TOOLS: frozenset[str] = frozenset({
-    "about", "ask_memory", "cancel_reminder", "character_read", "checkpoint_update",
+    "cancel_reminder", "character_read", "checkpoint_update",
     "event_propose", "event_revise", "event_rsvp", "event_search", "event_set_status",
     "list_reminders", "memo_read", "note_create", "note_read", "note_revise", "note_search",
-    "profile_dispute", "recall_lookups", "remember", "remind", "search_memory",
-    "search_memory_workspace", "standing_read", "suggest_venue", "who_said",
+    "profile_dispute", "recall_lookups", "remember", "remind", "standing_read",
+    "suggest_venue", "who_said",
 })
 
 ROOM_ONLY_MEMORY_ADAPTORS: frozenset[str] = frozenset({CULTURE_ADAPTOR_NAME})

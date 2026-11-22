@@ -18,7 +18,7 @@ from nora.doctrine.loader import DoctrineStore
 from nora.domain.media import GifCandidate, MediaObject
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef, Quote
 from nora.domain.notes import note_handle
-from nora.domain.ports import ImageResult, MessageHits, OutboundAttachment, SendResult
+from nora.domain.ports import ImageResult, OutboundAttachment, SendResult
 from nora.domain.utf16 import utf16_len
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
@@ -149,12 +149,7 @@ def test_every_declared_tool_is_built(wiring):
         # Built here like every closure; only a Dreamer loop is OFFERED them
         # (`nora.agent.surface.DREAMER_LOOP_TOOLS`).
         "rollup_read", "standing_read", "character_read", "social_read", "group_members",
-        "lookup_person", "about", "ask_memory", "search_memory", "recall_lookups",
-        # `search_memory_workspace` IS built here — `build_tools` builds every
-        # closure. Which ones a ROOM sees is `ToolScope`'s decision, applied
-        # by `ToolRegistry.surface()`, and the Dreamer-only cut is pinned there:
-        # tests/unit/test_tool_registry.py (`dreamer - tag`).
-        "search_memory_workspace",
+        "lookup_person", "recall_lookups",
         "calculate",
         "transit",
         "route",
@@ -227,9 +222,8 @@ def test_every_declared_tool_is_built(wiring):
         "note_read", "note_search", "note_create", "note_revise",
         # DEC-306: one kept memo of the unit.
         "memo_read",
-        # The remember verb — the conclusion write lane.
+        # The remember verb.
         "remember",
-        # The unit-wide memory variant of `search_memory`.
     }
 
 
@@ -724,7 +718,6 @@ async def test_send_reply_is_the_only_tool_that_can_send(wiring):
     await _call(wiring["tools"]["load_transcript"], limit=40)
     await _call(wiring["tools"]["group_members"])
     await _call(wiring["tools"]["lookup_person"], name="Miles")
-    await _call(wiring["tools"]["about"], person="Miles")
     assert wiring["sink"].sent == []
 
 
@@ -742,7 +735,7 @@ async def test_a_tool_never_raises_into_the_agent_loop(wiring, monkeypatch):
 
 
 async def test_the_tools_without_a_counter_of_their_own_now_have_one(wiring):
-    """`nora_room_lookups_total{tool,status}` covers three of them; these use the
+    """`nora_room_lookups_total{tool,status}` covers two of them; these use the
     same `{tool, status}` shape rather than bespoke series, so "did she ever
     call load_transcript" is answerable from `/metrics` as well as from the
     log."""
@@ -756,16 +749,15 @@ async def test_the_tools_without_a_counter_of_their_own_now_have_one(wiring):
 
 async def test_the_new_counter_never_double_counts_a_room_scoped_tool(wiring):
     """Metric names are append-only and `nora_room_lookups_total` is already
-    alerted on (R-22), so the three tools with that counter keep exactly
+    alerted on (R-22), so the two tools with that counter keep exactly
     the one they have. A tool appearing in both series would silently double every
     dashboard that sums tool volume."""
     tools, metrics = wiring["tools"], wiring["metrics"]
     await _call(tools["group_members"])
     await _call(tools["lookup_person"], name="Miles")
-    await _call(tools["about"], person="Miles")
-    for tool in ("group_members", "lookup_person", "about"):
+    for tool in ("group_members", "lookup_person"):
         assert metrics.get("nora_tool_calls_total", tool=tool) == 0, tool
-    assert metrics.get("nora_room_lookups_total") == 3
+    assert metrics.get("nora_room_lookups_total") == 2
 
 
 async def test_a_tool_that_could_not_answer_is_counted_apart_from_one_that_did(
@@ -1631,121 +1623,6 @@ async def test_the_gif_candidates_carry_the_untrusted_metadata_note(wiring):
     found = await _call(tools["search_gifs"], query="happy dance")
     assert found["status"] == "ok"
     assert "untrusted" in found["note"] and "only from these" in found["note"]
-
-
-class _RecordingHoncho:
-    """`FakeMemoryStore` records the query but not the SCOPE, and the scope is the
-    whole point of this verb: `conversation_id=None` is what makes the search
-    workspace-wide (the client's `/search` endpoint), so the fake has to
-    remember it."""
-
-    def __init__(self, hits=(), *, reachable=True):
-        self._hits = tuple(hits)
-        self._reachable = reachable
-        self.calls: list[dict] = []
-
-    async def search(self, *, query, conversation_id=None, limit=8, unit=None):
-        self.calls.append({
-            "query": query, "conversation_id": conversation_id, "unit": unit,
-        })
-        return MessageHits(reachable=self._reachable, hits=self._hits)
-
-
-def _unit_memory_tools(wiring, **over):
-    """`build_tools` over the `wiring` fixture's collaborators, with any of
-    them swapped out — `wiring_with` cannot do this (it passes `honcho`,
-    `persons` and `metrics` itself), and the roster/source ARE the thing
-    under test for this verb."""
-    tools = build_tools(
-        store=wiring["store"], conversation_id="g1", conversation_type="group",
-        persons=over.pop("persons", wiring["persons"]),
-        honcho=over.pop("honcho", wiring["honcho"]),
-        deliverer=wiring["deliverer"],
-        metrics=over.pop("metrics", wiring["metrics"]),
-        room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
-        question="who is here", context_window=40,
-        # `dream_adaptor` is what SHIPS this verb at all: it is
-        # Dreamer-only, and a tag-path build does not carry it. Naming an
-        # adaptor here is not decoration — drop it and `tools` has no
-        # `search_memory_workspace` to call.
-        unit_for=lambda *_a: "ws-main", dream_adaptor="proactive", **over,
-    )
-    return {t.tool_name: t for t in tools}
-
-
-async def test_search_memory_workspace_filters_by_the_address_book(wiring):
-    """The roster is `persons.by_person` — identity.toml's WHOLE address book,
-    not one room's live view and not one unit's people (`PersonRef` has no
-    unit). This pins the per-message guard only: a peer nobody can name never
-    comes back, and neither does Nora's own. It pins the ROUTE KEY the verb
-    passes (the run's unit, DEC-214), not the scope itself: that the client
-    turns a unit into Honcho's `scope` is pinned in
-    `tests/unit/test_honcho_workspaces.py`."""
-    honcho = _RecordingHoncho(hits=(
-        ("miles", "big walk 聽日朝早"),
-        ("a_peer_nobody_mapped", "should never surface"),
-        ("nora", "her own words are not the group's memory"),
-    ))
-    tools = _unit_memory_tools(wiring, honcho=honcho)
-
-    out = await tools["search_memory_workspace"]("big walk")
-
-    assert out["status"] == "ok"
-    assert out["results"] == [{"who": "Miles", "said": "big walk 聽日朝早"}]
-    # No room passed — Honcho's WORKSPACE endpoint — but NARROWED to the
-    # run's unit (DEC-214): the client scopes the workspace search to that
-    # unit's named scope, so it does not reach every unit.
-    assert honcho.calls[0]["conversation_id"] is None
-    assert honcho.calls[0]["unit"] == "ws-main"
-    # The room verb's marker of a DEGRADED view has no meaning here: there is
-    # no room view to degrade, so the key is absent rather than False.
-    assert "partial_view" not in out
-
-
-async def test_search_memory_workspace_withholds_what_she_may_not_repeat(
-    wiring,
-):
-    """The egress filter is SHARED with `search_memory`
-    (`_memory_hits_result`): a hit she cannot legally utter is `withheld`,
-    never `nothing_found` — the words exist and she may not repeat them."""
-    honcho = _RecordingHoncho(
-        hits=(("miles", "個 script 我 send 咗俾 +85290000101 呀"),))
-    metrics = Metrics()
-    tools = _unit_memory_tools(wiring, honcho=honcho, metrics=metrics)
-
-    out = await tools["search_memory_workspace"]("script")
-
-    assert out["status"] == "withheld"
-    assert out["found_but_unquotable"] == 1
-    assert "90000101" not in json.dumps(out)
-    # Counted on the TOOL series, not `nora_room_lookups_total` — this verb
-    # has no room, and the room series' alert would mislabel it.
-    assert metrics.get("nora_tool_calls_total",
-                       tool="search_memory_workspace", status="withheld") == 1
-
-
-async def test_search_memory_workspace_an_outage_is_unavailable(wiring):
-    """`reachable=False` is the adapter's own signal that nothing ran — the
-    outage must not read as «nothing was said»."""
-    tools = _unit_memory_tools(wiring, honcho=_RecordingHoncho(reachable=False))
-
-    out = await tools["search_memory_workspace"]("big walk")
-
-    assert out["status"] == "unavailable"
-
-
-async def test_search_memory_workspace_without_a_roster_is_unavailable(wiring):
-    """No persons wired at all is a WIRING gap, not an empty address book:
-    an empty one legitimately filters every hit, a missing one means «I
-    could not check» — and the two never share a status."""
-    tools = _unit_memory_tools(
-        wiring, honcho=_RecordingHoncho(hits=(("miles", "big walk"),)),
-        persons=None,
-    )
-
-    out = await tools["search_memory_workspace"]("big walk")
-
-    assert out["status"] == "unavailable"
 
 
 async def test_find_parking_unavailable_without_route_source(wiring):

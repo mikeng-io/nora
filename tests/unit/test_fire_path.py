@@ -137,14 +137,17 @@ async def test_the_fire_turn_carries_the_requester(fire_path: FirePath) -> None:
     assert ctx.message.timestamp == 0                 # falsy AND an int
 
 
-async def test_the_peer_card_is_read_for_the_requester(
+async def test_a_fire_turn_reads_no_peer_card(
     fire_path: FirePath, memory_store: FakeMemoryStore,
 ) -> None:
-    """`peer_card` goes silently empty when the tagger falls out — it is keyed on
-    `ref.honcho_peer_id`, so a `None` tagger yields `()` with nothing raising."""
+    """The requester has a stored card, and the fire turn neither reads nor
+    renders it: no call reaches the memory store."""
     ctx = await fire_path.build_context(reminder_occasion([_reminder()]))
 
-    assert ctx.peer_card == ("drinks his coffee black",)
+    assert ctx.tagger is not None
+    assert memory_store.cards, "the fixture holds a card for the requester"
+    assert ctx.peer_card == ()
+    assert memory_store.routes == []
 
 
 async def test_the_transcript_is_the_conversation_the_row_names(
@@ -324,28 +327,6 @@ class _FireAdapter:
     @property
     def texts(self) -> list[str]:
         return [text for _, text in self.sent]
-
-
-class _OutagingMemory(FakeMemoryStore):
-    """Honcho answering everything except the one endpoint under test.
-
-    `FakeMemoryStore(fail=True)` degrades the way the shipped `HonchoClient`
-    does — `peer_card` returns `[]` — which is exactly why it cannot express
-    this case: the defect being probed is a RAISE, and a fake that only ever
-    degrades gracefully would let an unguarded call site pass forever.
-    """
-
-    def __init__(
-        self, *, card_raises: bool = False,
-        cards: dict[str, list[str]] | None = None,
-    ) -> None:
-        super().__init__(cards=cards)
-        self._card_raises = card_raises
-
-    async def peer_card(self, *, peer_id: str) -> list[str]:
-        if self._card_raises:
-            raise RuntimeError("honcho down")
-        return await super().peer_card(peer_id=peer_id)
 
 
 class _HangsAfterSending(FakeAgentRunner):
@@ -542,29 +523,6 @@ async def test_a_fault_before_the_model_is_counted_as_a_heartbeat_handler_error(
     assert await path.run([_reminder()]) == "failed_error"
     assert metrics.get(
         "nora_silent_failures_total", reason="handler_error", audience="heartbeat",
-    ) == 1
-
-
-async def test_a_peer_card_outage_does_not_cost_the_reminder(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """DEFENSIVE. The shipped `HonchoClient.peer_card` returns `[]` on
-    failure, so this is unreachable today — and at-most-once is what makes it
-    worth guarding anyway: a raise here writes `failed_error` and the reminder
-    is GONE, where the tag path's equivalent only makes the person re-tag.
-    A thinner turn beats no turn, exactly as the transcript read already has it.
-    """
-    adapter = _FireAdapter()
-    path = _fire_path(
-        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
-        adapter=adapter, memory=_OutagingMemory(card_raises=True),
-        runner=FakeAgentRunner(_send_turns("記得食藥")),
-    )
-
-    assert await path.run([_reminder()]) == "sent"
-    assert adapter.texts == ["記得食藥"]
-    assert metrics.get(
-        "nora_errors_total", stage="fire_peer_card", platform="signal",
     ) == 1
 
 

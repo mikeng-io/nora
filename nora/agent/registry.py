@@ -36,10 +36,10 @@ from nora.agent.catalog.groups import (
     COMPUTER_TOOLS,
     DOCUMENT_TOOLS,
     GRAPH_PASS_TOOLS,
-    HONCHO_MEMORY_TOOLS,
     HOT_TOOLS,
     LOADER_TOOL,
     NATIVE_TOOL_BUDGETS,
+    OFF_GRAPH_ONLY_TOOLS,
     SUBAGENT_TOOLS,
     VIDEO_TOOLS,
     hot_tools,
@@ -430,7 +430,7 @@ class ToolRegistry:
             | (frozenset() if video is not None else VIDEO_TOOLS)
             | ({"profile_dispute"} if memory_search is None else set())
             | ({"memory_search", "memory_read"} if graph_retrieval is None else set())
-            | (HONCHO_MEMORY_TOOLS
+            | (OFF_GRAPH_ONLY_TOOLS
                if graph_retrieval is not None or memory_search is not None else set())
             | GRAPH_PASS_TOOLS
         )
@@ -560,10 +560,7 @@ class ToolRegistry:
         # offline/eval compositions, where the tool answers `unavailable`
         # rather than a guessed empty (R-5).
         self._mobility = mobility
-        # The OBSERVER peer: Nora's Honcho peer id (cfg.honcho.ai_peer). The
-        # `about`/`ask_memory` tools read her model of a person as
-        # (observer=ai_peer, observed=person), so the registry threads it like
-        # any other long-lived collaborator.
+        # The OBSERVER peer: Nora's Honcho peer id (cfg.honcho.ai_peer).
         self._ai_peer = ai_peer
         # The reminders store: a per-process collaborator like `transit` and
         # `search`, NOT default-constructed for the reason `route` is not: there
@@ -780,7 +777,7 @@ class ToolRegistry:
 
         scoped = copy(self)
         scoped._memory_search = search
-        scoped._withheld = (self._withheld - {"profile_dispute"}) | HONCHO_MEMORY_TOOLS
+        scoped._withheld = (self._withheld - {"profile_dispute"}) | OFF_GRAPH_ONLY_TOOLS
         return scoped
 
     def with_clock(self, clock: Callable[[], datetime]) -> ToolRegistry:
@@ -902,8 +899,7 @@ class ToolRegistry:
 
         FIRST SENTENCE, not a separate authored field: the first sentences
         already discriminate between confusable siblings
-        (`find_parking`/`parking_status`, `search_memory`/
-        `search_memory_workspace`, `note_read`/`note_search`), so a repair
+        (`find_parking`/`parking_status`, `note_read`/`note_search`), so a repair
         belongs in the docstring, one source of truth per tool.
 
         `hot` marks the tools whose full schema is already resident, so the

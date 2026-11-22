@@ -201,22 +201,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_errors_total",
         "Internal errors, by processing stage. The stage vocabulary is open — "
-        "every call site names its own — but the stages the AMBIENT "
-        "loop's memory reads raise are declared here by name, because they are "
-        "the only way an operator can see a block go missing: "
-        "stage=\"fire_people_in_window\" "
-        "(one speaker's <people_in_window> read did, counted once per failed "
-        "speaker), stage=\"fire_memory\" (the whole concurrent batch hit "
-        "[honcho] read_timeout_seconds — a port that never answers, which is "
-        "not the same failure as one that raises). Both are issue #210 "
-        "and both are "
-        "fail-soft: the block is lost, never the turn, so absence is the only "
-        "symptom and this series is the only tell. The fire_* stages "
-        "sit beside the pre-existing fire_peer_card / fire_standing / "
-        "fire_notes / fire_unit for that set's own stated reason — an "
-        "operator asking WHICH half of the context went blind must not have "
-        "to guess. The <culture> read (DEC-207) is counted per occasion, one "
-        "stage each, for the same reason: stage=\"tag_culture\", "
+        "every call site names its own — but the stages a fail-soft block read "
+        "raises are declared here by name, because they are the only way an "
+        "operator can see a block go missing: the block is lost, never the "
+        "turn, so absence is the only symptom and this series is the only "
+        "tell. An operator asking WHICH half of the context went blind must "
+        "not have to guess. The <culture> read (DEC-207) is counted per "
+        "occasion, one stage each: stage=\"tag_culture\", "
         "and stage=\"fire_culture\" — a room's account that exists and could "
         "not be read (a raise, or the bounded read timing out). A room never "
         "folded is not an error and moves nothing. The <self> read "
@@ -440,7 +431,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "«that person was never written down», because a behaviour difference "
         "would disclose membership (design/12-prompt-tool-skill-boundaries.md §3); "
         "`nothing_found` — a SEARCH over what was said matched nothing "
-        "(search_memory). A different question from `not_found`, hence a "
+        "(memory_search). A different question from `not_found`, hence a "
         "different label; it was recorded as `ok` until 2026-08-11, which made "
         "hit-rate unreadable on the one series that would show her searching "
         "constantly and finding nothing; "
@@ -455,24 +446,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "and a climbing `withheld` is the DEC-30 shape — she is being asked "
         "things she can see and cannot say.",
         ("tool", "status"),
-    ),
-    # Honcho's `representation` endpoint specifically, which cannot be trusted
-    # to fail loudly: an unknown peer answers **200 with an empty string**, not 404,
-    # so "asked and nothing known" (`empty`) and "could not ask" (`unavailable`) are
-    # indistinguishable at the HTTP layer and only the call site knows which it got.
-    # Alert on `ok == 0` while the series is being written at all.
-    #
-    # **The name keeps `recall` after the tool became `about` (DEC-39)**: metric
-    # names are append-only, and renaming one starts a new empty series beside a
-    # frozen one. The tool LABEL on `nora_room_lookups_total` does follow the tool
-    # name, because it must agree with the name in `data/nora.log` for `_log_call`
-    # to stay greppable.
-    _CounterSpec(
-        "nora_recall_total",
-        "Durable-profile lookups against Honcho by the `about` tool, "
-        "by outcome (ok / empty / unavailable). Named for that tool's former "
-        "name, `recall`; metric names are append-only.",
-        ("status",),
     ),
     # R-23. HOW the agent loop ended, every turn, straight off Strands'
     # `AgentResult.stop_reason`. The SDK reports a turn that ran out of budget by
@@ -1463,29 +1436,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "title resolved to a different note than the one read), or stale_head "
         "(the compare-and-set lost; the note moved under the call).",
         ("reason",),
-    ),
-    # Separates «her card is genuinely empty» from «the read failed»
-    # (`nora_errors_total{stage="peer_card"}`). Every name incremented in
-    # `engagement/context.py` must be declared here: `Metrics.inc` falls through its
-    # counter branch to the bare `self._gauges[name]` lookup and raises `KeyError`
-    # for an undeclared name, which `_peer_card`'s own `except Exception` would
-    # count as a read failure.
-    # `tests/architecture/test_every_recorded_metric_is_declared.py` checks call
-    # sites against this tuple.
-    _CounterSpec(
-        "nora_peer_card_empty_total",
-        "Peer-card reads that came back empty, by platform — i.e. tagged turns "
-        "where her card was NOT rendered into the prompt. It cannot say why: "
-        "`HonchoClient._get` catches every transport failure and returns None, "
-        "so a dead endpoint, a timeout, a 4xx, an unknown peer and a genuinely "
-        "empty card all arrive here as the same `[]`. Do NOT read this against "
-        "`nora_errors_total{stage=\"peer_card\"}` expecting the two to "
-        "partition the space — an outage lands in THIS series, not that one, "
-        "which is why that stage label stays near zero even while Honcho is "
-        "down. Separating the four needs `Recollection`'s two-axis shape on "
-        "the port, which is a port change; until then a RISING count here is "
-        "«her card stopped appearing» and nothing narrower.",
-        ("platform",),
     ),
     # Bounded reads where the LIMIT actually bit, by site. The vocabulary is
     # `nora.domain.bounds.BoundSite` and is deliberately NOT restated here (as for

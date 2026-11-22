@@ -31,9 +31,8 @@ the one an operator greps rather than alerts on.
 `room` and `question` are what the three room-scoped tools close over so the model
 never has to supply them: `room` is this conversation's membership (see
 `nora.agent.room` — scope is enforced where the answer is assembled, never at
-egress), and `question` is the tagging message, which `about` uses as its search
-query. Both are values Nora already holds, so under DEC-24 neither may appear in a
-schema.
+egress), and `question` is the tagging message. Both are values Nora already
+holds, so under DEC-24 neither may appear in a schema.
 
 `build_tool_specs` builds each tool as a plain, undecorated `ToolSpec`
 (`nora.agent.ports`) closed over this tag's dependencies — no `strands` import
@@ -157,10 +156,7 @@ _ORDER = [
     "social_read",
     "group_members",
     "lookup_person",
-    "about",
     "member_update",
-    "ask_memory",
-    "search_memory",
     "memory_search",
     "memory_read",
     "intention_commit",
@@ -202,7 +198,6 @@ _ORDER = [
     "event_rsvp",
     "event_set_status",
     "suggest_venue",
-    "search_memory_workspace",
     "note_read",
     "note_search",
     "memo_read",
@@ -432,9 +427,8 @@ def build_tool_specs(
     # mailbox, named in `file_fetch`/`computer_import`'s NOT_SHARED note so the
     # owner knows who to share with. "" → the note says "Nora's Google account".
     google_account: str = "",
-    # `[memory.index] read`: the retrieval
-    # service `ask_memory` answers from instead of Honcho. `None` (the
-    # shipped default, offline, eval) is the Honcho path.
+    # `[memory.index] read`: the retrieval service. `None` (the shipped
+    # default, offline, eval) leaves it unwired.
     memory_retrieval: MemorySearch | None = None,
     graph_retrieval: Any = None,
     pass_scope: PassScope | None = None,

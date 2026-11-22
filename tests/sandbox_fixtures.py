@@ -216,7 +216,6 @@ async def seed_source(
                 standing_age_hours=knowledge.standing_age_hours,
                 notes=knowledge.notes,
                 culture=knowledge.culture,
-                conclusions=knowledge.conclusions,
                 rooms=knowledge.rooms,
                 spacing_seconds=knowledge.spacing_seconds,
             ),

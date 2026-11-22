@@ -899,13 +899,11 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         "subagent_list", "subagent_read",
     }
     # The unit-safe half is `UNIT_SAFE_TOOLS` itself, read from the module.
-    # It includes the unit-scoped reads (`note_read`/`note_search`,
-    # `search_memory_workspace`), which resolve their unit from the key that
+    # It includes the unit-scoped reads (`note_read`/`note_search`), which
+    # resolve their unit from the key that
     # `DreamerRuntime.run` SUPPLIES to the tool layer for a unit-keyed adaptor,
     # not through the Dreamer's synthetic room.
-    unit_scoped = {
-        "note_read", "note_search", "search_memory_workspace",
-    }
+    unit_scoped = {"note_read", "note_search"}
     assert unit_scoped <= UNIT_SAFE_TOOLS, (
         "a unit-scoped read fell out of UNIT_SAFE_TOOLS — 32 §3.4 "
         "grants these only with the supplied key path"

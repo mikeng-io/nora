@@ -1096,10 +1096,8 @@ class MemoryIndexConfig(BaseModel):
 
     `read` (DEC-316) is the READ, and it selects ONE memory tool surface wherever
     tools are built: on, the memory graph's, `memory_search` over the index through
-    `nora.agent.memory_search`, with no Honcho behind it and none of `ask_memory`,
-    `search_memory`, `search_memory_workspace` or `who_said` offered; off (the default),
-    the Honcho surface, and no `memory_search`. `about`, `remember` and
-    `load_transcript` are on both.
+    `nora.agent.memory_search`, with no `who_said` offered; off (the default), no
+    `memory_search`, and `who_said`. `remember` and `load_transcript` are on both.
 
     `embed` starts the embedding worker on the same drain tick: up to `embed_batch`
     nodes per tick through llama-server at `embedder_url` (the `embedder` compose
@@ -3042,10 +3040,10 @@ class DreamBudgetConfig(BaseModel):
     output_tokens: int = Field(default=4_000, ge=1)
     timeout_seconds: float = Field(default=120.0, gt=0)
     #: **The per-PASS memory ceiling**: how many reads a single run may make across
-    #: `nora.agent.dreamer.MEMORY_TOOLS` TOGETHER — `about`, `ask_memory`,
-    #: `search_memory_workspace`, `lookup_person`. The per-tool budgets above it
+    #: `nora.agent.dreamer.MEMORY_TOOLS` TOGETHER — `lookup_person`, `memory_search`,
+    #: `memory_read`. The per-tool budgets above it
     #: (`[llm.budgets]`, `NativeTool.budget`) bound each verb on its own, which a pass
-    #: spends by asking four verbs the same question.
+    #: spends by asking several verbs the same question.
     #:
     #: This is CODE and not instruction, and it fails closed: the (N+1)th read is
     #: answered `unavailable` with a reason, never an error and never a silent empty.

@@ -145,12 +145,12 @@ async def test_an_unsettled_session_holds_and_a_kept_one_spends_the_batch():
 def test_memory_is_a_tool_the_session_may_call_never_a_prefetch():
     """Memory is a read the session MAY make, so a later merge or sunset
     of Honcho changes no Character code. The adaptor holds no memory
-    store at all, and its tools carry the two memory reads."""
+    store at all, and its tools carry the memory read."""
     import inspect
 
     params = inspect.signature(CharacterPersonAdaptor.__init__).parameters
     assert "memory" not in params
-    assert {"ask_memory", "search_memory"} <= CHARACTER_PERSON_TOOLS
+    assert "memory_search" in CHARACTER_PERSON_TOOLS
 
 
 def test_a_person_session_holds_no_presence_read_and_no_act_verb():
@@ -168,11 +168,7 @@ def test_a_person_session_holds_no_web_tool():
     `web_search` and `web_fetch` each cost a call and reach outside the room
     (DEC-290)."""
     assert CHARACTER_PERSON_TOOLS.isdisjoint({"web_search", "web_fetch"})
-    assert {
-        "ask_memory", "search_memory", "about", "lookup_person", "group_members",
-        # DEC-316: built instead of the first two while the index is on
-        "memory_search",
-    } == CHARACTER_PERSON_TOOLS
+    assert {"lookup_person", "group_members", "memory_search"} == CHARACTER_PERSON_TOOLS
 
 
 async def test_the_evidence_counts_and_reads_their_lines_across_the_units_rooms():

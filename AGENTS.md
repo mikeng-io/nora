@@ -24,9 +24,9 @@ Every path, including a new tool, stage or eval, keeps this loop.
   *whether it is still open*, the thing that would close it. When a model
   judges badly, read its input before rewriting its instruction.
 - **Serialize with provenance.** Her reply is the one authored surface: only a
-  `send_reply` call delivers. Audit rows and the Honcho feed carry her words
-  with their doctrine hash and tag id; the trace is what every claim about a
-  turn is re-derived from.
+  `send_reply` call delivers. Audit rows carry her words with their doctrine
+  hash and tag id; the trace is what every claim about a turn is re-derived
+  from.
 
 It holds only if a measure is fail-closed, "done" is measured by a gate, a
 metric or a read-back and never declared by the doer, and every step can be

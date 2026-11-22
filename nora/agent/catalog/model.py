@@ -57,7 +57,7 @@ class NativeTool:
     source_tier: str | None = None
     # `cacheable` is the seventh. True only for a tool whose result carries no
     # room/person-disclosure decision baked into the MOMENT it ran —
-    # `where_is`/`search_memory`/`about` all decide what they may say against the room's
+    # `where_is`/`memory_search` all decide what they may say against the room's
     cacheable: bool = False
     # `read_only` is the eighth. It answers "does calling this change anything outside the
     # turn": the Dreamer, a BACKGROUND research loop with nobody waiting on it, may look

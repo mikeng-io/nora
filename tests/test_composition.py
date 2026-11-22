@@ -275,7 +275,7 @@ async def test_the_root_hands_the_loader_the_tool_names_its_gate_needs(cfg, tmp_
     """The catalogue gate's backticked half is inert without `tool_names`, and an inert gate
     that nobody notices is worse than no gate.
 
-    It has to be a tool whose name is an ordinary English word, such as `now` or `about`.
+    It has to be a tool whose name is an ordinary English word, such as `now`.
     Every other native is snake_case, which the STRUCTURAL detector catches on its own, so
     injecting one of those would make this pass whether or not `tool_names` was ever
     handed over.
@@ -288,7 +288,7 @@ async def test_the_root_hands_the_loader_the_tool_names_its_gate_needs(cfg, tmp_
     conduct = d / "rooms" / "conduct.md"
     conduct.write_text(conduct.read_text().replace(
         "# Ground your understanding",
-        "Reach for `about` when you need to.\n\n# Ground your understanding", 1))
+        "Reach for `now` when you need to.\n\n# Ground your understanding", 1))
     with pytest.raises(StartupError, match="may not name a tool"):
         await build_dependencies(override_config(cfg, {"doctrine.dir": d}))
 
@@ -1337,7 +1337,7 @@ async def test_the_culture_adaptor_is_wired_with_its_grant_and_its_OWN_room(
 async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_path):
     """The property the grant exists for, measured at the seam rather than inferred from it:
     `RegistryToolSource.build` with the culture adaptor's own name, key and grant returns
-    the room-scoped verbs (`group_members`, `ask_memory`) over a room with a real platform
+    the room-scoped verbs (`group_members`, `lookup_person`) over a room with a real platform
     rather than the empty one.
 
     Without the scope-keyed resolution this returns the same NAMES built against
@@ -1376,11 +1376,11 @@ async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_p
     names = {
         getattr(t, "tool_name", None) or getattr(t, "__name__", "") for t in built
     }
-    # `[memory.index]` is off here: the Honcho memory surface, so the graph's
-    # `memory_search` is granted and not built (DEC-316).
+    # `[memory.index]` is off here, so the graph's `memory_search` is granted and
+    # not built (DEC-316).
     expected = set(culture.tools) - GRAPH_MEMORY_TOOLS
     assert names == expected, sorted(expected - names)
-    assert "group_members" in names and "ask_memory" in names
+    assert "group_members" in names and "lookup_person" in names
     room = captured["room"]
     assert room.platform == "signal", "the verbs were built over the EMPTY room"
     assert room._roster_source is not None, "no roster: every verb is unavailable"
@@ -1738,7 +1738,7 @@ async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withho
     assert "character_read" not in off.cognition_runner._runner._read_only_tools
     assert "character_read" in with_culture.cognition_runner._runner._read_only_tools
     wired = off.cognition_runner._runner._read_only_tools
-    assert {"note_read", "about", "where_been", "event_search"} <= wired
+    assert {"note_read", "where_been", "event_search"} <= wired
     assert {"rollup_read", "standing_read"} <= wired                    # DEC-246
     assert "memo_read" in wired                                         # DEC-306
     assert "social_read" in wired       # a SELECT, so no flag
@@ -2116,7 +2116,7 @@ async def test_cognition_holds_the_memory_surface_the_flag_selects(cfg, tmp_path
     the session's memory verbs exactly as it picks every other occasion's.
     The session's `wired` set (its guard's read-only set) and what it BUILDS
     agree, and neither holds the other surface."""
-    from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS
+    from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, OFF_GRAPH_ONLY_TOOLS
 
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(
@@ -2126,8 +2126,8 @@ async def test_cognition_holds_the_memory_surface_the_flag_selects(cfg, tmp_path
     assert runner is not None
     unit, home = next(iter(runner._home_rooms.items()))
     built = {t.tool_name for t in runner._read_tools_for(unit, [home])}
-    on, off = (GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS) if graph else (
-        HONCHO_MEMORY_TOOLS, GRAPH_MEMORY_TOOLS)
+    on, off = (GRAPH_MEMORY_TOOLS, OFF_GRAPH_ONLY_TOOLS) if graph else (
+        OFF_GRAPH_ONLY_TOOLS, GRAPH_MEMORY_TOOLS)
     assert ("memory_search" in built) is graph
     assert not built & off and not runner._read_only_tools & off
     assert built & on and runner._read_only_tools & on

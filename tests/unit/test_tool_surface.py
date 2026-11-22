@@ -122,9 +122,9 @@ def test_a_grant_is_a_ceiling_on_every_part_of_the_surface():
     assert _names(surface.tools) == {"now", "where_is"}
 
 
-def test_the_dreamer_only_verb_needs_the_dreamer():
-    assert "search_memory_workspace" not in _surface().admitted
-    assert "search_memory_workspace" in _surface(dream_adaptor="proactive").admitted
+def test_a_dreamer_only_verb_needs_the_dreamer():
+    assert not ToolScope(platform="signal").admits("document_list")
+    assert ToolScope(platform="signal", dreamer=True).admits("document_list")
 
 
 def test_the_declared_table_scope_admits_everything():

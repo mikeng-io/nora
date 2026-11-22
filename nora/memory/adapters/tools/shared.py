@@ -13,8 +13,6 @@ RECALL_LOOKUPS_MAX_CHARS = 8000
 
 NOTE_SEARCH_LIMIT = 5
 
-_REASONING_LEVELS = frozenset({"minimal", "low", "medium", "high", "max"})
-
 _ROLLUP_OFF = "I can't read the rollups right now. Say so; do not guess what anyone did."
 
 _ROLLUP_NO_BUILD = (

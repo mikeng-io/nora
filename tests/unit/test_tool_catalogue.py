@@ -50,8 +50,7 @@ BLOCK_CEILING = 2_730
 TAG_PLATFORMS = ("signal", "discord", "whatsapp", "instagram")
 
 # The per-line ceiling. Lines carry the tokens that discriminate between
-# neighbours (`search_memory` «in this group's history» against
-# `search_memory_workspace` «across EVERY room»; `create_event` «a NEW
+# neighbours (`create_event` «a NEW
 # gathering» against `update_event` «ALREADY proposed»), so cutting them to a
 # tighter number would remove the reason the line exists.
 #
@@ -148,7 +147,7 @@ def test_confusable_pairs_are_discriminated_in_the_catalogue_itself():
     so the neighbours are pinned HERE rather than left to a model eval.
 
     `where_is`/`where_been` is the pair most easily confused: unless `where_is`
-    says RIGHT NOW, both lines read as questions about the past. The other three
+    says RIGHT NOW, both lines read as questions about the past. The others
     discriminate already; they are pinned so a docstring edit cannot quietly
     remove the distinction.
     """
@@ -159,9 +158,6 @@ def test_confusable_pairs_are_discriminated_in_the_catalogue_itself():
 
     assert "named" in by_name["parking_status"]
     assert "nearest" in by_name["find_parking"]
-
-    assert "this group's" in by_name["search_memory"]
-    assert "EVERY room" in by_name["search_memory_workspace"]
 
     assert "NEW" in by_name["event_propose"]
     assert "ALREADY" in by_name["event_revise"]

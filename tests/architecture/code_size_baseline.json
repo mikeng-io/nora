@@ -2172,9 +2172,6 @@
  "tests/architecture/test_every_status_carries_a_note.py": {
   "internal_docstrings": 1
  },
- "tests/architecture/test_file_links_render_as_handles.py": {
-  "internal_docstrings": 1
- },
  "tests/architecture/test_framing_is_one_typed_place.py": {
   "comment_blocks": 2,
   "file_lines": 851,
@@ -2898,8 +2895,7 @@
   "internal_docstrings": 1
  },
  "tests/test_room_tools.py": {
-  "comment_blocks": 2,
-  "file_lines": 1076
+  "comment_blocks": 1
  },
  "tests/test_route_position_trust.py": {
   "internal_docstrings": 1
@@ -3023,9 +3019,6 @@
  },
  "tests/unit/test_analytics_rollup_synthetic.py": {
   "comment_blocks": 2
- },
- "tests/unit/test_ask_memory_index_flag.py": {
-  "internal_docstrings": 1
  },
  "tests/unit/test_blocks.py": {
   "comment_blocks": 1,

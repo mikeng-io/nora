@@ -525,7 +525,7 @@ async def test_a_called_floor_reads_no_legacy_store_even_when_wired(exported_spa
         ai_peer="nora", tagger_card_conclusions=3, policy=_policy(),
     )
     for method in (
-        "_prefetch", "_peer_card", "_recall_tagger", "_notes", "_memos", "_shared",
+        "_prefetch", "_notes", "_memos", "_shared",
         "_culture", "_unit_culture", "_self_account", "_lessons", "_profiles", "_character",
     ):
         monkeypatch.setattr(assembler, method, legacy)

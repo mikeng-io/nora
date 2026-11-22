@@ -292,15 +292,6 @@ class ComprehendRead(AgentTool):
 #: as-of is not a fold that was empty. What the session was already shown —
 #: its grounding — carries the as-of view these reads cannot give.
 HISTORICAL_READ_UNAVAILABLE: Mapping[str, str] = MappingProxyType({
-    "about": "This reads a person's profile as it stands now, not as of this "
-             "time; what was already gathered shows what was known then.",
-    "ask_memory": "This reasons over memory as it stands now, not as of this "
-                  "time; what was already gathered shows what was known then.",
-    "search_memory": "This searches memory as it stands now, not as of this "
-                     "time; what was already gathered shows what was known then.",
-    "search_memory_workspace": "This searches memory as it stands now, not as "
-                               "of this time; what was already gathered shows "
-                               "what was known then.",
     "memory_search": "This searches the memory graph's current heads; it "
                      "cannot be read back as of this time. What was already "
                      "gathered shows the graph as of it.",

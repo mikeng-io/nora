@@ -35,16 +35,6 @@ TOOLS = {
         output_contract="three_state",
         level=2,
     ),
-    "about": NativeTool(
-        4,
-        source_tier="remembered",
-        read_only=True,
-        side_effect_state="none",
-        idempotency="idempotent",
-        retry="safe",
-        output_contract="three_state",
-        level=2,
-    ),
     "member_update": NativeTool(
         4,
         source_tier="confirmed",

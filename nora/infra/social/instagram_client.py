@@ -146,13 +146,12 @@ look later" flow has to be SOON after, and a stored URL is a dead link.
 ## A story must be SAID to be a story, and the result is what says it
 
 The media vanishes in 24 hours. Nora's REPLY about it does not: every sent
-message is fed to Honcho as durable conclusions
-(`nora/engagement/stages/feedback.py`). So «he was at the beach» launders a
-perishable observation into permanent knowledge, indistinguishable a week
+message stays in the audit record. So «he was at the beach» launders a
+perishable observation into a permanent record, indistinguishable a week
 later from something he actually said, while «his story from 3h ago showed a
 beach» ages honestly on its own. The phrasing is the whole mitigation, because
-it travels WITH the claim — a retention rule cannot reach into a Honcho
-conclusion and a phrasing rule is already inside it.
+it travels WITH the claim — a retention rule cannot reach into a stored
+message and a phrasing rule is already inside it.
 
 Two things therefore ride an `ok` story result: `source_kind` says what this
 is in one token nothing can mistake — `instagram_story`, not a bare URL that

@@ -47,10 +47,7 @@ DISCORD_ONLY_TOOLS: frozenset[str] = frozenset({
     "set_music_volume",
 })
 
-#: Admitted only when a Dreamer adaptor built the set:
-#: `search_memory_workspace` returns verbatim lines from Honcho's WHOLE
-#: workspace, every unit, and a room could otherwise surface words said by
-#: people in none of its units — the crossing `send_to` refuses (R-49).
+#: Admitted only when a Dreamer adaptor built the set.
 #:
 #: `rollup_read` is also a tag-path tool (`TAG_READABLE_LOOP_TOOLS`, below).
 #: `standing_read` is an ordinary read: ledger budgets point every occasion to it.
@@ -73,7 +70,7 @@ DREAMER_LOOP_TOOLS: frozenset[str] = frozenset(
 TAG_READABLE_LOOP_TOOLS: frozenset[str] = frozenset({"rollup_read"})
 
 DREAMER_ONLY_TOOLS: frozenset[str] = frozenset(
-    {"search_memory_workspace", "document_list", "document_revise"}
+    {"document_list", "document_revise"}
 ) | (DREAMER_LOOP_TOOLS - TAG_READABLE_LOOP_TOOLS)
 
 #: Tag-turn tools only: the four `subagent_*` tools are a person's tool for
@@ -113,9 +110,7 @@ class ToolScope:
     everything.
 
     `dreamer` is True when a Dreamer adaptor built this set (`dream_adaptor`
-    is non-empty). `search_memory_workspace` is admitted only then: it
-    returns verbatim lines from Honcho's WHOLE workspace, every unit, and a
-    room could otherwise surface words from people in none of its units.
+    is non-empty). `DREAMER_ONLY_TOOLS` are admitted only then.
 
     `grant` is a ceiling by name, or `None` for no ceiling. The Dreamer passes
     its adaptor's granted tools intersected with what it may hold
