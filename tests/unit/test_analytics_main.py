@@ -25,6 +25,9 @@ class _FakeRunner:
     async def ensure_build(self, *, through_ms: int) -> int:
         return 7
 
+    async def projection_time(self) -> int:
+        return 123_456
+
     async def run(self, *, build_id: int, through_ms: int) -> RunReport:
         if self.explode:
             raise RuntimeError("database gone")
@@ -44,13 +47,10 @@ def _deps(runner: _FakeRunner, metrics: Metrics, *names: str) -> AnalyticsDepend
     )
 
 
-async def test_a_tick_builds_to_the_wall_clock_less_the_grace(monkeypatch):
-    from nora.analytics import __main__ as main_mod
-
-    monkeypatch.setattr(main_mod.time, "time", lambda: 1_000_000.0)
+async def test_a_tick_builds_to_the_projection_time():
     runner = _FakeRunner(fail=set())
-    await _tick(_deps(runner, Metrics(), "ok"), {}, {})
-    assert runner.runs == [(1_000_000 - 60) * 1000]
+    await _tick(_deps(runner, Metrics(), "ok"), {}, {}, clock=lambda: 1_000_000.0)
+    assert runner.runs == [123_456]
 
 
 async def test_a_run_that_raises_does_not_take_the_daemon_down():

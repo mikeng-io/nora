@@ -13,10 +13,8 @@ rows by construction (`tests/unit/test_rollup_determinism.py` is the gate).
 **No wall clock.** The fold's clock is `FoldState.logical_now_ms`: the newest
 time the Record has shown — a fix's `ts`, a successful poll's `at_ms`. A stay
 closes when a later fix, or a recorded poll proving the time passed with no
-fix, shows it ended. The wall clock enters exactly once, in the
-daemon, to choose WHICH watermark to build to (`now - grace_seconds`, so a
-row committed late is still inside it); it never enters what is computed at
-that watermark.
+fix, shows it ended. The daemon chooses the watermark from the input
+sources' observed frontiers.
 
 **Why the clock is logical.** Deciding a tail (an open stay's close, a trip's
 settlement, a provisional arrival's hold, a place label's staleness) on wall

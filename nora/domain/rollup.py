@@ -976,12 +976,9 @@ class HealthRow:
 def polls_healthy(
     rows: Sequence[HealthRow], *, scope: str, start_ms: int, end_ms: int,
     max_gap_ms: int,
+    require_preceding: bool = False,
 ) -> bool:
-    """The presence collector is proved healthy for `[start, end]` in one
-    circle when it polled that circle throughout — no two consecutive polls,
-    nor the span's edges and the nearest poll, further apart than
-    `max_gap_ms` — and every one of those polls succeeded. No rows is not
-    proof (R-27): it is exactly what an outage looks like."""
+    """Successful polls cover the span with no gap greater than `max_gap_ms`."""
     polls = sorted(
         (r for r in rows if r.source == "presence" and r.event == "poll" and r.scope == scope),
         key=lambda r: r.at_ms,
@@ -990,6 +987,8 @@ def polls_healthy(
     if not inside or any(r.outcome != "ok" for r in inside):
         return False
     before = [r for r in polls if r.at_ms < start_ms]
+    if require_preceding and (not before or before[-1].outcome != "ok"):
+        return False
     after = [r for r in polls if r.at_ms > end_ms]
     edge_start = before[-1].at_ms if before and before[-1].outcome == "ok" else inside[0].at_ms
     edge_end = after[0].at_ms if after and after[0].outcome == "ok" else inside[-1].at_ms
@@ -1001,20 +1000,21 @@ def polls_healthy(
 
 def adapter_up(
     rows: Sequence[HealthRow], *, platform: str, start_ms: int, end_ms: int,
+    require_preceding: bool = False,
 ) -> bool:
-    """A platform adapter is proved up for `[start, end]` when its newest
-    recorded transition at or before `start` is `up` and none inside the span
-    leaves `up` (`nora.app.source_health`: a steady state writes nothing, so
-    the state holds until the next transition). No transition before the
-    span is not proof."""
+    """An `up` reading covers the start and no reading reports an outage inside."""
     mine = sorted(
-        (r for r in rows if r.source == platform and r.event == "transition"),
+        (r for r in rows if r.source == platform and (
+            r.scope == "" if require_preceding else r.event == "transition"
+        )),
         key=lambda r: r.at_ms,
     )
-    before = [r for r in mine if r.at_ms <= start_ms]
+    before = [r for r in mine if r.at_ms < start_ms or (
+        not require_preceding and r.at_ms == start_ms
+    )]
     if not before or before[-1].outcome != "up":
         return False
-    return all(r.outcome == "up" for r in mine if start_ms < r.at_ms <= end_ms)
+    return all(r.outcome == "up" for r in mine if before[-1].at_ms < r.at_ms <= end_ms)
 
 
 @dataclass(frozen=True)

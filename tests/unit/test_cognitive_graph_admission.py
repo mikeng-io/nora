@@ -31,6 +31,7 @@ from nora.memory.domain.admission_proposals import (
     RoomReference,
     RowFacts,
     Scope,
+    SourceReference,
 )
 
 PASS = PassContext(
@@ -450,6 +451,11 @@ def test_refusal_literal_covers_all_reachable_form_and_write_reasons() -> None:
         ),
         (NEW_CLAIM, {"context": replace(PASS, occasion="called")}),
         (replace(NEW_CLAIM, id=""), {}),
+        (replace(NEW_ENTITY, source_ref=SourceReference("page", "https://example.invalid")), {}),
+        (
+            replace(NEW_EDGE, type="watches", target=ENTITY.id),
+            {"extra": (replace(INTENTION, form="maintain"),)},
+        ),
     )
     decisions = [_one(proposal, **kwargs) for proposal, kwargs in cases]
     assert all(isinstance(result, Refusal) and result.field for result in decisions)
@@ -461,4 +467,5 @@ def test_refusal_literal_covers_all_reachable_form_and_write_reasons() -> None:
         "credential",
         "doctrine",
         "content",
+        "unsafe_page_reference",
     }

@@ -12,10 +12,12 @@ vocabulary change lands in both places or fails.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import get_args
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
 
+from nora.domain.graph_registration import SourceKind
 from nora.infra.sql.graph_stimulus_schema import graph_stimulus_table
 from nora.infra.sql.schema import METADATA
 
@@ -132,6 +134,8 @@ ENTITY = sa.Table(
     sa.Column("aliases", pg.ARRAY(sa.Text)),
     sa.Column("pointer_kind", sa.Text),
     sa.Column("pointer_ref", sa.Text),
+    sa.Column("source_ref_kind", sa.Text),
+    sa.Column("source_ref_value", sa.Text),
     sa.PrimaryKeyConstraint("id", "unit", name="pk_entity"),
     sa.CheckConstraint(
         "state = 'tombstoned' OR name IS NOT NULL", name="ck_entity_name"
@@ -145,6 +149,13 @@ ENTITY = sa.Table(
     ),
     sa.CheckConstraint(
         "pointer_kind IS NULL OR basis = 'computed'", name="ck_entity_pointer_basis"
+    ),
+    sa.CheckConstraint(
+        f"source_ref_kind IS NULL OR source_ref_kind IN {get_args(SourceKind)!r}",
+        name="ck_entity_source_ref_kind",
+    ),
+    sa.CheckConstraint(
+        "(source_ref_kind IS NULL) = (source_ref_value IS NULL)", name="ck_entity_source_ref_pair",
     ),
 )
 
@@ -301,6 +312,14 @@ sa.Index("idx_edge_src", EDGE.c.src_id, EDGE.c.type)
 sa.Index("idx_edge_dst", EDGE.c.dst_id, EDGE.c.type)
 
 
+WATCH_RESULT = sa.Table(
+    "watch_result", METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
+    sa.Column("watch_edge", sa.Text, nullable=False),
+    sa.Column("content_hash", sa.Text, nullable=False),
+)
+
+
 NORA_ACT = sa.Table(
     "nora_act", METADATA,
     sa.Column("id", sa.Text, primary_key=True),
@@ -365,6 +384,7 @@ _ITEM_WRITERS = {
     "social_poll": ("SqlSocialStreamStore", "external"),
     "platform_observation": ("SqlObservationStore", "external"),
     "source_health": ("SqlSourceHealthLog", "internal"),
+    "watch_result": ("SqlWatchResults", "internal"),
     "nora_act": ("SqlActStore", "internal"),
     "nora_act_outcome": ("SqlActStore", "internal"),
     "nora_pass_output": ("SqlActStore", "internal"),
@@ -422,7 +442,8 @@ def _registration_planes(
     yield sa.CheckConstraint(
         "(unit IS NULL) = (graph_id IS NULL)",
         name=f"ck_{table}_graph_pair",
-        postgresql_not_valid=table not in {"nora_act", "nora_act_outcome", "nora_pass_output"},
+        postgresql_not_valid=table not in {"nora_act", "nora_act_outcome", "nora_pass_output",
+                                          "watch_result"},
     )
 
 
@@ -440,6 +461,15 @@ for _log in ("computer_events", "tool_call_log"):
     METADATA.tables[_log].append_column(sa.Column("act_id", sa.Text))
 
 _attach_registration_planes()
+
+for _key in ("unit", "graph_id"):
+    WATCH_RESULT.c[_key].nullable = False
+WATCH_RESULT.append_constraint(sa.ForeignKeyConstraint(
+    ["watch_edge", "unit"], ["edge.id", "edge.unit"], name="fk_watch_result_edge",
+))
+sa.Index(
+    "idx_watch_result_latest", WATCH_RESULT.c.unit, WATCH_RESULT.c.watch_edge, WATCH_RESULT.c.id,
+)
 
 NORA_ACT.append_constraint(sa.UniqueConstraint("id", "unit", name="uq_nora_act_id_unit"))
 sa.Index("idx_nora_act_pass", NORA_ACT.c.unit, NORA_ACT.c["pass"])

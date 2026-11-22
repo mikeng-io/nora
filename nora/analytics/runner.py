@@ -43,7 +43,7 @@ log = logging.getLogger("nora.analytics.runner")
 
 #: The version of what a run computes. Build 1 is `legacy` (the rows the
 #: wall-clock rollup wrote).
-CODE_VERSION = "rollup-2a.4"
+CODE_VERSION = "rollup-2e.1"
 
 #: RollupConfig fields that pace or bound the work and cannot change a row.
 _PACING = frozenset({
@@ -102,6 +102,9 @@ class RollupRunner:
     @property
     def params(self) -> str:
         return self._params
+
+    async def projection_time(self) -> int | None:
+        return await self._units.projection_time()
 
     async def run(
         self, *, build_id: int, through_ms: int, raise_stimuli: bool = True,
@@ -181,6 +184,7 @@ class RollupRunner:
         if (
             current is not None and current.code_version == CODE_VERSION
             and current.params_sha256 == self._params
+            and current.through_ms <= through_ms
         ):
             return current.id
         log.info(

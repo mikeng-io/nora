@@ -98,7 +98,31 @@ async def _append(conn: Any, table: str, n: int) -> None:
         await conn.execute(sa.insert(_table("registry")).values(
             id=graph_id, unit=row["unit"], kind="item",
         ))
+    if table == "watch_result":
+        await _seed_watch(conn, row["watch_edge"], n)
     await conn.execute(sa.insert(_table(table)).values(row))
+
+
+async def _seed_watch(conn: Any, edge_id: str, n: int) -> None:
+    target_id = f"{edge_id}-target"
+    intention_id = f"{edge_id}-intention"
+    parents = {
+        "entity": {**ROWS["entity"](n), "id": target_id},
+        "intention": {
+            **ROWS["intention"](n), "id": intention_id, "form": "maintain",
+            "done_when_form": None, "done_when": None, "holds_while_form": "predicate",
+            "holds_while": {"graph_id": target_id, "path": ["state"], "equals": "admitted"},
+        },
+        "edge": {
+            **ROWS["edge"](n), "id": edge_id, "type": "watches", "basis": "committed",
+            "src_id": intention_id, "dst_id": target_id,
+        },
+    }
+    await conn.execute(sa.insert(_table("registry")).values([
+        {key: row[key] for key in ("id", "unit", "kind")} for row in parents.values()
+    ]))
+    for table, row in parents.items():
+        await conn.execute(sa.insert(_table(table)).values(row))
 
 
 async def _held(engine: Any) -> dict[str, list[str]]:
