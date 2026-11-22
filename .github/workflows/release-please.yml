@@ -1,4 +1,4 @@
-# Ordinary master changes prepare patch/minor metadata; release-please alone publishes.
+# Every releasable master push prepares patch metadata; release-please alone publishes.
 # Publication feeds the existing release-images -> deployments -> Komodo lane.
 name: release-please
 
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Owner recovery, or preparing the bump for a break
+        description: Owner recovery, or preparing a minor/major milestone
         required: true
         type: choice
         options: [prepare, publish]

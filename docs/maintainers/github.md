@@ -123,7 +123,7 @@ The `release-please` workflow runs on every master push. It first lets
 release-please publish merged pending metadata, then fetches the new tags and
 plans the complete reachable range on latest master. Shipped changes qualify; docs, tests, CI, agent tooling and repository-only
 maintenance paths are excluded. Unknown paths and runtime Markdown qualify, and
-explicit breaking/minor declarations remain visible. Generated metadata is
+breaking declarations remain visible. Generated metadata is
 excluded to avoid loops. Internal types can stay hidden in the changelog.
 Existing tags and version history remain unchanged.
 
@@ -157,7 +157,7 @@ The App is mandatory, scoped to this repository, with no branch bypass or token
 fallback. Its PR writes trigger checks and its published Release triggers the
 complete release-image bundle → `deployments` → Komodo path, under the existing
 release-image control. This is standing release/deployment authority for automatic
-patch/minor and explicitly owner-prepared breaks. Read actual publication, image
+patches and owner-dispatched milestones. Read actual publication, image
 and deployed state separately; a tag alone proves no deployment.
 
 Devin release automation is stopped (operator, 2026-10-28; issue #316 closed not

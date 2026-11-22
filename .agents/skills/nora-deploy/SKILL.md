@@ -61,10 +61,11 @@ bootstrap prerequisite does not authorize checkout deployment in Komodo mode.
 
 ## 1. Release and deployment
 
-Production uses Stack `nora-releases`. Ordinary master pushes automatically
-prepare patch/minor metadata and merge it only after required checks, then
-release-please publishes the stable Release. Breaking ranges stop for an
-owner-only exact-candidate major dispatch (`nora-release`). Standing authority
+Production uses Stack `nora-releases`. Every releasable master push prepares
+patch metadata and merges it only after required checks, then release-please
+publishes the stable Release; minor and major are owner dispatches
+(`nora-release`). A breaking range ships too: its host change is in the notes,
+and the deploy refuses a host missing a required setting. Standing authority
 includes this existing release/deployment path; no daily evaluator is involved.
 The tag and GitHub Release trigger `release-images.yml`; all images must finish
 before it commits `compose.json` and `release.json` to `deployments`.

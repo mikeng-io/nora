@@ -328,6 +328,22 @@ def test_a_break_releases_automatically_as_a_patch_listed_as_breaking(repo, plan
     assert "### ⚠ BREAKING CHANGES" in (repo / "CHANGELOG.md").read_text()
 
 
+def test_the_breaking_section_says_what_the_host_must_do(repo, plan):
+    commit(
+        repo,
+        "nora/f.py",
+        "feat!: move the site out\n\nBREAKING CHANGE: hosts must set LEGAL_CONTACT, drop --site\n"
+        "and route / to the portal.\n\nCo-Authored-By: Someone <someone@example.invalid>",
+    )
+    assert plan.main(["--repo", REPO, "--out", str(repo / "out")]) == 0
+    changelog = (repo / "CHANGELOG.md").read_text()
+    assert (
+        "  * Host change: hosts must set LEGAL_CONTACT, drop --site and route / to the portal."
+        in changelog
+    )
+    assert "Co-Authored-By" not in changelog
+
+
 def plan_files():
     return (
         ".release-please-manifest.json",

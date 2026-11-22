@@ -64,7 +64,7 @@ A metadata merge triggers publication and no next bump by itself. If publication
 fails, rerun that workflow: publication comes first, and manifest/tag mismatch
 blocks planning a duplicate version until the existing release is published.
 
-## 3. Owner-only break and recovery dispatch
+## 3. Owner-only milestone and recovery dispatch
 
 The original and rerun actor must both be the repository owner, on master.
 Select the exact full current master SHA; drift is refused, never silently
@@ -75,8 +75,7 @@ gh workflow run release-please.yml --ref master -f action=prepare -f bump=<patch
 ```
 
 The generated metadata follows the same required checks and exact-head
-auto-merge; its master push lets release-please publish the owner's selection. Manual prepare can also select patch/minor for recovery, retaining marker
-minimums. A merged but unpublished PR can be resumed without preparing again:
+auto-merge; its master push lets release-please publish the owner's selection. Manual prepare can also select patch for recovery. A merged but unpublished PR can be resumed without preparing again:
 
 ```bash
 gh workflow run release-please.yml --ref master -f action=publish -f candidate=<full-current-master-sha>
@@ -97,8 +96,8 @@ Require a successful publisher run, a non-draft Release and a tag resolving to
 the generated metadata merge. A stable published Release automatically feeds
 `release-images.yml`, then the complete `deployments` bundle and installed Komodo
 poller under the existing release-image control. The operator's standing release
-and deployment authority includes this normal patch/minor path and explicitly
-owner-prepared breaks. Follow `nora-deploy` for image/source/receipt/live-stamp
+and deployment authority includes this normal patch path and owner-dispatched
+milestones. Follow `nora-deploy` for image/source/receipt/live-stamp
 readback; a tag or build alone proves no deployment.
 
 The separate owner-only Deploy master image entry stays default-off behind
