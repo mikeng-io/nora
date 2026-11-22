@@ -35,7 +35,7 @@ from nora.subject.journey import (
     declared_envelope,
     declared_source,
 )
-from nora.subject.journey_world import action_service, memory_service
+from nora.subject.journey_world import action_service
 from nora.subject.obtain import SubjectSpec, build_config, default_policy, obtain
 from nora.testing.signal_daemon import FakeSignalDaemon
 from tests.integration.subject.test_recorded_wake_runtime import services
@@ -86,9 +86,7 @@ async def _world(clean_pg_url: str, tmp_path: Path, name: str):
                        policy=policy, overrides=overrides)
     cfg = build_config(spec)
     requests: list[Any] = []
-    feeds: list[Any] = []
     apps = services(cfg, requests)
-    apps["honcho.base_url"] = memory_service(feeds)
     daemon = FakeSignalDaemon(sent_at_ms=int(time.time() * 1000))
     owners: dict[str, Any] = {}
 

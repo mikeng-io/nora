@@ -578,9 +578,8 @@ async def test_drive_composes_the_real_room_at_its_own_instant(monkeypatch, one_
     assert spec.now == datetime.fromtimestamp(_SHOT["before_ms"] / 1000, tz=UTC)
     assert spec.identity == '[persons.x]\nname = "X"\n'
     assert spec.policy == 'default = "deny"\n'
-    assert spec.overrides["llm.base_url"] == "http://127.0.0.1:9/v1"
+    assert spec.overrides == {"llm.base_url": "http://127.0.0.1:9/v1"}
     assert spec.database_url.endswith("_sb"), "composed against the SANDBOX, not the source"
-    assert "honcho.workspace_id" not in spec.overrides
     assert spec.environment is not None
 
 
@@ -598,9 +597,9 @@ async def test_only_explicit_subject_overrides_are_applied(monkeypatch, one_path
     monkeypatch.setitem(ENTRY_POINTS, "dreamer", EntryPoint(drive=fake_drive))
     monkeypatch.setattr(backbone, "obtain", capturing_obtain)
     await backbone._drive(
-        _case("redirect-probe"), _spec("dreamer", overrides={"honcho.workspace_id": "nora-eval"}),
+        _case("redirect-probe"), _spec("dreamer", overrides={"cognition.enabled": True}),
     )
-    assert captured["spec"].overrides == {"honcho.workspace_id": "nora-eval"}
+    assert captured["spec"].overrides == {"cognition.enabled": True}
 
 
 async def test_drive_reads_the_deployments_own_files_when_spec_states_none(

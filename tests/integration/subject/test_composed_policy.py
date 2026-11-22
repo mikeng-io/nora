@@ -14,7 +14,6 @@ from nora.subject.environment import IsolatedServices
 from nora.subject.obtain import RoomNotInPolicyError, build_config
 from tests.integration.test_the_subject_is_the_deployed_graph import (
     _bridge_app,
-    _empty_honcho_app,
     _model_app,
 )
 
@@ -58,7 +57,6 @@ async def test_subject_uses_composed_policy_with_real_guild_directory(
 
     bridge.router.add_post("/v1/reads", directory)
     apps = {"platforms.discord.base_url": bridge, "platforms.signal.base_url": bridge,
-            "honcho.base_url": _empty_honcho_app(),
             "llm.base_url": _model_app(requests)}
     apps.update({f"providers.{name}.base_url": _model_app(requests) for name in cfg.providers})
     module = importlib.import_module("nora.subject.obtain")

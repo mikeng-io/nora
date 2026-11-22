@@ -8,16 +8,14 @@ it by name, `honcho:8000`, on the external network `honcho_memory`, which holds
 Honcho's api and this one service.
 
 Honcho's own compose file is outside this repository, so what this pins is the
-half that is here: nora joins that network and nothing else does, the network
-is declared external under the name the runbook creates, and the eval suite on
-the host, which cannot resolve a container-network name, is rewritten to
-loopback. The other half, that the port is in fact refused, is
+half that is here: nora joins that network and nothing else does, and the
+network is declared external under the name the runbook creates. The other
+half, that the port is in fact refused, is
 `deploy/honcho-closed-probe.sh`, run on norty.
 """
 
 from __future__ import annotations
 
-import importlib
 from pathlib import Path
 
 import yaml
@@ -78,20 +76,6 @@ def test_no_service_is_pointed_at_honcho_through_the_host_any_more() -> None:
         line for line in text.splitlines() if not line.lstrip().startswith("#")
     )
     assert "host.docker.internal:8000" not in uncommented
-
-
-def test_the_host_reaches_honcho_on_loopback_where_the_container_uses_its_name() -> None:
-    """The eval suite runs on the host, outside any container, where `honcho`
-    does not resolve. The deployment's `[honcho] base_url` is `http://honcho:8000`,
-    and the suite must read it as loopback, exactly as it already reads
-    `host.docker.internal`."""
-    # By module path: `nora.subject.obtain` as an attribute is the function.
-    obtain = importlib.import_module("nora.subject.obtain")
-    assert obtain._from_host("http://honcho:8000") == "http://127.0.0.1:8000"
-    assert obtain._from_host("http://host.docker.internal:8000") == "http://127.0.0.1:8000"
-    # Not a substring rewrite: a host that merely contains the name is untouched.
-    assert obtain._from_host("http://honcho.example.org:8000") == "http://honcho.example.org:8000"
-    assert obtain._from_host("http://omniroute:20128/v1") == "http://omniroute:20128/v1"
 
 
 def test_the_nora_deploy_skill_creates_the_network_before_any_compose_up() -> None:

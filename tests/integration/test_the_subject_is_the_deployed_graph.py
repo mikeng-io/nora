@@ -125,7 +125,6 @@ async def test_obtain_returns_the_production_graph(spec, clean_pg_url, cognition
     daemon = FakeSignalDaemon()
     applications = {
         "platforms.signal.base_url": daemon.app(),
-        "honcho.base_url": _empty_honcho_app(),
         "llm.base_url": _model_app(requests),
         **{f"providers.{name}.base_url": _model_app(requests)
            for name in build_config(spec).providers},
@@ -136,7 +135,7 @@ async def test_obtain_returns_the_production_graph(spec, clean_pg_url, cognition
         subject = await obtain(replace(spec, environment=environment))
     assert isinstance(subject.deps, Dependencies)
     fields = {f.name for f in dataclasses.fields(Dependencies)}
-    assert len(fields) == 86, "Dependency shape changed; reconcile the production subject."
+    assert len(fields) == 85, "Dependency shape changed; reconcile the production subject."
     assert {"access", "managed_services", "managed_session", "graph_observe"} <= fields
     assert "wake_poller" in fields
     if cognition:
@@ -406,25 +405,6 @@ async def test_cancellation_closes_the_case_before_restoring_network_access():
     assert socket.socket.connect is original
 
 
-def _empty_honcho_app() -> web.Application:
-    app = web.Application()
-
-    async def create(request: web.Request) -> web.Response:
-        body = await request.json()
-        if not isinstance(body.get("id"), str):
-            return web.json_response({"cause": "id_required"}, status=422)
-        return web.json_response(body)
-
-    async def empty(request: web.Request) -> web.Response:
-        return web.json_response({"items": [], "total": 0})
-
-    app.router.add_post("/v3/workspaces", create)
-    app.router.add_post("/v3/workspaces/{workspace}/peers", create)
-    app.router.add_post("/v3/workspaces/{workspace}/scopes", create)
-    app.router.add_post("/v3/workspaces/{workspace}/scopes/{scope}/sessions/list", empty)
-    return app
-
-
 def _model_app(requests: list[dict]) -> web.Application:
     app = web.Application()
 
@@ -466,7 +446,6 @@ async def test_actual_production_composition_retains_fire_bridge_and_cognition(
     monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
     applications = {f"platforms.{platform}.base_url": _bridge_app([])
                     for platform in ("signal", "discord", "whatsapp", "instagram")}
-    applications["honcho.base_url"] = _empty_honcho_app()
     overrides = {f"platforms.{platform}.{key}": value
                  for platform in ("signal", "discord", "whatsapp", "instagram")
                  for key, value in (("enabled", True), ("mode", "bridge"))}

@@ -27,6 +27,8 @@ import httpx
 import pytest
 from openai import AsyncOpenAI
 
+from evals.scenarios import COGNITION_SESSION_OVERRIDES, MEMORY_INDEX_OVERRIDES
+from evals.subject_config import FULL_RESTORE_OVERRIDES
 from nora.subject.obtain import SubjectSpec
 from nora.subject.recorded_services import RecordedServices
 from scripts import confirm_cognition_anchors as confirm
@@ -232,7 +234,8 @@ async def test_wake_input_composes_the_production_spec(
     assert spec.policy == 'default = "deny"'
     assert spec.identity == 'name = "generated"'
     assert spec.now == datetime.fromtimestamp(90, UTC)
-    assert "honcho.workspace_id" not in spec.overrides
+    assert spec.overrides == {**COGNITION_SESSION_OVERRIDES, **FULL_RESTORE_OVERRIDES,
+                              **MEMORY_INDEX_OVERRIDES}
     assert spec.overrides["cognition.enabled"] is True
     assert spec.overrides["memory.index.read"] is True
     assert moment == {"at_ms": 90_000, "room": "generated-room",

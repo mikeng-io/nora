@@ -16,8 +16,15 @@
   {
     "name": "explicit generated services survive additional recordings",
     "file": "nora/subject/journey_world.py",
-    "old": "            if \"honcho.base_url\" in self.generated_bindings:\n                apps[\"honcho.base_url\"] = memory_service(self.feeds)\n            if \"platforms.signal.base_url\" in self.generated_bindings:\n                apps[\"platforms.signal.base_url\"] = self._bridge_app()\n",
+    "old": "            if \"platforms.signal.base_url\" in self.generated_bindings:\n                apps[\"platforms.signal.base_url\"] = self._bridge_app()\n",
     "new": "",
     "target": "tests/integration/subject/test_journey_recorded_boundary.py::test_explicit_generated_bindings_survive_additional_recorded_services"
+  },
+  {
+    "name": "a binding to a path config does not define refuses instead of being skipped",
+    "file": "nora/subject/environment.py",
+    "old": "                raise ValueError(\n                    f\"{path}: an isolated binding must name an HTTP endpoint\"\n                ) from None\n",
+    "new": "                continue\n",
+    "target": "tests/integration/subject/test_recorded_services.py::test_bind_generated_config_endpoints_and_reject_non_endpoints"
   }
 ]

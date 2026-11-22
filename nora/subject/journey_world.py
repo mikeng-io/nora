@@ -3,9 +3,9 @@
 `JourneyServices` is the `Spec.services` plan an autonomous-journey case
 declares: opening it binds every external the composition will reach —
 the model (finite request-aware `CausalProtocol` for subject calls, a
-payload-inspecting `GeneratedJudge` for the two judge aliases), the
-memory service, and the signal bridge's action/daemon routes — to
-listeners this process owns, with a Redis for the real bridge queue.
+payload-inspecting `GeneratedJudge` for the two judge aliases) and the
+signal bridge's action/daemon routes — to listeners this process owns,
+with a Redis for the real bridge queue.
 The world is generated rehearsal input, never Nora's control loop.
 """
 
@@ -110,69 +110,6 @@ def _wrapper() -> Any:
     sys.modules["signal_bridge_wrapper"] = module
     spec.loader.exec_module(module)
     return module
-
-
-def memory_service(feeds: list) -> web.Application:
-    application = web.Application()
-
-    async def create(request):
-        body = await request.json()
-        if not isinstance(body.get("id"), str) or not body["id"]:
-            return web.json_response({"error": "missing identity"}, status=422)
-        return web.json_response(body)
-
-    async def configure(request):
-        body = await request.json()
-        if not body or any(not isinstance(value, dict) for value in body.values()):
-            return web.json_response({"error": "missing peer configuration"}, status=422)
-        return web.json_response(body)
-
-    async def members(request):
-        return web.json_response({"items": [], "total": 0})
-
-    async def join(request):
-        body = await request.json()
-        if not body.get("session_ids"):
-            return web.json_response({"error": "missing sessions"}, status=422)
-        return web.Response(status=204)
-
-    async def feed(request):
-        body = await request.json()
-        if not body.get("messages") or any(
-            not row.get("content") or not row.get("peer_id") for row in body["messages"]
-        ):
-            return web.json_response({"error": "missing message or author"}, status=422)
-        feeds.extend(body["messages"])
-        return web.json_response({"messages": body["messages"]})
-
-    async def card(request):
-        if request.match_info["peer"] not in {"miles_novak", "nora"}:
-            return web.json_response({"error": "unrecorded peer"}, status=422)
-        return web.json_response({"peer_card": []})
-
-    async def representation(request):
-        body = await request.json()
-        if request.match_info["peer"] != "nora" or body.get("target") != "miles_novak":
-            return web.json_response({"error": "unrecorded peer model"}, status=422)
-        return web.json_response({"representation": ""})
-
-    async def workspaces(request):
-        # `inspect_workspace`'s read: empty means every bound workspace is
-        # absent, so ownership is claimed by create, marked with Nora's key.
-        return web.json_response({"items": [], "total": 0})
-
-    application.router.add_post("/v3/workspaces", create)
-    application.router.add_post("/v3/workspaces/list", workspaces)
-    for resource in ("peers", "sessions", "scopes"):
-        application.router.add_post(f"/v3/workspaces/{{workspace}}/{resource}", create)
-    application.router.add_post("/v3/workspaces/{workspace}/sessions/{session}/peers", configure)
-    application.router.add_post("/v3/workspaces/{workspace}/sessions/{session}/messages", feed)
-    application.router.add_post("/v3/workspaces/{workspace}/scopes/{scope}/sessions/list", members)
-    application.router.add_post("/v3/workspaces/{workspace}/scopes/{scope}/sessions", join)
-    application.router.add_get("/v3/workspaces/{workspace}/peers/{peer}/card", card)
-    application.router.add_post(
-        "/v3/workspaces/{workspace}/peers/{peer}/representation", representation)
-    return application
 
 
 def action_service(runtime: Any, environment: IsolatedServices) -> DurableActionService:
@@ -342,7 +279,7 @@ class JourneyServices:
                 "an external recording cannot serve model dispatch; subject "
                 "and judge aliases stay under the finite world or the "
                 "declared gateway")
-        allowed = {"honcho.base_url", "platforms.signal.base_url"}
+        allowed = {"platforms.signal.base_url"}
         if (len(set(generated_bindings)) != len(generated_bindings)
                 or not set(generated_bindings) <= allowed
                 or (external is not None
@@ -352,7 +289,6 @@ class JourneyServices:
         self.external = external
         self.requests: list[dict] = []
         self.errors: list[tuple] = []
-        self.feeds: list[dict] = []
         self.owners: dict[str, Any] = {}
         self.daemon: FakeSignalDaemon | None = None
         self.protocol: CausalProtocol | None = None
@@ -430,10 +366,7 @@ class JourneyServices:
         self.daemon = FakeSignalDaemon(sent_at_ms=int(time.time() * 1000))
         playback = self.external.playback() if self.external is not None else None
         if playback is None:
-            apps = {
-                "honcho.base_url": memory_service(self.feeds),
-                "platforms.signal.base_url": self._bridge_app(),
-            }
+            apps = {"platforms.signal.base_url": self._bridge_app()}
         else:
             signal = playback.bindings.get("platforms.signal.base_url")
 
@@ -444,8 +377,6 @@ class JourneyServices:
             recorded = playback.applications(before=before)
             apps = {binding: recorded[name]
                     for binding, name in playback.bindings.items()}
-            if "honcho.base_url" in self.generated_bindings:
-                apps["honcho.base_url"] = memory_service(self.feeds)
             if "platforms.signal.base_url" in self.generated_bindings:
                 apps["platforms.signal.base_url"] = self._bridge_app()
             if signal is None and "platforms.signal.base_url" not in self.generated_bindings:

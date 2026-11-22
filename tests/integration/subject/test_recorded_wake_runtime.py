@@ -28,7 +28,6 @@ from scripts.cognition_loop.cases import Case, Expectation
 from scripts.cognition_loop.run import _run_wake
 from scripts.memory_graph_spike import Judges, measured_run_budget
 from tests.integration.subject.test_replay_service_scope import NOW
-from tests.integration.test_the_subject_is_the_deployed_graph import _empty_honcho_app
 
 MODELS = ["generated-a", "generated-b"]
 
@@ -72,8 +71,7 @@ def services(cfg, requests):
 
     for path in ("/v1/self", "/v1/groups", "/v1/health"):
         bridge.router.add_get(path, read)
-    apps = {"llm.base_url": model, "honcho.base_url": _empty_honcho_app(),
-            "platforms.signal.base_url": bridge}
+    apps = {"llm.base_url": model, "platforms.signal.base_url": bridge}
     apps.update({f"providers.{name}.base_url": model for name in cfg.providers})
     return apps
 

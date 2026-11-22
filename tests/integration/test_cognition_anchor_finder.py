@@ -126,22 +126,11 @@ async def test_confirmation_runs_the_obtained_subject_and_bound_judge(
 
 def _recording(cfg) -> RecordedServices:
     """The finite external world for one confirmation; each call answered once."""
-    bindings = {"llm.base_url": "model", "honcho.base_url": "memory",
-                "platforms.signal.base_url": "bridge"}
+    bindings = {"llm.base_url": "model", "platforms.signal.base_url": "bridge"}
     bindings.update(
         {f"providers.{n}.base_url": "model" for n in cfg.providers})
     return RecordedServices({"version": 1, "bindings": bindings,
         "services": {
-            "memory": [
-                {"method": "POST", "path": "/v3/workspaces", "request_json": {
-                    "id": cfg.honcho.workspace_id}, "response": {"status": 200,
-                    "json": {"id": cfg.honcho.workspace_id}}},
-                {"method": "POST",
-                 "path": f"/v3/workspaces/{cfg.honcho.workspace_id}/peers",
-                 "request_json": {"id": cfg.honcho.ai_peer},
-                 "response": {"status": 200,
-                              "json": {"id": cfg.honcho.ai_peer}}},
-            ],
             "bridge": [
                 {"method": "POST", "path": "/api/v1/rpc",
                  "response": {"status": 200, "json": [

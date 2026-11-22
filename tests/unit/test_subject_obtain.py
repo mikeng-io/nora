@@ -323,6 +323,19 @@ def test_a_named_provider_is_dialled_on_loopback_from_the_host(
     assert built.providers["primary"].api_key_env == "OMNIROUTE_API_KEY"
 
 
+def test_only_the_docker_host_name_is_rewritten_to_loopback() -> None:
+    """The host cannot resolve `host.docker.internal`; every other name, one
+    merely containing it included, is left for the caller to dial."""
+    import importlib
+
+    obtain = importlib.import_module("nora.subject.obtain")
+    assert obtain._from_host("http://host.docker.internal:8000") == "http://127.0.0.1:8000"
+    assert obtain._from_host("http://host.docker.internal/v1") == "http://127.0.0.1/v1"
+    assert (obtain._from_host("http://host.docker.internal.example.org:8000")
+            == "http://host.docker.internal.example.org:8000")
+    assert obtain._from_host("http://omniroute:20128/v1") == "http://omniroute:20128/v1"
+
+
 def test_the_judge_endpoint_is_dialled_on_loopback_from_the_host(
     tmp_path, monkeypatch, example_config,
 ) -> None:

@@ -21,21 +21,10 @@ NOW = 2_000_000_000_000
 
 
 def recording(cfg, wakes):
-    bindings = {"llm.base_url": "model", "honcho.base_url": "memory",
-                "platforms.signal.base_url": "bridge"}
+    bindings = {"llm.base_url": "model", "platforms.signal.base_url": "bridge"}
     bindings.update({f"providers.{name}.base_url": "model" for name in cfg.providers})
-    memory = []
-    for _ in range(wakes):
-        memory.extend([
-            {"method": "POST", "path": "/v3/workspaces", "request_json": {
-                "id": cfg.honcho.workspace_id}, "response": {"status": 200, "json": {
-                    "id": cfg.honcho.workspace_id}}},
-            {"method": "POST", "path": f"/v3/workspaces/{cfg.honcho.workspace_id}/peers",
-             "request_json": {"id": cfg.honcho.ai_peer}, "response": {"status": 200, "json": {
-                 "id": cfg.honcho.ai_peer}}},
-        ])
     return RecordedServices({"version": 1, "bindings": bindings, "services": {
-        "model": [], "memory": memory, "bridge": [{"method": "GET", "path": "/v1/self",
+        "model": [], "bridge": [{"method": "GET", "path": "/v1/self",
             "response": {"status": 200, "json": {"primary": "generated-self", "aliases": []}}}
             for _ in range(wakes)],
     }})

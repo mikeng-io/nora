@@ -21,7 +21,7 @@ from nora.platform.bridge.service import action_http_status, action_response
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import RunEvidence, read_events, validate_events
 from nora.subject.journey import envelope, settled_event
-from nora.subject.journey_world import action_service, memory_service
+from nora.subject.journey_world import action_service
 from nora.subject.obtain import SubjectSpec, build_config, default_policy, obtain
 from nora.subject.sandbox import eval_host_lock
 from nora.testing.causal_protocol import completion
@@ -102,10 +102,9 @@ async def test_real_app_bridge_admission_settles_before_cancellation(
     spec = SubjectSpec(database_url=clean_pg_url, workdir=tmp_path / "subject",
                        policy=policy, overrides=overrides)
     cfg = build_config(spec)
-    requests, feeds, actions, errors, owners = [], [], [], [], {}
+    requests, actions, errors, owners = [], [], [], {}
     daemon = FakeSignalDaemon(sent_at_ms=int(time.time() * 1000) + 10000)
     apps = services(cfg, requests)
-    apps["honcho.base_url"] = memory_service(feeds)
     if tagged:
         model = reply_service(cfg, requests, errors)
         for key in tuple(apps):
@@ -153,7 +152,6 @@ async def test_real_app_bridge_admission_settles_before_cancellation(
                     STIMULUS.c.conversation_id == room))).mappings().all()
             if room == "g1":
                 assert len(recorded) == len(stimuli) == 1
-                assert feeds == [], "nothing is written to the old memory backend"
                 assert recorded[0]["person_id"] == "miles_novak"
                 assert event["state"] == "done"
                 kinds = {w["kind"] for w in work}
@@ -174,7 +172,7 @@ async def test_real_app_bridge_admission_settles_before_cancellation(
                     assert daemon.sent[0]["params"]["message"] == sent[0]["body"]
             else:
                 assert event["state"] == "intentional_skip"
-                assert recorded == stimuli == feeds == []
+                assert recorded == stimuli == []
             assert not env.denied, [(e["method"], e["path"]) for e in env.denied]
             env.check()
         finally:

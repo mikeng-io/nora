@@ -22,7 +22,6 @@ from nora.app.computer_queue import SegmentRegistry
 from nora.app.startup import StartupError
 from nora.infra.blobs import RustfsBlobStore
 from nora.subject.environment import IsolatedServices
-from nora.subject.journey_world import memory_service
 from nora.subject.obtain import SubjectSpec, build_config, default_policy, obtain
 
 
@@ -45,7 +44,6 @@ def boundary_apps(cfg, received, payloads):
     model.router.add_post("/v1/chat/completions", no_model)
     apps["llm.base_url"] = model
     apps.update({f"providers.{name}.base_url": model for name in cfg.providers})
-    apps["honcho.base_url"] = memory_service([])
     for name in ("signal", "discord", "whatsapp", "instagram"):
         app = web.Application()
 

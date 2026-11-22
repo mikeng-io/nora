@@ -41,13 +41,12 @@ def _manifest(tmp_path, recording):
 
 RECORDING = {
     "version": 1,
-    "bindings": {"honcho.base_url": "memory",
+    "bindings": {"platforms.discord.base_url": "discord",
                  "platforms.signal.base_url": "bridge"},
     "services": {
-        "memory": [{"method": "GET",
-                    "path": "/v3/workspaces/generated-ws/peers/miles_novak/card",
-                    "response": {"status": 200, "json": {
-                        "peer_card": [{"content": "generated history"}]}}}],
+        "discord": [{"method": "GET", "path": "/v1/groups",
+                     "response": {"status": 200, "json": [
+                         {"id": "generated-channel", "members": [["generated-user"]]}]}}],
         "bridge": [{"method": "GET", "path": "/v1/self",
                     "response": {"status": 200, "json": {
                         "primary": "+85290000001", "aliases": []}}},
@@ -89,7 +88,7 @@ def _send(action_id: str, rid: int, text: str = "generated reply") -> dict:
 async def test_the_declared_recording_serves_history_and_the_real_action_seam(
         clean_pg_url, evaluation_config, tmp_path, monkeypatch):
     """The manifest parses, the isolated boundary opens, and the configured
-    dependency receives its declared nonempty memory/roster responses while
+    dependency receives its declared nonempty roster responses while
     candidate actions still cross the real `DurableActionService` and daemon."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
     plan = _manifest(tmp_path, RECORDING)
@@ -102,11 +101,10 @@ async def test_the_declared_recording_serves_history_and_the_real_action_seam(
             rid = await _pending_row(store)
             async with aiohttp.ClientSession() as client:
                 async with client.get(
-                        bound.honcho.base_url
-                        + "/v3/workspaces/generated-ws/peers/miles_novak/card") as r:
+                        bound.platforms.discord.base_url + "/v1/groups") as r:
                     assert r.status == 200
-                    assert (await r.json())["peer_card"] == [
-                        {"content": "generated history"}]
+                    assert (await r.json()) == [
+                        {"id": "generated-channel", "members": [["generated-user"]]}]
                 async with client.get(
                         bound.platforms.signal.base_url + "/v1/self") as r:
                     assert r.status == 200
@@ -134,8 +132,8 @@ async def test_a_missing_response_fails_closed_never_a_generated_fill(
     are gone: the writes-only bridge answers 404 and the denial is a named
     error, even though the caller caught the HTTP failure."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
-    recording = {"version": 1, "bindings": {"honcho.base_url": "memory"},
-                 "services": {"memory": RECORDING["services"]["memory"]}}
+    recording = {"version": 1, "bindings": {"platforms.discord.base_url": "discord"},
+                 "services": {"discord": RECORDING["services"]["discord"]}}
     plan = _manifest(tmp_path, recording)
     with pytest.raises(EvidenceError, match="external_response_not_recorded"):
         async with plan.open(clean_pg_url) as env:
@@ -146,8 +144,7 @@ async def test_a_missing_response_fails_closed_never_a_generated_fill(
                 rid = await _pending_row(store)
                 async with aiohttp.ClientSession() as client:
                     async with client.get(
-                            env.urls["honcho.base_url"]
-                            + "/v3/workspaces/generated-ws/peers/miles_novak/card") as r:
+                            env.urls["platforms.discord.base_url"] + "/v1/groups") as r:
                         assert r.status == 200
                     async with client.post(
                             signal + "/v1/actions",
@@ -243,12 +240,12 @@ async def test_repeatable_reads_leave_ordered_writes_single_use():
     write = {"method": "POST", "path": "/update", "request_json": {"value": 7},
              "response": {"status": 201}}
     snapshot = RecordedServices({
-        "version": 1, "bindings": {"honcho.base_url": "recorded"},
+        "version": 1, "bindings": {"platforms.discord.base_url": "recorded"},
         "services": {"recorded": [health, write]},
     })
     with pytest.raises(EvidenceError, match="external_response_not_recorded"):
         async with snapshot.open("sqlite://") as env, aiohttp.ClientSession() as client:
-            base = env.urls["honcho.base_url"]
+            base = env.urls["platforms.discord.base_url"]
             for _ in range(2):
                 async with client.get(base + "/health") as response:
                     assert response.status == 200
@@ -266,7 +263,7 @@ async def test_repeatable_reads_leave_ordered_writes_single_use():
 def test_a_write_cannot_be_declared_repeatable():
     with pytest.raises(ValueError, match="bodyless GET"):
         RecordedServices({
-            "version": 1, "bindings": {"honcho.base_url": "recorded"},
+            "version": 1, "bindings": {"platforms.discord.base_url": "recorded"},
             "services": {"recorded": [
                 {"method": "POST", "path": "/update", "repeatable": True,
                  "response": {"status": 201}},
@@ -297,7 +294,7 @@ async def test_explicit_generated_bindings_survive_additional_recorded_services(
                     "kind": "journey_world",
                     "policy": default_policy(("signal", "g1")),
                     "judges": ["alpha", "beta"],
-                    "generated_bindings": ["honcho.base_url", "platforms.signal.base_url"],
+                    "generated_bindings": ["platforms.signal.base_url"],
                     "external": {
                         "version": 1,
                         "bindings": {"platforms.discord.base_url": "discord"},
@@ -323,13 +320,7 @@ async def test_explicit_generated_bindings_survive_additional_recorded_services(
     plan = load_services(path).corpora["autonomous_journey"]["outing"]
     with pytest.raises(EvidenceError, match="external_response_not_recorded"):
         async with plan.open(clean_pg_url) as env:
-            assert "honcho.base_url" in env.urls
             async with aiohttp.ClientSession() as client:
-                async with client.post(
-                    env.urls["honcho.base_url"] + "/v3/workspaces",
-                    json={"id": "generated-workspace"},
-                ) as response:
-                    assert (await response.json())["id"] == "generated-workspace"
                 async with client.get(
                     env.urls["platforms.signal.base_url"] + "/v1/self"
                 ) as response:
@@ -346,14 +337,16 @@ async def test_explicit_generated_bindings_survive_additional_recorded_services(
                 env.check()
 
 
-@pytest.mark.parametrize("bindings", [
-    ("llm.base_url",), ("honcho.base_url", "honcho.base_url"),
-    ("platforms.discord.base_url",), ("platforms.signal.base_url",),
+@pytest.mark.parametrize(("bindings", "recorded"), [
+    (("llm.base_url",), True),
+    (("platforms.signal.base_url", "platforms.signal.base_url"), False),
+    (("platforms.discord.base_url",), True), (("platforms.signal.base_url",), True),
 ])
-def test_generated_bindings_cannot_claim_models_unknown_services_or_recordings(bindings):
+def test_generated_bindings_cannot_claim_models_unknown_services_or_recordings(
+        bindings, recorded):
     recording = RecordedServices({
         "version": 1, "bindings": {"platforms.signal.base_url": "bridge"},
-        "services": {"bridge": []}})
+        "services": {"bridge": []}}) if recorded else None
     with pytest.raises(ValueError, match="generated bindings"):
         JourneyServices(policy=default_policy(("signal", "g1")),
                         external=recording, generated_bindings=bindings)

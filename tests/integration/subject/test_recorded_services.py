@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import subprocess
 import sys
 from textwrap import dedent
@@ -20,7 +21,7 @@ def fixture(tmp_path, rows):
         json.dumps(
             {
                 "version": 1,
-                "bindings": {"honcho.base_url": "one", "llm.base_url": "one"},
+                "bindings": {"platforms.discord.base_url": "one", "llm.base_url": "one"},
                 "services": {"one": rows},
             }
         )
@@ -60,10 +61,16 @@ async def test_bind_generated_config_endpoints_and_reject_non_endpoints(
                     client.get(bound.memory.index.embedder_url) as response):
             assert response.status == 200
 
-    for path in ("documents.public_url", "llm.model", "memory.index.missing_url"):
+    # `retired.base_url`: a whole section `Config` does not define, which is
+    # what a binding to a removed config section becomes.
+    assert "retired" not in type(cfg).model_fields
+    for path in ("documents.public_url", "llm.model", "memory.index.missing_url",
+                 "retired.base_url"):
         async with RecordedServices({"version": 1, "bindings": {path: "shared"},
                                      "services": {"shared": []}}).open("sqlite://") as env:
-            with pytest.raises(ValueError, match="must name an HTTP endpoint"):
+            assert path in env.urls
+            refusal = rf"^{re.escape(path)}: an isolated binding must name an HTTP endpoint$"
+            with pytest.raises(ValueError, match=refusal):
                 env.bind_config(cfg)
     async with RecordedServices({"version": 1, "bindings": {
         "memory.index.embedder_url": "shared"}, "services": {"shared": []}}).open(
@@ -83,7 +90,7 @@ async def test_json_sse_shared_and_planned_404(tmp_path):
         ],
     )
     async with recorded.open("sqlite://") as env:
-        assert env.urls["honcho.base_url"] == env.urls["llm.base_url"]
+        assert env.urls["platforms.discord.base_url"] == env.urls["llm.base_url"]
         async with aiohttp.ClientSession() as client:
             url = env.urls["llm.base_url"] + "/v1?q=1"
             async with client.post(url, json={"id": "generated"}) as result:
