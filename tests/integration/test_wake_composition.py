@@ -28,6 +28,7 @@ from tests.unit.test_dream_memory_budget import _ScriptedModel
 def wake_config(env):
     config = tomllib.loads(env.read_text())
     config["cognition"] = {"enabled": True}
+    config["lessons"]["check_model"] = "fixture-lesson-check"
     config["dreamer"]["enabled"] = True
     config["notes"] = {"enabled": True}
     config["dreamer"].setdefault("budgets", {})["cognition"] = {

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from nora.domain.graph_registration import Exposure, InputScope, inherited_scope
 from nora.domain.graph_stimuli import GraphStimulus
 from nora.domain.lineage import Lineage
-from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY, INTENTION, REGISTRY
+from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, ENTITY, INTENTION, REGISTRY
 from nora.infra.sql.cognitive_graph_store import (
     AdmissionTopic,
     GraphWriteError,
@@ -28,9 +28,14 @@ from nora.memory.adapters.delivery_arbitration import (
     check_deliveries,
     lock_deliveries,
 )
+from nora.memory.adapters.lesson_tally import rebuild_lesson_tally
 from nora.memory.app.condition_matcher import ConditionMatcher
 from nora.memory.domain.admission import Admitted, Refusal, fields
-from nora.memory.domain.admission_ports import AdmissionUnavailableError, Stored
+from nora.memory.domain.admission_ports import (
+    AdmissionUnavailableError,
+    AdmissionWriteRefusedError,
+    Stored,
+)
 from nora.memory.domain.admission_proposals import (
     AddEdge,
     CreateClaim,
@@ -42,6 +47,7 @@ from nora.memory.domain.admission_proposals import (
     Revise,
     RowFacts,
 )
+from nora.memory.domain.lesson_admission import LessonInventory, lesson_inventory_refusal
 
 
 class SqlAdmissionStore:
@@ -55,6 +61,13 @@ class SqlAdmissionStore:
 
     async def read(self, unit: str, ids: frozenset[str]) -> Mapping[str, RowFacts]:
         return await self._rows.read(unit, ids)
+
+    async def lesson_inventory(self, unit: str) -> LessonInventory:
+        try:
+            async with self._engine.connect() as conn:
+                return await _lesson_inventory(conn, unit)
+        except sa.exc.SQLAlchemyError as exc:
+            raise AdmissionUnavailableError(commit_uncertain=False) from exc
 
     async def close(
         self, intention: str, witness: str, context: PassContext,
@@ -94,6 +107,21 @@ class SqlAdmissionStore:
             and decision.row.delivery_mode == "choose_moment"
         )
 
+        is_lesson = isinstance(data, CreateClaim) and data.part == "lesson"
+
+        async def before_write(conn: AsyncConnection) -> None:
+            await conn.execute(sa.select(sa.func.pg_advisory_xact_lock(
+                sa.func.hashtextextended(f"lesson:unit:{context.unit}", 0),
+            )))
+            if isinstance(data, CreateClaim) and isinstance(data.content, str):
+                inventory = await _lesson_inventory(conn, context.unit)
+                reason = lesson_inventory_refusal(
+                    data.content, inventory, (), decision.held_lesson,
+                    decision.lesson_evidence_at,
+                )
+                if reason is not None:
+                    raise AdmissionWriteRefusedError(Refusal(reason, "content"))
+
         async def after_write(conn: AsyncConnection) -> None:
             if decision.deliveries:
                 await _additional_deliveries(conn, decision.deliveries, context)
@@ -105,6 +133,11 @@ class SqlAdmissionStore:
             if scheduled:
                 await lock_deliveries(conn, context.unit)
                 await check_deliveries(conn, context.unit, (stored.id, *stored.other_deliveries))
+            if is_lesson:
+                at = (await conn.execute(sa.select(sa.func.now()))).scalar_one()
+                await rebuild_lesson_tally(
+                    conn, self._graph, unit=context.unit, claim_id=stored.id, at=at,
+                )
             if revisions:
                 await _dependency(conn, stored, row)
 
@@ -117,12 +150,27 @@ class SqlAdmissionStore:
                 retire=isinstance(decision.proposal, Retire),
                 merge=(base.id, survivor.id) if base is not None and survivor is not None else None,
                 topics=topics,
+                before_write=before_write if is_lesson or context.occasion == "operator" else None,
                 after_write=after_write if derive_about or revisions or scheduled else None,
             )
         except GraphWriteError as exc:
             raise AdmissionUnavailableError(commit_uncertain=exc.commit_uncertain) from exc
         except DeliveryReadError as exc:
             raise AdmissionUnavailableError(commit_uncertain=False) from exc
+
+
+async def _lesson_inventory(conn: AsyncConnection, unit: str) -> LessonInventory:
+    c = CLAIM.c
+    rows = (await conn.execute(sa.select(c.id, c.content, c.state, c.asserted_at).where(
+        c.unit == unit, c.part == "lesson", sa.or_(
+            sa.and_(c.state == "live", sa.or_(c.valid_to.is_(None), c.valid_to > sa.func.now())),
+            sa.and_(c.state == "retired", c.writer == "operator", c.occasion == "operator"),
+        ),
+    ))).all()
+    return LessonInventory(
+        tuple((row.id, str(row.content)) for row in rows if row.state == "live"),
+        tuple(row.asserted_at for row in rows if row.state == "retired"),
+    )
 
 
 async def _additional_deliveries(
@@ -257,7 +305,9 @@ def _serialize(
     planes: dict[str, Any] = {
         **shared,
         "id": row.id,
-        "asserted_at": sa.func.now(),
+        "asserted_at": (
+            sa.func.clock_timestamp() if context.occasion == "operator" else sa.func.now()
+        ),
         "kind": row.kind,
         "basis": row.basis,
         "state": row.state,

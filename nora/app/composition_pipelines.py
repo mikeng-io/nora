@@ -8,6 +8,7 @@ from nora.agent.egress import LeakGuard
 from nora.agent.shared_state import shared_reader
 from nora.app.assembler import build_assembler
 from nora.app.composition_helpers import _reasoning_effort
+from nora.app.composition_lesson_check import build_graph_lesson_check
 from nora.app.dispatch import Dispatcher
 from nora.app.raw_clients import _DebriefModelClient
 from nora.app.wake_rooms import WakeRoomSlots
@@ -225,7 +226,7 @@ def build_graph_debrief(
     memory_wire: Any, objective: Any, cfg: Any, engine: Any,
     access: Any, lineage: Any,
     persons: Any, policy: Any, doctrine_store: Any, content_checks: bool, clock: Any,
-    metrics: Any, slots: Any,
+    metrics: Any, slots: Any, model_client_for: Any,
 ) -> GraphDebriefWiring:
     return GraphDebriefWiring(
         store=memory_wire.debrief_store(engine),
@@ -233,6 +234,9 @@ def build_graph_debrief(
             engine, persons, policy,
             LeakGuard(doctrine_store.get(applies_to="tag"), cfg.doctrine.canary),
             content_checks=content_checks, access=access, room_slots=WakeRoomSlots(policy, slots),
+            lesson_checker=build_graph_lesson_check(
+                cfg, doctrine_store, objective, model_client_for, metrics,
+            ),
         ),
         assembler=memory_wire.pass_assembler(engine, access, lineage, None, None),
         client=_debrief_client(cfg), objective=objective, clock=clock,

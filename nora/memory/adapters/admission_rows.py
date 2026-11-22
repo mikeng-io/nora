@@ -8,9 +8,17 @@ from typing import Literal, cast
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+from sqlalchemy.sql import FromClause
 
 from nora.domain.lineage import Lineage
-from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, ENTITY, INTENTION, REGISTRY
+from nora.infra.sql.cognitive_graph_schema import (
+    CLAIM,
+    EDGE,
+    ENTITY,
+    GRAPH_STIMULUS,
+    INTENTION,
+    REGISTRY,
+)
 from nora.infra.sql.schema import MESSAGES, METADATA
 from nora.memory.app.admission_identity import AdmissionIdentity
 from nora.memory.domain.admission_ports import AdmissionUnavailableError
@@ -155,21 +163,37 @@ class SqlAdmissionRows:
             source_ref=SourceReference(row["source_ref_kind"], row["source_ref_value"])
             if row.get("source_ref_kind") is not None else None,
             fetched_url=row.get("fetched_url"),
+            table=table, evidence_at=row["evidence_at"],
+            verdict_ending=row.get("ending") if table == "intention_verdict" else None,
+            aimed_at_nora=bool(row.get("aimed_at_nora")),
+            pointer_ref=row.get("pointer_ref"), part=row.get("part"),
         )
 
 
 def _select(table: sa.Table, id_column: str) -> sa.Select:
     needed = [table.c[id_column].label("id"), *(table.c[name] for name in _PLANES)]
+    needed.append(sa.func.coalesce(table.c.occurred_at, table.c.asserted_at).label(
+        "evidence_at",
+    ))
     needed.extend(
         table.c[name]
-        for name in ("form", "trigger", "delivery_mode", "pointer_kind",
-                     "source_ref_kind", "source_ref_value")
+        for name in ("form", "trigger", "delivery_mode", "pointer_kind", "pointer_ref",
+                     "part", "ending", "source_ref_kind", "source_ref_value")
         if name in table.c
     )
     if table.name == "fetched_pages":
         needed.append(table.c.url.label("fetched_url"))
+    source: FromClause = table
+    if table.name in ITEM_SOURCES:
+        stimulus = GRAPH_STIMULUS.c
+        source = table.outerjoin(GRAPH_STIMULUS, sa.and_(
+            stimulus.unit == table.c.unit, stimulus.graph_id == table.c.graph_id,
+            stimulus.kind == "strong_cue", stimulus.occurrence == "",
+            stimulus.cues.contains(["addresses_nora"]),
+        ))
+        needed.append(stimulus.graph_id.is_not(None).label("aimed_at_nora"))
     if table.name not in _SPEECH:
-        return sa.select(*needed)
+        return sa.select(*needed).select_from(source)
     parent = MESSAGES
     sender = parent if table.name == "message_edit" else table
     stmt = sa.select(
@@ -181,9 +205,9 @@ def _select(table: sa.Table, id_column: str) -> sa.Select:
         (parent.c.is_nora if sender is parent else sa.literal(0)).label("source_is_nora"),
     )
     if table is parent:
-        return stmt
+        return stmt.select_from(source)
     return stmt.select_from(
-        table.outerjoin(
+        source.outerjoin(
             parent,
             (parent.c.id == table.c.message_id) & (parent.c.unit == table.c.unit),
         )

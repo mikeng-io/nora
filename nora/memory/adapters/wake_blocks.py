@@ -15,7 +15,11 @@ def wake_blocks(
     if result.status == "unavailable":
         return (), frozenset()
     rows = {row.graph_id: row for row in result.rows if row.unavailable is None}
-    stimuli = tuple(stimulus for stimulus in data.stimuli if stimulus.graph_id in rows)
+    stimuli = tuple(
+        stimulus for stimulus in data.stimuli if stimulus.graph_id in rows
+        and (stimulus.source != "lesson_tally"
+             or rows[stimulus.graph_id].lesson_tally is not None)
+    )
     open_intentions = tuple(rows[id_] for id_ in anchors
                             if id_ in rows and rows[id_].kind == "intention"
                             and rows[id_].state == "open")
@@ -46,6 +50,12 @@ def wake_blocks(
     evidence = render_elements(
         (*verdicts, *corrections), tag="item", attrs=stimulus_attrs, body=stimulus_rows,
     )
+    claimed_verdict_ids = {s.graph_id for s in verdicts}
+    previous = tuple(rows[id_] for id_ in anchors
+                     if id_ in rows and rows[id_].source == "intention_verdict"
+                     and id_ not in claimed_verdict_ids)
+    if previous:
+        evidence += "\nEarlier verdicts in the same classes:\n" + builder.graph_rows(previous)
     blocks = (
         ContextBlock(
             name="agenda", body=compose_body(agenda), when_empty="self_close",
@@ -55,4 +65,4 @@ def wake_blocks(
         ),
     )
     shown = {s.graph_id for s in stimuli} | {row.graph_id for row in open_intentions}
-    return blocks, frozenset(shown)
+    return blocks, frozenset(shown | {row.graph_id for row in previous})

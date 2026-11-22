@@ -11,6 +11,7 @@ from nora.domain.graph_stimuli import GraphStimulus
 from nora.infra.sql.cognitive_graph_schema import EDGE, INTENTION, INTENTION_VERDICT
 from nora.infra.sql.cognitive_graph_store import RowData, SqlCognitiveGraph, visible_to_reads
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
+from nora.memory.adapters.lesson_tally import rebuild_lessons_for_verdict
 
 
 async def record_intention_verdicts(
@@ -54,7 +55,9 @@ async def _record(
     graph_id = await conn.scalar(stmt)
     if graph_id is None:
         return
+    at = clock()
     await SqlGraphStimuli.append_in(conn, GraphStimulus(
-        unit, "verdict", graph_id, clock(), "verify",
+        unit, "verdict", graph_id, at, "verify",
         intention["origin_room"], intention["owed_to"],
     ))
+    await rebuild_lessons_for_verdict(conn, graph, unit=unit, intention_id=id_, at=at)

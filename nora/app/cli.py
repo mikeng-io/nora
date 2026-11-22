@@ -55,7 +55,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
 from nora.agent.egress import scan_identifiers
-from nora.app import config_cli, lessons_cli, report
+from nora.app import config_cli, graph_lessons_cli, lessons_cli, report
 from nora.app.assess_run import AssessDisabledError
 from nora.app.assess_run import render as assess_render
 from nora.app.assess_run import run_nightly as assess_run_nightly
@@ -253,10 +253,7 @@ def add_subcommands(
     )
     snap.set_defaults(func=cmd_snapshot)
 
-    # `lessons`: the operator's list, show,
-    # retire and rollback of Nora's lessons. `list` and `show` read through the
-    # read-only engine; `retire` and `rollback` WRITE one revision each, only with
-    # `--apply` (`nora.app.lessons_cli`). No model can call these.
+    # List and retire operate on the graph; show and rollback address legacy history.
     lessons = subparsers.add_parser(
         "lessons", parents=[parent], help="Nora's lessons per unit (operator only)",
     )
@@ -280,7 +277,7 @@ def add_subcommands(
              "outcomes no newer than now (a dry run unless --apply)",
     )
     lessons_retire.add_argument("lesson_id")
-    lessons_retire.add_argument("--why", required=True, help="one sentence, kept with it")
+    lessons_retire.add_argument("--why", required=True, help="reason shown in the command result")
     lessons_retire.add_argument("--apply", action="store_true", help="write")
     lessons_retire.set_defaults(func=cmd_lessons_retire)
     lessons_rollback = lessons_sub.add_parser(
@@ -1524,15 +1521,9 @@ async def _lesson_of(store: SqlLessonStore, lesson_id: str) -> Lesson:
 
 
 async def cmd_lessons_list(args: argparse.Namespace) -> int:
-    """`nora lessons list --unit U [--all]`, READ ONLY."""
-    engine = create_readonly_sql_engine(_database_url(_config(args)))
-    try:
-        found = await SqlLessonStore(engine).lessons(unit=args.unit)
-    finally:
-        await engine.dispose()
-    for line in lessons_cli.render_list(args.unit, found, everything=bool(args.all)):
-        print(line)
-    return 0
+    return await graph_lessons_cli.list_lessons(
+        _database_url(_config(args)), args.unit, everything=bool(args.all),
+    )
 
 
 async def cmd_lessons_tensions(args: argparse.Namespace) -> int:
@@ -1566,24 +1557,13 @@ def _now_ms() -> int:
 
 
 async def cmd_lessons_retire(args: argparse.Namespace) -> int:
-    """`nora lessons retire ID --why TEXT [--apply]`: a WRITABLE engine, one
-    revision, a dry run without `--apply`."""
-    engine = create_sql_engine(_database_url(_config(args)))
+    cfg = _config(args)
     try:
-        lesson = await _lesson_of(SqlLessonStore(engine), args.lesson_id)
-        if not args.apply:
-            print(f"would retire {lesson.id} (unit {lesson.unit}, rev {lesson.head.seq}, "
-                  f"{lesson.head.state}); nothing written")
-            return 0
-        result = await lessons_cli.book_for(engine, _now_ms).retire(
-            unit=lesson.unit, lesson_id=lesson.id, by="operator", why=args.why,
-            established_by=lessons_cli.OPERATOR,
-            record_head=await lessons_cli.record_head(engine),
+        return await graph_lessons_cli.retire_lesson(
+            _database_url(cfg), _policy(cfg), args.lesson_id, apply=args.apply, why=args.why,
         )
-    finally:
-        await engine.dispose()
-    print(json.dumps(result))
-    return 0 if result["status"] == "ok" else 1
+    except graph_lessons_cli.GraphLessonError as exc:
+        raise CliError(str(exc)) from exc
 
 
 async def cmd_lessons_rollback(args: argparse.Namespace) -> int:

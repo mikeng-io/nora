@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass, replace
+from datetime import datetime
 from typing import Literal, cast, get_args
 
 from nora.domain.graph_registration import Exposure, InputScope, SourceKind, inherited_scope
@@ -28,6 +29,11 @@ from nora.memory.domain.admission_proposals import (
     SourceReference,
 )
 from nora.memory.domain.conditions import decode_condition_trigger
+from nora.memory.domain.lesson_admission import (
+    LessonFormRefusal,
+    LessonInventoryRefusal,
+    lesson_form,
+)
 
 FormRefusal = Literal[
     "unknown_kind",
@@ -53,11 +59,13 @@ FormRefusal = Literal[
     "invalid_field",
     "unbacked_page_reference",
     "unpollable_watch_target",
+    LessonFormRefusal,
 ]
 WriteRefusal = Literal[
     "stale_base", "credential", "doctrine", "content", "unsafe_page_reference",
     "not_open", "witness_not_met", "untyped_condition", "duplicate_delivery",
     "not_this_delivery", "citation_outside_pass", "not_a_commit", "room_busy",
+    LessonInventoryRefusal, "loosens_law", "check_unavailable",
 ]
 RefusalReason = Literal[FormRefusal, WriteRefusal]
 
@@ -79,6 +87,14 @@ class Admitted:
     owed_to: str | None = None
     topics: tuple[Admitted, ...] = ()
     deliveries: tuple[Admitted, ...] = ()
+    lesson_evidence_at: datetime | None = None
+
+    @property
+    def held_lesson(self) -> str | None:
+        base = self.base
+        if base is not None and base.part == "lesson" and base.state == "live":
+            return base.id
+        return None
 
 
 class _RefusalError(Exception):
@@ -93,6 +109,7 @@ _OCCASIONS = {
     "proactive": ("committed",),
     "debrief": ("committed",),
     "wake": ("committed", "inferred"),
+    "operator": ("inferred",),
 }
 _REVISION_STATES = {
     "claim": ("live", "superseded", "awaiting_weighing"),
@@ -280,6 +297,12 @@ class _Admission:
         if data.scope.unit != self.context.unit:
             raise _RefusalError("wrong_unit", "unit")
         base, survivor = self._transition(proposal)
+        if self.context.occasion == "operator" and (
+            self.context.writer != "operator" or not isinstance(proposal, Retire)
+            or base is None or base.kind != "claim" or base.part != "lesson"
+            or base.state != "live" or not self.context.pass_id.startswith("operator:")
+        ):
+            raise _RefusalError("occasion_basis", "basis")
         wanted: str | None
         if isinstance(data, Retire) and base is not None:
             kind, wanted = base.kind, base.basis
@@ -332,7 +355,19 @@ class _Admission:
                 if link.source == row.id and link.type in ("draws_on", "rests_on")
             ),
         )
-        return Admitted(proposal, row, links, base, survivor, owner, owed_to)
+        lesson_evidence_at = None
+        if isinstance(data, CreateClaim) and data.part == "lesson":
+            if refusal := lesson_form(data.content, evidence, links, self.rows, row.id):
+                reason, field = refusal
+                raise _RefusalError(reason, field)
+            lesson_evidence_at = max(
+                (entry.evidence_at for entry in evidence if entry.evidence_at is not None),
+                default=None,
+            )
+        return Admitted(
+            proposal, row, links, base, survivor, owner, owed_to,
+            lesson_evidence_at=lesson_evidence_at,
+        )
 
     def _get(self, ref: str, field: str, *, reason: FormRefusal) -> RowFacts:
         row = self.rows.get(ref)
