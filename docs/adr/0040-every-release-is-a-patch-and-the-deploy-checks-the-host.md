@@ -27,8 +27,8 @@ gate a release on a breaking marker.
   are selected only by owner dispatch at an exact full master SHA.
 - `!` / `BREAKING CHANGE:` now means "the host must change": the release lists
   it under ⚠ BREAKING CHANGES, linked to its commit, whose footer says what to
-  do; it still ships. The release PR body carries no free commit text, because
-  the publisher parses it.
+  do; it still ships. The release PR body carries no commit footer text,
+  because the publisher parses it.
 - Host readiness is the deploy's check, not the version's. A missing required
   setting refuses the deploy before any container is replaced
   (`docker-compose.yml` `${VAR:?…}` interpolation and Nora's config validation),

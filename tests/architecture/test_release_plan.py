@@ -338,7 +338,8 @@ def test_the_breaking_section_links_the_commit_and_copies_no_footer_text(repo, p
     )
     assert plan.main(["--repo", REPO, "--out", str(repo / "out")]) == 0
     body = (repo / "out/body.md").read_text()
-    assert f"/commit/{sha})" in body
+    breaking = body.split("### ⚠ BREAKING CHANGES", 1)[1].split("\n### ", 1)[0]
+    assert f"/commit/{sha})" in breaking
     assert "<details>" not in body and "route /" not in body
 
 
