@@ -86,8 +86,8 @@
   {
     "name": "an item's placement reads its account's latest recorded probe, across a restart",
     "file": "nora/infra/sql/social_privacy.py",
-    "old": ".having(latest_private.is_(False))",
-    "new": ".having(latest_private.is_not(None))",
+    "old": "where(latest.c.is_private.is_(False))",
+    "new": "where(latest.c.is_private.is_not(None))",
     "target": "tests/integration/test_social_poller_privacy.py::test_a_restarted_poller_places_backfill_items_from_the_recorded_probe"
   },
   {
@@ -124,5 +124,12 @@
     "old": "return tuple(sorted(set.intersection(*placed))) if placed else ()",
     "new": "return tuple(sorted(set.union(*placed))) if placed else ()",
     "target": "tests/infra/test_presence_circle_placement.py::test_a_presence_aggregate_reaches_only_units_its_inputs_circles_cover[two-circles-stored]"
+  },
+  {
+    "name": "an account's privacy is its latest probe's answer, not an earlier one",
+    "file": "nora/infra/sql/social_privacy.py",
+    "old": ".order_by(p.c.network, p.c.person, p.c.recorded_at.desc(), p.c.id.desc())",
+    "new": ".order_by(p.c.network, p.c.person, p.c.recorded_at, p.c.id)",
+    "target": "tests/infra/test_register_stored_rows.py::test_stored_social_rows_reach_units_only_from_an_account_last_probed_public"
   }
 ]
