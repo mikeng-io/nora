@@ -463,7 +463,7 @@
  "nora/subject/dreaming.py": 1,
  "nora/subject/evidence.py": 1,
  "nora/subject/knowledge.py": 3,
- "nora/subject/obtain.py": 5,
+ "nora/subject/obtain.py": 3,
  "nora/subject/sandbox.py": 3,
  "nora/subject/transport.py": 1,
  "nora/tag.py": 2,
