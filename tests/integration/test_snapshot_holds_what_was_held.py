@@ -78,6 +78,19 @@ async def _write(conn: Any, table: str, i: int) -> None:
             id=graph_id, unit=row["unit"], kind="aggregate",
         ))
         row["graph_id"] = graph_id
+    if table == "claim_support":
+        claim = {**ROWS["claim"](i), "id": row["claim_id"]}
+        await conn.execute(sa.insert(_table("registry")).values(
+            id=claim["id"], unit=claim["unit"], kind="claim",
+        ))
+        await conn.execute(sa.insert(_table("claim")).values(claim))
+    if table == "watch_result":
+        await _seed_watch(conn, row["watch_edge"], i)
+    if table in {"forget_request", "dispute", "claim_support", "watch_result"}:
+        await conn.execute(sa.insert(_table("registry")).values(
+            id=row["graph_id"], unit=row["unit"],
+            kind="aggregate" if table == "claim_support" else "item",
+        ))
     await conn.execute(sa.insert(_table(table)).values(row))
 
 
@@ -98,8 +111,6 @@ async def _append(conn: Any, table: str, n: int) -> None:
         await conn.execute(sa.insert(_table("registry")).values(
             id=graph_id, unit=row["unit"], kind="item",
         ))
-    if table == "watch_result":
-        await _seed_watch(conn, row["watch_edge"], n)
     await conn.execute(sa.insert(_table(table)).values(row))
 
 

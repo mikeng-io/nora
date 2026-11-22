@@ -16,6 +16,10 @@ from nora.memory.domain.acts import Outcome as Outcome
 from nora.memory.domain.admission_proposals import Occasion as Occasion
 from nora.memory.domain.admission_proposals import PassContext as PassContext
 from nora.memory.domain.authored_output import without_reasoning as without_reasoning
+from nora.memory.domain.registration import ITEM_SOURCES as ITEM_SOURCES
+from nora.memory.domain.registration import (
+    PROTECTED_ITEM_SOURCES as PROTECTED_ITEM_SOURCES,
+)
 
 
 def __getattr__(name: str):

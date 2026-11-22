@@ -323,9 +323,7 @@ class SqlItemRegistration:
             values["id"] = row_id
             key = (row_id,)
         graph_id = item_graph_id(table.name, key, unit)
-        await conn.execute(pg_insert(REGISTRY).values(
-            id=graph_id, unit=unit, kind="item",
-        ).on_conflict_do_nothing())
+        await _register_item(conn, graph_id, unit)
         values["graph_id"] = graph_id
         if failed or (not own and table.name not in _OWN_ITEMS):
             at = occurred_at or asserted_at
@@ -337,6 +335,20 @@ class SqlItemRegistration:
                 graph_id, at, table.name, room, next(iter(people), None), cues,
             ))
         return values
+
+
+async def _register_item(conn: AsyncConnection, graph_id: str, unit: str) -> None:
+    c = REGISTRY.c
+    stmt = pg_insert(REGISTRY).values(id=graph_id, unit=unit, kind="item")
+    # Both unique constraints can arbitrate concurrent first observations.
+    if await conn.scalar(stmt.on_conflict_do_nothing().returning(c.id)) is not None:
+        return
+    target = c.id == graph_id, c.unit == unit, c.kind == "item"
+    state = await conn.scalar(sa.select(c.state).where(*target).with_for_update(key_share=True))
+    if state == "tombstoned":
+        await conn.execute(sa.update(REGISTRY).where(*target).values(
+            state="live", content_hash=None, tombstoned_at=None, occurred_at=None,
+        ))
 
 
 async def touch_planes(
