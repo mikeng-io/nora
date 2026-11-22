@@ -1,19 +1,15 @@
 # Private direct messages
 
-A private DM is one authenticated person's conversation with Nora across their
-verified accounts. It can use the understanding of the units that person belongs
-to without making the raw conversation, credentials or private provenance
+A private DM is one authenticated person's conversation with one
+[agent](../cognition/boundaries.md#agents) across their verified accounts. It
+can use the understanding of that agent's units the person belongs to without making the raw conversation, credentials or private provenance
 visible to those units.
-
-**Status:** designed
-
-[Open issues](https://github.com/mikeng-io/nora/issues?q=is%3Aopen+%22design%2Fprivate-dm%2F%22)
 
 ## Parts
 
 - **Admission and scope** resolve the sender and direct peer to the same
-  declared person, choose an explicitly eligible anchor unit and bind one
-  person-plus-unit DM scope. [Admission](admission.md) defines continuity,
+  declared person, anchor the DM in the receiving agent's primary unit and
+  bind one person-plus-unit DM scope. [Admission](admission.md) defines continuity,
   platform routing and cross-unit reads.
 - **The private Record** holds one interleaved transcript across linked
   platforms, with native targets preserved for delivery, edits, reactions and
@@ -32,9 +28,10 @@ visible to those units.
 
 There is no separate private profile, private synthetic unit, second Cognition
 engine or automatic shared-memory feed. The canonical person profile remains
-one per unit. A DM may read every unit that explicitly lists its owner, but only
-through the per-room disclosure predicates; publication remains anchored to the
-default unit.
+one per unit. A DM may read its agent's primary unit and each of that agent's
+affiliates that lists its owner, never another agent's units, and only through
+the per-room disclosure predicates; publication remains anchored to the
+primary unit.
 
 Raw messages, quotations, attachments, transcripts, activity patterns, cookies
 and private source reasoning never become directly readable in a group or
@@ -44,8 +41,8 @@ ambiguous confidentiality holds the candidate.
 
 Replies stay on the admitted inbound platform and direct target. Scope is a
 read and serialization key, never a destination or a fallback account.
-Changing the default unit selects a different private partition without moving
-old history, workspaces or queued delivery.
+Changing an agent's primary unit selects a different private partition without
+moving old history, workspaces or queued delivery.
 
 ## Change and failure
 
@@ -55,7 +52,7 @@ opt-out, DM revocation or an unresolved owner/unit binding stops raw access and
 new curation before side effects.
 
 A refused or unavailable publication judgement commits no shared mutation.
-Private read failures never fall back to the anchor unit's files or a group
+Private read failures never fall back to the primary unit's files or a group
 roster. Already-published understanding remains in its original unit under
 ordinary dispute, correction and retirement; revocation is not a silent delete
 cascade.

@@ -19,7 +19,8 @@ is eligible, and what a pass's outcome settles.
 | **judge** | study's grade, on a model independent of the writer |
 
 No other launcher starts a pass. Collectors, reconnects and maintenance are
-plumbing, not executors of the loops.
+plumbing, not executors of the loops. Every [agent](boundaries.md#agents) runs
+on these same executors; single-flight and budgets stay per unit.
 
 ## Waking
 

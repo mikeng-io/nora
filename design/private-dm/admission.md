@@ -3,13 +3,14 @@
 ## Authority before side effects
 
 A conversational DM requires the feature grant, an eligible declared person, a
-supported platform and a valid anchor unit. The sender and the direct peer must
+supported platform and the receiving agent's primary unit as its anchor. The sender and the direct peer must
 resolve independently to that same person through operator-authored account
 identifiers. Display names, profile names and text claims never match.
 
-The anchor must explicitly list the person. An operator may choose it; inference
-is allowed only when exactly one unit is eligible. Zero or ambiguous eligibility
-or an unknown direct peer refuses before Record, media custody, memory feeds,
+The account that received the DM names the agent, and the anchor is that
+agent's primary unit, which must explicitly list the person. A person the
+primary does not list, an account bound to no agent, or an unknown direct peer
+refuses before Record, media custody, memory feeds,
 stimulus, provider creation or filesystem work; an invalid explicit choice is an
 invalid configuration and fails startup.
 
@@ -44,8 +45,9 @@ Retries and fallbacks never select another linked account.
 
 ## Reading across units
 
-The DM may read the default unit's permitted context and, when the topic calls
-for it, the context of another unit that explicitly lists the person. It does
+The DM may read the primary unit's permitted context and, when the topic calls
+for it, the context of the agent's affiliates that explicitly list the person.
+Another agent's units are never read. It does
 not render every unit indiscriminately; unclear topic scope asks rather than
 guesses.
 
@@ -60,7 +62,7 @@ DM access to a group-facing turn or to a model argument.
 
 ## Change and revocation
 
-Changing the default unit selects a different DM scope and workspace. Old
+Changing an agent's primary unit selects a different DM scope and workspace. Old
 messages, redeliveries, files and queued work remain bound to their original
 partition. Existing publications remain in their original unit until ordinary
 correction or retirement.

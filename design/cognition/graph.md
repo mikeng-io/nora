@@ -68,10 +68,14 @@ endpoint kinds. A new meaning is a reviewed edge type, never a new store.
 
 ## Scope
 
-- **unit** — the read boundary. A row is read only inside its unit. Each Nora
-  has one **primary** unit, her home circle; other units are **affiliates**,
-  helper or ad hoc circles, each still its own boundary. A person's DM with
-  Nora is a room of her primary unit.
+- **unit** — the read boundary. Every unit belongs to one
+  [agent](boundaries.md#agents). Its **primary** unit is the whole circle the
+  agent serves; an **affiliate** is a sub-group inside that circle, such as a
+  trip or a game group, whose members are all members of the primary. A row is
+  read in its own unit, and an affiliate's rooms also read the primary,
+  because everyone there already shares it. The primary never reads an
+  affiliate, affiliates never read each other, and no unit reads another
+  agent's. A person's DM with an agent is a room of that agent's primary unit.
 - **origin room** — where the row was established, which governs where it may
   render and where an act about it lands.
 - **persons** — the people it concerns, by id.
@@ -79,8 +83,8 @@ endpoint kinds. A new meaning is a reviewed edge type, never a new store.
 - **lineage** — the source restrictions inherited from what it cites: what a
   row may be rendered as, where, and to whom. Exclusions and exposure always
   inherit. For DM-origin evidence the raw items stay in the DM, while a claim
-  citing them may be shown to the model in any room of the primary unit, marked
-  with its DM origin ([boundaries](boundaries.md)).
+  citing them may be shown to the model in any room that reads the primary
+  unit, marked with its DM origin ([boundaries](boundaries.md)).
 - **exposure** — **external** (may reach a room through the guards),
   **internal** (Nora reads it, it never egresses), or **operator** (Nora never
   reads it).

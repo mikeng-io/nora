@@ -16,10 +16,6 @@ The goal is **emergence**: recommendation, personalisation, follow-through and
 learning arise from the generic loops working the graph, never from a
 capability's own code, store, prompt or loop.
 
-**Status:** designed
-
-[Open issues](https://github.com/mikeng-io/nora/issues?q=is%3Aopen+%22design%2Fcognition%2F%22)
-
 ## What Nora is
 
 | part | is | defined in |
@@ -28,6 +24,7 @@ capability's own code, store, prompt or loop.
 | **loops** | the process: the engagement and reflection loops, each running the OODAS stages as passes | [loops](loop.md), [context](context.md), [observation](observation.md), [retrieval](retrieval.md), [surface](surface.md) |
 | **executors** | the runtimes that run passes and actions | [execution](execution.md) |
 | **doctrine** | authored law, seed and practice, outside the graph | [boundaries](boundaries.md) |
+| **agents** | the Noras of one deployment, each an authored profile serving one circle of units | [boundaries](boundaries.md#agents) |
 
 How she improves is [learning](learning.md); why no capability gets its own
 part is [emergence](emergence.md).
@@ -46,7 +43,7 @@ part is [emergence](emergence.md).
 | [retrieval](retrieval.md) | one read semantics for prefetch and read tools |
 | [surface](surface.md) | the instruction, tools per pass, admission |
 | [execution](execution.md) | executors, waking, replay, time, settlement, tracing |
-| [boundaries](boundaries.md) | authority of authored text, scope, egress |
+| [boundaries](boundaries.md) | authority of authored text, agents, scope, egress |
 | [learning](learning.md) | verdicts, track records, lessons graded by consequences |
 | [emergence](emergence.md) | closed form over open content; capabilities through the generic loops |
 
@@ -60,7 +57,8 @@ part is [emergence](emergence.md).
 - An act counts only once observe records it; only a recorded outcome closes
   an intention.
 - Code names the form, never the content.
-- The unit is the read boundary. Only the engagement loop composes deliveries;
+- The unit is the read boundary; an affiliate also reads its primary, and
+  nothing is read across agents. Only the engagement loop composes deliveries;
   every delivery takes an admitted route through the common guards.
 - An unavailable read is unknown, never absence; a failed step fails closed and
   leaves its input pending.
@@ -86,7 +84,7 @@ Areas follow [ADR 0037](../../docs/adr/0037-code-is-grouped-by-area-and-depends-
 | the graph: registry, entities, claims, intentions, edges, admission, retrieval, presentations | `memory/`, which absorbs the Notebook, Standing, profiles, lessons and the account of herself |
 | items | the area of their source: `conversation/`, `location/`, `media/`, `social/`, `computer/`, `voice/` |
 | aggregates | `analytics/` for rollups; each area for its own current heads |
-| people, rooms, units, the primary unit | `people/` |
+| agents, people, rooms, units: primary and affiliates | `people/` |
 | delivery triggers, schedules, watches | `agenda/` |
 | delegated work | `subagents/` and `computer/` |
 | the engagement loop and the debrief | `engagement/`, with the fire path in `app/` |

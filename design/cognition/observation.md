@@ -44,6 +44,11 @@ written in orient and cited to the item.
 - Recording is unconditional within the admitted source scope.
 - Social observation covers admitted members and their opted-in accounts; a
   stranger on a member's item stays a handle and is not read as a member.
+- A source shared with a group outside Nora, such as a location circle or a
+  social account's audience, is placed only in units whose members all share
+  it. Belonging to another unit never places a person's source there; a unit
+  the group only partly covers receives nothing, and an affiliate can be
+  declared for the people who do share it.
 - Face matching identifies only a person labelled by themselves or the
   operator; an unmatched face stays unknown, and a non-member's biometric
   vector is transient, never stored.
