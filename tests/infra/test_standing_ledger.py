@@ -442,7 +442,7 @@ def collaborators():
     from nora.policy import Conversation, Policy
     from nora.testing import FakeRosterSource
 
-    kit = PersonRef("kit", "Kit", "kit")
+    kit = PersonRef("kit", "Kit")
     persons = Persons(by_person={"kit": kit}, index={("signal", "generated-account"): "kit"})
     policy = Policy(
         conversations=tuple(

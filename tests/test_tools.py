@@ -650,8 +650,7 @@ async def test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_r
     for handle in handles:
         name = handle[1:]
         persons = Persons(
-            by_person={"jordan": PersonRef(person_id="jordan", name=name,
-                                         honcho_peer_id="jordan", first_name=name)},
+            by_person={"jordan": PersonRef(person_id="jordan", name=name, first_name=name)},
             index={("signal", JORDAN_ACI): "jordan"},
         )
         # The example as the whole line the schema shows her writing, not the

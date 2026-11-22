@@ -79,7 +79,7 @@ CID = "room-a"
 SCOPE = SourceScope(platform="signal", account_key="acct", conversation_id=CID)
 
 PERSONS = Persons(
-    by_person={"ada": PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")},
+    by_person={"ada": PersonRef(person_id="ada", name="Ada")},
     index={("signal", "+852111"): "ada"},
 )
 

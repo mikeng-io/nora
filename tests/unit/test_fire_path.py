@@ -59,7 +59,7 @@ from nora.testing.reminders import FakeReminderStore
 T0 = datetime(2026, 8, 8, 19, 0, tzinfo=UTC)
 
 MILES = PersonRef(
-    person_id="miles", name="Miles", honcho_peer_id="miles", aliases=("阿Miles",),
+    person_id="miles", name="Miles", aliases=("阿Miles",),
 )
 
 

@@ -38,7 +38,7 @@ def _persons() -> Persons:
         }),
     )
     return Persons(
-        by_person={"miles": PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")},
+        by_person={"miles": PersonRef(person_id="miles", name="Miles")},
         index={("signal", "+852111"): "miles", ("signal", "lid:111"): "miles"},
         _accounts={("signal", "+852111"): miles, ("signal", "lid:111"): miles},
     )

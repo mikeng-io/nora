@@ -177,7 +177,7 @@ def tag_context(
         {}, quote=quote,
     )
     return TagContext(
-        "tag-1", message, PersonRef("miles", "Miles", "miles", aliases=("阿Miles",)),
+        "tag-1", message, PersonRef("miles", "Miles", aliases=("阿Miles",)),
         (row(body, name=name),), ("likes espresso",), 0.0,
         tagger_card=("asked about dinner",),
         self_account=CultureRevision(

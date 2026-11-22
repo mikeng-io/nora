@@ -276,7 +276,7 @@ async def test_the_audit_row_records_who_when_how_and_what(persons):
                                       stderr="warn", duration_ms=40))
     events = FakeComputerEventStore()
     blobs = FakeBlobStore()
-    tagger = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
+    tagger = PersonRef(person_id="miles", name="Miles")
     tools = _tools(persons, computer=runtime, events=events, blobs=blobs, tagger=tagger,
                    settings=ComputerToolSettings(max_output_chars=1000))
     bind_tag_id("tag-42")

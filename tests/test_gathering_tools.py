@@ -15,7 +15,7 @@ from nora.testing import FakeRosterSource
 from nora.testing.gatherings import FakeGatheringStore
 from tests.fakes import SinkSender
 
-MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
+MILES = PersonRef(person_id="miles", name="Miles Novak")
 GROUP = "signal:group-1"
 OTHER_GROUP = "signal:group-2"
 

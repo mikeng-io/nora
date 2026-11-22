@@ -90,8 +90,8 @@ async def build(
     agenda_body=None,
     stale_raw=None,
 ):
-    p1 = PersonRef("p1", "Ada", "p1", aliases=("Ace",))
-    p2 = PersonRef("p2", "Ben", "p2")
+    p1 = PersonRef("p1", "Ada", aliases=("Ace",))
+    p2 = PersonRef("p2", "Ben")
     persons = Persons({"p1": p1, "p2": p2}, {("signal", "p1"): "p1", ("signal", "p2"): "p2"})
     rooms = [
         SimpleNamespace(

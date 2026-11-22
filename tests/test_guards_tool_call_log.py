@@ -198,7 +198,7 @@ async def test_a_failed_write_increments_the_writes_counter_as_failed():
 # work TOGETHER.
 
 CONVERSATION = "conv-e2e"
-MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
+MILES = PersonRef(person_id="miles", name="Miles Novak")
 
 
 class _FakeRoute:

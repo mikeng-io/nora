@@ -33,7 +33,7 @@ HK = ZoneInfo("Asia/Hong_Kong")
 NOW = int(dt.datetime(2026, 9, 30, 15, 30, tzinfo=HK).timestamp() * 1000)
 HOME = Room("signal", "room-a")
 PERSONS = Persons(
-    by_person={"ben": PersonRef(person_id="ben", name="Ben", honcho_peer_id="ben")},
+    by_person={"ben": PersonRef(person_id="ben", name="Ben")},
     index={("signal", "+852000"): "ben"},
 )
 GYM = DerivedPlace(
@@ -74,8 +74,8 @@ class _Mobility:
 
 
 BEN = PERSONS.by_person["ben"]
-ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
-OUTSIDER = PersonRef(person_id="zed", name="Zed", honcho_peer_id="zed")
+ADA = PersonRef(person_id="ada", name="Ada")
+OUTSIDER = PersonRef(person_id="zed", name="Zed")
 CIRCLE = Circle(circle_id="c1", person_ids=frozenset({"ben", "ada"}))
 
 

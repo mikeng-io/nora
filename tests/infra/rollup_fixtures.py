@@ -57,7 +57,7 @@ class RollupFixture:
         )
         accounts = {(platform, p): p for platform, _ in self.rooms for p in people}
         persons = Persons(
-            {p: PersonRef(p, p, p) for p in people}, accounts,
+            {p: PersonRef(p, p) for p in people}, accounts,
             life360=tuple(Life360Membership(p, f"{p}-member", self.circle) for p in people),
         )
         self.registration = SqlItemRegistration(

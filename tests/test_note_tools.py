@@ -25,7 +25,7 @@ from nora.testing import FakeRosterSource
 from nora.testing.note_store import InMemoryNoteStore
 from tests.fakes import SinkSender
 
-MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
+MILES = PersonRef(person_id="miles", name="Miles Novak")
 GROUP = "signal:group-1"
 UNIT = "household"
 NOW = 1_770_000_000_000

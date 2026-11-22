@@ -38,16 +38,11 @@ def test_conversation_target_is_hashable_so_it_can_key_locks_and_debounce():
     assert {a, b} == {a}
 
 
-def test_person_ref_peer_id_equals_person_id():
-    ref = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
-    assert ref.honcho_peer_id == ref.person_id
-
-
 def test_tag_context_holds_immutable_collections():
     ctx = TagContext(
         tag_id="0f2c",
         message=_msg(),
-        tagger=PersonRef("miles", "Miles", "miles"),
+        tagger=PersonRef("miles", "Miles"),
         transcript=({"sender_name": "Miles", "body": "hi", "is_nora": 0},),
         peer_card=("likes espresso",),
         started_at=1.0,

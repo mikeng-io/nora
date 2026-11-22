@@ -181,7 +181,7 @@ async def test_selected_file_collective_uses_declared_members_without_managed_se
     case = await _background_identity_case()
     person = case.people[0]
     persons = Persons(by_person={person: PersonRef(
-        person_id=person, name="Generated File Collective Name", honcho_peer_id=person)}, index={})
+        person_id=person, name="Generated File Collective Name")}, index={})
     case.access = IdentityAccess.for_files(persons, None)
     case.bindings.down = True
     policy = _population_rooms()

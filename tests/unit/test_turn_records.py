@@ -50,7 +50,7 @@ def _trace(requirements, *, occasion="cognition"):
 
 
 def _room(*, fail=False, unnamed=False):
-    ref = PersonRef(person_id="p1", name="Member 1", honcho_peer_id="p1")
+    ref = PersonRef(person_id="p1", name="Member 1")
     return Room(
         platform="discord", conversation_id="room-b",
         roster_source=FakeRosterSource(
@@ -193,7 +193,7 @@ async def test_character_read_records_exclusions_and_location_subjects():
     from tests.fakes import SinkSender
     from tests.unit.test_profile_disclosure import _Heads
 
-    ref = PersonRef(person_id="p1", name="Member 1", honcho_peer_id="p1")
+    ref = PersonRef(person_id="p1", name="Member 1")
     persons = Persons(by_person={"p1": ref}, index={("signal", "account-1"): "p1"})
     convo = Conversation(platform="signal", ids=frozenset({"room-a"}),
                          primary_id="room-a", unit="u1", label="Room", location=True,

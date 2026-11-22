@@ -20,7 +20,7 @@ from nora.obs.metrics import Metrics
 from nora.testing.fakes import FakeBlobStore
 from tests.fakes import SinkSender
 
-MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
+MILES = PersonRef(person_id="miles", name="Miles Novak")
 
 
 class _FakeStore:

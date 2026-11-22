@@ -50,8 +50,8 @@ def source_inputs(engine, *, opted_out=()):
     from nora.domain.models import PersonRef
     from nora.infra.sql.social_stream import readable_social_store
     from nora.persons import Persons
-    persons = Persons(by_person={PERSON: PersonRef(person_id=PERSON, name='Synthetic',
-        honcho_peer_id='synthetic')}, index={}, _social_off=frozenset(opted_out))
+    persons = Persons(by_person={PERSON: PersonRef(person_id=PERSON, name='Synthetic')},
+        index={}, _social_off=frozenset(opted_out))
     return SqlProfileInputs(engine, social=readable_social_store(engine, persons))
 
 
@@ -418,8 +418,8 @@ async def test_initial_cached_recovery_past_old_cursor_is_bounded_and_durable(
     reads = SqlCharacterEvidence(env)
     boundary, _ = await reads.history_state(key=KEY)
     await reads.advance_history(key=KEY, cursor=boundary)  # old message history already completed
-    pk = PersonKey(unit='unit', person=PersonRef(person_id=PERSON, name='Synthetic',
-        honcho_peer_id='synthetic'), rooms=(CharacterRoom(key='room-a', platform='signal',
+    pk = PersonKey(unit='unit', person=PersonRef(person_id=PERSON, name='Synthetic'),
+        rooms=(CharacterRoom(key='room-a', platform='signal',
         label='Allowed'),), home='room-a', listed=('room-a',))
     profile = SqlProfileStore(env, screen=scan_identifiers)
     source = source_inputs(env)
@@ -477,8 +477,8 @@ def wired(engine, *, media_join=None):
     reads = SqlCharacterEvidence(engine)
     profile = SqlProfileStore(engine, screen=lambda _: None)
     source = source_inputs(engine)
-    pk = PersonKey(unit='unit', person=PersonRef(person_id=PERSON, name='Synthetic',
-        honcho_peer_id='synthetic'), rooms=(CharacterRoom(key='room-a', platform='signal',
+    pk = PersonKey(unit='unit', person=PersonRef(person_id=PERSON, name='Synthetic'),
+        rooms=(CharacterRoom(key='room-a', platform='signal',
         label='Allowed'),), home='room-a', listed=('room-a',))
     evidence = ProfileEvidence(store=reads, profile=profile, keys={KEY: pk},
                               source_inputs=source, wake_batch=100)
@@ -889,8 +889,8 @@ async def test_a_person_with_a_wake_batch_of_new_messages_counts_the_whole_batch
     await reads.advance_history(key=KEY, cursor=boundary)
     for i in range(5):
         await message(env, ident=100 + i, body=f'a new plain message {i}', ts=T0 + i + 1)
-    pk = PersonKey(unit='unit', person=PersonRef(person_id=PERSON, name='Synthetic',
-        honcho_peer_id='synthetic'), rooms=(CharacterRoom(key='room-a', platform='signal',
+    pk = PersonKey(unit='unit', person=PersonRef(person_id=PERSON, name='Synthetic'),
+        rooms=(CharacterRoom(key='room-a', platform='signal',
         label='Allowed'),), home='room-a', listed=('room-a',))
     evidence = ProfileEvidence(store=reads, profile=SqlProfileStore(env, screen=lambda _: None),
                                keys={KEY: pk}, source_inputs=source_inputs(env), wake_batch=3)

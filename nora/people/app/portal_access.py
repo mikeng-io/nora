@@ -96,4 +96,4 @@ class PortalScopes:
         if await self._bindings.identity_held(person_id) is not False:
             raise ValueError("identity publication incomplete")
         if person.lifecycle is PersonLifecycle.ACTIVE:
-            people[person_id] = PersonRef(person_id, person.display_name or person_id, person_id)
+            people[person_id] = PersonRef(person_id, person.display_name or person_id)

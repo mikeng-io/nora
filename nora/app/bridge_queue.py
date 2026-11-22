@@ -42,6 +42,7 @@ from nora.app.bridge_payloads import (
     _now_ms,
     _payload_trace,
     _person_dict,
+    _person_from_dict,
     _queue_wait_ms,
 )
 from nora.domain.actions import ActionOwner
@@ -783,8 +784,6 @@ class WorkRunner:
     # ---- ingest ---------------------------------------------------------
 
     async def _run_ingest(self, work: Any) -> None:
-        from nora.domain.models import PersonRef
-
         envelope = Envelope.from_fields(work.payload["envelope"])
         async with self._store.advisory_lock(
                 INGEST_NS, work.platform, work.account_key,
@@ -818,7 +817,7 @@ class WorkRunner:
                     return
                 decision = EngageDecision(**handoff["decision"])
                 result_message = message_from_dict(handoff["message"])
-                person = (PersonRef(**handoff["person"])
+                person = (_person_from_dict(handoff["person"])
                           if handoff.get("person") else None)
                 absorbed = bool(handoff.get("absorbed", True))
                 unit = handoff.get("unit")

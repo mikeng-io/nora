@@ -168,8 +168,7 @@ async def _finish_state(store, work_id: int) -> dict:
             BRIDGE_WORK.c.id == work_id))).mappings().one())
 
 
-_PERSON_DICT = {"person_id": "miles", "name": "Miles",
-                "honcho_peer_id": "miles"}
+_PERSON_DICT = {"person_id": "miles", "name": "Miles"}
 
 
 def _work_payload(ts: int, *, absorbed: bool,
@@ -461,6 +460,7 @@ async def test_kill_between_audit_and_handoff_resumes_from_snapshot(
     assert handoff["row_id"] and handoff["decision"]["reason"]
     assert handoff["absorbed"] is True
     assert handoff["person"]["person_id"] == "miles"
+    assert "honcho_peer_id" not in handoff["person"]   # what the writer emits now
 
     monkeypatch.undo()  # enqueue_work + gate restored for the replay
     work = await store.claim_next(owner="w", lease_seconds=60)

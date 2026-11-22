@@ -39,9 +39,9 @@ NOW = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
 # intersection this file exists to remove never sees her).
 _PERSONS = Persons(
     by_person={
-        "ada": PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada"),
-        "ben": PersonRef(person_id="ben", name="Ben", honcho_peer_id="ben"),
-        "cy": PersonRef(person_id="cy", name="Cy", honcho_peer_id="cy"),
+        "ada": PersonRef(person_id="ada", name="Ada"),
+        "ben": PersonRef(person_id="ben", name="Ben"),
+        "cy": PersonRef(person_id="cy", name="Cy"),
     },
     index={
         ("signal", "+85200000001"): "ada",

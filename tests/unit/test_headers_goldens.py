@@ -79,7 +79,7 @@ GOLDEN_PATH = Path(__file__).parent.parent / "fixtures" / "context_assembly_step
 
 T0 = datetime(2026, 8, 8, 19, 0, tzinfo=UTC)
 NOW = datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
-MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles", aliases=("阿Miles",))
+MILES = PersonRef(person_id="miles", name="Miles", aliases=("阿Miles",))
 
 #: The zone every case runs in unless it names another: the fire stamps read the
 #: process's own zone, so a golden that did not pin it would pass on one machine.
@@ -135,7 +135,7 @@ def _sweep(make: Callable[[str], Any]) -> dict[str, Any]:
 
 
 def _person(name: str) -> PersonRef:
-    return PersonRef(person_id="miles", name=name, honcho_peer_id="miles", aliases=("a",))
+    return PersonRef(person_id="miles", name=name, aliases=("a",))
 
 
 def _event(event: Event, tagger: PersonRef | None = MILES, now: datetime = T0) -> dict[str, Any]:
@@ -531,7 +531,7 @@ def _participation_tagger() -> Any:
 
 #: Live identity entries may set `first_name`; the header says `name`.
 _FIRST = PersonRef(
-    person_id="miles", name="Miles Novak", honcho_peer_id="miles", first_name="Michael",
+    person_id="miles", name="Miles Novak", first_name="Michael",
     last_name="Nguyen", aliases=("Mikey",),
 )
 
@@ -677,7 +677,7 @@ def _prefill_tag_message() -> Any:
         out[f"name-{name}"] = prefill.build_tag_message(
             _ctx(), tagger_name=value, display_name="Nora")
         out[f"alias-{name}"] = prefill.build_tag_message(
-            _ctx(tagger=PersonRef("miles", "Miles", "miles", aliases=(value, "b"))),
+            _ctx(tagger=PersonRef("miles", "Miles", aliases=(value, "b"))),
             tagger_name="Miles", display_name="Nora")
     return out
 

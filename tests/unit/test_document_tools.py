@@ -24,7 +24,7 @@ from nora.obs.metrics import Metrics
 from nora.testing import FakeDocumentStore, FakeMediaObjectStore, FakeRosterSource
 from tests.fakes import SinkSender
 
-MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
+MILES = PersonRef(person_id="miles", name="Miles Novak")
 ROOM = "signal-room-1"
 OTHER = "signal-room-2"
 

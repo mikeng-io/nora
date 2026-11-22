@@ -482,13 +482,13 @@ def load_persons(path: Path) -> Persons:
             p for p in (entry.first_name, entry.last_name) if p
         ) or person_id
         by_person[person_id] = PersonRef(
-            person_id=person_id, name=name, honcho_peer_id=person_id,
+            person_id=person_id, name=name,
             first_name=entry.first_name or "", last_name=entry.last_name or "",
             aliases=tuple(entry.aliases),
         )
         # Every kind of every account flattens into one
         # index, which is what makes all of a person's accounts land on a
-        # single `honcho_peer_id` (A2).
+        # single `person_id` (A2).
         for platform in PLATFORM_FIELDS:
             # (platform, value) → the index of the account block that claimed
             # it, so the two duplicate cases can be told apart below.

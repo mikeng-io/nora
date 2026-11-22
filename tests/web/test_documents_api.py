@@ -25,10 +25,10 @@ from nora.web.api import register_web_routes
 from tests.conftest import build_test_doctrine_store
 from tests.web.test_api import NO_SKILLS_DIR, _fake_events
 
-KEN = PersonRef(person_id="ken", name="Ken", honcho_peer_id="ken")
-MEI = PersonRef(person_id="mei", name="Mei", honcho_peer_id="mei")
-JO = PersonRef(person_id="jo", name="Jo", honcho_peer_id="jo")
-SAM = PersonRef(person_id="sam", name="Sam", honcho_peer_id="sam")
+KEN = PersonRef(person_id="ken", name="Ken")
+MEI = PersonRef(person_id="mei", name="Mei")
+JO = PersonRef(person_id="jo", name="Jo")
+SAM = PersonRef(person_id="sam", name="Sam")
 SHA = "a" * 64
 
 

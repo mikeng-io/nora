@@ -36,8 +36,8 @@ LONG_PHONE = "+" + "1" * 15
 IDENTIFIER = str(UUID(int=7))
 COORDINATE = ", ".join(f"{n + 0.125:.3f}" for n in (1, 2))
 KEY = "sk-" + "synthetic" * 4
-MEMBER = PersonRef(person_id="member", name="Juniper", honcho_peer_id="member")
-OUTSIDER = PersonRef(person_id="outsider", name="Cedar", honcho_peer_id="outsider")
+MEMBER = PersonRef(person_id="member", name="Juniper")
+OUTSIDER = PersonRef(person_id="outsider", name="Cedar")
 CIRCLE = Circle("circle", frozenset({MEMBER.person_id}), (MEMBER,))
 NOW = 1_800_000_000_000
 

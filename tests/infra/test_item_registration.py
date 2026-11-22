@@ -98,7 +98,7 @@ class _FixedRevisions:
 
 
 def _registration(*, multiple: bool = False) -> SqlItemRegistration:
-    owner = PersonRef(_PERSON, "Generated", _PERSON)
+    owner = PersonRef(_PERSON, "Generated")
     people = Persons(
         {_PERSON: owner}, {("signal", _AUTHOR): _PERSON},
         life360=(Life360Membership(_PERSON, "test-member", _CIRCLE),),
@@ -461,8 +461,8 @@ async def test_a_health_transition_wakes_its_unit(engine: AsyncEngine) -> None:
 def _partly_covered() -> SqlItemRegistration:
     outsider = "test-outsider"
     people = Persons(
-        {_PERSON: PersonRef(_PERSON, "Generated", _PERSON),
-         outsider: PersonRef(outsider, "Generated outsider", outsider)},
+        {_PERSON: PersonRef(_PERSON, "Generated"),
+         outsider: PersonRef(outsider, "Generated outsider")},
         {("signal", _AUTHOR): _PERSON},
         life360=(Life360Membership(_PERSON, "test-member", _CIRCLE),),
     )

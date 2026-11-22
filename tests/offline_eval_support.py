@@ -922,15 +922,15 @@ def build_gate_probe(
 _EVAL_PERSONS = Persons(
     by_person={
         "miles_novak": PersonRef(
-            person_id="miles_novak", name="Miles", honcho_peer_id="miles_novak",
+            person_id="miles_novak", name="Miles",
             aliases=("熱咖啡", "mapleleaf"),
         ),
         "grant": PersonRef(
-            person_id="grant", name="Grant", honcho_peer_id="grant",
+            person_id="grant", name="Grant",
             aliases=("明明",),
         ),
-        "ada": PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada"),
-        "ben": PersonRef(person_id="ben", name="Ben", honcho_peer_id="ben"),
+        "ada": PersonRef(person_id="ada", name="Ada"),
+        "ben": PersonRef(person_id="ben", name="Ben"),
     },
     index={
         ("signal", "+852111"): "miles_novak",

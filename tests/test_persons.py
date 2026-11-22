@@ -35,7 +35,7 @@ def _msg(sender_id, sender_name=None) -> NormalizedMessage:
 def test_resolve_maps_a_known_sender(persons):
     ref = persons.resolve("signal", "+85212345678")
     assert ref is not None
-    assert (ref.person_id, ref.name, ref.honcho_peer_id) == ("miles", "Miles", "miles")
+    assert (ref.person_id, ref.name) == ("miles", "Miles")
 
 
 def test_resolve_returns_none_for_an_unmapped_sender(persons):
@@ -348,7 +348,6 @@ def test_loads_identity_toml(tmp_path):
     assert ref is not None
     assert ref.name == "Miles"
     assert ref.person_id == "miles"
-    assert ref.honcho_peer_id == "miles"
     assert persons.resolve("telegram", "123456789") is not None
 
 
@@ -469,7 +468,6 @@ def test_two_accounts_on_one_platform_resolve_to_the_same_person(tmp_path):
     resolved = [persons.resolve("signal", i) for i in ids]
     assert all(r is not None for r in resolved), "every listed id must resolve"
     assert {r.person_id for r in resolved} == {"miles"}
-    assert {r.honcho_peer_id for r in resolved} == {"miles"}
 
 
 def test_a_label_is_never_matchable(tmp_path):

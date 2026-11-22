@@ -268,7 +268,7 @@ async def test_historical_unsettled_and_conflicted_sessions_hold_the_same_page(e
     reads = SqlCharacterEvidence(env.engine)
     pk = PersonKey(
         unit=ACCOUNT.unit,
-        person=PersonRef(person_id=KIT, name="Kit", honcho_peer_id="kit"),
+        person=PersonRef(person_id=KIT, name="Kit"),
         rooms=(CharacterRoom(key="room-a", platform="signal", label="Friends"),),
         listed=("room-a",),
         home="room-a",
@@ -405,7 +405,7 @@ async def test_render_on_person_and_unit_inputs_use_profile_rooms_without_legacy
     assert await evidence.count(key=key, after=cursor) == 0
     pk = PersonKey(
         unit=ACCOUNT.unit,
-        person=PersonRef(person_id=KIT, name="Kit", honcho_peer_id="kit"),
+        person=PersonRef(person_id=KIT, name="Kit"),
         rooms=(room,),
         listed=("room-a",),
         home="room-a",

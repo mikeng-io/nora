@@ -26,7 +26,7 @@ from nora.testing import InMemoryCultureStore
 NOW = datetime(2026, 10, 7, tzinfo=UTC)
 IDS = {"ada": "+85200000001", "bo": "+85200000002", "cy": "+85200000003",
        "di": "+85200000004", "ed": "+85200000005"}
-REFS = {p: PersonRef(person_id=p, name=p.title(), honcho_peer_id=p) for p in IDS}
+REFS = {p: PersonRef(person_id=p, name=p.title()) for p in IDS}
 PERSONS = Persons(
     by_person=REFS, index={("signal", v): p for p, v in IDS.items()},
 )
