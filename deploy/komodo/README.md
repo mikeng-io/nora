@@ -8,11 +8,11 @@ the first-install bootstrap below is not the normal production deploy procedure.
 
 ## Ownership and flow
 
-1. Every ordinary master push automatically prepares patch/minor release metadata.
+1. Every releasable master push automatically prepares patch release metadata.
    GitHub auto-merges only the generated metadata PR after required checks and
    exact-source guards; release-please then publishes the stable `vX.Y.Z` tag and
-   GitHub Release. Breaking ranges stop for owner-only exact-candidate major
-   preparation (`nora-release`). Published Releases trigger `Release images`
+   GitHub Release. Minor and major are owner dispatches; a breaking range ships,
+   and the deploy refuses a host missing a required setting (`nora-release`). Published Releases trigger `Release images`
    under its existing control; missing App setup fails closed. Manual image
    dispatch can rebuild an already-published stable tag. The separate default-off
    **Deploy master** entry selects current master without a formal release. Both

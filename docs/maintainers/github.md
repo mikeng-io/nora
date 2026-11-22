@@ -123,18 +123,15 @@ The `release-please` workflow runs on every master push. It first lets
 release-please publish merged pending metadata, then fetches the new tags and
 plans the complete reachable range on latest master. Shipped changes qualify; docs, tests, CI, agent tooling and repository-only
 maintenance paths are excluded. Unknown paths and runtime Markdown qualify, and
-explicit breaking/minor declarations remain visible. Generated metadata is
+breaking declarations remain visible. Generated metadata is
 excluded to avoid loops. Internal types can stay hidden in the changelog.
 Existing tags and version history remain unchanged.
 
-Compatible maintenance and small additions within an existing capability default
-to PATCH, including `feat`. Authors mark a complete new product capability or a
-new/deprecated documented supported integration API/CLI with the commit footer
-`Release-Bump: minor`. The planner consumes that decision without another approval
-or classifier. `!` / `BREAKING CHANGE:` markers across the range stop automatic
-processing before version writes; the owner selects their bump, patch/minor
-included (for example, when only the operator's own host moves), never below the
-`Release-Bump: minor` floor.
+Every releasable master push ships a PATCH; no commit type or footer selects
+minor. Minor and major are owner milestones, selected by owner dispatch at an
+exact full master SHA. `!` / `BREAKING CHANGE:` markers list a host change under
+⚠ BREAKING CHANGES and never stop automatic processing; the deploy refuses a
+host that is not ready (`nora-release` «The version convention»).
 
 The repository has native auto-merge enabled. Only the generated release PR on
 `release-please--branches--master--components--nora` gets `gh pr merge --auto
@@ -160,7 +157,7 @@ The App is mandatory, scoped to this repository, with no branch bypass or token
 fallback. Its PR writes trigger checks and its published Release triggers the
 complete release-image bundle → `deployments` → Komodo path, under the existing
 release-image control. This is standing release/deployment authority for automatic
-patch/minor and explicitly owner-prepared breaks. Read actual publication, image
+patches and owner-dispatched milestones. Read actual publication, image
 and deployed state separately; a tag alone proves no deployment.
 
 Devin release automation is stopped (operator, 2026-10-28; issue #316 closed not

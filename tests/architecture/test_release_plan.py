@@ -112,15 +112,14 @@ def test_ordinary_changes_default_to_patch_even_with_feat(repo, plan, subjects, 
     assert plan.bump("1.0.0", plan.entries("v1.0.0")) == expected
 
 
-def test_a_breaking_change_footer_requires_an_owner_selected_bump(repo, plan):
+def test_a_breaking_change_footer_still_releases_as_a_patch(repo, plan):
     (repo / "nora").mkdir(exist_ok=True)
     (repo / "nora/a.py").write_text("x")
     run("add", ".")
     run("commit", "-qm", "change: drop a verb\n\nBREAKING CHANGE: the verb is gone")
     found = plan.entries("v1.0.0")
     assert found[0].breaking
-    with pytest.raises(ValueError, match="owner-selected bump"):
-        plan.bump("1.0.0", found)
+    assert plan.bump("1.0.0", found) == "1.0.1"
     assert plan.bump("1.0.0", found, "major") == "2.0.0"
 
 
@@ -176,12 +175,16 @@ def test_the_pr_body_is_what_the_release_action_parses(repo, plan, tmp_path):
 
 
 def test_apply_moves_every_versioned_file_together(repo, plan, tmp_path):
-    commit(repo, "nora/f.py", "feat: add a thing\n\nRelease-Bump: minor")
+    commit(repo, "nora/f.py", "feat: add a thing")
     assert (
         plan.main(
             [
                 "--repo",
                 REPO,
+                "--bump",
+                "minor",
+                "--candidate",
+                run("rev-parse", "HEAD").strip(),
                 "--out",
                 str(tmp_path / "o"),
                 "--today",
@@ -245,16 +248,16 @@ def test_internal_commit_types_on_runtime_paths_write_a_patch(repo, plan, subjec
     assert f"{subject.split(': ', 1)[1]} ([{sha[:7]}]" in body
 
 
-def test_explicit_milestone_footer_automatically_selects_minor(repo, plan):
+def test_no_footer_selects_minor_only_the_owner_does(repo, plan):
     commit(repo, "nora/f.py", "feat: add a supported capability\n\nRelease-Bump: minor")
     assert plan.main(["--repo", REPO, "--out", str(repo / "out")]) == 0
-    assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.1.0"}
-    assert "## [1.1.0]" in (repo / "CHANGELOG.md").read_text()
+    assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.0.1"}
+    assert "## [1.0.1]" in (repo / "CHANGELOG.md").read_text()
 
 
 def test_assessed_candidate_must_still_be_the_prepared_head(repo, plan):
     assessed = commit(repo, "nora/f.py", "fix: repair a thing")
-    commit(repo, "nora/g.py", "feat: add a later capability\n\nRelease-Bump: minor")
+    commit(repo, "nora/g.py", "feat: add a later capability")
     with pytest.raises(ValueError, match="candidate changed"):
         plan.main(
             [
@@ -283,7 +286,7 @@ def test_assessed_candidate_must_still_be_the_prepared_head(repo, plan):
         )
         == 0
     )
-    assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.1.0"}
+    assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.0.1"}
 
 
 def test_a_compatible_feature_can_ship_as_an_assessed_product_patch(repo, plan):
@@ -298,32 +301,13 @@ def test_a_compatible_feature_can_ship_as_an_assessed_product_patch(repo, plan):
     ["change!: remove a verb", "change: remove a verb\n\nBREAKING CHANGE: the verb is gone"],
 )
 @pytest.mark.parametrize(("selected", "version"), [("patch", "1.0.1"), ("minor", "1.1.0")])
-def test_the_owner_may_ship_a_declared_break_below_major(repo, plan, subject, selected, version):
+def test_the_owner_may_select_any_bump_for_a_declared_break(repo, plan, subject, selected, version):
     commit(repo, "nora/f.py", subject)
     source = run("rev-parse", "HEAD").strip()
     args = ["--repo", REPO, "--bump", selected, "--candidate", source, "--out", str(repo / "out")]
     assert plan.main(args) == 0
     assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": version}
     assert "### ⚠ BREAKING CHANGES" in (repo / "CHANGELOG.md").read_text()
-
-
-def test_a_break_does_not_lift_the_milestone_floor(repo, plan):
-    commit(repo, "nora/f.py", "feat: add a capability\n\nRelease-Bump: minor")
-    commit(repo, "nora/g.py", "change!: remove a verb")
-    with pytest.raises(ValueError, match="below the minor"):
-        plan.main(
-            [
-                "--repo",
-                REPO,
-                "--bump",
-                "patch",
-                "--candidate",
-                run("rev-parse", "HEAD").strip(),
-                "--out",
-                str(repo / "out"),
-            ]
-        )
-    assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.0.0"}
 
 
 @pytest.mark.parametrize(
@@ -335,13 +319,28 @@ def test_a_break_does_not_lift_the_milestone_floor(repo, plan):
         "change: remove a verb\n\nBREAKING-CHANGE:the verb is gone",
     ],
 )
-def test_automatic_major_is_refused_before_any_version_write(repo, plan, subject):
+def test_a_break_releases_automatically_as_a_patch_listed_as_breaking(repo, plan, subject):
+    """A breaking marker no longer holds the release queue: the host change is
+    listed, and the deploy (not the version) refuses a host that is not ready."""
     commit(repo, "docs/note.md", subject)
-    before = {p: (repo / p).read_bytes() for p in plan_files()}
-    with pytest.raises(ValueError, match="owner-selected bump"):
-        plan.main(["--repo", REPO, "--out", str(repo / "out")])
-    assert {p: (repo / p).read_bytes() for p in plan_files()} == before
-    assert not (repo / "out").exists()
+    assert plan.main(["--repo", REPO, "--out", str(repo / "out")]) == 0
+    assert json.loads((repo / ".release-please-manifest.json").read_text()) == {".": "1.0.1"}
+    assert "### ⚠ BREAKING CHANGES" in (repo / "CHANGELOG.md").read_text()
+
+
+def test_the_breaking_section_links_the_commit_and_copies_no_footer_text(repo, plan):
+    """The release PR body is parsed by the publisher, so it carries no free
+    commit text: the linked commit's footer says what the host must do."""
+    sha = commit(
+        repo,
+        "nora/f.py",
+        "feat!: move the site out\n\nBREAKING CHANGE: route / to <details> the portal.",
+    )
+    assert plan.main(["--repo", REPO, "--out", str(repo / "out")]) == 0
+    body = (repo / "out/body.md").read_text()
+    breaking = body.split("### ⚠ BREAKING CHANGES", 1)[1].split("\n### ", 1)[0]
+    assert f"/commit/{sha})" in breaking
+    assert "<details>" not in body and "route /" not in body
 
 
 def plan_files():
@@ -370,8 +369,8 @@ def test_breaking_merge_message_is_not_hidden(repo, plan):
     commit(repo, "docs/a.md", "docs: clarify behavior")
     run("switch", "-q", "master")
     run("merge", "--no-ff", "topic", "-m", "merge!: remove supported behavior")
-    with pytest.raises(ValueError, match="owner-selected bump"):
-        plan.main(["--repo", REPO, "--out", str(repo / "out")])
+    assert plan.main(["--repo", REPO, "--out", str(repo / "out")]) == 0
+    assert "remove supported behavior" in (repo / "CHANGELOG.md").read_text()
 
 
 def test_metadata_merge_publication_and_later_internal_change_do_not_loop(repo, plan):

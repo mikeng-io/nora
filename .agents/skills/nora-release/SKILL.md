@@ -1,6 +1,6 @@
 ---
 name: nora-release
-description: Follows Nora's automatic patch/minor release pipeline or prepares the owner-selected bump for a break at an exact source SHA. Use for release PRs, version bumps, tags, changelogs or publication. Not for an ordinary deploy (nora-deploy).
+description: Follows Nora's automatic patch release pipeline, or prepares an owner-selected minor or major milestone at an exact source SHA. Use for release PRs, version bumps, tags, changelogs or publication. Not for an ordinary deploy (nora-deploy).
 ---
 
 # Nora releases
@@ -9,36 +9,34 @@ Every ordinary master push starts `release-please.yml`. The workflow publishes
 merged pending metadata first through release-please, then plans the complete
 remaining git-reachable range. It maintains one generated release PR and enables
 GitHub auto-merge on its exact head, with an authored merge subject. Required
-checks and the strict up-to-date branch rule govern the merge; the App has no
-bypass. This standing authority covers generated metadata only, never application
+checks govern the merge; the App has no bypass. This standing authority covers generated metadata only, never application
 or implementation PRs. There is no daily wait, paid agent or release evaluator.
 There is no AI release evaluator: never invoke or enable Devin release automation.
 
-## 1. Author the product bump
+## 1. The version convention
 
-Default PATCH includes shipped maintenance, runtime config and small additions
-within an existing capability. Docs, tests, CI, agent tooling and repository-only
-maintenance paths do not trigger a release; unknown paths still qualify. Runtime
-Markdown remains eligible. Explicit breaking/minor declarations remain visible. `feat` alone never requires minor.
-For a complete new product capability or a new/deprecated documented supported
-integration API/CLI, put this explicit footer in the authored commit message:
+Nora is an application that deploys itself, not a library, so a version is a
+build counter with named milestones:
 
-```text
-Release-Bump: minor
-```
+| part | means | moved by |
+|---|---|---|
+| patch | every releasable master push | the pipeline, always; nothing holds it |
+| minor | a milestone Mike names (a cutover, a capability landing) | Mike, by owner dispatch at an exact SHA |
+| major | a product generation | Mike only, by owner dispatch |
 
-The planner consumes that decision automatically across the entire unreleased
-range. Commit subjects remain changelog lines; internal types may stay hidden
-in mixed release notes while still triggering a patch. Internal-only releases
-list their actual subjects under Maintenance. Old-dated commits merged later
-remain included. `Release-As:` is unsupported. Existing versions/tags stay intact.
+No commit type, footer or breaking marker selects minor or major, and none stops
+the pipeline. Docs, tests, CI, agent tooling and repository-only maintenance
+paths do not trigger a release; unknown paths still qualify, and runtime
+Markdown remains eligible. Commit subjects are the changelog lines; internal-only
+releases list their subjects under Maintenance. Old-dated commits merged later
+remain included. `Release-As:` is unsupported. Existing versions and tags stay.
 
-`!` and `BREAKING CHANGE:` / `BREAKING-CHANGE:` anywhere in the unreleased range,
-including internal commits and merges, stop automatic processing before version
-writes. Never use a footer to request major. Document the incompatible
-interface/config and its migration; only the owner selects the bump, at an exact
-full current master SHA, patch/minor included (for example, a break that moves
-only the operator's own host); the `Release-Bump: minor` floor still binds.
+A change that needs the host to change marks it with `!` or a
+`BREAKING CHANGE:` footer that says what the host must do. The release lists it
+under ⚠ BREAKING CHANGES, linked to that commit, and ships as a patch. Readiness is the deploy's check,
+not the version's: a missing required setting refuses the deploy before any
+container is replaced (`docker-compose.yml` `${VAR:?…}` interpolation and Nora's
+config validation, `nora-deploy`), so an unready host blocks only its own deploy.
 
 ## 2. Follow automatic preparation and publication
 
@@ -66,7 +64,7 @@ A metadata merge triggers publication and no next bump by itself. If publication
 fails, rerun that workflow: publication comes first, and manifest/tag mismatch
 blocks planning a duplicate version until the existing release is published.
 
-## 3. Owner-only break and recovery dispatch
+## 3. Owner-only milestone and recovery dispatch
 
 The original and rerun actor must both be the repository owner, on master.
 Select the exact full current master SHA; drift is refused, never silently
@@ -77,8 +75,7 @@ gh workflow run release-please.yml --ref master -f action=prepare -f bump=<patch
 ```
 
 The generated metadata follows the same required checks and exact-head
-auto-merge; its master push lets release-please publish the owner's selection. Manual prepare can also select patch/minor for recovery, retaining marker
-minimums. A merged but unpublished PR can be resumed without preparing again:
+auto-merge; its master push lets release-please publish the owner's selection. Manual prepare can also select patch for recovery. A merged but unpublished PR can be resumed without preparing again:
 
 ```bash
 gh workflow run release-please.yml --ref master -f action=publish -f candidate=<full-current-master-sha>
@@ -99,8 +96,8 @@ Require a successful publisher run, a non-draft Release and a tag resolving to
 the generated metadata merge. A stable published Release automatically feeds
 `release-images.yml`, then the complete `deployments` bundle and installed Komodo
 poller under the existing release-image control. The operator's standing release
-and deployment authority includes this normal patch/minor path and explicitly
-owner-prepared breaks. Follow `nora-deploy` for image/source/receipt/live-stamp
+and deployment authority includes this normal patch path and owner-dispatched
+milestones. Follow `nora-deploy` for image/source/receipt/live-stamp
 readback; a tag or build alone proves no deployment.
 
 The separate owner-only Deploy master image entry stays default-off behind
