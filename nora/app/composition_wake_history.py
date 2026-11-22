@@ -116,7 +116,8 @@ async def replay_dependencies(
         revisions = RuntimeRevisions(cfg.model_dump(), policy, persons)
         wake = build_wake_runner(
             cfg, runtime, corpus, WakeHistoryRooms(policy, access, cfg.doctrine.display_name),
-            memory.wire.pass_assembler(engine, access, lineage, None, None), surface, metrics,
+            memory.wire.configured_pass_assembler(cfg, engine, access, lineage), surface,
+            metrics,
             revisions=revisions.current, model=model, occasion="wake_history",
         )
         yield store, wake, cfg.cognition.batch_max

@@ -6,7 +6,6 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.agent.lineage import LineagePolicy
 from nora.app.proactive_fire import FireAgent, FireRoom, ProactiveFire
 from nora.app.proactive_poller import ProactiveLanding, ProactivePoller
 from nora.config import HeartbeatConfig
@@ -17,12 +16,11 @@ from nora.engagement.stages.graph_debrief import Wiring
 def build_proactive(
     memory_wire: Any, engine: AsyncEngine, heartbeat: HeartbeatConfig,
     clock: Callable[[], datetime], slots: ConversationSlots, room: FireRoom,
-    agent: FireAgent, debrief: Wiring,
-    lineage: LineagePolicy,
+    agent: FireAgent, debrief: Wiring, assembler: Any,
 ) -> ProactivePoller:
     claims = memory_wire.proactive_claims(engine)
     turn = ProactiveFire(
-        room, agent, memory_wire.pass_assembler(engine, room.access, lineage, None, None),
+        room, agent, assembler,
         claims, memory_wire.act_envelope(engine), debrief,
         memory_wire.delivery_arbitration(engine, room.policy), clock,
     )
