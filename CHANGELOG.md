@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.21.1](https://github.com/mikeng-io/nora/compare/v7.21.0...v7.21.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* **release:** link a breaking change to its commit instead of copying its footer ([f606b20](https://github.com/mikeng-io/nora/commit/f606b2059b581d0655784d7ee9e5371cb5656ba9))
+* **release:** say what the host must do, and update every release passage ([8f6532d](https://github.com/mikeng-io/nora/commit/8f6532dda19b2a1810161b261f20887bfc29c21f))
+
 ## [7.21.0](https://github.com/mikeng-io/nora/compare/v7.20.7...v7.21.0) (2026-11-22)
 
 
