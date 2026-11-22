@@ -261,7 +261,7 @@ async def test_every_rollup_recomputes_identically_from_the_record(clean_pg_url)
     assert sum(t["replies_ba"] for t in ties) == 2 and sum(t["colocation_ms"] for t in ties) > 0
     books = await rollups.rows(table=ROLLUP_DAYBOOK, build_id=b)
     assert {d["local_date"] for d in books} == {"2026-09-21", "2026-09-22"}
-    assert all(["message", None, "signal:group-1"] in d["lineage"] for d in books)
+    assert all(["message", None, "signal:group-1"] in d["build_lineage"] for d in books)
     await engine.dispose()
 
 
@@ -765,7 +765,7 @@ async def test_a_drain_waiting_on_a_switch_keeps_the_new_builds_episode(clean_pg
         await conn.execute(sa.insert(PRESENCE_STAYS).values(
             subject_id="a", person_id="a", circle_id="c1", started_ts=_t(0, 19),
             ended_ts=_t(0, 20), lat=0.0, lng=0.0, radius_m=10.0, fix_count=3,
-            build_id=new, lineage=[],
+            build_id=new, build_lineage=[],
         ))
         await conn.execute(sa.insert(MEMORY_PROJECTION_QUEUE).values(
             kind="stay", source_id=key, last_error="RuntimeError",

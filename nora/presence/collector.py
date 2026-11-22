@@ -186,12 +186,13 @@ class PresenceCollector:
             return read
 
         moving = False
+        owners: set[str] | None = set() if self._managed_accounts is not None else None
         for member in read.members:
             self._count("nora_presence_member_states_total", wire_state=member.wire_state.value)
             if member.is_driving:
                 moving = True
             try:
-                await self._record(circle, member, now_ms=now_ms)
+                await self._record(circle, member, now_ms=now_ms, owners=owners)
             except Exception:  # noqa: BLE001 — bounded source failure, no identifiers in logs
                 self._observed_members.pop(circle.circle_id, None)
                 await self._record_poll(circle.circle_id, "unavailable", now_ms)
@@ -208,7 +209,7 @@ class PresenceCollector:
         # Places refresh AFTER a clean member read on purpose: a cycle that
         # could not even read members has no business spending a second call on
         # the same struggling account.
-        await self._refresh_places(circle, now_ms=now_ms)
+        await self._refresh_places(circle, now_ms=now_ms, owners=owners)
 
         self._last_success_ms[circle.circle_id] = now_ms
         self._publish_liveness(circle.circle_id, now_ms)
@@ -236,7 +237,9 @@ class PresenceCollector:
         if not ok:
             self._count("nora_errors_total", stage="source_health")
 
-    async def _refresh_places(self, circle: CircleSpec, *, now_ms: int) -> None:
+    async def _refresh_places(
+        self, circle: CircleSpec, *, now_ms: int, owners: set[str] | None,
+    ) -> None:
         """Fetch the circle's saved places if due. NEVER raises.
 
         Two gates, not one: a SUCCESS waits the full
@@ -266,7 +269,10 @@ class PresenceCollector:
             self._places_retry_ms[cid] = now_ms + int(backoff * 1000)
             return
         try:
-            await self._store.replace_places(circle_id=cid, places=list(read.places))
+            await self._store.replace_places(
+                circle_id=cid, places=list(read.places), partial=read.partial,
+                observed_persons=tuple(owners) if owners is not None else None,
+            )
         except Exception:
             log.exception("places store failed for circle")
             return
@@ -286,9 +292,13 @@ class PresenceCollector:
             return
         self._observed_members[circle.circle_id] = (now_ms, ids)
 
-    async def _record(self, circle: CircleSpec, member: Member, *, now_ms: int) -> bool:
+    async def _record(
+        self, circle: CircleSpec, member: Member, *, now_ms: int, owners: set[str] | None = None,
+    ) -> bool:
         if self._managed_accounts is not None:
             async with self._managed_accounts.recording(member.life360_id) as person_id:
+                if owners is not None and person_id is not None:
+                    owners.add(person_id)
                 return await self._write(circle, member, person_id=person_id, now_ms=now_ms)
         return await self._write(circle, member,
             person_id=circle.person_id_for(member.life360_id), now_ms=now_ms)

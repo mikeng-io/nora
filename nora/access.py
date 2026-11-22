@@ -479,6 +479,23 @@ class IdentityAccess:
             return False
         return await self._bindings.identity_held(person_id)
 
+    async def member_units(self, person_id: str) -> tuple[str, ...]:
+        """Current managed membership projected into its containing units."""
+        canonical = await self.canonical_person(person_id)
+        if canonical is None:
+            return ()
+        units = set()
+        for membership in await self._bindings.memberships_for(canonical):
+            if membership.state is not MembershipState.MEMBER:
+                continue
+            member_scope = membership.scope
+            scope = (await self._topology.parent_of(member_scope)
+                     if member_scope.kind is ScopeKind.ROOM else member_scope)
+            if (scope is not None and scope.kind is ScopeKind.UNIT
+                    and await self._topology.scope_exists(scope)):
+                units.add(scope.id)
+        return tuple(sorted(units))
+
     async def members_of(self, scope: Scope) -> tuple[ManagedMembership, ...]:
         if self._persons is not None:
             return ()  # the file keeps no membership records

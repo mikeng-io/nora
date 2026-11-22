@@ -2,22 +2,22 @@
   {
     "name": "rollup_read: a unit row of a superseded build is read (build filter dropped)",
     "file": "nora/infra/sql/rollup_read.py",
-    "old": "            table.c.build_id == current_build_id(), table.c.unit == q.unit,\n",
-    "new": "            table.c.unit == q.unit,\n",
+    "old": "            table.c.state == 'live', table.c.build_id == current_build_id(), table.c.unit == q.unit,\n",
+    "new": "            table.c.state == 'live',\n            table.c.unit == q.unit,\n",
     "target": "tests/integration/test_rollup_read.py::test_a_superseded_build_is_never_read"
   },
   {
     "name": "rollup_read: a person-scoped row of a superseded build is read",
     "file": "nora/infra/sql/rollup_read.py",
-    "old": "            table.c.build_id == current_build_id(),\n            table.c.subject_id.in_(q.subjects),\n",
-    "new": "            table.c.subject_id.in_(q.subjects or (\"\",)),\n",
+    "old": "            table.c.state == 'live', table.c.build_id == current_build_id(),\n            table.c.subject_id.in_(q.subjects),\n",
+    "new": "            table.c.state == 'live',\n            table.c.subject_id.in_(q.subjects),\n",
     "target": "tests/integration/test_rollup_read.py::test_a_superseded_build_is_never_read"
   },
   {
     "name": "rollup_read: another unit's rows are read (the unit boundary, DEC-231)",
     "file": "nora/infra/sql/rollup_read.py",
-    "old": "            table.c.build_id == current_build_id(), table.c.unit == q.unit,\n",
-    "new": "            table.c.build_id == current_build_id(),\n",
+    "old": "            table.c.state == 'live', table.c.build_id == current_build_id(), table.c.unit == q.unit,\n",
+    "new": "            table.c.state == 'live', table.c.build_id == current_build_id(),\n",
     "target": "tests/integration/test_rollup_read.py::test_the_unit_is_the_read_boundary"
   },
   {

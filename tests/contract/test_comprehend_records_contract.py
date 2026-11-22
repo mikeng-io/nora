@@ -318,10 +318,10 @@ async def test_a_withheld_social_item_is_skipped_but_projection_lag_still_fails(
         for item in ("generated-visible", "generated-hidden"):
             await conn.execute(sa.insert(SOCIAL_ITEM).values(
                 network="instagram", item_id=item, person="generated-person",
-                account="generated-account", kind="post", taken_at=at, seen_at=at,
+                account="generated-account", source_kind="post", taken_at=at, seen_at=at,
                 origin="poll", read_id=read))
         await conn.execute(sa.insert(SOCIAL_ITEM_STATE).values(
-            network="instagram", item_id="generated-hidden", state="hidden"))
+            network="instagram", item_id="generated-hidden", source_state="hidden"))
 
     def work(source):
         return WorkItem("generated-social-work", source, UNIT, "generated-hash", WORK.as_of)
@@ -412,7 +412,7 @@ async def _managed_records(engine, *, social, members, unit=_MUNIT, room=_MROOM)
         engine, media_join=SimpleNamespace(enrich=enrich),
         rooms_by_unit={unit: [("signal", room)]}, persons_by_unit={},
         access=access)
-    return records, bindings, registry
+    return records, bindings, registry, access
 
 
 async def _insert_node(engine, *, kind, source_id, unit, persons=(), room="", text):
@@ -424,15 +424,28 @@ async def _insert_node(engine, *, kind, source_id, unit, persons=(), room="", te
             persons=list(persons), text=text))
 
 
-async def _insert_social(engine, *, network="instagram", item, person):
+async def _insert_social(engine, access, *, item, person):
+    from nora.infra.sql.item_registration import (
+        RegistrationScope,
+        RuntimeRevisions,
+        SqlItemRegistration,
+    )
     from nora.infra.sql.schema import SOCIAL_ITEM
+    from nora.policy import Policy
 
     at = datetime(2026, 1, 2, tzinfo=UTC)
+    policy = Policy(())
+    scope = RegistrationScope(policy, None, access=access)
+    registration = SqlItemRegistration(scope, RuntimeRevisions({}, policy, None))
+    assert await scope.person_units(person) == (_MUNIT,)
     async with engine.begin() as conn:
+        planes = await registration.planes(
+            conn, SOCIAL_ITEM, unit=_MUNIT, occurred_at=at, persons=(person,),
+        )
         await conn.execute(sa.insert(SOCIAL_ITEM).values(
-            network=network, item_id=item, person=person,
-            account="generated-account", kind="post", taken_at=at, seen_at=at,
-            origin="poll"))
+            network="instagram", item_id=item, person=person,
+            account="generated-account", source_kind="post", taken_at=at, seen_at=at,
+            origin="poll", **planes))
 
 
 def _mwork(source):
@@ -447,9 +460,9 @@ async def test_managed_social_read_checks_the_live_preference_at_read_time(store
     _records, engine = store
     if engine is None:
         return
-    records, _bindings, registry = await _managed_records(
+    records, _bindings, registry, access = await _managed_records(
         engine, social={_MP: {"display_name": _MP, "social": True}}, members=(_MP,))
-    await _insert_social(engine, item="generated-item", person=_MP)
+    await _insert_social(engine, access, item="generated-item", person=_MP)
     await _insert_node(
         engine, kind="social", source_id="instagram:generated-item",
         unit=_MUNIT, persons=(_MP,), room="signal:generated-managed-room",
@@ -476,9 +489,9 @@ async def test_managed_social_read_is_unavailable_when_the_trait_is_missing(stor
         ({"display_name": _MP}, {"display_name": _MP, "social": "yes"})
     ):
         item_id = f"generated-broken-{i}"
-        records, _bindings, registry = await _managed_records(
+        records, _bindings, registry, access = await _managed_records(
             engine, social={_MP: traits}, members=(_MP,))
-        await _insert_social(engine, item=item_id, person=_MP)
+        await _insert_social(engine, access, item=item_id, person=_MP)
         await _insert_node(
             engine, kind="social", source_id=f"instagram:{item_id}",
             unit=_MUNIT, persons=(_MP,), room="signal:generated-managed-room",
@@ -502,7 +515,7 @@ async def test_managed_source_admission_uses_current_room_membership(store):
     from nora.domain.managed import OutcomeStatus
     from nora.domain.management import Scope, ScopeKind
 
-    records, bindings, _ = await _managed_records(
+    records, bindings, _, _access = await _managed_records(
         engine,
         social={_MP: {"display_name": _MP, "social": True},
                 _MF: {"display_name": _MF, "social": True}},
@@ -533,7 +546,7 @@ async def test_managed_source_admission_denies_unit_and_guild_only_members(store
     from nora.domain.managed import OutcomeStatus
     from nora.domain.management import Scope, ScopeKind
 
-    records, bindings, _ = await _managed_records(
+    records, bindings, _, _access = await _managed_records(
         engine,
         social={_MP: {"display_name": _MP, "social": True},
                 _MF: {"display_name": _MF, "social": True}},
@@ -565,7 +578,7 @@ async def test_managed_admission_folds_a_retired_alias_for_permission(store):
     from nora.domain.managed import OutcomeStatus
 
     former = "generated-managed-former"
-    records, bindings, _ = await _managed_records(
+    records, bindings, _, _access = await _managed_records(
         engine,
         social={_MP: {"display_name": _MP, "social": True},
                 former: {"display_name": former, "social": True}},
@@ -591,7 +604,7 @@ async def test_a_retired_opted_out_identity_still_withholds_social_sources(store
     from nora.domain.managed import OutcomeStatus
 
     former = "generated-managed-former"
-    records, bindings, _ = await _managed_records(
+    records, bindings, _, access = await _managed_records(
         engine,
         social={_MP: {"display_name": _MP, "social": True},
                 former: {"display_name": former, "social": False},
@@ -600,7 +613,7 @@ async def test_a_retired_opted_out_identity_still_withholds_social_sources(store
     )
     assert (await bindings.consolidate(survivor=_MP, former=former)
             ).status is OutcomeStatus.COMPLETE
-    await _insert_social(engine, item="generated-former-item", person=former)
+    await _insert_social(engine, access, item="generated-former-item", person=former)
     await _insert_node(
         engine, kind="social", source_id="instagram:generated-former-item",
         unit=_MUNIT, persons=(former,), room="signal:generated-managed-room",
@@ -608,7 +621,7 @@ async def test_a_retired_opted_out_identity_still_withholds_social_sources(store
     with pytest.raises(ValueError, match="social consent withdrawn"):
         await records.load(_mwork(("social", "instagram:generated-former-item")))
     # Positive control: another member with no opted-out identity reads.
-    await _insert_social(engine, item="generated-live-item", person=_MF)
+    await _insert_social(engine, access, item="generated-live-item", person=_MF)
     await _insert_node(
         engine, kind="social", source_id="instagram:generated-live-item",
         unit=_MUNIT, persons=(_MF,), room="signal:generated-managed-room",
@@ -624,7 +637,7 @@ async def test_managed_authority_outage_is_unavailable_and_recovers(store):
     _records, engine = store
     if engine is None:
         return
-    records, bindings, _ = await _managed_records(
+    records, bindings, _, _access = await _managed_records(
         engine, social={_MP: {"display_name": _MP, "social": True}}, members=(_MP,))
     await _insert_node(
         engine, kind="note", source_id="generated-outage-note", unit=None,

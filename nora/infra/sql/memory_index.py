@@ -588,7 +588,7 @@ def _hidden(i: Any) -> Any:
     st = SOCIAL_ITEM_STATE
     return sa.exists().where(
         st.c.network == i.c.network, st.c.item_id == i.c.item_id,
-        st.c.state.in_(HIDING_STATES),
+        st.c.source_state.in_(HIDING_STATES),
     )
 
 
@@ -599,7 +599,7 @@ def current_place(i: Any) -> Any:
     st = SOCIAL_ITEM_STATE
     placed = sa.and_(
         st.c.network == i.c.network, st.c.item_id == i.c.item_id,
-        st.c.state == PLACE_STATE,
+        st.c.source_state == PLACE_STATE,
     )
     latest = (
         sa.select(st.c.place).where(placed)
@@ -614,7 +614,7 @@ async def _project_social(conn: AsyncConnection, source_id: str) -> None:
     i = SOCIAL_ITEM
     row = (await conn.execute(
         sa.select(
-            i.c.person, i.c.kind, i.c.taken_at, i.c.caption, i.c.media_ref,
+            i.c.person, i.c.source_kind, i.c.taken_at, i.c.caption, i.c.media_ref,
             i.c.collab, current_place(i).label("location"), _hidden(i).label("stated"),
         ).where(i.c.network == network, i.c.item_id == item_id)
     )).first()
@@ -643,7 +643,7 @@ async def _project_social(conn: AsyncConnection, source_id: str) -> None:
     await _upsert_node(
         conn, kind="social", source_id=source_id, persons=persons, at_ms=at_ms,
         text=_text(
-            social_label(network, row.kind, collab=row.collab), row.caption,
+            social_label(network, row.source_kind, collab=row.collab), row.caption,
             *(readings.get(sha, "") for sha in wanted.values()),
         ),
     )
@@ -1437,7 +1437,7 @@ async def _episodes(
     of keys is `rollup_read`'s matching of a citation within its second."""
     table = ROLLUP_OUTING if kind == "outing" else _PRESENCE[kind]
     start = table.c.valid_from_ms if kind == "outing" else table.c.started_ts
-    where: list[Any] = [table.c.build_id == build]
+    where: list[Any] = [table.c.build_id == build, table.c.state == 'live']
     asked = None if keys is None else set(keys)
     if keys is not None:
         parsed = [p for k in keys if (p := _split_key(k)) is not None]
@@ -1454,13 +1454,13 @@ async def _episodes(
     if kind == "outing":
         stmt = sa.select(
             table.c.unit, table.c.persons, table.c.valid_from_ms.label("start"),
-            table.c.valid_to_ms.label("end"), table.c.lineage, table.c.district,
+            table.c.valid_to_ms.label("end"), table.c.build_lineage, table.c.district,
             table.c.city,
         )
     else:
         stmt = sa.select(
             table.c.subject_id, table.c.started_ts.label("start"),
-            table.c.ended_ts.label("end"), table.c.lineage,
+            table.c.ended_ts.label("end"), table.c.build_lineage,
         )
     out: dict[str, _Episode] = {}
     for r in await conn.execute(stmt.where(*where).order_by(start, table.c.id)):
@@ -1472,7 +1472,7 @@ async def _episodes(
         key = episode_key(subject, r.start, r.end)
         if asked is None or key in asked:
             out.setdefault(key, _Episode(
-                kind, key, unit, persons, r.start, r.end, r.lineage,
+                kind, key, unit, persons, r.start, r.end, r.build_lineage,
                 *((r.district, r.city) if kind == "outing" else ()),
             ))
     return list(out.values())

@@ -26,18 +26,25 @@ from dataclasses import dataclass
 from aiohttp import ClientSession
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.access import IdentityAccess
 from nora.config import Config
 from nora.config_reload import FileReload, LivePersons, RestartRequiredError
 from nora.domain.live import LiveSequence
 from nora.domain.managed import Verdict
 from nora.infra.life360 import Life360Client
 from nora.infra.sql import create_sql_engine, run_migrations
+from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
+from nora.infra.sql.item_registration import (
+    RegistrationScope,
+    RuntimeRevisions,
+    SqlItemRegistration,
+)
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.source_health import SqlSourceHealthLog
 from nora.obs.metrics import Metrics
 from nora.people import ManagedPresenceAccounts
 from nora.persons import Persons, PersonsError, load_persons
-from nora.policy import load_policy
+from nora.policy import Policy, PolicyError, load_policy
 from nora.presence.collector import CircleSpec, PresenceCollector
 
 log = logging.getLogger("nora.presence.composition")
@@ -90,11 +97,12 @@ class PresenceDependencies:
 
 def _file_circles(
     cfg: Config, metrics: Metrics,
-) -> tuple[Sequence[CircleSpec], FileReload[Persons]]:
+) -> tuple[Sequence[CircleSpec], FileReload[Persons], Policy | None, LivePersons]:
     try:
         persons = LivePersons(load_persons(cfg.identity_file))
-    except PersonsError as exc:
-        raise PresenceStartupError(f"identity.toml error: {exc}") from exc
+        policy = load_policy(cfg.policy_file) if cfg.policy_file.exists() else None
+    except (PersonsError, PolicyError) as exc:
+        raise PresenceStartupError(f"identity/policy error: {exc}") from exc
     boot_bindings = persons.honcho_workspaces
 
     def validate_persons(candidate: Persons) -> None:
@@ -110,12 +118,13 @@ def _file_circles(
     )
     circles = LiveSequence(lambda: _circles_from_identity(persons))
 
-    return circles, identity_reload
+    return circles, identity_reload, policy, persons
 
 
 def build_collector(
     cfg: Config, *, managed_accounts: ManagedPresenceAccounts | None = None,
     engine: AsyncEngine | None = None,
+    access: IdentityAccess | None = None, policy: Policy | None = None,
 ) -> PresenceDependencies:
     """Build the collector object graph from `cfg`, or an inert one when
     presence is disabled."""
@@ -128,12 +137,13 @@ def build_collector(
         )
 
     identity_reload = None
+    persons = None
     if cfg.identity.backend == "managed":
         if managed_accounts is None or engine is None:
             raise PresenceStartupError("managed presence authority is unavailable")
         circles: Sequence[CircleSpec] = _managed_circles(cfg)
     else:
-        circles, identity_reload = _file_circles(cfg, metrics)
+        circles, identity_reload, policy, persons = _file_circles(cfg, metrics)
 
     credentials = cfg.credentials
     credential = credentials.get(presence.client_credential_env, "")
@@ -169,10 +179,16 @@ def build_collector(
         except Exception as exc:  # noqa: BLE001 — bounded startup error
             raise PresenceStartupError(f"migration failed ({type(exc).__name__})") from None
         engine = create_sql_engine(database_url)
+    registration = SqlItemRegistration(
+        RegistrationScope(policy, persons, access=access),
+        RuntimeRevisions(cfg.model_dump(), policy, persons),
+    ) if policy is not None else None
     store = PresenceStore(
         engine,
         retention_days=presence.retention_days,
         metrics=metrics,
+        registration=registration,
+        aggregate_graph=SqlCognitiveGraph(engine),
     )
     client = Life360Client(
         client_credential=credential,
@@ -194,7 +210,7 @@ def build_collector(
         metrics=metrics,
         # Every poll's outcome, as Record: what
         # lets a later step prove «the collector was healthy for the span».
-        health_log=SqlSourceHealthLog(engine),
+        health_log=SqlSourceHealthLog(engine, registration=registration),
         managed_accounts=managed_accounts,
     )
     log.info(
@@ -251,7 +267,7 @@ async def open_collector(cfg: Config) -> AsyncIterator[PresenceDependencies]:
                 state = await services.registry.identity_state(external_id="boot-probe")
                 if state.verdict is Verdict.UNAVAILABLE:
                     raise PresenceStartupError("managed identity source is unavailable")
-                deps = build_collector(cfg, engine=engine,
+                deps = build_collector(cfg, engine=engine, access=services.access, policy=policy,
                     managed_accounts=ManagedPresenceAccounts(services.bindings, services.registry))
             except Exception as exc:  # noqa: BLE001 — no credential-bearing errors escape startup
                 raise PresenceStartupError(

@@ -69,8 +69,8 @@ async def _tie_row(engine) -> dict:
 async def test_step_2as_writer_stores_one_array_of_triples_for_the_row(engine):
     """The shape both sides agree on, pinned at the writer."""
     row = await _tie_row(engine)
-    assert row["lineage"] == [["message", None, "signal:ROOM-A"]]
-    lineage = Lineage.from_json(row["lineage"])
+    assert row["build_lineage"] == [["message", None, "signal:ROOM-A"]]
+    lineage = Lineage.from_json(row["build_lineage"])
     assert lineage.section(ROW) == (message("signal:ROOM-A"),)
 
 
@@ -78,7 +78,7 @@ async def test_a_rollup_row_passes_in_a_room_of_its_unit_and_is_refused_outside_
     """Read as the row's one set, not as malformed: shown in room A, where it
     was said, and in room B, whose people are all A's; refused in room D, of
     another unit, though D lists the same two people."""
-    lineage = Lineage.from_json((await _tie_row(engine))["lineage"])
+    lineage = Lineage.from_json((await _tie_row(engine))["build_lineage"])
     entries = lineage.section(ROW)
     assert section_permits(entries, _in(A), origin=None)
     assert section_permits(entries, _in(B), origin=None)

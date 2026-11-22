@@ -46,11 +46,11 @@ _RAW = re.compile(
 #: `path::function` -> why that write to an indexed table projects nothing.
 #: A new entry needs a reason a reader of the index would accept.
 _NOT_PROJECTED: dict[str, str] = {
-    "nora/infra/sql/mobility.py::relink_stays": (
+    "nora/infra/sql/mobility_writes.py::relink_stays": (
         "sets only a stay's place_id; no node carries a place (a label can be "
         "a secret saved place, R-35)"
     ),
-    "nora/infra/sql/mobility.py::relink_trips": (
+    "nora/infra/sql/mobility_writes.py::relink_trips": (
         "sets only a trip's corridor_id, which no node carries"
     ),
     "nora/infra/sql/rollups.py::create_build": "a new build is `building`: it has no nodes",
@@ -65,6 +65,15 @@ _NOT_PROJECTED: dict[str, str] = {
 #: function must still call the projector. `path::function` -> the write.
 _UNSEEN_WRITERS: dict[str, str] = {
     "nora/infra/sql/rollups.py::apply": "rollup_outing, through _diff_apply's `table`",
+    "nora/infra/sql/mobility_writes.py::commit_fold": (
+        "presence_stays and presence_trips, through store_presence's `table`"
+    ),
+    "nora/infra/sql/social_item_writes.py::record_state": (
+        "social_item_state, through _append_item_state and _record_at's `table`"
+    ),
+    "nora/infra/sql/social_item_writes.py::record_place": (
+        "social_item_state, through _append_item_state and _record_at's `table`"
+    ),
 }
 
 
@@ -250,10 +259,8 @@ def test_the_scan_sees_the_known_projecting_writers() -> None:
         ("nora/infra/sql/gatherings.py", "add_rsvp"),
         ("nora/infra/sql/culture.py", "append"),
         ("nora/subject/knowledge.py", "_seed_note_with_id"),
-        ("nora/infra/sql/mobility.py", "commit_fold"),
         ("nora/infra/sql/rollups.py", "switch_build"),
-        ("nora/infra/sql/social_stream.py", "insert_item"),
-        ("nora/infra/sql/social_stream.py", "record_state"),
+        ("nora/infra/sql/social_item_writes.py", "insert_item"),
         ("nora/infra/sql/social_stream.py", "record_perception"),
         ("nora/infra/sql/profile.py", "record_dispute"),
         ("nora/infra/sql/profile.py", "record_verdict"),
@@ -262,9 +269,7 @@ def test_the_scan_sees_the_known_projecting_writers() -> None:
 
 
 def test_a_write_the_scan_cannot_see_projects_too() -> None:
-    """`SqlRollupStore.apply` writes `rollup_outing` through a helper whose
-    table is a loop variable, so the scan above never sees it; it is held to
-    the same rule by name."""
+    """Writers using helpers with a variable table still call the projector."""
     missing = []
     for site in _UNSEEN_WRITERS:
         path, _, name = site.partition("::")
