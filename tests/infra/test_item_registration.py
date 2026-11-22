@@ -14,7 +14,7 @@ from nora.domain.presence import PresenceFix, WireState
 from nora.domain.social_stream import ItemCounts, SocialItem
 from nora.domain.tool_call_log import ToolCallLogEntry
 from nora.infra.sql.audit import SqlRecordStore
-from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY, INTENTION, REGISTRY
+from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY, GRAPH_STIMULUS, INTENTION, REGISTRY
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.computer_events import SqlComputerEventStore
 from nora.infra.sql.engine import create_sql_engine
@@ -430,3 +430,29 @@ async def test_one_item_per_observing_unit(engine: AsyncEngine, name: str) -> No
             network="instagram", since=datetime(1970, 1, 1, tzinfo=UTC),
         )
         assert len(calls) == 1
+
+
+async def _stimuli(engine: AsyncEngine, source: str) -> list[tuple[str, str]]:
+    stimulus = GRAPH_STIMULUS.c
+    async with engine.connect() as conn:
+        return [tuple(row) for row in await conn.execute(
+            sa.select(stimulus.unit, stimulus.kind).where(stimulus.source == source),
+        )]
+
+
+@pytest.mark.parametrize("name", ["source_health", "social_poll"])
+async def test_a_routine_probe_registers_without_waking_its_unit(
+    engine: AsyncEngine, name: str,
+) -> None:
+    await _Writer(engine, _registration()).write(name)
+    table = METADATA.tables[name]
+    async with engine.connect() as conn:
+        assert (await conn.execute(sa.select(table.c.unit))).scalars().all() == [_UNIT]
+    assert await _stimuli(engine, name) == []
+
+
+async def test_a_health_transition_wakes_its_unit(engine: AsyncEngine) -> None:
+    await SqlSourceHealthLog(engine, registration=_registration()).record(
+        source="presence", scope=_CIRCLE, event="transition", outcome="down", at_ms=_MS,
+    )
+    assert await _stimuli(engine, "source_health") == [(_UNIT, "new_item")]

@@ -63,7 +63,8 @@ class SqlSourceHealthLog:
         registration = self._registration
         values = await registration.planes(
             conn, SOURCE_HEALTH, unit=unit, occurred_at=epoch_ms(at_ms),
-            own=silent_scope is not None,
+            # A poll is a routine probe, read by health readers; only a transition wakes a unit.
+            own=silent_scope is not None or event == "poll",
         ) if registration else {}
         if silent_scope is not None:
             values.update(silent_scope)

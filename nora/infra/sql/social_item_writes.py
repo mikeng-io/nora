@@ -123,6 +123,7 @@ class SocialItemWrites:
                 **await reg.planes(
                     conn, table, unit=unit, occurred_at=now, persons=(person,),
                     key=(values["id"],) if "id" in values else None,
+                    own=table is SOCIAL_POLL,  # a routine probe; its items are the stimulus
                 ),
             }
         await conn.execute(sa.insert(table).values(values))
