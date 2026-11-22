@@ -14,6 +14,7 @@ from nora.agent.lineage import LineagePolicy
 from nora.domain.lineage import ROW, Lineage, LineageEntry, LiveRoom, message
 from nora.domain.models import PersonRef
 from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, ENTITY, REGISTRY
+from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import MESSAGES, SOCIAL_ITEM
@@ -243,3 +244,23 @@ async def test_scope_precedes_the_lexical_candidate_bound(scenario) -> None:
     result = await scenario.service().retrieve(READ, RetrievalAnchors(query=term), bounds)
     assert result.status == "ok"
     assert {row.graph_id for row in result.rows} == set(keep)
+
+
+async def test_a_withdrawn_message_is_never_read_or_found_even_as_of_before_it(scenario) -> None:
+    term = "Lantern withdrawal fixture"
+    await scenario.item("withdrawn", term)
+    await scenario.item("kept", term)
+    before = await scenario.now()
+    async with scenario.engine.connect() as conn:
+        message_id = await conn.scalar(sa.select(MESSAGES.c.id).where(
+            MESSAGES.c.graph_id == "withdrawn",
+        ))
+    assert await SqlRecordStore(scenario.engine).hide_message(message_id=message_id, now_ms=1)
+    service = scenario.service()
+
+    for anchors, as_of in (
+        (references("withdrawn", "kept"), None), (RetrievalAnchors(query=term), None),
+        (references("withdrawn", "kept"), before),
+    ):
+        result = await service.retrieve(READ, anchors, BOUNDS, as_of=as_of)
+        assert [row.graph_id for row in result.rows] == ["kept"]

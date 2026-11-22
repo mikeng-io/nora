@@ -35,6 +35,7 @@ from nora.infra.sql.cognitive_graph_schema import (
     INTENTION,
     REGISTRY,
 )
+from nora.infra.sql.schema import MESSAGES
 
 RowData = Mapping[str, Any] | sa.RowMapping
 
@@ -198,7 +199,17 @@ def visible_to_reads(
     targets: list[sa.ColumnElement[str]] = [identity]
     if "support_count" in c or "contradiction" in c:
         targets.append(c.claim_id)
+    withdrawn = MESSAGES.alias().c
+    not_withdrawn: sa.ColumnElement[bool] = sa.true()
+    if "hidden_at" in c:
+        not_withdrawn = c.hidden_at.is_(None)
+    elif "image" in c:  # withdrawal is current: no as-of image shows a message withdrawn since
+        not_withdrawn = ~sa.exists().where(
+            withdrawn.graph_id == identity, withdrawn.unit == c.unit,
+            withdrawn.hidden_at.is_not(None),
+        )
     return sa.and_(
+        not_withdrawn,
         sa.exists().where(
             registry.id == identity, registry.unit == c.unit, registry.state == registry_state,
         ),
