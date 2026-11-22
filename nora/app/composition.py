@@ -1435,7 +1435,7 @@ async def _compose_dependencies(
         social_perception=social_perception,
         story_expiry=story_expiry,
         graph_observe=graph_observe(engine, op_clock, metrics, fetch_client or search_client,
-            analytics=cfg.analytics, room_slots=WakeRoomSlots(policy, slots)),
+            analytics=cfg.analytics, room_slots=WakeRoomSlots(allowlist, slots)),
         graph_batches=(
             GraphBatchProducer(engine, metrics=metrics) if cfg.memory.graph.enabled else None
         ),
