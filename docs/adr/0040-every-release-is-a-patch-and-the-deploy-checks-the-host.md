@@ -26,7 +26,9 @@ gate a release on a breaking marker.
 - Minor is a milestone the operator names; major is a product generation. Both
   are selected only by owner dispatch at an exact full master SHA.
 - `!` / `BREAKING CHANGE:` now means "the host must change": the release lists
-  it under ⚠ BREAKING CHANGES with what to do, and still ships.
+  it under ⚠ BREAKING CHANGES, linked to its commit, whose footer says what to
+  do; it still ships. The release PR body carries no free commit text, because
+  the publisher parses it.
 - Host readiness is the deploy's check, not the version's. A missing required
   setting refuses the deploy before any container is replaced
   (`docker-compose.yml` `${VAR:?…}` interpolation and Nora's config validation),
@@ -39,8 +41,10 @@ gate a release on a breaking marker.
 - Worse: minor no longer records capability milestones unless the operator
   dispatches one, so a version number says less about scope than before.
 - Worse: a host change the deploy cannot detect (for example a reverse-proxy
-  route) ships and deploys as soon as it merges; its footer is the only warning.
+  route) ships and deploys as soon as it merges; its footer, one click from the
+  release notes, is the only warning.
   Read the ⚠ section of each release before relying on a deploy.
 - Enforced by `tests/architecture/test_release_plan.py`
   (`test_a_break_releases_automatically_as_a_patch_listed_as_breaking`,
-  `test_no_footer_selects_minor_only_the_owner_does`).
+  `test_no_footer_selects_minor_only_the_owner_does`,
+  `test_the_breaking_section_links_the_commit_and_copies_no_footer_text`).

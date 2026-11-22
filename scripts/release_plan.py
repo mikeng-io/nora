@@ -31,10 +31,6 @@ MANIFEST = ".release-please-manifest.json"
 PR_HEAD = "release-please--branches--master--components--nora"
 CONVENTIONAL = re.compile(r"^(?P<type>[a-z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?: (?P<text>.+)$")
 BREAKING_FOOTER = re.compile(r"^BREAKING[ -]CHANGE:", re.M)
-# The footer's text up to the next trailer (`Co-Authored-By:` and the like) or the end.
-BREAKING_NOTE = re.compile(
-    r"^BREAKING[ -]CHANGE:[ \t]*(.*?)(?=^[A-Za-z][A-Za-z-]*: |\Z)", re.M | re.S
-)
 SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 INTRO = ":robot: I have created a release *beep* *boop*\n---\n\n\n"
 OUTRO = (
@@ -51,7 +47,6 @@ class Entry:
     scope: str
     text: str
     breaking: bool
-    note: str = ""
 
 
 def entries(base: str, head: str = "HEAD") -> list[Entry]:
@@ -65,9 +60,7 @@ def entries(base: str, head: str = "HEAD") -> list[Entry]:
         else:
             kind = "revert" if subject.startswith('Revert "') else "chore"
             scope, text, breaking = "", subject, bool(BREAKING_FOOTER.search(message))
-        found = BREAKING_NOTE.search(message)
-        note = " ".join(found.group(1).split()) if found else ""
-        result.append(Entry(sha, kind, scope, text, breaking, note))
+        result.append(Entry(sha, kind, scope, text, breaking))
     return result
 
 
@@ -93,12 +86,10 @@ def sections() -> list[tuple[str, str]]:
     return [(s["type"], s["section"]) for s in config["changelog-sections"] if not s.get("hidden")]
 
 
-def line(entry: Entry, repo: str, note: bool = False) -> str:
+def line(entry: Entry, repo: str) -> str:
     scope = f"**{entry.scope}:** " if entry.scope else ""
     link = f"([{entry.sha[:7]}](https://github.com/{repo}/commit/{entry.sha}))"
-    text = f"* {scope}{entry.text} {link}"
-    # The breaking section says what the host must do, not only what changed.
-    return text + f"\n  * Host change: {entry.note}" if note and entry.note else text
+    return f"* {scope}{entry.text} {link}"
 
 
 def render(previous: str, version: str, found: list[Entry], repo: str, today: str) -> str:
@@ -112,9 +103,7 @@ def render(previous: str, version: str, found: list[Entry], repo: str, today: st
     for title, group in groups:
         if group:
             ordered = sorted(group, key=lambda e: (not e.scope, e.scope, e.text))
-            breaking = title == "⚠ BREAKING CHANGES"
-            lines = "\n".join(line(e, repo, breaking) for e in ordered)
-            out += f"\n\n### {title}\n\n" + lines + "\n"
+            out += f"\n\n### {title}\n\n" + "\n".join(line(e, repo) for e in ordered) + "\n"
     return out
 
 

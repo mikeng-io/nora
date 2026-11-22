@@ -33,7 +33,7 @@ remain included. `Release-As:` is unsupported. Existing versions and tags stay.
 
 A change that needs the host to change marks it with `!` or a
 `BREAKING CHANGE:` footer that says what the host must do. The release lists it
-under ⚠ BREAKING CHANGES and ships as a patch. Readiness is the deploy's check,
+under ⚠ BREAKING CHANGES, linked to that commit, and ships as a patch. Readiness is the deploy's check,
 not the version's: a missing required setting refuses the deploy before any
 container is replaced (`docker-compose.yml` `${VAR:?…}` interpolation and Nora's
 config validation, `nora-deploy`), so an unready host blocks only its own deploy.
