@@ -126,3 +126,42 @@ def test_a_guard_abandoned_on_a_dead_loop_goes_inert() -> None:
     assert socket.socket.connect is connect
     assert subprocess.Popen.__init__ is popen_init
     sock.close()
+
+
+def test_a_dead_owner_finalized_under_a_live_successor_cannot_strip_it() -> None:
+    """Entry retires the dead owner's patch stack, so a predecessor's exit
+    finalized while a successor is live is a no-op: it cannot restore the
+    originals underneath the live guard, and the successor's own exit
+    restores the real surfaces, not the zombie's wrappers."""
+    connect = socket.socket.connect
+
+    async def suspend_mid_exit() -> tuple[IsolatedServices, Any, Any]:
+        environment = await _open()
+        held = asyncio.ensure_future(_uncancellable())
+        exit_coroutine = environment.__aexit__(None, None, None)
+        exit_coroutine.send(None)
+        return environment, exit_coroutine, held
+
+    loop = asyncio.new_event_loop()
+    _dead, exit_coroutine, _held = loop.run_until_complete(suspend_mid_exit())
+    loop.close()
+
+    async def live_successor() -> None:
+        environment = await _open()
+        try:
+            # The dead predecessor's exit finalizes UNDER the live guard.
+            exit_coroutine.close()
+            assert getattr(socket.socket.connect,
+                           "_nora_eval_environment", None) is environment
+            sock = socket.socket()
+            with pytest.raises(PermissionError):
+                sock.connect(("10.255.255.1", 1))
+            sock.close()
+        finally:
+            await environment.__aexit__(None, None, None)
+
+    try:
+        asyncio.run(live_successor())
+    finally:
+        _dead._unwind_guard()
+    assert socket.socket.connect is connect

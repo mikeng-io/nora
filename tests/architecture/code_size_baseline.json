@@ -880,7 +880,7 @@
  },
  "nora/engagement/pipeline.py": {
   "comment_blocks": 42,
-  "file_lines": 1245,
+  "file_lines": 1262,
   "functions": {
    "EngagementPipeline._run_turn": 670
   },
@@ -1881,7 +1881,7 @@
   "internal_docstrings": 1
  },
  "nora/subject/environment.py": {
-  "comment_blocks": 1,
+  "comment_blocks": 2,
   "internal_docstrings": 1
  },
  "nora/subject/evidence.py": {

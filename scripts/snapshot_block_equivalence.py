@@ -43,8 +43,9 @@ an evidence error, not a silent pass.
 
 It prints the blocks compared, excepted (memory: `peer_card`,
 `peer_history`; Live: `tool_catalogue`, `presence`) and any that differ, and
-exits 0 only when every compared block is byte-identical and at least one
-was compared. A doctrine, Dreamer or deploy load not recorded by `--at`
+exits 0 only when every compared block is byte-identical, at least one was
+compared, and no compared block reports `status="unavailable"`. A doctrine,
+Dreamer or deploy load not recorded by `--at`
 is named in the output; a missing `config.toml`, `policy.toml` or
 `identity.toml` load exits 2 because the subject cannot be bound to what
 was actually in force.
@@ -181,14 +182,15 @@ async def _main(args: argparse.Namespace) -> int:
                                 sender_id=row.sender_id,
                                 sender_name=row.sender_name,
                                 timestamp=row.ts, body=row.body or "", raw={},
-                            ), now=spec.now or at)
+                            ), now=spec.now or at, row_id=args.message_id)
                     finally:
                         await _close(subject)
     diff = compare_blocks(recorded, restored)
     print(f"compared: {', '.join(diff.compared) or '(none)'}")
     print(f"excepted: {', '.join(diff.excepted) or '(none)'}")
     for label, names in (("DIFFER", diff.differs), ("MISSING from the restore", diff.missing),
-                         ("EXTRA in the restore", diff.extra)):
+                         ("EXTRA in the restore", diff.extra),
+                         ("UNAVAILABLE", diff.unavailable)):
         if names:
             print(f"{label}: {', '.join(names)}")
     print("EQUAL" if diff.equal else "NOT EQUAL")

@@ -21,7 +21,9 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from dataclasses import replace
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 import sqlalchemy as sa
@@ -281,9 +283,9 @@ async def test_a_restore_renders_the_blocks_the_turn_was_handed(
             sender_id="+85200000001", sender_name="Jordan", timestamp=BEFORE_MS,
             body="@nora which bike was it?", raw={},
         )
-        await live.deps.audit.append(message=tag, person_id="")
+        tag_id = await live.deps.audit.append(message=tag, person_id="")
         await _cite_tag(graph, engine)
-        recorded = await render_tag_blocks(live, message=tag, now=NOW)
+        recorded = await render_tag_blocks(live, message=tag, now=NOW, row_id=tag_id)
         # The open intention and the folded position are Standing now; the
         # room and unit accounts are profile presentations
         # (design/cognition/context.md's «Today's blocks» table).
@@ -313,7 +315,7 @@ async def test_a_restore_renders_the_blocks_the_turn_was_handed(
                 "AND body = :b"
             ), {"c": ROOM[1], "b": "@nora which bike was it?"})).scalar_one()
         await _graph_moves(graph, at_ms=BEFORE_MS - MINUTE, item_id=item_id)
-        moved = await render_tag_blocks(live, message=tag, now=NOW)
+        moved = await render_tag_blocks(live, message=tag, now=NOW, row_id=tag_id)
 
     # Positive control: what the stores hold NOW is not what the turn saw.
     control = compare_blocks(recorded, moved)
@@ -323,7 +325,8 @@ async def test_a_restore_renders_the_blocks_the_turn_was_handed(
         sandbox_as_of(clean_pg_url, at, template=pg_template) as (url, _report),
         offline_subject(_spec(url, src, tmp_path / "restored")) as restored_subject,
     ):
-        restored = await render_tag_blocks(restored_subject, message=tag, now=NOW)
+        restored = await render_tag_blocks(
+            restored_subject, message=tag, now=NOW, row_id=tag_id)
 
     diff = compare_blocks(recorded, restored)
     assert set(diff.compared) >= MUST_COMPARE, diff
@@ -354,3 +357,60 @@ def test_blocks_of_cuts_a_prefill_into_its_blocks() -> None:
     assert blocks["graph_profile of=a:room:b"].endswith("</graph_profile>")
     with pytest.raises(ValueError, match="twice"):
         blocks_of(text + '<transcript description="y">\nagain\n</transcript>\n')
+
+
+def test_an_unavailable_presentation_is_not_an_empty_one() -> None:
+    """A self-closed block carries its status: a timed-out read and a
+    successful empty read differ, so the gate cannot call them equal."""
+    recorded = blocks_of(
+        "<transcript>\nx\n</transcript>\n"
+        '<graph_standing status="unavailable" cause="graph_read_timeout" />')
+    restored = blocks_of("<transcript>\nx\n</transcript>\n<graph_standing />")
+    diff = compare_blocks(recorded, restored)
+    assert "graph_standing" in diff.differs
+    assert "graph_standing" in diff.unavailable
+    assert not diff.equal
+
+
+def test_unavailable_on_both_sides_is_still_unavailable() -> None:
+    """Identical `status="unavailable"` text is still an unavailable read:
+    the gate reports it, never EQUAL, never absent."""
+    text = ("<transcript>\nx\n</transcript>\n"
+            '<graph_standing status="unavailable" cause="graph_read_timeout" />')
+    diff = compare_blocks(blocks_of(text), blocks_of(text))
+    assert diff.unavailable == ("graph_standing",)
+    assert not diff.equal
+
+
+async def test_the_snapshot_render_forwards_the_row_and_a_recorded_roster(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """`render_tag_blocks` hands the called pass the SAME inputs the live
+    pass gets — the tagging row's `messages.id` and a `Room` on the recorded
+    roster — through `called_pass_prompt`, not the pipeline's privates."""
+    from nora.subject.sandbox_roster import RecordedRoster
+
+    tag = NormalizedMessage(
+        platform="signal", conversation_id="room-1", conversation_type="group",
+        sender_id="+85200000001", sender_name="Jordan",
+        timestamp=1_700_000_000_000, body="@nora hi", raw={})
+    ctx = SimpleNamespace(message=tag, transcript=(), tagger=None,
+                          room_members=frozenset(), tag_id="t")
+    monkeypatch.setattr("nora.subject.as_of.engagement_floor",
+                        lambda *a, **k: ())
+    prompt = AsyncMock(
+        return_value=([], "<transcript>\nx\n</transcript>", frozenset()))
+    subject = SimpleNamespace(
+        database_url="postgresql:///snap",
+        cfg=SimpleNamespace(doctrine=SimpleNamespace(display_name="nora"),
+                            store=SimpleNamespace(context_window=50)),
+        deps=SimpleNamespace(
+            assembler=SimpleNamespace(assemble=AsyncMock(return_value=ctx)),
+            access=None,
+            registry=SimpleNamespace(
+                identity_for=lambda _p: SimpleNamespace(aliases=())),
+            engagement=SimpleNamespace(called_pass_prompt=prompt)))
+    await render_tag_blocks(subject, message=tag, now=datetime.now(UTC),
+                            row_id=42)
+    kwargs = prompt.await_args.kwargs
+    assert kwargs["row_id"] == 42
+    assert isinstance(kwargs["room"]._roster_source, RecordedRoster)

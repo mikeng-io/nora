@@ -232,9 +232,15 @@ class IsolatedServices:
         if self._active or self._runners:
             raise RuntimeError("an evaluation environment cannot be re-entered")
         holder = getattr(socket.socket.connect, "_nora_eval_environment", None)
-        if holder is not None and not holder._released():
-            raise RuntimeError("evaluation cases must not share a network context"
-                               + (f"; held by {holder._case}" if holder._case else ""))
+        if holder is not None:
+            if not holder._released():
+                raise RuntimeError("evaluation cases must not share a network context"
+                                   + (f"; held by {holder._case}" if holder._case else ""))
+            # A dead owner's stack is retired BEFORE this case patches, so a
+            # late-finalized predecessor exit cannot restore the originals
+            # underneath a live guard, and this case captures the real
+            # surfaces rather than the zombie's wrappers.
+            holder._unwind_guard()
         try:
             self._case = os.environ.get("PYTEST_CURRENT_TEST", "")
             # OpenAI's SDK lazily reads platform.platform() for its user-agent.

@@ -169,7 +169,8 @@ async def test_the_block_gate_runs_the_migrated_path_end_to_end(
                 finally:
                     await engine.dispose()
                 now = datetime.fromtimestamp(before_ms / 1000, tz=UTC)
-                recorded = await render_tag_blocks(live, message=tag, now=now)
+                recorded = await render_tag_blocks(
+                    live, message=tag, now=now, row_id=tag_id)
             finally:
                 await _close(live)
         prefill_text = "\n".join(recorded.values())
@@ -188,6 +189,9 @@ async def test_the_block_gate_runs_the_migrated_path_end_to_end(
         compared = next(
             line for line in out.splitlines() if line.startswith("compared:"))
         assert "(none)" not in compared
+        # The seeded room position must be among the compared blocks: a
+        # transcript-only comparison cannot pass this gate.
+        assert "graph_standing" in compared
         assert "EQUAL" in out.splitlines()[-1]
 
         # Canonical evidence: the run started and settled inside

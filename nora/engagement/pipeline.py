@@ -78,7 +78,7 @@ import asyncio
 import dataclasses
 import logging
 import time
-from collections.abc import Awaitable, Callable, Coroutine, Mapping
+from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from contextlib import ExitStack
 from datetime import datetime
 from typing import Any
@@ -92,6 +92,7 @@ from nora.agent.prefill import engagement_floor
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room, trigger_message_ids
 from nora.domain import audience as audience_names
+from nora.domain.blocks import ContextBlock
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.external_files import render_file_links
 from nora.domain.framing import TAG_HEADER
@@ -294,6 +295,27 @@ class EngagementPipeline:
         self._slots = slots
         # Opaque area collaborator; absent where room management is not wired.
         self._room_commands = room_commands
+
+    async def called_pass_prompt(
+        self, ctx: TagContext, *, floor: Sequence[ContextBlock],
+        display_name: str, now: datetime, header: str,
+        row_id: int | None = None, room: Room | None = None,
+    ) -> tuple[list[dict[str, Any]], str, frozenset[str]]:
+        """The `called` pass's prompt, for one assembled `ctx`.
+
+        The single entry for this render: the tag pipeline calls it inside
+        the turn and `nora.subject.as_of.render_tag_blocks` calls it from a
+        restore, both through this pipeline rather than at `_graph`/`_policy`
+        — the room's unit and the row/room inputs cannot drift between the
+        two callers.
+        """
+        msg = ctx.message
+        convo = self._policy.conversation(msg.platform, msg.conversation_id)
+        return await self._graph.prompt(
+            "called", ctx, floor=floor, unit=convo.unit if convo else None,
+            display_name=display_name, now=now, header=header,
+            row_id=row_id, room=room,
+        )
 
     def _adapter_for(self, platform: str) -> Any:
         """The adapter this tag's platform belongs to, or a hard failure.
@@ -723,10 +745,9 @@ class EngagementPipeline:
                 ctx, display_name=self._display_name, tagger_name=tagger_name, now=now,
                 context_window=self._context_window, catalogue=surface.prompt_catalogue,
             )
-            pre_fill, tag_message, shown = await self._graph.prompt(
-                "called", ctx, floor=floor, unit=convo.unit if convo else None,
-                display_name=self._display_name, now=now, header=TAG_HEADER,
-                row_id=request.message_row_id, room=room,
+            pre_fill, tag_message, shown = await self.called_pass_prompt(
+                ctx, floor=floor, display_name=self._display_name, now=now,
+                header=TAG_HEADER, row_id=request.message_row_id, room=room,
             )
             seed_pass_shown(shown)
 
