@@ -382,6 +382,41 @@ def test_unavailable_on_both_sides_is_still_unavailable() -> None:
     assert not diff.equal
 
 
+def test_a_quoted_status_string_is_not_the_blocks_status() -> None:
+    """A message body quoting `status="unavailable"` is content, not the
+    block's status: the same transcript compared with itself reads equal."""
+    from nora.agent.prefill import render_transcript
+    from nora.domain.models import DeliveryStatus, TranscriptRow
+
+    rows = render_transcript(
+        [TranscriptRow(
+            id=1, sender_id="+85200000001", sender_name="Jordan", ts=1_700_000_000_000,
+            body='The exporter printed status="unavailable" yesterday',
+            is_nora=False, delivery_status=DeliveryStatus.SENT, raw_json=None)],
+        display_name="nora", now=datetime.fromtimestamp(1_700_000_000, tz=UTC))
+    text = f"<transcript>\n{rows}\n</transcript>"
+    diff = compare_blocks(blocks_of(text), blocks_of(text))
+    assert diff.unavailable == ()
+    assert diff.equal
+
+
+def test_a_nested_marker_is_not_a_block() -> None:
+    """`<source_reads unavailable/>` inside a transcript body is a marker of
+    the block it sits in, not a top-level block — the count must not gain it."""
+    from nora.agent.prefill import render_transcript
+    from nora.domain.models import DeliveryStatus, TranscriptRow
+
+    rows = render_transcript(
+        [TranscriptRow(
+            id=1, sender_id="+85200000001", sender_name="Jordan", ts=1_700_000_000_000,
+            body="hi", is_nora=False, delivery_status=DeliveryStatus.SENT,
+            raw_json=None)],
+        display_name="nora", now=datetime.fromtimestamp(1_700_000_000, tz=UTC))
+    text = f"<transcript>\n{rows}\n<source_reads unavailable/>\n</transcript>"
+    blocks = blocks_of(text)
+    assert list(blocks) == ["transcript"]
+
+
 async def test_the_snapshot_render_forwards_the_row_and_a_recorded_roster(
         monkeypatch: pytest.MonkeyPatch) -> None:
     """`render_tag_blocks` hands the called pass the SAME inputs the live

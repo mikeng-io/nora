@@ -83,8 +83,11 @@ def blocks_of(prefill_text: str) -> dict[str, str]:
     other duplicate fails closed rather than keeping one of them.
     """
     out: dict[str, str] = {}
-    for match in (*_BLOCK.finditer(prefill_text),
-                  *_PRESENTATION.finditer(prefill_text)):
+    blocks = list(_BLOCK.finditer(prefill_text))
+    spans = [m.span() for m in blocks]
+    top_level = (m for m in _PRESENTATION.finditer(prefill_text)
+                 if not any(start <= m.start() < end for start, end in spans))
+    for match in (*blocks, *top_level):
         name, attrs = match.group(1), match.group(2) or ""
         key = name
         if name == "graph_profile" and (of := _OF.search(attrs)):
@@ -93,6 +96,12 @@ def blocks_of(prefill_text: str) -> dict[str, str]:
             raise ValueError(f"block {key!r} appears twice; this is not one prefill")
         out[key] = match.group(0)
     return out
+
+
+def _opening_tag(block_text: str) -> str:
+    """The block's own opening tag, where its status attribute lives."""
+    end = block_text.find(">")
+    return block_text if end == -1 else block_text[:end + 1]
 
 
 async def render_tag_blocks(
@@ -180,6 +189,6 @@ def compare_blocks(recorded: Mapping[str, str], restored: Mapping[str, str]) -> 
         extra=tuple(sorted(n for n in names if n in restored and n not in recorded)),
         unavailable=tuple(sorted(
             n for n in names
-            if (n in recorded and _UNAVAILABLE.search(recorded[n]))
-            or (n in restored and _UNAVAILABLE.search(restored[n])))),
+            if (n in recorded and _UNAVAILABLE.search(_opening_tag(recorded[n])))
+            or (n in restored and _UNAVAILABLE.search(_opening_tag(restored[n]))))),
     )
