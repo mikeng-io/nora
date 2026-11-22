@@ -64,7 +64,7 @@ from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.live import LiveSet
 from nora.domain.rollup import SocialFact, SocialInput
@@ -163,6 +163,32 @@ class SettledRead:
     items: tuple[ReadItem, ...]
     #: The units its stimulus is already on record in.
     announced: frozenset[str] = frozenset()
+
+
+def _latest_private() -> Any:
+    """Grouped over probe rows: the latest one's answered privacy, NULL when
+    it did not say."""
+    p = SOCIAL_POLL
+    return sa.func.array_agg(
+        pg.aggregate_order_by(p.c.is_private, p.c.recorded_at.desc(), p.c.id.desc()),
+    )[1]
+
+
+async def public_accounts(
+    conn: AsyncConnection, pairs: Collection[tuple[str, str]],
+) -> frozenset[tuple[str, str]]:
+    """The `(network, person)` pairs among `pairs` whose latest recorded probe
+    answered public: the only accounts whose items are placed in units."""
+    if not pairs:
+        return frozenset()
+    p = SOCIAL_POLL
+    stmt = (
+        sa.select(p.c.network, p.c.person)
+        .where(p.c.stage == "probe", sa.tuple_(p.c.network, p.c.person).in_(list(pairs)))
+        .group_by(p.c.network, p.c.person)
+        .having(_latest_private().is_(False))
+    )
+    return frozenset((r.network, r.person) for r in (await conn.execute(stmt)).all())
 
 
 def _media(ref: str | None) -> tuple[str, ...]:
@@ -440,11 +466,8 @@ class SqlSocialStreamStore(SocialItemWrites):
         the cadence's floor and ceiling and the account's privacy."""
         p = SOCIAL_POLL
         answered = sa.func.max(p.c.recorded_at).filter(p.c.outcome.not_in(_UNANSWERED))
-        latest = sa.func.array_agg(
-            pg.aggregate_order_by(p.c.is_private, p.c.recorded_at.desc(), p.c.id.desc()),
-        )[1]
         stmt = (
-            sa.select(p.c.person, sa.func.max(p.c.recorded_at), answered, latest)
+            sa.select(p.c.person, sa.func.max(p.c.recorded_at), answered, _latest_private())
             .where(p.c.network == network, p.c.stage == "probe")
             .group_by(p.c.person)
         )
