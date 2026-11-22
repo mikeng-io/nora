@@ -450,6 +450,40 @@ async def test_graph_places_fixes_by_membership_without_a_view_grant(case, locat
     assert by_person[nonmember] == (None, None)
 
 
+async def test_graph_places_no_fix_in_a_unit_the_circle_only_partly_covers(case, location):
+    from nora.domain.managed import ManagedMembership, MembershipState
+    from nora.domain.presence import PresenceFix, WireState
+    from nora.infra.sql.item_registration import (
+        RegistrationScope,
+        RuntimeRevisions,
+        SqlItemRegistration,
+    )
+    from nora.policy import Policy
+
+    outsider = "generated-presence-outsider"
+    await case.bindings.register(
+        person=ManagedPerson(outsider, PersonLifecycle.ACTIVE),
+        account=ManagedAccount(str(uuid4()), outsider, "signal",
+                               frozenset({Identifier("signal", "phone", "+85290000141")}),
+                               AccountState.BOUND),
+        membership=ManagedMembership(outsider, location.room_scope, MembershipState.MEMBER,
+                                     "generated-test"),
+    )
+    assert await location.access.unit_members("generated-location-unit") == {PERSON, outsider}
+    policy = Policy(())
+    registration = SqlItemRegistration(
+        RegistrationScope(policy, None, access=location.access), RuntimeRevisions({}, policy, None),
+    )
+    ts = int(time.time() * 1000) + 1000
+    assert await PresenceStore(case.engine, registration=registration).record_fix(
+        fix=PresenceFix(circle_id=CIRCLE, person_id=PERSON, ts=ts, lat=22.3, lng=114.1,
+                        wire_state=WireState.LIVE, recorded_at=ts),
+    )
+    assert [(r["unit"], r["graph_id"]) for r in await _fixes(case) if r["ts"] == ts] == [
+        (None, None),
+    ]
+
+
 async def test_real_location_tool_reads_current_managed_circle_and_preserves_provider_boundary(
     case, location,
 ):

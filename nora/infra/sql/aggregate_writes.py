@@ -325,7 +325,9 @@ class AggregateWrites:
         old: RowData | None = None,
     ) -> int | None:
         reg = self.registration
-        units = await reg.scope.person_units(values["subject_id"]) if reg else ()
+        units = await reg.scope.presence_units(
+            values["subject_id"], values.get("circle_id"),
+        ) if reg else ()
         picked = None
         for unit in units or (None,):
             existing = old if old is not None and old["unit"] == unit else None

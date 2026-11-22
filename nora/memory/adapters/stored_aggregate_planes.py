@@ -31,6 +31,8 @@ class AggregatePlanes:
             return (unit,) if unit else ()
         if table.name == "presence_places":
             return tuple(unit for unit in await self._places(row["circle_id"]) if unit is not None)
+        if table.name.startswith("presence_"):
+            return await self.scope.presence_units(row["subject_id"], row.get("circle_id"))
         return await self.scope.person_units(row["subject_id"])
 
     async def _places(self, circle: str) -> dict[str | None, tuple[str, ...]]:

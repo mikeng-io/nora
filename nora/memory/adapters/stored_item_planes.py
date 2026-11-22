@@ -27,6 +27,7 @@ class ItemPlanes:
         self.scope = scope
         self._person_units: dict[str, tuple[str, ...]] = {}
         self._probes: dict[tuple[str, str], tuple[str, ...]] = {}
+        self._circles: dict[tuple[str, str], tuple[str, ...]] = {}
         self._rooms: dict[tuple[str, str], str | None] = {}
 
     async def _person(self, person: str) -> tuple[str, ...]:
@@ -97,10 +98,14 @@ class ItemPlanes:
                       "nora_pass_output"}:
             # Executor items are scoped when written, using their original authority.
             return (), None, []
+        elif name == "presence_fixes":
+            persons = [row["person_id"]]
+            key = row["person_id"], row["circle_id"]
+            if key not in self._circles:
+                self._circles[key] = await self.scope.presence_units(*key)
+            units = self._circles[key]
         else:
-            if name == "presence_fixes":
-                person = row["person_id"]
-            elif name in {"social_item_count", "social_item_state"}:
+            if name in {"social_item_count", "social_item_state"}:
                 person = parents.get((row["network"], row["item_id"]))
             else:
                 person = row["person"]

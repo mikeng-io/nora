@@ -456,3 +456,30 @@ async def test_a_health_transition_wakes_its_unit(engine: AsyncEngine) -> None:
         source="presence", scope=_CIRCLE, event="transition", outcome="down", at_ms=_MS,
     )
     assert await _stimuli(engine, "source_health") == [(_UNIT, "new_item")]
+
+
+def _partly_covered() -> SqlItemRegistration:
+    outsider = "test-outsider"
+    people = Persons(
+        {_PERSON: PersonRef(_PERSON, "Generated", _PERSON),
+         outsider: PersonRef(outsider, "Generated outsider", outsider)},
+        {("signal", _AUTHOR): _PERSON},
+        life360=(Life360Membership(_PERSON, "test-member", _CIRCLE),),
+    )
+    rooms = (
+        Conversation("signal", frozenset({_ROOM}), frozenset({_PERSON}), unit=_UNIT),
+        Conversation("signal", frozenset({"test-room-2"}), frozenset({_PERSON, outsider}),
+                     unit=_SECOND),
+    )
+    policy = Policy(rooms, _by_id={(c.platform, key): c for c in rooms for key in c.ids})
+    return SqlItemRegistration(RegistrationScope(policy, people), _FixedRevisions())
+
+
+@pytest.mark.parametrize("name", ["presence_fixes", "source_health"])
+async def test_a_circle_source_reaches_only_units_whose_members_all_share_it(
+    engine: AsyncEngine, name: str,
+) -> None:
+    await _Writer(engine, _partly_covered()).write(name)
+    table = METADATA.tables[name]
+    async with engine.connect() as conn:
+        assert (await conn.execute(sa.select(table.c.unit))).scalars().all() == [_UNIT]

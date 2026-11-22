@@ -114,7 +114,10 @@ class PresenceStore:
             recorded_at=fix.recorded_at,
         )
         registration = self._registration
-        units = await registration.scope.person_units(fix.person_id) if registration else ()
+        units = (
+            await registration.scope.presence_units(fix.person_id, fix.circle_id)
+            if registration else ()
+        )
         written = False
         async with self._engine.begin() as conn:
             for unit in units or (None,):

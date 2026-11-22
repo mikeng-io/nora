@@ -496,6 +496,25 @@ class IdentityAccess:
                 units.add(scope.id)
         return tuple(sorted(units))
 
+    async def unit_members(self, unit: str) -> frozenset[str] | None:
+        """Current managed members of a unit and its rooms, canonical; None when
+        the unit has an open room, or in file mode, where the policy answers."""
+        if self._persons is not None:
+            return None
+        scope = Scope(ScopeKind.UNIT, unit)
+        rooms = [s for s in await self._topology.scopes()
+                 if s.kind is ScopeKind.ROOM and await self._topology.parent_of(s) == scope]
+        for room in rooms:
+            if await self._topology.is_open_room(room):
+                return None
+        members = set()
+        for each in (scope, *rooms):
+            for membership in await self._bindings.members_of(each):
+                if membership.state is MembershipState.MEMBER:
+                    members.add(await self.canonical_person(membership.person_id)
+                                or membership.person_id)
+        return frozenset(members)
+
     async def members_of(self, scope: Scope) -> tuple[ManagedMembership, ...]:
         if self._persons is not None:
             return ()  # the file keeps no membership records
