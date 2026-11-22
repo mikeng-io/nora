@@ -4,16 +4,20 @@
 
 from datetime import timedelta
 
-from nora.domain.lineage import RoomFacts
+from nora.access import IdentityAccess
+from nora.agent.lineage import LineagePolicy
+from nora.domain.lineage import LiveRoom, RoomFacts
+from nora.memory import wire
 from nora.memory.adapters.graph_row_render import render_graph_row
 from nora.memory.domain.presentations import likes, profile
-from nora.memory.domain.retrieval import RetrievedSupport
+from nora.memory.domain.retrieval import ReadingRoom, RetrievedSupport
 from nora.memory.wire import claim_support
 from tests.infra.test_profile_read import about, anchored, pointer
 from tests.infra.test_retrieval_scope import (
     AT,
     OTHER,
     PERSON,
+    READ,
     ROOM,
     UNIT,
     scenario,  # noqa: F401
@@ -110,3 +114,48 @@ async def test_like_excluded_for_an_audience_member_is_absent(scenario) -> None:
                 excluded_persons=[PERSON])
     entries = likes(await anchored(scenario, person), person)
     assert [entry.claim.graph_id for entry in entries] == ["visible-trait"]
+
+
+def _reads(scenario):
+    access = IdentityAccess(file_persons=scenario.persons, file_policy=scenario.policy)
+    lineage = LineagePolicy.from_policy(scenario.policy, access=access)
+    return wire.graph_read_tools(scenario.engine, access, lineage, None, None)
+
+
+async def test_likes_of_reads_a_resolved_person_for_the_rooms_audience(scenario) -> None:
+    person = await pointer(scenario)
+    await scenario.entity("topic", name="Generated venue")
+    await about(scenario, "trait", person.graph_id, "topic", part="trait")
+    (read,) = await _reads(scenario).likes_of(READ, [PERSON], AT + timedelta(hours=1))
+    assert (read.person, read.status) == (PERSON, "ok")
+    assert [like.topic_name for like in read.likes] == ["Generated venue"]
+
+
+async def test_likes_of_an_unresolved_person_is_unavailable_not_empty(scenario) -> None:
+    await scenario.entity("topic", name="Generated venue")
+    await pointer(scenario, ref=OTHER, graph_id="other-person")
+    (read,) = await _reads(scenario).likes_of(READ, [PERSON], AT + timedelta(hours=1))
+    assert (read.status, read.cause, read.likes) == ("unavailable", "person_unresolved", ())
+
+
+async def test_likes_of_withholds_a_like_excluded_for_someone_in_the_live_roster(scenario) -> None:
+    person = await pointer(scenario)
+    await scenario.entity("topic", name="Generated venue")
+    await about(scenario, "trait", person.graph_id, "topic", part="trait",
+                excluded_persons=[OTHER])
+    reads, now = _reads(scenario), AT + timedelta(hours=1)
+    alone = ReadingRoom("signal", ROOM, LiveRoom(frozenset({PERSON})))
+    together = ReadingRoom("signal", ROOM, LiveRoom(frozenset({PERSON, OTHER})))
+    (visible,) = await reads.likes_of(alone, [PERSON], now)
+    (withheld,) = await reads.likes_of(together, [PERSON], now)
+    assert [like.topic_name for like in visible.likes] == ["Generated venue"]
+    assert withheld.likes == ()
+
+
+async def test_likes_of_in_another_unit_reads_unavailable(scenario) -> None:
+    person = await pointer(scenario)
+    await scenario.entity("topic", name="Generated venue")
+    await about(scenario, "trait", person.graph_id, "topic", part="trait")
+    now = AT + timedelta(hours=1)
+    (read,) = await _reads(scenario).likes_of(READ, [PERSON], now, unit="another-unit")
+    assert (read.status, read.cause) == ("unavailable", "reading_room_unavailable")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import replace
 from datetime import datetime
 from typing import cast
@@ -25,6 +26,7 @@ from nora.memory.app.act_scope import active_act_authority, pass_shown
 from nora.memory.app.retrieval import RetrievalService
 from nora.memory.domain.pass_declarations import declaration
 from nora.memory.domain.pass_inputs import PassScope
+from nora.memory.domain.presentations import EntityAnchor, PersonLikes, likes
 from nora.memory.domain.retrieval import ReadingRoom, RetrievalAnchors, RetrievalUnavailableError
 
 log = logging.getLogger("nora.tools")
@@ -132,6 +134,45 @@ class GraphReadTools:
             "keys": [[row.kind, row.graph_id] for row in result.rows],
         }
         return _memory_result(payload) if result.rows else payload
+
+    async def likes_of(
+        self, reading: ReadingRoom, persons: Sequence[str], now: datetime, *, unit: str = "",
+    ) -> tuple[PersonLikes, ...]:
+        """Each person's likes, read for the room's own audience (`reading.live`).
+        A person the graph cannot resolve, or whose read fails, reads
+        `unavailable`: unknown, never no preference."""
+        context = (authority.pass_context if (authority := active_act_authority()) else None)
+        bounds = declaration("called").bounds(now)
+        out: list[PersonLikes] = []
+        for person in dict.fromkeys(persons):
+            concerns = frozenset({person})
+            try:
+                target, resolved, _ = await self._access.authority(reading, concerns, None)
+                if target.room is None or (unit and resolved.unit != unit) or (
+                    context is not None and (
+                        resolved.unit != context.unit
+                        or (context.room is not None and not target.room.is_room(context.room))
+                    )
+                ):
+                    raise RetrievalUnavailableError("reading_room_unavailable")
+                pointer = await self._pointer(reading, concerns, None, person)
+                if pointer is None:
+                    out.append(PersonLikes(person, "unavailable", cause="person_unresolved"))
+                    continue
+                result = await self._retrieval.retrieve(
+                    reading, RetrievalAnchors(graph_ids=(pointer,)), bounds,
+                    concerns=concerns, now=now,
+                )
+            except (RetrievalUnavailableError, sa.exc.SQLAlchemyError, OSError) as exc:
+                cause = (str(exc) if isinstance(exc, RetrievalUnavailableError)
+                         else "statement_failed")
+                out.append(PersonLikes(person, "unavailable", cause=cause))
+                continue
+            out.append(PersonLikes(
+                person, result.status, likes(result, EntityAnchor(pointer, person)),
+                result.cause,
+            ))
+        return tuple(out)
 
     async def _pointer(
         self, reading: ReadingRoom, concerns: frozenset[str], historical: datetime | None,

@@ -294,8 +294,13 @@ _NOT_AN_EVENT_ID: Mapping[str, object] = {
 }
 
 _VENUE_REPORT: Mapping[str, str] = {
-    "nothing_found": "Nobody here has said anything usable about places they "
-    "like. Say so, and don't invent a pick.",
-    "unavailable": "I can't read what people here like right now. Say you "
-    "couldn't check, and don't guess a venue.",
+    "ok": "These are places people here are remembered to care about; the memory "
+    "does not say whether someone likes or avoids one. Offer them as options and "
+    "ask if anyone objects.",
+    "nothing_found": "No place people here are remembered to care about turned up. "
+    "Say so, and don't invent a pick.",
+    "unavailable": "I can't read what people here like right now, or could not read "
+    "all of it. Say you couldn't check, and don't guess a venue.",
 }
+
+_VENUE_PARTIAL = " Not everyone's memory could be read, so someone may be left out."

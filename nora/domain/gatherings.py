@@ -429,9 +429,9 @@ class RSVP:
 
 @dataclass(frozen=True, slots=True)
 class VenueCandidate:
-    """One `suggest_venue` candidate. `source` names WHY it was suggested —
-    "mention_frequency" or "explicit_callback" — so a reply can say why,
-    not just what."""
+    """One `suggest_venue` candidate. `source` names WHY it was suggested:
+    "mention_frequency" when several people in the room hold the like,
+    "explicit_callback" when one does, so a reply can say why, not just what."""
 
     venue_text: str
     place_id: str | None
@@ -446,7 +446,9 @@ class VenueCandidate:
 @dataclass(frozen=True, slots=True)
 class VenueSuggestions:
     """`status` is the R-27 three-state shape: `ok` / `nothing_found` /
-    `unavailable` — an ERROR is never a PASS. `route_hints` is the reserved
+    `unavailable` — an ERROR is never a PASS. `complete` is False when some
+    person's likes could not be read in full, so an `ok` ranking may leave
+    someone out. `route_hints` is the reserved
     seam: always `None` today; it may later be filled via `saved_places()` +
     `route()` per attendee under the R-28 guard those tools already enforce,
     without changing the type."""
@@ -454,6 +456,7 @@ class VenueSuggestions:
     status: str
     candidates: tuple[VenueCandidate, ...] = ()
     route_hints: None = None
+    complete: bool = True
 
 
 class GatheringNotFoundError(Exception):

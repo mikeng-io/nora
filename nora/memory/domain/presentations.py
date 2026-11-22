@@ -63,6 +63,22 @@ class Like:
     item_sources: tuple[str, ...]
     personal_response: bool
 
+    @property
+    def topic_name(self) -> str | None:
+        name = self.topic.content.get("name") if isinstance(self.topic.content, dict) else None
+        return name.strip() or None if isinstance(name, str) else None
+
+
+@dataclass(frozen=True, slots=True)
+class PersonLikes:
+    """One person's likes read and its status. A person the graph cannot
+    resolve reads `unavailable`: unknown, never no preference."""
+
+    person: str
+    status: RetrievalStatus
+    likes: tuple[Like, ...] = ()
+    cause: str | None = None
+
 
 def _about(row: RetrievedRow) -> tuple[str, ...]:
     return _outgoing(row, "about")

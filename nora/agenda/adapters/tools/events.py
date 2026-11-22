@@ -8,6 +8,7 @@ from nora.agenda.adapters.tools.shared import (
     _EVENTS_OFF,
     _NO_SUCH_EVENT,
     _NOT_AN_EVENT_ID,
+    _VENUE_PARTIAL,
     _VENUE_REPORT,
 )
 from nora.agent.toolkit.clock import _parse_when
@@ -441,11 +442,12 @@ def _make_suggest_venue(deps):
 
     async def suggest_venue(event_id: str) -> dict:
         """Suggest venues for an event already proposed here, from places people
-        in this conversation said they like. Call this when somebody wants a place.
+        in this conversation are remembered to care about. Call this when
+        somebody wants a place.
 
         Returns `status`: ok (up to three `candidates`, each with name, address,
         rating, price_level, maps_url and why), nothing_found, refused or
-        unavailable, with a `note` when it is not ok.
+        unavailable, with a `note`.
 
         Args:
             event_id: The event's id, from event_search.
@@ -507,11 +509,12 @@ def _make_suggest_venue(deps):
                 for c in out.candidates
             ],
         }
-        # How to report a non-ok answer (ADR 0015 §3): the service returns
-        # `nothing_found` (nobody has said anything usable) or `unavailable`
-        # (no memory to ask) with no words of its own.
+        # How to report an answer (ADR 0015 §3): the service returns its status
+        # with no words of its own; `ok` says what the candidates rest on.
         if out.status in _VENUE_REPORT:
             result["note"] = _VENUE_REPORT[out.status]
+            if out.status == "ok" and not out.complete:
+                result["note"] += _VENUE_PARTIAL
         return result
 
     return suggest_venue

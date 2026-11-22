@@ -96,7 +96,7 @@
  "nora/app/documents_media.py": 3,
  "nora/app/documents_service.py": 1,
  "nora/app/fire.py": 64,
- "nora/app/gatherings.py": 6,
+ "nora/app/gatherings.py": 5,
  "nora/app/heartbeat.py": 4,
  "nora/app/memory_backfill.py": 1,
  "nora/app/memory_carry.py": 1,

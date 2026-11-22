@@ -378,6 +378,27 @@ async def test_an_ok_event_result_carries_no_reporting_note():
     assert listed["status"] == "ok" and "note" not in listed
 
 
+async def test_an_ok_venue_answer_says_what_it_rests_on_and_when_someone_is_left_out():
+    """`suggest_venue`'s `ok` is the one ok that carries a note: the graph does
+    not say whether a remembered interest is liked or avoided, and an incomplete
+    read may leave someone out."""
+    from nora.domain.gatherings import VenueCandidate, VenueSuggestions
+
+    candidate = VenueCandidate("Soi 29", "id", "Soi 29", "Rd", 4.0, "", None, "explicit_callback")
+    eid = str(uuid4())
+    whole = await _tools(events=_Raising(
+        venues=VenueSuggestions(status="ok", candidates=(candidate,))))["suggest_venue"](
+        event_id=eid)
+    partial = await _tools(events=_Raising(
+        venues=VenueSuggestions(status="ok", candidates=(candidate,), complete=False),
+    ))["suggest_venue"](event_id=eid)
+    assert whole["status"] == partial["status"] == "ok"
+    assert "likes or avoids" in whole["note"] and "left out" not in whole["note"]
+    assert partial["note"].startswith(whole["note"]) and "left out" in partial["note"]
+    for out in (whole, partial):
+        assert "—" not in out["note"] and "–" not in out["note"]
+
+
 # ── migration 0074_event_revision (step 2b): base_revision_id at the tool
 # layer, and event_set_status's lifecycle moves. ────────────────────────────
 

@@ -7,7 +7,7 @@ Reuses three existing pieces:
 - the reminders domain, for an event's linked one-shot notification;
 - the SAME `route_source` (`RouteClient`/`PlaceResolver`) the `place_info`
   tool already uses, for venue resolution — behind the same R-28 screen;
-- Honcho's dialectic `chat()`, for `suggest_venue`'s per-person query.
+- the graph's likes read, for `suggest_venue`'s per-person candidates.
 """
 
 from __future__ import annotations
@@ -53,11 +53,13 @@ from nora.domain.gatherings import (
 from nora.domain.gatherings import (
     StaleEventRevisionError as StaleEventRevisionError,
 )
+from nora.domain.lineage import LiveRoom
 from nora.domain.ports import PlaceArea
 from nora.domain.reminders import (
     ensure_utc,
 )
 from nora.domain.rollup import room_key
+from nora.memory import PersonLikes, ReadingRoom
 
 #: The statuses the tag path's `event_set_status` tool may set: the lifecycle
 #: minus `staged`/`proposed` (`event_propose`'s own outcomes) and `evicted`
@@ -68,16 +70,10 @@ TAG_SETTABLE_STATUSES: frozenset[GatheringStatus] = frozenset({
     GatheringStatus.HAPPENED, GatheringStatus.LAPSED,
 })
 
-# The fixed-shape dialectic query: returns a short, directly-usable venue name
-# (or a clear "none") rather than free prose needing a separate extraction
-# step. Comparable across people and stable across calls because the wording
-# never varies.
-_VENUE_PREFERENCE_QUERY = (
-    "In one short phrase, name ONE restaurant or venue this person has "
-    "mentioned positively — food preferences and dietary constraints may "
-    "help you pick. Reply with just the name, or the single word 'none' "
-    "if you don't know one."
-)
+# ponytail: at most this many liked topics are looked up as places per
+# suggestion, bounding the Places calls; a longer tail is not checked.
+_VENUE_LOOKUPS = 8
+_VENUE_CANDIDATES = 3
 
 log = logging.getLogger("nora.app.gatherings")
 
@@ -112,11 +108,10 @@ class _PlaceAreas(Protocol):
     async def area_of_place(self, place_id: str) -> PlaceArea | None: ...
 
 
-class _Honcho(Protocol):
-    async def chat(
-        self, *, peer_id: str, query: str, reasoning_level: str = "low",
-        target: str | None = None, conversation_id: str | None = None,
-    ) -> str | None: ...
+class _Likes(Protocol):
+    async def likes_of(
+        self, reading: ReadingRoom, persons: Sequence[str], now: datetime, *, unit: str = "",
+    ) -> Sequence[PersonLikes]: ...
 
 
 def _tag_evidence(
@@ -169,8 +164,9 @@ class GatheringService:
         *,
         store: GatheringStore,
         route_source: _RouteSource | None,
-        honcho: _Honcho | None,
+        honcho: object | None,
         ai_peer: str,
+        likes: _Likes | None = None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         place_areas: _PlaceAreas | None = None,
         content_checks: bool = True,
@@ -182,7 +178,8 @@ class GatheringService:
         # (`GoogleGeocoder.area_of_place`); `None` (no Maps key) resolves
         # venues with no area, so the memory index gives them no `located_in`.
         self._place_areas = place_areas
-        self._honcho = honcho
+        self._likes = likes
+        self._honcho = honcho  # kept wired and unread until the port is removed
         self._ai_peer = ai_peer
         self._now = now
 
@@ -486,45 +483,57 @@ class GatheringService:
             unit_id=unit_id,
             platform=platform,
         )
-        if self._honcho is None:
+        if self._likes is None:
             return VenueSuggestions(status="unavailable")
 
-        # One fixed-shape query per mapped person.
-        mentions: dict[str, int] = {}
-        for person_id in roster_person_ids:
-            answer = await self._honcho.chat(
-                peer_id=self._ai_peer, query=_VENUE_PREFERENCE_QUERY,
-                target=person_id, conversation_id=conversation_id,
-            )
-            if not answer:
-                continue
-            name = answer.strip()
-            if not name or name.lower() == "none":
-                continue
-            mentions[name] = mentions.get(name, 0) + 1
-
-        if not mentions:
-            return VenueSuggestions(status="nothing_found")
-
-        ranked = sorted(mentions.items(), key=lambda kv: kv[1], reverse=True)
+        # The audience is the room's live roster, the people who will read the
+        # suggestion; each person is read for that one audience.
+        reading = ReadingRoom(
+            platform, conversation_id,
+            LiveRoom(frozenset(roster_person_ids)),
+        )
+        reads = await self._likes.likes_of(
+            reading, roster_person_ids, self._now(), unit=unit_id,
+        )
+        # A person whose read is not `ok` (unresolved, unavailable or partial)
+        # is unknown, never "no preference".
+        complete = bool(reads) and all(read.status in ("ok", "nothing_found") for read in reads)
+        holders: dict[str, tuple[str, set[str]]] = {}
+        for read in reads:
+            for like in read.likes:
+                if (name := like.topic_name) is not None:
+                    holders.setdefault(name.casefold(), (name, set()))[1].add(read.person)
+        # A liked topic is a venue only when the place resolver names one
+        # place for it; a food, a hobby or a category does not resolve.
+        ranked = sorted(holders.values(), key=lambda held: len(held[1]), reverse=True)
         candidates: list[VenueCandidate] = []
-        for venue_text, count in ranked[:3]:
-            resolved = await self._resolve_place(venue_text, person_names=person_names)
+        for lookups, (name, people) in enumerate(ranked):
+            if len(candidates) == _VENUE_CANDIDATES:
+                break
+            if lookups == _VENUE_LOOKUPS:
+                complete = False
+                break
+            verdict, resolved = await self._lookup_place(name, person_names=person_names)
+            if verdict == "unknown":
+                complete = False
+            if resolved is None:
+                continue
             candidates.append(
                 VenueCandidate(
-                    venue_text=venue_text,
-                    place_id=resolved.get("place_id") if resolved else None,
-                    name=resolved.get("name") if resolved else None,
-                    address=resolved.get("address") if resolved else None,
-                    rating=resolved.get("rating") if resolved else None,
-                    price_level=(resolved or {}).get("price_level", ""),
-                    maps_url=resolved.get("maps_url") if resolved else None,
-                    source=(
-                        "mention_frequency" if count > 1 else "explicit_callback"
-                    ),
+                    venue_text=name,
+                    place_id=resolved.get("place_id"),
+                    name=resolved.get("name"),
+                    address=resolved.get("address"),
+                    rating=resolved.get("rating"),
+                    price_level=resolved.get("price_level", ""),
+                    maps_url=resolved.get("maps_url"),
+                    source="mention_frequency" if len(people) > 1 else "explicit_callback",
                 )
             )
-        return VenueSuggestions(status="ok", candidates=tuple(candidates))
+        if candidates:
+            return VenueSuggestions(status="ok", candidates=tuple(candidates), complete=complete)
+        # No candidate: "nothing found" only when every read and lookup completed.
+        return VenueSuggestions(status="nothing_found" if complete else "unavailable")
 
     # ── internals ────────────────────────────────────────────────────────
 
@@ -620,11 +629,20 @@ class GatheringService:
     async def _resolve_place(
         self, text: str, *, person_names: frozenset[str] | None = None,
     ) -> dict[str, Any] | None:
+        return (await self._lookup_place(text, person_names=person_names))[1]
+
+    async def _lookup_place(
+        self, text: str, *, person_names: frozenset[str] | None = None,
+    ) -> tuple[str, dict[str, Any] | None]:
         """The FULL R-28 screen-call-screen sandwich, via the SAME
         `nora.agent.security.screen_and_resolve_place` `place_info`'s own
         tool closure calls, including the person-name check, the
         `try/except` around the call, and the return-path screen on Google's
         own `name`/`address` before they are persisted.
+
+        Returns `("place", data)` when one place resolved, `("not_a_place",
+        None)` when the screen refused the text or Google found none or a
+        crowded category, and `("unknown", None)` when it could not be asked.
 
         `person_names` is optional because `GatheringService` is built once at
         process start and has no per-tag address book of its own — callers
@@ -635,16 +653,15 @@ class GatheringService:
             text, route_source=self._route_source, person_names=person_names,
             content_checks=self._content_checks,
         )
-        if result.status != "resolved":
-            return None
+        if result.status == "refused":
+            return "not_a_place", None
         out = result.data
-        if out is None:
-            # Unreachable in practice — `status == "resolved"` always
-            # carries `data` by construction — but degrades honestly (R-5)
-            # rather than trusting that invariant with an `assert`.
-            return None
+        if result.status != "resolved" or out is None:
+            return "unknown", None
+        if out.get("status") in ("ambiguous", "not_found"):
+            return "not_a_place", None
         if out.get("status") != "ok":
-            return None
+            return "unknown", None
         # The real `RouteClient.place_info` never returns `maps_url` — it is
         # synthesized only inside the `place_info` TOOL wrapper, a layer this
         # service never touches. Mint the identical link here: the resolved
@@ -655,7 +672,7 @@ class GatheringService:
             "https://www.google.com/maps/search/?api=1&query="
             + urllib.parse.quote(maps_name)
         )
-        return out
+        return "place", out
 
 
 #: The event fields a room's view shows, the same four the Cognition session's
