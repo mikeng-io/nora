@@ -1,5 +1,24 @@
 # Changelog
 
+## [7.21.0](https://github.com/mikeng-io/nora/compare/v7.20.7...v7.21.0) (2026-11-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* move the public site and her art out of this repository (ADR 0039) ([c103ace](https://github.com/mikeng-io/nora/commit/c103ace4011fe9fb125f396e28f46b8e9a68ad34))
+
+
+### Features
+
+* move the public site and her art out of this repository (ADR 0039) ([c103ace](https://github.com/mikeng-io/nora/commit/c103ace4011fe9fb125f396e28f46b8e9a68ad34))
+
+
+### Bug Fixes
+
+* **agents:** ground unknown triage, end evidence-only goals, gate reruns on both budgets ([dd471ba](https://github.com/mikeng-io/nora/commit/dd471bad7056eb87e047eb27e47daf673225ca67))
+* **ci:** publish PR content as one completed check run ([0b559dd](https://github.com/mikeng-io/nora/commit/0b559dd318123a8849dfd2f8e42f5ee8b50c7a07))
+* accept pre-split releases for rollback and keep copies of her art honest ([daf7dec](https://github.com/mikeng-io/nora/commit/daf7dec292a98950fc20e1484551e6822d41d66c))
+
 ## [7.20.7](https://github.com/mikeng-io/nora/compare/v7.20.6...v7.20.7) (2026-11-21)
 
 
