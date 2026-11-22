@@ -44,11 +44,13 @@ class SocialItemWrites:
         self, item: SocialItem, *, person: str, origin: Origin, seen_at: datetime,
         media_ref: str | None = None, location: str | None = None,
         tagged: tuple[str, ...] = (), mentioned: tuple[str, ...] = (),
-        read_id: str | None = None,
+        read_id: str | None = None, public: bool = False,
     ) -> bool:
         """Record one item. True when it is new; False when `(network, item_id)`
         was already recorded, in which case nothing was written and the first
-        row stands unchanged."""
+        row stands unchanged. Only a `public` account's item is placed in the
+        person's units; any other is stored unscoped, and so are the count and
+        state rows that follow it."""
         stmt = (
             pg_insert(SOCIAL_ITEM)
             .values(
@@ -66,7 +68,8 @@ class SocialItemWrites:
             if (reg := self._registration) is None:
                 wrote = bool((await conn.execute(stmt)).rowcount)
             else:
-                for unit in await reg.scope.person_units(person) or (None,):
+                units = await reg.scope.person_units(person) if public else ()
+                for unit in units or (None,):
                     inserted = await reg.insert_once(
                         conn, SOCIAL_ITEM, stmt, unit=unit, persons=(person,),
                         occurred_at=item.taken_at, cues=graph_item_cues(item.caption),

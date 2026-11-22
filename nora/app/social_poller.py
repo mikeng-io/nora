@@ -1057,9 +1057,13 @@ class SocialPoller:
         origin: Literal["poll", "backfill"] = "poll",
     ) -> None:
         media_ref = await self._keep(item, now)
+        # A private account's audience is not recorded, so its items reach no
+        # unit; privacy not probed in this process is treated as private.
+        probe = self._probes.get(member.person)
         await self._store.insert_item(
             item, person=member.person, origin=origin, seen_at=now, media_ref=media_ref,
             location=item.location, read_id=read_id,
+            public=probe is not None and probe.is_private is False,
         )
 
     async def _keep(self, item: SocialItem, now: datetime) -> str | None:

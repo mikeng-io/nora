@@ -129,6 +129,7 @@ class _Writer:
     engine: AsyncEngine
     registration: SqlItemRegistration
     room: str = _ROOM
+    public: bool = True
 
     def _message(self) -> NormalizedMessage:
         return NormalizedMessage(
@@ -158,7 +159,9 @@ class _Writer:
                 network=item.network, person=_PERSON, stage="probe", outcome="unchanged",
             )
             return
-        await store.insert_item(item, person=_PERSON, origin="poll", seen_at=_AT)
+        await store.insert_item(
+            item, person=_PERSON, origin="poll", seen_at=_AT, public=self.public,
+        )
         if table == "social_item_state":
             await store.record_state(network=item.network, item_id=item.item_id, state="hidden")
         elif table == "social_item_count":
@@ -483,3 +486,17 @@ async def test_a_circle_source_reaches_only_units_whose_members_all_share_it(
     table = METADATA.tables[name]
     async with engine.connect() as conn:
         assert (await conn.execute(sa.select(table.c.unit))).scalars().all() == [_UNIT]
+
+
+@pytest.mark.parametrize("name", ["social_item", "social_item_count", "social_item_state"])
+async def test_a_social_item_of_an_account_not_known_public_reaches_no_unit(
+    engine: AsyncEngine, name: str,
+) -> None:
+    await _Writer(engine, _registration(multiple=True), public=False).write(name)
+    table = METADATA.tables[name]
+    async with engine.connect() as conn:
+        units = (await conn.execute(sa.select(table.c.unit))).scalars().all()
+        registered = await conn.scalar(sa.select(sa.func.count()).select_from(REGISTRY))
+    assert units == [None]
+    assert registered == 0
+    assert await _stimuli(engine, name) == []

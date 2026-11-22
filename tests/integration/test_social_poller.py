@@ -35,6 +35,7 @@ from aiohttp.test_utils import TestServer
 
 from nora.app.social_poller import SocialPoller, relist_max_pages
 from nora.config import SocialPollConfig
+from nora.domain.models import PersonRef
 from nora.domain.social_stream import (
     Failed,
     FailureKind,
@@ -49,6 +50,7 @@ from nora.domain.social_stream import (
 from nora.infra.social.instagram_source import InstagramSocialSource, _when
 from nora.infra.social.subjects import instagram_roster
 from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.item_registration import RegistrationScope, SqlItemRegistration
 from nora.infra.sql.schema import (
     EVENTS,
     MESSAGES,
@@ -62,6 +64,8 @@ from nora.infra.sql.schema import (
 )
 from nora.infra.sql.social_stream import SqlSocialStreamStore
 from nora.obs.metrics import Metrics
+from nora.persons import Persons
+from nora.policy import Conversation, Policy
 from nora.testing import (
     FakeBlobStore,
     FakeMediaObjectStore,
@@ -189,7 +193,8 @@ async def world(_db: str) -> AsyncIterator[World]:
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(sa.text(
                 "truncate social_item, social_poll, social_item_state, social_item_count, "
-                "messages, events, rollup_build, rollup_outing, rollup_colocation cascade",
+                "messages, events, rollup_build, rollup_outing, rollup_colocation, "
+                "registry cascade",
             ))
         await engine.dispose()
 
@@ -2081,3 +2086,31 @@ async def test_private_unfollowed_grid_reopens_only_after_access_is_confirmed(
     assert (await world.store.backfills(
         network="instagram", full_history=full_history,
     ))["ada"].done
+
+
+class _Revisions:
+    def current(self) -> dict[str, str]:
+        return {f"rev_{k}": f"test-{k}" for k in ("code", "config", "policy", "identity")}
+
+
+@pytest.mark.parametrize("is_private,unit", [(False, "test-unit"), (True, None), (None, None)])
+async def test_an_item_is_placed_in_a_unit_only_when_its_account_probed_public(
+    world, is_private, unit,
+) -> None:
+    room = Conversation("signal", frozenset({"test-room"}), frozenset({"ada"}), unit="test-unit")
+    scope = RegistrationScope(
+        Policy((room,), _by_id={("signal", "test-room"): room}),
+        Persons({"ada": PersonRef("ada", "Generated")}, {}),
+    )
+    world.store = SqlSocialStreamStore(
+        world.engine, registration=SqlItemRegistration(scope, _Revisions()),
+    )
+    quiet(world, BEA)
+    world.source.probes[ADA] = probe(posts=1, is_private=is_private, following=True)
+    world.source.pages[ADA] = Page(items=(post(world, "p1"),), next_cursor=None)
+    await world.poller().tick()
+    async with world.engine.connect() as conn:
+        placed = (await conn.execute(
+            sa.select(SOCIAL_ITEM.c.unit).where(SOCIAL_ITEM.c.item_id == "p1"),
+        )).scalars().all()
+    assert placed == [unit]
