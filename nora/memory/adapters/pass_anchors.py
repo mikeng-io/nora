@@ -60,6 +60,7 @@ class SqlPassAnchors:
 
     async def build(
         self, declaration: PassDeclaration, data: PassInput, scope: PassScope, now: datetime,
+        *, ceiling: datetime | None = None,
     ) -> AnchorRead:
         if not isinstance(data, declaration.input_type):
             raise TypeError(f"expected {declaration.input_type.__name__}")
@@ -84,7 +85,7 @@ class SqlPassAnchors:
             }
             async with self._engine.connect() as raw:
                 conn = await raw.execution_options(isolation_level="REPEATABLE READ")
-                rows = await scoped_rows(conn, authority, target, dm_rooms)
+                rows = await scoped_rows(conn, authority, target, dm_rooms, ceiling=ceiling)
                 queries = _AnchorQueries(conn, rows, authority)
                 seeds = await queries.build(data, now)
                 people = await self._identity_people(seeds.people, authority)

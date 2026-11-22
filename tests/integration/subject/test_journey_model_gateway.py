@@ -243,12 +243,13 @@ def test_generated_subject_answers_every_production_declaration(tmp_path, evalua
             (
                 request(
                     "dreamer", cfg.dreamer_model(), "<agenda/>\n<lesson_evidence/>",
-                    system=wake_instructions.for_objective("wake").text,
+                    system=wake_instructions.for_objective(objective).text,
                     tools=(tool_spec("graph_propose", "operations", "array"),),
                 ),
-                "wake",
+                objective,
                 "Generated protocol retains the previous account.",
-            ),
+            )
+            for objective in ("wake", "wake-history")
         ],
     }
     # These three builders share the scripted turn, cognition and fold journey.

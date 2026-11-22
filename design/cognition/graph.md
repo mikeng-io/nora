@@ -97,8 +97,9 @@ A boundary is drawn by scope, never by a filter applied inside it.
 | evidence | its edges to what it cites or rests on |
 | lifecycle | its state in its kind's lifecycle |
 
-Provenance is stamped by code, never written by the model. Replay and restore
-evaluate a row under the revisions recorded with it, or return unavailable.
+Provenance is stamped by code, never written by the model. When replay or restore
+re-evaluates recorded passes and graph rows, it uses the revisions recorded
+with them or returns unavailable. Observed items are read as recorded.
 A correction adds a
 revision or a retirement; it never erases the history that made the earlier
 row inspectable.

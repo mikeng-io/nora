@@ -51,11 +51,13 @@ class GraphReadTools:
     ) -> dict:
         authority = active_act_authority()
         context = authority.pass_context if authority is not None else None
-        historical = scope.as_of if scope is not None else None
         occasion = context.occasion if context else "called"
         if occasion == "operator":
             return {"status": "unavailable", "note": "No graph read tool on the operator occasion."}
-        bounds = declaration(occasion).bounds(historical or now)
+        clock = context.clock if context is not None else None
+        historical = scope.as_of if scope is not None and clock is None else None
+        now = clock or now
+        bounds = declaration(occasion).bounds(historical or now, clock=clock)
         start = max(bounds.since, since) if since is not None else bounds.since
         end = min(bounds.until, until) if until is not None else bounds.until
         if start > end:
@@ -98,7 +100,9 @@ class GraphReadTools:
                     }
                 person_id = matches[0].person_id
                 concerns |= {person_id}
-                pointer = await self._pointer(reading, concerns, historical, person_id)
+                pointer = await self._pointer(
+                    reading, concerns, historical, person_id, ceiling=clock,
+                )
                 if pointer is None:
                     subject_note = " Nothing is remembered about them as a subject."
                 else:
@@ -136,12 +140,12 @@ class GraphReadTools:
 
     async def _pointer(
         self, reading: ReadingRoom, concerns: frozenset[str], historical: datetime | None,
-        person: str,
+        person: str, *, ceiling: datetime | None = None,
     ) -> str | None:
         target, scope, dm_rooms = await self._access.authority(reading, concerns, historical)
         async with self._engine.connect() as raw:
             conn = await raw.execution_options(isolation_level="REPEATABLE READ")
-            rows = (await scoped_rows(conn, scope, target, dm_rooms)).c
+            rows = (await scoped_rows(conn, scope, target, dm_rooms, ceiling=ceiling)).c
             return cast(str | None, await conn.scalar(sa.select(rows.graph_id).where(
                 rows.kind == "entity", rows.state == "admitted",
                 rows.image["pointer_kind"].astext == "person",

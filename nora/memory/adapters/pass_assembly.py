@@ -8,6 +8,7 @@ from nora.domain.blocks import ContextBlock
 from nora.memory.adapters.pass_anchors import AnchorRead, SqlPassAnchors
 from nora.memory.adapters.presentation_blocks import GraphPresentationBlocks
 from nora.memory.adapters.wake_blocks import wake_blocks
+from nora.memory.app.act_scope import active_act_authority
 from nora.memory.app.retrieval import RetrievalService
 from nora.memory.domain.pass_declarations import PassDeclaration, PassName, declaration
 from nora.memory.domain.pass_inputs import (
@@ -32,8 +33,17 @@ class PassAssembler:
         scope: PassScope, now: datetime,
     ) -> AssembledPass:
         choice = declaration(pass_name)
-        bounds = choice.bounds(scope.as_of or now)
-        seeds = await self._anchors.build(choice, data, scope, now)
+        authority = active_act_authority()
+        context = authority.pass_context if authority is not None else None
+        clock = context.clock if context is not None else None
+        if clock is not None:
+            scope = replace(scope, as_of=None)
+        bounds = choice.bounds(scope.as_of or now, clock=clock)
+        if clock is not None and isinstance(data, WakeInput) and data.stimuli:
+            since = min(stimulus.eligible_at for stimulus in data.stimuli)
+            bounds = replace(bounds, since=min(bounds.since, since),
+                             rows=max(bounds.rows, len(data.stimuli)))
+        seeds = await self._anchors.build(choice, data, scope, now, ceiling=clock)
         if seeds.cause is not None:
             result = RetrievalResult("unavailable", bounds, cause=seeds.cause)
         else:
@@ -42,7 +52,8 @@ class PassAssembler:
                 nora = seeds.collective[0].graph_id
                 anchors = replace(anchors, graph_ids=(*anchors.graph_ids, nora))
             result = await self._retrieval.retrieve(
-                scope.room, anchors, bounds, concerns=seeds.concerns,
+                scope.room, anchors, bounds,
+                concerns=scope.concerns if clock is not None else seeds.concerns,
                 as_of=scope.as_of, now=now,
             )
         builder = GraphPresentationBlocks(now, seeds.room, seeds.dm_rooms)
@@ -57,9 +68,16 @@ class PassAssembler:
             choice, seeds, result, floor, now, open_room_and_unit=isinstance(data, DebriefInput),
             floor_ids=due_ids,
         )
+        observed: tuple[tuple[str, str], ...] = ()
+        if clock is not None and isinstance(data, WakeInput):
+            digests = {row.graph_id: row.input_digest for row in result.rows}
+            observed = tuple(
+                (stimulus.graph_id, digest) for stimulus in data.stimuli
+                if stimulus.graph_id in due_ids and (digest := digests.get(stimulus.graph_id))
+            )
         return AssembledPass(
             blocks, result.status, result.cause, shown,
-            not isinstance(data, ProactiveInput) or data.intention in due_ids,
+            not isinstance(data, ProactiveInput) or data.intention in due_ids, observed,
         )
 
 

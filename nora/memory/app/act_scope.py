@@ -130,7 +130,9 @@ def declare_act(
     if active is not None:
         authority = active.authority
         context = authority.pass_context
-        if context is not None and context.occasion in {"debrief", "wake", "review"}:
+        if context is not None and context.occasion in {
+            "debrief", "wake", "wake_history", "review",
+        }:
             raise ActRefused("non_engagement_pass")
         event = active.trigger_id
         request = (executor, request_id) if request_id else None

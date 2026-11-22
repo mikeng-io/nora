@@ -257,9 +257,12 @@ def standing(
     due = {row.graph_id for row in room_intentions if intention_is_due(row, now)}
     intentions = order_rows(room_intentions, due=due)
     settled = []
+    end = result.bounds.until
+    if result.bounds.ceiling is not None:
+        end = min(end, result.bounds.ceiling)
     for row in intentions:
         ended_at = aware_instant(row.close_when.get("ended_at"))
-        if ended_at is not None and result.bounds.since <= ended_at <= result.bounds.until:
+        if ended_at is not None and result.bounds.since <= ended_at <= end:
             ending = row.close_when.get("ending")
             witness = next(iter(_outgoing(row, "closed_by")), None)
             settled.append(SettledIntention(
