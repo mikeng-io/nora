@@ -34,15 +34,15 @@ from nora.domain.social_stream import SOCIAL_READ_REF, read_item
 from nora.domain.stimuli import Stimulus
 from nora.infra.sql.schema import (
     COGNITION_SESSION,
-    ENTITY,
     EVENTS,
     LEDGER_COMMITMENT,
+    LEGACY_ENTITY,
+    LEGACY_RELATION,
     MESSAGE_DELETE,
     MESSAGE_EDIT,
     MESSAGE_REACTION,
     MESSAGES,
     PLATFORM_OBSERVATION,
-    RELATION,
     SOCIAL_ITEM,
     STIMULUS,
 )
@@ -492,22 +492,22 @@ async def still_open(
                    EVENTS.c.when >= datetime.fromtimestamp(now_ms / 1000, tz=UTC)),
         ).order_by(EVENTS.c.when.asc().nulls_last()))
     ).all()
-    src, dst = ENTITY.alias("src"), ENTITY.alias("dst")
+    src, dst = LEGACY_ENTITY.alias("src"), LEGACY_ENTITY.alias("dst")
     relations = (await conn.execute(sa.select(
-        RELATION, src.c.name.label("src_name"), dst.c.name.label("dst_name"),
-    ).select_from(RELATION.outerjoin(src, sa.and_(
-        src.c.id == RELATION.c.src_id, src.c.kind == RELATION.c.src_kind,
+        LEGACY_RELATION, src.c.name.label("src_name"), dst.c.name.label("dst_name"),
+    ).select_from(LEGACY_RELATION.outerjoin(src, sa.and_(
+        src.c.id == LEGACY_RELATION.c.src_id, src.c.kind == LEGACY_RELATION.c.src_kind,
         src.c.unit == unit,
     )).outerjoin(dst, sa.and_(
-        dst.c.id == RELATION.c.dst_id, dst.c.kind == RELATION.c.dst_kind,
+        dst.c.id == LEGACY_RELATION.c.dst_id, dst.c.kind == LEGACY_RELATION.c.dst_kind,
         dst.c.unit == unit,
     ))).where(
-        RELATION.c.unit == unit, RELATION.c.status == "current",
-        RELATION.c.valid_to.is_(None),
-        RELATION.c.asserted_at <= datetime.fromtimestamp(now_ms / 1000, tz=UTC),
-        sa.or_(RELATION.c.rel == "plans", RELATION.c.src_kind == "commitment",
-               RELATION.c.dst_kind == "commitment"),
-    ).order_by(RELATION.c.id))).mappings().all()
+        LEGACY_RELATION.c.unit == unit, LEGACY_RELATION.c.status == "current",
+        LEGACY_RELATION.c.valid_to.is_(None),
+        LEGACY_RELATION.c.asserted_at <= datetime.fromtimestamp(now_ms / 1000, tz=UTC),
+        sa.or_(LEGACY_RELATION.c.rel == "plans", LEGACY_RELATION.c.src_kind == "commitment",
+               LEGACY_RELATION.c.dst_kind == "commitment"),
+    ).order_by(LEGACY_RELATION.c.id))).mappings().all()
     return {
         "unit": unit, "as_of_ms": now_ms,
         "relations": [

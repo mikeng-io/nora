@@ -14,14 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.memory_graph import Relation
 from nora.infra.sql.memory_graph import relation_row
-from nora.infra.sql.schema import RELATION
+from nora.infra.sql.schema import LEGACY_RELATION
 
 
 async def unit_relations(engine: AsyncEngine, *, unit: str) -> list[Relation]:
     """Every relation the unit's graph holds, oldest first."""
     async with engine.connect() as conn:
         rows = (await conn.execute(
-            sa.select(RELATION).where(RELATION.c.unit == unit)
-            .order_by(RELATION.c.asserted_at, RELATION.c.id)
+            sa.select(LEGACY_RELATION).where(LEGACY_RELATION.c.unit == unit)
+            .order_by(LEGACY_RELATION.c.asserted_at, LEGACY_RELATION.c.id)
         )).mappings().all()
     return [relation_row(row) for row in rows]

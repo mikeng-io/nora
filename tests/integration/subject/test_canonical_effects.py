@@ -10,7 +10,7 @@ from nora.domain.stimuli import NewStimulus
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.notes import SqlNoteStore
-from nora.infra.sql.schema import ENTITY
+from nora.infra.sql.schema import LEGACY_ENTITY
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.subject.effects import effect_boundary, prepare_effect_reads, read_effects
 from nora.subject.environment import IsolatedServices
@@ -74,9 +74,10 @@ async def test_versions_survive_creation_retirement_withdrawal_and_deletion(clea
         await check_consumers(result)
         deletion = await effect_boundary(engine)
         async with engine.begin() as conn:
-            await conn.execute(sa.insert(ENTITY).values(id="generated-ephemeral-entity",
+            await conn.execute(sa.insert(LEGACY_ENTITY).values(id="generated-ephemeral-entity",
                 unit="generated-unit", kind="place", name="Generated deleted venue"))
-            await conn.execute(sa.delete(ENTITY).where(ENTITY.c.id == "generated-ephemeral-entity"))
+            await conn.execute(sa.delete(LEGACY_ENTITY).where(
+                LEGACY_ENTITY.c.id == "generated-ephemeral-entity"))
         removed = await effects(engine, deletion)
         assert any(row["source"] == "row_history" and row["operation"] == "delete"
                    and row["row"]["image"]["id"] == "generated-ephemeral-entity"

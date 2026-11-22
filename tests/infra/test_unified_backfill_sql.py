@@ -42,9 +42,9 @@ async def engine(_graph_db):
     async with e.begin() as conn:
         await conn.execute(sa.text("SET LOCAL session_replication_role = replica"))
         await conn.execute(sa.text(
-            "TRUNCATE relation_evidence, relation, entity, memory_work_item, "
-            "memory_node, memory_edge, messages, message_edit, message_reaction, "
-            "message_delete, comprehend_result, extraction, stimulus "
+            "TRUNCATE legacy_relation_evidence, legacy_relation, legacy_entity, "
+            "legacy_memory_work_item, memory_node, memory_edge, messages, message_edit, "
+            "message_reaction, message_delete, comprehend_result, extraction, stimulus "
             "RESTART IDENTITY CASCADE"))
     try:
         yield e
@@ -234,10 +234,10 @@ async def test_legacy_reading_receipts_count_as_done(engine):
 
 @pytest.mark.asyncio
 async def test_still_open_selects_graph_only_plan_and_excludes_closed_controls(engine):
-    from nora.infra.sql.schema import ENTITY, RELATION
+    from nora.infra.sql.schema import LEGACY_ENTITY, LEGACY_RELATION
 
     async with engine.begin() as conn:
-        await conn.execute(ENTITY.insert(), [
+        await conn.execute(LEGACY_ENTITY.insert(), [
             {"id": "p1", "kind": "person", "unit": "u1", "name": "Generated Person"},
             {"id": "e1", "kind": "event", "unit": "u1", "name": "Generated Event"},
         ])
@@ -253,7 +253,7 @@ async def test_still_open_selects_graph_only_plan_and_excludes_closed_controls(e
                 "layer": "notebook", "unit": unit, "persons": ["p1"],
                 "asserted_at": NOW, "valid_from": NOW + timedelta(days=1),
                 "valid_to": valid_to, "status": status, "written_by": "generated"})
-        await conn.execute(RELATION.insert(), rows)
+        await conn.execute(LEGACY_RELATION.insert(), rows)
         selected = await backfill_sql.still_open(conn, "u1", BASE_MS)
     assert [row["id"] for row in selected["relations"]] == ["open-plan"]
     assert selected["relations"][0]["persons"] == ["p1"]
