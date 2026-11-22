@@ -840,8 +840,8 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # transcript, so every call there is honestly `unavailable`. Room-scoped
         # is the fail-closed side and the correct one; it does not move.
         "who_said",
-        "load_transcript", "group_members", "lookup_person", "about",
-        "ask_memory", "search_memory", "recall_lookups", "media_fetch",
+        "load_transcript", "group_members", "lookup_person",
+        "recall_lookups", "media_fetch",
         "list_reminders", "event_search", "suggest_venue", "search_gifs",
         # `music_status` reports on
         # ONE Discord conversation's voice session — the exact shape
