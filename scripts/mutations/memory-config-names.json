@@ -14,7 +14,7 @@
     "target": "tests/test_config.py::test_retired_memory_config_names_are_refused_with_the_new_home"
   },
   {
-    "name": "retired Honcho keys name the Honcho section",
+    "name": "removed memory keys are refused as removed",
     "file": "nora/config.py",
     "old": "if key in memory:",
     "new": "if False:",

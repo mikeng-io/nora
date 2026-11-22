@@ -44,7 +44,7 @@ def build_shared(
         record_query=SqlRecordQuery(engine),
         standing=standing_store if cfg.standing.enabled else None,
         traces=tag_trace_store,
-        ai_peer=cfg.honcho.ai_peer,
+        ai_peer=cfg.agent.name,
         rooms_of_unit=lambda unit: unit_rooms.get(unit, ()),
     )
     assembler = build_assembler(
@@ -280,7 +280,7 @@ def build_engagement(
         debounce=debounce,
         canary=cfg.doctrine.canary,
         display_name=cfg.doctrine.display_name,
-        ai_peer=cfg.honcho.ai_peer,
+        ai_peer=cfg.agent.name,
         context_window=cfg.store.context_window,
         timeout_seconds=tier.timeout_seconds,
         limits=limits,

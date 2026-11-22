@@ -6,13 +6,10 @@ own names (`67`, `ridgeline`).
 
 from __future__ import annotations
 
-import pytest
-
 from nora.app.memory_routing import (
     profile_scopes_of_person,
     workspaces_of_person,
 )
-from nora.persons import PersonsError, load_persons
 from nora.policy import load_policy
 
 
@@ -40,23 +37,6 @@ def _policy(tmp_path, body: str):
     path = tmp_path / "policy.toml"
     path.write_text(body)
     return load_policy(path)
-
-
-def _bindings(tmp_path, body: str) -> dict[str, str]:
-    path = tmp_path / "identity.toml"
-    path.write_text(body)
-    return load_persons(path).honcho_workspaces
-
-
-def test_identity_binds_a_nora_workspace_to_a_honcho_workspace(tmp_path):
-    assert _bindings(tmp_path, '[workspaces.67]\nhoncho_workspace = "nora"\n') == {
-        "67": "nora",
-    }
-
-
-def test_a_honcho_id_honcho_would_refuse_is_refused_at_startup(tmp_path):
-    with pytest.raises(PersonsError, match="honcho_workspace"):
-        _bindings(tmp_path, '[workspaces.67]\nhoncho_workspace = "no spaces"\n')
 
 
 def test_a_person_belongs_to_the_workspaces_whose_rooms_name_them(tmp_path):

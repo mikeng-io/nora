@@ -49,10 +49,10 @@
     "target": "tests/integration/test_eval_observability.py::test_diagnostic_artifacts_stay_private_and_cannot_replace_files"
   },
   {
-    "name": "workspace identity remains exactly as declared",
+    "name": "subject identity remains exactly as declared",
     "file": "nora/subject/obtain.py",
     "old": "    (spec.workdir / \"identity.toml\").write_text(spec.identity, encoding=\"utf-8\")",
-    "new": "    (spec.workdir / \"identity.toml\").write_text(spec.identity.replace('honcho_workspace = \"', 'honcho_workspace = \"eval-'), encoding=\"utf-8\")",
-    "target": "tests/unit/test_eval_subject_parity.py::test_workspace_isolation_preserves_separation_and_intentional_shared_units"
+    "new": "    (spec.workdir / \"identity.toml\").write_text(spec.identity.replace('name = \"', 'name = \"eval-'), encoding=\"utf-8\")",
+    "target": "tests/unit/test_subject_obtain.py::test_subject_identity_is_written_as_declared"
   }
 ]

@@ -62,9 +62,11 @@ def toml_path(example_config_path, monkeypatch):
     return example_config_path
 
 
-def test_unknown_key_is_a_startup_failure(toml_path):
-    toml_path.write_text(toml_path.read_text() + '\n[tagg]\ntrigger = "x"\n')
-    with pytest.raises(ConfigError, match="tagg"):
+@pytest.mark.parametrize(("section", "body"), [  # a typo, and the host's removed section
+    ("tagg", 'trigger = "x"'), ("honcho", 'base_url = "http://generated.invalid:8000"')])
+def test_unknown_key_is_a_startup_failure(toml_path, section, body):
+    toml_path.write_text(toml_path.read_text() + f'\n[{section}]\n{body}\n')
+    with pytest.raises(ConfigError, match=rf"(?m)^{section}$"):
         load(toml_path)
 
 
@@ -206,8 +208,6 @@ def test_config_uses_the_target_shape(toml_path):
     # operator typed — with two platforms wired one configured name is
     # necessarily wrong for one of them.
     assert not hasattr(cfg.platforms.signal, "nora_sender_id")
-    # Honcho client settings are separate from Nora memory settings
-    assert cfg.honcho.workspace_id == "nora"
     # store replaces buffer
     assert cfg.store.max_per_conversation == 500
     assert cfg.store.context_window == 40
@@ -2116,7 +2116,7 @@ def test_video_gen_refuses_a_resolution_other_than_480p(toml_path):
     ('message_readings', 'settle_seconds', '[memory.extraction], which has been removed'),
     ('memory_index', 'enabled', '[memory.index] read'),
     ('memory_index', 'drain_seconds', '[memory.index] refresh_seconds'),
-    *[('memory', key, f'[honcho] {key}') for key in (
+    *[('memory', key, f'[memory] {key} has been removed') for key in (
         'base_url', 'workspace_id', 'ai_peer', 'tagger_card_conclusions',
         'people_in_window_conclusions', 'people_in_window_speakers', 'read_timeout_seconds',
     )],
@@ -2159,7 +2159,6 @@ def test_memory_extraction_section_is_refused_as_removed(toml_path):
 
 def test_example_loads_with_the_memory_config_names(toml_path):
     cfg = load(toml_path)
-    assert cfg.honcho.workspace_id == 'nora'
     assert cfg.memory.index.read is False
     assert cfg.memory.index.refresh_seconds == 60
     assert cfg.memory.profile.write is False

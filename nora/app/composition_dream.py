@@ -686,7 +686,7 @@ def _dream_tool_source(
         store=audit, access=access,
         persons=persons,
         metrics=metrics,
-        ai_peer=cfg.honcho.ai_peer,
+        ai_peer=cfg.agent.name,
         # The home rooms, from the SAME allowlist read the adaptor's room map came from, with
         # each room's `location` flag threaded as DEC-74 threads it on a tag. Passed whether or
         # not the proactive adaptor is wired: the map is inert for an adaptor with no home-room…

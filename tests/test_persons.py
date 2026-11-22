@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
@@ -279,6 +281,19 @@ def test_the_same_life360_member_id_and_circle_id_twice_is_still_a_copy_paste_fa
     )
     with pytest.raises(PersonsError, match="two different account blocks"):
         load_persons(p)
+
+
+def test_a_removed_identity_table_is_refused_by_its_own_name(tmp_path):
+    """The live host's shape: a `[workspaces.*]` table beside real people. Refused at
+    schema validation, before any person is indexed, and the message names the
+    table from the input, since no literal in the code may."""
+    p = tmp_path / "identity.toml"
+    p.write_text(TOML + '[workspaces.home]\nhoncho_workspace = "generated-home"\n')
+    with pytest.raises(PersonsError) as caught:
+        load_persons(p)
+    message = str(caught.value)
+    assert re.search(r"^workspaces$", message, re.MULTILINE), message
+    assert "extra_forbidden" in message
 
 
 def test_person_id_must_satisfy_the_honcho_peer_id_charset(tmp_path):

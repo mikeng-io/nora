@@ -39,7 +39,6 @@ async def env(tmp_path, monkeypatch, aiohttp_server, clean_pg_url, example_confi
     # make the registry build a BridgeAdapter and call `/v1/self` — a route the
     # fake does not serve and these tests do not exercise.
     cfg["platforms"]["signal"]["mode"] = "direct"
-    cfg["honcho"]["base_url"] = base
     cfg["store"]["data_dir"] = str(tmp_path)
     cfg["doctrine"]["dir"] = str(ROOT / "nora" / "doctrine")
     # Same reason as the doctrine line above: the config file lives in tmp_path,
@@ -136,17 +135,6 @@ async def test_an_undeterminable_account_refuses_to_start(env):
     env.write_text(tomli_w.dumps(cfg))
     with pytest.raises(StartupError, match="account"):
         await build_app(env)
-
-
-async def test_honcho_being_down_does_not_prevent_startup(env):
-    cfg = tomllib.loads(env.read_text())
-    cfg["honcho"]["base_url"] = "http://127.0.0.1:1"
-    env.write_text(tomli_w.dumps(cfg))
-    app = await build_app(env)
-    try:
-        assert app.deps.dispatcher is not None
-    finally:
-        await app.shutdown()
 
 
 async def test_a_broken_migration_refuses_to_start(env, monkeypatch):

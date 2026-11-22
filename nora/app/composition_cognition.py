@@ -301,7 +301,7 @@ def _session_grounder(
         # The unit's held topic accounts: the one read the `<topics>` block
         # and the duplicate check share.
         topic_index=lambda unit: entry_store.held(unit=unit),
-        pending_reminds=lambda: reminders.pending_of(cfg.honcho.ai_peer),
+        pending_reminds=lambda: reminders.pending_of(cfg.agent.name),
         lineage=lineage,
         unit_rooms=lambda unit: readers.cognition_unit_rooms.get(unit, set()),
         ai_display_name=cfg.doctrine.display_name,
@@ -400,7 +400,7 @@ def _session_runner(
             memos=memo_store,
             entries=entry_store,
             reminders=reminders,
-            ai_peer=cfg.honcho.ai_peer,
+            ai_peer=cfg.agent.name,
             ledger=ledger_store,
             shared=shared,
             standing_fold=standing_fold,

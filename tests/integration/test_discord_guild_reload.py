@@ -46,7 +46,7 @@ def files(tmp_path):
     identity.write_text('[persons.miles]\nname = "Miles"\n')
     files = ReloadFiles(
         policy_path=policy, identity_path=identity,
-        ai_peer="nora", default_workspace="nora", metrics=Metrics(),
+        ai_peer="nora", metrics=Metrics(),
         policy_channels=StaticChannelDirectory(CHANNELS, threads={}),
     )
     files._test_metrics = Metrics()  # ReloadFiles stores no handle; scope needs one

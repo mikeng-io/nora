@@ -124,9 +124,7 @@ def validate_pair(persons: Persons, ai_peer: str) -> None:
 
 class ReloadFiles:
     def __init__(
-        self, *, policy_path: Path, identity_path: Path, ai_peer: str,
-        default_workspace: str,  # ponytail: read by nothing; leaves with the config shape
-        metrics: Metrics,
+        self, *, policy_path: Path, identity_path: Path, ai_peer: str, metrics: Metrics,
         validate_persons: Callable[[Persons], object] = lambda _: None,
         policy_channels: ChannelDirectory | None = None,
     ) -> None:
@@ -141,7 +139,7 @@ class ReloadFiles:
         self.policy = LivePolicy(policy_loader(policy_path))
         validate_pair(self.persons, ai_peer)
         validate_persons(self.persons)
-        boot_policy, boot_persons = self.policy.current, self.persons.current
+        boot_policy = self.policy.current
 
         def check_policy(candidate: Policy) -> None:
             if (candidate.units_declared, candidate._unit_workspace) != (
@@ -152,8 +150,6 @@ class ReloadFiles:
         def check_persons(candidate: Persons) -> None:
             validate_pair(candidate, ai_peer)
             validate_persons(candidate)
-            if candidate.honcho_workspaces != boot_persons.honcho_workspaces:
-                raise RestartRequiredError("identity.workspaces Honcho binding")
 
         self.files = (
             FileReload(policy_path, self.policy, policy_loader, check_policy, metrics),

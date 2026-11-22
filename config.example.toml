@@ -62,14 +62,6 @@ base_url = "http://instagram-bridge:18082"  # bridge holds the cookie session; n
 # token_env = "NORA_BRIDGE_TOKEN"
 # lease_seconds = 300
 
-[honcho]
-base_url = "http://127.0.0.1:8000"
-workspace_id = "nora"
-tagger_card_conclusions = 8
-people_in_window_conclusions = 3
-people_in_window_speakers = 4
-read_timeout_seconds = 5.0
-
 [llm]
 base_url = "http://localhost:20128/v1"
 api_key_env = "OMNIROUTE_API_KEY"     # env var NAME, never the value

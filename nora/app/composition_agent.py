@@ -188,7 +188,7 @@ def _build_tool_registry(
         ),
         google_account=cfg.google.account,
         subagent=subagent_desk,
-        ai_peer=cfg.honcho.ai_peer,
+        ai_peer=cfg.agent.name,
         mcp_tools=mcp_tool_groups,
         mcp_act_envelope=memory_area.wire.act_envelope(engine) if mcp_tool_groups else None,
         # The document tools: ships OFF, and off the
