@@ -203,14 +203,14 @@ class RegistrationScope:
                 m.circle_id for m in await self._life360()
                 if m.circle_id and await self._subject(m.person_id) == subject
             }
+            units = set()
+            for each in sorted(c for c in circles if c is not None):
+                for unit, members in (await self.circle_placements(each) or {}).items():
+                    if unit is not None and subject in {await self._subject(m) for m in members}:
+                        units.add(unit)
         except Exception:  # noqa: BLE001 — unknown membership must stay unscoped
             log.warning("graph registration circle membership unavailable")
             return ()
-        units = set()
-        for each in sorted(c for c in circles if c is not None):
-            for unit, members in (await self.circle_placements(each) or {}).items():
-                if unit is not None and subject in {await self._subject(m) for m in members}:
-                    units.add(unit)
         return tuple(sorted(units))
 
     async def health_units(self, source: str, scope: str) -> tuple[str, ...]:

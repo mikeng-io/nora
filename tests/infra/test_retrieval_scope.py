@@ -13,8 +13,8 @@ from nora.access import IdentityAccess
 from nora.agent.lineage import LineagePolicy
 from nora.domain.lineage import ROW, Lineage, LineageEntry, LiveRoom, message
 from nora.domain.models import PersonRef
-from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, ENTITY, REGISTRY
 from nora.infra.sql.audit import SqlRecordStore
+from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, ENTITY, REGISTRY
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import MESSAGES, SOCIAL_ITEM
