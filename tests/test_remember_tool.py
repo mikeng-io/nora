@@ -176,6 +176,10 @@ async def test_remember_unavailable_when_the_store_is_down(persons):
     profile = _Profile(raises=True)
     result = await _say(_remember(persons, profile=profile), _FACT)
     assert result["status"] == "unavailable"
+    # She must not claim to have remembered what was not saved: the note forbids the
+    # phrase outright, and never licenses it.
+    assert "never say 記低咗" in result["note"]
+    assert "may you say" not in result["note"]
     assert "as a note instead" in result["note"]
     assert profile.writes == []
 
@@ -186,6 +190,8 @@ async def test_remember_unavailable_when_no_store_is_wired(persons):
     unwired = await _say(_remember(persons, profile=None), _FACT)
     uncited = await _say(_remember(persons, profile=_Profile(), trigger=()), _FACT)
     assert unwired["status"] == uncited["status"] == "unavailable"
+    for result in (unwired, uncited):
+        assert "never say 記低咗" in result["note"]
 
 
 async def test_remember_keeps_the_fact_text_verbatim(persons):
@@ -238,5 +244,8 @@ async def test_only_the_ok_note_licenses_saying_it_was_remembered(persons):
     for case, (tool, content) in _cases(persons).items():
         note = (await _say(tool, content))["note"]
         assert "may you say" not in note, case
-        # a refusal may name the word only to forbid it
-        assert "記低咗" not in note or "never say" in note or "don't say" in note, case
+        # an outage names the word only to forbid it; a refusal does not need to
+        if case.startswith("unavailable/"):
+            assert "never say 記低咗" in note, case
+        else:
+            assert "記低咗" not in note or "don't say 記低咗" in note, case

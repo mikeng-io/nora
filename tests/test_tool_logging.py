@@ -35,11 +35,13 @@ from nora.obs.logging import bind_tag_id, clear_tag_id, setup_logging
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import FakeMemoryStore, FakeRosterSource
+from nora.testing.note_store import InMemoryNoteStore
 from tests.builders import make_logging_config
 from tests.fakes import SinkSender
 from tests.test_doctrine_loader import write
 
 GROUP = "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="
+UNIT = "household"
 NORA = frozenset({"+85290000100"})
 MILES = frozenset({"+85290000101"})
 TYLER = frozenset({"+85290000102"})
@@ -156,17 +158,16 @@ def wiring(tmp_path, restore_logging):
         roster_source=FakeRosterSource(groups={GROUP: (MILES, TYLER, NORA)}),
         persons=persons, self_ids=NORA,
     )
+    notes = InMemoryNoteStore()
     tools = build_tools(
         store=_Store(), conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(conclusions={"miles_novak": [
-            "Miles is from Ridgeline"
-        ]},
-                                           cards={"miles_novak": ["likes espresso"]}),
+        persons=persons, honcho=FakeMemoryStore(),
         deliverer=deliverer, metrics=metrics, room=room, question="邊個係阿豹",
         transit_source=_UNREACHABLE_TRANSIT, context_window=40,
+        notes=notes, note_unit=lambda _platform, _cid: UNIT,
     )
     return {"tools": {t.tool_name: t for t in tools}, "log": log, "metrics": metrics,
-            "sink": sink}
+            "sink": sink, "notes": notes}
 
 
 class _FakeAudit:
@@ -312,11 +313,34 @@ async def test_no_tool_line_carries_a_transcript_body_or_a_reply(wiring):
     await _call(tools["load_transcript"], limit=40)
     await _call(tools["send_reply"], text="今晚七點半得")
     text = wiring["log"].read_text()
-    for secret in ("Miles is from Ridgeline", "likes espresso", "去邊食", "你屋企",
-                   "今晚七點半得"):
+    for secret in ("去邊食", "你屋企", "今晚七點半得"):
         assert secret not in text, secret
     # ...and the reply's LENGTH is there, which is the thing that is safe.
     assert _tool_lines(wiring["log"])[-1]["chars"] == 6
+
+
+async def test_no_tool_line_carries_what_a_memory_read_returned(wiring):
+    """The memory half of the same rule. What `note_read` hands the model is a
+    note body distilled from what people said, and it is as unsafe in a log nobody
+    scans as a transcript line is. Both halves are asserted: the RESULT carries the
+    marker (so the read really reached it) and the LOG does not (so absence means
+    something)."""
+    marker = "Miles is from Ridgeline and likes espresso"
+    await wiring["notes"].create(
+        unit=UNIT, title="Miles", description="where he is from",
+        uncertainty="not settled yet", closing_condition="somebody decides",
+        established_in=GROUP, body=f"## Decided\n## Open\n- {marker} [501]",
+        established_by="tag:miles", now_ms=1_770_000_000_000, anchor_date=20261011,
+    )
+
+    result = await _call(wiring["tools"]["note_read"], title="Miles")
+
+    assert result["status"] == "ok"
+    assert marker in json.dumps(result, ensure_ascii=False)
+    line = _tool_lines(wiring["log"])[-1]
+    assert line["tool"] == "note_read" and line["status"] == "ok"
+    text = wiring["log"].read_text()
+    assert "Ridgeline" not in text and "espresso" not in text
 
 
 # ---- the tag_id bridge -------------------------------------------------------
