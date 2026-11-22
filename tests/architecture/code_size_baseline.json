@@ -360,8 +360,7 @@
   "internal_docstrings": 4
  },
  "nora/app/adoption.py": {
-  "comment_blocks": 3,
-  "internal_docstrings": 1
+  "comment_blocks": 3
  },
  "nora/app/agent_runner.py": {
   "comment_blocks": 9,
@@ -1479,9 +1478,6 @@
  },
  "nora/ingest/comprehension.py": {
   "comment_blocks": 13,
-  "functions": {
-   "MediaComprehension._comprehend": 134
-  },
   "internal_docstrings": 6
  },
  "nora/ingest/exif.py": {
@@ -2532,9 +2528,6 @@
  "tests/integration/test_a_real_snapshot_seeds_an_isolated_subject.py": {
   "file_lines": 871,
   "internal_docstrings": 1
- },
- "tests/integration/test_ambient.py": {
-  "comment_blocks": 1
  },
  "tests/integration/test_bridge_deferred.py": {
   "file_lines": 1246,

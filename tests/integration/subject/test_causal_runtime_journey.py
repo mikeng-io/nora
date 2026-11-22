@@ -153,11 +153,12 @@ async def test_real_app_bridge_admission_settles_before_cancellation(
                     STIMULUS.c.conversation_id == room))).mappings().all()
             if room == "g1":
                 assert len(recorded) == len(stimuli) == 1
-                assert len(feeds) == (2 if tagged else 1)
+                assert feeds == [], "nothing is written to the old memory backend"
                 assert recorded[0]["person_id"] == "miles_novak"
                 assert event["state"] == "done"
-                assert {w["kind"] for w in work} >= {"ingest", "stimulus", "memory_feed"}
-                assert feeds[0]["content"] == incoming.message["body"]
+                kinds = {w["kind"] for w in work}
+                assert kinds >= {"ingest", "stimulus"}
+                assert "memory_feed" not in kinds
                 if tagged:
                     async with engine.connect() as conn:
                         sent = (await conn.execute(sa.select(MESSAGES).where(

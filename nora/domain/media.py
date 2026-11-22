@@ -986,8 +986,8 @@ def body_with_handles(
     """Re-render `body`'s attachment placeholders with the handles now held.
 
     **Handles only.** A description baked in here would ride into
-    `messages.body`, which `memory_feed` and the prefill both read VERBATIM, so
-    "Honcho detailed, transcript short" would be impossible. The comprehension
+    `messages.body`, which every transcript consumer reads VERBATIM, so
+    "detailed for one, short for another" would be impossible. The comprehension
     lives in `media_objects` and is joined at render time.
 
     Returns `body` UNCHANGED if its tail is not the placeholder run this

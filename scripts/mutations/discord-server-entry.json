@@ -56,13 +56,6 @@
     "target": "tests/unit/test_discord_guild_entry.py::test_a_discovered_channel_is_mention_only_by_default"
   },
   {
-    "name": "the memory feed honours absorbed",
-    "file": "nora/ingest/stages/memory_feed.py",
-    "old": "    if not absorbed:\n        # A mention-only room (a server-entry channel `ambient` does not\n        # name): recorded and answered when tagged, never absorbed into\n        # memory. `Conversation.absorbed` is the flag's one definition.\n        return",
-    "new": "    if False:\n        # A mention-only room (a server-entry channel `ambient` does not\n        # name): recorded and answered when tagged, never absorbed into\n        # memory. `Conversation.absorbed` is the flag's one definition.\n        return",
-    "target": "tests/unit/test_discord_guild_entry.py::test_a_mention_only_channel_records_but_is_never_absorbed"
-  },
-  {
     "name": "stimulus skips non-absorbed rooms",
     "file": "nora/ingest/pipeline.py",
     "old": "            if self._stimulus_wiring is not None and absorbed:\n                with span(\"ingest.stimulus\"):\n                    await stimulus_stage.run(\n                        message=message, item=\"message\", row_id=row_id,",

@@ -6,13 +6,13 @@ import { cn } from "@/lib/cn";
 
 export type NoraState = "listening" | "degraded" | "unreachable" | "unknown";
 
-/** Whether she is up: her record and her memory both answer. Anything less
+/** Whether she is up: her record answers. Anything less
  * is said, not hidden (the status page gives the detail). */
 export function useNoraState(): NoraState {
   const { data, isError, isPending } = useStatus();
   if (isPending) return "unknown";
   if (isError || !data) return "unreachable";
-  return data.store.reachable && data.honcho.reachable ? "listening" : "degraded";
+  return data.store.reachable ? "listening" : "degraded";
 }
 
 /** Her presence dot: blush while she is listening (the Blush Rule: this dot

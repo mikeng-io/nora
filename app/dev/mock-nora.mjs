@@ -611,7 +611,6 @@ function buildStatus(now) {
     return {
       uptime_seconds: UPTIME_BASELINE_SECONDS + (now - START_TIME) / 1000,
       store: { reachable: true },
-      honcho: { reachable: true },
       reminders: { count: 0, next_due_at: null, upcoming: [] },
     };
   }
@@ -625,7 +624,6 @@ function buildStatus(now) {
   return {
     uptime_seconds: UPTIME_BASELINE_SECONDS + (now - START_TIME) / 1000,
     store: { reachable: true },
-    honcho: { reachable: true },
     reminders: { count: upcoming.length, next_due_at: upcoming[0].due_at, upcoming },
   };
 }

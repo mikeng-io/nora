@@ -422,11 +422,10 @@ class App:
         """Adapts `adoption.backfill`'s `AdoptionCounts` return to the
         `Coroutine[Any, Any, None]` `BackgroundTasks.spawn` accepts. The counts
         are for callers that want them (tests); production reads the log line
-        and the two `nora_*adoption*` counters."""
+        and `nora_lazy_adoptions_total`."""
         deps = self.deps
         await adoption.backfill(
-            audit=deps.audit, memory=deps.memory, persons=deps.persons,
-            metrics=deps.metrics, media_join=deps.media_join,
+            audit=deps.audit, persons=deps.persons, metrics=deps.metrics,
             start_delay_seconds=ADOPTION_START_DELAY_SECONDS,
         )
 

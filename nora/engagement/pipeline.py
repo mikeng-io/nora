@@ -1,5 +1,5 @@
 """`EngagementPipeline` — runs admission → context → doctrine → tools →
-invoke → deliver → feedback for a tag `nora.ingest` already decided to
+invoke → deliver for a tag `nora.ingest` already decided to
 engage. A readable table of contents, not a decision-maker:
 every branch belongs to the stage that owns it (`nora.engagement.stages.*`)
 or, for doctrine/tools, to the collaborator it delegates straight to
@@ -125,7 +125,7 @@ from nora.tag import Debounce
 from .graph_context import EngagementGraph
 from .mentions import MentionRenderer
 from .slots import ConversationSlots, Key
-from .stages import admission, command, debrief, deliver, feedback, graph_debrief, indicate, invoke
+from .stages import admission, command, debrief, deliver, graph_debrief, indicate, invoke
 from .stages.admission import Admission
 from .stages.indicate import Indicator
 from .stages.invoke import AgentRunner
@@ -1054,22 +1054,6 @@ class EngagementPipeline:
             if not delivered:
                 return                       # `finally` still resolves the indicator
 
-            # The tag path's semantic write — NORA'S replies, under the Nora
-            # aiPeer, into this conversation's session (Honcho). The human's
-            # words are already fed by the ambient memory_feed; this feeds only
-            # her side, building her self-model card. `sent_texts` is every
-            # message actually delivered (multi-message safe). Spawned off the
-            # reply path like every Honcho write.
-            # Gated on a MAPPED tagger, like the old feed: her self-model is
-            # built only from conversations with a known person (feeding her
-            # replies to unmapped senders is deliberately not done).
-            # `ctx.tagger is None` means an unmapped sender.
-            sent = handle.deliverer.sent_texts
-            if sent and ctx.tagger is not None:
-                self._spawn(feedback.run(
-                    memory=self._memory, ai_peer=self._ai_peer, sent_texts=sent,
-                    conversation_id=msg.conversation_id, metrics=self._metrics,
-                ))
             completed = True
         except BaseException:
             if disposition is not None:

@@ -258,8 +258,6 @@ HAND_BUILT = {
     ("nora/agent/toolkit/results.py", "_memory_hits_result"): "search_memory(_workspace) hits",
     ("nora/people/adapters/tools/__init__.py", "about"): "about's Honcho conclusions and card",
     ("nora/memory/adapters/tools/search.py", "ask_memory"): "ask_memory's Honcho answer",
-    ("nora/ingest/stages/memory_feed.py", "run"): "the live Honcho feed",
-    ("nora/app/adoption.py", "backfill"): "adoption's Honcho back-feed",
     ("nora/app/memory_backfill.py", "_items"): "`nora memory backfill`",
     ("nora/app/fire.py", "_window_query"): "the fire path's recall search key",
     ("nora/engagement/context.py", "_recall_tagger"): "the tagger recall search key",
@@ -317,7 +315,6 @@ BUILDERS: dict[str, str | tuple[str, ...]] = {
     # and query.py below; the renderers themselves are in HAND_BUILT above.
     "nora/conversation/adapters/tools/query.py":
         "renders record hits through the shared _transcript_messages (HAND_BUILT)",
-    "nora/app/adoption.py": ("backfill",),
     "nora/app/memory_backfill.py": ("_items",),
     "nora/app/fire.py": ("_window_query",),
     "nora/engagement/context.py": ("_recall_tagger",),
@@ -351,14 +348,9 @@ def test_every_transcript_builder_is_classified():
 #: Callers of `MemoryStore.feed` with the function that must render, or the
 #: reason the text is not a member's message.
 FEEDERS: dict[str, str] = {
-    "nora/ingest/stages/memory_feed.py": "run",
-    "nora/app/adoption.py": "backfill",
     "nora/app/memory_backfill.py": "_items",
 }
-_FEED_EXEMPT = {
-    "nora/engagement/stages/feedback.py": "feeds Nora's OWN sent replies, never a member's text",
-    "nora/ingest/comprehension.py": "feeds a media comprehension, not message text",
-}
+_FEED_EXEMPT: dict[str, str] = {}
 
 
 def _sources() -> list[Path]:
@@ -382,7 +374,7 @@ def test_every_honcho_feed_is_classified_and_its_function_renders():
     """Honcho's deriver is a model and recall hands its text back to her, so a
     fed URL is a URL she reads later."""
     feeders = _feeders()
-    assert "nora/ingest/stages/memory_feed.py" in feeders, "the discovery finds nothing"
+    assert "nora/app/memory_backfill.py" in feeders, "the discovery finds nothing"
     assert feeders == set(FEEDERS) | set(_FEED_EXEMPT), (
         f"unclassified feeders: {sorted(feeders - set(FEEDERS) - set(_FEED_EXEMPT))}; "
         f"stale: {sorted((set(FEEDERS) | set(_FEED_EXEMPT)) - feeders)}"

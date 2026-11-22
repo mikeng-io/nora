@@ -42,7 +42,7 @@ from .schema import (
 log = logging.getLogger("nora.infra.sql.bridge_store")
 
 WORK_KINDS = frozenset({
-    "ingest", "stimulus", "memory_feed", "turn",
+    "ingest", "stimulus", "turn",
     "participation", "participation_fire", "receipt", "trace_debrief",
 })
 
@@ -468,29 +468,6 @@ class SqlBridgeStore:
                 " FROM bridge_work WHERE id = :id"),
                 {"id": work_id})).scalar_one()
             return "folded" if folded else "noted"
-
-    async def mark_effect_started(self, work_id: int, generation: int, *,
-                                  kind: str, at_ms: int) -> bool:
-        """Commit "the non-idempotent effect starts now" BEFORE the effect —
-        fenced by `generation` so a stale claimant can never open an effect
-        it no longer owns, and idempotent on the kind so a same-generation
-        retry writes once. A False answer means the row's generation moved:
-        ownership was lost and the caller must NOT run the effect."""
-        async with self._engine.begin() as conn:
-            res = await conn.execute(sa.text(
-                "UPDATE bridge_work SET result ="
-                " COALESCE(result, '{}'::jsonb)"
-                " || jsonb_build_object('effect',"
-                "   COALESCE(result->'effect', '{}'::jsonb)"
-                "   || jsonb_build_object(:kind,"
-                "     jsonb_build_object('started_ms', CAST(:at AS bigint)))),"
-                " updated_at = now()"
-                " WHERE id = :id AND generation = :gen"
-                " AND NOT COALESCE(jsonb_exists("
-                "   result->'effect', :kind), false)"),
-                {"id": work_id, "gen": generation,
-                 "kind": kind, "at": at_ms})
-            return res.rowcount == 1
 
     async def close_participation_window(
         self, platform: str, conversation_id: str, window_end_ms: int,

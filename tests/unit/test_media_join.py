@@ -237,10 +237,8 @@ async def test_a_bracket_in_the_senders_own_text_is_not_a_placeholder():
 
 
 async def test_it_joins_an_unattributed_row_too():
-    """Lazy adoption's row type. These rows are FED TO HONCHO, so
-    `UnattributedRow` carries `media_json`: a back-filled row reaches memory
-    with a photo's description and a voice note's words, which are not in
-    `body`."""
+    """The unattributed row type carries `media_json`: a photo's description
+    and a voice note's words are behind that join, not in `body`."""
     row = UnattributedRow(
         id=1, platform="signal", sender_id="+852111", ts=1,
         body="睇下 [image a3f2c1]", conversation_id="g1",
@@ -275,15 +273,15 @@ async def test_the_cost_is_measured_only_when_the_join_actually_ran():
     assert 'nora_media_blobs_joined_count{path="tag"} 1.0' in metrics.render()
 
     # BOTH series, and by the caller's OWN path — a hardcoded label would leave
-    # adoption's 1000-row backfill and a tag window in one series, where the
+    # a 1000-row backfill and a tag window in one series, where the
     # batch paths (the exact ones where N is not 1) saturate `+Inf` and the tag
     # path is the only thing anybody can read. Asserted on the LATENCY series
     # as well as the count, because they are two separate observations.
-    await join.enrich([_row("[image a3f2c1]")], path="adoption")
+    await join.enrich([_row("[image a3f2c1]")], path="memory_backfill")
     rendered = metrics.render()
-    assert 'nora_media_join_seconds_count{path="adoption"} 1.0' in rendered
+    assert 'nora_media_join_seconds_count{path="memory_backfill"} 1.0' in rendered
     assert 'nora_media_join_seconds_count{path="tag"} 1.0' in rendered
-    assert 'nora_media_blobs_joined_count{path="adoption"} 1.0' in rendered
+    assert 'nora_media_blobs_joined_count{path="memory_backfill"} 1.0' in rendered
 
 
 # ---- guards for behaviours a mutation sweep can break ---------------------
@@ -380,7 +378,7 @@ async def test_an_unread_window_is_nothing_found_and_not_an_outage():
 async def test_one_lookup_serves_a_whole_window():
     """A BOUND to go with the measurement. An unbatched `get` per distinct blob
     is fine for a three-blob tag window but an unbounded number of round trips
-    for adoption's 1000-row backfill scan and for the Dreamer's batch."""
+    for a 1000-row backfill scan and for the Dreamer's batch."""
 
     class _Counting(FakeMediaObjectStore):
         calls = 0
@@ -404,11 +402,9 @@ async def test_every_blob_in_a_backfill_is_joined_in_bounded_batches():
     """**A cap on distinct blobs is data loss on the one caller that is a backfill.**
 
     A cap that kept the LAST N distinct blobs would drop the oldest:
-    `RecordStore.unattributed` returns rows OLDEST FIRST, adoption feeds each to
-    Honcho and then calls `set_person_id` — which is exactly what removes the
-    row from every future scan. So an operator adding a person after months of
-    chat would have the oldest blobs in the scan go into memory as bare handles
-    and be marked adopted, with no second pass ever.
+    A backfill reads rows OLDEST FIRST and reads each row once, so an operator
+    adding a person after months of chat would have the oldest blobs in the scan
+    go into memory as bare handles, with no second pass ever.
 
     Batching bounds the same thing without losing anything: each QUERY asks
     about at most `query_blobs`, and the number of queries is bounded by the
@@ -429,11 +425,11 @@ async def test_every_blob_in_a_backfill_is_joined_in_bounded_batches():
     rows = [_row(f"[image {sha[:6]}]", sha=sha, ts=i + 1)
             for i, sha in enumerate(shas)]
 
-    got = await join.enrich(rows, path="adoption")
+    got = await join.enrich(rows, path="memory_backfill")
 
     assert all(": photo" in (r.body or "") for r in got), (
         "a blob past the query bound rendered bare and its row was then "
-        "marked adopted — lost for good"
+        "consumed — lost for good"
     )
     assert _Counting.queries == [2, 2, 1], "each query is bounded"
 
@@ -474,10 +470,10 @@ async def test_the_blob_count_is_the_true_count():
     await join.enrich(
         [_row(f"[image {sha[:6]}]", sha=sha, ts=i + 1)
          for i, sha in enumerate(shas)],
-        path="adoption",
+        path="memory_backfill",
     )
 
-    assert 'nora_media_blobs_joined_sum{path="adoption"} 5.0' in metrics.render()
+    assert 'nora_media_blobs_joined_sum{path="memory_backfill"} 5.0' in metrics.render()
 
 
 async def test_a_batch_that_cannot_be_read_refuses_the_whole_window():
@@ -505,12 +501,12 @@ async def test_a_batch_that_cannot_be_read_refuses_the_whole_window():
     got = await join.enrich(
         [_row(f"[image {sha[:6]}]", sha=sha, ts=i + 1)
          for i, sha in enumerate(shas)],
-        path="adoption",
+        path="memory_backfill",
     )
 
     assert all(":" not in (r.body or "") for r in got)
     assert metrics.get(
-        "nora_media_join_total", path="adoption", status="unavailable",
+        "nora_media_join_total", path="memory_backfill", status="unavailable",
         reason="store") == 1
 
 

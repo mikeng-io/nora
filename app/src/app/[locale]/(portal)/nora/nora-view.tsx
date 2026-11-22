@@ -130,16 +130,11 @@ function HowSheIs() {
       <h2 id="health-title" className="sr-only">
         {t("health")}
       </h2>
-      <dl className="grid divide-y divide-hairline sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+      <dl className="grid divide-y divide-hairline sm:grid-cols-2 sm:divide-x sm:divide-y-0">
         <HealthItem
           label={t("record")}
           ok={s.store.reachable}
           value={s.store.reachable ? t("recordOk") : t("recordDown")}
-        />
-        <HealthItem
-          label={t("memory")}
-          ok={s.honcho.reachable}
-          value={s.honcho.reachable ? t("memoryOk") : t("memoryDown")}
         />
         <div className="grid content-start gap-1 p-4 sm:p-5">
           <dt className="text-label font-medium text-ink-muted">{t("uptime")}</dt>

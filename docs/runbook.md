@@ -117,9 +117,9 @@ To tell "quiet" from "broken":
    curl -s http://127.0.0.1:9100/health | python -m json.tool
    ```
 
-   Look at `platforms.<name>.connected`, `store.reachable`, `honcho.reachable`, and
+   Look at `platforms.<name>.connected`, `store.reachable` and
    `omniroute.last_success_at`. Any of those false/stale explains real silence: a
-   platform's stream dropped, the DB is unreachable, Honcho is down, or the LLM hasn't
+   platform's stream dropped, the DB is unreachable, or the LLM hasn't
    answered recently.
 
    **Check `platforms` first, not `sse`.** `sse` is Signal's block and only Signal's;

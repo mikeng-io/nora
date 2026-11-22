@@ -14,7 +14,7 @@ spent, so **nothing in her own loop runs after the reply**.
 
 **It runs on EVERY completed turn, not only the ones that sent something.**
 Success, an R-5 silence, a veto, a timeout — `outcome` carries which. Gating on
-`feedback.run`'s *"if sent and there is a tagger"* would be wrong: a turn that
+*"if sent and there is a tagger"* would be wrong: a turn that
 deliberately said nothing produced just as much reasoning as one that replied,
 and a deliberate silence is the decision most likely to be wrong in a way
 nobody complains about. A debrief that only reviews successful replies measures

@@ -88,7 +88,7 @@ async def test_status_route_returns_200_with_the_expected_shape(client):
     resp = await client.get("/app/v1/status")
     assert resp.status == 200
     body = await resp.json()
-    assert set(body) == {"uptime_seconds", "store", "honcho", "reminders"}
+    assert set(body) == {"uptime_seconds", "store", "reminders"}
 
 
 async def test_doctrine_route_returns_the_shipped_sections_in_order(client):

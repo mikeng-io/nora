@@ -330,29 +330,22 @@ class _OutagingMemory(FakeMemoryStore):
     """Honcho answering everything except the one endpoint under test.
 
     `FakeMemoryStore(fail=True)` degrades the way the shipped `HonchoClient`
-    does — `peer_card` returns `[]`, `feed` returns False — which is exactly why
-    it cannot express these two cases: the defect being probed is a RAISE, and a
-    fake that only ever degrades gracefully would let an unguarded call site
-    pass forever.
+    does — `peer_card` returns `[]` — which is exactly why it cannot express
+    this case: the defect being probed is a RAISE, and a fake that only ever
+    degrades gracefully would let an unguarded call site pass forever.
     """
 
     def __init__(
-        self, *, card_raises: bool = False, feed_raises: bool = False,
+        self, *, card_raises: bool = False,
         cards: dict[str, list[str]] | None = None,
     ) -> None:
         super().__init__(cards=cards)
         self._card_raises = card_raises
-        self._feed_raises = feed_raises
 
     async def peer_card(self, *, peer_id: str) -> list[str]:
         if self._card_raises:
             raise RuntimeError("honcho down")
         return await super().peer_card(peer_id=peer_id)
-
-    async def feed(self, **kwargs: object) -> bool:
-        if self._feed_raises:
-            raise RuntimeError("honcho down")
-        return await super().feed(**kwargs)          # type: ignore[arg-type]
 
 
 class _HangsAfterSending(FakeAgentRunner):
@@ -549,28 +542,6 @@ async def test_a_fault_before_the_model_is_counted_as_a_heartbeat_handler_error(
     assert await path.run([_reminder()]) == "failed_error"
     assert metrics.get(
         "nora_silent_failures_total", reason="handler_error", audience="heartbeat",
-    ) == 1
-
-
-async def test_a_feedback_failure_names_the_platform_it_happened_on(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """`nora_errors_total` declares `(stage, platform)`. An increment that omits
-    the platform records `platform=""` and is invisible to an operator filtering
-    `nora_errors_total{platform="signal"}` — the filter the runbook reaches for
-    first."""
-    adapter = _FireAdapter()
-    path = _fire_path(
-        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
-        adapter=adapter, memory=_OutagingMemory(feed_raises=True),
-        runner=FakeAgentRunner(_send_turns("記得食藥")),
-    )
-
-    # The reminder still arrived; only her memory of saying it did not.
-    assert await path.run([_reminder()]) == "sent"
-    assert adapter.texts == ["記得食藥"]
-    assert metrics.get(
-        "nora_errors_total", stage="fire_feedback", platform="signal",
     ) == 1
 
 

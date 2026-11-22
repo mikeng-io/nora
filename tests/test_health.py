@@ -39,10 +39,11 @@ async def client(aiohttp_client, store):
     return c
 
 
-async def test_health_reports_all_four_dependencies(client):
+async def test_health_reports_its_dependencies_and_no_memory_backend(client):
     body = await (await client.get("/health")).json()
-    assert set(body) >= {"sse", "store", "honcho", "omniroute", "uptime_seconds",
+    assert set(body) >= {"sse", "store", "omniroute", "uptime_seconds",
                          "errors_since_restart", "doctrine_sha256", "strands_version"}
+    assert "honcho" not in body, "a key nothing measures would claim reachability"
 
 
 async def test_health_returns_200_when_everything_is_reachable(client):
@@ -72,9 +73,13 @@ async def test_health_returns_503_when_the_store_is_unreachable(aiohttp_client):
     assert (await c.get("/health")).status == 503
 
 
-async def test_health_returns_503_when_honcho_is_down(client):
+async def test_health_does_not_read_the_memory_backend(client):
+    """The container healthcheck path: a backend that is down must not make the
+    service report unhealthy, and nothing in the body may say it was asked."""
     client.honcho.fail = True
-    assert (await client.get("/health")).status == 503
+    response = await client.get("/health")
+    assert response.status == 200
+    assert "honcho" not in await response.json()
 
 
 async def test_health_reports_the_doctrine_sha256(client):

@@ -177,7 +177,6 @@ def describers(
             spawn=_spawn,
             stickers_enabled=cfg.media.sticker_descriptions,
             max_concurrent=cfg.media.comprehension_max_concurrent,
-            content_checks=content_checks,
         )
     # `[speech.stt]`'s transcriber: wired ONLY when enabled — the same inert-ship rule as
     # `stickers`. Off leaves the ingest stage without a transcriber and a voice note is

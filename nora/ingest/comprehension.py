@@ -8,8 +8,6 @@ and keep it second, which is the A9 violation `nora/ingest/stages/media.py`
 exists to end. **Comprehension has no such property.** An un-comprehended image
 is a row that says Nora holds the bytes and claims nothing about them, so a
 comprehension that lands late, or never, has not made anything untrue.
-`memory_feed` is already spawned on precisely this reasoning and Honcho is
-already never load-bearing.
 
 **And inline would be untenable in the one case that matters.** Signal ingest
 is serialized: the listener awaits each message's stages in turn, so an inline
@@ -59,12 +57,10 @@ from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any
 
-from nora.agent.egress import scan_identifiers
 from nora.domain.media import (
     CONTENT_LABELS,
     MediaBlob,
     MediaObject,
-    sanitize_description,
 )
 from nora.domain.models import PersonRef
 from nora.domain.ports import (
@@ -132,9 +128,9 @@ class MediaComprehension:
     policy), which would make two tests share an in-flight map.
 
     Every collaborator arrives through `__init__`; `schedule` takes only the
-    facts of one message. `spawn` is the SAME injected scheduler `memory_feed`
-    uses, so a deployment that does not want background work has one place to
-    change and this job inherits its done-callback logging.
+    facts of one message. `spawn` is the scheduler the ingest
+    pipeline uses, so a deployment that does not want background work has one
+    place to change and this job inherits its done-callback logging.
     """
 
     def __init__(
@@ -148,9 +144,7 @@ class MediaComprehension:
         spawn: Callable[[Coroutine[Any, Any, None]], None],
         stickers_enabled: bool = True,
         max_concurrent: int = DEFAULT_MAX_CONCURRENT,
-        content_checks: bool = True,
     ) -> None:
-        self._content_checks = content_checks
         self._blobs = blobs
         self._store = store
         self._interpreter = interpreter
@@ -343,9 +337,9 @@ class MediaComprehension:
                     # ALREADY THERE, and this is the default config's own path: with
                     # `comprehension_text_model = ""` the text pass answers
                     # `no_text_describer` every time, and `_already_read` keys on
-                    # title/description for a content label, so re-running would re-feed the
-                    # SAME words to memory on every sighting. The words are already stored
-                    # and already remembered; nothing here has anything to add.
+                    # title/description for a content label, so re-running would
+                    # re-write the SAME words on every sighting. They are already
+                    # stored; nothing here has anything to add.
                     return status
                 # A voice note whose SUMMARY failed still has its words, and
                 # those words are the thing the room actually needs. Store the
@@ -355,11 +349,6 @@ class MediaComprehension:
                 await self._store.comprehend(
                     sha256=blob.sha256, title="", description="",
                     content=content, model="",
-                )
-                await self._feed(
-                    platform=platform, conversation_id=conversation_id,
-                    person=person, timestamp=timestamp, blob=blob, label=label,
-                    title="", description="", content=content,
                 )
             return status
 
@@ -406,20 +395,8 @@ class MediaComprehension:
             # THE READ HAPPENED AND NOTHING KEPT IT. Counting `ok` here would be
             # «a tick that wrote nothing reporting ok»: under load the metric says the
             # pipeline is healthy while
-            # the index is empty. And the feed is skipped with it — Honcho
-            # would otherwise hold a description of bytes `media_objects` has
-            # no row for, and a redelivery would feed the same words twice with
-            # no row to dedup against.
+            # the index is empty.
             return self._count(platform, label, "unavailable", "store")
-        await self._feed(
-            platform=platform, conversation_id=conversation_id, person=person,
-            timestamp=timestamp, blob=blob, label=label,
-            title=result.title, description=result.text, content=content,
-            # The caveat rides to memory too, and last. What a read did not see
-            # is not a rendering detail — a recalled description of half a clip
-            # is as wrong in a peer card as it is in a transcript.
-            caveat=str(provenance.get("media_caveat", "")),
-        )
         return self._count(platform, label, "ok", "")
 
     async def _read_transcript(self, subject: Subject) -> MediaDescription:
@@ -449,64 +426,6 @@ class MediaComprehension:
         except Exception:
             log.exception("comprehension could not open blob %s", blob.handle)
             return None
-
-    async def _feed(
-        self, *, platform: str, conversation_id: str, person: PersonRef | None,
-        timestamp: int, blob: MediaBlob, label: str,
-        title: str, description: str, content: str, caveat: str = "",
-    ) -> None:
-        """ALL THREE FIELDS to Honcho, under the sender's own peer, SCREENED.
-
-        The marker already rides into memory in `messages.body`; the
-        comprehension follows it in, keyed by the SAME handle the transcript
-        renders, so a later recall can join the two.
-
-        **The identifier screen runs HERE, and it has to.** Screening at render
-        time covers the TRANSCRIPT but not Honcho, which has two consumers and
-        only one of them renders. A voice note carrying a phone number would
-        otherwise be written verbatim and DURABLY into the sender's peer, where
-        it can resurface in a later peer card — a worse surface than the
-        transcript, because nothing re-screens a card at render.
-
-        A hit costs the DETAIL and never the marker, the shape the render join
-        also uses: memory still records that a photo arrived, and claims
-        nothing about it.
-
-        Mapped senders only, like `memory_feed`: an unmapped sender is
-        never fed to the semantic store, and a photo does not change that.
-        Never load-bearing and never raised into: `MemoryStore` swallows its
-        own failures and this is already off the listener path.
-        """
-        if person is None:
-            return
-        marker = f"[{label} {blob.handle}]"
-        detail = "\n".join(
-            sanitize_description(part)
-            for part in (title, description, content, caveat)
-            if part
-        )
-        kind = scan_identifiers(detail, content_checks=self._content_checks) if detail else None
-        if kind is not None:
-            log.warning(
-                "a media comprehension would have carried a %s identifier into "
-                "memory — feeding the marker alone", kind,
-            )
-            self._metrics.inc("nora_egress_blocks_total", kind=kind)
-            detail = ""
-        text = f"{marker}\n{detail}" if detail else marker
-        try:
-            await self._memory.ensure_peer(
-                peer_id=person.honcho_peer_id, conversation_id=conversation_id,
-            )
-            ok = await self._memory.feed(
-                peer_id=person.honcho_peer_id, text=text,
-                conversation_id=conversation_id,
-                metadata={"ts": timestamp, "media": blob.handle},
-            )
-        except Exception:
-            log.exception("comprehension feed failed; memory is never load-bearing")
-            ok = False
-        self._metrics.inc("honcho_feed_success" if ok else "honcho_feed_failure")
 
     @staticmethod
     def _already_read(existing: MediaObject, label: str) -> bool:

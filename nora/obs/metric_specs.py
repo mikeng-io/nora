@@ -384,17 +384,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Adapter listen() loop restarts after a failure, by platform.",
         ("platform",),
     ),
-    # Lazy adoption. A backfill that silently does nothing is an R-5 failure;
-    # nora/app/adoption.py documents why these two are not redundant (a failed
-    # feed is left unmarked on purpose, so it retries on the next start).
+    # Lazy adoption. A backfill that silently does nothing is an R-5 failure.
     _CounterSpec(
         "nora_lazy_adoptions_total",
-        "Unattributed audit rows fed and marked by the startup backfill.",
-        ("platform",),
-    ),
-    _CounterSpec(
-        "nora_adoption_failures_total",
-        "Adoptable rows whose Honcho feed failed; left unmarked to retry.",
+        "Unattributed audit rows marked with their person by the startup backfill.",
         ("platform",),
     ),
     # Progress and authored reactions share the transport outcome vocabulary.
@@ -2280,16 +2273,6 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "Seconds since the last ingest event, per platform.",
         ("platform",),
     ),
-    # `Gauge`, not `Counter`, on purpose: prometheus-client's exposition format
-    # unconditionally appends `_total` to every counter-typed series' rendered name
-    # (`exposition.py::generate_latest`, not configurable). These two names do not end
-    # in `_total`; a `Counter` would silently rename them to `honcho_feed_success_total`
-    # / `honcho_feed_failure_total`, which the append-only metric-name contract
-    # forbids. A `Gauge` only ever incremented (see `Metrics.inc`) renders under its
-    # exact declared name and is otherwise indistinguishable from a counter for these
-    # call sites.
-    _GaugeSpec("honcho_feed_success", "Successful Honcho feed calls."),
-    _GaugeSpec("honcho_feed_failure", "Failed Honcho feed calls."),
     # R-17's other half. A failure COUNTER alone cannot distinguish "0 because
     # enrichment is healthy" from "0 because the enrichment code never runs". This
     # gauge is always published, on every path including total failure, so

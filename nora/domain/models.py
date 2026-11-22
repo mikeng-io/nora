@@ -667,8 +667,7 @@ class UnattributedRow:
     platform cannot be re-resolved at all.
 
     `body` is `str | None` for the same reason the column is nullable: an
-    attachment-only message audits with no text. There is nothing to feed a
-    peer from such a row, only a `person_id` to record.
+    attachment-only message audits with no text.
 
     `raw_json` is the FULL stored envelope, and it is here for the operator
     control plane (`nora persons pending`), not for adoption — which ignores
@@ -693,19 +692,14 @@ class UnattributedRow:
     sender_id: str
     ts: int
     body: str | None
-    # The conversation the message was in — needed so lazy-adoption feeds it into
-    # the right conversation session, the same way the ambient feed does. Like
-    # `platform`, it is carried because a re-fed row must know its session, which
-    # `TranscriptRow` (already conversation-scoped) omits. REQUIRED, not
-    # defaulted: a `""` would build a malformed `nora-conv-` session, so an
-    # omission is a construction error, not a silent garbage feed.
+    # The conversation the message was in. Like `platform`, it is carried
+    # because `TranscriptRow` (already conversation-scoped) omits it. REQUIRED,
+    # not defaulted: an omission is a construction error, not a blank room.
     conversation_id: str
     raw_json: str | None = None
-    # The custody index for this row, exactly as `TranscriptRow` carries it.
-    # It is here because lazy adoption FEEDS these rows to Honcho and what a
-    # photo showed lives behind a join keyed on this column, not in `body` —
-    # without it, a back-filled row reaches memory as `[image a3f2c1]` and
-    # nothing else. Defaulted, so every existing construction stays valid.
+    # The custody index for this row, exactly as `TranscriptRow` carries it:
+    # what a photo showed lives behind a join keyed on this column, not in
+    # `body`. Defaulted, so every existing construction stays valid.
     media_json: str | None = None
 
 

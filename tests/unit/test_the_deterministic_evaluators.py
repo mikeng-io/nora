@@ -10,7 +10,6 @@ whatever it enforced along with it.
 from __future__ import annotations
 
 from tests.offline_eval_evaluators import (
-    HonchoFedOncePerReply,
     NoRedundantRead,
     NoSendWithoutTrigger,
     RepliesAtLeastOnce,
@@ -19,9 +18,9 @@ from tests.offline_eval_evaluators import (
 from tests.offline_eval_harness import Trajectory
 
 
-def _t(tool_calls=(), sent=(), reply=None, feeds=0, prefill_sufficient=True) -> Trajectory:
+def _t(tool_calls=(), sent=(), reply=None, prefill_sufficient=True) -> Trajectory:
     return Trajectory(tool_calls=list(tool_calls), sent=list(sent), reply=reply,
-                      honcho_feeds=feeds, prefill_sufficient=prefill_sufficient)
+                      prefill_sufficient=prefill_sufficient)
 
 
 def test_replies_at_least_once_passes_on_a_single_send():
@@ -71,13 +70,6 @@ def test_no_redundant_read_fails_when_prefill_was_sufficient():
 def test_no_redundant_read_allows_a_read_when_prefill_was_thin():
     assert NoRedundantRead().evaluate(
         _t(["load_transcript", "send_reply"], prefill_sufficient=False)).passed
-
-
-def test_honcho_fed_once_per_delivered_reply():
-    assert HonchoFedOncePerReply().evaluate(_t(["send_reply"], ["hi"], "hi", feeds=1)).passed
-    assert not HonchoFedOncePerReply().evaluate(
-        _t(["send_reply"], ["hi"], "hi", feeds=2)).passed
-    assert HonchoFedOncePerReply().evaluate(_t([], [], None, feeds=0)).passed
 
 
 def test_deterministic_evaluators_are_hard_gates():

@@ -1,5 +1,5 @@
 """The obligations a committed ingest raises downstream — the turn (tag or
-`!!!member` command), participation candidate, memory feed, stimulus — as
+`!!!member` command), participation candidate, stimulus — as
 ONE ordinal sequence per source event. `WorkRunner._run_ingest` owns the
 verdict; this block owns the enqueues, kept at the same payload boundary
 `bridge_payloads` opened.
@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from nora.app.bridge_payloads import _decision_dict, _person_dict
+from nora.app.bridge_payloads import _decision_dict
 from nora.platform.bridge.rehydrate import message_to_dict
 
 
@@ -18,9 +18,9 @@ async def enqueue_downstream(
     conn: Any, *, store: Any, work: Any, envelope: Any, message: Any,
     decision: Any, person: Any, row_id: Any, absorbed: bool, unit: Any,
     observation_status: str | None, room_command: Any, participation: Any,
-    memory_feed: Any, stimulus: Any, downstream: dict[str, Any],
+    stimulus: Any, downstream: dict[str, Any],
 ) -> bool:
-    """Enqueue the turn/participation/memory-feed/stimulus obligations;
+    """Enqueue the turn/participation/stimulus obligations;
     returns whether `message` IS a room command (the caller stamps it)."""
     # ONE command-recognition rule for both ingress paths: the predicate the
     # live dispatcher is handed at composition, over the VERIFIED normalized
@@ -59,18 +59,6 @@ async def enqueue_downstream(
             account_key=work.account_key,
             conversation_id=work.conversation_id,
             payload={"note_message": message_to_dict(message),
-                     **downstream})
-        ordinal += 1
-    if memory_feed is not None and person is not None:
-        await store.enqueue_work(
-            conn, event_id=envelope.event_id,
-            kind="memory_feed", ordinal=ordinal,
-            platform=work.platform,
-            account_key=work.account_key,
-            conversation_id=work.conversation_id,
-            payload={"message": message_to_dict(message),
-                     "person": _person_dict(person),
-                     "absorbed": absorbed, "unit": unit,
                      **downstream})
         ordinal += 1
     # A committed sidecar's ordinal-90 obligation is the ONE stimulus for

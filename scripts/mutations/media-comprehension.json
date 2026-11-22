@@ -35,7 +35,7 @@
   "target": "tests/unit/test_media_comprehension.py -k write_that_did_not_land"
  },
  {
-  "name": "K7 a forwarded voice note does not re-feed",
+  "name": "K7 a forwarded voice note does not re-write",
   "file": "nora/ingest/comprehension.py",
   "old": "                if existing is not None and existing.content == content:",
   "new": "                if False:",
@@ -152,13 +152,6 @@
   "old": "    if obj.caveat:\n        parts.append(obj.caveat)",
   "new": "    pass",
   "target": "tests/test_media_fetch.py -k layer_1_carries_the_caveat"
- },
- {
-  "name": "R3 the Honcho feed carries the caveat",
-  "file": "nora/ingest/comprehension.py",
-  "old": "            for part in (title, description, content, caveat)",
-  "new": "            for part in (title, description, content)",
-  "target": "tests/unit/test_media_comprehension.py -k caveat_reaches_memory"
  },
  {
   "name": "R3 unattributed selects media_json",

@@ -1,4 +1,3 @@
-import asyncio
 
 from nora.testing import ScriptedTurn, group_event
 
@@ -55,18 +54,10 @@ async def test_an_opted_in_rooms_closed_window_is_the_only_ambient_exception(har
     assert h.agents_constructed == 1
 
 
-async def test_mapped_senders_are_fed_to_honcho(harness):
-    await harness.handler.on_event(group_event(body="hi", sender="+852111"))
-    await harness.drain()
-    assert harness.honcho.fed == [("miles", "hi", "g1")]
-
-
-async def test_unmapped_senders_are_never_fed(harness):
+async def test_unmapped_senders_are_still_audited(harness):
     await harness.handler.on_event(group_event(body="hi", sender="+852999"))
     await harness.drain()
-    assert harness.honcho.fed == []
-    assert harness.honcho.peers == []
-    assert len(await harness.store.recent(conversation_id="g1", limit=10)) == 1  # still audited
+    assert len(await harness.store.recent(conversation_id="g1", limit=10)) == 1
 
 
 async def test_a_dm_event_is_dropped_entirely(harness):
@@ -93,51 +84,6 @@ async def test_a_db_failure_drops_the_message_not_the_listener(harness, monkeypa
     await harness.handler.on_event(group_event(body="hi"))     # must not raise
     await harness.drain()
     assert harness.metrics.get("nora_errors_total", stage="ambient") == 1
-
-
-async def test_a_honcho_failure_does_not_block_ingest(harness):
-    harness.honcho.fail = True
-    await harness.handler.on_event(group_event(body="hi"))
-    await harness.drain()
-    assert len(await harness.store.recent(conversation_id="g1", limit=10)) == 1
-
-
-async def test_ingest_does_not_wait_on_a_slow_honcho(harness):
-    """Ingest SPAWNS the memory feed; it never awaits it. Proven on the condition, not the
-    clock: the fake feed blocks on an event nobody sets until after `on_event` has
-    returned, so an ingest that awaited the feed would never return and `wait_for` would
-    time out. A wall-clock bound would fail under full-suite load while passing alone."""
-    entered = False
-    release = asyncio.Event()
-
-    async def slow_feed(peer_id, text, conversation_id=None, metadata=None):
-        """PRODUCTION'S SIGNATURE (#74). It was `(peer_id, text)` while
-        `memory_feed` has called `feed(peer_id=, text=, conversation_id=,
-        metadata=)` since 2026-08-07 — so the fake raised `TypeError`
-        immediately, inside the spawned task, and the elapsed-time assertion
-        below was satisfied by a call that never slept. The test passed while
-        proving the opposite of its name, and turned red only when the
-        background task's log landed inside this test's capture.
-        """
-        nonlocal entered
-        entered = True
-        await release.wait()
-        return True
-
-    harness.honcho.feed = slow_feed
-    # An ingest that awaited the feed would block on `release` forever; the
-    # timeout is a hang guard, not a latency bound.
-    await asyncio.wait_for(harness.handler.on_event(group_event(body="hi")), timeout=10)
-    # THE POSITIVE CONTROL: with a wrong signature the fake raises in microseconds, so
-    # returning promptly would be true of a call that never blocked and the test would
-    # measure nothing. Asserting the fake was actually entered is what makes the return a
-    # statement about the SPAWN rather than about an exception.
-    #
-    # After one loop tick, not before: the feed is SPAWNED, so it has not started when
-    # `on_event` returns.
-    await asyncio.sleep(0)
-    assert entered, "the slow feed must have been reached, or the return proves nothing"
-    release.set()
 
 
 async def test_debounce_window(harness_factory):

@@ -95,8 +95,8 @@ class Metrics:
             else:
                 counter.inc(value)
             return
-        # honcho_feed_success/honcho_feed_failure are Gauges (see _GAUGES'
-        # comment) but are incremented, never .set(); Gauge supports .inc().
+        # A Gauge declared under a name that must not end in `_total` is
+        # incremented, never .set(); Gauge supports .inc().
         gauge = self._gauges[name]
         labelnames = self._gauge_labels[name]
         if labelnames:

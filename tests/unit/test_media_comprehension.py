@@ -315,42 +315,15 @@ async def test_a_voice_note_with_no_transcript_claims_nothing():
     ) == 1
 
 
-# --- what reaches Honcho ----------------------------------------------------
-
-
-async def test_all_three_fields_reach_honcho_under_the_senders_peer():
-    """The marker rides into memory in `messages.body`, and what it points at
-    must not be empty, or every reply around a photo is preserved and
-    unreadable. The handle is carried with it so a later recall can join the
-    two."""
-    memory = FakeMemoryStore()
-    interpreter = FakeMediaInterpreter(
-        "a bowl of wonton noodles", title="a plate of noodles", content="生記粥麵")
-    job, spawn = _job(interpreter=interpreter, memory=memory)
-
-    _schedule(job, _subject(), person=MILES)
-    await spawn.drain()
-
-    assert len(memory.fed) == 1
-    text = memory.fed[0][1]
-    assert SHA[:6] in text
-    assert "a plate of noodles" in text
-    assert "a bowl of wonton noodles" in text
-    assert "生記粥麵" in text
-
-
-async def test_an_unmapped_sender_is_never_fed():
-    """A message from somebody `identity.toml` does not name is
-    never fed to the semantic store, and a photo does not change that. The
-    comprehension is still WRITTEN — the index is not identity-scoped."""
-    memory = FakeMemoryStore()
+async def test_an_unmapped_senders_reading_is_still_written():
+    """The comprehension is WRITTEN for a sender `identity.toml` does not name:
+    the index is not identity-scoped."""
     store = FakeMediaObjectStore()
-    job, spawn = _job(memory=memory, store=store)
+    job, spawn = _job(store=store)
 
     _schedule(job, _subject(), person=None)
     await spawn.drain()
 
-    assert memory.fed == []
     assert len(store.comprehended) == 1, "the index write is not identity-scoped"
 
 
@@ -405,58 +378,9 @@ async def test_a_collaborator_that_raises_costs_the_read_and_nothing_else():
     spawn.discard()
 
 
-# --- what the screen catches on the way to memory ---------------------------
-
-
-async def test_an_identifier_in_a_comprehension_never_reaches_memory():
-    """Memory is screened too. The text rides to Honcho screened by
-    `scan_identifiers`; a render-time screen is the stricter position for the
-    TRANSCRIPT and no position at all for memory, which does not render.
-
-    A comprehension written unscreened into a peer is worse than one written
-    into a transcript, because nothing re-screens a peer card at render — a
-    voice note containing a phone number would be durable and resurfacing.
-    A hit costs the DETAIL and keeps the marker, exactly as the render join
-    does: memory still records that media arrived and claims nothing about it.
-    """
-    memory = FakeMemoryStore()
-    metrics = Metrics()
-    interpreter = FakeMediaInterpreter(
-        "a card reading +85212345678", title="a business card")
-    job, spawn = _job(interpreter=interpreter, memory=memory, metrics=metrics)
-
-    _schedule(job, _subject(), person=MILES)
-    await spawn.drain()
-
-    assert len(memory.fed) == 1
-    text = memory.fed[0][1]
-    assert "85212345678" not in text
-    assert "business card" not in text, "the whole detail goes, not just the digits"
-    assert SHA[:6] in text, "the marker stays — media DID arrive"
-    assert metrics.get("nora_egress_blocks_total", kind="phone") == 1
-
-
-async def test_a_clean_comprehension_still_reaches_memory_whole():
-    """The positive control for the screen: it must not be eating everything.
-    All three fields, under the marker."""
-    memory = FakeMemoryStore()
-    interpreter = FakeMediaInterpreter(
-        "a bowl of wonton noodles", title="a plate of noodles", content="生記粥麵")
-    job, spawn = _job(interpreter=interpreter, memory=memory)
-
-    _schedule(job, _subject(), person=MILES)
-    await spawn.drain()
-
-    text = memory.fed[0][1]
-    assert "a plate of noodles" in text
-    assert "a bowl of wonton noodles" in text
-    assert "生記粥麵" in text
-
-
-async def test_a_screened_comprehension_is_still_stored():
-    """The screen is an EGRESS screen. The row keeps what the model read — that
-    is the record, and `media_fetch` applies its own screen on every serve —
-    while the copy that leaves for memory is the one that loses the detail."""
+async def test_a_comprehension_is_stored_as_the_model_read_it():
+    """The row keeps what the model read — that is the record, and
+    `media_fetch` applies its own screen on every serve."""
     store = FakeMediaObjectStore()
     interpreter = FakeMediaInterpreter("a card reading +85212345678")
     job, spawn = _job(interpreter=interpreter, store=store)
@@ -569,48 +493,10 @@ async def test_the_read_is_its_own_trace_and_reaches_the_collector(
     assert spans["comprehend"].attributes[TRACE_KIND] == "generation"
 
 
-async def test_the_caveat_reaches_memory_with_the_reading():
-    """What a read did NOT see is not a rendering detail. A recalled
-    description of half a clip is as wrong in a peer card as in a transcript —
-    and worse, because nothing re-screens or re-qualifies a card at render."""
-
-    class _Capped(FakeMediaInterpreter):
-        async def describe(self, *, data, media_type, label=""):
-            got = await super().describe(
-                data=data, media_type=media_type, label=label)
-            return replace(got, provenance={
-                "media_caveat": "(I only watched the first 4 of them.)"})
-
-    memory = FakeMemoryStore()
-    job, spawn = _job(interpreter=_Capped(), memory=memory)
-
-    _schedule(job, _subject(label="video", media_type="video/mp4"), person=MILES)
-    await spawn.drain()
-
-    assert len(memory.fed) == 1
-    assert "I only watched the first 4" in memory.fed[0][1]
-
-
-async def test_a_whole_read_carries_no_caveat_into_memory():
-    """The control: a caveat on every reading is a caveat that means nothing,
-    and it would also teach her to hedge about clips she saw in full."""
-    memory = FakeMemoryStore()
-    job, spawn = _job(memory=memory)
-
-    _schedule(job, _subject(), person=MILES)
-    await spawn.drain()
-
-    assert "watched" not in memory.fed[0][1]
-
-
 async def test_a_write_that_did_not_land_is_not_counted_ok():
     """`SqlMediaObjectStore.comprehend` answers False on any database failure
     and the job must not count `ok` on it — the «a tick that wrote nothing
-    reporting ok» shape docs/maintainers/conventions-rationale.md names.
-
-    The FEED goes with it: Honcho would otherwise hold a description of bytes
-    `media_objects` has no row for, and a redelivery would feed the same words
-    again with no row to dedup against."""
+    reporting ok» shape docs/maintainers/conventions-rationale.md names."""
     class _WriteFails(FakeMediaObjectStore):
         """The index READS fine and the write does not — which is the shape
         that matters and the shape a blanket `fail=True` cannot produce: with
@@ -622,9 +508,8 @@ async def test_a_write_that_did_not_land_is_not_counted_ok():
             return False
 
     metrics = Metrics()
-    memory = FakeMemoryStore()
     store = _WriteFails()
-    job, spawn = _job(store=store, memory=memory, metrics=metrics)
+    job, spawn = _job(store=store, metrics=metrics)
 
     _schedule(job, _subject(), person=MILES)
     await spawn.drain()
@@ -636,22 +521,18 @@ async def test_a_write_that_did_not_land_is_not_counted_ok():
     assert metrics.get(
         "nora_media_comprehension_total", platform="signal", label="image",
         status="ok", reason="") == 0
-    assert memory.fed == [], "nothing reached memory that nothing stored"
 
 
-async def test_a_forwarded_voice_note_does_not_re_feed_the_same_words():
+async def test_a_forwarded_voice_note_does_not_re_write_the_same_words():
     """The shipped default's own path. With `comprehension_text_model = ""`
     the text pass answers `no_text_describer` every time, and `_already_read`
     keys on title/description for a content label — so a forwarded voice note
-    must not re-run the pass and feed the SAME words to memory on every
-    sighting.
+    must not re-write the SAME words on every sighting.
 
-    The words are already stored and already remembered; a second sighting has
-    nothing to add."""
+    The words are already stored; a second sighting has nothing to add."""
     store = FakeMediaObjectStore()
-    memory = FakeMemoryStore()
     interpreter = FakeMediaInterpreter(available=False, reason="no_text_describer")
-    job, spawn = _job(interpreter=interpreter, store=store, memory=memory)
+    job, spawn = _job(interpreter=interpreter, store=store)
 
     subject = _subject(
         label="voice note", media_type="audio/aac",
@@ -661,8 +542,7 @@ async def test_a_forwarded_voice_note_does_not_re_feed_the_same_words():
     _schedule(job, subject, person=MILES)          # the same bytes, forwarded
     await spawn.drain()
 
-    assert len(memory.fed) == 1, "the same words reached memory twice"
-    assert len(store.comprehended) == 1
+    assert len(store.comprehended) == 1, "the same words were written twice"
 
 
 async def test_a_voice_note_whose_words_changed_is_still_written():
@@ -670,9 +550,8 @@ async def test_a_voice_note_whose_words_changed_is_still_written():
     «never write a voice note twice». It is the CONTENT that decides: a row
     holding different words is a row with something to add."""
     store = FakeMediaObjectStore()
-    memory = FakeMemoryStore()
     interpreter = FakeMediaInterpreter(available=False, reason="no_text_describer")
-    job, spawn = _job(interpreter=interpreter, store=store, memory=memory)
+    job, spawn = _job(interpreter=interpreter, store=store)
 
     _schedule(job, _subject(
         label="voice note", media_type="audio/aac", transcript="first"),

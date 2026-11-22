@@ -63,14 +63,6 @@ class NoRedundantRead:
         return Result(True)
 
 
-class HonchoFedOncePerReply:
-    def evaluate(self, t) -> Result:
-        delivered = bool(t.sent)
-        expected = 1 if delivered else 0
-        ok = t.honcho_feeds == expected
-        return Result(ok, f"honcho fed {t.honcho_feeds} time(s), expected {expected}")
-
-
 # A turn ending in one of these is an ERROR for eval purposes, never a correct silence
 # (see `evaluate`).
 #

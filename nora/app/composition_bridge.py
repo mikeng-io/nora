@@ -79,7 +79,6 @@ async def runtime(
             # Absorption is a PER-MESSAGE admission fact, never a wiring constant: each obligation
             # carries the value canonical policy computed at ingest, and the deferred executor
             # rechecks the allowlist as it stands when the work actually runs.
-            memory_feed={"memory": memory},
             stimulus=stimulus_wiring,
             lease_seconds=cfg.bridges.lease_seconds,
             allowlist=allowlist,

@@ -54,6 +54,9 @@ _NOT_A_BUILDER = {
     # human reading `[image a3f2c1]` in a CLI table is not being told a photo
     # was never looked at; a model reading it in a prompt is.
     "nora/app/cli.py": "renders unattributed rows for an operator on the CLI",
+    # Lazy adoption reads the same rows only to resolve `(platform, sender_id)`
+    # and record `person_id`; no body leaves it.
+    "nora/app/adoption.py": "resolves a sender and sets person_id, renders no transcript",
     # The eval seam's read-back: `heard`
     # reads NORA'S OWN rows after a turn, to report what the room heard, and
     # `last_row_id` reads one row's id as a watermark. Neither body reaches a
@@ -273,7 +276,7 @@ def _discovered_readers(root: pathlib.Path | None = None) -> dict[str, set[str]]
 #: _hand_maintained` asserts this equals the discovered set minus
 #: `_NOT_A_BUILDER`, so a new builder cannot be forgotten — only classified.
 #: The `path=` label each builder must pass. Nothing else guards it — the
-#: label is what separates a tag window from adoption's 1000-row backfill in
+#: label is what separates a tag window from a 1000-row backfill in
 #: two histograms whose buckets differ by two orders of magnitude, and a
 #: copy-pasted `path="tag"` in the fire path would put them in one series with
 #: nobody able to see it.
@@ -284,7 +287,6 @@ PATHS = {
     "nora/app/runtime.py": "dreamer",
     "nora/app/cognition_context.py": "cognition",
     "nora/app/wake_floor.py": "wake",
-    "nora/app/adoption.py": "adoption",
     # The conversation tools' record_query hit render (`query.py`); record.py/
     # rooms.py share the label — the discovery sees only the toolkit's
     # `_transcript_messages` store read (in `_NOT_A_BUILDER` above).
@@ -300,7 +302,7 @@ PATHS = {
     # was shown it, for a model that grades her reply against it.
     "nora/subject/sandbox.py": "judge_source",
     # `nora memory backfill` (DEC-214): a unit's history replayed into its own
-    # Honcho workspace — memory's deriver reads what it feeds, as adoption's.
+    # Honcho workspace — memory's deriver reads what it feeds.
     "nora/app/memory_backfill.py": "memory_backfill",
 }
 
@@ -592,7 +594,7 @@ def test_each_builder_labels_its_own_path(rel: str, path: str) -> None:
 
     The two cost histograms are labelled BY path because the callers have
     nothing in common but the code — a tag window is a handful of blobs under a
-    reply's latency, adoption's is a thousand-row backfill — so a copy-pasted
+    reply's latency, a backfill is a thousand-row replay — so a copy-pasted
     label collapses them into one series where the batch paths saturate and
     nobody can see it. Nothing else in the suite reads what any site passes."""
     tree = ast.parse(_source(rel))

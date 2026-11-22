@@ -56,7 +56,6 @@ from .stages import external_files as external_files_stage
 from .stages import gate as gate_stage
 from .stages import identity as identity_stage
 from .stages import media as media_stage
-from .stages import memory_feed as memory_feed_stage
 from .stages import quote_target as quote_target_stage
 from .stages import scope as scope_stage
 from .stages import stimulus as stimulus_stage
@@ -167,11 +166,11 @@ class IngestResult:
     # callers that never set it.
     outcome: str = ""
     # Set when durable=True so the caller can persist follow-on obligations
-    # (stimulus/memory_feed run as durable work instead of inline awaits).
+    # (the stimulus runs as durable work instead of an inline await).
     row_id: int | None = None
     person: PersonRef | None = None
     # The admission-time absorption fact (Conversation.absorbed as the canonical
-    # allowlist read it at ingest). A durable caller defers memory/stimulus by
+    # allowlist read it at ingest). A durable caller defers the stimulus by
     # minutes; the fact must travel with the message so a later recheck can
     # tell a room that was never absorbed from one whose policy moved.
     absorbed: bool = True
@@ -376,7 +375,7 @@ class IngestPipeline:
         # stage that returns a new message: the body gains the durable handle
         # for every attachment whose bytes are now Nora's, so the row and the
         # blob it names are committed by the same INSERT. See that module for
-        # why it is inline rather than spawned like `memory_feed`.
+        # why it is inline rather than spawned.
         with span("ingest.media"):
             message = await media_stage.run(
                 message=message, sources=self._media_sources, blobs=self._blobs,
@@ -427,10 +426,10 @@ class IngestPipeline:
         # The STIMULUS, right behind the Record row it names. Inside the
         # guard: a span for a stage that cannot run would claim work that never
         # happened.
-        # Under `durable` these two stages are NOT run inline: the caller
-        # (bridge WorkRunner) persists them as obligations in the same commit
+        # Under `durable` the stimulus is NOT run inline: the caller
+        # (bridge WorkRunner) persists it as an obligation in the same commit
         # that retires the ingest work, so the post-audit crash window cannot
-        # silently lose them. Inline stays the non-bridge behaviour.
+        # silently lose it. Inline stays the non-bridge behaviour.
         if not durable:
             if self._stimulus_wiring is not None and absorbed:
                 with span("ingest.stimulus"):
@@ -439,12 +438,6 @@ class IngestPipeline:
                         person_id=person.person_id if person else None,
                         wiring=self._stimulus_wiring, metrics=m,
                     )
-            with span("ingest.memory_feed"):
-                await memory_feed_stage.run(
-                    message=message, person=person, memory=self._memory,
-                    metrics=m, spawn=self._spawn, absorbed=absorbed,
-                )
-
             decision = await self._decide(message=message, person=person, m=m)
         if decision is None:
             raise AssertionError("gate did not run before the outcome")
@@ -557,11 +550,6 @@ class IngestPipeline:
                     person_id=person.person_id if person else original.person_id,
                     wiring=self._stimulus_wiring, metrics=m, target=original,
                 )
-        with span("ingest.memory_feed"):
-            await memory_feed_stage.run(
-                message=message, person=person, memory=self._memory, metrics=m,
-                spawn=self._spawn, edited=original, absorbed=absorbed,
-            )
         with span("ingest.gate"):
             decision = await edit_gate_stage.run(
                 message=message, previous=original, policy=self._policy, metrics=m,

@@ -34,7 +34,7 @@ do not, and the refusals are the design:
   which is always the reminder that has waited hours; R-12 tests a synthetic
   sender against Nora's own aliases. The conversation slot is taken by the tick
   instead, through the same `ConversationSlots` the tag path holds.
-* **no `audit_stage` and no `memory_feed_stage`** — both would write a message
+* **no `audit_stage`** — it would write a message
   the requester never sent, under the requester's peer, at the wrong time.
 * **no `indicate`** — `indicate.begin` reacts to `(author, timestamp)` and
   returns `None` when either is falsy, which the synthetic message's blank
@@ -49,8 +49,7 @@ WHAT IT DOES REUSE, AND WHY EACH ONE MATTERS
 model as U+FFFC), `build_prefill`/`build_tag_message` (or R-13/R-13b escaping
 of group-authored text stops being pinned by its two named acceptance tests),
 `deliver.build` + `Deliverer` (the ONLY caller of `adapter.send`, so R-2, R-4,
-R-6 and R-18 all still apply), and `feedback.run` (a fire turn is still
-something she said; omitting it makes her memory of her own speech incomplete).
+R-6 and R-18 all still apply).
 
 Doctrine is read at `applies_to="heartbeat"` — `"participation"` for that
 occasion — because at `"tag"` it would carry the silence rules that
@@ -182,7 +181,7 @@ from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.graph_context import EngagementGraph
 from nora.engagement.mentions import MentionRenderer
 from nora.engagement.self_presence import PresenceReader
-from nora.engagement.stages import deliver, feedback
+from nora.engagement.stages import deliver
 from nora.engagement.stages.invoke import AgentRunner
 from nora.ingest.relevance_gate import SCORE_ABSENT
 from nora.language.culture_render import read_character, read_culture
@@ -2166,10 +2165,6 @@ class FirePath:
                     texts=handle.deliverer.sent_texts, held=False,
                     stop_reason=stop_reason,
                 )
-            await self._feed(
-                handle.deliverer.sent_texts, occasion.conversation_id,
-                occasion.platform,
-            )
             return SENT
         except Exception:
             log.exception("fire turn failed (tag=%s); staying silent", ctx.tag_id)
@@ -2799,34 +2794,6 @@ class FirePath:
         # admission where the model simply gave no number.
         shown = f"{score:.2f}" if score is not None else "—"
         return f"{room} — {last} — go — {shown}"
-
-    async def _feed(
-        self, sent_texts: Sequence[str], conversation_id: str, platform: str,
-    ) -> None:
-        """Nora's own messages, under the Nora aiPeer, into this conversation's
-        session — the tag path's `feedback` stage, awaited rather than spawned.
-
-        Awaited because nobody is waiting on a fire turn, so there is no reply
-        latency to protect; guarded because a Honcho outage must not turn a
-        reminder that reached the group into a `failed_error` row that says it
-        did not.
-        """
-        if not sent_texts:
-            return
-        try:
-            await feedback.run(
-                memory=self._memory, ai_peer=self._ai_peer, sent_texts=sent_texts,
-                conversation_id=conversation_id, metrics=self._metrics,
-            )
-        except Exception:
-            log.exception("fire turn feedback failed; the reminder was still delivered")
-            # `platform`, because the series DECLARES `(stage, platform)` and an
-            # omitted label records `platform=""` (`Metrics._full_labels`) — a
-            # sample invisible to `nora_errors_total{platform="signal"}`, which
-            # is the filter an operator reaches for first.
-            self._metrics.inc(
-                "nora_errors_total", stage="fire_feedback", platform=platform,
-            )
 
 
 def _window_query(transcript: Sequence[TranscriptRow]) -> str:

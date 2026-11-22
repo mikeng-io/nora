@@ -1,4 +1,4 @@
-"""The ingest stages: audit, identity, memory_feed, gate and the
+"""The ingest stages: audit, identity, gate and the
 cognition stimulus.
 
 Each module has exactly one public `async def run(...)`. `nora.ingest.pipeline.

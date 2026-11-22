@@ -1,23 +1,9 @@
-"""Stage 4 — feed the ambient message to Honcho. Mapped senders only (D6);
-always off the listener path.
+"""The framing `nora.app.memory_backfill` still replays edits with.
 
-`on_event` is awaited by the SSE reader, so an inline 200-800ms Honcho call
-would stall the socket read for every conversation on this adapter. This
-stage schedules the feed through the injected `spawn` and returns immediately
-— it never awaits the feed itself. `HonchoClient` is documented as never
-load-bearing and already swallows its own failures (`nora/infra/honcho/
-client.py`), so there is no try/except here to add; a `MemoryStore` fake that
-raises would surface via `spawn`'s own done-callback, not this stage.
-"""
+The live feed that used this module is gone; the importer leaves with the
+backfill, and then this module does."""
 
 from __future__ import annotations
-
-from collections.abc import Callable, Coroutine
-from typing import Any
-
-from nora.domain.external_files import render_file_links
-from nora.domain.models import EditedMessage, NormalizedMessage, PersonRef
-from nora.domain.ports import MemoryStore
 
 
 def edit_text(*, body: str, first_body: str | None) -> str:
@@ -31,68 +17,3 @@ def edit_text(*, body: str, first_body: str | None) -> str:
     join from this message to that one: without it, «8pm» is a fact, not a
     change from «7pm»."""
     return f"[edited an earlier message; it first said: «{first_body or ''}»] {body}"
-
-
-async def run(
-    *,
-    message: NormalizedMessage,
-    person: PersonRef | None,
-    memory: MemoryStore,
-    metrics: Any,
-    spawn: Callable[[Coroutine[Any, Any, Any]], None],
-    edited: EditedMessage | None = None,
-    absorbed: bool = True,
-    on_effect_start: Callable[[], Any] | None = None,
-) -> None:
-    """Schedule the feed; never await it here. `person is None` means the
-    sender is unmapped (D6) — the message is never fed to the semantic store.
-
-    `edited` is the message `message` edits, when it is an edit: the text is
-    then framed as a correction and the metadata points at the original's
-    `ts`.
-
-    The scheduled coroutine returns a typed outcome (`_FEED_*`) so a durable
-    caller awaiting it can tell a landed feed from an uncertain POST; a
-    listener spawn drops the value exactly as it dropped None."""
-    if person is None:
-        return
-    if not absorbed:
-        # A mention-only room (a server-entry channel `ambient` does not
-        # name): recorded and answered when tagged, never absorbed into
-        # memory. `Conversation.absorbed` is the flag's one definition.
-        return
-    # Honcho's deriver is a model and recall hands its text back to her, so a
-    # shared file link is fed as its handle, never the URL (R-18).
-    text = render_file_links(message.body)
-    metadata: dict[str, object] = {"ts": message.timestamp}
-    if edited is not None:
-        text = edit_text(body=text, first_body=render_file_links(edited.first_body or ""))
-        metadata["edit_of_ts"] = edited.ts
-    spawn(_feed(
-        memory=memory, peer_id=person.honcho_peer_id, text=text,
-        conversation_id=message.conversation_id, metadata=metadata,
-        metrics=metrics, on_effect_start=on_effect_start,
-    ))
-
-
-async def _feed(
-    *, memory: MemoryStore, peer_id: str, text: str, conversation_id: str,
-    metadata: dict[str, object], metrics: Any,
-    on_effect_start: Callable[[], Any] | None = None,
-) -> str:
-    await memory.ensure_peer(peer_id=peer_id, conversation_id=conversation_id)
-    # `ensure_peer` is idempotent — the durable caller's effect-start commit
-    # sits between it and the one call Honcho cannot dedupe: `feed` itself.
-    # Everything before the hook is safe to retry; nothing after it is.
-    if on_effect_start is not None:
-        await on_effect_start()
-    # Fed under the SPEAKER'S peer into the CONVERSATION's session (Honcho v2).
-    # `ts` rides as metadata so the deriver has structure.
-    ok = await memory.feed(
-        peer_id=peer_id, text=text, conversation_id=conversation_id,
-        metadata=metadata,
-    )
-    metrics.inc("honcho_feed_success" if ok else "honcho_feed_failure")
-    # `feed` POSTs; a False may mean the post landed and the response was
-    # lost — an UNCONFIRMED effect a durable caller must not blindly replay.
-    return "fed" if ok else "feed_unconfirmed"

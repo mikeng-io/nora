@@ -142,8 +142,7 @@ def _resolve_inbound_mentions(content: str, mentions: list[_DiscordUser]) -> str
     discord.py already resolved WHO these ids are — `message.mentions` — so
     this is a pure text substitution, no extra I/O. Doing it here, once, at
     comprehend time, means everything that reads `NormalizedMessage.body`
-    downstream (the model's own transcript in `nora.agent.prefill`, the
-    Honcho feed in `nora.ingest.stages.memory_feed`) sees a name instead of a
+    downstream (the model's own transcript in `nora.agent.prefill`) sees a name instead of a
     bare snowflake nobody — human or model — can read.
 
     An id present in `content` but absent from `mentions` (a shape Discord

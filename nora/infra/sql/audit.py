@@ -1005,11 +1005,10 @@ class SqlRecordStore:
     async def unattributed(self, *, limit: int) -> list[UnattributedRow]:
         """Audited rows still attributed to nobody, OLDEST FIRST.
 
-        The ordering is load-bearing, not incidental: the caller
-        (`nora.app.adoption`) replays these into a person's Honcho peer, and a
-        peer's memory has to read chronologically. `ts`, not `id` — a row's
-        insert order is the order Nora *received* it, which under signal-cli's
-        catch-up delivery is not the order it was *sent*. `id` only breaks ties.
+        The ordering is `ts`, not `id` — a row's insert order is the order Nora
+        *received* it, which under signal-cli's catch-up delivery is not the
+        order it was *sent*. `id` only breaks ties, and a backlog past the
+        caller's `limit` is attributed oldest first.
 
         `is_nora = 0` is part of the predicate deliberately. Nora's own replies
         are audited with `person_id` NULL too, and her account is never written
@@ -1026,17 +1025,12 @@ class SqlRecordStore:
                 MESSAGES.c.id, MESSAGES.c.platform, MESSAGES.c.sender_id,
                 MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.conversation_id,
                 MESSAGES.c.raw_json,
-                # The custody index, so lazy adoption can join what a photo
-                # showed before it feeds the row to Honcho. Without it a
-                # back-filled row reaches memory as `[image a3f2c1]` and nothing
-                # else.
+                # The custody index a reader joins what a photo showed on.
                 MESSAGES.c.media_json,
             )
             .where(MESSAGES.c.person_id.is_(None), MESSAGES.c.is_nora == 0)
-            # A withdrawn message is never replayed into memory: adoption FEEDS
-            # these rows to Honcho (`nora.app.adoption`), so a message its author
-            # deleted would otherwise reach memory the day its sender is first
-            # mapped.
+            # A withdrawn message is never attributed: it would otherwise reach
+            # a person's memory the day its sender is first mapped.
             .where(MESSAGES.c.hidden_at.is_(None))
             .order_by(MESSAGES.c.ts.asc(), MESSAGES.c.id.asc())
             .limit(limit)
@@ -1058,8 +1052,7 @@ class SqlRecordStore:
         This is the only write lazy adoption performs, and it is off the ingest
         path entirely. A single batched UPDATE across the whole backlog would
         hold a transaction open for the length of the batch and lock every row
-        it touched; a row at a time, interleaved with the caller's awaited Honcho
-        feed, never does.
+        it touched; a row at a time never does.
 
         An unknown `row_id` is a silent no-op, matching `set_delivery_outcome` —
         the row may have been pruned out from under the backfill between the

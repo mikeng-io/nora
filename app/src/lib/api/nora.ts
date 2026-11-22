@@ -10,7 +10,6 @@ import { apiGet } from "./client";
 export const StatusSchema = z.object({
   uptime_seconds: z.number(),
   store: z.object({ reachable: z.boolean() }),
-  honcho: z.object({ reachable: z.boolean() }),
   reminders: z.object({
     count: z.number(),
     next_due_at: z.string().nullable(),

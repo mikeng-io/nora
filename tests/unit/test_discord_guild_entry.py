@@ -323,7 +323,7 @@ def _pipeline(allowlist, memory, spawned, stimulus_calls, monkeypatch, audit=Non
 
 async def test_a_mention_only_channel_records_but_is_never_absorbed(tmp_path, monkeypatch):
     """The server-entry default: transcript kept, tag path open, but no
-    Honcho feed and no stimulus — `Conversation.absorbed` is False."""
+    stimulus — `Conversation.absorbed` is False."""
     memory = FakeMemoryStore()
     spawned, stimuli = [], []
     pipeline = _pipeline(
@@ -335,12 +335,11 @@ async def test_a_mention_only_channel_records_but_is_never_absorbed(tmp_path, mo
     assert result.message is not None          # admitted and recorded
     for coro in spawned:
         await coro
-    assert memory.fed == []                    # never absorbed into memory
     assert stimuli == []                       # and never a stimulus
 
 
-async def test_an_ambient_channel_is_fed_and_stimulated(tmp_path, monkeypatch):
-    """`ambient = [...]` is the opt-in: the same turn absorbs fully."""
+async def test_an_ambient_channel_is_stimulated(tmp_path, monkeypatch):
+    """`ambient = [...]` is the opt-in: the same turn is absorbed."""
     memory = FakeMemoryStore()
     spawned, stimuli = [], []
     pipeline = _pipeline(
@@ -352,7 +351,6 @@ async def test_an_ambient_channel_is_fed_and_stimulated(tmp_path, monkeypatch):
 
     for coro in spawned:
         await coro
-    assert memory.fed != []
     assert len(stimuli) == 1
 
 
@@ -491,13 +489,12 @@ async def _run_past_a_swap(tmp_path, monkeypatch, message, audit=None):
 async def test_a_room_vanishing_between_scope_and_the_absorb_read_is_not_absorbed(
     tmp_path, monkeypatch,
 ):
-    """A message the CURRENT policy denies is never fed or stimulated — the
+    """A message the CURRENT policy denies is never stimulated — the
     absorb read fails closed, never `or room.absorbed` on a missing room."""
-    result, memory, stimuli = await _run_past_a_swap(
+    result, _memory, stimuli = await _run_past_a_swap(
         tmp_path, monkeypatch, _discord_msg(CHANNEL_B),
     )
     assert result.message is not None          # recorded
-    assert memory.fed == []                    # but never absorbed
     assert stimuli == []
 
 
@@ -513,11 +510,10 @@ async def test_an_edit_whose_room_vanishes_mid_turn_is_not_absorbed(
         _discord_msg(CHANNEL_B, body="second"),
         timestamp=5, edit_of=EditTarget(message_id="edit-target-1"),
     )
-    result, memory, stimuli = await _run_past_a_swap(
+    result, _memory, stimuli = await _run_past_a_swap(
         tmp_path, monkeypatch, edit, audit=store,
     )
     assert result.message is not None          # the edit itself is recorded
-    assert memory.fed == []                    # but never absorbed
     assert stimuli == []
 
 
