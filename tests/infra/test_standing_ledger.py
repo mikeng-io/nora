@@ -620,7 +620,7 @@ async def test_standing_read_returns_all_entries_and_full_history(ledger, ledger
     assert got["entries"][0]["body"] == changed.entry.body
 
 
-async def test_context_assembly_renders_one_standing_block(
+async def test_called_floor_ignores_wired_legacy_standing(
     ledger, ledger_db, example_config
 ):
     from nora.agent.prefill import build_prefill
@@ -658,11 +658,9 @@ async def test_context_assembly_renders_one_standing_block(
 
     ctx = await assembler.assemble(request=_request(msg))
     text = str(build_prefill(ctx, display_name="Nora", context_window=20))
-    # The one `standing` block carries the legacy paragraph as a position and
-    # the ledger entry as an open decision — no second block beside it.
-    assert "<standing " in text or "<standing>" in text
-    assert "A legacy paragraph" in text and entry.id in text
-    assert "standing_ledger" not in text and "shared_cognitive_state" not in text
+    assert ctx.shared is None
+    assert "<standing " not in text and "<standing>" not in text
+    assert "A legacy paragraph" not in text and entry.id not in text
 
 
 async def test_thread_has_no_body_and_whole_standing_writes_are_refused(ledger, ledger_db):
@@ -691,7 +689,7 @@ async def test_thread_has_no_body_and_whole_standing_writes_are_refused(ledger, 
 
 
 @pytest.mark.parametrize("kind", ["fire", "participation"])
-async def test_fire_and_participation_render_unit_ledger_in_other_room(
+async def test_the_unit_ledger_still_reaches_legacy_fire_only(
     ledger,
     ledger_db,
     doctrine_store,
@@ -741,7 +739,8 @@ async def test_fire_and_participation_render_unit_ledger_in_other_room(
         kind=kind,
     )
     ctx = await path.build_context(occasion)
-    assert entry.id in str(build_prefill(ctx, display_name="Nora", context_window=20))
+    text = str(build_prefill(ctx, display_name="Nora", context_window=20))
+    assert (entry.id in text) is (kind == "fire")
 
 
 async def test_revising_one_section_preserves_evidence_after_source_retention(ledger, ledger_db):

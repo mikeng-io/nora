@@ -370,18 +370,6 @@ def _assembler(memory, **kw):
     )
 
 
-async def test_a_thrown_recall_never_costs_the_turn():
-    """A raising Honcho is the same shape as an unreachable one from the
-    group's side — the reply still happens, thinner."""
-    class Boom(FakeMemory):
-        async def representation(self, **kw):
-            raise RuntimeError("honcho is down")
-
-    ctx = await _assembler(Boom()).assemble(request=_request())
-
-    assert ctx.peer_card == ("likes coffee",)     # the rest of the turn survived
-
-
 # ---------------------------------------------------------------------------
 # The note tier's read.
 #
@@ -432,101 +420,6 @@ class RaisingNoteStore:
         raise RuntimeError("note store is down")
 
 
-async def test_standing_notes_reach_the_tag_context_when_a_store_is_wired():
-    note = _note("n1", "ridgeline", "9 Sept dinner")
-    store = FakeNoteStore({"ridgeline": (note,)})
-    assembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-        context_window=10, metrics=Metrics(), notes=store, policy=_policy(),
-    )
-
-    ctx = await assembler.assemble(request=_request())
-
-    assert ctx.notes == (note,)
-
-
-async def test_notes_are_empty_when_no_store_is_configured():
-    assembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-        context_window=10, metrics=Metrics(), policy=_policy(),
-    )
-
-    ctx = await assembler.assemble(request=_request())
-
-    assert ctx.notes == ()
-
-
-async def test_the_notes_read_is_keyed_on_the_unit_not_the_conversation():
-    """The unit scoping is the whole point of this read: `g1` belongs to unit `ridgeline`,
-    and a note established in the OTHER unit must not appear however alike
-    the two rooms are. The ARGUMENT is asserted as well as the result, because
-    a read keyed on the conversation id would answer `()` here — the right
-    result for the wrong reason, and the wrong result the day a unit has
-    two rooms."""
-    mine = _note("n1", "ridgeline", "9 Sept dinner")
-    theirs = _note("n2", "friends", "Someone else's wedding")
-    store = FakeNoteStore({"ridgeline": (mine,), "friends": (theirs,)})
-    assembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-        context_window=10, metrics=Metrics(), notes=store,
-        policy=_policy(unit="ridgeline"),
-    )
-
-    ctx = await assembler.assemble(request=_request())
-
-    assert ctx.notes == (mine,)
-    assert store.calls == ["ridgeline"], "scoped by unit, never by room"
-
-
-async def test_a_failing_notes_read_yields_an_empty_index_not_a_dead_turn():
-    store = FakeRecordStore()
-    await store.append(message=_msg())
-    assembler = TranscriptInjection(
-        audit=store, memory=FakeMemory(), persons=_MILES, context_window=10,
-        metrics=Metrics(), notes=RaisingNoteStore(), policy=_policy(),
-    )
-
-    ctx = await assembler.assemble(request=_request())
-
-    assert ctx.notes == ()
-    assert ctx.transcript, "the other reads must still have completed"
-
-
-async def test_a_failing_notes_read_counts_nora_errors_total_stage_notes():
-    metrics = Metrics()
-    assembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-        context_window=10, metrics=metrics, notes=RaisingNoteStore(),
-        policy=_policy(),
-    )
-
-    await assembler.assemble(request=_request())
-
-    assert metrics.get("nora_errors_total", stage="notes", platform="signal") == 1
-
-
-async def test_a_room_the_policy_does_not_know_reads_no_notes_and_is_counted():
-    """A store wired with no unit to scope it by is a WIRING GAP, not an
-    empty notebook: engagement and ingest disagree about which `Policy` they
-    were given (`EngagementPipeline`'s own `convo is not None` note). It
-    defaults safely — a thinner prompt, never notes from a guessed unit —
-    and it is COUNTED, because the alternative is the `<notes>` block quietly
-    never appearing for the life of a deployment."""
-    metrics = Metrics()
-    store = FakeNoteStore({"ridgeline": (_note("n1", "ridgeline", "9 Sept dinner"),)})
-    assembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-        context_window=10, metrics=metrics, notes=store,
-        policy=_policy(conversation_id="another-room"),
-    )
-
-    ctx = await assembler.assemble(request=_request())
-
-    assert ctx.notes == ()
-    assert store.calls == [], "no unit means no read at all, not a guess"
-    assert metrics.get("nora_errors_total", stage="notes", platform="signal") == 1
-
-
 # ---- nora_note_index_entries, the gauge config.toml calls "the tell" -------
 #
 # The four tests below are one test each of the four states this gauge has to
@@ -537,104 +430,7 @@ async def test_a_room_the_policy_does_not_know_reads_no_notes_and_is_counted():
 # the whole reason the publish sits on the success path.
 
 
-async def test_the_index_gauge_reports_how_many_notes_she_was_actually_shown():
-    notes = tuple(
-        _note(f"n{i}", "ridgeline", f"note {i}") for i in range(3)
-    )
-    metrics = Metrics()
-    assembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-        context_window=10, metrics=metrics, notes=FakeNoteStore({"ridgeline": notes}),
-        policy=_policy(),
-    )
-
-    ctx = await assembler.assemble(request=_request())
-
-    # Bound to what reached the context, not to a number written beside it: a
-    # gauge that agreed with a constant while `ctx.notes` disagreed would be
-    # measuring the test.
-    assert metrics.get("nora_note_index_entries", unit="ridgeline") == len(ctx.notes) == 3
-
-
-async def test_the_index_gauge_is_labelled_so_two_units_do_not_overwrite():
-    """The label is the reason this gauge means anything on this deployment.
-    `friends` and `ridgeline` are separate notebooks; unlabelled, whichever room
-    tagged last would own the reading and the exported number would mean «the
-    size of the notebook consulted most recently»."""
-    store = FakeNoteStore({
-        "ridgeline": (_note("n1", "ridgeline", "9 Sept dinner"),),
-        "friends": tuple(_note(f"f{i}", "friends", f"note {i}") for i in range(4)),
-    })
-    metrics = Metrics()
-
-    for conversation_id, unit in (("g1", "ridgeline"), ("g2", "friends")):
-        assembler = TranscriptInjection(
-            audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-            context_window=10, metrics=metrics, notes=store,
-            policy=_policy(conversation_id=conversation_id, unit=unit),
-        )
-        await assembler.assemble(
-            request=_request(_msg(conversation_id=conversation_id)))
-
-    assert metrics.get("nora_note_index_entries", unit="ridgeline") == 1
-    assert metrics.get("nora_note_index_entries", unit="friends") == 4
-
-
-async def test_an_empty_notebook_reads_zero_rather_than_going_absent():
-    """A wired, reached notebook holding nothing. `0` here is a measurement — «I looked, there is
-    nothing» — and it is what separates a quiet notebook from a broken one."""
-    metrics = Metrics()
-    assembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-        context_window=10, metrics=metrics, notes=FakeNoteStore({"ridgeline": ()}),
-        policy=_policy(),
-    )
-
-    await assembler.assemble(request=_request())
-
-    # PRESENCE, then value — and in that order on purpose. `Metrics.get` sums
-    # the series matching its labels and answers `0.0` when there are none, so
-    # `get(...) == 0` is true of a gauge that was never published and cannot
-    # tell this state from the one the test below covers. Asserting membership
-    # in `snapshot()` is what makes the zero a measurement.
-    assert ("nora_note_index_entries", (("unit", "ridgeline"),)) in metrics.snapshot()
-    assert metrics.get("nora_note_index_entries", unit="ridgeline") == 0
-
-
-async def test_a_failed_read_leaves_the_gauge_absent_rather_than_zero():
-    """R-27 in one gauge. A failing store returns `()` like an empty notebook
-    does, and publishing `0` here would export «the notebook is empty» for «I
-    could not read the notebook» — the `unavailable`-as-`nothing_found`
-    collapse, in the one series meant to answer that exact question. The wiring
-    gap keeps `nora_errors_total{stage="notes"}`; absence is what says no
-    reading was taken."""
-    metrics = Metrics()
-    assembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-        context_window=10, metrics=metrics, notes=RaisingNoteStore(),
-        policy=_policy(),
-    )
-
-    await assembler.assemble(request=_request())
-
-    assert ("nora_note_index_entries", (("unit", "ridgeline"),)) not in metrics.snapshot()
-    assert metrics.get("nora_errors_total", stage="notes", platform="signal") == 1
-
-
 # --- Standing's read half ---------------------------------------------------
-
-async def test_no_shared_reader_is_the_dormant_default():
-    """`[standing] enabled = false` — no shared reader wired, no view, the
-    same "not yet wired" shape `notes` uses."""
-    metrics = Metrics()
-    assembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-        context_window=10, metrics=metrics, shared=None,
-    )
-    ctx = await assembler.assemble(request=_request())
-    assert ctx.shared is None
-    assert metrics.get("nora_errors_total", stage="standing") == 0
-
 
 async def test_the_position_is_read_by_platform_and_conversation():
     """The room's Standing paragraph is a READ ADAPTER in the shared view
@@ -667,37 +463,10 @@ async def test_the_position_is_read_by_platform_and_conversation():
             standing=store, ai_peer="nora",
             rooms_of_unit=lambda unit: (("signal", "g1"),)),
     )
-    ctx = await assembler.assemble(request=_request())
+    view = await assembler._shared(_msg(), None)
     assert store.reads == [("signal", "g1")]
-    pos = next(e for e in ctx.shared.entries if e.kind == "standing")
+    pos = next(e for e in view.entries if e.kind == "standing")
     assert pos.subject == "a position"
-
-
-async def test_a_failed_standing_read_is_unavailable_never_nothing_found():
-    """The THIRD state, and it is not the same as the other two. A position
-    that exists and could not be fetched is `unavailable`; folding it in with
-    "no store" and "no row" reports it as `nothing_found`, which is exactly the
-    substitution R-27 exists to prevent. Fail-SOFT on the value — a thinner
-    prompt beats no reply — and never silent."""
-    class _Broken:
-        async def read(self, *, platform: str, conversation_id: str):
-            raise RuntimeError("db down")
-
-    from nora.agent.shared_state import shared_reader
-
-    metrics = Metrics()
-    assembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-        context_window=10, metrics=metrics, policy=_policy(),
-        shared=shared_reader(
-            standing=_Broken(), ai_peer="nora",
-            rooms_of_unit=lambda unit: (("signal", "g1"),)),
-    )
-    ctx = await assembler.assemble(request=_request())
-    assert ctx.shared is not None and ctx.shared.status == "unavailable"
-    # The standing store's source in the view is `findings` — the read
-    # adapter that also carries the position paragraph.
-    assert ("findings", "unavailable") in ctx.shared.sources
 
 
 async def test_the_tag_path_reads_presence_at_turn_start():
@@ -741,26 +510,32 @@ async def test_the_tag_path_reads_presence_at_turn_start():
 # ---------------------------------------------------------------------------
 
 
-async def test_assemble_emits_a_span_per_store_read(exported_spans):
-    """PROBE: replace any one `traced_read(...)` call in `TranscriptInjection`
-    with a bare `await` and its name drops out of this list."""
-    notes = _note("n1", "ridgeline", "9 Sept dinner")
+async def test_a_called_floor_reads_no_legacy_store_even_when_wired(exported_spans, monkeypatch):
+    reads = []
+
+    async def legacy(*args, **kwargs):
+        reads.append("legacy")
+        raise RuntimeError("Legacy store reached on the called path")
+
+    store = FakeRecordStore()
+    await store.append(message=_msg())
     memory = FakeMemory()
     assembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=memory, persons=_MILES,
-        context_window=10, metrics=Metrics(),
-        ai_peer="nora", tagger_card_conclusions=3,
-        notes=FakeNoteStore({"ridgeline": (notes,)}), policy=_policy(),
+        audit=store, memory=memory, persons=_MILES, context_window=10, metrics=Metrics(),
+        ai_peer="nora", tagger_card_conclusions=3, policy=_policy(),
     )
+    for method in (
+        "_prefetch", "_peer_card", "_recall_tagger", "_notes", "_memos", "_shared",
+        "_culture", "_unit_culture", "_self_account", "_lessons", "_profiles", "_character",
+    ):
+        monkeypatch.setattr(assembler, method, legacy)
 
-    await assembler.assemble(request=_request())
+    ctx = await assembler.assemble(request=_request())
 
-    names = [s.name for s in exported_spans.get_finished_spans()]
-    assert names.count("store.record.recent") == 1
-    assert names.count("store.memory.peer_card") == 1
-    # `_recall_tagger` calls `MemoryStore.representation`: one read, one span.
-    assert names.count("store.memory.representation") == 1
-    assert names.count("store.notes.standing") == 1
+    assert ctx.transcript and ctx.tagger is not None
+    assert not reads
+    spans = [s.name for s in exported_spans.get_finished_spans()]
+    assert spans.count("store.record.recent") == 1
 
 
 async def test_a_store_read_span_carries_row_count_and_duration(exported_spans):
@@ -789,71 +564,22 @@ async def test_a_store_read_span_carries_row_count_and_duration(exported_spans):
     assert recorded.attributes["nora.store.duration_ms"] >= 0
 
 
-async def test_presence_and_culture_reads_are_also_traced(exported_spans):
-    """`_culture` and `_presence` are gathered alongside the six wrapped reads
-    `test_assemble_emits_a_span_per_store_read` covers, and are wrapped the
-    same way: same store-port boundary, same class, so every `build_prefill`
-    read is visible.
-
-    PROBE: replace either `traced_read(...)` call — the one wrapping
-    `self._culture_reader.head(...)` or `self._presence_reader.read(...)` —
-    with a bare `await` and its name drops out of this list.
-    """
+async def test_the_called_presence_read_is_traced(exported_spans):
     from nora.domain.self_presence import Presence
-    from nora.testing import InMemoryCultureStore
 
-    culture_store = InMemoryCultureStore()
-    await culture_store.append(
-        key="g1", body="a running joke about pineapple pizza",
-        written_at=1, established_by="fold",
-    )
-
-    class _Reader:
-        async def read(self, *, platform: str, conversation_id: str, direct: bool = False):
-            return Presence(platform=platform, label="Friends", here_state="up")
+    class Reader:
+        async def read(self, *, platform, conversation_id, direct=False):
+            return Presence(platform=platform, label=conversation_id, here_state="up")
 
     assembler = TranscriptInjection(
         audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-        context_window=10, metrics=Metrics(),
-        presence=_Reader(), culture=culture_store, policy=_policy(),
+        context_window=10, metrics=Metrics(), presence=Reader(), policy=_policy(),
     )
 
-    await assembler.assemble(request=_request())
+    ctx = await assembler.assemble(request=_request())
 
-    names = [s.name for s in exported_spans.get_finished_spans()]
-    assert names.count("store.presence.read") == 1
-    assert names.count("store.culture.head") == 3  # the room's, its unit's (C3a), hers
-
-
-async def test_memory_representation_row_count_is_the_conclusions_count(
-    exported_spans,
-):
-    """`Recollection` has no `__len__`, so plain
-    `_row_count` leaves `store.memory.representation` with no row count at
-    all — measurable, but never measured. `traced_read`'s `count=` callback
-    is what closes that, not a special case inside `_row_count` itself.
-
-    PROBE: drop `count=lambda r: len(r.conclusions)` from either
-    `traced_read(..., "representation", ...)` call in
-    `_recall_tagger` and `nora.store.row_count` disappears from its span.
-    """
-    assembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-        context_window=10, metrics=Metrics(),
-        ai_peer="nora", tagger_card_conclusions=3,
-    )
-
-    await assembler.assemble(request=_request())
-
-    representation_spans = [
-        s for s in exported_spans.get_finished_spans()
-        if s.name == "store.memory.representation"
-    ]
-    assert len(representation_spans) == 1
-    for recorded in representation_spans:
-        # `FakeMemory.representation` answers one conclusion per call
-        # (module docstring / `FakeMemory.representation`'s own body).
-        assert recorded.attributes["nora.store.row_count"] == 1
+    assert ctx.presence.label == "g1"
+    assert sum(s.name == "store.presence.read" for s in exported_spans.get_finished_spans()) == 1
 
 
 async def test_a_failing_read_ends_its_span_with_error_status(exported_spans):
@@ -964,49 +690,3 @@ async def _kept(store: object, unit: str, title: str) -> object:
         body="## Kept\n- kept [1]", citations=("1",), mode="told",
         established_by="cognition:u", model=None, now_ms=1,
     )
-
-
-async def test_the_memos_read_is_this_rooms_unit_only():
-    from nora.testing.memo_store import InMemoryMemoStore
-
-    store = InMemoryMemoStore()
-    mine = await _kept(store, "ridgeline", "wifi password")
-    await _kept(store, "friends", "their door code")
-    assembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-        context_window=10, metrics=Metrics(), memos=store,
-        policy=_policy(unit="ridgeline"),
-    )
-    ctx = await assembler.assemble(request=_request())
-    assert [m.id for m in ctx.memos] == [mine.id]
-
-
-async def test_a_failing_memos_read_is_counted_and_renders_none():
-    class _Down:
-        async def kept(self, *, unit: str) -> tuple[object, ...]:
-            raise RuntimeError("memo store is down")
-
-    metrics = Metrics()
-    assembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-        context_window=10, metrics=metrics, memos=_Down(), policy=_policy(),
-    )
-    ctx = await assembler.assemble(request=_request())
-    assert ctx.memos == ()
-    assert metrics.get("nora_errors_total", stage="memos", platform="signal") == 1
-
-
-async def test_a_room_the_policy_does_not_know_reads_no_memos_and_is_counted():
-    """A wired memo store with no unit to scope it by is a
-    wiring gap, counted as `_notes` counts it, never a silent empty list."""
-    from nora.testing.memo_store import InMemoryMemoStore
-
-    metrics = Metrics()
-    assembler = TranscriptInjection(
-        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
-        context_window=10, metrics=metrics, memos=InMemoryMemoStore(),
-        policy=_policy(conversation_id="some-other-room"),
-    )
-    ctx = await assembler.assemble(request=_request())
-    assert ctx.memos == ()
-    assert metrics.get("nora_errors_total", stage="memos", platform="signal") == 1

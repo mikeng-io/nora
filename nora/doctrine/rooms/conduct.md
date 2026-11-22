@@ -6,7 +6,7 @@ applies_to: [tag, heartbeat, participation, proactive]
 version: 52
 kind: conduct
 authority_above: [constraints, room-constraints, pictures, identity, belonging, voice]
-authority_below: [situation, message-content, tool-output]
+authority_below: [engagement, situation, message-content, tool-output]
 not_here: >-
   No tool catalogue. What she can reach for is described by the tool schemas.
   Not register or language policy (voice.md), not absolute prohibitions

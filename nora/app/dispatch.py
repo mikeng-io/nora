@@ -92,5 +92,6 @@ class Dispatcher:
             return
         request = EngagementRequest(
             message=result.message, decision=result.decision, tag_id=uuid.uuid4().hex,
+            message_row_id=result.row_id,
         )
         self._background.spawn(self._engagement.run(request))

@@ -43,6 +43,7 @@ from nora.memory.adapters.debrief_store import SqlDebriefStore
 from nora.memory.adapters.graph_clock import SqlDueSchedules
 from nora.memory.adapters.graph_store import SqlCognitiveGraph
 from nora.memory.adapters.memory_intake import SqlMemoryIntake
+from nora.memory.adapters.message_graph_ids import SqlMessageGraphIds
 from nora.memory.adapters.pass_anchors import SqlPassAnchors
 from nora.memory.adapters.pass_assembly import PassAssembler
 from nora.memory.adapters.retrieval_store import SqlRetrieval
@@ -428,6 +429,10 @@ def debrief_store(engine: AsyncEngine) -> SqlDebriefStore:
     return SqlDebriefStore(engine, SqlActStore(
         engine, engine.get_execution_options()["item_registration"],
     ))
+
+
+def message_graph_ids(engine: AsyncEngine) -> SqlMessageGraphIds:
+    return SqlMessageGraphIds(engine)
 
 
 def pass_assembler(

@@ -6,7 +6,7 @@ applies_to: [tag, heartbeat, participation, proactive]
 version: 4
 kind: constraint
 authority_above: [constraints]
-authority_below: [belonging, voice, conduct, situation, message-content, tool-output]
+authority_below: [engagement, belonging, voice, conduct, situation, message-content, tool-output]
 not_here: >-
   Only what may never happen in a room, on top of core/constraints.md, which
   applies here too. Moved out of conduct.md, belonging.md, pictures.md and

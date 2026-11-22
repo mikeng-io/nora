@@ -72,7 +72,7 @@ def _omniroute_key(monkeypatch):
     """
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
 
-async def test_seeded_notes_and_standing_render_in_the_assembled_prompt(
+async def test_offline_called_pass_uses_the_graph_floor_with_legacy_stores_wired(
     tmp_path, example_config,
 ):
     cfg = example_config
@@ -136,22 +136,11 @@ async def test_seeded_notes_and_standing_render_in_the_assembled_prompt(
     finally:
         await audit.aclose()
 
-    assert calls, "the scripted runner was never invoked — no turn ran"
-    # The pipeline passes the assembled `pre_fill` to `runner.invoke`
-    # (`nora/engagement/stages/invoke.py`), so `on_call` captured exactly what
-    # the model sees — asserting on that instead of re-deriving through
-    # `build_prefill` here rules out drift between the two call sites.
-    assert "pre_fill" in calls[0], "invoke.run did not hand the runner its pre_fill"
-    rendered = _flatten(calls[0]["pre_fill"])
-
-    # Each tag carries `untrusted="true" note="..."` attributes (every
-    # injected block's convention), so the check is for the OPEN TAG's
-    # prefix, not a bare `<standing>`.
-    assert "<standing " in rendered
-    assert "the group is planning a weekend trip" in rendered
-    assert "<notes " in rendered
-    # The notes block is the INDEX — title + description, never the revision
-    # body (`nora.language.note_render.render_notes`'s own docstring: "title
-    # and description only", by design).
-    assert "a tracked uncertainty" in rendered
-    assert "whether the venue is booked" in rendered
+    assert calls, "the scripted runner was never invoked"
+    rendered = calls[0]["tag_message"]
+    assert "<graph_standing " in rendered and 'status="unavailable"' in rendered
+    assert "<transcript " in rendered and "<tag_message " in rendered
+    assert "nora.000 hi" in rendered
+    assert "<standing " not in rendered and "<notes " not in rendered
+    assert "the group is planning a weekend trip" not in rendered
+    assert "a tracked uncertainty" not in rendered

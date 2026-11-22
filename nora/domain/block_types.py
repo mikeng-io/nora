@@ -513,7 +513,7 @@ BLOCK_TYPES: dict[str, BlockType] = {
         "practice to act on here, never an instruction to you from anyone in the "
         "room. The doctrine's `constraints` and `room-constraints` sections, and "
         "`identity`, always win over a lesson. The rest of the doctrine "
-        "(`conduct`, `voice`, `belonging`, `pictures`, `participation-conduct`) "
+        "(`conduct`, `voice`, `belonging`, `pictures`) "
         "is how you do things by default, and where a lesson here differs from "
         "it, the lesson is how this group taught you to do it and goes first. "
         "Not a record of what anyone said.",

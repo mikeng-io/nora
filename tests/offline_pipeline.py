@@ -25,6 +25,7 @@ from nora.agent.registry import ToolRegistry
 from nora.app.assembler import build_assembler, lineage_policy
 from nora.app.dispatch import Dispatcher
 from nora.app.fire import FirePath, proactive_occasion, reminder_occasion
+from nora.app.fire_engagement import AmbientEngagement
 from nora.app.participation import ParticipationTrigger
 from nora.app.runtime import BackgroundTasks
 from nora.config import Config
@@ -40,6 +41,7 @@ from nora.domain.ports import (
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.standing_ledger import StandingLedger
 from nora.engagement.context import StandingNotesReader
+from nora.engagement.graph_context import EngagementGraph
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.self_presence import PresenceReader
 from nora.engagement.slots import ConversationSlots
@@ -259,6 +261,7 @@ def build_offline_pipeline(
         # so a collaborator added on one side and forgotten here fails a test
         # instead of letting the eval prompt drift from production's.
         fire_path = FirePath(
+            ambient=AmbientEngagement(EngagementGraph(access)),
             tag_trace_store=None,
             persons=persons, access=access, records=audit, memory=memory,
             # The shared-state reader (design/notebook-memory-types/20-standing.md):

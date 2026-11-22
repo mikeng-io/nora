@@ -1310,9 +1310,9 @@ class WorkRunner:
             message=message_from_dict(payload["message"]),
             decision=EngageDecision(**payload["decision"]),
             tag_id=payload["tag_id"],
-            # The explicit-command occasion survives durable rehydration —
-            # older rows carry no key and are the tag turns they always were.
+            # Older work rows default to an ordinary tag.
             occasion=payload.get("occasion", "tag"),
+            message_row_id=payload.get("message_row_id"),
         )
         adapter = self._adapters.get(work.platform)
         bound = (adapter.bind_owner(owner)

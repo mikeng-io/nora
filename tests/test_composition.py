@@ -1042,11 +1042,12 @@ async def test_unit_scopes_are_the_allowlists_units_deduplicated(cfg):
 
 # --- Standing / the debrief stage ---------------------------------------
 
-async def test_standing_disabled_wires_no_debrief_or_room_position_source(cfg):
+async def test_standing_disabled_still_wires_graph_debrief_without_legacy_fold(cfg):
     """Disabling the room fold leaves canonical action facts readable, without
     asking the shared reader to read a dormant room position store."""
     deps = await build_dependencies(cfg)
-    assert deps.engagement._debrief_wiring is None
+    assert deps.engagement._debrief_wiring is not None
+    assert deps.engagement._standing_replay_wiring is None
     reader = deps.engagement._context._shared_reader
     assert reader is not None
     view = await reader(unit="friends", now_ms=1000)

@@ -10,7 +10,7 @@ from sqlalchemy.sql import FromClause
 
 from nora.access import IdentityAccess
 from nora.agent.lineage import LineagePolicy
-from nora.domain.lineage import RoomFacts, room_key, split_room
+from nora.domain.lineage import RoomFacts, split_room
 from nora.domain.managed import room_scope_id
 from nora.domain.management import Scope, ScopeKind
 from nora.memory.adapters.retrieval_scope import RetrievalAccess, scoped_rows
@@ -64,14 +64,13 @@ class SqlPassAnchors:
         if not isinstance(data, declaration.input_type):
             raise TypeError(f"expected {declaration.input_type.__name__}")
         reading = scope.room
-        room = RoomFacts(reading.platform, frozenset({reading.conversation_id}), scope.unit, None)
-        room_ref = room_key(reading.platform, reading.conversation_id)
-        names = {
-            "nora": scope.nora_name, room_ref: reading.conversation_id,
-            scope.unit: scope.unit_name or scope.unit,
-        }
+        room = RoomFacts(reading.platform, frozenset(), scope.unit, None)
+        room_ref = "room"
+        names = {"nora": scope.nora_name}
         dm_rooms: frozenset[str] = frozenset()
         try:
+            if scope.anchor_failure is not None:
+                raise RetrievalUnavailableError(scope.anchor_failure)
             target, authority, dm_rooms = await self._authority.authority(
                 reading, scope.concerns, scope.as_of,
             )
@@ -167,12 +166,12 @@ class _AnchorQueries:
                 return await self.review(data, now)
 
     def called(self, data: CalledInput) -> _Seeds:
-        ids = (data.item.id, data.quotes) if data.quotes else (data.item.id,)
+        ids = tuple(ref for ref in (data.item.id, data.quotes) if ref is not None)
         return _Seeds(ids, (self._scope.room,), data.item.people, data.item.text)
 
     def ambient(self, data: AmbientInput) -> _Seeds:
         return _Seeds(
-            tuple(item.id for item in data.items), (self._scope.room,),
+            tuple(item.id for item in data.items if item.id is not None), (self._scope.room,),
             tuple(person for item in data.items for person in item.people),
             "\n".join(item.text for item in data.items),
         )

@@ -401,7 +401,7 @@ def _fire_path(
     standing_store_timeout_seconds: float = 5.0,
     decisions=None,
     policy=None,
-    defer_tools: bool = False,
+    defer_tools: bool = False, ambient=None,
 ) -> FirePath:
     extra = {"shared": shared,
              "standing_store_timeout_seconds": standing_store_timeout_seconds,
@@ -423,7 +423,7 @@ def _fire_path(
         canary="test-canary", display_name="Nora",
         ai_peer="nora", context_window=40,
         limits=LIMITS, timeout_seconds=timeout_seconds, clock=lambda: T0,
-        defer_tools=defer_tools,
+        defer_tools=defer_tools, ambient=ambient,
         participation_runner=participation_runner,
         shadow_channel=shadow_channel, shadow_platform=shadow_platform,
         gate_shadow_channel=gate_shadow_channel,
@@ -2614,52 +2614,6 @@ async def test_a_decision_log_that_is_down_never_fails_a_fire_turn(
     ) == 1
 
 
-async def test_a_participation_turn_sees_what_she_already_raised_in_this_room(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """**The read.** This is the turn deciding whether to speak into a room
-    nobody addressed her in, so «she raised this two hours ago» is the fact
-    that changes the answer.
-
-    Rendered as `<loop_decisions>` with an age on every row: every question the
-    block answers is a question about WHEN, and an undated block cannot ground
-    that judgement.
-
-    Falsification: drop `decisions=await self._read_decisions(occasion)` from
-    `FirePath.build_context`, or the `_decisions_block` term from
-    `nora.agent.prefill.build_prefill`.
-    """
-    store = InMemoryDecisionLogStore()
-    await store.append(row=DecisionRow(
-        id="r1", writer="proactive_decide", platform="discord",
-        # The HOME room, on the other platform. A room-scoped read would answer
-        # nothing here.
-        conversation_id="home-1", unit="friends", note_id="n-1",
-        verdict="remind", reason="",
-        ts=int(T0.timestamp() * 1000) - 7_200_000,
-    ))
-    path = _fire_path(
-        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
-        runner=FakeAgentRunner([]),
-        participation_runner=FakeAgentRunner([]),
-        decisions=_decision_recorder(store),
-        policy=_decision_policy(),
-    )
-
-    ctx = await path.build_context(_participation())
-    prefill = build_prefill(
-        ctx, display_name="Nora", context_window=40, now=T0,
-    )
-    rendered = "\n".join(str(m) for m in prefill)
-
-    assert "<loop_decisions" in rendered
-    # The room LABEL, the writer, the verdict, the note by ID, and an age. No
-    # title, no model text, no conversation id.
-    assert "(2h ago) Friends HQ proactive_decide remind — note n-1" in rendered
-    block = rendered.split("<loop_decisions")[1].split("</loop_decisions>")[0]
-    assert "home-1" not in block
-
-
 async def test_a_proactive_act_turn_sees_the_raise_its_sibling_row_just_made(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
@@ -2701,59 +2655,10 @@ async def test_a_proactive_act_turn_sees_the_raise_its_sibling_row_just_made(
     assert "conv-1" not in block
 
 
-async def test_a_participation_turn_never_reads_back_its_own_rows(
+async def test_only_the_legacy_proactive_turn_reads_the_decision_log(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
-    """A turn handed its own last verdict is a turn agreeing with itself, and
-    on the ambient path that is the direction the silence bias already
-    leans. The tag rows are excluded too: a tag is somebody asking, so what it
-    answered is in the transcript underneath, where it already is.
-
-    Falsification: drop the `row.writer in (...)` filter in
-    `FirePath._read_decisions`.
-    """
-    store = InMemoryDecisionLogStore()
-    ts = int(T0.timestamp() * 1000)
-    for row_id, writer, verdict, reason in (
-        ("a", "participation", "silent", "declined"),
-        ("b", "tag", "replied", "send_reply"),
-        ("c", "proactive_decide", "remind", ""),
-        ("d", "proactive_act", "spoke", "spoke"),
-    ):
-        await store.append(row=DecisionRow(
-            id=row_id, writer=writer, platform="signal",
-            conversation_id="conv-1", unit="friends", note_id=None,
-            verdict=verdict, reason=reason, ts=ts,
-        ))
-    path = _fire_path(
-        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
-        runner=FakeAgentRunner([]), participation_runner=FakeAgentRunner([]),
-        decisions=_decision_recorder(store), policy=_decision_policy(),
-    )
-
-    ctx = await path.build_context(_participation())
-
-    assert [row.writer for _, rows in ctx.decisions for row in rows] == [
-        "proactive_decide", "proactive_act",
-    ]
-
-
-async def test_only_the_floor_weighing_occasions_read_the_decision_log(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """Participation and the proactive act turn read it; a reminder does not.
-
-    A reminder or a gathering firing was decided when its row was written and
-    is not weighing whether to take a floor, so the block would cost a read and
-    change nothing. Asserted as the triple, so deleting
-    `_DECISION_WRITERS_BY_KIND` cannot pass by making every side empty.
-
-    Falsification: drop `"proactive"` from `_DECISION_WRITERS_BY_KIND` and the
-    second assertion reddens; drop the whole mapping lookup and the third does.
-    """
-    # `proactive_act` is the ONE writer both readers carry, so a single row
-    # serves all three assertions and neither side can pass by being empty for
-    # a reason unrelated to the `kind` check.
+    """The legacy proactive context still reads its unit's decision history."""
     store = InMemoryDecisionLogStore()
     await store.append(row=DecisionRow(
         id="r1", writer="proactive_act", platform="signal",
@@ -2766,7 +2671,7 @@ async def test_only_the_floor_weighing_occasions_read_the_decision_log(
         decisions=_decision_recorder(store), policy=_decision_policy(),
     )
 
-    assert (await path.build_context(_participation())).decisions != ()
+    assert (await path.build_context(_participation())).decisions == ()
     assert (await path.build_context(
         fire_module.proactive_occasion([_proactive_row()]),
     )).decisions != ()
@@ -3067,14 +2972,14 @@ async def test_the_fire_context_reads_run_concurrently_not_one_after_another(
     assert ctx.shared is not None and ctx.shared.status == "unavailable"
     assert ctx.presence is not None
 
-async def test_a_deferred_participation_turn_gets_the_same_surface_as_a_tag(
+async def test_a_deferred_ambient_turn_gets_the_graph_catalogue(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
     """The fire path takes its tools from the
     SAME `ToolRegistry.surface()` the tag path does, so `[llm] defer_tools`
     means the same thing on both — hot tools plus the loader, the catalogue
     in the prompt, one more turn for the load."""
-    from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HOT_TOOLS, LOADER_TOOL
+    from nora.agent.catalog.groups import HOT_TOOLS, LEGACY_ENGAGEMENT_TOOLS, LOADER_TOOL
 
     calls: list = []
     path = _fire_path(
@@ -3084,18 +2989,15 @@ async def test_a_deferred_participation_turn_gets_the_same_surface_as_a_tag(
             [ScriptedTurn(final_text="")], on_call=calls.append,
         ),
         defer_tools=True,
+        registry=ToolRegistry(engagement_graph_retrieval=object(), intention_admission=object()),
     )
     await path.speak(_participation())
 
     call = calls[-1]
-    # No index wired: the Honcho memory surface, so the graph's hot verb is
-    # not built and not resident (DEC-316).
-    assert {t.tool_name for t in call["tools"]} == (
-        HOT_TOOLS - GRAPH_MEMORY_TOOLS) | {LOADER_TOOL}
-    prompt = "\n".join(
-        block.get("text", "") for m in call["pre_fill"] for block in m["content"]
-    )
-    assert "<tool_catalogue" in prompt
+    assert {t.tool_name for t in call["tools"]} == (HOT_TOOLS - LEGACY_ENGAGEMENT_TOOLS) | {
+        LOADER_TOOL,
+    }
+    assert "<tool_catalogue" in call["tag_message"]
     assert call["limits"]["turns"] == LIMITS["turns"] + 1
 
 

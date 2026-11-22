@@ -427,7 +427,7 @@ class _MutableClock:
 async def run_case(
     case: Case, *, script: list[ScriptedTurn] | None = None, live: bool = False,
     effort: str | None = None, seed: ProductionSeed | None = None,
-    skills_dir: str | Path | None = None,
+    skills_dir: str | Path | None = None, named_room: bool = False,
 ) -> Trajectory:
     """Run one eval `Case` through a real pipeline graph and return the resulting
     `Trajectory`.
@@ -603,10 +603,10 @@ async def run_case(
             build_eval_tool_registry(notes=notes_store, observations=obs_store)
             if live else None
         )
-        # Live mode names the room for the subset gate; scripted rooms stay unavailable.
+        # A named roster lets a scripted lookup measure a miss in a known room.
         roster = (
             FakeRosterSource(groups={_EVAL_GROUP_ID: (frozenset({_EVAL_MEMBER_ID}),)})
-            if live else None
+            if live or named_room else None
         )
         try:
             dispatcher, _engagement, background, trigger = build_offline_pipeline(

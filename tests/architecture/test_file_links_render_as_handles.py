@@ -247,7 +247,7 @@ def test_the_operator_review_channel_keeps_the_link_clickable():
 HAND_BUILT = {
     ("nora/engagement/stages/graph_debrief.py", "_evidence_body"):
         "graph debrief evidence and room messages",
-    ("nora/agent/prefill.py", "build_tag_message"): "<tag_message>, the message she answers",
+    ("nora/agent/prefill.py", "_tag_block"): "<tag_message>, the message she answers",
     ("nora/agent/prefill.py", "_replying_to_block"): "<replying_to>, the quoted parent",
     ("nora/subject/context_selector_render.py", "selector_prompt"):
         "the eval selector's <tag_message>",

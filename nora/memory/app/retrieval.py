@@ -129,7 +129,7 @@ class RetrievalService:
                 raise RetrievalUnavailableError("query_embedder_unavailable")
             vector = await self._embedder.embed_query(query)
         except Exception as exc:
-            if not lexical.ids:
+            if not walk.distances:
                 raise RetrievalUnavailableError("query_embedding_failed") from exc
             return "query_embedding_failed"
         walk.collect(await graph.vector(vector), 0)
