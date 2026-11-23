@@ -117,6 +117,9 @@
           }
         },
         "required": [
+          "connected_at_ms",
+          "degraded",
+          "detail",
           "ok"
         ],
         "title": "BridgeStatus",
@@ -453,6 +456,7 @@
           }
         },
         "required": [
+          "aliases",
           "platform",
           "primary"
         ],
@@ -560,6 +564,12 @@
             "type": "array"
           }
         },
+        "required": [
+          "error",
+          "message_id",
+          "platform_ms",
+          "platform_refs"
+        ],
         "title": "PlatformOperationPayload",
         "type": "object"
       },

@@ -659,3 +659,19 @@ async def test_a_direct_answer_off_the_schema_is_read_back(invalid):
         result = await _send(server, owner=_LIVE)
     assert result == _UNCERTAIN
     assert calls == {"post": 1, "get": 1}
+
+
+async def test_an_unbound_completion_with_an_empty_payload_is_read_back():
+    """An answer carries every payload field: a `complete` whose payload is `{}` is
+    not a confirmation even when the send bound no audit row."""
+    async def post(request):
+        return web.json_response({**_operation("complete"), "payload": {}}, status=200)
+
+    async def absent(request):
+        return _read("nothing_found")
+
+    calls, server = _counting(post, absent)
+    async with server:
+        result = await _send(server)
+    assert result == _UNCERTAIN
+    assert calls == {"post": 1, "get": 1}

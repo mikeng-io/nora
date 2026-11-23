@@ -64,7 +64,33 @@ def component_schemas() -> dict[str, Any]:
     families = {"ReadOutcome": api.ReadOutcome, "OperationOutcome": api.OperationOutcome}
     for name, family in families.items():
         schemas[name]["x-http-status"] = {o: api.status_for(o) for o in get_args(family)}
-    return cast(dict[str, Any], _wire_names(schemas))
+    wired = cast(dict[str, Any], _wire_names(schemas))
+    for route in platform.PLATFORM_ROUTES:
+        for name in _refs(wired[route.response.__name__]["properties"]["payload"]):
+            _answer_carries_every_field(wired, name)
+    return wired
+
+
+def _refs(node: object) -> list[str]:
+    """The component names a schema node refers to, at any depth."""
+    if isinstance(node, list):
+        return [name for item in node for name in _refs(item)]
+    if not isinstance(node, dict):
+        return []
+    own = [node["$ref"].rsplit("/", 1)[1]] if isinstance(node.get("$ref"), str) else []
+    return own + [name for key, value in node.items() if key != "$ref" for name in _refs(value)]
+
+
+def _answer_carries_every_field(schemas: dict[str, Any], name: str) -> None:
+    """An answer's payload type, and the types it nests, require every property: a
+    bridge always writes each one (null where the type allows it). An envelope
+    nested as a payload keeps its own rule."""
+    if name.endswith("Envelope"):
+        return
+    properties = schemas[name].get("properties", {})
+    schemas[name]["required"] = sorted(properties)
+    for name_ in _refs(list(properties.values())):
+        _answer_carries_every_field(schemas, name_)
 
 
 _SCHEMAS: Final = component_schemas()

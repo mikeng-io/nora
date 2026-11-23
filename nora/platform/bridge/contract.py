@@ -194,7 +194,8 @@ class PlatformSurface:
 
     async def _readiness(self) -> dict[str, Any]:
         """The status, `ok` only with a ledger and an account beside a live platform."""
-        status = dict(await self._status())
+        status = {"detail": None, "degraded": False, "connected_at_ms": None,
+                  **await self._status()}
         missing = ("no action service" if self._actions() is None
                    else None if await self._account() else "no account identity")
         if status.get("ok") and missing:
