@@ -45,7 +45,8 @@ async def bridge(aiohttp_client):
 
 async def _op(http, kind: str, operation_id: str | None = None, **effect) -> dict:
     return await envelope(await http.post("/v1/voice/operations", headers=AUTH, json={
-        "operation_id": operation_id or str(uuid4()), "kind": kind, "effect": effect}))
+        "operation_id": operation_id or str(uuid4()), "kind": kind, "effect": effect}),
+        kind=kind)
 
 
 def _audio(size: int) -> str:

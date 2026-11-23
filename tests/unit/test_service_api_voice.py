@@ -149,6 +149,18 @@ def test_each_kind_complete_carries_what_the_kind_returns():
     assert report.is_valid(_settled({"status": "stale"}))
 
 
+def test_a_play_complete_names_its_playback():
+    play = validator(VOICE_ANSWERS["play"])
+    snapshot = {"generation": "gen-1", "channel_id": "c1", "voice": "connected"}
+
+    for playback_id in (None, "", 7):
+        assert not play.is_valid(_settled({"state": {**snapshot, "playback_id": playback_id}}))
+    assert not play.is_valid(_settled({"state": snapshot}))
+    assert play.is_valid(_settled({"state": {**snapshot, "playback_id": "pb-1"}}))
+    assert play.is_valid({**_settled({"state": snapshot, "error": {
+        "kind": "generation_conflict", "message": ""}}), "outcome": "rejected"})
+
+
 def test_an_ok_status_carries_the_snapshot():
     status = validator("VoiceStatusReadEnvelope")
     read = {"when": {"observed_at_ms": 1, "known_by": "controller_clock"},

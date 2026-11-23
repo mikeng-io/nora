@@ -501,7 +501,7 @@ async def _voice(http, kind: str, **effect) -> dict:
         return await envelope(await http.post("/v1/voice/queries", headers=AUTH, json={
             "kind": "status", "params": effect}))
     return await envelope(await http.post("/v1/voice/operations", headers=AUTH, json={
-        "operation_id": str(uuid4()), "kind": kind, "effect": effect}))
+        "operation_id": str(uuid4()), "kind": kind, "effect": effect}), kind=kind)
 
 
 def _app_side(world) -> tuple[BridgeControlClient, BridgeDiscordAdapter]:

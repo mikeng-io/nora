@@ -126,6 +126,17 @@ class VoiceConnectionState:
 
 
 @dataclass(frozen=True)
+class VoicePlayState(VoiceConnectionState):
+    """A `play`'s snapshot: the playback it started, which that track's events name."""
+
+    playback_id: str
+
+
+#: Fields a caller later matches against an event: a non-empty string on the wire.
+MATCHED_IDS: Final[Mapping[type, tuple[str, ...]]] = {VoicePlayState: ("playback_id",)}
+
+
+@dataclass(frozen=True)
 class VoiceOperationPayload:
     """The controller's connection snapshot, and on a refusal its reason."""
 
@@ -205,10 +216,10 @@ class IntakeOperationReadEnvelope(ReadEnvelope):
     payload: IntakeOperationEnvelope | None
 
 
-#: The answer each voice kind's `complete` carries: a report the hub's own, any
-#: other kind the connection snapshot.
+#: The answer each voice kind's `complete` carries: a report the hub's own, a
+#: play the snapshot naming its playback, any other kind the connection snapshot.
 VOICE_COMPLETE: Final[Mapping[VoiceOperationKind, type]] = {
-    kind: VoiceReportPayload if kind == "report" else VoiceConnectionState
+    kind: {"report": VoiceReportPayload, "play": VoicePlayState}.get(kind, VoiceConnectionState)
     for kind in VOICE_EFFECTS}
 
 #: Each operation request's kind, mapped to the effect it carries.

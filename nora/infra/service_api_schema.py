@@ -35,6 +35,7 @@ _COMPONENTS: Final[dict[str, Any]] = {
     "VoiceOperationKind": voice.VoiceOperationKind,
     "VoiceQueryKind": voice.VoiceQueryKind,
     "IntakeOperationKind": voice.IntakeOperationKind,
+    "VoicePlayState": voice.VoicePlayState,
     **{
         tp.__name__: tp
         for route in ROUTES
@@ -92,9 +93,12 @@ def _when(outcome: str, payload: dict[str, Any]) -> dict[str, Any]:
 def _bind_answers(schemas: dict[str, Any]) -> None:
     """Give each voice kind an answer whose `complete` carries what that kind returns."""
     base = schemas["VoiceOperationEnvelope"]
+    for tp, fields in voice.MATCHED_IDS.items():
+        for field in fields:
+            schemas[tp.__name__]["properties"][field]["minLength"] = 1
     for component, tp in VOICE_ANSWER_TYPES.items():
-        payload = ({"type": "object", "required": ["state"], "properties": {"state": _ref(tp)}}
-                   if tp is voice.VoiceConnectionState else _ref(tp))
+        payload = (_ref(tp) if tp is voice.VoiceReportPayload else
+                   {"type": "object", "required": ["state"], "properties": {"state": _ref(tp)}})
         schemas[component] = {
             **base, "title": component, "allOf": [_when("complete", payload)],
             "description": f"A voice operation's answer whose `complete` is {tp.__name__}."}
@@ -134,6 +138,7 @@ BLOB_PUT: Final = "BlobPutEnvelope"
 #: schema with `complete` held to what the kind returns.
 VOICE_ANSWER_TYPES: Final[dict[str, type]] = {
     "VoiceConnectionEnvelope": voice.VoiceConnectionState,
+    "VoicePlayEnvelope": voice.VoicePlayState,
     "VoiceReportEnvelope": voice.VoiceReportPayload}
 VOICE_ANSWERS: Final[dict[str, str]] = {
     kind: next(name for name, tp in VOICE_ANSWER_TYPES.items() if tp is done)

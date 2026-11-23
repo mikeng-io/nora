@@ -18,7 +18,7 @@ import sqlalchemy as sa
 from aiohttp import web
 
 from nora.domain.service_api import OperationOutcome, status_for
-from nora.infra.service_api_schema import BLOB_PUT, validator
+from nora.infra.service_api_schema import BLOB_PUT, VOICE_ANSWERS, validator
 from nora.infra.sql.schema import MESSAGES
 
 DOCUMENT = Path(__file__).resolve().parents[2] / "docs/service-api/openapi.json"
@@ -67,14 +67,16 @@ _SCHEMAS = {
 }
 
 
-async def envelope(resp: Any) -> dict[str, Any]:
+async def envelope(resp: Any, *, kind: str | None = None) -> dict[str, Any]:
     """An answer's body, held to the six parts, its route's documented schema (the
-    one the app's client validates by) and its outcome's status."""
+    one the app's client validates by; a voice `kind`'s own when given) and its
+    outcome's status."""
     body = await resp.json()
     assert set(body) == PARTS, body
     assert resp.status == status_for(body["outcome"]), (resp.status, body)
     route = (resp.method, "/".join(resp.url.path.split("/")[:4]))
-    errors = [e.message for e in _SCHEMAS[route].iter_errors(body)]
+    schema = validator(VOICE_ANSWERS[kind]) if kind else _SCHEMAS[route]
+    errors = [e.message for e in schema.iter_errors(body)]
     assert not errors, (route, errors, body)
     return body
 
