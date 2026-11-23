@@ -474,7 +474,6 @@ async def test_the_front_door_refuses_what_the_controller_refuses(controller):
     assert await post("no spaces", "play", **play) == 400
     assert await post("x" * 65, "play", **play) == 400
     assert await post(str(uuid4()), "play", **play, resumable="yes") == 400
-    assert await post(str(uuid4()), "join", channel_id="c" * 65) == 400
     assert await post(str(uuid4()), "play", **play, title="t" * 70_000) == 413
     assert await post(str(uuid4()), "speak", generation=generation, media_type="audio/wav",
                       audio_b64="A" * (4 * 1024 * 1024)) == 413
@@ -503,3 +502,49 @@ async def test_a_duplicate_in_flight_awaits_the_first_answer(controller):
     assert answers[0] == answers[1] and answers[0]["outcome"] == "complete"
     assert len(fake.plays) == 1
 
+
+async def test_the_body_bound_is_checked_before_the_request_is_read(controller):
+    """Size comes first, keyed only on `kind`: a non-`speak` body over 64 KiB is
+    413 with a null effect, a `speak` over 4 MiB is 413 with a malformed id."""
+    _fake, _client, test_client = controller
+
+    control = await test_client.post(OPERATIONS, json={
+        "operation_id": "op-1", "kind": "leave", "effect": None, "pad": "x" * 70_000})
+    speech = await test_client.post(OPERATIONS, json={
+        "operation_id": "no spaces", "kind": "speak", "effect": {},
+        "pad": "x" * (4 * 1024 * 1024 + 1)})
+
+    assert (control.status, speech.status) == (413, 413)
+
+
+async def test_a_join_takes_any_channel_id(controller):
+    fake, client, _ = controller
+
+    await client.join(GUILD, "c" * 65, operation_id=str(uuid4()))
+
+    assert fake.channel_id == "c" * 65
+
+
+async def test_a_reservation_in_flight_never_expires(aiohttp_client):
+    """Past five minutes, an operation still running reads back `pending` and
+    a replay waits for it instead of applying a second effect."""
+    now = [0.0]
+    fake = FakeVoiceController(GUILD, CHANNEL, clock=lambda: now[0])
+    test_client = await aiohttp_client(fake.app())
+    client = VoiceControllerClient(str(test_client.make_url("")).rstrip("/"))
+    generation = await _join(client)
+    fake.play_gate = asyncio.Event()
+    body = {"operation_id": "op-slow", "kind": "play", "effect": {
+        "guild_id": GUILD, "generation": generation, "stream_url": "https://cdn.example/a"}}
+    first = asyncio.ensure_future(test_client.post(OPERATIONS, json=body))
+    await fake.play_waiting.wait()
+
+    now[0] = 301.0
+    read = await (await test_client.get(f"{OPERATIONS}/op-slow")).json()
+    replay = asyncio.ensure_future(test_client.post(OPERATIONS, json=body))
+    await asyncio.sleep(0)
+    fake.play_gate.set()
+
+    assert read["payload"]["outcome"] == "pending"
+    assert (await (await first).json()) == (await (await replay).json())
+    assert len(fake.plays) == 1

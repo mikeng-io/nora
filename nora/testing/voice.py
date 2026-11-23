@@ -12,10 +12,10 @@ the real calls fail.
 The wire (`docs/service-api/openapi.json`, «Outcomes on the controller»):
 
 - `POST /v1/voice/operations` `{operation_id, kind, effect}`, checked in the
-  controller's order: a body that is not a JSON object is 400; an
+  controller's order: a body over 4 MiB is 413; one that is not a JSON object
+  is 400; a body over 64 KiB whose `kind` is not `speak` is 413; an
   `operation_id` outside 1-64 of `[A-Za-z0-9._:-]` is 400; a kind outside the
-  closed set is 422; an effect that is not an object is 400; a body over the
-  64 KiB control bound (4 MiB for `speak`) is 413; a `guild_id` that
+  closed set is 422; an effect that is not an object is 400; a `guild_id` that
   is not a snowflake is 400 `wrong_guild`; `report` is `unsupported`;
 - one ledger for the whole fake, five minutes from settlement: the same id and
   effect answers the kept envelope without running again (a duplicate in
@@ -27,8 +27,7 @@ The wire (`docs/service-api/openapi.json`, «Outcomes on the controller»):
   The fake holds one core, so a `join` for another admitted guild is
   `unavailable` `join_failed`, an answer the real controller also gives;
 - `join` admits ANY channel in the guild, is idempotent in the same channel
-  and `rejected` `connected_elsewhere` otherwise, its `channel_id` at most 64
-  characters; `play.resumable` is a
+  and `rejected` `connected_elsewhere` otherwise; `play.resumable` is a
   boolean or absent (null reads as absent);
 - every generation-scoped kind is `rejected` `generation_conflict` on a stale
   generation, with the current one in the payload's `state`;
@@ -56,8 +55,10 @@ import base64
 import binascii
 import hashlib
 import json
+import math
 import re
 import time
+from collections.abc import Callable
 from typing import Any
 
 from aiohttp import web
@@ -98,6 +99,7 @@ class FakeVoiceController:
     def __init__(
         self, guild_id: str, channel_id: str = "", *, speech_queue_max: int = 4,
         forbidden_guilds: frozenset[str] = frozenset(),
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._guild_id = guild_id
         # The FIRST-BOOT channel, mirroring the real controller's CHANNEL_ID:
@@ -108,6 +110,7 @@ class FakeVoiceController:
         self._channel_id = channel_id
         self._speech_queue_max = speech_queue_max
         self._forbidden = forbidden_guilds
+        self._clock = clock
         #: Whether the fake holds a connection core for its guild: made by the
         #: first `join`, kept across a `leave`.
         self.has_core = False
@@ -217,12 +220,16 @@ class FakeVoiceController:
 
     async def operations(self, request: web.Request) -> web.Response:
         raw = await request.read()
+        if len(raw) > _MAX_BODY_BYTES:
+            return web.json_response({"error": "body_too_large"}, status=413)
         try:
             body = json.loads(raw or b"{}")
         except (json.JSONDecodeError, UnicodeDecodeError):
             return web.json_response({"error": "invalid_json"}, status=400)
         if not isinstance(body, dict):
             return web.json_response({"error": "invalid_body"}, status=400)
+        if body.get("kind") != "speak" and len(raw) > _MAX_CONTROL_BYTES:
+            return web.json_response({"error": "body_too_large"}, status=413)
         operation_id, kind, effect = body.get("operation_id"), body.get("kind"), body.get("effect")
         if not (isinstance(operation_id, str) and _OPERATION_ID.fullmatch(operation_id)):
             return web.json_response({"error": "invalid_operation_id"}, status=400)
@@ -230,13 +237,11 @@ class FakeVoiceController:
             return web.json_response({"error": "unknown_kind"}, status=422)
         if not isinstance(effect, dict):
             return web.json_response({"error": "invalid_body"}, status=400)
-        if len(raw) > (_MAX_BODY_BYTES if kind == "speak" else _MAX_CONTROL_BYTES):
-            return web.json_response({"error": "body_too_large"}, status=413)
         if kind != "report" and not _snowflake(effect.get("guild_id")):
             return web.json_response({"error": "wrong_guild"}, status=400)
         if kind in self.conflicts:
             return web.json_response({"error": "operation_id_reused"}, status=409)
-        now = time.monotonic()
+        now = self._clock()
         self._ledger = {k: v for k, v in self._ledger.items() if v[0] > now}
         digest = hashlib.sha256(json.dumps([kind, effect], sort_keys=True).encode()).hexdigest()
         held = self._ledger.get(operation_id)
@@ -248,7 +253,8 @@ class FakeVoiceController:
             return _respond(answered)
         started = int(time.time() * 1000)
         answer: asyncio.Future[dict[str, Any] | str] = asyncio.get_running_loop().create_future()
-        self._ledger[operation_id] = (now + _LEDGER_S, digest, answer, started)
+        # In flight, a reservation never expires; its five minutes start at settlement.
+        self._ledger[operation_id] = (math.inf, digest, answer, started)
         try:
             outcome, payload = await self._apply(kind, effect)
         except _BadRequestError as exc:
@@ -258,13 +264,13 @@ class FakeVoiceController:
         envelope = operation_envelope(outcome, payload, guild_id=str(
             effect.get("guild_id") or ""), trace=_trace(request), started_ms=started)
         # Every settled answer is kept, `unavailable` and `uncertain` too.
-        self._ledger[operation_id] = (time.monotonic() + _LEDGER_S, digest, answer, started)
+        self._ledger[operation_id] = (self._clock() + _LEDGER_S, digest, answer, started)
         answer.set_result(envelope)
         return _respond(envelope)
 
     async def read_operation(self, request: web.Request) -> web.Response:
         held = self._ledger.get(request.match_info["operation_id"])
-        if held is None or held[0] <= time.monotonic():
+        if held is None or held[0] <= self._clock():
             return self._read("nothing_found", None, _trace(request))
         answered = held[2].result() if held[2].done() else _pending(held[3])
         return self._read("ok", answered, _trace(request))
@@ -329,7 +335,7 @@ class FakeVoiceController:
 
     def _join(self, effect: dict[str, Any]) -> tuple[OperationOutcome, dict[str, Any]]:
         channel = effect.get("channel_id")
-        if not isinstance(channel, str) or not channel or len(channel) > 64:
+        if not isinstance(channel, str) or not channel:
             raise _BadRequestError("invalid_body")
         self.has_core = True
         if self.voice == "connected":
