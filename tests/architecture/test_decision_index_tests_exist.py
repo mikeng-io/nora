@@ -112,6 +112,14 @@ _ROW_ID = re.compile(r"\|\s*((?:DEC|R|D|A)-?[0-9]+[a-z]?)\s*\|")
 #: clause.
 _KNOWN_UNRESOLVED: dict[tuple[str, str, str], str] = {
     (
+        "DEC-237", "tests/test_gatherings_service.py",
+        "test_update_event_refuses_on_every_terminal_status",
+    ): "The session event revision path is retired. The design bundle owns the remaining citation.",
+    (
+        "DEC-303", "tests/unit/test_cognition_live_writes.py",
+        "test_an_event_with_a_time_owns_no_reminder",
+    ): "The session event writers are retired. The design bundle owns the remaining citation.",
+    (
         "R-33", "tests/test_vision.py",
         "test_the_vision_timeout_is_always_shorter_than_the_loop_budget",
     ): (

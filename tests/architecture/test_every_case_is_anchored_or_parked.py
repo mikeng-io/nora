@@ -167,5 +167,5 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     `census()`, never summed by hand.
     """
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 406
-    assert sum(c.active + c.parked for c in totals) == 406
+    assert sum(c.total for c in totals) == 403
+    assert sum(c.active + c.parked for c in totals) == 403
