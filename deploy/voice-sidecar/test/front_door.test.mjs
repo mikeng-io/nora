@@ -108,26 +108,31 @@ test('an operation_id must be a short ASCII token; anything else is refused befo
   await h.close();
 });
 
-test('the ledger holds at most its entry budget, evicting settled entries oldest-first', async () => {
+test('the ledger holds at most its entry budget and keeps every receipt', async () => {
   const h = await makeHarness({ ledgerOptions: { maxEntries: 4 } });
   for (let i = 0; i < 10; i += 1) {
-    // generation 'x' never matches, so each is rejected — a settled, kept answer.
+    // generation 'x' never matches: the first four are rejected and kept.
     const res = await h.op('stop', { guild_id: GUILD, generation: 'x' }, { operationId: `flood-${i}` });
-    assert.equal(res.outcome, 'rejected');
+    assert.equal(res.outcome, i < 4 ? 'rejected' : 'unavailable', `flood-${i}`);
     assert.ok(h.ledger.size() <= 4, `size ${h.ledger.size()} after ${i + 1}`);
   }
-  assert.equal(h.ledger.size(), 4);
+  for (let i = 0; i < 4; i += 1) {
+    assert.equal((await h.get(`/v1/voice/operations/flood-${i}`)).body.outcome, 'ok', `flood-${i} still reads back`);
+  }
   await h.close();
 });
 
 test('the ledger holds at most its byte budget, counting the kept envelopes', async () => {
-  const budget = 1500;
+  const budget = 2500;
   const h = await makeHarness({ ledgerOptions: { maxBytes: budget, answerBytes: 1000 } });
+  const outcomes = [];
   for (let i = 0; i < 10; i += 1) {
     const res = await h.op('stop', { guild_id: GUILD, generation: 'x' }, { operationId: `bytes-${i}` });
-    assert.equal(res.outcome, 'rejected', 'each one ran and was kept');
+    outcomes.push(res.outcome);
     assert.ok(h.ledger.bytes() <= budget, `bytes ${h.ledger.bytes()}`);
   }
+  assert.equal(outcomes[0], 'rejected');
+  assert.equal(outcomes.at(-1), 'unavailable', 'a full budget refuses the next id');
   await h.close();
 });
 
@@ -254,18 +259,18 @@ test('operation ids have a bounded ASCII format', async () => {
 test('the ledger caps in-flight entries and bytes before executing', async () => {
   let release;
   const gate = new Promise(r => { release = r; });
-  const h = await makeHarness({ joinGate: () => gate, ledgerOptions: { maxEntries: 1, maxBytes: 4096, answerBytes: 1024 } });
+  const h = await makeHarness({ joinGate: () => gate, ledgerOptions: { maxEntries: 2, maxBytes: 8192, answerBytes: 1024 } });
   const first = h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: 'first' });
   await until(() => h.joinCalls.length === 1);
-  const r = await h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: 'second' });
-  assert.equal(r.status, 503);
-  assert.equal(h.ledger.size(), 1);
   assert.ok(h.ledger.bytes() >= 1024, 'the reservation holds room for the answer');
-  release();
-  await first;
   const big = await h.op('stop', { guild_id: GUILD, generation: 'x', padding: 'x'.repeat(600) }, { operationId: 'large' });
   assert.equal(big.outcome, 'rejected');
-  assert.ok(h.ledger.bytes() <= 4096, 'an effect occupies the ledger only as its hash');
+  assert.ok(h.ledger.bytes() < 4096, 'an effect occupies the ledger only as its hash');
+  const r = await h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: 'second' });
+  assert.equal(r.status, 503);
+  assert.equal(h.ledger.size(), 2);
+  release();
+  await first;
   const tiny = await makeHarness({ ledgerOptions: { maxBytes: 128 } }); // under one answer's room
   const refused = await tiny.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: 'over-budget' });
   assert.equal(refused.status, 503, 'even an in-flight entry must fit the byte budget');
@@ -274,22 +279,19 @@ test('the ledger caps in-flight entries and bytes before executing', async () =>
   await h.close();
 });
 
-test('settled ledger entries evict and expire without new requests', async () => {
+test('settled ledger entries expire without new requests, freeing their room', async () => {
   const clock = createFakeClock();
-  const h = await makeHarness({ clock, ledgerOptions: {
-    maxEntries: 2, maxBytes: 4096, answerBytes: 1024, ttlMs: 100, sweepMs: 10,
-  } });
-  for (const id of ['one', 'two', 'three']) {
-    const r = await h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: id });
-    assert.equal(r.outcome, 'complete');
-    assert.ok(h.ledger.size() <= 2);
-    assert.ok(h.ledger.bytes() <= 4096);
+  const h = await makeHarness({ clock, ledgerOptions: { maxEntries: 2, ttlMs: 100, sweepMs: 10 } });
+  for (const id of ['one', 'two']) {
+    assert.equal((await h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: id })).outcome, 'complete');
   }
+  assert.equal((await h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: 'three' })).outcome, 'unavailable');
   assert.equal(h.ledger.size(), 2);
   clock.advance(101);
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(h.ledger.size(), 0);
   assert.equal(h.ledger.bytes(), 0);
+  assert.equal((await h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: 'three' })).outcome, 'complete');
   await h.close();
 });
 
@@ -318,6 +320,85 @@ test('an authenticated caller cannot dispatch to a refused guild', async () => {
   } finally { await new Promise(r => front.close(r)); }
 });
 
+test('a receipt survives pressure for its whole TTL: read back and resubmitted, it never runs twice', async () => {
+  const h = await makeHarness({ ledgerOptions: { maxEntries: 4 } });
+  const { generation } = await h.join();
+  const effect = { guild_id: GUILD, generation, stream_url: 'https://cdn.test/a', title: 't'.repeat(63 * 1024) };
+  const played = await h.op('play', effect, { operationId: 'op-original' });
+  assert.equal(played.outcome, 'complete');
+  assert.ok(Buffer.byteLength(JSON.stringify(played.body)) < 12 * 1024, 'the answer stays small: the title is cut');
+  for (let i = 0; i < 8; i += 1) {
+    await h.op('play', { guild_id: GUILD, generation, stream_url: `https://cdn.test/p${i}` }, { operationId: `op-press-${i}` });
+  }
+  const readBack = await h.get('/v1/voice/operations/op-original');
+  assert.equal(readBack.body.outcome, 'ok', 'still readable under pressure');
+  assert.deepEqual(readBack.body.payload, played.body);
+  const spawned = h.procs.length;
+  const again = await h.op('play', effect, { operationId: 'op-original' });
+  assert.deepEqual(again.body, played.body);
+  assert.equal(h.procs.length, spawned, 'not run again');
+  await h.close();
+});
+
+test('a refused request erases no receipt', async () => {
+  let release;
+  const gate = new Promise(r => { release = r; });
+  const h = await makeHarness({ joinGate: () => gate, ledgerOptions: { maxBytes: 3900, answerBytes: 2000 } });
+  const small = await h.op('stop', { guild_id: GUILD, generation: 'x' }, { operationId: 'op-small' });
+  assert.equal(small.outcome, 'rejected');
+  const held = h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: 'op-held' });
+  await until(() => h.joinCalls.length === 1);
+  const refused = await h.op('stop', { guild_id: GUILD, generation: 'x' }, { operationId: 'op-refused' });
+  assert.equal(refused.outcome, 'unavailable');
+  assert.equal(refused.error, 'dedupe_full');
+  assert.equal((await h.get('/v1/voice/operations/op-small')).body.outcome, 'ok', 'the receipt is still there');
+  assert.equal((await h.get('/v1/voice/operations/op-refused')).body.outcome, 'nothing_found');
+  release();
+  await held;
+  await h.close();
+});
+
+test('guilds each with an operation in flight leave room for a speech in a connected guild', async () => {
+  // In flight at once is bounded by the listener's 64 connections, so 63
+  // guilds hold one each and the 64th request is the speech.
+  const HELD = 63;
+  const h = await makeHarness();
+  const { generation } = await h.join();
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  let held = 0;
+  const front = createFrontDoor({
+    authToken: TOKEN,
+    controllerFor: (guildId) => (guildId === GUILD ? h.core.controller : {
+      execute: async () => { held += 1; await gate; return { outcome: 'complete', state: null }; },
+    }),
+    health: () => ({}),
+  });
+  await new Promise((r) => front.listen(0, '127.0.0.1', r));
+  const send = (body) => fetch(`http://127.0.0.1:${front.address().port}/v1/voice/operations`, {
+    method: 'POST', headers: { ...AUTH, 'content-type': 'application/json' }, body: JSON.stringify(body),
+  });
+  try {
+    const inFlight = [];
+    for (let i = 0; i < HELD; i += 1) {
+      const guild = String(100000000000000000n + BigInt(i));
+      inFlight.push(send({ operation_id: `held-${i}`, kind: 'join', effect: { guild_id: guild, channel_id: 'c1' } }));
+    }
+    assert.ok(await until(() => held === HELD, 5000), `all ${HELD} held`);
+    const speech = await send({ operation_id: 'speech', kind: 'speak',
+      effect: { guild_id: GUILD, generation, audio_b64: Buffer.from('tts').toString('base64'), media_type: 'audio/mpeg' } });
+    assert.equal(speech.status, 200);
+    assert.equal((await speech.json()).outcome, 'complete');
+    release();
+    for (const res of await Promise.all(inFlight)) assert.equal(res.status, 200);
+  } finally {
+    release();
+    front.closeAllConnections();
+    await new Promise((r) => front.close(r));
+    await h.close();
+  }
+});
+
 test('an operation that ran always reads back', async () => {
   // Without room for one answer, the operation is refused before it runs.
   const cramped = await makeHarness({ ledgerOptions: { maxBytes: 2000 } });
@@ -327,10 +408,11 @@ test('an operation that ran always reads back', async () => {
   assert.equal((await cramped.get('/v1/voice/operations/op-cramped')).body.outcome, 'nothing_found', 'nothing ran');
   await cramped.close();
 
-  // Once it ran, its answer is kept, even one larger than the budget.
-  const h = await makeHarness({ ledgerOptions: { maxBytes: 2600, answerBytes: 2500 } });
+  // Once it ran, its answer is kept in its reservation's place, even when the
+  // reservation understates it.
+  const h = await makeHarness({ ledgerOptions: { maxBytes: 2000, answerBytes: 500 } });
   const { generation } = await h.join();
-  const effect = { guild_id: GUILD, generation, stream_url: 'https://cdn.test/a', title: 't'.repeat(2500) };
+  const effect = { guild_id: GUILD, generation, stream_url: 'https://cdn.test/a', title: 't'.repeat(900) };
   const played = await h.op('play', effect, { operationId: 'op-big-answer' });
   assert.equal(played.outcome, 'complete', 'play');
   assert.equal(h.procs.length, 1);

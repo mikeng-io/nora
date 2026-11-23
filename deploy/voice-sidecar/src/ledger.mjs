@@ -4,12 +4,11 @@
 //
 // The first occurrence of an id reserves an in-flight entry BEFORE its handler
 // runs, so a concurrent duplicate awaits the same execution. The reservation
-// charges `answerBytes`, the most an answer can hold, so the settled envelope
-// always replaces it in place: an operation that ran is never left without
-// its record. Both kinds count toward the entry and byte bounds; only settled
-// entries are evictable (oldest first, under pressure), so a map full of
-// in-flight requests refuses the next id before it runs rather than grow.
-// At the defaults that is about 7 operations in flight at once.
+// charges `answerBytes`, the most an answer can hold, and the settled envelope
+// replaces it in place. Nothing unexpired is ever evicted: an entry leaves only
+// when its TTL passes, so a receipt stays readable for its whole five minutes.
+// When the bounds are reached a NEW id is refused before it runs, and the
+// refusal removes nothing.
 
 import { createHash } from 'node:crypto';
 
@@ -17,9 +16,8 @@ import { realClock } from './outbox.mjs';
 
 const TTL_MS = 5 * 60 * 1000;
 const MAX_ENTRIES = 256;
-const MAX_BYTES = 512 * 1024;
 const SWEEP_MS = 30 * 1000;
-const ANSWER_BYTES = 8 * 1024;
+const ANSWER_BYTES = 12 * 1024;
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -38,9 +36,10 @@ export function createLedger({
   clock = realClock,
   ttlMs = TTL_MS,
   maxEntries = MAX_ENTRIES,
-  maxBytes = MAX_BYTES,
   sweepMs = SWEEP_MS,
   answerBytes = ANSWER_BYTES,
+  // Room for every entry at its largest answer, plus its id and hash.
+  maxBytes = maxEntries * (answerBytes + 256),
 } = {}) {
   // id -> { fingerprint, bytes } plus in-flight { promise, pending } | settled { envelope, expiresAt }
   const entries = new Map();
@@ -60,15 +59,11 @@ export function createLedger({
     }
   }
 
-  // Room for one more entry of `size`, evicting settled entries oldest-first
-  // only as far as needed. False when everything held is in flight.
-  function makeRoom(size) {
-    const fits = () => entries.size < maxEntries && bytes + size <= maxBytes;
-    for (const [id, entry] of entries) {
-      if (fits()) return true;
-      if (entry.expiresAt !== undefined) forget(id);
-    }
-    return fits();
+  // Room for one more entry of `size` once expired entries are gone. Never
+  // evicts anything live.
+  function hasRoom(size) {
+    prune();
+    return entries.size < maxEntries && bytes + size <= maxBytes;
   }
 
   // Expiry does not wait for traffic; unref() so the timer never holds the process.
@@ -84,7 +79,7 @@ export function createLedger({
     reserve(id, print, promise, pending) {
       const size = Buffer.byteLength(id) + print.length
         + Math.max(answerBytes, Buffer.byteLength(JSON.stringify(pending)));
-      if (!makeRoom(size)) return false;
+      if (!hasRoom(size)) return false;
       entries.set(id, { fingerprint: print, promise, pending, bytes: size });
       bytes += size;
       return true;

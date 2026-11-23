@@ -38,11 +38,25 @@ const MAX_BODY_BYTES = 4 * 1024 * 1024;
 // A query body, and every operation but `speak` (measured re-serialized, so
 // the answer's snapshot, which echoes a play's title and url, stays bounded).
 const MAX_CONTROL_BYTES = 64 * 1024;
-// The most an answer can hold: a snapshot carries at most one control body's
-// strings (the current track) plus fixed fields. The ledger reserves this
-// before an operation runs, so a settled answer always has its room.
-export const MAX_ANSWER_BYTES = MAX_CONTROL_BYTES + 8 * 1024;
+// What a snapshot echoes from requests is bounded, so an answer is small: the
+// current track's url (at most 8 KiB as JSON, else 400) and title (cut to
+// 1 KiB as JSON; it is display only) and a channel_id of at most 64
+// characters. With the fixed fields that makes an answer at most 12 KiB, which
+// the ledger reserves before an operation runs. Its 256 entries then take at
+// most 3 MiB; in flight at once is at most the listener's 64 connections.
+const MAX_URL_JSON_BYTES = 8 * 1024;
+const MAX_TITLE_JSON_BYTES = 1024;
+export const MAX_ANSWER_BYTES = 12 * 1024;
 const MAX_CHANNEL_ID = 64;
+
+const jsonBytes = (value) => Buffer.byteLength(JSON.stringify(value));
+
+// The title cut to its bound, on code point boundaries.
+function boundedTitle(title) {
+  const points = Array.from(title);
+  while (jsonBytes(points.join('')) > MAX_TITLE_JSON_BYTES) points.length = Math.floor(points.length * 0.9);
+  return points.join('');
+}
 // An operation_id is the ledger key: a short ASCII word, nothing that could be
 // a path, a header or a log-injection payload.
 const OPERATION_ID_RE = /^[A-Za-z0-9._:-]{1,64}$/;
@@ -168,8 +182,8 @@ export function createController({
     play: async (effect, operationId) => {
       checkGuild(effect);
       checkGeneration(effect);
-      if (typeof effect.stream_url !== 'string' || !effect.stream_url) {
-        throw httpError(400, 'invalid_body', 'stream_url is required');
+      if (typeof effect.stream_url !== 'string' || !effect.stream_url || jsonBytes(effect.stream_url) > MAX_URL_JSON_BYTES) {
+        throw httpError(400, 'invalid_body', 'stream_url is required, at most 8 KiB');
       }
       // Optional source capability (design/voice-channel/audio.md «Speech and
       // music arbitration»): false marks a live/non-seekable stream; absent
@@ -179,7 +193,7 @@ export function createController({
       }
       arbiter.playMusic({
         streamUrl: effect.stream_url,
-        title: typeof effect.title === 'string' ? effect.title : null,
+        title: typeof effect.title === 'string' ? boundedTitle(effect.title) : null,
         durationSeconds: typeof effect.duration_seconds === 'number' ? effect.duration_seconds : null,
         requestId: operationId,
         resumable: effect.resumable ?? undefined,

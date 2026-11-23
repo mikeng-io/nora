@@ -56,16 +56,23 @@ malformed request (a `guild_id` that is not a snowflake, a bad effect, an
 is `400` and an unknown kind `422`, each with no envelope; `resumable: null`
 is read as absent.
 
-The process keeps one operation ledger, keyed by `operation_id`, for 5
-minutes, bounded at 256 entries / 512 KiB with in-flight entries never
-evicted. It holds a hash of the kind and effect and the answered envelope,
-never audio. An operation reserves room for its whole answer before it
-runs, so one that ran always reads back; with no room left (every slot in
-flight) the next one is `unavailable` before it runs, and settled entries
-are evicted oldest-first under pressure. The same id with the same kind and
-effect is answered from it without running again (a concurrent duplicate
-awaits the first); the same id with another kind or effect is `409` with no
-envelope.
+The process keeps one operation ledger, keyed by `operation_id`. It holds a
+hash of the kind and effect and the answered envelope, never audio, and every
+receipt stays for its full 5 minutes: nothing unexpired is evicted. An
+operation reserves room for its whole answer before it runs, so one that ran
+always reads back. The ledger holds at most 256 entries, in flight and
+settled together, within 3 MiB. When it is full, a new `operation_id` is
+`unavailable` before it runs, and that refusal removes nothing. The same id
+with the same kind and effect is answered from it without running again (a
+concurrent duplicate awaits the first); the same id with another kind or
+effect is `409` with no envelope.
+
+An answer stays small because what a snapshot echoes from requests is
+bounded: a `play`'s `stream_url` is at most 8 KiB as JSON (else `400`), its
+`title` is cut to 1 KiB as JSON (it is display only), and a `join`'s
+`channel_id` is at most 64 characters. That caps an answer at 12 KiB. At most
+64 requests are in flight at once, the listener's connection limit, so every
+one of them has room.
 
 **Every route requires `Authorization: Bearer $NORA_BRIDGE_TOKEN`**, the shared
 service bearer that nora and the bridges already hold. A missing or wrong
