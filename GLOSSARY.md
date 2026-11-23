@@ -34,7 +34,7 @@ Design and the API say identity; code still says `person`. The other two "identi
 |---|---|---|
 | **identity** | the canonical registered subject; in code a person: **`person_id`** (`miles_novak`), stable, operator-assigned and also the Honcho peer id (A2, DEC-14), and **`PersonRef`**, the resolved record (id, name, aliases) | `nora/persons.py`, `identity.toml` |
 | **identity resolution** | mapping a platform *account* — phone number, ACI — to an identity | `nora/ingest/stages/identity.py` |
-| **`self`** | **Nora's own account** on a platform, used for self-tag checks (R-12); in code `PlatformIdentity` | `domain/models.py`, `adapter.resolve_identity()` |
+| **`self`** | **Nora's own account** on a platform, used for self-tag checks (R-12); in code `PlatformIdentity` | `domain/identity.py`, `adapter.resolve_identity()` |
 | **seed** | who Nora *is* — her voice and conduct, not accounts; the file is `doctrine/core/identity.md` (her place in a room is `doctrine/rooms/belonging.md`) | the doctrine layer |
 
 Tools that answer *"who is 阿豹?"* are named **`person_*`** in code, never

@@ -34,7 +34,7 @@ expressed — the drafts and conclusions Nora wrote — is among its items; hidd
 reasoning is never kept, and what it decided is an intention.
 
 A fetched outside page is an item with its fetch provenance. It can support
-public attributes of a place, work, event or organisation, never an
+public attributes of a place, work, event or organisation, never a private
 identity's attendance, traits or relationships.
 
 A perception reading of a media item is not observation: it is a claim,
@@ -108,7 +108,7 @@ time it becomes eligible. It is not a conclusion and not an instruction.
   it computes; a change item alone wakes nothing.
 - Absence is a stimulus only when every source needed to prove it was healthy
   over the interval.
-- Nora's own acts never stimulate by themselves; what others do next does. A
+- Nora's own acts never stimulate by themselves; what identities do next does. A
   revision's dependency stimulus is the exception: it names work the revision
   made due.
 - An aggregate change rides with a wake started for any reason; it is context

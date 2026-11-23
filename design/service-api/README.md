@@ -44,7 +44,8 @@ actor it names and the outcome it reports.
 - A consumer — a page, a service, an application, a tool, an MCP client —
   never reads or writes Nora's database or another service's store; it calls
   a contract. Only the area that owns a table touches it, in whichever Nora
-  process runs that area.
+  process runs that area; a bridge's action and custody stores are the
+  bridge's own, and it is their owner, not a consumer.
 - One contract per subject. A route that fits an existing contract joins it;
   a new namespace is a reviewed architecture change.
 - The contract is machine-readable and generated from the domain types; a
