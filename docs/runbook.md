@@ -1644,74 +1644,12 @@ successful old shadow session is not historical coverage. The person adaptor
 now walks bounded oldest-first pages through a frozen Record boundary using
 its existing schedule and budget, independently of recent-message updates.
 
-The Character-card spike is an explicit operator command; it never runs on
-startup or changes `[memory.profile] read`. Dates are inclusive HKT dates, and keys
-may be repeated. Dry-run constructs no runtime and writes no rows or cursors:
-
-```bash
-nora memory profile-history --key '<unit>#character:<person>' --since 2026-10-01 --until 2026-10-02
-# Only when the operator chooses to run the spike:
-nora memory profile-history --key '<unit>#character:<person>' --since 2026-10-01 --until 2026-10-02 --apply
-nora memory profile-report --key '<unit>#character:<person>' --since 2026-10-01 --until 2026-10-02
-nora memory profile-report --key '<unit>#character:<person>' --format card
-nora memory profile-report --key '<unit>#character:<person>' --judge
-```
-
-The window reads messages/mentions oldest-first in day-sized pages, with cached
-media and bounded social/presence snapshots for that day, through the same
-writer. It retains the normal history cursor rather than resetting it. As with
-normal sessions, input budgets bound source delivery; this is a monitored spike,
-not evidence of a completed full historical recovery. Inspect the report and
-session traces before widening the window. No window is run by the build.
-
-The report reads the database through a read-only engine and prints counts by
-default. `--format card` explicitly prints private card prose on the operator's
-machine. `--judge` spends calls on `[evals] judge_model`, refuses the writer's
-configured model, and reports pattern/event/unsupported/unavailable separately.
-This classification never writes a hypothesis verdict or promotes a claim.
-Usage and refusal counts come from recorded Langfuse observations; absent or
-inaccessible receipts are null, never zero. `--sessions /private/observations.json`
-can instead read an exported observation list (or its `data` envelope). Keep
-source text, cards and trace exports on owner hardware. No public receipt contains
-private rows. Migration downgrade refuses dimension rows rather than rewriting
-append-only history; preserve a database backup for schema rollback.
-
-`nora memory profile-history` prints per-account source boundary/progress,
-eligible source counts, missing fields, untyped legacy heads and disputes,
-without message text. Completion means source exhaustion, not factual parity.
-Inspect original source messages for missing/ambiguous facts; never fill them
-from uncited memory conclusions or infer a birthday from an occasion date.
-
-To repeat an incomplete old shadow pass, use
-`nora memory profile-history --key '<unit>#character:<person>' --restart --apply`.
-Without `--apply` this is a dry run. Only the historical cursors reset; Profile
-claim history and the recent watermark remain. Failures, conflicts and
-unsettled sessions retain the page. A crash after claim commit but before
-cursor settlement repeats evidence. Runtime traces and watermark row history
-retain per-page provenance. Render-on retires legacy model writers and reads
-Profile room accounts for person/unit context; render-off restores the old
-configured writer/read surface. No legacy tables or Honcho client are removed.
-
-After fixing a cached-media reader, inspect one account's actual rendered input
-offline before spending another model pass. To wake just that account without
-resetting history or lowering the global interval, use
-`nora memory profile-retry-media --key '<unit>#character:<person>'` (read-only),
-then add `--apply` to queue one attempt. The command requires a listed account,
-completed history and pending cached media; it never composes a second Nora or
-calls a model. Duplicate pending submissions coalesce. The normal running
-Dreamer consumes the request before reading its next batch, under its existing
-per-key exclusion, schedule batch size and model budget. A failed/interrupted
-attempt consumes it too: there is no automatic paid drain loop. The normal
-schedule and other wake signals remain active. A request arriving during an
-in-flight pass waits for the next eligible tick.
-
-The request token and its claim reuse a separate
-`profile-person:media-retry` consolidation namespace, retained in row history;
-they never acknowledge a source or alter existing cursor timestamps. A claimed
-request proves only that an attempt began. Read the normal Dreamer trace and
-`profile-history` cached-media receipts afterwards; `unavailable` is not success,
-and no-change can settle rendered inputs without adding any identity fact.
-Stop after the first account to assess progress before requesting another.
+Historical pages that fail, conflict or stay unsettled retain the page; a crash
+after claim commit but before cursor settlement repeats evidence. Runtime traces
+and watermark row history retain per-page provenance. Render-on retires legacy
+model writers and reads Profile room accounts for person/unit context;
+render-off restores the old configured writer/read surface. No legacy tables or
+Honcho client are removed.
 
 ### Memory graph code projection
 

@@ -84,13 +84,6 @@
     "target": "tests/infra/test_character_card.py::test_window_dry_read_is_oldest_first_day_by_day_and_report_counts_only"
   },
   {
-    "name": "dry-run constructs no runtime",
-    "file": "nora/app/cli.py",
-    "old": "        if args.apply:\n            from nora.app.composition import build_dependencies",
-    "new": "        if True:\n            from nora.app.composition import build_dependencies",
-    "target": "tests/test_cli_control_plane.py::test_profile_window_and_report_are_read_only_until_explicit_apply"
-  },
-  {
     "name": "dimension and evidence range render canonically",
     "file": "nora/domain/character_card.py",
     "old": "f\"{day(item.strength.get('last'))}; {item.mode}]: {text}\")",
@@ -145,13 +138,6 @@
     "old": "_profile_location(PROFILE_LINE.c),",
     "new": "sa.false(),",
     "target": "tests/infra/test_memory_projection_profile.py::test_location_profile_search_uses_existing_presence_scope"
-  },
-  {
-    "name": "events-as-traits uses a different configured model",
-    "file": "nora/app/cli.py",
-    "old": "if cfg.evals.judge_model == cfg.dreamer_model():",
-    "new": "if False:",
-    "target": "tests/test_cli_control_plane.py::test_character_report_requires_a_separately_configured_judge"
   },
   {
     "name": "collective prompt disclosure uses actual cited subjects",

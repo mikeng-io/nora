@@ -156,6 +156,24 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "`pending_disputes`, `open_disputes` and the session's dispute input leave "
         "with the Profile sessions in 6c-2b.",
     ),
+    ("profile_inputs.py", "request_recovery"): _Pin(
+        "scheduled_removal",
+        "`nora memory profile-retry-media` was its only caller and left with the Profile "
+        "session drivers. The method leaves with `SqlProfileInputs` in 6c-2b-ii, which also "
+        "removes `test_profile_source_inputs.py`, the test that still queues one.",
+    ),
+    ("profile_inputs.py", "presence_revisions"): _Pin(
+        "scheduled_removal",
+        "`nora memory profile-history` was its only outside caller and left with the Profile "
+        "session drivers; `rollup` still calls it. The method leaves with `SqlProfileInputs` "
+        "in 6c-2b-ii, which also removes the `test_character_card.py` reads of it.",
+    ),
+    ("character.py", "historical_counts"): _Pin(
+        "scheduled_removal",
+        "`nora memory profile-history` was its only caller and left with the Profile session "
+        "drivers; no test calls it. The method leaves with the Character evidence reads "
+        "in 6c-2d, not with `SqlProfileInputs`.",
+    ),
     ("cognitive_graph_store.py", "revise"): _Pin(
         "deferred_consumer",
         "Revises a graph kind row through the phase one store. Admission owns "

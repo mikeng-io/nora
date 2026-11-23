@@ -313,7 +313,7 @@ class ProfileEvidence:
     enrichment/state, current Register heads and non-location Rollup changes
     remain pending until actually rendered and durably settled. The legacy
     message and frozen historical cursors are independent. Initial cached-media
-    recovery has its own frozen boundary, reported by `profile-history`.
+    recovery has its own frozen boundary.
     Without that collaborator, legacy callers retain their chronological
     social cursor; an unsettled person batch is never abandoned.
     """
