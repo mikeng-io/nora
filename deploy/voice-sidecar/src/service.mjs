@@ -16,7 +16,8 @@
 //
 // Health semantics: /health is LIVENESS, and it is deliberately 200 while
 // the service is healthy-but-idle. A missing token is a configuration
-// posture (voice not enabled on this deployment), not a process failure.
+// posture (voice not enabled on this deployment), not a process failure;
+// it is what /ready answers 503 for, beside a boot still restoring state.
 //
 // Privacy posture: audio is transient. PCM is forwarded over the TCP seam
 // and music flows CDN -> ffmpeg -> Discord; nothing is written to disk.
@@ -46,10 +47,10 @@ const HOST = process.env.HOST ?? '127.0.0.1';
 const PORT = Number(process.env.PORT ?? 4600);
 const PUMP_HOST = process.env.PUMP_HOST ?? '127.0.0.1';
 const PUMP_PORT = Number(process.env.PUMP_PORT ?? 4599);
-// In bridge mode the discord-bridge owns the VoiceEventConsumer
-// (/v1/voice/event, bearer-authed like every /v1 route there) — the app
-// relinquished it, so the shipped default targets the bridge.
-const NORA_EVENT_URL = process.env.NORA_EVENT_URL ?? 'http://discord-bridge:18093/v1/voice/event';
+// The hub's `report` route. In bridge mode the discord-bridge holds the hub
+// (its /v1/voice/operations, bearer-authed like every /v1 route there), so
+// the shipped default targets the bridge.
+const NORA_EVENT_URL = process.env.NORA_EVENT_URL ?? 'http://discord-bridge:18093/v1/voice/operations';
 // A DIRECTORY now, one `<guild_id>.json` inside it (multi-guild 2026-09-17).
 // Configured guilds come from Nora's existing [speech.tts].sidecars list,
 // mounted read-only at /app/config.toml. State records desired connections,
@@ -275,6 +276,9 @@ async function main() {
   // Without a token there is nothing to join with, so nothing is created —
   // same posture as before this was `!TOKEN` inline in `controllerFor`.
   const registry = createCoreRegistry({ makeCore, canCreate: () => Boolean(TOKEN), log });
+  // Ready once boot has restored what the state directory holds; never
+  // without a bot token, since no connection could be made.
+  let booted = false;
 
   const server = createFrontDoor({
     authToken: BRIDGE_TOKEN,
@@ -292,6 +296,7 @@ async function main() {
       return response.ok;
     },
     controllerFor: registry.controllerFor,
+    ready: () => booted && Boolean(TOKEN),
     // Process-level liveness, not a guild's. The compose HEALTHCHECK curls
     // this and it must answer 200 while idle with no guild at all.
     health: () => ({
@@ -373,6 +378,7 @@ async function main() {
   } else {
     log('boot_idle', { reason: 'healthy-but-idle', missing: 'DISCORD_BOT_TOKEN' });
   }
+  booted = true;
 
   async function shutdown(signal) {
     log('shutdown', { signal });

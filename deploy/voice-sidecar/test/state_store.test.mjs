@@ -11,7 +11,7 @@ import path from 'node:path';
 
 import { containedFile, createStateStore, guildsFromStateFiles } from '../src/state_store.mjs';
 import { bootChannel } from '../src/lifecycle.mjs';
-import { makeHarness, GUILD, CHANNEL } from './helpers.mjs';
+import { makeHarness, until, GUILD, CHANNEL } from './helpers.mjs';
 
 const tmp = () => mkdtempSync(path.join(tmpdir(), 'voc-state-'));
 
@@ -93,11 +93,11 @@ test('bootChannel: absent file + no env does not join', () => {
   assert.equal(bootChannel(null, undefined), null);
 });
 
-test('/voice/exit persists desired idle', async () => {
+test('leave persists desired idle', async () => {
   const h = await makeHarness();
   const { generation } = await h.join();
-  const res = await h.post('/voice/exit', { guild_id: GUILD, generation });
-  assert.equal(res.status, 200);
+  const res = await h.op('leave', { guild_id: GUILD, generation });
+  assert.equal(res.outcome, 'complete');
   assert.deepEqual(JSON.parse(readFileSync(h.statePath, 'utf8')), { desired: 'idle' });
   await h.close();
 });
@@ -112,10 +112,10 @@ test('successful join persists desired connected with the channel', async () => 
   await h.close();
 });
 
-test('simulated restart after /voice/exit does NOT rejoin (boot reads idle)', async () => {
+test('simulated restart after leave does NOT rejoin (boot reads idle)', async () => {
   const h = await makeHarness();
   const { generation } = await h.join();
-  await h.post('/voice/exit', { guild_id: GUILD, generation });
+  await h.op('leave', { guild_id: GUILD, generation });
   await h.close();
 
   // New process, same state file: the boot decision must say "stay idle"
@@ -139,13 +139,43 @@ test('exit intent is persisted BEFORE connection teardown begins (crash cannot b
     },
   });
   const { generation } = await h.join();
-  await h.post('/voice/exit', { guild_id: GUILD, generation });
+  await h.op('leave', { guild_id: GUILD, generation });
   assert.deepEqual(stateAtTeardown, { desired: 'idle' });
   assert.equal(h.leaves(), 1);
   await h.close();
 });
 
-test('a state write failure is loud: state_write_ok flips false in /voice/status', async () => {
+test('a connection restored at boot reports with no join', async () => {
+  // service.mjs's boot: a guild whose state file says connected is rejoined
+  // from that file (`bootChannel`, then the core's own lifecycle.join), never
+  // through the control plane. Its events must still reach the hub.
+  const dir = tmp();
+  const statePath = path.join(dir, `${GUILD}.json`);
+  writeFileSync(statePath, JSON.stringify({ desired: 'connected', channel_id: CHANNEL }));
+  const h = await makeHarness({ statePath });
+  const stored = await createStateStore({ path: statePath }).read();
+  const channel = bootChannel(stored.state, null);
+  assert.equal(channel, CHANNEL);
+  await h.core.lifecycle.join(channel);
+  const generation = h.core.lifecycle.generation();
+  assert.equal(h.joinCalls.length, 1);
+
+  h.connection.emit('stateChange', { status: 'ready' }, { status: 'destroyed' });
+  assert.ok(await until(() => h.eventAttempts.length > 0));
+  const [report] = h.eventAttempts;
+  assert.equal(report.kind, 'report');
+  assert.equal(typeof report.operation_id, 'string');
+  assert.equal(report.effect.type, 'voice-death');
+  assert.equal(report.effect.guild_id, GUILD);
+  assert.equal(report.effect.generation, generation);
+  assert.equal(report.effect.event_seq, 1);
+  assert.equal(h.delivered.length, 1, 'the hub took it');
+  // No operation of any kind, join included, reached the control plane.
+  assert.equal(h.ledger.size(), 0);
+  await h.close();
+});
+
+test('a state write failure is loud: state_write_ok flips false in the status query', async () => {
   const dir = tmp();
   const statePath = path.join(dir, 'desired_state.json');
   let failWrites = false;
@@ -157,20 +187,20 @@ test('a state write failure is loud: state_write_ok flips false in /voice/status
     path: statePath,
   };
   const h = await makeHarness({ stateStore });
-  const before = await h.get(`/voice/status?guild_id=${GUILD}`);
-  assert.equal(before.body.state_write_ok, true);
+  const before = await h.status();
+  assert.equal(before.payload.state_write_ok, true);
 
   failWrites = true;
   await h.join(); // join persists desired connected -> write fails
-  const after = await h.get(`/voice/status?guild_id=${GUILD}`);
-  assert.equal(after.body.state_write_ok, false);
-  assert.equal(after.body.voice, 'connected'); // the join itself still succeeded
+  const after = await h.status();
+  assert.equal(after.payload.state_write_ok, false);
+  assert.equal(after.payload.voice, 'connected'); // the join itself still succeeded
 
   failWrites = false;
-  const { generation } = after.body;
-  await h.post('/voice/exit', { guild_id: GUILD, generation }); // persist recovers
-  const recovered = await h.get(`/voice/status?guild_id=${GUILD}`);
-  assert.equal(recovered.body.state_write_ok, true);
+  const { generation } = after.payload;
+  await h.op('leave', { guild_id: GUILD, generation }); // persist recovers
+  const recovered = await h.status();
+  assert.equal(recovered.payload.state_write_ok, true);
   await h.close();
 });
 

@@ -160,7 +160,7 @@ test('music/stop during speech never reports the player as idle mid-speech', asy
   arbiter.enqueueSpeech({ audio: Buffer.from('tts'), mediaType: 'audio/mpeg', requestId: 'r1' });
   assert.equal(arbiter.stopMusic(), true);
 
-  // The snapshot /voice/status serves: speech is audibly playing, so the
+  // The snapshot the status query serves: speech is audibly playing, so the
   // player status must not read idle (2026-09-16 audit C-4).
   assert.equal(arbiter.statusSnapshot().player.status, 'suspended');
   assert.equal(arbiter.statusSnapshot().playback_id, null); // the music slot is gone
@@ -437,7 +437,7 @@ test("the readable-first path attaches the resource without consuming or unshift
   assert.equal(unshiftCalls, 0);
 });
 
-test('/voice/status position reporting is coherent with the resume policy', () => {
+test('the status query\'s position reporting is coherent with the resume policy', () => {
   const { arbiter, player, playToPlaying } = makeArbiter();
   playToPlaying();
   player.current.playbackDuration = 7_500;
@@ -656,7 +656,7 @@ test('a play parked behind a speech queue that never drains fails at the deadlin
   assert.equal(failed.length, 1);
   assert.equal(failed[0].reason, 'start-timeout');
   assert.equal(failed[0].playback_id, playbackId);
-  // The parked slot is released, so /voice/status stops reporting a track
+  // The parked slot is released, so the status query stops reporting a track
   // that is never going to play.
   assert.equal(arbiter.statusSnapshot().playback_id, null);
 });

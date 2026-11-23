@@ -21,7 +21,7 @@ import { encodeHello, encodeFrame } from './codec.mjs';
  * is up, each user gets a backlog bound of `maxUserBacklog` frames (16 ×
  * 20 ms by default) measured as written-but-not-yet-flushed. A frame that
  * would exceed the bound is DROPPED and counted; pump.stats() exposes the
- * drop counters for /voice/status. The wake gate degrades into gaps for a
+ * drop counters for the status query. The wake gate degrades into gaps for a
  * slow consumer, never into a memory grow.
  */
 export function createPump({ guildId, token, host = '127.0.0.1', port = 4599, maxPending = 200, maxUserBacklog = 16, connectImpl = net.connect } = {}) {

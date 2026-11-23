@@ -1,11 +1,11 @@
-// The control plane's perimeter (security(voice), Aikido round 2): the shared
-// bearer on every route, a bounded request_id dedupe map that expires on a
-// timer, over-limit bodies answered and closed unread, and listener limits.
+// The control plane's perimeter: the shared bearer on every route, a bounded
+// operation ledger that expires on a timer, over-limit bodies answered and
+// closed unread, and listener limits.
 //
 // Falsification: drop the bearer check in createFrontDoor and the auth matrix
 // goes green-to-red on every route; drop makeRoom and the budget tests see the
-// map grow past its bound; drop the sweep interval and the expiry test never
-// sees the memo go; restore the drain in readBody and the unread-body test
+// ledger grow past its bound; drop the sweep interval and the expiry test never
+// sees the entry go; restore the drain in readBody and the unread-body test
 // waits for the rest of the upload.
 
 import { test } from 'node:test';
@@ -55,12 +55,15 @@ test('a front door refuses to exist without a token', () => {
 
 test('every route refuses a missing or wrong bearer, and does nothing for the caller', async () => {
   const h = await makeHarness();
+  const operation = (kind, effect) => JSON.stringify({ operation_id: `op-${kind}`, kind, effect });
   const calls = [
-    ['POST', '/voice/join', JSON.stringify({ guild_id: GUILD, channel_id: CHANNEL })],
-    ['POST', '/music/stop', JSON.stringify({ guild_id: GUILD, generation: 'x' })],
-    ['POST', '/stream', JSON.stringify({ guild_id: GUILD, generation: 'x', audio_b64: 'AAA=' })],
-    ['GET', `/voice/status?guild_id=${GUILD}`, undefined],
+    ['POST', '/v1/voice/operations', operation('join', { guild_id: GUILD, channel_id: CHANNEL })],
+    ['POST', '/v1/voice/operations', operation('stop', { guild_id: GUILD, generation: 'x' })],
+    ['POST', '/v1/voice/operations', operation('speak', { guild_id: GUILD, generation: 'x', audio_b64: 'AAA=' })],
+    ['POST', '/v1/voice/queries', JSON.stringify({ kind: 'status', params: { guild_id: GUILD } })],
+    ['GET', '/v1/voice/operations/op-join', undefined],
     ['GET', '/health', undefined],
+    ['GET', '/ready', undefined],
   ];
   const headers = [{}, { authorization: 'Bearer wrong' }, { authorization: `Basic ${TOKEN}` }];
   for (const [method, path, body] of calls) {
@@ -91,72 +94,73 @@ test('the same routes answer for the bearer, and a non-ASCII header does not cra
   await h.close();
 });
 
-test('a request_id must be a short ASCII token; anything else is refused before dedupe', async () => {
+test('an operation_id must be a short ASCII token; anything else is refused before the ledger', async () => {
   const h = await makeHarness();
   const bad = ['x'.repeat(65), 'a/../b', 'has space', 123, ''];
   for (const id of bad) {
-    const res = await h.post('/voice/join', { guild_id: GUILD, channel_id: CHANNEL, request_id: id });
-    assert.equal(res.status, 400, `request_id ${JSON.stringify(id)}`);
-    assert.equal(res.body.error, 'invalid_request_id');
+    const res = await h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: id });
+    assert.equal(res.status, 400, `operation_id ${JSON.stringify(id)}`);
+    assert.deepEqual(res.body, { error: 'invalid_operation_id' });
   }
-  assert.equal(h.core.controller.dedupeSize(), 0, 'a refused id takes no dedupe slot');
-  const good = await h.post('/voice/join', { guild_id: GUILD, channel_id: CHANNEL, request_id: 'req-1' });
-  assert.equal(good.status, 200);
+  assert.equal(h.ledger.size(), 0, 'a refused id takes no ledger slot');
+  const good = await h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: 'req-1' });
+  assert.equal(good.outcome, 'complete');
   await h.close();
 });
 
-test('the dedupe map holds at most its entry budget, evicting completed entries oldest-first', async () => {
-  const h = await makeHarness({ controllerOptions: { dedupeMaxEntries: 4 } });
+test('the ledger holds at most its entry budget, evicting settled entries oldest-first', async () => {
+  const h = await makeHarness({ ledgerOptions: { maxEntries: 4 } });
   for (let i = 0; i < 10; i += 1) {
-    // generation 'x' never matches, so each answers 409 — a completed, memoized answer.
-    const res = await h.post('/music/stop', { guild_id: GUILD, generation: 'x', request_id: `flood-${i}` });
-    assert.equal(res.status, 409);
-    assert.ok(h.core.controller.dedupeSize() <= 4, `size ${h.core.controller.dedupeSize()} after ${i + 1}`);
+    // generation 'x' never matches, so each is rejected — a settled, kept answer.
+    const res = await h.op('stop', { guild_id: GUILD, generation: 'x' }, { operationId: `flood-${i}` });
+    assert.equal(res.outcome, 'rejected');
+    assert.ok(h.ledger.size() <= 4, `size ${h.ledger.size()} after ${i + 1}`);
   }
-  assert.equal(h.core.controller.dedupeSize(), 4);
+  assert.equal(h.ledger.size(), 4);
   await h.close();
 });
 
-test('the dedupe map holds at most its byte budget, counting the memoized bodies', async () => {
+test('the ledger holds at most its byte budget, counting the kept envelopes', async () => {
   const budget = 1500;
-  const h = await makeHarness({ controllerOptions: { dedupeMaxBytes: budget } });
+  const h = await makeHarness({ ledgerOptions: { maxBytes: budget } });
   for (let i = 0; i < 10; i += 1) {
-    await h.post('/music/stop', { guild_id: GUILD, generation: 'x', request_id: `bytes-${i}` });
-    assert.ok(h.core.controller.dedupeBytes() <= budget, `bytes ${h.core.controller.dedupeBytes()}`);
+    await h.op('stop', { guild_id: GUILD, generation: 'x' }, { operationId: `bytes-${i}` });
+    assert.ok(h.ledger.bytes() <= budget, `bytes ${h.ledger.bytes()}`);
   }
   await h.close();
 });
 
-test('an in-flight entry is never evicted: at the budget with everything in flight, the next id is refused 503', async () => {
+test('an in-flight entry is never evicted: at the budget with everything in flight, the next id is unavailable', async () => {
   let release;
   const gate = new Promise((resolve) => {
     release = resolve;
   });
-  const h = await makeHarness({ joinGate: () => gate, controllerOptions: { dedupeMaxEntries: 1 } });
-  const first = h.post('/voice/join', { guild_id: GUILD, channel_id: CHANNEL, request_id: 'held' });
+  const h = await makeHarness({ joinGate: () => gate, ledgerOptions: { maxEntries: 1 } });
+  const first = h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: 'held' });
   await until(() => h.joinCalls.length === 1);
-  const refused = await h.post('/voice/join', { guild_id: GUILD, channel_id: CHANNEL, request_id: 'other' });
+  const refused = await h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: 'other' });
   assert.equal(refused.status, 503);
-  assert.equal(refused.body.error, 'dedupe_full');
+  assert.equal(refused.outcome, 'unavailable');
+  assert.equal(refused.error, 'dedupe_full');
   release();
   const done = await first;
-  assert.equal(done.status, 200, 'the held request still completes');
+  assert.equal(done.outcome, 'complete', 'the held request still completes');
   await h.close();
 });
 
-test('an expired memo is dropped by the timer, with no further traffic', async () => {
+test('an expired entry is dropped by the timer, with no further traffic', async () => {
   const clock = createFakeClock();
   const h = await makeHarness({
     clock,
-    controllerOptions: { dedupeTtlMs: 1000, dedupeSweepMs: 5 },
+    ledgerOptions: { ttlMs: 1000, sweepMs: 5 },
   });
-  await h.post('/music/stop', { guild_id: GUILD, generation: 'x', request_id: 'expiring' });
-  assert.equal(h.core.controller.dedupeSize(), 1);
+  await h.op('stop', { guild_id: GUILD, generation: 'x' }, { operationId: 'expiring' });
+  assert.equal(h.ledger.size(), 1);
   clock.advance(5000);
   assert.equal(
-    await until(() => h.core.controller.dedupeSize() === 0, 400),
+    await until(() => h.ledger.size() === 0, 400),
     true,
-    'the sweep timer, not a later request, must release the memo',
+    'the sweep timer, not a later request, must release the entry',
   );
   await h.close();
 });
@@ -164,18 +168,18 @@ test('an expired memo is dropped by the timer, with no further traffic', async (
 test('an over-limit body is answered 413 and the connection closed without reading the rest', async () => {
   const h = await makeHarness();
   const head = [
-    'POST /music/stop HTTP/1.1',
+    'POST /v1/voice/operations HTTP/1.1',
     'host: x',
     `authorization: Bearer ${TOKEN}`,
     'content-type: application/json',
-    'content-length: 10000000', // far over the 64 KiB control limit
+    'content-length: 10000000', // far over the 4 MiB operations cap
     'connection: keep-alive',
     '',
     '',
   ].join('\r\n');
   // Send only the first slice. A server that drains would sit waiting for the
   // other ~10 MB; this one answers at once and closes.
-  const { data, closed } = await rawExchange(h.port, head, 'x'.repeat(70 * 1024), { after: 1000 });
+  const { data, closed } = await rawExchange(h.port, head, 'x'.repeat(4 * 1024 * 1024 + 1024), { after: 1000 });
   assert.match(data, /^HTTP\/1\.1 413 /);
   assert.match(data, /body_too_large/);
   assert.match(data, /connection: close/i);
@@ -192,7 +196,7 @@ test('a request whose body never finishes is cut by the request deadline', { tim
   });
   await new Promise((resolve) => front.listen(0, '127.0.0.1', resolve));
   const head = [
-    'POST /music/stop HTTP/1.1',
+    'POST /v1/voice/operations HTTP/1.1',
     'host: x',
     `authorization: Bearer ${TOKEN}`,
     'content-type: application/json',
@@ -235,56 +239,56 @@ test('the listener refuses connections beyond its limit', { timeout: 5000 }, asy
 });
 
 
-test('request ids have a bounded ASCII format', async () => {
+test('operation ids have a bounded ASCII format', async () => {
   const h = await makeHarness();
-  for (const request_id of ['x'.repeat(65), 'space here', 'é', 42, '']) {
-    const r = await h.post('/voice/join', { guild_id: GUILD, channel_id: CHANNEL, request_id });
+  for (const id of ['x'.repeat(65), 'space here', 'é', 42, '']) {
+    const r = await h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: id });
     assert.equal(r.status, 400);
-    assert.equal(r.body.error, 'invalid_request_id');
+    assert.equal(r.error, 'invalid_operation_id');
   }
   assert.equal(h.joinCalls.length, 0);
   await h.close();
 });
 
-test('dedupe caps in-flight entries and bytes before executing', async () => {
+test('the ledger caps in-flight entries and bytes before executing', async () => {
   let release;
   const gate = new Promise(r => { release = r; });
-  const h = await makeHarness({ joinGate: () => gate,
-    controllerOptions: { dedupeMaxEntries: 1, dedupeMaxBytes: 512 } });
-  const first = h.post('/voice/join', { guild_id: GUILD, channel_id: CHANNEL, request_id: 'first' });
+  const h = await makeHarness({ joinGate: () => gate, ledgerOptions: { maxEntries: 1, maxBytes: 512 } });
+  const first = h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: 'first' });
   await until(() => h.joinCalls.length === 1);
-  const r = await h.post('/voice/join', { guild_id: GUILD, channel_id: CHANNEL, request_id: 'second' });
+  const r = await h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: 'second' });
   assert.equal(r.status, 503);
-  assert.equal(h.core.controller.dedupeSize(), 1);
-  assert.ok(h.core.controller.dedupeBytes() > 'first'.length, 'the promise metadata counts too');
+  assert.equal(h.ledger.size(), 1);
+  assert.ok(h.ledger.bytes() > 'first'.length, 'the hash and pending record count too');
   release();
   await first;
-  const big = await h.post('/music/stop', { guild_id: GUILD, request_id: 'large', padding: 'x'.repeat(600) });
-  assert.equal(big.status, 409, 'request bodies do not occupy the dedupe map');
-  const tiny = await makeHarness({ controllerOptions: { dedupeMaxBytes: 128 } });
-  const refused = await tiny.post('/voice/join', { guild_id: GUILD, channel_id: CHANNEL, request_id: 'over-budget' });
+  const big = await h.op('stop', { guild_id: GUILD, generation: 'x', padding: 'x'.repeat(600) }, { operationId: 'large' });
+  assert.equal(big.outcome, 'rejected');
+  assert.ok(h.ledger.bytes() <= 512, 'an effect occupies the ledger only as its hash');
+  const tiny = await makeHarness({ ledgerOptions: { maxBytes: 128 } });
+  const refused = await tiny.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: 'over-budget' });
   assert.equal(refused.status, 503, 'even an in-flight entry must fit the byte budget');
   assert.equal(tiny.joinCalls.length, 0);
   await tiny.close();
   await h.close();
 });
 
-test('completed dedupe entries evict and expire without new requests', async () => {
+test('settled ledger entries evict and expire without new requests', async () => {
   const clock = createFakeClock();
-  const h = await makeHarness({ clock, controllerOptions: {
-    dedupeMaxEntries: 2, dedupeMaxBytes: 4096, dedupeTtlMs: 100, dedupeSweepMs: 10,
+  const h = await makeHarness({ clock, ledgerOptions: {
+    maxEntries: 2, maxBytes: 4096, ttlMs: 100, sweepMs: 10,
   } });
-  for (const request_id of ['one', 'two', 'three']) {
-    const r = await h.post('/voice/join', { guild_id: GUILD, channel_id: CHANNEL, request_id });
-    assert.equal(r.status, 200);
-    assert.ok(h.core.controller.dedupeSize() <= 2);
-    assert.ok(h.core.controller.dedupeBytes() <= 4096);
+  for (const id of ['one', 'two', 'three']) {
+    const r = await h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: id });
+    assert.equal(r.outcome, 'complete');
+    assert.ok(h.ledger.size() <= 2);
+    assert.ok(h.ledger.bytes() <= 4096);
   }
-  assert.equal(h.core.controller.dedupeSize(), 2);
+  assert.equal(h.ledger.size(), 2);
   clock.advance(101);
   await new Promise(resolve => setTimeout(resolve, 30));
-  assert.equal(h.core.controller.dedupeSize(), 0);
-  assert.equal(h.core.controller.dedupeBytes(), 0);
+  assert.equal(h.ledger.size(), 0);
+  assert.equal(h.ledger.bytes(), 0);
   await h.close();
 });
 
@@ -297,15 +301,18 @@ test('an authenticated caller cannot dispatch to a refused guild', async () => {
   await new Promise(r => front.listen(0, '127.0.0.1', r));
   try {
     const base = `http://127.0.0.1:${front.address().port}`;
+    const send = (p, body) => fetch(`${base}${p}`, { method: 'POST',
+      headers: { ...AUTH, 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const denied = '222222222222222222';
-    const a = await fetch(`${base}/voice/status?guild_id=${denied}`, { headers: AUTH });
-    const b = await fetch(`${base}/voice/join`, { method: 'POST', headers: { ...AUTH,
-      'content-type': 'application/json' }, body: JSON.stringify({ guild_id: denied }) });
-    assert.equal(a.status, 403);
+    const a = await send('/v1/voice/queries', { kind: 'status', params: { guild_id: denied } });
+    const b = await send('/v1/voice/operations', { operation_id: 'op-1', kind: 'join', effect: { guild_id: denied } });
+    assert.equal(a.status, 200);
+    assert.equal((await a.json()).outcome, 'nothing_found');
     assert.equal(b.status, 403);
+    assert.equal((await b.json()).outcome, 'denied');
     assert.equal(dispatched, 0);
-    const good = await fetch(`${base}/voice/status?guild_id=${GUILD}`, { headers: AUTH });
-    assert.equal(good.status, 404);
+    const good = await send('/v1/voice/queries', { kind: 'status', params: { guild_id: GUILD } });
+    assert.equal((await good.json()).outcome, 'nothing_found');
     assert.equal(dispatched, 1);
   } finally { await new Promise(r => front.close(r)); }
 });
