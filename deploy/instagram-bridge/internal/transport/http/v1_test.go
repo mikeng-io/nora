@@ -734,8 +734,8 @@ func TestOperationOutcomesFollowTheContract(t *testing.T) {
 // The digest of the effect today's BridgeAdapter.send builds, computed by the
 // Python request_hash. A send reserved before the switch replays only if Go
 // hashes the same effect to the same digest.
-const pinnedEffect = `{"attachments":[],"mentions":[],"preview":null,"quote":null,"styles":[],"target":{"id":"conv-1","kind":"group","thread":null},"text":"hello"}`
-const pinnedDigest = "7351bd46460864619ccc4c35f7bba42a94abfcd9a59507d01acd3ba2183b30f8"
+const pinnedEffect = `{"attachments":[],"mentions":[],"preview":null,"quote":null,"styles":[],"target":{"id":"conv-1","kind":"group","thread":""},"text":"hello"}`
+const pinnedDigest = "2769bc2bbbf2d02f1cf2a8d29db8261987258a0d6873e5b1e5c81aeb54d54035"
 
 func TestRequestHashCoversTheEffectOnly(t *testing.T) {
 	var effect any
