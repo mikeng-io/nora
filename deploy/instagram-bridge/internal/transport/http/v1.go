@@ -712,7 +712,7 @@ func (v *V1) handleBlobGet(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, readEnvelope(r, "unavailable", nil, false, installationScope()))
 		return
 	}
-	w.Header().Set("Content-Type", rec.MediaType)
+	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Content-Sha256", rec.SHA256)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)

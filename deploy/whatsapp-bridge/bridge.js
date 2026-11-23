@@ -905,9 +905,10 @@ const handleV1 = createV1({
     if (!sock || !connected) return null;
     const s = selfForms();
     const aliases = [s.phone && phoneForm(s.phone), s.lid && lidForm(s.lid)].filter(Boolean);
+    if (!aliases.length) return null;
     return {
       platform: 'whatsapp',
-      primary: aliases[0] || null,
+      primary: aliases[0],
       aliases,
       phone: s.phone,
       lid: s.lid,
