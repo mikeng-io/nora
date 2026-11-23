@@ -563,8 +563,8 @@ def occurrence_at(*, anchor: datetime, rule: RecurrenceRule, index: int) -> date
     #
     # So this branch is plain UTC arithmetic and touches no zone at all —
     # `rule.tz` is still carried on the rule, because a duration series is
-    # still SHOWN to a person in their own zone and `list_reminders` renders
-    # it there; it just plays no part in computing the instant.
+    # still SHOWN to a person in their own zone; it just plays no part in
+    # computing the instant.
     period = rule.period_seconds
     if period is not None:
         return anchor + timedelta(seconds=period * index)
@@ -665,8 +665,8 @@ def plan_successor(reminder: Reminder, *, now: datetime) -> Reminder | None:
         index += 1
     else:
         # Unreachable with a floor that floors. Ending the series is the
-        # fail-closed answer: a series that stops is visible in
-        # `list_reminders` and in the absence of a pending row, where a tick
+        # fail-closed answer: a series that stops is visible in the
+        # absence of a pending row, where a tick
         # that never returns is visible only as a heartbeat that stopped.
         return None
     return replace(
@@ -678,20 +678,6 @@ def plan_successor(reminder: Reminder, *, now: datetime) -> Reminder | None:
         outcome=None,
         series=replace(series, occurrence=index),
     )
-
-
-def remaining_occurrences(series: Series | None) -> int:
-    """How many occurrences follow this row, by the series' COUNT bound alone.
-
-    An UPPER bound, not a promise: `until` or a cancel can end the series
-    sooner, and this deliberately does not pretend to know which — it is what
-    `list_reminders` says out loud, where over-claiming («11 more») is a smaller
-    error than the alternative of saying nothing at all about how long a
-    recurring reminder will go on.
-    """
-    if series is None:
-        return 0
-    return max(0, series.rule.count - series.occurrence - 1)
 
 
 def check_limit(limit: int) -> int:

@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from nora.app.fire import FirePath, reminder_occasion
+from nora.app.fire import FirePath
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
     AccountState,
@@ -30,7 +30,7 @@ from nora.testing.managed import (
     FakeLinkRequests,
     FakeTopologySource,
 )
-from tests.unit.test_fire_path import T0, _reminder
+from tests.unit.test_fire_path import T0, _job_occasion
 
 _M_FIRE_ROOM = Scope(ScopeKind.ROOM, room_scope_id("signal", "conv-1"))
 _M_FIRE_SIBLING = Scope(ScopeKind.ROOM, room_scope_id("signal", "conv-2"))
@@ -96,7 +96,7 @@ async def test_the_occasion_rooms_nickname_renders_through_the_fire_turn():
             person_id="miles", scope=scope, nickname=nickname,
             operation_id=f"generated-op-{scope.id}")).status.value == "complete"
 
-    ctx = await path.build_context(reminder_occasion([_reminder()]))
+    ctx = await path.build_context(_job_occasion())
 
     assert ctx.tagger is not None and ctx.tagger.name == "Generated Room Nick"
     assert all(
@@ -116,7 +116,7 @@ async def test_a_sibling_rooms_nickname_never_names_the_requester():
         nickname="Generated Sibling Nick",
         operation_id="generated-op-1")).status.value == "complete"
 
-    ctx = await path.build_context(reminder_occasion([_reminder()]))
+    ctx = await path.build_context(_job_occasion())
 
     # No name on this room's ancestry: the global name renders, not the
     # sibling's — and the sibling room's own view DOES see it.
@@ -138,9 +138,9 @@ async def test_an_unreadable_scoped_store_fails_the_fire_turn():
     bindings.down = True
     try:
         with pytest.raises(RuntimeError):
-            await path.build_context(reminder_occasion([_reminder()]))
+            await path.build_context(_job_occasion())
     finally:
         bindings.down = False
 
-    ctx = await path.build_context(reminder_occasion([_reminder()]))
+    ctx = await path.build_context(_job_occasion())
     assert ctx.tagger is not None and ctx.tagger.name == "Generated Room Nick"

@@ -73,7 +73,7 @@ def test_every_unavailable_name_is_a_real_read_tool():
     n for n in ("memory_search", "memory_read", "note_read",
                 "note_search", "memo_read", "social_read", "room_state_read",
                 "poll_list", "poll_read", "lookup_person",
-                "who_said", "group_members", "event_search", "rollup_read",
+                "who_said", "group_members", "rollup_read",
                 "standing_read", "character_read", "routine_read", "where_been",
                 "media_search", "file_fetch")
 ))

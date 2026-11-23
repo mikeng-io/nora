@@ -1,12 +1,5 @@
 [
   {
-    "name": "4b: a header's wording changes (reminder: «Say it for», not «Say it to»)",
-    "file": "nora/domain/framing.py",
-    "old": "f\"Say it to {_name(self.tagger)} now, in your own words, as the \"",
-    "new": "f\"Say it for {_name(self.tagger)} now, in your own words, as the \"",
-    "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[reminder-the-requesters-name]"
-  },
-  {
     "name": "4b: a header's wording changes (participation: the closing exclamation)",
     "file": "nora/domain/framing.py",
     "old": "\"not, stay silent: silence is a complete answer here, not a failure.\"",
@@ -18,7 +11,7 @@
     "file": "nora/domain/framing.py",
     "old": "    return _put(person.name if person is not None else \"\")",
     "new": "    return _put(person.name if person is not None else \"\", \"system\")",
-    "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[reminder-the-requesters-name]"
+    "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[compute-the-requesters-name]"
   },
   {
     "name": "4b: the proactive note title is no longer escaped",
@@ -49,25 +42,11 @@
     "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[relay-the-platform-it-came-from]"
   },
   {
-    "name": "4b: a reminder's stamps swap asked and due",
-    "file": "nora/domain/framing.py",
-    "old": "f\"- asked {stamp(row.created_at)}, due {stamp(row.due_at)}\"",
-    "new": "f\"- asked {stamp(row.due_at)}, due {stamp(row.created_at)}\"",
-    "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[stamps-in-utc]"
-  },
-  {
     "name": "4b: the day of the month is zero-padded",
     "file": "nora/domain/framing.py",
     "old": "\"%-d %b %H:%M\"",
     "new": "\"%d %b %H:%M\"",
     "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[stamps-in-utc]"
-  },
-  {
-    "name": "4b: the recurrence reads the unit and not the interval",
-    "file": "nora/domain/framing.py",
-    "old": "cadence = unit if step == 1 else f\"{_figure(step)} {unit}s\"",
-    "new": "cadence = unit",
-    "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[reminder-every-recurrence-unit-interval-and-position]"
   },
   {
     "name": "4b: the score is rounded to one place",
@@ -189,7 +168,7 @@
     "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[first-name-the-header-says-the-name]"
   },
   {
-    "name": "4b fix: a reminder's text is formatted with str() again (fail-open for a non-str)",
+    "name": "4b fix: a row's text is formatted with str() again (fail-open for a non-str)",
     "file": "nora/domain/framing.py",
     "old": "_put(text, \"joined\")",
     "new": "_put(text, \"carried\")",
@@ -232,9 +211,9 @@
   },
   {
     "name": "4b fix: a builder's only real use is removed (the FRAMING tuple still names it)",
-    "file": "nora/domain/framing.py",
-    "old": "    return RepeatClause(series).render()",
-    "new": "    return \"\"",
+    "file": "nora/app/fire.py",
+    "old": "        body=RequestBody(tuple(r.text for r in rows)).render(),",
+    "new": "        body=\"\",",
     "target": "tests/architecture/test_framing_is_one_typed_place.py::test_every_builder_is_used_somewhere"
   }
 ]

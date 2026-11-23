@@ -38,7 +38,6 @@ from nora.domain.reminders import (
     UnknownRecurrenceZoneError,
     occurrence_at,
     plan_successor,
-    remaining_occurrences,
 )
 
 HK = "Asia/Hong_Kong"
@@ -374,19 +373,6 @@ def test_the_successors_id_is_derived_so_a_double_mint_collides():
     assert first.id == again.id == uuid.uuid5(SERIES, "1")
 
 
-def test_remaining_occurrences_counts_what_follows_this_row():
-    rule = _rule(Recurrence.DAILY, count=14)
-    anchor = _local(HK, 2026, 9, 27, 9, 0)
-
-    assert remaining_occurrences(None) == 0
-    assert remaining_occurrences(
-        _reminder(anchor=anchor, rule=rule, occurrence=0).series
-    ) == 13
-    assert remaining_occurrences(
-        _reminder(anchor=anchor, rule=rule, occurrence=13).series
-    ) == 0
-
-
 # ── sub-day recurrence ────────────────────────────────────────────────
 
 
@@ -615,20 +601,14 @@ def test_an_interval_past_the_ceiling_is_refused_rather_than_overflowing():
 
 
 def test_every_per_unit_table_covers_every_recurrence():
-    """Three hand-maintained per-unit tables exist, each subscripted BARE somewhere: a table missing
-    a unit (such as `CADENCE_UNITS`) would make every sub-day reminder raise KeyError in its own
-    fire header after claiming the row.
+    """The per-unit table is subscripted BARE: a table missing a unit would make a
+    sub-day series raise KeyError after claiming the row.
 
     A table missing a member is a runtime crash on a background path nobody is
     watching, which is the worst place to find one. This is the gate that makes
     adding a unit fail here instead.
     """
-    from nora.agenda.adapters.tools.shared import _PERIOD_DAYS
-    from nora.domain.framing import CADENCE_UNITS
-
     repeating = set(Recurrence) - {Recurrence.NONE}
-    assert set(CADENCE_UNITS) == repeating, "nora.domain.framing.CADENCE_UNITS"
-    assert set(_PERIOD_DAYS) == repeating, "nora.agenda.adapters.tools.shared._PERIOD_DAYS"
     # UNIT_SECONDS is deliberately PARTIAL — a calendar unit has no fixed
     # period — so it is checked as a subset with the sub-day units required.
     assert set(UNIT_SECONDS) == DURATION_UNITS

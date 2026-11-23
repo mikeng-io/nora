@@ -123,14 +123,14 @@ def test_two_members_of_one_name_keep_one_order_in_every_process():
 
 
 async def test_the_fire_path_fills_room_members_through_build_context(tmp_path):
-    """The wiring, not only the helper: a reminder fired into a listed room
+    """The wiring, not only the helper: an occasion fired into a listed room
     carries that room's members (dropping the fire wiring must fail)."""
     from datetime import UTC, datetime
 
-    from nora.app.fire import FirePath, reminder_occasion
+    from nora.app.fire import FirePath
     from nora.obs.metrics import Metrics
     from nora.testing import FakeRecordStore
-    from tests.unit.test_fire_path import _reminder
+    from tests.unit.test_fire_path import _job_occasion
 
     persons, _ = _load(tmp_path)
     (tmp_path / "p2.toml").write_text(
@@ -144,7 +144,5 @@ async def test_the_fire_path_fills_room_members_through_build_context(tmp_path):
         limits={}, timeout_seconds=120.0, clock=lambda: datetime(2026, 9, 28, tzinfo=UTC),
         policy=load_policy(tmp_path / "p2.toml"),
     )
-    ctx = await path.build_context(reminder_occasion([_reminder(
-        requester_person_id="miles_novak"
-    )]))
+    ctx = await path.build_context(_job_occasion(requester_person_id="miles_novak"))
     assert [m.name for m in ctx.room_members] == ["Miles Novak"]

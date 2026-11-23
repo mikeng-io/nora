@@ -311,8 +311,6 @@ HISTORICAL_READ_UNAVAILABLE: Mapping[str, str] = MappingProxyType({
                  "this time.",
     "poll_read": "This reads a poll's folded state as it stands now, not as "
                  "of this time.",
-    "event_search": "This reads gatherings' open folds as they stand now, "
-                    "not what was open then.",
     "rollup_read": "This reads a rollup built now; what it would have read "
                    "then cannot be rebuilt here.",
     "standing_read": "This reads standing as it stands now, not as of this "

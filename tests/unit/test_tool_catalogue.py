@@ -159,9 +159,6 @@ def test_confusable_pairs_are_discriminated_in_the_catalogue_itself():
     assert "named" in by_name["parking_status"]
     assert "nearest" in by_name["find_parking"]
 
-    assert "NEW" in by_name["event_propose"]
-    assert "ALREADY" in by_name["event_revise"]
-
     assert "history" in by_name["version_list"]
     assert "upgrades" in by_name["version_list"]
     assert "names a version" in by_name["version_read"]

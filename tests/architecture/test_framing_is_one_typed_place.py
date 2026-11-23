@@ -144,8 +144,8 @@ NON_ESCAPED: dict[tuple[str, str, str], str] = {
 #: raw value or an unreviewed function; adding to this list is the review. Each
 #: is defined in framing (`test_clean_calls_are_exactly_the_helpers_framing_defines`).
 CLEAN_CALLS: frozenset[str] = frozenset({
-    "_put", "_figure", "stamp", "_name", "_repeat", "_gate_note", "_utc_minute",
-    "_asked", "_repeats", "_request", "_decided", "_about", "_outcome", "_documents", "len",
+    "_put", "_figure", "stamp", "_name", "_gate_note", "_utc_minute",
+    "_decided", "_about", "_outcome", "_documents", "len",
 })
 
 _WORD = re.compile(r"[^\W\d_][\w'’-]*")
@@ -294,7 +294,7 @@ def test_the_table_gives_every_kind_its_own_builder():
         assert callable(getattr(cls, "render", None)), f"{kind}: no render()"
 
 
-def _event_source(header: str, kind: str = "reminder", body: str = "''") -> ast.Module:
+def _event_source(header: str, kind: str = "proactive", body: str = "''") -> ast.Module:
     return ast.parse(
         "def occasion(rows):\n"
         f"    return Event(kind={kind!r}, body={body}, header={header})\n"
@@ -306,7 +306,7 @@ def _event_source(header: str, kind: str = "reminder", body: str = "''") -> ast.
     "lambda tagger, now: 'You are in a group chat'",
     "_inline_header",
     "lambda tagger, now: _helper(rows)",
-    "lambda tagger, now: ReminderHeader(rows, tagger)",
+    "lambda tagger, now: ProactiveHeader(rows)",
 ], ids=["f-string", "literal", "function", "helper-call", "forgot-render"])
 def test_an_event_whose_header_is_written_inline_is_caught(header):
     _found, problems = event_findings({"nora/app/x.py": _event_source(header)})
@@ -315,7 +315,7 @@ def test_an_event_whose_header_is_written_inline_is_caught(header):
 
 def test_an_event_whose_body_is_built_inline_is_caught():
     _found, problems = event_findings({"nora/app/x.py": _event_source(
-        "lambda tagger, now: ReminderHeader(rows, tagger).render()",
+        "lambda tagger, now: ProactiveHeader(rows).render()",
         body="f'(asked earlier) {job.task}'",
     )})
     assert problems and "body" in problems[0]
@@ -323,21 +323,21 @@ def test_an_event_whose_body_is_built_inline_is_caught():
 
 def test_an_event_that_renders_a_typed_builder_is_clean():
     found, problems = event_findings({"nora/app/x.py": _event_source(
-        "lambda tagger, now: ReminderHeader(tuple(rows), tagger).render()",
+        "lambda tagger, now: ProactiveHeader(tuple(rows)).render()",
         body="RequestBody(()).render()",
     )})
-    assert not problems and found == {"reminder": ["ReminderHeader"]}
+    assert not problems and found == {"proactive": ["ProactiveHeader"]}
 
 
 def test_a_kind_built_with_the_wrong_builder_is_caught(modules):
     swapped = {"nora/app/x.py": _event_source(
-        "lambda tagger, now: ProactiveHeader(tagger).render()", kind="reminder")}
+        "lambda tagger, now: ComputeHeader(tagger).render()", kind="proactive")}
     found, _problems = event_findings(swapped)
-    assert found["reminder"] != [framing.FIRE_HEADERS["reminder"].__name__]
+    assert found["proactive"] != [framing.FIRE_HEADERS["proactive"].__name__]
 
 
 @pytest.mark.parametrize("source", [
-    "def o(r):\n    return events.Event(kind='reminder', body='', "
+    "def o(r):\n    return events.Event(kind='proactive', body='', "
     "header=lambda t, n: f'Earlier {t.name} asked you')\n",
     "def o(ev):\n    return dataclasses.replace(ev, header=lambda t, n: 'x')\n",
     "def o(ev):\n    return replace(ev, header=lambda t, n: f'(asked) {t}')\n",
@@ -351,7 +351,7 @@ def test_the_discovery_sees_every_known_construction_site(modules):
     """A zero from an instrument that cannot see is not evidence."""
     found, _problems = event_findings(modules)
     assert set(found) >= {
-        "reminder", "proactive", "compute", "relay", "compute_lost",
+        "proactive", "compute", "relay", "compute_lost",
         "participation",
     }
 
@@ -423,12 +423,12 @@ def test_a_builder_named_only_in_the_tables_is_not_used():
     """The positive control: a table row is not a use. Counting the `FRAMING`
     tuple as a use would mark every builder used."""
     tree = ast.parse(
-        "FRAMING = {c.__name__: c for c in (RepeatClause, ReminderHeader)}\n"
-        "FIRE_HEADERS = {'reminder': ReminderHeader}\n"
-        "def f():\n    return ReminderHeader(1, 2)\n"
+        "FRAMING = {c.__name__: c for c in (ClockLine, ProactiveHeader)}\n"
+        "FIRE_HEADERS = {'proactive': ProactiveHeader}\n"
+        "def f():\n    return ProactiveHeader(1)\n"
     )
     uses = real_uses({"x.py": tree})
-    assert uses["ReminderHeader"] == 1 and uses["RepeatClause"] == 0
+    assert uses["ProactiveHeader"] == 1 and uses["ClockLine"] == 0
 
 
 # =============================================================================
@@ -827,7 +827,7 @@ def test_prose_built_outside_framing_is_caught(source):
 
 
 @pytest.mark.parametrize("source", [
-    "def r(rows):\n    return ReminderHeader(tuple(rows), None).render()\n",
+    "def r(rows):\n    return ProactiveHeader(tuple(rows)).render()\n",
     "def r(n):\n    raise KeyError(f'no event factory registered for kind={n!r} at all')\n",
     "def r(n):\n    log.error('%s turn not fired: %s is no longer in identity.toml', n, n)\n",
     "def r(n):\n    log.warning(f'fire turn {n} recovered a reply written without send_reply')\n",

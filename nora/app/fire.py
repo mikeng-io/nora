@@ -2,15 +2,15 @@
 
 WHAT THIS MODULE IS RESPONSIBLE FOR
 -----------------------------------
-The TURN. `nora.app.heartbeat` owns *when* a reminder fires, *whether* policy
+The TURN. `nora.app.heartbeat` owns *when* a due row fires, *whether* policy
 still allows it and *what the row then says*; this owns everything between the
 two — the synthetic `TagContext`, the prompt, the model call, the delivery, and
 the outcome string it answers with.
 
 THERE ARE SEVERAL OCCASIONS, AND THE TURN IS THE SAME TURN
 ----------------------------------------------------------
-The occasions are reminders (DEC-70), gatherings (DEC-139), compute results,
-relays (DEC-105), proactive acts and participation. Participation is the one
+The occasions are compute results, relays (DEC-105), proactive acts and
+participation. Participation is the one
 that triggers on a real room going quiet rather than on a stored row, and the
 one where silence is a HEALTHY outcome rather than a failure (`SILENT` below).
 Everything between "something made this turn happen" and "the group heard it"
@@ -24,7 +24,7 @@ beside this one. It has to be built THROUGH it.
 So what differs is factored into `Event`: where she speaks, on whose
 authority, the words put to her, and the header that says why this turn is
 happening. `speak(occasion)` is the turn; `run(rows)` is the heartbeat's
-reminder-shaped adapter onto it (see both docstrings).
+row-shaped adapter onto it (see both docstrings).
 
 It reuses the tag pipeline's stages where they fit and refuses them where they
 do not, and the refusals are the design:
@@ -120,7 +120,6 @@ from nora.domain.framing import (
     ParticipationHeader,
     ProactiveHeader,
     RelayHeader,
-    ReminderHeader,
     RequestBody,
 )
 from nora.domain.lineage import (
@@ -252,8 +251,8 @@ PROACTIVE_AUDIENCE = audience_names.PROACTIVE
 
 # WHICH OCCASIONS READ THE SHARED DECISION LOG, AND WITH WHICH WRITERS — one
 # statement, because they are one decision (`_read_decisions`). A kind absent
-# from this mapping renders no `<loop_decisions>` block at all: the reminder
-# and gathering occasions were decided when their row was written and are not
+# from this mapping renders no `<loop_decisions>` block at all: the compute
+# and relay occasions were decided when their work was started and are not
 # weighing whether to take a floor, so the read would cost a query and change
 # nothing.
 #
@@ -283,30 +282,6 @@ SHADOW_AUDIENCE = audience_names.SHADOW
 # through" and "she drafted 40 replies" the same number.
 GATE_SHADOW_AUDIENCE = audience_names.GATE_SHADOW
 
-def reminder_occasion(rows: Sequence[Reminder]) -> Event:
-    """One conversation's due reminders, as the occasion they are.
-
-    The heartbeat's rows are already grouped by `(platform, conversation_id,
-    requester)`, so `rows[0]` names all four for the whole batch.
-
-    `body` is the requester's OWN sentence(s), joined, and that is the premise of
-    the whole feature: a reminder is a deferred request, put to her at the due
-    time AS a request. The set-at and due-at facts deliberately do NOT go here —
-    they belong in the header, because a body that is anything other than what
-    the person said breaks that premise.
-    """
-    row = rows[0]
-    return Event(
-        platform=row.platform,
-        conversation_id=row.conversation_id,
-        conversation_type=row.conversation_type,
-        person_id=row.requester_person_id,
-        body=RequestBody(tuple(r.text for r in rows)).render(),
-        header=lambda tagger, now: ReminderHeader(tuple(rows), tagger).render(),
-        kind="reminder",
-    )
-
-
 def proactive_occasion(rows: Sequence[Reminder]) -> Event:
     """A `kind="proactive"` row — Nora's own earlier decision — coming due
     (DEC-162): the ACT turn of the OODA loop whose DECIDE step wrote this row.
@@ -318,9 +293,8 @@ def proactive_occasion(rows: Sequence[Reminder]) -> Event:
     exactly as it does for a participation turn.
 
     `body` is the INTENT the Cognition session's `remind` wrote — «raise the dinner plan now
-    that people know where they are coming from» — put to her the way a
-    reminder puts the requester's own sentence: as what was asked, in the
-    asker's words, and the asker is her earlier self. The header carries
+    that people know where they are coming from» — put to her as what was
+    asked, in the asker's words, and the asker is her earlier self. The header carries
     when she decided it and for when, and names the note it is about
     (`payload["note_title"]`, stamped in code by `remind` at decision
     time). The note's CURRENT body is not here: the fire turn renders the
@@ -695,11 +669,11 @@ class FirePath:
         # same map: fire-path eligibility is NOT platform-specific, so a
         # reminder set in a Discord channel fires into that channel.
         self._adapters = adapters
-        # Kind -> factory, the dispatch point for reminder-derived Events
-        # (DEC-139). Defaults to reminders only; the composition root wires the
-        # real registry.
+        # Kind -> factory, the dispatch point for row-derived Events
+        # (DEC-139). Defaults to proactive rows only; the composition root wires
+        # the real registry.
         self._event_registry = dict(
-            event_registry if event_registry is not None else {"reminder": reminder_occasion}
+            event_registry if event_registry is not None else {"proactive": proactive_occasion}
         )
         self._registry = registry
         self._canary = canary
@@ -996,8 +970,8 @@ class FirePath:
         **Two occasions, and the restriction is the decision.** Both are
         turns deciding whether to speak into a room nobody addressed her in, so
         «she raised this two hours ago in another room» is the fact that changes
-        the answer. A reminder or a gathering firing was decided when its row
-        was written and is not weighing the floor at all; handing it this block
+        the answer. A compute result or a relay was decided when its work was
+        started and is not weighing the floor at all; handing it this block
         would cost a read and change nothing.
 
         **The proactive act turn reads it too.** The decide pass's index says
@@ -1148,7 +1122,7 @@ class FirePath:
     async def _read_culture(self, occasion: Event) -> CultureRevision | None:
         """This room's current account, or `None`.
 
-        **Every fire occasion reads it** (DEC-207): a reminder, a gathering and
+        **Every fire occasion reads it** (DEC-207): a compute result, a relay and
         a proactive act turn all read the account of the room they are about
         to speak into. A proactive act turn is keyed on a unit for its
         DECISION, but by the time it reaches this path it has chosen one
@@ -1448,15 +1422,15 @@ class FirePath:
 
         Dispatch by KIND, through the reminder-derived registry
         (DEC-139): `rows[0].kind` selects the
-        factory that renders the batch's Event (`"reminder"` →
-        `reminder_occasion`, `"proactive"` → `proactive_occasion`); an
+        factory that renders the batch's Event (`"proactive"` →
+        `proactive_occasion`); an
         UNREGISTERED kind raises inside this call,
         before `speak`, and `HeartbeatLoop._run_turn`'s `_fire` guard
         resolves the claimed rows to FAILED (`failed_error`) immediately —
         never rendered as a malformed sentence, never left FIRING for boot
         `recover()`.
 
-        The registry defaults to `{"reminder": reminder_occasion}`; the
+        The registry defaults to `{"proactive": proactive_occasion}`; the
         composition root wires the real registry.
 
         It is a separate method rather than a lambda in the composition root
@@ -1807,9 +1781,6 @@ class FirePath:
                 # for is precisely where an unchecked attribution would be worst.
                 transcript=ctx.transcript,
                 # The one thing that tells a tool this turn was not a tag.
-                # `remind` refuses on it: a reminder that can set a reminder
-                # is an unbounded loop, and the conversation it would fire into
-                # is this one.
                 fire_turn=True,
                 # A relayed message carries another room's words: its turn may not relay them
                 # onward (8765_44837).
@@ -2294,8 +2265,8 @@ class FirePath:
         gate call without becoming an egress question.
 
         Only the two occasions that CAN decline the floor are logged. A
-        reminder or a gathering firing is not a decision about whether to
-        speak — it was decided when the row was written — and putting it here
+        compute result or a relay is not a decision about whether to
+        speak — it was decided when the work was started — and putting it here
         would dilute the block with rows no decider can act on.
 
         `record` never raises and never blocks past its own timeout, so this
@@ -2594,9 +2565,8 @@ def _synthetic_message(
 ) -> NormalizedMessage:
     """The synthetic message of a fire turn. Built in memory only — nothing writes it.
 
-    `body` is `Event.body`: for a reminder the requester's OWN sentence(s),
-    which is the premise of the whole feature (a deferred request, put to her at
-    the due time AS a request). The circumstances deliberately do NOT
+    `body` is `Event.body`: for a proactive row the intent her earlier pass
+    wrote, put to her at the due time AS a request. The circumstances deliberately do NOT
     go here — they belong in the header — because a body that is anything other
     than what somebody actually wrote breaks that premise.
 

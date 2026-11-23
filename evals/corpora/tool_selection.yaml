@@ -9,7 +9,7 @@
 # WEIGHTED TOWARD CONFUSABLE PAIRS, because that is where selection errors
 # concentrate and where a one-line catalogue entry is thinnest:
 # where_is/where_been, find_parking/parking_status, route/transit,
-# event_propose/event_revise, weather/web_search. Each such case names the
+# weather/web_search. Each such case names the
 # sibling in `not_tools`: calling it is the error the pair exists to catch.
 # The rest are single cold tools, so a turn that never loads anything is
 # visible as a FAIL rather than hidden behind a hot tool.
@@ -106,7 +106,7 @@ cases:
     expect: reply
     mention: true
     input: 聖誕去邊度旅行仲未傾掂，你幫手跟住件事，唔好唔記得
-    metadata: {tools: [note_create], not_tools: [remind]}
+    metadata: {tools: [note_create]}
     snapshot: *room_a
 
   - name: route_find_parking_near
@@ -147,14 +147,6 @@ cases:
     metadata: {tools: [transit], not_tools: [route]}
     snapshot: *room_a
 
-  - name: route_event_propose
-    entry: tag
-    expect: reply
-    mention: true
-    input: 幫我哋開個飯局，下星期六晚七點，喺旺角
-    metadata: {tools: [event_propose], not_tools: [event_revise]}
-    snapshot: *room_a
-
   - name: route_weather_not_web
     entry: tag
     expect: reply
@@ -164,22 +156,6 @@ cases:
     snapshot: *room_a
 
   # --- single cold tools ---------------------------------------------------------
-  - name: route_remind
-    entry: tag
-    expect: reply
-    mention: true
-    input: 聽朝九點提我交租
-    metadata: {tools: [remind]}
-    snapshot: *room_a
-
-  - name: route_list_reminders
-    entry: tag
-    expect: reply
-    mention: true
-    input: 我有咩提醒未到？
-    metadata: {tools: [list_reminders]}
-    snapshot: *room_a
-
   - name: route_calculate
     entry: tag
     expect: reply
@@ -1323,7 +1299,7 @@ cases:
     expect: reply
     mention: true
     input: 記低 我食素
-    metadata: {tools: [remember], not_tools: [note_create, note_revise, remind], memory_surface: graph}
+    metadata: {tools: [remember], not_tools: [note_create, note_revise], memory_surface: graph}
     snapshot: *room_a
 
   # Typed Identity: stable facts share the graph remember writer. Routing is
@@ -1333,7 +1309,7 @@ cases:
     expect: reply
     mention: true
     input: 記低，我生日係二月二十九號，唔好估年份。
-    metadata: {tools: [remember], not_tools: [note_create, remind], memory_surface: graph}
+    metadata: {tools: [remember], not_tools: [note_create], memory_surface: graph}
     snapshot: *room_a
 
   - name: route_typed_languages_and_diet
@@ -1341,7 +1317,7 @@ cases:
     expect: reply
     mention: true
     input: 記低，我講廣東話同英文，食素。
-    metadata: {tools: [remember], not_tools: [note_create, remind], memory_surface: graph}
+    metadata: {tools: [remember], not_tools: [note_create], memory_surface: graph}
     snapshot: *room_a
 
   - name: route_typed_residence_correction
@@ -1349,7 +1325,7 @@ cases:
     expect: reply
     mention: true
     input: 記低，我已經搬離倫敦，依家住香港。
-    metadata: {tools: [remember], not_tools: [where_is, remind], memory_surface: graph}
+    metadata: {tools: [remember], not_tools: [where_is], memory_surface: graph}
     snapshot: *room_a
 
   # --- memory_search (DEC-316, operator ruling 2026-10-16) ----------------------

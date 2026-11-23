@@ -25,7 +25,8 @@ from typing import Literal, get_args
 
 #: The tag path: somebody addressed her (`nora.engagement.pipeline`).
 TAG = "tag"
-#: A reminder or gathering coming due (`nora.app.fire.FirePath`, its default).
+#: A fire turn nobody asked for and nobody may decline: a compute result, a relay
+#: or a lost job (`nora.app.fire.FirePath`, its default).
 HEARTBEAT = "heartbeat"
 #: The ambient participation occasion.
 PARTICIPATION = "participation"

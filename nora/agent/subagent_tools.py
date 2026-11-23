@@ -61,20 +61,18 @@ NOT_LOOKUPS: frozenset[str] = frozenset({
     "instagram_read", "instagram_search", "x_read", "x_search",
     "linkedin_read", "linkedin_search",
     # reads that belong to a live turn or to a Dreamer pass
-    "load_tools", "recall_lookups", "list_reminders", "music_status", "search_gifs",
+    "load_tools", "recall_lookups", "music_status", "search_gifs",
     "computer_session_list", "rollup_read", "standing_read",
     # Nora's own handle on background jobs: a worker that held it would recurse
     "subagent_list", "subagent_read",
 })
 
 #: Held by nobody on a worker, whatever the registry grows: every send path, every
-#: schedule, every note, event and memory write, and the document state change.
+#: note and memory write, and the document state change.
 NEVER: frozenset[str] = frozenset({
     "send_reply", "reaction_send", "send_to", "send_gif", "media_send",
     "generate_image", "video_create",
-    "remind", "cancel_reminder",
     "note_create", "note_revise",
-    "event_propose", "event_revise", "event_rsvp", "event_set_status",
     "remember", "document_set_status",
     "play_music", "skip_music", "stop_music", "top_music", "set_music_volume",
     # no recursion: a worker never starts, reads or stops a worker

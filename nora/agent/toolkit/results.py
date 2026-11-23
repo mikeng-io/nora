@@ -86,17 +86,6 @@ _QUERY_FRAME = (
 )
 
 
-def _record_created(metrics, status: str, **detail: object) -> None:
-    """`remind`'s two counters, incremented together."""
-    metrics.inc("nora_reminders_created_total", status=status)
-    if status == "created":
-        _record(metrics, "remind", "ok", **detail)
-    elif status == "unavailable":
-        _record(metrics, "remind", "unavailable", **detail)
-    else:
-        _record(metrics, "remind", "refused", reason=status, **detail)
-
-
 _ROLLUP_TIME = (
     "I could not read that interval. Give it as ISO 8601: a date such as "
     "2026-09-01, or start/end such as 2026-09-01/2026-09-07 (an end date "

@@ -230,13 +230,6 @@ def test_the_registry_exposes_every_declared_tool():
         "parking_status", "find_parking",
         # Discord-only music.
         "play_music", "skip_music", "top_music", "stop_music", "music_status", "set_music_volume",
-        "remind", "list_reminders", "cancel_reminder",
-        # The Event module (gatherings/RSVP/venue suggestions).
-        "event_propose",
-        "event_revise",
-        "event_rsvp",
-        "event_set_status",
-        "event_search",
         # Nora's computer (DEC-243).
         "computer_run", "computer_read", "computer_write", "computer_edit", "computer_export",
         "computer_import", "computer_session_list",
@@ -464,23 +457,6 @@ def test_budgets_match_todays_table():
         # second covers "no, the other one" after a bad match.
         "play_music": 2, "skip_music": 2, "top_music": 2, "stop_music": 2, "music_status": 2,
         "set_music_volume": 2,
-        # The three reminder verbs (DEC-70), all 2 and sized by the
-        # CONVERSATION rather than by cost: none leaves the host or the
-        # database, so a call is one model round trip, and one message can
-        # genuinely set two reminders or set one after cancelling another.
-        # Raising them would buy nothing — the real bound on how many
-        # reminders exist is `max_pending_per_requester`, checked inside
-        # `remind`, which no budget can substitute for.
-        "remind": 2, "list_reminders": 2, "cancel_reminder": 2,
-        # The Event module: `list_events` is 1 like `group_members` (a
-        # room-scoped read, same answer if called twice). `event_propose` is 3,
-        # the one that reaches further, for the same round-trip reason as
-        # `remind`'s 2 (DEC-237).
-        # `event_revise`/`event_set_status` are 2, sized like the
-        # reminder verbs. `event_rsvp` is 1 — a single yes/no/maybe, and a
-        # second call in the same turn is a model looping on its own write.
-        "event_search": 1, "event_propose": 3, "event_revise": 2,
-        "event_rsvp": 1, "event_set_status": 2,
         # One metadata list, then notes for up to two selected releases.
         "version_list": 1, "version_read": 2,
         # The four note verbs. The RATIO is the
@@ -916,8 +892,6 @@ def test_cacheable_tools_is_a_frozenset_not_a_list():
 # act verbs goes stale as verbs are added (the events family, DEC-117), and a
 # stale list would hand a background agent write verbs.
 ACT_VERBS = frozenset({"document_revise", "intention_commit",
-    "remind", "cancel_reminder",
-    "event_propose", "event_revise", "event_rsvp", "event_set_status",
     # a command, a file write and a file edit all
     # change the room's workspace.
     "computer_run", "computer_write", "computer_edit",
@@ -999,7 +973,7 @@ READ_ONLY = frozenset({"document_list",
     "memory_search", "memory_read",
     # reads a shared file; the account cannot write.
     "file_fetch", "media_search",
-    "web_search", "web_fetch", "weather", "list_reminders", "event_search",
+    "web_search", "web_fetch", "weather",
     "version_list", "version_read", "search_gifs",
     # The two parking verbs: live reads that act on nothing —
     # vacancy lookups and nearby discovery, no writes anywhere.

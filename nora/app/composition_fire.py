@@ -7,7 +7,7 @@ from typing import Any
 from nora.app.composition_helpers import _reasoning_effort
 from nora.app.compute_poller import ComputeJobPoller
 from nora.app.compute_poller import recover as compute_poller_recover
-from nora.app.fire import FirePath, proactive_occasion, reminder_occasion
+from nora.app.fire import FirePath, proactive_occasion
 from nora.app.fire_engagement import AmbientEngagement
 from nora.app.heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from nora.app.participation import ParticipationTrigger
@@ -225,7 +225,6 @@ def _fire_grounding_args(
         # composition root so the domain type stays free of app wiring. The registry holds the
         # kinds whose Events are PRODUCED BY a due Reminder row; compute/relay/lost-job call…
         "event_registry": {
-            "reminder": reminder_occasion,
             # The proactive act turn: a row the Cognition session's `remind` writes, built
             # `person_id=None`. Registered unconditionally — a row of this kind can only exis…
             # writer was once wired, and an unregistered kind fails the row `failed_error` wi…

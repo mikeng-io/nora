@@ -5,8 +5,8 @@ reads. Nothing here regenerates a golden: changing one is a model-visible
 change. What is compared is the whole text each seam produces, never a
 substring of it:
 
-* every fire `Event` kind, through its public factory (`reminder_occasion`,
-  `proactive_occasion`, `compute_occasion`, `relay_occasion`,
+* every fire `Event` kind, through its public factory (`proactive_occasion`,
+  `compute_occasion`, `relay_occasion`,
   `lost_job_occasion` and `participation_occasion`): the `header(tagger, now)`
   the turn renders, the `body` put to her, the speaker and the kind. Each
   interpolated field is swept one at a time over hostile values
@@ -14,9 +14,8 @@ substring of it:
   long string, an empty one) with every other field held at a baseline, so a
   golden says WHICH field a difference came from; a kitchen-sink case sets them
   all at once;
-* the reminder's stamps over eight timezones and the instants where a date or an
-  offset changes, every recurrence unit at interval 1, 2 and 10, the last and
-  the second-last occurrence, and one to many rows;
+* the proactive row's stamps over eight timezones and the instants where a date
+  or an offset changes;
 * the participation score's formatting (`None`, rounding edges, 0 and 1, a
   negative, NaN and infinity);
 * the tag prefill's pieces, through `build_prefill`: the `context_header`
@@ -65,14 +64,13 @@ from nora.app.fire import (
     participation_occasion,
     proactive_occasion,
     relay_occasion,
-    reminder_occasion,
 )
 from nora.domain import summons as summons_domain
 from nora.domain.compute import ComputeJob, ComputeJobState
 from nora.domain.events import Event
 from nora.domain.models import NormalizedMessage, PersonRef, TagContext
 from nora.domain.ports import JobResult, JobStatus
-from nora.domain.reminders import Recurrence, RecurrenceRule, Reminder, ReminderState, Series
+from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.summons import SummonsContext, ThreadRow, render_summons
 
 GOLDEN_PATH = Path(__file__).parent.parent / "fixtures" / "context_assembly_step4b_goldens.json"
@@ -165,13 +163,6 @@ def _row(**kw: Any) -> Reminder:
     return Reminder(**base)
 
 
-def _series(
-    every: Recurrence, *, interval: int = 1, occurrence: int = 0, count: int = 12,
-) -> Series:
-    rule = RecurrenceRule(every=every, tz="Asia/Hong_Kong", count=count, interval=interval)
-    return Series(id=uuid.UUID(int=2), anchor_at=T0, occurrence=occurrence, rule=rule)
-
-
 def _job(**kw: Any) -> ComputeJob:
     base: dict[str, Any] = {
         "id": uuid.UUID(int=3), "backend_job_id": "b-1", "task": "draw a heron",
@@ -208,63 +199,6 @@ def _case(name: str) -> Callable[[Callable[[], Any]], Callable[[], Any]]:
     return register
 
 
-# =============================================================================
-# reminder
-# =============================================================================
-
-
-@_case("reminder-the-requesters-name")
-def _reminder_name() -> Any:
-    return _sweep(lambda v: _event(reminder_occasion([_row()]), _person(v)))
-
-
-@_case("reminder-no-tagger")
-def _reminder_no_tagger() -> Any:
-    return _event(reminder_occasion([_row()]), None)
-
-
-@_case("reminder-the-requesters-own-words-are-the-body")
-def _reminder_text() -> Any:
-    return _sweep(lambda v: _event(reminder_occasion([_row(text=v)]))["body"])
-
-
-@_case("reminder-many-rows-and-one-header")
-def _reminder_many() -> Any:
-    rows = [_row(text=v, created_at=T0 - timedelta(hours=i + 1), due_at=T0 + timedelta(hours=i))
-            for i, v in enumerate(["洗衫", HOSTILE["nasty"], "", HOSTILE["crlf"]])]
-    return {n: _event(reminder_occasion(rows[:n])) for n in (1, 2, 3, 4)}
-
-
-@_case("reminder-a-one-shot-and-a-recurring-row-together")
-def _reminder_mixed() -> Any:
-    one = _row(text="one")
-    rep = _row(text="two", series=_series(Recurrence.DAILY, occurrence=2, count=5))
-    return {
-        "shot-then-series": _event(reminder_occasion([one, rep])),
-        "series-then-shot": _event(reminder_occasion([rep, one])),
-        "two-series": _event(reminder_occasion([rep, rep])),
-    }
-
-
-@_case("reminder-every-recurrence-unit-interval-and-position")
-def _reminder_grid() -> Any:
-    out: dict[str, Any] = {}
-    for every in Recurrence:
-        if every is Recurrence.NONE:
-            continue
-        for interval in (1, 2, 10):
-            for occurrence, count in ((0, 1), (0, 2), (0, 12), (3, 5), (4, 5), (38, 40)):
-                key = f"{every.value}-x{interval}-{occurrence}of{count}"
-                try:
-                    series = _series(every, interval=interval, occurrence=occurrence,
-                                     count=count)
-                except ValueError as exc:
-                    out[key] = f"refused: {exc}"
-                    continue
-                out[key] = _stamp_lines(_event(reminder_occasion([_row(series=series)]))["header"])
-    return out
-
-
 #: Instants where a date, a day-of-month width, a year or an offset changes.
 _INSTANTS = {
     "new-year": datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
@@ -298,7 +232,6 @@ def _stamps() -> dict[str, Any]:
     for key, at in _INSTANTS.items():
         row = _row(created_at=at, due_at=at + timedelta(minutes=90))
         out[key] = {
-            "reminder": _stamp_lines(_event(reminder_occasion([row]))["header"]),
             "proactive": _stamp_lines(_event(proactive_occasion([row]))["header"]),
         }
     return out
@@ -321,8 +254,8 @@ def _stamps_offset() -> Any:
     ny = timezone(timedelta(hours=-5))
     at = datetime(2026, 9, 24, 23, 30, tzinfo=hk)
     return {
-        "hk": _stamp_lines(_event(reminder_occasion([_row(created_at=at, due_at=at)]))["header"]),
-        "ny": _stamp_lines(_event(reminder_occasion(
+        "hk": _stamp_lines(_event(proactive_occasion([_row(created_at=at, due_at=at)]))["header"]),
+        "ny": _stamp_lines(_event(proactive_occasion(
             [_row(created_at=at.astimezone(ny), due_at=at.astimezone(ny))]))["header"]),
     }
 
@@ -330,7 +263,7 @@ def _stamps_offset() -> Any:
 @_case("stamps-a-naive-datetime-is-read-as-local")
 def _stamps_naive() -> Any:
     at = datetime(2026, 9, 24, 23, 30)
-    return _stamp_lines(_event(reminder_occasion([_row(created_at=at, due_at=at)]))["header"])
+    return _stamp_lines(_event(proactive_occasion([_row(created_at=at, due_at=at)]))["header"])
 
 
 # =============================================================================
@@ -539,7 +472,6 @@ _FIRST = PersonRef(
 @_case("first-name-the-header-says-the-name")
 def _first_name() -> Any:
     return {
-        "reminder": _event(reminder_occasion([_row()]), _FIRST),
         "proactive": _event(_proactive({"note_title": "plan"}), _FIRST),
         "participation": _event(participation_occasion(
             platform="signal", conversation_id="c", relevance_score=0.4), _FIRST),
@@ -561,10 +493,7 @@ def _mix(i: int) -> str:
 @_case("kitchen-sink-every-field-hostile-at-once")
 def _kitchen_sink() -> Any:
     who = _person(HOSTILE["nasty"])
-    rows = [_row(text=_mix(3), series=_series(Recurrence.WEEKLY, interval=2, occurrence=1,
-                                              count=4), created_at=T0 - timedelta(days=3))]
     return {
-        "reminder": _event(reminder_occasion(rows), who),
         "proactive": _event(_proactive({"note_title": HOSTILE["crlf"]}), who),
         "compute": _event(_compute(_job(task=_mix(5)), JobResult(
             JobStatus.SUCCEEDED, url=_mix(6), summary=_mix(7))), who),
@@ -647,7 +576,6 @@ def _prefill_default() -> Any:
 def _prefill_fire() -> Any:
     who = _person(HOSTILE["nasty"])
     events = {
-        "reminder": reminder_occasion([_row()]),
         "proactive": _proactive({"note_title": "plan"}), "compute": _compute(),
         "relay": _relay(), "lost": lost_job_occasion(_job()),
         "participation": participation_occasion(
@@ -819,12 +747,6 @@ def _turn(event: Event) -> dict[str, Any]:
 
 
 _TURN_EVENTS: dict[str, Callable[[], Event]] = {
-    "reminder": lambda: reminder_occasion([_row()]),
-    "reminder-recurring-and-hostile": lambda: reminder_occasion([
-        _row(text=HOSTILE["nasty"], series=_series(Recurrence.WEEKLY, interval=2, occurrence=1,
-                                                   count=4)),
-        _row(text="two", created_at=T0 - timedelta(days=1), due_at=T0 + timedelta(days=1)),
-    ]),
     "proactive": lambda: _proactive({"note_title": HOSTILE["nasty"]}),
     "compute": lambda: _compute(_job(task=HOSTILE["nasty"]), JobResult(
         JobStatus.SUCCEEDED, url="https://example.test/a?x=1&y=2", summary=HOSTILE["forge"])),
@@ -893,21 +815,21 @@ def test_the_text_the_model_reads_is_byte_identical(name: str) -> None:
 
 def test_the_cases_are_deterministic() -> None:
     """A golden over a value that varies run to run proves nothing."""
-    for name in ("turn-reminder", "turn-participation", "prefill-the-clock-line"):
+    for name in ("turn-compute", "turn-participation", "prefill-the-clock-line"):
         assert produce(name) == produce(name)
 
 
 def test_the_suite_covers_every_kind_an_event_can_have() -> None:
     kinds = {
         ev["kind"]
-        for name in ("reminder-no-tagger", "compute-no-tagger",
+        for name in ("compute-no-tagger",
                      "lost-job-no-tagger", "participation-the-event-and-its-defaults",
                      "proactive-a-payload-that-names-no-usable-title",
                      "relay-the-requesters-name")
         for ev in _flatten(GOLDEN[name])
     }
     assert kinds == {
-        "reminder", "proactive", "compute", "compute_lost", "relay",
+        "proactive", "compute", "compute_lost", "relay",
         "participation",
     }
 

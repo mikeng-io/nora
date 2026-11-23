@@ -277,7 +277,6 @@ CALLS: dict[str, list[dict[str, Any]]] = {
     "record_query": [{"start": "2026-09-01", "end": "2026-10-30"},
                      {"start": "2026-09-01", "end": "2026-10-30", "text": "dinner",
                       "scope": "all_rooms"}],
-    "event_search": [{}, {"place": "ramen"}],
     "rollup_read": [
         {"kind": "daybook", "subject": "Ada", "interval": "2026-09-01/2026-10-30"},
         {"kind": "tie", "subject": "Ada, Ben", "interval": "2026-09-01"},
@@ -453,7 +452,7 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
         t: (before.get(t), n) for t, n in _live(after).items() if before.get(t) != n
     }
     # A tool that answered `unavailable` for a wiring gap was never really run.
-    reached = {"note_search", "note_read", "record_query", "event_search",
+    reached = {"note_search", "note_read", "record_query",
                "rollup_read", "standing_read", "memo_read", "social_read",
                "group_members", "poll_list", "poll_read", "room_state_read"}
     for name in reached:

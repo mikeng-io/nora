@@ -24,7 +24,7 @@ from nora.agent import factory
 from nora.agent.registry import ToolRegistry
 from nora.app.assembler import build_assembler, lineage_policy
 from nora.app.dispatch import Dispatcher
-from nora.app.fire import FirePath, proactive_occasion, reminder_occasion
+from nora.app.fire import FirePath, proactive_occasion
 from nora.app.fire_engagement import AmbientEngagement
 from nora.app.participation import ParticipationTrigger
 from nora.app.runtime import BackgroundTasks
@@ -306,7 +306,6 @@ def build_offline_pipeline(
             # production's is.
             lineage=lineage_policy(cfg, policy=room_allowlist(), persons=persons),
             event_registry={
-                "reminder": reminder_occasion,
                 # The proactive act turn, registered as production registers it.
                 "proactive": proactive_occasion,
             },

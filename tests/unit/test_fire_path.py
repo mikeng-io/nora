@@ -1,4 +1,4 @@
-"""`FirePath` — the turn one due reminder becomes.
+"""`FirePath` — the turn one occasion nobody tagged becomes.
 
 `build_context` is exercised for the blank-sender trap, and `run()` for its
 observability contract: a fire turn that half-arrived, a fault before the
@@ -26,12 +26,11 @@ from nora.app.fire import (
     FirePath,
     compute_occasion,
     participation_occasion,
-    reminder_occasion,
+    proactive_occasion,
 )
 from nora.domain.compute import ComputeJob, ComputeJobState
 from nora.domain.decision_log import DecisionLogRecorder, DecisionRow
 from nora.domain.events import Event
-from nora.domain.framing import ReminderHeader
 from nora.domain.models import ConversationTarget, PersonRef
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.ports import (
@@ -41,7 +40,7 @@ from nora.domain.ports import (
     SendResult,
     SteamPlayerState,
 )
-from nora.domain.reminders import Reminder, ReminderCaps, ReminderState
+from nora.domain.reminders import Reminder, ReminderState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import Conversation, Policy, permissive_policy
@@ -73,6 +72,13 @@ def _reminder(**kw: object) -> Reminder:
     }   # a dict LITERAL: ruff's C4 ruleset is enabled and C408 rejects dict()
     base.update(kw)
     return Reminder(**base)                                     # type: ignore[arg-type]
+
+
+def _job_occasion(**kw: object) -> Event:
+    """A person-bearing occasion on the heartbeat audience: a finished job."""
+    return compute_occasion(
+        _compute_job(**kw), JobResult(status=JobStatus.SUCCEEDED, summary="12 wet days"),
+    )
 
 
 @pytest.fixture
@@ -119,13 +125,13 @@ async def test_the_fire_turn_carries_the_requester(fire_path: FirePath) -> None:
     everything that reads it. A blank sender_id resolved through
     ContextAssembler gives tagger=None, which makes Room.scope() unavailable and every
     room-scoped tool refuse."""
-    reminder = _reminder()
+    occasion = _job_occasion()
 
-    ctx = await fire_path.build_context(reminder_occasion([reminder]))
+    ctx = await fire_path.build_context(occasion)
 
     assert ctx.tagger is not None
-    assert ctx.tagger.person_id == reminder.requester_person_id
-    assert ctx.message.body == reminder.text          # the request itself
+    assert ctx.tagger.person_id == occasion.person_id
+    assert ctx.message.body == occasion.body          # what she is told
     assert ctx.message.sender_name != ""              # NOT Persons.display_name
     assert ctx.message.sender_id == ""                # so no reaction is placed
     assert ctx.message.timestamp == 0                 # falsy AND an int
@@ -134,12 +140,12 @@ async def test_the_fire_turn_carries_the_requester(fire_path: FirePath) -> None:
 async def test_the_transcript_is_the_conversation_the_row_names(
     fire_path: FirePath, record_store: FakeRecordStore,
 ) -> None:
-    """A fire turn with an empty transcript passes every gate and answers a
-    reminder with no idea what the room has been saying."""
+    """A fire turn with an empty transcript passes every gate and answers an
+    occasion with no idea what the room has been saying."""
     await record_store.append(message=_inbound("conv-1", "去邊食"))
     await record_store.append(message=_inbound("conv-OTHER", "唔關事"))
 
-    ctx = await fire_path.build_context(reminder_occasion([_reminder()]))
+    ctx = await fire_path.build_context(_job_occasion())
 
     assert [row.body for row in ctx.transcript] == ["去邊食"]
 
@@ -148,12 +154,12 @@ async def test_several_rows_for_one_requester_are_one_turn(
     fire_path: FirePath,
 ) -> None:
     """The tick groups by (conversation, requester), so `rows` can be more than
-    one — and every sentence has to reach her or a reminder is silently eaten
+    one — and every sentence has to reach her or a row is silently eaten
     by a turn that only spoke for the first."""
-    first = _reminder(text="洗衫")
-    second = _reminder(text="打電話俾阿媽")
+    first = _proactive_row(text="洗衫")
+    second = _proactive_row(text="打電話俾阿媽")
 
-    ctx = await fire_path.build_context(reminder_occasion([first, second]))
+    ctx = await fire_path.build_context(proactive_occasion([first, second]))
 
     assert "洗衫" in ctx.message.body
     assert "打電話俾阿媽" in ctx.message.body
@@ -166,7 +172,7 @@ async def test_an_unmapped_requester_leaves_the_tagger_none(
     old, so the person a row names may no longer be in it. `build_context`
     reports that honestly rather than inventing a PersonRef; `run()` is what
     refuses the turn."""
-    ctx = await fire_path.build_context(reminder_occasion([_reminder(requester_person_id="ghost")]))
+    ctx = await fire_path.build_context(_job_occasion(requester_person_id="ghost"))
 
     assert ctx.tagger is None
 
@@ -390,12 +396,12 @@ async def test_a_fire_turn_cut_off_between_messages_is_counted_as_partial(
 ) -> None:
     """DEC-42's observable, on the path that needs it most.
 
-    Two of three reminder messages went out and the loop was cut off by R-8's
+    Two of three messages went out and the loop was cut off by R-8's
     token cap. Everything else about this turn looks successful — `delivered` is
     True, the outcome is `sent`, the row is DONE — so nothing R-23 built can see
     it. `nora_partial_replies_total`'s own spec says "every increment here is a
     message the group was meant to receive"; without this the sentence is
-    unreachable for reminders.
+    unreachable for a fire turn.
     """
     adapter = _FireAdapter()
     path = _fire_path(
@@ -404,7 +410,7 @@ async def test_a_fire_turn_cut_off_between_messages_is_counted_as_partial(
         runner=FakeAgentRunner(_send_turns("一", "二", "三", tokens=20_000)),
     )
 
-    outcome = await path.run([_reminder()])
+    outcome = await path.speak(_job_occasion())
 
     assert adapter.texts == ["一", "二"]
     assert outcome == "sent"                        # delivered, so `sent`
@@ -431,7 +437,7 @@ async def test_a_timeout_after_the_reminder_went_out_is_a_partial_delivery(
         runner=_HangsAfterSending(_send_turns("一", "二")),
     )
 
-    outcome = await path.run([_reminder()])
+    outcome = await path.speak(_job_occasion())
 
     assert adapter.texts == ["一", "二"]
     assert outcome == "sent"
@@ -445,14 +451,14 @@ async def test_a_timeout_after_the_reminder_went_out_is_a_partial_delivery(
 async def test_a_complete_fire_turn_is_never_counted_as_partial(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
-    """The control for the observable itself: a reminder that arrived whole must
-    leave the counter alone, or every delivered reminder reads as a truncation."""
+    """The control for the observable itself: a turn that arrived whole must
+    leave the counter alone, or every delivered turn reads as a truncation."""
     path = _fire_path(
         doctrine_store=doctrine_store, persons=persons, metrics=metrics,
         runner=FakeAgentRunner(_send_turns("記得食藥")),
     )
 
-    assert await path.run([_reminder()]) == "sent"
+    assert await path.speak(_job_occasion()) == "sent"
     for reason in ("limit_turns", "limit_total_tokens", "invocation_failed",
                    "pipeline_error"):
         assert metrics.get("nora_partial_replies_total", reason=reason) == 0
@@ -472,7 +478,7 @@ async def test_the_two_shared_llm_series_say_the_heartbeat_was_speaking(
         runner=FakeAgentRunner(_send_turns("記得食藥")),
     )
 
-    await path.run([_reminder()])
+    await path.speak(_job_occasion())
 
     assert metrics.get(
         "nora_llm_stop_reason_total", reason="end_turn", audience="heartbeat",
@@ -499,7 +505,7 @@ async def test_a_fault_before_the_model_is_counted_as_a_heartbeat_handler_error(
         runner=FakeAgentRunner(_send_turns("記得食藥")),
     )
 
-    assert await path.run([_reminder()]) == "failed_error"
+    assert await path.speak(_job_occasion()) == "failed_error"
     assert metrics.get(
         "nora_silent_failures_total", reason="handler_error", audience="heartbeat",
     ) == 1
@@ -512,23 +518,22 @@ async def test_a_fault_before_the_model_is_counted_as_a_heartbeat_handler_error(
 # ---------------------------------------------------------------------------
 
 
-async def test_a_reminder_whose_requester_left_identity_toml_sends_nothing(
+async def test_an_occasion_whose_requester_left_identity_toml_sends_nothing(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
-    """The fire-time identity re-check, pinned on `run()` rather than on
+    """The fire-time identity re-check, pinned on the turn rather than on
     `build_context`.
 
     `build_context` reporting `tagger is None` is only half the rule: what
-    matters is what `run()` DOES with it — `failed_policy`, nothing sent,
+    matters is what the turn DOES with it — `failed_policy`, nothing sent,
     nothing counted. Without that assertion, deleting the early return in
-    `_turn` would leave a row naming a person identity.toml no longer knows
+    `_turn` would leave an occasion naming a person identity.toml no longer knows
     running a full turn on somebody else's behalf.
 
     All three halves are here, and the counters are the half that is easy to
     miss: `failed_policy` is not a FAILURE of Nora's, so an R-5 alarm that moved
     for it would charge a withdrawn grant to the silent-failure budget. The
-    counter that SHOULD move is `nora_reminders_fired_total{failed_policy}`, and
-    that one is the heartbeat's to write (`_resolve`), not this path's.
+    counter that SHOULD move is the caller's own, not this path's.
     """
     adapter = _FireAdapter()
     runner = FakeAgentRunner(_send_turns("記得食藥"))
@@ -537,7 +542,7 @@ async def test_a_reminder_whose_requester_left_identity_toml_sends_nothing(
         adapter=adapter, runner=runner,
     )
 
-    outcome = await path.run([_reminder(requester_person_id="ghost")])
+    outcome = await path.speak(_job_occasion(requester_person_id="ghost"))
 
     assert outcome == "failed_policy"
     # Nothing reached the group, and the model was never asked anything.
@@ -600,7 +605,7 @@ async def test_an_occasion_that_names_a_missing_person_is_still_refused(
     must not relax it for one that names somebody who has left identity.toml.
 
     Asserted on `speak` directly, with an occasion built by hand, so it cannot
-    be satisfied by `reminder_occasion` happening to be the only caller that
+    be satisfied by `compute_occasion` happening to be the only caller that
     sets `person_id`.
     """
     adapter = _FireAdapter()
@@ -612,7 +617,7 @@ async def test_an_occasion_that_names_a_missing_person_is_still_refused(
 
     outcome = await path.speak(Event(
         platform="signal", conversation_id="conv-1", conversation_type="group",
-        person_id="ghost", body="洗衫", kind="reminder",
+        person_id="ghost", body="洗衫", kind="compute",
         header=lambda tagger, now: "never rendered",
     ))
 
@@ -624,49 +629,30 @@ async def test_an_occasion_that_names_a_missing_person_is_still_refused(
 async def test_the_fire_path_hands_its_tools_the_turn_provenance(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
-    """R-39, pinned at the ONE place that connects it to production.
+    """`fire_turn` is turn PROVENANCE, threaded from `FirePath._turn` into the
+    surface, and the only thing that tells a tool this turn was not a tag: the
+    tag-only tools are refused on it and the reaction picker stays off.
 
-    `remind`'s refusal has its own test, but that test passes `fire_turn=True`
-    into the registry by hand — it proves the tool reads the flag, not that
-    anything ever sets it. The single line that does is
-    `registry.build(..., fire_turn=True)` in `FirePath._turn`.
-
-    So this builds the registry the way the composition root does, runs a REAL
-    fire turn whose script calls `remind`, and asserts the refusal actually
-    happened: without the flag she re-arms her own reminder every time one comes
-    due, which is recurrence with none of the recurrence caps able to stop it.
+    So this runs a REAL fire turn through a registry that records what the
+    path asked it for, and asserts the flag arrived set.
     """
-    store = FakeReminderStore()
-    registry = ToolRegistry(
-        reminders=store, reminder_caps=ReminderCaps(), clock=lambda: T0,
-    )
+    seen: list[bool] = []
+
+    class _Recording(ToolRegistry):
+        def surface(self, **kwargs):  # type: ignore[override]
+            seen.append(kwargs.get("fire_turn", False))
+            return super().surface(**kwargs)
+
     adapter = _FireAdapter()
     path = _fire_path(
         doctrine_store=doctrine_store, persons=persons, metrics=metrics,
-        adapter=adapter, registry=registry,
-        runner=FakeAgentRunner([
-            # Cycle one: she tries to set a fresh reminder from inside the turn
-            # that is a reminder going off. Cycle two: she answers, so the turn
-            # is an ordinary successful fire and the assertions below are about
-            # the refusal alone.
-            ScriptedTurn(tool_calls=[
-                ("remind", {"when": (T0 + timedelta(hours=2)).isoformat(),
-                            "text": "再提我一次"}),
-            ]),
-            *_send_turns("記得食藥"),
-        ]),
+        adapter=adapter, registry=_Recording(),
+        runner=FakeAgentRunner(_send_turns("記得食藥")),
     )
 
-    assert await path.run([_reminder()]) == "sent"
+    assert await path.speak(_job_occasion()) == "sent"
     assert adapter.texts == ["記得食藥"]
-
-    # The refusal is the assertion; the empty store is what makes it mean
-    # something (a refusal that still wrote the row would satisfy a
-    # status-only check and lose nothing but the truth).
-    assert metrics.get("nora_reminders_created_total", status="fire_turn") == 1
-    assert metrics.get("nora_reminders_created_total", status="created") == 0
-    assert await store.count_pending("miles") == 0
-    assert metrics.get("nora_tool_calls_total", tool="remind", status="refused") == 1
+    assert seen == [True]
 
 
 def test_the_audience_label_is_the_one_constant_every_fire_counter_carries() -> None:
@@ -675,64 +661,9 @@ def test_the_audience_label_is_the_one_constant_every_fire_counter_carries() -> 
     assert fire_module.AUDIENCE == "heartbeat"
 
 
-# ---- DEC-85: the header says a repeat is a repeat -----------------------------
-
-def _series(occurrence: int = 2, count: int = 14):
-    from nora.domain.reminders import Recurrence, RecurrenceRule, Series
-
-    anchor = T0 - timedelta(days=occurrence)
-    return Series(
-        id=uuid.uuid5(uuid.NAMESPACE_URL, "series"), anchor_at=anchor,
-        occurrence=occurrence,
-        rule=RecurrenceRule(
-            every=Recurrence.DAILY, tz="Asia/Hong_Kong", count=count,
-        ),
-    )
-
-
-def test_a_one_shot_fire_header_is_unchanged_by_recurrence() -> None:
-    """The control, and DEC-85's contract: a one-shot turn's prompt carries no
-    recurring-header clause. Every clause the recurring header
-    adds is asserted ABSENT here, so a clause that leaked into the ordinary path
-    — telling her every reminder is a standing arrangement — is caught by the
-    test that says the ordinary path did not change."""
-    header = ReminderHeader((_reminder(),), MILES).render()
-
-    assert "every" not in header
-    assert "repeat" not in header
-    assert header.startswith("You are in a group chat")
-
-
-def test_a_recurring_fire_header_says_it_repeats_and_how_much_is_left() -> None:
-    """Third of fourteen, and she is told so.
-
-    Without it she has no way to know this is a standing arrangement, and the
-    failure is specific rather than vague: she announces the reminder as if it
-    were new («記住喇, 我會日日提你») on every one of the fourteen days, which is
-    how a daily reminder becomes a thing people mute. The COUNT is in the line
-    as well because «11 more» and «last one» are different things to say.
-    """
-    row = _reminder(series=_series(occurrence=2, count=14))
-
-    header = ReminderHeader((row,), MILES).render()
-
-    assert "(every day, 11 more after this)" in header
-    assert "A repeat is not a new arrangement" in header
-
-
-def test_the_final_occurrence_says_so_rather_than_counting_zero() -> None:
-    """«0 more after this» is a sentence about arithmetic; «last one» is a
-    sentence about the thing. She is being asked to speak, not to report."""
-    row = _reminder(series=_series(occurrence=13, count=14))
-
-    header = ReminderHeader((row,), MILES).render()
-
-    assert "(every day, last one)" in header
-
-
 # ---- compute_occasion --------------------------------
 #
-# The pure-function half, beside `_fire_header`'s above: what a finished — or
+# The pure-function half: what a finished — or
 # failed — compute job becomes when it is put to her. `ComputeJobPoller`'s own
 # tests (`tests/unit/test_compute_poller.py`) cover the delivery around it.
 
@@ -859,7 +790,7 @@ class _DiscordFireAdapter(_FireAdapter):
 async def test_a_fire_turn_speaks_on_the_platform_the_occasion_names(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
-    """Fire-path eligibility is explicitly NOT platform-specific, so a reminder
+    """Fire-path eligibility is explicitly NOT platform-specific, so an occasion
     owed in a Discord channel fires there.
 
     Speaking every occasion into one platform's adapter regardless of where it
@@ -879,9 +810,7 @@ async def test_a_fire_turn_speaks_on_the_platform_the_occasion_names(
         adapters={"signal": signal_adapter, "discord": discord_adapter},
     )
 
-    outcome = await fire.speak(reminder_occasion(
-        [_reminder(platform="discord", conversation_id="111/222")]
-    ))
+    outcome = await fire.speak(_job_occasion(platform="discord", conversation_id="111/222"))
 
     assert outcome == fire_module.SENT
     assert discord_adapter.texts == ["收到"]
@@ -894,7 +823,7 @@ async def test_a_fire_turn_for_an_unwired_platform_fails_rather_than_speaking(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
     """The absent-route case, and why `_adapter_for` raises rather than falling
-    back: speaking a reminder into a room on another platform is worse than not
+    back: speaking an occasion into a room on another platform is worse than not
     speaking it. `_turn`'s outer guard turns the raise into `failed_error` plus
     `nora_silent_failures_total{reason="handler_error"}` — loud and counted,
     with nothing delivered."""
@@ -905,9 +834,7 @@ async def test_a_fire_turn_for_an_unwired_platform_fails_rather_than_speaking(
         adapters={"signal": signal_adapter},
     )
 
-    outcome = await fire.speak(reminder_occasion(
-        [_reminder(platform="discord", conversation_id="111/222")]
-    ))
+    outcome = await fire.speak(_job_occasion(platform="discord", conversation_id="111/222"))
 
     assert outcome == fire_module.FAILED_ERROR
     assert signal_adapter.sent == [], "an unroutable occasion must not fall back"
@@ -953,24 +880,20 @@ async def test_unregistered_kind_fails_closed(
         await path.run([_reminder(kind="no_such_kind")])
 
 
-async def test_legacy_reminder_row_still_fires_after_the_kind_columns_land(
+async def test_a_reminder_row_has_no_occasion_and_fails_closed(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
-    """A row written BEFORE DEC-139
-    (no kind — defaults to "reminder", no payload) round-trips and fires
-    through `reminder_occasion` exactly as it did before. The columns are
-    additive; nothing about an old row's rendering changes."""
+    """A `kind="reminder"` row (the column's default) has no registered
+    factory: it fails closed before `speak`, and nothing reaches the group."""
     adapter = _FireAdapter()
     path = _fire_path(
         persons=persons, doctrine_store=doctrine_store, metrics=metrics,
         runner=FakeAgentRunner(_send_turns("記得食藥")), adapter=adapter,
     )
-    row = _reminder(text="記得食藥")  # kind defaults to "reminder", payload None
 
-    outcome = await path.run([row])
-
-    assert outcome == fire_module.SENT
-    assert adapter.texts == ["記得食藥"]
+    with pytest.raises(KeyError, match="no event factory registered"):
+        await path.run([_reminder(text="記得食藥")])
+    assert adapter.sent == []
 
 
 # --- <standing> on the fire path --------------------------------------
@@ -1014,7 +937,7 @@ async def test_the_fire_path_renders_the_conversations_position(
     store = InMemoryStandingStore()
     fire = await _fire_path_with_standing(
         persons, record_store, doctrine_store, metrics, store)
-    occasion = reminder_occasion([_reminder()])
+    occasion = _job_occasion()
     await store.write(standing=Standing(
         platform=occasion.platform, conversation_id=occasion.conversation_id,
         body="They settled on somewhere for the 9th; Grant is travelling.",
@@ -1050,7 +973,7 @@ async def test_a_hanging_standing_read_cannot_wedge_a_fire_turn(
         _Hangs(), store_timeout=0.05)
 
     ctx = await asyncio.wait_for(
-        fire.build_context(reminder_occasion([_reminder()])), timeout=5)
+        fire.build_context(_job_occasion()), timeout=5)
 
     assert ctx.shared is not None and ctx.shared.status == "unavailable"
     assert metrics.get("nora_errors_total", stage="shared_state") == 1
@@ -1122,7 +1045,7 @@ async def test_the_fire_path_reads_the_note_index(
         notes=_seeded_note_store(),
     )
 
-    ctx = await fire.build_context(reminder_occasion([_reminder()]))
+    ctx = await fire.build_context(_job_occasion())
 
     assert [n.title for n in ctx.notes] == ["Raft roadmap"]
 
@@ -1131,12 +1054,12 @@ async def test_a_standing_and_culture_head_render_in_a_fire_turn(
     persons, record_store, doctrine_store, metrics,
 ) -> None:
     """A room holding a Standing head AND a culture head renders both in a
-    reminder-fired turn."""
+    fire turn."""
     from nora.domain.standing import Standing
     from nora.testing import InMemoryStandingStore
     from nora.testing.culture_store import InMemoryCultureStore
 
-    occasion = reminder_occasion([_reminder()])
+    occasion = _job_occasion()
     standing = InMemoryStandingStore()
     await standing.write(standing=Standing(
         platform=occasion.platform, conversation_id=occasion.conversation_id,
@@ -1171,7 +1094,7 @@ async def test_a_failed_note_read_is_counted_not_silent(
         notes=_Down(),
     )
 
-    ctx = await fire.build_context(reminder_occasion([_reminder()]))
+    ctx = await fire.build_context(_job_occasion())
 
     assert ctx.notes == ()
     assert metrics.get("nora_errors_total", stage="fire_notes") == 1
@@ -1188,7 +1111,7 @@ async def test_a_wired_tier_without_a_policy_is_a_counted_wiring_gap(
         notes=_seeded_note_store(), policy=None,
     )
 
-    ctx = await fire.build_context(reminder_occasion([_reminder()]))
+    ctx = await fire.build_context(_job_occasion())
 
     assert ctx.notes == ()
     assert metrics.get("nora_errors_total", stage="fire_unit") == 1
@@ -1200,7 +1123,7 @@ async def test_the_dormant_default_reads_nothing_and_counts_nothing(
     """No tier collaborator wired (the shipped `[notes] enabled = false`):
     empty field, and no wiring-gap count — a deployment with the tier off does
     not HAVE the gap."""
-    ctx = await fire_path.build_context(reminder_occasion([_reminder()]))
+    ctx = await fire_path.build_context(_job_occasion())
 
     assert ctx.notes == ()
     assert metrics.get("nora_errors_total", stage="fire_unit") == 0
@@ -1740,67 +1663,6 @@ async def test_a_missing_shadow_adapter_fails_soft_and_is_counted(
     assert metrics.get("nora_errors_total", stage="participation_shadow") == 1
 
 
-def test_a_sub_day_reminder_renders_its_cadence_in_the_fire_header():
-    """R-89/DEC-159: every `Recurrence` member has a cadence word.
-
-    `CADENCE_UNITS` maps every `Recurrence` member to a word and `RepeatClause`
-    subscripts it BARE, so a missing member (a sub-day `minutely`/`hourly`)
-    would raise KeyError inside `_fire_header` — which runs AFTER `claim` has
-    minted the successor and BEFORE the model is called. Every occurrence would
-    claim a row, say nothing, and arm the next one: the «promised eleven
-    updates, delivered zero» failure.
-
-    The INTERVAL is asserted too, not just the unit. Reading only `rule.every`
-    renders a fortnight as «every week» and a ten-minute cadence as «every
-    minute» — wrong by the whole multiplier, in the one paragraph whose stated
-    job is stopping her misdescribing a standing arrangement.
-    """
-    from nora.domain.framing import CADENCE_UNITS, RepeatClause
-    from nora.domain.reminders import Recurrence
-
-    # Total, not just the two added: a future unit that forgets this table
-    # breaks the fire path, not the domain, and would be found in production.
-    assert set(CADENCE_UNITS) == set(Recurrence) - {Recurrence.NONE}
-
-    assert "every 10 minutes" in RepeatClause(
-        _recurring_row(Recurrence.MINUTELY, interval=10).series).render()
-    assert "every hour" in RepeatClause(
-        _recurring_row(Recurrence.HOURLY, interval=1).series).render()
-    assert "every 2 weeks" in RepeatClause(
-        _recurring_row(Recurrence.WEEKLY, interval=2).series).render()
-    # The existing cadences render unchanged.
-    assert "every day" in RepeatClause(
-        _recurring_row(Recurrence.DAILY, interval=1).series).render()
-
-
-def _recurring_row(unit, *, interval: int):
-    """One PENDING occurrence of a series, the shape `_fire_header` receives."""
-    import uuid
-    from datetime import UTC, datetime
-
-    from nora.domain.reminders import (
-        Recurrence,
-        RecurrenceRule,
-        Reminder,
-        ReminderState,
-        Series,
-    )
-
-    assert unit is not Recurrence.NONE
-    now = datetime.now(UTC)
-    rule = RecurrenceRule(
-        every=unit, tz="Asia/Hong_Kong", count=7, interval=interval,
-    )
-    series_id = uuid.uuid4()
-    return Reminder(
-        id=uuid.uuid5(series_id, "0"), requester_person_id="p_miles",
-        platform="discord", conversation_id="c1", conversation_type="group",
-        text="F1 lap update", created_at=now, due_at=now,
-        state=ReminderState.PENDING, fired_at=None, outcome=None,
-        series=Series(id=series_id, anchor_at=now, occurrence=0, rule=rule),
-    )
-
-
 # ---- every occasion gets a root span --------------------------------
 
 
@@ -1835,10 +1697,10 @@ def fire_spans():
         trace._TRACER_PROVIDER = previous
 
 
-async def test_a_reminder_turn_produces_one_named_root_span(
+async def test_a_fire_turn_produces_one_named_root_span(
     persons: Persons, doctrine_store, metrics: Metrics, fire_spans,
 ) -> None:
-    """A reminder firing yields one trace with a ROOT span carrying the `nora.*`
+    """A fire turn yields one trace with a ROOT span carrying the `nora.*`
     attributes and the OUTCOME.
 
     Without a root the spans are siblings with no name and none of the `nora.*`
@@ -1858,9 +1720,7 @@ async def test_a_reminder_turn_produces_one_named_root_span(
         adapters={"discord": adapter},
     )
 
-    outcome = await fire.speak(reminder_occasion(
-        [_reminder(platform="discord", conversation_id="111/222")]
-    ))
+    outcome = await fire.speak(_job_occasion(platform="discord", conversation_id="111/222"))
 
     finished = fire_spans.get_finished_spans()
     roots = [s for s in finished if s.parent is None]
@@ -1868,11 +1728,11 @@ async def test_a_reminder_turn_produces_one_named_root_span(
         f"one root per entry point; got {[s.name for s in roots]}"
     )
     root = roots[0]
-    assert root.name == "reminder"
+    assert root.name == "compute"
     # The OUTCOME, which is the whole point: `sent` vs `failed_timeout` must be
-    # readable in the trace, not only in the reminder row.
+    # readable in the trace, not only in the job row.
     assert root.attributes["nora.outcome"] == outcome
-    assert root.attributes["nora.occasion"] == "reminder"
+    assert root.attributes["nora.occasion"] == "compute"
     assert root.attributes["nora.platform"] == "discord"
     assert root.attributes["nora.conversation_id"] == "111/222"
     # `generation`, because the sampler selects on it and this turn contains a
@@ -1897,13 +1757,11 @@ async def test_a_failed_fire_turn_still_says_so_on_its_root(
         adapters={"signal": _FireAdapter()},
     )
 
-    outcome = await fire.speak(reminder_occasion(
-        [_reminder(platform="discord", conversation_id="111/222")]
-    ))
+    outcome = await fire.speak(_job_occasion(platform="discord", conversation_id="111/222"))
 
     assert outcome == fire_module.FAILED_ERROR
     [root] = [s for s in fire_spans.get_finished_spans() if s.parent is None]
-    assert root.name == "reminder"
+    assert root.name == "compute"
     assert root.attributes["nora.outcome"] == fire_module.FAILED_ERROR
 # ---------------------------------------------------------------------------
 # The Relevance Gate's review post
@@ -2467,11 +2325,11 @@ async def test_a_participation_turn_that_declines_is_written_too(
     assert "nothing to add here" not in str(rows)
 
 
-async def test_a_reminder_occasion_writes_no_decision_row(
+async def test_a_compute_occasion_writes_no_decision_row(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
     """Only the two occasions that CAN decline the floor are decisions. A
-    reminder firing was decided when the row was written; logging it here
+    finished job was decided when the job was started; logging it here
     would dilute the block with rows no decider can act on.
 
     **What actually enforces it is that `_turn` calls `_determined` from the
@@ -2484,11 +2342,11 @@ async def test_a_reminder_occasion_writes_no_decision_row(
     store = InMemoryDecisionLogStore()
     path = _fire_path(
         doctrine_store=doctrine_store, persons=persons, metrics=metrics,
-        runner=FakeAgentRunner(_send_turns("reminder text")),
+        runner=FakeAgentRunner(_send_turns("job text")),
         decisions=_decision_recorder(store),
     )
 
-    await path.speak(reminder_occasion([_reminder()]))
+    await path.speak(_job_occasion())
 
     assert await store.recent(conversation_id="conv-1", since_ms=0) == ()
 
@@ -2583,7 +2441,7 @@ async def test_only_the_legacy_proactive_turn_reads_the_decision_log(
     assert (await path.build_context(
         fire_module.proactive_occasion([_proactive_row()]),
     )).decisions != ()
-    assert (await path.build_context(reminder_occasion([_reminder()]))).decisions == ()
+    assert (await path.build_context(_job_occasion())).decisions == ()
 
 
 async def test_the_proactive_act_turn_reads_its_siblings_and_not_its_own_decide_row(
@@ -2808,7 +2666,7 @@ async def test_a_fire_turn_reads_presence_for_the_occasions_room(
     persons: Persons, record_store: FakeRecordStore,
     doctrine_store, metrics: Metrics,
 ) -> None:
-    """A reminder, a participation turn and a
+    """A finished job, a participation turn and a
     proactive act turn render the same prefill as a tag, so they read the
     same `<presence>` — for the room the occasion names, at fire time."""
     from nora.domain.self_presence import Presence
@@ -2829,11 +2687,11 @@ async def test_a_fire_turn_reads_presence_for_the_occasions_room(
         timeout_seconds=120.0, clock=lambda: T0,
         presence=_Reader(),                                     # type: ignore[arg-type]
     )
-    reminder = _reminder()
+    occasion = _job_occasion()
 
-    ctx = await path.build_context(reminder_occasion([reminder]))
+    ctx = await path.build_context(occasion)
 
-    assert asked == [(reminder.platform, reminder.conversation_id)]
+    assert asked == [(occasion.platform, occasion.conversation_id)]
     assert ctx.presence is not None and ctx.presence.label == "Friends"
 
 
@@ -2875,7 +2733,7 @@ async def test_the_fire_context_reads_run_concurrently_not_one_after_another(
         presence=_Reader(),                                     # type: ignore[arg-type]
     )
 
-    ctx = await path.build_context(reminder_occasion([_reminder()]))
+    ctx = await path.build_context(_job_occasion())
 
     assert ctx.shared is not None and ctx.shared.status == "unavailable"
     assert ctx.presence is not None
@@ -2915,7 +2773,7 @@ async def test_a_fire_turn_publishes_the_heartbeat_deadline_not_the_loops(
     """A fire turn is bounded by `[heartbeat].timeout_seconds` (120 in
     production), while the vision describer is built from the `[llm]` loop
     (360). Without the heartbeat's own deadline published, one slow read takes
-    the whole heartbeat budget and the reminder turn dies (DEC-197)."""
+    the whole heartbeat budget and the fire turn dies (DEC-197)."""
     from nora.domain.turn_deadline import seconds_left
 
     seen: list[float | None] = []
@@ -2930,7 +2788,7 @@ async def test_a_fire_turn_publishes_the_heartbeat_deadline_not_the_loops(
         timeout_seconds=7.0, runner=_Reads(_send_turns("記得食藥")),
     )
 
-    await path.run([_reminder()])
+    await path.speak(_job_occasion())
 
     assert seen and seen[0] is not None and 6.0 < seen[0] <= 7.0, seen
 
@@ -2952,7 +2810,7 @@ async def test_a_fire_turn_reads_its_units_kept_memos_and_counts_a_failed_read(
     fire = await _fire_path_with_tiers(
         persons, record_store, doctrine_store, metrics, memos=memos,
     )
-    ctx = await fire.build_context(reminder_occasion([_reminder()]))
+    ctx = await fire.build_context(_job_occasion())
     assert [m.title for m in ctx.memos] == ["nora wifi"]
 
     class _Down:
@@ -2962,7 +2820,7 @@ async def test_a_fire_turn_reads_its_units_kept_memos_and_counts_a_failed_read(
     fire = await _fire_path_with_tiers(
         persons, record_store, doctrine_store, metrics, memos=_Down(),
     )
-    ctx = await fire.build_context(reminder_occasion([_reminder()]))
+    ctx = await fire.build_context(_job_occasion())
     assert ctx.memos == ()
     assert metrics.get("nora_errors_total", stage="fire_memos") == 1
 
@@ -2992,16 +2850,16 @@ async def test_a_fire_turn_carries_its_rooms_location_trust_into_where_is(
         registry=_Spy(), policy=policy, runner=FakeAgentRunner(_send_turns("記得食藥")),
     )
 
-    await path.run([_reminder()])
+    await path.speak(_job_occasion())
 
     assert seen == [location]
 
 
-async def test_a_relayed_turn_is_told_it_is_a_relay_and_a_reminder_is_not(
+async def test_a_relayed_turn_is_told_it_is_a_relay_and_a_finished_job_is_not(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
     """8765_44837 on the fire path: a relayed message's turn carries `relay_turn` into the
-    surface, so `send_to` is left off it; a reminder's turn, which is no relay, does not."""
+    surface, so `send_to` is left off it; a finished job's turn, which is no relay, does not."""
     from nora.app.fire import relay_occasion
 
     seen: list[bool] = []
@@ -3024,7 +2882,7 @@ async def test_a_relayed_turn_is_told_it_is_a_relay_and_a_reminder_is_not(
     await path.speak(relay_occasion(
         destination=room, requester=MILES, text="dinner at 8", from_platform="discord",
     ))
-    await path.run([_reminder()])
+    await path.speak(_job_occasion())
 
     assert seen == [True, False]
 

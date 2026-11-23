@@ -95,6 +95,6 @@
     "file": "nora/app/fire.py",
     "old": "                relay_turn=occasion.kind == \"relay\",",
     "new": "                relay_turn=False,",
-    "target": "tests/unit/test_fire_path.py::test_a_relayed_turn_is_told_it_is_a_relay_and_a_reminder_is_not"
+    "target": "tests/unit/test_fire_path.py::test_a_relayed_turn_is_told_it_is_a_relay_and_a_finished_job_is_not"
   }
 ]

@@ -564,11 +564,8 @@ class ToolRegistry:
         self._ai_peer = ai_peer
         # The reminders store: a per-process collaborator like `transit` and
         # `search`, NOT default-constructed for the reason `route` is not: there
-        # is no storeless default, so every composition that has not wired one
-        # (offline, eval, and any test that does not care) leaves `remind`
-        # answering `unavailable`, the honest "not configured" state (R-5).
-        # `nora.app.composition` passes the same `SqlReminderStore` the
-        # heartbeat's tick reads from; two would be two queues.
+        # is no storeless default. `nora.app.composition` passes the same
+        # `SqlReminderStore` the heartbeat's tick reads from; two would be two queues.
         self._reminders = reminders
         # `GatheringService`'s own collaborator, wired the identical honest way
         # `reminders` is: NOT default-constructed (there is no serviceless
@@ -744,7 +741,7 @@ class ToolRegistry:
         load-bearing.
 
         Without `read_only` the set would swallow the write verbs, which also
-        declare `three_state` (`note_revise`, `remind`, the events family, the
+        declare `three_state` (`note_revise`, `intention_commit`, the
         music verbs; see `NativeTool.output_contract`). A failed WRITE is a
         different fact from an empty READ, and counting one as the other would
         let a `note_revise` that came back `unavailable` silence a reply she
@@ -848,7 +845,7 @@ class ToolRegistry:
         here on the next start with nothing to edit.
 
         READ-ONLY tools only (`read_only_tools`). The gate is asking whether an
-        ANSWER exists, and a verb that acts (`send_reply`, `remind`,
+        ANSWER exists, and a verb that acts (`send_reply`, `intention_commit`,
         `play_music`) is never the reason a window is worth a turn.
 
         FIRST SENTENCE only. The full descriptions are written for a model that
@@ -885,7 +882,7 @@ class ToolRegistry:
         The difference from `capability_digest` is the reader and therefore the
         scope. The Relevance Gate asks «could an answer exist here?», so it
         gets READ-ONLY tools. This is read by the model that is about to
-        CHOOSE, so it gets all of them; leaving `send_reply` or `remind` out
+        CHOOSE, so it gets all of them; leaving `send_reply` or `intention_commit` out
         would leave out a thing she can do.
 
         A line answers ONE question: is this the tool I want, or not? It

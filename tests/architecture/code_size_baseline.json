@@ -2759,9 +2759,6 @@
   "comment_blocks": 5,
   "internal_docstrings": 2
  },
- "tests/test_gathering_tools.py": {
-  "comment_blocks": 1
- },
  "tests/test_gatherings_service.py": {
   "comment_blocks": 2,
   "file_lines": 821,
@@ -2843,11 +2840,6 @@
  },
  "tests/test_relay.py": {
   "internal_docstrings": 3
- },
- "tests/test_reminder_tools.py": {
-  "comment_blocks": 4,
-  "file_lines": 1340,
-  "internal_docstrings": 1
  },
  "tests/test_room_tools.py": {
   "comment_blocks": 1

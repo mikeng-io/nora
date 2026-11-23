@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from typing import Any
 
-from nora.agenda.adapters.tools import build as _build
 from nora.agenda.adapters.tools.session import session_verbs as _session_verbs
 from nora.app.composition_helpers import _room_claims
 from nora.app.gatherings import GatheringService
@@ -10,11 +9,7 @@ from nora.domain.reminders import ReminderCaps, ReminderStore
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.reminders import SqlReminderStore
 
-"""Compose this area's tool adapters from shared dependencies."""
-
-
-def tool_specs(deps):
-    return _build(deps)
+"""Compose this area's session verbs and stores from shared dependencies."""
 
 
 def session_verbs(deps):
