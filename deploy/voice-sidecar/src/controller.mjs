@@ -102,10 +102,11 @@ function closeUnread(req, res, status, error) {
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-// What ffmpeg may be handed: an http(s) URL with no control characters.
-const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+// What ffmpeg may be handed: an http(s) URL with no whitespace (leading and
+// trailing included, which URL parsing would trim) and no control characters.
+const UNSAFE_CHARS = /[\s\u0000-\u001f\u007f-\u009f]/u;
 function isStreamUrl(value) {
-  if (typeof value !== 'string' || !value || CONTROL_CHARS.test(value)) return false;
+  if (typeof value !== 'string' || !value || UNSAFE_CHARS.test(value)) return false;
   try {
     return ['http:', 'https:'].includes(new URL(value).protocol);
   } catch {
