@@ -358,8 +358,8 @@ test('a refused request erases no receipt', async () => {
 });
 
 test('guilds each with an operation in flight leave room for a speech in a connected guild', async () => {
-  // In flight at once is bounded by the listener's 64 connections, so 63
-  // guilds hold one each and the 64th request is the speech.
+  // The listener takes 64 connections, so 63 guilds each hold one open with
+  // an operation in flight and the 64th connection carries the speech.
   const HELD = 63;
   const h = await makeHarness();
   const { generation } = await h.join();
