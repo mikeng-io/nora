@@ -1,0 +1,287 @@
+{
+  "components": {
+    "schemas": {
+      "OperationError": {
+        "description": "A classified, sanitised reason; never raw upstream text.",
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "message"
+        ],
+        "title": "OperationError",
+        "type": "object"
+      },
+      "OperationFrom": {
+        "additionalProperties": false,
+        "description": "The target of the effect and its platform reference when one exists.",
+        "properties": {
+          "platform_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Platform Ref"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "title": "OperationFrom",
+        "type": "object"
+      },
+      "OperationWhen": {
+        "additionalProperties": false,
+        "description": "Where the record is in its lifecycle, and when it got there.",
+        "properties": {
+          "settled_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Settled At Ms"
+          },
+          "started_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Started At Ms"
+          },
+          "state": {
+            "enum": [
+              "prepared",
+              "started",
+              "settled"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "OperationWhen",
+        "type": "object"
+      },
+      "Scope": {
+        "additionalProperties": false,
+        "description": "The scope a request resolved to, at its contract's level.",
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Id"
+          },
+          "level": {
+            "enum": [
+              "room",
+              "unit",
+              "agent",
+              "identity",
+              "workspace",
+              "installation",
+              "none"
+            ],
+            "title": "Level",
+            "type": "string"
+          }
+        },
+        "required": [
+          "level"
+        ],
+        "title": "Scope",
+        "type": "object"
+      },
+      "VoiceConnectionState": {
+        "description": "A connection snapshot: the fields every implementer writes; each adds its own.",
+        "properties": {
+          "channel_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Id"
+          },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          }
+        },
+        "required": [
+          "generation",
+          "channel_id"
+        ],
+        "title": "VoiceConnectionState",
+        "type": "object"
+      },
+      "VoiceOperationPayload": {
+        "additionalProperties": false,
+        "description": "The controller's connection snapshot, and on a refusal its reason.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationError"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceConnectionState"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "title": "VoiceOperationPayload",
+        "type": "object"
+      },
+      "VoiceReportEnvelope": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "complete"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/VoiceReportPayload"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A voice operation's answer whose `complete` is VoiceReportPayload.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/OperationFrom"
+          },
+          "outcome": {
+            "enum": [
+              "complete",
+              "pending",
+              "denied",
+              "rejected",
+              "unsupported",
+              "incomplete",
+              "uncertain",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceOperationPayload"
+              },
+              {
+                "$ref": "#/components/schemas/VoiceReportPayload"
+              }
+            ],
+            "title": "Payload"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/OperationWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "VoiceReportEnvelope",
+        "type": "object"
+      },
+      "VoiceReportPayload": {
+        "additionalProperties": false,
+        "description": "What the hub did with a reported event.",
+        "properties": {
+          "status": {
+            "enum": [
+              "ok",
+              "duplicate",
+              "stale"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "VoiceReportPayload",
+        "type": "object"
+      }
+    }
+  }
+}

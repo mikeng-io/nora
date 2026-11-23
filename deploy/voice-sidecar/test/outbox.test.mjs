@@ -8,11 +8,12 @@ import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-import {
-  OPERATION_OUTCOMES, OPERATION_STATES, REPORT_STATUSES, SCOPE_LEVELS,
-} from '../src/contract.mjs';
-import { REFUSAL_FIELDS, createOutbox } from '../src/outbox.mjs';
+import { STATUS } from '../src/contract.mjs';
+import { createOutbox } from '../src/outbox.mjs';
+import { extract, TARGET } from '../scripts/report_schema.mjs';
 import { EVENT_URL as URL, createFakeClock, hubAnswer, tick } from './helpers.mjs';
 
 function makeOutbox({ fetchBehavior, clock = createFakeClock(), ...options } = {}) {
@@ -446,27 +447,74 @@ test('reports are retried only when the hub could not take them', async () => {
   assert.equal(bounded.pendingCount(), 255);
 });
 
-test('the acknowledgement check reads the contract\'s own closed sets', () => {
-  const { schemas } = JSON.parse(readFileSync(
-    new globalThis.URL('../../../docs/service-api/openapi.json', import.meta.url), 'utf8')).components;
-  assert.deepEqual([...SCOPE_LEVELS], schemas.ScopeLevel.enum);
-  assert.deepEqual([...OPERATION_STATES], schemas.OperationState.enum);
-  assert.deepEqual([...OPERATION_OUTCOMES], schemas.OperationOutcome.enum);
-  assert.deepEqual([...REPORT_STATUSES], schemas.VoiceReportPayload.properties.status.enum);
-  assert.deepEqual(schemas.VoiceReportPayload.required, ['status']);
-  // A refusal's payload is VoiceOperationPayload, its error an OperationError.
-  assert.deepEqual(Object.keys(schemas.VoiceOperationPayload.properties).sort(), [...REFUSAL_FIELDS].sort());
-  assert.equal(schemas.VoiceOperationPayload.additionalProperties, false);
-  assert.deepEqual(schemas.VoiceOperationPayload.properties.error.anyOf,
-    [{ $ref: '#/components/schemas/OperationError' }, { type: 'null' }]);
-  assert.deepEqual(schemas.OperationError.required, ['kind', 'message']);
-  assert.equal(schemas.OperationError.properties.kind.type, 'string');
-  assert.equal(schemas.OperationError.properties.message.type, 'string');
-  assert.equal(schemas.VoiceReportPayload.additionalProperties, false);
-  const parts = { OperationWhen: ['settled_at_ms', 'started_at_ms', 'state'],
-    OperationFrom: ['platform_ref', 'target'], Scope: ['id', 'level'] };
-  for (const [name, fields] of Object.entries(parts)) {
-    assert.deepEqual(Object.keys(schemas[name].properties).sort(), fields, name);
-    assert.equal(schemas[name].additionalProperties, false, name);
+test('the shipped report schema is the contract document\'s', () => {
+  const document = JSON.parse(readFileSync(
+    new globalThis.URL('../../../docs/service-api/openapi.json', import.meta.url), 'utf8'));
+  assert.equal(readFileSync(TARGET, 'utf8'), extract(document));
+  const check = spawnSync(process.execPath,
+    [fileURLToPath(new globalThis.URL('../scripts/report_schema.mjs', import.meta.url)), '--check'], { encoding: 'utf8' });
+  assert.equal(check.status, 0, check.stderr);
+});
+
+// One event, one first answer, then a hub that takes it: whether the event
+// was retried, with a new operation_id and the same event.
+async function retriedAfter(first, status) {
+  const clock = createFakeClock();
+  let calls = 0;
+  const { outbox, attempts } = makeOutbox({
+    clock,
+    baseDelayMs: 1000,
+    fetchBehavior: async () => {
+      calls += 1;
+      if (calls > 1) return hubAnswer('complete');
+      return { status, json: async () => structuredClone(first) };
+    },
+  });
+  outbox.push('speech-finished', { guild_id: '111111111111111111' });
+  await tick();
+  await tick();
+  clock.advance(1000);
+  await tick();
+  await tick();
+  assert.equal(outbox.pendingCount(), 0);
+  if (attempts.length === 2) {
+    assert.notEqual(attempts[0].operation_id, attempts[1].operation_id);
+    assert.deepEqual(attempts[0].effect, attempts[1].effect);
   }
+  return attempts.length === 2;
+}
+
+test('every acknowledgement is retried exactly when the contract refuses it', async () => {
+  const ack = {
+    outcome: 'complete', payload: { status: 'ok' }, when: { state: 'settled' },
+    from: { target: '111111111111111111' }, scope: { level: 'installation' }, trace: '',
+  };
+  const error = { kind: 'test', message: 'synthetic' };
+  // [label, first answer, retried?, status]
+  const cases = ['ok', 'duplicate', 'stale'].map((status) => [status, { ...ack, payload: { status } }, false]);
+  for (const outcome of ['rejected', 'denied', 'unsupported', 'incomplete', 'uncertain']) {
+    const typed = (payload) => ({ ...ack, outcome, payload });
+    cases.push([`${outcome} valid`, typed({ error, state: { channel_id: null, generation: null } }), false]);
+    for (const [label, payload] of Object.entries({
+      scalar: 'bad', empty: {}, 'empty error': { error: {} },
+      'missing kind': { error: { message: 'bad' } }, 'missing message': { error: { kind: 'bad' } },
+      'extra payload key': { error, other: 1 }, 'scalar state': { error, state: 1 },
+      'array state': { error, state: [] }, 'empty state': { error, state: {} },
+      'wrong nested state type': { error, state: { generation: 1, channel_id: null } },
+    })) cases.push([`${outcome} ${label}`, typed(payload), outcome !== 'uncertain' || label !== 'empty']);
+  }
+  cases.push(['uncertain omitted error with null state', { ...ack, outcome: 'uncertain', payload: { state: null } }, false]);
+  for (const payload of [1, {}, { status: 'bogus' }, { status: 'ok', extra: true }]) {
+    cases.push([`complete ${JSON.stringify(payload)}`, { ...ack, payload }, true]);
+  }
+  // Replies recorded from the Python hubs (the bridge and the app).
+  const replies = JSON.parse(readFileSync(new globalThis.URL('./report_replies.json', import.meta.url), 'utf8'));
+  for (const { label, status, body, retry } of replies) cases.push([label, body, retry, status]);
+  assert.equal(cases.length, 80);
+
+  const mismatches = [];
+  for (const [label, first, retry, status = STATUS[first.outcome]] of cases) {
+    if (await retriedAfter(first, status) !== retry) mismatches.push(label);
+  }
+  assert.deepEqual(mismatches, []);
 });
