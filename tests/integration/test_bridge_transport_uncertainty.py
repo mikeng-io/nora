@@ -500,12 +500,16 @@ async def test_an_invalid_react_completion_is_not_a_reaction():
     assert calls["post"] == 1
 
 
-async def test_an_invalid_blob_completion_is_not_custody():
+@pytest.mark.parametrize("answer", [
+    _bare_complete, lambda: _operation("complete"),
+    lambda: {**_operation("complete"), "payload": None},
+], ids=["bare", "delivery_payload", "null_payload"])
+async def test_an_invalid_blob_completion_is_not_custody(answer):
     puts: list[str] = []
 
     async def put(request):
         puts.append(request.match_info["key"])
-        return web.json_response(_bare_complete(), status=200)
+        return web.json_response(answer(), status=200)
 
     async def post(request):
         raise AssertionError("no operation follows an unproven blob")
@@ -523,3 +527,78 @@ async def test_an_invalid_blob_completion_is_not_custody():
         finally:
             await adapter.close()
     assert len(puts) == 1
+
+
+def _bound_complete(**over):
+    body = _operation("complete", platform_ms=7, platform_ref="ref-1", message_id=41)
+    return {**body, **over}
+
+
+def _unbound_complete_record():
+    return _operation("complete", platform_ms=7, platform_ref="ref-1")
+
+
+@pytest.mark.parametrize("invalid", [
+    lambda: _bound_complete(payload=None), lambda: _bound_complete(payload={}),
+    lambda: _bound_complete(outcome=["complete"]), _unbound_complete_record,
+], ids=["null_payload", "empty_payload", "array_outcome", "no_audit_row"])
+async def test_a_direct_answer_must_carry_its_delivery_payload(invalid):
+    """No payload, an empty one, an outcome that is not a string, or a completion
+    naming no audit row for a bound send: never a confirmation, so it is read back."""
+    async def post(request):
+        return web.json_response(invalid(), status=200)
+
+    async def absent(request):
+        return _read("nothing_found")
+
+    calls, server = _counting(post, absent)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _UNCERTAIN
+    assert calls == {"post": 1, "get": 1}
+
+
+async def _partial_read_back(request):
+    return web.json_response({"outcome": "ok", "payload": _bound_complete()})
+
+
+async def _read_back_unbound(request):
+    return _read("ok", _unbound_complete_record())
+
+
+async def _read_back_array_outcome(request):
+    return _read("ok", _bound_complete(outcome=["complete"]))
+
+
+async def _read_back_outer_array_outcome(request):
+    body = read_body("ok", _bound_complete(), source="signal", trace="")
+    return web.json_response({**body, "outcome": ["ok"]}, status=200)
+
+
+@pytest.mark.parametrize("read_back", [
+    _partial_read_back, _read_back_unbound, _read_back_array_outcome,
+    _read_back_outer_array_outcome,
+])
+async def test_a_read_back_must_be_a_whole_record_of_this_send(read_back):
+    async def pending(request):
+        return web.json_response(_operation("pending"), status=status_for("pending"))
+
+    calls, server = _counting(pending, read_back)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _UNCERTAIN
+    assert calls == {"post": 1, "get": 1}
+
+
+async def test_a_whole_read_back_of_this_send_confirms():
+    async def pending(request):
+        return web.json_response(_operation("pending"), status=status_for("pending"))
+
+    async def record(request):
+        return _read("ok", _bound_complete())
+
+    calls, server = _counting(pending, record)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _OK
+    assert calls == {"post": 1, "get": 1}
