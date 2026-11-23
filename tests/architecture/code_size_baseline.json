@@ -1673,7 +1673,7 @@
  },
  "nora/platform/discord/bridge_app.py": {
   "comment_blocks": 10,
-  "file_lines": 1783,
+  "file_lines": 1701,
   "functions": {
    "DiscordBridge._observation_events": 217
   },
@@ -1949,8 +1949,7 @@
   "comment_blocks": 1
  },
  "nora/testing/voice.py": {
-  "comment_blocks": 3,
-  "internal_docstrings": 2
+  "comment_blocks": 2
  },
  "nora/web/api.py": {
   "comment_blocks": 7,
@@ -1975,9 +1974,6 @@
  },
  "nora/web/status.py": {
   "comment_blocks": 1
- },
- "nora/web/voice.py": {
-  "comment_blocks": 2
  },
  "scripts/affected_tests.py": {
   "comment_blocks": 2,
@@ -2524,9 +2520,9 @@
  },
  "tests/integration/test_discord_bridge_control.py": {
   "comment_blocks": 3,
-  "file_lines": 1147,
+  "file_lines": 1139,
   "functions": {
-   "test_the_bridge_owns_the_whole_graph_while_the_app_proxies": 131
+   "test_the_bridge_owns_the_whole_graph_while_the_app_proxies": 129
   },
   "internal_docstrings": 4
  },

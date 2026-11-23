@@ -9,6 +9,7 @@ from nora.infra.voice.http_controller import VoiceControllerClient
 from nora.infra.voice.hub import VoiceControllerHub
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.listener import DiscordListener
+from nora.testing.voice import operation_envelope
 
 
 @dataclass
@@ -316,34 +317,23 @@ class _FakeSpeaker:
 
 async def test_voice_channel_send_goes_through_speaker_not_rest(aiohttp_server):
     """A SPOKEN turn must never hit the REST text path — it is answered aloud
-    through the audio-controller's `/stream` endpoint. Routed on
+    through the audio-controller's `speak` operation. Routed on
     `ConversationTarget.voice`: the conversation is the guild's ordinary text
     room, so the room cannot say which way to answer."""
 
     seen: list[str] = []
 
-    async def join_handler(request: web.Request) -> web.Response:
-        seen.append(request.method + request.path)
-        return web.json_response(
-            {"ok": True, "request_id": "r",
-             "state": {"voice": "connected", "generation": "gen-1", "channel_id": "222",
-                       "playback_id": None, "speech_queue": 0}},
-        )
-
-    async def stream_handler(request: web.Request) -> web.Response:
-        seen.append(request.method + request.path)
+    async def operation(request: web.Request) -> web.Response:
         body = await request.json()
-        seen.append(body.get("media_type", ""))
-        return web.json_response(
-            {"ok": True, "request_id": "r",
-             "state": {"voice": "connected", "generation": "gen-1", "channel_id": "222",
-                       "playback_id": None, "speech_queue": 1}},
-            status=202,
-        )
+        seen.append(body["kind"])
+        if body["kind"] == "speak":
+            seen.append(body["effect"].get("media_type", ""))
+        return web.json_response(operation_envelope("complete", {
+            "state": {"voice": "connected", "generation": "gen-1", "channel_id": "222",
+                      "playback_id": None, "speech_queue": 0}}))
 
     app = web.Application()
-    app.router.add_post("/voice/join", join_handler)
-    app.router.add_post("/stream", stream_handler)
+    app.router.add_post("/v1/voice/operations", operation)
     server = await aiohttp_server(app)
 
     hub = VoiceControllerHub(
@@ -365,8 +355,8 @@ async def test_voice_channel_send_goes_through_speaker_not_rest(aiohttp_server):
 
     assert result.ok is True
     assert speaker.calls == ["喂 Nora，收到。"]
-    assert seen == ["POST/voice/join", "POST/stream", "audio/mpeg"], (
-        "must route to the controller /stream, never REST"
+    assert seen == ["join", "speak", "audio/mpeg"], (
+        "must route to the controller's speak operation, never REST"
     )
 
 

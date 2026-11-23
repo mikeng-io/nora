@@ -163,7 +163,7 @@ The newest:
 * **`voice-wake/`** — Python wake gate (stage 3), the seam's only consumer:
   openWakeWord 「喂 Nora」 detection per user, utterance collection,
   transcription via the local `stt` service, and the transcript POSTed to
-  Nora's `/app/v1/voice/utterance` as text. Audio is transient end to end.
+  Nora's `/v1/intake/operations` as text. Audio is transient end to end.
   See `deploy/voice-wake/README.md`.
 
 ## Monitoring

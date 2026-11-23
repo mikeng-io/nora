@@ -1,6 +1,6 @@
 """`VoiceControllerHub` (nora/infra/voice/hub.py) against a fake controller:
-per-guild session caching, the boot reconciliation (409 → adopt the
-existing connection via /voice/status), the fail-closed speech paths, and
+per-guild session caching, the boot reconciliation (a rejected join → adopt
+the existing connection via the `status` query), the fail-closed speech paths, and
 the bounded exactly-once event-id dedupe.
 """
 
@@ -12,12 +12,14 @@ import logging
 import pytest
 from aiohttp import web
 
+from nora.domain.service_api import OperationOutcome, status_for
 from nora.infra.voice.http_controller import (
     GenerationConflict,
     VoiceControllerClient,
     VoiceControllerUnavailable,
 )
 from nora.infra.voice.hub import _EVENT_ID_BOUND_PER_GUILD, VoiceControllerHub
+from nora.testing.voice import operation_envelope, read_envelope
 
 
 def _state(**overrides):
@@ -33,26 +35,34 @@ def _state(**overrides):
 
 def _app(
     *,
-    join_status: int = 200,
+    join: OperationOutcome = "complete",
     status_voice: str = "connected",
     status_channel: str = "cortez-1",
     status_last_event_seq: int | None = None,
-    stream_status: int = 200,
-    exit_status: int = 200,
+    stream: OperationOutcome = "complete",
+    leave: OperationOutcome = "complete",
     record: list | None = None,
 ):
-    """A fake controller whose /voice/join, /voice/status, /stream and
-    /voice/exit behaviours are independently switchable."""
+    """A fake controller whose `join`, `status`, `speak` and `leave` outcomes
+    are independently switchable; `rejected` carries the reason each would."""
     app = web.Application()
+    names = {"join": "join", "speak": "stream", "leave": "exit"}
+    reasons = {"join": "connected_elsewhere", "speak": "generation_conflict"}
 
-    async def join(request: web.Request) -> web.Response:
+    async def operation(request: web.Request) -> web.Response:
+        body = await request.json()
+        kind = body["kind"]
         if record is not None:
-            record.append(("join", await request.json()))
-        if join_status != 200:
-            return web.json_response(
-                {"error": "connected_elsewhere", "request_id": "r"}, status=join_status,
-            )
-        return web.json_response({"ok": True, "request_id": "r", "state": _state()})
+            record.append((names[kind], body["effect"]))
+        outcome = {"join": join, "speak": stream, "leave": leave}[kind]
+        state = (_state(voice="idle", generation=None, channel_id=None)
+                 if kind == "leave" else _state())
+        payload: dict = {"state": state}
+        if outcome != "complete":
+            reason = reasons.get(kind, "down")
+            payload["error"] = {"kind": reason, "message": reason}
+        return web.json_response(operation_envelope(outcome, payload),
+                                 status=status_for(outcome))
 
     async def status(request: web.Request) -> web.Response:
         if record is not None:
@@ -63,35 +73,10 @@ def _app(
         )
         if status_last_event_seq is not None:
             body["last_event_seq"] = status_last_event_seq
-        return web.json_response(body)
+        return web.json_response(read_envelope("ok", body))
 
-    async def stream(request: web.Request) -> web.Response:
-        if record is not None:
-            record.append(("stream", await request.json()))
-        if stream_status == 409:
-            return web.json_response(
-                {"error": "generation_conflict", "request_id": "r"}, status=409,
-            )
-        if stream_status != 200:
-            return web.json_response(
-                {"error": "speech_queue_full", "request_id": "r"}, status=stream_status,
-            )
-        return web.json_response({"ok": True, "request_id": "r", "state": _state()})
-
-    async def exit_(request: web.Request) -> web.Response:
-        if record is not None:
-            record.append(("exit", await request.json()))
-        if exit_status != 200:
-            return web.json_response({"error": "down", "request_id": "r"}, status=exit_status)
-        return web.json_response(
-            {"ok": True, "request_id": "r",
-             "state": _state(voice="idle", generation=None, channel_id=None)},
-        )
-
-    app.router.add_post("/voice/join", join)
-    app.router.add_get("/voice/status", status)
-    app.router.add_post("/stream", stream)
-    app.router.add_post("/voice/exit", exit_)
+    app.router.add_post("/v1/voice/operations", operation)
+    app.router.add_post("/v1/voice/queries", status)
     return app
 
 
@@ -118,10 +103,10 @@ async def test_join_caches_the_session_per_guild(aiohttp_client):
 
 async def test_a_join_conflict_adopts_the_controllers_existing_connection(aiohttp_client):
     """Boot reconciliation: nora restarted, the controller's
-    connection survived — the 409 answers 'already there', and /voice/status
+    connection survived — the rejection answers 'already there', and `status`
     confirms it IS the channel asked for, so its generation is adopted."""
     record: list = []
-    hub = await _hub(aiohttp_client, _app(join_status=409, record=record))
+    hub = await _hub(aiohttp_client, _app(join="rejected", record=record))
 
     session = await hub.join("guild-1", "cortez-1")
 
@@ -133,7 +118,7 @@ async def test_a_join_conflict_adopts_the_controllers_existing_connection(aiohtt
 
 async def test_a_conflict_to_a_different_channel_is_reraised(aiohttp_client):
     hub = await _hub(
-        aiohttp_client, _app(join_status=409, status_channel="cortez-elsewhere"),
+        aiohttp_client, _app(join="rejected", status_channel="cortez-elsewhere"),
     )
 
     with pytest.raises(GenerationConflict):
@@ -142,7 +127,7 @@ async def test_a_conflict_to_a_different_channel_is_reraised(aiohttp_client):
 
 
 async def test_a_conflict_with_no_live_connection_is_reraised(aiohttp_client):
-    hub = await _hub(aiohttp_client, _app(join_status=409, status_voice="idle"))
+    hub = await _hub(aiohttp_client, _app(join="rejected", status_voice="idle"))
 
     with pytest.raises(GenerationConflict):
         await hub.join("guild-1", "cortez-1")
@@ -169,7 +154,7 @@ async def test_stream_speech_posts_the_audio_for_the_sessions_generation(aiohttp
 
 
 async def test_stream_speech_on_conflict_drops_the_session_and_is_false(aiohttp_client):
-    hub = await _hub(aiohttp_client, _app(stream_status=409))
+    hub = await _hub(aiohttp_client, _app(stream="rejected"))
     await hub.join("guild-1", "cortez-1")
 
     assert await hub.stream_speech("guild-1", b"mp3", "audio/mpeg") is False
@@ -179,7 +164,7 @@ async def test_stream_speech_on_conflict_drops_the_session_and_is_false(aiohttp_
 
 
 async def test_stream_speech_when_unavailable_is_false_and_keeps_the_session(aiohttp_client):
-    hub = await _hub(aiohttp_client, _app(stream_status=503))
+    hub = await _hub(aiohttp_client, _app(stream="unavailable"))
     await hub.join("guild-1", "cortez-1")
 
     assert await hub.stream_speech("guild-1", b"mp3", "audio/mpeg") is False
@@ -209,7 +194,7 @@ async def test_exit_disconnects_and_clears_the_cache(aiohttp_client):
 
 
 async def test_a_failed_exit_is_false_and_still_clears_the_cache(aiohttp_client):
-    hub = await _hub(aiohttp_client, _app(exit_status=503))
+    hub = await _hub(aiohttp_client, _app(leave="unavailable"))
     await hub.join("guild-1", "cortez-1")
 
     assert await hub.exit("guild-1") is False
@@ -255,7 +240,7 @@ async def test_adopting_a_status_with_an_event_seq_gap_warns(aiohttp_client, cap
     of the last seq nora consumed means events were emitted while nora was
     not consuming — the adoption still succeeds, but the gap is surfaced."""
     hub = await _hub(
-        aiohttp_client, _app(join_status=409, status_last_event_seq=9),
+        aiohttp_client, _app(join="rejected", status_last_event_seq=9),
     )
     hub.note_event_seq("guild-1", 4)
 
@@ -275,7 +260,7 @@ async def test_adoption_without_a_seq_gap_does_not_warn(aiohttp_client, caplog):
     for last_event_seq in (4, None):
         caplog.clear()
         hub = await _hub(
-            aiohttp_client, _app(join_status=409, status_last_event_seq=last_event_seq),
+            aiohttp_client, _app(join="rejected", status_last_event_seq=last_event_seq),
         )
         hub.note_event_seq("guild-1", 4)
 
@@ -324,9 +309,9 @@ async def test_adopt_boot_voice_sessions_adopts_without_a_persisted_music_row(ai
     from config, and speech must stream afterwards.
 
     Config names GUILDS, so the CHANNEL comes from the controller's own
-    /voice/status: it is the only thing that knows where it reconnected."""
+    `status` query: it is the only thing that knows where it reconnected."""
     record: list = []
-    hub = await _hub(aiohttp_client, _app(join_status=409, record=record))
+    hub = await _hub(aiohttp_client, _app(join="rejected", record=record))
 
     await hub.adopt_boot_voice_sessions(["guild-1"])
 
@@ -339,7 +324,7 @@ async def test_adopt_boot_voice_sessions_adopts_without_a_persisted_music_row(ai
 
 
 async def test_adopt_boot_adopts_the_channel_the_controller_is_actually_in(aiohttp_client):
-    """Adoption takes the channel from the controller's /voice/status, not the
+    """Adoption takes the channel from the controller's `status`, not the
     configured one: a controller that came back up in a different channel —
     ordinary, since any channel is joinable — must not be dragged back to the
     old one."""
@@ -390,7 +375,7 @@ async def test_adopt_boot_voice_sessions_skips_empty_entries(aiohttp_client):
 async def test_adopt_boot_voice_sessions_does_not_raise_when_the_controller_is_down(
     aiohttp_client,
 ):
-    hub = await _hub(aiohttp_client, _app(join_status=503))
+    hub = await _hub(aiohttp_client, _app(join="unavailable"))
 
     await hub.adopt_boot_voice_sessions(["guild-1"])  # must not raise
 
@@ -446,7 +431,7 @@ async def test_join_to_a_different_channel_is_a_conflict_not_a_cache_hit(aiohttp
     the next boot resumes against B. `/discord join` escapes it only by having
     its own `session_for` check.
 
-    The controller's own 409 never fires because nora never sends the request."""
+    The controller's own rejection never fires because nora never sends the request."""
     record: list = []
     hub = await _hub(aiohttp_client, _app(record=record))
     await hub.join("guild-1", "cortez-1")
@@ -485,7 +470,7 @@ async def test_the_channel_is_forgotten_with_the_session(aiohttp_client):
 
 
 async def test_an_adopted_join_records_the_channel_it_adopted(aiohttp_client):
-    """A 409 that IS the channel asked for adopts the live connection
+    """A rejected join that IS the channel asked for adopts the live connection
     (`_adopt_existing`), and the cache must record that channel — otherwise
     the very next send would re-join and take a second connection.
 
@@ -496,7 +481,7 @@ async def test_an_adopted_join_records_the_channel_it_adopted(aiohttp_client):
     what we asked for rather than what we were told is how the cache ends up
     naming the wrong channel."""
     hub = await _hub(
-        aiohttp_client, _app(join_status=409, status_channel="cortez-1"),
+        aiohttp_client, _app(join="rejected", status_channel="cortez-1"),
     )
 
     await hub.join("guild-1", "cortez-1")
@@ -508,8 +493,8 @@ async def test_an_adopted_join_records_the_channel_it_adopted(aiohttp_client):
 
 
 async def test_boot_adoption_is_quiet_when_a_guild_has_no_connection(aiohttp_client, caplog):
-    """A controller holding no connection for a guild answers 404
-    `unknown_guild`, and since one process serves N guilds that is the ordinary
+    """A controller holding no connection for a guild answers the `status`
+    query `nothing_found`, and since one process serves N guilds that is the ordinary
     COLD-BOOT state — not a fault. It is logged at INFO ("nothing to adopt"),
     never as a failed adoption at WARNING, which would fire on every boot.
 
@@ -518,9 +503,9 @@ async def test_boot_adoption_is_quiet_when_a_guild_has_no_connection(aiohttp_cli
     app = web.Application()
 
     async def status(request: web.Request) -> web.Response:
-        return web.json_response({"error": "unknown_guild"}, status=404)
+        return web.json_response(read_envelope("nothing_found", None))
 
-    app.router.add_get("/voice/status", status)
+    app.router.add_post("/v1/voice/queries", status)
     hub = await _hub(aiohttp_client, app)
 
     with caplog.at_level(logging.INFO, logger="nora.infra.voice"):
@@ -534,13 +519,13 @@ async def test_boot_adoption_is_quiet_when_a_guild_has_no_connection(aiohttp_cli
 
 
 async def test_boot_adoption_still_warns_on_a_real_refusal(aiohttp_client, caplog):
-    """The other side of it: a 4xx that is NOT `unknown_guild` still warns."""
+    """The other side of it: a 400 refusal still warns."""
     app = web.Application()
 
     async def status(request: web.Request) -> web.Response:
         return web.json_response({"error": "wrong_guild"}, status=400)
 
-    app.router.add_get("/voice/status", status)
+    app.router.add_post("/v1/voice/queries", status)
     hub = await _hub(aiohttp_client, app)
 
     with caplog.at_level(logging.INFO, logger="nora.infra.voice"):

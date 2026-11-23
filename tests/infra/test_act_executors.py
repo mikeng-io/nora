@@ -276,13 +276,13 @@ async def test_controller_executors(acts, executor, monkeypatch):
             monkeypatch.setattr(bridge, "_speech", wire)
             assert await bridge.speech("fixture-guild", b"speech", "audio/wav") is True
         else:
-            wire = AsyncMock(return_value={"state": {"generation": "fixture-generation"}})
-            monkeypatch.setattr(voice, "_request", wire)
+            wire = AsyncMock(return_value={"generation": "fixture-generation"})
+            monkeypatch.setattr(voice, "_operation", wire)
             if executor == "voice.control":
-                result = await voice.join("guild", "voice-room", request_id="fixture-join")
+                result = await voice.join("guild", "voice-room", operation_id="fixture-join")
             else:
                 result = await voice.stream("fixture-generation", b"speech", media_type="audio/wav",
-                                            guild_id="guild", request_id="fixture-stream")
+                                            guild_id="guild", operation_id="fixture-stream")
             assert result["generation"] == "fixture-generation"
     wire.assert_awaited_once()
     await _recorded(engine, executor)

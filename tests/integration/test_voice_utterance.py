@@ -1,7 +1,7 @@
-"""The voice utterance endpoint through the REAL wired pipeline: a POSTed
+"""The utterance `intake` route through the REAL wired pipeline: a recorded
 transcript must produce the same artifacts a typed Discord message would —
 an audit row in Postgres (with the speaker resolved to their person) — and
-the route must answer 202 without waiting on any of it.
+the route must answer `complete` without waiting on any of it.
 
 Same wiring posture as `tests/integration/harness.py` (real ingest +
 dispatcher + `SqlRecordStore` against a throwaway database, fakes only at
@@ -20,6 +20,7 @@ from aiohttp import web
 
 from nora.access import IdentityAccess
 from nora.app.runtime import BackgroundTasks
+from nora.domain.service_api import status_for
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
@@ -56,6 +57,7 @@ async def _drain(background) -> None:
 # The wake gate's bearer: the utterance route refuses everything without it.
 TOKEN = "test-bridge-token"  # noqa: S105 - a fake
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
+INTAKE = "/v1/intake/operations"
 
 
 @pytest.fixture(autouse=True)
@@ -125,16 +127,31 @@ async def client(tmp_path, monkeypatch, clean_pg_url, aiohttp_client):
     await store.aclose()
 
 
-async def test_a_posted_utterance_lands_as_an_ingest_row(client):
-    resp = await client.post(
-        "/app/v1/voice/utterance",
-        headers=AUTH,
-        json={"user_id": USER, "text": TEXT, "guild_id": GUILD,
-              "voice_channel_id": "499999999999999999"},
-    )
-    assert resp.status == 202
+async def _record(client, operation_id: str, **effect) -> dict:
+    resp = await client.post(INTAKE, headers=AUTH, json={
+        "operation_id": operation_id, "kind": "record",
+        "effect": {"event_id": "evt-1", "kind": "utterance", "user_id": USER,
+                   "text": TEXT, "guild_id": GUILD, **effect}})
+    body = await resp.json()
+    assert set(body) == {"outcome", "payload", "when", "from", "scope", "trace"}
+    assert resp.status == status_for(body["outcome"])
+    assert body["when"]["state"] == "settled" and body["scope"]["level"] == "installation"
+    return body
+
+
+async def test_utterance_outcomes_follow_the_contract(client):
+    """Accepted is `complete` and lands one ingest row; the same `event_id` under
+    a new operation is `complete` and lands none; a guild with no voice room is
+    `rejected` and records nothing."""
+    first = await _record(client, "op-1", voice_channel_id="499999999999999999")
+    await _drain(client.background)
+    again = await _record(client, "op-2", voice_channel_id="499999999999999999")
+    await _drain(client.background)
+    refused = await _record(client, "op-3", event_id="evt-2", guild_id="499999999999999999")
     await _drain(client.background)
 
+    assert [first["outcome"], again["outcome"], refused["outcome"]] == [
+        "complete", "complete", "rejected"]
     rows = await client.store.recent(conversation_id=CONV, limit=10)
     assert len(rows) == 1
     row = rows[0]
@@ -155,9 +172,8 @@ async def test_an_utterance_from_an_unmarked_guild_records_nothing(
     wires a bare `IngestPipeline` the way the composition root does.
 
     The guild has to resolve to a room before a message exists at all, so an
-    unlisted guild is a 400 and ingest is never entered. 400 rather than 202 on
-    purpose: the only caller is our own wake container, and answering
-    "accepted" for something that was definitely not accepted is the silent
+    unlisted guild is `rejected` and ingest is never entered: answering
+    `complete` for something that was definitely not accepted is the silent
     failure R-5 exists to forbid — a misconfigured guild would look exactly like
     a quiet room."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
@@ -213,13 +229,8 @@ async def test_an_utterance_from_an_unmarked_guild_records_nothing(
     )
     client = await aiohttp_client(app)
     try:
-        resp = await client.post(
-            "/app/v1/voice/utterance",
-            headers=AUTH,
-            json={"user_id": USER, "text": TEXT,
-                  "guild_id": "499999999999999999"},
-        )
-        assert resp.status == 400
+        body = await _record(client, "op-1", guild_id="499999999999999999")
+        assert body["outcome"] == "rejected"
         await _drain(background)
         assert await store.recent(conversation_id=CONV, limit=10) == []
     finally:

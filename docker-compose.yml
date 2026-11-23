@@ -1092,12 +1092,12 @@ services:
       # an explicit VOICE_PUMP_HOST override for the consume.mjs stand-in.
       - PUMP_HOST=${VOICE_PUMP_HOST:-voice-wake}
       - PUMP_PORT=${VOICE_PUMP_PORT:-4599}
-      # Nora drives the audio-controller HTTP contract (join/exit, /music/*,
-      # /stream for TTS — the old /play route is gone). The Node server's own
+      # Nora drives the audio-controller's `voice` contract (join, leave, the
+      # music kinds, and speak for TTS). The Node server's own
       # default HOST is 127.0.0.1 (a host-run sidecar should stay
       # loopback-only); inside compose it must listen on the private nora
       # network so the nora container can reach
-      # http://voice-sidecar:4600/voice/status. 0.0.0.0 here is still
+      # http://voice-sidecar:4600/v1/voice/queries. 0.0.0.0 here is still
       # private: the service publishes NO host port (no `ports:` at all,
       # above).
       - HOST=0.0.0.0
@@ -1114,10 +1114,10 @@ services:
       # with its own file, and this directory is also the process's only
       # memory of which guilds to restore on boot.
       - STATE_DIR=/var/lib/audio-controller
-      # Controller lifecycle events (generation/playback advancement) go to
-      # the bridge's /v1/voice/event — the bridge owns the VoiceEventConsumer
+      # Controller lifecycle events (generation/playback advancement) are
+      # `report` operations on the bridge's /v1/voice/operations — the bridge owns the VoiceEventConsumer
       # when [platforms.discord] mode = "bridge"; the app relinquished it.
-      - NORA_EVENT_URL=http://discord-bridge:18093/v1/voice/event
+      - NORA_EVENT_URL=http://discord-bridge:18093/v1/voice/operations
     volumes:
       # Desired-state durability (§12.1): /discord exit writes idle, a join
       # writes connected, and the boot decision reads this file — it must
@@ -1142,7 +1142,7 @@ services:
   # consumer of the sidecar's seam. Per-user PCM in, openWakeWord 「喂 Nora」
   # detection (the v3 ONNX is baked into the image), utterance collection,
   # transcription via the local `stt` service, and the TRANSCRIPT forwarded
-  # to Nora's POST /app/v1/voice/utterance — audio is transient end to end,
+  # to Nora's POST /v1/intake/operations — audio is transient end to end,
   # never stored. Failure posture: no wake → no cost (one STT retry with
   # language unset, then a silent drop).
   #

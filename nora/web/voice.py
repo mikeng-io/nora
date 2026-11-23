@@ -1,5 +1,6 @@
-"""`register_voice` — POST /app/v1/voice/utterance, the voice channel's text
-entry point.
+"""`register_voice` — the `intake` contract's `record` of a woken utterance, the
+voice channel's text entry point, and the `voice` contract's `report` where the
+app holds the hub.
 
 The `voice-wake` service (`deploy/voice-wake/`) hears 「喂 Nora」 in a
 Discord voice channel, transcribes the utterance locally, and POSTs the
@@ -18,8 +19,8 @@ already serves — a second app would mean a second port.
 Two postures, stated here because they are decisions, not omissions:
 
 - **Text only.** Audio never reaches this process — the wake service sends
-  `{user_id, text, guild_id}` plus an optional `voice_channel_id` and nothing
-  else. There is no audio storage anywhere on this path, by design.
+  `{event_id, kind: "utterance", user_id, text, guild_id}` plus an optional
+  `voice_channel_id` and nothing else. There is no audio storage anywhere on this path, by design.
 - **Bearer, not network.** The only caller is the wake service on the private
   `nora` docker network, and that is not authentication: any container there
   could reach the port. The route requires the shared `NORA_BRIDGE_TOKEN`
@@ -27,17 +28,18 @@ Two postures, stated here because they are decisions, not omissions:
   authenticated POST could do is exactly what any message in an admitted
   conversation does — policy and the engage gate still apply downstream.
 
-Returns 202 Accepted: ingest runs inline (it is deterministic — the same
-reasoning as `Dispatcher.on_message`), and downstream agent work is spawned
-by the dispatcher, never awaited here.
+An accepted utterance is `complete`: ingest runs inline (it is deterministic —
+the same reasoning as `Dispatcher.on_message`), and downstream agent work is
+spawned by the dispatcher, never awaited here. An `event_id` recorded in the
+last five minutes is `complete` again and is not ingested twice.
 
 **The GUILD decides the room, not the channel.** A server has many voice
 channels and gains more, so the caller sends `guild_id` and this route
 resolves it to the ONE room the operator marked `voice = true` — see
 `nora.policy.Policy.voice_room` for why that is explicit rather than inferred,
 and `Conversation.voice` for why speech is a surface of a room rather than a
-room of its own. An unresolvable guild is a 400 and nothing is ingested: the
-resolution IS the admission check, so failing it must not fall through to a
+room of its own. An unresolvable guild is `rejected` and nothing is ingested
+or kept: the resolution IS the admission check, so failing it must not fall through to a
 room somebody else's speech belongs in.
 
 The real `voice_channel_id` survives on `raw` as provenance, and is OPTIONAL:
@@ -47,18 +49,64 @@ was spoken in, which the resolved `conversation_id` no longer carries.
 
 from __future__ import annotations
 
-import json
 import logging
 import time
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, get_args
 
 from aiohttp import web
 
 from nora.domain.models import NormalizedMessage
+from nora.domain.service_api import OperationOutcome
+from nora.domain.service_api_voice import IntakeOperationKind, VoiceOperationKind
 from nora.infra.service_auth import service_auth_ok
+from nora.platform.bridge.answers import (
+    InvalidOperation,
+    OperationLedger,
+    now_ms,
+    operation_request,
+    report_answer,
+    settled_body,
+    trace_of,
+)
 
 log = logging.getLogger("nora.web.voice")
+
+INTAKE_KINDS = frozenset(get_args(IntakeOperationKind))
+VOICE_KINDS = frozenset(get_args(VoiceOperationKind))
+SOURCE = "nora"
+Answer = tuple[OperationOutcome, dict[str, Any]]
+
+
+class _RecentIds:
+    """Event ids recorded in the last five minutes, bounded."""
+
+    def __init__(self, *, ttl_s: float = 300.0, bound: int = 4096) -> None:
+        self._ttl_s = ttl_s
+        self._bound = bound
+        self._ids: OrderedDict[str, float] = OrderedDict()
+
+    def claim(self, event_id: str) -> bool:
+        """`True` the first time an id is seen in the window; it is then held."""
+        now = time.monotonic()
+        while self._ids and (next(iter(self._ids.values())) <= now
+                             or len(self._ids) >= self._bound):
+            self._ids.popitem(last=False)
+        if event_id in self._ids:
+            return False
+        self._ids[event_id] = now + self._ttl_s
+        return True
+
+    def release(self, event_id: str) -> None:
+        self._ids.pop(event_id, None)
+
+
+def _text(effect: dict[str, Any], key: str) -> str:
+    value = effect.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise InvalidOperation("event_id, user_id, text and guild_id are required")
+    return value
 
 
 def register_voice(
@@ -79,101 +127,102 @@ def register_voice(
     this module keeps knowing nothing about policy loading, and so a test can
     state the mapping in one line.
 
-    `on_voice_event`, when provided, also registers
-    `POST /app/v1/voice/event` — the audio-controller's callback channel
-    The consumer owns every validation and
-    routing decision; this route only parses JSON and passes the
-    (status, payload) verdict through. When `None`, the event route does
-    not exist at all — a deployment without the controller wired has no
-    endpoint to poke."""
+    `on_voice_event`, when provided, also registers `POST /v1/voice/operations`
+    and its read-back: the audio-controller's `report`s, answered `unsupported`
+    for every other `voice` kind. The consumer owns every validation and
+    routing decision; this route reads its (status, payload) verdict as an
+    outcome. When `None`, the voice routes do not exist at all."""
+    ledger = OperationLedger()
+    recorded = _RecentIds()
 
-    async def voice_utterance(request: web.Request) -> web.Response:
-        # Checked before the body is read: an unauthenticated caller gets no
-        # parse, no room resolution and no ingest.
-        if not service_auth_ok(request.headers.get("Authorization")):
-            return web.json_response({"error": "unauthorized"}, status=401)
-        try:
-            body = await request.json()
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return web.json_response({"error": "invalid json"}, status=400)
-        if not isinstance(body, dict):
-            return web.json_response({"error": "invalid body"}, status=400)
-        user_id = body.get("user_id")
-        text = body.get("text")
-        guild_id = body.get("guild_id")
-        if not (
-            isinstance(user_id, str) and user_id
-            and isinstance(text, str) and text.strip()
-            and isinstance(guild_id, str) and guild_id
-        ):
-            return web.json_response(
-                {"error": "user_id, text and guild_id are required"},
-                status=400,
-            )
+    async def record(effect: dict[str, Any]) -> Answer:
+        event_id, user_id = _text(effect, "event_id"), _text(effect, "user_id")
+        text, guild_id = _text(effect, "text"), _text(effect, "guild_id")
+        if effect.get("kind") != "utterance":
+            raise InvalidOperation("kind must be utterance")
         # OPTIONAL on purpose: the guild DECIDES the room, the channel only
-        # records where the words were said. Only the controller knows which
-        # channel it is currently connected to, and a caller that could not
-        # reach it must be able to say so — an absent channel is honest, a
-        # stale configured one is a lie in the one field a trace would be
-        # read for.
-        raw_channel = body.get("voice_channel_id")
+        # records where the words were said; an absent channel is honest.
+        raw_channel = effect.get("voice_channel_id")
         voice_channel_id = raw_channel if isinstance(raw_channel, str) and raw_channel else None
         conversation_id = resolve_voice_room(guild_id)
         if conversation_id is None:
             # Not a fallback to the channel id: an unmarked guild has no room
             # the operator chose for speech, and guessing one writes a spoken
-            # sentence into somebody else's notebook. Loud, and counted where
-            # every other room refusal is — the scope stage never sees this
-            # message, so it cannot count it for us.
+            # sentence into somebody else's notebook.
             log.warning(
                 "voice utterance from guild %s refused: no conversation in "
                 "policy.toml marks voice = true for it (channel %s)",
                 guild_id, voice_channel_id,
             )
-            return web.json_response(
-                {"error": "no voice room for this guild"}, status=400,
-            )
+            return "rejected", {"error": {"kind": "no_voice_room",
+                                          "message": "no voice room for this guild"}}
+        if not recorded.claim(event_id):
+            return "complete", {}
         message = NormalizedMessage(
             platform="discord",
             conversation_id=conversation_id,
-            # A voice channel is a shared room — "group", never "dm" (the
-            # wake service only ever joins a guild channel).
+            # A voice channel is a shared room — "group", never "dm".
             conversation_type="group",
             sender_id=user_id,
-            # The Discord snowflake says WHO spoke (protocol-native identity); the
-            # display name is Discord's to give and this path never saw it —
-            # None, not a guess.
+            # The snowflake says WHO spoke; the display name is Discord's to
+            # give and this path never saw it — None, not a guess.
             sender_name=None,
             timestamp=int(time.time() * 1000),
             body=text,
             raw={
                 "voice": True,
                 "user_id": user_id,
-                # PROVENANCE, never routing: `conversation_id` above is the
-                # guild's text room, so these two are the only record of
-                # where the sentence was actually spoken.
+                # PROVENANCE, never routing: `conversation_id` is the guild's
+                # text room, so these are the only record of where it was said.
                 "guild_id": guild_id,
                 "voice_channel_id": voice_channel_id,
             },
             voice=True,
         )
-        await ingest(message)
-        return web.json_response({"status": "accepted"}, status=202)
+        try:
+            await ingest(message)
+        except Exception:
+            recorded.release(event_id)
+            raise
+        return "complete", {}
 
-    app.router.add_post("/app/v1/voice/utterance", voice_utterance)
+    async def report(kind: str, effect: dict[str, Any]) -> Answer:
+        if kind != "report" or on_voice_event is None:
+            return "unsupported", {"error": {"kind": "unsupported",
+                                             "message": f"the app does not serve {kind}"}}
+        return report_answer(*await on_voice_event(effect))
 
-    if on_voice_event is not None:
-
-        async def voice_event(request: web.Request) -> web.Response:
-            # Same posture as the utterance route: no bearer, no parse and no dispatch, so a
-            # co-networked caller cannot detach a live guild session.
+    def serve(kinds: frozenset[str],
+              apply: Callable[[str, dict[str, Any]], Awaitable[Answer]],
+              ) -> Callable[[web.Request], Awaitable[web.Response]]:
+        async def submit(request: web.Request) -> web.Response:
+            # Checked before the body is read: an unauthenticated caller gets
+            # no parse, no resolution and no effect.
             if not service_auth_ok(request.headers.get("Authorization")):
                 return web.json_response({"error": "unauthorized"}, status=401)
-            try:
-                body = await request.json()
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                return web.json_response({"error": "invalid json"}, status=400)
-            status, payload = await on_voice_event(body)
-            return web.json_response(payload, status=status)
+            parsed = await operation_request(request, kinds)
+            if isinstance(parsed, web.Response):
+                return parsed
+            operation_id, kind, effect = parsed
+            started, trace = now_ms(), trace_of(request.headers)
 
-        app.router.add_post("/app/v1/voice/event", voice_event)
+            async def work() -> dict[str, Any]:
+                outcome, payload = await apply(kind, effect)
+                return settled_body(outcome, payload, target=str(effect.get("guild_id") or ""),
+                                    trace=trace, started_ms=started)
+
+            return await ledger.respond(request, operation_id, kind, effect, work)
+
+        return submit
+
+    async def read(request: web.Request) -> web.Response:
+        if not service_auth_ok(request.headers.get("Authorization")):
+            return web.json_response({"error": "unauthorized"}, status=401)
+        return ledger.read(request, source=SOURCE)
+
+    app.router.add_post("/v1/intake/operations",
+                        serve(INTAKE_KINDS, lambda _kind, effect: record(effect)))
+    app.router.add_get("/v1/intake/operations/{operation_id}", read)
+    if on_voice_event is not None:
+        app.router.add_post("/v1/voice/operations", serve(VOICE_KINDS, report))
+        app.router.add_get("/v1/voice/operations/{operation_id}", read)

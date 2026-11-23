@@ -17,8 +17,12 @@ from __future__ import annotations
 
 import logging
 
+from aiohttp import web
+
 from nora.app.voice_events import VoiceEventConsumer
+from nora.domain.service_api import status_for
 from nora.infra.voice.hub import VoiceControllerHub
+from nora.web.voice import register_voice
 
 GUILD = "guild-1"
 PLAYBACK = "pb-1"
@@ -29,7 +33,7 @@ class _StubClient:
     state snapshot carrying the generation and playback id events are then
     checked against."""
 
-    async def join(self, guild_id: str, channel_id: str, *, request_id: str) -> dict:
+    async def join(self, guild_id: str, channel_id: str, *, operation_id: str) -> dict:
         return {
             "voice": "connected", "generation": "gen-1", "channel_id": channel_id,
             "playback_id": PLAYBACK,
@@ -306,9 +310,51 @@ async def test_an_event_for_a_guild_with_no_controller_is_refused():
         _event("speech-finished", guild_id="a-guild-nobody-configured", event_seq=1),
     )
 
-    assert status == 400
+    assert status == 403
     assert payload == {"error": "unknown guild"}
     assert manager.calls == [], "nothing was acted on"
     assert hub.last_event_seq("a-guild-nobody-configured") is None, (
         "no bookmark was created for an unknown guild"
     )
+
+
+async def test_report_outcomes_follow_the_contract(aiohttp_client, monkeypatch):
+    """A controller's report through the route the hub serves: applied and a
+    repeated `event_id` are `complete`; a transition that raises is
+    `unavailable` and left unconsumed, so the next report (a new operation)
+    applies it; an event for a guild the hub does not know is `denied`."""
+    monkeypatch.setenv("NORA_BRIDGE_TOKEN", "tok")
+    consumer, manager, _ = await _consumer()
+    app = web.Application()
+    register_voice(app, ingest=_never, resolve_voice_room=lambda _g: None,
+                   on_voice_event=consumer.consume)
+    client = await aiohttp_client(app)
+
+    async def report(operation_id: str, event: dict) -> dict:
+        resp = await client.post("/v1/voice/operations", headers={
+            "Authorization": "Bearer tok"}, json={
+            "operation_id": operation_id, "kind": "report", "effect": event})
+        body = await resp.json()
+        assert set(body) == {"outcome", "payload", "when", "from", "scope", "trace"}
+        assert resp.status == status_for(body["outcome"])
+        assert body["when"]["state"] == "settled" and body["scope"]["level"] == "installation"
+        return body
+
+    applied = await report("op-1", _event("track-finished", playback_id=PLAYBACK))
+    repeated = await report("op-2", _event("track-finished", playback_id=PLAYBACK))
+    assert (applied["outcome"], applied["payload"]) == ("complete", {"status": "ok"})
+    assert (repeated["outcome"], repeated["payload"]) == ("complete", {"status": "duplicate"})
+    assert manager.calls == [f"track-finished:{GUILD}:{PLAYBACK}"]
+
+    manager.failures = 1
+    failing = _event("track-finished", event_id="evt-2", playback_id=PLAYBACK, event_seq=2)
+    assert (await report("op-3", failing))["outcome"] == "unavailable"
+    assert (await report("op-4", failing))["outcome"] == "complete"
+    assert manager.calls[-1] == f"track-finished:{GUILD}:{PLAYBACK}" and len(manager.calls) == 2
+
+    stranger = _event("speech-finished", event_id="evt-3", guild_id="guild-nobody-has")
+    assert (await report("op-5", stranger))["outcome"] == "denied"
+
+
+async def _never(message) -> None:
+    raise AssertionError("a report never ingests a message")
