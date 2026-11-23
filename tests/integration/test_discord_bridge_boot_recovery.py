@@ -16,6 +16,7 @@ from nora.app.voice_events import VoiceEventConsumer
 from nora.domain.music import MusicSession
 from nora.infra.voice.http_controller import VoiceControllerClient
 from nora.infra.voice.hub import VoiceControllerHub
+from nora.platform.discord import music_commands
 from nora.platform.discord.bridge_app import DiscordBridge
 from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.testing.music import FakeMusicQueueStore, FakeMusicSessionStore
@@ -66,6 +67,7 @@ def _controller(state: dict) -> web.Application:
         if kind == "join" and joins == 1 and state["hold"] is not None:
             state["join_arrived"].set()
             await state["hold"].wait()
+            state["held_answered"] = True
         if kind == "play":
             state["plays"].append(effect["stream_url"])
             state["playback_id"] = f"pb-{len(state['plays'])}"
@@ -84,7 +86,8 @@ def _controller(state: dict) -> web.Application:
     return app
 
 
-async def _world(aiohttp_client, monkeypatch, states: dict[str, dict]):
+async def _world(aiohttp_client, monkeypatch, states: dict[str, dict],
+                 wake_only: frozenset[str] = frozenset()):
     """A bridge whose guilds each persist Track A playing, Track B queued."""
     async def _sync(self):
         return None
@@ -106,17 +109,19 @@ async def _world(aiohttp_client, monkeypatch, states: dict[str, dict]):
     now = datetime.now(UTC)
     guilds = []
     for guild_id, state in states.items():
+        guild = _Guild(int(guild_id))
+        voice = _Channel(int(state["voice"]), "voice", guild, 2)
+        guild.channels.extend([_Channel(int(TEXT_CHANNEL), "general", guild, 0), voice])
+        voice.members.append(guild.add_member(_Member(int(MEMBER))))
+        guilds.append(guild)
+        if guild_id in wake_only:
+            continue
         await sessions.upsert(MusicSession(
             guild_id=guild_id, voice_channel_id=state["voice"], notify_channel_id=TEXT_CHANNEL,
             now_playing_source=TRACK.source, now_playing_locator=TRACK.locator,
             now_playing_title=TRACK.title, paused=False, volume=1.0, updated_at=now))
         await queue.enqueue(guild_id=guild_id, source=TRACK_B.source, url=TRACK_B.locator,
                             title=TRACK_B.title, added_by_person_id=MEMBER, added_at=now)
-        guild = _Guild(int(guild_id))
-        voice = _Channel(int(state["voice"]), "voice", guild, 2)
-        guild.channels.extend([_Channel(int(TEXT_CHANNEL), "general", guild, 0), voice])
-        voice.members.append(guild.add_member(_Member(int(MEMBER))))
-        guilds.append(guild)
     bridge = DiscordBridge(api_token="t", account_key="a",  # noqa: S106 — synthetic
                            client=FakeDiscordClient(guilds),
                            manager=manager, hub=hub, voice_guild_ids=frozenset(states))
@@ -236,4 +241,49 @@ async def test_one_guilds_failed_recovery_leaves_the_other_recovered(
 
     assert hub.session_for(GUILD) is None and GUILD not in manager._players
     assert hub.session_for(GUILD_2) is not None and GUILD_2 in manager._players
-    assert f"voice recovery for guild {GUILD} failed: VoiceControllerUnavailable" in caplog.text
+    prefixes = ("voice recovery failed", "boot voice adoption failed")
+    failures = [r.getMessage() for r in caplog.records if r.getMessage().startswith(prefixes)]
+    assert failures == [
+        "boot voice adoption failed: VoiceControllerUnavailable — will retry on the next join/send",
+        "voice recovery failed: VoiceControllerUnavailable"]
+    assert not [m for m in failures if GUILD in m or "HTTP" in m or "/v1/" in m]
+
+
+async def test_a_late_adoption_never_replaces_the_session_playback_started(
+        aiohttp_client, monkeypatch):
+    """Guild 1's recovery is held; wake-only guild 2's adoption answer is
+    delayed while `/music play` starts and queues there. The late answer is
+    older than the session play wrote, so it is refused: the finish advances."""
+    hold_1, hold_2 = asyncio.Event(), asyncio.Event()
+    first, second = _state(hold=hold_1), _state(voice=VOICE_2, playback_id=None, hold=hold_2)
+    hub, manager, bridge = await _world(
+        aiohttp_client, monkeypatch, {GUILD: first, GUILD_2: second},
+        wake_only=frozenset({GUILD_2}))
+    connect = music_commands._connect_factory(hub, GUILD_2, VOICE_2)
+    try:
+        ready = asyncio.create_task(bridge.on_gateway_ready())
+        await asyncio.wait_for(first["join_arrived"].wait(), 5)
+        await asyncio.wait_for(second["join_arrived"].wait(), 5)
+        for track in (TRACK, TRACK_B):
+            await manager.play(guild_id=GUILD_2, query_or_url=track.locator,
+                               requested_by=MEMBER, added_at=datetime.now(UTC),
+                               connect=connect, voice_channel_id=VOICE_2,
+                               notify_channel_id=TEXT_CHANNEL)
+        assert second["plays"] == [TRACK.stream_url]
+        hold_2.set()
+        for _ in range(100):
+            if second.get("held_answered"):
+                break
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.1)  # the hub reads the late answer
+        assert second.get("held_answered")
+        assert hub.expected_playback_id(GUILD_2) == "pb-1"
+        finished = await asyncio.wait_for(
+            VoiceEventConsumer(manager, hub).consume(_finished("pb-1", GUILD_2)), 5)
+        hold_1.set()
+        await asyncio.wait_for(ready, 5)
+    finally:
+        _stop_watch(manager)
+
+    assert finished == (200, {"status": "ok"})
+    assert second["plays"] == [TRACK.stream_url, TRACK_B.stream_url]

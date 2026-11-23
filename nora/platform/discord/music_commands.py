@@ -622,9 +622,9 @@ async def recover_voice_sessions(
                       for guild_id in voice_guild_ids if guild_id and guild_id not in steps})
     # Each guild on its own, under its own lock: one held join delays no other.
     results = await asyncio.gather(*steps.values(), return_exceptions=True)
-    for guild_id, result in zip(steps, results, strict=True):
+    for result in results:
         if isinstance(result, BaseException):
-            log.error("voice recovery for guild %s failed: %s", guild_id, type(result).__name__)
+            log.error("voice recovery failed: %s", type(result).__name__)
 
 
 async def _recover_persisted(
