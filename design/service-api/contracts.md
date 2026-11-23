@@ -111,8 +111,9 @@ guild, and a player that plays what it is given
   hash, never the bytes.
 - The hub that owns the connection calls the controller: the bridge where
   the bridge owns the gateway, the app otherwise. A bridge that holds the
-  hub implements `voice` too, for the app: it relays the same operations
-  under the same paths and answers `unsupported` for one it does not relay.
+  hub implements `voice` too, for the app: it relays the same connection
+  operations under the same paths and answers `unsupported` for one it
+  does not relay.
 - Every connection operation but `join` names the connection generation it
   observed. A stale or absent generation is `rejected` with the current
   one, and a lifecycle or arbiter refusal is `rejected` with its reason;
