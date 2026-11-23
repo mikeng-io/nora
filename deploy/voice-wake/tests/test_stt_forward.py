@@ -81,8 +81,7 @@ def _read(outcome: str, payload: dict | None = None, status: int | None = None):
 
 
 async def _forward(handler, *, reads=(), **kwargs):
-    """Drive one forward; `reads` are the read-back answers in order, then
-    `nothing_found`."""
+    """Drive one forward; `reads` answer the read-backs in order, then `nothing_found`."""
     app = web.Application()
     app["seen"] = []
     answers = list(reads)
