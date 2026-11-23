@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.access import IdentityAccess
 from nora.config import Config
-from nora.config_reload import FileReload, LivePersons, RestartRequiredError
+from nora.config_reload import FileReload, LivePersons
 from nora.domain.live import LiveSequence
 from nora.domain.managed import Verdict
 from nora.infra.life360 import Life360Client
@@ -103,14 +103,11 @@ def _file_circles(
         policy = load_policy(cfg.policy_file) if cfg.policy_file.exists() else None
     except (PersonsError, PolicyError) as exc:
         raise PresenceStartupError(f"identity/policy error: {exc}") from exc
-    boot_bindings = persons.honcho_workspaces
 
     def validate_persons(candidate: Persons) -> None:
-        if cfg.honcho.ai_peer in candidate.by_person:
+        if cfg.agent.name in candidate.by_person:
             raise PresenceStartupError("identity.toml uses the reserved aiPeer person id")
         _circles_from_identity(candidate)
-        if candidate.honcho_workspaces != boot_bindings:
-            raise RestartRequiredError("identity.workspaces Honcho binding")
 
     validate_persons(persons)
     identity_reload = FileReload(

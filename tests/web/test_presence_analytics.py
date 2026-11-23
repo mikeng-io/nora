@@ -12,8 +12,8 @@ from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from tests.conftest import build_test_doctrine_store
 
-MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
-DAISY = PersonRef(person_id="daisy", name="Daisy", honcho_peer_id="daisy")
+MILES = PersonRef(person_id="miles", name="Miles")
+DAISY = PersonRef(person_id="daisy", name="Daisy")
 CIRCLE = Circle(circle_id="c1", person_ids=frozenset({"miles"}), people=(MILES,))
 
 

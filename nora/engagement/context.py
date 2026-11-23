@@ -216,8 +216,8 @@ class TranscriptInjection:
         self._observations = observations
         self._audit = audit
         # `<recalled>`, the pre-fetch: the SAME retrieval service the tool
-        # registry's `memory_search` holds, `None` on the Honcho surface
-        # (`[memory.index] read = false`) and in every harness that wires
+        # registry's `memory_search` holds, `None` with
+        # `[memory.index] read = false` and in every harness that wires
         # none, which renders no block.
         self._memory_search = memory_search
         # The graph's one clock (`build_dependencies`' `clock`), so a harness

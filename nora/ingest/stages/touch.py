@@ -2,15 +2,14 @@
 message: find it, and record the touch beside it.
 
 Neither is a message (`nora.domain.models.Touch`), so neither becomes a
-`messages` row, a transcript line, a Honcho feed or a turn. Each is a Record
+`messages` row, a transcript line or a turn. Each is a Record
 item attached to the message it touches (`message_reaction`,
 `message_delete`), because the cited-message cues and the tie need them.
 
 A delete of a message on record also HIDES it (`RecordStore.hide_message`,
 `messages.hidden_at`): every replay and render reads through `transcript_select`,
 which excludes a hidden row, so the message is no longer shown or fed to memory.
-That is all a delete does. Honcho keeps what it was already fed (it has no
-per-message delete), and nothing derived from the message is marked or revisited
+That is all a delete does: nothing derived from the message is marked or revisited
 (AGENTS.md «A guard needs a consequence»). A delete whose target is not on record
 is dropped, as a reaction is. A reaction hides nothing.
 

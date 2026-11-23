@@ -529,7 +529,7 @@ async def test_file_graph_keeps_opt_outs_when_no_access_backend_is_supplied(exam
 
     persons = Persons(
         by_person={PERSON: PersonRef(
-            person_id=PERSON, name="Generated Person", honcho_peer_id=PERSON)},
+            person_id=PERSON, name="Generated Person")},
         index={}, _social_off=frozenset({PERSON}),
     )
     wired = _graph_composition(persons, None, example_config)

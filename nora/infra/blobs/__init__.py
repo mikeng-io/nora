@@ -2,9 +2,9 @@
 (DEC-43 filesystem, DEC-136 RustFS).
 
 Its own package rather than a module under `infra/sql/` for the reason
-`infra/`'s docstring gives about `sql` and `honcho`: the contracts are
-different. A failed audit append drops the message; a failed blob write leaves
-the message recorded with an honest placeholder and no custody claim.
+`infra/`'s docstring gives: the contracts are different. A failed audit append
+drops the message; a failed blob write leaves the message recorded with an
+honest placeholder and no custody claim.
 
 May import: stdlib, `cryptography`, `botocore` (RustFS's error types only —
 the `boto3` client itself is built at the composition root and handed in),

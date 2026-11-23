@@ -7,7 +7,7 @@ from nora.domain.models import PersonRef
 from nora.persons import Persons
 
 BLAKE = PersonRef(
-    person_id="blake_lindqvist", name="Blake Lindqvist", honcho_peer_id="blake_lindqvist",
+    person_id="blake_lindqvist", name="Blake Lindqvist",
     aliases=("Fung", "峰哥"),
 )
 

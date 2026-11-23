@@ -22,7 +22,7 @@ def test_config_example_exists_and_parses():
     assert set(data) == {
         "agent",
         "content_checks",
-        "platforms", "llm", "honcho", "memory", "store", "media", "route", "presence",
+        "platforms", "llm", "memory", "store", "media", "route", "presence",
         "analytics", "compute", "computer", "otp",
         "search", "online", "weather", "preview", "heartbeat", "reminders",
         "speech", "social",
@@ -153,7 +153,7 @@ def _load_live_or_skip() -> dict[str, object]:
 # argued for here, which is the fail-closed direction.
 _MAY_DIFFER = {
     # Hosts, ports, accounts and paths — the deployment's own topology.
-    "llm.base_url", "honcho.base_url", "platforms.signal.base_url",
+    "llm.base_url", "platforms.signal.base_url",
     "platforms.signal.account", "store.data_dir", "obs.logging.path",
     "obs.tracing.endpoint", "obs.tracing.exporter", "obs.tracing.headers_env",
     "evals.langfuse.host", "evals.langfuse.headers_env",

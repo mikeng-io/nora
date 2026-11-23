@@ -256,10 +256,6 @@ def test_exactly_these_tools_are_cacheable():
     }
 
 
-def test_feed_honcho_is_not_a_tool(wiring):
-    assert "feed_honcho" not in wiring["tools"]
-
-
 def test_every_tool_has_a_model_facing_docstring(wiring):
     for name, tool in wiring["tools"].items():
         doc = tool.__doc__ or ""
@@ -650,8 +646,7 @@ async def test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_r
     for handle in handles:
         name = handle[1:]
         persons = Persons(
-            by_person={"jordan": PersonRef(person_id="jordan", name=name,
-                                         honcho_peer_id="jordan", first_name=name)},
+            by_person={"jordan": PersonRef(person_id="jordan", name=name, first_name=name)},
             index={("signal", JORDAN_ACI): "jordan"},
         )
         # The example as the whole line the schema shows her writing, not the

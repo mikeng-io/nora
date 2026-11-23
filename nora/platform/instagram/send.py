@@ -360,9 +360,9 @@ class InstagramSender:
         # that boundary. The row `nora.agent.guards.Deliverer` writes to A9
         # before this call holds the drafted `"@Miles Novak"` form, which is
         # deliberate: it is what Nora MEANT, in the name she and the
-        # transcript already use for this person, and it is what Honcho's
-        # memory should read back — not a bare `nka_bpumvg` handle a future
-        # rename could orphan. The precedent for
+        # transcript already use for this person, and it is what her memory
+        # should read back — not a bare `nka_bpumvg` handle a future rename
+        # could orphan. The precedent for
         # "the audited string and the wire string may differ" is `send_gif`'s
         # `record_text` (`tests/architecture/test_outbound_offsets_are_
         # computed_last.py`); this is the same shape one layer further out.

@@ -20,8 +20,9 @@ This module is the comparison, used two ways:
 
 What is excepted, by name, and why:
 
-- **memory** — `peer_card`, `peer_history`: Honcho has no chain
-  to read backwards, so a restore cannot hold what it said. Neither block
+- **memory** — `peer_card`, `peer_history`: an old recording read them from
+  a store with no chain to read backwards, so a restore cannot hold what they
+  said. Neither block
   renders on the graph path (design/cognition/context.md's migration table);
   the names stay so an old recording is excepted rather than extra.
 - **Live** — `tool_catalogue` (built from the tools admitted at the turn, not

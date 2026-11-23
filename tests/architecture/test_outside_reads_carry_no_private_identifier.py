@@ -91,7 +91,7 @@ PHONE = f"+1{202}{555}{101:04d}"
 FILE_ID = "1SyntheticEgressFile00000"
 FILE_URL = f"https://docs.google.com/document/d/{FILE_ID}/edit"
 PLACE = "Central Library"
-PERSON = PersonRef("test-person", "Juniper", "test-person")
+PERSON = PersonRef("test-person", "Juniper")
 
 # A bare name or a non-identifier handle can pass. Name screens follow the content-filter decision.
 # reverse_geocode has only float arguments. Its coordinate provenance is a separate boundary.

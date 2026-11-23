@@ -31,7 +31,7 @@ from tests.unit.test_document_links_are_minted import PUBLIC, _service
 from tests.unit.test_document_tools import _doc
 from tests.unit.test_fire_path import _fire_path, _FireAdapter
 
-MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
+MILES = PersonRef(person_id="miles", name="Miles")
 ROOM = "conv-1"
 NOW = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
 

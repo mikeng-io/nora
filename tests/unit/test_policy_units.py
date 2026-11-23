@@ -98,7 +98,7 @@ def test_a_unit_entry_without_a_workspace_is_refused(tmp_path):
         _load(tmp_path, _ROOMS + _UNITS.replace('workspace = "two"', ""))
 
 
-def test_a_workspace_name_honcho_would_refuse_is_refused_at_startup(tmp_path):
+def test_a_workspace_name_outside_the_scope_id_alphabet_is_refused_at_startup(tmp_path):
     with pytest.raises(PolicyError, match=r"\^\[a-zA-Z0-9_-\]\+\$"):
         _load(tmp_path, _ROOMS + _UNITS.replace('"two"', '"two words"'))
 

@@ -32,7 +32,7 @@ _R90_BYTES = b"\x89PNG r-89 pixels"
 _R90_SHA = hashlib.sha256(_R90_BYTES).hexdigest()
 _R90_PERSONS = Persons(
     by_person={"miles": PersonRef(
-        person_id="miles", name="Miles", honcho_peer_id="miles")},
+        person_id="miles", name="Miles")},
     index={("signal", "+85212345678"): "miles"},
 )
 

@@ -65,6 +65,6 @@ async def _circles(source: tuple[Circle, ...], viewer: str,
             if (person is None or person.lifecycle is not PersonLifecycle.ACTIVE
                     or await bindings.identity_held(pid) is not False):
                 raise ValueError("unavailable consented circle member")
-            people.append(PersonRef(pid, person.display_name or pid, pid))
+            people.append(PersonRef(pid, person.display_name or pid))
         result.append(Circle(circle.circle_id, frozenset(known), tuple(people)))
     return tuple(result)

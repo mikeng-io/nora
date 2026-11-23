@@ -23,7 +23,7 @@ NOW = datetime.fromtimestamp((T0 + 3_600_000) / 1000, tz=UTC)
 
 KEY = "character:unit:ada"
 PK = PersonKey(unit="unit", rooms=(), home="room-a", listed=("room-a",),
-               person=PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada"))
+               person=PersonRef(person_id="ada", name="Ada"))
 
 
 def _item(item_id: str, *, us: int) -> PersonSocialItem:

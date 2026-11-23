@@ -509,7 +509,7 @@ async def test_an_exact_hit_is_pinned_ahead_of_a_nearer_newer_dense_hit() -> Non
     twin = _msg("twin", "booked a table tonight", at=NOW)
     index = FakeMemoryIndex([named, twin], embed_model=M)
     q = "booked a table tonight"  # the twin's own words: cosine 1
-    rin = PersonRef("kit", "Rin", "kit")  # listed in B under id `kit`
+    rin = PersonRef("kit", "Rin")  # listed in B under id `kit`
     found = await _search(index, "did Rin say " + q,
                           embedder=FakeQueryEmbedder({"did Rin say " + q: bag_of_words(q)}),
                           people=(rin,))
@@ -519,7 +519,7 @@ async def test_an_exact_hit_is_pinned_ahead_of_a_nearer_newer_dense_hit() -> Non
 
 async def test_a_name_of_someone_this_room_does_not_list_is_not_exact() -> None:
     index = FakeMemoryIndex([_msg("1", "Rin booked a table")], embed_model=M)
-    stranger = PersonRef("rin", "Rin", "rin")  # not listed in B
+    stranger = PersonRef("rin", "Rin")  # not listed in B
     found = await _search(index, "did Rin book", people=(stranger,))
     assert all(h.pin == 0 for h in found.hits)
     assert "exact" not in index.calls
@@ -565,10 +565,10 @@ def test_a_name_is_cased_and_a_url_handle_or_id_is_not() -> None:
 def test_a_person_is_pinned_by_full_name_and_alias_never_the_bare_surname() -> None:
     """A family name pins everything about the family, and a
     romanised one (Ho, Lo, Ma) is two letters."""
-    kit = PersonRef("kit", "Kit", "kit", first_name="Kit", last_name="Ho", aliases=("阿傑",))
+    kit = PersonRef("kit", "Kit", first_name="Kit", last_name="Ho", aliases=("阿傑",))
     assert sorted(memory_search._names(kit)) == ["Kit", "Kit", "Kit Ho", "阿傑"]
     assert exact_terms_of("the Ho family dinner", memory_search._names(kit)) == []
-    called_by_surname = PersonRef("ho", "Ho", "ho", first_name="Kit", last_name="Ho")
+    called_by_surname = PersonRef("ho", "Ho", first_name="Kit", last_name="Ho")
     assert memory_search._names(called_by_surname) == ["Kit", "Kit Ho"]
 
 
@@ -845,7 +845,7 @@ async def test_a_pinned_literal_survives_the_dense_floor() -> None:
     """A real hit set is never turned into `nothing_found` by the floor when
     an exact reference holds: the pin scores 1 whatever its cosine."""
     named = _msg("named", "Rin")
-    rin = PersonRef("kit", "Rin", "kit")
+    rin = PersonRef("kit", "Rin")
     found = await _search(FakeMemoryIndex([named], embed_model=M),
                           "did Rin ever book that ramen place downtown", people=(rin,))
     assert found.status == "ok"
@@ -937,7 +937,7 @@ async def test_an_exact_hit_past_the_pins_needs_the_cosine_floor() -> None:
             for i in range(PINNED_LIMIT)]
     bare = _msg("bare", "Rin", at=NOW - 3_600_000)
     assert cosine(bag_of_words(q), bag_of_words(bare.text)) < DENSE_FLOOR
-    rin = PersonRef("kit", "Rin", "kit")
+    rin = PersonRef("kit", "Rin")
     found = await _search(FakeMemoryIndex([*near, bare], embed_model=M), q, people=(rin,))
     assert sum(1 for h in found.hits if h.pin) == PINNED_LIMIT
     assert "bare" not in {h.node.source_id for h in found.hits}

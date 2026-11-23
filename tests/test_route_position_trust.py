@@ -65,7 +65,7 @@ class _RecordingClient:
 
 def _tools(*, location_trusted: bool):
     fung = PersonRef(
-        person_id="p_fung", name="Fung", honcho_peer_id="p_fung",
+        person_id="p_fung", name="Fung",
         first_name="Fung", aliases=("Fung",),
     )
     persons = Persons(
@@ -181,7 +181,7 @@ async def test_a_bound_place_label_that_is_a_disclosed_live_address_is_still_ref
             return self.place if place_id == 5 else None
 
     fung = PersonRef(
-        person_id="p_fung", name="Fung", honcho_peer_id="p_fung",
+        person_id="p_fung", name="Fung",
         first_name="Fung", aliases=("Fung",),
     )
     persons = Persons(by_person={"p_fung": fung}, index={("signal", FUNG_PHONE): "p_fung"})

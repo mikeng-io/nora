@@ -60,7 +60,7 @@ from nora.testing import (
 )
 from nora.testing.scripted_agent import _invoke_tool
 
-MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
+MILES = PersonRef(person_id="miles", name="Miles")
 PERSONS = Persons(by_person={"miles": MILES}, index={("signal", "+852111"): "miles"})
 LIMITS = {"turns": 4, "output_tokens": 400, "total_tokens": 24000}
 

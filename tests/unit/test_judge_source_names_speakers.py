@@ -54,10 +54,10 @@ STRANGER_PHONE = "+85290001111"
 PERSONS = Persons(
     by_person={
         "miles_novak": PersonRef(
-            person_id="miles_novak", name="Miles Novak", honcho_peer_id="miles_novak",
+            person_id="miles_novak", name="Miles Novak",
         ),
         "grant": PersonRef(
-            person_id="grant", name="Grant Carver", honcho_peer_id="grant",
+            person_id="grant", name="Grant Carver",
         ),
     },
     index={("signal", MILES_PHONE): "miles_novak", ("signal", GRANT_UUID): "grant"},

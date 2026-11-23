@@ -17,15 +17,12 @@ which is why none of them describes a conversation (DEC-24): both scoped tools r
 their conversation from the closure, so asking for it adds nothing and costs one
 reply per wrong guess.
 
-feed_honcho is deliberately NOT a tool: the handler owns the single post-reply feed.
-
 `conversation_type` and `context_window` are injected but unread. They stay on the
 builder because `ToolRegistry` passes the same set to every tool it will ever
 register, not because anything here uses them. `metrics` is injected too, and is read
-by EVERY tool, because the counter cannot live anywhere else: Honcho answers
-200-with-an-empty-string for a peer it has never heard of, so "asked and nothing
-known" and "could not ask" are indistinguishable at the transport and only the call
-site knows which it got. See `_log_call` for the other half of the same argument —
+by EVERY tool, because the counter cannot live anywhere else: a transport can make
+"asked and nothing known" and "could not ask" look alike, and only the call site
+knows which it got. See `_log_call` for the other half of the same argument —
 the one an operator greps rather than alerts on.
 
 `room` and `question` are what the three room-scoped tools close over so the model

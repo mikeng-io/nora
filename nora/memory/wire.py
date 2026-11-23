@@ -164,7 +164,7 @@ def search(cfg, engine, metrics, access=None) -> SearchWiring:
 
     # `[memory.index] read` (ships off): the one retrieval service, held by the tag path's
     # pre-fetch (`<recalled>`) and by the tool registry's `memory_search` below, one
-    # instance for both; `None` keeps the Honcho surface and no pre-fetch. The same…
+    # instance for both; `None` keeps the `read = false` surface and no pre-fetch.
     memory_index_reader = SqlMemoryIndex(engine)
     memory_search = (
         MemorySearch(

@@ -41,8 +41,8 @@ pytestmark = pytest.mark.asyncio
 T0 = datetime(2026, 10, 5, 9, 0, tzinfo=UTC)
 NOW = T0 + timedelta(days=2)
 ROOMS = (CharacterRoom(key="room-a", platform="signal", label="Friends"),)
-ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
-CY = PersonRef(person_id="cy", name="Cy", honcho_peer_id="cy")
+ADA = PersonRef(person_id="ada", name="Ada")
+CY = PersonRef(person_id="cy", name="Cy")
 KEY = character_key("friends", "ada")
 CY_KEY = character_key("friends", "cy")
 KEYS = {
@@ -652,7 +652,7 @@ async def _assert_history_uses_only_the_selected_identity_source(
     from nora.infra.sql.character import SqlCharacterEvidence
     from nora.persons import Persons
 
-    refs = {pid: PersonRef(person_id=pid, name="Generated File Identity", honcho_peer_id=pid)
+    refs = {pid: PersonRef(person_id=pid, name="Generated File Identity")
             for pid in (original, survivor)}
     file = IdentityAccess.for_files(Persons(by_person=refs, index={}), None)
     reader = SqlCharacterEvidence(engine, identity_ids=file.identity_ids)

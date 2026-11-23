@@ -195,7 +195,7 @@ def _fire_turn_args(
         "registry": tool_registry,
         "canary": cfg.doctrine.canary,
         "display_name": cfg.doctrine.display_name,
-        "ai_peer": cfg.honcho.ai_peer,
+        "ai_peer": cfg.agent.name,
         "context_window": cfg.store.context_window,
         "limits": limits,
         "defer_tools": cfg.llm.defer_tools,

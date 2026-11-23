@@ -213,10 +213,8 @@ class ManagedExport:
         refused += typed_refusals + rel_refusals
         folded = sorted([*folded, *containment])
 
-        workspace_names = frozenset(policy.unit_workspaces().values()) | {"default"}
         (people, revoked_accounts, suspended_accounts, emit_refusals,
-         dropped, nonportable, workspaces) = _emit_people(
-            inv, traits, workspace_names)
+         dropped, nonportable) = _emit_people(inv, traits)
         refused += emit_refusals
         if refused:
             return ExportReport(outcome=_denied(refused),
@@ -247,7 +245,7 @@ class ManagedExport:
                 outcome=_denied(derive_refusals),
                 refusals=tuple(derive_refusals))
 
-        identity_toml = _build_identity(tuple(people), tuple(workspaces))
+        identity_toml = _build_identity(tuple(people))
         policy_toml = _build_policy(source, derived)
         loaded_pair = _validate_bundle(identity_toml, policy_toml)
         if isinstance(loaded_pair, Outcome):

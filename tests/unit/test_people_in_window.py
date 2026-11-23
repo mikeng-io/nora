@@ -31,7 +31,7 @@ from nora.domain.models import (
 T0 = datetime(2026, 9, 11, 22, 20, tzinfo=UTC)
 
 MILES = PersonRef(
-    person_id="miles", name="Miles Novak", honcho_peer_id="miles", aliases=("阿Miles",),
+    person_id="miles", name="Miles Novak", aliases=("阿Miles",),
 )
 
 

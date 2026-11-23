@@ -431,7 +431,7 @@ def _tool_wiring(route_source):
     from nora.persons import Persons
 
     tyler = PersonRef(
-        person_id="p_tyler", name="Tyler", honcho_peer_id="p_tyler",
+        person_id="p_tyler", name="Tyler",
         first_name="Tyler", aliases=("陳生", "阿豹"),
     )
     persons = Persons(by_person={"p_tyler": tyler}, index={})

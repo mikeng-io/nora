@@ -259,7 +259,7 @@ async def test_a_tag_turn_titles_the_document_for_its_tagger_and_not_for_another
     job = _job(state=ComputeJobState.DONE, finished_minutes=5, result_document_ids=(DOC,))
     docs = _Documents(creator=KEN, title="Ken's private title")
     reader = _reader(await _store(job), documents=docs)
-    people = {p: PersonRef(person_id=p, name=p.title(), honcho_peer_id=p) for p in (KEN, MEI)}
+    people = {p: PersonRef(person_id=p, name=p.title()) for p in (KEN, MEI)}
     persons = Persons(
         by_person=people,
         index={("signal", "sender-ken"): KEN, ("signal", "sender-mei"): MEI},

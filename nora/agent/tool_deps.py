@@ -617,9 +617,3 @@ class ToolDeps:
         except Exception:
             log.exception("note unit resolution failed")
             return None
-
-    def _memory_route(self) -> dict[str, str]:
-        """The key every Honcho verb here is ROUTED by (DEC-214): the unit"""
-        if self.supplied_unit:
-            return {"unit": self.supplied_unit}
-        return {"conversation_id": self.bound_conversation_id}

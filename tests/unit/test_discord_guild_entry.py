@@ -299,7 +299,7 @@ def _discord_msg(channel_id, body="hello"):
 def _persons():
     return Persons(
         by_person={"miles": PersonRef(
-            person_id="miles", name="Miles", honcho_peer_id="miles",
+            person_id="miles", name="Miles",
         )},
         index={("discord", "424242424242424242"): "miles"},
     )

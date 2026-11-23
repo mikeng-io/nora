@@ -4,34 +4,34 @@
     "file": "nora/config.py",
     "old": "if old in data:",
     "new": "if False:",
-    "target": "tests/test_config.py::test_retired_memory_config_names_are_refused_with_the_new_home"
+    "target": "tests/test_config.py::test_retired_memory_config_names_are_refused_naming_the_new_home_or_the_removal"
   },
   {
     "name": "retired section keys name the replacement key",
     "file": "nora/config.py",
     "old": "if key in values:",
     "new": "if False:",
-    "target": "tests/test_config.py::test_retired_memory_config_names_are_refused_with_the_new_home"
+    "target": "tests/test_config.py::test_retired_memory_config_names_are_refused_naming_the_new_home_or_the_removal"
   },
   {
-    "name": "retired Honcho keys name the Honcho section",
+    "name": "removed memory keys are refused as removed",
     "file": "nora/config.py",
     "old": "if key in memory:",
     "new": "if False:",
-    "target": "tests/test_config.py::test_retired_memory_config_names_are_refused_with_the_new_home"
+    "target": "tests/test_config.py::test_retired_memory_config_names_are_refused_naming_the_new_home_or_the_removal"
   },
   {
     "name": "retired keys in moved sections are refused",
     "file": "nora/config.py",
     "old": "if old in values:",
     "new": "if False:",
-    "target": "tests/test_config.py::test_retired_memory_config_names_are_refused_with_the_new_home"
+    "target": "tests/test_config.py::test_retired_memory_config_names_are_refused_naming_the_new_home_or_the_removal"
   },
   {
     "name": "retired culture wake keys name the Profile home",
     "file": "nora/config.py",
     "old": "if old in culture:",
     "new": "if False:",
-    "target": "tests/test_config.py::test_retired_memory_config_names_are_refused_with_the_new_home"
+    "target": "tests/test_config.py::test_retired_memory_config_names_are_refused_naming_the_new_home_or_the_removal"
   }
 ]

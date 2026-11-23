@@ -98,7 +98,7 @@ class _FixedRevisions:
 
 
 def _registration(*, multiple: bool = False) -> SqlItemRegistration:
-    owner = PersonRef(_PERSON, "Generated", _PERSON)
+    owner = PersonRef(_PERSON, "Generated")
     people = Persons(
         {_PERSON: owner}, {("signal", _AUTHOR): _PERSON},
         life360=(Life360Membership(_PERSON, "test-member", _CIRCLE),),

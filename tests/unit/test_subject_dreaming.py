@@ -14,9 +14,9 @@ from nora.subject.dreaming import with_roster_senders
 
 ROSTER = Persons(
     by_person={
-        "p_ada": PersonRef(person_id="p_ada", name="Ada Roster", honcho_peer_id="p_ada"),
-        "p_ben": PersonRef(person_id="p_ben", name="Ben Roster", honcho_peer_id="p_ben"),
-        "p_cat": PersonRef(person_id="p_cat", name="Cat Roster", honcho_peer_id="p_cat"),
+        "p_ada": PersonRef(person_id="p_ada", name="Ada Roster"),
+        "p_ben": PersonRef(person_id="p_ben", name="Ben Roster"),
+        "p_cat": PersonRef(person_id="p_cat", name="Cat Roster"),
     },
     index={
         ("signal", "+852111"): "p_ada", ("signal", "+852222"): "p_ben",

@@ -64,9 +64,6 @@ max_tokens = 2000
 turns = 20
 total_tokens = 1024000
 output_tokens = 12000
-[honcho]
-base_url = "http://honcho.generated:8000"
-workspace_id = "nora"
 [engagement]
 policy = "trigger_text"
 [engagement.trigger]

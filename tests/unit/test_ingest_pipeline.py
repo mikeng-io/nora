@@ -98,7 +98,7 @@ async def test_a_mapped_trigger_message_is_audited_and_engaged():
     TriggerTextPolicy."""
     msg = _msg(sender_id="+852111", body="nora.000 what's up")
     persons = Persons(
-        by_person={"miles": PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")},
+        by_person={"miles": PersonRef(person_id="miles", name="Miles")},
         index={("signal", "+852111"): "miles"})
     store = FakeRecordStore()
     pipeline = _pipeline(
@@ -477,7 +477,7 @@ def _policy_of(*, room: str = "g1", persons: str = '"*"'):
 
 def _known_persons() -> Persons:
     return Persons(
-        by_person={"miles": PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")},
+        by_person={"miles": PersonRef(person_id="miles", name="Miles")},
         index={("signal", "+852111"): "miles"})
 
 

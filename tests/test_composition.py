@@ -293,12 +293,11 @@ async def test_the_root_hands_the_loader_the_tool_names_its_gate_needs(cfg, tmp_
 
 
 async def test_the_nora_aipeer_id_is_reserved_and_no_human_may_hold_it(cfg):
-    """Honcho v2 corpus-safety: the aiPeer id is Nora's self-model peer. A human mapped to it
-    would feed under it and merge IRREVERSIBLY into her card (Honcho keeps conclusions,
-    not text). Setting `honcho.ai_peer` to an existing person id ("miles" in this fixture)
-    must refuse to start, not silently corrupt the corpus."""
+    """The aiPeer id is `[agent].name`, Nora's own person id. A human mapped to it
+    would be read as her. Setting `agent.name` to an existing person id ("miles" in
+    this fixture) must refuse to start, not silently merge the two."""
     with pytest.raises(StartupError, match="reserved for Nora"):
-        await build_dependencies(override_config(cfg, {"honcho.ai_peer": "miles"}))
+        await build_dependencies(override_config(cfg, {"agent.name": "miles"}))
 
 
 async def test_no_enabled_platform_refuses_to_start(cfg):
@@ -662,7 +661,7 @@ async def test_remind_writes_a_real_row_through_the_registry_the_root_builds(cfg
         # silently fell back to its defaults would ignore every operator value.
         assert registry._caps == ReminderCaps(**cfg.reminders.model_dump())
 
-        miles = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
+        miles = PersonRef(person_id="miles", name="Miles")
         specs = registry.specs(
             store=deps.audit, conversation_id="g1", conversation_type="group",
             persons=deps.persons, deliverer=None,

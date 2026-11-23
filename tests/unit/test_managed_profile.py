@@ -533,7 +533,7 @@ async def test_the_file_backend_refuses_authoritatively():
 
     persons = Persons(
         by_person={PERSON: PersonRef(
-            person_id=PERSON, name=OLDER_NAME, honcho_peer_id="generated-peer")},
+            person_id=PERSON, name=OLDER_NAME)},
         index={})
     services = ManagedServices(
         FileBindingStore(persons), FakeAuthorityBackend(),

@@ -27,7 +27,7 @@ from .domain.identity import (
     metadata_keys,
 )
 
-# Honcho requires ^[a-zA-Z0-9_-]+$ for peer ids, and honcho_peer_id == person_id.
+# A person_id is used verbatim as a key in every store, so one alphabet.
 _PERSON_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 # The platform sub-table names `_PersonEntry` accepts, in the order the reverse
@@ -174,7 +174,7 @@ class _PersonEntry(BaseModel):
                     "(double brackets). A person may hold several accounts on "
                     "one platform (a dual-SIM personal/work pair, a second "
                     "Discord), and they all resolve to the same person_id and "
-                    "share one Honcho peer card (A2). List that account's id "
+                    "share one person (A2). List that account's id "
                     "forms inside the block; see "
                     "design/10-preview-identity.toml."
                 )
@@ -214,41 +214,10 @@ class _PersonEntry(BaseModel):
         return self
 
 
-class _WorkspaceBinding(BaseModel):
-    """One `[workspaces.<nora workspace>]` table: the HONCHO workspace that
-    Nora workspace is bound to (DEC-214).
-
-    Here and not in `policy.toml` because it is an external id, not a trust
-    answer: `policy.toml` says which workspace a unit belongs to, this file
-    says where that workspace's person models live. A Nora workspace with no
-    table here uses its own name as its Honcho workspace id
-    (`nora.app.memory_routing`)."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    honcho_workspace: str
-
-    @field_validator("honcho_workspace")
-    @classmethod
-    def _check_honcho_workspace(cls, value: str) -> str:
-        if not _PERSON_ID_RE.match(value):
-            raise ValueError(
-                f"honcho_workspace {value!r} must match ^[a-zA-Z0-9_-]+$ — "
-                "Honcho refuses any other workspace id with a 422, at feed "
-                "time and off the reply path, so every write would be lost "
-                "without a sound"
-            )
-        return value
-
-
 class _PersonsFile(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     persons: dict[str, _PersonEntry] = Field(default_factory=dict)
-    # Nora workspace -> its Honcho binding (DEC-214). Empty is the shipped
-    # state and the back-compat one: every workspace is then bound by name,
-    # and the implicit one to `honcho.workspace_id`.
-    workspaces: dict[str, _WorkspaceBinding] = Field(default_factory=dict)
 
     @field_validator("persons")
     @classmethod
@@ -259,6 +228,6 @@ class _PersonsFile(BaseModel):
             if not _PERSON_ID_RE.match(person_id):
                 raise ValueError(
                     f"person_id {person_id!r} must match ^[a-zA-Z0-9_-]+$ "
-                    "(it is used verbatim as the Honcho peer id)"
+                    "(it is used verbatim as a key in every store)"
                 )
         return value

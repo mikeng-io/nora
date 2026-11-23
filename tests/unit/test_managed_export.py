@@ -573,6 +573,21 @@ username = "generated-handle"
     assert block["username"] == "generated-handle"
 
 
+async def test_export_drops_an_archived_workspaces_table_and_still_loads(graph):
+    """The host's archived `[workspaces.*]` table: dropped, and the file still loads."""
+    store, *_ = _seed(graph)
+    archive = '[workspaces.default]\nhoncho_workspace = "generated-home"\n'
+    probe = _Probe(store, graph[2], archive=("op-archive", archive, 'default = "deny"\n'))
+    *_, policy_path, _export = graph
+    export = _export_for(store, graph[1], graph[2], policy_path, probe=probe)
+    report = await export.export(policy_path)
+    assert report.outcome.status is OutcomeStatus.COMPLETE, report.refusals
+    assert "workspaces" not in tomllib.loads(report.bundle.identity_toml)
+    assert "workspaces:default" in json.loads(report.bundle.manifest_json)["dropped"]
+    out = _write_bundle(Path(policy_path).parent, report.bundle)
+    assert "miles" in load_persons(out / "identity.toml").by_person
+
+
 async def test_export_reports_unavailable_when_kratos_is_down(graph):
     _seed(graph)
     *_, registry, policy_path, export = graph

@@ -27,7 +27,7 @@ from nora.testing import (
     FakeMediaObjectStore,
 )
 
-MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
+MILES = PersonRef(person_id="miles", name="Miles")
 
 SHA = "a" * 64
 BYTES = b"\x89PNG some pixels"

@@ -32,8 +32,8 @@ class _FakeSubject:
 async def test_know_seeds_roster_senders_for_production_name_projection() -> None:
     subject = _FakeSubject()
     subject.deps.persons = Persons(
-        by_person={"ada": PersonRef("ada", "Ada Roster", "ada"),
-                   "ben": PersonRef("ben", "Ben Roster", "ben")},
+        by_person={"ada": PersonRef("ada", "Ada Roster"),
+                   "ben": PersonRef("ben", "Ben Roster")},
         index={("signal", "+85222222222"): "ada", ("signal", "+852111"): "ben"},
         _subject_aliases={"ada_before": "ada"},
     )

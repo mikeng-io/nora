@@ -62,8 +62,7 @@ def identity(cfg: Any, channel_directory: Any, metrics: Any)-> IdentityWiring:
         reload_files = ReloadFiles(
             policy_path=cfg.policy_file,
             identity_path=cfg.identity_file,
-            ai_peer=cfg.honcho.ai_peer,
-            default_workspace=cfg.honcho.workspace_id,
+            ai_peer=cfg.agent.name,
             metrics=metrics,
             policy_channels=channel_directory,
         )
@@ -293,17 +292,6 @@ def instructions(cfg: Any, metrics: Any)-> InstructionsWiring:
     except InstructionError as exc:
         raise StartupError(f"Dreamer instruction error: {exc}") from exc
 
-    # Two machine ids for one agent: `[agent].name` (trace lineage) and `[honcho].ai_peer`
-    # (the Honcho observer peer). A clone ("delia") must set BOTH; if they diverge, the
-    # agent traces under one name but builds its memory under another — a silent split.…
-    if cfg.agent.name != cfg.honcho.ai_peer:
-        log.warning(
-            "agent.name (%r) != honcho.ai_peer (%r): traces and Honcho memory "
-            "will use different agent identities — set both to the same value "
-            "unless this split is intended",
-            cfg.agent.name,
-            cfg.honcho.ai_peer,
-        )
     return InstructionsWiring(dreamer_instructions=dreamer_instructions)
 
 

@@ -464,7 +464,7 @@ async def test_account_key_mismatch_with_enabled_config_denies(
             "trigger": type("T", (), {"enabled": False, "text": ""})(),
             "reactions": type("R", (), {"enabled": True})(),
         })()
-        honcho = type("H", (), {"ai_peer": "nora", "workspace_id": "ws"})()
+        agent = type("A", (), {"name": "nora"})()
 
     pub = _publisher(
         cfg_dir, account_key=ACCOUNT_KEY,

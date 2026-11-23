@@ -30,7 +30,7 @@ from nora.testing import InMemoryCharacterEvidence, InMemoryCultureStore
 
 T0 = 1_790_000_000_000
 NOW = datetime.fromtimestamp((T0 + 86_400_000) / 1000, tz=UTC)
-ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada", aliases=("阿Ada",))
+ADA = PersonRef(person_id="ada", name="Ada", aliases=("阿Ada",))
 ROOMS = (
     CharacterRoom(key="room-a", platform="signal", label="Friends"),
     CharacterRoom(key="room-b", platform="discord", label="Zone 42"),

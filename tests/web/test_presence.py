@@ -9,8 +9,8 @@ from nora.web.presence import (
     build_presence_places_payload,
 )
 
-MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
-ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
+MILES = PersonRef(person_id="miles", name="Miles")
+ADA = PersonRef(person_id="ada", name="Ada")
 CIRCLE = Circle(circle_id="c1", person_ids=frozenset({"miles", "ada"}), people=(MILES, ADA))
 
 

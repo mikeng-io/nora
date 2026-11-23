@@ -78,7 +78,6 @@ def _ref(person: ManagedPerson) -> PersonRef:
     return PersonRef(
         person_id=person.person_id,
         name=person.display_name or person.person_id,
-        honcho_peer_id=person.person_id,
     )
 
 
@@ -345,7 +344,6 @@ class IdentityAccess:
         return PersonRef(
             person_id=person.person_id,
             name=scoped,
-            honcho_peer_id=person.person_id,
         )
 
     async def _scoped_name(self, person_id: str, scope: Scope) -> str | None:

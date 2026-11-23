@@ -13,7 +13,7 @@ else. A person's name must never resolve to a place through this seam —
 「Tyler 屋企」 is not a stop, and a Life360/Places half behind this same seam
 would inherit exactly this discipline: a person's name or live position is
 hard-blocked in any argument that leaves the host, and the in-repo half of that
-guarantee is that nothing in this module consults `identity.toml`, Honcho, the roster, or any
+guarantee is that nothing in this module consults `identity.toml`, memory, the roster, or any
 store that knows a human. It reads two public files about bus stops, and that
 is the whole of what it may ever read.
 

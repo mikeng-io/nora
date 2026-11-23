@@ -60,7 +60,7 @@ class _FakeBridge:
         return self.volume_outcome
 
 
-_MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
+_MILES = PersonRef(person_id="miles", name="Miles")
 
 
 def _specs(*, platform: str, persons=None, music=None, tagger=None) -> dict:
