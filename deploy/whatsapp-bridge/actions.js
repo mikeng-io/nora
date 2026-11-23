@@ -236,26 +236,31 @@ async function runActionInner({ store, ctx, actionId, owner, op, request, metric
   const settled = (state, fields) => ({ action_id: actionId, state, message_id: messageId,
     platform_ref: null, platform_refs: null, platform_ms: null, error: null,
     started_at: startedAt, completed_at: Date.now(), ...fields });
+  let state;
+  let fields;
   try {
     const out = await executors[op](request, ctx);
-    await store.finish(actionId, 'confirmed', {
-      platformRef: out.platform_ref, platformMs: out.platform_ms,
-      platformRefs: out.platform_refs });
-    metrics?.inc('bridge_action_total', { op, state: 'confirmed' });
-    return settled('confirmed', { platform_ref: out.platform_ref,
-      platform_refs: out.platform_refs ?? null, platform_ms: out.platform_ms });
+    state = 'confirmed';
+    fields = { platform_ref: out.platform_ref, platform_refs: out.platform_refs ?? null,
+      platform_ms: out.platform_ms };
   } catch (err) {
-    if (err instanceof ActionRejected) {
-      const error = { kind: err.kind, message: sanitizeError(err).message };
-      await store.finish(actionId, 'rejected', { error });
-      metrics?.inc('bridge_action_total', { op, state: 'rejected' });
-      return settled('rejected', { error });
-    }
-    const error = sanitizeError(err);
-    await store.finish(actionId, 'uncertain', { error });
-    metrics?.inc('bridge_action_total', { op, state: 'uncertain' });
-    return settled('uncertain', { error });
+    state = err instanceof ActionRejected ? 'rejected' : 'uncertain';
+    fields = { error: err instanceof ActionRejected
+      ? { kind: err.kind, message: sanitizeError(err).message } : sanitizeError(err) };
   }
+  // The row is `started`: a terminal write that does not land leaves the
+  // outcome unrecorded, which is `uncertain` — never `unavailable`, whose
+  // meaning is "not attempted".
+  for (const [s, f] of [[state, fields], ['uncertain', { error: sanitizeError(null, 'ledger') }]]) {
+    try {
+      await store.finish(actionId, s, { platformRef: f.platform_ref ?? null,
+        platformMs: f.platform_ms ?? null, platformRefs: f.platform_refs ?? null, error: f.error ?? null });
+      metrics?.inc('bridge_action_total', { op, state: s });
+      return settled(s, f);
+    } catch { /* the next attempt records uncertainty */ }
+  }
+  metrics?.inc('bridge_action_total', { op, state: 'uncertain' });
+  return settled('uncertain', { error: sanitizeError(null, 'ledger') });
 }
 
 const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -287,6 +292,17 @@ function operationFault(body) {
  */
 function routeTable(deps) {
   const healthy = () => Boolean(deps.health?.()?.ok);
+
+  /** The bridge's status, `ok` only when it can also deliver; `/ready` agrees. */
+  function readiness() {
+    const status = { connected_at_ms: null, ...deps.health?.() };
+    const missing = !deps.store ? 'action_store_missing'
+      : !deps.attachments ? 'custody_missing'
+        : !deps.self?.() ? 'no_account_identity'
+          : deps.ready && !deps.ready() ? 'not_ready' : null;
+    if (missing && status.ok) Object.assign(status, { ok: false, detail: missing });
+    return { ...status, ok: Boolean(status.ok) };
+  }
 
   async function submitOperation(req, res, trace) {
     const body = await jsonBody(req);
@@ -381,9 +397,9 @@ function routeTable(deps) {
   }
 
   async function readStatus(req, res, trace) {
-    const status = { connected_at_ms: null, ...deps.health() };
+    const status = readiness();
     return sendRead(res, readEnvelope(trace, { outcome: 'ok', payload: status,
-      healthy: Boolean(status.ok) }));
+      healthy: status.ok }));
   }
 
   return [
@@ -396,7 +412,7 @@ function routeTable(deps) {
     ['GET', '/v1/operations/status', 'read', readStatus],
     ['GET', '/health', 'probe', (req, res) => sendJson(res, 200, deps.liveness?.() ?? { ok: true })],
     ['GET', '/ready', 'probe', (req, res) => {
-      const ready = Boolean(deps.ready?.());
+      const ready = readiness().ok;
       return sendJson(res, ready ? 200 : 503, { ready });
     }],
   ].map(([method, path, family, handler]) => ({
