@@ -37,6 +37,7 @@ from nora.domain.service_api import (
 from nora.domain.service_api import (
     Outcome as ContractOutcome,
 )
+from nora.infra.service_api_schema import validator
 from nora.infra.trace_propagation import propagation_headers
 from nora.memory import ActAuthority, EffectRecorder, Outcome
 
@@ -44,6 +45,11 @@ log = logging.getLogger("nora.infra.voice")
 
 OPERATIONS_PATH = "/v1/voice/operations"
 QUERIES_PATH = "/v1/voice/queries"
+
+
+#: Each path's answer schema, as the contract generates it.
+_ANSWERS = {OPERATIONS_PATH: validator("VoiceOperationEnvelope"),
+            QUERIES_PATH: validator("VoiceStatusReadEnvelope")}
 
 
 @dataclass(frozen=True)
@@ -322,8 +328,11 @@ class VoiceControllerClient:
                                           else "http_400")
         if parsed.outcome is None:
             raise VoiceControllerUnavailable(f"{path} answered HTTP {status}")
-        return _Answer(parsed.outcome,
-                       payload.get("payload") if isinstance(payload, dict) else None)
+        if not _ANSWERS[path].is_valid(payload) or (
+                family == "operation"
+                and (payload["when"]["state"] == "settled") == (parsed.outcome == "pending")):
+            raise VoiceControllerUnavailable(f"{path} answered {parsed.outcome} off the contract")
+        return _Answer(parsed.outcome, payload["payload"])
 
 
 class HttpVoiceSession:

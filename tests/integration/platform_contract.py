@@ -18,8 +18,8 @@ import sqlalchemy as sa
 from aiohttp import web
 
 from nora.domain.service_api import OperationOutcome, status_for
-from nora.infra.sql.schema import MESSAGES
 from nora.infra.service_api_schema import BLOB_PUT, validator
+from nora.infra.sql.schema import MESSAGES
 
 DOCUMENT = Path(__file__).resolve().parents[2] / "docs/service-api/openapi.json"
 OPERATIONS = "/v1/platform/operations"

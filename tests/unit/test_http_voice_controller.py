@@ -146,6 +146,16 @@ async def test_a_success_body_without_a_state_snapshot_is_unavailable(aiohttp_cl
         await vc.join(GUILD, "cortez-1", operation_id="req-1")
 
 
+async def test_a_minimal_complete_off_the_contract_is_unavailable(aiohttp_client):
+    """A 200 carrying only `outcome: complete` and a state payload is not an
+    envelope: the join is `unavailable`, never a connection."""
+    vc = await _client(aiohttp_client, _app(answer=(200, {
+        "outcome": "complete", "payload": {"state": _state()}})))
+
+    with pytest.raises(VoiceControllerUnavailable):
+        await vc.join(GUILD, "cortez-1", operation_id="req-1")
+
+
 async def test_play_records_the_playback_id_from_the_state_snapshot(aiohttp_client):
     vc = await _client(aiohttp_client, _app())
     session = HttpVoiceSession(vc, guild_id=GUILD, generation="gen-1")

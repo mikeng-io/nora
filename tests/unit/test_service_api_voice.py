@@ -20,6 +20,7 @@ from nora.domain.service_api_voice import (
     VoiceOperationRequest,
     VoiceQueryKind,
 )
+from nora.infra.service_api_schema import validator
 from scripts.service_api_contract import DOCUMENT
 
 THE_WIRE = {
@@ -98,3 +99,35 @@ def test_the_voice_and_intake_kinds_are_closed():
         "voice query": VOICE_QUERY_KINDS,
         "intake operation": INTAKE_OPERATION_KINDS,
     }
+
+
+def _settled(payload: dict) -> dict:
+    return {"outcome": "complete", "payload": payload,
+            "when": {"state": "settled", "started_at_ms": 1, "settled_at_ms": 2},
+            "from": {"target": "g1", "platform_ref": None},
+            "scope": {"level": "installation"}, "trace": ""}
+
+
+def test_a_kind_admits_only_its_own_effect():
+    """A `report` carrying a join's fields is the app's 400, so the schema refuses
+    it; the report's open effect still admits the event's own fields."""
+    request = validator("VoiceOperationRequest")
+    join = {"guild_id": "g1", "channel_id": "c1"}
+    report = {"event_id": "e1", "event_seq": 1, "type": "track-finished",
+              "guild_id": "g1", "playback_id": "p1"}
+
+    assert not request.is_valid({"operation_id": "o1", "kind": "report", "effect": join})
+    assert not request.is_valid({"operation_id": "o1", "kind": "join",
+                                 "effect": {**join, "generation": "x"}})
+    assert request.is_valid({"operation_id": "o1", "kind": "report", "effect": report})
+    assert request.is_valid({"operation_id": "o1", "kind": "join", "effect": join})
+
+
+def test_a_report_answer_and_a_connection_answer_never_pass_for_each_other():
+    answer = validator("VoiceOperationEnvelope")
+
+    assert not answer.is_valid(_settled({"status": "garbled"}))
+    assert not answer.is_valid(_settled({"status": "ok", "state": None}))
+    assert answer.is_valid(_settled({"status": "duplicate"}))
+    assert answer.is_valid(_settled({"state": {"voice": "connected"}}))
+    assert answer.is_valid(_settled({"error": {"kind": "denied", "message": ""}}))

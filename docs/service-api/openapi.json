@@ -223,6 +223,7 @@
         "type": "object"
       },
       "ConnectionEffect": {
+        "additionalProperties": false,
         "description": "`leave`, `stop`, `pause` and `resume`: the generation the caller observed.",
         "properties": {
           "generation": {
@@ -372,6 +373,27 @@
         "type": "object"
       },
       "IntakeOperationRequest": {
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "record"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/UtteranceEffect"
+                }
+              }
+            }
+          }
+        ],
         "description": "An intake event recorded by operation.",
         "properties": {
           "effect": {
@@ -401,6 +423,7 @@
         }
       },
       "JoinEffect": {
+        "additionalProperties": false,
         "description": "Connect the guild's voice connection to a channel.",
         "properties": {
           "channel_id": {
@@ -936,6 +959,7 @@
         "type": "string"
       },
       "PlayEffect": {
+        "additionalProperties": false,
         "description": "Play a stream on the connection.",
         "properties": {
           "duration_seconds": {
@@ -1177,6 +1201,7 @@
         "type": "string"
       },
       "SetVolumeEffect": {
+        "additionalProperties": false,
         "description": "Set the player's volume, in percent of unity.",
         "properties": {
           "generation": {
@@ -1201,6 +1226,7 @@
         "type": "object"
       },
       "SpeakEffect": {
+        "additionalProperties": false,
         "description": "Speak bounded audio on the connection; its record keeps the hash, never the bytes.",
         "properties": {
           "audio_b64": {
@@ -1278,6 +1304,7 @@
         "type": "object"
       },
       "UtteranceEffect": {
+        "additionalProperties": false,
         "description": "A woken utterance; the wake gate mints `event_id`.",
         "properties": {
           "event_id": {
@@ -1393,6 +1420,7 @@
         "type": "string"
       },
       "VoiceOperationPayload": {
+        "additionalProperties": false,
         "description": "The controller's connection snapshot, and on a refusal its reason.",
         "properties": {
           "error": {
@@ -1472,6 +1500,179 @@
         "type": "object"
       },
       "VoiceOperationRequest": {
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "join"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/JoinEffect"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "leave"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/ConnectionEffect"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "play"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/PlayEffect"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "stop"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/ConnectionEffect"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "pause"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/ConnectionEffect"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "resume"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/ConnectionEffect"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "set_volume"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/SetVolumeEffect"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "speak"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/SpeakEffect"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "report"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/ReportEffect"
+                }
+              }
+            }
+          }
+        ],
         "description": "A connection operation or a report; `effect` is the shape `VOICE_EFFECTS` names.",
         "properties": {
           "effect": {
@@ -1578,6 +1779,7 @@
         "type": "string"
       },
       "VoiceReportPayload": {
+        "additionalProperties": false,
         "description": "What the hub did with a reported event.",
         "properties": {
           "status": {

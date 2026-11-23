@@ -84,21 +84,28 @@ def component_schemas() -> dict[str, Any]:
 
 
 def _bind_effects(schemas: dict[str, Any]) -> None:
-    """Each request names the effect its kind carries; an open effect admits more fields."""
+    """Bind each request's `kind` to its one effect; only `OPEN_EFFECTS` stay open."""
     for request, table in voice.EFFECTS.items():
-        schemas[request.__name__]["x-effects"] = {kind: _ref(tp) for kind, tp in table.items()}
-    for effect in voice.OPEN_EFFECTS:
-        schemas[effect.__name__]["additionalProperties"] = True
+        schema = schemas[request.__name__]
+        schema["x-effects"] = {kind: _ref(tp) for kind, tp in table.items()}
+        schema["allOf"] = [
+            {"if": {"required": ["kind"], "properties": {"kind": {"const": kind}}},
+             "then": {"properties": {"effect": _ref(tp)}}}
+            for kind, tp in table.items()]
+        for effect in set(table.values()):
+            schemas[effect.__name__]["additionalProperties"] = effect in voice.OPEN_EFFECTS
 
 
 def _ref(tp: type) -> dict[str, str]:
     return {"$ref": REF.format(model=tp.__name__)}
 
 
-#: An envelope's parts and the delivery payload carry exactly their fields; a
+#: An envelope's parts and the delivery and voice payloads carry exactly their
+#: fields, so a report's answer and a connection's never pass for each other; a
 #: payload a platform may extend (the account, the status) stays open.
 _CLOSED_PARTS: Final = ("ReadWhen", "ReadFrom", "OperationWhen", "OperationFrom", "Scope",
-                        "PlatformOperationPayload")
+                        "PlatformOperationPayload", "VoiceOperationPayload",
+                        "VoiceReportPayload")
 #: The blob `PUT` answer: an operation envelope whose `complete` names a key and
 #: whose `rejected` says why.
 BLOB_PUT: Final = "BlobPutEnvelope"

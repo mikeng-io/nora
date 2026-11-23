@@ -66,6 +66,7 @@ from nora.domain.ports import (
     speakable,
 )
 from nora.domain.service_api import OperationConflictError, status_for
+from nora.infra.service_api_schema import validator
 from nora.memory import ActAuthority, EffectRecorder, Outcome
 from nora.platform.bridge.client import (
     ACCOUNT_PATH,
@@ -152,14 +153,15 @@ class BridgeControlClient:
             else None
 
     async def _voice_status(self, guild_id: str) -> BridgeAnswer | None:
-        """The bridge's `status` query as stated; `None` for a failed or self-inconsistent read."""
+        """The bridge's `status` query as stated; `None` when failed or off the contract."""
         try:
             answer = await bridge_call(
                 await self._client(), "POST", f"{self._endpoint.base_url}{VOICE_QUERIES}",
                 "read", json={"kind": "status", "params": {"guild_id": guild_id}})
         except (BridgeUnavailableError, OperationConflictError):
             return None
-        return answer if _stated(answer) and answer.outcome != "unavailable" else None
+        valid = _VOICE_STATUS.is_valid(answer.body)
+        return answer if valid and _stated(answer) and answer.outcome != "unavailable" else None
 
     async def voice_state(self, guild_id: str) -> dict[str, Any] | None:
         """The bridge's `status` query → `{connected, session, generation,
@@ -177,9 +179,9 @@ class BridgeControlClient:
         `True` for `complete`; `False` (the reply falls back to text) only for a
         coherent status read that shows no connection, a stated `rejected`,
         `unsupported`, `denied` or `unavailable`, or a 400; `None` when the
-        audio may have played or the read could not tell: a failed or
-        self-inconsistent read or answer, `uncertain`, `incomplete`,
-        `pending`, a transport failure, a 409.
+        audio may have played or the read could not tell: a failed read, a read
+        or answer that is self-inconsistent or off the contract, `uncertain`,
+        `incomplete`, `pending`, a transport failure, a 409.
         """
         if self._effects is None:
             return await self._speech(guild_id, audio, media_type)
@@ -213,12 +215,20 @@ class BridgeControlClient:
             return None
         except BridgeUnavailableError as exc:
             return False if exc.status == 400 else None
+        if not _VOICE_OPERATION.is_valid(answer.body) \
+                or (answer.body["when"]["state"] == "settled") == (answer.outcome == "pending"):
+            return None  # an answer off the contract says nothing about the audio
         if answer.outcome == "complete":
             return True
         if answer.outcome in ("rejected", "unsupported", "denied", "unavailable") \
                 and _stated(answer):
             return False
         return None
+
+
+#: The voice routes' answer schemas, as the contract generates them.
+_VOICE_STATUS = validator("VoiceStatusReadEnvelope")
+_VOICE_OPERATION = validator("VoiceOperationEnvelope")
 
 
 def _stated(answer: BridgeAnswer) -> bool:
