@@ -1235,6 +1235,18 @@ async def test_operation_outcomes_follow_the_contract(bridge_app, monkeypatch):
         blob_limit=lambda n: monkeypatch.setattr(wrapper, "MAX_ATTACHMENT_BYTES", n)))
 
 
+async def test_a_settled_operation_replays_after_its_audit_row_settled(bridge_app, monkeypatch):
+    bridge, client, daemon = bridge_app
+    await pc.replay_after_its_audit_row_settled(pc.Bridge(
+        http=client, auth=AUTH, store=bridge.store, engine=bridge.store._engine,
+        platform="signal", account_key=ACCT, conversation_id=ROOM,
+        no_ledger=lambda: pc.swapped(bridge, "_actions"),
+        logged_out=lambda: pc.swapped(bridge, "_rpc", _daemon_down),
+        query_ok=("roster", {"conversation_id": ROOM}), query_unavailable=("channels", {}),
+        blob_limit=lambda n: monkeypatch.setattr(wrapper, "MAX_ATTACHMENT_BYTES", n)))
+    assert daemon.sent == []
+
+
 #: What `BridgeAdapter.send` builds for "hello" to group conv-1, and the request
 #: hash the bridges stored for it before the switch; Go and JS pin the same pair.
 PINNED_EFFECT = {"target": {"kind": "group", "id": "conv-1", "thread": ""}, "text": "hello",

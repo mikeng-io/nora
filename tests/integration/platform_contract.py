@@ -196,3 +196,25 @@ async def _drive_blobs(bridge: Bridge) -> None:
     assert got.status == 200 and await got.read() == b"one"
     absent = await envelope(await http.get(f"{BLOBS}/k2", headers=auth))
     assert absent["outcome"] == "nothing_found"
+
+
+async def replay_after_its_audit_row_settled(bridge: Bridge) -> dict[str, Any]:
+    """A `confirmed` operation replayed after the app marked its audit row `sent`:
+    the owner no longer passes the pending-row check, and the answer is still the
+    stored record, never a denial."""
+    rid = await pending_row(bridge.engine, platform=bridge.platform,
+                            conversation_id=bridge.conversation_id)
+    owner = {"kind": "live_invocation", "id": str(rid)}
+    effect = {"target": {"kind": "group", "id": bridge.conversation_id}, "text": "settled"}
+    await _seed(bridge, "op-settled", owner, effect, "confirmed")
+    async with bridge.engine.begin() as conn:
+        await conn.execute(sa.update(MESSAGES).where(MESSAGES.c.id == rid)
+                           .values(delivery_status="sent"))
+    body = await envelope(await bridge.http.post(OPERATIONS, headers=bridge.auth, json={
+        "operation_id": "op-settled", "owner": owner, "kind": "send", "effect": effect}))
+    assert body["outcome"] == "complete" and body["payload"]["message_id"] == rid
+    conflict = await bridge.http.post(OPERATIONS, headers=bridge.auth, json={
+        "operation_id": "op-settled", "owner": owner, "kind": "send",
+        "effect": {**effect, "text": "another effect"}})
+    assert conflict.status == 409
+    return body

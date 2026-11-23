@@ -76,6 +76,7 @@ from tests.integration.platform_contract import (
     assert_serves_the_contract,
     drive_outcomes,
     envelope,
+    replay_after_its_audit_row_settled,
     swapped,
 )
 
@@ -1046,6 +1047,20 @@ async def test_operation_outcomes_follow_the_contract(bridge, monkeypatch):
         query_unavailable=("channels", {"guild_id": "1"}),
         blob_limit=lambda n: monkeypatch.setattr(
             "nora.platform.discord.bridge_app.MAX_ATTACHMENT_BYTES", n)))
+
+
+async def test_a_settled_operation_replays_after_its_audit_row_settled(bridge, monkeypatch):
+    b = bridge["bridge"]
+    await b.start()
+    await replay_after_its_audit_row_settled(Bridge(
+        http=bridge["http"], auth=AUTH, store=b._actions._store, engine=bridge["engine"],
+        platform="discord", account_key=ACCOUNT, conversation_id=CONV,
+        no_ledger=lambda: swapped(b, "_actions"), logged_out=lambda: swapped(b, "self_id"),
+        query_ok=("channels", {"guild_id": GUILD}),
+        query_unavailable=("channels", {"guild_id": "1"}),
+        blob_limit=lambda n: monkeypatch.setattr(
+            "nora.platform.discord.bridge_app.MAX_ATTACHMENT_BYTES", n)))
+    assert bridge["rest_state"]["posts"] == []
 
 
 class _Emoji:
