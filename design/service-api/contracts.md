@@ -28,6 +28,19 @@ whatever the network allows.
   `documents` and `management`, so the portal and Nora read the same rows
   with the same scope rules.
 
+## Where it runs
+
+The service API is a convention and a set of contracts, not a service. Each
+contract is served by the process that implements it, on that process's own
+listener: the app serves `intake`, `graph`, `documents`, `management` and
+`operations` on its one HTTP listener; each bridge, controller, computerd
+and the collector serves its own. There is no gateway: a gateway would be a
+second hop and a second owner of every scope and actor check.
+
+The MCP server is a separate entry point of the same image that calls the
+contracts over HTTP like any other principal, so it cannot reach state the
+contracts do not offer.
+
 ## Boundaries
 
 ```
