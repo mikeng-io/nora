@@ -53,7 +53,9 @@ hash.
 
 Every response body is one envelope: the outcome, the payload, and the facts
 that make the outcome checkable. Three answers are not envelopes: the bytes
-a blob `GET` returns, a stream's frames, and the root probes.
+a blob `GET` returns, a stream's frames, and the root probes. A blob `GET`
+with no bytes to return answers a read envelope: `nothing_found` or
+`unavailable`.
 
 | part | read | operation |
 |---|---|---|
