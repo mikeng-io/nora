@@ -10,11 +10,12 @@
 // minutes. A NEW id is refused before it runs once either bound (256 entries,
 // 512 KiB) is reached, and the refusal removes nothing.
 //
-// ponytail: an admitted answer is kept even past the byte bound, so the bytes
-// held can exceed 512 KiB by what the operations then in flight answer. An
-// answer echoes at most two control bodies' strings (a channel_id, the current
-// track), about 132 KiB, and at most 64 are in flight (the listener limit):
-// about 9 MiB in the worst case.
+// ponytail: an admitted answer is kept even past the byte bound, and an
+// operation outlives its socket, so up to 256 admitted entries can settle at
+// their largest. The largest answer is a snapshot echoing two parsed control
+// bodies' strings (the connection's channel_id and the current track's title
+// and url, each body at most 64 KiB as JSON) plus fixed fields of under 4 KiB:
+// about 132 KiB. The ceiling is 256 × 132 KiB, about 33 MiB.
 
 import { createHash } from 'node:crypto';
 

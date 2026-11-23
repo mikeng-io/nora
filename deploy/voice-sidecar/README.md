@@ -63,9 +63,9 @@ are counted at their actual size. A new `operation_id` is `unavailable`
 before it runs once 256 entries (in flight and settled together) or 512 KiB
 are held, and that refusal removes nothing. An admitted operation's answer is
 always kept, so one that ran always reads back, even when that takes the
-ledger past 512 KiB: by at most what the operations then in flight answer,
-about 9 MiB in the worst case (64 in flight, each answer echoing at most two
-control bodies' strings). The same id with the same kind and effect is
+ledger past 512 KiB. The ceiling is 256 entries × the largest answer (about
+132 KiB: a snapshot echoing two control bodies' strings, the connection's
+`channel_id` and the current track), about 33 MiB. The same id with the same kind and effect is
 answered from it without running again (a concurrent duplicate awaits the
 first); the same id with another kind or effect is `409` with no envelope.
 
