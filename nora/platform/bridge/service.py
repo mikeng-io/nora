@@ -41,7 +41,7 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from nora.domain.actions import ActionOwner
-from nora.infra.sql.bridge_store import SqlBridgeStore
+from nora.infra.sql.bridge_store import SqlBridgeStore, request_hash
 from nora.memory import ActAuthority, EffectRecorder, Outcome
 from nora.platform.bridge import telemetry as bt
 from nora.platform.bridge.actions import stored_request, validate_owner
@@ -446,6 +446,12 @@ class DurableActionService:
         # Refuse BEFORE any effect when the ledger is unreachable — an
         # unrecorded effect is the one thing this API must never produce.
         try:
+            # A spent id answers from its stored row: the owner's authority is
+            # checked only before work runs, and a settled send has already
+            # spent it (its audit row is no longer pending).
+            stored = await self._store.action(aid)
+            if stored is not None and stored["state"] != "prepared":
+                return self._replay_or_conflict(stored, owner, r)
             async with self._store._engine.begin() as conn:
                 verdict_owner = await validate_owner(
                     conn, platform=self._platform,
@@ -495,13 +501,22 @@ class DurableActionService:
             # The effect ran but the outcome was NOT persisted — report the
             # retained ambiguity, never a terminal the ledger doesn't hold.
             return ActionReply(
-                "uncertain", kind="store",
-                message="terminal write failed", started_ms=started_ms)
+                "uncertain", kind="store", message="terminal write failed",
+                message_id=verdict_owner.message_id, started_ms=started_ms)
         return ActionReply(
             final, kind=reply.kind, message=reply.message,
             platform_ref=reply.platform_ref, platform_ms=reply.platform_ms,
-            platform_refs=reply.platform_refs, started_ms=started_ms,
-            settled_ms=int(time.time() * 1000))
+            platform_refs=reply.platform_refs, message_id=verdict_owner.message_id,
+            started_ms=started_ms, settled_ms=int(time.time() * 1000))
+
+    def _replay_or_conflict(self, row: Mapping[str, Any], owner: ActionOwner,
+                            request: dict[str, Any]) -> ActionReply:
+        """A spent row: its own reply for the same id, owner and effect, else 409."""
+        if (row["platform"] == self._platform and row["account_key"] == self._account_key
+                and row["request_hash"] == request_hash(request)
+                and row["owner_kind"] == owner.kind and row["owner_id"] == owner.id):
+            return reply_from_row(row)
+        return ActionReply("conflict", kind="id_reused", message="action id spent")
 
     async def get(self, action_id: str) -> dict[str, Any] | None:
         """An operation's persisted row, scoped: another platform's or

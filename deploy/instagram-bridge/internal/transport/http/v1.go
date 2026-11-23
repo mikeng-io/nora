@@ -201,6 +201,24 @@ type v1TypingRequest struct {
 	Target actionTarget `json:"target"`
 }
 
+// decodeKinded decodes a request whose `kind` must be a string: any other
+// JSON value there is the closed set's 422, before a handler runs.
+func decodeKinded(w http.ResponseWriter, raw []byte, into any, unknownKind string) bool {
+	var probe struct {
+		Kind json.RawMessage `json:"kind"`
+	}
+	var kind string
+	if json.Unmarshal(raw, &probe) == nil && len(probe.Kind) > 0 && json.Unmarshal(probe.Kind, &kind) != nil {
+		writeErrorEnvelope(w, http.StatusUnprocessableEntity, "unknown_kind", unknownKind)
+		return false
+	}
+	if err := json.Unmarshal(raw, into); err != nil {
+		invalidRequest(w, "invalid json body")
+		return false
+	}
+	return true
+}
+
 // handleOperation is POST /v1/platform/operations.
 func (v *V1) handleOperation(w http.ResponseWriter, r *http.Request) {
 	// The deliver span is a bounded ROOT — never a child of the otelhttp
@@ -220,10 +238,11 @@ func (v *V1) handleOperation(w http.ResponseWriter, r *http.Request) {
 		trace.WithAttributes(attribute.String("nora.trace_kind", "queue")))
 	defer span.End()
 	var req OperationRequest
-	if _, ok := readJSONOr(w, r, maxJSONBody, &req, func(w http.ResponseWriter) {
+	raw, ok := readJSONOr(w, r, maxJSONBody, &json.RawMessage{}, func(w http.ResponseWriter) {
 		writeEnvelope(w, settledEnvelope(r, "unavailable",
 			errorPayload("unavailable", "too many request bodies are being read; retry"), "", installationScope()))
-	}); !ok {
+	})
+	if !ok || !decodeKinded(w, raw, &req, "kind must be one of send|react|edit|typing") {
 		return
 	}
 	if len(req.Kind) <= 64 {
@@ -322,15 +341,16 @@ func (v *V1) handleOperation(w http.ResponseWriter, r *http.Request) {
 		ledgerDown()
 		return
 	}
-	v.execute(w, r, req, target, scope)
+	v.execute(w, r, req, target, scope, verdict.MessageID)
 }
 
 // execute runs the op, writes the terminal state and answers. Runs detached
 // from the request's cancellation — a caller hanging up mid-send must not
 // turn a landed platform call into an ambiguous one.
-func (v *V1) execute(w http.ResponseWriter, r *http.Request, req OperationRequest, target string, scope envScope) {
+func (v *V1) execute(w http.ResponseWriter, r *http.Request, req OperationRequest, target string, scope envScope, messageID *int64) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 45*time.Second)
 	defer cancel()
+	startedMS := time.Now().UnixMilli()
 	state, ref, refs, ms, errKind, errMsg := v.runOp(ctx, req)
 	if err := v.Store.Finish(ctx, req.OperationID, state, ref, refs, ms, errKind, errMsg); err != nil {
 		// The platform call may have landed and its record is not settled:
@@ -343,11 +363,24 @@ func (v *V1) execute(w http.ResponseWriter, r *http.Request, req OperationReques
 	v.Metrics.Count("action_" + outcomeMetric(state, errKind))
 	row, err := v.Store.Get(ctx, req.OperationID)
 	if err != nil || row == nil {
-		writeEnvelope(w, settledEnvelope(r, "uncertain",
-			errorPayload("ledger", "operation ran; its record could not be read back"), target, scope))
-		return
+		// The terminal write landed: answer what it persisted.
+		row = writtenRow(req, state, ref, refs, ms, errKind, errMsg, messageID, startedMS)
 	}
 	writeEnvelope(w, rowEnvelope(r, row))
+}
+
+// writtenRow is the row a successful terminal write left, from its own values.
+func writtenRow(req OperationRequest, state, ref string, refs []string, ms *int64, errKind, errMsg string, messageID *int64, startedMS int64) *bridge.ActionRow {
+	settledMS := time.Now().UnixMilli()
+	row := &bridge.ActionRow{ActionID: req.OperationID, Op: req.Kind, Request: req.Effect, State: state,
+		PlatformRefs: refs, PlatformMS: ms, MessageID: messageID, StartedAtMS: &startedMS, SettledAtMS: &settledMS}
+	if ref != "" {
+		row.PlatformRef = &ref
+	}
+	if errKind != "" {
+		row.Error, _ = json.Marshal(map[string]string{"kind": errKind, "message": errMsg})
+	}
+	return row
 }
 
 func outcomeMetric(state, errKind string) string {
@@ -579,11 +612,16 @@ func (v *V1) readiness() (bool, string) {
 		return false, "attachment custody is not configured"
 	}
 	snap := v.App.Health()
-	if snap.State != domain.StateAuthenticated {
+	switch {
+	case snap.State != domain.StateAuthenticated:
 		if snap.Detail != "" {
 			return false, string(snap.State) + ": " + snap.Detail
 		}
 		return false, string(snap.State)
+	case !snap.HasClient:
+		return false, "no messaging client"
+	case snap.Self.FBID == "":
+		return false, "no account identity"
 	}
 	return true, snap.Detail
 }
@@ -618,9 +656,10 @@ func (v *V1) handleQuery(w http.ResponseWriter, r *http.Request) {
 		Kind   string         `json:"kind"`
 		Params map[string]any `json:"params"`
 	}
-	if _, ok := readJSONOr(w, r, maxJSONBody, &req, func(w http.ResponseWriter) {
+	raw, ok := readJSONOr(w, r, maxJSONBody, &json.RawMessage{}, func(w http.ResponseWriter) {
 		writeEnvelope(w, readEnvelope(r, "unavailable", nil, false, installationScope()))
-	}); !ok {
+	})
+	if !ok || !decodeKinded(w, raw, &req, "unknown query kind") {
 		return
 	}
 	if !queryKinds[req.Kind] {

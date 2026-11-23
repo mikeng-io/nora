@@ -20,8 +20,10 @@ from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from evals.services import load_services
 from nora.agent import factory
 from nora.agent.speech_format import render_input
+from nora.app.composition_onboarding import _signal_bridge_fetch
 from nora.instructions.dreamer import DreamerInstructions
 from nora.obs.metrics import Metrics
+from nora.platform.bridge.client import BridgeEndpoint
 from nora.subject.eval_evidence import EvidenceError
 from nora.subject.journey_world import make_causal_protocol
 from nora.subject.obtain import SubjectSpec, build_config
@@ -378,6 +380,10 @@ async def test_the_declared_world_admits_subject_and_judges_through_the_budget(
         assert [r["model"] for r in seen["requests"]] == ["nora", "alpha", "beta"]
         assert all(r["messages"][0]["content"] == "generated"
                    for r in seen["requests"])
+        # The generated Signal bridge's roster, read the way Signal discovery reads it.
+        roster = await _signal_bridge_fetch(BridgeEndpoint(
+            services.urls["platforms.signal.base_url"], "generated-token"))("g1")
+        assert roster is not None and [row["number"] for row in roster.rows] == ["+852111"]
         services.check()
 
 

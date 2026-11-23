@@ -32,8 +32,8 @@ import { authorizedBridgeRequest } from './bridge_helpers.js';
 const tmpDir = () => mkdtempSync(path.join(tmpdir(), 'wa-bridge-'));
 
 test('handled contract routes do not fall through to the legacy 404', async (t) => {
-  const handleV1 = createV1({ health: () => ({ ok: true }), self: () => ({ platform: 'whatsapp' }),
-    liveness: () => ({ ok: true }), ready: () => true });
+  const handleV1 = createV1({ store: {}, attachments: {}, health: () => ({ ok: true }),
+    self: () => ({ platform: 'whatsapp' }), liveness: () => ({ ok: true }), ready: () => true });
   let fallbacks = 0;
   let errors = 0;
   const server = createServer(async (req, res) => {
@@ -1461,9 +1461,9 @@ test('routes match the platform contract', async () => {
   assert.ok(SERVED_ROUTES.includes('GET /ready'));
 
   // Each documented route is answered by the router, with `{param}` filled.
-  let ready = false;
-  const v1 = createV1({ store: null, ctx: fakeCtx(), attachments: null, self: () => null,
-    health: () => ({ ok: false }), liveness: () => ({ ok: true }), ready: () => ready });
+  const deps = { store: null, ctx: fakeCtx(), attachments: null, self: () => null,
+    health: () => ({ ok: false }), liveness: () => ({ ok: true }) };
+  const v1 = createV1(deps);
   for (const route of documented) {
     const [method, template] = route.split(' ');
     const res = await call(v1, method, template.replace(/\{[a-z_]+\}/g, 'x1'), method === 'GET' ? null : {});
@@ -1481,7 +1481,8 @@ test('routes match the platform contract', async () => {
   // The probes: /ready follows whether the contract can be served; both keep
   // the unauthenticated access /health has.
   assert.equal((await call(v1, 'GET', '/ready')).status, 503);
-  ready = true;
+  Object.assign(deps, { store: {}, attachments: {}, self: () => ({ platform: 'whatsapp' }),
+    health: () => ({ ok: true }) });
   assert.equal((await call(v1, 'GET', '/ready')).status, 200);
   assert.equal((await call(v1, 'GET', '/health')).status, 200);
   assert.equal(authorizedBridgeRequest('GET', '/ready', undefined, 't0k'), true);
@@ -1645,4 +1646,38 @@ test('request hash covers the effect only', async () => {
   await call(v1, 'POST', '/v1/platform/operations',
     { operation_id: 'h-1', owner: { kind: 'event_receipt', id: 'e1' }, kind: 'send', effect });
   assert.equal(pg.actions.get('h-1').request_hash, digest);
+});
+
+test('a send whose terminal writes fail after the effect ran is uncertain, never unavailable', async () => {
+  const pg = fakePg();
+  const store = new ActionStore(pg, { platform: 'whatsapp', accountKey: 'a' });
+  const ctx = fakeCtx();
+  pg.works.set('1', workRow(4));
+  const writes = [];
+  store.finish = async (id, state) => { writes.push(state); throw new Error('generated write failure'); };
+  const v1 = createV1({ store, ctx, attachments: null, self: () => null,
+    health: () => ({ ok: true }), metrics: null });
+  const res = await call(v1, 'POST', '/v1/platform/operations', { operation_id: 'wf1',
+    owner: { kind: 'work', id: 'w-1', generation: 4 }, kind: 'send', effect: REQ });
+  assertEnvelope(res, 'uncertain', 'post-effect write failure');
+  assert.equal(ctx.calls.length, 1);              // the effect ran upstream
+  assert.deepEqual(writes, ['confirmed', 'uncertain']);
+});
+
+test('ready needs every delivery dependency beside a healthy socket', async () => {
+  const me = { platform: 'whatsapp', primary: '+85290000100', aliases: ['+85290000100'] };
+  const deps = { store: {}, ctx: fakeCtx(), attachments: {}, self: () => me,
+    health: () => ({ ok: true, detail: null }), liveness: () => ({ ok: true }) };
+  const v1 = createV1(deps);
+  assert.equal((await call(v1, 'GET', '/ready')).status, 200);
+  for (const [missing, value] of [['store', null], ['attachments', null], ['self', () => null]]) {
+    const kept = deps[missing];
+    deps[missing] = value;
+    assert.equal((await call(v1, 'GET', '/ready')).status, 503, missing);
+    const status = await call(v1, 'GET', '/v1/operations/status');
+    assertEnvelope(status, 'ok', missing);
+    assert.equal(status.json.payload.ok, false, missing);
+    assert.ok(status.json.payload.detail, missing);
+    deps[missing] = kept;
+  }
 });
