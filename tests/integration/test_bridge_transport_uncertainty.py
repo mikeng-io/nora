@@ -11,7 +11,7 @@ from aiohttp.test_utils import TestServer
 
 from nora.domain.actions import ActionOwner
 from nora.domain.models import ConversationTarget, NormalizedMessage
-from nora.domain.ports import SendResult
+from nora.domain.ports import OutboundAttachment, SendResult
 from nora.domain.service_api import OperationConflictError, status_for
 from nora.ingest.policy import MentionPolicy
 from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint, BridgeUnavailableError
@@ -311,13 +311,14 @@ def _counting(post_answer, read_answer=None):
     return calls, _bridge(post=post, get=get)
 
 
-async def _send(server):
-    adapter = _adapter(server)
+async def _send(server, owner=None):
+    root = _adapter(server)
+    adapter = root.bind_owner(owner) if owner is not None else root
     try:
         return await adapter.send(
             target=ConversationTarget("signal", "synthetic-room", "group"), text="reply")
     finally:
-        await adapter.close()
+        await root.close()
 
 
 async def test_a_lost_answer_reads_the_record_back():
@@ -387,3 +388,138 @@ async def test_a_conflict_is_never_read_back():
         with pytest.raises(OperationConflictError):
             await _send(server)
     assert calls == {"post": 1, "get": 0}
+
+
+def _bare_complete():
+    return {"outcome": "complete"}
+
+
+def _other_row():
+    return _operation("complete", platform_ms=7, platform_ref="ref-1", message_id=999)
+
+
+def _list_payload():
+    return {**_operation("complete", platform_ms=7, platform_ref="ref-1"), "payload": []}
+
+
+def _complete_while_started():
+    body = _operation("complete", platform_ms=7, platform_ref="ref-1")
+    return {**body, "when": {**body["when"], "state": "started"}}
+
+
+_LIVE = ActionOwner("live_invocation", "41")
+
+
+@pytest.mark.parametrize("invalid", [_bare_complete, _other_row, _list_payload,
+                                     _complete_while_started])
+async def test_an_invalid_direct_answer_is_read_back(invalid):
+    """A POST answer that is not a well-formed envelope of this send is never a
+    confirmation: it reads `unavailable`, so the record is read back once."""
+    async def post(request):
+        return web.json_response(invalid(), status=200)
+
+    async def absent(request):
+        return _read("nothing_found")
+
+    calls, server = _counting(post, absent)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _UNCERTAIN
+    assert calls == {"post": 1, "get": 1}
+
+
+async def test_a_valid_direct_answer_of_this_send_confirms():
+    async def post(request):
+        return web.json_response(_operation(
+            "complete", platform_ms=7, platform_ref="ref-1", message_id=41))
+
+    calls, server = _counting(post)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _OK
+    assert calls == {"post": 1, "get": 0}
+
+
+async def _read_back_conflict(request):
+    return web.json_response({"error": "operation_id reused"}, status=409)
+
+
+async def _read_back_list(request):
+    return _read("ok", [])
+
+
+async def _read_back_list_payload(request):
+    return _read("ok", _list_payload())
+
+
+async def _read_back_started(request):
+    return _read("ok", _complete_while_started())
+
+
+async def _read_back_other_row(request):
+    return _read("ok", _other_row())
+
+
+async def _read_back_bare(request):
+    return _read("ok", _bare_complete())
+
+
+@pytest.mark.parametrize("read_back", [
+    _read_back_conflict, _read_back_list, _read_back_list_payload, _read_back_started,
+    _read_back_other_row, _read_back_bare,
+])
+async def test_an_invalid_read_back_is_uncertain(read_back):
+    """Whatever the read-back answers short of a valid settled record of this send
+    — a 409, a malformed record, a `complete` still `started` — the send is
+    uncertain, never failed and never confirmed."""
+    async def pending(request):
+        body = _operation("pending")
+        return web.json_response(body, status=status_for("pending"))
+
+    calls, server = _counting(pending, read_back)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _UNCERTAIN
+    assert calls == {"post": 1, "get": 1}
+
+
+async def test_an_invalid_react_completion_is_not_a_reaction():
+    async def post(request):
+        return web.json_response(_bare_complete(), status=200)
+
+    calls, server = _counting(post)
+    async with server:
+        adapter = _adapter(server)
+        try:
+            with pytest.raises(BridgeUnavailableError):
+                await adapter.react(
+                    target=ConversationTarget("signal", "synthetic-room", "group"),
+                    emoji="+", to_author="synthetic-author", to_timestamp=1)
+        finally:
+            await adapter.close()
+    assert calls["post"] == 1
+
+
+async def test_an_invalid_blob_completion_is_not_custody():
+    puts: list[str] = []
+
+    async def put(request):
+        puts.append(request.match_info["key"])
+        return web.json_response(_bare_complete(), status=200)
+
+    async def post(request):
+        raise AssertionError("no operation follows an unproven blob")
+
+    server = _bridge(post=post)
+    server.app.router.add_put("/v1/platform/blobs/{key}", put)
+    async with server:
+        adapter = _adapter(server)
+        try:
+            with pytest.raises(BridgeUnavailableError):
+                await adapter.send(
+                    target=ConversationTarget("signal", "synthetic-room", "group"),
+                    text="reply", attachments=(OutboundAttachment(
+                        content=b"x", filename="a.txt", media_type="text/plain"),))
+        finally:
+            await adapter.close()
+    assert len(puts) == 1

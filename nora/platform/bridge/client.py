@@ -16,7 +16,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Set
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, get_args
 
 import aiohttp
 from opentelemetry.trace.propagation.tracecontext import (
@@ -40,6 +40,7 @@ from nora.domain.ports import (
 from nora.domain.service_api import (
     Family,
     OperationConflictError,
+    OperationOutcome,
     Outcome,
     parse_response,
 )
@@ -148,9 +149,21 @@ class BridgeAdapter:
                          operation_id: str) -> BridgeAnswer:
         owner = (self._owner.to_dict() if self._owner is not None
                  else {"kind": "live_invocation", "id": "app"})
-        return await self._call("POST", "/v1/platform/operations", "operation", json={
+        answer = await self._call("POST", "/v1/platform/operations", "operation", json={
             "operation_id": operation_id, "owner": owner, "kind": kind,
             "effect": effect}, timeout_s=30)
+        if not valid_operation(answer.body, message_id=self._bound_message_id()):
+            raise BridgeUnavailableError(
+                f"operation {operation_id}: not an envelope of this operation",
+                status=answer.status)
+        return answer
+
+    def _bound_message_id(self) -> int | None:
+        """The audit row a `live_invocation` owner names: what its record must carry."""
+        if self._owner is not None and self._owner.kind == "live_invocation" \
+                and self._owner.id.isdigit():
+            return int(self._owner.id)
+        return None
 
     # ---- PlatformAdapter -------------------------------------------------
 
@@ -222,6 +235,9 @@ class BridgeAdapter:
             key = f"out-{self._next_action_id('send')}-{i}"
             put = await self._call("PUT", f"/v1/platform/blobs/{key}", "operation",
                                    data=a.content, timeout_s=60)
+            if not valid_operation(put.body, message_id=None):
+                raise BridgeUnavailableError(f"blob {key}: not an operation envelope",
+                                             status=put.status)
             if put.outcome == "rejected":
                 # A refused attachment is a failed send, never a sent one.
                 return SendResult(ok=False)
@@ -257,22 +273,18 @@ class BridgeAdapter:
         return _send_result(outcome, envelope)
 
     async def _read_back(self, operation_id: str) -> tuple[str, Mapping[str, Any]]:
-        """One read of the operation's record; anything short of a settled record
-        that is provably ours is `uncertain`. An absent record can belong to a
-        POST still in flight, so `nothing_found` is never a refusal."""
+        """One read of the operation's record; anything short of a valid record
+        that is provably ours is `uncertain`: an absent record can belong to a
+        POST still in flight, and a failed read (a 409 included) proves nothing."""
         try:
             answer = await self._call(
                 "GET", f"/v1/platform/operations/{operation_id}", "read")
-        except BridgeUnavailableError:
+        except Exception:  # noqa: BLE001 — any failed read-back leaves the send uncertain
             return "uncertain", {}
         record = answer.payload if answer.outcome == "ok" else None
-        if not isinstance(record, dict):
+        if not valid_operation(record, message_id=self._bound_message_id()):
             return "uncertain", {}
-        message_id = (record.get("payload") or {}).get("message_id")
-        if (self._owner is not None and self._owner.kind == "live_invocation"
-                and message_id is not None and str(message_id) != self._owner.id):
-            return "uncertain", {}
-        outcome = str(record.get("outcome"))
+        outcome = str(record["outcome"])
         return (outcome if outcome != "pending" else "uncertain"), record
 
     async def react(self, *, target: ConversationTarget, emoji: str,
@@ -454,6 +466,49 @@ async def bridge_query(endpoint: BridgeEndpoint, kind: str, params: Mapping[str,
     except BridgeUnavailableError:
         return None
     return answer if answer.outcome == "ok" else None
+
+
+_PARTS = frozenset({"outcome", "payload", "when", "from", "scope", "trace"})
+_OPERATION_OUTCOMES = frozenset(get_args(OperationOutcome))
+
+
+def _int_or_none(value: object) -> bool:
+    return value is None or (isinstance(value, int) and not isinstance(value, bool))
+
+
+def _str_or_none(value: object) -> bool:
+    return value is None or isinstance(value, str)
+
+
+def valid_operation(body: object, *, message_id: int | None) -> bool:
+    """Whether `body` is a well-formed operation envelope, and of the audit row
+    `message_id` when the operation bound one: six parts, an operation outcome,
+    `settled` for every outcome but `pending`. Its status is `parse_response`'s."""
+    if not isinstance(body, Mapping) or set(body) != _PARTS:
+        return False
+    when, origin, scope, payload = body["when"], body["from"], body["scope"], body["payload"]
+    if body["outcome"] not in _OPERATION_OUTCOMES or not isinstance(body["trace"], str):
+        return False
+    if not (isinstance(when, Mapping) and isinstance(origin, Mapping)
+            and isinstance(scope, Mapping) and isinstance(scope.get("level"), str)):
+        return False
+    if when.get("state") not in ("prepared", "started", "settled") \
+            or (when["state"] == "settled") == (body["outcome"] == "pending") \
+            or not (_int_or_none(when.get("started_at_ms"))
+                    and _int_or_none(when.get("settled_at_ms"))):
+        return False
+    if not isinstance(origin.get("target"), str) or not _str_or_none(origin.get("platform_ref")):
+        return False
+    if payload is None:
+        return True
+    refs = payload.get("platform_refs", []) if isinstance(payload, Mapping) else None
+    if not (isinstance(refs, list) and all(isinstance(r, str) for r in refs)
+            and _int_or_none(payload.get("platform_ms"))
+            and _int_or_none(payload.get("message_id"))
+            and isinstance(payload.get("error"), Mapping | None)):
+        return False
+    stated = payload.get("message_id")
+    return message_id is None or stated is None or stated == message_id
 
 
 def _send_result(outcome: str, envelope: Mapping[str, Any]) -> SendResult:
