@@ -13,7 +13,7 @@ from nora.agent.lineage import LineagePolicy
 from nora.agent.memory_search import MemorySearch
 from nora.agent.room import Room
 from nora.app.cognition_grounding import place_release
-from nora.app.composition_helpers import _unified_profile_writers_retired
+from nora.app.composition_helpers import _cognition_writes_profile
 from nora.domain.live import LiveMapping
 from nora.domain.memory_index import QueryEmbedder
 from nora.domain.ports import SearchProvider
@@ -293,7 +293,7 @@ def graph(
                 screen=functools.partial(text_offence, content_checks=content_checks),
                 index=profile_index,
             )
-            if _unified_profile_writers_retired(
+            if _cognition_writes_profile(
                 profile_index=profile_index,
                 graph_comprehend=True,
                 cognition_enabled=cfg.cognition.enabled,

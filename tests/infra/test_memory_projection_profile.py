@@ -341,7 +341,7 @@ async def test_the_shadow_writes_no_node(engine):
 
 async def test_a_rebuild_equals_live_projection(engine):
     """The flip's backfill: a rebuild from empty writes exactly what the live
-    writes projected — including the drop of a hidden line's chain."""
+    writes projected."""
     mid = await _said(engine)
     await _unit_proven(engine)
     store = _store(engine)
@@ -354,10 +354,6 @@ async def test_a_rebuild_equals_live_projection(engine):
         ops=[replace(_told("runs on sundays", mid), kind="role", fact_key="role")],
         citable=_citable(mid), now_ms=NOW + 1, written_by_session="tag",
         apply_decay=False,
-    )
-    await store.record_dispute(
-        account=ACCOUNT, disputed_by="member-b", claim="cycles to work",
-        kind="forget", message_id=int(mid), now_ms=NOW + 2,
     )
     live_nodes = {k: (n.text, n.state, n.unit, n.origin_room, n.persons)
                   for k, n in (await _nodes(engine)).items()}

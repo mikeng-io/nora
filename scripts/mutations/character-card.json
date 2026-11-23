@@ -56,13 +56,6 @@
     "target": "tests/unit/test_character_card.py::test_existing_room_flag_and_disclosure_guard_filter_stored_location"
   },
   {
-    "name": "coordinates never reach the model",
-    "file": "nora/language/profile.py",
-    "old": "if self._coordinate_screen is not None and self._coordinate_screen(text):",
-    "new": "if False:",
-    "target": "tests/infra/test_character_card.py::test_coordinate_input_is_refused_before_any_model_can_read_it"
-  },
-  {
     "name": "content roundtrips through SQL",
     "file": "nora/infra/sql/profile.py",
     "old": "content=row.content, location=row.location,",
@@ -96,20 +89,6 @@
     "old": "3 * TRAIT_DECAY_MS if line.kind in (\"skill\", \"value\")",
     "new": "TRAIT_DECAY_MS if line.kind in (\"skill\", \"value\")",
     "target": "tests/unit/test_character_card.py::test_every_trait_needs_two_hkt_days_and_skill_value_decay_is_longer"
-  },
-  {
-    "name": "presence is actually handed to the writer",
-    "file": "nora/language/profile.py",
-    "old": "        if selected:\n            parts.append(ContextBlock(",
-    "new": "        if False:\n            parts.append(ContextBlock(",
-    "target": "tests/infra/test_character_card.py::test_presence_labels_corridors_and_rhythm_reach_writer_never_coordinates"
-  },
-  {
-    "name": "social items actually enter the composed input",
-    "file": "nora/language/profile.py",
-    "old": "            restamp(social_block, _ROW),",
-    "new": "            None,",
-    "target": "tests/unit/test_profile_social_input.py::test_inputs_renders_the_items_with_counts_and_makes_them_citable"
   },
   {
     "name": "nine pooled traits retain the existing retirement requirement",

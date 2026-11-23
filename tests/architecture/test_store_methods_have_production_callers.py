@@ -143,6 +143,15 @@ class _Pin(NamedTuple):
     why: str
 
 
+_PROFILE_SESSION_READ = (
+    "The Profile sessions were its only callers and left in 6c-2b-ii. The method leaves "
+    "with `SqlProfileStore` in 6c-2c."
+)
+_PROFILE_SESSION_EVIDENCE = (
+    "The Profile sessions' evidence reads were its only callers and left in 6c-2b-ii. The "
+    "method leaves with `SqlCharacterEvidence` in 6c-2d."
+)
+
 # Public store methods with NO production caller, by (module, method).
 #
 # Every row carries the shape and the reason, because a bare list is exactly
@@ -152,21 +161,24 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("profile.py", "record_dispute"): _Pin(
         "scheduled_removal",
         "`profile_dispute` writes the graph's dispute verb instead. The method leaves "
-        "with `SqlProfileStore` in 6c-2c; the tests that use it as setup for "
-        "`pending_disputes`, `open_disputes` and the session's dispute input leave "
-        "with the Profile sessions in 6c-2b.",
+        "with `SqlProfileStore` in 6c-2c, together with the store tests that still call it.",
     ),
-    ("profile_inputs.py", "request_recovery"): _Pin(
+    **{
+        ("profile.py", name): _Pin("scheduled_removal", _PROFILE_SESSION_READ)
+        for name in ("room_context", "pending_told", "pending_disputes",
+                     "due_guesses", "record_verdict")
+    },
+    **{
+        ("character.py", name): _Pin("scheduled_removal", _PROFILE_SESSION_EVIDENCE)
+        for name in ("advance_history", "history_state", "mentions_since",
+                     "profile_revision_count", "profile_revisions_after", "room_count",
+                     "room_since", "tie_totals", "windowed")
+    },
+    ("social_stream.py", "current_counts"): _Pin(
         "scheduled_removal",
-        "`nora memory profile-retry-media` was its only caller and left with the Profile "
-        "session drivers. The method leaves with `SqlProfileInputs` in 6c-2b-ii, which also "
-        "removes `test_profile_source_inputs.py`, the test that still queues one.",
-    ),
-    ("profile_inputs.py", "presence_revisions"): _Pin(
-        "scheduled_removal",
-        "`nora memory profile-history` was its only outside caller and left with the Profile "
-        "session drivers; `rollup` still calls it. The method leaves with `SqlProfileInputs` "
-        "in 6c-2b-ii, which also removes the `test_character_card.py` reads of it.",
+        "The Profile person session was its only caller and left in 6c-2b-ii; the Character "
+        "person session reads items without counts. It leaves with the social store's session "
+        "reads in 6c-2d, which removes the Character sessions.",
     ),
     ("character.py", "historical_counts"): _Pin(
         "scheduled_removal",
@@ -417,7 +429,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "memory_graph.py",
         "music_queue.py", "music_session.py", "notes.py", "observations.py",
         "otp.py",
-        "participation_state.py", "profile.py", "profile_inputs.py", "presence.py",
+        "participation_state.py", "profile.py", "presence.py",
         "reasoning_strip.py", "record_query.py",
         "reminders.py", "revisions.py", "rollup_read.py", "rollups.py",
         "snapshot_at.py", "social_stream.py",

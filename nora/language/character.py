@@ -604,8 +604,8 @@ class _Shown:
     """One item as the block renders it: redacted, screened and clipped once.
 
     `counts` is the item's latest `social_item_count` row, when the session
-    reads counts (the Profile adaptor's input, 45 §4); None renders no count
-    attributes, so the Character block is unchanged."""
+    reads counts; None renders no count attributes, so the Character block is
+    unchanged."""
 
     item: PersonSocialItem
     shows: str | None

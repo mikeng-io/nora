@@ -35,11 +35,11 @@
     "target": "tests/unit/test_cognition_profile_handoff.py::test_write_then_later_turn_renders"
   },
   {
-    "name": "writer-retirement-requires-cognition-and-every-unit-home",
+    "name": "profile-ownership-requires-cognition-and-every-unit-home",
     "file": "nora/app/composition_helpers.py",
-    "old": "        if (\n            profile_index\n            and graph_comprehend\n            and cognition_enabled\n            and units\n            and units <= home_units\n        )\n        else frozenset()",
-    "new": "        if profile_index and graph_comprehend\n        else frozenset()",
-    "target": "tests/unit/test_cognition_profile_handoff.py::test_writers_stay_without_cognition_or_complete_unit_coverage"
+    "old": "    return bool(\n        profile_index and graph_comprehend and cognition_enabled\n        and units and units <= home_units\n    )",
+    "new": "    return bool(profile_index and graph_comprehend)",
+    "target": "tests/unit/test_cognition_profile_handoff.py::test_cognition_does_not_own_profile_without_cognition_or_complete_unit_coverage"
   },
   {
     "name": "prepared-social-sources-retain-their-individual-provenance",

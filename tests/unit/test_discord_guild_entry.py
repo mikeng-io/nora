@@ -358,7 +358,7 @@ import dataclasses  # noqa: E402
 from types import SimpleNamespace  # noqa: E402
 
 import nora.ingest.stages.scope as scope_stage  # noqa: E402
-from nora.app.composition_helpers import _profile_room_keys, character_person_keys  # noqa: E402
+from nora.app.composition_helpers import character_person_keys  # noqa: E402
 from nora.app.composition_readers import scope_home_rooms, social_unit_rooms  # noqa: E402
 from nora.app.documents_service import room_label, rooms_named  # noqa: E402
 from nora.config_reload import LivePolicy  # noqa: E402
@@ -404,12 +404,6 @@ def test_character_person_keys_see_discovered_rooms(tmp_path):
         f"{GUILD}/{CHANNEL_A}", f"{GUILD}/{CHANNEL_B}", f"{GUILD}/{CHANNEL_C}",
     }
     assert key.home == f"{GUILD}/{CHANNEL_A}"
-
-
-def test_profile_room_keys_cover_a_discovered_channel(tmp_path):
-    policy = _policy(tmp_path, 'default = "deny"\n' + _friends_entry(), DISCOVERED)
-    keys = _profile_room_keys(policy)
-    assert keys[f"{GUILD}/{CHANNEL_A}"].unit == "friends"
 
 
 def test_social_unit_rooms_include_discovered_channels(tmp_path):

@@ -31,9 +31,6 @@ from nora.language.character import (
     CHARACTER_UNIT_ADAPTOR_NAME,
 )
 from nora.language.culture import CULTURE_ADAPTOR_NAME
-from nora.language.profile import PROFILE_PERSON_ADAPTOR_NAME
-from nora.language.profile_collective import PROFILE_COLLECTIVE_ADAPTOR_NAMES
-from nora.language.profile_verdict import PROFILE_VERDICT_ADAPTOR_NAME
 from nora.platform.bridge.service import DurableActionService, action_http_status, action_response
 from nora.platform.signal.react import SignalReactor
 from nora.platform.signal.send import SignalSender
@@ -59,9 +56,6 @@ def make_causal_protocol(cfg: Config) -> CausalProtocol:
             CHARACTER_PERSON_ADAPTOR_NAME: "session_close",
             CHARACTER_UNIT_ADAPTOR_NAME: "session_close",
             CULTURE_ADAPTOR_NAME: "culture",
-            PROFILE_PERSON_ADAPTOR_NAME: "profile",
-            **dict.fromkeys(PROFILE_COLLECTIVE_ADAPTOR_NAMES, "profile"),
-            PROFILE_VERDICT_ADAPTOR_NAME: "profile_verdict",
             "wake": "session_close",
             "wake-history": "session_close",
             "review": "session_close",

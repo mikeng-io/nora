@@ -7,13 +7,6 @@
   "target": "tests/unit/test_tool_route_grader.py::test_shown_transcript_reads_the_rendered_window_off_the_chat_span"
  },
  {
-  "name": "profile source projects canonical mentions for shared row mapping",
-  "file": "nora/infra/sql/profile_inputs.py",
-  "old": "            sa.func.coalesce(latest.c.mention_persons_json, m.mention_persons_json).label(\n                \"mention_persons_json\"),\n",
-  "new": "",
-  "target": "tests/infra/test_profile_source_inputs.py::test_late_cached_reading_after_cursor_and_restart_is_pending_once[image]"
- },
- {
   "name": "stored transcript restores canonical mention tuple",
   "file": "nora/infra/sql/tag_traces.py",
   "old": "    d[\"mention_persons\"] = tuple(d.get(\"mention_persons\", ()))\n",

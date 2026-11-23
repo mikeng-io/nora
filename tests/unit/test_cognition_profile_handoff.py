@@ -410,27 +410,15 @@ async def test_collective_accounts_map(entity: list[str], entity_kind: str) -> N
 
 
 def test_profile_writer_ownership_matrix() -> None:
-    """One account writer per flag combination: the Dreamer writers retire
-    exactly where the unified session is wired; the verdict judge and tag
-    told/dispute paths never."""
-    from nora.app.composition_helpers import _unified_profile_writers_retired
-    from nora.language.profile import PROFILE_PERSON_ADAPTOR_NAME
-    from nora.language.profile_collective import (
-        PROFILE_NORA_ADAPTOR_NAME,
-        PROFILE_ROOM_ADAPTOR_NAME,
-        PROFILE_UNIT_ADAPTOR_NAME,
-    )
-    from nora.language.profile_verdict import PROFILE_VERDICT_ADAPTOR_NAME
+    """The Cognition session owns the Profile accounts exactly where it is wired:
+    the Profile switch and graph comprehension both on."""
+    from nora.app.composition_helpers import _cognition_writes_profile
     coverage = {"cognition_enabled": True, "units": frozenset({UNIT}),
                 "home_units": frozenset({UNIT})}
-    on = _unified_profile_writers_retired(
-        profile_index=True, graph_comprehend=True, **coverage)
-    assert on == frozenset({PROFILE_PERSON_ADAPTOR_NAME, PROFILE_ROOM_ADAPTOR_NAME,
-                            PROFILE_UNIT_ADAPTOR_NAME, PROFILE_NORA_ADAPTOR_NAME})
-    assert PROFILE_VERDICT_ADAPTOR_NAME not in on
+    assert _cognition_writes_profile(profile_index=True, graph_comprehend=True, **coverage)
     for profile_index, comprehend in ((False, True), (True, False), (False, False)):
-        assert _unified_profile_writers_retired(
-            profile_index=profile_index, graph_comprehend=comprehend, **coverage) == frozenset()
+        assert not _cognition_writes_profile(
+            profile_index=profile_index, graph_comprehend=comprehend, **coverage)
 
 
 @pytest.mark.asyncio
@@ -464,15 +452,15 @@ async def test_explicit_relation_premises_replace_instead_of_carrying() -> None:
     assert len(heads) == 1 and heads[0].draws_on == ()
 
 
-def test_writers_stay_without_cognition_or_complete_unit_coverage() -> None:
-    from nora.app.composition_helpers import _unified_profile_writers_retired
+def test_cognition_does_not_own_profile_without_cognition_or_complete_unit_coverage() -> None:
+    from nora.app.composition_helpers import _cognition_writes_profile
     flags = {"profile_index": True, "graph_comprehend": True,
              "cognition_enabled": True, "units": frozenset({"one", "two"}),
              "home_units": frozenset({"one", "two"})}
-    assert len(_unified_profile_writers_retired(**flags)) == 4
-    assert not _unified_profile_writers_retired(**{**flags, "cognition_enabled": False})
-    assert not _unified_profile_writers_retired(**{**flags, "home_units": frozenset({"one"})})
-    assert not _unified_profile_writers_retired(**{**flags, "units": frozenset()})
+    assert _cognition_writes_profile(**flags)
+    assert not _cognition_writes_profile(**{**flags, "cognition_enabled": False})
+    assert not _cognition_writes_profile(**{**flags, "home_units": frozenset({"one"})})
+    assert not _cognition_writes_profile(**{**flags, "units": frozenset()})
 
 
 @pytest.mark.asyncio

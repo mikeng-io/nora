@@ -39,7 +39,6 @@ from nora.domain.memory_index import (
 )
 from nora.domain.otp import CHECK_OUTCOMES as OTP_CHECK_OUTCOMES
 from nora.domain.otp import REQUEST_OUTCOMES as OTP_REQUEST_OUTCOMES
-from nora.domain.profile import PROFILE_OUTCOMES
 from nora.domain.reasoning_strip import (
     PATHS_HELP,
     STRIP_OUTCOMES,
@@ -1572,24 +1571,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     # The Lessons session: one per unit, by what it did; `decayed` is code
     # retiring a lesson at its horizon.
-    # The Profile sessions, in shadow (design/unified-memory/profiles.md).
-    _CounterSpec(
-        "nora_profile_session_total",
-        "Profile sessions by outcome (" + " / ".join(sorted(PROFILE_OUTCOMES)) + "). "
-        "written a session's one write landed rows; kept it settled with none; "
-        "refused one verb call was refused; unsettled a session that did neither "
-        "(its batch is held); abandoned the third unsettled run of one batch.",
-        ("outcome",),
-    ),
-    # The Profile verdict judge (45 §3): one per hypothesis judged, by verdict
-    # and by judge (code for a countable observable, the model otherwise).
-    # `unknown` is never confirmed's side: it is the observable unread (R-27).
-    _CounterSpec(
-        "nora_profile_verdict_total",
-        "Hypothesis verdicts by verdict (confirmed / refuted / expired / "
-        "unknown) and judge (code / model).",
-        ("verdict", "judge"),
-    ),
     _CounterSpec(
         "nora_lessons_session_total",
         "Lesson writes by outcome ("

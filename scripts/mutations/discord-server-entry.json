@@ -119,13 +119,6 @@
     "target": "tests/unit/test_discord_guild_entry.py::test_character_person_keys_see_discovered_rooms"
   },
   {
-    "name": "profile room keys enumerate rooms()",
-    "file": "nora/app/composition_helpers.py",
-    "old": "        for conv in allowlist.rooms()\n        if conv.primary_id and conv.unit",
-    "new": "        for conv in allowlist.conversations\n        if conv.primary_id and conv.unit",
-    "target": "tests/unit/test_discord_guild_entry.py::test_profile_room_keys_cover_a_discovered_channel"
-  },
-  {
     "name": "social unit rooms enumerate rooms()",
     "file": "nora/app/composition_readers.py",
     "old": "            (c.platform, rid) for c in allowlist.rooms() if c.unit == unit for rid in sorted(c.ids)",

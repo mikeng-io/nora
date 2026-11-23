@@ -5,12 +5,10 @@ from __future__ import annotations
 
 import functools
 import logging
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 from nora.agent.dream_screen import offence as dream_offence
-from nora.agent.dream_screen import text_offence
 from nora.agent.dreamer import (
     AdaptorGrant,
     AdaptorSchedule,
@@ -19,15 +17,11 @@ from nora.agent.dreamer import (
     culture_grant,
 )
 from nora.agent.egress import scan_identifiers
-from nora.agent.security import looks_like_coordinate
 from nora.app.composition_helpers import (
     CHARACTER_ADAPTOR_NAMES,
     _adaptor_budget,
-    _collective_members,
     _now_ms,
-    _profile_room_keys,
     _reasoning_effort,
-    _unified_profile_writers_retired,
     character_person_keys,
     character_unit_keys,
     selected_character_person_keys,
@@ -41,9 +35,6 @@ from nora.infra.sql.character import SqlCharacterEvidence
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.lessons import SqlLessonStore
-from nora.infra.sql.profile import SqlProfileStore
-from nora.infra.sql.profile_inputs import SqlProfileInputs
-from nora.infra.sql.rollup_read import SqlRollupRead
 from nora.infra.sql.social_stream import readable_social_store
 from nora.infra.sql.tension import SqlTensionStore
 from nora.language.background_identity import BackgroundIdentity
@@ -63,21 +54,6 @@ from nora.language.culture import CULTURE_ADAPTOR_NAME, CultureAdaptor
 from nora.language.doctrine_check import CHECK_OBJECTIVE, DoctrineCheck
 from nora.language.lesson_book import LessonBook
 from nora.language.lessons import CognitionLessons, LessonEvidence, LessonsKey
-from nora.language.profile import PROFILE_PERSON_ADAPTOR_NAME, ProfileEvidence, ProfilePersonAdaptor
-from nora.language.profile_collective import (
-    PROFILE_COLLECTIVE_ADAPTOR_NAMES,
-    PROFILE_NORA_ADAPTOR_NAME,
-    PROFILE_ROOM_ADAPTOR_NAME,
-    PROFILE_UNIT_ADAPTOR_NAME,
-    CollectiveEvidence,
-    CollectiveKey,
-    ProfileCollectiveAdaptor,
-)
-from nora.language.profile_verdict import (
-    PROFILE_VERDICT_ADAPTOR_NAME,
-    DocketAccount,
-    ProfileVerdictAdaptor,
-)
 
 log = logging.getLogger("nora.app.composition")
 
@@ -90,12 +66,6 @@ class CharacterAdaptorWiring:
     person_keys: Any
     schedules: Any
     unit_keys: Any
-
-
-@dataclass(frozen=True)
-class ProfileAdaptorWiring:
-    adaptors: Any
-    schedules: Any
 
 
 def _character_adaptors(
@@ -306,250 +276,6 @@ def _character_collective_adaptors(
     return schedules, adaptors, unit_keys, nora_keys
 
 
-def _profile_adaptors(
-    allowlist: Any, cfg: Any, character: Any, clock: Any,
-    content_checks: Any, engine: Any, media_join: Any, metrics: Any,
-    persons: Any, profile_index: Any, access: Any = None,
-) -> ProfileAdaptorWiring:
-    """The Profile sessions (person, verdict judge, collectives), in shadow."""
-
-    # PROFILE · COLLECTIVES' keys (45 §1's key forms): a room's account under its
-    # `primary_id`, the unit's and Nora's under the culture keys — the same key the prose
-    # head they backfill from is written under.
-    profile_room_keys = LiveMapping(lambda: _profile_room_keys(allowlist))
-    profile_unit_keys = LiveMapping(
-        lambda: {
-            key: CollectiveKey(unit=uk.unit, rooms=uk.rooms, label=uk.unit)
-            for key, uk in character.unit_keys.items()
-        }
-    )
-    profile_nora_keys = LiveMapping(
-        lambda: {
-            key: CollectiveKey(
-                unit=nk.unit, rooms=nk.rooms, label=cfg.doctrine.display_name
-            )
-            for key, nk in character.nora_keys.items()
-        }
-    )
-    profile_collective_keys = LiveMapping(
-        lambda: {
-            **profile_room_keys,
-            **profile_unit_keys,
-            **profile_nora_keys,
-        }
-    )
-    schedules = {}
-    adaptors = ()
-    if cfg.memory.profile.write:
-        p_sched, p_ad, profile_store, profile_reads, profile_social = (
-            _profile_person_adaptors(
-                allowlist=allowlist, cfg=cfg, character=character,
-                clock=clock, content_checks=content_checks, engine=engine,
-                media_join=media_join, metrics=metrics, persons=persons,
-                profile_collective_keys=profile_collective_keys,
-                profile_index=profile_index, access=access,
-            )
-        )
-        c_sched, c_ad = _profile_collective_adaptors(
-            allowlist=allowlist, cfg=cfg, character=character,
-            content_checks=content_checks, engine=engine,
-            media_join=media_join, metrics=metrics, persons=persons,
-            profile_index=profile_index, profile_reads=profile_reads,
-            profile_room_keys=profile_room_keys,
-            profile_social=profile_social, profile_store=profile_store,
-            profile_unit_keys=profile_unit_keys,
-            profile_nora_keys=profile_nora_keys, access=access,
-        )
-        schedules = {**p_sched, **c_sched}
-        adaptors = (*p_ad, *c_ad)
-    return ProfileAdaptorWiring(adaptors=adaptors, schedules=schedules)
-
-
-def _profile_person_adaptors(
-    allowlist: Any, cfg: Any, character: Any, clock: Any,
-    content_checks: Any, engine: Any, media_join: Any, metrics: Any,
-    persons: Any, profile_collective_keys: Any, profile_index: Any,
-    access: Any = None,
-) -> Any:
-    """The person account's session and the verdict judge."""
-    profile_store = SqlProfileStore(
-        engine,
-        screen=functools.partial(text_offence, content_checks=content_checks),
-        index=profile_index,
-    )
-    profile_reads = SqlCharacterEvidence(engine,
-        identity_ids=access.identity_ids if access is not None else None)
-    # The person accounts' social input (45 §4): the readable
-    # store's (opted-out, gone and hidden left out there), the
-    # same store the social cursor and the counts come from.
-    profile_social = readable_social_store(engine, persons)
-    schedules = {
-        PROFILE_PERSON_ADAPTOR_NAME: AdaptorSchedule(
-            min_interval_seconds=cfg.memory.profile.update_every_seconds,
-            wake_batch=cfg.memory.profile.person.update_every_messages,
-            batch_limit=cfg.memory.profile.person.update_every_messages,
-        ),
-        # The verdict judge (45 §3): one unit's docket of
-        # window-closed open hypotheses, fired the tick one is due
-        # (wake_batch 1), never by its writer.
-        PROFILE_VERDICT_ADAPTOR_NAME: AdaptorSchedule(
-            min_interval_seconds=cfg.memory.profile.update_every_seconds,
-            wake_batch=1,
-            batch_limit=cfg.memory.profile.person.update_every_messages,
-        ),
-    }
-    adaptors = (
-        ProfilePersonAdaptor(
-            profile=profile_store,
-            culture=character.culture_store,
-            render=profile_index,
-            media_join=media_join,
-            evidence=ProfileEvidence(
-                store=profile_reads,
-                profile=profile_store,
-                keys=character.person_keys,
-                wake_batch=cfg.memory.profile.person.update_every_messages,
-                source_inputs=SqlProfileInputs(engine, social=profile_social,
-                    identity_ids=access.identity_ids if access is not None else None),
-                source_timeout_seconds=cfg.standing.store_timeout_seconds,
-                social=profile_social, access=access,
-                former_ids=access.former_ids_for if access is not None
-                    else persons.former_ids_for,
-            ),
-            reads=profile_reads,
-            keys=character.person_keys,
-            name_of=lambda pid: (
-                ref.name
-                if pid and (ref := persons.by_person.get(pid)) is not None
-                else "someone"
-            ),
-            clock_ms=lambda: int(clock().timestamp() * 1000),
-            clock=clock,
-            metrics=metrics,
-            # The social items' render (45 §4): screened like the
-            # Character session's, captions redacted to the author's
-            # own handle, each reading clipped as the media reads.
-            social=profile_social, identity=BackgroundIdentity(access),
-            coordinate_screen=looks_like_coordinate if content_checks else None,
-            screen=functools.partial(scan_identifiers, content_checks=content_checks),
-            render_chars=cfg.media.comprehension_render_chars,
-            handle_owners=persons.instagram_username_owners,
-        ),
-        ProfileVerdictAdaptor(
-            store=profile_store,
-            reads=profile_reads,
-            rollup=SqlRollupRead(engine),
-            # The docket covers every account of the unit, a
-            # collective's included: each mapped to who the judge
-            # says it is about and the rooms its window covers.
-            keys=LiveMapping(
-                lambda: {
-                    **{
-                        key: DocketAccount(
-                            about=pk.person.name,
-                            rooms=tuple(
-                                (r.platform, r.key)
-                                for r in pk.rooms
-                                if r.key in pk.listed
-                            ),
-                        )
-                        for key, pk in character.person_keys.items()
-                    },
-                    **{
-                        key: DocketAccount(
-                            about=ck.label or key,
-                            rooms=tuple((r.platform, r.key) for r in ck.rooms),
-                        )
-                        for key, ck in profile_collective_keys.items()
-                    },
-                }
-            ),
-            name_of=lambda pid: (
-                ref.name
-                if pid and (ref := persons.by_person.get(pid)) is not None
-                else "someone"
-            ),
-            clock_ms=_now_ms,
-            metrics=metrics,
-        ),
-    )
-    return schedules, adaptors, profile_store, profile_reads, profile_social
-
-
-def _profile_collective_adaptors(
-    allowlist: Any, cfg: Any, character: Any, content_checks: Any,
-    engine: Any, media_join: Any, metrics: Any, persons: Any,
-    profile_index: Any, profile_reads: Any, profile_room_keys: Any, profile_social: Any,
-    profile_store: Any, profile_unit_keys: Any, profile_nora_keys: Any, access: Any = None,
-) -> Any:
-    """The room, unit and Nora collective accounts."""
-    schedules = {
-        PROFILE_ROOM_ADAPTOR_NAME: AdaptorSchedule(
-            min_interval_seconds=cfg.memory.profile.update_every_seconds,
-            wake_batch=cfg.culture.wake_batch,
-            batch_limit=cfg.culture.batch_limit,
-        ),
-        PROFILE_UNIT_ADAPTOR_NAME: AdaptorSchedule(
-            min_interval_seconds=cfg.memory.profile.update_every_seconds,
-            wake_batch=cfg.memory.profile.unit.update_every_room_profile_changes,
-            batch_limit=cfg.culture.batch_limit,
-        ),
-        PROFILE_NORA_ADAPTOR_NAME: AdaptorSchedule(
-            min_interval_seconds=cfg.memory.profile.update_every_seconds,
-            wake_batch=cfg.memory.profile.nora.update_every_replies,
-            batch_limit=cfg.memory.profile.nora.update_every_replies,
-        ),
-    }
-    collective_kinds: tuple[
-        tuple[Literal["room", "unit", "nora"], Mapping[str, CollectiveKey]],
-        ...,
-    ] = (
-        ("room", profile_room_keys),
-        ("unit", profile_unit_keys),
-        ("nora", profile_nora_keys),
-    )
-    adaptors = (
-        *(
-            ProfileCollectiveAdaptor(
-                kind=kind, identity=BackgroundIdentity(access),
-                profile=profile_store,
-                culture=character.culture_store,
-                render=profile_index,
-                media_join=media_join,
-                screen=functools.partial(text_offence, content_checks=content_checks),
-                coordinate_screen=looks_like_coordinate if content_checks else None,
-                evidence=CollectiveEvidence(
-                    store=profile_reads,
-                    keys=keys,
-                    kind=kind,
-                    render=profile_index,
-                    identity=BackgroundIdentity(access),
-                    source_inputs=SqlProfileInputs(engine, social=profile_social),
-                    members=LiveMapping(
-                        functools.partial(
-                            _collective_members,
-                            allowlist,
-                            keys,
-                        )
-                    ),
-                ),
-                reads=profile_reads,
-                keys=keys,
-                name_of=lambda pid: (
-                    ref.name
-                    if pid and (ref := persons.by_person.get(pid)) is not None
-                    else "someone"
-                ),
-                clock_ms=_now_ms,
-                metrics=metrics,
-            )
-            for kind, keys in collective_kinds
-        ),
-    )
-    return schedules, adaptors
-
-
-
 @dataclass(frozen=True)
 class DreamObjectivesWiring:
     adaptors: Any
@@ -557,9 +283,9 @@ class DreamObjectivesWiring:
 
 
 def _dream_objectives(
-    allowlist: Any, cfg: Any, clock: Any, content_checks: Any,
-    engine: Any, media_join: Any, metrics: Any, note_store: Any,
-    persons: Any, profile_index: Any, unit_scopes: Any, access: Any = None,
+    allowlist: Any, cfg: Any, content_checks: Any, engine: Any,
+    metrics: Any, note_store: Any, persons: Any, profile_index: Any,
+    access: Any = None,
 ) -> DreamObjectivesWiring:
     """Every objective session and its wake schedule, minus the retired."""
     adaptors: tuple[Any, ...] = ()
@@ -572,14 +298,6 @@ def _dream_objectives(
         )
         adaptors = (*adaptors, *character.adaptors)
         schedules = {**schedules, **character.schedules}
-        profile = _profile_adaptors(
-            allowlist=allowlist, cfg=cfg, character=character,
-            clock=clock, content_checks=content_checks, engine=engine,
-            media_join=media_join, metrics=metrics, persons=persons,
-            profile_index=profile_index, access=access,
-        )
-        adaptors = (*adaptors, *profile.adaptors)
-        schedules = {**schedules, **profile.schedules}
     if profile_index or not cfg.culture.enabled:
         retired = {
             CULTURE_ADAPTOR_NAME,
@@ -587,13 +305,6 @@ def _dream_objectives(
             CHARACTER_UNIT_ADAPTOR_NAME,
             CHARACTER_NORA_ADAPTOR_NAME,
         }
-        retired |= _unified_profile_writers_retired(
-            profile_index=profile_index,
-            graph_comprehend=(cfg.memory.graph.enabled and cfg.memory.graph.comprehend.enabled),
-            cognition_enabled=cfg.cognition.enabled,
-            units=frozenset(unit_scopes()),
-            home_units=frozenset(allowlist.home_rooms()),
-        )
         adaptors = tuple(a for a in adaptors if a.name not in retired)
         schedules = {k: v for k, v in schedules.items() if k not in retired}
     return DreamObjectivesWiring(adaptors=adaptors, schedules=schedules)
@@ -726,24 +437,10 @@ def _dream_grants_and_budgets(cfg: Any) -> Any:
         # rooms that lists the person (`CharacterPersonAdaptor.tool_room`),
         # resolved through `scope_rooms` exactly as the room fold's are.
         CHARACTER_PERSON_ADAPTOR_NAME: culture_grant(),
-        # The Profile session stands where the person's Character session
-        # does (`ProfilePersonAdaptor.tool_room`), with the same reads.
-        PROFILE_PERSON_ADAPTOR_NAME: culture_grant(),
-        # A room's Profile session holds Culture's read tools, scoped to
-        # its own room (`ProfileCollectiveAdaptor.tool_room`).
-        PROFILE_ROOM_ADAPTOR_NAME: culture_grant(),
-        # The verdict judge holds no read tool (its windows are in the
-        # prompt) and writes only through `record_verdict`; the default
-        # grant (nothing) is its ceiling, kept here by omission.
     }
     dream_budgets = {name: _adaptor_budget(b) for name, b in cfg.dreamer.budgets.items()}
     if "culture" in dream_budgets:
-        for name in (
-            *CHARACTER_ADAPTOR_NAMES,
-            PROFILE_PERSON_ADAPTOR_NAME,
-            PROFILE_VERDICT_ADAPTOR_NAME,
-            *PROFILE_COLLECTIVE_ADAPTOR_NAMES,
-        ):
+        for name in CHARACTER_ADAPTOR_NAMES:
             dream_budgets.setdefault(name, dream_budgets["culture"])
     fallback = cfg.dreamer.budget_for("")
     return dream_grants, dream_budgets, fallback
