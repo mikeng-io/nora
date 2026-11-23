@@ -1115,9 +1115,11 @@ services:
       # memory of which guilds to restore on boot.
       - STATE_DIR=/var/lib/audio-controller
       # Controller lifecycle events (generation/playback advancement) are
-      # `report` operations on the bridge's /v1/voice/operations — the bridge owns the VoiceEventConsumer
-      # when [platforms.discord] mode = "bridge"; the app relinquished it.
-      - NORA_EVENT_URL=http://discord-bridge:18093/v1/voice/operations
+      # `report` operations on /v1/voice/operations of whichever process holds
+      # the voice hub: the bridge under [platforms.discord] mode = "bridge";
+      # under mode = "direct" set NORA_VOICE_EVENT_URL to the app's, on its
+      # [obs.metrics] port: http://nora:9100/v1/voice/operations.
+      - NORA_EVENT_URL=${NORA_VOICE_EVENT_URL:-http://discord-bridge:18093/v1/voice/operations}
     volumes:
       # Desired-state durability (§12.1): /discord exit writes idle, a join
       # writes connected, and the boot decision reads this file — it must
