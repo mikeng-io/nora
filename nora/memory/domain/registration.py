@@ -37,6 +37,7 @@ ITEM_SOURCES = MappingProxyType({
     "nora_pass_output": ItemSource((), "internal", "SqlActStore"),
     "computer_events": ItemSource(("requester_person_id",), "internal", "SqlComputerEventStore"),
     "tool_call_log": ItemSource((), "internal", "SqlToolCallLogStore"),
+    "watch_result": ItemSource((), "internal", "SqlWatchResults"),
 })
 
 AggregateFamily = Literal["interval", "bucket", "head"]

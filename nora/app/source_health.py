@@ -1,14 +1,13 @@
-"""Platform adapter health as Record — one `source_health` row per state
-TRANSITION.
+"""Platform adapter transitions and periodic healthy probes as Record.
 
 Makes "every source healthy for the interval" a query, not an assumption. The
 presence collector records its own polls (`nora.presence.collector`); this
 records the adapters, from the samples the liveness loop takes every 10 s
 (`App._update_last_event_age`).
 
-Transitions, not samples. A row is written the first time a platform is
+Transitions and healthy probes. A row is written the first time a platform is
 observed after a start (so a restart is visible as a fresh `up` or `down`)
-and whenever its state changes; a steady state writes nothing. Four states:
+and whenever its state changes. A steady `up` records periodic probes. States:
 
 | state | from `AdapterHealth` |
 |---|---|
@@ -52,6 +51,8 @@ log = logging.getLogger("nora.app.source_health")
 
 #: `PlatformSilent`'s threshold (`deploy/prometheus/rules/nora.yml`).
 STALE_AFTER_SECONDS = 900.0
+# ponytail: a steady adapter contributes at most one healthy probe per minute.
+HEALTHY_PROBE_INTERVAL_MS = 60_000
 
 
 def state_of(health: AdapterHealth, *, stale_after: float = STALE_AFTER_SECONDS) -> str:
@@ -75,10 +76,10 @@ class AdapterHealthRecorder:
         self._log = log
         self._metrics = metrics
         self._clock = clock
-        self._last: dict[str, str] = {}
+        self._last: dict[str, tuple[str, int]] = {}
 
     async def sample(self, health: AdapterHealth) -> None:
-        """Record `health` if its state differs from the last one written."""
+        """Record a state change or a due healthy probe."""
         await self._transition(
             health.platform, state_of(health, stale_after=self._stale_after), health.detail,
         )
@@ -88,13 +89,16 @@ class AdapterHealthRecorder:
         await self._transition(platform, "unknown", "health() raised")
 
     async def _transition(self, platform: str, state: str, detail: str) -> None:
-        if self._last.get(platform) == state:
+        now = int(self._clock() * 1000)
+        last_state, last_at = self._last.get(platform, ("", now))
+        steady = last_state == state
+        if steady and (state != "up" or now - last_at < HEALTHY_PROBE_INTERVAL_MS):
             return
         try:
             ok = await asyncio.wait_for(
                 self._log.record(
-                    source=platform, scope="", event="transition", outcome=state,
-                    at_ms=int(self._clock() * 1000), detail=detail,
+                    source=platform, scope="", event="poll" if steady else "transition",
+                    outcome=state, at_ms=now, detail=detail,
                 ),
                 timeout=self._timeout,
             )
@@ -102,6 +106,6 @@ class AdapterHealthRecorder:
             log.exception("adapter health transition not written (%s)", platform)
             ok = False
         if ok:
-            self._last[platform] = state
+            self._last[platform] = state, now
         else:
             self._metrics.inc("nora_errors_total", stage="source_health", platform=platform)
