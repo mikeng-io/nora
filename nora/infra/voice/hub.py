@@ -323,8 +323,8 @@ class VoiceControllerHub:
         opposite of that.
 
         Idempotent with an already-cached session — `hub.join` short-
-        circuits on the cache — and safe to call after
-        `resume_persisted_sessions`, which may have already populated it.
+        circuits on the cache. Runs BEFORE `resume_persisted_sessions`, so a
+        session it recovers is the resume's cache hit and gets its player.
         Best-effort: a controller unreachable at this exact boot instant
         must not fail nora's boot; the next `/discord join`, `/music play`,
         or voice-channel send retries the same `hub.join` path."""

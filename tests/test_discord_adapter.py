@@ -408,7 +408,8 @@ async def test_a_conflict_on_speech_falls_back_to_text(aiohttp_server):
             speaks.append(body["operation_id"])
             return web.json_response({"error": "operation_id_reused"}, status=409)
         return web.json_response(operation_envelope("complete", {"state": {
-            "voice": "connected", "generation": "gen-1", "channel_id": "222"}}))
+            "voice": "connected", "generation": "gen-1", "channel_id": "222",
+            "playback_id": None}}))
 
     async def messages_handler(request: web.Request) -> web.Response:
         posted.append(request.path)

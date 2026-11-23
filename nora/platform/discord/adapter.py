@@ -177,6 +177,13 @@ class DiscordAdapter:
         self._current_client = client
 
         async def _register_music_commands() -> None:
+            # A guild with no persisted MUSIC row never calls `hub.join` in the
+            # resume, so a wake-reply-only boot would leave the controller's
+            # connection un-adopted and every speech reply dropped. Adoption runs
+            # first, so a session it recovers is the resume's cache hit and a
+            # guild with a persisted session never holds one without a player.
+            if self._voice_hub is not None:
+                await self._voice_hub.adopt_boot_voice_sessions(self._voice_guild_ids)
             # The command tree shares the gateway client's lifecycle.
             if self._music_manager is not None:
                 await register_music_commands(
@@ -201,15 +208,6 @@ class DiscordAdapter:
                 # otherwise nora would only learn that music stopped from
                 # an event a wedged controller does not send.
                 self._music_manager.start_liveness_watch()
-            # A guild with no persisted MUSIC row
-            # never calls `hub.join` above, so a wake-reply-only boot would
-            # leave the controller's boot-joined connection un-adopted and
-            # every speech reply silently dropped until a human ran
-            # `/discord join`. Independent of `_music_manager` and safe to
-            # run every `on_ready` — `hub.join`/`adopt_boot_voice_sessions`
-            # are both idempotent against an already-cached session.
-            if self._voice_hub is not None:
-                await self._voice_hub.adopt_boot_voice_sessions(self._voice_guild_ids)
 
         self._listener = DiscordListener(
             client, self._token, on_ready_extra=_register_music_commands,

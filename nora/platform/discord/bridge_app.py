@@ -594,10 +594,10 @@ class DiscordBridge:
     async def on_gateway_ready(self) -> None:
         """The ONE graph-attach point — `DiscordListener.on_ready_extra`.
 
-        The same sequence `DiscordAdapter` ran on every `on_ready`: register
-        the slash tree on THIS client, resume persisted music sessions,
-        start the liveness watch, and adopt any voice session the controller
-        kept alive while this process was down. Idempotent by construction —
+        The same sequence `DiscordAdapter` runs on every `on_ready`: adopt any
+        voice session the controller kept alive (first, so the resume finds it
+        cached and builds its player), register the slash tree, resume
+        persisted music sessions, and start the liveness watch. Idempotent by construction —
         each half guards against clobbering a live one."""
         client = self._client
         user = getattr(client, "user", None) if client is not None else None
@@ -606,6 +606,8 @@ class DiscordBridge:
         self.connected_at_ms = int(time.time() * 1000)
         self._frames.clear()
         log.info("discord gateway connected as %s", self.self_id)
+        if self._hub is not None:
+            await self._hub.adopt_boot_voice_sessions(self._voice_guild_ids)
         if self._manager is not None and client is not None:
             await register_music_commands(
                 client, self._manager,
@@ -622,8 +624,6 @@ class DiscordBridge:
                 command_acts=self._command_acts,
             )
             self._manager.start_liveness_watch()
-        if self._hub is not None:
-            await self._hub.adopt_boot_voice_sessions(self._voice_guild_ids)
 
     @staticmethod
     def _publisher_died(task: asyncio.Task) -> None:
