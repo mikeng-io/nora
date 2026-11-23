@@ -11,17 +11,25 @@ the real calls fail.
 
 The wire (`docs/service-api/openapi.json`, «Outcomes on the controller»):
 
-- `POST /v1/voice/operations` `{operation_id, kind, effect}`; a kind outside
-  the closed set is 422, `report` is `unsupported`; a body that is not a JSON
-  object, an effect with no or another `guild_id` (`wrong_guild`), and a
-  malformed effect are 400 with no envelope;
-- one ledger for the whole fake, five minutes: the same id and effect answers
-  the kept envelope without running again, another effect is 409;
-  `GET /v1/voice/operations/{operation_id}` reads it back;
+- `POST /v1/voice/operations` `{operation_id, kind, effect}`, checked in the
+  controller's order: a body that is not a JSON object is 400; an
+  `operation_id` outside 1-64 of `[A-Za-z0-9._:-]` is 400; a kind outside the
+  closed set is 422; an effect that is not an object is 400; a body over the
+  64 KiB control bound on any kind but `speak` is 413; a `guild_id` that
+  is not a snowflake is 400 `wrong_guild`; `report` is `unsupported`;
+- one ledger for the whole fake, five minutes from settlement: the same id and
+  effect answers the kept envelope without running again (a duplicate in
+  flight awaits the first answer), another effect is 409;
+  `GET /v1/voice/operations/{operation_id}` reads it back, `pending` in flight;
+- admission: a guild in `forbidden_guilds` is `denied`; an admitted guild the
+  fake holds no core for (never joined, or any guild but its own) is
+  `rejected` `unknown_guild` on every kind but `join`; both carry null `state`.
+  The fake holds one core, so a `join` for another admitted guild is
+  `unavailable` `join_failed`, an answer the real controller also gives;
 - `join` admits ANY channel in the guild, is idempotent in the same channel
-  and `rejected` `connected_elsewhere` otherwise; a guild the fake holds no
-  connection for (never joined) is `rejected` `unknown_guild` on every other
-  kind, with a null `state`; a guild in `forbidden_guilds` is `denied`;
+  and `rejected` `connected_elsewhere` otherwise, its `channel_id` at most 64
+  characters; `play.resumable` is a
+  boolean or absent (null reads as absent);
 - every generation-scoped kind is `rejected` `generation_conflict` on a stale
   generation, with the current one in the payload's `state`;
 - `play` REPLACES the music slot (a fresh `playback_id` each time); `stop`
@@ -29,16 +37,16 @@ The wire (`docs/service-api/openapi.json`, «Outcomes on the controller»):
   are `rejected` `pause_during_speech`; `set_volume` outside 0-200 is 400;
 - `speak` over the bound is 400; a full speech queue is `unavailable`;
   `fault` set to `internal_error` answers `uncertain`, to any other reason
-  `unavailable`; every settled answer is kept, these too, and an id in flight
-  reads back `pending`;
-- `POST /v1/voice/queries` `status`: `ok` with the full snapshot the hub
-  reconciles from, `nothing_found` for a guild with no connection or a
-  forbidden one.
+  `unavailable`; every settled answer is kept, these too;
+- `POST /v1/voice/queries` `status`: a missing, empty or non-string
+  `guild_id` is 400; `ok` with the full snapshot the hub reconciles from;
+  `nothing_found` for any other string: no core, forbidden, not a snowflake.
 
 Deliberately NOT emulated: the outbox's event DELIVERY (tests POST events to
 nora's consumer directly), ffmpeg, and the Discord socket. `speech_active`
 stays set after `speak` until the test calls `finish_speech()`, which is what
-lets a test pin "pause/resume DURING speech" deterministically.
+lets a test pin "pause/resume DURING speech" deterministically. The ledger
+is unbounded, so the real one's "no room" `unavailable` is never answered.
 """
 
 from __future__ import annotations
@@ -48,6 +56,7 @@ import base64
 import binascii
 import hashlib
 import json
+import re
 import time
 from typing import Any
 
@@ -59,6 +68,25 @@ _MAX_SPEECH_BYTES = 2 * 1024 * 1024
 _KINDS = frozenset({"join", "leave", "play", "stop", "pause", "resume",
                     "set_volume", "speak", "report"})
 _LEDGER_S = 300.0
+_MAX_CONTROL_BYTES = 64 * 1024
+_OPERATION_ID = re.compile(r"[A-Za-z0-9._:-]{1,64}")
+_SNOWFLAKE = re.compile(r"[0-9]{15,25}")
+
+
+def _snowflake(value: object) -> bool:
+    return isinstance(value, str) and _SNOWFLAKE.fullmatch(value) is not None
+
+
+def _refusal(kind: str) -> dict[str, Any]:
+    """A refusal that resolved no connection: `state` is null."""
+    return {"state": None, "error": {"kind": kind, "message": kind}}
+
+
+def _respond(answered: dict[str, Any] | str) -> web.Response:
+    """A kept envelope under its outcome's status, or a 400 with no envelope."""
+    if isinstance(answered, str):
+        return web.json_response({"error": answered}, status=400)
+    return web.json_response(answered, status=status_for(answered["outcome"]))
 
 
 class _BadRequestError(Exception):
@@ -84,8 +112,10 @@ class FakeVoiceController:
         self.has_core = False
         #: A reason the next operations fail with (`internal_error` is `uncertain`).
         self.fault: str | None = None
-        #: operation_id -> (expires_at, effect hash, envelope or `None` in flight).
-        self._ledger: dict[str, tuple[float, str, dict[str, Any] | None]] = {}
+        #: operation_id -> (expires_at, effect hash, answer, started_at_ms); the
+        #: answer is an envelope, or a 400's reason, once it settles.
+        self._ledger: dict[str, tuple[
+            float, str, asyncio.Future[dict[str, Any] | str], int]] = {}
         #: How many operations reached a handler, the ledger's replays excluded.
         self.applied = 0
         self.voice = "idle"
@@ -174,67 +204,77 @@ class FakeVoiceController:
 
     def _answer(self, outcome: OperationOutcome,
                 reason: str | None = None) -> tuple[OperationOutcome, dict[str, Any]]:
-        state = None if reason == "unknown_guild" else self._state()
-        payload: dict[str, Any] = {"state": state}
+        payload: dict[str, Any] = {"state": self._state()}
         if reason is not None:
             payload["error"] = {"kind": reason, "message": reason}
         return outcome, payload
 
     async def operations(self, request: web.Request) -> web.Response:
+        raw = await request.read()
         try:
-            body = json.loads(await request.read() or b"{}")
+            body = json.loads(raw or b"{}")
         except (json.JSONDecodeError, UnicodeDecodeError):
             return web.json_response({"error": "invalid_json"}, status=400)
-        if not isinstance(body, dict) or not isinstance(body.get("effect"), dict):
+        if not isinstance(body, dict):
             return web.json_response({"error": "invalid_body"}, status=400)
-        if body.get("kind") not in _KINDS:
-            return web.json_response({"error": "unknown_kind"}, status=422)
-        operation_id, kind, effect = body.get("operation_id"), body["kind"], body["effect"]
-        if not isinstance(operation_id, str) or not operation_id:
+        operation_id, kind, effect = body.get("operation_id"), body.get("kind"), body.get("effect")
+        if not (isinstance(operation_id, str) and _OPERATION_ID.fullmatch(operation_id)):
             return web.json_response({"error": "invalid_operation_id"}, status=400)
+        if not isinstance(kind, str) or kind not in _KINDS:
+            return web.json_response({"error": "unknown_kind"}, status=422)
+        if not isinstance(effect, dict):
+            return web.json_response({"error": "invalid_body"}, status=400)
+        if kind != "speak" and len(raw) > _MAX_CONTROL_BYTES:
+            return web.json_response({"error": "body_too_large"}, status=413)
+        if kind != "report" and not _snowflake(effect.get("guild_id")):
+            return web.json_response({"error": "wrong_guild"}, status=400)
         now = time.monotonic()
         self._ledger = {k: v for k, v in self._ledger.items() if v[0] > now}
         digest = hashlib.sha256(json.dumps([kind, effect], sort_keys=True).encode()).hexdigest()
-        started = int(time.time() * 1000)
         held = self._ledger.get(operation_id)
         if held is not None:
             if held[1] != digest:
                 return web.json_response({"error": "operation_id_reused"}, status=409)
-            kept = held[2] or _pending(started)
-            return web.json_response(kept, status=status_for(kept["outcome"]))
-        # Every settled answer is kept, `unavailable` and `uncertain` too;
-        # while it runs, the id reads back `pending`.
-        self._ledger[operation_id] = (now + _LEDGER_S, digest, None)
+            # A duplicate in flight awaits the first execution's answer.
+            answered = await asyncio.shield(held[2])
+            return _respond(answered)
+        started = int(time.time() * 1000)
+        answer: asyncio.Future[dict[str, Any] | str] = asyncio.get_running_loop().create_future()
+        self._ledger[operation_id] = (now + _LEDGER_S, digest, answer, started)
         try:
             outcome, payload = await self._apply(kind, effect)
         except _BadRequestError as exc:
             del self._ledger[operation_id]
-            return web.json_response({"error": str(exc)}, status=400)
+            answer.set_result(str(exc))
+            return _respond(str(exc))
         envelope = operation_envelope(outcome, payload, guild_id=str(
             effect.get("guild_id") or ""), trace=_trace(request), started_ms=started)
-        self._ledger[operation_id] = (now + _LEDGER_S, digest, envelope)
-        return web.json_response(envelope, status=status_for(outcome))
+        # Every settled answer is kept, `unavailable` and `uncertain` too.
+        self._ledger[operation_id] = (time.monotonic() + _LEDGER_S, digest, answer, started)
+        answer.set_result(envelope)
+        return _respond(envelope)
 
     async def read_operation(self, request: web.Request) -> web.Response:
         held = self._ledger.get(request.match_info["operation_id"])
         if held is None or held[0] <= time.monotonic():
             return self._read("nothing_found", None, _trace(request))
-        return self._read("ok", held[2] or _pending(int(time.time() * 1000)), _trace(request))
+        answered = held[2].result() if held[2].done() else _pending(held[3])
+        return self._read("ok", answered, _trace(request))
 
     async def queries(self, request: web.Request) -> web.Response:
         try:
             body = await request.json()
         except (json.JSONDecodeError, UnicodeDecodeError):
             body = None
-        if not isinstance(body, dict) or not isinstance(body.get("params"), dict):
+        if not isinstance(body, dict):
             return web.json_response({"error": "invalid_body"}, status=400)
         if body.get("kind") != "status":
             return web.json_response({"error": "unknown_kind"}, status=422)
-        guild_id = body["params"].get("guild_id")
+        params = body.get("params")
+        guild_id = params.get("guild_id") if isinstance(params, dict) else None
         if not isinstance(guild_id, str) or not guild_id:
             return web.json_response({"error": "guild_id is required"}, status=400)
-        if guild_id in self._forbidden or guild_id != self._guild_id or not (
-                self.has_core or self.voice == "connected"):
+        if guild_id in self._forbidden or not self._holds(guild_id):
             return self._read("nothing_found", None, _trace(request))
         return self._read("ok", {
             **self._state(),
@@ -247,23 +287,29 @@ class FakeVoiceController:
             "pump": {},
         }, _trace(request))
 
+    def _holds(self, guild_id: str) -> bool:
+        """Whether the fake holds a connection core for this guild."""
+        return guild_id == self._guild_id and (self.has_core or self.voice == "connected")
+
     async def _apply(self, kind: str,
                      effect: dict[str, Any]) -> tuple[OperationOutcome, dict[str, Any]]:
         if kind == "report":
-            return self._answer("unsupported", "unsupported")
-        guild_id = effect.get("guild_id")
+            return "unsupported", _refusal("unsupported")
+        guild_id = effect["guild_id"]
         if guild_id in self._forbidden:
-            return self._answer("denied", "forbidden_guild")
+            return "denied", _refusal("forbidden_guild")
         if guild_id != self._guild_id:
-            raise _BadRequestError("wrong_guild")
+            # Another admitted guild: no core, and this fake holds only one.
+            return ("unavailable", _refusal("join_failed")) if kind == "join" else (
+                "rejected", _refusal("unknown_guild"))
         if self.fault is not None:
             return self._answer(
                 "uncertain" if self.fault == "internal_error" else "unavailable", self.fault)
         self.applied += 1
         if kind == "join":
             return self._join(effect)
-        if not (self.has_core or self.voice == "connected"):
-            return self._answer("rejected", "unknown_guild")
+        if not self._holds(guild_id):
+            return "rejected", _refusal("unknown_guild")
         if self.generation is None or effect.get("generation") != self.generation:
             return self._answer("rejected", "generation_conflict")
         handler = {"leave": self._leave, "play": self._play, "stop": self._stop,
@@ -275,7 +321,7 @@ class FakeVoiceController:
 
     def _join(self, effect: dict[str, Any]) -> tuple[OperationOutcome, dict[str, Any]]:
         channel = effect.get("channel_id")
-        if not isinstance(channel, str) or not channel:
+        if not isinstance(channel, str) or not channel or len(channel) > 64:
             raise _BadRequestError("invalid_body")
         self.has_core = True
         if self.voice == "connected":
@@ -304,6 +350,8 @@ class FakeVoiceController:
     async def _play(self, effect: dict[str, Any]) -> tuple[OperationOutcome, dict[str, Any]]:
         stream_url = effect.get("stream_url")
         if not isinstance(stream_url, str) or not stream_url:
+            raise _BadRequestError("invalid_body")
+        if effect.get("resumable") is not None and not isinstance(effect["resumable"], bool):
             raise _BadRequestError("invalid_body")
         if self.play_gate is not None:
             await self.play_gate.wait()
@@ -401,7 +449,7 @@ def read_envelope(outcome: ReadOutcome, payload: object, *, trace: str = "") -> 
 
 
 def _pending(started_ms: int) -> dict[str, Any]:
-    return {**operation_envelope("complete", None, started_ms=started_ms),
+    return {**operation_envelope("complete", {"state": None}, started_ms=started_ms),
             "outcome": "pending",
             "when": {"state": "started", "started_at_ms": started_ms, "settled_at_ms": None}}
 

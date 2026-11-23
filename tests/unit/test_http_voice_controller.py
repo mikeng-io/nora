@@ -34,6 +34,7 @@ def _state(**overrides):
     return state
 
 
+GUILD = "100000000000000101"
 OPERATIONS = "/v1/voice/operations"
 QUERIES = "/v1/voice/queries"
 
@@ -71,7 +72,7 @@ async def _client(aiohttp_client, app) -> VoiceControllerClient:
 async def test_join_returns_the_state_snapshot(aiohttp_client):
     vc = await _client(aiohttp_client, _app())
 
-    state = await vc.join("guild-1", "cortez-1", operation_id="req-1")
+    state = await vc.join(GUILD, "cortez-1", operation_id="req-1")
 
     assert state["voice"] == "connected"
     assert state["generation"] == "gen-1"
@@ -80,7 +81,7 @@ async def test_join_returns_the_state_snapshot(aiohttp_client):
 async def test_status_returns_the_full_query_payload(aiohttp_client):
     vc = await _client(aiohttp_client, _app())
 
-    snapshot = await vc.status("guild-1")
+    snapshot = await vc.status(GUILD)
 
     assert snapshot["generation"] == "gen-1"
     assert snapshot["player"]["status"] == "playing"
@@ -91,7 +92,7 @@ async def test_a_rejected_generation_maps_to_generation_conflict(aiohttp_client)
 
     with pytest.raises(GenerationConflict):
         await vc.play("stale-gen", "https://cdn.example/x",
-            guild_id="guild-1", operation_id="req-1")
+            guild_id=GUILD, operation_id="req-1")
 
 
 async def test_a_400_maps_to_rejected_carrying_the_reason(aiohttp_client):
@@ -112,7 +113,7 @@ async def test_unavailable_maps_to_unavailable(aiohttp_client):
 
     with pytest.raises(VoiceControllerUnavailable):
         await vc.stream("gen-1", b"mp3-bytes", media_type="audio/mpeg",
-                        guild_id="guild-1", operation_id="req-1")
+                        guild_id=GUILD, operation_id="req-1")
 
 
 async def test_a_transport_error_maps_to_unavailable():
@@ -120,7 +121,7 @@ async def test_a_transport_error_maps_to_unavailable():
     vc = VoiceControllerClient("http://127.0.0.1:1", timeout_seconds=2.0)
 
     with pytest.raises(VoiceControllerUnavailable):
-        await vc.status("guild-1")
+        await vc.status(GUILD)
 
 
 async def test_an_unparseable_success_body_maps_to_unavailable(aiohttp_client):
@@ -133,7 +134,7 @@ async def test_an_unparseable_success_body_maps_to_unavailable(aiohttp_client):
     vc = await _client(aiohttp_client, app)
 
     with pytest.raises(VoiceControllerUnavailable):
-        await vc.status("guild-1")
+        await vc.status(GUILD)
 
 
 async def test_a_success_body_without_a_state_snapshot_is_unavailable(aiohttp_client):
@@ -142,12 +143,12 @@ async def test_a_success_body_without_a_state_snapshot_is_unavailable(aiohttp_cl
     vc = await _client(aiohttp_client, _app(answer=(200, operation_envelope("complete", {}))))
 
     with pytest.raises(VoiceControllerUnavailable):
-        await vc.join("guild-1", "cortez-1", operation_id="req-1")
+        await vc.join(GUILD, "cortez-1", operation_id="req-1")
 
 
 async def test_play_records_the_playback_id_from_the_state_snapshot(aiohttp_client):
     vc = await _client(aiohttp_client, _app())
-    session = HttpVoiceSession(vc, guild_id="guild-1", generation="gen-1")
+    session = HttpVoiceSession(vc, guild_id=GUILD, generation="gen-1")
     assert session.playback_id is None
 
     await session.play("https://cdn.example/x", duration_seconds=200.0)
@@ -158,7 +159,7 @@ async def test_play_records_the_playback_id_from_the_state_snapshot(aiohttp_clie
 async def test_play_sends_the_pinned_body(aiohttp_client):
     record: list = []
     vc = await _client(aiohttp_client, _app(record=record))
-    session = HttpVoiceSession(vc, guild_id="guild-1", generation="gen-1")
+    session = HttpVoiceSession(vc, guild_id=GUILD, generation="gen-1")
 
     await session.play("https://cdn.example/x", duration_seconds=200.0)
 
@@ -173,7 +174,7 @@ async def test_play_sends_the_pinned_body(aiohttp_client):
 async def test_set_volume_converts_the_float_to_a_percent(aiohttp_client):
     record: list = []
     vc = await _client(aiohttp_client, _app(record=record))
-    session = HttpVoiceSession(vc, guild_id="guild-1", generation="gen-1")
+    session = HttpVoiceSession(vc, guild_id=GUILD, generation="gen-1")
 
     await session.set_volume(0.5)
     await session.set_volume(2.0)
@@ -185,7 +186,7 @@ async def test_set_volume_converts_the_float_to_a_percent(aiohttp_client):
 async def test_every_call_mints_a_fresh_operation_id(aiohttp_client):
     record: list = []
     vc = await _client(aiohttp_client, _app(record=record))
-    session = HttpVoiceSession(vc, guild_id="guild-1", generation="gen-1")
+    session = HttpVoiceSession(vc, guild_id=GUILD, generation="gen-1")
 
     await session.pause()
     await session.resume()
@@ -199,7 +200,7 @@ async def test_every_call_mints_a_fresh_operation_id(aiohttp_client):
 async def test_disconnect_tolerates_a_generation_conflict(aiohttp_client):
     """Already gone controller-side IS the end state disconnect asks for."""
     vc = await _client(aiohttp_client, _app(answer=_rejected("generation_conflict")))
-    session = HttpVoiceSession(vc, guild_id="guild-1", generation="gen-1")
+    session = HttpVoiceSession(vc, guild_id=GUILD, generation="gen-1")
 
     await session.disconnect()  # must not raise
 
@@ -207,7 +208,7 @@ async def test_disconnect_tolerates_a_generation_conflict(aiohttp_client):
 async def test_disconnect_propagates_other_failures(aiohttp_client):
     vc = await _client(aiohttp_client, _app(answer=(503, operation_envelope(
         "unavailable", {"state": None, "error": {"kind": "restarting", "message": "r"}}))))
-    session = HttpVoiceSession(vc, guild_id="guild-1", generation="gen-1")
+    session = HttpVoiceSession(vc, guild_id=GUILD, generation="gen-1")
 
     with pytest.raises(VoiceControllerUnavailable):
         await session.disconnect()
@@ -219,7 +220,7 @@ async def test_an_injected_session_is_used_instead_of_a_per_call_one(aiohttp_cli
         str(test_client.make_url("")).rstrip("/"), session=test_client.session,
     )
 
-    state = await vc.join("guild-1", "cortez-1", operation_id="req-1")
+    state = await vc.join(GUILD, "cortez-1", operation_id="req-1")
 
     assert state["generation"] == "gen-1"
 
@@ -233,9 +234,9 @@ async def test_play_sends_resumable_only_when_given(aiohttp_client):
 
     await vc.play(
         "gen-1", "https://cdn.example/live",
-        resumable=False, guild_id="guild-1", operation_id="r1",
+        resumable=False, guild_id=GUILD, operation_id="r1",
     )
-    await vc.play("gen-1", "https://cdn.example/vod", guild_id="guild-1", operation_id="r2")
+    await vc.play("gen-1", "https://cdn.example/vod", guild_id=GUILD, operation_id="r2")
 
     bodies = [r["effect"] for r in record if r["kind"] == "play"]
     assert bodies[0]["resumable"] is False
@@ -248,11 +249,11 @@ async def test_a_generation_conflict_reconciles_and_retries_once(aiohttp_client)
     hub's cache and the manager's player hold this same object, so both
     agree afterwards — and retries the verb, which then succeeds. No
     rejection loop."""
-    fake = FakeVoiceController("guild-1", "cortez-1")
+    fake = FakeVoiceController(GUILD, "cortez-1")
     test_client = await aiohttp_client(fake.app())
     vc = VoiceControllerClient(str(test_client.make_url("")).rstrip("/"))
-    state = await vc.join("guild-1", "cortez-1", operation_id="r-join")
-    session = HttpVoiceSession(vc, guild_id="guild-1", generation=state["generation"])
+    state = await vc.join(GUILD, "cortez-1", operation_id="r-join")
+    session = HttpVoiceSession(vc, guild_id=GUILD, generation=state["generation"])
     fake.restart()  # connection survives under a NEW generation; ours is stale
     assert fake.generation != session.generation
 
@@ -266,12 +267,12 @@ async def test_a_generation_conflict_reconciles_and_retries_once(aiohttp_client)
 async def test_a_conflict_with_no_live_connection_does_not_reconcile(aiohttp_client):
     """An EXITED connection is not a stale generation — it is a gone one.
     There is nothing to adopt, and the conflict climbs."""
-    fake = FakeVoiceController("guild-1", "cortez-1")
+    fake = FakeVoiceController(GUILD, "cortez-1")
     test_client = await aiohttp_client(fake.app())
     vc = VoiceControllerClient(str(test_client.make_url("")).rstrip("/"))
-    state = await vc.join("guild-1", "cortez-1", operation_id="r-join")
-    session = HttpVoiceSession(vc, guild_id="guild-1", generation=state["generation"])
-    await vc.exit(state["generation"], guild_id="guild-1", operation_id="r-exit")
+    state = await vc.join(GUILD, "cortez-1", operation_id="r-join")
+    session = HttpVoiceSession(vc, guild_id=GUILD, generation=state["generation"])
+    await vc.exit(state["generation"], guild_id=GUILD, operation_id="r-exit")
 
     with pytest.raises(GenerationConflict):
         await session.play("https://cdn.example/a")
@@ -281,15 +282,15 @@ async def test_a_conflict_with_no_live_connection_does_not_reconcile(aiohttp_cli
 async def test_an_arbiter_rejection_is_not_retried(aiohttp_client):
     """`pause_during_speech` is a refusal, not staleness: no status read,
     no retry, the conflict climbs as-is."""
-    fake = FakeVoiceController("guild-1", "cortez-1")
+    fake = FakeVoiceController(GUILD, "cortez-1")
     test_client = await aiohttp_client(fake.app())
     vc = VoiceControllerClient(str(test_client.make_url("")).rstrip("/"))
-    state = await vc.join("guild-1", "cortez-1", operation_id="r-join")
-    session = HttpVoiceSession(vc, guild_id="guild-1", generation=state["generation"])
+    state = await vc.join(GUILD, "cortez-1", operation_id="r-join")
+    session = HttpVoiceSession(vc, guild_id=GUILD, generation=state["generation"])
     await session.play("https://cdn.example/a")
     await vc.stream(
         state["generation"], b"speech", media_type="audio/mpeg",
-        guild_id="guild-1", operation_id="r-s",
+        guild_id=GUILD, operation_id="r-s",
     )
 
     with pytest.raises(GenerationConflict) as excinfo:
@@ -302,11 +303,11 @@ async def test_stop_tolerates_a_dead_generation(aiohttp_client):
     already forgot this generation — the music slot is definitionally
     stopped, so the teardown that called stop COMPLETES instead of dying
     on a controller that is already gone."""
-    fake = FakeVoiceController("guild-1", "cortez-1")
+    fake = FakeVoiceController(GUILD, "cortez-1")
     test_client = await aiohttp_client(fake.app())
     vc = VoiceControllerClient(str(test_client.make_url("")).rstrip("/"))
-    state = await vc.join("guild-1", "cortez-1", operation_id="r-join")
-    session = HttpVoiceSession(vc, guild_id="guild-1", generation=state["generation"])
+    state = await vc.join(GUILD, "cortez-1", operation_id="r-join")
+    session = HttpVoiceSession(vc, guild_id=GUILD, generation=state["generation"])
     await session.play("https://cdn.example/a")
     fake.restart()  # our generation is now unrecognised
 
@@ -335,8 +336,8 @@ async def test_every_control_call_and_the_status_read_carry_the_bearer(aiohttp_c
     app.router.add_post(QUERIES, status_handler)
     vc = await _client(aiohttp_client, app)
 
-    await vc.join("guild-1", "chan-1", operation_id="r-1")
-    await vc.status("guild-1")
+    await vc.join(GUILD, "chan-1", operation_id="r-1")
+    await vc.status(GUILD)
 
     assert seen == ["Bearer tok-shared", "Bearer tok-shared"]
 
@@ -355,6 +356,6 @@ async def test_with_no_token_configured_the_client_sends_no_header(aiohttp_clien
     app.router.add_post(OPERATIONS, handler)
     vc = await _client(aiohttp_client, app)
 
-    await vc.join("guild-1", "chan-1", operation_id="r-1")
+    await vc.join(GUILD, "chan-1", operation_id="r-1")
 
     assert seen == [None]

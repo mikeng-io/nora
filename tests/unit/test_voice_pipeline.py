@@ -33,7 +33,7 @@ from nora.testing.music import FakeMusicQueueStore, FakeMusicSessionStore
 from nora.testing.voice import FakeVoiceController
 from tests.unit.test_music_player_manager import _StubSource
 
-GUILD = "guild-1"
+GUILD = "100000000000000101"
 CHANNEL = "cortez-1"
 T0 = datetime(2026, 9, 16, 12, 0, tzinfo=UTC)
 

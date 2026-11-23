@@ -12,6 +12,7 @@ controller and this fake ever disagree, one of them is off-contract.
 
 from __future__ import annotations
 
+import asyncio
 from uuid import uuid4
 
 import pytest
@@ -28,7 +29,7 @@ from nora.infra.voice.http_controller import (
 )
 from nora.testing.voice import FakeVoiceController
 
-GUILD = "guild-1"
+GUILD = "100000000000000101"
 CHANNEL = "cortez-1"
 OPERATIONS = "/v1/voice/operations"
 
@@ -413,3 +414,86 @@ async def test_a_reconciled_retry_is_a_new_operation(controller):
 
     assert session.generation == fake.generation != generation
     assert [p["generation"] for p in fake.plays] == [fake.generation]
+
+
+OTHER_GUILD = "100000000000000102"
+FORBIDDEN_GUILD = "100000000000000103"
+
+
+async def test_a_malformed_forbidden_and_unjoined_guild_are_told_apart(aiohttp_client):
+    """A guild id that is not a snowflake is a 400; a forbidden guild is `denied`
+    on an operation and `nothing_found` on the status query; an admitted guild
+    with no connection is `rejected` `unknown_guild`. The last two carry no state."""
+    fake = FakeVoiceController(GUILD, CHANNEL, forbidden_guilds=frozenset({FORBIDDEN_GUILD}))
+    test_client = await aiohttp_client(fake.app())
+
+    async def op(guild_id: object, kind: str = "leave") -> tuple[int, dict]:
+        resp = await test_client.post(OPERATIONS, json={
+            "operation_id": str(uuid4()), "kind": kind,
+            "effect": {"guild_id": guild_id, "generation": "gen-1"}})
+        return resp.status, await resp.json()
+
+    async def status(guild_id: object) -> tuple[int, dict]:
+        resp = await test_client.post("/v1/voice/queries", json={
+            "kind": "status", "params": {"guild_id": guild_id}})
+        return resp.status, await resp.json()
+
+    assert (await op("guild-x"))[0] == 400
+    assert (await op(None))[0] == 400
+    code, body = await op(FORBIDDEN_GUILD)
+    assert (code, body["outcome"], body["payload"]["state"]) == (403, "denied", None)
+    code, body = await op(OTHER_GUILD)
+    assert (code, body["outcome"], body["payload"]["error"]["kind"]) == (
+        200, "rejected", "unknown_guild")
+    assert body["payload"]["state"] is None
+    for guild_id in (FORBIDDEN_GUILD, OTHER_GUILD, "guild-x"):
+        code, body = await status(guild_id)
+        assert (code, body["outcome"]) == (200, "nothing_found"), guild_id
+    for guild_id in (None, "", 7):
+        assert (await status(guild_id))[0] == 400, guild_id
+    assert fake.applied == 0
+
+
+async def test_the_front_door_refuses_what_the_controller_refuses(controller):
+    """An operation id outside the grammar, a non-boolean `resumable`, an
+    over-long channel and a control body over 64 KiB are refused before any
+    effect; a null `resumable` reads as absent."""
+    fake, client, test_client = controller
+    generation = await _join(client)
+
+    async def post(operation_id: str, kind: str, **effect) -> int:
+        resp = await test_client.post(OPERATIONS, json={
+            "operation_id": operation_id, "kind": kind, "effect": {"guild_id": GUILD, **effect}})
+        return resp.status
+
+    play = {"generation": generation, "stream_url": "https://cdn.example/a"}
+    assert await post("no spaces", "play", **play) == 400
+    assert await post("x" * 65, "play", **play) == 400
+    assert await post(str(uuid4()), "play", **play, resumable="yes") == 400
+    assert await post(str(uuid4()), "join", channel_id="c" * 65) == 400
+    assert await post(str(uuid4()), "play", **play, title="t" * 70_000) == 413
+    assert fake.plays == []
+    assert await post(str(uuid4()), "play", **play, resumable=None) == 200
+    assert len(fake.plays) == 1
+
+
+async def test_a_duplicate_in_flight_awaits_the_first_answer(controller):
+    """The same id and effect while the first is still running is answered with
+    the first's envelope, never a second execution."""
+    fake, client, test_client = controller
+    generation = await _join(client)
+    fake.play_gate = asyncio.Event()
+    body = {"operation_id": "op-dup", "kind": "play", "effect": {
+        "guild_id": GUILD, "generation": generation, "stream_url": "https://cdn.example/a"}}
+
+    first = asyncio.ensure_future(test_client.post(OPERATIONS, json=body))
+    while not fake.applied > 1:
+        await asyncio.sleep(0)
+    second = asyncio.ensure_future(test_client.post(OPERATIONS, json=body))
+    read = await (await test_client.get(f"{OPERATIONS}/op-dup")).json()
+    assert read["payload"]["outcome"] == "pending"
+    fake.play_gate.set()
+    answers = [await (await r).json() for r in (first, second)]
+
+    assert answers[0] == answers[1] and answers[0]["outcome"] == "complete"
+    assert len(fake.plays) == 1
