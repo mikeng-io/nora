@@ -9,7 +9,7 @@ from dataclasses import fields as data_fields
 from nora.agent.egress import LeakGuard, scan_identifiers, scan_reply
 from nora.memory.app.admission_identity import AdmissionIdentity
 from nora.memory.domain.admission import Refusal, admit_batch, fields, row_references
-from nora.memory.domain.admission_ports import AdmissionStore, AdmissionUnavailableError
+from nora.memory.domain.admission_ports import AdmissionStore, AdmissionUnavailableError, Stored
 from nora.memory.domain.admission_proposals import (
     CreateIntention,
     MergeEntities,
@@ -21,12 +21,6 @@ from nora.memory.domain.admission_proposals import (
     Revise,
 )
 from nora.memory.domain.graph import StaleBaseError
-
-
-@dataclass(frozen=True, slots=True)
-class Stored:
-    id: str
-    base: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,12 +137,13 @@ class AdmissionService:
             )
             if isinstance(choice, Refusal):
                 return choice
-            await self._store.persist_admitted_proposal(choice, context)
+            stored = Stored(choice.row.id, choice.base.id if choice.base is not None else None)
+            await self._store.persist_admitted_proposal(choice, context, stored)
         except StaleBaseError:
             return Refusal("stale_base", "base")
         except AdmissionUnavailableError as exc:
             return Unavailable(data.id, exc.commit_uncertain)
-        return Stored(choice.row.id, choice.base.id if choice.base is not None else None)
+        return stored
 
     def _protect(self, proposal: Proposal) -> Refusal | None:
         for field, text in _text(proposal):

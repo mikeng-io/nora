@@ -7,11 +7,15 @@ from typing import Any
 from uuid import uuid4
 
 import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import AsyncConnection
 
+from nora.domain.graph_stimuli import GraphStimulus
+from nora.infra.sql.cognitive_graph_schema import EDGE
 from nora.infra.sql.cognitive_graph_store import GraphWriteError, SqlCognitiveGraph
+from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.memory.adapters.admission_rows import GRAPH_TABLES, SqlAdmissionRows
 from nora.memory.domain.admission import Admitted, fields
-from nora.memory.domain.admission_ports import AdmissionUnavailableError
+from nora.memory.domain.admission_ports import AdmissionUnavailableError, Stored
 from nora.memory.domain.admission_proposals import (
     AddEdge,
     CreateClaim,
@@ -20,6 +24,7 @@ from nora.memory.domain.admission_proposals import (
     Link,
     PassContext,
     Retire,
+    Revise,
     RowFacts,
 )
 
@@ -32,9 +37,14 @@ class SqlAdmissionStore:
     async def read(self, unit: str, ids: frozenset[str]) -> Mapping[str, RowFacts]:
         return await self._rows.read(unit, ids)
 
-    async def persist_admitted_proposal(self, decision: Admitted, context: PassContext) -> None:
+    async def persist_admitted_proposal(
+        self, decision: Admitted, context: PassContext, stored: Stored,
+    ) -> None:
         row, edges = _serialize(decision, context)
         base, survivor = decision.base, decision.survivor
+        async def dependency(conn: AsyncConnection) -> None:
+            await _dependency(conn, stored, row)
+
         try:
             await self._graph.write_admission(
                 GRAPH_TABLES[decision.row.kind],
@@ -43,9 +53,28 @@ class SqlAdmissionStore:
                 base_state=base.state if base is not None and survivor is None else None,
                 retire=isinstance(decision.proposal, Retire),
                 merge=(base.id, survivor.id) if base is not None and survivor is not None else None,
+                after_write=dependency if isinstance(decision.proposal, (Revise, Retire)) else None,
             )
         except GraphWriteError as exc:
             raise AdmissionUnavailableError(commit_uncertain=exc.commit_uncertain) from exc
+
+
+async def _dependency(conn: AsyncConnection, stored: Stored, row: Mapping[str, Any]) -> None:
+    if stored.base is None:
+        return
+    dependents = tuple((await conn.scalars(
+        sa.select(EDGE.c.src_id).distinct().where(
+            EDGE.c.unit == row["unit"], EDGE.c.dst_id == stored.base, EDGE.c.state == "live",
+            EDGE.c.type.in_(("draws_on", "rests_on")),
+        ).order_by(EDGE.c.src_id),
+    )).all())
+    if dependents:
+        at = (await conn.execute(sa.select(sa.func.now()))).scalar_one()
+        await SqlGraphStimuli.append_in(conn, GraphStimulus(
+            row["unit"], "dependency", stored.base, at, "admission",
+            room=row["origin_room"], revision_id=stored.id, dependents=dependents,
+            occurrence=stored.id,
+        ))
 
 
 def _stamp(context: PassContext) -> dict[str, str]:

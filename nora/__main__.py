@@ -23,7 +23,7 @@ from typing import Any, Protocol
 
 from . import config
 from .agent.telemetry import setup_agent_tracing
-from .app import adoption, cli, lifecycle, runtime, wake
+from .app import adoption, cli, lifecycle, runtime, tick_grid
 from .app.composition import Dependencies, StartupError, build_dependencies
 from .app.management import mount_management
 from .app.revisions import RevisionRecorder
@@ -200,7 +200,7 @@ class App:
             register_bridge_routes(health_app, runtime=deps.bridge_runtime)
         self._health_runner = await serve(health_app, self.cfg.obs.metrics.port)
 
-        deps.background.spawn(heartbeat(deps.metrics))
+        self._start_clocks()
         # What this process loaded: its deploy, its three config files, and
         # every doctrine and Dreamer load from now on, so `nora snapshot --at
         # T` can say what was in force. Spawned, never awaited: a slow or
@@ -329,7 +329,7 @@ class App:
             # session timeout. Never raises (it counts and logs); a wake it could
             # not release expires on its own clock.
             await deps.wake_evaluator.reclaim_orphans(process_started_ms=int(started_at * 1000))
-            deps.background.spawn(wake.wake_loop(
+            deps.background.spawn(tick_grid.wake_loop(
                 deps.wake_evaluator, deps.metrics,
                 tick_seconds=deps.wake_tick_seconds))
         else:
@@ -423,6 +423,12 @@ class App:
             if deps.computer_lifecycle is not None:
                 await deps.computer_lifecycle.close()
             await deps.background.cancel_all()
+
+    def _start_clocks(self) -> None:
+        deps = self.deps
+        deps.background.spawn(heartbeat(deps.metrics))
+        if deps.graph_observe is not None:
+            deps.background.spawn(deps.graph_observe.run())
 
     async def _adopt_pending(self) -> None:
         """Adapts `adoption.backfill`'s `AdoptionCounts` return to the

@@ -4,9 +4,10 @@ tombstone — each in a single transaction, so no half-write exists."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import Any
+from uuid import uuid4
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -200,6 +201,7 @@ class SqlCognitiveGraph:
         base_state: str | None = None,
         retire: bool = False,
         merge: tuple[str, str] | None = None,
+        after_write: Callable[[AsyncConnection], Awaitable[None]] | None = None,
     ) -> None:
         """Write a model proposal and all its edges as one graph transaction."""
         committing = False
@@ -216,6 +218,8 @@ class SqlCognitiveGraph:
                     await self._revise(conn, table, row)
                 for edge in edges:
                     await self._insert(conn, EDGE, edge)
+                if after_write is not None:
+                    await after_write(conn)
                 committing = True
         except sa.exc.SQLAlchemyError as exc:
             raise GraphWriteError(commit_uncertain=committing) from exc
@@ -266,6 +270,37 @@ class SqlCognitiveGraph:
                 excluded_persons=edge["excluded_persons"], origin_room=edge["origin_room"],
             )
         )
+
+    async def end_intention_in(
+        self, conn: AsyncConnection, intention: RowData, ending: str, *,
+        witness_id: str, witness_at: datetime, witness_scope: Mapping[str, Any],
+    ) -> None:
+        scope = inherited_scope(
+            (InputScope(tuple(row["excluded_persons"]), row["exposure"],
+                        Lineage.from_json(row["lineage"])) for row in (intention, witness_scope)),
+            build_lineage=Lineage(), minimum="internal",
+        )
+        unit, intention_id = intention["unit"], intention["id"]
+        ended = await conn.scalar(sa.update(INTENTION).where(
+            INTENTION.c.unit == unit, INTENTION.c.id == intention_id, INTENTION.c.state == "open",
+        ).values(state="ended", ending=ending, ended_at=sa.func.clock_timestamp())
+          .returning(INTENTION.c.ended_at))
+        if ended is None:
+            return
+        await self._insert(conn, EDGE, {
+            "id": f"edge:{uuid4().hex}", "unit": unit, "kind": "edge",
+            "src_id": intention_id, "dst_id": witness_id, "type": "closed_by",
+            "basis": "computed", "state": "live", "writer": "ConditionMatcher",
+            "origin_room": intention["origin_room"], "occurred_at": witness_at,
+            "asserted_at": ended, "persons": intention["persons"],
+            "exposure": scope.exposure, "lineage": scope.lineage.to_json(),
+            "excluded_persons": list(scope.excluded_persons),
+        })
+        if intention["form"] == "maintain":
+            await conn.execute(sa.update(EDGE).where(
+                EDGE.c.unit == unit, EDGE.c.src_id == intention_id,
+                EDGE.c.type == "watches", EDGE.c.state == "live",
+            ).values(state="retired"))
 
     async def aggregate_planes(
         self,

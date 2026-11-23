@@ -1,6 +1,7 @@
 """The admission use case's storage contract."""
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Protocol
 
 from nora.memory.domain.admission import Admitted
@@ -12,9 +13,15 @@ class AdmissionUnavailableError(Exception):
         self.commit_uncertain = commit_uncertain
 
 
+@dataclass(frozen=True, slots=True)
+class Stored:
+    id: str
+    base: str | None = None
+
+
 class AdmissionStore(Protocol):
     async def read(self, unit: str, ids: frozenset[str]) -> Mapping[str, RowFacts]: ...
 
     async def persist_admitted_proposal(
-        self, decision: Admitted, context: PassContext,
+        self, decision: Admitted, context: PassContext, stored: Stored,
     ) -> None: ...
