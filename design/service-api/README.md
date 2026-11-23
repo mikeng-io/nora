@@ -27,8 +27,8 @@ actor it names and the outcome it reports.
   `platform`.
 - **Operation** — every write: a typed, idempotent request with an actor and a
   scope, answered with a record that can be read back.
-- **Read** — every GET-shaped answer: `ok`, `nothing_found` or `unavailable`,
-  with when and from what it was observed.
+- **Read** — every GET-shaped answer: `ok`, `nothing_found`, `unavailable`
+  or `denied`, with when and from what it was observed.
 - **Identity** — the canonical subject the API names: a human, a bot or an
   agent, with no type that decides its permissions
   ([managed identity](../managed-identity-access/identity.md#one-identity-many-accounts)).
@@ -51,8 +51,8 @@ actor it names and the outcome it reports.
 - The contract is machine-readable and generated from the domain types; a
   non-Python service, the portal client and the MCP server are checked against
   it, never hand-copied.
-- Every write is an operation; no route mutates state on a GET or outside the
-  operation lifecycle.
+- Every write is an operation, save the bytes of a blob, which are bound to
+  the operation that names their key; no route mutates state on a GET.
 - A read's absence and a read's failure never share a shape; an unavailable
   dependency is `unavailable`, never an empty success.
 - The server resolves every request's scope from its principal and subject

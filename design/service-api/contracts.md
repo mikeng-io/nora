@@ -6,17 +6,17 @@ whatever the network allows.
 
 ## The contracts
 
-| contract | owner | implemented by | called by | holds |
-|---|---|---|---|---|
-| `intake` | `ingest/` | the app's intake | bridges, collectors, audio controllers, executors, the portal, any principal registered as a source | events in one envelope: messages, edits, reactions, deletions, summons, activity changes, social items, membership, source health |
-| `platform` | `platform/` | every bridge | the app | delivery operations (send, react, typing), reads (self, roster, channels, members), attachment custody |
-| `sources` | `social/` | each source adapter | the app's tools, the reflection loop | on-demand reads of one outside reference: an account's items, an identity's live activity |
-| `graph` | `memory/` | the app | the portal, tools, MCP | scoped reads with the retrieval semantics |
-| `management` | `people/` | the management service | the portal, in-room management, bridges' roster sync | the identity, membership and grant operations |
-| `documents` | `documents/` | the app | the portal, tools | documents, revisions, artifacts and their media |
-| `voice` | `voice/` | each audio controller | the app | join, leave, speak, play and their status |
-| `computer` | `computer/` | computerd | the app | sandbox operations, browser sessions, exports |
-| `operations` | `app/` | every Nora process | the operator, monitors, the portal | the process's own status, tool and skill catalogue and doctrine; config and policy reload, queue inspection and drain, loop pause and resume, replay |
+| contract | owner | implemented by | called by | holds | scope |
+|---|---|---|---|---|---|
+| `intake` | `ingest/` | the app's intake | bridges, collectors, audio controllers, executors, the portal, any principal registered as a source | events in one envelope: messages, edits, reactions, deletions, summons, activity changes, social items, membership, source health | placed by intake |
+| `platform` | `platform/` | every bridge | the app | delivery operations (send, react, typing), reads (self, roster, channels, members), attachment custody | room, or the account for self and roster reads |
+| `sources` | `social/` | each source adapter | the app's tools, the reflection loop | on-demand reads of one outside reference: an account's items, an identity's live activity | unit or room |
+| `graph` | `memory/` | the app | the portal, tools, MCP | scoped reads with the retrieval semantics | unit, by the reader's scope |
+| `management` | `people/` | the management service | the portal, in-room management, bridges' roster sync | the identity, membership and grant operations | room, unit, workspace or installation |
+| `documents` | `documents/` | the app | the portal, tools | documents, revisions, artifacts and their media | room |
+| `voice` | `voice/` | each audio controller | the app | join, leave, speak, play and their status | room |
+| `computer` | `computer/` | computerd | the app | sandbox operations, browser sessions, exports | room |
+| `operations` | `app/` | every Nora process | the operator, monitors, the portal | the process's own status, tool and skill catalogue and doctrine; config and policy reload, queue inspection and drain, loop pause and resume, replay | installation |
 
 - A bridge implements `platform` and its own `operations`, and calls
   `intake` and `management`. A platform-specific capability (voice, music, presence) is either a
@@ -49,11 +49,12 @@ contracts do not offer.
 ```
  outside sources ─► adapters ──┐
  platforms ──────► bridges ────┼─► intake ─► items ─► the loops ─► admission ─► graph
- executors ────────────────────┘                          │
+ executors, controllers, portal┘                          │
                                                           ├─► platform  (deliveries, engagement loop only)
                                                           ├─► voice, computer, documents
                                                           └─► sources   (on-demand reads)
  portal, MCP, operator ─► graph, documents, management, operations
+ bridges ───────────────► management (roster synchronisation)
 ```
 
 - **Ingress is one direction.** Bridges and adapters record what happened
@@ -90,8 +91,8 @@ enqueue times, the conversation or subject it concerns, and the trace context.
   operation of `intake`, idempotent on the event id; the transport changes
   delivery guarantees, never meaning.
 - An event without its identity or version is retained as malformed, never
-  guessed into a message; its `record` operation is `rejected`, and nothing
-  is lost.
+  guessed into a message: it becomes no item, its `record` operation is
+  `rejected`, and it is kept once under its event id for inspection.
 - Intake places each item by the observation rules
   ([observation](../cognition/observation.md#rules)); an adapter never names
   a unit.

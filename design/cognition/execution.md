@@ -72,7 +72,7 @@ observed; a failed replay records none and never takes a live slot.
   A standalone retry takes the room's slot like any pass. The debrief settles
   its own obligation, never the pass.
 - An inbound event is acknowledged only once its owner and work are durable.
-  A started act whose outcome is uncertain is read back by identity, never
+  A started act whose outcome is uncertain is read back by its act id, never
   replayed.
 - **While a room's slot is held, the engagement loop wins**: a reflection write
   to an intention of that room is refused as room-busy and retried after the

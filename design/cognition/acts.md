@@ -32,7 +32,7 @@ recorded, and able to close an intention the same way.
 - Public publication on a surface without a unit records its outcome in its
   own ledger, not as a graph item.
 
-**What identity guarantees.** Every act carries a stable identity, checked
+**What the act id guarantees.** Every act carries a stable act id, checked
 before it is invoked, so Nora never *invokes* the same act twice. Whether the
 outside effect happens once depends on the destination, and each executor
 declares which guarantee it provides:
@@ -41,7 +41,7 @@ declares which guarantee it provides:
 |---|---|---|
 | **at-most-once invocation** | Nora never starts the same act twice | always |
 | **idempotent effect** | repeating the call adds no second effect | the destination accepts an idempotency key |
-| **read-back reconciliation** | an uncertain outcome is settled by reading the destination | the destination can be read back by identity |
+| **read-back reconciliation** | an uncertain outcome is settled by reading the destination | the destination can be read back by act id |
 | **unknown** | neither: an uncertain outcome stays unknown and is never retried | — |
 
 No executor claims an exactly-once effect its destination cannot provide.
@@ -63,7 +63,7 @@ Delegated work — a sub-agent job, a computer task, a long browser session —
 runs outside both loops under its own executor.
 
 - Starting it is a delegation act. The work is an achieve intention naming its
-  executor and the job's identity; it is done when the job's outcome item
+  executor and the job's act id; it is done when the job's outcome item
   reports success. A failed or cancelled job closes nothing: decide retries or
   drops the intention, citing that outcome.
 - The executor's own job state is authoritative for the job. Its events and

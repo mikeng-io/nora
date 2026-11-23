@@ -37,21 +37,23 @@ finding against the route, never an exception to the convention.
 |---|---|---|---|
 | `GET` | read a resource or a collection page | yes | yes |
 | `POST …/queries` | a read whose filter names a platform identifier, free text or more than a page key | yes | yes |
-| `POST …/operations` | every write | no | by `operation_id` |
+| `POST …/operations` | every write but a blob's bytes | no | by `operation_id` |
 | `GET …/operations/{id}` | the operation's current record | yes | yes |
 | `PUT …/blobs/{key}` | bytes under an opaque key, with their hash (attachments, media) | no | by key and hash |
 
 No `PATCH` and no `DELETE`: a partial update and a retirement are operations,
 so they carry an actor, an idempotency id and an outcome like every other
 write. Blob custody is the one write outside the operation lifecycle: bytes
-are bound to the operation that names their key, the same key and hash is
-`complete` again, and the same key with another hash is `rejected`.
+are bound to the operation that names their key. Its `PUT` answers an
+operation envelope that is settled at once: `complete` for new bytes and
+again for the same key and hash, `rejected` for the same key with another
+hash.
 
 ## The envelope
 
 Every response body is one envelope: the outcome, the payload, and the facts
-that make the outcome checkable. Three answers are not envelopes: a blob's
-bytes, a stream's frames, and the root probes.
+that make the outcome checkable. Three answers are not envelopes: the bytes
+a blob `GET` returns, a stream's frames, and the root probes.
 
 | part | read | operation |
 |---|---|---|
@@ -74,6 +76,7 @@ Field names are `snake_case`; times are integer epoch milliseconds named
 | `ok` | the source answered and the thing exists | 200 |
 | `nothing_found` | every source needed was healthy and none has it | 200 |
 | `unavailable` | a source failed, is stale or was never wired; absence is unknown | 503 |
+| `denied` | the principal's scope or exposure does not reach it; whether it exists is not said | 403 |
 
 **Operations**
 
@@ -96,9 +99,9 @@ Field names are `snake_case`; times are integer epoch milliseconds named
   `nothing_found`.
 - Every status in the tables carries an envelope. A status that disagrees
   with its body's outcome is `unavailable`; a redirect is refused.
-- Four statuses carry no envelope, because the request never became a read
-  or an operation: `400` and `422` (malformed), `401` (no principal) and
-  `409` (an `operation_id` reused for another effect).
+- Five statuses carry no envelope, because the request never became a read
+  or an operation: `400` and `422` (malformed), `401` (no principal), `404`
+  (no such route) and `409` (an `operation_id` reused for another effect).
 - Reading an operation's record is a read: `ok` with the record and its
   operation outcome, `nothing_found` when no such record exists.
 
@@ -107,8 +110,9 @@ Field names are `snake_case`; times are integer epoch milliseconds named
 - The caller mints the `operation_id`. Resubmitting the same id with the same
   effect returns the existing record; the same id with a different effect is
   `409` and changes nothing.
-- An outcome that applied nothing (`denied`, `rejected`, `unsupported`,
-  `unavailable`) does not consume the id: resubmitting attempts it again.
+- A settled record is final, whatever its outcome. Trying again after an
+  outcome that applied nothing (`denied`, `rejected`, `unsupported`,
+  `unavailable`) is a new operation with a new id.
 - An operation is typed: a closed `kind` per contract and a payload of that
   kind's shape, never an open mapping.
 - The request names its subject; the server stamps the **actor** and the
