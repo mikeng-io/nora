@@ -15,9 +15,33 @@ becomes **live** again without a restart once its identity resolves.
 | `disabled` | switched off in config | none | none | absent |
 
 `nora.platform.registry.AdapterRegistry` owns the state of every platform. The
-vocabulary is `nora.domain.platform_state.PlatformState`. The adapter carries
-the latch (`degrade`, `promote`), so its own sends and its own `health()`
-honour the state wherever they are called from.
+vocabulary is `nora.domain.platform_state.PlatformState`.
+
+## One contract for every platform
+
+Liveness is part of the `PlatformAdapter` contract, not a per-platform
+feature. Every rule above holds for a platform because it is an adapter, not
+because someone wrote code for it.
+
+- **The adapter side.** Every adapter carries one shared latch
+  (`nora.platform.latch.DegradeLatch`). It provides `degrade(reason)`,
+  `promote()` and `degraded`, refuses `send` and `react` while degraded, and
+  marks `health()` degraded. A facade derived from an adapter (an owner-bound
+  adapter, a voice front) shares the root adapter's latch, so it cannot send
+  past it.
+- **The registry side.** The registry builds platforms from one table: a
+  platform's name, its config section and its builder. Startup, the identity
+  wait, degrade, background recovery, promotion order, the inbound gates, the
+  state metric and `/health` run once over that table. No step names a
+  platform.
+- **Adding a platform** (Telegram, say) is a config section, an adapter that
+  joins the latch, and one table entry. It inherits degraded startup,
+  recovery, gating and visibility unchanged. A contract test runs over every
+  table entry, so an adapter that skips the latch fails CI. It does not fail
+  silently in production.
+- **What stays platform-specific** is what only that platform can know: how it
+  resolves an identity, and which of its failures mean misconfiguration
+  rather than unavailability.
 
 ## Startup
 
