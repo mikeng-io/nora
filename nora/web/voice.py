@@ -49,6 +49,7 @@ was spoken in, which the resolved `conversation_id` no longer carries.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections import OrderedDict
@@ -80,27 +81,49 @@ SOURCE = "nora"
 Answer = tuple[OperationOutcome, dict[str, Any]]
 
 
-class _RecentIds:
-    """Event ids recorded in the last five minutes, bounded."""
+class _EventIds:
+    """The utterances ingested in the last five minutes, by `event_id`, and the
+    ones being ingested now; a repeat waits for, or is answered by, the first."""
 
     def __init__(self, *, ttl_s: float = 300.0, bound: int = 4096) -> None:
         self._ttl_s = ttl_s
         self._bound = bound
-        self._ids: OrderedDict[str, float] = OrderedDict()
+        #: event_id -> the ingest in flight, or when its retention ends.
+        self._held: OrderedDict[str, asyncio.Future[None] | float] = OrderedDict()
 
-    def claim(self, event_id: str) -> bool:
-        """`True` the first time an id is seen in the window; it is then held."""
+    def _settled(self) -> list[tuple[str, float]]:
+        return [(k, v) for k, v in self._held.items() if isinstance(v, float)]
+
+    async def once(self, event_id: str, ingest: Callable[[], Awaitable[None]]) -> None:
+        """Run `ingest` for an event id not ingested in the window; a failure keeps nothing."""
         now = time.monotonic()
-        while self._ids and (next(iter(self._ids.values())) <= now
-                             or len(self._ids) >= self._bound):
-            self._ids.popitem(last=False)
-        if event_id in self._ids:
-            return False
-        self._ids[event_id] = now + self._ttl_s
-        return True
-
-    def release(self, event_id: str) -> None:
-        self._ids.pop(event_id, None)
+        for key, expires_at in self._settled():
+            if expires_at <= now:
+                del self._held[key]
+        held = self._held.get(event_id)
+        if isinstance(held, float):
+            return
+        if held is not None:
+            await asyncio.shield(held)
+            return
+        for key, _ in self._settled()[:max(0, len(self._held) - self._bound + 1)]:
+            del self._held[key]
+        running: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        self._held[event_id] = running
+        try:
+            await ingest()
+        except BaseException as exc:
+            if self._held.get(event_id) is running:
+                del self._held[event_id]
+            if isinstance(exc, Exception):
+                running.set_exception(exc)
+                running.exception()
+            else:
+                running.cancel()
+            raise
+        self._held[event_id] = time.monotonic() + self._ttl_s
+        self._held.move_to_end(event_id)
+        running.set_result(None)
 
 
 def _text(effect: dict[str, Any], key: str) -> str:
@@ -134,7 +157,7 @@ def register_voice(
     routing decision; this route reads its (status, payload) verdict as an
     outcome. When `None`, the voice routes do not exist at all."""
     ledger = OperationLedger()
-    recorded = _RecentIds()
+    recorded = _EventIds()
 
     async def record(effect: dict[str, Any]) -> Answer:
         event_id, user_id = _text(effect, "event_id"), _text(effect, "user_id")
@@ -157,8 +180,6 @@ def register_voice(
             )
             return "rejected", {"error": {"kind": "no_voice_room",
                                           "message": "no voice room for this guild"}}
-        if not recorded.claim(event_id):
-            return "complete", {}
         message = NormalizedMessage(
             platform="discord",
             conversation_id=conversation_id,
@@ -180,11 +201,7 @@ def register_voice(
             },
             voice=True,
         )
-        try:
-            await ingest(message)
-        except Exception:
-            recorded.release(event_id)
-            raise
+        await recorded.once(event_id, lambda: ingest(message))
         return "complete", {}
 
     async def report(kind: str, effect: dict[str, Any]) -> Answer:

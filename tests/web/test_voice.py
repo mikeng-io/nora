@@ -7,6 +7,7 @@ to an audit row) is the integration test's job
 and the assertions are on what the route BUILDS and what it refuses.
 """
 
+import asyncio
 import json
 import time
 from itertools import count
@@ -14,7 +15,7 @@ from itertools import count
 import pytest
 from aiohttp import web
 
-from nora.web.voice import register_voice
+from nora.web.voice import _EventIds, register_voice
 from tests.integration.platform_contract import DOCUMENT
 
 GUILD = "111111111111111111"
@@ -247,3 +248,76 @@ async def test_an_unset_token_refuses_every_utterance(client, monkeypatch):
     resp = await client.post(INTAKE, headers=AUTH, json=_op(BODY))
     assert resp.status == 401
     assert client.received == []
+
+
+
+def _gated(gate: asyncio.Event, calls: list[str], *, fail: bool = False):
+    async def ingest() -> None:
+        calls.append("ingest")
+        await gate.wait()
+        if fail:
+            raise RuntimeError("ingest failed")
+
+    return ingest
+
+
+async def test_a_replay_in_flight_waits_for_the_first_ingest():
+    """The same `event_id` while the first ingest is still running waits for
+    it, and ingests nothing itself."""
+    ids, gate, calls = _EventIds(), asyncio.Event(), []
+    first = asyncio.ensure_future(ids.once("evt-1", _gated(gate, calls)))
+    await asyncio.sleep(0)
+    second = asyncio.ensure_future(ids.once("evt-1", _gated(gate, calls)))
+    await asyncio.sleep(0)
+
+    assert not second.done(), "a replay was answered before the event was recorded"
+    gate.set()
+    await first
+    await second
+    assert calls == ["ingest"]
+
+
+async def test_an_ingest_that_raises_records_nothing():
+    """A failed ingest is no receipt: the replay waiting on it fails too, and
+    the next attempt ingests the event again."""
+    ids, gate, calls = _EventIds(), asyncio.Event(), []
+    first = asyncio.ensure_future(ids.once("evt-1", _gated(gate, calls, fail=True)))
+    await asyncio.sleep(0)
+    waiting = asyncio.ensure_future(ids.once("evt-1", _gated(gate, calls)))
+    await asyncio.sleep(0)
+    gate.set()
+
+    for failed in (first, waiting):
+        with pytest.raises(RuntimeError):
+            await failed
+    await ids.once("evt-1", _gated(gate, calls))
+    assert calls == ["ingest", "ingest"]
+
+
+async def test_a_full_window_checks_for_the_duplicate_before_it_evicts():
+    """At the bound, an id already recorded is answered as recorded, not
+    evicted and ingested again."""
+    ids, gate, calls = _EventIds(bound=1), asyncio.Event(), []
+    gate.set()
+    await ids.once("evt-1", _gated(gate, calls))
+    await ids.once("evt-1", _gated(gate, calls))
+    assert calls == ["ingest"]
+
+
+async def test_a_failed_ingest_through_the_route_is_retried_by_the_next_operation(
+        aiohttp_client):
+    failures = [RuntimeError("ingest failed")]
+    received = []
+
+    async def _ingest(message):
+        if failures:
+            raise failures.pop()
+        received.append(message)
+
+    app = web.Application()
+    register_voice(app, ingest=_ingest, resolve_voice_room=lambda _g: CONV)
+    client = await aiohttp_client(app)
+
+    assert (await client.post(INTAKE, headers=AUTH, json=_op(BODY))).status == 500
+    retried = await client.post(INTAKE, headers=AUTH, json=_op(BODY))
+    assert (await retried.json())["outcome"] == "complete" and len(received) == 1
