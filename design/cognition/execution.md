@@ -81,7 +81,7 @@ observed; a failed replay records none and never takes a live slot.
 - Reaching a round, token or time bound is a failed pass, not a normal end.
   What was admitted stays durable and is safe to meet again on retry.
 - Input that repeatedly cannot be processed is parked for the operator, never
-  silently consumed. An outage never deletes human input.
+  silently consumed. An outage never deletes admitted input.
 
 ## Tracing
 

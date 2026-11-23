@@ -34,8 +34,9 @@ expressed — the drafts and conclusions Nora wrote — is among its items; hidd
 reasoning is never kept, and what it decided is an intention.
 
 A fetched outside page is an item with its fetch provenance. It can support
-public attributes of a place, work, event or organisation, never a private
-identity's attendance, traits or relationships.
+public attributes of a place, work, event or organisation, never the
+attendance, traits or relationships of a private individual, registered or
+not.
 
 A perception reading of a media item is not observation: it is a claim,
 written in orient and cited to the item.

@@ -89,8 +89,9 @@ identities' responses to her acts, never only her own earlier words.
   When enabled they fail closed. Scope, consent, availability and the
   three-state results never switch off.
 - Silence is a valid outcome of every delivering pass.
-- An outside query carries only the minimum public question: never a private
-  identity's name, handle, address, identifier, coordinate or trace.
+- An outside query carries only the minimum public question: never the
+  name, handle, address, identifier, coordinate or trace of a private
+  individual, registered or not.
 - A saved place is an entity. Its coordinate may serve a requested route
   inside code; it never reaches model prose or an outside query, and an
   identity's live position is never a routing endpoint.

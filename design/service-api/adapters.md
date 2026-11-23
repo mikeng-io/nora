@@ -33,8 +33,8 @@ does next.
 - An adapter records a **change of state**, never a repeated reading of the
   same state. A poll that sees what the last poll saw records nothing but the
   source's health.
-- A **session** — online from one time to another, playing one game, an
-  active story — is an episode computed from those items
+- A **session** — online from one time to another, playing one game — is
+  an episode computed from those items
   ([aggregates](../cognition/observation.md#aggregates)), never written by the
   adapter. Rebuilding sessions from the items at a watermark gives the same
   sessions.
@@ -69,8 +69,10 @@ does next.
   identity is managed identity's, never the adapter's.
 - An adapter never writes a table, never names a unit and never reads policy.
   Placement is intake's, by the observation rules.
-- A port's contract suite (`tests/contract/`) is the adapter's admission: an
-  adapter that does not pass it for every declared capability is not loaded.
+- A port's contract suite (`tests/contract/`) is the adapter's admission
+  proof, run in CI against every declared capability. At start Nora
+  validates only what an adapter declares, and refuses one whose declaration
+  is malformed or names a port it does not implement.
 
 ## Reads for the loops
 

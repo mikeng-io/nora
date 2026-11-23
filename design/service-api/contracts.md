@@ -8,7 +8,7 @@ whatever the network allows.
 
 | contract | owner | implemented by | called by | holds |
 |---|---|---|---|---|
-| `intake` | `ingest/` | the app's intake | bridges, collectors, executors, the portal, any principal registered as a source | events in one envelope: messages, edits, reactions, deletions, summons, activity changes, social items, membership, source health |
+| `intake` | `ingest/` | the app's intake | bridges, collectors, audio controllers, executors, the portal, any principal registered as a source | events in one envelope: messages, edits, reactions, deletions, summons, activity changes, social items, membership, source health |
 | `platform` | `platform/` | every bridge | the app | delivery operations (send, react, typing), reads (self, roster, channels, members), attachment custody |
 | `sources` | `social/` | each source adapter | the app's tools, the reflection loop | on-demand reads of one outside reference: an account's items, an identity's live activity |
 | `graph` | `memory/` | the app | the portal, tools, MCP | scoped reads with the retrieval semantics |
@@ -16,7 +16,7 @@ whatever the network allows.
 | `documents` | `documents/` | the app | the portal, tools | documents, revisions, artifacts and their media |
 | `voice` | `voice/` | each audio controller | the app | join, leave, speak, play and their status |
 | `computer` | `computer/` | computerd | the app | sandbox operations, browser sessions, exports |
-| `operations` | `app/` | every Nora process | the operator, monitors | config and policy reload, queue inspection and drain, loop pause and resume, replay |
+| `operations` | `app/` | every Nora process | the operator, monitors, the portal | the process's own status, tool and skill catalogue and doctrine; config and policy reload, queue inspection and drain, loop pause and resume, replay |
 
 - A bridge implements `platform` and its own `operations`, and calls
   `intake` and `management`. A platform-specific capability (voice, music, presence) is either a
@@ -86,11 +86,12 @@ stable event id derived from the source's own identity, the platform and
 account, the kind, the source's time and how it was known, the receive and
 enqueue times, the conversation or subject it concerns, and the trace context.
 
-- The same envelope arrives over the durable stream or over
-  `POST /v1/intake/events`; the transport changes delivery guarantees, never
-  meaning.
+- The same envelope arrives over the durable stream or as a `record`
+  operation of `intake`, idempotent on the event id; the transport changes
+  delivery guarantees, never meaning.
 - An event without its identity or version is retained as malformed, never
-  guessed into a message.
+  guessed into a message; its `record` operation is `rejected`, and nothing
+  is lost.
 - Intake places each item by the observation rules
   ([observation](../cognition/observation.md#rules)); an adapter never names
   a unit.

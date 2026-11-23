@@ -13,7 +13,7 @@ recorded, and able to close an intention the same way.
 | **executor** | what performs it: an engagement pass's delivery or act tool, a deterministic notifier, a job runner |
 | **destination** | the room, surface or system it affects |
 | **authority** | the pass and identity on whose behalf it runs, and the intention it serves, if any |
-| **identity** | a stable id, so a retry recognises the same act |
+| **act id** | a stable id, so a retry recognises the same act |
 | **outcome** | an observed item reporting **done**, **failed** or **uncertain** |
 
 **Rules**
@@ -21,7 +21,7 @@ recorded, and able to close an intention the same way.
 - An act's outcome is an item, recorded by observe; the act counts only once it
   is recorded, and it counts as done only when that item reports done.
 - An uncertain outcome — the call timed out after it may have taken effect — is
-  never replayed blindly. It is read back by its identity first; until then it
+  never replayed blindly. It is read back by its act id first; until then it
   is unknown.
 - Deliveries also pass the delivery arbitration; effects and delegations pass
   their area's admission.

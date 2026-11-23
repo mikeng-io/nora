@@ -39,7 +39,7 @@ finding against the route, never an exception to the convention.
 | `POST …/queries` | a read whose filter names a platform identifier, free text or more than a page key | yes | yes |
 | `POST …/operations` | every write | no | by `operation_id` |
 | `GET …/operations/{id}` | the operation's current record | yes | yes |
-| `PUT …/blobs/{key}` | content-addressed bytes only (attachments, media) | no | by key and hash |
+| `PUT …/blobs/{key}` | bytes under an opaque key, with their hash (attachments, media) | no | by key and hash |
 
 No `PATCH` and no `DELETE`: a partial update and a retirement are operations,
 so they carry an actor, an idempotency id and an outcome like every other
@@ -50,7 +50,8 @@ are bound to the operation that names their key, the same key and hash is
 ## The envelope
 
 Every response body is one envelope: the outcome, the payload, and the facts
-that make the outcome checkable.
+that make the outcome checkable. Three answers are not envelopes: a blob's
+bytes, a stream's frames, and the root probes.
 
 | part | read | operation |
 |---|---|---|
@@ -87,6 +88,9 @@ Field names are `snake_case`; times are integer epoch milliseconds named
 | `uncertain` | the effect may have happened; never retried blindly, read back first | 200 |
 | `unavailable` | not attempted: a dependency the operation needs is down | 503 |
 
+- A read over several sources is `ok` when any of them has the thing, with
+  its coverage naming the sources that failed; `nothing_found` only when
+  every one was healthy; otherwise `unavailable`.
 - The outcome is the answer; the HTTP status is derived from it by these
   tables and never read instead of it. A 404 is a missing route, never
   `nothing_found`.
@@ -107,8 +111,10 @@ Field names are `snake_case`; times are integer epoch milliseconds named
   `unavailable`) does not consume the id: resubmitting attempts it again.
 - An operation is typed: a closed `kind` per contract and a payload of that
   kind's shape, never an open mapping.
-- It names its **actor** and its **scope**, and the revisions it observed of
-  the state it changes. A stale revision is `rejected` with the current one.
+- The request names its subject; the server stamps the **actor** and the
+  resolved **scope** on the record. An operation that changes stored state
+  also names the revisions it observed, and a stale one is `rejected` with
+  the current revision.
 - Its record has one lifecycle: `prepared → started → settled`. Its outcome
   is `pending` while prepared or started; settling sets every other outcome.
 - A caller whose response was lost reads the record back. An effect whose
@@ -133,8 +139,8 @@ Field names are `snake_case`; times are integer epoch milliseconds named
   never a value in the body.
 - The server resolves scope from the principal and the request's subject;
   a caller names a subject, never its own scope. Each contract declares the
-  level it scopes at: a room, a unit, an agent, a workspace or the
-  installation.
+  level it scopes at: a room, a unit, an agent, an identity, a workspace,
+  the installation, or none for a public surface without a unit.
 - A read or an effect whose scope cannot be resolved is `denied`, never
   widened or redirected. Intake is the exception that loses nothing: it
   places an event by the [observation rules](../cognition/observation.md#rules)
