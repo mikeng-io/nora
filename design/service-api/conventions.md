@@ -115,7 +115,7 @@ Field names are `snake_case`; times are integer epoch milliseconds named
 ## Scope, actor and exposure
 
 - Reachability is the network's. A principal is resolved once from the
-  request: a service by its deployment credential, a person by a viewer
+  request: a service by its deployment credential, an identity by a viewer
   session from [managed identity](../managed-identity-access/management.md#web-app); the actor of an operation is the principal or the human it
   verifiably acts for, never a value in the body.
 - Every request resolves one agent, unit and room scope. Nora validates its

@@ -29,6 +29,11 @@ actor it names and the outcome it reports.
   scope, answered with a record that can be read back.
 - **Read** — every GET-shaped answer: `ok`, `nothing_found` or `unavailable`,
   with when and from what it was observed.
+- **Identity** — the canonical subject the API names: a human, a bot or an
+  agent, with no type that decides its permissions
+  ([managed identity](../managed-identity-access/identity.md#one-identity-many-accounts)).
+  Resources say `identities` and `identity_id`, never `persons`; Nora's own
+  platform account is `self`.
 - **Principal** — the authenticated caller. The **actor** is who an operation
   acts for; a principal never nominates another actor.
 - **Adapter** — the code that turns one outside source into items through

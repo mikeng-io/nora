@@ -10,7 +10,7 @@ whatever the network allows.
 |---|---|---|---|---|
 | `intake` | `ingest/` | the app's intake | bridges, collectors, executors, any principal registered as a source | events in one envelope: messages, edits, reactions, deletions, summons, activity changes, social items, membership, source health |
 | `platform` | `platform/` | every bridge | the app | delivery operations (send, react, typing), reads (self, roster, channels, members), attachment custody |
-| `sources` | `social/` | each source adapter | the app's tools, the reflection loop | on-demand reads of one outside reference: an account's items, a person's live activity |
+| `sources` | `social/` | each source adapter | the app's tools, the reflection loop | on-demand reads of one outside reference: an account's items, an identity's live activity |
 | `graph` | `memory/` | the app | the portal, tools, MCP | scoped reads with the retrieval semantics |
 | `management` | `people/` | the management service | the portal, in-room management, bridges' roster sync | the identity, membership and grant operations |
 | `documents` | `documents/` | the app | the portal, tools | documents, revisions, artifacts and their media |

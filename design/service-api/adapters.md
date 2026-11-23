@@ -65,7 +65,7 @@ does next.
   each per agent.
 - An adapter receives its credentials by name from the secret contract and
   its accounts from the managed identity: which account belongs to which
-  person is identity's, never the adapter's.
+  identity is managed identity's, never the adapter's.
 - An adapter never writes a table, never names a unit and never reads policy.
   Placement is intake's, by the observation rules.
 - A port's contract suite (`tests/contract/`) is the adapter's admission: an
@@ -73,10 +73,10 @@ does next.
 
 ## Reads for the loops
 
-- **What happened** — what a person played this week, when they are usually
+- **What happened** — what an identity played this week, when they are usually
   on Discord — is a graph read over recorded sessions and items: scoped by the unit, cheap,
   and historical.
-- **What holds now** — is a person online this minute — is one live activity read
+- **What holds now** — is an identity online this minute — is one live activity read
   through `sources`, across every activity adapter, keyed by the unit for the
   reflection loop and by the room for the engagement loop. It is one read
   surface, never one tool per network.
