@@ -1,5 +1,19 @@
 # Changelog
 
+## [7.21.2](https://github.com/mikeng-io/nora/compare/v7.21.1...v7.21.2) (2026-11-23)
+
+
+### Features
+
+* **image-gen:** add the metered OpenAI platform API image lane ([fb6c658](https://github.com/mikeng-io/nora/commit/fb6c658ad0bd3b9e34aea7809e21ff165301f7b0))
+* **image-gen:** make looping GIFs on GPT Image models that animate ([07bce28](https://github.com/mikeng-io/nora/commit/07bce28618d8e0f656c33dd6ee161822f6f1d2bd))
+
+
+### Bug Fixes
+
+* **image-gen:** a GIF cap is 0 or 2..16, and the skill says when to make a GIF ([2051d76](https://github.com/mikeng-io/nora/commit/2051d76d0fe55e00fb49193889a225bc1406269d))
+* **image-gen:** billing refusals are quota, and the spend cap is an enforced hard limit ([7bfae64](https://github.com/mikeng-io/nora/commit/7bfae64a00085ebbee9ed84c306f2ba794e78e8e))
+
 ## [7.21.1](https://github.com/mikeng-io/nora/compare/v7.21.0...v7.21.1) (2026-11-22)
 
 
