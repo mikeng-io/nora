@@ -178,14 +178,14 @@ test('an over-limit body is answered 413 and the connection closed without readi
     'host: x',
     `authorization: Bearer ${TOKEN}`,
     'content-type: application/json',
-    'content-length: 10000000', // far over the 4 MiB operations cap
+    'content-length: 10000000', // far over the 64 KiB control bound
     'connection: keep-alive',
     '',
     '',
   ].join('\r\n');
   // Send only the first slice. A server that drains would sit waiting for the
   // other ~10 MB; this one answers at once and closes.
-  const { data, closed } = await rawExchange(h.port, head, 'x'.repeat(4 * 1024 * 1024 + 1024), { after: 1000 });
+  const { data, closed } = await rawExchange(h.port, head, 'x'.repeat(70 * 1024), { after: 1000 });
   assert.match(data, /^HTTP\/1\.1 413 /);
   assert.match(data, /body_too_large/);
   assert.match(data, /connection: close/i);

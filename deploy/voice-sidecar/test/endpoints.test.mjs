@@ -62,6 +62,38 @@ function rawRequest(port, head, body, { end = false } = {}) {
     socket.on('error', reject);
   });
 }
+// Streams `body` in pieces over a raw socket, stopping once an answer
+// arrives, so a refusal mid-upload is read rather than lost to a reset.
+// Resolves with the status, the parsed body and the elapsed milliseconds.
+function rawStream(port, body, { contentLength = Buffer.byteLength(body), path = '/v1/voice/operations' } = {}) {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    let data = '';
+    const socket = net.connect({ host: '127.0.0.1', port }, () => {
+      socket.write([`POST ${path} HTTP/1.1`, 'host: x', `authorization: Bearer ${TOKEN}`,
+        'content-type: application/json', `content-length: ${contentLength}`, 'connection: close', '', ''].join('\r\n'));
+      // One piece at a time, paced, so the answer is read before the server
+      // closes on what it did not read.
+      let at = 0;
+      const pump = () => {
+        if (at >= body.length || data || socket.destroyed) return;
+        const piece = body.slice(at, at + 16 * 1024);
+        at += piece.length;
+        socket.write(piece, () => setTimeout(pump, 1));
+      };
+      pump();
+    });
+    socket.on('data', (chunk) => { data += chunk.toString(); });
+    socket.on('close', () => resolve({
+      status: Number(/^HTTP\/1\.1 (\d{3}) /.exec(data)?.[1]),
+      body: data.includes('{') ? JSON.parse(data.slice(data.indexOf('{'), data.lastIndexOf('}') + 1)) : null,
+      ms: Date.now() - started,
+    }));
+    socket.on('error', (err) => { if (!['ECONNRESET', 'EPIPE'].includes(err.code)) reject(err); });
+  });
+}
+const operationBody = (request) => JSON.stringify(request);
+
 const partialHead = (port) => [
   'POST /v1/voice/operations HTTP/1.1', 'host: x', `authorization: Bearer ${TOKEN}`,
   'content-type: application/json', 'content-length: 100', 'connection: close', '', '',
@@ -215,10 +247,10 @@ test('voice outcomes follow the contract', async () => {
   // connection operation over the control bound, before its effect.
   const unauthorized = await fetch(`http://127.0.0.1:${h.port}/v1/voice/operations`, { method: 'POST', body: '{}' });
   assertNoEnvelope({ status: unauthorized.status, body: await unauthorized.json() }, 401, 'no bearer');
-  assertNoEnvelope(await h.post('/v1/voice/operations', { pad: 'x'.repeat(4 * 1024 * 1024) }), 413, 'over the cap');
+  assertNoEnvelope(await rawStream(h.port, operationBody({ pad: 'x'.repeat(70 * 1024) })), 413, 'over the control bound');
   const spawnedBefore = h.procs.length;
-  const longTitle = await h.op('play', { guild_id: GUILD, generation, stream_url: 'https://cdn.test/t',
-    title: 'x'.repeat(550 * 1024) }, { operationId: 'op-long-title' });
+  const longTitle = await rawStream(h.port, operationBody({ operation_id: 'op-long-title', kind: 'play',
+    effect: { guild_id: GUILD, generation, stream_url: 'https://cdn.test/t', title: 'x'.repeat(550 * 1024) } }));
   assertNoEnvelope(longTitle, 413, 'a play over the control bound');
   assert.equal(h.procs.length, spawnedBefore, 'refused before any effect');
   assertEnvelope(await h.get('/v1/voice/operations/op-long-title'), 'nothing_found', 'read-back: long title');
@@ -594,18 +626,45 @@ test('a refusal carries the six parts and the current snapshot', async () => {
   await h.close();
 });
 
-test('an over-limit body is 413 body_too_large, distinct from a transport read failure', async () => {
-  // Over-limit and transport-error used to share one 400 body_too_large. The
-  // split is 413 for over-limit (400 stays for genuine bad requests); the
-  // operations route's cap is the speech cap, since every kind shares it.
+test('the control bound is enforced on arriving bytes; only speak runs on to the speech cap', async () => {
+  // Every kind shares one route, so the kind is read off the arriving bytes:
+  // a body past 64 KiB goes on only if it has already named `speak`.
   const h = await makeHarness();
-  const big = await h.post('/v1/voice/operations', {
-    operation_id: 'big', kind: 'stop', effect: { guild_id: GUILD, generation: 'x' }, pad: 'x'.repeat(4 * 1024 * 1024),
-  });
-  assert.equal(big.status, 413);
-  assert.deepEqual(big.body, { error: 'body_too_large' });
-  // A query's cap is a control body's.
-  const query = await h.post('/v1/voice/queries', { kind: 'status', params: { guild_id: GUILD }, pad: 'x'.repeat(70 * 1024) });
+  const { generation } = await h.join();
+  const play = (extra) => ({ operation_id: 'big', kind: 'play',
+    effect: { guild_id: GUILD, generation, stream_url: 'https://cdn.test/a', ...extra } });
+
+  // A partial upload past the bound is refused at once, not at the deadline.
+  const partial = await rawStream(h.port, operationBody(play({ title: 'x'.repeat(70 * 1024) })).slice(0, 70 * 1024),
+    { contentLength: 100 * 1024 });
+  assertNoEnvelope(partial, 413, 'a partial play upload');
+  assert.equal(partial.body.error, 'body_too_large');
+  assert.ok(partial.ms < 5000, `refused as it arrived, after ${partial.ms} ms, not at the 15 s deadline`);
+  // Whitespace counts: a complete request padded past the bound is refused.
+  const padded = operationBody(play({})).replace('{', `{${' '.repeat(70 * 1024)}`);
+  assertNoEnvelope(await rawStream(h.port, padded), 413, 'whitespace padding');
+  assert.equal(h.procs.length, 0, 'nothing played');
+  // A kind repeated after a large body is read as JSON reads it, the last one.
+  const repeated = operationBody({ operation_id: 'dup', kind: 'speak',
+    effect: { guild_id: GUILD, generation, stream_url: 'https://cdn.test/a', pad: 'x'.repeat(70 * 1024) } })
+    .replace(/}$/, ',"kind":"play"}');
+  assertNoEnvelope(await rawStream(h.port, repeated), 413, 'a later kind decides');
+
+  // speak runs to the speech cap, and no further.
+  const speech = await h.op('speak', { guild_id: GUILD, generation,
+    audio_b64: Buffer.alloc(2 * 1024 * 1024, 1).toString('base64') });
+  assert.equal(speech.outcome, 'complete', 'a 2 MiB speech, 2.7 MiB as base64');
+  const overCap = await rawStream(h.port, operationBody({ operation_id: 'huge', kind: 'speak',
+    effect: { guild_id: GUILD, generation, audio_b64: 'A'.repeat(4 * 1024 * 1024) } }));
+  assertNoEnvelope(overCap, 413, 'over the speech cap');
+  // Its ceiling: a speech must name its kind before an effect past the bound.
+  const late = await rawStream(h.port, JSON.stringify({ operation_id: 'late',
+    effect: { guild_id: GUILD, generation, audio_b64: 'A'.repeat(70 * 1024) }, kind: 'speak' }));
+  assertNoEnvelope(late, 413, 'kind after a large effect');
+
+  // A query's bound is a control body's.
+  const query = await rawStream(h.port, JSON.stringify({ kind: 'status', params: { guild_id: GUILD }, pad: 'x'.repeat(70 * 1024) }),
+    { path: '/v1/voice/queries' });
   assert.equal(query.status, 413);
   await h.close();
 });
