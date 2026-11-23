@@ -49,6 +49,7 @@ RULE_TESTS = {
         "test_a_closed_replay_records_the_exact_inputs_and_a_failed_replay_records_none",
     "proactive-claim": "test_a_due_intention_delivers_once_and_closes_only_on_a_reply_outcome",
     "debrief-pass-items": "test_debrief_writes_only_commit_operations_citing_its_pass_items",
+    "cognition-event-surface": "test_cognition_offers_reminders_and_wakes_without_event_writes",
     "DEC-97": "test_running_identity_is_independent_of_the_latest_release",
     "DEC-324": "test_a_server_entry_admits_a_discovered_channel_by_guild_id",
     "DEC-323": "test_policy_reload_admits_the_next_message_from_a_new_room",
@@ -252,10 +253,6 @@ RULE_TESTS = {
     # ANY attachment there by naming it right, even one `label_for` still
     # displays as `[file]`.
     "R-58": "test_a_matching_filename_on_a_non_audio_attachment_is_not_a_voice_note",
-    # R-52 (DEC-117): `create_event` fail-closes on ambiguity — more than one
-    # open event — refusing rather than guessing which of two-or-more
-    # already-open events is meant.
-    "R-52": "test_r52_two_open_events_refuses_a_third_rather_than_guessing",
     # R-55: a note revision is VETOED unless `note_read` succeeded for that note
     # in the same turn. The injected index carries title + description only —
     # enough to know a note exists, nowhere near enough to revise one — and

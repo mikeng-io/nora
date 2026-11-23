@@ -114,7 +114,7 @@ class Stores:
 
     def events(self) -> GatheringService:
         return GatheringService(
-            store=self.gatherings, route_source=None,
+            store=self.gatherings,
             now=lambda: datetime.fromtimestamp(NOW / 1000, UTC),
         )
 

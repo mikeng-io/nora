@@ -447,15 +447,10 @@ def units_with_home_rooms(
 def open_events_reader(
     store: GatheringStore,
 ) -> Callable[[str, str, str], Awaitable[Sequence[Gathering]]]:
-    """A room's events a session may still move, and is shown: every status
-    before `happened` (`OPEN_STATUSES`: staged, proposed, confirmed), so a
-    confirmed event can reach `happened` or `cancelled`. The unit AND platform
-    are passed with the room because a conversation id alone is only unique
-    within one unit's and one platform's id space.
+    """Read a room's staged, proposed and confirmed events for cognition.
 
-    The read is scoped by the row's persisted owner (`event_in_scope`); a row
-    with no stored platform is quarantined, never attributed from the current
-    `policy.toml` assignment."""
+    The persisted unit, platform and conversation ID identify the owning room.
+    Rows without a stored platform are quarantined."""
     async def read(unit: str, platform: str, conversation_id: str) -> Sequence[Gathering]:
         return [
             e for e in await store.list_for_conversation(
@@ -476,8 +471,7 @@ def upcoming_reader(
     room_proactive: Callable[[str, str], bool] = lambda platform, conversation_id: True,
 ) -> Callable[[str, int], Awaitable[Sequence[tuple[str, str]]]]:
     """The wake evaluator's `upcoming` seam (DEC-303): the unit's rooms holding
-    an event a session may still move (`open_events_reader`) whose start falls
-    between now and `days` ahead.
+    an open event whose start falls between now and `days` ahead.
 
     `unit_rooms(unit)` gives each room as `(platform, primary_id, id forms)`:
     events are read under every id form the room has had, and the room is

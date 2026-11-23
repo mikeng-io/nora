@@ -105,10 +105,7 @@ class InvalidEventFieldModeError(Exception):
 
 
 class StaleEventRevisionError(Exception):
-    """Raised on an `event_revise`/`event_set_status`-shaped write whose
-    `base_revision_id` is not the event's current `head_revision_id`
-    (a stale one is refused `stale_base`, with the current row). Carries the
-    row so the caller can show it without a second read."""
+    """An event write used a stale base revision. Carries the current row."""
 
     def __init__(self, event_id: UUID, current: Gathering) -> None:
         super().__init__(f"event {event_id}: base_revision_id is stale")
@@ -442,14 +439,7 @@ class GatheringNotFoundError(Exception):
 
 
 class GatheringCancelledError(Exception):
-    """Raised by `GatheringService` (`nora.app.gatherings`) when `update_event`/
-    `rsvp` is asked to act on an event whose `status` is already in
-    `TERMINAL_STATUSES` (`happened`, `cancelled`, `lapsed`, `evicted`; only a
-    status before `happened` may be revised). `status` says which terminal
-    status it was; the name is kept for existing catch sites
-    (`nora.agent.tools`). Lives here for the same layering reason as
-    `GatheringNotFoundError`: the exception TYPE must be reachable from
-    `nora.agent`, which sits below `nora.app` and may not import it."""
+    """An RSVP was requested for an event in a terminal status."""
 
     def __init__(self, event_id: UUID, status: GatheringStatus | None = None) -> None:
         label = status.value if status is not None else "cancelled"
@@ -459,11 +449,7 @@ class GatheringCancelledError(Exception):
 
 
 class AmbiguousOpenGatheringsError(Exception):
-    """More than one proposed event exists for a conversation: the
-    fail-closed-on-ambiguity case. The caller (the `create_event`
-    tool) is expected to catch this and ask which event is meant, never
-    guess. Same layering reason as `GatheringNotFoundError` above for why this
-    lives in `nora.domain` rather than alongside `GatheringService`."""
+    """More than one open proposed event matches the conversation."""
 
     def __init__(self, conversation_id: str, open_events: Sequence[Gathering]) -> None:
         super().__init__(
@@ -476,17 +462,7 @@ class AmbiguousOpenGatheringsError(Exception):
 def still_open_gatherings(
     events: Sequence[Gathering], *, now: datetime,
 ) -> list[Gathering]:
-    """`GatheringService.create_event`'s filter: a PROPOSED event still counts toward the
-    ambiguity backstop only while it is STILL OPEN — `when is None` (no time
-    settled yet) or `when >= now`. A dinner that already happened and was
-    never explicitly cancelled must not refuse every future `create_event`
-    call for this conversation forever.
-
-    `events` is expected already filtered to `status=PROPOSED` (the caller's
-    own read, `list_events(status=PROPOSED)` live or the equivalent shadow
-    read) — this function does not read a store and does not filter by
-    status itself, matching `has_duplicate_open_title`'s "prior is a
-    parameter" shape next door in `nora.domain.notes`."""
+    """Keep unscheduled and future events from an already filtered list of proposals."""
     return [e for e in events if e.when is None or e.when >= now]
 
 

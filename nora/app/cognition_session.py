@@ -162,8 +162,7 @@ COGNITION_PATH_PREFIX = "cognition:"
 #: names: it would shadow (or be shadowed by) a session verb.
 SESSION_VERB_NAMES: frozenset[str] = frozenset({
     "note_create", "note_revise", "note_set_status", "note_merge",
-    "memo_create", "memo_revise", "memo_set_status", "event_propose", "event_revise",
-    "event_set_status", "standing_revise", "topic_create",
+    "memo_create", "memo_revise", "memo_set_status", "standing_revise", "topic_create",
     "topic_revise", "topic_set_status",
     "wake_at", "wake_move", "wake_cancel", "remind", "remind_move", "remind_cancel",
     "memory_propose", "profile_read", "profile_revise",
@@ -1816,16 +1815,12 @@ class CognitionSessionRunner:
         )
         notes_v, memos_v, topics_v, standing_v, memory_v = importlib.import_module(
             "nora.memory").wire.session_verbs(deps)
-        events_v, wakes_v, reminds_v = importlib.import_module(
+        wakes_v, reminds_v = importlib.import_module(
             "nora.agenda").wire.session_verbs(deps)
 
-        receipted = linked = (
-            "note_create", "memo_create", "event_propose",
-            "note_revise", "memo_revise", "event_revise",
-        )
+        receipted = linked = ("note_create", "memo_create", "note_revise", "memo_revise")
         #: The revise verbs' row id lives in their ARGUMENTS, not their result.
-        row_arg = {"note_revise": "note_id", "memo_revise": "memo_id",
-                   "event_revise": "event_id"}
+        row_arg = {"note_revise": "note_id", "memo_revise": "memo_id"}
 
         def _assoc_targets(bound: Mapping[str, Any]) -> Any:
             """The named associations, or None when `associations` was left
@@ -1851,9 +1846,7 @@ class CognitionSessionRunner:
                     existing = await self._memory.records.act_result(key, state.session_id)
                     if existing is not None:
                         targets = _assoc_targets(bound)
-                        if verb.__name__ == "event_propose":
-                            merged = {**existing, "event_id": existing["id"]}
-                        elif verb.__name__ in row_arg:
+                        if verb.__name__ in row_arg:
                             merged = {**existing,
                                       row_arg[verb.__name__]: bound[row_arg[verb.__name__]]}
                         else:
@@ -1872,8 +1865,6 @@ class CognitionSessionRunner:
                     if verb.__name__ in row_arg:
                         result = {**result,
                                   row_arg[verb.__name__]: bound[row_arg[verb.__name__]]}
-                    elif verb.__name__ == "event_propose":
-                        result = {**result, "event_id": result["id"]}
                     targets = _assoc_targets(bound)
                     if targets is not None or verb.__name__ not in row_arg:
                         await self._memory.link_result(
@@ -1883,7 +1874,7 @@ class CognitionSessionRunner:
 
 
         verbs = tuple(receipted_act(v) for v in (
-            *notes_v, *memos_v, *topics_v, *events_v, *standing_v, *wakes_v, *reminds_v,
+            *notes_v, *memos_v, *topics_v, *standing_v, *wakes_v, *reminds_v,
         ))
         if self._memory is not None:
             verbs = (*memory_v, *verbs)

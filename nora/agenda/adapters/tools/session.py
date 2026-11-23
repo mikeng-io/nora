@@ -1,12 +1,8 @@
-"""Cognition-session verbs for the agenda tier: events, self-wakes and
-reminders. Reached from the session through `nora.agenda.wire.session_verbs`
-(the package root).
-"""
+"""Cognition-session verbs for self-wakes and reminders."""
 
 from __future__ import annotations
 
 import uuid
-from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
 from typing import Any, Literal
 
@@ -22,12 +18,10 @@ from nora.app.session_verbs import (
     _answer,
     _bad_time,
     _outside_unit,
-    _parse_when,
     _refused,
     _room_key,
     _room_of,
     _when_ms,
-    _write_target,
     now_utc,
 )
 from nora.domain.cognition_remind import (
@@ -35,82 +29,18 @@ from nora.domain.cognition_remind import (
     check_remind_time,
 )
 from nora.domain.cognition_session import Room
-from nora.domain.gatherings import (
-    AmbiguousOpenGatheringsError,
-    FieldMeta,
-    Gathering,
-    GatheringCancelledError,
-    GatheringNotFoundError,
-    GatheringStatus,
-    InvalidEventFieldModeError,
-    StaleEventRevisionError,
-)
-from nora.domain.note_body import NoteBodyError, Shown, check_citations
 from nora.domain.reminders import (
     Reminder,
 )
 
 
-def session_verbs(d: SessionDeps) -> tuple[tuple[Any, ...], ...]:
+def session_verbs(d: SessionDeps) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
     """The session's write verbs, built against the runner's
     collaborators in `d` (`d.runner` is `CognitionSessionRunner`)."""
     return (
-        (_make_event_propose(d), _make_event_revise(d), _make_event_set_status(d),),
         (_make_wake_at(d), _make_wake_move(d), _make_wake_cancel(d),),
         (_make_remind(d), _make_remind_move(d), _make_remind_cancel(d),),
     )
-
-
-def _evidence(
-    verb: str, reasoning: str, confidence: str, cited_ids: Sequence[str],
-    shown: Shown, parts: Sequence[str], *, may_be_uncited: bool = False,
-) -> tuple[tuple[FieldMeta, ...], tuple[int, ...]] | dict[str, object]:
-    """What an event write states and rests on, held to what the session saw."""
-    try:
-        meta = tuple(
-            FieldMeta(field=p, reasoning=reasoning, confidence=confidence)
-            for p in parts
-        )
-        if not cited_ids and may_be_uncited:
-            return meta, ()
-        ids, _keys = check_citations(cited_ids, shown, what=verb)
-    except InvalidEventFieldModeError as exc:
-        return _refused(f"bad_{exc.field}", str(exc))
-    except NoteBodyError as exc:
-        return _refused(exc.rule, str(exc))
-    return meta, ids
-
-
-async def _event_write(d: SessionDeps,
-    verb: str, call: Callable[[], Awaitable[Gathering]],
-    platform: str, conversation_id: str, item: int | None,
-) -> dict[str, object]:
-    """One event revision through the live service, refusals in session words."""
-    wrote = d.wrote
-    try:
-        event = await call()
-    except GatheringNotFoundError:
-        return _refused("not_found", "there is no event by that id in this room")
-    except GatheringCancelledError as exc:
-        return _refused("terminal_status", f"nothing moves that event on ({exc})")
-    except StaleEventRevisionError:
-        return _refused(
-            "stale_base", "the event changed since you read it; read it again and "
-            "redo your change against what it says now",
-        )
-    except (InvalidEventFieldModeError, ValueError) as exc:
-        return _refused("invalid_event", f"{verb}: {exc}")
-    return wrote(
-        platform, conversation_id, item, id=str(event.id),
-        head_revision_id=str(event.head_revision_id),
-    )
-
-
-def _uuid(text: str) -> uuid.UUID | None:
-    try:
-        return uuid.UUID(text)
-    except ValueError:
-        return None
 
 
 async def _own_reminder(d: SessionDeps, reminder_id: str) -> Reminder | dict[str, object]:
@@ -124,252 +54,6 @@ async def _own_reminder(d: SessionDeps, reminder_id: str) -> Reminder | dict[str
     if _room_key(Room(row.platform, row.conversation_id)) not in state.allowed_rooms:
         return _outside_unit(state)
     return row
-
-
-def _make_event_propose(d: SessionDeps) -> Any:
-    self, unit, state = d.runner, d.unit, d.state
-    established_by, shown_for, wrote = d.established_by, d.shown_for, d.wrote
-    _act_receipt, _associations = d.act_receipt, d.associations
-    async def event_propose(
-        title: str, reasoning: Literal["told", "deduced", "abduced"],
-        confidence: Literal["low", "medium", "high"], cited_ids: list[str],
-        when: str = "", venue_text: str = "",
-        status: Literal["staged", "proposed"] = "proposed", room: str = "",
-        item: int | None = None, associations: list[list[str]] | None = None,
-    ) -> dict[str, object]:
-        """Propose a NEW gathering in a room, returning its id. Call this
-        when a room wants to arrange something that is not open yet. If an
-        event is already open (proposed) there, revise it with event_revise
-        instead of creating a second one.
-
-        Every field you give rests on the rows you cite. An `abduced` value
-        (your best explanation of something nobody said) is written as
-        abduced and is put to the room as a question, and a yes to it later
-        does not make it told.
-
-        Returns `status`: ok (with the event's `id`), refused or unavailable,
-        with a `reason` and `detail` when it is not ok.
-
-        Args:
-            title: What the gathering is, in their words.
-            reasoning: How you reached what you give: `told` (a person said
-                it, or members agreed among themselves), `deduced` (it
-                follows from rows you hold) or `abduced`.
-            confidence: How sure you are: low, medium or high.
-            cited_ids: The rows it rests on, at least one: message ids you
-                were shown or read, as digits, and Rollup rows you read, as
-                rollup(kind|subject|from/to).
-            when: Optional. ISO 8601 with an offset, the first moment it is
-                for. Work out relative time yourself.
-            venue_text: Optional. The place, the way it was said.
-            status: `proposed` when the room is settling it, `staged` when
-                you only suspect it is an event.
-            room: Optional when the agenda is one room, required when it
-                spans several. The room the gathering is in, as
-                `platform:conversation_id`, which the reads block
-                shows beside each room's label.
-            item: Optional. The agenda item this write is for, by its
-                number.
-            associations: Optional. Existing matters this entry concerns, as
-                [kind, id] node keys from the graph you were shown.
-        """
-        resolved = _write_target(room, item, state)
-        if isinstance(resolved, dict):
-            return resolved
-        (platform, conversation_id), item = resolved
-        targets = _associations(associations)
-        if isinstance(targets, dict):
-            return targets
-        due = _parse_when(when) if when else None
-        if when and due is None:
-            return _refused("bad_when", "when must be ISO 8601 with an offset")
-        if status not in ("staged", "proposed"):
-            return _refused("bad_status", "an event is proposed or staged, nothing later")
-        shown = await shown_for(platform, conversation_id, "")
-        if isinstance(shown, dict):
-            return shown
-        parts = ["what", "status", *(["start"] if due else []),
-                 *(["place"] if venue_text else [])]
-        checked = _evidence(
-            "event_propose", reasoning, confidence, cited_ids, shown, parts,
-        )
-        if isinstance(checked, dict):
-            return checked
-        meta, ids = checked
-        try:
-            event = await self._events.create_event(
-                conversation_id=conversation_id, requester_person_id=established_by,
-                title=title, when=due, venue_text=venue_text or None,
-                platform=platform, unit_id=unit, message_ids=ids,
-                status=GatheringStatus(status), reasoning=reasoning,
-                confidence=confidence, field_meta=meta,
-                receipt=_act_receipt(
-                    lambda row: {"status": "ok", "id": str(row.id)}),
-            )
-        except AmbiguousOpenGatheringsError:
-            return _refused(
-                "ambiguous_open_gatherings",
-                "two or more events are already open here; revise one of them",
-            )
-        except (InvalidEventFieldModeError, ValueError) as exc:
-            return _refused("invalid_event", str(exc))
-        return wrote(platform, conversation_id, item, id=str(event.id))
-    return event_propose
-
-
-def _make_event_revise(d: SessionDeps) -> Any:
-    self, unit, state, shown_for, _act_receipt, _associations = (
-        d.runner, d.unit, d.state, d.shown_for, d.act_receipt, d.associations)
-    async def event_revise(
-        event_id: str, reasoning: Literal["told", "deduced", "abduced"],
-        confidence: Literal["low", "medium", "high"], cited_ids: list[str],
-        when: str = "", venue_text: str = "",
-        base_revision_id: str = "", room: str = "", item: int | None = None,
-        associations: list[list[str]] | None = None,
-    ) -> dict[str, object]:
-        """Change the time or venue of an event that is still open in a
-        room (staged, proposed or confirmed). Call this when an open
-        event's details are settled or change.
-
-        What you change rests on the rows you cite, and an `abduced` value
-        is written as abduced and put as a question. One write has one
-        reasoning: if the time and the place rest on different evidence,
-        make two writes.
-
-        Returns `status`: ok, refused or unavailable, with a `reason` and
-        `detail` when it is not ok.
-
-        Args:
-            event_id: The event's id.
-            reasoning: How you reached what you change: `told`, `deduced`
-                or `abduced`, as event_propose says.
-            confidence: How sure you are: low, medium or high.
-            cited_ids: The rows it rests on, at least one: message ids as
-                digits, Rollup rows as rollup(kind|subject|from/to), each
-                one you were shown or read.
-            when: Optional. ISO 8601 with an offset.
-            venue_text: Optional. The place, the way it was said.
-            base_revision_id: Optional. The event's `head_revision_id` your
-                last read of it showed. Leave it out to write regardless
-                of what changed since.
-            room: Optional when the agenda is one room, required when it
-                spans several. The event's room, as
-                `platform:conversation_id`, which the reads block
-                shows beside each room's label.
-            item: Optional. The agenda item this write is for, by its
-                number.
-            associations: Optional. The matters this entry now concerns, as
-                [kind, id] node keys from the graph you were shown; they
-                replace its current semantic links.
-        """
-        resolved = _write_target(room, item, state)
-        if isinstance(resolved, dict):
-            return resolved
-        (platform, conversation_id), item = resolved
-        targets = _associations(associations)
-        if isinstance(targets, dict):
-            return targets
-        due = _parse_when(when) if when else None
-        if when and due is None:
-            return _refused("bad_when", "when must be ISO 8601 with an offset")
-        if due is None and not venue_text:
-            return _refused("nothing_to_change", "give a `when` or a `venue_text`")
-        event_uuid = _uuid(event_id)
-        base = _uuid(base_revision_id) if base_revision_id else None
-        if event_uuid is None or (base_revision_id and base is None):
-            return _refused("not_found", "that is not an event id from this room")
-        shown = await shown_for(platform, conversation_id, "")
-        if isinstance(shown, dict):
-            return shown
-        checked = _evidence(
-            "event_revise", reasoning, confidence, cited_ids, shown,
-            [*(["start"] if due else []), *(["place"] if venue_text else [])],
-        )
-        if isinstance(checked, dict):
-            return checked
-        meta, ids = checked
-        return await _event_write(d, "event_revise", lambda: self._events.update_event(
-            event_id=event_uuid, conversation_id=conversation_id, when=due,
-            venue_text=venue_text or None, platform=platform,
-            unit_id=unit, base_revision_id=base,
-            message_ids=ids, reasoning=reasoning, confidence=confidence,
-            field_meta=meta,
-            receipt=_act_receipt(
-                lambda row: {"status": "ok", "id": str(row.id),
-                             "head_revision_id": str(row.head_revision_id)}),
-        ), platform, conversation_id, item)
-    return event_revise
-
-
-def _make_event_set_status(d: SessionDeps) -> Any:
-    self, unit, state, shown_for = d.runner, d.unit, d.state, d.shown_for
-    async def event_set_status(
-        event_id: str, status: Literal["confirmed", "cancelled", "happened", "lapsed"],
-        reasoning: Literal["told", "deduced", "abduced"],
-        confidence: Literal["low", "medium", "high"], cited_ids: list[str],
-        base_revision_id: str = "", room: str = "", item: int | None = None,
-    ) -> dict[str, object]:
-        """Move an event that is still open in a room (staged, proposed or
-        confirmed) to a new state. Call this when the room confirms it,
-        says it happened, or says it is off.
-
-        The move rests on the rows you cite; an `abduced` one is written as
-        abduced and put as a question ("did it happen?"). A move to `lapsed`
-        (the date passed with nothing agreed) may cite nothing, since the
-        evidence is the clock. Only a status before `happened` moves: an
-        event that happened, was cancelled or lapsed stays as it is.
-
-        Returns `status`: ok, refused or unavailable, with a `reason` and
-        `detail` when it is not ok.
-
-        Args:
-            event_id: The event's id.
-            status: The state to move it to.
-            reasoning: How you reached it: `told`, `deduced` or `abduced`,
-                as event_propose says.
-            confidence: How sure you are: low, medium or high.
-            cited_ids: The rows it rests on: message ids as digits, Rollup
-                rows as rollup(kind|subject|from/to), each one you were
-                shown or read.
-            base_revision_id: Optional. The event's `head_revision_id` your
-                last read of it showed. Leave it out to write regardless
-                of what changed since.
-            room: Optional when the agenda is one room, required when it
-                spans several. The event's room, as
-                `platform:conversation_id`, which the reads block
-                shows beside each room's label.
-            item: Optional. The agenda item this write is for, by its
-                number.
-        """
-        resolved = _write_target(room, item, state)
-        if isinstance(resolved, dict):
-            return resolved
-        (platform, conversation_id), item = resolved
-        try:
-            parsed = GatheringStatus(status)
-        except ValueError:
-            return _refused("bad_status", "use confirmed, cancelled, happened or lapsed")
-        event_uuid = _uuid(event_id)
-        base = _uuid(base_revision_id) if base_revision_id else None
-        if event_uuid is None or (base_revision_id and base is None):
-            return _refused("not_found", "that is not an event id from this room")
-        shown = await shown_for(platform, conversation_id, "")
-        if isinstance(shown, dict):
-            return shown
-        checked = _evidence(
-            "event_set_status", reasoning, confidence, cited_ids, shown, ["status"],
-            may_be_uncited=parsed is GatheringStatus.LAPSED,
-        )
-        if isinstance(checked, dict):
-            return checked
-        meta, ids = checked
-        return await _event_write(d, "event_set_status", lambda: self._events.set_event_status(
-            event_id=event_uuid, conversation_id=conversation_id, status=parsed,
-            base_revision_id=base, platform=platform, unit_id=unit,
-            message_ids=ids,
-            reasoning=reasoning, confidence=confidence, field_meta=meta,
-        ), platform, conversation_id, item)
-    return event_set_status
 
 
 def _make_wake_at(d: SessionDeps) -> Any:

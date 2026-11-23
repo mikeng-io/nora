@@ -98,6 +98,19 @@ async def test_place_queries_reach_both_clients_only_when_disabled(query, enable
     assert source.place_info.await_count == int(not enabled)
 
 
+async def test_place_resolution_strips_sensitive_return_fields_when_checks_are_enabled():
+    async def place_info(query: str) -> dict[str, str]:
+        assert query == "Library Cafe"
+        return {"name": f"Call {PHONE} to book", "address": COORDINATE, "place_id": "cafe-id"}
+
+    result = await screen_and_resolve_place(
+        "Library Cafe", route_source=SimpleNamespace(place_info=place_info), content_checks=True,
+    )
+
+    assert result.status == "resolved"
+    assert result.data == {"place_id": "cafe-id"}
+
+
 @pytest.mark.parametrize("enabled", [False, True])
 async def test_registry_routes_known_names_and_coordinates_through_the_configured_screen(enabled):
     from tests.test_routes import _RecordingClient

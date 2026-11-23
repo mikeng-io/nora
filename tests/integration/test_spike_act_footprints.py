@@ -15,7 +15,7 @@ async def test_every_generated_act_footprint_moves_invariant(clean_pg_url):
             for table in ("note", "events", "standing", "reminders"):
                 await conn.execute(sa.insert(METADATA.tables[table]).values(ROWS[table](0)))
             await conn.execute(sa.insert(METADATA.tables["memo"]).values(APPEND["memo"](0)))
-        # Independent of ACT_TABLES: one observed durable effect for each live verb.
+        # Independent of ACT_TABLES: durable effects of live acts and retained event rows.
         effects = {
             "note_create": ("note", "insert"),
             "note_revise": ("note_revision", "insert"),
@@ -24,9 +24,9 @@ async def test_every_generated_act_footprint_moves_invariant(clean_pg_url):
             "memo_create": ("memo", "insert"),
             "memo_revise": ("memo_revision", "insert"),
             "memo_set_status": ("memo_revision", "insert"),
-            "event_propose": ("events", "insert"),
-            "event_revise": ("event_revision", "insert"),
-            "event_set_status": ("events", "update"),
+            "event_row_insert": ("events", "insert"),
+            "event_revision_insert": ("event_revision", "insert"),
+            "event_status_update": ("events", "update"),
             "standing_revise": ("standing_revision", "insert"),
             "wake_at": ("cognition_self_wake", "insert"),
             "wake_move": ("cognition_self_wake", "insert"),

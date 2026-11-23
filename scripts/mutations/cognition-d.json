@@ -77,20 +77,6 @@
   "target": "tests/infra/test_event_citations.py::test_a_rollup_row_brings_its_own_lineage"
  },
  {
-  "name": "m6: the tag path records no room",
-  "file": "nora/app/gatherings.py",
-  "old": "    if not parts:\n        return None\n    return EventEvidence(",
-  "new": "    return None\n    return EventEvidence(",
-  "target": "tests/infra/test_event_citations.py::test_a_tag_turn_s_event_cites_the_message_that_raised_it_and_rests_on_its_room"
- },
- {
-  "name": "review #669: the tag path cites no message",
-  "file": "nora/app/gatherings.py",
-  "old": "for part in sorted(parts) for mid in dict.fromkeys(message_ids)",
-  "new": "for part in sorted(parts) for mid in ()",
-  "target": "tests/infra/test_event_citations.py::test_forgetting_the_author_of_the_message_that_raised_a_tag_turn_marks_its_event tests/infra/test_event_citations.py::test_a_tag_turn_s_event_cites_the_message_that_raised_it_and_rests_on_its_room"
- },
- {
   "name": "review #669: the pipeline builds the Room without the triggering row",
   "file": "nora/engagement/pipeline.py",
   "old": "                trigger_message_ids=trigger_message_ids(\n                    ctx.transcript, sender_id=msg.sender_id, timestamp=msg.timestamp,\n                ),",

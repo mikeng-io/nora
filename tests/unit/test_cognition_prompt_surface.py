@@ -72,7 +72,7 @@ async def test_both_lanes_state_the_whole_loop_and_only_the_live_lane_holds_acts
     # The replay says it is one and that it does not act; the live session does not.
     assert "replays the past" in historical and "History does not act" in historical
     assert "replays the past" not in live and "History does not act" not in live
-    assert "events with `event_propose`, `event_revise`, `event_set_status`" in live
+    assert "Write notes with `note_create`" in live
     assert "Use `remind` for a later room turn and `wake_at` for your own later look" in live
     assert "A note** holds" in live and "Every event field says how you know it" in live
     assert "Tools:" not in live
@@ -129,11 +129,12 @@ async def test_lesson_guidance_and_verbs_never_reach_the_historical_lane():
 
 
 @pytest.mark.parametrize("offered", [frozenset(), frozenset({"note_create"}),
-                                    frozenset({"event_revise"}), _NOTEBOOK_TOOLS])
+                                    frozenset({"memo_revise"}), _NOTEBOOK_TOOLS])
 def test_notebook_section_renders_for_any_of_its_tools(offered):
     text = render_session_system("<!-- cognition-orient --><!-- cognition-act-skill -->",
                                  "NOTEBOOK", tool_names=offered)
     assert ("NOTEBOOK" in text) == bool(offered)
+    assert "events with `" not in text
     assert "Tools:" not in text
 
 

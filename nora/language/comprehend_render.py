@@ -183,7 +183,6 @@ _NOTEBOOK_VERBS = (
     ("notes", ("note_create", "note_revise", "note_set_status", "note_merge")),
     ("memos", ("memo_create", "memo_revise", "memo_set_status")),
     ("topics", ("topic_create", "topic_revise", "topic_set_status")),
-    ("events", ("event_propose", "event_revise", "event_set_status")),
 )
 _HISTORICAL_ORIENT = (
     "This session replays the past in source-time order: the clock line is the time of "
@@ -204,7 +203,6 @@ _NOTEBOOK_TOOLS = frozenset({
     "note_create", "note_revise", "note_set_status", "note_merge",
     "memo_create", "memo_revise", "memo_set_status",
     "topic_create", "topic_revise", "topic_set_status",
-    "event_propose", "event_revise", "event_set_status",
 })
 
 

@@ -43,9 +43,6 @@ cases:
     - note_create
     - note_revise
     - note_set_status
-    - event_propose
-    - event_revise
-    - event_set_status
     - lesson_write
     - topic_create
     - wake_at
@@ -89,9 +86,6 @@ cases:
     - note_create
     - note_revise
     - note_set_status
-    - event_propose
-    - event_revise
-    - event_set_status
     - lesson_write
     - topic_create
     - wake_at
@@ -134,7 +128,6 @@ cases:
     required_tools:
     - note_revise
     not_tools:
-    - event_propose
     - note_create
     - note_revise
     - note_set_status
@@ -194,9 +187,6 @@ cases:
     - note_create
     - note_revise
     - note_set_status
-    - event_propose
-    - event_revise
-    - event_set_status
     - lesson_write
     - topic_create
     - wake_at
@@ -243,9 +233,6 @@ cases:
     - note_create
     - note_revise
     - note_set_status
-    - event_propose
-    - event_revise
-    - event_set_status
     - lesson_write
     - topic_create
     - wake_at
@@ -286,9 +273,6 @@ cases:
     - note_create
     - note_revise
     - note_set_status
-    - event_propose
-    - event_revise
-    - event_set_status
     - lesson_write
     - topic_create
     - wake_at
@@ -331,9 +315,6 @@ cases:
     - note_create
     - note_revise
     - note_set_status
-    - event_propose
-    - event_revise
-    - event_set_status
     - lesson_write
     - topic_create
     - wake_at
@@ -522,9 +503,6 @@ cases:
     - note_create
     - note_revise
     - note_set_status
-    - event_propose
-    - event_revise
-    - event_set_status
     - remind
     - send_reply
     args_exclude:
@@ -551,9 +529,6 @@ cases:
     - note_create
     - note_revise
     - note_set_status
-    - event_propose
-    - event_revise
-    - event_set_status
     - remind
     - send_reply
     args_exclude:

@@ -7,7 +7,7 @@
 # act verbs (`nora.agent.cognition_pace` and the session's write verbs in
 # `nora.app.cognition_session`), never the tag path's own tools.
 # Confusable pairs weighted the same way: note_create/note_revise,
-# event_propose/event_revise/event_set_status, wake_at/wake_move/wake_cancel,
+# wake_at/wake_move/wake_cancel,
 # remind/remind_move/remind_cancel.
 #
 # SYNTHETIC INPUT, deliberately: no real message is quoted anywhere in this
@@ -52,36 +52,12 @@ cases:
     metadata: {tools: [note_revise], not_tools: [note_create]}
     snapshot: *room_a
 
-  - name: cognition_event_propose_vs_revise_no_open_event
-    entry: dreamer
-    category: cognition
-    expect: reply
-    input: "room A has 3 new messages proposing a time and place"
-    metadata: {tools: [event_propose], not_tools: [event_revise, event_set_status]}
-    snapshot: *room_a
-
-  - name: cognition_event_revise_vs_propose_open_event
-    entry: dreamer
-    category: cognition
-    expect: reply
-    input: "room A has 2 new messages; event E1 is proposed and its place just changed"
-    metadata: {tools: [event_revise], not_tools: [event_propose]}
-    snapshot: *room_a
-
-  - name: cognition_event_set_status_vs_revise_cancellation
-    entry: dreamer
-    category: cognition
-    expect: reply
-    input: "room A has 1 new message saying event E1 is off"
-    metadata: {tools: [event_set_status], not_tools: [event_propose]}
-    snapshot: *room_a
-
   - name: cognition_standing_revise_vs_note_create_position_only
     entry: dreamer
     category: cognition
     expect: reply
     input: "room A has 5 new messages narrowing where dinner will be, nothing settled"
-    metadata: {tools: [standing_revise], not_tools: [note_create, event_propose]}
+    metadata: {tools: [standing_revise], not_tools: [note_create]}
     snapshot: *room_a
 
   - name: cognition_wake_at_vs_wake_move_first_self_wake

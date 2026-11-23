@@ -95,6 +95,6 @@
   "file": "nora/app/register_graph.py",
   "old": "        if entities and not any(\n            e.key in (r.src, r.dst) for e in entities for r in relations\n        ):",
   "new": "        if entities and not relations:",
-  "target": "tests/unit/test_cognition_session_runner.py::test_event_revise_replaces_association_without_an_orphan_retry"
+  "target": "tests/unit/test_cognition_session_runner.py::test_reprojecting_an_event_entry_keeps_its_record_link_without_an_orphan"
  }
 ]

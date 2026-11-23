@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
 
-from nora.app.gatherings import AmbiguousOpenGatheringsError, GatheringService
+from nora.app.gatherings import GatheringService
 from nora.domain.gatherings import (
     TERMINAL_STATUSES,
     Gathering,
@@ -14,179 +14,26 @@ from nora.domain.gatherings import (
     GatheringStatus,
     RSVPResponse,
 )
-from nora.domain.ports import PlaceArea
 from nora.testing.gatherings import FakeGatheringStore
+from tests.builders import make_gathering
 
 pytestmark = pytest.mark.asyncio
 
 NOW = datetime(2026, 8, 19, 12, 0, tzinfo=UTC)
 
 
-class _FakeRouteSource:
-    def __init__(self, response: dict | None = None) -> None:
-        self._response = response or {
-            "status": "ok",
-            "name": "Soi 29 Thai Kitchen",
-            "address": "29 Soi Rd, Central",
-            "rating": 4.5,
-            "price_level": "PRICE_LEVEL_MODERATE",
-            "place_id": "ChIJfake123",
-        }
-
-    async def place_info(self, name: str) -> dict:
-        return self._response
-
-
-class _NoHoncho:
-    """The service is still handed a Honcho store; any use of it fails."""
-
-    def __getattr__(self, name):
-        raise AssertionError(f"Honcho.{name} was used")
-
-
-def _service(
-    *,
-    store=None,
-    route_source=None,
-    honcho=None,
-    place_areas=None,
-) -> GatheringService:
-    return GatheringService(
-        store=store or FakeGatheringStore(),
-        route_source=route_source or _FakeRouteSource(),
-        now=lambda: NOW,
-        place_areas=place_areas,
-    )
-
-
-class _FakePlaceAreas:
-    """Google's place-id lookup: the area of the one id it knows, else None;
-    `asked` proves it is asked by the RESOLVED place's id."""
-
-    def __init__(self, area: PlaceArea | None) -> None:
-        self.area = area
-        self.asked: list[str] = []
-
-    async def area_of_place(self, place_id: str) -> PlaceArea | None:
-        self.asked.append(place_id)
-        return self.area if place_id == "ChIJfake123" else None
-
-
-async def test_a_resolved_venue_keeps_its_district_and_city_and_a_failed_one_none():
-    """Step 3a: the venue's areas are resolved with it, by the place id the
-    lookup answered, and stored on the event (the memory index's
-    `located_in` chain). A name that carries a coordinate is screened out
-    (R-28); a later venue that does not resolve clears them with the rest."""
-    areas = _FakePlaceAreas(PlaceArea(district="旺角 / Mong Kok", city="1.5, 2.5"))
-    store = FakeGatheringStore()
-    svc = _service(store=store, place_areas=areas)
-    ev = await svc.create_event(
-        conversation_id="signal:group-1", requester_person_id="miles",
-        title="Dinner", platform="signal",
-    )
-    updated = await svc.update_event(
-        event_id=ev.id, conversation_id="signal:group-1", venue_text="Soi 29",
-        platform="signal",
-    )
-    assert areas.asked == ["ChIJfake123"]
-    assert (updated.venue_district, updated.venue_city) == ("旺角 / Mong Kok", None)
-    assert (await svc.get_event(event_id=ev.id)).venue_district == "旺角 / Mong Kok"
-
-    unresolved = _service(
-        store=store, route_source=_FakeRouteSource({"status": "not_found"}),
-        place_areas=areas,
-    )
-    cleared = await unresolved.update_event(
-        event_id=ev.id, conversation_id="signal:group-1", venue_text="nowhere",
-        platform="signal",
-    )
-    assert (cleared.venue_district, cleared.venue_city) == (None, None)
-
-
-async def test_create_event_persists_and_returns_it():
-    svc = _service()
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        platform="signal",
-    )
-    assert ev.title == "Dinner"
-    assert ev.status is GatheringStatus.PROPOSED
-    back = await svc.get_event(event_id=ev.id)
-    assert back.id == ev.id
-
-
-async def test_update_event_resolves_venue_once_via_route_source():
-    route_source = _FakeRouteSource()
-    calls = []
-    orig = route_source.place_info
-
-    async def counting(name):
-        calls.append(name)
-        return await orig(name)
-
-    route_source.place_info = counting  # type: ignore[method-assign]
-
-    svc = _service(route_source=route_source)
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        platform="signal",
-    )
-    updated = await svc.update_event(
-        event_id=ev.id,
-        conversation_id="signal:group-1",
-        venue_text="Soi 29",
-        platform="signal",
-    )
-
-    assert updated.venue_name == "Soi 29 Thai Kitchen"
-    assert updated.venue_place_id == "ChIJfake123"
-    assert updated.venue_rating == 4.5
-    assert updated.venue_resolved_at == NOW
-    # `maps_url` is synthesized by GatheringService itself — the route
-    # source never returns it — from the RESOLVED name, url-quoted.
-    assert updated.venue_maps_url == (
-        "https://www.google.com/maps/search/?api=1&query=Soi%2029%20Thai%20Kitchen"
-    )
-    assert calls == ["Soi 29"]  # resolved exactly once
-
-    # Reading it back must NOT re-query the resolver.
-    back = await svc.get_event(event_id=ev.id)
-    assert back.venue_name == "Soi 29 Thai Kitchen"
-    assert calls == ["Soi 29"]
-
-
-async def test_venue_resolution_refuses_a_raw_coordinate():
-    svc = _service()
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        platform="signal",
-    )
-    updated = await svc.update_event(
-        event_id=ev.id,
-        conversation_id="signal:group-1",
-        venue_text="22.2793,114.1628",
-        platform="signal",
-    )
-    # Refused at the R-28 screen — venue_text is kept as what was said,
-    # nothing gets resolved.
-    assert updated.venue_text == "22.2793,114.1628"
-    assert updated.venue_place_id is None
+def _service(store: FakeGatheringStore) -> GatheringService:
+    return GatheringService(store=store, now=lambda: NOW)
 
 
 async def test_rsvp_records_a_response():
-    svc = _service()
-    ev = await svc.create_event(
+    store = FakeGatheringStore()
+    svc = _service(store)
+    ev = await store.create(make_gathering(
         conversation_id="signal:group-1",
-        requester_person_id="miles",
+        created_by="miles",
         title="Dinner",
-        platform="signal",
-    )
+    ))
     r = await svc.rsvp(
         event_id=ev.id,
         conversation_id="signal:group-1", platform="signal",
@@ -197,20 +44,18 @@ async def test_rsvp_records_a_response():
 
 
 async def test_list_events_filters_by_status():
-    svc = _service()
-    a = await svc.create_event(
+    store = FakeGatheringStore()
+    svc = _service(store)
+    await store.create(make_gathering(
         conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="A",
-        platform="signal",
-    )
-    await svc.create_event(
+        created_by="miles",
+        title="A", status=GatheringStatus.CANCELLED,
+    ))
+    await store.create(make_gathering(
         conversation_id="signal:group-1",
-        requester_person_id="miles",
+        created_by="miles",
         title="B",
-        platform="signal",
-    )
-    await svc.cancel_event(event_id=a.id, conversation_id="signal:group-1", platform="signal")
+    ))
 
     proposed = await svc.list_events(
         conversation_id="signal:group-1",
@@ -219,145 +64,17 @@ async def test_list_events_filters_by_status():
     assert [e.title for e in proposed] == ["B"]
 
 
-async def test_create_event_raises_when_two_open_events_already_exist():
-    store = FakeGatheringStore()
-    svc = _service(store=store)
-    await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="A",
-        platform="signal",
-    )
-    # Directly insert a second PROPOSED event, bypassing the doctrine check
-    # the `create_event` TOOL is expected to have already run — this
-    # method's own raise is a last-resort backstop, not the primary
-    # mechanism.
-    second = Gathering(
-        id=uuid.uuid4(),
-        conversation_id="signal:group-1",
-        title="B",
-        created_by="miles",
-        when=None,
-        venue_text=None,
-        venue_place_id=None,
-        venue_name=None,
-        venue_address=None,
-        venue_rating=None,
-        venue_price_level="",
-        venue_maps_url=None,
-        venue_resolved_at=None,
-        status=GatheringStatus.PROPOSED,
-        reminder_id=None,
-        created_at=NOW,
-        platform="signal",
-    )
-    await store.create(second)
-
-    with pytest.raises(AmbiguousOpenGatheringsError):
-        await svc.create_event(
-            conversation_id="signal:group-1",
-            requester_person_id="miles",
-            title="C",
-            platform="signal",
-        )
-
-
-# ── past PROPOSED events must not lock out create_event forever ─────────────
-
-
-def _proposed_event(*, title: str, when: datetime | None) -> Gathering:
-    return Gathering(
-        id=uuid.uuid4(),
-        conversation_id="signal:group-1",
-        title=title,
-        created_by="miles",
-        when=when,
-        venue_text=None,
-        venue_place_id=None,
-        venue_name=None,
-        venue_address=None,
-        venue_rating=None,
-        venue_price_level="",
-        venue_maps_url=None,
-        venue_resolved_at=None,
-        status=GatheringStatus.PROPOSED,
-        reminder_id=None,
-        created_at=NOW,
-        platform="signal",
-    )
-
-
-async def test_create_event_ignores_past_proposed_events_in_the_open_count():
-    """Two dinners that already happened and were never explicitly
-    cancelled must NOT refuse a third create_event forever — only a
-    PROPOSED event that is still ahead (or has no `when` at all) counts
-    toward the ambiguity backstop."""
-    store = FakeGatheringStore()
-    svc = _service(store=store)
-    await store.create(_proposed_event(title="Past A", when=NOW - timedelta(days=10)))
-    await store.create(_proposed_event(title="Past B", when=NOW - timedelta(days=5)))
-
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="A New Dinner",
-        platform="signal",
-    )
-    assert ev.title == "A New Dinner"
-
-
-async def test_create_event_still_refuses_on_two_future_open_events():
-    """The doctrine still holds for events that are genuinely still open —
-    one with a future `when`, one with none at all."""
-    store = FakeGatheringStore()
-    svc = _service(store=store)
-    await store.create(_proposed_event(title="Future A", when=NOW + timedelta(days=1)))
-    await store.create(_proposed_event(title="Future B (no time yet)", when=None))
-
-    with pytest.raises(AmbiguousOpenGatheringsError):
-        await svc.create_event(
-            conversation_id="signal:group-1",
-            requester_person_id="miles",
-            title="C",
-            platform="signal",
-        )
-
-
 # ── updating/RSVPing a CANCELLED event must refuse, not re-arm ──────────────
 
 
-async def test_update_event_refuses_on_a_cancelled_event():
-    svc = _service()
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        platform="signal",
-    )
-    await svc.cancel_event(event_id=ev.id, conversation_id="signal:group-1", platform="signal")
-
-    with pytest.raises(GatheringCancelledError):
-        await svc.update_event(
-            event_id=ev.id,
-            conversation_id="signal:group-1",
-            when=NOW + timedelta(days=3),
-            platform="signal",
-        )
-    # Its other fields are untouched.
-    back = await svc.get_event(event_id=ev.id)
-    assert back.status is GatheringStatus.CANCELLED
-    assert back.when is None
-
-
 async def test_rsvp_refuses_on_a_cancelled_event():
-    svc = _service()
-    ev = await svc.create_event(
+    store = FakeGatheringStore()
+    svc = _service(store)
+    ev = await store.create(make_gathering(
         conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        platform="signal",
-    )
-    await svc.cancel_event(event_id=ev.id, conversation_id="signal:group-1", platform="signal")
+        created_by="miles",
+        title="Dinner", status=GatheringStatus.CANCELLED,
+    ))
 
     with pytest.raises(GatheringCancelledError):
         await svc.rsvp(
@@ -366,51 +83,17 @@ async def test_rsvp_refuses_on_a_cancelled_event():
             person_id="daisy",
             response=RSVPResponse.YES,
         )
-
-
-# ── EVERY terminal status refuses, not just CANCELLED
-# (any status before `happened` may be revised; no further statuses once a
-# terminal one is reached). Parametrized over the domain's
-# OWN `TERMINAL_STATUSES` — never a hand-copied list here — so a status
-# later added to the enum is covered by construction, not by remembering to
-# update this file too. ─────────────────────────────────────────────────
-
-
-@pytest.mark.parametrize("terminal", sorted(TERMINAL_STATUSES, key=lambda s: s.value))
-async def test_update_event_refuses_on_every_terminal_status(terminal):
-    svc = _service()
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        platform="signal",
-    )
-    await svc.set_event_status(
-        event_id=ev.id, conversation_id="signal:group-1", platform="signal", status=terminal,
-    )
-
-    with pytest.raises(GatheringCancelledError) as exc_info:
-        await svc.update_event(
-            event_id=ev.id,
-            conversation_id="signal:group-1",
-            when=NOW + timedelta(days=3),
-            platform="signal",
-        )
-    assert exc_info.value.status is terminal
 
 
 @pytest.mark.parametrize("terminal", sorted(TERMINAL_STATUSES, key=lambda s: s.value))
 async def test_rsvp_refuses_on_every_terminal_status(terminal):
-    svc = _service()
-    ev = await svc.create_event(
+    store = FakeGatheringStore()
+    svc = _service(store)
+    ev = await store.create(make_gathering(
         conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        platform="signal",
-    )
-    await svc.set_event_status(
-        event_id=ev.id, conversation_id="signal:group-1", platform="signal", status=terminal,
-    )
+        created_by="miles",
+        title="Dinner", status=terminal,
+    ))
 
     with pytest.raises(GatheringCancelledError) as exc_info:
         await svc.rsvp(
@@ -422,49 +105,14 @@ async def test_rsvp_refuses_on_every_terminal_status(terminal):
     assert exc_info.value.status is terminal
 
 
-# ── event ids are conversation-scoped on every write verb ───────────────────
-
-
-async def test_update_event_refuses_a_mismatched_conversation_id():
-    svc = _service()
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        platform="signal",
-    )
-    with pytest.raises(GatheringNotFoundError):
-        await svc.update_event(
-            event_id=ev.id,
-            conversation_id="signal:some-other-group",
-            venue_text="Soi 29",
-            platform="signal",
-        )
-
-
-async def test_cancel_event_refuses_a_mismatched_conversation_id():
-    svc = _service()
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        platform="signal",
-    )
-    with pytest.raises(GatheringNotFoundError):
-        await svc.cancel_event(
-            event_id=ev.id,
-            conversation_id="signal:some-other-group", platform="signal",
-        )
-
-
 async def test_rsvp_refuses_a_mismatched_conversation_id():
-    svc = _service()
-    ev = await svc.create_event(
+    store = FakeGatheringStore()
+    svc = _service(store)
+    ev = await store.create(make_gathering(
         conversation_id="signal:group-1",
-        requester_person_id="miles",
+        created_by="miles",
         title="Dinner",
-        platform="signal",
-    )
+    ))
     with pytest.raises(GatheringNotFoundError):
         await svc.rsvp(
             event_id=ev.id,
@@ -472,96 +120,35 @@ async def test_rsvp_refuses_a_mismatched_conversation_id():
             person_id="daisy",
             response=RSVPResponse.YES,
         )
-
-
-# ── the FULL R-28 screen-call-screen sandwich, not just the half ────────────
-
-
-async def test_venue_resolution_refuses_a_query_naming_a_known_person():
-    """«Tyler's place» must not reach Google as a venue query — the same
-    person-name half of R-28 `place_info` already enforces, now shared via
-    `nora.agent.security.screen_and_resolve_place`."""
-    svc = _service()
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        platform="signal",
-    )
-    updated = await svc.update_event(
-        event_id=ev.id,
-        conversation_id="signal:group-1",
-        venue_text="Tyler's place",
-        person_names=frozenset({"tyler"}),
-        platform="signal",
-    )
-    assert updated.venue_text == "Tyler's place"
-    assert updated.venue_place_id is None
-    assert updated.venue_name is None
-
-
-async def test_venue_resolution_strips_a_google_returned_name_that_trips_the_screen():
-    """The return-path screen: a Google-returned `name`/`address` that itself
-    trips `scan_identifiers`/`looks_like_coordinate` must be stripped before it
-    is persisted, so `_resolve_venue` never writes Google's raw fields into
-    `venue_name`/`venue_address` unscreened."""
-    route_source = _FakeRouteSource(
-        {
-            "status": "ok",
-            "name": "Call +85212345678 to book",
-            "address": "22.2793,114.1628",
-            "rating": 4.0,
-            "price_level": "",
-            "place_id": "ChIJfake456",
-        }
-    )
-    svc = _service(route_source=route_source)
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        platform="signal",
-    )
-    updated = await svc.update_event(
-        event_id=ev.id,
-        conversation_id="signal:group-1",
-        venue_text="Soi 29",
-        platform="signal",
-    )
-    assert updated.venue_name is None  # stripped: an identifier
-    assert updated.venue_address is None  # stripped: a coordinate
-    assert updated.venue_place_id == "ChIJfake456"  # untouched fields kept
 
 
 async def test_list_events_for_person_includes_created_and_rsvpd():
     """Also proves list_events_for_person is NOT conversation-scoped —
     "theirs" lives in a different conversation than "mine" and still
     shows up, since miles RSVP'd to it."""
-    svc = _service()
-    mine = await svc.create_event(
+    store = FakeGatheringStore()
+    svc = _service(store)
+    mine = await store.create(make_gathering(
         conversation_id="signal:group-1",
-        requester_person_id="miles",
+        created_by="miles",
         title="Dinner",
-        platform="signal",
-    )
-    theirs = await svc.create_event(
+    ))
+    theirs = await store.create(make_gathering(
         conversation_id="discord:group-2",
-        requester_person_id="daisy",
+        created_by="daisy",
         title="Movie",
-        platform="signal",
-    )
+    ))
     await svc.rsvp(
         event_id=theirs.id,
         conversation_id="discord:group-2", platform="signal",
         person_id="miles",
         response=RSVPResponse.YES,
     )
-    unrelated = await svc.create_event(
+    unrelated = await store.create(make_gathering(
         conversation_id="discord:group-2",
-        requester_person_id="daisy",
+        created_by="daisy",
         title="Gym",
-        platform="signal",
-    )
+    ))
 
     out = await svc.list_events_for_person(person_id="miles")
     assert {e.id for e in out} == {mine.id, theirs.id}
@@ -569,26 +156,26 @@ async def test_list_events_for_person_includes_created_and_rsvpd():
 
 
 async def test_get_event_for_person_returns_event_when_creator():
-    svc = _service()
-    ev = await svc.create_event(
+    store = FakeGatheringStore()
+    svc = _service(store)
+    ev = await store.create(make_gathering(
         conversation_id="signal:group-1",
-        requester_person_id="miles",
+        created_by="miles",
         title="Dinner",
-        platform="signal",
-    )
+    ))
     out = await svc.get_event_for_person(event_id=ev.id, person_id="miles")
     assert out is not None
     assert out.id == ev.id
 
 
 async def test_get_event_for_person_returns_event_when_rsvpd():
-    svc = _service()
-    ev = await svc.create_event(
+    store = FakeGatheringStore()
+    svc = _service(store)
+    ev = await store.create(make_gathering(
         conversation_id="signal:group-1",
-        requester_person_id="daisy",
+        created_by="daisy",
         title="Dinner",
-        platform="signal",
-    )
+    ))
     await svc.rsvp(
         event_id=ev.id,
         conversation_id="signal:group-1", platform="signal",
@@ -600,25 +187,25 @@ async def test_get_event_for_person_returns_event_when_rsvpd():
 
 
 async def test_get_event_for_person_returns_none_when_not_a_participant():
-    svc = _service()
-    ev = await svc.create_event(
+    store = FakeGatheringStore()
+    svc = _service(store)
+    ev = await store.create(make_gathering(
         conversation_id="signal:group-1",
-        requester_person_id="daisy",
+        created_by="daisy",
         title="Dinner",
-        platform="signal",
-    )
+    ))
     out = await svc.get_event_for_person(event_id=ev.id, person_id="miles")
     assert out is None
 
 
 async def test_get_event_for_person_returns_an_event_of_a_room_i_am_in():
-    svc = _service()
-    ev = await svc.create_event(
+    store = FakeGatheringStore()
+    svc = _service(store)
+    ev = await store.create(make_gathering(
         conversation_id="signal:group-1",
-        requester_person_id="daisy",
+        created_by="daisy",
         title="Dinner",
-        platform="signal",
-    )
+    ))
     out = await svc.get_event_for_person(
         event_id=ev.id, person_id="miles", conversation_ids=frozenset({"signal:group-1"}),
     )
@@ -630,36 +217,16 @@ async def test_get_event_for_person_returns_an_event_of_a_room_i_am_in():
 
 
 async def test_get_event_for_person_returns_none_for_unknown_event():
-    svc = _service()
+    store = FakeGatheringStore()
+    svc = _service(store)
     out = await svc.get_event_for_person(event_id=uuid.uuid4(), person_id="miles")
     assert out is None
 
 
-# ── search_events finds a legacy unit_id="" event through the unit's own
-# rooms, and never another unit's ───────────────────────────────────────────
-
-
 def _legacy_event(*, conversation_id: str, title: str) -> Gathering:
-    """A pre-migration row: `unit_id=""`, exactly what the backfill left
-    every existing event with (units live in `policy.toml`, not the DB)."""
-    return Gathering(
-        id=uuid.uuid4(),
-        conversation_id=conversation_id,
-        title=title,
-        created_by="miles",
-        when=None,
-        venue_text=None,
-        venue_place_id=None,
-        venue_name=None,
-        venue_address=None,
-        venue_rating=None,
-        venue_price_level="",
-        venue_maps_url=None,
-        venue_resolved_at=None,
-        status=GatheringStatus.PROPOSED,
-        reminder_id=None,
-        created_at=NOW,
-        unit_id="",
+    """A pre-migration row with no stored platform or unit."""
+    return make_gathering(
+        conversation_id=conversation_id, title=title, created_by="miles", platform="",
     )
 
 
@@ -671,7 +238,7 @@ async def test_a_legacy_row_is_quarantined_from_room_and_unit_reads():
     legacy = await store.create(_legacy_event(
         conversation_id="signal:room-a", title="Pre-migration dinner",
     ))
-    svc = _service(store=store)
+    svc = _service(store)
 
     assert not await svc.list_events(
         conversation_id="signal:room-a", unit_id="friends", platform="signal",
@@ -688,11 +255,11 @@ async def test_a_row_with_a_persisted_platform_is_listed_and_searchable():
     room and to the unit-wide search, so the quarantine above is not a read that
     simply never works."""
     store = FakeGatheringStore()
-    svc = _service(store=store)
-    event = await svc.create_event(
-        conversation_id="signal:room-a", requester_person_id="miles",
-        title="Dinner", platform="signal", unit_id="friends",
-    )
+    svc = _service(store)
+    event = await store.create(make_gathering(
+        conversation_id="signal:room-a", created_by="miles",
+        title="Dinner", unit_id="friends",
+    ))
 
     assert [e.id for e in await svc.list_events(
         conversation_id="signal:room-a", unit_id="friends", platform="signal",
@@ -710,12 +277,12 @@ async def test_a_room_moved_to_another_unit_does_not_take_its_old_events():
     reads nor mutates it, and `work` still does — the row's own persisted
     owner, not the current assignment, decides."""
     store = FakeGatheringStore()
-    work = _service(store=store)
-    event = await work.create_event(
-        conversation_id="signal:room-a", requester_person_id="miles",
-        title="Work dinner", platform="signal", unit_id="work",
-    )
-    friends = _service(store=store)
+    work = _service(store)
+    event = await store.create(make_gathering(
+        conversation_id="signal:room-a", created_by="miles",
+        title="Work dinner", unit_id="work",
+    ))
+    friends = _service(store)
 
     assert not await friends.list_events(
         conversation_id="signal:room-a", unit_id="friends", platform="signal",
@@ -725,72 +292,56 @@ async def test_a_room_moved_to_another_unit_does_not_take_its_old_events():
             unit_id="friends", conversation_id="signal:room-a", platform="signal",
         )
     }
-    for _name, call in _event_mutations(friends, event.id).items():
-        with pytest.raises(GatheringNotFoundError):
-            await call()
+    with pytest.raises(GatheringNotFoundError):
+        await friends.rsvp(
+            event_id=event.id, conversation_id="signal:room-a",
+            platform="signal", unit_id="friends",
+            person_id="miles", response=RSVPResponse.YES,
+        )
     assert (await store.get(event.id)).unit_id == "work"
     assert [e.id for e in await work.list_events(
         conversation_id="signal:room-a", unit_id="work", platform="signal",
     )] == [event.id]
 
 
-def _event_mutations(
-    svc: GatheringService, event_id: uuid.UUID, *, platform: str = "signal",
-    unit_id: str = "friends",
-):
-    """Every write that authorizes a bare event id, as the caller named."""
-    return {
-        "event_revise": lambda: svc.update_event(
-            event_id=event_id, conversation_id="signal:room-a",
-            platform=platform, unit_id=unit_id, venue_text="elsewhere",
-        ),
-        "event_rsvp": lambda: svc.rsvp(
-            event_id=event_id, conversation_id="signal:room-a",
-            person_id="miles", response=RSVPResponse.YES,
-            platform=platform, unit_id=unit_id,
-        ),
-        "event_set_status": lambda: svc.set_event_status(
-            event_id=event_id, conversation_id="signal:room-a",
-            status=GatheringStatus.CONFIRMED,
-            platform=platform, unit_id=unit_id,
-        ),
-    }
-
-
-async def test_every_event_mutation_refuses_the_same_room_id_on_another_platform():
+async def test_rsvp_refuses_the_same_room_id_on_another_platform():
     """A platform move is a room move: the conversation string alone never
     authorizes a write. The row keeps its persisted platform, and the same
-    room id on whatsapp cannot revise, answer, status-move or venue it."""
+    room id on whatsapp cannot RSVP to it."""
     store = FakeGatheringStore()
-    event = await _service(store=store).create_event(
-        conversation_id="signal:room-a", requester_person_id="miles",
-        title="Work dinner", platform="signal", unit_id="work",
-    )
-    svc = _service(store=store)
-    for name, call in _event_mutations(
-        svc, event.id, platform="whatsapp", unit_id="work",
-    ).items():
-        with pytest.raises(GatheringNotFoundError):
-            await call()
-        assert (await store.get(event.id)).platform == "signal", name
+    event = await store.create(make_gathering(
+        conversation_id="signal:room-a", created_by="miles",
+        title="Work dinner", unit_id="work",
+    ))
+    svc = _service(store)
+    with pytest.raises(GatheringNotFoundError):
+        await svc.rsvp(
+            event_id=event.id, conversation_id="signal:room-a",
+            platform="whatsapp", unit_id="work",
+            person_id="miles", response=RSVPResponse.YES,
+        )
+    assert (await store.get(event.id)).platform == "signal"
 
 
-async def test_every_event_mutation_refuses_another_units_event_with_the_same_room_id():
+async def test_rsvp_refuses_another_units_event_with_the_same_room_id():
     """The row's own `unit_id` is authoritative: a foreign unit's id never
     passes because the conversation string happens to match."""
     store = FakeGatheringStore()
-    foreign = await _service(store=store).create_event(
-        conversation_id="signal:room-a", requester_person_id="miles",
-        title="Work dinner", platform="signal", unit_id="work",
-    )
-    svc = _service(store=store)
-    for name, call in _event_mutations(svc, foreign.id).items():
-        with pytest.raises(GatheringNotFoundError):
-            await call()
-        assert (await store.get(foreign.id)).unit_id == "work", name
+    foreign = await store.create(make_gathering(
+        conversation_id="signal:room-a", created_by="miles",
+        title="Work dinner", unit_id="work",
+    ))
+    svc = _service(store)
+    with pytest.raises(GatheringNotFoundError):
+        await svc.rsvp(
+            event_id=foreign.id, conversation_id="signal:room-a",
+            platform="signal", unit_id="friends",
+            person_id="miles", response=RSVPResponse.YES,
+        )
+    assert (await store.get(foreign.id)).unit_id == "work"
 
 
-async def test_every_event_mutation_refuses_a_row_with_no_stored_platform():
+async def test_rsvp_refuses_a_row_with_no_stored_platform():
     """A `unit_id=""`/`platform=""` row is quarantined for WRITES too: there is
     no persisted owner to prove it is this caller's, so it refuses like an
     unknown id rather than letting the first asker mutate it."""
@@ -798,24 +349,26 @@ async def test_every_event_mutation_refuses_a_row_with_no_stored_platform():
     legacy = await store.create(_legacy_event(
         conversation_id="signal:room-a", title="Pre-migration dinner",
     ))
-    svc = _service(store=store)
-    for _name, call in _event_mutations(svc, legacy.id).items():
-        with pytest.raises(GatheringNotFoundError):
-            await call()
+    svc = _service(store)
+    with pytest.raises(GatheringNotFoundError):
+        await svc.rsvp(
+            event_id=legacy.id, conversation_id="signal:room-a",
+            platform="signal", unit_id="friends",
+            person_id="miles", response=RSVPResponse.YES,
+        )
     assert not await store.rsvps_for(legacy.id)
 
 
 async def test_an_omitted_platform_is_not_a_wildcard_on_a_mutation():
-    """An internal caller that forgot to resolve the platform must fail closed,
-    not fall back to "any platform": `set_event_status` defaults to `""`, which
-    matches no persisted row, so a signal event is still refused."""
-    svc = _service()
-    event = await svc.create_event(
-        conversation_id="signal:room-a", requester_person_id="miles",
-        title="Dinner", platform="signal", unit_id="work",
-    )
+    """An omitted platform fails closed for an RSVP to a Signal event."""
+    store = FakeGatheringStore()
+    svc = _service(store)
+    event = await store.create(make_gathering(
+        conversation_id="signal:room-a", created_by="miles",
+        title="Dinner", unit_id="work",
+    ))
     with pytest.raises(GatheringNotFoundError):
-        await svc.set_event_status(
+        await svc.rsvp(
             event_id=event.id, conversation_id="signal:room-a",
-            unit_id="work", status=GatheringStatus.CONFIRMED,
+            unit_id="work", person_id="miles", response=RSVPResponse.YES,
         )

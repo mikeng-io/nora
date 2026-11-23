@@ -785,14 +785,7 @@ async def _compose_dependencies(
     _agenda_event_store = _agenda_wire.event_store(allowlist=allowlist, engine=engine)
     event_room_claims = _agenda_event_store.event_room_claims
     event_store = _agenda_event_store.event_store
-    _location_place_areas = _location_wire.place_areas(cfg=cfg, route_client=route_client)
-    place_areas = _location_place_areas.place_areas
-    _agenda_events = _agenda_wire.events(
-        content_checks=content_checks,
-        event_store=event_store,
-        place_areas=place_areas,
-        route_client=route_client,
-    )
+    _agenda_events = _agenda_wire.events(event_store=event_store)
     events = _agenda_events.events
     _media_describers = _media_wire.describers(
         _spawn=_spawn,
