@@ -35,7 +35,7 @@ from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.catalog.groups import (
     COMPUTER_TOOLS,
     DOCUMENT_TOOLS,
-    GRAPH_MEMORY_TOOLS,
+    GRAPH_PASS_TOOLS,
     HONCHO_MEMORY_TOOLS,
     HOT_TOOLS,
     LOADER_TOOL,
@@ -370,14 +370,10 @@ class ToolRegistry:
         # link is opened through; `None` answers the open `unavailable`. Its
         # `google_account` names who the NOT_SHARED note says to share with.
         external_files: ExternalFilesSource | None = None, google_account: str = "",
-        # `[memory.index] read` (ships off): the retrieval service
-        # `memory_search` answers from, and the switch between the two memory
-        # surfaces (DEC-316): wired, every build offers `memory_search` and no
-        # Honcho tool (`about` included; `remember` is on both surfaces, a
-        # Profile write here and Honcho's there); `None` keeps the Honcho
-        # surface.
-        # Process-lifetime like `record`.
+        # The legacy dependency still selects the Profile writes.
+        # Graph reads need the Cognitive Graph reader.
         memory_search: MemorySearch | None = None,
+        graph_retrieval: Any = None,
         # The Profile write the graph surface's `remember` makes (a `told`
         # line, design/unified-memory/profiles.md). Wired with `memory_search`.
         profile: ProfileWriter | None = None,
@@ -401,6 +397,7 @@ class ToolRegistry:
         self._profile_read = profile_read
         self._external_files, self._google_account = external_files, google_account
         self._memory_search = memory_search
+        self._graph_retrieval = graph_retrieval
         self._record = record
         self._documents = documents
         self._lineage = lineage
@@ -429,12 +426,11 @@ class ToolRegistry:
             | (frozenset() if documents is not None else DOCUMENT_TOOLS)
             | (frozenset() if subagent is not None else SUBAGENT_TOOLS)
             | (frozenset() if video is not None else VIDEO_TOOLS)
-            # The memory surface not selected (DEC-316): with no index wired
-            # the graph's `memory_search`, with one every Honcho tool.
-            # `build_tool_specs` never builds them; withholding them here
-            # keeps the digest and `withheld_tools()` (Cognition's read
-            # surface) true to the same one choice.
-            | (GRAPH_MEMORY_TOOLS if memory_search is None else HONCHO_MEMORY_TOOLS)
+            | ({"profile_dispute"} if memory_search is None else set())
+            | ({"memory_search", "memory_read"} if graph_retrieval is None else set())
+            | (HONCHO_MEMORY_TOOLS
+               if graph_retrieval is not None or memory_search is not None else set())
+            | GRAPH_PASS_TOOLS
         )
         self._subagent = subagent
         self._video = video
@@ -782,7 +778,7 @@ class ToolRegistry:
 
         scoped = copy(self)
         scoped._memory_search = search
-        scoped._withheld = (self._withheld - GRAPH_MEMORY_TOOLS) | HONCHO_MEMORY_TOOLS
+        scoped._withheld = (self._withheld - {"profile_dispute"}) | HONCHO_MEMORY_TOOLS
         return scoped
 
     def with_clock(self, clock: Callable[[], datetime]) -> ToolRegistry:
@@ -1174,7 +1170,7 @@ class ToolRegistry:
             rooms=self._rooms,
             record=self._record,
             observations=self._observations,
-            memory_retrieval=self._memory_search,
+            memory_retrieval=self._memory_search, graph_retrieval=self._graph_retrieval,
             profile=self._profile,
             lineage=self._lineage,
             rollup=self._rollup,

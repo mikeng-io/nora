@@ -20,6 +20,7 @@ from nora.memory.domain.admission import (
 )
 from nora.memory.domain.admission_ports import AdmissionStore, AdmissionUnavailableError, Stored
 from nora.memory.domain.admission_proposals import (
+    CloseIntention,
     CreateIntention,
     MergeEntities,
     PassContext,
@@ -151,6 +152,8 @@ class AdmissionService:
         ids = frozenset().union(*(row_references(part) for part in (proposal, *topics)))
         if ids & unknown:
             return Unavailable(data.id, commit_uncertain=False), ()
+        if isinstance(proposal, CloseIntention):
+            return await self._close(proposal, context, shown), ()
         # IDs supplied by the model grant no additional reads.
         readable = ids & shown
         related: tuple[Stored, ...] = ()
@@ -192,6 +195,18 @@ class AdmissionService:
         except AdmissionUnavailableError as exc:
             return Unavailable(data.id, exc.commit_uncertain), related
         return stored, related
+
+    async def _close(
+        self, proposal: CloseIntention, context: PassContext, shown: set[str],
+    ) -> Stored | Refusal | Unavailable:
+        if proposal.witness not in shown:
+            return Refusal("citation_not_shown", "witness")
+        if proposal.id not in shown:
+            return Refusal("stale_base", "base")
+        try:
+            return await self._store.close(proposal.id, proposal.witness, context)
+        except AdmissionUnavailableError as exc:
+            return Unavailable(proposal.id, exc.commit_uncertain)
 
     def _protect(self, proposal: Proposal) -> Refusal | None:
         for field, text in _text(proposal):

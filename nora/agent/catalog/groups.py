@@ -89,4 +89,7 @@ HONCHO_MEMORY_TOOLS: frozenset[str] = frozenset(
 
 GRAPH_MEMORY_TOOLS: frozenset[str] = frozenset({"memory_search", "memory_read", "profile_dispute"})
 
+# These tools are offered by a graph pass through its own dependencies.
+GRAPH_PASS_TOOLS: frozenset[str] = frozenset({"intention_commit"})
+
 ROOM_ONLY_MEMORY_ADAPTORS: frozenset[str] = frozenset({CULTURE_ADAPTOR_NAME})

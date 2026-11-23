@@ -30,9 +30,9 @@
  {
   "name": "the memory tool person filter reads managed room membership",
   "file": "nora/memory/adapters/tools/search.py",
-  "old": "            listed = scope.listed_here if scope is not None else None",
-  "new": "            listed = target.room.persons if target.room is not None else None",
-  "target": "tests/unit/test_memory_search_tool.py::test_memory_search_admits_a_managed_member_the_stale_roster_omits"
+  "old": "if target.room.persons is not None:",
+  "new": "if target.room.persons is not None and self._access.access.is_file_backend:",
+  "target": "tests/infra/test_graph_read_tools.py::test_memory_search_does_not_treat_the_roster_as_room_membership"
  },
  {
   "name": "file graph keeps its opt-outs without a selected access facade",

@@ -20,6 +20,7 @@ class AssembledPass:
     blocks: tuple[ContextBlock, ...]
     status: RetrievalStatus
     cause: str | None
+    shown: frozenset[str] = frozenset()
 
     def render(self) -> str:
         return render_blocks(tuple(replace(block, order=i) for i, block in enumerate(self.blocks)))
@@ -44,14 +45,14 @@ class PassAssembler:
                 scope.room, seeds.anchors, bounds, concerns=seeds.concerns,
                 as_of=scope.as_of, now=now,
             )
-        blocks = _presentation_order(choice, seeds, result, floor, now)
-        return AssembledPass(blocks, result.status, result.cause)
+        blocks, shown = _presentation_order(choice, seeds, result, floor, now)
+        return AssembledPass(blocks, result.status, result.cause, shown)
 
 
 def _presentation_order(
     choice: PassDeclaration, seeds: AnchorRead, result: RetrievalResult,
     floor: Sequence[ContextBlock], now: datetime,
-) -> tuple[ContextBlock, ...]:
+) -> tuple[tuple[ContextBlock, ...], frozenset[str]]:
     builder = GraphPresentationBlocks(now, seeds.room, seeds.dm_rooms)
     early: list[ContextBlock] = []
     late: list[ContextBlock] = []
@@ -75,5 +76,7 @@ def _presentation_order(
         late.append(block)
         shown.update(ids)
     if "related" in chosen:
-        late.append(builder.related_block(result, related(result, shown)))
-    return (*early, *floor, *late)
+        rows = related(result, shown)
+        late.append(builder.related_block(result, rows))
+        shown.update(row.graph_id for row in rows)
+    return (*early, *floor, *late), frozenset(shown if result.status != "unavailable" else ())

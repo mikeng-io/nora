@@ -23,7 +23,14 @@ from nora.infra.sql.schema import (
     SOURCE_HEALTH,
 )
 from nora.memory.app.condition_matcher import ConditionMatcher, Evaluation, Witness
-from nora.memory.domain.conditions import ActEvent, ConditionValue, Ending, PersonEvent, Predicate
+from nora.memory.domain.conditions import (
+    ActEvent,
+    ConditionValue,
+    Ending,
+    OwnDelivery,
+    PersonEvent,
+    Predicate,
+)
 from nora.memory.domain.registration import AGGREGATE_FAMILIES
 
 _Source = tuple[str, str]
@@ -43,14 +50,20 @@ class SqlConditionMatcher:
 
     async def run_once(self) -> None:
         async with self._engine.begin() as conn:
-            await self._matcher.observe(batch=_Batch(conn, self._graph))
+            await self._matcher.observe(batch=SqlIntentionBatch(conn, self._graph))
 
 
-class _Batch:
+class SqlIntentionBatch:
     def __init__(self, conn: AsyncConnection, graph: SqlCognitiveGraph) -> None:
         self._conn = conn
         self._graph = graph
         self._health: dict[tuple[str, _Source], bool] = {}
+
+    async def one(self, unit: str, intention: str) -> Mapping[str, object] | None:
+        row = (await self._conn.execute(sa.select(INTENTION).where(
+            _INTENT.unit == unit, _INTENT.id == intention,
+        ).with_for_update())).mappings().one_or_none()
+        return dict(row) if row is not None else None
 
     async def open(self) -> list[Mapping[str, object]]:
         table = INTENTION
@@ -66,7 +79,7 @@ class _Batch:
     async def evaluate(
         self, intention: Mapping[str, Any], condition: ConditionValue,
     ) -> Evaluation:
-        if isinstance(condition, ActEvent):
+        if isinstance(condition, (ActEvent, OwnDelivery)):
             return await self._act(intention, condition)
         if isinstance(condition, PersonEvent):
             return await self._person(intention, condition)
@@ -83,18 +96,27 @@ class _Batch:
             self._health[key] = await self._conn.scalar(stmt) in {"up", "ok"}
         return self._health[key]
 
-    async def _act(self, intention: Mapping[str, Any], condition: ActEvent) -> Evaluation:
+    async def _act(
+        self, intention: Mapping[str, Any], condition: ActEvent | OwnDelivery,
+    ) -> Evaluation:
         unit = intention["unit"]
+        if isinstance(condition, OwnDelivery):
+            match = sa.and_(
+                _ACT.act_kind == "delivery", _ACT.authority_intention == intention["id"],
+            )
+        else:
+            match = sa.and_(
+                _OUTCOME.act_id == condition.act_id,
+                sa.or_(_ACT.authority_intention.is_(None),
+                       _ACT.authority_intention == intention["id"]),
+            )
         stmt = (
             sa.select(NORA_ACT_OUTCOME, _ACT.executor)
             .join(NORA_ACT, sa.and_(_ACT.id == _OUTCOME.act_id, _ACT.unit == _OUTCOME.unit))
             .where(
-                _OUTCOME.unit == unit, _OUTCOME.act_id == condition.act_id,
+                _OUTCOME.unit == unit, match,
                 _OUTCOME.graph_id.is_not(None), _OUTCOME.state == "live",
                 _ACT.state == "live",
-                sa.or_(
-                    _ACT.authority_intention.is_(None), _ACT.authority_intention == intention["id"],
-                ),
             )
             .order_by(_OUTCOME.id.desc()).limit(1)
         )

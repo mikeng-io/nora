@@ -569,9 +569,8 @@ def test_no_text_after_args_is_silently_dropped(tool: str, doc: str) -> None:
 # `nora/agent/tools.py` deliberately does not do.
 
 
-#: Per tool, the statuses its DELEGATE return(s) -- (c)/(e) -- can actually
-#: carry, independent of what any OTHER, unrelated return in the same tool
-#: proves. Hand-verified against each backend's own vocabulary:
+#: Reachable delegate statuses, independent of the tool's other return paths.
+#: These match the respective backend's own vocabulary:
 #: `SocialBridgeClient._read` (x/LinkedIn) only ever answers `ok`/
 #: `nothing_found`/`unavailable` (its own status check restricts to exactly
 #: these three); `refused`, where a docstring lists it, is raised

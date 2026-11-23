@@ -43,6 +43,9 @@ _CHARSET = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 VERBS: tuple[str, ...] = (
     "read", "fetch", "search", "list", "create", "update", "cancel", "send",
     "query", "propose", "revise", "set_status", "rsvp",
+    # Each write verb owns one basis the model may propose. Create, update and
+    # cancel each name only one of the four operations on a commitment.
+    "commit",
     # Nora's computer (DEC-243): the coding-agent convention, Claude Code's
     # Bash/Read/Write/Edit (and Pi's core set). `run` executes a command:
     # restricting the language is not restricting the capability, so there is
