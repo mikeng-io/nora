@@ -45,7 +45,7 @@ from typing import Any, Literal
 #: pass.
 Expectation = Literal[
     "go", "no_go", "speak", "silence", "reply", "no_reply",
-    "create", "update", "none", "either", "remind", "fold", "identity",
+    "create", "update", "none", "either", "remind", "fold",
 ]
 
 #: Which entry point the input enters at. A SELECTION ON A CASE, not a branch
@@ -54,7 +54,7 @@ Expectation = Literal[
 #: this design draws rather than hides.
 Entry = Literal[
     "gate", "participation", "tag", "dreamer", "proactive_act", "standing",
-    "profile_identity", "profile_coverage", "standing_unit", "public_summons",
+    "profile_coverage", "standing_unit", "public_summons",
     "autonomous_journey",
 ]
 
@@ -341,8 +341,6 @@ class Outcome:
             return any(kind == expect for kind, _ in self.changed)
         if expect == "remind":
             return self.written > 0
-        if expect == "identity":
-            return True if self.position is not None else None
         if expect == "fold":
             # Nothing written is not a verdict about the position; and a
             # position no judge read has not been measured against the case's

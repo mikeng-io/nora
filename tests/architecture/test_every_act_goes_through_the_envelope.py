@@ -230,7 +230,6 @@ KNOWN_CALLS = {'agent/comprehend_tools.py': {'ComprehendRead.stream self._inner.
  'agent/mcp.py': {'stream_mounted envelope.stream': 1, 'stream_mounted tool.stream': 1},
  'agent/room_routing.py': {'RoomRoutedTool.stream target.stream': 1},
  'agent/tool_deps.py': {'ToolDeps._keep_fetched_media self.blob_store.put': 1},
- 'app/cli.py': {'cmd_profile_history sa.delete W': 1},
  'app/compute_poller.py': {'ComputeJobPoller._keep self._blobs.put': 1},
  'app/computer_queue.py': {"_lifecycle_work lifecycle.request 'acquire'": 1,
                            "_lifecycle_work lifecycle.request 'release'": 1},

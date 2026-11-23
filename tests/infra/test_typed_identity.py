@@ -427,56 +427,6 @@ async def test_render_on_person_and_unit_inputs_use_profile_rooms_without_legacy
     assert "norm: plan in the open" in rendered and 'source_at="1970-' in rendered
 
 
-async def test_history_cli_receipts_and_explicit_rerun_preserve_claims(
-    env, clean_pg_url, monkeypatch, capsys
-):
-    import json
-    from argparse import Namespace
-    from types import SimpleNamespace
-
-    from nora.app import cli
-    from nora.persons import Persons
-
-    await _message(env.engine, 1, person=KIT)
-    reads = SqlCharacterEvidence(env.engine)
-    assert await reads.history_state(key=ACCOUNT.key) == (1, 0)
-    await reads.advance_history(key=ACCOUNT.key, cursor=1)
-    await _write(
-        env,
-        [
-            AddOp(
-                part="facts",
-                kind="role",
-                text="organiser",
-                mode="told",
-                citations=("101",),
-                told_by=KIT,
-                fact_key="role",
-                fact_value="organiser",
-            )
-        ],
-    )
-    monkeypatch.setattr(cli, "_config", lambda _: SimpleNamespace())
-    monkeypatch.setattr(cli, "_database_url", lambda _: clean_pg_url)
-    monkeypatch.setattr(cli, "_policy", lambda _: SimpleNamespace(
-        conversations=(), rooms=lambda: ()))
-    monkeypatch.setattr(cli, "_persons", lambda _: Persons(by_person={}, index={}))
-    args = Namespace(key=ACCOUNT.key, restart=True, apply=False)
-    assert await cli.cmd_profile_history(args) == 0
-    receipt = json.loads(capsys.readouterr().out)
-    assert receipt["complete"] and not receipt["restart_applied"]
-    assert receipt["typed_current"] == 1 and "gender" in receipt["missing_fields"]
-    assert await reads.history_state(key=ACCOUNT.key) == (1, 1)
-    await _message(env.engine, 2, person=KIT)
-    args.apply = True
-    assert await cli.cmd_profile_history(args) == 0
-    receipt = json.loads(capsys.readouterr().out)
-    assert receipt["restart_applied"] and not receipt["complete"]
-    assert await reads.history_state(key=ACCOUNT.key) == (2, 0)
-    [line] = await env.store.account_heads(key=ACCOUNT.key)
-    assert line.fact_value == "organiser"
-
-
 @pytest.mark.parametrize("key", ["gender", "sex"])
 async def test_gender_and_sex_require_explicit_statements_not_deductions(env, key):
     result = await _write(env, [AddOp(part="facts", kind="attribute", text="claim",

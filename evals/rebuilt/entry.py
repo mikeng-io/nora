@@ -47,7 +47,6 @@ from .autonomous_journey import autonomous_journey
 from .domain import Case, Outcome, WorkingSetFinding
 from .fold_evidence import render_evidence, render_shown
 from .profile_coverage import profile_coverage
-from .profile_identity import profile_identity
 
 
 async def public_summons(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
@@ -672,11 +671,6 @@ class EntryPoint:
     #: `gate` and `dreamer` are unaffected: they read and write, and never speak.
     drives_a_turn: bool = False
 
-    #: A private synthetic-source experiment declares a later stimulus clock
-    #: and records a canonical receipt. Ordinary reconstructed entries keep
-    #: their exact-anchor assembly and call shape.
-    synthetic_sources: bool = False
-
     #: Reads a frozen evidence census, not a writable Nora subject. The same
     #: registered drive/Outcome contract applies; no workspace or sandbox is needed.
     frozen_input: bool = False
@@ -690,10 +684,9 @@ class EntryPoint:
 
     #: What a judge grades, when a judge is configured: `"reply"` — what she
     #: said, against the reply rubric — or `"position"` — the standing position
-    #: a fold wrote — or `"identity"`, canonical heads against source meaning.
-    #: Data here, not a
+    #: a fold wrote. Data here, not a
     #: branch on the entry's name, for the reason `drives_a_turn` is.
-    judged_on: Literal["reply", "position", "identity"] = "reply"
+    judged_on: Literal["reply", "position"] = "reply"
 
 
 #: Both entry points turn on the SAME pair, and that is not duplication: the
@@ -742,10 +735,6 @@ ENTRY_POINTS = {
     # the corpus's business (the culture adaptor needs `[culture] enabled`). Putting an
     # adaptor's flag here would make one corpus's requirement look like the
     # entry point's.
-    "profile_identity": EntryPoint(
-        drive=profile_identity, synthetic_sources=True, judged_on="identity",
-        config={"dreamer.enabled": True, "memory.profile.write": True},
-    ),
     "dreamer": EntryPoint(drive=dreamer, config={"dreamer.enabled": True}),
     # The act turn needs the FIRE PATH, which `[participation]` also builds,
     # and the note tier its row points at. NOT `[heartbeat]`: composition
