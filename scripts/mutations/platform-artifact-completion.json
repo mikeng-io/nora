@@ -72,8 +72,8 @@
   {
     "name": "the action reply drops the stored ref list",
     "file": "deploy/instagram-bridge/internal/transport/http/v1.go",
-    "old": "\t\tPlatformRefs: row.PlatformRefs,",
-    "new": "\t\tPlatformRefs: nil,",
+    "old": "\trefs := row.PlatformRefs\n",
+    "new": "\tvar refs []string\n",
     "target": "go:deploy/instagram-bridge ./internal/transport/http -run ^TestV1SendMultiPostKeepsEveryRef"
   },
   {
