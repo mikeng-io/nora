@@ -427,7 +427,8 @@ async def test_a_conflict_on_speech_falls_back_to_text(aiohttp_server):
     )
 
     result = await adapter.send(
-        target=ConversationTarget("discord", "111/999", "group", voice=True), text="喂 Nora，收到。")
+        target=ConversationTarget("discord", "111/999", "group", voice=True),
+        text="喂 Nora，收到。")
 
     assert result.ok is True
     assert posted == ["/channels/999/messages"] and len(speaks) == 1

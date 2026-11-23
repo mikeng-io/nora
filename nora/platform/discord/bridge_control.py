@@ -65,7 +65,7 @@ from nora.domain.ports import (
     VoiceChannelRef,
     speakable,
 )
-from nora.domain.service_api import OperationConflictError
+from nora.domain.service_api import OperationConflictError, status_for
 from nora.memory import ActAuthority, EffectRecorder, Outcome
 from nora.platform.bridge.client import (
     ACCOUNT_PATH,
@@ -151,27 +151,35 @@ class BridgeControlClient:
         return answer.payload if answer.outcome == "ok" and isinstance(answer.payload, dict) \
             else None
 
-    async def voice_state(self, guild_id: str) -> dict[str, Any] | None:
-        """The bridge's `status` query → `{connected, session, generation,
-        channel_id}` for `ok`, `None` otherwise — the "does a controller
-        session exist" check the send path pays for before paying for synthesis."""
+    async def _voice_status(self, guild_id: str) -> BridgeAnswer | None:
+        """The bridge's `status` query as stated; `None` for a failed or self-inconsistent read."""
         try:
             answer = await bridge_call(
                 await self._client(), "POST", f"{self._endpoint.base_url}{VOICE_QUERIES}",
                 "read", json={"kind": "status", "params": {"guild_id": guild_id}})
-        except BridgeUnavailableError:
+        except (BridgeUnavailableError, OperationConflictError):
             return None
-        return answer.payload if answer.outcome == "ok" and isinstance(answer.payload, dict) \
-            else None
+        return answer if _stated(answer) and answer.outcome != "unavailable" else None
+
+    async def voice_state(self, guild_id: str) -> dict[str, Any] | None:
+        """The bridge's `status` query → `{connected, session, generation,
+        channel_id}` for `ok`, `None` otherwise — the "does a controller
+        session exist" check the send path pays for before paying for synthesis."""
+        answer = await self._voice_status(guild_id)
+        if answer is None or answer.outcome != "ok" or not isinstance(answer.payload, dict):
+            return None
+        return answer.payload
 
     async def speech(self, guild_id: str, audio: bytes,
                      media_type: str) -> bool | None:
         """A `speak` on the bridge, for the generation its `status` query names.
 
-        `True` for `complete`; `False` (the reply falls back to text) for a
-        refusal, a 400, or no connection; `None` when the audio may have played:
-        `uncertain`, `incomplete`, `pending`, a transport failure, a 409 or any
-        other answer with no envelope.
+        `True` for `complete`; `False` (the reply falls back to text) only for a
+        status read that shows no connection, a stated `rejected`,
+        `unsupported`, `denied` or `unavailable`, or a 400; `None` when the
+        audio may have played or the read could not tell: a failed or
+        self-inconsistent read or answer, `uncertain`, `incomplete`,
+        `pending`, a transport failure, a 409.
         """
         if self._effects is None:
             return await self._speech(guild_id, audio, media_type)
@@ -184,8 +192,11 @@ class BridgeControlClient:
         )
 
     async def _speech(self, guild_id: str, audio: bytes, media_type: str) -> bool | None:
-        state = await self.voice_state(guild_id)
-        generation = state.get("generation") if state is not None else None
+        status = await self._voice_status(guild_id)
+        if status is None:
+            return None
+        state = status.payload if status.outcome == "ok" else None
+        generation = state.get("generation") if isinstance(state, dict) else None
         if not isinstance(generation, str) or not generation:
             return False
         try:
@@ -202,11 +213,17 @@ class BridgeControlClient:
             return False if exc.status == 400 else None
         if answer.outcome == "complete":
             return True
-        stated = answer.body.get("outcome")  # an unavailable parse of no envelope is not stated
         if answer.outcome in ("rejected", "unsupported", "denied", "unavailable") \
-                and stated == answer.outcome:
+                and _stated(answer):
             return False
         return None
+
+
+def _stated(answer: BridgeAnswer) -> bool:
+    """Whether the outcome is the answer's own, under its own status: not one
+    `parse_response` put in place of a missing or self-contradicting envelope."""
+    return answer.body.get("outcome") == answer.outcome \
+        and answer.status == status_for(answer.outcome)
 
 
 class BridgeMusicTool:
