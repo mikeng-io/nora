@@ -81,4 +81,7 @@ the contracts keep their own bundles: [platform bridges](../platform-bridges/00-
 own event custody and delivery durability, [managed identity](../managed-identity-access/management.md)
 owns the management operations and their authority, and
 [cognition](../cognition/README.md) owns what the graph contract reads and
-admits. Those bundles describe their routes in this bundle's conventions.
+admits. Those bundles conform to this one: a bridge action is a `platform`
+operation and its `confirmed` is `complete`; a management operation is a
+`management` operation with the same outcomes; the portal's routes are reads
+of the contracts its pages use.

@@ -25,7 +25,10 @@ finding against the route, never an exception to the convention.
 - At most one sub-collection level. Deeper relations are a query or a
   separate collection filtered by its parent.
 - `/health`, `/ready` and `/metrics` sit at the root, unversioned, on every
-  service: liveness, readiness to serve, Prometheus.
+  service: liveness only, readiness to serve, Prometheus. Richer state, such
+  as a bridge's queue, is a read of `operations`.
+- A byte stream (audio, live media) is a resource an operation opens; its
+  frames are the stream's own protocol, not envelopes.
 
 ## Methods
 
@@ -97,8 +100,8 @@ Field names are `snake_case`; times are integer epoch milliseconds named
   kind's shape, never an open mapping.
 - It names its **actor** and its **scope**, and the revisions it observed of
   the state it changes. A stale revision is `rejected` with the current one.
-- Its record has one lifecycle: `prepared → started → settled`, where settled
-  carries the outcome. A record that cannot be found after a lost response is
+- Its record has one lifecycle: `prepared → started → settled`. Its outcome
+  is `pending` while prepared or started; settling sets every other outcome. A record that cannot be found after a lost response is
   `uncertain` until the target's own evidence settles it.
 
 ## Collections and paging
@@ -111,8 +114,9 @@ Field names are `snake_case`; times are integer epoch milliseconds named
 
 ## Scope, actor and exposure
 
-- Reachability is the network's. A principal is resolved from the request's
-  credential once; the actor of an operation is the principal or the human it
+- Reachability is the network's. A principal is resolved once from the
+  request: a service by its deployment credential, a person by a viewer
+  session from [managed identity](../managed-identity-access/management.md#web-app); the actor of an operation is the principal or the human it
   verifiably acts for, never a value in the body.
 - Every request resolves one agent, unit and room scope. Nora validates its
   containment; an unknown or unresolvable scope is `denied`, never widened or
@@ -128,7 +132,8 @@ Field names are `snake_case`; times are integer epoch milliseconds named
   one until its last caller moves.
 - The contract document is OpenAPI, generated from the domain types that own
   each contract. Every service, the portal client and the MCP tool list are
-  generated from or checked against it.
+  generated from or checked against it, and each contract's suite in
+  `tests/contract/` runs every implementation against it.
 
 ## Tracing and observation
 

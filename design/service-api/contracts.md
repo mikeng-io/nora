@@ -8,10 +8,10 @@ whatever the network allows.
 
 | contract | owner | implemented by | called by | holds |
 |---|---|---|---|---|
-| `intake` | `ingest/` | the app's intake | bridges, collectors, executors | events in one envelope: messages, edits, reactions, deletions, summons, activity changes, social items, membership, source health |
+| `intake` | `ingest/` | the app's intake | bridges, collectors, executors, any principal registered as a source | events in one envelope: messages, edits, reactions, deletions, summons, activity changes, social items, membership, source health |
 | `platform` | `platform/` | every bridge | the app | delivery operations (send, react, typing), reads (self, roster, channels, members), attachment custody |
 | `sources` | `social/` | each source adapter | the app's tools, the reflection loop | on-demand reads of one outside reference: an account's items, a person's live activity |
-| `graph` | `memory/` | the app | the portal, tools, MCP | scoped reads with the retrieval semantics; observation submissions |
+| `graph` | `memory/` | the app | the portal, tools, MCP | scoped reads with the retrieval semantics |
 | `management` | `people/` | the management service | the portal, in-room management, bridges' roster sync | the identity, membership and grant operations |
 | `documents` | `documents/` | the app | the portal, tools | documents, revisions, artifacts and their media |
 | `voice` | `voice/` | each audio controller | the app | join, leave, speak, play and their status |
@@ -43,13 +43,15 @@ whatever the network allows.
 - **Ingress is one direction.** Bridges and adapters write only to `intake`;
   nothing outside the app writes a graph table, a presence head or a social
   row directly.
-- **Egress is one route.** Only the engagement loop calls `platform`
-  delivery operations, after the guards ([boundaries](../cognition/boundaries.md#egress));
-  `voice`, `documents` and `computer` effects pass the same act envelope.
-- **The graph has no write route.** `graph` submissions are observations: a
-  caller records that something happened, and intake records it with the
-  caller as its source. Understanding is written only by the loops through
-  admission.
+- **Egress is one route.** Only the app calls `platform`, and every delivery
+  is an act through the act envelope and the common guards
+  ([boundaries](../cognition/boundaries.md#egress)); model-composed
+  deliveries come only from the engagement loop. `voice`, `documents` and
+  `computer` effects pass the same envelope.
+- **The graph has no write route.** `graph` is read-only. A caller that
+  records that something happened is an `intake` source, registered with the
+  item kinds it may submit; understanding is written only by the loops
+  through admission.
 - **Scope travels, never widens.** Every call carries the agent, unit and
   room it acts within; a `sources` read for the reflection loop is keyed by
   its unit, a portal read by its viewer's scope.
