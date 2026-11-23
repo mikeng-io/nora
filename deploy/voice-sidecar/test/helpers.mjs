@@ -193,8 +193,11 @@ export function createFakeResource(stream) {
 export const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 // Poll a condition across ticks (loopback HTTP + real fs need more than one).
-export async function until(cond, tries = 200) {
-  for (let i = 0; i < tries; i += 1) {
+// Waits at least `tries` ticks and at least `minMs` of wall time: a real file
+// write under a loaded host can outlast any tick count.
+export async function until(cond, tries = 200, minMs = 2000) {
+  const started = Date.now();
+  for (let i = 0; i < tries || Date.now() - started < minMs; i += 1) {
     if (cond()) return true;
     await tick();
   }
