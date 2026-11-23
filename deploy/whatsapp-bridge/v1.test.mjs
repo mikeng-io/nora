@@ -1524,6 +1524,11 @@ test('operation outcomes follow the contract', async () => {
     const pending = await op('o-pending');
     assertEnvelope(pending, 'pending', 'pending');
     assert.equal(pending.json.when.state, 'started');
+    // a stored row's time arrives from Postgres as a string and leaves as a number
+    seed('o-stored', { state: 'confirmed', platform_ref: 'S9', platform_ms: '1730300005000' });
+    const stored = await op('o-stored');
+    assertEnvelope(stored, 'complete', 'complete');
+    assert.strictEqual(stored.json.payload.platform_ms, 1730300005000);
     // rejected: refused before any upstream bytes
     const rejected = await op('o-rejected', { target: { kind: 'group', id: 'not-a-group' }, text: 'hi' });
     assertEnvelope(rejected, 'rejected', 'rejected');

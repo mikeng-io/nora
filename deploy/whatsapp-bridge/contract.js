@@ -61,7 +61,7 @@ export function operationEnvelope(trace, action, target) {
     outcome,
     payload: {
       platform_refs: refs,
-      platform_ms: action.platform_ms ?? null,
+      platform_ms: ms(action.platform_ms),
       message_id: action.message_id == null ? null : Number(action.message_id),
       error: action.error ? { kind: String(action.error.kind),
         message: String(action.error.message ?? 'bridge operation failed') } : null,

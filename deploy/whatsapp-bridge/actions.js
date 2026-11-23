@@ -435,8 +435,11 @@ export function createV1(deps) {
       // The server's refusal of a JSON body over the cap, before any handler ran.
       if (err?.message === 'body too large') return sendRefusal(res, 413, 'body too large');
       // Anything else is a measurer that could not answer: unavailable, never a 500.
+      if (route.family === 'probe') return sendJson(res, 503, { ok: false });
       if (route.family === 'operation') {
-        return sendOperation(res, settledOperation(trace, { outcome: 'unavailable' }));
+        return sendOperation(res, settledOperation(trace, { outcome: 'unavailable',
+          payload: { platform_refs: [], platform_ms: null, message_id: null,
+            error: { kind: 'unavailable', message: 'bridge operation failed' } } }));
       }
       return sendRead(res, readEnvelope(trace, { outcome: 'unavailable', healthy: false }));
     }
