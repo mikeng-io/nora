@@ -8,7 +8,7 @@ whatever the network allows.
 
 | contract | owner | implemented by | called by | holds |
 |---|---|---|---|---|
-| `intake` | `ingest/` | the app's intake | bridges, collectors, executors, any principal registered as a source | events in one envelope: messages, edits, reactions, deletions, summons, activity changes, social items, membership, source health |
+| `intake` | `ingest/` | the app's intake | bridges, collectors, executors, the portal, any principal registered as a source | events in one envelope: messages, edits, reactions, deletions, summons, activity changes, social items, membership, source health |
 | `platform` | `platform/` | every bridge | the app | delivery operations (send, react, typing), reads (self, roster, channels, members), attachment custody |
 | `sources` | `social/` | each source adapter | the app's tools, the reflection loop | on-demand reads of one outside reference: an account's items, an identity's live activity |
 | `graph` | `memory/` | the app | the portal, tools, MCP | scoped reads with the retrieval semantics |
@@ -18,8 +18,8 @@ whatever the network allows.
 | `computer` | `computer/` | computerd | the app | sandbox operations, browser sessions, exports |
 | `operations` | `app/` | every Nora process | the operator, monitors | config and policy reload, queue inspection and drain, loop pause and resume, replay |
 
-- A bridge implements `platform` and calls `intake`; it serves nothing else.
-  A platform-specific capability (voice, music, presence) is either a
+- A bridge implements `platform` and its own `operations`, and calls
+  `intake` and `management`. A platform-specific capability (voice, music, presence) is either a
   capability of `platform` declared by `self`, or another contract the bridge
   also implements; it is never a bridge-only route.
 - `operations` controls a running process. Building, deploying and restarting
@@ -56,9 +56,11 @@ contracts do not offer.
  portal, MCP, operator ─► graph, documents, management, operations
 ```
 
-- **Ingress is one direction.** Bridges and adapters write only to `intake`;
-  nothing outside the app writes a graph table, a presence head or a social
-  row directly.
+- **Ingress is one direction.** Bridges and adapters record what happened
+  only through `intake`; nothing outside the app writes a graph table, a
+  presence head or a social row directly. A roster synchronisation is a
+  `management` operation about authority, beside the membership item intake
+  records of the same event.
 - **Egress is one route.** Only the app calls `platform`, and every delivery
   is an act through the act envelope and the common guards
   ([boundaries](../cognition/boundaries.md#egress)); model-composed
@@ -67,10 +69,12 @@ contracts do not offer.
 - **The graph has no write route.** `graph` is read-only. A caller that
   records that something happened is an `intake` source, registered with the
   item kinds it may submit; understanding is written only by the loops
-  through admission.
-- **Scope travels, never widens.** Every call carries the agent, unit and
-  room it acts within; a `sources` read for the reflection loop is keyed by
-  its unit, a portal read by its viewer's scope.
+  through admission. The portal is such a source for an identity's dispute
+  and forget request: intake records the item and code hides what it names
+  before answering ([storage](../cognition/storage.md#retention-and-forgetting)).
+- **Scope is resolved, never widened.** A call names its subject and the
+  server resolves the scope: a `sources` read for the reflection loop
+  resolves to its unit, a portal read to its viewer's scope.
 - **A contract never calls back up.** A bridge never reads the graph, an
   adapter never reads policy, and a controller never reads a transcript:
   what they need arrives in the operation they were given.

@@ -38,8 +38,9 @@ does next.
   ([aggregates](../cognition/observation.md#aggregates)), never written by the
   adapter. Rebuilding sessions from the items at a watermark gives the same
   sessions.
-- A session opening or closing is a presence change, and that is the
-  stimulus; the change items themselves wake nothing
+- For an activity source, a session opening or closing is a presence
+  change, and that is the stimulus; its change items wake nothing. An item
+  source's new item stimulates like any other
   ([stimuli](../cognition/observation.md#stimuli)).
 - A gap while the source was unhealthy closes no session and opens none: the
   session's coverage records it, and a condition over it evaluates unknown.

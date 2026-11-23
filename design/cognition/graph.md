@@ -149,7 +149,7 @@ The graph is **entity-neutral** and its subjects are **identity-neutral**:
   are its `self`.
 - An unregistered handle, organisation or stranger is an entity without an
   identity: it can be the subject of claims, never of scope or exclusion,
-  which need accounts to enforce.
+  which need a registered identity to enforce.
 
 ### Intentions
 

@@ -96,7 +96,7 @@ time it becomes eligible. It is not a conclusion and not an instruction.
 | a new item | record |
 | a watched source changed | a watch result item |
 | an aggregate crossed its baseline | compute |
-| a presence change: arriving at or leaving a place, starting or ending travel, starting or stopping play | compute |
+| a presence change: arriving at or leaving a place, starting or ending travel, coming online or going offline, starting or stopping play or listening | compute |
 | an intention due, a review time, a valid-to time ending, a deadline passing | the clock |
 | a verdict written | study's verify |
 | an identity's correction aimed at Nora, or an identity's statement about themselves | record, by an addressing or self-reference cue; a **strong cue**, so a wake follows quickly |
@@ -104,7 +104,7 @@ time it becomes eligible. It is not a conclusion and not an instruction.
 
 **Rules**
 
-- An online-status or play item stimulates only through the presence change
+- An online-status, play or listening item stimulates only through the presence change
   it computes; a change item alone wakes nothing.
 - Absence is a stimulus only when every source needed to prove it was healthy
   over the interval.

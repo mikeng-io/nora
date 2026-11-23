@@ -28,11 +28,11 @@ Ordered by how much confusion each has caused.
 ## Identity, and the things that are not one
 
 An **identity** is the subject Nora knows — a human, a bot or an agent, one model, no type deciding permissions ([managed identity](design/managed-identity-access/identity.md#one-identity-many-accounts)).
-Design and the API say identity; code still says `person`. The other two "identity" things are spelled out below.
+Design and the API say identity; the code's names are `person_*`. The other two "identity" things are spelled out below.
 
 | term | means | where |
 |---|---|---|
-| **identity** | the canonical registered subject; in code a person: **`person_id`** (`miles_novak`), stable, operator-assigned and also the Honcho peer id (A2, DEC-14), and **`PersonRef`**, the resolved record (id, name, aliases) | `nora/persons.py`, `identity.toml` |
+| **identity** | the canonical registered subject; in code a person: **`person_id`** (`miles_novak`), stable, operator-assigned and also the Honcho peer id (A2, DEC-14), and **`PersonRef`**, the resolved record (id, name, first/last, aliases) | `nora/persons.py`, `identity.toml` |
 | **identity resolution** | mapping a platform *account* — phone number, ACI — to an identity | `nora/ingest/stages/identity.py` |
 | **`self`** | **Nora's own account** on a platform, used for self-tag checks (R-12); in code `PlatformIdentity` | `domain/identity.py`, `adapter.resolve_identity()` |
 | **seed** | who Nora *is* — her voice and conduct, not accounts; the file is `doctrine/core/identity.md` (her place in a room is `doctrine/rooms/belonging.md`) | the doctrine layer |

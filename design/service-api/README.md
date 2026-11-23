@@ -55,8 +55,9 @@ actor it names and the outcome it reports.
   operation lifecycle.
 - A read's absence and a read's failure never share a shape; an unavailable
   dependency is `unavailable`, never an empty success.
-- Every request resolves one scope (agent, unit, room) that Nora validates
-  against real containment; a caller-supplied scope name is never trusted.
+- The server resolves every request's scope from its principal and subject
+  and validates real containment; a caller-supplied scope is never trusted,
+  and intake records what it cannot place rather than refusing it.
 - Platform identifiers, phone numbers, handles and free text never appear in
   a path or query string.
 - Items reach the graph only through intake; inferred and committed rows only
@@ -91,7 +92,8 @@ the contracts keep their own bundles: [platform bridges](../platform-bridges/00-
 own event custody and delivery durability, [managed identity](../managed-identity-access/management.md)
 owns the management operations and their authority, and
 [cognition](../cognition/README.md) owns what the graph contract reads and
-admits. Those bundles conform to this one: a bridge action is a `platform`
+admits. Where one of them names a route, a status or an outcome, this
+bundle's convention is the authority: a bridge action is a `platform`
 operation and its `confirmed` is `complete`; a management operation is a
-`management` operation with the same outcomes; the portal's routes are reads
-of the contracts its pages use.
+`management` operation that takes the whole operation outcome family; the
+portal's routes are reads of the contracts its pages use.

@@ -12,6 +12,7 @@ finding against the route, never an exception to the convention.
 /v{major}/{contract}/operations
 /v{major}/{contract}/operations/{operation_id}
 /v{major}/{contract}/queries
+/v{major}/{contract}/blobs/{key}
 /health   /ready   /metrics
 ```
 
@@ -38,11 +39,13 @@ finding against the route, never an exception to the convention.
 | `POST …/queries` | a read whose filter names a platform identifier, free text or more than a page key | yes | yes |
 | `POST …/operations` | every write | no | by `operation_id` |
 | `GET …/operations/{id}` | the operation's current record | yes | yes |
-| `PUT …/{collection}/{key}` | content-addressed bytes only (attachments, media) | no | by key and hash |
+| `PUT …/blobs/{key}` | content-addressed bytes only (attachments, media) | no | by key and hash |
 
 No `PATCH` and no `DELETE`: a partial update and a retirement are operations,
 so they carry an actor, an idempotency id and an outcome like every other
-write.
+write. Blob custody is the one write outside the operation lifecycle: bytes
+are bound to the operation that names their key, the same key and hash is
+`complete` again, and the same key with another hash is `rejected`.
 
 ## The envelope
 
@@ -55,7 +58,7 @@ that make the outcome checkable.
 | payload | the resource, or the page | the applied effect, or the reason it was not applied |
 | when | observed at, by the source's clock, and how that time was known | started and settled times |
 | from | the source, its health, and its coverage when partial | the target and the platform reference when one exists |
-| scope | the agent, unit and room the read resolved to | the same, for the effect |
+| scope | the scope the read resolved to, at its contract's level | the same, for the effect |
 | trace | the trace id | the trace id |
 
 Field names are `snake_case`; times are integer epoch milliseconds named
@@ -84,25 +87,33 @@ Field names are `snake_case`; times are integer epoch milliseconds named
 | `uncertain` | the effect may have happened; never retried blindly, read back first | 200 |
 | `unavailable` | not attempted: a dependency the operation needs is down | 503 |
 
-- The HTTP status says whether the API answered; the outcome says what
-  happened. A 404 is a missing route, never `nothing_found`.
-- The client reads the outcome from the body for every status, and a status
-  that disagrees with its body is `unavailable`. A redirect is refused.
-- Transport faults that are the caller's own (a malformed body, an unknown
-  field, a missing credential) are `400`, `422` and `401`, with no outcome.
+- The outcome is the answer; the HTTP status is derived from it by these
+  tables and never read instead of it. A 404 is a missing route, never
+  `nothing_found`.
+- Every status in the tables carries an envelope. A status that disagrees
+  with its body's outcome is `unavailable`; a redirect is refused.
+- Four statuses carry no envelope, because the request never became a read
+  or an operation: `400` and `422` (malformed), `401` (no principal) and
+  `409` (an `operation_id` reused for another effect).
+- Reading an operation's record is a read: `ok` with the record and its
+  operation outcome, `nothing_found` when no such record exists.
 
 ## Operations
 
 - The caller mints the `operation_id`. Resubmitting the same id with the same
   effect returns the existing record; the same id with a different effect is
   `409` and changes nothing.
+- An outcome that applied nothing (`denied`, `rejected`, `unsupported`,
+  `unavailable`) does not consume the id: resubmitting attempts it again.
 - An operation is typed: a closed `kind` per contract and a payload of that
   kind's shape, never an open mapping.
 - It names its **actor** and its **scope**, and the revisions it observed of
   the state it changes. A stale revision is `rejected` with the current one.
 - Its record has one lifecycle: `prepared → started → settled`. Its outcome
-  is `pending` while prepared or started; settling sets every other outcome. A record that cannot be found after a lost response is
-  `uncertain` until the target's own evidence settles it.
+  is `pending` while prepared or started; settling sets every other outcome.
+- A caller whose response was lost reads the record back. An effect whose
+  target cannot say whether it happened settles `uncertain`, never
+  `complete` and never retried blindly.
 
 ## Collections and paging
 
@@ -116,11 +127,18 @@ Field names are `snake_case`; times are integer epoch milliseconds named
 
 - Reachability is the network's. A principal is resolved once from the
   request: a service by its deployment credential, an identity by a viewer
-  session from [managed identity](../managed-identity-access/management.md#web-app); the actor of an operation is the principal or the human it
-  verifiably acts for, never a value in the body.
-- Every request resolves one agent, unit and room scope. Nora validates its
-  containment; an unknown or unresolvable scope is `denied`, never widened or
-  redirected.
+  session from [managed identity](../managed-identity-access/management.md#web-app).
+  The actor of an operation is the principal or the identity it verifiably
+  acts for ([management](../managed-identity-access/management.md#one-application-boundary)),
+  never a value in the body.
+- The server resolves scope from the principal and the request's subject;
+  a caller names a subject, never its own scope. Each contract declares the
+  level it scopes at: a room, a unit, an agent, a workspace or the
+  installation.
+- A read or an effect whose scope cannot be resolved is `denied`, never
+  widened or redirected. Intake is the exception that loses nothing: it
+  places an event by the [observation rules](../cognition/observation.md#rules)
+  and records one it cannot place as unresolved, never refusing it.
 - A principal's exposure bounds what any read returns to it: internal rows
   never reach an outside-forwarding principal; operator rows reach operator
   principals only.
