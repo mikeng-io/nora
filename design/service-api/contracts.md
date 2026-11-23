@@ -116,9 +116,10 @@ guild, and a player that plays what it is given
   observed. A stale or absent generation is `rejected` with the current
   one, and a lifecycle or arbiter refusal is `rejected` with its reason;
   none is a 409 or a 404.
-- A controller reports what happened (a track finished, a connection died)
-  to the hub that owns its connection, as a `report` operation of `voice`
-  that the hub implements, idempotent on the event's id.
+- A connection's events (a track finished, the connection died) are a
+  stream that `join` opens toward the hub that owns the connection; their
+  delivery is the stream's own protocol
+  ([audio ownership](../voice-channel/audio.md)), not envelopes.
 - The music queue (what plays next, skipping, reordering, resolving a
   source) belongs to the process that owns the player, never to `voice`
   ([music](../voice-channel/music.md)). When a bridge owns it, its commands

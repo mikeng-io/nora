@@ -155,7 +155,8 @@ Field names are `snake_case`; times are integer epoch milliseconds named
 - An effect whose scope cannot be resolved is `denied`, never widened or
   redirected. Intake is the exception that loses nothing: it
   places an event by the [observation rules](../cognition/observation.md#rules)
-  and records one it cannot place as unresolved, never refusing it.
+  and records one it cannot place as unresolved. It refuses one only
+  where its source's retention rule forbids keeping it.
 - A principal's exposure bounds what any read returns to it: internal rows
   never reach an outside-forwarding principal; operator rows reach operator
   principals only.

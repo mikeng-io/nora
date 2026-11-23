@@ -57,7 +57,8 @@ actor it names and the outcome it reports.
   dependency is `unavailable`, never an empty success.
 - The server resolves every request's scope from its principal and subject
   and validates real containment; a caller-supplied scope is never trusted,
-  and intake records what it cannot place rather than refusing it.
+  and intake records what it cannot place, refusing it only where its
+  source's retention rule forbids keeping it.
 - Platform identifiers, phone numbers, handles and free text never appear in
   a path or query string.
 - Items reach the graph only through intake; inferred and committed rows only
