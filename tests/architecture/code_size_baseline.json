@@ -1182,9 +1182,9 @@
   "internal_docstrings": 3
  },
  "nora/infra/sql/memory_graph.py": {
-  "file_lines": 862,
+  "file_lines": 871,
   "functions": {
-   "SqlMemoryGraph.walk": 134
+   "SqlMemoryGraph.walk": 137
   }
  },
  "nora/infra/sql/memory_index.py": {
@@ -2329,7 +2329,7 @@
   "internal_docstrings": 1
  },
  "tests/contract/test_memory_graph_contract.py": {
-  "file_lines": 1156
+  "file_lines": 1155
  },
  "tests/contract/test_memory_index_contract.py": {
   "comment_blocks": 1
@@ -2513,6 +2513,9 @@
    "PublicDownloadBoundary.test_real_ytdlp_ffmpeg_and_direct_subprocess_boundary": 559
   }
  },
+ "tests/integration/snapshot_rows.py": {
+  "comment_blocks": 2
+ },
  "tests/integration/test_a_real_snapshot_seeds_an_isolated_subject.py": {
   "file_lines": 871,
   "internal_docstrings": 1
@@ -2654,8 +2657,7 @@
   "comment_blocks": 2
  },
  "tests/integration/test_snapshot_holds_what_was_held.py": {
-  "comment_blocks": 3,
-  "file_lines": 810
+  "comment_blocks": 1
  },
  "tests/integration/test_snapshot_renders_the_recorded_blocks.py": {
   "comment_blocks": 1

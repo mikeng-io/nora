@@ -12,7 +12,11 @@ from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.graph_projection import ProjectionContext, form_batch
 from nora.infra.sql.memory_graph import WALK_SQL, SqlMemoryGraph, walk_parameters
-from nora.infra.sql.schema import MEMORY_GRAPH_REFUSAL, MEMORY_WORK_ITEM, RELATION
+from nora.infra.sql.schema import (
+    LEGACY_MEMORY_GRAPH_REFUSAL,
+    LEGACY_MEMORY_WORK_ITEM,
+    LEGACY_RELATION,
+)
 from nora.obs.metrics import Metrics
 from tests.contract.test_memory_graph_contract import PERSON, load
 from tests.contract.test_memory_graph_contract import _graph_db as _graph_db
@@ -27,11 +31,11 @@ async def sql(_graph_db):
         await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
         await conn.execute(
             sa.text(
-                "TRUNCATE relation_evidence, relation, entity, memory_work_item, "
-                "graph_refusal, graph_arrival, messages, memory_node, memory_edge, "
-                "memory_projection_queue, rollup_build, rollup_colocation, rollup_outing, "
-                "rollup_response, presence_stays, standing_decision, standing_decision_revision, "
-                "reminders RESTART IDENTITY CASCADE"
+                "TRUNCATE legacy_relation_evidence, legacy_relation, legacy_entity, "
+                "legacy_memory_work_item, legacy_graph_refusal, legacy_graph_arrival, messages, "
+                "memory_node, memory_edge, memory_projection_queue, rollup_build, "
+                "rollup_colocation, rollup_outing, rollup_response, presence_stays, "
+                "standing_decision, standing_decision_revision, reminders RESTART IDENTITY CASCADE"
             )
         )
     try:
@@ -45,14 +49,14 @@ async def test_real_database_fault_is_unavailable_and_recovers(sql):
     query = Walk("u1", frozenset({"p1"}))
     assert (await sql.walk((PERSON.key,), query)).nodes
     async with sql.engine.begin() as conn:
-        await conn.execute(sa.text("ALTER TABLE relation RENAME TO faulted_relation"))
+        await conn.execute(sa.text("ALTER TABLE legacy_relation RENAME TO faulted_relation"))
     try:
         failed = await sql.walk((PERSON.key,), query)
         assert failed.status == "unavailable"
         assert not failed.nodes and not failed.relations
     finally:
         async with sql.engine.begin() as conn:
-            await conn.execute(sa.text("ALTER TABLE faulted_relation RENAME TO relation"))
+            await conn.execute(sa.text("ALTER TABLE faulted_relation RENAME TO legacy_relation"))
     assert (await sql.walk((PERSON.key,), query)).nodes
 
 
@@ -60,13 +64,13 @@ async def test_walk_plan_uses_both_relation_endpoint_indexes(sql):
     async with sql.engine.begin() as conn:
         await conn.execute(
             sa.text("""
-          INSERT INTO relation(id,src_kind,src_id,rel,dst_kind,dst_id,layer,
+          INSERT INTO legacy_relation(id,src_kind,src_id,rel,dst_kind,dst_id,layer,
                                asserted_at,written_by,unit)
           SELECT 'generated-'||n,'event',n::text,'at','place',(n+1)::text,
                  'notebook',now(),'generated','u1' FROM generate_series(1,10000) n
         """)
         )
-        await conn.execute(sa.text("ANALYZE relation"))
+        await conn.execute(sa.text("ANALYZE legacy_relation"))
         plan = (
             await conn.execute(
                 sa.text("EXPLAIN (FORMAT JSON) " + WALK_SQL),
@@ -101,7 +105,7 @@ async def test_projection_toggle_batching_pointer_identity_and_backfill(sql):
 
     first = await store.append(message=message(0))
     async with engine.begin() as conn:
-        assert not (await conn.execute(sa.select(RELATION))).all()
+        assert not (await conn.execute(sa.select(LEGACY_RELATION))).all()
     scope = ProjectionContext(
         {"signal:generated-room": "generated-unit"},
         {"generated-unit": frozenset({"generated-person"})},
@@ -115,16 +119,18 @@ async def test_projection_toggle_batching_pointer_identity_and_backfill(sql):
         count = (
             await conn.execute(
                 sa.select(sa.func.count())
-                .select_from(RELATION)
-                .where(RELATION.c.rel == "authored_by", RELATION.c.status == "current")
+                .select_from(LEGACY_RELATION)
+                .where(LEGACY_RELATION.c.rel == "authored_by",
+                       LEGACY_RELATION.c.status == "current")
             )
         ).scalar_one()
         assert count == 23
         pointer = pointer_entity("person", "generated-unit", "generated-person", "person")
         assert (
             await conn.execute(
-                sa.select(RELATION.c.dst_id)
-                .where(RELATION.c.rel == "authored_by", RELATION.c.status == "current")
+                sa.select(LEGACY_RELATION.c.dst_id)
+                .where(LEGACY_RELATION.c.rel == "authored_by",
+                       LEGACY_RELATION.c.status == "current")
                 .limit(1)
             )
         ).scalar_one() == pointer.id
@@ -132,7 +138,7 @@ async def test_projection_toggle_batching_pointer_identity_and_backfill(sql):
         assert await form_batch(conn, now=now) == 20
         assert await form_batch(conn, now=now) == 3
         assert await form_batch(conn, now=now) == 0
-        batches = (await conn.execute(sa.select(MEMORY_WORK_ITEM))).mappings().all()
+        batches = (await conn.execute(sa.select(LEGACY_MEMORY_WORK_ITEM))).mappings().all()
         assert len(batches) == 2
         assert all(r["state"] == "pending" for r in batches)
     before = await graph_project(engine, scope=scope)
@@ -140,10 +146,10 @@ async def test_projection_toggle_batching_pointer_identity_and_backfill(sql):
     async with engine.begin() as conn:
         assert not (
             await conn.execute(
-                sa.select(RELATION.c.id).where(
-                    RELATION.c.src_id == str(first),
-                    RELATION.c.rel == "in_room",
-                    RELATION.c.status == "current",
+                sa.select(LEGACY_RELATION.c.id).where(
+                    LEGACY_RELATION.c.src_id == str(first),
+                    LEGACY_RELATION.c.rel == "in_room",
+                    LEGACY_RELATION.c.status == "current",
                 )
             )
         ).first()
@@ -153,14 +159,14 @@ async def test_projection_toggle_batching_pointer_identity_and_backfill(sql):
     assert applied["sources"]["message"] == 24
     async with engine.begin() as conn:
         assert (
-            await conn.execute(sa.select(sa.func.count()).select_from(MEMORY_WORK_ITEM))
+            await conn.execute(sa.select(sa.func.count()).select_from(LEGACY_MEMORY_WORK_ITEM))
         ).scalar_one() == 2
         assert (
             await conn.execute(
-                sa.select(RELATION.c.id).where(
-                    RELATION.c.src_id == str(first),
-                    RELATION.c.rel == "in_room",
-                    RELATION.c.status == "current",
+                sa.select(LEGACY_RELATION.c.id).where(
+                    LEGACY_RELATION.c.src_id == str(first),
+                    LEGACY_RELATION.c.rel == "in_room",
+                    LEGACY_RELATION.c.status == "current",
                 )
             )
         ).first()
@@ -179,7 +185,7 @@ async def test_refused_parts_are_durable(sql):
     )
     assert admitted.relations == (REL,)
     async with sql.engine.begin() as conn:
-        rows = (await conn.execute(sa.select(MEMORY_GRAPH_REFUSAL))).mappings().all()
+        rows = (await conn.execute(sa.select(LEGACY_MEMORY_GRAPH_REFUSAL))).mappings().all()
     assert any(r["part_id"] == "bad" and r["reason"] == "vocabulary" for r in rows)
 
 
@@ -194,7 +200,7 @@ async def test_projection_failure_keeps_source_and_requeues(sql):
     )
     store = SqlRecordStore(sql.engine, metrics=sql.metrics)
     async with sql.engine.begin() as conn:
-        await conn.execute(sa.text("ALTER TABLE relation RENAME TO faulted_relation"))
+        await conn.execute(sa.text("ALTER TABLE legacy_relation RENAME TO faulted_relation"))
     try:
         mid = await store.append(
             message=NormalizedMessage(
@@ -220,12 +226,14 @@ async def test_projection_failure_keeps_source_and_requeues(sql):
         )
     finally:
         async with sql.engine.begin() as conn:
-            await conn.execute(sa.text("ALTER TABLE faulted_relation RENAME TO relation"))
+            await conn.execute(sa.text("ALTER TABLE faulted_relation RENAME TO legacy_relation"))
     async with sql.engine.begin() as conn:
         assert await memory_index.drain_queue(conn) == 1
         assert not (await conn.execute(sa.select(MEMORY_PROJECTION_QUEUE))).all()
         assert (
-            await conn.execute(sa.select(RELATION.c.id).where(RELATION.c.rel == "in_room"))
+            await conn.execute(
+                sa.select(LEGACY_RELATION.c.id).where(
+                    LEGACY_RELATION.c.rel == "in_room"))
         ).first()
 
 
@@ -280,11 +288,14 @@ async def test_social_and_late_media_produce_pending_work(sql):
         item, person="generated-person", origin="poll", seen_at=now, media_ref=sha
     )
     async with sql.engine.begin() as conn:
-        work = (await conn.execute(sa.select(MEMORY_WORK_ITEM))).mappings().all()
+        work = (await conn.execute(sa.select(LEGACY_MEMORY_WORK_ITEM))).mappings().all()
         assert {r["source_kind"] for r in work} == {"media", "social"}
         assert all(r["state"] == "pending" for r in work)
         edges = (
-            (await conn.execute(sa.select(RELATION.c.rel).where(RELATION.c.status == "current")))
+            (
+                await conn.execute(
+                    sa.select(LEGACY_RELATION.c.rel).where(
+                        LEGACY_RELATION.c.status == "current")))
             .scalars()
             .all()
         )
@@ -384,12 +395,17 @@ async def test_rollup_projection_and_closed_episode_work_are_atomic(sql):
         key = episode_key(f"{unit}|{','.join(persons)}", start, start + 100)
         await memory_index.project_episodes(conn, bid, "outing", [key])
         edges = (
-            (await conn.execute(sa.select(RELATION.c.rel).where(RELATION.c.status == "current")))
+            (
+                await conn.execute(
+                    sa.select(LEGACY_RELATION.c.rel).where(
+                        LEGACY_RELATION.c.status == "current")))
             .scalars()
             .all()
         )
         assert {"located_in", "during", "stayed_at", "co_located_with", "outcome_of"} <= set(edges)
-        work = (await conn.execute(sa.select(MEMORY_WORK_ITEM.c.source_kind))).scalars().all()
+        work = (
+            await conn.execute(sa.select(LEGACY_MEMORY_WORK_ITEM.c.source_kind))
+        ).scalars().all()
         assert {"outing", "co_location", "episode"} <= set(work)
 
 
@@ -472,7 +488,7 @@ async def test_register_writers_enqueue_their_own_committed_revisions(sql):
     await reminders.create(reminder)
     assert await reminders.cancel(reminder.id, conversation_id=room)
     async with sql.engine.begin() as conn:
-        work = (await conn.execute(sa.select(MEMORY_WORK_ITEM))).mappings().all()
+        work = (await conn.execute(sa.select(LEGACY_MEMORY_WORK_ITEM))).mappings().all()
     assert [r["source_kind"] for r in work].count("decision") == 1
     assert [r["source_kind"] for r in work].count("reminder") == 2
     assert all(r["state"] == "pending" for r in work)
@@ -517,7 +533,8 @@ async def test_excluded_node_retires_projection_and_counts_skip(sql):
         )
         await project_source(conn, "note", note_id)
         current = (
-            sa.select(sa.func.count()).select_from(RELATION).where(RELATION.c.status == "current")
+            sa.select(sa.func.count()).select_from(LEGACY_RELATION).where(
+                LEGACY_RELATION.c.status == "current")
         )
         assert (await conn.execute(current)).scalar_one() == 1
         await conn.execute(
@@ -527,7 +544,7 @@ async def test_excluded_node_retires_projection_and_counts_skip(sql):
         )
         await project_source(conn, "note", note_id)
         assert (await conn.execute(current)).scalar_one() == 0
-        assert (await conn.execute(sa.select(RELATION.c.status))).scalar_one() == "retired"
+        assert (await conn.execute(sa.select(LEGACY_RELATION.c.status))).scalar_one() == "retired"
     assert sql.metrics.get("nora_memory_graph_projection_total", outcome="excluded") == 1
 
 
@@ -536,13 +553,13 @@ async def test_sql_record_hub_stays_out_of_recursive_paths(sql):
     async with sql.engine.begin() as conn:
         await conn.execute(
             sa.text("""
-          INSERT INTO relation(id,src_kind,src_id,rel,dst_kind,dst_id,layer,
+          INSERT INTO legacy_relation(id,src_kind,src_id,rel,dst_kind,dst_id,layer,
                                asserted_at,written_by,unit,persons)
           SELECT 'record-'||n,'message',n::text,'authored_by','person','p1',
                  'record',now(),'generated','u1',ARRAY['p1'] FROM generate_series(1,5000) n
         """)
         )
-        await conn.execute(sa.text("ANALYZE relation"))
+        await conn.execute(sa.text("ANALYZE legacy_relation"))
         query = Walk("u1", frozenset({"p1"}), nodes=4, fan_out=20, layers=("record", "notebook"))
         plan = (
             await conn.execute(

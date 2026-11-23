@@ -34,9 +34,9 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.memory_graph import SqlMemoryGraph
 from nora.infra.sql.schema import (
     COGNITION_WAKE,
+    LEGACY_MEMORY_WORK_ITEM,
     MEMORY_NODE,
     MEMORY_PROJECTION_QUEUE,
-    MEMORY_WORK_ITEM,
     MESSAGES,
     SOCIAL_ITEM,
     SOCIAL_ITEM_STATE,
@@ -211,7 +211,7 @@ async def test_the_replay_preparation_indexes_the_restored_sandbox(clean_pg_url,
                     assert edited["embedding_model"] is None
                     assert (await node("social", f"{NET}:item-2")).mappings().one()
                     assert await conn.scalar(
-                        sa.select(sa.func.count()).select_from(MEMORY_WORK_ITEM)) == 0
+                        sa.select(sa.func.count()).select_from(LEGACY_MEMORY_WORK_ITEM)) == 0
                     assert await conn.scalar(
                         sa.select(sa.func.count()).select_from(
                             MEMORY_PROJECTION_QUEUE)) == 0
