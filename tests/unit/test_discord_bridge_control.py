@@ -392,6 +392,20 @@ async def test_voice_reads_by_outcome(control, bridge_state, status, answer, exp
     assert len(bridge_state["speech"]) == (1 if status == "ok" else 0)
 
 
+@pytest.mark.parametrize("voice", [
+    None,
+    {"connected": True, "session": True, "generation": None, "channel_id": CHANNEL},
+    {"connected": False, "session": False, "generation": "g1", "channel_id": None},
+    {"session": True, "generation": "g1", "channel_id": CHANNEL},
+])
+async def test_an_incoherent_status_read_says_nothing_and_sends_nothing(
+        control, bridge_state, voice):
+    bridge_state["voice"] = voice
+
+    assert await control.speech(GUILD, b"pcm", "audio/wav") is None
+    assert bridge_state["speech"] == []
+
+
 async def test_voice_reads_no_connection_as_false_and_sends_nothing(control, bridge_state):
     bridge_state["voice"] = {"connected": False, "session": False,
                              "generation": None, "channel_id": None}

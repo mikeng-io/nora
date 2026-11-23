@@ -175,7 +175,7 @@ class BridgeControlClient:
         """A `speak` on the bridge, for the generation its `status` query names.
 
         `True` for `complete`; `False` (the reply falls back to text) only for a
-        status read that shows no connection, a stated `rejected`,
+        coherent status read that shows no connection, a stated `rejected`,
         `unsupported`, `denied` or `unavailable`, or a 400; `None` when the
         audio may have played or the read could not tell: a failed or
         self-inconsistent read or answer, `uncertain`, `incomplete`,
@@ -193,12 +193,14 @@ class BridgeControlClient:
 
     async def _speech(self, guild_id: str, audio: bytes, media_type: str) -> bool | None:
         status = await self._voice_status(guild_id)
-        if status is None:
+        state = status.payload if status is not None and status.outcome == "ok" else None
+        if not isinstance(state, dict):
             return None
-        state = status.payload if status.outcome == "ok" else None
-        generation = state.get("generation") if isinstance(state, dict) else None
-        if not isinstance(generation, str) or not generation:
+        connected, generation = state.get("connected"), state.get("generation")
+        if connected is False and generation is None:
             return False
+        if connected is not True or not isinstance(generation, str) or not generation:
+            return None  # a read that contradicts itself says nothing
         try:
             answer = await bridge_call(
                 await self._client(), "POST", f"{self._endpoint.base_url}{VOICE_OPERATIONS}",
