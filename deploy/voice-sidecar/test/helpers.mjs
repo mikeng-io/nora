@@ -28,8 +28,17 @@ export const EVENT_URL = 'http://nora.test/v1/voice/operations';
 
 // The hub's answer to a `report`: an envelope with `outcome`, at the
 // kernel's status for it unless `status` overrides it.
+// The payload the contract gives each outcome of a report's answer.
+function defaultHubPayload(outcome) {
+  if (outcome === 'complete') return { status: 'ok' };
+  if (['rejected', 'unsupported', 'denied', 'incomplete', 'uncertain'].includes(outcome)) {
+    return { state: null, error: { kind: outcome, message: outcome } };
+  }
+  return {};
+}
+
 export function hubAnswer(outcome, {
-  status = STATUS[outcome], payload = outcome === 'complete' ? { status: 'ok' } : {},
+  status = STATUS[outcome], payload = defaultHubPayload(outcome),
 } = {}) {
   const envelope = {
     outcome,

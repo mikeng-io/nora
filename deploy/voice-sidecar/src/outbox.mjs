@@ -57,6 +57,23 @@ export function isAcknowledgement(envelope) {
 const isReportStatus = (payload) => isObject(payload)
   && Object.keys(payload).length === 1 && REPORT_STATUSES.includes(payload.status);
 
+// A refusal's payload: the contract's VoiceOperationPayload (only these
+// fields) carrying its OperationError, a string `kind` and `message`.
+export const REFUSAL_FIELDS = Object.freeze(['error', 'state']);
+const isOperationError = (v) => isObject(v) && isString(v.kind) && isString(v.message);
+const isOperationPayload = (payload, { errorRequired }) => isObject(payload)
+  && Object.keys(payload).every((key) => REFUSAL_FIELDS.includes(key))
+  && (payload.state == null || isObject(payload.state))
+  && (errorRequired ? isOperationError(payload.error) : payload.error == null || isOperationError(payload.error));
+const REFUSALS = Object.freeze(['rejected', 'unsupported', 'denied', 'incomplete']);
+
+// Whether a settled outcome's payload is the shape the contract gives it.
+function isTerminalPayload(outcome, payload) {
+  if (outcome === 'complete') return isReportStatus(payload);
+  if (REFUSALS.includes(outcome)) return isOperationPayload(payload, { errorRequired: true });
+  return isOperationPayload(payload, { errorRequired: false }); // uncertain
+}
+
 export function createOutbox({
   url,
   headers = {},
@@ -96,8 +113,8 @@ export function createOutbox({
   // envelope with any outcome but `unavailable`), 'refused' (400, 409, 422:
   // retrying cannot help) or 'retry' (everything else: `unavailable`, 3xx,
   // 401, 404, a status that disagrees with its outcome, a read's outcome, a
-  // record not yet settled, a `complete` without the hub's report status, or
-  // anything that is not exactly an envelope).
+  // record not yet settled, a settled outcome whose payload is not its
+  // contract shape, or anything that is not exactly an envelope).
   async function verdict(res) {
     const status = res?.status;
     if (status === 400 || status === 409 || status === 422) return 'refused';
@@ -111,7 +128,7 @@ export function createOutbox({
     const { outcome, when, payload } = envelope;
     if (!OPERATION_OUTCOMES.includes(outcome) || STATUS[outcome] !== status) return 'retry';
     if (outcome === 'unavailable' || outcome === 'pending' || when.state !== 'settled') return 'retry';
-    if (outcome === 'complete' && !isReportStatus(payload)) return 'retry';
+    if (!isTerminalPayload(outcome, payload)) return 'retry';
     return 'taken';
   }
 

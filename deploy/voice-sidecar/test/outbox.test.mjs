@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import {
   OPERATION_OUTCOMES, OPERATION_STATES, REPORT_STATUSES, SCOPE_LEVELS,
 } from '../src/contract.mjs';
-import { createOutbox } from '../src/outbox.mjs';
+import { REFUSAL_FIELDS, createOutbox } from '../src/outbox.mjs';
 import { EVENT_URL as URL, createFakeClock, hubAnswer, tick } from './helpers.mjs';
 
 function makeOutbox({ fetchBehavior, clock = createFakeClock(), ...options } = {}) {
@@ -384,6 +384,23 @@ test('reports are retried only when the hub could not take them', async () => {
     assert.equal(a.effect.event_seq, b.effect.event_seq, `${label}: the same event_seq`);
     assert.deepEqual(a.effect, b.effect, `${label}: the event unchanged`);
   }
+  // A settled refusal must carry its typed error, or it is retried.
+  const malformedRefusals = {
+    'rejected with a scalar payload': hubAnswer('rejected', { payload: 'no' }),
+    'rejected with an empty error': hubAnswer('rejected', { payload: { error: {} } }),
+    'denied with no error': hubAnswer('denied', { payload: { state: null } }),
+    'unsupported with a numeric kind': hubAnswer('unsupported', { payload: { error: { kind: 1, message: 'm' } } }),
+    'incomplete with an extra field': hubAnswer('incomplete', {
+      payload: { error: { kind: 'k', message: 'm' }, status: 'ok' } }),
+    'uncertain with a scalar payload': hubAnswer('uncertain', { payload: 7 }),
+  };
+  for (const [label, answer] of Object.entries(malformedRefusals)) {
+    const { outbox, attempts } = await firstAnswerIs(answer);
+    assert.equal(attempts.length, 2, `${label}: retried`);
+    assert.equal(outbox.pendingCount(), 0, label);
+    assert.notEqual(attempts[0].operation_id, attempts[1].operation_id, `${label}: a new operation_id`);
+    assert.deepEqual(attempts[0].effect, attempts[1].effect, `${label}: the same event`);
+  }
   const ended = {
     complete: hubAnswer('complete'),
     denied: hubAnswer('denied'),
@@ -437,6 +454,14 @@ test('the acknowledgement check reads the contract\'s own closed sets', () => {
   assert.deepEqual([...OPERATION_OUTCOMES], schemas.OperationOutcome.enum);
   assert.deepEqual([...REPORT_STATUSES], schemas.VoiceReportPayload.properties.status.enum);
   assert.deepEqual(schemas.VoiceReportPayload.required, ['status']);
+  // A refusal's payload is VoiceOperationPayload, its error an OperationError.
+  assert.deepEqual(Object.keys(schemas.VoiceOperationPayload.properties).sort(), [...REFUSAL_FIELDS].sort());
+  assert.equal(schemas.VoiceOperationPayload.additionalProperties, false);
+  assert.deepEqual(schemas.VoiceOperationPayload.properties.error.anyOf,
+    [{ $ref: '#/components/schemas/OperationError' }, { type: 'null' }]);
+  assert.deepEqual(schemas.OperationError.required, ['kind', 'message']);
+  assert.equal(schemas.OperationError.properties.kind.type, 'string');
+  assert.equal(schemas.OperationError.properties.message.type, 'string');
   assert.equal(schemas.VoiceReportPayload.additionalProperties, false);
   const parts = { OperationWhen: ['settled_at_ms', 'started_at_ms', 'state'],
     OperationFrom: ['platform_ref', 'target'], Scope: ['id', 'level'] };
