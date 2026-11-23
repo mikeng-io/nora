@@ -38,10 +38,17 @@ ITEM_SOURCES = MappingProxyType({
     "computer_events": ItemSource(("requester_person_id",), "internal", "SqlComputerEventStore"),
     "tool_call_log": ItemSource((), "internal", "SqlToolCallLogStore"),
     "watch_result": ItemSource((), "internal", "SqlWatchResults"),
+    "forget_request": ItemSource(("author",), "internal", "SqlMemoryIntake"),
+    "dispute": ItemSource(("author",), "internal", "SqlMemoryIntake"),
+})
+
+# ponytail: Nora's own act records are kept until a design ruling sets their retention.
+PROTECTED_ITEM_SOURCES = frozenset({
+    "nora_act", "nora_act_outcome", "nora_pass_output", "computer_events",
 })
 
 AggregateFamily = Literal["interval", "bucket", "head"]
-AGGREGATE_FAMILIES: MappingProxyType[str, AggregateFamily] = MappingProxyType({
+BACKFILL_AGGREGATE_FAMILIES: MappingProxyType[str, AggregateFamily] = MappingProxyType({
     "presence_stays": "interval",
     "presence_trips": "interval",
     "presence_derived_places": "interval",
@@ -55,6 +62,11 @@ AGGREGATE_FAMILIES: MappingProxyType[str, AggregateFamily] = MappingProxyType({
     "rollup_daybook": "interval",
     "presence_places": "head",
     "platform_object_state": "head",
+})
+
+AGGREGATE_FAMILIES: MappingProxyType[str, AggregateFamily] = MappingProxyType({
+    **BACKFILL_AGGREGATE_FAMILIES,
+    "claim_support": "head",
 })
 
 NonGraphReason = Literal[
@@ -104,6 +116,7 @@ NON_GRAPH_TABLES: MappingProxyType[str, NonGraphReason] = MappingProxyType({
     "extraction_attempt": "legacy",
     "extraction_claim": "legacy",
     "extraction_queue": "legacy",
+    "expired_coverage": "operational",
     "fact": "legacy",
     "fact_asserter": "legacy",
     "fact_candidate": "legacy",

@@ -136,7 +136,8 @@ def build_audit(cfg: Any, engine: Any, metrics: Any, *, self_ids: Any) -> AuditW
     registration = engine.get_execution_options().get("item_registration")
     audit = SqlRecordStore(
         engine,
-        max_per_conversation=cfg.store.max_per_conversation,
+        max_per_conversation=cfg.store.max_per_conversation if cfg.store.prune_enabled else None,
+        horizons=cfg.memory.retention.horizon_days,
         self_ids=self_ids,
         metrics=metrics,
         registration=registration,

@@ -305,7 +305,9 @@ def _record_tool_args(
         # `web_fetch`'s own backend ([search] fetch_provider) and the page
         # index its offset/about reads answer from; the store is unconditional
         # like `tool_call_log_store` (one pool, one lifecycle).
-        "fetched_pages": SqlFetchedPageStore(engine),
+        "fetched_pages": SqlFetchedPageStore(
+            engine, horizon_days=cfg.memory.retention.horizon_days.get("fetched_pages"),
+        ),
         # The third consumer of `tool_call_log_store` (the first two are
         # EngagementPipeline/FirePath, via `deliver.build`) —
         # `recall_lookups`'s own collaborator.

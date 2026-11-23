@@ -108,7 +108,7 @@ def test_kind_columns() -> None:
         assert extras <= {c.name for c in TABLES[name].c}, name
     assert {c.name for c in REGISTRY.c} == {
         "id", "unit", "kind", "state", "registered_at", "content_hash",
-        "tombstoned_at",
+        "tombstoned_at", "occurred_at",
     }
 
 

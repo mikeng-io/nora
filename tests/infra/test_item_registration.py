@@ -34,6 +34,7 @@ from nora.memory.app.acts import ActEnvelope
 from nora.memory.domain.acts import Act, ActAuthority, ActIdentity, Outcome
 from nora.memory.domain.admission_proposals import PassContext
 from nora.memory.domain.registration import AGGREGATE_FAMILIES, BACKFILL_ITEM_SOURCES, ITEM_SOURCES
+from nora.memory.wire import memory_intake
 from nora.persons import Life360Membership, Persons
 from nora.policy import Conversation, Policy
 from tests.contract.test_computer_event_store_contract import _event
@@ -83,7 +84,7 @@ _ROOM_SOURCES = frozenset({
     "fetched_pages", "platform_observation",
 })
 _FANOUT_SOURCES = tuple(source for source in BACKFILL_ITEM_SOURCES if source not in _ROOM_SOURCES)
-_NON_PASS_SOURCES = (*BACKFILL_ITEM_SOURCES, "watch_result")
+_NON_PASS_SOURCES = (*BACKFILL_ITEM_SOURCES, "watch_result", "forget_request", "dispute")
 _FORWARD_SOURCES = tuple(source for source in ITEM_SOURCES if source not in _NON_PASS_SOURCES)
 _PASS = PassContext(
     _UNIT, _ROOM, False, "called", "engagement", "test-pass", "test-trace", "test-model",
@@ -252,6 +253,18 @@ class _Writer:
             )
         elif table == "watch_result":
             await self._watch_result()
+        elif table in {"forget_request", "dispute"}:
+            intake = memory_intake(self.engine, self.registration)
+            if table == "forget_request":
+                await intake.forget(unit=_UNIT, author=_PERSON, targets=["generated-item"], at=_AT)
+            else:
+                await SqlCognitiveGraph(self.engine).create(METADATA.tables["claim"], {
+                    "id": "generated-claim", "unit": _UNIT, "kind": "claim", "basis": "inferred",
+                    "reasoning": "induced", "confidence": "low", "part": "fact",
+                    "content": {"text": "fixture"}, "state": "live",
+                    "writer": "generated", "exposure": "internal",
+                })
+                await intake.dispute(unit=_UNIT, author=_PERSON, claim_id="generated-claim", at=_AT)
         elif table in _FORWARD_SOURCES:
             await self._executor_evidence(table)
         else:
@@ -347,7 +360,7 @@ async def test_item_writer_rolls_back_after_registry_insert(
         registered = await conn.scalar(sa.select(sa.func.count()).select_from(REGISTRY))
     prerequisites = 3 if name == "watch_result" else int(name in {
         "message_edit", "message_reaction", "message_delete",
-        "social_item_count", "social_item_state", "nora_act_outcome",
+        "social_item_count", "social_item_state", "nora_act_outcome", "dispute",
     })
     assert count == 0
     assert registered == prerequisites
@@ -361,8 +374,8 @@ async def test_item_insert_with_unit_and_no_registry_is_refused(
     table = METADATA.tables[name]
     async with engine.begin() as conn:
         row = dict((await conn.execute(sa.select(table))).mappings().one())
-        if name in _FORWARD_SOURCES or name == "watch_result":
-            if name in {"nora_act_outcome", "watch_result"}:
+        if name in _FORWARD_SOURCES or name in {"watch_result", "forget_request", "dispute"}:
+            if name in {"nora_act_outcome", "watch_result", "forget_request", "dispute"}:
                 row.pop("id")
             elif name in {"computer_events", "tool_call_log"}:
                 row["id"] = uuid4()

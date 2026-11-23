@@ -10,8 +10,11 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from nora.domain.graph_stimuli import GraphStimulus
-from nora.infra.sql.cognitive_graph_schema import EDGE
-from nora.infra.sql.cognitive_graph_store import GraphWriteError, SqlCognitiveGraph
+from nora.infra.sql.cognitive_graph_store import (
+    GraphWriteError,
+    SqlCognitiveGraph,
+    dependent_claims,
+)
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.memory.adapters.admission_rows import GRAPH_TABLES, SqlAdmissionRows
 from nora.memory.domain.admission import Admitted, fields
@@ -62,12 +65,7 @@ class SqlAdmissionStore:
 async def _dependency(conn: AsyncConnection, stored: Stored, row: Mapping[str, Any]) -> None:
     if stored.base is None:
         return
-    dependents = tuple((await conn.scalars(
-        sa.select(EDGE.c.src_id).distinct().where(
-            EDGE.c.unit == row["unit"], EDGE.c.dst_id == stored.base, EDGE.c.state == "live",
-            EDGE.c.type.in_(("draws_on", "rests_on")),
-        ).order_by(EDGE.c.src_id),
-    )).all())
+    dependents = await dependent_claims(conn, row["unit"], stored.base)
     if dependents:
         at = (await conn.execute(sa.select(sa.func.now()))).scalar_one()
         await SqlGraphStimuli.append_in(conn, GraphStimulus(

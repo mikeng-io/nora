@@ -11,7 +11,7 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import MESSAGES, METADATA, SOURCE_HEALTH
 from nora.memory.adapters.stored_row_registration import SqlStoredRows
 from nora.memory.app.register_stored_rows import RegisterStoredRows
-from nora.memory.domain.registration import AGGREGATE_FAMILIES, BACKFILL_ITEM_SOURCES
+from nora.memory.domain.registration import BACKFILL_AGGREGATE_FAMILIES, BACKFILL_ITEM_SOURCES
 from tests.infra.test_aggregate_registration import (
     _CIRCLE,
     _UNITS,
@@ -26,7 +26,7 @@ from tests.infra.test_item_registration import _SECOND, _UNIT, _registration, _W
 
 pytestmark = pytest.mark.fresh_database
 
-TABLES = (*BACKFILL_ITEM_SOURCES, *AGGREGATE_FAMILIES)
+TABLES = (*BACKFILL_ITEM_SOURCES, *BACKFILL_AGGREGATE_FAMILIES)
 PLANES = (KIND_PLANES - {"id"}) | {"graph_id"}
 COMPARED = PLANES - {"asserted_at", *(name for name in PLANES if name.startswith("rev_"))}
 AT = datetime(2026, 1, 1, tzinfo=UTC)
