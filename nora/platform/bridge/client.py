@@ -44,7 +44,7 @@ from nora.domain.service_api import (
     parse_response,
 )
 from nora.domain.service_api_platform import SELF_ACCOUNT_ID
-from nora.platform.bridge.schema import validator
+from nora.platform.bridge.schema import BLOB_PUT, validator
 
 log = logging.getLogger("nora.platform.bridge.client")
 
@@ -472,7 +472,7 @@ async def bridge_query(endpoint: BridgeEndpoint, kind: str, params: Mapping[str,
 #: The kernel's own schemas for the answers the client reads, compiled once.
 _DELIVERY = validator("PlatformOperationEnvelope")
 _READ_BACK = validator("OperationReadEnvelope")
-_BLOB = validator("OperationEnvelope")
+_BLOB = validator(BLOB_PUT)
 
 
 def _settled_agrees(body: Mapping[str, Any]) -> bool:

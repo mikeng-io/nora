@@ -19,7 +19,7 @@ from aiohttp import web
 
 from nora.domain.service_api import status_for
 from nora.infra.sql.schema import MESSAGES
-from nora.platform.bridge.schema import validator
+from nora.platform.bridge.schema import BLOB_PUT, validator
 
 DOCUMENT = Path(__file__).resolve().parents[2] / "docs/service-api/openapi.json"
 OPERATIONS = "/v1/platform/operations"
@@ -51,7 +51,7 @@ def assert_serves_the_contract(app: web.Application) -> None:
 _SCHEMAS = {
     ("POST", "/v1/platform/operations"): validator("PlatformOperationEnvelope"),
     ("GET", "/v1/platform/operations"): validator("OperationReadEnvelope"),
-    ("PUT", "/v1/platform/blobs"): validator("OperationEnvelope"),
+    ("PUT", "/v1/platform/blobs"): validator(BLOB_PUT),
     ("GET", "/v1/platform/blobs"): validator("ReadEnvelope"),
     ("POST", "/v1/platform/queries"): validator("ReadEnvelope"),
     ("GET", "/v1/platform/accounts"): validator("AccountReadEnvelope"),

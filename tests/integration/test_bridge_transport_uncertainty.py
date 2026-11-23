@@ -675,3 +675,91 @@ async def test_an_unbound_completion_with_an_empty_payload_is_read_back():
         result = await _send(server)
     assert result == _UNCERTAIN
     assert calls == {"post": 1, "get": 1}
+
+
+def _seventh(body):
+    return {**body, "extra": "generated"}
+
+
+@pytest.mark.parametrize("read_back", [
+    lambda: _read_back_with(_seventh(_bound_complete())),
+    lambda: web.json_response(_seventh(read_body(
+        "ok", _bound_complete(), source="signal", trace="")), status=200),
+    lambda: web.json_response({**read_body("ok", _bound_complete(), source="signal", trace=""),
+                               "from": {"source": "signal", "healthy": True}}, status=200),
+], ids=["nested_seventh_field", "outer_seventh_field", "failed_sources_missing"])
+async def test_a_read_back_beyond_its_six_parts_is_uncertain(read_back):
+    async def pending(request):
+        return web.json_response(_operation("pending"), status=status_for("pending"))
+
+    async def answer(request):
+        return read_back()
+
+    calls, server = _counting(pending, answer)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _UNCERTAIN
+    assert calls == {"post": 1, "get": 1}
+
+
+async def test_a_direct_answer_beyond_its_six_parts_is_read_back():
+    async def post(request):
+        return web.json_response(_seventh(_bound_complete()), status=200)
+
+    async def absent(request):
+        return _read("nothing_found")
+
+    calls, server = _counting(post, absent)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _UNCERTAIN
+    assert calls == {"post": 1, "get": 1}
+
+
+def _blob_rejected(payload):
+    body = operation_body(ActionReply("rejected", kind="conflict"), target="k", trace="")
+    return {**body, "payload": payload}
+
+
+@pytest.mark.parametrize("payload", [{"error": {}}, "refused", 1],
+                         ids=["error_object_empty", "scalar_payload", "number_payload"])
+async def test_a_malformed_blob_refusal_is_not_a_definite_failure(payload):
+    """A `rejected` blob answer must say why; one that cannot is an invalid answer,
+    never a refused attachment."""
+    async def put(request):
+        return web.json_response(_blob_rejected(payload), status=200)
+
+    async def post(request):
+        raise AssertionError("no operation follows an unproven blob")
+
+    server = _bridge(post=post)
+    server.app.router.add_put("/v1/platform/blobs/{key}", put)
+    async with server:
+        adapter = _adapter(server)
+        try:
+            with pytest.raises(BridgeUnavailableError):
+                await adapter.send(
+                    target=ConversationTarget("signal", "synthetic-room", "group"),
+                    text="reply", attachments=(OutboundAttachment(
+                        content=b"x", filename="a.txt", media_type="text/plain"),))
+        finally:
+            await adapter.close()
+
+
+async def test_a_typed_blob_refusal_is_a_failed_send():
+    async def put(request):
+        return web.json_response(_blob_rejected(
+            {"error": {"kind": "conflict", "message": "the key holds other bytes"}}))
+
+    server = _bridge()
+    server.app.router.add_put("/v1/platform/blobs/{key}", put)
+    async with server:
+        adapter = _adapter(server)
+        try:
+            result = await adapter.send(
+                target=ConversationTarget("signal", "synthetic-room", "group"),
+                text="reply", attachments=(OutboundAttachment(
+                    content=b"x", filename="a.txt", media_type="text/plain"),))
+        finally:
+            await adapter.close()
+    assert result == SendResult(ok=False)

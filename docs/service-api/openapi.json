@@ -2,6 +2,7 @@
   "components": {
     "schemas": {
       "AccountReadEnvelope": {
+        "additionalProperties": false,
         "description": "An account read: `unavailable` until the platform login has landed.",
         "properties": {
           "from": {
@@ -79,6 +80,102 @@
         "title": "ActionOwner",
         "type": "object"
       },
+      "BlobPutEnvelope": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "complete"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "rejected"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "properties": {
+                    "error": {
+                      "$ref": "#/components/schemas/OperationError"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ],
+        "description": "The answer to a blob PUT.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/OperationFrom"
+          },
+          "outcome": {
+            "enum": [
+              "complete",
+              "pending",
+              "denied",
+              "rejected",
+              "unsupported",
+              "incomplete",
+              "uncertain",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "title": "Payload"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/OperationWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "BlobPutEnvelope",
+        "type": "object"
+      },
       "BridgeStatus": {
         "description": "A bridge's own detail: whether it can serve, and why not.",
         "properties": {
@@ -140,6 +237,7 @@
         "type": "string"
       },
       "OperationEnvelope": {
+        "additionalProperties": false,
         "description": "The body of every operation response. `from_` is `from` on the wire.",
         "properties": {
           "from": {
@@ -204,6 +302,7 @@
         "type": "object"
       },
       "OperationFrom": {
+        "additionalProperties": false,
         "description": "The target of the effect and its platform reference when one exists.",
         "properties": {
           "platform_ref": {
@@ -253,6 +352,7 @@
         }
       },
       "OperationReadEnvelope": {
+        "additionalProperties": false,
         "description": "An operation read back: `ok` carries the operation's own envelope.",
         "properties": {
           "from": {
@@ -393,6 +493,7 @@
         "type": "string"
       },
       "OperationWhen": {
+        "additionalProperties": false,
         "description": "Where the record is in its lifecycle, and when it got there.",
         "properties": {
           "settled_at_ms": {
@@ -464,6 +565,7 @@
         "type": "object"
       },
       "PlatformOperationEnvelope": {
+        "additionalProperties": false,
         "description": "The answer to a delivery operation.",
         "properties": {
           "from": {
@@ -518,6 +620,7 @@
         "type": "string"
       },
       "PlatformOperationPayload": {
+        "additionalProperties": false,
         "description": "What a delivery applied, or why it did not.",
         "properties": {
           "error": {
@@ -650,6 +753,7 @@
         "type": "string"
       },
       "ReadEnvelope": {
+        "additionalProperties": false,
         "description": "The body of every read response. `from_` is `from` on the wire.",
         "properties": {
           "from": {
@@ -690,6 +794,7 @@
         "type": "object"
       },
       "ReadFrom": {
+        "additionalProperties": false,
         "description": "The source, its health, and the sources that failed when coverage is partial.",
         "properties": {
           "failed_sources": {
@@ -710,8 +815,9 @@
           }
         },
         "required": [
-          "source",
-          "healthy"
+          "failed_sources",
+          "healthy",
+          "source"
         ],
         "title": "ReadFrom",
         "type": "object"
@@ -730,6 +836,7 @@
         }
       },
       "ReadWhen": {
+        "additionalProperties": false,
         "description": "When the source observed the answer, by its own clock.",
         "properties": {
           "known_by": {
@@ -742,13 +849,14 @@
           }
         },
         "required": [
-          "observed_at_ms",
-          "known_by"
+          "known_by",
+          "observed_at_ms"
         ],
         "title": "ReadWhen",
         "type": "object"
       },
       "Scope": {
+        "additionalProperties": false,
         "description": "The scope a request resolved to, at its contract's level.",
         "properties": {
           "id": {
@@ -796,6 +904,7 @@
         "type": "string"
       },
       "StatusReadEnvelope": {
+        "additionalProperties": false,
         "description": "The `operations` contract's status read of a bridge.",
         "properties": {
           "from": {
@@ -1023,7 +1132,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OperationEnvelope"
+                  "$ref": "#/components/schemas/BlobPutEnvelope"
                 }
               }
             },
@@ -1033,7 +1142,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OperationEnvelope"
+                  "$ref": "#/components/schemas/BlobPutEnvelope"
                 }
               }
             },
@@ -1049,7 +1158,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OperationEnvelope"
+                  "$ref": "#/components/schemas/BlobPutEnvelope"
                 }
               }
             },
@@ -1065,7 +1174,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OperationEnvelope"
+                  "$ref": "#/components/schemas/BlobPutEnvelope"
                 }
               }
             },

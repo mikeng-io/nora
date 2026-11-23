@@ -15,7 +15,7 @@ from typing import Any, get_args
 
 from nora.domain import service_api as api
 from nora.domain import service_api_platform as platform
-from nora.platform.bridge.schema import component_schemas
+from nora.platform.bridge.schema import ANSWERS, component_schemas
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCUMENT = ROOT / "docs" / "service-api" / "openapi.json"
@@ -34,7 +34,8 @@ def _responses(route: platform.Route) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for status in sorted({api.status_for(o) for o in get_args(family)}):
         outcomes = [o for o in get_args(family) if api.status_for(o) == status]
-        content: dict[str, Any] = {"application/json": {"schema": _ref(route.response)}}
+        content: dict[str, Any] = {"application/json": {"schema": {
+            "$ref": f"#/components/schemas/{ANSWERS[route.name]}"}}}
         if route.answers_bytes and status == 200:
             content.update(_OCTETS)
         out[str(status)] = {"description": ", ".join(outcomes), "content": content}

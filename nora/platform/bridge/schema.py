@@ -68,7 +68,38 @@ def component_schemas() -> dict[str, Any]:
     for route in platform.PLATFORM_ROUTES:
         for name in _refs(wired[route.response.__name__]["properties"]["payload"]):
             _answer_carries_every_field(wired, name)
+    for name in ("ReadWhen", "ReadFrom"):
+        wired[name]["required"] = sorted(wired[name]["properties"])
+    for name in [n for n in wired if n.endswith("Envelope")] + list(_CLOSED_PARTS):
+        wired[name]["additionalProperties"] = False
+    wired[BLOB_PUT] = _blob_put(wired["OperationEnvelope"])
     return wired
+
+
+#: An envelope's parts and the delivery payload carry exactly their fields; a
+#: payload a platform may extend (the account, the status) stays open.
+_CLOSED_PARTS: Final = ("ReadWhen", "ReadFrom", "OperationWhen", "OperationFrom", "Scope",
+                        "PlatformOperationPayload")
+#: The blob `PUT` answer: an operation envelope whose `complete` names a key and
+#: whose `rejected` says why.
+BLOB_PUT: Final = "BlobPutEnvelope"
+#: The component each route answers with, by route name.
+ANSWERS: Final[dict[str, str]] = {
+    route.name: BLOB_PUT if route.name == "put_blob" else route.response.__name__
+    for route in platform.PLATFORM_ROUTES}
+
+
+def _blob_put(envelope: dict[str, Any]) -> dict[str, Any]:
+    def when(outcome: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return {"if": {"properties": {"outcome": {"const": outcome}}},
+                "then": {"properties": {"payload": payload}}}
+
+    return {**envelope, "title": BLOB_PUT, "description": "The answer to a blob PUT.", "allOf": [
+        when("complete", {"type": "object", "required": ["key"],
+                          "properties": {"key": {"type": "string"}}}),
+        when("rejected", {"type": "object", "required": ["error"],
+                          "properties": {"error": {"$ref": REF.format(model="OperationError")}}}),
+    ]}
 
 
 def _refs(node: object) -> list[str]:
