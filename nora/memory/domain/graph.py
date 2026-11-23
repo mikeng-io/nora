@@ -63,7 +63,7 @@ EdgeState = Literal["live", "superseded", "retired", "tombstoned"]
 EdgeFamily = Literal["cites", "about", "draws_on", "relation"]
 EdgeType = Literal[
     "cites", "about", "draws_on", "rests_on", "serves", "watches", "closed_by",
-    "interested_in",
+    "interested_in", "merged_into",
 ]
 
 
@@ -126,6 +126,12 @@ EDGES: dict[str, EdgeDeclaration] = {
         target_kinds=frozenset({"item", "aggregate"}),
         bases=frozenset({"computed"}),
     ),
+    "merged_into": EdgeDeclaration(
+        family="relation",
+        source_kinds=frozenset({"entity"}),
+        target_kinds=frozenset({"entity"}),
+        bases=frozenset({"inferred"}),
+    ),
     "interested_in": EdgeDeclaration(
         family="relation",
         source_kinds=frozenset({"entity"}),
@@ -167,11 +173,11 @@ class Cited:
 
 
 def cites_legal(source_basis: str, target: Cited) -> bool:
-    """The citation rule (graph.md «cites»): an inferred row cites only
+    """The citation rule (graph.md «cites»): inferred and committed rows cite only
     observed or computed rows; a computed row derives from observed or
     computed rows and from an intention's conditions and rests_on edges —
     deriving from a claim or from any other intention content is refused."""
-    if source_basis == "inferred":
+    if source_basis in ("inferred", "committed"):
         return target.element == "row" and target.basis in ("observed", "computed")
     if source_basis == "computed":
         if target.element == "row":

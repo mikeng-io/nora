@@ -285,7 +285,7 @@ EDGE = sa.Table(
     sa.PrimaryKeyConstraint("id", "unit", name="pk_edge"),
     sa.CheckConstraint(
         "type IN ('cites', 'about', 'draws_on', 'rests_on', 'serves', 'watches',"
-        " 'closed_by', 'interested_in')",
+        " 'closed_by', 'interested_in', 'merged_into')",
         name="ck_edge_type",
     ),
     sa.ForeignKeyConstraint(
