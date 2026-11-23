@@ -33,7 +33,7 @@ The controller serves the `voice` contract (`design/service-api/contracts.md`
 |---|---|---|
 | `join` | `{guild_id, channel_id}` | join (idempotent on the same channel; another channel is `rejected` `connected_elsewhere`) |
 | `leave` | `{guild_id, generation}` | stop music + speech + wake pump, destroy the connection, persist `idle` |
-| `play` | `+ stream_url`, optional `title`, `duration_seconds`, `resumable` | REPLACE the current music slot (ffmpeg pulls `stream_url`); mints a `playback_id` |
+| `play` | `+ stream_url`, optional `title`, `duration_seconds`, `resumable` | REPLACE the current music slot (ffmpeg pulls `stream_url`, an http(s) URL with no control characters, else `400`); `complete` names the `playback_id` it minted, and a start that fails at once is `unavailable` `stream_failed` |
 | `stop` | `{guild_id, generation}` | stop music only — stays connected, keeps the wake pump |
 | `pause` / `resume` | `{guild_id, generation}` | current-track state (`rejected` `pause_during_speech` while speech is active) |
 | `set_volume` | `+ percent` | 0–200 %, applied now and remembered for the next track |

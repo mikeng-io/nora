@@ -210,6 +210,7 @@ export async function makeHarness(options = {}) {
 
   const procs = [];
   const spawn = (args) => {
+    if (options.spawnError) throw options.spawnError;
     const p = createFakeProc();
     p.args = args;
     procs.push(p);

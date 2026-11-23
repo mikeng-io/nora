@@ -397,6 +397,29 @@ test('replace-play: old playback emits no track-finished, new playback_id is min
   await h.close();
 });
 
+test('a play is refused a stream_url ffmpeg could not take, and never completes without its playback', async () => {
+  const h = await makeHarness();
+  const { generation } = await h.join();
+  for (const url of ['https://cdn.test/a\u0000b', 'https://cdn.test/a\nb', 'file:///etc/passwd', 'ftp://cdn.test/a', 'not a url']) {
+    const res = await h.op('play', { guild_id: GUILD, generation, stream_url: url }, { operationId: 'op-bad-url' });
+    assert.equal(res.status, 400, JSON.stringify(url));
+    assert.deepEqual(res.body, { error: 'invalid_body' }, JSON.stringify(url));
+  }
+  assert.equal(h.procs.length, 0, 'nothing spawned');
+  await h.close();
+
+  // A start that fails at once, for any reason, is an error outcome.
+  const failing = await makeHarness({ spawnError: new Error('spawn failed') });
+  const gen = (await failing.join()).generation;
+  const res = await failing.op('play', { guild_id: GUILD, generation: gen, stream_url: 'https://cdn.test/a' });
+  assert.notEqual(res.outcome, 'complete');
+  assert.equal(res.outcome, 'unavailable');
+  assert.deepEqual(res.body.payload.error, { kind: 'stream_failed', message: 'stream_failed' });
+  assert.equal(res.state.playback_id, null);
+  assert.ok(await until(() => failing.delivered.some((e) => e.type === 'stream-failed')), 'the failure is still reported');
+  await failing.close();
+});
+
 test('a play with a long stream_url and title, under the control bound, completes and echoes both', async () => {
   const h = await makeHarness();
   const { generation } = await h.join();

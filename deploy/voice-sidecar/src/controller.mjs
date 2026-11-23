@@ -102,6 +102,17 @@ function closeUnread(req, res, status, error) {
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
+// What ffmpeg may be handed: an http(s) URL with no control characters.
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+function isStreamUrl(value) {
+  if (typeof value !== 'string' || !value || CONTROL_CHARS.test(value)) return false;
+  try {
+    return ['http:', 'https:'].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
+
 export function createController({
   guildId,
   lifecycle,
@@ -165,8 +176,8 @@ export function createController({
     play: async (effect, operationId) => {
       checkGuild(effect);
       checkGeneration(effect);
-      if (typeof effect.stream_url !== 'string' || !effect.stream_url) {
-        throw httpError(400, 'invalid_body', 'stream_url is required');
+      if (!isStreamUrl(effect.stream_url)) {
+        throw httpError(400, 'invalid_body', 'stream_url must be an http(s) URL');
       }
       // Optional source capability (design/voice-channel/audio.md «Speech and
       // music arbitration»): false marks a live/non-seekable stream; absent
@@ -174,13 +185,17 @@ export function createController({
       if (effect.resumable != null && typeof effect.resumable !== 'boolean') {
         throw httpError(400, 'invalid_body', 'resumable must be a boolean when present');
       }
-      arbiter.playMusic({
+      const playbackId = arbiter.playMusic({
         streamUrl: effect.stream_url,
         title: typeof effect.title === 'string' ? effect.title : null,
         durationSeconds: typeof effect.duration_seconds === 'number' ? effect.duration_seconds : null,
         requestId: operationId,
         resumable: effect.resumable ?? undefined,
       });
+      // A start that failed at once (the arbiter has already reported
+      // stream-failed and cleared the slot) is not a playback: never answer
+      // `complete` without the one this play created.
+      if (arbiter.statusSnapshot().playback_id !== playbackId) throw httpError(503, 'stream_failed');
     },
     stop: async (effect) => {
       checkGuild(effect);
