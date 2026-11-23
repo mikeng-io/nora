@@ -111,7 +111,7 @@ def build_registry(
     media_join: Any, media_objects: Any, memo_store: Any, memory_search: Any,
     metrics: Any, mobility: Any, music_bridge: Any, note_store: Any,
     observation_store: Any, persons: Any, presence_circles: Any, presence_reader: Any,
-    presence_store: Any, profile_index: Any, profile_reader: Any, reaction_picker: Any,
+    presence_store: Any, profile_index: Any, reaction_picker: Any,
     refresher: Any, relay: Any, reminder_caps: Any, reminders: Any,
     route_client: Any, room_management: Any, search_client: Any, social_client: Any,
     standing_store: Any, graph_retrieval: Any,
@@ -142,7 +142,7 @@ def build_registry(
         note_store=note_store, observation_store=observation_store, persons=persons,
         presence_circles=presence_circles, presence_reader=presence_reader,
         presence_store=presence_store, profile_index=profile_index,
-        profile_reader=profile_reader, reaction_picker=reaction_picker,
+        reaction_picker=reaction_picker,
         refresher=refresher, relay=relay, reminder_caps=reminder_caps, reminders=reminders,
         route_client=route_client, search_client=search_client,
         social_client=social_client, standing_store=standing_store,
@@ -163,7 +163,7 @@ def _build_tool_registry(
     computer_dm_scope_for: Any, content_checks: Any, culture_reader: Any,
     subagent_desk: Any, giphy_client: Any, discord_presence: Any, computer: Any,
     presence_store: Any, mcp_tool_groups: Any, image_generator: Any, ledger_store: Any,
-    memo_store: Any, memory_search: Any, profile_reader: Any, observation_store: Any,
+    memo_store: Any, memory_search: Any, observation_store: Any,
     graph_retrieval: Any, engagement_graph_retrieval: Any, intention_admission: Any,
     browser: Any, computer_context: Any, computer_settings: Any, presence_reader: Any,
     search_client: Any, engine: Any, events: Any, version_manifest: Any,
@@ -207,7 +207,7 @@ def _build_tool_registry(
             cfg=cfg, content_checks=content_checks, culture_reader=culture_reader,
             engine=engine, ledger_store=ledger_store, lineage=lineage,
             memo_store=memo_store, memory_search=memory_search, graph_retrieval=graph_retrieval,
-            profile_index=profile_index, profile_reader=profile_reader,
+            profile_index=profile_index,
             standing_store=standing_store,
         ),
         **_record_tool_args(
@@ -253,12 +253,17 @@ def _build_tool_registry(
 def _memory_tool_args(
     cfg: Any, content_checks: Any, culture_reader: Any, engine: Any,
     ledger_store: Any, lineage: Any, memo_store: Any, memory_search: Any,
-    profile_index: Any, profile_reader: Any, standing_store: Any, graph_retrieval: Any,
+    profile_index: Any, standing_store: Any, graph_retrieval: Any,
 ) -> Any:
     """The memory tier's tools: index search, graph verbs, standing, ledger."""
+    import nora.memory as memory_area
+
     return {
         "memory_search": memory_search,
         "graph_retrieval": graph_retrieval,
+        # `profile_dispute`'s writes: the graph's dispute and forget verbs. No flag:
+        # the engagement turn always reads the graph whose IDs the tool takes.
+        "memory_intake": memory_area.wire.memory_intake(engine),
         # The graph surface's `remember` writes a Profile `told` line
         # (design/unified-memory/profiles.md); wired with `memory_search`, never alone.
         "profile": (
@@ -272,10 +277,6 @@ def _memory_tool_args(
             if memory_search is not None
             else None
         ),
-        # THE SWITCH (45 §5): while `[memory.profile] read` is on, `character_read`
-        # answers from the Profile accounts — the same reader the tag
-        # assembler and the fire path hold, so tool and prompt cannot disagree.
-        "profile_read": profile_reader,
         "lineage": lineage,
         # The current Rollup build's rows and the Standing head. SELECTs, so no flag. The
         # Standing head is Dreamer-only (`DREAMER_ONLY_TOOLS`); the Rollup read is also a tag
@@ -283,7 +284,7 @@ def _memory_tool_args(
         "rollup": SqlRollupRead(engine),
         "standing_head": standing_store,
         "ledger": ledger_store,
-        # `character_read`: withheld while `[culture]` is off.
+        # `room_list`'s room accounts: `None` while `[culture]` is off.
         "culture": culture_reader,
         # `memo_read` (DEC-306): the memo store, unit-resolved like the note reads.
         "memos": memo_store,

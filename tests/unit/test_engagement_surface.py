@@ -57,6 +57,21 @@ def test_the_graph_surface_has_the_pinned_tools(ambient, expected, defer):
 
 
 @pytest.mark.parametrize("ambient", [False, True])
+def test_the_graph_dispute_verb_is_offered_on_the_engagement_surface_with_its_intake(ambient):
+    assert "profile_dispute" not in _surface(fire_turn=ambient).admitted
+    wired = ToolRegistry(
+        engagement_graph_retrieval=object(), intention_admission=object(), memory_intake=object(),
+    )
+    assert "profile_dispute" in wired.surface(
+        store=_FakeStore(), conversation_id="g1", conversation_type="group",
+        persons=_FakePersons(), deliverer=_deliverer(),
+        metrics=Metrics(), room=Room(platform="signal", conversation_id="g1",
+                                     roster_source=None, persons=_FakePersons()),
+        engagement=True, fire_turn=ambient,
+    ).admitted
+
+
+@pytest.mark.parametrize("ambient", [False, True])
 def test_load_tools_cannot_reach_any_retired_tool(ambient):
     surface = _surface(fire_turn=ambient, defer=True)
     agent = Agent(tools=surface.tools)

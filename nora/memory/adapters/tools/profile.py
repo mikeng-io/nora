@@ -21,6 +21,7 @@ from nora.domain.profile import (
 )
 from nora.domain.profile import Said as ProfileSaid
 from nora.memory.adapters.tools.shared import (
+    _PROFILE_DISPUTE_NOT_FOUND,
     _PROFILE_DISPUTE_NOTES,
     _PROFILE_DISPUTE_REFUSED_NOTES,
     _PROFILE_DISPUTE_UNAVAILABLE,
@@ -106,139 +107,71 @@ def _make_remember_told(deps):
     return remember_told
 
 
-async def _dispute_subject(person: str, tagger, room, metrics, content_checks):
-    """Whose account the dispute lands on: the speaker unless `person` names someone here."""
-    subject = tagger
-    if person.strip():
-        view = await room.scope()
-        if not view.available:
-            _record(metrics, "profile_dispute", "unavailable", reason="roster")
-            return subject, dict(_PROFILE_DISPUTE_UNAVAILABLE)
-        matches = view.find(person)
-        if not matches:
-            miss = _miss(person, view, content_checks=content_checks)
-            _record(metrics, "profile_dispute", miss["status"], candidates=0)
-            return subject, miss
-        if len(matches) > 1:
-            _record(metrics, "profile_dispute", "ambiguous", candidates=len(matches))
-            return subject, {
-                "status": "ambiguous",
-                **_asked_about(person, content_checks=content_checks),
-                "could_be": [p.name for p in matches],
-                "note": "More than one person here goes by that. Ask which one.",
-            }
-        subject = matches[0]
-    return subject, None
-
-
 def _make_profile_dispute(deps):
-    content_checks = deps.content_checks
-    lineage = deps.lineage
+    intake = deps.memory_intake
     metrics = deps.metrics
-    profile = deps.profile
     room = deps.room
-    _now_ms = deps._now_ms
     _unit = deps._unit
 
     async def profile_dispute(
-        claim: str,
-        person: str = "",
+        claim_id: str,
         kind: Literal["dispute", "forget"] = "dispute",
     ) -> dict:
-        """Call this when somebody disputes a remembered fact, or its person asks you to forget it.
+        """Call this when somebody disputes a remembered claim, or asks you to
+        forget one about them.
 
-        It records who disputed it and what they said, against your account of that
-        person. What the person themselves disputes is hidden at once; anyone else's
-        dispute is marked and weighed later. Only the person themselves may ask to
-        forget.
+        Name the claim by the graph ID its row starts with. What the person it
+        is about disputes is hidden at once; anyone else's dispute marks it to be
+        weighed later. Only the person it is about may ask to forget it.
 
-        Returns `status`: ok (with `effect`: hidden, disputed or recorded), refused,
-        not_found, ambiguous or unavailable, with a `note` on how to report it.
+        Returns `status`: ok (with `effect`: hidden or disputed), refused,
+        not_found or unavailable, with a `note` on how to report it.
 
         Args:
-            claim: What is wrong, one line, in the speaker's own words.
-            person: Whose remembered fact it is, as named here. Leave empty when it
-                is the speaker's own.
+            claim_id: The graph ID shown first on the claim's row.
             kind: dispute (the default: it is wrong) or forget (take it away, which
-                only the person themselves may ask)."""
-        # The dispute door (35 §2), mirroring `remember_told`: the speaker is the
-        # disputer, the named person is the account's subject, and the store rules on
-        # it in one transaction. The line the claim names is matched by code
+                only the person it is about may ask)."""
         tagger = room.tagger
         if tagger is None:
             _record(metrics, "profile_dispute", "refused", reason="no_tagger")
-            return {
-                "status": "refused",
-                "note": "Nothing was recorded: I don't know who you are well "
-                "enough to say who disputes it. Say you can't, and "
-                "don't guess.",
-            }
-        text = claim.strip()
-        if not text:
+            return _refused("no_tagger")
+        target = claim_id.strip()
+        if not target:
             _record(metrics, "profile_dispute", "refused", reason="empty")
-            return {
-                "status": "refused",
-                "note": "Nothing was recorded: say what is wrong, one line, then call again.",
-            }
-        if len(text) > PROFILE_LINE_MAX_CHARS:
-            _record(metrics, "profile_dispute", "refused", reason="too_long")
-            return {
-                "status": "refused",
-                "note": f"Nothing was recorded: a dispute fits in "
-                f"{PROFILE_LINE_MAX_CHARS} characters. Say it shorter, "
-                "then call again.",
-            }
-        cites = room.trigger_message_ids
+            return _refused("empty")
         unit = _unit()
-        if profile is None or lineage is None or unit is None or not cites:
-            # A wiring gap, or a turn no Record message raised: «I couldn't»,
-            # never a record.
+        if intake is None or unit is None:
             _record(metrics, "profile_dispute", "unavailable", reason="unwired")
             return dict(_PROFILE_DISPUTE_UNAVAILABLE)
-        subject, blocked = await _dispute_subject(
-            person, tagger, room, metrics, content_checks=content_checks
-        )
-        if blocked is not None:
-            return blocked
         try:
-            result = await profile.record_dispute(
-                account=ProfileAccount(
-                    key=character_key(unit, subject.person_id),
-                    entity_kind="human",
-                    unit=unit,
-                    subject=subject.person_id,
-                ),
-                disputed_by=tagger.person_id,
-                claim=text,
-                kind=kind,
-                message_id=cites[0],
-                now_ms=_now_ms(),
-            )
+            persons = await intake.claim_persons(unit=unit, claim_id=target)
+            if persons is None:
+                _record(metrics, "profile_dispute", "not_found")
+                return dict(_PROFILE_DISPUTE_NOT_FOUND)
+            subject = tagger.person_id in persons
+            if kind == "forget" and not subject:
+                # The self-only rule. The store hides every target a forget
+                # request names from every read, whoever asked.
+                _record(metrics, "profile_dispute", "refused", reason="forget_not_subject")
+                return _refused("forget_not_subject")
+            at = deps.now_fn()
+            if kind == "forget":
+                await intake.forget(unit=unit, author=tagger.person_id, targets=(target,), at=at)
+            else:
+                await intake.dispute(unit=unit, author=tagger.person_id, claim_id=target, at=at)
         except Exception:
             log.exception("profile_dispute failed")
             _record(metrics, "profile_dispute", "unavailable")
             return dict(_PROFILE_DISPUTE_UNAVAILABLE)
-        if result.status == "ok":
-            _record(metrics, "profile_dispute", "ok", effect=result.effect)
-            return {
-                "status": "ok",
-                "effect": result.effect,
-                "person": subject.name,
-                "note": _PROFILE_DISPUTE_NOTES.get(result.effect or "", "It is recorded."),
-            }
-        if result.status == "conflict":
-            _record(metrics, "profile_dispute", "unavailable", reason="conflict")
-            return dict(_PROFILE_DISPUTE_UNAVAILABLE)
-        reason = result.refusal.reason if result.refusal else "refused"
-        _record(metrics, "profile_dispute", "refused", reason=reason)
-        return {
-            "status": "refused",
-            "note": _PROFILE_DISPUTE_REFUSED_NOTES.get(
-                reason, "Nothing was recorded. Say you couldn't record it."
-            ),
-        }
+        effect = "hidden" if subject else "disputed"
+        _record(metrics, "profile_dispute", "ok", effect=effect)
+        return {"status": "ok", "effect": effect, "note": _PROFILE_DISPUTE_NOTES[effect]}
 
     return profile_dispute
+
+
+def _refused(reason: str) -> dict:
+    return {"status": "refused", "note": _PROFILE_DISPUTE_REFUSED_NOTES[reason]}
 
 
 async def _remember_told__tagger(c):

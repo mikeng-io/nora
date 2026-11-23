@@ -183,8 +183,8 @@ def _cut(body: str, room: int) -> str:
 def account_text(
     view: ProfileView, *, name_of: Callable[[str], str], now: datetime,
 ) -> tuple[str, int | None] | None:
-    """One account's sections as plain TEXT for a tool result
-    (`character_read` under the switch): `render_profile`'s body without the
+    """One account's sections as plain TEXT for a tool result:
+    `render_profile`'s body without the
     block wrapper — a tool result is not a prompt block — capped at
     `PROFILE_ACCOUNT_MAX_CHARS` with the cut marker, with the newest rendered
     line's `written_at` so the result can carry its own `as_of` (an account

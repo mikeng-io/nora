@@ -440,6 +440,8 @@ RULE_TESTS = {
     "lesson-admission": "test_three_distinct_verdicts_admit_a_checked_lesson",
     "lesson-tally": "test_lesson_tallies_resting_verdicts_and_renders_counts",
     "lesson-relearn": "test_operator_retirement_hides_graph_lesson_and_sets_evidence_floor",
+    "graph-dispute": "test_another_persons_dispute_marks_the_claim_for_weighing",
+    "graph-forget-self-only": "test_only_the_person_a_claim_is_about_may_ask_to_forget_it",
 }
 
 

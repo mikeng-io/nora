@@ -109,7 +109,6 @@ from nora.infra.vision.preprocess import (
     VIDEO_CHUNK_SECONDS,
     VIDEO_MAX_CHUNKS,
 )
-from nora.language.profile_render import ProfileHeads
 from nora.memory import PassScope
 
 log = logging.getLogger("nora.tools")
@@ -223,9 +222,10 @@ class ToolDeps:
     graph_retrieval: Any = None
     pass_scope: PassScope | None = None
     intention_admission: Any = None
+    # The graph's dispute and forget verbs (`SqlMemoryIntake`).
+    memory_intake: Any = None
     all_memory_surfaces: bool = False
     profile: ProfileWriter | None = None
-    profile_read: ProfileHeads | None = None
     content_checks: bool = True
     caps: Any = field(init=False, default=None)
     now_fn: Any = field(init=False, default=None)

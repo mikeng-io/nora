@@ -146,7 +146,7 @@ def test_every_declared_tool_is_built(wiring):
         "poll_list", "poll_read", "room_state_read",
         # Built here like every closure; only a Dreamer loop is OFFERED them
         # (`nora.agent.surface.DREAMER_LOOP_TOOLS`).
-        "rollup_read", "standing_read", "character_read", "social_read", "group_members",
+        "rollup_read", "standing_read", "social_read", "group_members",
         "lookup_person", "recall_lookups",
         "calculate",
         "transit",

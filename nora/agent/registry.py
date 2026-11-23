@@ -97,7 +97,6 @@ from ..infra.transit import TransitClient
 from ..infra.version import VersionManifest
 from ..infra.vision import VisionCache, VisionClient
 from ..infra.vision.preprocess import VIDEO_CHUNK_SECONDS, VIDEO_MAX_CHUNKS
-from ..language.profile_render import ProfileHeads
 from .lineage import LineagePolicy
 from .links import LinkCarry
 from .mcp import McpToolGroup, stream_mounted
@@ -353,7 +352,7 @@ class ToolRegistry:
         rollup: RollupReadSource | None = None,
         standing_head: StandingHeadSource | None = None,
         ledger: StandingLedger | None = None,
-        # `character_read`'s culture store (`[culture] enabled`): `None` withholds it.
+        # The culture store (`[culture] enabled`) `room_list` shows each room's account from.
         culture: CultureReader | None = None,
         # `social_read`'s read of the social stream's Record: `None` withholds it.
         social_items: SocialItemsSource | None = None,
@@ -374,14 +373,12 @@ class ToolRegistry:
         graph_retrieval: Any = None,
         engagement_graph_retrieval: Any = None,
         intention_admission: Any = None,
+        # The graph's dispute and forget verbs `profile_dispute` writes through;
+        # without them the registry withholds the tool from every turn.
+        memory_intake: Any = None,
         # The Profile write the graph surface's `remember` makes (a `told`
         # line, design/unified-memory/profiles.md). Wired with `memory_search`.
         profile: ProfileWriter | None = None,
-        # THE SWITCH (45 §5): `character_read`'s Profile source while
-        # `[memory.profile] read` is on beside `[memory.profile] write`. Wired, it
-        # answers where `culture` would, so the tool reads the accounts the
-        # prompt's `<profile>` blocks render; both `None` withholds the tool.
-        profile_read: ProfileHeads | None = None,
         # Typed observation reads; None withholds them, not the message Record read.
         observations: Any = None,
         # Shared management invocation; specs supplies the verified per-turn message.
@@ -394,12 +391,12 @@ class ToolRegistry:
         self._room_management = room_management
         self._budget_overrides = dict(budget_overrides or {})
         self._profile = profile
-        self._profile_read = profile_read
         self._external_files, self._google_account = external_files, google_account
         self._memory_search = memory_search
         self._graph_retrieval = graph_retrieval
         self._engagement_graph_retrieval = engagement_graph_retrieval
         self._intention_admission = intention_admission
+        self._memory_intake = memory_intake
         self._record = record
         self._documents = documents
         self._lineage = lineage
@@ -414,8 +411,6 @@ class ToolRegistry:
             (frozenset() if record is not None else frozenset({"record_query"}))
             | (frozenset() if rollup is not None else frozenset({"rollup_read"}))
             | (frozenset() if standing_head is not None else frozenset({"standing_read"}))
-            | (frozenset() if culture is not None or profile_read is not None
-               else frozenset({"character_read"}))
             | (frozenset() if social_items is not None else frozenset({"social_read"}))
             | (frozenset() if memos is not None else frozenset({"memo_read"}))
             | (frozenset() if observations is not None
@@ -428,7 +423,7 @@ class ToolRegistry:
             | (frozenset() if documents is not None else DOCUMENT_TOOLS)
             | (frozenset() if subagent is not None else SUBAGENT_TOOLS)
             | (frozenset() if video is not None else VIDEO_TOOLS)
-            | ({"profile_dispute"} if memory_search is None else set())
+            | ({"profile_dispute"} if memory_intake is None else set())
             | ({"memory_search", "memory_read"} if graph_retrieval is None else set())
             | (OFF_GRAPH_ONLY_TOOLS
                if graph_retrieval is not None or memory_search is not None else set())
@@ -774,7 +769,7 @@ class ToolRegistry:
 
         scoped = copy(self)
         scoped._memory_search = search
-        scoped._withheld = (self._withheld - {"profile_dispute"}) | OFF_GRAPH_ONLY_TOOLS
+        scoped._withheld = self._withheld | OFF_GRAPH_ONLY_TOOLS
         return scoped
 
     def with_clock(self, clock: Callable[[], datetime]) -> ToolRegistry:
@@ -1159,12 +1154,12 @@ class ToolRegistry:
             graph_retrieval=(self._engagement_graph_retrieval if engagement
                              else self._graph_retrieval),
             intention_admission=self._intention_admission if engagement else None,
+            memory_intake=self._memory_intake,
             profile=self._profile,
             lineage=self._lineage,
             rollup=self._rollup,
             standing_head=self._standing_head, ledger=self._ledger,
             culture=self._culture,
-            profile_read=self._profile_read,
             social_items=self._social_items,
             versions=self._versions, releases=self._releases,
             giphy_source=self._giphy,

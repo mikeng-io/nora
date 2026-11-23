@@ -60,29 +60,6 @@ _STANDING_OFF = "I can't read this room's position right now. Say so; do not gue
 
 _STANDING_NONE = "No supported position is held for this room. Say so, and do not reconstruct one."
 
-_CHARACTER_OFF = "I can't read accounts of this group right now. Say so; do not guess one."
-
-_CHARACTER_WITHHELD = (
-    "An account is held but carries something that can't be repeated here. "
-    "Work from what you already know."
-)
-
-_CHARACTER_NONE = (
-    "No account is held of that room or person in this group. Say so, and do "
-    "not describe them from memory as if one were."
-)
-
-_CHARACTER_OK = (
-    "Each account is as of its own time and is one room's view. Link it by its "
-    "`revision`; do not quote it as what someone said."
-)
-
-_CHARACTER_PROFILE_OK = (
-    "Each account is as of its own time and is this group's view of that room "
-    "or person; a (disputed) line is being weighed, not settled. Do not quote "
-    "it as what someone said."
-)
-
 _STANDING_WITHHELD = (
     "Some sections are not shown in this conversation. Do not read the rest as complete."
 )
@@ -124,18 +101,24 @@ _PROFILE_DISPUTE_NOTES: Mapping[str, str] = MappingProxyType(
         "hidden": "It is forgotten. Say so, and do not bring it up again.",
         "disputed": "It is marked as disputed and I will weigh it. Meanwhile, do "
         "not state it as fact.",
-        "recorded": "It is recorded. I could not tell which remembered fact it "
-        "was about, so ask which one if that matters.",
     }
 )
 
 _PROFILE_DISPUTE_REFUSED_NOTES: Mapping[str, str] = MappingProxyType(
     {
+        "no_tagger": "Nothing was recorded: I don't know who you are well enough to "
+        "say who disputes it. Say you can't, and don't guess.",
+        "empty": "Nothing was recorded: name the claim by the ID its row starts with, "
+        "then call again.",
         "forget_not_subject": "Nothing was recorded: only they can ask me to "
         "forget something about themselves. Say so.",
-        "identifier": "Nothing was recorded: it carries a number or handle I never "
-        "keep. Say it without that, then call again.",
-        "coordinate": "Nothing was recorded: it carries a location I never keep. "
-        "Say it without that, then call again.",
+    }
+)
+
+_PROFILE_DISPUTE_NOT_FOUND: Mapping[str, str] = MappingProxyType(
+    {
+        "status": "not_found",
+        "note": "Nothing was recorded: no remembered claim here has that ID. Use the "
+        "ID its row starts with, and don't guess one.",
     }
 )

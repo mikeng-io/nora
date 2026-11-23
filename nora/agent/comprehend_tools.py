@@ -315,8 +315,6 @@ HISTORICAL_READ_UNAVAILABLE: Mapping[str, str] = MappingProxyType({
                    "then cannot be rebuilt here.",
     "standing_read": "This reads standing as it stands now, not as of this "
                      "time.",
-    "character_read": "This reads culture as it stands now, not as of this "
-                      "time.",
     "routine_read": "This reads a routine computed on the current state, not "
                     "as of this time.",
     "where_been": "This reads presence derived from the current state, not "

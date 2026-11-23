@@ -49,7 +49,6 @@ _KEY_ORDER = [
     "room_state_read",
     "rollup_read",
     "standing_read",
-    "character_read",
     "social_read",
     "group_members",
     "lookup_person",

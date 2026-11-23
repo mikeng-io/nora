@@ -31,7 +31,6 @@ from nora.agent.lineage import (
     LineagePolicy,
     derived_view,
     excluded,
-    profile_lines_for,
     section_permits,
     visible_sections,
 )
@@ -46,7 +45,6 @@ from nora.domain.comprehend import ComprehendItem, Preview, preview_seeds
 from nora.domain.computer_context import ComputerView
 from nora.domain.culture import (
     CultureRevision,
-    character_key,
     nora_character_key,
     unit_culture_key,
 )
@@ -89,10 +87,9 @@ from nora.domain.ports import (
     RecordStore,
     RosterSource,
 )
-from nora.domain.profile import ProfileView
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.rollup import room_key
-from nora.domain.self_presence import Presence, platform_name
+from nora.domain.self_presence import Presence
 from nora.domain.shared_state import SharedView
 from nora.domain.standing import Standing
 from nora.domain.standing_ledger import LedgerEntry
@@ -107,7 +104,6 @@ from nora.language.comprehend_render import preview_text
 from nora.language.computer_render import estimate_tokens
 from nora.language.culture_render import read_character, read_culture
 from nora.language.lesson_render import ActiveLessons, read_lessons
-from nora.language.profile_render import ProfileHeads, authored_identity, read_profile
 from nora.obs.tracing import traced_read
 from nora.persons import Persons
 from nora.policy import Policy
@@ -202,7 +198,6 @@ class TranscriptInjection:
         memory_search: MemorySearch | None = None,
         shared: Callable[..., Awaitable[SharedView]] | None = None,
         clock: Callable[[], datetime] | None = None,
-        profile: ProfileHeads | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
         self_ids: frozenset[str] = frozenset(),
         observations: Any = None, access: Any = None,
@@ -301,14 +296,6 @@ class TranscriptInjection:
         # raises, so it is safe inside the gather. Tag path only: the fire path
         # holds no such reader.
         self._subagents_reader = subagents
-        # THE SWITCH (45 §5): the Profile accounts' reader, wired by
-        # composition only when `[memory.profile] read` is on. Not `None` means this
-        # turn renders `<profile>` blocks and the reads they replace —
-        # `_culture`, `_unit_culture`, `_self_account` and `_character` —
-        # are not made at all: a switched
-        # turn never pays for both surfaces, and a failed profile read is
-        # `nora_errors_total` (R-27), never a quiet fall back to the old block.
-        self._profile_reader = profile
 
     @staticmethod
     def _room_scope(msg: NormalizedMessage) -> Scope:
@@ -466,10 +453,6 @@ class TranscriptInjection:
         Bounded, fail-soft and counted (`stage="tag_culture"`) by
         `read_culture`, so it is safe inside the `gather`.
         """
-        if self._profile_reader is not None:
-            # The switch (45 §5): the room's `<profile>` replaced this block;
-            # a switched turn never pays for both surfaces.
-            return None
         if self._culture_reader is None or self._policy is None:
             return None
         convo = self._policy.conversation(msg.platform, msg.conversation_id)
@@ -487,39 +470,6 @@ class TranscriptInjection:
             stage="tag_culture", platform=msg.platform, metrics=self._metrics,
         )
         return found
-
-    async def _recent_with_character(
-        self, msg: NormalizedMessage, ref: PersonRef | None,
-    ) -> tuple[
-        tuple[TranscriptRow, ...],
-        tuple[tuple[str, CultureRevision], ...],
-        tuple[ProfileView, ...],
-    ]:
-        """The transcript, then the accounts of the people in it. WHO needs the
-        window's speakers, so the character read cannot start before the
-        transcript; chained here it still overlaps every other read in the
-        gather instead of waiting for all of them. Its own bound
-        (`read_character`'s timeout) is added to the transcript's, not to the
-        whole gather's.
-
-        Switched (`[memory.profile] read`): the character read is not made at all
-        and the turn's Profile accounts are read instead — the room's, the
-        unit's, hers, and every person the turn is about."""
-        read = await self._recent(msg)
-        shown = self._shown(read, msg)
-        if self._profile_reader is not None:
-            return read, (), await self._profiles(msg, ref, shown)
-        return read, await self._character(msg, ref, shown), ()
-
-    async def _platforms_of(self, person_id: str) -> tuple[str, ...]:
-        """The display names of the networks one person is reachable on, for
-        their authored identity lines — "Signal", "Discord", never a handle or
-        a number (R-18). Read off the identity index, so a renamed platform
-        cannot drift from what `resolve` matches."""
-        return tuple(sorted({
-            platform_name(a.platform)
-            for a in await self._access.accounts_for(person_id)
-        }))
 
     def _obs_actor_name(
         self, platform: str, actor: str | None, *, known: bool = True
@@ -539,94 +489,6 @@ class TranscriptInjection:
             lineage = LineagePolicy.from_policy(self._policy, access=self._access)
         return await lineage.read_room(
             platform=msg.platform, conversation_id=msg.conversation_id)
-
-    async def _profiles(
-        self, msg: NormalizedMessage, ref: PersonRef | None,
-        transcript: Sequence[TranscriptRow],
-    ) -> tuple[ProfileView, ...]:
-        """The turn's Profile accounts (45 §5): hers, the room's, the unit's,
-        then one per person the turn is about (`tag_character_people`'s set,
-        the same set `<character>` rendered).
-
-        Reads share `read_profile` (bounded, fail-soft, counted under
-        `nora_errors_total{stage="tag_profile_*"}`, R-27): a failed read drops
-        THAT account's view, never the turn. A line whose `exclude_persons`
-        names a member of this room is dropped here, before the view is built
-        (`ProfileView`'s docstring) — the renderer never sees it. Views with
-        nothing to say still land in the tuple; `render_profile` emits no
-        block for them, and `ctx.profiles` being non-empty is the switch, not
-        any one account's content."""
-        reader = self._profile_reader
-        if reader is None or self._policy is None:
-            return ()
-        convo = self._policy.conversation(msg.platform, msg.conversation_id)
-        if convo is None or not convo.unit:
-            return ()
-        members = await self._room_members(msg)
-        target = await self._render_room(msg)
-        room = Room(
-            platform=msg.platform, conversation_id=msg.conversation_id,
-            roster_source=self._rosters.get(msg.platform), access=self._access,
-            tagger=ref, self_ids=self._self_ids,
-        )
-
-        async def one(
-            key: str, *, entity: str, of: str, stage: str,
-            authored: tuple[str, ...] = (),
-        ) -> ProfileView | None:
-            lines = await read_profile(
-                reader.account_heads(key=key), stage=stage,
-                platform=msg.platform, metrics=self._metrics,
-            )
-            if lines is None:
-                return None
-            kept = await profile_lines_for(lines, target, room)
-            return ProfileView(entity=entity, of=of, lines=kept, authored=authored)
-
-        views: list[ProfileView] = []
-        # HERS, gated like `_self_account` (R-31): written from her sends in
-        # every room of the unit, so a room that may not see it reads nothing.
-        if self._policy.shows_self_in(msg.platform, msg.conversation_id):
-            view = await one(
-                nora_character_key(convo.unit),
-                entity="nora", of="nora", stage="tag_profile_self",
-            )
-            if view is not None:
-                views.append(view)
-        # THE ROOM's, keyed its `primary_id` for `_culture`'s reason (DEC-181).
-        # The stored subject id is shared with Cognition and the read tools.
-        if convo.primary_id and convo.label:
-            view = await one(
-                convo.primary_id,
-                entity="room", of=convo.primary_id,
-                stage="tag_profile_room",
-            )
-            if view is not None:
-                views.append(view)
-        # THE UNIT's, keyed like `_unit_culture`.
-        view = await one(
-            unit_culture_key(convo.unit),
-            entity="unit", of=convo.unit, stage="tag_profile_unit",
-        )
-        if view is not None:
-            views.append(view)
-        # THEIRS: every listed person this turn is about, with their authored
-        # identity lines (45 §3: rendered, never written).
-        for person in await tag_character_people(
-            members, access=self._access, message=msg,
-            tagger=ref, transcript=transcript,
-        ):
-            view = await one(
-                character_key(convo.unit, person.person_id),
-                entity="person", of=person.person_id, stage="tag_profile_person",
-                authored=authored_identity(
-                    name=person.name, aliases=person.aliases,
-                    platforms=await self._platforms_of(person.person_id),
-                ),
-            )
-            if view is not None:
-                views.append(view)
-        return tuple(views)
 
     def _shown(
         self, read: Sequence[TranscriptRow], msg: NormalizedMessage,
@@ -677,8 +539,6 @@ class TranscriptInjection:
         `unit_culture_key(unit)`, so it is read only in that unit's rooms.
         Bounded, fail-soft and counted (`stage="tag_unit_culture"`) by
         `read_culture`, like `_culture`."""
-        if self._profile_reader is not None:
-            return None  # the switch (45 §5): the unit's `<profile>` replaced it
         if self._culture_reader is None or self._policy is None:
             return None
         convo = self._policy.conversation(msg.platform, msg.conversation_id)
@@ -696,8 +556,6 @@ class TranscriptInjection:
         (`stage="tag_self"`) by `read_culture`, like `_unit_culture`; `None`
         when the unit has no account or the room may not show it
         (`Policy.shows_self_in`), so no `<self>` block renders."""
-        if self._profile_reader is not None:
-            return None  # the switch (45 §5): her `<profile of="nora">` replaced it
         if self._culture_reader is None or self._policy is None:
             return None
         convo = self._policy.conversation(msg.platform, msg.conversation_id)

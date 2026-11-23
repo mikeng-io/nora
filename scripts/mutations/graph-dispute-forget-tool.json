@@ -1,0 +1,30 @@
+[
+  {
+    "name": "forget is refused unless the speaker is the claim's subject",
+    "file": "nora/memory/adapters/tools/profile.py",
+    "old": "            if kind == \"forget\" and not subject:\n",
+    "new": "            if False:\n",
+    "target": "tests/infra/test_profile_dispute_graph.py::test_only_the_person_a_claim_is_about_may_ask_to_forget_it"
+  },
+  {
+    "name": "a dispute lands on the graph's dispute verb",
+    "file": "nora/memory/adapters/tools/profile.py",
+    "old": "                await intake.dispute(unit=unit, author=tagger.person_id, claim_id=target, at=at)\n",
+    "new": "                pass\n",
+    "target": "tests/infra/test_profile_dispute_graph.py::test_another_persons_dispute_marks_the_claim_for_weighing"
+  },
+  {
+    "name": "an unwired intake withholds profile_dispute",
+    "file": "nora/agent/registry.py",
+    "old": "{\"profile_dispute\"} if memory_intake is None else set()",
+    "new": "set()",
+    "target": "tests/unit/test_engagement_surface.py::test_the_graph_dispute_verb_is_offered_on_the_engagement_surface_with_its_intake"
+  },
+  {
+    "name": "the engagement turn does not refuse profile_dispute",
+    "file": "nora/agent/catalog/groups.py",
+    "old": "    \"recall_lookups\", \"remember\", \"standing_read\",\n",
+    "new": "    \"profile_dispute\", \"recall_lookups\", \"remember\", \"standing_read\",\n",
+    "target": "tests/unit/test_engagement_surface.py::test_the_graph_dispute_verb_is_offered_on_the_engagement_surface_with_its_intake"
+  }
+]

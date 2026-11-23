@@ -87,9 +87,9 @@ GRAPH_PASS_TOOLS: frozenset[str] = frozenset({"intention_commit"})
 
 # Legacy stores behind engagement's retired memory tools.
 LEGACY_ENGAGEMENT_TOOLS: frozenset[str] = frozenset({
-    "character_read", "checkpoint_update",
+    "checkpoint_update",
     "memo_read", "note_create", "note_read", "note_revise", "note_search",
-    "profile_dispute", "recall_lookups", "remember", "standing_read",
+    "recall_lookups", "remember", "standing_read",
     "who_said",
 })
 

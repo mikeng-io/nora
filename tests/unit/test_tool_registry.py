@@ -77,7 +77,7 @@ _RECORD = object()
 #: The same for the two Dreamer-only reads (`rollup_read`, `standing_read`).
 _ROLLUP = object()
 _STANDING = object()
-#: `character_read`'s culture store, never called.
+#: `room_list`'s culture store, never called.
 _CULTURE = object()
 #: `social_read`'s social stream read, never called.
 _SOCIAL_ITEMS = object()
@@ -195,7 +195,7 @@ def test_the_registry_exposes_every_declared_tool():
         # under lineage.
         "record_query",
         # the Dreamer-only reads.
-        "rollup_read", "standing_read", "character_read", "social_read", "group_members",
+        "rollup_read", "standing_read", "social_read", "group_members",
         "lookup_person", "recall_lookups", "calculate",
         "transit", "route", "place_info", "saved_places", "where_is",
         # DEC-156: the coordinate -> street-address fetch surface. `where_is`
@@ -483,7 +483,7 @@ def test_budgets_match_todays_table():
         # trip is the cost); `standing_read` is 1 (the head does not move inside a
         # session's read of one room). A Cognition session raises both per agenda
         # item (`nora.app.cognition_wiring`).
-        "rollup_read": 4, "standing_read": 1, "character_read": 2,
+        "rollup_read": 4, "standing_read": 1,
         # `social_read` is 3: one person, a narrower window, then another
         # person.
         "social_read": 3,
@@ -983,7 +983,7 @@ READ_ONLY = frozenset({"document_list",
     "memo_read",
     # Dreamer-only SELECTs of the Rollup's
     # current build and of a room's Standing head.
-    "rollup_read", "standing_read", "character_read", "social_read",
+    "rollup_read", "standing_read", "social_read",
     "music_status",
     # DEC-151, DEC-201: the X tools are pure reads at all three layers, the
     # tools' closed vocabulary, the bridge's host-side allowlist, this

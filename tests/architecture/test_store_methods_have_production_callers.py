@@ -15,7 +15,7 @@ up. Several of them SHOULD NOT be wired; there is nothing on the other end. It
 exists so that the inventory is a checked artifact, and so that the NEXT method
 to arrive unwired has to be classified deliberately rather than by default.
 
-THE FOUR SHAPES, because lumping them together makes the list look like a pile
+THE FIVE SHAPES, because lumping them together makes the list look like a pile
 of bugs:
 
   `read_back_affordance` — a by-id read shipped on the store's own surface for
@@ -31,6 +31,9 @@ of bugs:
       THIS one up would mean moving the caller into `nora/`, which is the
       wrong direction: the whole point is that a manual, human-invoked path
       stays outside the code the tag/participation loop runs.
+  `scheduled_removal`    — its caller left in an earlier layer and the method
+      leaves with its store in a later one. The reason names that layer and
+      what removes the tests that still use it.
 
 Methods in `_AMBIGUOUS` (below) may also have no production caller and cannot
 be proven so here; `SqlTagTraceStore.recent` is one, because its name is shared
@@ -129,7 +132,8 @@ ROOT = Path(__file__).resolve().parents[2]
 SQL = ROOT / "nora" / "infra" / "sql"
 
 Shape = Literal[
-    "read_back_affordance", "deferred_consumer", "defect", "operator_script"
+    "read_back_affordance", "deferred_consumer", "defect", "operator_script",
+    "scheduled_removal",
 ]
 SHAPES: frozenset[str] = frozenset(get_args(Shape))
 
@@ -145,6 +149,13 @@ class _Pin(NamedTuple):
 # the artifact that gets re-derived from scratch by the next session that
 # notices one of them.
 _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
+    ("profile.py", "record_dispute"): _Pin(
+        "scheduled_removal",
+        "`profile_dispute` writes the graph's dispute verb instead. The method leaves "
+        "with `SqlProfileStore` in 6c-2c; the tests that use it as setup for "
+        "`pending_disputes`, `open_disputes` and the session's dispute input leave "
+        "with the Profile sessions in 6c-2b.",
+    ),
     ("cognitive_graph_store.py", "revise"): _Pin(
         "deferred_consumer",
         "Revises a graph kind row through the phase one store. Admission owns "
@@ -597,7 +608,7 @@ def test_every_uncalled_store_method_is_pinned() -> None:
         "_NO_PRODUCTION_CALLER:\n  " + "\n  ".join(unpinned) + "\n\n"
         "This is not necessarily a bug — most such methods are deliberate "
         "read-back affordances. It IS a decision, and it has to be made rather "
-        "than defaulted into: add a row saying which of the four shapes it is "
+        "than defaulted into: add a row saying which of the shapes it is "
         "and why. A green contract suite proves the verb WORKS and says nothing "
         "about whether it is USED, which is how every row already here arrived."
     )

@@ -26,17 +26,6 @@ TOOLS = {
         output_contract="three_state",
         level=1,
     ),
-    "character_read": NativeTool(
-        2,
-        source_tier="remembered",
-        cacheable=False,
-        read_only=True,
-        side_effect_state="none",
-        idempotency="idempotent",
-        retry="safe",
-        output_contract="three_state",
-        level=2,
-    ),
     "memory_read": NativeTool(
         8,
         source_tier="remembered",
