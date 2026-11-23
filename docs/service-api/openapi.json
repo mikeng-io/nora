@@ -1,0 +1,402 @@
+{
+  "components": {
+    "schemas": {
+      "Contract": {
+        "enum": [
+          "intake",
+          "platform",
+          "sources",
+          "graph",
+          "management",
+          "documents",
+          "voice",
+          "computer",
+          "operations"
+        ],
+        "type": "string"
+      },
+      "OperationEnvelope": {
+        "description": "The body of every operation response. `from_` is `from` on the wire.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/OperationFrom"
+          },
+          "outcome": {
+            "enum": [
+              "complete",
+              "pending",
+              "denied",
+              "rejected",
+              "unsupported",
+              "incomplete",
+              "uncertain",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "title": "Payload"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/OperationWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "OperationEnvelope",
+        "type": "object"
+      },
+      "OperationFrom": {
+        "description": "The target of the effect and its platform reference when one exists.",
+        "properties": {
+          "platform_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Platform Ref"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "title": "OperationFrom",
+        "type": "object"
+      },
+      "OperationOutcome": {
+        "enum": [
+          "complete",
+          "pending",
+          "denied",
+          "rejected",
+          "unsupported",
+          "incomplete",
+          "uncertain",
+          "unavailable"
+        ],
+        "type": "string",
+        "x-http-status": {
+          "complete": 200,
+          "denied": 403,
+          "incomplete": 200,
+          "pending": 202,
+          "rejected": 200,
+          "unavailable": 503,
+          "uncertain": 200,
+          "unsupported": 200
+        }
+      },
+      "OperationRecord": {
+        "description": "One operation's record: `prepared \u2192 started \u2192 settled`, final once settled.",
+        "properties": {
+          "outcome": {
+            "default": "pending",
+            "enum": [
+              "complete",
+              "pending",
+              "denied",
+              "rejected",
+              "unsupported",
+              "incomplete",
+              "uncertain",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/components/schemas/OperationRequest"
+          },
+          "settled_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Settled At Ms"
+          },
+          "started_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Started At Ms"
+          },
+          "state": {
+            "default": "prepared",
+            "enum": [
+              "prepared",
+              "started",
+              "settled"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "title": "OperationRecord",
+        "type": "object"
+      },
+      "OperationRequest": {
+        "description": "A caller's operation: its caller-minted id, kind and effect.",
+        "properties": {
+          "effect": {
+            "title": "Effect"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "kind",
+          "effect"
+        ],
+        "title": "OperationRequest",
+        "type": "object"
+      },
+      "OperationState": {
+        "enum": [
+          "prepared",
+          "started",
+          "settled"
+        ],
+        "type": "string"
+      },
+      "OperationWhen": {
+        "description": "Where the record is in its lifecycle, and when it got there.",
+        "properties": {
+          "settled_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Settled At Ms"
+          },
+          "started_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Started At Ms"
+          },
+          "state": {
+            "enum": [
+              "prepared",
+              "started",
+              "settled"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "OperationWhen",
+        "type": "object"
+      },
+      "ReadEnvelope": {
+        "description": "The body of every read response. `from_` is `from` on the wire.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/ReadFrom"
+          },
+          "outcome": {
+            "enum": [
+              "ok",
+              "nothing_found",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "title": "Payload"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/ReadWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "ReadEnvelope",
+        "type": "object"
+      },
+      "ReadFrom": {
+        "description": "The source, its health, and the sources that failed when coverage is partial.",
+        "properties": {
+          "failed_sources": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Failed Sources",
+            "type": "array"
+          },
+          "healthy": {
+            "title": "Healthy",
+            "type": "boolean"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "healthy"
+        ],
+        "title": "ReadFrom",
+        "type": "object"
+      },
+      "ReadOutcome": {
+        "enum": [
+          "ok",
+          "nothing_found",
+          "unavailable"
+        ],
+        "type": "string",
+        "x-http-status": {
+          "nothing_found": 200,
+          "ok": 200,
+          "unavailable": 503
+        }
+      },
+      "ReadWhen": {
+        "description": "When the source observed the answer, by its own clock.",
+        "properties": {
+          "known_by": {
+            "title": "Known By",
+            "type": "string"
+          },
+          "observed_at_ms": {
+            "title": "Observed At Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "observed_at_ms",
+          "known_by"
+        ],
+        "title": "ReadWhen",
+        "type": "object"
+      },
+      "Scope": {
+        "description": "The scope a request resolved to, at its contract's level.",
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Id"
+          },
+          "level": {
+            "enum": [
+              "room",
+              "unit",
+              "agent",
+              "identity",
+              "workspace",
+              "installation",
+              "none"
+            ],
+            "title": "Level",
+            "type": "string"
+          }
+        },
+        "required": [
+          "level"
+        ],
+        "title": "Scope",
+        "type": "object"
+      },
+      "ScopeLevel": {
+        "enum": [
+          "room",
+          "unit",
+          "agent",
+          "identity",
+          "workspace",
+          "installation",
+          "none"
+        ],
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "title": "Nora service API",
+    "version": "1"
+  },
+  "openapi": "3.1.0",
+  "paths": {}
+}
