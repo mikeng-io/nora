@@ -11,14 +11,13 @@ where two pieces of cross-request state live, because both are scoped to
   `status` query and ADOPTS the live generation when it points at the
   channel nora asked for (and only then — connected elsewhere re-raises).
 - **event bookkeeping** — the expected `playback_id` per guild
-  (read off the cached session) and the exactly-once `event_id` dedupe the
-  controller's `report` consumer relies on.
+  (read off the cached session) and the per-guild `event_seq` bookmark the
+  controller's `report` consumer keeps.
 """
 
 from __future__ import annotations
 
 import logging
-from collections import deque
 from collections.abc import Iterable, Mapping
 from typing import Any
 from uuid import uuid4
@@ -35,19 +34,6 @@ from nora.infra.voice.http_controller import (
 )
 
 log = logging.getLogger("nora.infra.voice")
-
-#: Bound on the event-id dedupe window (FIFO), PER GUILD. Controller callbacks
-#: retry from a ≤256-event outbox each, so 1024 covers several full
-#: replays of one controller's outbox.
-#:
-#: Multiplied by the number of guilds, because the deque is process-global
-#: while the topology is one controller per guild. Event ids
-#: are `randomUUID()` per controller so they cannot collide, and sharing one
-#: deque is right — but sharing one BOUND is not: at four guilds a flat 1024
-#: is exactly one outbox, and at five a guild's ids can be evicted while its
-#: own outbox is still replaying them.
-_EVENT_ID_BOUND_PER_GUILD = 1024
-
 
 class VoiceControllerHub:
     def __init__(self, clients: Mapping[str, VoiceControllerClient]) -> None:
@@ -66,9 +52,6 @@ class VoiceControllerHub:
         # a guild can be joined, so a cache hit does not imply the same
         # channel and `join` has to compare.
         self._channels: dict[str, str] = {}
-        self._seen_event_ids: deque[str] = deque()
-        self._seen_event_id_set: set[str] = set()
-        self._event_id_bound = _EVENT_ID_BOUND_PER_GUILD * max(len(self._clients), 1)
         # The highest `event_seq` the consumer has successfully processed,
         # PER GUILD. Read against the `status` query's `last_event_seq`
         # on adoption: a controller AHEAD of it holds events nora never saw.
@@ -303,13 +286,6 @@ class VoiceControllerHub:
         session = self._sessions.get(guild_id)
         return session.generation if session is not None else None
 
-    def seen_event(self, event_id: str) -> bool:
-        """Pure check half of the exactly-once dedupe — the consumer asks
-        this FIRST and only commits via `consume_event_id` once the event
-        was actually processed (B7: a failed delivery stays retryable, so
-        nothing may be marked consumed before its transition succeeded)."""
-        return event_id in self._seen_event_id_set
-
     def last_event_seq(self, guild_id: str) -> int | None:
         """This GUILD's bookmark. A guild nora has consumed nothing for
         answers `None`, which reads as "no baseline yet" — never as a gap."""
@@ -387,19 +363,3 @@ class VoiceControllerHub:
                     "boot voice adoption for guild %s failed: %s — will retry "
                     "on the next join/send", guild_id, exc,
                 )
-
-    def consume_event_id(self, event_id: str) -> bool:
-        """The COMMIT half of the exactly-once dedupe for controller
-        callbacks: called only AFTER an event's transition
-        succeeded — a failure leaves the id unconsumed so the controller's
-        retry is processed, never acknowledged as a duplicate. `True` the
-        first time an `event_id` is committed, `False` on any replay within
-        the bounded FIFO window."""
-        if event_id in self._seen_event_id_set:
-            return False
-        self._seen_event_ids.append(event_id)
-        self._seen_event_id_set.add(event_id)
-        while len(self._seen_event_ids) > self._event_id_bound:
-            evicted = self._seen_event_ids.popleft()
-            self._seen_event_id_set.discard(evicted)
-        return True

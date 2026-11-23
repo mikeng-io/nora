@@ -10,10 +10,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import time
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeVar
 
 from aiohttp import web
 
@@ -23,6 +25,8 @@ from nora.domain.service_api import (
     ReadOutcome,
     status_for,
 )
+
+T = TypeVar("T")
 
 #: How a read's `observed_at_ms` was known: the bridge's own clock.
 KNOWN_BY = "bridge_clock"
@@ -198,6 +202,72 @@ class OperationLedger:
         return envelope_response(read_body(
             "ok" if envelope is not None else "nothing_found", envelope, source=source,
             trace=trace_of(req.headers), scope=INSTALLATION))
+
+
+class EventWindowFull(Exception):  # noqa: N818 — names the answer, `unavailable`
+    """Every slot holds an event still being applied; nothing ran."""
+
+
+class EventOnce:
+    """Events applied by `event_id`: reserved before they apply, kept after.
+
+    A repeat while the first runs waits for it and applies nothing; a failure
+    keeps nothing, so its waiters fail with it and a later delivery applies it.
+    Settled ids leave oldest first past `bound`, or after `ttl_s` when one is
+    set; an id still being applied never leaves, and a full window refuses.
+    """
+
+    def __init__(self, *, bound: int, ttl_s: float | None = None,
+                 clock: Callable[[], float] = time.monotonic) -> None:
+        self._bound = bound
+        self._ttl_s = ttl_s
+        self._clock = clock
+        #: event_id -> the application in flight, or when its retention ends.
+        self._held: OrderedDict[str, asyncio.Future[None] | float] = OrderedDict()
+
+    def _settled(self) -> list[tuple[str, float]]:
+        return [(k, v) for k, v in self._held.items() if isinstance(v, float)]
+
+    async def once(self, event_id: str, apply: Callable[[], Awaitable[T]]) -> tuple[bool, T | None]:
+        """`(True, result)` for the delivery that applied, `(False, None)` for a repeat.
+
+        Raises what `apply` raised, to every delivery waiting on it, and
+        `EventWindowFull` before applying when no settled id can leave.
+        """
+        now = self._clock()
+        for key, expires_at in self._settled():
+            if expires_at <= now:
+                del self._held[key]
+        held = self._held.get(event_id)
+        if isinstance(held, float):
+            return False, None
+        if held is not None:
+            await asyncio.shield(held)
+            return False, None
+        excess = len(self._held) - self._bound + 1
+        if excess > 0:
+            settled = self._settled()
+            if len(settled) < excess:
+                raise EventWindowFull(event_id)
+            for key, _ in settled[:excess]:
+                del self._held[key]
+        running: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        self._held[event_id] = running
+        try:
+            result = await apply()
+        except BaseException as exc:
+            if self._held.get(event_id) is running:
+                del self._held[event_id]
+            if isinstance(exc, Exception):
+                running.set_exception(exc)
+                running.exception()
+            else:
+                running.cancel()
+            raise
+        self._held[event_id] = math.inf if self._ttl_s is None else self._clock() + self._ttl_s
+        self._held.move_to_end(event_id)
+        running.set_result(None)
+        return True, result
 
 
 def pending_body(payload: Mapping[str, Any], *, target: str, trace: str,
