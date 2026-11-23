@@ -76,7 +76,6 @@ Field names are `snake_case`; times are integer epoch milliseconds named
 | `ok` | the source answered and the thing exists | 200 |
 | `nothing_found` | every source needed was healthy and none has it | 200 |
 | `unavailable` | a source failed, is stale or was never wired; absence is unknown | 503 |
-| `denied` | the principal's scope or exposure does not reach it; whether it exists is not said | 403 |
 
 **Operations**
 
@@ -145,8 +144,11 @@ Field names are `snake_case`; times are integer epoch milliseconds named
   a caller names a subject, never its own scope. Each contract declares the
   level it scopes at: a room, a unit, an agent, an identity, a workspace,
   the installation, or none for a public surface without a unit.
-- A read or an effect whose scope cannot be resolved is `denied`, never
-  widened or redirected. Intake is the exception that loses nothing: it
+- A read resolves within its scope, never resolves and then filters: what
+  the principal's scope or exposure does not reach answers `nothing_found`,
+  exactly as what does not exist, and a page is complete for that scope.
+- An effect whose scope cannot be resolved is `denied`, never widened or
+  redirected. Intake is the exception that loses nothing: it
   places an event by the [observation rules](../cognition/observation.md#rules)
   and records one it cannot place as unresolved, never refusing it.
 - A principal's exposure bounds what any read returns to it: internal rows

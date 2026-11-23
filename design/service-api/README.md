@@ -25,10 +25,10 @@ actor it names and the outcome it reports.
 - **Contract** — a namespace of resources and operations with one owner area.
   Any number of services may implement one contract; every bridge implements
   `platform`.
-- **Operation** — every write: a typed, idempotent request with an actor and a
+- **Operation** — every write but a blob's bytes: a typed, idempotent request with an actor and a
   scope, answered with a record that can be read back.
-- **Read** — every GET-shaped answer: `ok`, `nothing_found`, `unavailable`
-  or `denied`, with when and from what it was observed.
+- **Read** — every GET-shaped answer: `ok`, `nothing_found` or `unavailable`,
+  with when and from what it was observed.
 - **Identity** — the canonical subject the API names: a human, a bot or an
   agent, with no type that decides its permissions
   ([managed identity](../managed-identity-access/identity.md#one-identity-many-accounts)).
