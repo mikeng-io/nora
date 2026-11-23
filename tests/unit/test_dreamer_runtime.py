@@ -311,7 +311,7 @@ def test_an_adaptor_reaching_past_the_ceiling_refuses_to_start():
 
 def test_no_adaptor_may_hold_reads_reserved_for_cognition():
     """A derived read ceiling must still refuse the reads reserved for Cognition."""
-    reserved = frozenset({"rollup_read", "character_read", "social_read"})
+    reserved = frozenset({"rollup_read", "social_read"})
     ceiling = reserved | {"now", "standing_read"}
     adaptor = _Adaptor(sink=_Sink(), tools=reserved | {"now"})
 
@@ -785,9 +785,6 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # `routine_read`: the same substrate behind the SAME
         # guard as `where_been`, so the same fail-closed side.
         "routine_read",
-        # `character_read` resolves its unit from the BOUND room
-        # (`lineage.render_room`), so a unit-keyed run without a home room has none.
-        "character_read",
         # `online_now` answers about the ROOM's own
         # members — the invoking conversation's roster is its input domain,
         # which a unit-keyed Dreamer tick does not have.

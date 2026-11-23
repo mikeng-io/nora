@@ -60,29 +60,6 @@ _STANDING_OFF = "I can't read this room's position right now. Say so; do not gue
 
 _STANDING_NONE = "No supported position is held for this room. Say so, and do not reconstruct one."
 
-_CHARACTER_OFF = "I can't read accounts of this group right now. Say so; do not guess one."
-
-_CHARACTER_WITHHELD = (
-    "An account is held but carries something that can't be repeated here. "
-    "Work from what you already know."
-)
-
-_CHARACTER_NONE = (
-    "No account is held of that room or person in this group. Say so, and do "
-    "not describe them from memory as if one were."
-)
-
-_CHARACTER_OK = (
-    "Each account is as of its own time and is one room's view. Link it by its "
-    "`revision`; do not quote it as what someone said."
-)
-
-_CHARACTER_PROFILE_OK = (
-    "Each account is as of its own time and is this group's view of that room "
-    "or person; a (disputed) line is being weighed, not settled. Do not quote "
-    "it as what someone said."
-)
-
 _STANDING_WITHHELD = (
     "Some sections are not shown in this conversation. Do not read the rest as complete."
 )

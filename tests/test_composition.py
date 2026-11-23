@@ -1673,12 +1673,6 @@ async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withho
     ))
     assert "record_query" not in off.cognition_runner._runner._read_only_tools
     assert "record_query" in on.cognition_runner._runner._read_only_tools
-    # `character_read` follows `[culture] enabled` the same way (self-growth C4).
-    with_culture = await build_dependencies(override_config(
-        cfg, {**_SESSION_ON, "culture.enabled": True},
-    ))
-    assert "character_read" not in off.cognition_runner._runner._read_only_tools
-    assert "character_read" in with_culture.cognition_runner._runner._read_only_tools
     wired = off.cognition_runner._runner._read_only_tools
     assert {"note_read", "where_been"} <= wired
     assert {"rollup_read", "standing_read"} <= wired                    # DEC-246

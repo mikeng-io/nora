@@ -34,7 +34,7 @@ def build_shared(
     engine: Any, ledger_store: Any, lessons_reader: Any, media_join: Any,
     memo_store: Any, memory_search: Any, metrics: Any,
     note_store: Any, observation_store: Any, persons: Any, presence_reader: Any,
-    profile_reader: Any, quote_window: Any, registry: Any, reminders: Any,
+    quote_window: Any, registry: Any, reminders: Any,
     rosters: Any, standing_store: Any, subagents_context: Any, tag_trace_store: Any,
     unit_rooms: Any,
 ) -> SharedWiring:
@@ -76,10 +76,6 @@ def build_shared(
         quote_window=quote_window,
         presence=presence_reader,
         culture=culture_reader,
-        # `<profile>`, the switch (45 §5): `None` until `[memory.profile] read` is
-        # on beside `[memory.profile] write`, and the same reader the fire path,
-        # the Cognition grounder and the debrief fold hold.
-        profile=profile_reader,
         # `<lessons>`: `None` while `[lessons]
         # render` is off. The same reader the fire path gets.
         lessons=lessons_reader,

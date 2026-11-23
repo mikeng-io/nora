@@ -179,63 +179,6 @@ async def test_the_real_sdk_retains_the_exchange_and_requirements(occasion):
     assert items[0].requirements == (REQ,)
 
 
-async def test_character_read_records_exclusions_and_location_subjects():
-    from types import SimpleNamespace
-
-    from nora.agent.room import Room
-    from nora.agent.tools import build_tools
-    from nora.agent.turn_recording import TurnRecording
-    from nora.domain.profile import ProfileLine
-    from nora.infra.transit import TransitClient
-    from nora.obs.metrics import Metrics
-    from nora.policy import Conversation, Policy
-    from nora.testing import FakeRecordStore
-    from tests.fakes import SinkSender
-    from tests.unit.test_profile_disclosure import _Heads
-
-    ref = PersonRef(person_id="p1", name="Member 1")
-    persons = Persons(by_person={"p1": ref}, index={("signal", "account-1"): "p1"})
-    convo = Conversation(platform="signal", ids=frozenset({"room-a"}),
-                         primary_id="room-a", unit="u1", label="Room", location=True,
-                         persons=frozenset({"p1"}))
-    policy = Policy(conversations=(convo,), _by_id={("signal", "room-a"): convo})
-    from nora.agent.whereis import Circle
-    lineage = LineagePolicy.from_policy(policy, circles=(
-        Circle(circle_id="generated-circle", person_ids=frozenset({"p1"})),
-    ))
-    line = ProfileLine(
-        id="generated-line", profile_key="room-a", part="traits", kind="topic",
-        text="generated observation", mode="induced", citations=(), state="current",
-        unit="u1", written_at=1, written_by_session="generated-session",
-        exclude_persons=("p2",), location=True, strength={"location_subjects": ["p1"]},
-        content={"statement": "generated observation", "context": "unknown",
-                 "interest": "books", "depth": "unknown", "stance": "unknown"},
-    )
-    tools = build_tools(
-        store=FakeRecordStore(), conversation_id="room-a", conversation_type="group",
-        persons=persons, deliverer=SinkSender(), metrics=Metrics(),
-        room=Room(platform="signal", conversation_id="room-a", persons=persons,
-                  roster_source=FakeRosterSource(groups={"room-a": (frozenset({"account-1"}),)})),
-        transit_source=TransitClient(kmb_base_url="http://127.0.0.1:1",
-                                    mtr_schedule_url="http://127.0.0.1:1/s",
-                                    mtr_routes_url="http://127.0.0.1:1/r", timeout_seconds=.5),
-        lineage=lineage, profile_read=_Heads({"room-a": (line,)}),
-        clock=lambda: datetime(2026, 10, 1, tzinfo=UTC),
-    )
-    tool = next(t for t in tools if t.tool_name == "character_read")
-    recording = TurnRecording()
-    event = SimpleNamespace(tool_use={"toolUseId": "call-1"})
-    recording.before(event)
-    try:
-        result = await tool._tool_func(entity="room", subject="Room")
-    finally:
-        recording.after(event)
-    assert result["status"] == "ok"
-    captured = recording.to_json()["call-1"]
-    assert any(r["exclude_persons"] == ["p2"] and r["location"]
-               and r["location_subjects"] == ["p1"] for r in captured)
-
-
 class _RecordConnection:
     """Local SQL scaffolding: answer only matching table, handle and unit reads."""
 

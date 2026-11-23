@@ -40,7 +40,6 @@ from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.self_presence import PresenceReader
 from nora.engagement.subagents_context import SubagentsContextReader
 from nora.language.lesson_render import ActiveLessons
-from nora.language.profile_render import ProfileHeads
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import Policy
@@ -77,7 +76,6 @@ def build_assembler(
     memory_search: MemorySearch | None = None,
     shared: Callable[..., Awaitable[SharedView]] | None = None,
     clock: Callable[[], datetime] | None = None,
-    profile: ProfileHeads | None = None,
     rosters: Mapping[str, RosterSource] | None = None,
     self_ids: frozenset[str] = frozenset(),
     observations: object = None,
@@ -141,11 +139,7 @@ def build_assembler(
         # The graph's one clock, so the pre-fetch dates and ranks its items
         # at the instant every other component reads.
         clock=clock,
-        # THE SWITCH (design/unified-memory/profiles.md): the Profile accounts'
-        # reader. `None` until `[memory.profile] read` is on beside `[memory.profile]
-        # write`, and in every harness that wires none — the turn then
-        # renders the peer and prose-culture blocks it always has.
-        profile=profile, rosters=rosters, self_ids=self_ids,
+        rosters=rosters, self_ids=self_ids,
         # The typed platform-observation Record: the room's source events
         # (transcript) and folded object heads (standing slot). `None` in
         # a harness renders neither — never a guessed source line.

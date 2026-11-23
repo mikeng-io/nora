@@ -111,7 +111,6 @@ from nora.infra.vision.preprocess import (
     VIDEO_CHUNK_SECONDS,
     VIDEO_MAX_CHUNKS,
 )
-from nora.language.profile_render import ProfileHeads
 from nora.memory import PassScope
 
 _AREAS = (
@@ -148,7 +147,6 @@ _ORDER = [
     "room_state_read",
     "rollup_read",
     "standing_read",
-    "character_read",
     "social_read",
     "group_members",
     "lookup_person",
@@ -425,8 +423,6 @@ def build_tool_specs(
     # The Profile write (design/unified-memory/profiles.md): the graph surface's
     # `remember` writes a `told` line through it. `None` answers `unavailable`.
     profile: ProfileWriter | None = None,
-    # Profile heads shared with the rendered context; None withholds the read.
-    profile_read: ProfileHeads | None = None,
     # Management requires both the shared invocation and verified trigger message.
     room_management=None,
     message=None,
@@ -555,7 +551,6 @@ def build_tool_specs(
         memory_intake=memory_intake,
         all_memory_surfaces=all_memory_surfaces,
         profile=profile,
-        profile_read=profile_read,
         room_management=room_management,
         message=message,
         content_checks=content_checks,
@@ -693,7 +688,6 @@ def build_tools(
     intention_admission: Any = None,
     memory_intake: Any = None,
     profile: ProfileWriter | None = None,
-    profile_read: ProfileHeads | None = None,
     relay: Relay | None = None,
     relay_turn: bool = False,
     room_management=None,
@@ -727,7 +721,7 @@ def build_tools(
         video=video, video_ref_kinds=video_ref_kinds, memory_retrieval=memory_retrieval,
         graph_retrieval=graph_retrieval, pass_scope=pass_scope,
         intention_admission=intention_admission, memory_intake=memory_intake,
-        profile=profile, profile_read=profile_read, relay=relay, relay_turn=relay_turn,
+        profile=profile, relay=relay, relay_turn=relay_turn,
         room_management=room_management, message=message,
         content_checks=content_checks
     )

@@ -225,7 +225,7 @@ MEMORY_KINDS: tuple[MemoryKind, ...] = (
     MemoryKind("profile line", "semantic", "an entity's relations changed in this session",
                "the relations it draws_on, and their evidence",
                (*_relations_for("profile_line"), "draws_on"), "Decide (reshape)",
-               "supersede; profile_dispute"),
+               "supersede"),
     MemoryKind("note", "prospective",
                "somebody has decided to do something and a corner is still open; "
                "you can say what would close it", "Record", (*_relations_for("note"), "cites"),

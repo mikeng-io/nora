@@ -13,9 +13,6 @@ def build(deps):
     from nora.memory.adapters.tools.standing import _make_standing_read
 
     standing_read = _make_standing_read(deps)
-    from nora.memory.adapters.tools.standing import _make_character_read
-
-    character_read = _make_character_read(deps)
     from nora.memory.adapters.tools.search import _make_memory_search
 
     memory_search = _make_memory_search(deps)
@@ -58,7 +55,6 @@ def build(deps):
     return (
         _spec("rollup_read", rollup_read),
         _spec("standing_read", standing_read),
-        _spec("character_read", character_read),
         _spec("memory_search", memory_search),
         _spec("memory_read", memory_read),
         _spec("intention_commit", intention_commit),

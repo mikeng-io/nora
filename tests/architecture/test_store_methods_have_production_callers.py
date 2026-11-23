@@ -145,6 +145,12 @@ class _Pin(NamedTuple):
 # the artifact that gets re-derived from scratch by the next session that
 # notices one of them.
 _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
+    ("profile.py", "record_dispute"): _Pin(
+        "defect",
+        "`profile_dispute` writes the graph's dispute verb, so no turn writes a Profile "
+        "dispute and the Profile sessions read only disputes already stored. The "
+        "method leaves with `SqlProfileStore`.",
+    ),
     ("cognitive_graph_store.py", "revise"): _Pin(
         "deferred_consumer",
         "Revises a graph kind row through the phase one store. Admission owns "
