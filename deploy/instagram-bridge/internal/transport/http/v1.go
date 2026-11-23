@@ -299,11 +299,13 @@ func (v *V1) handleOperation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !verdict.OK {
-		_ = v.Store.Finish(r.Context(), req.OperationID, bridge.ActionRejected, "", nil, nil, "fenced", verdict.Reason)
+		finishErr := v.Store.Finish(r.Context(), req.OperationID, bridge.ActionRejected, "", nil, nil, "fenced", verdict.Reason)
 		v.Metrics.Count("action_rejected")
-		if row, _ := v.Store.Get(r.Context(), req.OperationID); row != nil {
-			writeEnvelope(w, rowEnvelope(r, row))
-			return
+		if finishErr == nil {
+			if row, _ := v.Store.Get(r.Context(), req.OperationID); row != nil {
+				writeEnvelope(w, rowEnvelope(r, row))
+				return
+			}
 		}
 		settled("denied", errorPayload("fenced", verdict.Reason))
 		return
@@ -642,7 +644,7 @@ func (v *V1) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		slog.WarnContext(r.Context(), "query_roster failed", "code", errorCode(err), "conversation_id", conv)
+		slog.WarnContext(r.Context(), "query_roster failed", "code", errorCode(err), "conversation_id", room.String())
 		writeEnvelope(w, readEnvelope(r, "unavailable", nil, false, scope))
 		return
 	}
