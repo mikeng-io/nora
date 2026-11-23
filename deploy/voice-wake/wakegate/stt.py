@@ -88,7 +88,13 @@ async def transcribe(
 _STATUS = {"complete": 200, "pending": 202, "denied": 403, "rejected": 200,
            "unsupported": 200, "incomplete": 200, "uncertain": 200,
            "unavailable": 503}
+_READ_STATUS = {"ok": 200, "nothing_found": 200, "unavailable": 503}
 _NO_ENVELOPE = frozenset({400, 401, 404, 409, 422})
+# A lost or unsettled answer is read back by its operation_id, never resent;
+# the bound keeps a slow Nora from holding an utterance task for long.
+_READ_BACK_ON = frozenset({"pending", "uncertain", "lost"})
+_READ_BACKS = 3
+_READ_BACK_GAP_S = 0.2
 _STATES = frozenset({"prepared", "started", "settled"})
 _LEVELS = frozenset({"room", "unit", "agent", "identity", "workspace",
                      "installation", "none"})
@@ -138,9 +144,11 @@ async def forward_utterance(
     a refused forward drops the utterance (transient by design) and is
     visible in the log.
 
-    True only for a 200 whose envelope's outcome is `complete`; any other
-    outcome, a status that disagrees with it, a body with no envelope, a
-    redirect or a transport failure is False.
+    True only for a whole envelope whose outcome is `complete`, answered
+    with that outcome's status. On `pending`, `uncertain` or a lost or
+    invalid answer the record is read back by the same `operation_id`, a
+    bounded number of times; only a settled `complete` there is True.
+    Every other answer, a redirect included, is False after one POST.
 
     `token` is the shared service bearer; Nora refuses the utterance without it.
 
@@ -161,27 +169,82 @@ async def forward_utterance(
     }
     if voice_channel_id:
         effect["voice_channel_id"] = voice_channel_id
-    request = {"operation_id": str(uuid.uuid4()), "kind": "record", "effect": effect}
+    operation_id = str(uuid.uuid4())
+    request = {"operation_id": operation_id, "kind": "record", "effect": effect}
+    headers = {"Authorization": f"Bearer {token}"}
+    outcome = await _submit(session, url, request, headers)
+    if outcome in _READ_BACK_ON:
+        outcome = await _read_back(session, f"{url}/{operation_id}", headers)
+    if outcome == "complete":
+        return True
+    log.warning("nora did not record the utterance (%s)", outcome)
+    return False
+
+
+async def _answer(session: aiohttp.ClientSession, method: str, url: str,
+                  **kwargs) -> tuple[int, object] | str:
+    """(status, JSON body or None), or a fixed label for no answer."""
     try:
-        async with session.post(
-            url, json=request, headers={"Authorization": f"Bearer {token}"},
-            allow_redirects=False,
-        ) as response:
+        async with session.request(method, url, allow_redirects=False, **kwargs) as response:
             try:
                 body = await response.json(content_type=None)
             except ValueError:
                 body = None
-            outcome = _operation_outcome(body)
-            if outcome is None or _STATUS[outcome] != response.status:
-                log.warning("nora answered without a valid envelope (http %s)",
-                            response.status)
-                return False
-            if outcome != "complete":
-                log.warning("nora did not record the utterance (%s)", outcome)
-                return False
-            return True
+            return response.status, body
     except asyncio.CancelledError:
         raise
-    except (TimeoutError, aiohttp.ClientError) as exc:
-        log.warning("nora unreachable (%s)", type(exc).__name__)
-        return False
+    except (TimeoutError, aiohttp.ClientError):
+        return "lost"
+
+
+async def _submit(session: aiohttp.ClientSession, url: str, request: dict,
+                  headers: dict[str, str]) -> str:
+    """The POST's validated outcome, or a fixed label: `lost`, `redirect`, `http_<n>`."""
+    answer = await _answer(session, "POST", url, json=request, headers=headers)
+    if isinstance(answer, str):
+        return answer
+    status, body = answer
+    if 300 <= status < 400:
+        return "redirect"
+    if status in _NO_ENVELOPE:
+        return f"http_{status}"
+    outcome = _operation_outcome(body)
+    return outcome if outcome is not None and _STATUS[outcome] == status else "lost"
+
+
+async def _read_back(session: aiohttp.ClientSession, url: str,
+                     headers: dict[str, str]) -> str:
+    """The record's settled outcome by GET, or the last label once the bound runs out."""
+    label = "lost"
+    for attempt in range(_READ_BACKS):
+        if attempt:
+            await asyncio.sleep(_READ_BACK_GAP_S)
+        answer = await _answer(session, "GET", url, headers=headers)
+        if isinstance(answer, str):
+            continue
+        status, body = answer
+        label = _read_outcome(status, body)
+        if label == "nothing_found" or (label in _STATUS and label != "pending"):
+            return label
+    return label
+
+
+def _read_outcome(status: int, body: object) -> str:
+    """The read-back's answer: the record's outcome, `nothing_found`, or `lost`."""
+    if not isinstance(body, dict) or body.get("outcome") not in _READ_STATUS:
+        return "lost"
+    outcome = body["outcome"]
+    when, from_ = body.get("when"), body.get("from")
+    well_formed = (
+        _READ_STATUS[outcome] == status
+        and isinstance(when, dict) and isinstance(when.get("known_by"), str)
+        and isinstance(when.get("observed_at_ms"), int)
+        and isinstance(from_, dict) and isinstance(from_.get("source"), str)
+        and isinstance(from_.get("healthy"), bool)
+        and _scope_and_trace(body)
+    )
+    if not well_formed or outcome == "unavailable":
+        return "lost"
+    if outcome == "nothing_found":
+        return "nothing_found"
+    return _operation_outcome(body.get("payload")) or "lost"

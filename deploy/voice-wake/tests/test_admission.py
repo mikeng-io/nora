@@ -240,7 +240,7 @@ class _Session:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
 
-    def post(self, url, **kwargs):
+    def request(self, method, url, **kwargs):
         self.calls.append((url, kwargs))
         return _Response()
 
