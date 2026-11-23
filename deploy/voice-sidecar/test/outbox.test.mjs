@@ -346,6 +346,8 @@ test('reports are retried only when the hub could not take them', async () => {
     'a read outcome': hubAnswer('ok'),
     'a bare outcome': { status: 200, json: async () => ({ outcome: 'complete' }) },
     'settled but missing parts': { status: 200, json: async () => ({ outcome: 'complete', when: { state: 'settled' } }) },
+    'parts of the wrong shape': { status: 200, json: async () => ({
+      ...envelopeOf(hubAnswer('complete')), from: null, scope: null, trace: null }) },
     'complete but still started': { status: 200, json: async () => ({
       ...envelopeOf(hubAnswer('complete')), when: { state: 'started', started_at_ms: 1, settled_at_ms: null } }) },
   };

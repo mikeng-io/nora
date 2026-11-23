@@ -74,9 +74,11 @@ export function createOutbox({
     if (!envelope || typeof envelope !== 'object' || !ENVELOPE_PARTS.every((part) => Object.hasOwn(envelope, part))) {
       return 'retry';
     }
-    const { outcome, when } = envelope;
+    const { outcome, when, from, scope, trace } = envelope;
+    const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+    if (!isObject(when) || !isObject(from) || !isObject(scope) || typeof trace !== 'string') return 'retry';
     if (!OPERATION_OUTCOMES.includes(outcome) || STATUS[outcome] !== status) return 'retry';
-    if (outcome === 'unavailable' || outcome === 'pending' || when?.state !== 'settled') return 'retry';
+    if (outcome === 'unavailable' || outcome === 'pending' || when.state !== 'settled') return 'retry';
     return 'taken';
   }
 
