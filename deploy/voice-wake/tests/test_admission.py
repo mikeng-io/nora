@@ -224,7 +224,10 @@ class _Response:
     status = 200
 
     async def json(self, content_type=None):
-        return {"outcome": "complete"}
+        return {
+            "outcome": "complete", "payload": {}, "when": {"state": "settled"},
+            "from": {"target": "intake"}, "scope": {"level": "installation"}, "trace": "",
+        }
 
     async def __aenter__(self):
         return self

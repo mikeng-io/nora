@@ -83,6 +83,46 @@ async def transcribe(
     return None
 
 
+# The canonical service API's operation envelope (design/service-api/
+# conventions.md), mirrored because this service may not import nora.
+_STATUS = {"complete": 200, "pending": 202, "denied": 403, "rejected": 200,
+           "unsupported": 200, "incomplete": 200, "uncertain": 200,
+           "unavailable": 503}
+_NO_ENVELOPE = frozenset({400, 401, 404, 409, 422})
+_STATES = frozenset({"prepared", "started", "settled"})
+_LEVELS = frozenset({"room", "unit", "agent", "identity", "workspace",
+                     "installation", "none"})
+
+
+def _optional(value: object, kind: type) -> bool:
+    return value is None or (isinstance(value, kind) and not isinstance(value, bool))
+
+
+def _scope_and_trace(body: dict) -> bool:
+    scope = body.get("scope")
+    return (isinstance(scope, dict) and scope.get("level") in _LEVELS
+            and _optional(scope.get("id"), str) and isinstance(body.get("trace"), str))
+
+
+def _operation_outcome(body: object) -> str | None:
+    """The outcome of a well-formed operation envelope, else None."""
+    if not isinstance(body, dict) or body.get("outcome") not in _STATUS:
+        return None
+    outcome = body["outcome"]
+    when, from_ = body.get("when"), body.get("from")
+    well_formed = (
+        isinstance(body.get("payload"), dict)
+        and isinstance(when, dict) and when.get("state") in _STATES
+        and (when["state"] == "settled") != (outcome == "pending")
+        and _optional(when.get("started_at_ms"), int)
+        and _optional(when.get("settled_at_ms"), int)
+        and isinstance(from_, dict) and isinstance(from_.get("target"), str)
+        and _optional(from_.get("platform_ref"), str)
+        and _scope_and_trace(body)
+    )
+    return outcome if well_formed else None
+
+
 async def forward_utterance(
     session: aiohttp.ClientSession,
     *,
@@ -131,10 +171,13 @@ async def forward_utterance(
                 body = await response.json(content_type=None)
             except ValueError:
                 body = None
-            outcome = body.get("outcome") if isinstance(body, dict) else None
-            if response.status != 200 or outcome != "complete":
-                log.warning("nora refused the utterance (http %s, outcome %s)",
-                            response.status, outcome)
+            outcome = _operation_outcome(body)
+            if outcome is None or _STATUS[outcome] != response.status:
+                log.warning("nora answered without a valid envelope (http %s)",
+                            response.status)
+                return False
+            if outcome != "complete":
+                log.warning("nora did not record the utterance (%s)", outcome)
                 return False
             return True
     except asyncio.CancelledError:
