@@ -12,8 +12,8 @@ recorded, and able to close an intention the same way.
 | **kind** | delivery (reaches a room or an output channel: a message, a reaction, an image, a GIF, an announcement), effect (changes something that is not a conversation: a document, the computer, a play queue, a network), or delegation (starts work another executor carries on) |
 | **executor** | what performs it: an engagement pass's delivery or act tool, a deterministic notifier, a job runner |
 | **destination** | the room, surface or system it affects |
-| **authority** | the pass and person on whose behalf it runs, and the intention it serves, if any |
-| **identity** | a stable id, so a retry recognises the same act |
+| **authority** | the pass and identity on whose behalf it runs, and the intention it serves, if any |
+| **act id** | a stable id, so a retry recognises the same act |
 | **outcome** | an observed item reporting **done**, **failed** or **uncertain** |
 
 **Rules**
@@ -21,18 +21,18 @@ recorded, and able to close an intention the same way.
 - An act's outcome is an item, recorded by observe; the act counts only once it
   is recorded, and it counts as done only when that item reports done.
 - An uncertain outcome — the call timed out after it may have taken effect — is
-  never replayed blindly. It is read back by its identity first; until then it
+  never replayed blindly. It is read back by its act id first; until then it
   is unknown.
 - Deliveries also pass the delivery arbitration; effects and delegations pass
   their area's admission.
 - An act's outcome closes only an intention whose condition is that act being
-  done; an intention waiting on a person or a state closes on that witness
+  done; an intention waiting on an identity or a state closes on that witness
   instead ([graph](graph.md)). A failed outcome closes nothing: it is a
   stimulus, and decide retries or drops the intention, citing the failure.
 - Public publication on a surface without a unit records its outcome in its
   own ledger, not as a graph item.
 
-**What identity guarantees.** Every act carries a stable identity, checked
+**What the act id guarantees.** Every act carries a stable act id, checked
 before it is invoked, so Nora never *invokes* the same act twice. Whether the
 outside effect happens once depends on the destination, and each executor
 declares which guarantee it provides:
@@ -41,7 +41,7 @@ declares which guarantee it provides:
 |---|---|---|
 | **at-most-once invocation** | Nora never starts the same act twice | always |
 | **idempotent effect** | repeating the call adds no second effect | the destination accepts an idempotency key |
-| **read-back reconciliation** | an uncertain outcome is settled by reading the destination | the destination can be read back by identity |
+| **read-back reconciliation** | an uncertain outcome is settled by reading the destination | the destination can be read back by act id |
 | **unknown** | neither: an uncertain outcome stays unknown and is never retried | — |
 
 No executor claims an exactly-once effect its destination cannot provide.
@@ -63,7 +63,7 @@ Delegated work — a sub-agent job, a computer task, a long browser session —
 runs outside both loops under its own executor.
 
 - Starting it is a delegation act. The work is an achieve intention naming its
-  executor and the job's identity; it is done when the job's outcome item
+  executor and the job's act id; it is done when the job's outcome item
   reports success. A failed or cancelled job closes nothing: decide retries or
   drops the intention, citing that outcome.
 - The executor's own job state is authoritative for the job. Its events and

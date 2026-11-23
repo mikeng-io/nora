@@ -84,7 +84,7 @@ Areas follow [ADR 0037](../../docs/adr/0037-code-is-grouped-by-area-and-depends-
 | the graph: registry, entities, claims, intentions, edges, admission, retrieval, presentations | `memory/`, which absorbs the Notebook, Standing, profiles, lessons and the account of herself |
 | items | the area of their source: `conversation/`, `location/`, `media/`, `social/`, `computer/`, `voice/` |
 | aggregates | `analytics/` for rollups; each area for its own current heads |
-| agents, people, rooms, units: primary and affiliates | `people/` |
+| agents, identities, rooms, units: primary and affiliates | `people/` |
 | delivery triggers, schedules, watches | `agenda/` |
 | delegated work | `subagents/` and `computer/` |
 | the engagement loop and the debrief | `engagement/`, with the fire path in `app/` |
