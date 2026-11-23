@@ -54,8 +54,11 @@ OLD_VOICE_ROUTES = ("/voice/join", "/voice/exit", "/voice/status", "/voice/event
                     "/voice/utterance", "/app/v1/voice")
 OLD_VOICE_PATTERNS = (
     re.compile(r"(?<!/v1)/music/(?:play|stop|pause|resume|volume)"),
-    # A whole path segment after `/v1/voice/` that is not one of the contract's.
-    re.compile(r"/v1/voice/(?!(?:operations|queries)(?![\w-]))(?:\{\w+\}|[\w-]+)"),
+    # Anything after `/v1/voice/` but one of the contract's exact paths (a
+    # read-back with a real id included), which may end a string, a sentence
+    # or a shell default's `}`.
+    re.compile(r"/v1/voice/(?!(?:operations/(?:\{operation_id\}|[\w.:-]+)|operations|queries)"
+               r"(?![\w{/-]))[^\s\"'`)]+"),
 )
 #: The controller's old speech route, named only where a voice caller or server lives.
 QUOTED_STREAM = re.compile(r"""["'`]/stream["'`]""")
@@ -96,9 +99,13 @@ def test_no_old_voice_route_is_named() -> None:
 def test_the_voice_rule_reads_whole_segments() -> None:
     """Positive control for the `/v1/voice/` rule."""
     rule = OLD_VOICE_PATTERNS[1]
-    named = ["/v1/voice/operations-legacy", "/v1/voice/{guild_id}/join", "/v1/voice/event"]
+    named = ["/v1/voice/operations-legacy", "/v1/voice/{guild_id}/join", "/v1/voice/event",
+             'f"/v1/voice/{self._guild_id}/speech"', "/v1/voice/operations/{guild_id}",
+             "/v1/voice/operations/{operation_id}/more", "/v1/voice/operations/op-1/join"]
     clean = ["/v1/voice/operations", "/v1/voice/operations/{operation_id}",
-             "${URL:-http://bridge/v1/voice/operations}",
-             "/v1/voice/queries", 'startswith("/v1/voice/")']
-    assert all(rule.search(text) for text in named)
-    assert not any(rule.search(text) for text in clean)
+             "${URL:-http://bridge/v1/voice/operations}", "/v1/voice/queries.",
+             "/v1/voice/queries", 'startswith("/v1/voice/")', "/v1/voice/operations/op-join"]
+    assert [text for text in named if not rule.search(text)] == []
+    assert [text for text in clean if rule.search(text)] == []
+    for text in ("/voice/status", "${X:-http://bridge/voice/join}"):
+        assert any(route in text for route in OLD_VOICE_ROUTES), text

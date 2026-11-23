@@ -1116,9 +1116,9 @@ services:
       - STATE_DIR=/var/lib/audio-controller
       # Controller lifecycle events (generation/playback advancement) are
       # `report` operations on /v1/voice/operations of whichever process holds
-      # the voice hub: the bridge under [platforms.discord] mode = "bridge";
-      # under mode = "direct" set NORA_VOICE_EVENT_URL to the app's, on its
-      # [obs.metrics] port: http://nora:9100/v1/voice/operations.
+      # the voice hub: the bridge under [platforms.discord] mode = "bridge".
+      # Direct mode MUST set NORA_VOICE_EVENT_URL=http://nora:9100/v1/voice/operations;
+      # otherwise the controller's reports are answered `unsupported` and dropped.
       - NORA_EVENT_URL=${NORA_VOICE_EVENT_URL:-http://discord-bridge:18093/v1/voice/operations}
     volumes:
       # Desired-state durability (§12.1): /discord exit writes idle, a join
