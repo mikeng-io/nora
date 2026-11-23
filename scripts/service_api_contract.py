@@ -41,7 +41,7 @@ _COMPONENTS: dict[str, Any] = {
         if tp is not None and tp is not bytes
     },
 }
-_PARAM = re.compile(r"\{([a-z_]+)\}")
+_PARAM = re.compile(r"\{([a-z][a-z0-9_]*)\}")
 _OCTETS = {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}}
 
 

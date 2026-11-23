@@ -38,19 +38,18 @@ def test_every_documented_path_conforms():
 
 def test_the_operation_and_query_kinds_are_closed():
     schemas = _document()["components"]["schemas"]
-    documented = {
-        "operation": {
-            *schemas["PlatformOperationKind"]["enum"],
-            *schemas["PlatformOperationRequest"]["properties"]["kind"]["enum"],
-        },
-        "query": {
-            *schemas["PlatformQueryKind"]["enum"],
-            *schemas["PlatformQuery"]["properties"]["kind"]["enum"],
-        },
-    }
     declared = {
         "operation": set(get_args(PlatformOperationKind)),
         "query": set(get_args(PlatformQueryKind)),
     }
-    assert declared == documented, "a kind is declared but not documented: regenerate"
+    documented = {
+        "PlatformOperationKind": ("operation", schemas["PlatformOperationKind"]["enum"]),
+        "PlatformOperationRequest": (
+            "operation", schemas["PlatformOperationRequest"]["properties"]["kind"]["enum"]),
+        "PlatformQueryKind": ("query", schemas["PlatformQueryKind"]["enum"]),
+        "PlatformQuery": ("query", schemas["PlatformQuery"]["properties"]["kind"]["enum"]),
+    }
+    for schema, (family, kinds) in documented.items():
+        assert set(kinds) == declared[family], (
+            f"{schema} does not document the declared kinds: regenerate")
     assert declared == {"operation": OPERATION_KINDS, "query": QUERY_KINDS}
