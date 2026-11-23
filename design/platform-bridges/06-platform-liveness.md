@@ -23,10 +23,12 @@ Liveness is part of the `PlatformAdapter` contract, not a per-platform
 feature. Every rule above holds for a platform because it is an adapter, not
 because someone wrote code for it.
 
-- **The adapter side.** Every adapter carries one shared latch
-  (`nora.platform.latch.DegradeLatch`). It provides `degrade(reason)`,
-  `promote()` and `degraded`, refuses `send` and `react` while degraded, and
-  marks `health()` degraded. A facade derived from an adapter (an owner-bound
+- **The adapter side.** Every adapter, real or fake, carries one shared latch
+  (`nora.domain.latch.DegradeLatch`). It lives in the domain layer so that
+  adapters and test fakes can both depend on it. It provides
+  `degrade(reason)`, `promote()` and `degraded`. While degraded it answers
+  `send`, `react` and `health()` itself, with no upstream call: a refusal, and
+  a degraded health report. Once clear, those calls pass to the adapter. A facade derived from an adapter (an owner-bound
   adapter, a voice front) shares the root adapter's latch, so it cannot send
   past it.
 - **The registry side.** The registry builds platforms from one table: a
