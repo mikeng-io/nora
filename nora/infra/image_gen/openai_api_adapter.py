@@ -1,6 +1,7 @@
 """GPT Image through the OpenAI platform API, billed per token to the
 project that owns the API key. The wire is `gpt_image`; this lane adds the
-key. A project budget, not this code, is what caps the spend.
+key. The cap is the project's spend limit with «Enforce a hard limit» on, not
+this code; billing refusals (spend limit, no credit) are `quota`.
 """
 
 from __future__ import annotations

@@ -167,9 +167,9 @@ class GptImageGenerator:
             return ImageResult(status="nothing_found", reason="refused", provider=self.provider)
         if status == 401:
             return self._unavailable("auth")
-        if "usage_limit" in code or "quota" in code:
-            # ChatGPT's plan limit answers `usage_limit_reached`; the platform
-            # API's spent budget or credit answers `insufficient_quota`.
+        if any(w in code for w in ("usage_limit", "quota", "spend_limit", "credit_balance")):
+            # ChatGPT's plan limit is `usage_limit_reached`; the platform's billing refusals
+            # are `insufficient_quota`, `*_spend_limit_exceeded`, `credit_balance_exhausted`.
             return self._unavailable("quota")
         if status == 429:
             return self._unavailable("rate_limited")

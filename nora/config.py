@@ -2824,9 +2824,8 @@ class OpenAICodexImageGenConfig(_GptImageLaneConfig):
 
 
 class OpenAIImageGenConfig(_GptImageLaneConfig):
-    """`[image_gen.openai]`: gpt-image on the platform API, billed per token to
-    the key's project, whose budget (not this code) caps the spend.
-    `api_key_env` NAMES the env var holding the key, never the key."""
+    """`[image_gen.openai]`: gpt-image on the platform API, billed per token; the cap is the
+    project's enforced hard spend limit. `api_key_env` NAMES the key's env var, never the key."""
 
     api_key_env: str = Field(default="OPENAI_IMAGE_API_KEY", min_length=1)
 

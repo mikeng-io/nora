@@ -545,10 +545,13 @@ async def _generate_image__empty(c):
         )
     c.reason = c.result.reason or "unavailable"
     c.note = {
-        "quota": "I've used up today's image quota. Say so plainly.",
+        "quota": (
+            "I've hit my image quota or spending limit. Say so plainly, without guessing when "
+            "it resets."
+        ),
         "auth": (
-            "My image generation login has expired. Miles needs to re-authorise before I can make "
-            "more."
+            "My image generation login or key isn't working. Miles needs to re-authorise it "
+            "before I can make more."
         ),
         "rate_limited": "I'm making too many right now; try again in a bit.",
         "down": "The image service is having trouble right now; try again in a bit.",

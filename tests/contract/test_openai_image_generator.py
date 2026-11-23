@@ -92,6 +92,9 @@ async def test_references_use_the_edits_endpoint(api_server):
     ("status", "body", "reason"),
     [
         (429, {"error": {"code": "insufficient_quota", "type": "insufficient_quota"}}, "quota"),
+        (429, {"error": {"code": "project_spend_limit_exceeded"}}, "quota"),
+        (429, {"error": {"code": "organization_spend_limit_exceeded"}}, "quota"),
+        (429, {"error": {"code": "credit_balance_exhausted"}}, "quota"),
         (429, {"error": {"code": "rate_limit_exceeded"}}, "rate_limited"),
         (401, {"error": {"code": "invalid_api_key"}}, "auth"),
         (400, {"error": {"code": "invalid_value"}}, "bad_request"),
