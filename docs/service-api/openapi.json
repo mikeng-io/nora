@@ -1,6 +1,127 @@
 {
   "components": {
     "schemas": {
+      "AccountReadEnvelope": {
+        "description": "An account read: `unavailable` until the platform login has landed.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/ReadFrom"
+          },
+          "outcome": {
+            "enum": [
+              "ok",
+              "nothing_found",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlatformAccount"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/ReadWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "AccountReadEnvelope",
+        "type": "object"
+      },
+      "ActionOwner": {
+        "description": "Who may run this action. `work` owners carry the fenced work id +\ngeneration the bridge re-validates against bridge_work before executing.",
+        "properties": {
+          "generation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Generation"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id"
+        ],
+        "title": "ActionOwner",
+        "type": "object"
+      },
+      "BridgeStatus": {
+        "description": "A bridge's own detail: whether it can serve, and why not.",
+        "properties": {
+          "connected_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Connected At Ms"
+          },
+          "degraded": {
+            "default": false,
+            "title": "Degraded",
+            "type": "boolean"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detail"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "BridgeStatus",
+        "type": "object"
+      },
       "Contract": {
         "enum": [
           "intake",
@@ -60,6 +181,25 @@
         "title": "OperationEnvelope",
         "type": "object"
       },
+      "OperationError": {
+        "description": "A classified, sanitised reason; never raw upstream text.",
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "message"
+        ],
+        "title": "OperationError",
+        "type": "object"
+      },
       "OperationFrom": {
         "description": "The target of the effect and its platform reference when one exists.",
         "properties": {
@@ -108,6 +248,53 @@
           "uncertain": 200,
           "unsupported": 200
         }
+      },
+      "OperationReadEnvelope": {
+        "description": "An operation read back: `ok` carries the operation's own envelope.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/ReadFrom"
+          },
+          "outcome": {
+            "enum": [
+              "ok",
+              "nothing_found",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlatformOperationEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/ReadWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "OperationReadEnvelope",
+        "type": "object"
       },
       "OperationRecord": {
         "description": "One operation's record: `prepared \u2192 started \u2192 settled`, final once settled.",
@@ -244,6 +431,213 @@
         ],
         "title": "OperationWhen",
         "type": "object"
+      },
+      "PlatformAccount": {
+        "description": "The bridge's own account; a platform may add its own fields.",
+        "properties": {
+          "aliases": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Aliases",
+            "type": "array"
+          },
+          "platform": {
+            "title": "Platform",
+            "type": "string"
+          },
+          "primary": {
+            "title": "Primary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "primary"
+        ],
+        "title": "PlatformAccount",
+        "type": "object"
+      },
+      "PlatformOperationEnvelope": {
+        "description": "The answer to a delivery operation.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/OperationFrom"
+          },
+          "outcome": {
+            "enum": [
+              "complete",
+              "pending",
+              "denied",
+              "rejected",
+              "unsupported",
+              "incomplete",
+              "uncertain",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/PlatformOperationPayload"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/OperationWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "PlatformOperationEnvelope",
+        "type": "object"
+      },
+      "PlatformOperationKind": {
+        "enum": [
+          "send",
+          "react",
+          "edit",
+          "typing"
+        ],
+        "type": "string"
+      },
+      "PlatformOperationPayload": {
+        "description": "What a delivery applied, or why it did not.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationError"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message Id"
+          },
+          "platform_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Platform Ms"
+          },
+          "platform_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Platform Refs",
+            "type": "array"
+          }
+        },
+        "title": "PlatformOperationPayload",
+        "type": "object"
+      },
+      "PlatformOperationRequest": {
+        "description": "A delivery operation; `owner` is who may run it, `effect` its kind's content.",
+        "properties": {
+          "effect": {
+            "additionalProperties": true,
+            "title": "Effect",
+            "type": "object"
+          },
+          "kind": {
+            "enum": [
+              "send",
+              "react",
+              "edit",
+              "typing"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/ActionOwner"
+          }
+        },
+        "required": [
+          "operation_id",
+          "kind",
+          "effect",
+          "owner"
+        ],
+        "title": "PlatformOperationRequest",
+        "type": "object"
+      },
+      "PlatformQuery": {
+        "description": "A read whose filter names platform identifiers.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "roster",
+              "members",
+              "channels",
+              "channel",
+              "member_presence",
+              "voice_presence",
+              "groups"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "required": [
+          "kind",
+          "params"
+        ],
+        "title": "PlatformQuery",
+        "type": "object"
+      },
+      "PlatformQueryKind": {
+        "enum": [
+          "roster",
+          "members",
+          "channels",
+          "channel",
+          "member_presence",
+          "voice_presence",
+          "groups"
+        ],
+        "type": "string"
       },
       "ReadEnvelope": {
         "description": "The body of every read response. `from_` is `from` on the wire.",
@@ -390,6 +784,53 @@
           "none"
         ],
         "type": "string"
+      },
+      "StatusReadEnvelope": {
+        "description": "The `operations` contract's status read of a bridge.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/ReadFrom"
+          },
+          "outcome": {
+            "enum": [
+              "ok",
+              "nothing_found",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BridgeStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/ReadWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "StatusReadEnvelope",
+        "type": "object"
       }
     }
   },
@@ -398,5 +839,404 @@
     "version": "1"
   },
   "openapi": "3.1.0",
-  "paths": {}
+  "paths": {
+    "/v1/operations/status": {
+      "get": {
+        "operationId": "read_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusReadEnvelope"
+                }
+              }
+            },
+            "description": "ok, nothing_found"
+          },
+          "400": {
+            "description": "no envelope"
+          },
+          "401": {
+            "description": "no envelope"
+          },
+          "404": {
+            "description": "no envelope"
+          },
+          "422": {
+            "description": "no envelope"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusReadEnvelope"
+                }
+              }
+            },
+            "description": "unavailable"
+          }
+        },
+        "x-family": "read"
+      }
+    },
+    "/v1/platform/accounts/{account_id}": {
+      "get": {
+        "operationId": "read_account",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountReadEnvelope"
+                }
+              }
+            },
+            "description": "ok, nothing_found"
+          },
+          "400": {
+            "description": "no envelope"
+          },
+          "401": {
+            "description": "no envelope"
+          },
+          "404": {
+            "description": "no envelope"
+          },
+          "422": {
+            "description": "no envelope"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountReadEnvelope"
+                }
+              }
+            },
+            "description": "unavailable"
+          }
+        },
+        "x-family": "read"
+      }
+    },
+    "/v1/platform/blobs/{key}": {
+      "get": {
+        "operationId": "get_blob",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadEnvelope"
+                }
+              },
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "ok, nothing_found"
+          },
+          "400": {
+            "description": "no envelope"
+          },
+          "401": {
+            "description": "no envelope"
+          },
+          "404": {
+            "description": "no envelope"
+          },
+          "422": {
+            "description": "no envelope"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadEnvelope"
+                }
+              }
+            },
+            "description": "unavailable"
+          }
+        },
+        "x-family": "read"
+      },
+      "put": {
+        "operationId": "put_blob",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationEnvelope"
+                }
+              }
+            },
+            "description": "complete, rejected, unsupported, incomplete, uncertain"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationEnvelope"
+                }
+              }
+            },
+            "description": "pending"
+          },
+          "400": {
+            "description": "no envelope"
+          },
+          "401": {
+            "description": "no envelope"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationEnvelope"
+                }
+              }
+            },
+            "description": "denied"
+          },
+          "404": {
+            "description": "no envelope"
+          },
+          "422": {
+            "description": "no envelope"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationEnvelope"
+                }
+              }
+            },
+            "description": "unavailable"
+          }
+        },
+        "x-family": "operation"
+      }
+    },
+    "/v1/platform/operations": {
+      "post": {
+        "operationId": "submit_operation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformOperationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformOperationEnvelope"
+                }
+              }
+            },
+            "description": "complete, rejected, unsupported, incomplete, uncertain"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformOperationEnvelope"
+                }
+              }
+            },
+            "description": "pending"
+          },
+          "400": {
+            "description": "no envelope"
+          },
+          "401": {
+            "description": "no envelope"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformOperationEnvelope"
+                }
+              }
+            },
+            "description": "denied"
+          },
+          "404": {
+            "description": "no envelope"
+          },
+          "409": {
+            "description": "no envelope"
+          },
+          "422": {
+            "description": "no envelope"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformOperationEnvelope"
+                }
+              }
+            },
+            "description": "unavailable"
+          }
+        },
+        "x-family": "operation"
+      }
+    },
+    "/v1/platform/operations/{operation_id}": {
+      "get": {
+        "operationId": "read_operation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationReadEnvelope"
+                }
+              }
+            },
+            "description": "ok, nothing_found"
+          },
+          "400": {
+            "description": "no envelope"
+          },
+          "401": {
+            "description": "no envelope"
+          },
+          "404": {
+            "description": "no envelope"
+          },
+          "422": {
+            "description": "no envelope"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationReadEnvelope"
+                }
+              }
+            },
+            "description": "unavailable"
+          }
+        },
+        "x-family": "read"
+      }
+    },
+    "/v1/platform/queries": {
+      "post": {
+        "operationId": "query",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadEnvelope"
+                }
+              }
+            },
+            "description": "ok, nothing_found"
+          },
+          "400": {
+            "description": "no envelope"
+          },
+          "401": {
+            "description": "no envelope"
+          },
+          "404": {
+            "description": "no envelope"
+          },
+          "422": {
+            "description": "no envelope"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadEnvelope"
+                }
+              }
+            },
+            "description": "unavailable"
+          }
+        },
+        "x-family": "read"
+      }
+    }
+  }
 }

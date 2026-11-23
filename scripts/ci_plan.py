@@ -81,6 +81,8 @@ def classify(
             plan["portal"] = plan["codeql-javascript"] = True
         if path.startswith("tests/fixtures/instagram_bridge/"):
             plan["go"] = plan["codeql-go"] = True
+        if path == "docs/service-api/openapi.json":
+            plan["go"] = True
         name = Path(path).name
         suffix = Path(path).suffix
         # Build and analyzer policy can affect every component.
