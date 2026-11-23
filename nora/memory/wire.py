@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nora.access import IdentityAccess
 from nora.agent.dream_screen import text_offence
 from nora.agent.egress import LeakGuard
+from nora.agent.lineage import LineagePolicy
 from nora.agent.memory_search import MemorySearch
 from nora.agent.room import Room
 from nora.app.cognition_grounding import place_release
@@ -16,6 +17,7 @@ from nora.app.composition_helpers import _unified_profile_writers_retired
 from nora.app.memory_routing import MemoryRoutingError, build_workspace_router
 from nora.app.startup import StartupError
 from nora.domain.live import LiveMapping
+from nora.domain.memory_index import QueryEmbedder
 from nora.domain.ports import SearchProvider
 from nora.infra.embedder import QUERY_TIMEOUT_SECONDS, LlamaEmbedder, fingerprint, model_file
 from nora.infra.honcho import HonchoClient
@@ -40,6 +42,7 @@ from nora.memory.adapters.condition_matcher import SqlConditionMatcher
 from nora.memory.adapters.graph_clock import SqlDueSchedules
 from nora.memory.adapters.graph_store import SqlCognitiveGraph
 from nora.memory.adapters.memory_intake import SqlMemoryIntake
+from nora.memory.adapters.retrieval_store import SqlRetrieval
 from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
 from nora.memory.adapters.tools.session import session_verbs as _session_verbs
@@ -49,6 +52,7 @@ from nora.memory.app.acts import ActEnvelope
 from nora.memory.app.admission import AdmissionService
 from nora.memory.app.admission_identity import AdmissionIdentity
 from nora.memory.app.graph_clock import GraphClock
+from nora.memory.app.retrieval import RetrievalService
 from nora.memory.app.watches import WatchPoller
 from nora.persons import Persons
 from nora.policy import Policy
@@ -387,3 +391,10 @@ def memory_intake(
 
 def claim_support(engine: AsyncEngine) -> SqlClaimSupport:
     return SqlClaimSupport(engine, SqlCognitiveGraph(engine))
+
+def retrieval(
+    engine: AsyncEngine, access: IdentityAccess, lineage: LineagePolicy,
+    embedder: QueryEmbedder | None, embedding_model: str | None,
+) -> RetrievalService:
+    """Build the shared scoped graph reader for a pass."""
+    return RetrievalService(SqlRetrieval(engine, access, lineage, embedding_model), embedder)

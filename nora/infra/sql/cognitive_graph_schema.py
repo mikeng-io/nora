@@ -15,11 +15,16 @@ from collections.abc import Iterator
 from typing import get_args
 
 import sqlalchemy as sa
+from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy.dialects import postgresql as pg
 
 from nora.domain.graph_registration import SourceKind
 from nora.infra.sql.graph_stimulus_schema import graph_stimulus_table
-from nora.infra.sql.schema import METADATA
+from nora.infra.sql.schema import (
+    EMBEDDING_DIMENSIONS,
+    EMBEDDING_INDEXED_DIMENSIONS,
+    METADATA,
+)
 
 GRAPH_STIMULUS = graph_stimulus_table(METADATA)
 
@@ -323,6 +328,39 @@ EDGE = sa.Table(
 )
 sa.Index("idx_edge_src", EDGE.c.src_id, EDGE.c.type)
 sa.Index("idx_edge_dst", EDGE.c.dst_id, EDGE.c.type)
+
+
+GRAPH_SEARCH = sa.Table(
+    "graph_search",
+    METADATA,
+    sa.Column("graph_id", sa.Text, nullable=False),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("text", sa.Text, nullable=False),
+    sa.Column("embedding", HALFVEC(EMBEDDING_DIMENSIONS)),
+    sa.Column("embedding_model", sa.Text),
+    sa.Column("embedded_at", sa.BigInteger),
+    sa.Column("embed_attempts", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("embed_error", sa.Text),
+    sa.Column("embed_input", sa.Text),
+    sa.PrimaryKeyConstraint("graph_id", "unit", name="pk_graph_search"),
+    sa.ForeignKeyConstraint(
+        ["graph_id", "unit"], ["registry.id", "registry.unit"], name="fk_graph_search_registry",
+    ),
+    sa.CheckConstraint("embed_input = 'text'", name="ck_graph_search_embed_input"),
+)
+sa.Index(
+    "idx_graph_search_text_trgm", GRAPH_SEARCH.c.text,
+    postgresql_using="gin", postgresql_ops={"text": "gin_trgm_ops"},
+)
+sa.Index(
+    "idx_graph_search_embedding_256",
+    sa.cast(
+        sa.func.subvector(GRAPH_SEARCH.c.embedding, 1, EMBEDDING_INDEXED_DIMENSIONS),
+        HALFVEC(EMBEDDING_INDEXED_DIMENSIONS),
+    ).label("embedding_256"),
+    postgresql_using="hnsw",
+    postgresql_ops={"embedding_256": "halfvec_cosine_ops"},
+)
 
 
 WATCH_RESULT = sa.Table(

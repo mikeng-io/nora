@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from nora.domain.graph_registration import Exposure, InputScope, inherited_scope
 from nora.domain.graph_stimuli import GraphStimulus
+from nora.domain.lineage import Lineage
+from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY, REGISTRY
 from nora.infra.sql.cognitive_graph_store import (
     GraphWriteError,
     SqlCognitiveGraph,
@@ -45,8 +49,14 @@ class SqlAdmissionStore:
     ) -> None:
         row, edges = _serialize(decision, context)
         base, survivor = decision.base, decision.survivor
-        async def dependency(conn: AsyncConnection) -> None:
-            await _dependency(conn, stored, row)
+        derive_about = isinstance(fields(decision.proposal), (CreateClaim, CreateIntention))
+        revisions = isinstance(decision.proposal, (Revise, Retire))
+
+        async def after_write(conn: AsyncConnection) -> None:
+            if derive_about:
+                await _computed_about(conn, decision.row, context)
+            if revisions:
+                await _dependency(conn, stored, row)
 
         try:
             await self._graph.write_admission(
@@ -56,10 +66,46 @@ class SqlAdmissionStore:
                 base_state=base.state if base is not None and survivor is None else None,
                 retire=isinstance(decision.proposal, Retire),
                 merge=(base.id, survivor.id) if base is not None and survivor is not None else None,
-                after_write=dependency if isinstance(decision.proposal, (Revise, Retire)) else None,
+                after_write=after_write if derive_about or revisions else None,
             )
         except GraphWriteError as exc:
             raise AdmissionUnavailableError(commit_uncertain=exc.commit_uncertain) from exc
+
+
+async def _computed_about(conn: AsyncConnection, row: RowFacts, context: PassContext) -> None:
+    people = {person for person in row.persons if person is not None}
+    if not people:
+        return
+    entity = ENTITY.c
+    query = sa.select(
+        entity.id, entity.exposure, entity.excluded_persons, entity.lineage,
+    ).where(
+        entity.unit == row.unit, entity.pointer_kind == "person",
+        entity.pointer_ref.in_(people), entity.state == "admitted",
+    ).ext(distinct_on(entity.pointer_ref)).order_by(entity.pointer_ref, entity.id)
+    pointers = (await conn.execute(query)).mappings().all()
+    if not pointers:
+        return
+
+    source = InputScope(row.excluded_persons, cast(Exposure, row.exposure), row.lineage)
+    edges = []
+    for pointer in pointers:
+        target = InputScope(
+            tuple(pointer["excluded_persons"]), pointer["exposure"],
+            Lineage.from_json(pointer["lineage"]),
+        )
+        scope = inherited_scope((source, target), build_lineage=Lineage(), minimum="external")
+        link = Link(type="about", source=row.id, target=pointer["id"], basis="computed")
+        edges.append({
+            **_stamp(context), **_link_values(link), "id": f"edge:{uuid4().hex}",
+            "unit": row.unit, "origin_room": row.origin_room, "persons": list(row.persons),
+            "excluded_persons": list(scope.excluded_persons), "exposure": scope.exposure,
+            "lineage": scope.lineage.to_json(),
+        })
+    await conn.execute(sa.insert(REGISTRY), [
+        {name: edge[name] for name in ("id", "unit", "kind")} for edge in edges
+    ])
+    await conn.execute(sa.insert(EDGE), edges)
 
 
 async def _dependency(conn: AsyncConnection, stored: Stored, row: Mapping[str, Any]) -> None:

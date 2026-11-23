@@ -94,7 +94,7 @@ EDGES: dict[str, EdgeDeclaration] = {
             {"entity", "item", "aggregate", "claim", "intention", "edge"}
         ),
         target_kinds=frozenset({"entity"}),
-        bases=frozenset({"computed"}),
+        bases=frozenset({"computed", "inferred"}),
     ),
     "draws_on": EdgeDeclaration(
         family="draws_on",

@@ -70,8 +70,18 @@ AGGREGATE_FAMILIES: MappingProxyType[str, AggregateFamily] = MappingProxyType({
 })
 
 NonGraphReason = Literal[
-    "graph kind", "operational", "transport", "blob storage", "legacy",
+    "graph kind", "operational", "transport", "blob storage", "legacy", "derived",
 ]
+SEARCHABLE_SOURCES = MappingProxyType({
+    "messages": ("body",),
+    "fetched_pages": ("url",),
+    "social_item": ("caption", "alt_text"),
+    "nora_pass_output": ("content",),
+    "claim": ("content",),
+    "intention": ("done_when", "holds_while", "drop_when"),
+    "entity": ("name", "aliases"),
+})
+
 NON_GRAPH_TABLES: MappingProxyType[str, NonGraphReason] = MappingProxyType({
     "analytics_watermark": "operational",
     "artifacts": "blob storage",
@@ -154,6 +164,7 @@ NON_GRAPH_TABLES: MappingProxyType[str, NonGraphReason] = MappingProxyType({
     "memo_revision": "legacy",
     "memory_edge": "legacy",
     "memory_index_state": "legacy",
+    "graph_search": "derived",
     "memory_node": "legacy",
     "memory_projection_queue": "legacy",
     "music_queue": "operational",
