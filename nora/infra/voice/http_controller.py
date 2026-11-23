@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import base64
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
@@ -100,6 +101,19 @@ class VoiceControllerNoConnection(VoiceControllerUnavailable):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+
+@contextmanager
+def conflicts_fail() -> Iterator[None]:
+    """A 409 (an `operation_id` reused for another effect) as a failed call.
+
+    The session and the hub answer every caller through `VoiceControllerError`;
+    the conflict is `VoiceControllerUnavailable`, so nothing reconciles or retries it.
+    """
+    try:
+        yield
+    except OperationConflictError as exc:
+        raise VoiceControllerUnavailable(f"operation_id reused: {exc}") from exc
 
 
 class VoiceControllerClient:
@@ -352,7 +366,8 @@ class HttpVoiceSession:
         "I could not check" must not reach a caller looking like "not
         playing"."""
         try:
-            status = await self._client.status(self._guild_id)
+            with conflicts_fail():
+                status = await self._client.status(self._guild_id)
         except VoiceControllerError:
             return PlaybackReading.unreachable()
         if not isinstance(status, dict):
@@ -383,7 +398,7 @@ class HttpVoiceSession:
     def guild_id(self) -> str:
         return self._guild_id
 
-    async def _reconcile_generation(self) -> bool:
+    async def reconcile_generation(self) -> bool:
         """Adopt the controller's CURRENT generation after a
         `generation_conflict` (a restart or a replaced connection).
         `False` — and the original conflict climbs — when the controller
@@ -391,7 +406,8 @@ class HttpVoiceSession:
         stale generation, it is a gone one, and retrying against it would
         resurrect audio nora already tore down."""
         try:
-            status = await self._client.status(self._guild_id)
+            with conflicts_fail():
+                status = await self._client.status(self._guild_id)
         except VoiceControllerError:
             return False
         if status.get("voice") != "connected":
@@ -416,14 +432,15 @@ class HttpVoiceSession:
         reconcile and retry ONCE (a fresh `operation_id` — the controller
         keeps the rejection under the first one). Arbiter rejections
         (`pause_during_speech`) are not staleness and propagate as-is."""
-        try:
-            return await verb(self._operation_id())
-        except GenerationConflict as exc:
-            if exc.reason != "generation_conflict":
-                raise
-            if not await self._reconcile_generation():
-                raise
-            return await verb(self._operation_id())
+        with conflicts_fail():
+            try:
+                return await verb(self._operation_id())
+            except GenerationConflict as exc:
+                if exc.reason != "generation_conflict":
+                    raise
+                if not await self.reconcile_generation():
+                    raise
+                return await verb(self._operation_id())
 
     async def play(
         self, stream_url: str, *,
@@ -461,9 +478,10 @@ class HttpVoiceSession:
         teardown complete locally instead of
         dying on a controller that is already gone."""
         try:
-            await self._client.stop_music(
-                self._generation, guild_id=self._guild_id, operation_id=self._operation_id(),
-            )
+            with conflicts_fail():
+                await self._client.stop_music(
+                    self._generation, guild_id=self._guild_id, operation_id=self._operation_id(),
+                )
         except GenerationConflict as exc:
             if exc.reason != "generation_conflict":
                 raise
@@ -491,9 +509,10 @@ class HttpVoiceSession:
         saw first, an exit someone else issued) is exactly the end state
         this call asks for."""
         try:
-            await self._client.exit(
-                self._generation, guild_id=self._guild_id, operation_id=self._operation_id(),
-            )
+            with conflicts_fail():
+                await self._client.exit(
+                    self._generation, guild_id=self._guild_id, operation_id=self._operation_id(),
+                )
         except GenerationConflict:
             log.info(
                 "voice exit for guild %s: generation already invalid — treated as done",

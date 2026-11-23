@@ -26,6 +26,7 @@ from uuid import uuid4
 from nora.domain.playback_liveness import PlaybackReading
 from nora.infra.voice.http_controller import (
     GenerationConflict,
+    conflicts_fail,
     HttpVoiceSession,
     VoiceControllerClient,
     VoiceControllerError,
@@ -120,12 +121,13 @@ class VoiceControllerHub:
                 f"already connected to channel {self._channels.get(guild_id)} "
                 f"in guild {guild_id}, not {channel_id}"
             )
-        try:
-            state = await self._client_for(guild_id).join(
-                guild_id, channel_id, operation_id=str(uuid4()),
-            )
-        except GenerationConflict:
-            state = await self._adopt_existing(guild_id, channel_id)
+        with conflicts_fail():
+            try:
+                state = await self._client_for(guild_id).join(
+                    guild_id, channel_id, operation_id=str(uuid4()),
+                )
+            except GenerationConflict:
+                state = await self._adopt_existing(guild_id, channel_id)
         session = self._build_session(guild_id, state)
         self._sessions[guild_id] = session
         # The channel the controller reports, not the one asked for: an
@@ -229,27 +231,47 @@ class VoiceControllerHub:
         self._sessions.pop(guild_id, None)
         self._channels.pop(guild_id, None)
 
-    async def stream_speech(self, guild_id: str, audio: bytes, media_type: str) -> bool:
-        """`speak` for the guild's current generation. NEVER raises —
-        `False` (with a log saying why) when there is no session, the
-        generation is stale, or the controller is unavailable. A
-        `GenerationConflict` also drops the cached session: the controller
-        no longer recognises it, so nothing may stream through it again."""
+    async def speak(self, guild_id: str, audio: bytes, media_type: str) -> None:
+        """`speak` for the guild's current generation, raising the controller's
+        verdict: `VoiceControllerNoConnection` with no session, `GenerationConflict`
+        for a stale generation, `VoiceControllerError` for anything else."""
         session = self._sessions.get(guild_id)
         if session is None:
-            log.info("speech for guild %s dropped: no voice session", guild_id)
-            return False
-        try:
+            raise VoiceControllerNoConnection("no voice session")
+        with conflicts_fail():
             await self._client_for(guild_id).stream(
                 session.generation, audio,
                 media_type=media_type, guild_id=guild_id, operation_id=str(uuid4()),
             )
+
+    async def leave(self, guild_id: str) -> None:
+        """`leave` for the guild's current generation, raising the verdict as
+        `speak` does; the session is dropped only once the controller confirms."""
+        session = self._sessions.get(guild_id)
+        if session is None:
+            raise VoiceControllerNoConnection("no voice session")
+        with conflicts_fail():
+            await self._client_for(guild_id).exit(
+                session.generation, guild_id=guild_id, operation_id=str(uuid4()),
+            )
+        self.drop(guild_id)
+
+    async def stream_speech(self, guild_id: str, audio: bytes, media_type: str) -> bool:
+        """`speak`, NEVER raising — `False` (with a log saying why) when there
+        is no session, the generation is stale, or the controller is
+        unavailable. A `GenerationConflict` also drops the cached session: the
+        controller no longer recognises it, so nothing may stream through it again."""
+        try:
+            await self.speak(guild_id, audio, media_type)
         except GenerationConflict as exc:
             log.warning(
                 "speech for guild %s dropped: %s — dropping the stale session",
                 guild_id, exc,
             )
             self.drop(guild_id)
+            return False
+        except VoiceControllerNoConnection as exc:
+            log.info("speech for guild %s dropped: %s", guild_id, exc)
             return False
         except VoiceControllerError as exc:
             log.warning("speech for guild %s failed: %s", guild_id, exc)
@@ -334,7 +356,8 @@ class VoiceControllerHub:
             if not guild_id:
                 continue
             try:
-                status = await self._client_for(guild_id).status(guild_id)
+                with conflicts_fail():
+                    status = await self._client_for(guild_id).status(guild_id)
                 if status.get("voice") != "connected":
                     continue
                 channel_id = status.get("channel_id")

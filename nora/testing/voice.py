@@ -144,6 +144,8 @@ class FakeVoiceController:
         #: When set, `play` waits on it before answering — the
         #: "controller is hung mid-play" fault.
         self.play_gate: asyncio.Event | None = None
+        #: Set when a `play` is waiting on `play_gate`.
+        self.play_waiting = asyncio.Event()
         self._seq = 0
 
     # --- test-side controls -------------------------------------------------
@@ -354,6 +356,7 @@ class FakeVoiceController:
         if effect.get("resumable") is not None and not isinstance(effect["resumable"], bool):
             raise _BadRequestError("invalid_body")
         if self.play_gate is not None:
+            self.play_waiting.set()
             await self.play_gate.wait()
         self._seq += 1
         self.playback_id = f"pb-{self._seq}"  # REPLACE: a fresh playback identity

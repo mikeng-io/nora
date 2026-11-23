@@ -371,9 +371,10 @@ async def test_a_redirect_is_unavailable(controller, aiohttp_client):
 
 
 async def test_a_conflict_is_never_retried(aiohttp_client):
-    """A 409 is an `operation_id` reused for another effect: it raises the
-    kernel's `OperationConflictError` and the session does not reconcile and
-    send again, as it would for a `generation_conflict`."""
+    """A 409 is an `operation_id` reused for another effect: the client raises
+    the kernel's `OperationConflictError`, and the session fails the call as
+    unavailable without reconciling and sending again, as it would for a
+    `generation_conflict`."""
     operations = []
 
     async def conflict(request: web.Request) -> web.Response:
@@ -396,8 +397,11 @@ async def test_a_conflict_is_never_retried(aiohttp_client):
     session = HttpVoiceSession(client, guild_id=GUILD, generation="gen-1")
 
     with pytest.raises(OperationConflictError):
+        await client.pause("gen-1", guild_id=GUILD, operation_id="op-reused")
+    with pytest.raises(VoiceControllerUnavailable) as failed:
         await session.pause()
-    assert [op["kind"] for op in operations] == ["pause"]
+    assert isinstance(failed.value.__cause__, OperationConflictError)
+    assert [op["kind"] for op in operations] == ["pause", "pause"]
     assert session.generation == "gen-1"
 
 
@@ -487,8 +491,7 @@ async def test_a_duplicate_in_flight_awaits_the_first_answer(controller):
         "guild_id": GUILD, "generation": generation, "stream_url": "https://cdn.example/a"}}
 
     first = asyncio.ensure_future(test_client.post(OPERATIONS, json=body))
-    while not fake.applied > 1:
-        await asyncio.sleep(0)
+    await fake.play_waiting.wait()
     second = asyncio.ensure_future(test_client.post(OPERATIONS, json=body))
     read = await (await test_client.get(f"{OPERATIONS}/op-dup")).json()
     assert read["payload"]["outcome"] == "pending"

@@ -17,7 +17,11 @@ from aiohttp import web
 
 from nora.domain.service_api import OperationOutcome
 from nora.domain.service_api_voice import VoiceOperationKind
-from nora.infra.voice.http_controller import VoiceControllerError
+from nora.infra.voice.http_controller import (
+    GenerationConflict,
+    VoiceControllerError,
+    VoiceControllerNoConnection,
+)
 from nora.infra.voice.hub import VoiceControllerHub
 from nora.platform.bridge.answers import (
     INSTALLATION,
@@ -146,18 +150,31 @@ class BridgeVoiceSurface:
             return "rejected", self._refusal(guild_id, "no_connection")
         if effect.get("generation") != session.generation:
             return "rejected", self._refusal(guild_id, "generation_conflict")
-        if kind == "speak":
-            if not await hub.stream_speech(guild_id, audio, _field(effect, "media_type")):
-                return "unavailable", self._refusal(guild_id, "stream_failed")
-            return "complete", {"state": self._state(guild_id)}
         try:
-            manager = self._manager()
-            if manager is not None:
-                await manager.leave_voice(guild_id)
-            await hub.exit(guild_id)
+            if kind == "speak":
+                await hub.speak(guild_id, audio, _field(effect, "media_type"))
+            else:
+                await hub.leave(guild_id)
+        except GenerationConflict:
+            # The controller restarted or replaced the connection behind the
+            # cache: adopt what it holds now, so the state names the generation.
+            if not await session.reconcile_generation():
+                hub.drop(guild_id)
+            return "rejected", self._refusal(guild_id, "generation_conflict")
+        except VoiceControllerNoConnection:
+            hub.drop(guild_id)
+            return "rejected", self._refusal(guild_id, "no_connection")
         except VoiceControllerError as exc:
-            log.error("voice leave failed: %s", type(exc).__name__)
+            log.error("voice %s failed: %s", kind, type(exc).__name__)
             return "unavailable", self._refusal(guild_id, "controller_unavailable")
+        manager = self._manager()
+        if kind == "leave" and manager is not None:
+            # The controller confirmed the exit; what is left is the player's
+            # local teardown, whose controller calls meet a generation that is gone.
+            try:
+                await manager.leave_voice(guild_id)
+            except VoiceControllerError as exc:
+                log.warning("music teardown after a leave failed: %s", type(exc).__name__)
         return "complete", {"state": self._state(guild_id)}
 
     def _refusal(self, guild_id: str, kind: str) -> dict[str, Any]:

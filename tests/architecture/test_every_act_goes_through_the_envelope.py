@@ -336,7 +336,7 @@ KNOWN_CALLS = {'agent/comprehend_tools.py': {'ComprehendRead.stream self._inner.
  'infra/vision/preprocess.py': {'_run asyncio.create_subprocess_exec': 1,
                                 '_run_video asyncio.create_subprocess_exec': 1},
  'infra/voice/http_controller.py': {"VoiceControllerClient._call session.request 'POST'": 1},
- 'infra/voice/hub.py': {'VoiceControllerHub.stream_speech self._client_for(guild_id).stream': 1},
+ 'infra/voice/hub.py': {'VoiceControllerHub.speak self._client_for(guild_id).stream': 1},
  'ingest/stages/media.py': {'_take blobs.put': 1},
  'ingest/stickers.py': {'StickerReader._read self._blobs.put': 1},
  'media/adapters/tools/create.py': {'_generate_image__store_blob c.blob_store.put': 1},
