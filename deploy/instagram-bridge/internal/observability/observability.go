@@ -107,7 +107,7 @@ func TraceHTTP(h http.Handler) http.Handler {
 	return otelhttp.NewHandler(h, ServiceName,
 		otelhttp.WithFilter(func(r *http.Request) bool {
 			switch r.URL.Path {
-			case "/health", "/v1/health", "/v1/self", "/metrics", "/events":
+			case "/health", "/ready", "/v1/operations/status", "/v1/platform/accounts/self", "/metrics", "/events":
 				return false
 			default:
 				return true

@@ -273,6 +273,14 @@ var (
 // depends on what the body turned out to be (a text message is bounded
 // tighter than a media one).
 func readJSON(w http.ResponseWriter, r *http.Request, limit int64, into any) ([]byte, bool) {
+	return readJSONOr(w, r, limit, into, func(w http.ResponseWriter) {
+		writeErrorEnvelope(w, http.StatusServiceUnavailable, "unavailable", "too many request bodies are being read; retry")
+	})
+}
+
+// readJSONOr is readJSON with the answer to a full set of body readers
+// supplied by the route, so a contract route answers it as its own envelope.
+func readJSONOr(w http.ResponseWriter, r *http.Request, limit int64, into any, busy func(http.ResponseWriter)) ([]byte, bool) {
 	select {
 	case bodySlots <- struct{}{}:
 		defer func() { <-bodySlots }()
@@ -282,7 +290,7 @@ func readJSON(w http.ResponseWriter, r *http.Request, limit int64, into any) ([]
 		// slot and no deadline until its body arrives.
 		w.Header().Set("Connection", "close")
 		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(refusedBodyDrain))
-		writeErrorEnvelope(w, http.StatusServiceUnavailable, "unavailable", "too many request bodies are being read; retry")
+		busy(w)
 		return nil, false
 	}
 	// A writer that cannot set deadlines (a test recorder) is read without one.

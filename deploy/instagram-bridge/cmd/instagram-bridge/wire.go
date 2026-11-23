@@ -20,7 +20,7 @@ import (
 // durable carries the nora-bridge-wire v1 dependencies built from env in
 // main. Everything is optional except Journal — a bridge with no
 // NORA_BRIDGE_JOURNAL runs the compatibility surface only (SSE as before,
-// no durable capture), which /v1/health reports honestly.
+// no durable capture), which GET /v1/operations/status reports honestly.
 type durable struct {
 	journal    *bridge.Journal
 	projection *bridge.ProjectionSource
@@ -82,11 +82,18 @@ func wire(o gateway.Options, hub *stream.Hub, startedAt time.Time, comments app.
 			return err
 		})
 		gw.UpstreamGate(sink.UpstreamOK)
-		handler = handler.WithV1(&httptransport.V1{
-			App: svc, Store: d.actions, Custody: d.custody,
+		v1 := &httptransport.V1{
+			App: svc, Custody: d.custody,
 			Metrics: d.metrics, AccountKey: d.accountKey,
 			UpstreamOK: sink.UpstreamOK,
-		})
+		}
+		// Only a real store: a nil *ActionStore in the interface is not nil,
+		// and the contract routes would call through it instead of answering
+		// `unavailable`.
+		if d.actions != nil {
+			v1.Store = d.actions
+		}
+		handler = handler.WithV1(v1)
 	}
 	return gw, handler.Routes(), sink
 }
@@ -142,7 +149,7 @@ func durableFromEnv(journalPath, redisURL, dsn, projectionDir, accountKey, keyHe
 	}
 	if dsn != "" {
 		if d.actions, err = bridge.NewActionStore(context.Background(), dsn, "instagram", accountKey); err != nil {
-			slog.Warn("action store unavailable; /v1/actions will answer 503", "error", err)
+			slog.Warn("action store unavailable; platform operations will answer unavailable", "error", err)
 		} else {
 			// Receipt authority binds to THIS bridge's journal — an
 			// event_receipt owner names an event the journal holds with a
@@ -150,7 +157,7 @@ func durableFromEnv(journalPath, redisURL, dsn, projectionDir, accountKey, keyHe
 			d.actions.SetReceiptIntents(bridge.JournalReceiptIntents(j, key, keyVersion))
 		}
 	} else {
-		slog.Warn("DATABASE_URL unset: /v1/actions answers 503 and receipts are journaled as skipped")
+		slog.Warn("DATABASE_URL unset: platform operations answer unavailable and receipts are journaled as skipped")
 	}
 	return d, nil
 }

@@ -2,7 +2,7 @@ package bridge
 
 // Bridge-owned attachment custody: inbound media bytes are copied to a
 // bridge-local volume and referenced by an opaque immutable key; outbound
-// uploads land here first through PUT /v1/attachments/{key}. A raw expiring
+// uploads land here first through PUT /v1/platform/blobs/{key}. A raw expiring
 // URL or an app-local path is never a durable reference — the envelope's
 // `attachments[]` and `message.media[].fetch_token` name custody keys only.
 //
@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/url"
@@ -79,6 +80,12 @@ func ValidKey(key string) bool {
 // ErrKeyConflict is a PUT reusing a key for different bytes.
 var ErrKeyConflict = errors.New("attachment key already held for different bytes")
 
+// ErrTooLarge is a PUT whose bytes exceed MaxAttachmentBytes.
+var ErrTooLarge = fmt.Errorf("attachment exceeds %d bytes", MaxAttachmentBytes)
+
+// ErrNoObject is a key custody holds nothing under.
+var ErrNoObject = errors.New("no attachment under this key")
+
 // Put stores bytes under key, idempotent for identical content. `pin`
 // attaches a retention owner (a work/action id or an event id).
 func (c *Custody) Put(key string, r io.Reader, mediaType, fileName, pin string) (*CustodyRecord, error) {
@@ -90,7 +97,7 @@ func (c *Custody) Put(key string, r io.Reader, mediaType, fileName, pin string) 
 		return nil, err
 	}
 	if int64(len(data)) > MaxAttachmentBytes {
-		return nil, fmt.Errorf("attachment exceeds %d bytes", MaxAttachmentBytes)
+		return nil, ErrTooLarge
 	}
 	sum := sha256.Sum256(data)
 	c.mu.Lock()
@@ -246,18 +253,31 @@ func (c *Custody) FetchURL(ctx context.Context, hc *http.Client, rawURL, key, pi
 // Get returns the record and opens the object. It is an error (nil, false)
 // for an unknown key — never a fabricated empty file.
 func (c *Custody) Get(key string) (*CustodyRecord, []byte, bool) {
+	rec, data, err := c.Find(key)
+	return rec, data, err == nil
+}
+
+// Find is Get that tells a key holding nothing (ErrNoObject) from custody
+// that could not be read (any other error).
+func (c *Custody) Find(key string) (*CustodyRecord, []byte, error) {
 	if !ValidKey(key) {
-		return nil, nil, false
+		return nil, nil, ErrNoObject
 	}
 	rec, err := c.load(key)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil, ErrNoObject
+	}
 	if err != nil {
-		return nil, nil, false
+		return nil, nil, err
 	}
 	data, err := os.ReadFile(c.binPath(key))
-	if err != nil {
-		return nil, nil, false
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil, ErrNoObject
 	}
-	return rec, data, true
+	if err != nil {
+		return nil, nil, err
+	}
+	return rec, data, nil
 }
 
 // Stat reports the custody record when BOTH sides of key exist on disk and
