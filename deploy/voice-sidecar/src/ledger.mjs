@@ -3,10 +3,13 @@
 // a hash of the kind and effect and the answered envelope, never audio.
 //
 // The first occurrence of an id reserves an in-flight entry BEFORE its handler
-// runs, so a concurrent duplicate awaits the same execution. A settled
-// envelope is kept for the TTL. Both kinds count toward the entry and byte
-// bounds; only settled entries are evictable, so a map full of in-flight
-// requests refuses the next id rather than grow.
+// runs, so a concurrent duplicate awaits the same execution. The reservation
+// charges `answerBytes`, the most an answer can hold, so the settled envelope
+// always replaces it in place: an operation that ran is never left without
+// its record. Both kinds count toward the entry and byte bounds; only settled
+// entries are evictable (oldest first, under pressure), so a map full of
+// in-flight requests refuses the next id before it runs rather than grow.
+// At the defaults that is about 7 operations in flight at once.
 
 import { createHash } from 'node:crypto';
 
@@ -16,6 +19,7 @@ const TTL_MS = 5 * 60 * 1000;
 const MAX_ENTRIES = 256;
 const MAX_BYTES = 512 * 1024;
 const SWEEP_MS = 30 * 1000;
+const ANSWER_BYTES = 8 * 1024;
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -36,6 +40,7 @@ export function createLedger({
   maxEntries = MAX_ENTRIES,
   maxBytes = MAX_BYTES,
   sweepMs = SWEEP_MS,
+  answerBytes = ANSWER_BYTES,
 } = {}) {
   // id -> { fingerprint, bytes } plus in-flight { promise, pending } | settled { envelope, expiresAt }
   const entries = new Map();
@@ -77,17 +82,17 @@ export function createLedger({
     },
     /** Reserve `id` for an execution in flight; false when no room can be made. */
     reserve(id, print, promise, pending) {
-      const size = Buffer.byteLength(id) + print.length + Buffer.byteLength(JSON.stringify(pending));
+      const size = Buffer.byteLength(id) + print.length
+        + Math.max(answerBytes, Buffer.byteLength(JSON.stringify(pending)));
       if (!makeRoom(size)) return false;
       entries.set(id, { fingerprint: print, promise, pending, bytes: size });
       bytes += size;
       return true;
     },
-    /** Keep the settled envelope; one that cannot fit is answered but not kept. */
+    /** Keep the settled envelope in its reservation's place; it is always kept. */
     settle(id, print, envelope) {
       forget(id);
       const size = Buffer.byteLength(id) + print.length + Buffer.byteLength(JSON.stringify(envelope));
-      if (!makeRoom(size)) return;
       entries.set(id, { fingerprint: print, envelope, expiresAt: clock.now() + ttlMs, bytes: size });
       bytes += size;
     },

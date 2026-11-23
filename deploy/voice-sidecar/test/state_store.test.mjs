@@ -8,10 +8,13 @@ import { strict as assert } from 'node:assert';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, chmodSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { EventEmitter } from 'node:events';
 
 import { containedFile, createStateStore, guildsFromStateFiles } from '../src/state_store.mjs';
 import { bootChannel } from '../src/lifecycle.mjs';
-import { makeHarness, until, GUILD, CHANNEL } from './helpers.mjs';
+import { buildCore, createCoreRegistry, createFrontDoor } from '../src/controller.mjs';
+import { restoreConnections } from '../src/service.mjs';
+import { createFakePlayer, hubAnswer, makeHarness, until, EVENT_URL, GUILD, CHANNEL } from './helpers.mjs';
 
 const tmp = () => mkdtempSync(path.join(tmpdir(), 'voc-state-'));
 
@@ -146,33 +149,58 @@ test('exit intent is persisted BEFORE connection teardown begins (crash cannot b
 });
 
 test('a connection restored at boot reports with no join', async () => {
-  // service.mjs's boot: a guild whose state file says connected is rejoined
-  // from that file (`bootChannel`, then the core's own lifecycle.join), never
-  // through the control plane. Its events must still reach the hub.
+  // service.mjs's own boot restore, with only Discord and the hub faked: a
+  // guild whose state file says connected is minted and rejoined from that
+  // file, never through the control plane, and its events still reach the hub.
   const dir = tmp();
-  const statePath = path.join(dir, `${GUILD}.json`);
-  writeFileSync(statePath, JSON.stringify({ desired: 'connected', channel_id: CHANNEL }));
-  const h = await makeHarness({ statePath });
-  const stored = await createStateStore({ path: statePath }).read();
-  const channel = bootChannel(stored.state, null);
-  assert.equal(channel, CHANNEL);
-  await h.core.lifecycle.join(channel);
-  const generation = h.core.lifecycle.generation();
-  assert.equal(h.joinCalls.length, 1);
+  writeFileSync(path.join(dir, `${GUILD}.json`), JSON.stringify({ desired: 'connected', channel_id: CHANNEL }));
+  const connection = new EventEmitter();
+  const client = new EventEmitter();
+  client.channels = { cache: new Map() };
+  const pump = () => {};
+  pump.close = () => {};
+  pump.stats = () => ({});
+  const joins = [];
+  const reports = [];
+  const registry = createCoreRegistry({ makeCore: (guildId) => buildCore(registry, guildId, {
+    joinVoice: async (channelId) => {
+      joins.push(channelId);
+      return { connection, client, player: createFakePlayer(), bus: new EventEmitter(), pump, leave: async () => {} };
+    },
+    entersStateFn: async () => {},
+    stateStore: createStateStore({ path: containedFile(dir, `${guildId}.json`) }),
+    spawn: () => { throw new Error('no music in this test'); },
+    createMusicResource: () => null,
+    createSpeechResource: () => null,
+    fetchImpl: async (url, opts) => {
+      reports.push({ url, ...JSON.parse(opts.body) });
+      return hubAnswer('complete');
+    },
+    eventUrl: EVENT_URL,
+  }) });
+  const front = createFrontDoor({ authToken: 'test-bridge-token', controllerFor: registry.controllerFor, health: () => ({}) });
+  try {
+    await restoreConnections({ stateDir: dir, configuredGuilds: new Set([GUILD]), registry, log: () => {} });
+    assert.ok(await until(() => registry.entries()[0]?.[1].lifecycle.voice() === 'connected'), 'restored');
+    assert.deepEqual(joins, [CHANNEL]);
+    const [[, core]] = registry.entries();
+    const generation = core.lifecycle.generation();
 
-  h.connection.emit('stateChange', { status: 'ready' }, { status: 'destroyed' });
-  assert.ok(await until(() => h.eventAttempts.length > 0));
-  const [report] = h.eventAttempts;
-  assert.equal(report.kind, 'report');
-  assert.equal(typeof report.operation_id, 'string');
-  assert.equal(report.effect.type, 'voice-death');
-  assert.equal(report.effect.guild_id, GUILD);
-  assert.equal(report.effect.generation, generation);
-  assert.equal(report.effect.event_seq, 1);
-  assert.equal(h.delivered.length, 1, 'the hub took it');
-  // No operation of any kind, join included, reached the control plane.
-  assert.equal(h.ledger.size(), 0);
-  await h.close();
+    connection.emit('stateChange', { status: 'ready' }, { status: 'destroyed' });
+    assert.ok(await until(() => reports.length > 0), 'a report was sent');
+    const [report] = reports;
+    assert.equal(report.url, EVENT_URL);
+    assert.equal(report.kind, 'report');
+    assert.equal(typeof report.operation_id, 'string');
+    assert.equal(report.effect.type, 'voice-death');
+    assert.equal(report.effect.guild_id, GUILD);
+    assert.equal(report.effect.generation, generation);
+    assert.equal(report.effect.event_seq, 1);
+    // No operation of any kind, join included, reached the control plane.
+    assert.equal(front.ledger.size(), 0);
+  } finally {
+    front.ledger.dispose();
+  }
 });
 
 test('a state write failure is loud: state_write_ok flips false in the status query', async () => {

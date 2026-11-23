@@ -35,7 +35,14 @@ const MAX_SPEECH_BYTES = 2 * 1024 * 1024; // decoded b64 budget per `speak`
 // Raw operations body: every kind shares the route, so the cap is speech's
 // (b64 is ~4/3 of decoded).
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
-const MAX_CONTROL_BYTES = 64 * 1024; // a query body
+// A query body, and every operation but `speak` (measured re-serialized, so
+// the answer's snapshot, which echoes a play's title and url, stays bounded).
+const MAX_CONTROL_BYTES = 64 * 1024;
+// The most an answer can hold: a snapshot carries at most one control body's
+// strings (the current track) plus fixed fields. The ledger reserves this
+// before an operation runs, so a settled answer always has its room.
+export const MAX_ANSWER_BYTES = MAX_CONTROL_BYTES + 8 * 1024;
+const MAX_CHANNEL_ID = 64;
 // An operation_id is the ledger key: a short ASCII word, nothing that could be
 // a path, a header or a log-injection payload.
 const OPERATION_ID_RE = /^[A-Za-z0-9._:-]{1,64}$/;
@@ -144,7 +151,7 @@ export function createController({
   const handlers = {
     join: async (effect) => {
       if (effect.guild_id !== guildId) throw httpError(400, 'wrong_guild');
-      if (typeof effect.channel_id !== 'string' || !effect.channel_id) {
+      if (typeof effect.channel_id !== 'string' || !effect.channel_id || effect.channel_id.length > MAX_CHANNEL_ID) {
         throw httpError(400, 'invalid_body', 'channel_id is required');
       }
       // Any channel in this guild (design/voice-channel/audio.md «Connection
@@ -166,8 +173,8 @@ export function createController({
       }
       // Optional source capability (design/voice-channel/audio.md «Speech and
       // music arbitration»): false marks a live/non-seekable stream; absent
-      // leaves the arbiter's default.
-      if (effect.resumable !== undefined && typeof effect.resumable !== 'boolean') {
+      // or null leaves the arbiter's default.
+      if (effect.resumable != null && typeof effect.resumable !== 'boolean') {
         throw httpError(400, 'invalid_body', 'resumable must be a boolean when present');
       }
       arbiter.playMusic({
@@ -175,7 +182,7 @@ export function createController({
         title: typeof effect.title === 'string' ? effect.title : null,
         durationSeconds: typeof effect.duration_seconds === 'number' ? effect.duration_seconds : null,
         requestId: operationId,
-        resumable: effect.resumable,
+        resumable: effect.resumable ?? undefined,
       });
     },
     stop: async (effect) => {
@@ -423,7 +430,7 @@ export function createFrontDoor({
   // Refuses to exist without a token: every route here moves audio or holds
   // a voice connection, and the bridges already refuse to start unauthenticated.
   if (!authToken) throw new Error('createFrontDoor needs an authToken (NORA_BRIDGE_TOKEN)');
-  const ledger = createLedger({ clock, ...ledgerOptions });
+  const ledger = createLedger({ clock, answerBytes: MAX_ANSWER_BYTES, ...ledgerOptions });
 
   // Reads, parses and shape-checks a JSON object body, answering the refusal
   // itself; null when it did.
@@ -484,6 +491,10 @@ export function createFrontDoor({
       }
       if (!VOICE_KINDS.includes(kind)) return sendRefusal(res, 422, 'unknown_kind');
       if (!isObject(effect)) return sendRefusal(res, 400, 'invalid_body');
+      // Only `speak` carries audio; every other kind keeps the control routes' bound.
+      if (kind !== 'speak' && Buffer.byteLength(JSON.stringify(body)) > MAX_CONTROL_BYTES) {
+        return sendRefusal(res, 413, 'body_too_large');
+      }
       if (kind !== 'report' && !(typeof effect.guild_id === 'string' && SNOWFLAKE_RE.test(effect.guild_id))) {
         return sendRefusal(res, 400, 'wrong_guild');
       }
@@ -536,12 +547,13 @@ export function createFrontDoor({
       if (!body) return;
       if (body.kind !== 'status') return sendRefusal(res, 422, 'unknown_kind');
       const guildId = isObject(body.params) ? body.params.guild_id : undefined;
-      if (!(typeof guildId === 'string' && SNOWFLAKE_RE.test(guildId))) {
-        return sendRefusal(res, 400, 'guild_id is required');
-      }
+      if (typeof guildId !== 'string' || !guildId) return sendRefusal(res, 400, 'guild_id is required');
       const read = (outcome, payload = null) => sendEnvelope(res, readEnvelope(trace, {
         outcome, payload, observedAtMs: clock.now(),
       }));
+      // Every core and configured guild is a snowflake, so anything else
+      // resolves to nothing; it never reaches admission's Discord lookup.
+      if (!SNOWFLAKE_RE.test(guildId)) return read('nothing_found');
       // A guild outside admission reads exactly as one with no connection.
       if (!await authorizeGuild(guildId)) return read('nothing_found');
       const controller = controllerFor(guildId, { create: false });

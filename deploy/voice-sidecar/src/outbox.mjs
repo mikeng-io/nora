@@ -14,7 +14,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { STATUS } from './contract.mjs';
+import { ENVELOPE_PARTS, OPERATION_OUTCOMES, STATUS } from './contract.mjs';
 
 export const realClock = {
   now: () => Date.now(),
@@ -57,10 +57,11 @@ export function createOutbox({
     return event;
   }
 
-  // What the hub's answer means for this event: 'taken' (any settled outcome
-  // but `unavailable`), 'refused' (400, 409, 422: retrying cannot help) or
-  // 'retry' (`unavailable`, 3xx, 401, 404, a status that disagrees with its
-  // outcome, or no parseable envelope).
+  // What the hub's answer means for this event: 'taken' (a settled operation
+  // envelope with any outcome but `unavailable`), 'refused' (400, 409, 422:
+  // retrying cannot help) or 'retry' (everything else: `unavailable`, 3xx,
+  // 401, 404, a status that disagrees with its outcome, a read's outcome, a
+  // record not yet settled, or anything that is not a whole envelope).
   async function verdict(res) {
     const status = res?.status;
     if (status === 400 || status === 409 || status === 422) return 'refused';
@@ -70,10 +71,12 @@ export function createOutbox({
     } catch {
       return 'retry';
     }
-    const outcome = envelope?.outcome;
-    if (typeof outcome !== 'string' || !Object.hasOwn(STATUS, outcome) || STATUS[outcome] !== status) return 'retry';
-    // `pending` is not settled: the hub has not taken it yet.
-    if (outcome === 'unavailable' || outcome === 'pending') return 'retry';
+    if (!envelope || typeof envelope !== 'object' || !ENVELOPE_PARTS.every((part) => Object.hasOwn(envelope, part))) {
+      return 'retry';
+    }
+    const { outcome, when } = envelope;
+    if (!OPERATION_OUTCOMES.includes(outcome) || STATUS[outcome] !== status) return 'retry';
+    if (outcome === 'unavailable' || outcome === 'pending' || when?.state !== 'settled') return 'retry';
     return 'taken';
   }
 

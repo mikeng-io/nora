@@ -33,13 +33,18 @@ test('the status query requires a guild and finds nothing for one with no connec
   // report one server's playback as another's the moment a second connected.
   const h = await makeHarness();
 
-  const missing = await h.post('/v1/voice/queries', { kind: 'status', params: {} });
-  assert.equal(missing.status, 400);
-  assert.deepEqual(Object.keys(missing.body), ['error']);
+  for (const params of [{}, { guild_id: '' }, { guild_id: 42 }, null]) {
+    const missing = await h.post('/v1/voice/queries', { kind: 'status', params });
+    assert.equal(missing.status, 400, JSON.stringify(params));
+    assert.deepEqual(Object.keys(missing.body), ['error']);
+  }
 
-  const unknown = await h.status(OTHER_GUILD);
-  assert.equal(unknown.status, 200);
-  assert.equal(unknown.outcome, 'nothing_found');
+  // A guild id that resolves to nothing, well-formed or not, is found nowhere.
+  for (const guildId of [OTHER_GUILD, 'someone-else']) {
+    const unknown = await h.status(guildId);
+    assert.equal(unknown.status, 200, guildId);
+    assert.equal(unknown.outcome, 'nothing_found', guildId);
+  }
   await h.close();
 });
 

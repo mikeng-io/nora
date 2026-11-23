@@ -26,19 +26,11 @@ const TRACE_ID = 'a1'.repeat(16);
 const TRACEPARENT = `00-${TRACE_ID}-${'b2'.repeat(8)}-01`;
 const tts = () => Buffer.from('tts').toString('base64');
 
+// The pinned snapshot; `autopaused` is the "is sound actually moving" ground
+// truth, beside `player.position_ms`.
 const PINNED_SNAPSHOT_KEYS = [
-  'voice',
-  'generation',
-  'channel_id',
-  'playback_id',
-  'player',
-  // "is sound actually moving" ground truth, alongside `player.position_ms`.
-  'autopaused',
-  'subscribers',
-  'playable',
-  'pending_reaps',
-  'speech_queue',
-  'crossfade_seconds',
+  'voice', 'generation', 'channel_id', 'playback_id', 'player', 'autopaused',
+  'subscribers', 'playable', 'pending_reaps', 'speech_queue', 'crossfade_seconds',
 ];
 
 function assertEnvelope(res, outcome, label) {
@@ -51,6 +43,29 @@ function assertNoEnvelope(res, status, label) {
   assert.equal(res.status, status, label);
   assert.deepEqual(Object.keys(res.body), ['error'], label);
 }
+
+// Raw HTTP over a socket, for what fetch will not send: a body that stops
+// short. Resolves with the status and the parsed body.
+function rawRequest(port, head, body, { end = false } = {}) {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect({ host: '127.0.0.1', port }, () => {
+      socket.write(head + body);
+      if (end) socket.end();
+    });
+    let data = '';
+    socket.on('data', (chunk) => { data += chunk.toString(); });
+    socket.on('close', () => {
+      const status = Number(/^HTTP\/1\.1 (\d{3}) /.exec(data)?.[1]);
+      // The body may be chunked: the JSON is the one object in it.
+      resolve({ status, body: JSON.parse(data.slice(data.indexOf('{'), data.lastIndexOf('}') + 1)) });
+    });
+    socket.on('error', reject);
+  });
+}
+const partialHead = (port) => [
+  'POST /v1/voice/operations HTTP/1.1', 'host: x', `authorization: Bearer ${TOKEN}`,
+  'content-type: application/json', 'content-length: 100', 'connection: close', '', '',
+].join('\r\n');
 
 // -- the voice contract (docs/service-api/openapi.json) -------------------------
 
@@ -137,6 +152,12 @@ test('voice outcomes follow the contract', async () => {
   const paused = await h.op('pause', { guild_id: GUILD, generation });
   assertEnvelope(paused, 'rejected', 'pause during speech');
   assert.equal(paused.error, 'pause_during_speech');
+  const idle = await makeHarness();
+  const idleGen = (await idle.join()).generation;
+  const nothing = await idle.op('resume', { guild_id: GUILD, generation: idleGen });
+  assertEnvelope(nothing, 'rejected', 'an arbiter refusal with no music');
+  assert.equal(nothing.error, 'no_music_playing');
+  await idle.close();
   // rejected: no connection for a guild, on a non-join operation.
   const unknown = await h.op('stop', { guild_id: OTHER_GUILD, generation: 'g' });
   assertEnvelope(unknown, 'rejected', 'unknown guild');
@@ -181,13 +202,31 @@ test('voice outcomes follow the contract', async () => {
   const badJson = await fetch(`http://127.0.0.1:${h.port}/v1/voice/operations`, {
     method: 'POST', headers: { 'content-type': 'application/json', ...AUTH }, body: '{nope' });
   assertNoEnvelope({ status: badJson.status, body: await badJson.json() }, 400, 'invalid json');
-  // A refused 400 holds no ledger entry: the id is free afterwards.
-  assert.equal(h.ledger.get('bad-11'), undefined);
+  // A 400 never became an operation: no id of them, the ones refused inside a
+  // handler included, reads back.
+  for (const [label] of malformed) {
+    assertEnvelope(await h.get(`/v1/voice/operations/bad-${label.length}`), 'nothing_found', `read-back: ${label}`);
+  }
+  const partial = await rawRequest(h.port, partialHead(h.port), '{"oper', { end: true });
+  assertNoEnvelope(partial, 400, 'body read failed');
+  assert.equal(partial.body.error, 'body_read_failed');
 
-  // 401 and 413 are refused before any handler runs.
+  // 401, 408 and 413 are refused before any handler runs; 413 also for a
+  // connection operation over the control bound, before its effect.
   const unauthorized = await fetch(`http://127.0.0.1:${h.port}/v1/voice/operations`, { method: 'POST', body: '{}' });
   assertNoEnvelope({ status: unauthorized.status, body: await unauthorized.json() }, 401, 'no bearer');
   assertNoEnvelope(await h.post('/v1/voice/operations', { pad: 'x'.repeat(4 * 1024 * 1024) }), 413, 'over the cap');
+  const spawnedBefore = h.procs.length;
+  const longTitle = await h.op('play', { guild_id: GUILD, generation, stream_url: 'https://cdn.test/t',
+    title: 'x'.repeat(550 * 1024) }, { operationId: 'op-long-title' });
+  assertNoEnvelope(longTitle, 413, 'a play over the control bound');
+  assert.equal(h.procs.length, spawnedBefore, 'refused before any effect');
+  assertEnvelope(await h.get('/v1/voice/operations/op-long-title'), 'nothing_found', 'read-back: long title');
+  const slow = await makeHarness({ bodyTimeoutMs: 100 });
+  const timedOut = await rawRequest(slow.port, partialHead(slow.port), '{"oper');
+  assertNoEnvelope(timedOut, 408, 'body still arriving at the deadline');
+  assert.equal(timedOut.body.error, 'body_timeout');
+  await slow.close();
 
   // 422: a kind outside the closed set, and nothing applied.
   const played = h.procs.length;
@@ -607,7 +646,7 @@ test('two joins waiting on one leave produce exactly ONE subsequent joinVoice', 
   assert.equal(h.joinCalls.length, 1);
 
   const exitP = h.op('leave', { guild_id: GUILD, generation });
-  assert.equal(await until(() => h.leaves() === 1), true); // teardown parked inside leave()
+  assert.equal(await until(() => h.leaves() === 1, 5000), true); // teardown parked inside leave()
   const j1 = h.op('join', { guild_id: GUILD, channel_id: CHANNEL });
   const j2 = h.op('join', { guild_id: GUILD, channel_id: CHANNEL });
   assert.equal(await until(() => h.core.lifecycle.voice() === 'destroying'), true);
@@ -634,7 +673,7 @@ test('an intentional leave emits NO voice-death and invalidates the generation a
   const { generation } = await h.join();
 
   const exitP = h.op('leave', { guild_id: GUILD, generation });
-  assert.equal(await until(() => h.leaves() === 1), true); // teardown parked inside leave(); generation already dead
+  assert.equal(await until(() => h.leaves() === 1, 5000), true); // teardown parked inside leave(); generation already dead
   const late = await h.op('play', { guild_id: GUILD, generation, stream_url: 'https://cdn.test/x' });
   assert.equal(late.outcome, 'rejected');
   assert.equal(late.error, 'generation_conflict');
@@ -667,13 +706,13 @@ test('two concurrent operations with the same operation_id execute the handler e
   await h.close();
 });
 
-test('play accepts an optional boolean resumable; a non-boolean is 400 invalid_body', async () => {
+test('play accepts an optional boolean or null resumable; anything else is 400 invalid_body', async () => {
   // nora forwards the source's resumable capability (seekable vs live) in the
   // play effect; absent keeps the arbiter default.
   const h = await makeHarness();
   const { generation } = await h.join();
 
-  for (const resumable of ['yes', 1, null]) {
+  for (const resumable of ['yes', 1]) {
     const bad = await h.op('play', { guild_id: GUILD, generation, stream_url: 'https://cdn.test/x', resumable });
     assert.equal(bad.status, 400, `resumable=${resumable}`);
     assert.equal(bad.error, 'invalid_body');
@@ -687,6 +726,11 @@ test('play accepts an optional boolean resumable; a non-boolean is 400 invalid_b
   const regular = await h.op('play', { guild_id: GUILD, generation, stream_url: 'https://cdn.test/a' });
   assert.equal(regular.outcome, 'complete');
   assert.equal(regular.state.player.position_policy, 'approximate_seek'); // default unchanged
+
+  // null is absent (the contract's PlayEffect allows it): the default policy.
+  const unset = await h.op('play', { guild_id: GUILD, generation, stream_url: 'https://cdn.test/b', resumable: null });
+  assert.equal(unset.outcome, 'complete');
+  assert.equal(unset.state.player.position_policy, 'approximate_seek');
   await h.close();
 });
 

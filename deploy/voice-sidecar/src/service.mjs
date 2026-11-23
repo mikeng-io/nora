@@ -215,6 +215,63 @@ print(json.dumps(guilds))
   }
 }
 
+// Boot (design/voice-channel/audio.md «Connection lifecycle»): restore
+// whatever the state directory says was connected, for guilds still in the
+// shared configuration. Each restored guild is minted in `registry` and joined
+// through its own lifecycle, never through the control plane.
+//
+// A guild whose file says `idle` is NOT restored and NOT created: a restart
+// must not rejoin a channel someone just left. A file that cannot be read
+// is not a first boot either — fail closed, log loudly, stay out.
+export async function restoreConnections({ stateDir, configuredGuilds, registry, log }) {
+  let files = [];
+  try {
+    files = (await readdir(stateDir)).filter((f) => f.endsWith('.json'));
+  } catch (err) {
+    if (err?.code !== 'ENOENT') {
+      log('error', { event: 'state_dir_read_failed', path: stateDir, error: String(err?.message ?? err) });
+    }
+  }
+  const { guilds, skipped } = guildsFromStateFiles(files);
+  for (const file of skipped) {
+    log('boot_skip_state_file', {
+      file,
+      reason: 'not a guild snowflake (pre-multi-guild state file or junk)',
+    });
+  }
+  for (const guildId of guilds) {
+    if (!configuredGuilds.has(guildId)) continue;
+    const file = `${guildId}.json`;
+    const store = createStateStore({ path: containedFile(stateDir, file) });
+    const stored = await store.read();
+    if (stored.status === 'corrupt' || stored.status === 'error') {
+      log('error', {
+        event: 'state_store_read_failed',
+        guild_id: guildId,
+        status: stored.status,
+        path: store.path,
+        error: stored.error ?? null,
+      });
+      continue;
+    }
+    // No env fallback channel any more: `bootChannel`'s second argument was
+    // CHANNEL_ID, and the only honest first-boot posture for a process that
+    // serves N guilds is idle until someone joins.
+    const channel = bootChannel(stored.state, null, log);
+    if (!channel) {
+      log('boot_idle', { guild_id: guildId, reason: stored.state?.desired === 'idle' ? 'desired_state_idle' : 'no_channel' });
+      continue;
+    }
+    registry.mint(guildId).lifecycle.join(channel).catch(() => {
+      // Join failed: already logged by the lifecycle, and its own
+      // `onJoinFailed` hook (wired by `buildCore`) has already
+      // dropped this core from the registry — /health does not carry it.
+      // Nothing left to do here; compose's restart policy gives the retry.
+    });
+  }
+  if (!guilds.length) log('boot_idle', { reason: 'no_persisted_guilds' });
+}
+
 async function main() {
   const configuredGuilds = loadConfiguredGuilds();
   // ONE CORE PER GUILD, in one process (multi-guild, 2026-09-17). Each is the
@@ -322,59 +379,8 @@ async function main() {
     log('listening_http', { host: HOST, port: PORT });
   });
 
-  // Boot (design/voice-channel/audio.md «Connection lifecycle»): restore whatever the STATE DIRECTORY says was connected.
-  // Restore only guilds still present in the shared configuration.
-  //
-  // A guild whose file says `idle` is NOT restored and NOT created: a restart
-  // must not rejoin a channel someone just left. A file that cannot be read
-  // is not a first boot either — fail closed, log loudly, stay out.
   if (TOKEN) {
-    let files = [];
-    try {
-      files = (await readdir(STATE_DIR)).filter((f) => f.endsWith('.json'));
-    } catch (err) {
-      if (err?.code !== 'ENOENT') {
-        log('error', { event: 'state_dir_read_failed', path: STATE_DIR, error: String(err?.message ?? err) });
-      }
-    }
-    const { guilds, skipped } = guildsFromStateFiles(files);
-    for (const file of skipped) {
-      log('boot_skip_state_file', {
-        file,
-        reason: 'not a guild snowflake (pre-multi-guild state file or junk)',
-      });
-    }
-    for (const guildId of guilds) {
-      if (!configuredGuilds.has(guildId)) continue;
-      const file = `${guildId}.json`;
-      const store = createStateStore({ path: containedFile(STATE_DIR, file) });
-      const stored = await store.read();
-      if (stored.status === 'corrupt' || stored.status === 'error') {
-        log('error', {
-          event: 'state_store_read_failed',
-          guild_id: guildId,
-          status: stored.status,
-          path: store.path,
-          error: stored.error ?? null,
-        });
-        continue;
-      }
-      // No env fallback channel any more: `bootChannel`'s second argument was
-      // CHANNEL_ID, and the only honest first-boot posture for a process that
-      // serves N guilds is idle until someone joins.
-      const channel = bootChannel(stored.state, null, log);
-      if (!channel) {
-        log('boot_idle', { guild_id: guildId, reason: stored.state?.desired === 'idle' ? 'desired_state_idle' : 'no_channel' });
-        continue;
-      }
-      registry.mint(guildId).lifecycle.join(channel).catch(() => {
-        // Join failed: already logged by the lifecycle, and its own
-        // `onJoinFailed` hook (wired in `makeCore`, above) has already
-        // dropped this core from the registry — /health does not carry it.
-        // Nothing left to do here; compose's restart policy gives the retry.
-      });
-    }
-    if (!guilds.length) log('boot_idle', { reason: 'no_persisted_guilds' });
+    await restoreConnections({ stateDir: STATE_DIR, configuredGuilds, registry, log });
   } else {
     log('boot_idle', { reason: 'healthy-but-idle', missing: 'DISCORD_BOT_TOKEN' });
   }

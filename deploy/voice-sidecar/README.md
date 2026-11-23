@@ -25,9 +25,9 @@ The controller serves the `voice` contract (`design/service-api/contracts.md`
 |---|---|
 | `POST /v1/voice/operations` | a connection operation: `{operation_id, kind, effect}` |
 | `GET /v1/voice/operations/{operation_id}` | an operation read back: `ok` with its envelope, `nothing_found` for an id the ledger does not hold |
-| `POST /v1/voice/queries` | `{kind: "status", params: {guild_id}}`: `ok` with the snapshot plus `last_event_seq`, `outbox_dropped`, `streaming`, `last_error`, `state_write_ok`, `wake`, `pump`; `nothing_found` for a guild with no connection |
+| `POST /v1/voice/queries` | `{kind: "status", params: {guild_id}}`: `ok` with the snapshot plus `last_event_seq`, `outbox_dropped`, `streaming`, `last_error`, `state_write_ok`, `wake`, `pump`; `nothing_found` for a guild id with no connection, well-formed or not; 400 for a missing one |
 | `GET /health` | process liveness (see below) |
-| `GET /ready` | 200 once boot has restored state and a bot token is configured, else 503 |
+| `GET /ready` | 200 once a bot token is set and boot's scan of the stored state has finished, else 503; a restored connection may still be rejoining Discord |
 
 | kind | effect | semantics |
 |---|---|---|
@@ -53,21 +53,27 @@ admission is `denied`; a full speech queue, a failed join and a full ledger
 are `unavailable`; a handler that fails unexpectedly is `uncertain`. A
 malformed request (a `guild_id` that is not a snowflake, a bad effect, an
 `operation_id` outside 1–64 characters of `[A-Za-z0-9._:-]`, invalid JSON)
-is `400` and an unknown kind `422`, each with no envelope.
+is `400` and an unknown kind `422`, each with no envelope; `resumable: null`
+is read as absent.
 
 The process keeps one operation ledger, keyed by `operation_id`, for 5
 minutes, bounded at 256 entries / 512 KiB with in-flight entries never
 evicted. It holds a hash of the kind and effect and the answered envelope,
-never audio. The same id with the same kind and effect is answered from it
-without running again (a concurrent duplicate awaits the first); the same id
-with another kind or effect is `409` with no envelope.
+never audio. An operation reserves room for its whole answer before it
+runs, so one that ran always reads back; with no room left (every slot in
+flight) the next one is `unavailable` before it runs, and settled entries
+are evicted oldest-first under pressure. The same id with the same kind and
+effect is answered from it without running again (a concurrent duplicate
+awaits the first); the same id with another kind or effect is `409` with no
+envelope.
 
 **Every route requires `Authorization: Bearer $NORA_BRIDGE_TOKEN`**, the shared
 service bearer that nora and the bridges already hold. A missing or wrong
 bearer is `401 unauthorized` before the body is read. The process refuses to
-start without the token. An operation body over 4 MiB (a query's over
-64 KiB) is `413` and a body still arriving after 15 s is `408`; both close
-the connection without reading the rest. The listener accepts at most 64
+start without the token. An operation body over 4 MiB is `413` and closes
+the connection unread, as does a body still arriving after 15 s (`408`).
+Every operation but `speak`, and every query, keeps the 64 KiB control
+bound: over it is `413` before any effect runs. The listener accepts at most 64
 connections.
 
 Events (`track-finished`, `stream-failed`, `speech-finished`,

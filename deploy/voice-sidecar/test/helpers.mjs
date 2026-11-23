@@ -36,7 +36,7 @@ export function hubAnswer(outcome, { status = STATUS[outcome], payload = {} } = 
     scope: { level: 'installation' },
     trace: '',
   };
-  return { status, json: async () => envelope };
+  return { status, envelope, json: async () => envelope };
 }
 
 export function createFakeClock(start = 1_000_000) {
@@ -283,6 +283,7 @@ export async function makeHarness(options = {}) {
     ...(options.authorizeGuild ? { authorizeGuild: options.authorizeGuild } : {}),
     clock,
     ledgerOptions: options.ledgerOptions ?? {},
+    ...(options.bodyTimeoutMs ? { bodyTimeoutMs: options.bodyTimeoutMs } : {}),
     log: () => {},
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));

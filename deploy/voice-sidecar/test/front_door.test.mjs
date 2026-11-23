@@ -122,9 +122,10 @@ test('the ledger holds at most its entry budget, evicting settled entries oldest
 
 test('the ledger holds at most its byte budget, counting the kept envelopes', async () => {
   const budget = 1500;
-  const h = await makeHarness({ ledgerOptions: { maxBytes: budget } });
+  const h = await makeHarness({ ledgerOptions: { maxBytes: budget, answerBytes: 1000 } });
   for (let i = 0; i < 10; i += 1) {
-    await h.op('stop', { guild_id: GUILD, generation: 'x' }, { operationId: `bytes-${i}` });
+    const res = await h.op('stop', { guild_id: GUILD, generation: 'x' }, { operationId: `bytes-${i}` });
+    assert.equal(res.outcome, 'rejected', 'each one ran and was kept');
     assert.ok(h.ledger.bytes() <= budget, `bytes ${h.ledger.bytes()}`);
   }
   await h.close();
@@ -253,19 +254,19 @@ test('operation ids have a bounded ASCII format', async () => {
 test('the ledger caps in-flight entries and bytes before executing', async () => {
   let release;
   const gate = new Promise(r => { release = r; });
-  const h = await makeHarness({ joinGate: () => gate, ledgerOptions: { maxEntries: 1, maxBytes: 512 } });
+  const h = await makeHarness({ joinGate: () => gate, ledgerOptions: { maxEntries: 1, maxBytes: 4096, answerBytes: 1024 } });
   const first = h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: 'first' });
   await until(() => h.joinCalls.length === 1);
   const r = await h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: 'second' });
   assert.equal(r.status, 503);
   assert.equal(h.ledger.size(), 1);
-  assert.ok(h.ledger.bytes() > 'first'.length, 'the hash and pending record count too');
+  assert.ok(h.ledger.bytes() >= 1024, 'the reservation holds room for the answer');
   release();
   await first;
   const big = await h.op('stop', { guild_id: GUILD, generation: 'x', padding: 'x'.repeat(600) }, { operationId: 'large' });
   assert.equal(big.outcome, 'rejected');
-  assert.ok(h.ledger.bytes() <= 512, 'an effect occupies the ledger only as its hash');
-  const tiny = await makeHarness({ ledgerOptions: { maxBytes: 128 } });
+  assert.ok(h.ledger.bytes() <= 4096, 'an effect occupies the ledger only as its hash');
+  const tiny = await makeHarness({ ledgerOptions: { maxBytes: 128 } }); // under one answer's room
   const refused = await tiny.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: 'over-budget' });
   assert.equal(refused.status, 503, 'even an in-flight entry must fit the byte budget');
   assert.equal(tiny.joinCalls.length, 0);
@@ -276,7 +277,7 @@ test('the ledger caps in-flight entries and bytes before executing', async () =>
 test('settled ledger entries evict and expire without new requests', async () => {
   const clock = createFakeClock();
   const h = await makeHarness({ clock, ledgerOptions: {
-    maxEntries: 2, maxBytes: 4096, ttlMs: 100, sweepMs: 10,
+    maxEntries: 2, maxBytes: 4096, answerBytes: 1024, ttlMs: 100, sweepMs: 10,
   } });
   for (const id of ['one', 'two', 'three']) {
     const r = await h.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: id });
@@ -315,4 +316,29 @@ test('an authenticated caller cannot dispatch to a refused guild', async () => {
     assert.equal((await good.json()).outcome, 'nothing_found');
     assert.equal(dispatched, 1);
   } finally { await new Promise(r => front.close(r)); }
+});
+
+test('an operation that ran always reads back', async () => {
+  // Without room for one answer, the operation is refused before it runs.
+  const cramped = await makeHarness({ ledgerOptions: { maxBytes: 2000 } });
+  const refused = await cramped.op('join', { guild_id: GUILD, channel_id: CHANNEL }, { operationId: 'op-cramped' });
+  assert.equal(refused.outcome, 'unavailable', 'no room for the answer');
+  assert.equal(cramped.joinCalls.length, 0, 'refused before the effect');
+  assert.equal((await cramped.get('/v1/voice/operations/op-cramped')).body.outcome, 'nothing_found', 'nothing ran');
+  await cramped.close();
+
+  // Once it ran, its answer is kept, even one larger than the budget.
+  const h = await makeHarness({ ledgerOptions: { maxBytes: 2600, answerBytes: 2500 } });
+  const { generation } = await h.join();
+  const effect = { guild_id: GUILD, generation, stream_url: 'https://cdn.test/a', title: 't'.repeat(2500) };
+  const played = await h.op('play', effect, { operationId: 'op-big-answer' });
+  assert.equal(played.outcome, 'complete', 'play');
+  assert.equal(h.procs.length, 1);
+  const readBack = await h.get('/v1/voice/operations/op-big-answer');
+  assert.equal(readBack.body.outcome, 'ok', 'read-back');
+  assert.deepEqual(readBack.body.payload, played.body);
+  const again = await h.op('play', effect, { operationId: 'op-big-answer' });
+  assert.deepEqual(again.body, played.body);
+  assert.equal(h.procs.length, 1, 'not run again');
+  await h.close();
 });

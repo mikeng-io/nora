@@ -330,6 +330,7 @@ test('reports are retried only when the hub could not take them', async () => {
     await tick();
     return { outbox, attempts };
   }
+  const envelopeOf = (answer) => answer.envelope;
   const unparseable = { status: 200, json: async () => { throw new SyntaxError('not json'); } };
   const retried = {
     unavailable: hubAnswer('unavailable'),
@@ -342,6 +343,11 @@ test('reports are retried only when the hub could not take them', async () => {
     'outcome disagrees': hubAnswer('unavailable', { status: 200 }),
     'no envelope': unparseable,
     'not settled': hubAnswer('pending'),
+    'a read outcome': hubAnswer('ok'),
+    'a bare outcome': { status: 200, json: async () => ({ outcome: 'complete' }) },
+    'settled but missing parts': { status: 200, json: async () => ({ outcome: 'complete', when: { state: 'settled' } }) },
+    'complete but still started': { status: 200, json: async () => ({
+      ...envelopeOf(hubAnswer('complete')), when: { state: 'started', started_at_ms: 1, settled_at_ms: null } }) },
   };
   for (const [label, answer] of Object.entries(retried)) {
     const { outbox, attempts } = await firstAnswerIs(answer);
