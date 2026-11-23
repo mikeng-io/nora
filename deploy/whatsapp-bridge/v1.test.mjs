@@ -1634,8 +1634,8 @@ test('operation outcomes follow the contract', async () => {
 test('request hash covers the effect only', async () => {
   // What BridgeAdapter.send builds; the Python and Go bridges pin the same digest.
   const effect = { attachments: [], mentions: [], preview: null, quote: null, styles: [],
-    target: { id: 'conv-1', kind: 'group', thread: null }, text: 'hello' };
-  const digest = '7351bd46460864619ccc4c35f7bba42a94abfcd9a59507d01acd3ba2183b30f8';
+    target: { id: 'conv-1', kind: 'group', thread: '' }, text: 'hello' };
+  const digest = '2769bc2bbbf2d02f1cf2a8d29db8261987258a0d6873e5b1e5c81aeb54d54035';
   assert.equal(requestHash(effect), digest);
   // The stored hash is over the inner `effect`, whatever id, owner and kind carry it.
   const pg = fakePg();
