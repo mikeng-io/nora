@@ -122,6 +122,25 @@
         "title": "BridgeStatus",
         "type": "object"
       },
+      "ConnectionEffect": {
+        "description": "`leave`, `stop`, `pause` and `resume`: the generation the caller observed.",
+        "properties": {
+          "generation": {
+            "title": "Generation",
+            "type": "string"
+          },
+          "guild_id": {
+            "title": "Guild Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "guild_id",
+          "generation"
+        ],
+        "title": "ConnectionEffect",
+        "type": "object"
+      },
       "Contract": {
         "enum": [
           "intake",
@@ -135,6 +154,168 @@
           "operations"
         ],
         "type": "string"
+      },
+      "IntakeOperationEnvelope": {
+        "description": "The answer to an intake `record`.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/OperationFrom"
+          },
+          "outcome": {
+            "enum": [
+              "complete",
+              "pending",
+              "denied",
+              "rejected",
+              "unsupported",
+              "incomplete",
+              "uncertain",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/IntakeOperationPayload"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/OperationWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "IntakeOperationEnvelope",
+        "type": "object"
+      },
+      "IntakeOperationKind": {
+        "const": "record",
+        "type": "string"
+      },
+      "IntakeOperationPayload": {
+        "description": "Why an event was not recorded, when it was not.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationError"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "title": "IntakeOperationPayload",
+        "type": "object"
+      },
+      "IntakeOperationReadEnvelope": {
+        "description": "An intake operation read back: `ok` carries the operation's own envelope.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/ReadFrom"
+          },
+          "outcome": {
+            "enum": [
+              "ok",
+              "nothing_found",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntakeOperationEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/ReadWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "IntakeOperationReadEnvelope",
+        "type": "object"
+      },
+      "IntakeOperationRequest": {
+        "description": "An intake event recorded by operation.",
+        "properties": {
+          "effect": {
+            "$ref": "#/components/schemas/UtteranceEffect"
+          },
+          "kind": {
+            "const": "record",
+            "title": "Kind",
+            "type": "string"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "kind",
+          "effect"
+        ],
+        "title": "IntakeOperationRequest",
+        "type": "object",
+        "x-effects": {
+          "record": {
+            "$ref": "#/components/schemas/UtteranceEffect"
+          }
+        }
+      },
+      "JoinEffect": {
+        "description": "Connect the guild's voice connection to a channel.",
+        "properties": {
+          "channel_id": {
+            "title": "Channel Id",
+            "type": "string"
+          },
+          "guild_id": {
+            "title": "Guild Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "guild_id",
+          "channel_id"
+        ],
+        "title": "JoinEffect",
+        "type": "object"
       },
       "OperationEnvelope": {
         "description": "The body of every operation response. `from_` is `from` on the wire.",
@@ -639,6 +820,66 @@
         ],
         "type": "string"
       },
+      "PlayEffect": {
+        "description": "Play a stream on the connection.",
+        "properties": {
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Duration Seconds"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "string"
+          },
+          "guild_id": {
+            "title": "Guild Id",
+            "type": "string"
+          },
+          "resumable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resumable"
+          },
+          "stream_url": {
+            "title": "Stream Url",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          }
+        },
+        "required": [
+          "guild_id",
+          "generation",
+          "stream_url"
+        ],
+        "title": "PlayEffect",
+        "type": "object"
+      },
       "ReadEnvelope": {
         "description": "The body of every read response. `from_` is `from` on the wire.",
         "properties": {
@@ -738,6 +979,26 @@
         "title": "ReadWhen",
         "type": "object"
       },
+      "ReportEffect": {
+        "additionalProperties": true,
+        "description": "A controller's connection event, sent to the hub; the event's own fields ride along.",
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_seq": {
+            "title": "Event Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "event_id",
+          "event_seq"
+        ],
+        "title": "ReportEffect",
+        "type": "object"
+      },
       "Scope": {
         "description": "The scope a request resolved to, at its contract's level.",
         "properties": {
@@ -785,6 +1046,59 @@
         ],
         "type": "string"
       },
+      "SetVolumeEffect": {
+        "description": "Set the player's volume, in percent of unity.",
+        "properties": {
+          "generation": {
+            "title": "Generation",
+            "type": "string"
+          },
+          "guild_id": {
+            "title": "Guild Id",
+            "type": "string"
+          },
+          "percent": {
+            "title": "Percent",
+            "type": "number"
+          }
+        },
+        "required": [
+          "guild_id",
+          "generation",
+          "percent"
+        ],
+        "title": "SetVolumeEffect",
+        "type": "object"
+      },
+      "SpeakEffect": {
+        "description": "Speak bounded audio on the connection; its record keeps the hash, never the bytes.",
+        "properties": {
+          "audio_b64": {
+            "title": "Audio B64",
+            "type": "string"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "string"
+          },
+          "guild_id": {
+            "title": "Guild Id",
+            "type": "string"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "guild_id",
+          "generation",
+          "audio_b64",
+          "media_type"
+        ],
+        "title": "SpeakEffect",
+        "type": "object"
+      },
       "StatusReadEnvelope": {
         "description": "The `operations` contract's status read of a bridge.",
         "properties": {
@@ -831,6 +1145,368 @@
         ],
         "title": "StatusReadEnvelope",
         "type": "object"
+      },
+      "UtteranceEffect": {
+        "description": "A woken utterance; the wake gate mints `event_id`.",
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "guild_id": {
+            "title": "Guild Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "utterance",
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "voice_channel_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Voice Channel Id"
+          }
+        },
+        "required": [
+          "event_id",
+          "kind",
+          "guild_id",
+          "user_id",
+          "text"
+        ],
+        "title": "UtteranceEffect",
+        "type": "object"
+      },
+      "VoiceOperationEnvelope": {
+        "description": "The answer to a voice operation; a `report`'s payload is the hub's own answer.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/OperationFrom"
+          },
+          "outcome": {
+            "enum": [
+              "complete",
+              "pending",
+              "denied",
+              "rejected",
+              "unsupported",
+              "incomplete",
+              "uncertain",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceOperationPayload"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ],
+            "title": "Payload"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/OperationWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "VoiceOperationEnvelope",
+        "type": "object"
+      },
+      "VoiceOperationKind": {
+        "enum": [
+          "join",
+          "leave",
+          "play",
+          "stop",
+          "pause",
+          "resume",
+          "set_volume",
+          "speak",
+          "report"
+        ],
+        "type": "string"
+      },
+      "VoiceOperationPayload": {
+        "description": "The controller's connection snapshot, and on a refusal its reason.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationError"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "state": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "State"
+          }
+        },
+        "title": "VoiceOperationPayload",
+        "type": "object"
+      },
+      "VoiceOperationReadEnvelope": {
+        "description": "A voice operation read back: `ok` carries the operation's own envelope.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/ReadFrom"
+          },
+          "outcome": {
+            "enum": [
+              "ok",
+              "nothing_found",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceOperationEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/ReadWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "VoiceOperationReadEnvelope",
+        "type": "object"
+      },
+      "VoiceOperationRequest": {
+        "description": "A connection operation or a report; `effect` is the shape `VOICE_EFFECTS` names.",
+        "properties": {
+          "effect": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JoinEffect"
+              },
+              {
+                "$ref": "#/components/schemas/ConnectionEffect"
+              },
+              {
+                "$ref": "#/components/schemas/PlayEffect"
+              },
+              {
+                "$ref": "#/components/schemas/SetVolumeEffect"
+              },
+              {
+                "$ref": "#/components/schemas/SpeakEffect"
+              },
+              {
+                "$ref": "#/components/schemas/ReportEffect"
+              }
+            ],
+            "title": "Effect"
+          },
+          "kind": {
+            "enum": [
+              "join",
+              "leave",
+              "play",
+              "stop",
+              "pause",
+              "resume",
+              "set_volume",
+              "speak",
+              "report"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "kind",
+          "effect"
+        ],
+        "title": "VoiceOperationRequest",
+        "type": "object",
+        "x-effects": {
+          "join": {
+            "$ref": "#/components/schemas/JoinEffect"
+          },
+          "leave": {
+            "$ref": "#/components/schemas/ConnectionEffect"
+          },
+          "pause": {
+            "$ref": "#/components/schemas/ConnectionEffect"
+          },
+          "play": {
+            "$ref": "#/components/schemas/PlayEffect"
+          },
+          "report": {
+            "$ref": "#/components/schemas/ReportEffect"
+          },
+          "resume": {
+            "$ref": "#/components/schemas/ConnectionEffect"
+          },
+          "set_volume": {
+            "$ref": "#/components/schemas/SetVolumeEffect"
+          },
+          "speak": {
+            "$ref": "#/components/schemas/SpeakEffect"
+          },
+          "stop": {
+            "$ref": "#/components/schemas/ConnectionEffect"
+          }
+        }
+      },
+      "VoiceQuery": {
+        "description": "A read of a connection's status.",
+        "properties": {
+          "kind": {
+            "const": "status",
+            "title": "Kind",
+            "type": "string"
+          },
+          "params": {
+            "$ref": "#/components/schemas/VoiceStatusParams"
+          }
+        },
+        "required": [
+          "kind",
+          "params"
+        ],
+        "title": "VoiceQuery",
+        "type": "object"
+      },
+      "VoiceQueryKind": {
+        "const": "status",
+        "type": "string"
+      },
+      "VoiceStatusParams": {
+        "description": "The guild whose connection is read.",
+        "properties": {
+          "guild_id": {
+            "title": "Guild Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "guild_id"
+        ],
+        "title": "VoiceStatusParams",
+        "type": "object"
+      },
+      "VoiceStatusReadEnvelope": {
+        "description": "A connection's status, in the implementer's own shape; none is `nothing_found`.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/ReadFrom"
+          },
+          "outcome": {
+            "enum": [
+              "ok",
+              "nothing_found",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/ReadWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "VoiceStatusReadEnvelope",
+        "type": "object"
       }
     }
   },
@@ -840,6 +1516,129 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/intake/operations": {
+      "post": {
+        "operationId": "submit_intake_operation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntakeOperationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeOperationEnvelope"
+                }
+              }
+            },
+            "description": "complete, rejected, unsupported, incomplete, uncertain"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeOperationEnvelope"
+                }
+              }
+            },
+            "description": "pending"
+          },
+          "400": {
+            "description": "no envelope"
+          },
+          "401": {
+            "description": "no envelope"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeOperationEnvelope"
+                }
+              }
+            },
+            "description": "denied"
+          },
+          "404": {
+            "description": "no envelope"
+          },
+          "409": {
+            "description": "no envelope"
+          },
+          "422": {
+            "description": "no envelope"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeOperationEnvelope"
+                }
+              }
+            },
+            "description": "unavailable"
+          }
+        },
+        "x-family": "operation"
+      }
+    },
+    "/v1/intake/operations/{operation_id}": {
+      "get": {
+        "operationId": "read_intake_operation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeOperationReadEnvelope"
+                }
+              }
+            },
+            "description": "ok, nothing_found"
+          },
+          "400": {
+            "description": "no envelope"
+          },
+          "401": {
+            "description": "no envelope"
+          },
+          "404": {
+            "description": "no envelope"
+          },
+          "422": {
+            "description": "no envelope"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeOperationReadEnvelope"
+                }
+              }
+            },
+            "description": "unavailable"
+          }
+        },
+        "x-family": "read"
+      }
+    },
     "/v1/operations/status": {
       "get": {
         "operationId": "read_status",
@@ -1229,6 +2028,179 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ReadEnvelope"
+                }
+              }
+            },
+            "description": "unavailable"
+          }
+        },
+        "x-family": "read"
+      }
+    },
+    "/v1/voice/operations": {
+      "post": {
+        "operationId": "submit_voice_operation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceOperationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceOperationEnvelope"
+                }
+              }
+            },
+            "description": "complete, rejected, unsupported, incomplete, uncertain"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceOperationEnvelope"
+                }
+              }
+            },
+            "description": "pending"
+          },
+          "400": {
+            "description": "no envelope"
+          },
+          "401": {
+            "description": "no envelope"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceOperationEnvelope"
+                }
+              }
+            },
+            "description": "denied"
+          },
+          "404": {
+            "description": "no envelope"
+          },
+          "409": {
+            "description": "no envelope"
+          },
+          "422": {
+            "description": "no envelope"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceOperationEnvelope"
+                }
+              }
+            },
+            "description": "unavailable"
+          }
+        },
+        "x-family": "operation"
+      }
+    },
+    "/v1/voice/operations/{operation_id}": {
+      "get": {
+        "operationId": "read_voice_operation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceOperationReadEnvelope"
+                }
+              }
+            },
+            "description": "ok, nothing_found"
+          },
+          "400": {
+            "description": "no envelope"
+          },
+          "401": {
+            "description": "no envelope"
+          },
+          "404": {
+            "description": "no envelope"
+          },
+          "422": {
+            "description": "no envelope"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceOperationReadEnvelope"
+                }
+              }
+            },
+            "description": "unavailable"
+          }
+        },
+        "x-family": "read"
+      }
+    },
+    "/v1/voice/queries": {
+      "post": {
+        "operationId": "voice_query",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceStatusReadEnvelope"
+                }
+              }
+            },
+            "description": "ok, nothing_found"
+          },
+          "400": {
+            "description": "no envelope"
+          },
+          "401": {
+            "description": "no envelope"
+          },
+          "404": {
+            "description": "no envelope"
+          },
+          "422": {
+            "description": "no envelope"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceStatusReadEnvelope"
                 }
               }
             },

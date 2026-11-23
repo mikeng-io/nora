@@ -31,8 +31,10 @@ def _document() -> dict:
 
 def test_every_documented_path_conforms():
     paths = _document()["paths"]
-    assert {(m, p) for p, methods in paths.items() for m in methods} == THE_WIRE
-    for path in paths:
+    documented = {(m, p) for p, methods in paths.items() for m in methods
+                  if p.startswith(("/v1/platform/", "/v1/operations/"))}
+    assert documented == THE_WIRE
+    for _, path in documented:
         assert path_conforms(path), path
 
 

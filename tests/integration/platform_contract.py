@@ -23,6 +23,8 @@ from nora.infra.sql.schema import MESSAGES
 DOCUMENT = Path(__file__).resolve().parents[2] / "docs/service-api/openapi.json"
 OPERATIONS = "/v1/platform/operations"
 BLOBS = "/v1/platform/blobs"
+#: The document's routes this contract owns; it lists other contracts' too.
+CONTRACT_PREFIXES = ("/v1/platform/", "/v1/operations/")
 PARTS = {"outcome", "payload", "when", "from", "scope", "trace"}
 #: The collections the old wire served; none may be registered.
 OLD_COLLECTIONS = ("actions", "self", "reads", "attachments", "health",
@@ -31,7 +33,8 @@ OLD_COLLECTIONS = ("actions", "self", "reads", "attachments", "health",
 
 def documented_routes() -> set[tuple[str, str]]:
     paths = json.loads(DOCUMENT.read_text())["paths"]
-    return {(method.upper(), path) for path, item in paths.items() for method in item}
+    return {(method.upper(), path) for path, item in paths.items() for method in item
+            if path.startswith(CONTRACT_PREFIXES)}
 
 
 def assert_serves_the_contract(app: web.Application) -> None:
@@ -39,7 +42,7 @@ def assert_serves_the_contract(app: web.Application) -> None:
     served = {(route.method, route.resource.canonical)
               for route in app.router.routes() if route.resource is not None}
     contract = {(m, p) for m, p in served
-                if p.startswith(("/v1/platform/", "/v1/operations/")) and m != "HEAD"}
+                if p.startswith(CONTRACT_PREFIXES) and m != "HEAD"}
     assert contract == documented_routes()
     assert {("GET", "/health"), ("GET", "/ready")} <= served
     old = tuple(f"/v1/{name}" for name in OLD_COLLECTIONS)

@@ -18,9 +18,11 @@ from pydantic.json_schema import JsonSchemaMode
 
 from nora.domain import service_api as api
 from nora.domain import service_api_platform as platform
+from nora.domain import service_api_voice as voice
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCUMENT = ROOT / "docs" / "service-api" / "openapi.json"
+ROUTES = platform.PLATFORM_ROUTES + voice.VOICE_ROUTES
 
 _COMPONENTS: dict[str, Any] = {
     "Contract": api.Contract,
@@ -34,9 +36,12 @@ _COMPONENTS: dict[str, Any] = {
     "OperationRecord": api.OperationRecord,
     "PlatformOperationKind": platform.PlatformOperationKind,
     "PlatformQueryKind": platform.PlatformQueryKind,
+    "VoiceOperationKind": voice.VoiceOperationKind,
+    "VoiceQueryKind": voice.VoiceQueryKind,
+    "IntakeOperationKind": voice.IntakeOperationKind,
     **{
         tp.__name__: tp
-        for route in platform.PLATFORM_ROUTES
+        for route in ROUTES
         for tp in (route.request, route.response)
         if tp is not None and tp is not bytes
     },
@@ -65,6 +70,14 @@ def _outcome_statuses(schemas: dict[str, Any]) -> None:
         schemas[name]["x-http-status"] = {o: api.status_for(o) for o in get_args(family)}
 
 
+def _effects(schemas: dict[str, Any]) -> None:
+    """Each request names the effect its kind carries; an open effect admits more fields."""
+    for request, table in voice.EFFECTS.items():
+        schemas[request.__name__]["x-effects"] = {k: _ref(tp) for k, tp in table.items()}
+    for effect in voice.OPEN_EFFECTS:
+        schemas[effect.__name__]["additionalProperties"] = True
+
+
 def _ref(tp: type) -> dict[str, Any]:
     return {"$ref": f"#/components/schemas/{tp.__name__}"}
 
@@ -87,7 +100,7 @@ def _responses(route: platform.Route) -> dict[str, Any]:
 
 def _paths() -> dict[str, Any]:
     paths: dict[str, Any] = {}
-    for route in platform.PLATFORM_ROUTES:
+    for route in ROUTES:
         operation: dict[str, Any] = {
             "operationId": route.name,
             "x-family": route.family,
@@ -119,6 +132,7 @@ def generate() -> str:
     for (name, _), schema in top.items():
         schemas.setdefault(name, schema)
     _outcome_statuses(schemas)
+    _effects(schemas)
     document = {
         "openapi": "3.1.0",
         "info": {"title": "Nora service API", "version": "1"},

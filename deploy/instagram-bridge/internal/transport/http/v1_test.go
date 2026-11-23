@@ -393,6 +393,9 @@ func TestRoutesMatchThePlatformContract(t *testing.T) {
 	doc := readContract(t)
 	documented := map[string]bool{}
 	for path, ops := range doc.Paths {
+		if !strings.HasPrefix(path, "/v1/platform/") && !strings.HasPrefix(path, "/v1/operations/") {
+			continue // another contract's route
+		}
 		for method := range ops {
 			documented[strings.ToUpper(method)+" "+path] = true
 		}
