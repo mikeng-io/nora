@@ -72,9 +72,11 @@ class GenerationConflict(VoiceControllerError):  # noqa: N818 — pinned contrac
     `generation_conflict` is recoverable (reconcile via the `status` query and
     retry), an arbiter rejection is NOT — the two must never be conflated."""
 
-    def __init__(self, reason: str) -> None:
+    def __init__(self, reason: str, state: dict[str, Any] | None = None) -> None:
         super().__init__(reason)
         self.reason = reason
+        #: The controller's snapshot the rejection carried, `None` when it carried none.
+        self.state = state
 
 
 class VoiceControllerRejected(VoiceControllerError):  # noqa: N818 — pinned contract name
@@ -276,7 +278,8 @@ class VoiceControllerClient:
         if answer.outcome == "rejected":
             if reason == "unknown_guild":
                 raise VoiceControllerNoConnection(reason)
-            raise GenerationConflict(reason)
+            state = payload.get("state")
+            raise GenerationConflict(reason, state if isinstance(state, dict) else None)
         if answer.outcome != "complete":
             raise VoiceControllerUnavailable(f"{kind} answered {answer.outcome} ({reason})")
         state = payload.get("state")
@@ -410,10 +413,13 @@ class HttpVoiceSession:
                 status = await self._client.status(self._guild_id)
         except VoiceControllerError:
             return False
-        if status.get("voice") != "connected":
-            return False
-        generation = status.get("generation")
-        if not isinstance(generation, str) or not generation:
+        return self.adopt(status)
+
+    def adopt(self, state: dict[str, Any]) -> bool:
+        """Take the generation of a controller snapshot that shows a live
+        connection; `False`, changing nothing, for any other snapshot."""
+        generation = state.get("generation")
+        if state.get("voice") != "connected" or not isinstance(generation, str) or not generation:
             return False
         log.info(
             "voice session for guild %s: adopting generation %s after a "
@@ -421,7 +427,7 @@ class HttpVoiceSession:
             self._guild_id, generation,
         )
         self._generation = generation
-        playback_id = status.get("playback_id")
+        playback_id = state.get("playback_id")
         self.playback_id = playback_id if isinstance(playback_id, str) else None
         return True
 

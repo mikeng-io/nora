@@ -114,6 +114,8 @@ class FakeVoiceController:
         #: Whether the fake holds a connection core for its guild: made by the
         #: first `join`, kept across a `leave`.
         self.has_core = False
+        #: When set, the status query answers `unavailable`.
+        self.status_unavailable = False
         #: Kinds answered 409 `operation_id_reused`, as for an id reused with
         #: another effect.
         self.conflicts: set[str] = set()
@@ -288,6 +290,8 @@ class FakeVoiceController:
         guild_id = params.get("guild_id") if isinstance(params, dict) else None
         if not isinstance(guild_id, str) or not guild_id:
             return web.json_response({"error": "guild_id is required"}, status=400)
+        if self.status_unavailable:
+            return self._read("unavailable", None, _trace(request))
         if guild_id in self._forbidden or not self._holds(guild_id):
             return self._read("nothing_found", None, _trace(request))
         return self._read("ok", {

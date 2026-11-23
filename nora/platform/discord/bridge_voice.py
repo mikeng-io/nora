@@ -156,10 +156,13 @@ class BridgeVoiceSurface:
                 await hub.speak(guild_id, audio, _field(effect, "media_type"))
             else:
                 await hub.leave(guild_id)
-        except GenerationConflict:
+        except GenerationConflict as exc:
             # The controller restarted or replaced the connection behind the
-            # cache: adopt what it holds now, so the state names the generation.
-            if not await session.reconcile_generation():
+            # cache: adopt the generation its rejection names. A snapshot with
+            # no connection drops the session; no snapshot keeps it.
+            state = exc.state
+            if state is not None and not session.adopt(state) \
+                    and state.get("voice") != "connected":
                 hub.drop(guild_id)
             return "rejected", self._refusal(guild_id, "generation_conflict")
         except VoiceControllerNoConnection:

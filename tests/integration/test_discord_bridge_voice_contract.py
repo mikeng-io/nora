@@ -136,10 +136,12 @@ async def test_a_controller_restart_behind_the_cache_is_a_generation_conflict(br
     """The controller restarted under a new generation while the bridge still
     holds the old one: the operation is `rejected` `generation_conflict` with
     the generation the controller holds now, and nothing was applied."""
-    fake, _hub, _app, http = bridge
+    fake, hub, _app, http = bridge
     stale = (await _op(http, "join", guild_id=GUILD, channel_id=CHANNEL)
              )["payload"]["state"]["generation"]
     fake.restart()
+    # The rejection itself names the generation: no status read is needed.
+    fake.status_unavailable = True
     effect = {"guild_id": GUILD, "generation": stale}
     if kind == "speak":
         effect |= {"media_type": "audio/wav", "audio_b64": _audio(4)}
@@ -149,6 +151,7 @@ async def test_a_controller_restart_behind_the_cache_is_a_generation_conflict(br
     assert answer["outcome"] == "rejected"
     assert answer["payload"]["error"]["kind"] == "generation_conflict"
     assert answer["payload"]["state"]["generation"] == fake.generation != stale
+    assert hub.generation_for(GUILD) == fake.generation, "the live session is kept"
     assert fake.voice == "connected" and not fake.speech_active
 
 
