@@ -15,7 +15,7 @@ The wire (`docs/service-api/openapi.json`, «Outcomes on the controller»):
   controller's order: a body that is not a JSON object is 400; an
   `operation_id` outside 1-64 of `[A-Za-z0-9._:-]` is 400; a kind outside the
   closed set is 422; an effect that is not an object is 400; a body over the
-  64 KiB control bound on any kind but `speak` is 413; a `guild_id` that
+  64 KiB control bound (4 MiB for `speak`) is 413; a `guild_id` that
   is not a snowflake is 400 `wrong_guild`; `report` is `unsupported`;
 - one ledger for the whole fake, five minutes from settlement: the same id and
   effect answers the kept envelope without running again (a duplicate in
@@ -28,7 +28,7 @@ The wire (`docs/service-api/openapi.json`, «Outcomes on the controller»):
   `unavailable` `join_failed`, an answer the real controller also gives;
 - `join` admits ANY channel in the guild, is idempotent in the same channel
   and `rejected` `connected_elsewhere` otherwise, its `channel_id` at most 64
-  characters; `play.stream_url` at most 8 KiB as JSON; `play.resumable` is a
+  characters; `play.resumable` is a
   boolean or absent (null reads as absent);
 - every generation-scoped kind is `rejected` `generation_conflict` on a stale
   generation, with the current one in the payload's `state`;
@@ -69,6 +69,7 @@ _KINDS = frozenset({"join", "leave", "play", "stop", "pause", "resume",
                     "set_volume", "speak", "report"})
 _LEDGER_S = 300.0
 _MAX_CONTROL_BYTES = 64 * 1024
+_MAX_BODY_BYTES = 4 * 1024 * 1024
 _OPERATION_ID = re.compile(r"[A-Za-z0-9._:-]{1,64}")
 _SNOWFLAKE = re.compile(r"[0-9]{15,25}")
 
@@ -229,7 +230,7 @@ class FakeVoiceController:
             return web.json_response({"error": "unknown_kind"}, status=422)
         if not isinstance(effect, dict):
             return web.json_response({"error": "invalid_body"}, status=400)
-        if kind != "speak" and len(raw) > _MAX_CONTROL_BYTES:
+        if len(raw) > (_MAX_BODY_BYTES if kind == "speak" else _MAX_CONTROL_BYTES):
             return web.json_response({"error": "body_too_large"}, status=413)
         if kind != "report" and not _snowflake(effect.get("guild_id")):
             return web.json_response({"error": "wrong_guild"}, status=400)
@@ -356,8 +357,7 @@ class FakeVoiceController:
 
     async def _play(self, effect: dict[str, Any]) -> tuple[OperationOutcome, dict[str, Any]]:
         stream_url = effect.get("stream_url")
-        if not isinstance(stream_url, str) or not stream_url or len(
-                json.dumps(stream_url)) > 8 * 1024:
+        if not isinstance(stream_url, str) or not stream_url:
             raise _BadRequestError("invalid_body")
         if effect.get("resumable") is not None and not isinstance(effect["resumable"], bool):
             raise _BadRequestError("invalid_body")
@@ -429,7 +429,7 @@ class FakeVoiceController:
         return self._answer("complete")
 
     def app(self) -> web.Application:
-        app = web.Application(client_max_size=4 * _MAX_SPEECH_BYTES)
+        app = web.Application(client_max_size=2 * _MAX_BODY_BYTES)
         app.router.add_post("/v1/voice/operations", self.operations)
         app.router.add_get("/v1/voice/operations/{operation_id}", self.read_operation)
         app.router.add_post("/v1/voice/queries", self.queries)

@@ -461,7 +461,7 @@ async def test_a_malformed_forbidden_and_unjoined_guild_are_told_apart(aiohttp_c
 async def test_the_front_door_refuses_what_the_controller_refuses(controller):
     """An operation id outside the grammar, a non-boolean `resumable`, an
     over-long channel and a control body over 64 KiB are refused before any
-    effect; a null `resumable` reads as absent."""
+    effect, as is a `speak` body over 4 MiB; a null `resumable` reads as absent."""
     fake, client, test_client = controller
     generation = await _join(client)
 
@@ -476,6 +476,8 @@ async def test_the_front_door_refuses_what_the_controller_refuses(controller):
     assert await post(str(uuid4()), "play", **play, resumable="yes") == 400
     assert await post(str(uuid4()), "join", channel_id="c" * 65) == 400
     assert await post(str(uuid4()), "play", **play, title="t" * 70_000) == 413
+    assert await post(str(uuid4()), "speak", generation=generation, media_type="audio/wav",
+                      audio_b64="A" * (4 * 1024 * 1024)) == 413
     assert fake.plays == []
     assert await post(str(uuid4()), "play", **play, resumable=None) == 200
     assert len(fake.plays) == 1
@@ -501,12 +503,3 @@ async def test_a_duplicate_in_flight_awaits_the_first_answer(controller):
     assert answers[0] == answers[1] and answers[0]["outcome"] == "complete"
     assert len(fake.plays) == 1
 
-
-async def test_an_over_long_stream_url_is_refused(controller):
-    fake, client, _ = controller
-    generation = await _join(client)
-
-    with pytest.raises(VoiceControllerRejected):
-        await client.play(generation, "https://cdn.example/" + "a" * 9000, guild_id=GUILD,
-                          operation_id=str(uuid4()))
-    assert fake.plays == []
