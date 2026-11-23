@@ -13,7 +13,7 @@ through to `self._session` before returning.
 real implementation, `nora/infra/voice/http_controller.py`'s
 `HttpVoiceSession`, drives the audio-controller over HTTP rather than
 holding a local voice connection. Track completion arrives as the
-controller's `track-finished` event (`POST /app/v1/voice/event`), which the
+controller's `track-finished` event (a `report` operation), which the
 voice-event consumer routes to `MusicPlayerManager.on_track_finished` —
 advancement happens on ACTUAL completion only, never on a local timer.
 `skip()` is the same advance, driven directly by a command instead."""
@@ -47,7 +47,7 @@ class VoiceSession(Protocol):
     supersedes the current track, matching what skip/advance rely on).
 
     Speech (TTS) deliberately has NO verb here: spoken replies ride the
-    controller's `/stream` endpoint through `VoiceControllerHub`, which owns
+    controller's `speak` operation through `VoiceControllerHub`, which owns
     the per-guild generation — never through the music session."""
 
     async def play(
@@ -272,7 +272,7 @@ class MusicPlayer:
 
         Deliberately does NOT call `voice.stop()` up front when there IS a
         next track: the advance's own `voice.play()` call for it REPLACES
-        whatever's currently audible (the controller's `/music/play` is
+        whatever's currently audible (the controller's `play` is
         replace-not-enqueue) — the same
         mechanism a natural track-end relies on, just triggered by a command
         instead of the controller's `track-finished` event. Only when the

@@ -24,6 +24,8 @@ from pathlib import Path
 import aiohttp
 from aiohttp import web
 
+from nora.testing.voice import operation_envelope, read_envelope
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WRAPPER = REPO_ROOT / "deploy" / "signal-bridge" / "wrapper.py"
 DISCORD_ENTRY = REPO_ROOT / "deploy" / "discord-bridge" / "entry.py"
@@ -275,9 +277,8 @@ def test_discord_entry_serves_v1_before_connecting(
 
 
 def _controller_app(record: list) -> web.Application:
-    """A fake audio-controller — the real `/voice/*` control contract: join
-    and stream answer the `state` snapshot, status answers the flat
-    snapshot. Behaves like the real server, wrong-call shapes included."""
+    """A fake audio-controller on the `voice` contract: every operation is
+    `complete` with the `state` snapshot, the `status` query `ok` with it."""
     app = web.Application()
 
     def _state() -> dict:
@@ -288,23 +289,17 @@ def _controller_app(record: list) -> web.Application:
             "speech_queue": 0, "crossfade_seconds": 0,
         }
 
-    async def join(request: web.Request) -> web.Response:
-        record.append(("join", await request.json()))
-        return web.json_response(
-            {"ok": True, "request_id": "r", "state": _state()})
+    async def operation(request: web.Request) -> web.Response:
+        body = await request.json()
+        record.append(({"speak": "stream"}.get(body["kind"], body["kind"]), body["effect"]))
+        return web.json_response(operation_envelope("complete", {"state": _state()}))
 
     async def status(request: web.Request) -> web.Response:
-        record.append(("status", dict(request.query)))
-        return web.json_response(_state())
+        record.append(("status", (await request.json())["params"]))
+        return web.json_response(read_envelope("ok", _state()))
 
-    async def stream(request: web.Request) -> web.Response:
-        record.append(("stream", await request.json()))
-        return web.json_response(
-            {"ok": True, "request_id": "r", "state": _state()})
-
-    app.router.add_post("/voice/join", join)
-    app.router.add_get("/voice/status", status)
-    app.router.add_post("/stream", stream)
+    app.router.add_post("/v1/voice/operations", operation)
+    app.router.add_post("/v1/voice/queries", status)
     return app
 
 
@@ -314,10 +309,10 @@ async def test_discord_entry_owns_the_voice_graph_from_the_deployed_config(
     """Rendered compose env + generated config (discord bridge mode, music
     enabled, a `[speech.tts] sidecars` entry pointing at the fake
     controller): the BOOTED bridge owns the whole voice path the app
-    relinquished — `/v1/voice/{g}/join` reaches the controller's
-    `/voice/join`, `/v1/voice/{g}/speech` reaches `/stream` on the same
-    adopted generation, `/v1/voice/event` dedupes and its sidecar allow-list
-    IS the config's — all with no nora process running."""
+    relinquished — the bridge's `join` reaches the controller's `join`, its
+    `speak` reaches the controller's `speak` on the same adopted generation,
+    a `report` dedupes and its sidecar allow-list IS the config's — all with
+    no nora process running."""
     record: list = []
     controller = await aiohttp_client(_controller_app(record))
     _write_config(
@@ -350,48 +345,42 @@ async def test_discord_entry_owns_the_voice_graph_from_the_deployed_config(
                     "entry never served an authenticated status read")
                 await asyncio.sleep(0.2)
 
-            # join → the controller's /voice/join, on the config's allow-list.
-            async with http.post(
-                    f"{base}/v1/voice/{GUILD_ID}/join",
-                    json={"channel_id": "cortez-1"}, headers=headers) as r:
-                assert r.status == 200, await r.text()
+            async def voice(kind: str, operation_id: str, **effect) -> dict:
+                async with http.post(f"{base}/v1/voice/operations", headers=headers, json={
+                        "operation_id": operation_id, "kind": kind, "effect": effect}) as r:
+                    return await r.json()
+
+            # join → the controller's join, on the config's allow-list.
+            joined = await voice("join", "op-1", guild_id=GUILD_ID, channel_id="cortez-1")
+            assert joined["outcome"] == "complete", joined
             joins = [p for kind, p in record if kind == "join"]
             assert joins and joins[0]["channel_id"] == "cortez-1"
 
-            async with http.get(
-                    f"{base}/v1/voice/{GUILD_ID}", headers=headers) as r:
-                state = await r.json()
+            async with http.post(f"{base}/v1/voice/queries", headers=headers, json={
+                    "kind": "status", "params": {"guild_id": GUILD_ID}}) as r:
+                state = (await r.json())["payload"]
             assert state["connected"] and state["generation"] == "gen-1"
 
             # speech → the SAME session's generation on the controller.
             speech = b"\x00" * 64
-            async with http.post(
-                    f"{base}/v1/voice/{GUILD_ID}/speech",
-                    data=speech, headers=headers) as r:
-                assert r.status == 204, await r.text()
+            spoken = await voice("speak", "op-2", guild_id=GUILD_ID, generation="gen-1",
+                                 media_type="audio/wav",
+                                 audio_b64=base64.b64encode(speech).decode())
+            assert spoken["outcome"] == "complete", spoken
             streams = [p for kind, p in record if kind == "stream"]
             assert streams and streams[0]["generation"] == "gen-1"
             assert base64.b64decode(streams[0]["audio_b64"]) == speech
 
-            # The consumer route — dedupe by event_id, sidecars as allow-list.
+            # The consumer's reports — dedupe by event_id, sidecars as allow-list.
             event = {
                 "type": "speech-finished", "event_id": "evt-1",
                 "guild_id": GUILD_ID, "event_seq": 1}
-            async with http.post(
-                    f"{base}/v1/voice/event", json=event,
-                    headers=headers) as r:
-                assert r.status == 200
-                assert (await r.json())["status"] == "ok"
-            async with http.post(
-                    f"{base}/v1/voice/event", json=event,
-                    headers=headers) as r:
-                assert (await r.json())["status"] == "duplicate"
-            async with http.post(
-                    f"{base}/v1/voice/event",
-                    json={**event, "event_id": "evt-2",
-                          "guild_id": "not-configured"},
-                    headers=headers) as r:
-                assert r.status == 400  # no controller configured → refused
+            assert (await voice("report", "op-3", **event))["payload"] == {"status": "ok"}
+            assert (await voice("report", "op-4", **event))["payload"] == {
+                "status": "duplicate"}
+            refused = await voice("report", "op-5", **{
+                **event, "event_id": "evt-2", "guild_id": "not-configured"})
+            assert refused["outcome"] == "denied"  # no controller configured
 
             # Attachment custody — the compose env names the dir and the
             # entry created it: a PUT/GET roundtrip lands bytes durably on

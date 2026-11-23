@@ -1,15 +1,14 @@
 """The Python bridges' edge onto the `platform` contract
 (`nora.domain.service_api_platform`, `docs/service-api/openapi.json`).
 
-One rendering of a stored action row into an operation envelope, one read
-envelope, and the routes Signal and Discord both serve. Storage keeps its own
+One rendering of a stored action row into an operation envelope (the read
+envelope is `answers.py`'s), and the routes Signal and Discord both serve. Storage keeps its own
 words (`confirmed`, `started`, ...); they become contract outcomes only here.
 """
 
 from __future__ import annotations
 
 import json
-import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from os.path import realpath
@@ -18,49 +17,19 @@ from typing import Any, Protocol, get_args
 
 from aiohttp import web
 
-from nora.domain.service_api import OperationOutcome, ReadOutcome, status_for
+from nora.domain.service_api import OperationOutcome, ReadOutcome
 from nora.domain.service_api_platform import (
     SELF_ACCOUNT_ID,
     PlatformOperationKind,
     PlatformQueryKind,
 )
 from nora.platform.bridge import telemetry as bt
+from nora.platform.bridge.answers import envelope_response, read_body, scope_of, trace_of
 from nora.platform.bridge.service import ActionReply, reply_from_row
 from nora.platform.bridge.wire import attachment_key_ok
 
 OPERATION_KINDS = frozenset(get_args(PlatformOperationKind))
 QUERY_KINDS = frozenset(get_args(PlatformQueryKind))
-#: How a read's `observed_at_ms` was known: the bridge's own clock.
-KNOWN_BY = "bridge_clock"
-
-
-def trace_of(headers: Mapping[str, str]) -> str:
-    """The trace id a request's W3C `traceparent` carries, or ``""``."""
-    parts = (headers.get("traceparent") or "").split("-")
-    trace = parts[1] if len(parts) == 4 else ""
-    valid = len(trace) == 32 and trace.strip("0") and all(
-        c in "0123456789abcdef" for c in trace)
-    return trace if valid else ""
-
-
-def scope_of(conversation_id: object) -> dict[str, Any]:
-    """`room` when the request names one conversation, else `installation`."""
-    if isinstance(conversation_id, str) and conversation_id:
-        return {"level": "room", "id": conversation_id}
-    return {"level": "installation", "id": None}
-
-
-def read_body(outcome: ReadOutcome, payload: object, *, source: str, trace: str,
-              observed_ms: int | None = None,
-              scope: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    """A read envelope; `payload` is null unless the outcome is `ok`."""
-    return {
-        "outcome": outcome, "payload": payload if outcome == "ok" else None,
-        "when": {"observed_at_ms": observed_ms or int(time.time() * 1000),
-                 "known_by": KNOWN_BY},
-        "from": {"source": source, "healthy": outcome != "unavailable",
-                 "failed_sources": []},
-        "scope": dict(scope or scope_of(None)), "trace": trace}
 
 
 def _operation_outcome(reply: ActionReply) -> OperationOutcome | None:
@@ -102,11 +71,6 @@ def operation_body(reply: ActionReply, *, target: str, trace: str
                  "started_at_ms": reply.started_ms, "settled_at_ms": reply.settled_ms},
         "from": {"target": target, "platform_ref": reply.platform_ref},
         "scope": scope_of(target), "trace": trace}
-
-
-def envelope_response(body: Mapping[str, Any]) -> web.Response:
-    """An envelope under the status its outcome owns — never another."""
-    return web.json_response(dict(body), status=status_for(body["outcome"]))
 
 
 def operation_response(reply: ActionReply, *, target: str, trace: str) -> web.Response:

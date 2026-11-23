@@ -399,7 +399,7 @@ class Dependencies:
     speaker: Speaker | None
     # The audio-controller seam: the per-guild
     # voice-session registry every voice path shares, and the consumer for
-    # the controller's `/app/v1/voice/event` callbacks. Both `None` when
+    # the controller's `report` operations. Both `None` when
     # `[speech.tts] sidecars` is empty (the consumer additionally needs
     # `[music] enabled`) — a deployment without a controller boots unchanged
     # and every voice verb fails closed.

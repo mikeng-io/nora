@@ -1,8 +1,9 @@
 """`VoiceEventConsumer` — the nora half of the controller → nora callback
 contract.
 
-The audio-controller POSTs lifecycle events to `/app/v1/voice/event`
-(registered in `nora/web/voice.py`): music advancement (`track-finished`,
+The audio-controller reports lifecycle events as the `voice` contract's
+`report` operation, to whichever process holds the hub (`nora/web/voice.py`
+on the app, `bridge_voice.py` on the Discord bridge): music advancement (`track-finished`,
 `stream-failed`), connection death (`voice-death`), the empty-channel
 observation (`channel-emptied`), and the speech acknowledgement
 (`speech-finished`). Every decision stays here — the controller never
@@ -12,7 +13,7 @@ The guards that make a replayed, failed or stale event harmless:
 
 - `event_id` dedupe via the hub (exactly-once, bounded window) — committed
   ONLY after the event's transition succeeded: a failed delivery
-  answers 500 and stays retryable, so the controller's retry is PROCESSED,
+  answers 500 (`unavailable`) and stays retryable, so the controller's retry is PROCESSED,
   never acknowledged as a duplicate while the work is still undone;
 - `playback_id` must match the guild's CURRENT expected playback before a
   music event may advance the queue — a `track-finished` for a track that
@@ -58,12 +59,12 @@ class VoiceEventConsumer:
         self._hub = hub
 
     async def consume(self, body: object) -> tuple[int, dict[str, Any]]:
-        """One callback → (http_status, payload). NEVER raises: the
-        controller retries on non-2xx, so a well-formed event whose work
-        FAILED answers 500 WITHOUT consuming the `event_id` (the retry
-        will be processed), a well-formed-but-inapplicable one answers
-        200 with a `status` naming why nothing happened, and only a
-        malformed body earns a 400."""
+        """One report → (http_status, payload), read by `report_outcome`. NEVER
+        raises: the controller retries after `unavailable`, so a well-formed
+        event whose work FAILED answers 500 WITHOUT consuming the `event_id`
+        (the retry will be processed), a well-formed-but-inapplicable one
+        answers 200 with a `status` naming why nothing happened, an unknown
+        guild 403 (`denied`), and only a malformed body earns a 400."""
         if not isinstance(body, dict):
             return 400, {"error": "body must be an object"}
         event_type = body.get("type")
@@ -78,6 +79,9 @@ class VoiceEventConsumer:
         guild_id = body.get("guild_id")
         if not isinstance(guild_id, str) or not guild_id:
             return 400, {"error": "guild_id is required"}
+        event_seq = body.get("event_seq")
+        if not isinstance(event_seq, int) or isinstance(event_seq, bool):
+            return 400, {"error": "event_seq must be an integer"}
         # A guild nora has no controller for cannot have emitted this. The
         # route has no auth by design (its only caller is a controller on the
         # private compose network), so without this check every distinct
@@ -91,18 +95,16 @@ class VoiceEventConsumer:
                 "audio-controller ([speech.tts] sidecars) — refused",
                 event_id, event_type, guild_id,
             )
-            return 400, {"error": "unknown guild"}
+            return 403, {"error": "unknown guild"}
         if self._hub.seen_event(event_id):
             return 200, {"status": "duplicate"}
-        event_seq = body.get("event_seq")
-        if isinstance(event_seq, int) and not isinstance(event_seq, bool):
-            last = self._hub.last_event_seq(guild_id)
-            if last is not None and event_seq > last + 1:
-                log.warning(
-                    "voice event seq gap for guild %s: last consumed %d, arrived "
-                    "%d — %d event(s) may have been lost while nora was down",
-                    guild_id, last, event_seq, event_seq - last - 1,
-                )
+        last = self._hub.last_event_seq(guild_id)
+        if last is not None and event_seq > last + 1:
+            log.warning(
+                "voice event seq gap for guild %s: last consumed %d, arrived "
+                "%d — %d event(s) may have been lost while nora was down",
+                guild_id, last, event_seq, event_seq - last - 1,
+            )
 
         try:
             with act_event(event_id, ActAuthority(None)):
@@ -121,8 +123,7 @@ class VoiceEventConsumer:
         # Commit the dedupe ONLY on success — and only now bookmark the
         # seq, so a failed delivery never moves the gap baseline forward.
         self._hub.consume_event_id(event_id)
-        if isinstance(event_seq, int) and not isinstance(event_seq, bool):
-            self._hub.note_event_seq(guild_id, event_seq)
+        self._hub.note_event_seq(guild_id, event_seq)
         return status, payload
 
     async def _process(

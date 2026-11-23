@@ -95,7 +95,7 @@ class DiscordAdapter:
         # The voice path: the MiniMax speaker and the audio-controller hub.
         # BOTH None on every deployment that hasn't wired the voice path — the
         # text-only posture stays byte-identical. A SPOKEN turn routes through
-        # speak → the controller's `/stream` endpoint instead of REST text (see
+        # speak → the controller's `speak` operation instead of REST text (see
         # `send`). `voice_guild_ids` is not part of that decision: it is the
         # join allow-list, naming the guilds whose voice channels Nora may be
         # pulled into at all.
@@ -331,7 +331,7 @@ class DiscordAdapter:
         quote: OutboundQuote | None = None,
     ) -> SendResult:
         # Voice playout: answer a SPOKEN turn aloud, through the speaker →
-        # the audio-controller's `/stream` seam. Fail-closed: without a
+        # the audio-controller's `speak` operation. Fail-closed: without a
         # speaker or a hub the reply is SILENT (ok=False, text-only fallback
         # is the caller's business).
         #
@@ -395,7 +395,7 @@ class DiscordAdapter:
             log.warning("voice-channel send failed: tts unavailable (reason=%s)", result.reason)
             return SendResult(ok=False)
         # The ONLY speech path: the
-        # controller's `/stream` endpoint, generation-scoped via the hub.
+        # controller's `speak` operation, generation-scoped via the hub.
         # `False` covers every failure (stale generation, controller down) —
         # the hub already logged which. The no-session case was refused above,
         # before the synthesis was paid for.

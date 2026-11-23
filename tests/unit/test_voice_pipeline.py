@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -28,12 +29,14 @@ from nora.app.voice_events import VoiceEventConsumer
 from nora.domain.ports import ResolvedTrack
 from nora.infra.voice.http_controller import HttpVoiceSession, VoiceControllerClient
 from nora.infra.voice.hub import VoiceControllerHub
+from nora.platform.discord import music_messages as m
+from nora.platform.discord.music_commands import MusicCommands
 from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.testing.music import FakeMusicQueueStore, FakeMusicSessionStore
 from nora.testing.voice import FakeVoiceController
 from tests.unit.test_music_player_manager import _StubSource
 
-GUILD = "guild-1"
+GUILD = "100000000000000101"
 CHANNEL = "cortez-1"
 T0 = datetime(2026, 9, 16, 12, 0, tzinfo=UTC)
 
@@ -226,3 +229,39 @@ async def test_an_advance_after_a_controller_restart_plays_on_the_new_generation
     assert status is not None
     assert status.now_playing is not None
     assert status.now_playing.title == "Track B"
+
+
+class _Interaction:
+    """The fields a deferred `/music` handler reads before and after its call."""
+
+    def __init__(self) -> None:
+        self.guild_id = int(GUILD)
+        self.id = 1
+        self.user = SimpleNamespace(id=1, display_name="generated-user")
+        self.channel = None
+        self.replies: list[str] = []
+        self.response = SimpleNamespace(defer=self._defer)
+        self.followup = SimpleNamespace(send=self._send)
+
+    async def _defer(self, **_kwargs: Any) -> None:
+        return None
+
+    async def _send(self, content: str, **_kwargs: Any) -> None:
+        self.replies.append(content)
+
+
+async def test_a_conflict_from_the_controller_is_a_reply_not_a_crash(
+    pipeline: _Pipeline,
+) -> None:
+    """A 409 on `pause` reaches `/music pause` as a controller failure: the
+    command replies the unavailable line and nothing is sent again."""
+    await pipeline.play()
+    pipeline.fake.conflicts = {"pause"}
+    commands = MusicCommands(pipeline.manager, hub=pipeline.hub,
+                             voice_guild_ids=frozenset({GUILD}))
+    interaction = _Interaction()
+
+    await commands.pause.callback(commands, interaction)
+
+    assert interaction.replies == [m.controller_unavailable_line()]
+    assert pipeline.fake.voice == "connected" and not pipeline.fake.paused

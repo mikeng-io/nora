@@ -12,12 +12,12 @@ import json
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import sqlalchemy as sa
 from aiohttp import web
 
-from nora.domain.service_api import status_for
+from nora.domain.service_api import OperationOutcome, status_for
 from nora.infra.sql.schema import MESSAGES
 
 DOCUMENT = Path(__file__).resolve().parents[2] / "docs/service-api/openapi.json"
@@ -199,3 +199,17 @@ async def _drive_blobs(bridge: Bridge) -> None:
     assert got.status == 200 and await got.read() == b"one"
     absent = await envelope(await http.get(f"{BLOBS}/k2", headers=auth))
     assert absent["outcome"] == "nothing_found"
+
+
+def assert_settled_operation(status: int, body: Any) -> None:
+    """A settled operation envelope as a controller's outbox counts it delivered:
+    the six parts, each well formed, an operation outcome under its own status."""
+    assert isinstance(body, dict) and set(body) == PARTS, body
+    assert body["outcome"] in get_args(OperationOutcome) and body["outcome"] != "pending"
+    assert status == status_for(body["outcome"]), (status, body)
+    when, source, scope = body["when"], body["from"], body["scope"]
+    assert when["state"] == "settled"
+    assert all(isinstance(when[k], int) for k in ("started_at_ms", "settled_at_ms")), when
+    assert isinstance(source["target"], str) and source["platform_ref"] is None, source
+    assert scope["level"] == "installation" and isinstance(body["trace"], str), body
+    assert body["trace"] == "" or len(body["trace"]) == 32, body

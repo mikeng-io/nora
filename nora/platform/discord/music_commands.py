@@ -95,7 +95,7 @@ def _connect_factory(hub: VoiceControllerHub | None, guild_id: str, channel_id: 
     so this function is never called at all in the rejection case.
 
     The join goes through the hub (the audio-controller owns the connection):
-    first join for a guild POSTs `/voice/join`,
+    first join for a guild sends a `join` operation,
     later ones reuse the cached session. A `None` hub means music is enabled
     without an audio-controller configured — the join then fails CLOSED as
     `VoiceControllerUnavailable`, which the command layer already renders as
@@ -540,7 +540,7 @@ async def register(
     Registers `/music` AND the `/discord` voice-control group. There is NO
     `on_voice_state_update` empty-channel handler here: the
     audio-controller observes the channel itself and POSTs `channel-emptied`
-    to `/app/v1/voice/event` — nora holds no voice client to watch.
+    as a `report` operation — nora holds no voice client to watch.
 
     `admission` is the ONE `CommandTree.interaction_check` — the tree's own
     seam, so it gates every command on it (`/music play` through

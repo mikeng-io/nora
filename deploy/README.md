@@ -157,13 +157,15 @@ The newest:
   toward the Python wake gate, AND drives outbound music/speech playback
   itself over an HTTP control plane (`nora/infra/voice/http_controller.py`)
   — no longer receive-only, the stage-2 name from before nora stopped
-  holding its own voice connection. See
-  `design/voice-channel/audio.md` and
+  holding its own voice connection. Its lifecycle reports go to the
+  discord-bridge; `[platforms.discord] mode = "direct"` must set
+  `NORA_VOICE_EVENT_URL=http://nora:9100/v1/voice/operations`, or the reports
+  are answered `unsupported` and dropped. See `design/voice-channel/audio.md` and
   `deploy/voice-sidecar/README.md`.
 * **`voice-wake/`** — Python wake gate (stage 3), the seam's only consumer:
   openWakeWord 「喂 Nora」 detection per user, utterance collection,
   transcription via the local `stt` service, and the transcript POSTed to
-  Nora's `/app/v1/voice/utterance` as text. Audio is transient end to end.
+  Nora's `/v1/intake/operations` as text. Audio is transient end to end.
   See `deploy/voice-wake/README.md`.
 
 ## Monitoring

@@ -6,13 +6,13 @@ where two pieces of cross-request state live, because both are scoped to
 "what nora currently believes about the controller", not to any one call:
 
 - **boot reconciliation** — a nora restart loses the generation it
-  minted, but the controller's connection survives it. A `/voice/join` that
-  comes back 409 means "already connected"; the hub then reads
-  `/voice/status` and ADOPTS the live generation when it points at the
+  minted, but the controller's connection survives it. A `join` that
+  comes back `rejected` means "already connected"; the hub then reads the
+  `status` query and ADOPTS the live generation when it points at the
   channel nora asked for (and only then — connected elsewhere re-raises).
 - **event bookkeeping** — the expected `playback_id` per guild
   (read off the cached session) and the exactly-once `event_id` dedupe the
-  `/app/v1/voice/event` consumer relies on.
+  controller's `report` consumer relies on.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from nora.infra.voice.http_controller import (
     VoiceControllerError,
     VoiceControllerNoConnection,
     VoiceControllerUnavailable,
+    conflicts_fail,
 )
 
 log = logging.getLogger("nora.infra.voice")
@@ -69,7 +70,7 @@ class VoiceControllerHub:
         self._seen_event_id_set: set[str] = set()
         self._event_id_bound = _EVENT_ID_BOUND_PER_GUILD * max(len(self._clients), 1)
         # The highest `event_seq` the consumer has successfully processed,
-        # PER GUILD. Read against `/voice/status`'s `last_event_seq`
+        # PER GUILD. Read against the `status` query's `last_event_seq`
         # on adoption: a controller AHEAD of it holds events nora never saw.
         #
         # Per guild, and it has to be: each controller mints
@@ -95,8 +96,8 @@ class VoiceControllerHub:
 
     async def join(self, guild_id: str, channel_id: str) -> HttpVoiceSession:
         """The cached session if this guild already has one; otherwise
-        `/voice/join`, adopting the controller's existing connection on a
-        409 that turns out to BE the channel asked for."""
+        `join`, adopting the controller's existing connection on a
+        rejection that turns out to BE the channel asked for."""
         cached = self._sessions.get(guild_id)
         if cached is not None:
             if self._channels.get(guild_id) == channel_id:
@@ -120,16 +121,17 @@ class VoiceControllerHub:
                 f"already connected to channel {self._channels.get(guild_id)} "
                 f"in guild {guild_id}, not {channel_id}"
             )
-        try:
-            state = await self._client_for(guild_id).join(
-                guild_id, channel_id, request_id=str(uuid4()),
-            )
-        except GenerationConflict:
-            state = await self._adopt_existing(guild_id, channel_id)
+        with conflicts_fail():
+            try:
+                state = await self._client_for(guild_id).join(
+                    guild_id, channel_id, operation_id=str(uuid4()),
+                )
+            except GenerationConflict:
+                state = await self._adopt_existing(guild_id, channel_id)
         session = self._build_session(guild_id, state)
         self._sessions[guild_id] = session
         # The channel the controller reports, not the one asked for: an
-        # adopted 409 lands on whatever it was already connected to.
+        # adopted rejection lands on whatever it was already connected to.
         reported = state.get("channel_id")
         self._channels[guild_id] = (
             reported if isinstance(reported, str) and reported else channel_id
@@ -137,7 +139,7 @@ class VoiceControllerHub:
         return session
 
     async def _adopt_existing(self, guild_id: str, channel_id: str) -> dict[str, Any]:
-        """Boot reconciliation: the join 409'd because the controller
+        """Boot reconciliation: the join was rejected because the controller
         is already connected. Adopt its generation ONLY when the live
         connection is to the very channel requested — anything else is a
         real conflict and climbs back out as one."""
@@ -214,7 +216,7 @@ class VoiceControllerHub:
 
     def channel_for(self, guild_id: str) -> str | None:
         """The channel this guild's cached session is connected to, or
-        `None` — the read the bridge's `/v1/voice/{guild}` state route needs
+        `None` — the read the bridge's voice `status` query needs
         (`_channels` is what `join` maintains for exactly this)."""
         return self._channels.get(guild_id)
 
@@ -229,27 +231,47 @@ class VoiceControllerHub:
         self._sessions.pop(guild_id, None)
         self._channels.pop(guild_id, None)
 
-    async def stream_speech(self, guild_id: str, audio: bytes, media_type: str) -> bool:
-        """`POST /stream` for the guild's current generation. NEVER raises —
-        `False` (with a log saying why) when there is no session, the
-        generation is stale, or the controller is unavailable. A
-        `GenerationConflict` also drops the cached session: the controller
-        no longer recognises it, so nothing may stream through it again."""
+    async def speak(self, guild_id: str, audio: bytes, media_type: str) -> None:
+        """`speak` for the guild's current generation, raising the controller's
+        verdict: `VoiceControllerNoConnection` with no session, `GenerationConflict`
+        for a stale generation, `VoiceControllerError` for anything else."""
         session = self._sessions.get(guild_id)
         if session is None:
-            log.info("speech for guild %s dropped: no voice session", guild_id)
-            return False
-        try:
+            raise VoiceControllerNoConnection("no voice session")
+        with conflicts_fail():
             await self._client_for(guild_id).stream(
                 session.generation, audio,
-                media_type=media_type, guild_id=guild_id, request_id=str(uuid4()),
+                media_type=media_type, guild_id=guild_id, operation_id=str(uuid4()),
             )
+
+    async def leave(self, guild_id: str) -> None:
+        """`leave` for the guild's current generation, raising the verdict as
+        `speak` does; the session is dropped only once the controller confirms."""
+        session = self._sessions.get(guild_id)
+        if session is None:
+            raise VoiceControllerNoConnection("no voice session")
+        with conflicts_fail():
+            await self._client_for(guild_id).exit(
+                session.generation, guild_id=guild_id, operation_id=str(uuid4()),
+            )
+        self.drop(guild_id)
+
+    async def stream_speech(self, guild_id: str, audio: bytes, media_type: str) -> bool:
+        """`speak`, NEVER raising — `False` (with a log saying why) when there
+        is no session, the generation is stale, or the controller is
+        unavailable. A `GenerationConflict` also drops the cached session: the
+        controller no longer recognises it, so nothing may stream through it again."""
+        try:
+            await self.speak(guild_id, audio, media_type)
         except GenerationConflict as exc:
             log.warning(
                 "speech for guild %s dropped: %s — dropping the stale session",
                 guild_id, exc,
             )
             self.drop(guild_id)
+            return False
+        except VoiceControllerNoConnection as exc:
+            log.info("speech for guild %s dropped: %s", guild_id, exc)
             return False
         except VoiceControllerError as exc:
             log.warning("speech for guild %s failed: %s", guild_id, exc)
@@ -334,7 +356,8 @@ class VoiceControllerHub:
             if not guild_id:
                 continue
             try:
-                status = await self._client_for(guild_id).status(guild_id)
+                with conflicts_fail():
+                    status = await self._client_for(guild_id).status(guild_id)
                 if status.get("voice") != "connected":
                     continue
                 channel_id = status.get("channel_id")

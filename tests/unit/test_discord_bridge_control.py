@@ -10,6 +10,7 @@ non-200s, unknown kinds).
 
 from __future__ import annotations
 
+import base64
 import time
 from unittest.mock import AsyncMock, Mock
 
@@ -25,6 +26,7 @@ from nora.domain.ports import (
     VoiceChannelRef,
 )
 from nora.domain.service_api import status_for
+from nora.platform.bridge.answers import settled_body
 from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint
 from nora.platform.bridge.contract import operation_body, read_body
 from nora.platform.bridge.service import ActionReply
@@ -42,6 +44,10 @@ TOKEN = "test-bearer"  # noqa: S105 — a synthetic fixture token, not a secret
 GUILD = "100000000000000001"
 CHANNEL = "100000000000000002"
 MEMBER = "100000000000000003"
+
+
+def _settled(outcome: str) -> dict:
+    return settled_body(outcome, {"state": {}}, target=GUILD, trace="", started_ms=1)
 
 
 def _bridge_app(state: dict) -> web.Application:
@@ -77,14 +83,34 @@ def _bridge_app(state: dict) -> web.Application:
             status=status_for(outcome))
 
     async def voice_state(req: web.Request) -> web.Response:
-        state["voice_state"].append(req.match_info["guild_id"])
-        return web.json_response(state["voice"])
+        state["voice_state"].append((await req.json())["params"]["guild_id"])
+        answer = state["status_answer"]
+        if answer == "drop":
+            assert req.transport is not None
+            req.transport.close()
+        if isinstance(answer, int):
+            return web.json_response({"error": "no envelope"}, status=answer)
+        if answer == "inconsistent":
+            return web.json_response(read_body("unavailable", None, source="discord", trace=""))
+        return web.json_response(read_body(answer, state["voice"], source="discord", trace=""),
+                                 status=status_for(answer))
 
     async def speech(req: web.Request) -> web.Response:
-        data = await req.read()
-        state["speech"].append((req.match_info["guild_id"], data,
-                                req.headers.get("X-Speech-Media-Type")))
-        return web.Response(status=state["speech_status"])
+        effect = (await req.json())["effect"]
+        state["speech"].append((effect["guild_id"], base64.b64decode(effect["audio_b64"]),
+                                effect["media_type"], effect["generation"]))
+        answer = state["speech_answer"]
+        if answer == "drop":
+            assert req.transport is not None
+            req.transport.close()
+        if isinstance(answer, int):
+            return web.json_response({"error": "no envelope"}, status=answer)
+        if answer == "inconsistent":
+            return web.json_response(_settled("unavailable"))
+        body = _settled(answer) if answer != "pending" else {
+            **_settled("complete"), "outcome": "pending",
+            "when": {"state": "started", "started_at_ms": 1, "settled_at_ms": None}}
+        return web.json_response(body, status=status_for(body["outcome"]))
 
     async def actions(req: web.Request) -> web.Response:
         body = await req.json()
@@ -104,8 +130,8 @@ def _bridge_app(state: dict) -> web.Application:
     app = web.Application(middlewares=[auth])
     app.router.add_post("/v1/music/{op}", music)
     app.router.add_post("/v1/platform/queries", reads)
-    app.router.add_get("/v1/voice/{guild_id}", voice_state)
-    app.router.add_post("/v1/voice/{guild_id}/speech", speech)
+    app.router.add_post("/v1/voice/queries", voice_state)
+    app.router.add_post("/v1/voice/operations", speech)
     app.router.add_post("/v1/platform/operations", actions)
     app.router.add_get("/v1/operations/status", health)
     app.router.add_get("/v1/platform/accounts/self", self_id)
@@ -121,7 +147,7 @@ def bridge_state() -> dict:
         "reads_ops": {}, "reads_by_guild": {},
         "voice": {"connected": True, "session": True, "generation": "g1",
                   "channel_id": CHANNEL},
-        "speech_status": 204,
+        "speech_answer": "complete", "status_answer": "ok",
     }
 
 
@@ -289,8 +315,9 @@ async def test_voice_send_forwards_speech_to_session(control, server, bridge_sta
     result = await adapter.send(target=target, text="hello there")
     assert result.ok is True
     # Bounded bytes reached the bridge's speech route for the right guild.
-    guild, data, media_type = bridge_state["speech"][-1]
+    guild, data, media_type, generation = bridge_state["speech"][-1]
     assert guild == GUILD and data == b"pcm" and media_type == "audio/wav"
+    assert generation == "g1", "the speak names the generation the status query read"
     assert bridge_state["actions"] == []  # no text send
 
 
@@ -343,3 +370,46 @@ async def test_unauthenticated_bridge_calls_fail_closed(server, bridge_state):
     out = await BridgeVoicePresence(control=control).in_voice(
         member_ids=frozenset({MEMBER}))
     assert out is None
+
+
+@pytest.mark.parametrize(("status", "answer", "expected"), [
+    ("ok", "complete", True),
+    ("ok", "rejected", False), ("ok", "unsupported", False), ("ok", "denied", False),
+    ("ok", "unavailable", False), ("ok", 400, False),
+    ("ok", "uncertain", None), ("ok", "incomplete", None), ("ok", "pending", None),
+    ("ok", "inconsistent", None),
+    ("ok", 409, None), ("ok", 404, None), ("ok", 500, None), ("ok", "drop", None),
+    ("unavailable", "complete", None), ("inconsistent", "complete", None),
+    ("drop", "complete", None), (409, "complete", None),
+])
+async def test_voice_reads_by_outcome(control, bridge_state, status, answer, expected):
+    """`speech` is `True` only for `complete`; `False` (the reply falls back to
+    text) only where a stated answer shows the audio cannot have played; `None`
+    where it may have, or where the status read could not tell."""
+    bridge_state["status_answer"], bridge_state["speech_answer"] = status, answer
+
+    assert await control.speech(GUILD, b"pcm", "audio/wav") is expected
+    assert len(bridge_state["speech"]) == (1 if status == "ok" else 0)
+
+
+@pytest.mark.parametrize("voice", [
+    None,
+    {"connected": True, "session": True, "generation": None, "channel_id": CHANNEL},
+    {"connected": False, "session": False, "generation": "g1", "channel_id": None},
+    {"session": True, "generation": "g1", "channel_id": CHANNEL},
+])
+async def test_an_incoherent_status_read_says_nothing_and_sends_nothing(
+        control, bridge_state, voice):
+    bridge_state["voice"] = voice
+
+    assert await control.speech(GUILD, b"pcm", "audio/wav") is None
+    assert bridge_state["speech"] == []
+
+
+async def test_voice_reads_no_connection_as_false_and_sends_nothing(control, bridge_state):
+    bridge_state["voice"] = {"connected": False, "session": False,
+                             "generation": None, "channel_id": None}
+
+    assert await control.speech(GUILD, b"pcm", "audio/wav") is False
+    assert bridge_state["voice_state"] == [GUILD] and bridge_state["speech"] == []
+    assert await control.voice_state(GUILD) == bridge_state["voice"]

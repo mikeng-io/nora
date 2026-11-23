@@ -14,8 +14,8 @@ that is a deployment error that fails closed at the bridge, not a silent
 unauthenticated mode.
 
 The voice path uses the same bearer in both directions: nora calls the audio
-controller with `service_auth_headers()`, and the wake gate calls nora's
-`/app/v1/voice/utterance`, which checks it with `service_auth_ok`.
+controller with `service_auth_headers()`, and the wake gate records an
+utterance on nora's `intake` operations, which check it with `service_auth_ok`.
 """
 
 from __future__ import annotations

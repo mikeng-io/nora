@@ -25,9 +25,8 @@ whole integration API):
   synchronous, so it reads a freshness-bounded snapshot and answers `None`
   — the same "unavailable" a dead client gave — the moment it goes stale).
 - the adapter — `BridgeAdapter` → `BridgeDiscordAdapter`: same adapter, plus
-  the `target.voice` send path forwarded through `POST
-  /v1/voice/{guild}/speech` to the SAME controller generation the bridge
-  holds.
+  the `target.voice` send path forwarded as a `speak` on the bridge's
+  `voice` operations, to the SAME controller generation the bridge holds.
 
 `BridgeControlClient` deliberately wraps `BridgeEndpoint` rather than
 re-inventing auth: one bearer, one session, and every transport failure is
@@ -38,6 +37,7 @@ of every implementation it replaces.
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping
@@ -65,6 +65,7 @@ from nora.domain.ports import (
     VoiceChannelRef,
     speakable,
 )
+from nora.domain.service_api import OperationConflictError, status_for
 from nora.memory import ActAuthority, EffectRecorder, Outcome
 from nora.platform.bridge.client import (
     ACCOUNT_PATH,
@@ -79,6 +80,8 @@ from nora.platform.bridge.client import (
 from .channels import StaticChannelDirectory
 
 log = logging.getLogger("nora.discord.bridge")
+VOICE_OPERATIONS = "/v1/voice/operations"
+VOICE_QUERIES = "/v1/voice/queries"
 
 
 class BridgeControlClient:
@@ -148,33 +151,36 @@ class BridgeControlClient:
         return answer.payload if answer.outcome == "ok" and isinstance(answer.payload, dict) \
             else None
 
-    async def get(self, path: str) -> dict[str, Any] | None:
-        """`GET` on the shared surface — `None` on any non-200/transport
-        failure, matching every other method's discipline."""
+    async def _voice_status(self, guild_id: str) -> BridgeAnswer | None:
+        """The bridge's `status` query as stated; `None` for a failed or self-inconsistent read."""
         try:
-            session = await self._client()
-            async with session.get(
-                    f"{self._endpoint.base_url}{path}",
-                    timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-        except (TimeoutError, aiohttp.ClientError, ValueError):
+            answer = await bridge_call(
+                await self._client(), "POST", f"{self._endpoint.base_url}{VOICE_QUERIES}",
+                "read", json={"kind": "status", "params": {"guild_id": guild_id}})
+        except (BridgeUnavailableError, OperationConflictError):
             return None
-        return data if isinstance(data, dict) else None
+        return answer if _stated(answer) and answer.outcome != "unavailable" else None
 
     async def voice_state(self, guild_id: str) -> dict[str, Any] | None:
-        """`GET /v1/voice/{guild}` → `{session, generation, channel_id}` or
-        `None` — the "does a controller session exist" check the send path
-        pays for before paying for synthesis."""
-        return await self.get(f"/v1/voice/{guild_id}")
+        """The bridge's `status` query → `{connected, session, generation,
+        channel_id}` for `ok`, `None` otherwise — the "does a controller
+        session exist" check the send path pays for before paying for synthesis."""
+        answer = await self._voice_status(guild_id)
+        if answer is None or answer.outcome != "ok" or not isinstance(answer.payload, dict):
+            return None
+        return answer.payload
 
     async def speech(self, guild_id: str, audio: bytes,
                      media_type: str) -> bool | None:
-        """`POST /v1/voice/{guild}/speech` — `True` streamed, `False` the
-        bridge refused (no session / oversized / controller failed), `None`
-        transport unknown. Callers treat `False` and `None` identically:
-        the reply falls back to text."""
+        """A `speak` on the bridge, for the generation its `status` query names.
+
+        `True` for `complete`; `False` (the reply falls back to text) only for a
+        coherent status read that shows no connection, a stated `rejected`,
+        `unsupported`, `denied` or `unavailable`, or a 400; `None` when the
+        audio may have played or the read could not tell: a failed or
+        self-inconsistent read or answer, `uncertain`, `incomplete`,
+        `pending`, a transport failure, a 409.
+        """
         if self._effects is None:
             return await self._speech(guild_id, audio, media_type)
         return await self._effects.invoke(
@@ -186,20 +192,39 @@ class BridgeControlClient:
         )
 
     async def _speech(self, guild_id: str, audio: bytes, media_type: str) -> bool | None:
-        try:
-            session = await self._client()
-            async with session.post(
-                    f"{self._endpoint.base_url}/v1/voice/{guild_id}/speech",
-                    data=audio,
-                    headers={"X-Speech-Media-Type": media_type},
-                    timeout=self._timeout) as resp:
-                if resp.status == 204:
-                    return True
-                if resp.status in (400, 409, 413, 503):
-                    return False
-                return None
-        except (TimeoutError, aiohttp.ClientError):
+        status = await self._voice_status(guild_id)
+        state = status.payload if status is not None and status.outcome == "ok" else None
+        if not isinstance(state, dict):
             return None
+        connected, generation = state.get("connected"), state.get("generation")
+        if connected is False and generation is None:
+            return False
+        if connected is not True or not isinstance(generation, str) or not generation:
+            return None  # a read that contradicts itself says nothing
+        try:
+            answer = await bridge_call(
+                await self._client(), "POST", f"{self._endpoint.base_url}{VOICE_OPERATIONS}",
+                "operation", json={"operation_id": str(uuid4()), "kind": "speak", "effect": {
+                    "guild_id": guild_id, "generation": generation,
+                    "audio_b64": base64.b64encode(audio).decode("ascii"),
+                    "media_type": media_type}},
+                timeout_s=self._timeout.total or 30)
+        except OperationConflictError:
+            return None
+        except BridgeUnavailableError as exc:
+            return False if exc.status == 400 else None
+        if answer.outcome == "complete":
+            return True
+        if answer.outcome in ("rejected", "unsupported", "denied", "unavailable") \
+                and _stated(answer):
+            return False
+        return None
+
+
+def _stated(answer: BridgeAnswer) -> bool:
+    """Whether the outcome is the answer's own, not one `parse_response` stood in."""
+    return answer.body.get("outcome") == answer.outcome \
+        and answer.status == status_for(answer.outcome)
 
 
 class BridgeMusicTool:
