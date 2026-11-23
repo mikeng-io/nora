@@ -990,11 +990,21 @@
           "event_seq": {
             "title": "Event Seq",
             "type": "integer"
+          },
+          "guild_id": {
+            "title": "Guild Id",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
           }
         },
         "required": [
           "event_id",
-          "event_seq"
+          "event_seq",
+          "type",
+          "guild_id"
         ],
         "title": "ReportEffect",
         "type": "object"
@@ -1194,7 +1204,7 @@
         "type": "object"
       },
       "VoiceOperationEnvelope": {
-        "description": "The answer to a voice operation; a `report`'s payload is the hub's own answer.",
+        "description": "The answer to a voice operation; a taken `report` carries the hub's own answer.",
         "properties": {
           "from": {
             "$ref": "#/components/schemas/OperationFrom"
@@ -1219,8 +1229,7 @@
                 "$ref": "#/components/schemas/VoiceOperationPayload"
               },
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/VoiceReportPayload"
               }
             ],
             "title": "Payload"
@@ -1444,6 +1453,25 @@
       "VoiceQueryKind": {
         "const": "status",
         "type": "string"
+      },
+      "VoiceReportPayload": {
+        "description": "What the hub did with a reported event.",
+        "properties": {
+          "status": {
+            "enum": [
+              "ok",
+              "duplicate",
+              "stale"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "VoiceReportPayload",
+        "type": "object"
       },
       "VoiceStatusParams": {
         "description": "The guild whose connection is read.",

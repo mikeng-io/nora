@@ -74,6 +74,8 @@ class ReportEffect:
 
     event_id: str
     event_seq: int
+    type: str
+    guild_id: str
 
 
 @dataclass(frozen=True)
@@ -124,10 +126,17 @@ class VoiceOperationPayload:
 
 
 @dataclass(frozen=True)
-class VoiceOperationEnvelope(OperationEnvelope):
-    """The answer to a voice operation; a `report`'s payload is the hub's own answer."""
+class VoiceReportPayload:
+    """What the hub did with a reported event."""
 
-    payload: VoiceOperationPayload | Mapping[str, object]
+    status: Literal["ok", "duplicate", "stale"]
+
+
+@dataclass(frozen=True)
+class VoiceOperationEnvelope(OperationEnvelope):
+    """The answer to a voice operation; a taken `report` carries the hub's own answer."""
+
+    payload: VoiceOperationPayload | VoiceReportPayload
 
 
 @dataclass(frozen=True)
