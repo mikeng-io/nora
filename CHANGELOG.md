@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.21.3](https://github.com/mikeng-io/nora/compare/v7.21.2...v7.21.3) (2026-11-23)
+
+
+### Bug Fixes
+
+* **platform:** gate the managed Signal link challenge on liveness, harden the verifier read ([d8b5756](https://github.com/mikeng-io/nora/commit/d8b57565897fae9eb90087f47b6e228c76558e4d))
+* **platform:** one platform's identity failure degrades that platform, not Nora ([6ed48f2](https://github.com/mikeng-io/nora/commit/6ed48f2eefec891d46b46511be7147c45a51042e))
+
 ## [7.21.2](https://github.com/mikeng-io/nora/compare/v7.21.1...v7.21.2) (2026-11-23)
 
 
