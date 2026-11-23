@@ -156,34 +156,6 @@ class EventsCollaborator(Protocol):
     `nora.domain.gatherings` for the identical reason — an exception TYPE has to
     be importable from every layer that catches it."""
 
-    async def create_event(
-        self,
-        *,
-        conversation_id: str,
-        requester_person_id: str,
-        title: str,
-        when: datetime | None = None,
-        venue_text: str | None = None,
-        person_names: frozenset[str] | None = None,
-        platform: str,
-        unit_id: str = "",
-        message_ids: Sequence[int] = (),
-    ) -> Gathering: ...
-
-    async def update_event(
-        self,
-        *,
-        event_id: UUID,
-        conversation_id: str,
-        when: datetime | None = None,
-        venue_text: str | None = None,
-        person_names: frozenset[str] | None = None,
-        platform: str,
-        unit_id: str = "",
-        base_revision_id: UUID | None = None,
-        message_ids: Sequence[int] = (),
-    ) -> Gathering: ...
-
     async def rsvp(
         self,
         *,
@@ -194,27 +166,6 @@ class EventsCollaborator(Protocol):
         platform: str = "",
         unit_id: str = "",
     ) -> RSVP: ...
-
-    async def cancel_event(
-        self,
-        *,
-        event_id: UUID,
-        conversation_id: str,
-        platform: str = "",
-        unit_id: str = "",
-    ) -> Gathering: ...
-
-    async def set_event_status(
-        self,
-        *,
-        event_id: UUID,
-        conversation_id: str,
-        status: GatheringStatus,
-        base_revision_id: UUID | None = None,
-        platform: str = "",
-        unit_id: str = "",
-        message_ids: Sequence[int] = (),
-    ) -> Gathering: ...
 
     async def list_events(
         self,

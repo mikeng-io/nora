@@ -181,18 +181,19 @@ async def test_a_session_with_a_nonempty_agenda_records_itself_and_calls_the_mod
 
 
 
-async def test_the_tool_list_offers_every_write_pace_and_remind_verb():
+async def test_cognition_offers_reminders_and_wakes_without_event_writes():
     fake = FakeCognitionAgentRunner(script=[])
     runner, _store, fake = _runner(agent_runner=fake)
     view = UnitView(
         unit="unit-1", pending=_pending("unit-1"), last_activity_ms=None, last_wake=None,
     )
     await runner.on_wake(unit="unit-1", view=view, now_ms=NOW, wake_id=1)
-    assert set(fake.last_tool_names) >= {
-        "note_create", "note_revise", "event_propose", "event_revise",
-        "event_set_status", "standing_revise", "wake_at", "wake_move", "wake_cancel",
+    names = set(fake.last_tool_names)
+    assert names >= {
+        "note_create", "note_revise", "standing_revise", "wake_at", "wake_move", "wake_cancel",
         "remind", "remind_move", "remind_cancel",
     }
+    assert names.isdisjoint({"event_propose", "event_revise", "event_set_status"})
 
 
 
