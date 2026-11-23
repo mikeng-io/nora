@@ -41,7 +41,7 @@
  "nora/agent/room.py": 6,
  "nora/agent/room_routing.py": 2,
  "nora/agent/runtime_tools.py": 1,
- "nora/agent/security.py": 7,
+ "nora/agent/security.py": 4,
  "nora/agent/shared_state.py": 3,
  "nora/agent/shelf_hook.py": 1,
  "nora/agent/social_read.py": 1,

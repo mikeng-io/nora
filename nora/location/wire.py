@@ -65,24 +65,6 @@ def route(cfg) -> RouteWiring:
 
 
 @dataclass(frozen=True)
-class PlaceAreasWiring:
-    place_areas: Any
-
-
-def place_areas(cfg, route_client) -> PlaceAreasWiring:
-
-    # A venue's district and city come from the Geocoding API by the place id `place_info`
-    # resolved it to, with the route key (a Places id is that key's project's, and the key
-    # is restricted to Routes + Places + Geocoding). No route client, no venue area.
-    place_areas = None
-    if route_client is not None:
-        from nora.infra.geocode import GoogleGeocoder
-
-        place_areas = GoogleGeocoder(api_key=cfg.credentials.get(cfg.route.api_key_env, ""))
-    return PlaceAreasWiring(place_areas=place_areas)
-
-
-@dataclass(frozen=True)
 class WeatherWiring:
     weather_client: Any
 

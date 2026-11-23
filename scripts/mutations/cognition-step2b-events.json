@@ -44,8 +44,8 @@
   {
     "name": "rsvp actually refuses on EVERY terminal status, not just cancelled",
     "file": "nora/app/gatherings.py",
-    "old": "        if current.status in TERMINAL_STATUSES:\n            # The same set `update_event` refuses on:",
-    "new": "        if current.status is GatheringStatus.CANCELLED:\n            # The same set `update_event` refuses on:",
-    "target": "tests/test_gatherings_service.py -k test_rsvp_refuses_on_every_terminal_status"
+    "old": "        if current.status in TERMINAL_STATUSES:\n",
+    "new": "        if current.status is GatheringStatus.CANCELLED:\n",
+    "target": "tests/test_gatherings_service.py::test_rsvp_refuses_on_every_terminal_status"
   }
 ]

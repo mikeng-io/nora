@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Collection, Sequence
 from datetime import UTC, datetime
-from typing import Any, Protocol
 from uuid import UUID
 
 from nora.agent.lineage import LineagePolicy, visible_sections
@@ -35,10 +34,6 @@ from nora.domain.ports import PlaceArea
 from nora.domain.rollup import room_key
 
 
-class _RouteSource(Protocol):
-    async def place_info(self, name: str) -> dict[str, Any]: ...
-
-
 def screened_area(area: PlaceArea | None, *, content_checks: bool = True) -> PlaceArea | None:
     """Remove area names that carry identifiers or coordinates."""
     if area is None:
@@ -56,22 +51,12 @@ def screened_area(area: PlaceArea | None, *, content_checks: bool = True) -> Pla
     return PlaceArea(district=clean(area.district), city=clean(area.city)) or None
 
 
-class _PlaceAreas(Protocol):
-    """A resolved venue's areas by its Google place id
-    (`nora.infra.geocode.GoogleGeocoder.area_of_place`); None on a failure."""
-
-    async def area_of_place(self, place_id: str) -> PlaceArea | None: ...
-
-
 class GatheringService:
     def __init__(
         self,
         *,
         store: GatheringStore,
-        route_source: _RouteSource | None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
-        place_areas: _PlaceAreas | None = None,
-        content_checks: bool = True,
     ) -> None:
         self._store = store
         self._now = now
@@ -89,10 +74,7 @@ class GatheringService:
             platform=platform,
         )
         if current.status in TERMINAL_STATUSES:
-            # The same set `update_event` refuses on:
-            # recording an RSVP against an event that is over, called off,
-            # lapsed, or evicted is not useful and reads as though it is
-            # still on.
+            # An RSVP would make a terminal event appear to be still on.
             raise GatheringCancelledError(event_id, current.status)
         row = RSVP(
             event_id=event_id, person_id=person_id, response=response,

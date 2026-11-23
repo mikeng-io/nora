@@ -185,9 +185,7 @@ class World:
         media_join = MediaJoin(
             store=SqlMediaObjectStore(engine), screen=lambda text: None, metrics=self.metrics,
         )
-        events = GatheringService(
-            store=SqlGatheringStore(engine), route_source=None,
-        )
+        events = GatheringService(store=SqlGatheringStore(engine))
         circle = Circle(
             circle_id="c1", person_ids=frozenset({"p1", "p2"}),
             people=tuple(self.persons.by_person[p] for p in ("p1", "p2")),

@@ -92,8 +92,8 @@ def _shape(verbs: tuple[str, ...] = VERBS) -> re.Pattern[str]:
     return re.compile(rf"^[a-z][a-z0-9]*(_[a-z0-9]+)*_({'|'.join(verbs)})$")
 
 
-#: The retained names from when ADR 0015 landed.
-#: The snapshot may only shrink: its digest is pinned below, so adding a name to it (exempting a
+#: Every tool name that existed when ADR 0015 landed. A SNAPSHOT,
+#: never edited: its digest is pinned below, so adding a name to it (exempting a
 #: new tool by hand) fails the build. A name leaves the exemption by being
 #: added to `_RENAMED_SINCE`, which is how the exempt set only shrinks.
 _SNAPSHOT_2026_09_24 = frozenset({
@@ -114,8 +114,7 @@ _SNAPSHOT_SHA256 = (
     "ef4a84d816b536d0f733b7fc00e083684b30eac6b8177c23716219252f4865f7"
 )
 
-#: Snapshot names renamed to the pattern or removed since. Grows; the exempt
-#: set below shrinks with it.
+#: Retired tool names, including renamed snapshot entries. The exempt set shrinks with it.
 _RENAMED_SINCE: frozenset[str] = frozenset({
     # Replaced by the public release list/read pair.
     "version",
@@ -136,7 +135,7 @@ _RENAMED_SINCE: frozenset[str] = frozenset({
     "suggest_venue",
     # Retired: `intention_commit` opens, revises, drops and closes a scheduled delivery.
     "remind", "list_reminders", "cancel_reminder",
-    "event_rsvp", "event_search",
+    "event_propose", "event_revise", "event_rsvp", "event_search", "event_set_status",
     # Retired: the graph's `graph_profile` presentation carries the accounts it read.
     "character_read",
 })
@@ -178,7 +177,7 @@ def test_a_misnamed_new_tool_is_actually_caught(monkeypatch: pytest.MonkeyPatch)
     assert _misnamed(_catalog_entries.NATIVE_TOOLS) == ["read_instagram"]
 
 
-def test_the_snapshot_matches_its_pinned_digest() -> None:
+def test_the_snapshot_is_never_edited() -> None:
     """Pinning a LENGTH let a name be swapped in at the same size. The digest
     pins the exact set: exempting a new tool now means changing this hash, a
     diff nobody can make by accident."""

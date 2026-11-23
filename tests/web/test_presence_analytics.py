@@ -18,10 +18,7 @@ CIRCLE = Circle(circle_id="c1", person_ids=frozenset({"miles"}), people=(MILES,)
 
 
 def _events() -> GatheringService:
-    return GatheringService(
-        store=FakeGatheringStore(),
-        route_source=None,
-    )
+    return GatheringService(store=FakeGatheringStore())
 
 
 class FakeAnalyticsStore:

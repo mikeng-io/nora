@@ -21,7 +21,6 @@ def _ROOMS(person_id: str) -> frozenset[tuple[str, str]]:
 def _service(store: FakeGatheringStore) -> GatheringService:
     return GatheringService(
         store=store,
-        route_source=None,
         now=lambda: datetime(2026, 8, 19, tzinfo=UTC),
     )
 

@@ -23,7 +23,7 @@ NOW = datetime(2026, 8, 19, 12, 0, tzinfo=UTC)
 
 
 def _service(store: FakeGatheringStore) -> GatheringService:
-    return GatheringService(store=store, route_source=None, now=lambda: NOW)
+    return GatheringService(store=store, now=lambda: NOW)
 
 
 async def test_rsvp_records_a_response():

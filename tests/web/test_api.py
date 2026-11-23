@@ -34,10 +34,7 @@ def _fake_events() -> GatheringService:
     (`route_source`/`honcho` both `None`) — these fixtures only exercise
     routes unrelated to Gathering, so the real shape doesn't matter, just that
     `register_web_routes` receives a real `GatheringService` instance."""
-    return GatheringService(
-        store=FakeGatheringStore(),
-        route_source=None,
-    )
+    return GatheringService(store=FakeGatheringStore())
 
 
 class FakePresenceReader:
@@ -337,7 +334,7 @@ async def client_with_events(aiohttp_client):
     what a test asks for (CLAUDE.md's fake-fidelity rule; FakeGatheringStore's
     own docstring makes the same commitment for its store-level contract)."""
     gatherings = FakeGatheringStore()
-    events_service = GatheringService(store=gatherings, route_source=None)
+    events_service = GatheringService(store=gatherings)
     event = await gatherings.create(make_gathering(
         conversation_id="signal:group-1",
         created_by="miles",
@@ -377,7 +374,7 @@ async def test_the_events_routes_show_a_member_every_event_of_their_room(aiohttp
     from nora.app.gatherings import room_event_shown
 
     gatherings = FakeGatheringStore()
-    events_service = GatheringService(store=gatherings, route_source=None)
+    events_service = GatheringService(store=gatherings)
     event = await gatherings.create(make_gathering(
         conversation_id="group-1", created_by="cognition:u",
         title="Saturday dinner",
@@ -413,7 +410,7 @@ async def test_the_events_routes_do_not_show_a_rooms_old_event_after_it_moved_un
     from nora.app.gatherings import room_event_shown
 
     gatherings = FakeGatheringStore()
-    events_service = GatheringService(store=gatherings, route_source=None)
+    events_service = GatheringService(store=gatherings)
     event = await gatherings.create(make_gathering(
         conversation_id="group-1", created_by="cognition:u",
         title="Work offsite", unit_id="work",

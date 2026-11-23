@@ -1,14 +1,9 @@
-"""R-28's identifier/coordinate egress screen. Applied at every place where
+"""R-28's identifier and coordinate screens for Google Places and Routes.
 
 Runtime composition defaults `[content_checks] enabled` to false. The original
 phone/UUID/coordinate, place/person-name and location-audience predicates remain
 available in enabled mode. Credentials and LeakGuard are independent of this
 switch; admission, unit scope, location opt-in and availability still apply.
-
-a string that might name a person or carry a raw coordinate is about to
-leave the host in a tool argument (Google Places/Routes), so that
-`nora.agent.tools` and `nora.app.gatherings.GatheringService` apply the
-identical screen to a venue string without a second copy of this logic.
 
 `scan_identifiers` is re-exported here rather than redefined: its body
 lives in `nora.agent.egress`, paired there with `scan_reply` over a shared
@@ -19,13 +14,8 @@ one gets called later. Re-exporting keeps one source of truth.
 `looks_like_coordinate` lives here so callers outside `tools.py` can use it
 without reaching into that tool-definitions module for one regex predicate.
 
-`screen_and_resolve_place` is the FULL R-28 screen-call-screen sandwich
-(outbound identifier/coordinate/person screen, the call wrapped in
-`try/except`, and a return-path screen on Google's own `name`/`address`).
-`nora.agent.tools`'s `place_info` tool and
-`GatheringService._resolve_place` share it, so a Google-returned `name` or
-`address` that itself trips `scan_identifiers`/`looks_like_coordinate` is never
-persisted as `venue_name`/`venue_address`.
+`screen_and_resolve_place` screens queries and returned place data for
+the `place_info` tool and the location route adapters.
 """
 
 from __future__ import annotations
@@ -188,28 +178,13 @@ async def screen_and_resolve_place(
     person_names: frozenset[str] | None = None,
     content_checks: bool = True,
 ) -> PlaceScreenResult:
-    """The FULL R-28 screen-call-screen sandwich for resolving a free-text
-    venue/place name through Google Places — shared by `nora.agent.tools`'s
-    `place_info` tool and `nora.app.gatherings.GatheringService._resolve_place`.
+    """Resolve a place query and screen the provider's response.
 
-    Three phases, all load-bearing:
-      1. OUTBOUND screen — `scan_identifiers`/`looks_like_coordinate` on the
-         query, then (when `person_names` is given) the person-name check: a
-         query naming a known person («Tyler's», «陳生屋企») is refused
-         before it ever reaches Google, the same as a route argument is.
-      2. THE CALL — `route_source.place_info(query)`, wrapped in
-         `try/except Exception`: an exception escaping a tool is a silent
-         turn (R-5), so it degrades to `unavailable` instead of propagating.
-      3. RETURN-PATH screen — Google's own `name`/`address` are screened the
-         same way before a caller can persist, serve, or hand them back to
-         the model: Google is a third party Nora does not control, and an
-         identifier or coordinate that comes BACK is exactly as much a leak
-         as one that goes out.
-
-    `person_names` is optional: `GatheringService` has no per-tag `persons`/room
-    the way a tool closure does, so it cannot always build that set itself.
-    A caller that has it should always pass it; one without it still gets
-    the identifier/coordinate half of the screen, both ways.
+    The query passes the identifier and coordinate screens and, when
+    supplied, the known person-name screen before reaching the provider.
+    An absent provider or failed lookup returns `unavailable`.
+    Identifiers are screened from returned names and addresses. Addresses
+    that consist of raw coordinates are also stripped when checks are enabled.
     """
     reason = _refused_before_the_call(query, person_names, content_checks=content_checks)
     if reason is not None:

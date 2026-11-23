@@ -66,11 +66,6 @@ class EventsWiring:
     events: Any
 
 
-def events(content_checks, event_store, place_areas, route_client) -> EventsWiring:
-    events = GatheringService(
-        store=event_store,
-        route_source=route_client,
-        place_areas=place_areas,
-        content_checks=content_checks,
-    )
+def events(event_store) -> EventsWiring:
+    events = GatheringService(store=event_store)
     return EventsWiring(events=events)
