@@ -21,7 +21,7 @@ from nora.platform.bridge.service import action_http_status, action_response
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import RunEvidence, read_events, validate_events
 from nora.subject.journey import envelope, settled_event
-from nora.subject.journey_world import action_service, memory_service
+from nora.subject.journey_world import action_service
 from nora.subject.obtain import SubjectSpec, build_config, default_policy, obtain
 from nora.subject.sandbox import eval_host_lock
 from nora.testing.causal_protocol import completion
@@ -59,25 +59,18 @@ def reply_service(cfg, requests, errors):
         position = len(requests)
         requests.append(body)
         try:
-            assert position < 2 and body["model"] == cfg.llm.model
+            assert position < 1 and body["model"] == cfg.llm.model
             assert body["stream"] is True
             tools = {tool["function"]["name"]: tool["function"]
                      for tool in body.get("tools", [])}
-            if position == 0:
-                assert "Generated bridge admission input." in json.dumps(body["messages"])
-                arguments = {"text": "Generated protocol acknowledgement."}
-                validate(arguments, tools["send_reply"]["parameters"])
-                result = completion(cfg.llm.model, "", stream=True)["response"]
-                result["chunks"][0]["choices"][0]["delta"] = {"role": "assistant",
-                    "tool_calls": [{"index": 0, "id": "generated-reply", "type": "function",
-                        "function": {"name": "send_reply", "arguments": json.dumps(arguments)}}]}
-                result["chunks"][1]["choices"][0]["finish_reason"] = "tool_calls"
-            else:
-                assert not tools
-                assert "Generated protocol acknowledgement." in json.dumps(body["messages"])
-                result = completion(cfg.llm.model, json.dumps({
-                    "standing": "Generated protocol acknowledgement.", "working_set": []}),
-                    stream=True)["response"]
+            assert "Generated bridge admission input." in json.dumps(body["messages"])
+            arguments = {"text": "Generated protocol acknowledgement."}
+            validate(arguments, tools["send_reply"]["parameters"])
+            result = completion(cfg.llm.model, "", stream=True)["response"]
+            result["chunks"][0]["choices"][0]["delta"] = {"role": "assistant",
+                "tool_calls": [{"index": 0, "id": "generated-reply", "type": "function",
+                    "function": {"name": "send_reply", "arguments": json.dumps(arguments)}}]}
+            result["chunks"][1]["choices"][0]["finish_reason"] = "tool_calls"
         except (AssertionError, KeyError) as exc:
             errors.append((position, body.get("model"), type(exc).__name__))
             return web.json_response({"error": "unmatched generated model request"}, status=422)
@@ -109,10 +102,9 @@ async def test_real_app_bridge_admission_settles_before_cancellation(
     spec = SubjectSpec(database_url=clean_pg_url, workdir=tmp_path / "subject",
                        policy=policy, overrides=overrides)
     cfg = build_config(spec)
-    requests, feeds, actions, errors, owners = [], [], [], [], {}
+    requests, actions, errors, owners = [], [], [], {}
     daemon = FakeSignalDaemon(sent_at_ms=int(time.time() * 1000) + 10000)
     apps = services(cfg, requests)
-    apps["honcho.base_url"] = memory_service(feeds)
     if tagged:
         model = reply_service(cfg, requests, errors)
         for key in tuple(apps):
@@ -160,11 +152,11 @@ async def test_real_app_bridge_admission_settles_before_cancellation(
                     STIMULUS.c.conversation_id == room))).mappings().all()
             if room == "g1":
                 assert len(recorded) == len(stimuli) == 1
-                assert len(feeds) == (2 if tagged else 1)
                 assert recorded[0]["person_id"] == "miles_novak"
                 assert event["state"] == "done"
-                assert {w["kind"] for w in work} >= {"ingest", "stimulus", "memory_feed"}
-                assert feeds[0]["content"] == incoming.message["body"]
+                kinds = {w["kind"] for w in work}
+                assert kinds >= {"ingest", "stimulus"}
+                assert "memory_feed" not in kinds
                 if tagged:
                     async with engine.connect() as conn:
                         sent = (await conn.execute(sa.select(MESSAGES).where(
@@ -180,7 +172,7 @@ async def test_real_app_bridge_admission_settles_before_cancellation(
                     assert daemon.sent[0]["params"]["message"] == sent[0]["body"]
             else:
                 assert event["state"] == "intentional_skip"
-                assert recorded == stimuli == feeds == []
+                assert recorded == stimuli == []
             assert not env.denied, [(e["method"], e["path"]) for e in env.denied]
             env.check()
         finally:
@@ -193,7 +185,9 @@ async def test_real_app_bridge_admission_settles_before_cancellation(
                 await engine.dispose()
         assert not subject.deps.background._tasks
         assert not errors
-        assert len(requests) == (2 if tagged else 0)
+        # One model call a tag turn: the reply. The Standing fold runs inside
+        # the cognition session now, not as a second call on admission.
+        assert len(requests) == (1 if tagged else 0)
         evidence, _ = runtime_evidence
         captured = [json.loads(e["attributes"]["nora.model.request.body"])
                     for e in read_events(evidence.path) if e.get("name") == "nora.model.request"]

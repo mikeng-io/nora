@@ -24,7 +24,6 @@ from nora.ingest.policy import TriggerTextPolicy
 from nora.obs.metrics import Metrics
 from nora.people.app.managed_authority import AuthorityService
 from nora.policy import Conversation, Policy
-from nora.testing import FakeMemoryStore
 from nora.testing.managed import (
     FakeAuthorityBackend,
     FakeIdentityRegistry,
@@ -85,7 +84,7 @@ async def _pipeline(engine):
     room = Conversation("signal", frozenset({ROOM_ID}), frozenset(), unit="generated-unit")
     policy = Policy((room,), _by_id={("signal", ROOM_ID): room})
     pipeline = IngestPipeline(
-        audit=SqlRecordStore(engine), memory=FakeMemoryStore(),
+        audit=SqlRecordStore(engine),
         policy=TriggerTextPolicy("nora.000"),
         allowlist=policy, access=access, metrics=Metrics(), spawn=lambda task: task.close(),
     )

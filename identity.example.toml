@@ -1,9 +1,9 @@
 # Who people are: person_id -> the accounts they hold on each platform. Copy to
 # `identity.toml`. Valid edits hot-reload within three seconds. Invalid edits keep
-# the last good version. Changing [workspaces] requires process recreation.
+# the last good version.
 # policy.toml refers to people by the person_id defined here.
 #
-# person_id doubles as the Honcho peer id and must match ^[a-zA-Z0-9_-]+$.
+# person_id is used verbatim as a key in every store and must match ^[a-zA-Z0-9_-]+$.
 #
 # One [[persons.<id>.<platform>]] block per ACCOUNT. A person may hold several
 # accounts on a platform (dual-SIM, a second Discord, a burner Telegram); all
@@ -66,23 +66,3 @@ phone = "+85212345678"
 # username = "example_handle"   # readable, never matched on
 # fbid     = "100000000000001"
 # igid     = "10000001"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# WORKSPACE BINDINGS (DEC-214). Retiring with Honcho. policy.toml's
-# [units.<unit>] puts each unit in a Nora workspace; this maps a Nora workspace
-# to the Honcho workspace holding its person models.
-#
-# Optional per workspace: with no table here, the Nora workspace name is used as
-# the Honcho workspace id. Startup refuses if two Nora workspaces bind to one
-# Honcho workspace, or if a binding exists while policy.toml has no [units]
-# (the implicit workspace is bound to config.toml's honcho.workspace_id).
-#
-# A bound Honcho workspace must be Nora's own (carrying her `nora_owner`
-# marker) or absent or empty, which she claims. An unmarked workspace that
-# already holds sessions makes startup fail; pick another id (a `nora-` prefix keeps
-# them apart). config.toml's honcho.workspace_id is exempt.
-#
-# [workspaces.home]
-# honcho_workspace = "nora"     # keep an existing Honcho workspace and its history
-# [workspaces.work]
-# honcho_workspace = "nora-work"

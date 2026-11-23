@@ -4,163 +4,15 @@ from nora.domain.culture import RoomMessage, character_key
 from nora.domain.models import DeliveryStatus, PersonRef, TranscriptRow
 from nora.domain.profile import ProfileDispute, ProfileLine
 from nora.persons import Persons
-from nora.testing import FakeMemoryStore
 from nora.web.memory import build_memory_payload
 
-MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
-ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
+MILES = PersonRef(person_id="miles", name="Miles")
+ADA = PersonRef(person_id="ada", name="Ada")
 
 
 def _persons(*refs: PersonRef) -> Persons:
     return Persons(by_person={r.person_id: r for r in refs}, index={})
 
-
-async def test_returns_only_the_callers_own_entry_not_everyone_elses():
-    """User-scoped: a caller resolved to `miles` must never see `ada`'s memory
-    (no "showcase everyone to everyone")."""
-    honcho = FakeMemoryStore(
-        conclusions={"miles": ["likes climbing", "works in fintech"], "ada": ["plays guitar"]},
-        cards={"miles": ["Name: Miles Novak"], "ada": ["Name: Ada"]},
-    )
-    persons = _persons(MILES, ADA)
-
-    payload = await build_memory_payload(
-        honcho=honcho, persons=persons, ai_peer="nora", person_id="miles",
-    )
-
-    assert [entry["person_id"] for entry in payload] == ["miles"]
-    assert payload[0]["display_name"] == "Miles"
-    assert payload[0]["reachable"] is True
-    assert payload[0]["episodes"] == ["likes climbing", "works in fintech"]
-    assert payload[0]["identity"] == ["Name: Miles Novak"]
-
-
-async def test_a_missing_person_id_returns_empty_not_everyone():
-    """Fail-closed (R-5's shape): no resolved identity must never fall back
-    to showing every whitelisted person's data."""
-    honcho = FakeMemoryStore(conclusions={"miles": ["x"]})
-    persons = _persons(MILES)
-
-    payload = await build_memory_payload(
-        honcho=honcho, persons=persons, ai_peer="nora", person_id=None,
-    )
-
-    assert payload == []
-
-
-async def test_an_unrecognized_person_id_returns_empty_not_an_error():
-    honcho = FakeMemoryStore(conclusions={"miles": ["x"]})
-    persons = _persons(MILES)
-
-    payload = await build_memory_payload(
-        honcho=honcho, persons=persons, ai_peer="nora", person_id="stranger",
-    )
-
-    assert payload == []
-
-
-async def test_a_person_with_no_conclusions_or_card_is_reachable_but_empty():
-    honcho = FakeMemoryStore(conclusions={}, cards={})
-    persons = _persons(MILES)
-
-    payload = await build_memory_payload(
-        honcho=honcho, persons=persons, ai_peer="nora", person_id="miles",
-    )
-
-    assert payload == [
-        {
-            "person_id": "miles", "display_name": "Miles", "reachable": True,
-            "identity": [], "episodes": [],
-        },
-    ]
-
-
-async def test_an_unreachable_honcho_is_reported_unavailable_not_empty():
-    """R-27: an unreachable Honcho must never look identical to 'nothing
-    known' — FakeMemoryStore(fail=True) mirrors the live client's unreachable
-    shape (tests/fakes.py's Recollection(reachable=False)). `identity`
-    still comes back `[]` (peer_card's own documented ambiguity — ports.py:
-    it answers `[]` for both "down" and "knows nothing"), so `reachable`
-    (sourced from `representation` alone) is the only unavailability signal
-    this payload carries."""
-    honcho = FakeMemoryStore(fail=True)
-    persons = _persons(MILES)
-
-    payload = await build_memory_payload(
-        honcho=honcho, persons=persons, ai_peer="nora", person_id="miles",
-    )
-
-    assert payload == [
-        {
-            "person_id": "miles", "display_name": "Miles", "reachable": False,
-            "identity": [], "episodes": [],
-        },
-    ]
-
-
-async def test_queries_honcho_as_the_ai_peer_observing_the_caller():
-    """Nora's MODEL OF the person, not the person's self-model — the same
-    (observer=ai_peer, observed=target) shape nora/engagement/context.py's
-    _recall_self/_recall_tagger_card already use."""
-    honcho = FakeMemoryStore(conclusions={"miles": ["x"]})
-    persons = _persons(MILES)
-
-    await build_memory_payload(honcho=honcho, persons=persons, ai_peer="nora", person_id="miles")
-
-    assert honcho.queries == [("nora", "miles", "")]
-
-
-async def test_identity_is_the_persons_own_self_scoped_peer_card_not_an_observer_pair():
-    """`peer_card` takes only `peer_id` — no observer/observed pair — called
-    with the PERSON's own honcho_peer_id, distinct from `representation`'s
-    (ai_peer, target) shape asserted above."""
-    honcho = FakeMemoryStore(cards={"miles": ["Name: Miles Novak", "Aliases: Miles"]})
-    persons = _persons(MILES)
-
-    payload = await build_memory_payload(
-        honcho=honcho, persons=persons, ai_peer="nora", person_id="miles",
-    )
-
-    assert payload[0]["identity"] == ["Name: Miles Novak", "Aliases: Miles"]
-
-
-async def test_one_entry_per_workspace_the_caller_belongs_to_each_read_there():
-    """DEC-214: a person in units of two Nora workspaces has a separate model
-    in each workspace's Honcho workspace. The page shows them apart, labelled,
-    each read routed by the WORKSPACE (unscoped across its units) — and only
-    ever the caller's own model."""
-    honcho = FakeMemoryStore(conclusions={"miles": ["likes climbing"], "ada": ["x"]})
-    persons = _persons(MILES, ADA)
-    member_of = {"miles": ("67", "ridgeline"), "ada": ("67",)}
-
-    payload = await build_memory_payload(
-        honcho=honcho, persons=persons, ai_peer="nora", person_id="miles",
-        workspaces_of=lambda pid: member_of.get(pid, ()),
-    )
-
-    assert [(e["person_id"], e["workspace"]) for e in payload] == [
-        ("miles", "67"), ("miles", "ridgeline"),
-    ]
-    assert honcho.workspace_reads == [
-        ("representation", "67"), ("peer_card", "67"),
-        ("representation", "ridgeline"), ("peer_card", "ridgeline"),
-    ]
-    assert {observed for (_obs, observed, _q) in honcho.queries} == {"miles"}
-
-
-async def test_a_caller_in_no_workspace_sees_nothing_rather_than_a_guess():
-    """A person no listed room names belongs to no workspace, so there is no
-    Honcho workspace to read — empty, never a default one."""
-    honcho = FakeMemoryStore(conclusions={"miles": ["x"]})
-    payload = await build_memory_payload(
-        honcho=honcho, persons=_persons(MILES), ai_peer="nora", person_id="miles",
-        workspaces_of=lambda _pid: (),
-    )
-    assert payload == []
-    assert honcho.queries == []
-
-
-# --- Profile (45, the switch) --------------------------------------------------
 
 _NOW = 1_790_000_000_000
 
@@ -171,8 +23,10 @@ class _Profile:
     def __init__(self, heads=None, disputes=None):
         self._heads = heads or {}
         self._disputes = disputes or {}
+        self.reads = []
 
     async def account_heads(self, *, key):
+        self.reads.append(key)
         return self._heads.get(key, ())
 
     async def open_disputes(self, *, key, limit):
@@ -206,10 +60,94 @@ def _line(line_id: str, text: str, **overrides) -> ProfileLine:
     return ProfileLine(**(defaults | overrides))
 
 
-async def test_a_callers_own_profile_accounts_ride_their_workspace_entries():
+async def test_returns_only_the_callers_own_accounts_not_everyone_elses():
+    """User-scoped: a caller resolved to `miles` must never see `ada`'s account
+    (no "showcase everyone to everyone"), though the store holds hers."""
+    miles_key, ada_key = character_key("friends", "miles"), character_key("friends", "ada")
+    profile = _Profile(heads={
+        miles_key: (_line("m1", "cycles to work"),),
+        ada_key: (_line("a1", "plays guitar", profile_key=ada_key, told_by="ada"),),
+    })
+
+    payload = await build_memory_payload(
+        persons=_persons(MILES, ADA), person_id="miles",
+        profile=profile, profile_scopes_of=lambda pid: (("friends", "67"),),
+    )
+
+    [account] = payload
+    assert [line["text"] for line in account["lines"]] == ["legacy untyped: cycles to work"]
+    assert profile.reads == [miles_key]
+
+
+@pytest.mark.parametrize("person_id", [None, "stranger"])
+async def test_no_resolved_person_returns_empty_not_everyone(person_id):
+    """Fail-closed (R-5's shape): no resolved identity must never fall back to
+    showing every whitelisted person's data. The store holds an account for
+    `miles` and is wired, so a leaking fallback would return it."""
+    profile = _Profile(heads={character_key("friends", "miles"): (_line("l1", "cycles"),)})
+
+    payload = await build_memory_payload(
+        persons=_persons(MILES), person_id=person_id,
+        profile=profile, profile_scopes_of=lambda pid: (("friends", "67"),),
+    )
+
+    assert payload == []
+    assert profile.reads == []
+
+
+async def test_without_a_profile_reader_the_payload_is_empty_and_the_reader_is_what_fills_it():
+    """The payload carries nothing but Profile accounts, so with the switch off
+    it is empty. The same call with the reader wired is not, which is what makes
+    the empty list a measurement rather than an inert default."""
+    heads = {character_key("friends", "miles"): (_line("l1", "cycles to work"),)}
+    wired = {"persons": _persons(MILES), "person_id": "miles",
+             "profile_scopes_of": lambda pid: (("friends", "67"),)}
+
+    assert await build_memory_payload(**wired) == []
+    assert len(await build_memory_payload(**wired, profile=_Profile(heads=heads))) == 1
+
+
+async def test_one_account_per_unit_the_caller_is_listed_in_each_in_a_workspace_they_belong_to():
+    """DEC-214: a person in units of two Nora workspaces has a separate account
+    in each. They are shown apart, in unit order, and only a workspace the
+    caller belongs to shows its account."""
+    heads = {
+        character_key("friends", "miles"): (_line("f1", "cycles to work"),),
+        character_key("climbers", "miles"): (
+            _line("c1", "lives near Sha Tin", unit="climbers",
+                  profile_key=character_key("climbers", "miles")),),
+    }
+    scopes = lambda pid: (("climbers", "ridgeline"), ("friends", "67"))  # noqa: E731
+
+    both = await build_memory_payload(
+        persons=_persons(MILES), person_id="miles", profile=_Profile(heads=heads),
+        profile_scopes_of=scopes, workspaces_of=lambda pid: ("67", "ridgeline"),
+    )
+    only_67 = await build_memory_payload(
+        persons=_persons(MILES), person_id="miles", profile=_Profile(heads=heads),
+        profile_scopes_of=scopes, workspaces_of=lambda pid: ("67",),
+    )
+
+    assert [a["unit"] for a in both] == ["climbers", "friends"]
+    assert [a["unit"] for a in only_67] == ["friends"]
+
+
+async def test_a_caller_in_no_workspace_sees_nothing_rather_than_a_guess():
+    """A person no listed room names belongs to no workspace, so an account the
+    store holds for them still shows nowhere."""
+    profile = _Profile(heads={character_key("friends", "miles"): (_line("l1", "cycles"),)})
+    payload = await build_memory_payload(
+        persons=_persons(MILES), person_id="miles", profile=profile,
+        profile_scopes_of=lambda pid: (("friends", "67"),),
+        workspaces_of=lambda _pid: (),
+    )
+    assert payload == []
+
+
+async def test_a_callers_own_profile_accounts_come_back_one_per_unit():
     """The switch's portal half (cognition-loop/data.md §4): the caller sees the
-    account about them per unit that lists them, each under its workspace's
-    entry — every chain head with its state, the evidence behind it, and the
+    account about them per unit that lists them, each in its
+    own object — every chain head with its state, the evidence behind it, and the
     open disputes."""
     key = character_key("friends", "miles")
     profile = _Profile(
@@ -229,15 +167,14 @@ async def test_a_callers_own_profile_accounts_ride_their_workspace_entries():
     )
     cited = _Cited([_row(7, "i cycle to work", "g1"), _row(9, "her send", "g1", None)])
     payload = await build_memory_payload(
-        honcho=FakeMemoryStore(conclusions={"miles": ["x"]}, cards={"miles": []}),
-        persons=_persons(MILES), ai_peer="nora", person_id="miles",
+        persons=_persons(MILES), person_id="miles",
         workspaces_of=lambda _pid: ("67",),
         profile=profile,
         profile_scopes_of=lambda _pid: (("friends", "67"),),
         cited=cited,
         rooms_of=lambda _pid: frozenset({("signal", "g1")}),
     )
-    [account] = payload[0]["profile"]
+    [account] = payload
     assert account["unit"] == "friends"
     told, hypothesis = account["lines"]
     assert (told["state"], told["mode"], told["told_by"]) == ("current", "told", "Miles")
@@ -267,62 +204,48 @@ async def test_evidence_text_shows_only_where_the_viewer_is_still_listed():
     profile = _Profile(heads={key: (_line("l1", "cycles to work"),)})
     cited = _Cited([_row(7, "i cycle to work", "g1")])
     payload = await build_memory_payload(
-        honcho=FakeMemoryStore(conclusions={"miles": ["x"]}),
-        persons=_persons(MILES), ai_peer="nora", person_id="miles",
+        persons=_persons(MILES), person_id="miles",
         profile=profile, profile_scopes_of=lambda _pid: (("friends", "default"),),
         cited=cited,
         rooms_of=lambda _pid: frozenset(),  # no longer listed in g1
     )
-    assert payload[0]["profile"][0]["lines"][0]["evidence"] == [
+    assert payload[0]["lines"][0]["evidence"] == [
         {"ref": "7", "kind": "message"},
     ]
 
 
 async def test_an_account_never_written_is_absent_not_empty():
     payload = await build_memory_payload(
-        honcho=FakeMemoryStore(conclusions={"miles": ["x"]}),
-        persons=_persons(MILES), ai_peer="nora", person_id="miles",
+        persons=_persons(MILES), person_id="miles",
         profile=_Profile(),
         profile_scopes_of=lambda _pid: (("friends", "default"),),
     )
-    assert "profile" not in payload[0]
+    assert payload == []
 
 
 async def test_a_person_no_room_lists_has_no_profile_read_at_all():
     profile = _Profile()
     payload = await build_memory_payload(
-        honcho=FakeMemoryStore(conclusions={"miles": ["x"]}),
-        persons=_persons(MILES), ai_peer="nora", person_id="miles",
+        persons=_persons(MILES), person_id="miles",
         profile=profile, profile_scopes_of=lambda _pid: (),
     )
-    assert "profile" not in payload[0]
+    assert payload == []
+    assert profile.reads == []
 
 
 async def test_an_account_whose_workspace_has_no_entry_is_dropped_not_rehomed():
-    """Fail-closed across the grouping boundary: the unit's workspace names no
-    entry of this caller, so the account shows NOWHERE rather than under
-      another workspace's label."""
+    """Fail-closed across the grouping boundary: the unit's workspace is not one the
+    caller belongs to, so the account shows NOWHERE rather than as another
+    workspace's."""
     key = character_key("friends", "miles")
     profile = _Profile(heads={key: (_line("l1", "cycles to work"),)})
     payload = await build_memory_payload(
-        honcho=FakeMemoryStore(conclusions={"miles": ["x"]}),
-        persons=_persons(MILES), ai_peer="nora", person_id="miles",
+        persons=_persons(MILES), person_id="miles",
         workspaces_of=lambda _pid: ("ridgeline",),
         profile=profile,
         profile_scopes_of=lambda _pid: (("friends", "67"),),
     )
-    assert "profile" not in payload[0]
-
-
-async def test_without_a_profile_reader_the_payload_is_unchanged():
-    payload = await build_memory_payload(
-        honcho=FakeMemoryStore(conclusions={"miles": ["x"]}, cards={"miles": ["Name: M"]}),
-        persons=_persons(MILES), ai_peer="nora", person_id="miles",
-    )
-    assert payload == [
-        {"person_id": "miles", "display_name": "Miles", "reachable": True,
-         "identity": ["Name: M"], "episodes": ["x"]},
-    ]
+    assert payload == []
 
 
 @pytest.mark.parametrize("same_unit", [False, True])
@@ -331,12 +254,12 @@ async def test_typed_relationship_names_resolve_only_inside_the_accounts_unit(sa
     line = _line("relation", "conflicting prose", kind="relationship", fact_key="relationship",
                  fact_value={"relation": "friend", "person_id": "ada"})
     payload = await build_memory_payload(
-        honcho=FakeMemoryStore(), persons=_persons(MILES, ADA), ai_peer="nora", person_id="miles",
+        persons=_persons(MILES, ADA), person_id="miles",
         profile=_Profile(heads={key: (line,)}),
         profile_scopes_of=lambda pid: (
             ("friends" if pid == "miles" or same_unit else "other", "default"),),
     )
-    text = payload[0]["profile"][0]["lines"][0]["text"]
+    text = payload[0]["lines"][0]["text"]
     assert text == ("relationship: friend: " + ("Ada" if same_unit else "someone")
                     + " [told] (told by Miles)")
     assert "conflicting prose" not in text
@@ -349,11 +272,11 @@ async def test_fallback_portal_keeps_json_but_displays_shared_formatted_truth():
     line = _line("height", "conflicting prose", fact_key="attribute", fact_value=value,
                  as_of=1000)
     payload = await build_memory_payload(
-        honcho=FakeMemoryStore(), persons=_persons(MILES), ai_peer="nora", person_id="miles",
+        persons=_persons(MILES), person_id="miles",
         profile=_Profile(heads={key: (line,)}),
         profile_scopes_of=lambda _: (("friends", "default"),),
     )
-    shown = payload[0]["profile"][0]["lines"][0]
+    shown = payload[0]["lines"][0]
     assert shown["fact_value"] == value and shown["as_of"] == 1000
     from nora.domain.character_card import format_line
     assert shown["text"] == format_line(line, name_of=lambda _: "Miles")

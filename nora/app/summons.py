@@ -15,7 +15,7 @@ and answers under the one the card's SENDER wrote that tags her
 ledger row is claimed on the card's message id before anything is read; the
 comment id is bound to it once found, and stays unique across rows. It reuses the model loop, the
 tool surface and the guards of every other occasion, and it constructs NO
-ROOM and writes NO MEMORY: no Honcho, no audit row, no roster, no notes, no
+ROOM and writes NO MEMORY: no audit row, no roster, no notes, no
 transcript. What it holds is the bridge, the ledger, the person index (for the
 summoner gate and nothing else), the doctrine, the tool registry under
 `PUBLIC_GRANT`, and a runner.
@@ -516,7 +516,7 @@ class SummonsOccasion:
         turn_tools: dict[str, Any] = {
             "store": _NoTranscript(), "conversation_id": conversation_id,
             "conversation_type": CONVERSATION_TYPE, "persons": self._persons,
-            "honcho": None, "deliverer": handle.deliverer, "metrics": self._metrics,
+            "deliverer": handle.deliverer, "metrics": self._metrics,
             "room": room, "question": question, "transcript": (),
             # Not a tag: `send_reply` asks no reaction picker for a GIF.
             "fire_turn": True, "links": handle.links,

@@ -37,7 +37,7 @@ from nora.infra.social import (
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import Conversation, Policy
-from nora.testing import FakeMemoryStore, FakeRosterSource
+from nora.testing import FakeRosterSource
 from tests.fakes import SinkSender
 
 _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "instagram_bridge"
@@ -260,7 +260,7 @@ def world(bridge, persons):
         )
         specs = ToolRegistry(social=router).specs(
             store=_NoStore(), conversation_id=room_id, conversation_type="group",
-            persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+            persons=persons, deliverer=SinkSender(),
             metrics=Metrics(), room=room, **turn,
         )
         spec = next(s for s in specs if s.name == "instagram_read")
@@ -804,7 +804,7 @@ def test_the_schema_takes_one_of_person_handle_or_link_and_an_optional_read():
     (spec,) = [
         s for s in ToolRegistry().specs(
             store=_NoStore(), conversation_id="g1", conversation_type="group",
-            persons=_NoPersons(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+            persons=_NoPersons(), deliverer=SinkSender(),
             metrics=Metrics(), room=room,
         ) if s.name == "instagram_read"
     ]
@@ -879,7 +879,7 @@ async def test_an_unreadable_roster_makes_a_handle_story_unavailable(persons, br
     )
     specs = ToolRegistry(social=router).specs(
         store=_NoStore(), conversation_id="g1", conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=persons, deliverer=SinkSender(),
         metrics=Metrics(), room=room,
     )
     read = next(s.call for s in specs if s.name == "instagram_read")

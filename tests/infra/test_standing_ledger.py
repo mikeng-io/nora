@@ -442,7 +442,7 @@ def collaborators():
     from nora.policy import Conversation, Policy
     from nora.testing import FakeRosterSource
 
-    kit = PersonRef("kit", "Kit", "kit")
+    kit = PersonRef("kit", "Kit")
     persons = Persons(by_person={"kit": kit}, index={("signal", "generated-account"): "kit"})
     policy = Policy(
         conversations=tuple(
@@ -467,7 +467,7 @@ async def toolset(ledger, ledger_db, *, room_id="room-a", context=None, tagger=N
     from nora.engagement.self_presence import PresenceReader
     from nora.infra.sql.standing import SqlStandingStore
     from nora.infra.transit import TransitClient
-    from nora.testing import FakeAdapter, FakeMemoryStore
+    from nora.testing import FakeAdapter
     from tests.fakes import SinkSender
 
     persons, policy, roster, lineage = context or collaborators()
@@ -479,7 +479,6 @@ async def toolset(ledger, ledger_db, *, room_id="room-a", context=None, tagger=N
         conversation_id=room_id,
         conversation_type="group",
         persons=persons,
-        honcho=FakeMemoryStore(),
         deliverer=SinkSender(),
         metrics=Metrics(),
         room=Room(
@@ -628,7 +627,6 @@ async def test_called_floor_ignores_wired_legacy_standing(
     from nora.domain.models import NormalizedMessage
     from nora.domain.standing import Standing
     from nora.infra.sql.standing import SqlStandingStore
-    from nora.testing import FakeMemoryStore
 
     entry, _ = await plant(ledger, ledger_db)
     legacy = SqlStandingStore(ledger_db)
@@ -639,7 +637,6 @@ async def test_called_floor_ignores_wired_legacy_standing(
     assembler = build_assembler(
         example_config,
         audit=SqlRecordStore(ledger_db),
-        memory=FakeMemoryStore(),
         persons=persons,
         policy=policy,
         metrics=Metrics(),
@@ -699,7 +696,6 @@ async def test_the_unit_ledger_still_reaches_legacy_fire_only(
     from nora.agent.shared_state import shared_reader
     from nora.app.fire import FirePath
     from nora.domain.events import Event
-    from nora.testing import FakeMemoryStore
 
     entry, _ = await plant(ledger, ledger_db)
     persons, policy, roster, lineage = collaborators()
@@ -708,7 +704,6 @@ async def test_the_unit_ledger_still_reaches_legacy_fire_only(
     path = FirePath(
         persons=persons,
         records=SqlRecordStore(ledger_db),
-        memory=FakeMemoryStore(),
         doctrine_store=doctrine_store,
         metrics=Metrics(),
         runner=None,

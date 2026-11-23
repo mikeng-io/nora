@@ -32,7 +32,7 @@ def build_shared(
     access: Any, allowlist: Any, audit: Any, background: Any, cfg: Any,
     clock: Any, computer_context: Any, culture_reader: Any, documents_context: Any,
     engine: Any, ledger_store: Any, lessons_reader: Any, media_join: Any,
-    memo_store: Any, memory: Any, memory_search: Any, metrics: Any,
+    memo_store: Any, memory_search: Any, metrics: Any,
     note_store: Any, observation_store: Any, persons: Any, presence_reader: Any,
     profile_reader: Any, quote_window: Any, registry: Any, reminders: Any,
     rosters: Any, standing_store: Any, subagents_context: Any, tag_trace_store: Any,
@@ -44,14 +44,13 @@ def build_shared(
         record_query=SqlRecordQuery(engine),
         standing=standing_store if cfg.standing.enabled else None,
         traces=tag_trace_store,
-        ai_peer=cfg.honcho.ai_peer,
+        ai_peer=cfg.agent.name,
         rooms_of_unit=lambda unit: unit_rooms.get(unit, ()),
     )
     assembler = build_assembler(
         cfg,
         access=access,
         audit=audit,
-        memory=memory,
         persons=persons,
         metrics=metrics,
         memory_search=memory_search,
@@ -115,12 +114,11 @@ class IngestWiring:
 def build_ingest(
     _spawn: Any, access: Any, allowlist: Any, audit: Any, blobs: Any,
     cfg: Any, comprehension: Any, media_objects: Any, media_sources: Any,
-    memory: Any, metrics: Any, policy: Any,
+    metrics: Any, policy: Any,
     sticker_reader: Any, stimulus_wiring: Any, transcriber: Any,
 ) -> IngestWiring:
     ingest = IngestPipeline(
         audit=audit,
-        memory=memory,
         policy=policy,
         allowlist=allowlist,
         access=access,
@@ -169,8 +167,9 @@ async def standing(
             content_checks=content_checks,
         )
     # The Cognition session's completion hook (design/notebook-memory-types/ 20-standing.md
-    # §3): the SAME tools-less Standing fold the tag path runs after every admitted turn,
-    # run once per room the finished session actually bound, with the session's whole…
+    # §3): the tools-less Standing fold, run once per room the finished session
+    # actually bound. The tag path's own per-turn fold went through graph
+    # admission with the debrief (NOR-36); this is the session's copy.
     standing_fold = None
     if debrief_wiring is not None:
 
@@ -255,7 +254,7 @@ def build_engagement(
     access: Any, allowlist: Any, assembler: Any, audit: Any, background: Any,
     cfg: Any, clock: Any, debounce: Any, debrief_wiring: GraphDebriefWiring | None,
     decision_log: Any, doctrine_store: Any, limits: Any, llm_state: Any,
-    memory: Any, metrics: Any, persons: Any, preview_source: Any,
+    metrics: Any, persons: Any, preview_source: Any,
     reasoning_strip_store: Any, registry: Any, room_commands: Any,
     rosters: Any, runner: Any,
     slots: Any, tag_trace_store: Any, tier: Any, tool_call_log_store: Any,
@@ -269,7 +268,6 @@ def build_engagement(
         # of platforms this process can both hear and speak on.
         adapters=dict(registry.adapters),
         audit=audit,
-        memory=memory,
         persons=persons,
         doctrine_store=doctrine_store,
         context_assembler=assembler, graph=graph,
@@ -282,7 +280,7 @@ def build_engagement(
         debounce=debounce,
         canary=cfg.doctrine.canary,
         display_name=cfg.doctrine.display_name,
-        ai_peer=cfg.honcho.ai_peer,
+        ai_peer=cfg.agent.name,
         context_window=cfg.store.context_window,
         timeout_seconds=tier.timeout_seconds,
         limits=limits,

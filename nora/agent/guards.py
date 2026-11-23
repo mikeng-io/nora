@@ -127,8 +127,7 @@ class Deliverer:
     (`docs/runbook.md`) that is filtered to `audience="tag"`. A missing keyword
     is a `TypeError` at construction.
 
-    `sent_texts` is a list: every delivered message is appended, and the feedback
-    stage feeds each under the Nora aiPeer into the conversation's session. A
+    `sent_texts` is a list: every delivered message is appended, in order. A
     scalar would drop the earlier messages of a multi-message turn.
     """
 
@@ -212,9 +211,9 @@ class Deliverer:
         self._delivered_count = 0
         self._reaction_delivered = False
         self.send_unresolved = 0  # wire-admitted sends with no recorded outcome
-        # Every message actually SENT this turn (Honcho v2): the feedback stage
-        # feeds each under the Nora aiPeer. Populated only on a successful send,
-        # so a refused/failed message is never fed.
+        # Every message actually SENT this turn, recorded with a fire turn's
+        # determination. Populated only on a successful send, so a
+        # refused/failed message is never recorded.
         self._sent_texts: list[str] = []
         # WHY the last `deliver` answered as it did. `deliver` returns a bool,
         # which cannot tell a guard refusal from a send that reached the wire and
@@ -234,9 +233,8 @@ class Deliverer:
 
     @property
     def sent_texts(self) -> tuple[str, ...]:
-        """Every message actually sent this turn, in order (Honcho v2). A tuple
-        so a caller cannot mutate the Deliverer's record; the feedback stage
-        feeds each under the Nora aiPeer."""
+        """Every message actually sent this turn, in order. A tuple so a
+        caller cannot mutate the Deliverer's record."""
         return tuple(self._sent_texts)
 
     @property
@@ -635,7 +633,7 @@ class Deliverer:
             # The never-silent fallback (`source="fallback"`) is delivered to the
             # group, so the turn counts as non-silent (`delivered`), but it is a
             # canned apology, not Nora's authored words, so it stays out of
-            # `sent_texts` and never feeds her Honcho self-model card.
+            # `sent_texts` and is never recorded as what she said.
             if source != "fallback" and (not attachments or outbound.text.strip()):
                 self._sent_texts.append(outbound.text)
             self._metrics.inc("nora_replies_total", status="sent", platform=self._target.platform)

@@ -5,9 +5,7 @@ failure-shaped behaviours:
 - A transcript read failure logs, counts `nora_errors_total{stage="context"}`,
   and continues with an EMPTY transcript rather than raising — a thinner
   reply beats no reply (R-5-adjacent).
-- An unmapped sender (`Persons.resolve` returns `None`) yields `tagger=None`
-  and an empty peer card, with NO Honcho call at all: `memory.peer_card` is
-  only ever called for a sender we can name.
+- An unmapped sender (`Persons.resolve` returns `None`) yields `tagger=None`.
 
 Takes an `EngagementRequest`, not a bare message, because `decision` is the
 only route by which a classifier's `rationale` can reach the prefill; `assemble`
@@ -88,7 +86,6 @@ from nora.domain.observations import (
 from nora.domain.ports import (
     CultureReader,
     EngagementRequest,
-    MemoryStore,
     RecordStore,
     RosterSource,
 )
@@ -141,8 +138,7 @@ class StandingNotesReader(Protocol):
 
     **Never raises**, the promise every critical-path read in this module
     makes. `SqlNoteStore.standing` does not yet make it — it is a bare
-    `SELECT` — which is why `_notes` guards rather than trusts, exactly as
-    `_peer_card` does for a port that DOES promise it.
+    `SELECT` — which is why `_notes` guards rather than trusts.
     """
 
     async def standing(self, *, unit: str) -> tuple[Note, ...]:
@@ -184,7 +180,6 @@ class TranscriptInjection:
         self,
         *,
         audit: RecordStore,
-        memory: MemoryStore,
         persons: Persons,
         context_window: int,
         prompt_window: int | None = None,
@@ -192,7 +187,6 @@ class TranscriptInjection:
         quote_window: QuoteWindow | None = None,
         ai_peer: str = "",
         display_name: str = "",
-        tagger_card_conclusions: int = 0,
         notes: StandingNotesReader | None = None,
         policy: Policy | None = None,
 
@@ -222,8 +216,8 @@ class TranscriptInjection:
         self._observations = observations
         self._audit = audit
         # `<recalled>`, the pre-fetch: the SAME retrieval service the tool
-        # registry's `memory_search` holds, `None` on the Honcho surface
-        # (`[memory.index] read = false`) and in every harness that wires
+        # registry's `memory_search` holds, `None` with
+        # `[memory.index] read = false` and in every harness that wires
         # none, which renders no block.
         self._memory_search = memory_search
         # The graph's one clock (`build_dependencies`' `clock`), so a harness
@@ -238,7 +232,6 @@ class TranscriptInjection:
         # root over the canonical stores, `None` in every harness that wires
         # none — which renders no `<standing>` block.
         self._shared_reader = shared
-        self._memory = memory
         self._access = access or IdentityAccess.for_files(persons, policy)
         self._context_window = context_window
         # `None` renders everything that was read (every harness that predates
@@ -249,7 +242,6 @@ class TranscriptInjection:
         self._metrics = metrics
         self._ai_peer = ai_peer
         self._display_name = display_name
-        self._tagger_card_conclusions = tagger_card_conclusions
         # `notes` is `None` while `[notes] enabled = false`: the note tier is
         # dormant, the same "not configured" shape `ai_peer=""` uses to disable
         # the self/tagger card reads below.
@@ -311,9 +303,9 @@ class TranscriptInjection:
         self._subagents_reader = subagents
         # THE SWITCH (45 §5): the Profile accounts' reader, wired by
         # composition only when `[memory.profile] read` is on. Not `None` means this
-        # turn renders `<profile>` blocks and the seven reads they replace —
-        # `_peer_card`, `_recall_tagger`, `_culture`, `_unit_culture`,
-        # `_self_account` and `_character` — are not made at all: a switched
+        # turn renders `<profile>` blocks and the reads they replace —
+        # `_culture`, `_unit_culture`, `_self_account` and `_character` —
+        # are not made at all: a switched
         # turn never pays for both surfaces, and a failed profile read is
         # `nora_errors_total` (R-27), never a quiet fall back to the old block.
         self._profile_reader = profile
@@ -778,7 +770,7 @@ class TranscriptInjection:
         """Where she is, read at turn start, or `None` with no reader wired.
 
         `PresenceReader.read` is written never to raise; guarded anyway for
-        the reason `_peer_card` is — in a `gather`, an unreachable exception
+        the reason every read in the `gather` is — an unreachable exception
         is not a thinner prompt but six cancelled reads and a dead turn.
         """
         if self._presence_reader is None:
@@ -826,95 +818,6 @@ class TranscriptInjection:
             log.exception("context collection failed; continuing with an empty transcript")
             self._metrics.inc("nora_errors_total", stage="context", platform=msg.platform)
             return ()
-
-    async def _peer_card(
-        self, ref: PersonRef | None, msg: NormalizedMessage
-    ) -> tuple[str, ...]:
-        """Their durable card. NO Honcho call at all for an unmapped sender.
-
-        Guarded, unlike the inline call this replaced. `MemoryStore.peer_card`
-        answers `[]` rather than raising for both of its failure modes, so in
-        principle this catch is unreachable — but it is now one of five siblings
-        in a `gather`, where an unreachable exception stops being a thinner
-        prompt and becomes four cancelled reads and a dead turn.
-        """
-        if self._profile_reader is not None:
-            return ()  # the switch (45 §5): the tagger's `<profile>` replaced it
-        if ref is None:
-            return ()
-        try:
-            card = tuple(await traced_read(
-                "memory", "peer_card", self._memory.peer_card(
-                    peer_id=ref.honcho_peer_id, conversation_id=msg.conversation_id,
-                ),
-            ))
-            if not card:
-                # THE ONE SIGNAL THIS READ HAS. `peer_card` answers `[]` for a
-                # dead endpoint, a timeout, an unknown peer and a genuinely
-                # empty card alike (`ports.py:500`), so the block simply is not
-                # rendered and nothing says why. A COUNTER cannot say which of
-                # the four it was — only `Recollection`'s two-axis shape can,
-                # and giving `peer_card` that is a port change — but it makes
-                # «her card stopped appearing» visible to an operator.
-                self._metrics.inc(
-                    "nora_peer_card_empty_total", platform=msg.platform)
-            return card
-        except Exception:
-            log.exception("peer-card read failed; continuing without it")
-            self._metrics.inc(
-                "nora_errors_total", stage="peer_card", platform=msg.platform)
-            return ()
-
-    async def _recall_tagger(
-        self, ref: PersonRef | None, msg: NormalizedMessage
-    ) -> tuple[str, ...]:
-        """What Honcho concluded about THE TAGGER, curated to this message.
-
-        The `about` tool's exact call — observer Nora, observed them — run up
-        front for the one person guaranteed to be relevant: the one talking.
-        It is deliberately a DUPLICATE of a tool that already works, bought
-        because a model that has to decide to look often doesn't, and because
-        the round trip it saves costs a model call in each direction.
-
-        NO new disclosure, and this is the part worth being sure about rather
-        than assuming: `about` is already gated by the room roster
-        (`RoomView.find`), and the tagger is in the room by construction — they
-        just spoke in it. So this surfaces nothing she could not already have
-        asked for about this person, in this room, on this turn.
-
-        Fail-open and silent, deliberately: an unreachable Honcho yields no
-        block rather than a note saying she cannot remember. This is
-        background she may draw on, never the ground for a claim. `about`
-        remains the path for anything she will actually assert, and it
-        reports `unavailable` honestly.
-        """
-        if self._profile_reader is not None:
-            return ()  # the switch (45 §5): the tagger's `<profile>` replaced it
-        if ref is None or not self._ai_peer or self._tagger_card_conclusions <= 0:
-            return ()
-        try:
-            recall = await traced_read(
-                "memory", "representation", self._memory.representation(
-                    peer_id=self._ai_peer,
-                    target=ref.honcho_peer_id,
-                    search_query=render_file_links(msg.body or ""),
-                    max_conclusions=self._tagger_card_conclusions,
-                    conversation_id=msg.conversation_id,
-                ),
-                # `Recollection` has no `__len__` — `_row_count` would leave
-                # this read unmeasured even though it plainly has a count.
-                count=lambda r: len(r.conclusions),
-            )
-        except Exception:
-            log.exception("tagger-card recall failed; continuing without it")
-            self._metrics.inc(
-                "nora_errors_total", stage="tagger_card", platform=msg.platform)
-            return ()
-        if not recall.reachable:
-            self._metrics.inc(
-                "nora_errors_total", stage="tagger_card", platform=msg.platform)
-            return ()
-        return recall.conclusions
 
     async def _shared(
         self, msg: NormalizedMessage, ref: PersonRef | None,
@@ -1349,8 +1252,7 @@ class TranscriptInjection:
           `EngagementPipeline`'s own `convo is not None` note), so it defaults
           safely AND is counted: guessing a unit would render another
           unit's notes into this room, and staying silent about it is how a
-          block goes missing for the life of a deployment (see `_peer_card`'s
-          `nora_peer_card_empty_total`).
+          block goes missing for the life of a deployment.
 
         Fail-SOFT on the read itself, like every sibling: a thinner prompt
         beats no reply. `StandingNotesReader` is documented never to raise, but

@@ -188,14 +188,14 @@ def _build_tool_registry(
         ),
         google_account=cfg.google.account,
         subagent=subagent_desk,
-        ai_peer=cfg.honcho.ai_peer,
+        ai_peer=cfg.agent.name,
         mcp_tools=mcp_tool_groups,
         mcp_act_envelope=memory_area.wire.act_envelope(engine) if mcp_tool_groups else None,
         # The document tools: ships OFF, and off the
         # registry withholds all three from every turn.
         documents=document_service if cfg.documents.enabled else None,
-        # the six event tools (`create_event`/`update_event`/`rsvp_event`/
-        # `cancel_event`/`list_events`/`suggest_venue`) answer `unavailable` (R-5) whenever a
+        # the five event tools (`create_event`/`update_event`/`rsvp_event`/
+        # `cancel_event`/`list_events`) answer `unavailable` (R-5) whenever a
         # composition has not wired one; every deployment here has, since it needs nothing this…
         events=events,
         # `[llm.budgets]`, the per-deployment delta over the table. Threaded here for the same
@@ -484,7 +484,7 @@ class SubagentBackendWiring:
 
 def backend(
     audit: Any, cfg: Any, clock: Any, compute_backends: Any,
-    compute_jobs: Any, computer_admission: Any, computer_scope_for: Any, memory: Any,
+    compute_jobs: Any, computer_admission: Any, computer_scope_for: Any,
     metrics: Any, model_client_for: Any, persons: Any, registry: Any,
     rosters: Any, route_model: Any, subagent_desk: Any, subagents_context: Any,
     tier: Any, tool_registry: Any, access: Any = None,
@@ -502,7 +502,6 @@ def backend(
             registry=tool_registry,
             store=audit,
             persons=persons,
-            honcho=memory,
             metrics=metrics,
             rosters=rosters,
             self_ids=registry.self_aliases(),

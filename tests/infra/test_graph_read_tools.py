@@ -9,7 +9,7 @@ import pytest
 import sqlalchemy as sa
 
 from nora.access import IdentityAccess
-from nora.agent.catalog.groups import HONCHO_MEMORY_TOOLS
+from nora.agent.catalog.groups import OFF_GRAPH_ONLY_TOOLS
 from nora.agent.lineage import LineagePolicy
 from nora.agent.room import Room
 from nora.agent.tools import build_tool_specs
@@ -54,7 +54,7 @@ def specs(scenario, *, clock=lambda: NOW, room_id=ROOM, scope=SCOPE, metrics=Non
     ) if graph else None
     built = build_tool_specs(
         store=None, conversation_id=room_id, conversation_type="group", room=room,
-        persons=people, honcho=None, deliverer=SinkSender(),
+        persons=people, deliverer=SinkSender(),
         metrics=metrics or Metrics(), transit_source=_UNREACHABLE_TRANSIT, clock=clock,
         graph_retrieval=graph_retrieval, pass_scope=scope, memory_retrieval=memory_retrieval,
         content_checks=content_checks,
@@ -67,7 +67,7 @@ async def test_search_reads_claim_text_and_never_returns_another_units_row(scena
     await scenario.claim("claim:here", content={"text": phrase})
     await scenario.claim("claim:outside", content={"text": phrase}, unit="other-unit")
     tools = specs(scenario)
-    assert tools.keys().isdisjoint(HONCHO_MEMORY_TOOLS)
+    assert tools.keys().isdisjoint(OFF_GRAPH_ONLY_TOOLS)
     result = await tools["memory_search"](phrase)
     assert result["status"] == "ok"
     assert phrase in result["rows"]
@@ -299,7 +299,7 @@ def _managed_tools(scenario, access, roster):
     return {
         spec.name: spec.call for spec in build_tool_specs(
             store=None, conversation_id=ROOM, conversation_type="group", room=room,
-            persons=access.persons_view(), honcho=None, deliverer=SinkSender(),
+            persons=access.persons_view(), deliverer=SinkSender(),
             metrics=Metrics(), transit_source=_UNREACHABLE_TRANSIT, clock=lambda: NOW,
             graph_retrieval=reader,
         )

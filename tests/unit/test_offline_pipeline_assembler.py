@@ -32,7 +32,6 @@ from nora.policy import permissive_policy
 from nora.testing import (
     FakeAdapter,
     FakeAgentRunner,
-    FakeMemoryStore,
     FakeRecordStore,
     InMemoryNoteStore,
     InMemoryStandingStore,
@@ -110,7 +109,6 @@ async def test_offline_called_pass_uses_the_graph_floor_with_legacy_stores_wired
     ))
 
     audit = FakeRecordStore()
-    memory = FakeMemoryStore()
     adapter = FakeAdapter()
     calls: list[dict] = []
     runner = FakeAgentRunner(
@@ -119,7 +117,7 @@ async def test_offline_called_pass_uses_the_graph_floor_with_legacy_stores_wired
 
     try:
         dispatcher, _, background, _trigger = build_offline_pipeline(
-            cfg, adapter=adapter, audit=audit, memory=memory,
+            cfg, adapter=adapter, audit=audit,
             access=IdentityAccess.for_files(persons, permissive_policy()),
             doctrine_store=doctrine_store, runner=runner, metrics=metrics,
             notes=notes_store, standing=standing_store,

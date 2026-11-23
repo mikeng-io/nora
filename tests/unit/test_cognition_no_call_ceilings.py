@@ -48,7 +48,7 @@ def _runner(model: _ScriptedModel, metrics: Metrics) -> DreamerAgentRunner:
             retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
         ),
         metrics=metrics,
-        param_names={"about": frozenset({"person"}), "note_read": frozenset({"person"})},
+        param_names={"lookup_person": frozenset({"person"}), "note_read": frozenset({"person"})},
     )
 
 
@@ -68,11 +68,11 @@ def _vetoes(metrics: Metrics, rule: str) -> float:
 
 
 async def test_fifty_calls_of_one_tool_are_not_vetoed():
-    """`about` is a memory verb with a per-tool budget of 4 in the registry and a
+    """`lookup_person` is a memory verb with a per-tool budget of 4 in the registry and a
     per-pass ration; 50 calls of it in one session all run and nothing is
     vetoed or refused."""
-    tools = _Tools(["about", "note_read"])
-    model = _ScriptedModel(["about"] * 50 + [None])
+    tools = _Tools(["lookup_person", "note_read"])
+    model = _ScriptedModel(["lookup_person"] * 50 + [None])
     metrics = Metrics()
     live = _runner(model, metrics)
 
@@ -82,7 +82,7 @@ async def test_fifty_calls_of_one_tool_are_not_vetoed():
         budget=_budget(turns=200), trace_attributes={"cognition.items": "1"},
     )
 
-    assert tools.ran == ["about"] * 50
+    assert tools.ran == ["lookup_person"] * 50
     assert result.stop_reason == "end_turn"
     for rule in RULES:
         assert _vetoes(metrics, rule) == 0, rule
@@ -91,12 +91,13 @@ async def test_fifty_calls_of_one_tool_are_not_vetoed():
 async def test_a_session_stops_at_its_turn_cap_and_says_so():
     """With no call ceiling the round cap is what bounds a model that never
     stops asking, and it is named, not inferred."""
-    tools = _Tools(["about"])
-    model = _ScriptedModel(["about"] * 60)
+    tools = _Tools(["lookup_person"])
+    model = _ScriptedModel(["lookup_person"] * 60)
     metrics = Metrics()
 
     result = await _runner(model, metrics).run(
-        system_prompt="s", prompt="p", tools=tools.build(key="k", names=frozenset({"about"})),
+        system_prompt="s", prompt="p",
+        tools=tools.build(key="k", names=frozenset({"lookup_person"})),
         budget=_budget(turns=10), trace_attributes={},
     )
 
@@ -108,12 +109,13 @@ async def test_a_session_stops_at_its_turn_cap_and_says_so():
 
 async def test_a_session_still_refuses_an_argument_the_tool_does_not_declare():
     """R-99 is a safety check, not a budget: the session keeps it."""
-    tools = _Tools(["about"])
-    model = _ScriptedModel(["about", None], inputs=['{"file": "x"}'])
+    tools = _Tools(["lookup_person"])
+    model = _ScriptedModel(["lookup_person", None], inputs=['{"file": "x"}'])
     metrics = Metrics()
 
     await _runner(model, metrics).run(
-        system_prompt="s", prompt="p", tools=tools.build(key="k", names=frozenset({"about"})),
+        system_prompt="s", prompt="p",
+        tools=tools.build(key="k", names=frozenset({"lookup_person"})),
         budget=_budget(turns=10), trace_attributes={},
     )
 
@@ -122,12 +124,13 @@ async def test_a_session_still_refuses_an_argument_the_tool_does_not_declare():
 
 
 async def test_a_session_still_refuses_a_tool_it_does_not_hold():
-    tools = _Tools(["about"])
+    tools = _Tools(["lookup_person"])
     model = _ScriptedModel(["note_read", None])
     metrics = Metrics()
 
     await _runner(model, metrics).run(
-        system_prompt="s", prompt="p", tools=tools.build(key="k", names=frozenset({"about"})),
+        system_prompt="s", prompt="p",
+        tools=tools.build(key="k", names=frozenset({"lookup_person"})),
         budget=_budget(turns=10), trace_attributes={},
     )
 
@@ -135,13 +138,13 @@ async def test_a_session_still_refuses_a_tool_it_does_not_hold():
 
 
 def _veto_after(guard: DreamGuard, calls: int) -> str | None:
-    """Run `calls` completed calls of `about`, then ask for one more."""
+    """Run `calls` completed calls of `lookup_person`, then ask for one more."""
     for i in range(calls):
-        before = _Before("about", f"t{i}")
+        before = _Before("lookup_person", f"t{i}")
         guard._before_tool(before)
         assert before.cancel_tool is None
-        guard._after_tool(_After("about", f"t{i}"))
-    last = _Before("about", "tlast")
+        guard._after_tool(_After("lookup_person", f"t{i}"))
+    last = _Before("lookup_person", "tlast")
     guard._before_tool(last)
     return last.cancel_tool
 
@@ -154,20 +157,20 @@ def test_every_other_adaptor_keeps_its_per_tool_ceiling():
     `subagent`, which DEC-247's amendment (DEC-282) exempts by name. The sub-agent's own half
     is `tests/unit/test_subagent_worker.py::
     test_the_workers_guard_has_no_call_ceiling_and_every_other_adaptors_keeps_its_own`."""
-    guard = DreamGuard(adaptor="proactive", budgets={"about": 4}, metrics=Metrics())
+    guard = DreamGuard(adaptor="proactive", budgets={"lookup_person": 4}, metrics=Metrics())
     message = _veto_after(guard, 4)
     assert message is not None
-    assert "You already called about 4 time(s)" in message
+    assert "You already called lookup_person 4 time(s)" in message
 
 
 async def test_a_dreamer_adaptors_guard_built_by_the_dreamer_still_vetoes_per_tool():
     """Through the REAL `DreamerRuntime._sample` (not a `DreamGuard` built by
-    hand): a non-cognition adaptor (`proactive`) asking `about` 30 times in one
+    hand): a non-cognition adaptor (`proactive`) asking `lookup_person` 30 times in one
     pass is stopped at the tool's own ceiling, the call's body never runs past
     it, and the veto is counted under the `tool-budget` rule. The pass-wide and
     memory ceilings are lifted here so ONLY the per-tool one can be what binds."""
-    tools = _Tools(["about"])
-    model = _ScriptedModel(["about"] * 30 + [None])
+    tools = _Tools(["lookup_person"])
+    model = _ScriptedModel(["lookup_person"] * 30 + [None])
     budget = replace(BUDGET, turns=60, max_memory_calls=None, max_tool_calls=None)
     runtime, metrics = _runtime(model, tools, budget=budget)
 
@@ -181,7 +184,7 @@ def test_the_session_guard_is_the_same_class_with_the_ceiling_switched_off():
     """The same four calls, the same budget map, one flag: the only difference
     between the session and every other adaptor is `per_tool_ceilings`."""
     guard = DreamGuard(
-        adaptor="cognition", budgets={"about": 4}, metrics=Metrics(),
+        adaptor="cognition", budgets={"lookup_person": 4}, metrics=Metrics(),
         per_tool_ceilings=False,
     )
     assert _veto_after(guard, 4) is None

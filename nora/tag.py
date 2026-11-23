@@ -105,8 +105,7 @@ class Debounce:
     I/O: the QUEUED verdict and the enqueue that follows it must have no await
     between them, or two concurrent tags read the same queue depth and FIFO
     order stops being arrival order. So the row is written fire-and-forget on
-    the loop, the same shape `nora.ingest.stages.memory_feed` uses off the
-    listener's path. `spawn` is REQUIRED when `store` is given: a store with
+    the loop, off the listener's path. `spawn` is REQUIRED when `store` is given: a store with
     nowhere to spawn would be a fourth wiring state that looks configured and
     persists nothing.
 

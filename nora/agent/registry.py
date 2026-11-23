@@ -36,10 +36,10 @@ from nora.agent.catalog.groups import (
     COMPUTER_TOOLS,
     DOCUMENT_TOOLS,
     GRAPH_PASS_TOOLS,
-    HONCHO_MEMORY_TOOLS,
     HOT_TOOLS,
     LOADER_TOOL,
     NATIVE_TOOL_BUDGETS,
+    OFF_GRAPH_ONLY_TOOLS,
     SUBAGENT_TOOLS,
     VIDEO_TOOLS,
     hot_tools,
@@ -326,8 +326,7 @@ class ToolRegistry:
         # public_url`; `""` answers a link export `unavailable`.
         artifact_link_base: str = "",
         clock: Callable[[], datetime] = utc_now,
-        mcp_tools: Mapping[str, McpToolGroup] | None = None,
-        mcp_act_envelope: Any = None,
+        mcp_tools: Mapping[str, McpToolGroup] | None = None, mcp_act_envelope: Any = None,
         versions: VersionManifest | None = None,
         releases: GithubReleases | None = None,
         giphy: GifSource | None = None,
@@ -364,8 +363,7 @@ class ToolRegistry:
         # `[video_gen]` wired (ships off): the desk `video_create` calls, and the reference
         # kinds its gates allow (`image`, `video`, `audio`). Without the desk the registry
         # withholds the tool from every turn.
-        video: VideoDesk | None = None,
-        video_ref_kinds: frozenset[str] = frozenset(),
+        video: VideoDesk | None = None, video_ref_kinds: frozenset[str] = frozenset(),
         # `[external_files]` (ships off): the one read-only source a shared file
         # link is opened through; `None` answers the open `unavailable`. Its
         # `google_account` names who the NOT_SHARED note says to share with.
@@ -432,7 +430,7 @@ class ToolRegistry:
             | (frozenset() if video is not None else VIDEO_TOOLS)
             | ({"profile_dispute"} if memory_search is None else set())
             | ({"memory_search", "memory_read"} if graph_retrieval is None else set())
-            | (HONCHO_MEMORY_TOOLS
+            | (OFF_GRAPH_ONLY_TOOLS
                if graph_retrieval is not None or memory_search is not None else set())
             | GRAPH_PASS_TOOLS
         )
@@ -562,10 +560,7 @@ class ToolRegistry:
         # offline/eval compositions, where the tool answers `unavailable`
         # rather than a guessed empty (R-5).
         self._mobility = mobility
-        # The OBSERVER peer: Nora's Honcho peer id (cfg.honcho.ai_peer). The
-        # `about`/`ask_memory` tools read her model of a person as
-        # (observer=ai_peer, observed=person), so the registry threads it like
-        # any other long-lived collaborator.
+        # Nora's own id, the owner of every reminder she sets: `[agent].name`.
         self._ai_peer = ai_peer
         # The reminders store: a per-process collaborator like `transit` and
         # `search`, NOT default-constructed for the reason `route` is not: there
@@ -782,7 +777,7 @@ class ToolRegistry:
 
         scoped = copy(self)
         scoped._memory_search = search
-        scoped._withheld = (self._withheld - {"profile_dispute"}) | HONCHO_MEMORY_TOOLS
+        scoped._withheld = (self._withheld - {"profile_dispute"}) | OFF_GRAPH_ONLY_TOOLS
         return scoped
 
     def with_clock(self, clock: Callable[[], datetime]) -> ToolRegistry:
@@ -904,8 +899,7 @@ class ToolRegistry:
 
         FIRST SENTENCE, not a separate authored field: the first sentences
         already discriminate between confusable siblings
-        (`find_parking`/`parking_status`, `search_memory`/
-        `search_memory_workspace`, `note_read`/`note_search`), so a repair
+        (`find_parking`/`parking_status`, `note_read`/`note_search`), so a repair
         belongs in the docstring, one source of truth per tool.
 
         `hot` marks the tools whose full schema is already resident, so the
@@ -993,7 +987,6 @@ class ToolRegistry:
             conversation_id="catalog",
             conversation_type="group",
             persons=None,
-            honcho=None,
             deliverer=None,
             metrics=None,
             room=self._catalog_room(),
@@ -1103,7 +1096,6 @@ class ToolRegistry:
         conversation_id: str,
         conversation_type: str,
         persons: Any,
-        honcho: Any,
         deliverer: Any,
         metrics: Any,
         room: Room,
@@ -1129,7 +1121,7 @@ class ToolRegistry:
         return build_tool_specs(
             display_name=self._display_name,
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
-            persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
+            persons=persons, deliverer=deliverer, metrics=metrics,
             room=room, transit_source=self._transit, route_source=self._route,
             vision_source=self._vision, blob_store=self._blobs,
             vision_cache=self._vision_cache, video_readings=self._video_readings,
@@ -1216,7 +1208,6 @@ class ToolRegistry:
         conversation_id: str,
         conversation_type: str,
         persons: Any,
-        honcho: Any,
         deliverer: Any,
         metrics: Any,
         room: Room,
@@ -1242,7 +1233,7 @@ class ToolRegistry:
         never defers, so it is the resident-everything build."""
         return self.surface(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
-            persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
+            persons=persons, deliverer=deliverer, metrics=metrics,
             room=room, question=question, context_window=context_window,
             transcript=transcript, lookup_window=lookup_window,
             fire_turn=fire_turn, allowed_mcp=allowed_mcp,
@@ -1258,7 +1249,6 @@ class ToolRegistry:
         conversation_id: str,
         conversation_type: str,
         persons: Any,
-        honcho: Any,
         deliverer: Any,
         metrics: Any,
         room: Room,
@@ -1295,7 +1285,7 @@ class ToolRegistry:
         shelf = ToolShelf()
         specs = self.specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
-            persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
+            persons=persons, deliverer=deliverer, metrics=metrics,
             room=room, question=question, context_window=context_window,
             transcript=transcript, lookup_window=lookup_window,
             fire_turn=fire_turn, relay_turn=relay_turn,

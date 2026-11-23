@@ -39,7 +39,6 @@ from nora.agent.surface import (
     load_onto,
 )
 from nora.obs.metrics import Metrics
-from nora.testing.fakes import FakeMemoryStore
 from tests.unit.test_tool_registry import _deliverer, _FakePersons, _FakeStore
 
 
@@ -48,7 +47,7 @@ def _surface(platform: str = "signal", **kw: Any):
                 persons=_FakePersons())
     return ToolRegistry().surface(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         metrics=Metrics(), room=room, **kw,
     )
 
@@ -74,7 +73,7 @@ def test_build_is_the_surface_without_deferral():
                 persons=_FakePersons())
     built = ToolRegistry().build(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         metrics=Metrics(), room=room,
     )
     assert _names(built) == _names(_surface().tools)
@@ -122,9 +121,9 @@ def test_a_grant_is_a_ceiling_on_every_part_of_the_surface():
     assert _names(surface.tools) == {"now", "where_is"}
 
 
-def test_the_dreamer_only_verb_needs_the_dreamer():
-    assert "search_memory_workspace" not in _surface().admitted
-    assert "search_memory_workspace" in _surface(dream_adaptor="proactive").admitted
+def test_a_dreamer_only_verb_needs_the_dreamer():
+    assert not ToolScope(platform="signal").admits("document_list")
+    assert ToolScope(platform="signal", dreamer=True).admits("document_list")
 
 
 def test_the_declared_table_scope_admits_everything():

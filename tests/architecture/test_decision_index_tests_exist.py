@@ -183,17 +183,6 @@ _KNOWN_UNRESOLVED: dict[tuple[str, str, str], str] = {
         "may not still hold against the XML-tag renderer — unverified"
     ),
     (
-        "DEC-36", "tests/unit/test_engagement_feedback.py",
-        "test_noras_reply_never_reaches_any_peers_stream",
-    ): (
-        "deleted during the Honcho v2 rewrite (5120019c); the row's OTHER "
-        "citation on the same line (`test_only_the_taggers_own_words_are_fed_"
-        "under_the_taggers_peer`) was renamed forward in the same commit and "
-        "is repointed in this index, but this one's replacement is a "
-        "differently-scoped test (multi-message feed completeness), not a "
-        "rename of this claim"
-    ),
-    (
         "DEC-43", "tests/infra/test_alembic.py",
         "test_0004_adds_media_json_without_disturbing_the_ts_desc_index",
     ): (

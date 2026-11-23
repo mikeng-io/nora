@@ -2,9 +2,9 @@
 transcript a model is about to read.
 
 **One join, not a method on the tag assembler.** Every transcript consumer
-(the tag and fire paths, the standing fold, the note tier's adaptors, lazy
-adoption's Honcho back-feed) must see what a photo, sticker or voice note
-showed; a join living in one builder leaves the others blind to it.
+(the tag and fire paths, the standing fold, the note tier's adaptors) must
+see what a photo, sticker or voice note showed; a join living in one builder
+leaves the others blind to it.
 
 **Why the DOMAIN layer.** `nora/language/` sits two layers below `nora/agent/`
 in the import contract, so a join living beside `scan_identifiers` could not
@@ -76,27 +76,21 @@ Screen = Callable[[str], str | None]
 #: it reaches, so a static-only guard would be a claim.
 JoinPath = Literal[
     "tag", "fire", "debrief", "dreamer", "cognition", "wake",
-    "adoption", "load_transcript", "relevance_gate",
+    "load_transcript", "relevance_gate",
     # The eval seam's two readers (`nora.subject`): its dream pass, and the
     # window a judge grades a reply against. `nora.subject` is outside the
     # gate's mypy, so an unlisted label is caught only by `_count` at runtime.
     "dreamer_eval", "judge_source",
-    # `nora memory backfill` (DEC-214): a unit's history replayed into its own
-    # Honcho workspace, joined for adoption's reason — it feeds memory.
-    "memory_backfill",
     "unknown",
 ]
 JOIN_PATHS: tuple[str, ...] = get_args(JoinPath)
 
 #: How many distinct blobs one QUERY may ask about. A bound on the round trip,
 #: not on how much of the window gets served: `enrich` batches, and every blob
-#: is asked about. Truncating instead would lose data on the one caller that is
-#: a backfill: `RecordStore.unattributed` returns rows OLDEST FIRST
-#: (`nora/infra/sql/audit.py` documents the ordering as load-bearing), and
-#: adoption feeds each row to Honcho and then calls `set_person_id`, which
-#: removes it from every future scan, so a blob left as a bare handle there is
-#: never revisited. The number of queries is bounded by the CALLER's own row
-#: limit, which every caller already has.
+#: is asked about. Truncating instead would lose data on a backfill, which
+#: reads each row once and never revisits a blob left as a bare handle. The
+#: number of queries is bounded by the CALLER's own row limit, which every
+#: caller already has.
 DEFAULT_QUERY_BLOBS = 200
 
 #: How long ONE query may take before the join gives up and renders the bare
@@ -157,8 +151,8 @@ class MediaJoin:
         """The rows with every resolvable placeholder rendered, or the rows.
 
         `path` names the CALLER. Callers differ in cost: a tag window is a few
-        blobs and must stay under a reply's latency, while adoption's is a
-        thousand-row backfill at process start. One unlabelled series would put
+        blobs and must stay under a reply's latency, while a backfill is a
+        thousand-row replay. One unlabelled series would put
         both in the same histogram, where the backfill saturates `+Inf`.
 
         Total. The store port promises never to raise, so the catch below is

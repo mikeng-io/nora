@@ -49,7 +49,7 @@ def _browse(persons, *, browser, computer=True, events=None, settings=None):
     specs = build_tool_specs(
         unit_for=lambda platform, cid: cid,
         store=None, conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=room, transit_source=None,
         blob_store=FakeBlobStore() if computer else None,
         computer=FakeSandboxRuntime() if computer else None,

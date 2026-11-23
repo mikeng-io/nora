@@ -110,8 +110,8 @@ class _RecordingStore:
 
 
 async def _run(*, reasons: bool) -> tuple[_RecordingStore, Metrics]:
-    tools = _Tools(["about"])
-    model = _ReasoningModel(reasons=reasons, script=["about", None])
+    tools = _Tools(["lookup_person"])
+    model = _ReasoningModel(reasons=reasons, script=["lookup_person", None])
     store = _RecordingStore()
     metrics = Metrics()
     runtime = DreamerRuntime(
@@ -136,7 +136,7 @@ async def _run(*, reasons: bool) -> tuple[_RecordingStore, Metrics]:
 async def test_a_tool_using_dreamer_run_that_reasons_is_recorded_by_adaptor():
     """THE DREAMER PROBE.
 
-    Two model calls: the first asks `about`, the second answers. The second is
+    Two model calls: the first asks `lookup_person`, the second answers. The second is
     the continuation, and it carries the first's reasoning into a request the
     Chat Completions transport will not take it in.
 

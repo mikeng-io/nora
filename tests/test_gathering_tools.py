@@ -11,25 +11,31 @@ from nora.agent.room import Room
 from nora.app.gatherings import GatheringService
 from nora.domain.models import PersonRef
 from nora.obs.metrics import Metrics
-from nora.testing import FakeMemoryStore, FakeRosterSource
+from nora.testing import FakeRosterSource
 from nora.testing.gatherings import FakeGatheringStore
 from tests.fakes import SinkSender
 
-MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
+MILES = PersonRef(person_id="miles", name="Miles Novak")
 GROUP = "signal:group-1"
 OTHER_GROUP = "signal:group-2"
 
 
-def test_all_six_event_tools_are_registered():
+def test_all_five_event_tools_are_registered():
     for name in (
         "event_propose",
         "event_revise",
         "event_rsvp",
         "event_set_status",
         "event_search",
-        "suggest_venue",
     ):
         assert name in NATIVE_TOOLS, f"{name} missing from NATIVE_TOOLS"
+
+
+def test_suggest_venue_is_retired():
+    """A venue suggestion needs a place entity type and a trait polarity the
+    graph does not have, so the tool is gone rather than answering from less."""
+    assert "suggest_venue" not in NATIVE_TOOLS
+    assert "suggest_venue" not in _tools(events=_events_service())
 
 
 async def test_r52_two_open_events_refuses_a_third_rather_than_guessing():
@@ -41,8 +47,6 @@ async def test_r52_two_open_events_refuses_a_third_rather_than_guessing():
     svc = GatheringService(
         store=FakeGatheringStore(),
         route_source=None,
-        honcho=None,
-        ai_peer="nora",
         now=lambda: datetime(2026, 8, 19, tzinfo=UTC),
     )
     await svc.create_event(
@@ -118,7 +122,6 @@ def _tools(
         conversation_id=conversation_id,
         conversation_type="group",
         persons=_FakePersons(MILES),
-        honcho=FakeMemoryStore(),
         deliverer=SinkSender(),
         metrics=metrics or Metrics(),
         room=_room(
@@ -133,8 +136,6 @@ def _events_service(*, store: FakeGatheringStore | None = None) -> GatheringServ
     return GatheringService(
         store=store or FakeGatheringStore(),
         route_source=None,
-        honcho=None,
-        ai_peer="nora",
         now=lambda: datetime(2026, 8, 19, 12, tzinfo=UTC),
     )
 
@@ -147,7 +148,6 @@ async def test_every_event_tool_answers_unavailable_when_events_is_none():
         ("event_revise", {"event_id": str(uuid4())}),
         ("event_rsvp", {"event_id": str(uuid4()), "response": "yes"}),
         ("event_set_status", {"event_id": str(uuid4()), "status": "cancelled"}),
-        ("suggest_venue", {"event_id": str(uuid4())}),
     )
     for name, kwargs in calls:
         out = await tools[name](**kwargs)
@@ -209,12 +209,6 @@ async def test_cancel_event_translates_event_not_found():
     assert out["status"] == "refused"
 
 
-async def test_suggest_venue_translates_event_not_found():
-    tools = _tools(events=_events_service())
-    out = await tools["suggest_venue"](event_id=str(uuid4()))
-    assert out["status"] == "refused"
-
-
 async def test_update_event_translates_a_cancelled_event_fix_i2():
     events = _events_service()
     tools = _tools(events=events)
@@ -269,35 +263,27 @@ async def test_update_event_refuses_an_event_from_another_conversation_fix_i5():
 
 
 class _Raising:
-    """Every GatheringService verb the tools call, raising `exc` (or, for
-    `suggest_venue`, answering `venues`). The tool layer's translation is what
-    is under test, so the service is a stub here."""
+    """Every GatheringService verb the tools call, raising `exc`. The tool
+    layer's translation is what is under test, so the service is a stub here."""
 
-    def __init__(self, exc: Exception | None = None, venues=None) -> None:
+    def __init__(self, exc: Exception) -> None:
         self._exc = exc
-        self._venues = venues
 
     async def _raise(self, **_: object):
-        if self._exc is not None:
-            raise self._exc
-        return self._venues
+        raise self._exc
 
     create_event = update_event = rsvp = cancel_event = list_events = _raise
     set_event_status = search_events = _raise
 
-    async def suggest_venue(self, **_: object):
-        return await self._raise()
-
 
 async def test_every_non_ok_event_status_carries_a_note():
-    """The six descriptions only NAME their statuses (ADR 0015); how to
+    """The five descriptions only NAME their statuses (ADR 0015); how to
     report each is the result's `note`. Every non-ok code path is driven, so
     one that loses its note, or grows a dash, goes red."""
     from nora.domain.gatherings import (
         AmbiguousOpenGatheringsError,
         GatheringCancelledError,
         GatheringNotFoundError,
-        VenueSuggestions,
     )
 
     eid = str(uuid4())
@@ -314,7 +300,6 @@ async def test_every_non_ok_event_status_carries_a_note():
         "unavailable/off/cancel": (
             _tools(events=None), "event_set_status",
             {"event_id": eid, "status": "cancelled"}),
-        "unavailable/off/suggest": (_tools(events=None), "suggest_venue", {"event_id": eid}),
         "unavailable/raise/list": (_tools(events=boom), "event_search", {}),
         "unavailable/raise/create": (_tools(events=boom), "event_propose", {"title": "D"}),
         "unavailable/raise/update": (_tools(events=boom), "event_revise", {"event_id": eid}),
@@ -323,13 +308,6 @@ async def test_every_non_ok_event_status_carries_a_note():
         "unavailable/raise/cancel": (
             _tools(events=boom), "event_set_status",
             {"event_id": eid, "status": "cancelled"}),
-        "unavailable/raise/suggest": (_tools(events=boom), "suggest_venue", {"event_id": eid}),
-        "unavailable/memory/suggest": (
-            _tools(events=_Raising(venues=VenueSuggestions(status="unavailable"))),
-            "suggest_venue", {"event_id": eid}),
-        "nothing_found/suggest": (
-            _tools(events=_Raising(venues=VenueSuggestions(status="nothing_found"))),
-            "suggest_venue", {"event_id": eid}),
         "refused/bad_status/list": (_tools(events=real), "event_search", {"status": "x"}),
         "refused/no_tagger/create": (
             _tools(events=real, tagger=None), "event_propose", {"title": "D"}),
@@ -349,7 +327,6 @@ async def test_every_non_ok_event_status_carries_a_note():
         "refused/not_found/cancel": (
             _tools(events=missing), "event_set_status",
             {"event_id": eid, "status": "cancelled"}),
-        "refused/not_found/suggest": (_tools(events=missing), "suggest_venue", {"event_id": eid}),
         "refused/cancelled/update": (_tools(events=gone), "event_revise", {"event_id": eid}),
         "refused/cancelled/rsvp": (
             _tools(events=gone), "event_rsvp", {"event_id": eid, "response": "yes"}),
@@ -359,7 +336,6 @@ async def test_every_non_ok_event_status_carries_a_note():
         "refused/bad_id/cancel": (
             _tools(events=real), "event_set_status",
             {"event_id": "x", "status": "cancelled"}),
-        "refused/bad_id/suggest": (_tools(events=real), "suggest_venue", {"event_id": "x"}),
     }
     for case, (tools, verb, kwargs) in calls.items():
         out = await tools[verb](**kwargs)

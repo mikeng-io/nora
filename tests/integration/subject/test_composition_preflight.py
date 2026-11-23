@@ -22,7 +22,6 @@ from nora.app.computer_queue import SegmentRegistry
 from nora.app.startup import StartupError
 from nora.infra.blobs import RustfsBlobStore
 from nora.subject.environment import IsolatedServices
-from nora.subject.journey_world import memory_service
 from nora.subject.obtain import SubjectSpec, build_config, default_policy, obtain
 
 
@@ -45,7 +44,6 @@ def boundary_apps(cfg, received, payloads):
     model.router.add_post("/v1/chat/completions", no_model)
     apps["llm.base_url"] = model
     apps.update({f"providers.{name}.base_url": model for name in cfg.providers})
-    apps["honcho.base_url"] = memory_service([])
     for name in ("signal", "discord", "whatsapp", "instagram"):
         app = web.Application()
 
@@ -128,7 +126,7 @@ async def test_cold_composition_preserves_features_and_closes_owned_resources(
     before = asyncio.all_tasks()
     expected = (pytest.raises(StartupError, match="unset or empty")
                 if exit_mode == "missing_token" else
-                pytest.raises(StartupError, match="no unit can run")
+                pytest.raises(StartupError, match=r"needs \[notes\] enabled")
                 if exit_mode == "startup_error" else
                 pytest.raises(RuntimeError, match="generated exit")
                 if exit_mode == "case_error" else nullcontext())
@@ -241,6 +239,10 @@ def preflight_spec(source, evaluation_config, clean_pg_url, tmp_path, exit_mode)
                  "computer.scoped.lifecycle_socket": str(tmp_path / "lifecycle.sock")}
     if source == evaluation_config:
         overrides["cognition.enabled"] = True
+        if exit_mode == "startup_error":
+            # `[cognition] enabled` requires the notebook; no_home_room only
+            # warns and leaves the unit un-woken, so it cannot refuse a boot.
+            overrides["notes.enabled"] = False
         overrides.update({
             "computer.enabled": True, "computer.scoped.enabled": True,
             "media.enabled": True, "media.rustfs.enabled": True,
@@ -255,4 +257,4 @@ def preflight_spec(source, evaluation_config, clean_pg_url, tmp_path, exit_mode)
     return SubjectSpec(database_url=clean_pg_url, workdir=tmp_path / "subject",
         config=source, overrides=overrides,
         policy=default_policy(("signal", "g1"), unit="generated-unit")
-        + ("home_room = true\n" if exit_mode != "startup_error" else ""))
+        + "home_room = true\n")

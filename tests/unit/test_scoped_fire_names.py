@@ -22,7 +22,7 @@ from nora.domain.models import NormalizedMessage
 from nora.obs.metrics import Metrics
 from nora.people.app.managed import ManagedServices
 from nora.persons import Persons
-from nora.testing.fakes import FakeMemoryStore, FakeRecordStore
+from nora.testing.fakes import FakeRecordStore
 from nora.testing.managed import (
     FakeAuthorityBackend,
     FakeBindingStore,
@@ -74,7 +74,7 @@ async def _managed_fire_path(
             body=f"generated m{i}", raw={}))
     return FirePath(
         persons=Persons(by_person={}, index={}),   # unused under managed
-        records=store, memory=FakeMemoryStore(),
+        records=store,
         doctrine_store=None, metrics=Metrics(),                     # type: ignore[arg-type]
         runner=None, adapters={}, registry=None,                    # type: ignore[arg-type]
         canary="test-canary", display_name="Nora",

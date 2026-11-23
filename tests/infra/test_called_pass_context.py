@@ -21,7 +21,6 @@ from nora.infra.sql.item_registration import (
 )
 from nora.memory import wire
 from nora.obs.metrics import Metrics
-from nora.testing.fakes import FakeMemoryStore
 from tests.infra.test_pass_anchors import pointers
 from tests.infra.test_pass_assembly import _counted
 from tests.infra.test_retrieval_scope import PERSON, ROOM, UNIT, write_edge
@@ -71,7 +70,7 @@ async def called(scenario):
                               text="Untrusted quoted copy"))
     row = await records.append(message=msg, person_id=PERSON)
     assembler = TranscriptInjection(
-        audit=records, memory=FakeMemoryStore(), persons=persons, context_window=10,
+        audit=records, persons=persons, context_window=10,
         metrics=Metrics(), policy=scenario.policy, access=access,
     )
     ctx = await assembler.assemble(request=_request(msg))

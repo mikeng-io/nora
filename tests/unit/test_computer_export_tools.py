@@ -106,7 +106,7 @@ def _tools(world: _World, persons, *, conversation_id: str = GROUP, fire_turn: b
     specs = build_tool_specs(
         unit_for=lambda platform, cid: cid,
         store=world.records, conversation_id=conversation_id, conversation_type="group",
-        persons=persons, honcho=None, deliverer=deliverer, metrics=world.metrics,
+        persons=persons, deliverer=deliverer, metrics=world.metrics,
         room=room, transit_source=None, blob_store=world.blobs, fire_turn=fire_turn,
         computer=world.runtime, computer_events=world.events, computer_settings=settings,
         computer_exports=world.exports,
@@ -486,7 +486,7 @@ async def test_an_export_with_the_computer_off_is_still_two_rows(persons):
     specs = build_tool_specs(
         unit_for=lambda platform, cid: cid,
         store=None, conversation_id=GROUP, conversation_type="group", persons=persons,
-        honcho=None, deliverer=None, metrics=Metrics(), room=room, transit_source=None,
+        deliverer=None, metrics=Metrics(), room=room, transit_source=None,
         computer=None, computer_events=world.events, computer_exports=world.exports,
     )
     call = next(s.call for s in specs if s.name == "computer_export")

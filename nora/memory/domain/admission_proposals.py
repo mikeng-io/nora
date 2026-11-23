@@ -97,6 +97,8 @@ class RowFacts:
     aimed_at_nora: bool = False
     pointer_ref: str | None = None
     part: str | None = None
+    asserted_at: datetime | None = None
+    window_end: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +137,8 @@ class CreateClaim(ProposalFields):
     kind: ClassVar[Kind] = "claim"
     content: object
     part: str = "fact"
+    grade: str | None = None
+    reviewed_at: datetime | None = None
     prediction: str | None = None
     window_end: datetime | None = None
     valid_from: datetime | None = None

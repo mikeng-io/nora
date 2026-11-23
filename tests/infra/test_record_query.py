@@ -28,7 +28,7 @@ from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import load_policy
-from nora.testing import FakeMemoryStore, FakeRecordStore, FakeRosterSource
+from nora.testing import FakeRecordStore, FakeRosterSource
 from tests.fakes import SinkSender
 
 NOW = datetime(2026, 9, 29, 4, 0, tzinfo=UTC)          # 12:00 HKT
@@ -282,7 +282,7 @@ def _tools(engine, policy, persons, *, room_id="ROOM-B", platform="discord",
     )
     tools = build_tools(
         store=FakeRecordStore(), conversation_id=room_id, conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=persons, deliverer=SinkSender(),
         metrics=Metrics(), room=room, transit_source=_UNREACHABLE_TRANSIT,
         clock=lambda: NOW,
         record=SqlRecordQuery(engine) if record else None,

@@ -1,29 +1,16 @@
-"""`<people_in_window>` on the PARTICIPATION turn.
+"""`<people_in_window>` — what the block renders and how it is hedged.
 
-The context for every assertion below:
-`fire.py::participation_occasion` builds `person_id=None` — deliberately,
-«like a version announcement», because the occasion is the room and not a
-person. `FirePath.build_context` reads `peer_card` only `if ref is not None`,
-and `tagger_card` is assembled **only** by
-`nora.engagement.context.TranscriptInjection`, the TAG path. So the one decider
-that holds «notes and the peer card» behind a blind gate would render
-*no Honcho block at all*: it would know the people in the window by display
-name.
+`FirePath` fills no `people_in_window`, so the prompt carries it only when a
+`TagContext` is handed one. What these tests pin is the renderer and its hedge:
 
-Four properties, and each is a mutation entry in
-`scripts/mutations/issue-210-participation-reads-memory.json`:
-
-1. the block RENDERS, and only on the participation occasion;
-2. the turn makes no read of her own representation: the `<self>` block
-   (her Character · Nora account) stands where `<self_card>` was;
-3. the hedge is `<peer_history>`'s clause for clause — «undated, therefore
+1. the block RENDERS under its own tag;
+2. the hedge is `<peer_history>`'s clause for clause — «undated, therefore
    not standing» included, which is the whole of what keeps a remembered joke
    («the room calls me 管理員») a record rather than a standing directive;
-4. it is BOUNDED on both axes and FAIL-SOFT on every axis: a Honcho failure
-   costs the block, never the turn, and is counted.
+3. the relevance gate gained no memory reader, and the tag path renders no
+   such block.
 
-No I/O — `unit/`: the memory store is `nora.testing.fakes.FakeMemoryStore`,
-which the contract suite already binds to `HonchoClient`.
+No I/O — `unit/`.
 """
 
 from __future__ import annotations
@@ -33,10 +20,6 @@ from datetime import UTC, datetime
 import pytest
 
 from nora.agent.prefill import build_prefill
-from nora.app.fire import (
-    FirePath,
-    reminder_occasion,
-)
 from nora.domain.models import (
     DeliveryStatus,
     NormalizedMessage,
@@ -44,87 +27,12 @@ from nora.domain.models import (
     TagContext,
     TranscriptRow,
 )
-from nora.domain.reminders import Reminder, ReminderState
-from nora.obs.metrics import Metrics
-from nora.persons import Persons
-from nora.testing.fakes import FakeMemoryStore, FakeRecordStore
 
 T0 = datetime(2026, 9, 11, 22, 20, tzinfo=UTC)
 
 MILES = PersonRef(
-    person_id="miles", name="Miles Novak", honcho_peer_id="miles", aliases=("阿Miles",),
+    person_id="miles", name="Miles Novak", aliases=("阿Miles",),
 )
-ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
-BEN = PersonRef(person_id="ben", name="Ben", honcho_peer_id="ben")
-
-
-@pytest.fixture
-def metrics() -> Metrics:
-    return Metrics()
-
-
-@pytest.fixture
-def persons() -> Persons:
-    return Persons(
-        by_person={"miles": MILES, "ada": ADA, "ben": BEN},
-        index={
-            ("signal", "+85211"): "miles",
-            ("signal", "+85222"): "ada",
-            ("signal", "+85233"): "ben",
-        },
-    )
-
-
-def _reminder() -> Reminder:
-    return Reminder(
-        id="r-1", requester_person_id="miles", platform="signal",
-        conversation_id="conv-1", conversation_type="group",
-        text="睇下 Tyler 喺邊", created_at=T0, due_at=T0,
-        state=ReminderState.FIRING, fired_at=None, outcome=None,
-    )
-
-
-async def _records(*rows: tuple[str, str]) -> FakeRecordStore:
-    """`(sender_id, body)` pairs into the contract-passing record fake.
-
-    Through `append`, never by hand-filling `rows`: that fake PASSES
-    `tests/contract/test_audit_store_contract.py`, which pins the two
-    properties every assertion about «the window» rests on — `recent` returns
-    OLDEST-first and its `limit` takes the NEWEST.
-    """
-    store = FakeRecordStore()
-    for i, (sender, body) in enumerate(rows, 1):
-        await store.append(
-            message=NormalizedMessage(
-                "signal", "conv-1", "group", sender, "whoever",
-                int(T0.timestamp() * 1000) + i * 60_000, body, {},
-            ),
-            person_id=None,
-        )
-    return store
-
-
-def _path(
-    persons: Persons, records: FakeRecordStore, memory: FakeMemoryStore,
-    doctrine_store, metrics: Metrics, **kw,
-) -> FirePath:
-    """The shipped `config.example.toml` numbers, spelled here rather than
-    defaulted: `FirePath`'s own defaults are 0 (inert), so a test that let them
-    default would measure the block being off."""
-    base = {                                # a dict LITERAL: ruff C408
-        "people_in_window_conclusions": 3,
-        "people_in_window_speakers": 4,
-    }
-    base.update(kw)
-    return FirePath(
-        persons=persons, records=records, memory=memory,
-        doctrine_store=doctrine_store, metrics=metrics,
-        runner=None, adapters={}, registry=None,                 # type: ignore[arg-type]
-        canary="test-canary", display_name="Nora",
-        ai_peer="nora", context_window=40, limits={},
-        timeout_seconds=120.0, clock=lambda: T0,
-        **base,                                                  # type: ignore[arg-type]
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -150,23 +58,6 @@ async def test_the_block_reaches_the_prompt_under_its_own_tag() -> None:
     assert "<people_in_window" in rendered
     assert '<person name="Miles Novak" ' in rendered
     assert "- miles_novak jokingly calls nora 管理員" in rendered
-
-
-async def test_a_reminder_occasion_reads_no_memory_at_all(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """Participation ONLY — `_read_decisions`' restriction, one tier over. A
-    reminder firing was decided when its row was written, so handing it four
-    Honcho round trips would cost latency and change nothing."""
-    memory = FakeMemoryStore(conclusions={"miles": ["something"], "nora": ["else"]})
-    path = _path(
-        persons, await _records(("+85211", "hi")), memory, doctrine_store, metrics,
-    )
-
-    ctx = await path.build_context(reminder_occasion([_reminder()]))
-
-    assert ctx.people_in_window == ()
-    assert memory.queries == []          # not «empty answer» — NO CALL
 
 
 # ---------------------------------------------------------------------------

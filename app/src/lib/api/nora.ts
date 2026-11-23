@@ -10,7 +10,6 @@ import { apiGet } from "./client";
 export const StatusSchema = z.object({
   uptime_seconds: z.number(),
   store: z.object({ reachable: z.boolean() }),
-  honcho: z.object({ reachable: z.boolean() }),
   reminders: z.object({
     count: z.number(),
     next_due_at: z.string().nullable(),
@@ -21,14 +20,11 @@ export const StatusSchema = z.object({
 });
 export type Status = z.infer<typeof StatusSchema>;
 
-// nora/web/memory.py::build_memory_payload: the caller's own entries only,
-// one per Nora workspace they belong to (DEC-214), each labelled
-// `workspace`. `identity` (who they are) and `episodes` (what happened) are
-// two distinct reads and never collapse into one list.
-// `profile` is optional: only a backend running the Profile switch
-// (`[memory.profile] read`) sends it — the caller's own account per unit, every
-// chain head with its state, the evidence behind each line, and the open
-// disputes (cognition-loop/data.md §4).
+// nora/web/memory.py::build_memory_payload: the caller's own Profile accounts,
+// one per unit that lists them, shown apart. Only a backend running the Profile
+// switch (`[memory.profile] read`) sends any — every chain head with its state,
+// the evidence behind each line, and the open disputes (cognition-loop/data.md
+// §4). An empty list is "nothing to show here", never "nothing is held".
 export const ProfileEvidenceSchema = z.object({
   ref: z.string(),
   kind: z.enum(["message", "episode", "social", "rollup", "unknown"]),
@@ -71,17 +67,7 @@ export const ProfileAccountSchema = z.object({
   disputes: z.array(ProfileDisputeSchema),
 });
 export type ProfileAccount = z.infer<typeof ProfileAccountSchema>;
-export const MemoryEntrySchema = z.object({
-  workspace: z.string().optional(),
-  person_id: z.string(),
-  display_name: z.string(),
-  reachable: z.boolean(),
-  identity: z.array(z.string()),
-  episodes: z.array(z.string()),
-  profile: z.array(ProfileAccountSchema).optional(),
-});
-export type MemoryEntry = z.infer<typeof MemoryEntrySchema>;
-export const MemorySchema = z.array(MemoryEntrySchema);
+export const MemorySchema = z.array(ProfileAccountSchema);
 
 // nora/web/doctrine.py::build_doctrine_payload, in doctrine order.
 export const DoctrineSectionSchema = z.object({

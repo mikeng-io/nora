@@ -49,13 +49,6 @@
     "target": "tests/integration/test_composition_unwind.py::test_a_late_build_failure_unwinds_bridge_and_model_resources"
   },
   {
-    "name": "the honcho client is owned before ensure_workspace",
-    "file": "nora/memory/wire.py",
-    "old": "    if owner is not None:\n        # Owned before `ensure_workspace` and the foreign-workspaces refusal\n        # below can strand it — the client exists from here on.\n        owner.own_memory(memory)",
-    "new": "",
-    "target": "tests/integration/test_composition_unwind.py::test_a_mid_build_failure_unwinds_everything_acquired"
-  },
-  {
     "name": "background tasks are owned before the first spawn",
     "file": "nora/app/composition_runtime.py",
     "old": "    if owner is not None:\n        # Owned before the first spawn — a failing `hydrate` below must\n        # still cancel what is already running.\n        owner.own_background(background)",
@@ -103,12 +96,5 @@
     "old": "    except BaseException:\n        # Cancellation inside `ensure_bucket` must not strand the pool.\n        s3.close()\n        raise",
     "new": "    except BaseException:\n        # Cancellation inside `ensure_bucket` must not strand the pool.\n        raise",
     "target": "tests/unit/test_composition_media.py::test_a_cancelled_ensure_bucket_closes_the_s3_client"
-  },
-  {
-    "name": "the memory handle closes on normal shutdown too",
-    "file": "nora/app/lifecycle.py",
-    "old": "            audit=deps.audit,\n            managed_session=getattr(deps, \"managed_session\", None),\n            blobs=getattr(deps, \"blobs\", None),\n            memory=getattr(deps, \"memory\", None),\n            model_clients=deps.model_clients,",
-    "new": "            audit=deps.audit,\n            managed_session=getattr(deps, \"managed_session\", None),\n            blobs=getattr(deps, \"blobs\", None),\n            model_clients=deps.model_clients,",
-    "target": "tests/integration/test_composition_unwind.py::test_a_successful_build_transfers_each_resource_once"
   }
 ]

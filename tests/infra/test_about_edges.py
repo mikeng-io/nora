@@ -24,7 +24,7 @@ from tests.infra.test_cognitive_graph_admission import engine as admitted_messag
 
 engine = admitted_message_engine
 
-OTHER = PersonRef("other-fixture-person", "Other Fixture Person", "other-fixture-person")
+OTHER = PersonRef("other-fixture-person", "Other Fixture Person")
 
 
 def _service(engine: AsyncEngine) -> AdmissionService:

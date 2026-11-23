@@ -102,7 +102,6 @@ def test_subject_consumers_read_the_pytest_owned_config(
     assert copied == stated
     assert cfg.llm.model == stated["llm"]["model"] == "nora"
     assert cfg.relevance_gate.enabled is True
-    assert module.memory_endpoint()[1] == stated["honcho"]["workspace_id"]
 
 
 def test_each_spec_composes_its_own_declared_config(
@@ -213,15 +212,14 @@ def test_an_explicit_policy_is_used_verbatim(tmp_path, monkeypatch) -> None:
 def test_a_deployment_shaped_policy_whose_unit_is_not_the_workspace_is_accepted(
     tmp_path, monkeypatch,
 ) -> None:
-    """Production's own shape: `honcho.workspace_id = "nora"` and rooms in
-    units `friends`/`ridgeline`. Refusing it would refuse the deployment."""
+    """Production's own shape: rooms in units `friends`/`ridgeline`, neither named
+    like the deployment. Refusing it would refuse the deployment."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     spec = _spec(tmp_path, room=("signal", "friends-sig"), policy=_DEPLOYMENT_SHAPED)
-    cfg = build_config(spec)
+    build_config(spec)
     convo = _conversation_for(spec, load_policy(tmp_path / "policy.toml"))
     assert convo.unit == "friends"
     assert convo.primary_id == "friends-sig"
-    assert cfg.honcho.workspace_id != "friends", "the unit is the room's, not Honcho's"
 
 
 def test_conversation_for_resolves_the_rooms_own_entry_among_several(tmp_path, monkeypatch) -> None:
@@ -232,37 +230,12 @@ def test_conversation_for_resolves_the_rooms_own_entry_among_several(tmp_path, m
     assert (convo.primary_id, convo.unit) == ("ridgeline-sig", "ridgeline")
 
 
-def test_the_honcho_workspace_name_is_preserved(evaluation_config, tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    cfg = build_config(_spec(tmp_path))
-    assert cfg.honcho.workspace_id == tomllib.loads(evaluation_config.read_text())["honcho"][
-        "workspace_id"]
-
-
-def test_subject_identity_workspace_bindings_are_preserved(tmp_path, monkeypatch):
+def test_subject_identity_is_written_as_declared(tmp_path, monkeypatch):
     monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
-    identity = ('[workspaces.home]\nhoncho_workspace="generated-home"\n'
-                '[workspaces.work]\nhoncho_workspace="generated-work"\n')
+    identity = ('[persons.miles]\nname = "Miles"\n'
+                '[persons.ada]\nname = "Ada"\n')
     build_config(_spec(tmp_path, identity=identity))
     assert (tmp_path / "identity.toml").read_text() == identity
-
-
-def test_a_draw_names_its_own_workspace(tmp_path, monkeypatch) -> None:
-    """An eval draw composes against a workspace of its own."""
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    cfg = build_config(_spec(
-        tmp_path, overrides={"honcho.workspace_id": "nora-eval-run-case-1-abc123"},
-    ))
-    assert cfg.honcho.workspace_id == "nora-eval-run-case-1-abc123"
-
-
-@pytest.mark.parametrize("workspace", ["nora", "probe", "nora-eval-", "nora-48b00d52c0ff"])
-def test_workspace_names_are_values_not_the_external_isolation_boundary(
-    tmp_path, monkeypatch, workspace,
-) -> None:
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    cfg = build_config(_spec(tmp_path, overrides={"honcho.workspace_id": workspace}))
-    assert cfg.honcho.workspace_id == workspace
 
 
 def test_a_policy_naming_the_rooms_id_on_a_different_entry_is_refused(
@@ -322,6 +295,19 @@ def test_a_named_provider_is_dialled_on_loopback_from_the_host(
         base_url="http://host.docker.internal:20128/v1", api_key_env="OMNIROUTE_API_KEY")}}))
     assert built.providers["primary"].base_url == "http://127.0.0.1:20128/v1"
     assert built.providers["primary"].api_key_env == "OMNIROUTE_API_KEY"
+
+
+def test_only_the_docker_host_name_is_rewritten_to_loopback() -> None:
+    """The host cannot resolve `host.docker.internal`; every other name, one
+    merely containing it included, is left for the caller to dial."""
+    import importlib
+
+    obtain = importlib.import_module("nora.subject.obtain")
+    assert obtain._from_host("http://host.docker.internal:8000") == "http://127.0.0.1:8000"
+    assert obtain._from_host("http://host.docker.internal/v1") == "http://127.0.0.1/v1"
+    assert (obtain._from_host("http://host.docker.internal.example.org:8000")
+            == "http://host.docker.internal.example.org:8000")
+    assert obtain._from_host("http://omniroute:20128/v1") == "http://omniroute:20128/v1"
 
 
 def test_the_judge_endpoint_is_dialled_on_loopback_from_the_host(

@@ -45,7 +45,6 @@ from nora.persons import load_persons
 from nora.testing import (
     FakeMediaDescriptionStore,
     FakeMediaObjectStore,
-    FakeMemoryStore,
 )
 from tests.fakes import SinkSender
 from tests.test_doctrine_loader import write
@@ -138,7 +137,7 @@ async def wiring(tmp_path, record_pg_url):
         )
         tools = build_tools(
             store=store, conversation_id="g1", conversation_type="group",
-            persons=persons, honcho=FakeMemoryStore(), deliverer=deliverer, metrics=metrics,
+            persons=persons, deliverer=deliverer, metrics=metrics,
             room=room, transit_source=None,
             vision_source=vision_source, blob_store=blob_store, vision_cache=vision_cache,
             describe_models=describe_models,
@@ -159,7 +158,7 @@ async def wiring(tmp_path, record_pg_url):
         cid = kw.pop("conversation_id", "g1")
         tools = build_tools(
             store=store, conversation_id=cid, conversation_type="group",
-            persons=persons, honcho=FakeMemoryStore(), deliverer=deliverer,
+            persons=persons, deliverer=deliverer,
             metrics=metrics,
             room=Room(platform="signal", conversation_id=cid, roster_source=None,
                       persons=persons),
@@ -1293,7 +1292,7 @@ async def test_a_shared_items_thumbnail_is_looked_at_only_when_asked(wiring):
     spawned: list = []
     job = MediaComprehension(
         blobs=wiring["blobs"], store=index, interpreter=interpreter,
-        memory=FakeMemoryStore(), metrics=Metrics(), spawn=spawned.append,
+        metrics=Metrics(), spawn=spawned.append,
     )
 
     staged = await media_stage.run(

@@ -10,7 +10,6 @@ from nora.domain.gatherings import (
     Gathering,
     GatheringStatus,
     RSVPResponse,
-    VenueSuggestions,
 )
 from nora.domain.notes import (
     Note,
@@ -237,17 +236,6 @@ class EventsCollaborator(Protocol):
         end: datetime | None = None,
         platform: str = "",
     ) -> Sequence[Gathering]: ...
-
-    async def suggest_venue(
-        self,
-        *,
-        event_id: UUID,
-        conversation_id: str,
-        roster_person_ids: Sequence[str],
-        person_names: frozenset[str] | None = None,
-        platform: str = "",
-        unit_id: str = "",
-    ) -> VenueSuggestions: ...
 
 
 class NoteCollaborator(Protocol):

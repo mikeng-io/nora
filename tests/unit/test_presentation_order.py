@@ -4,8 +4,20 @@ from dataclasses import replace
 from datetime import timedelta
 from random import Random
 
-from nora.memory.domain.presentations import intention_is_due, lessons, order_rows
-from nora.memory.domain.retrieval import RetrievalBounds, RetrievalResult, RetrievedSupport
+from nora.memory.domain.presentations import (
+    EntityAnchor,
+    intention_is_due,
+    lessons,
+    order_rows,
+    profile,
+    standing,
+)
+from nora.memory.domain.retrieval import (
+    RetrievalBounds,
+    RetrievalResult,
+    RetrievedEdge,
+    RetrievedSupport,
+)
 from tests.unit.test_graph_row_render import CLAIM, ITEM, NOW
 
 
@@ -65,3 +77,21 @@ def test_lessons_order_by_support_then_recency_with_unknown_last() -> None:
         "ok", RetrievalBounds(1, 4, 10, earlier, NOW), (unknown, old, new, stronger),
     )
     assert lessons(result) == (stronger, new, old, unknown)
+
+
+def test_presentations_leave_grade_claims_out_of_profile_standing_and_lessons() -> None:
+    def claim(part):
+        return replace(CLAIM, graph_id=part, part=part, origin_room="room",
+                       edges=(RetrievedEdge("about", part, "entity"),))
+
+    guess, lesson, situation, grade = map(claim, ("guess", "lesson", "situation", "grade"))
+    result = RetrievalResult(
+        "ok", RetrievalBounds(1, 4, 10, NOW - timedelta(hours=1), NOW),
+        (guess, lesson, situation, grade),
+    )
+    assert tuple(row for _, rows in profile(result, EntityAnchor("entity", None), {}).parts
+                 for row in rows) == (guess,)
+    assert tuple(entry.row for entry in standing(result, "room", "entity", NOW).situation) == (
+        situation,
+    )
+    assert lessons(result) == (lesson,)

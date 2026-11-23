@@ -336,7 +336,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         # attributed.
         "current",
         # Registration protocols share resolver names with the implementations.
-        "conversation", "conversations", "person_id", "platform", "rooms", "subject_id_for",
+        "conversation", "person_id", "platform", "rooms", "subject_id_for",
         # Aggregate retirement and lesson retirement are separate operations.
         "retire",
         # `SqlBrowserTabStore.bind` shares the name with the playback's

@@ -77,10 +77,7 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     "poll_list", "poll_read", "room_state_read", "group_members",
     # the tiers' reads that already exist
     "where_been", "routine_read", "note_read", "note_search",
-    # memory
-    "about", "ask_memory", "search_memory", "search_memory_workspace",
-    # the graph surface's (DEC-316): built instead of the Honcho memory verbs
-    # above while `[memory.index] read`, never beside them
+    # memory: the graph surface's (DEC-316)
     "memory_search", "memory_read",
     # the room's own rows, roster and people (platform-observations/exposure.md)
     "room_read", "load_transcript", "who_said", "lookup_person",
@@ -107,12 +104,8 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
 #: audited line fails the gate). These are native reads; ComprehendRead may
 #: separately serialize fetched Record evidence, but no Notebook judgement or act.
 #:
-#: Counters (`nora_tool_calls_total`, `nora_recall_total`, `nora_room_lookups_
-#: total`) are observability, read by a person and never by a decision, and are
-#: kept. A Honcho read verb only ever ROUTES (`HonchoClient._route` ensures the
-#: unit's workspace marker and scope once per process, the identical idempotent
-#: get-or-create the tag path performs) and answers; no message and no
-#: conclusion is written.
+#: Counters (`nora_tool_calls_total`, `nora_room_lookups_total`) are
+#: observability, read by a person and never by a decision, and are kept.
 READ_TOOL_AUDIT: Mapping[str, str] = {
     "group_members": "Scoped Room.members read through the agenda room registry; "
                      "existing roster availability and audience checks; counters only.",
@@ -148,13 +141,6 @@ READ_TOOL_AUDIT: Mapping[str, str] = {
     "note_read": "SQL read of a note and its head; its CAS anchor is a closure "
                  "local to the build. No write.",
     "note_search": "SQL read of note bodies; counters only. No write.",
-    "about": "Honcho `peer_card` + `representation` reads; counters only.",
-    "ask_memory": "Honcho `chat` (dialectic reasoning, server side): a read verb; "
-                  "what Honcho does inside it is not observable from this repo. "
-                  "KEPT, flagged; counters only.",
-    "search_memory": "Honcho session `search` read; counters only.",
-    "search_memory_workspace": "Honcho workspace `search` read, narrowed to the "
-                               "unit's scope; counters only.",
     "memory_read": "Scoped SQL graph, node fields and evidence reads; counters only. No write.",
     "memory_search": "SQL reads of the memory index and graph (`SqlMemoryIndex`, which "
                      "writes nothing) and one query embedding; counters only. "
@@ -220,7 +206,8 @@ def read_surface(
     and what the registry itself does not offer (`ToolRegistry.
     withheld_tools()`). REQUIRED, so the memory surface (DEC-316) has one
     source, the registry that builds the tools: a caller cannot leave it out
-    and have the catalogue claim the Honcho verbs with the graph's built."""
+    and have the catalogue claim the `read = false` surface's verbs with the
+    graph's built."""
     present = COGNITION_READ_CATALOGUE & read_only
     withheld = frozenset(
         name for name, flag in FLAGGED_READS.items()
@@ -272,7 +259,7 @@ def read_tools_for(
     through the room it names; an `agenda_room` argument that is not on the
     agenda is refused. That binds WHICH room a read is resolved through (its
     roster and lineage), not which rooms' data a tool may reach: `record_query
-    scope="all_rooms"` and `search_memory_workspace` read the unit's OTHER
+    scope="all_rooms"` reads the unit's OTHER
     rooms too, because the unit is the read boundary (DEC-231). The unit's home
     room is never substituted for an item's room.
 

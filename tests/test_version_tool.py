@@ -29,7 +29,7 @@ def _tools(tmp_path, *, payload=STAMP, raw=None):
     registry = ToolRegistry(versions=VersionManifest(path))
     metrics = Metrics()
     specs = registry.specs(store=None, conversation_id="g1", conversation_type="group",
-                           persons=None, honcho=None, deliverer=None, metrics=metrics, room=None)
+                           persons=None, deliverer=None, metrics=metrics, room=None)
     assert "version" not in {spec.name for spec in specs}
     return {spec.name: spec.call for spec in specs}, metrics, path
 
@@ -123,7 +123,7 @@ async def test_unrecorded_version_and_invalid_input_have_distinct_outcomes(tmp_p
 
 async def test_an_unstamped_registry_stays_unavailable_without_network(no_build_stamp):
     specs = ToolRegistry().specs(store=None, conversation_id="g1", conversation_type="group",
-                                 persons=None, honcho=None, deliverer=None,
+                                 persons=None, deliverer=None,
                                  metrics=Metrics(), room=None)
     tools = {spec.name: spec.call for spec in specs}
     listed = await tools["version_list"]()

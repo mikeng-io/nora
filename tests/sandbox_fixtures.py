@@ -36,7 +36,6 @@ from nora.subject.eval_evidence import EvidenceError, RunEvidence, read_events
 from nora.subject.obtain import _DEFAULT_IDENTITY, default_policy
 from nora.subject.sandbox import eval_host_lock
 from nora.testing.signal_daemon import FakeSignalDaemon
-from tests.fakes import FakeHoncho
 
 #: One room, the shape `SubjectSpec`'s defaults give a test.
 ROOM = ("signal", "g1")
@@ -123,7 +122,6 @@ class OfflineSubjectServices:
         bridge.router.add_post("/v1/actions", action)
         async with IsolatedServices(database_url=database_url, redis=redis, applications={
             "llm.base_url": model,
-            "honcho.base_url": FakeHoncho().application(),
             "platforms.signal.base_url": bridge,
         }) as environment:
             yield environment
@@ -216,7 +214,6 @@ async def seed_source(
                 standing_age_hours=knowledge.standing_age_hours,
                 notes=knowledge.notes,
                 culture=knowledge.culture,
-                conclusions=knowledge.conclusions,
                 rooms=knowledge.rooms,
                 spacing_seconds=knowledge.spacing_seconds,
             ),

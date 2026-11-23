@@ -64,7 +64,8 @@ async def test_a_dry_run_reports_and_writes_nothing(
     assert "dry run: nothing written" in out
     assert "tag_debounce_state" in out
     assert "doctrine: UNAVAILABLE" in out  # no load recorded: said, not guessed
-    assert "memory (Honcho)" in out and "step 2" in out
+    # The exceptions still print; none is a memory store, since the graph restores as history.
+    assert "step 2" in out and "memory (" not in out
     assert await _count(clean_pg_url, "SELECT count(*) FROM row_history") == before
 
 

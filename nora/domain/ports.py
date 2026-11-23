@@ -95,34 +95,6 @@ version reintroduces the bug it avoids:
   Folding both onto one Protocol would force every write-side implementation to
   also be a valid read-side one, which is not true in general.
 
-- `MemoryStore.ensure_*` is declared **idempotent under concurrency**.
-  `HonchoClient.ensure_peer`/`ensure_session` are check-then-act over per-peer
-  state, and person-centric identity means the same peer id can be hit from two
-  platforms at the same moment. A per-peer `asyncio.Lock`
-  (`HonchoClient._peer_lock` in `nora/infra/honcho/client.py`) provides it; the
-  invariant is declared here so a static conformance check (mypy on
-  `nora.infra`) has something to hold the implementation to.
-
-- `MemoryStore.representation()` returns `Recollection`, NOT `list[str]` like
-  its sibling `peer_card`. The two differ in exactly the bit that matters:
-  `peer_card` answers `[]` both when Honcho is down and when it knows nothing,
-  so a dead endpoint is indistinguishable from an empty card.
-  `representation`'s own transport makes that worse — an unknown peer answers
-  200 with an empty string, not 404 — so the reachability bit cannot be
-  recovered by the caller and is carried instead. `Recollection` is what new
-  call sites are held to.
-
-- `MemoryStore.health()` returns `MemoryHealth`, mirroring
-  `PlatformAdapter.health() -> AdapterHealth`, rather than a bare
-  `dict[str, Any]`.
-
-- `MemoryStore.feed()` is `bool`, deliberately, even though `SendResult` exists
-  because "a bool loses retryability on a network call to a flaky service."
-  Honcho is never load-bearing (see `nora/infra/honcho/client.py`): a failed
-  feed is fire-and-forget, logged and counted, never retried. A
-  retryable/retry_after shape would imply a retry policy that does not exist.
-  The asymmetry with `SendResult` is intentional; do not add a `FeedResult`.
-
 - `BlobStore` is `put`, `get` and `delete`. `delete` is the mechanism; the
   one policy that calls it is a story frame's bound
   (design/cognition-loop/observation.md, `nora.app.social_expiry`),
@@ -521,14 +493,6 @@ class AdapterHealth:
 
 
 @dataclass(frozen=True)
-class MemoryHealth:
-    """Mirrors `AdapterHealth` — typed, not a bare dict. See module docstring's
-    `MemoryStore` note."""
-
-    reachable: bool
-
-
-@dataclass(frozen=True)
 class EngageDecision:
     """See module docstring for why `rationale` and `threshold` ride along
     with `confidence` instead of a bare bool or a bare number.
@@ -600,40 +564,6 @@ class RoomActivity:
     # row nobody resolved. A message count lets one person account for twenty
     # lines, so "which group has the most people talking" needs heads.
     speakers: int = 0
-
-
-@dataclass(frozen=True)
-class Recollection:
-    """What durable memory returned about ONE person, for ONE question.
-
-    Same two-axis shape as `Roster`, for the same reason: `MemoryStore.peer_card`
-    returns `[]` both when Honcho is down and when it knows nothing, so a broken
-    endpoint is indistinguishable from an empty card. Honcho's `representation`
-    endpoint makes it worse — an unknown peer answers **200 with an empty
-    string** rather than 404, so "no such peer" and "nothing known" are already
-    indistinguishable at the HTTP layer. `reachable` is the one bit that cannot
-    be recovered afterwards, so it is carried rather than inferred.
-    """
-
-    reachable: bool
-    conclusions: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class MessageHits:
-    """What a raw-message search returned, and WHETHER IT RAN.
-
-    `Recollection`'s argument, one endpoint over: a bare list answering `[]` for
-    a transport failure, a >=400, a malformed body AND a genuine miss would let
-    `search_memory` report all four as `nothing_found` — an ERROR reading as a
-    PASS, which R-27 forbids. "Nothing matched" is a true-sounding sentence for
-    a search nobody ran. An `except` clause in the CALLER cannot fix it — the
-    adapter catches everything itself — so the bit is carried out of the place
-    that knows it.
-    """
-
-    reachable: bool
-    hits: tuple[tuple[str, str], ...] = ()      # (peer_id, content)
 
 
 @runtime_checkable
@@ -954,7 +884,7 @@ class RecordStore(Protocol):
         unsend of it. Every replay and render reads through `transcript_select`, which
         excludes a hidden row. True when THIS call hid it, False when it already was
         (the first timestamp is kept) or the row does not exist. Nothing derived from
-        the message is touched, and Honcho keeps what it was already fed."""
+        the message is touched."""
         ...
 
     async def unattributed(self, *, limit: int) -> list[UnattributedRow]: ...
@@ -1393,112 +1323,6 @@ class SourceHealthLog(Protocol):
 
 
 @runtime_checkable
-class MemoryStore(Protocol):
-    """`ensure_*` methods are idempotent under concurrency — see module docstring.
-
-    **Every call names WHERE it is for** (DEC-214): the room
-    (`conversation_id`) or the unit (`unit`) whose memory it reads or writes.
-    Either resolves to the same thing — the unit — and the unit to its Nora
-    workspace's HONCHO workspace and its own named scope inside it. A caller
-    never names a Honcho workspace itself. On the peer
-    verbs (`ensure_peer`, `conclude`, `peer_card`, `representation`, `chat`)
-    the key ROUTES only; it never narrows a read to one session. `peer_card`
-    and `representation` also take `workspace` — a NORA workspace name — for
-    a person's model across every unit of it, unscoped (the portal). On `feed`
-    and `search` a `conversation_id` also names the room's own session, as it
-    always has. A call whose key the deployment cannot route (a room or unit
-    `policy.toml` does not place in any workspace) fails closed: a read is
-    `unavailable`, a write is `False`, never a read of another workspace."""
-
-    async def ensure_workspace(self) -> None: ...
-
-    async def ensure_peer(
-        self, *, peer_id: str, conversation_id: str | None = None,
-        unit: str | None = None,
-    ) -> None: ...
-
-    # The message is fed under `peer_id` into that `conversation_id`'s
-    # session: a multi-peer session, so a human's words and Nora's reply share
-    # one session while each stays under its own speaker's peer (DEC-36 at the
-    # message level). `metadata` is optional structure for the deriver (ts,
-    # reply_to, …), not the message text.
-    async def feed(
-        self,
-        *,
-        peer_id: str,
-        text: str,
-        conversation_id: str,
-        metadata: dict[str, object] | None = None,
-    ) -> bool: ...
-
-    # The conclusion WRITE lane (the `remember` tool's method): one settled
-    # fact about `target`, stored as `(observer=peer_id, observed=target)` —
-    # the exact pair `representation` reads back, so what is written is
-    # readable the moment the write lands, with no second scope in between.
-    # No SESSION key on purpose: the read lane is unit-wide by design (see
-    # `representation`), so the write is too, and disclosure stays the room
-    # roster's job at the tool layer. `conversation_id`/`unit` ROUTE it to
-    # the unit's workspace and scope (see the class docstring). Bare best-effort `bool`
-    # like `feed` — never load-bearing, never retried (see the module
-    # docstring on `feed`'s asymmetry with `SendResult`).
-    async def conclude(
-        self, *, peer_id: str, content: str, target: str,
-        conversation_id: str | None = None, unit: str | None = None,
-    ) -> bool: ...
-
-    async def peer_card(
-        self, *, peer_id: str, conversation_id: str | None = None,
-        unit: str | None = None, workspace: str | None = None,
-    ) -> list[str]: ...
-
-    # `peer_id` is the OBSERVER, `target` the OBSERVED. With
-    # `target` set the recall is `(observer=peer_id, observed=target)` — Nora's
-    # model of a person, not the person's self-model. Unit-wide (no session
-    # scope): knowledge blends across every room of the unit Nora shares with
-    # them (DEC-214); the room roster gates disclosure at the tool layer.
-    async def representation(
-        self,
-        *,
-        peer_id: str,
-        search_query: str,
-        max_conclusions: int = 5,
-        target: str | None = None,
-        conversation_id: str | None = None,
-        unit: str | None = None,
-        workspace: str | None = None,
-    ) -> Recollection: ...
-
-    # The DIALECTIC verb: Honcho REASONS over the (observer, observed) model to
-    # synthesise an answer, vs `representation` which retrieves raw conclusions.
-    # `reasoning_level` is the caller's per-question depth/latency choice
-    # (minimal→max). None on any failure — best-effort, like `feed`.
-    async def chat(
-        self,
-        *,
-        peer_id: str,
-        query: str,
-        reasoning_level: str = "low",
-        target: str | None = None,
-        conversation_id: str | None = None,
-        unit: str | None = None,
-    ) -> str | None: ...
-
-    # Semantic search over the raw MESSAGES (not conclusions) — the verb behind
-    # `search_memory`. Carries `reachable` beside the hits (see `MessageHits`):
-    # a bare list would make a Honcho outage indistinguishable from a genuine
-    # miss, and `search_memory` would report it as «nothing was said».
-    # The caller still filters to the room roster and screens identifiers.
-    async def search(
-        self, *, query: str, conversation_id: str | None = None, limit: int = 8,
-        unit: str | None = None,
-    ) -> MessageHits: ...
-
-    async def health(self) -> MemoryHealth: ...
-
-    async def aclose(self) -> None: ...
-
-
-@runtime_checkable
 class MediaSource(Protocol):
     """One platform's attachment bytes. Never raises — see module docstring."""
 
@@ -1846,7 +1670,7 @@ class MediaInterpreter(Protocol):
     """Bytes to a comprehension — title, description, content. Never raises.
 
     Stickers and photos are both read automatically. Where the result may go is
-    bounded: the comprehension lands in `media_objects` and in Honcho; the
+    bounded: the comprehension lands in `media_objects`; the
     transcript renders only title and description; `scan_identifiers` runs on
     every render and on every serve, never once at store time.
 
@@ -2314,7 +2138,7 @@ class SocialSubjectIndex(Protocol):
     binding does not degrade the answer, it reads a different human's stories
     silently.
 
-    **Not Honcho, deliberately.** Honcho holds what Nora remembers and infers
+    **Not memory, deliberately.** Memory holds what Nora remembers and infers
     about people, which is the right home for "Miles posts a lot of food
     photos" and the wrong home for "Miles is igid 246967358": the binding is an
     AUTHORIZATION KEY (the tier decision is made on it), and a binding that
@@ -2599,23 +2423,6 @@ DEFAULT_DREAM_STORE_TIMEOUT_SECONDS = 15.0
 #: silently wrong. Raise it, and `[dreamer] max_unit_hold_seconds`'s default,
 #: together.
 DREAM_MAX_STORE_CALLS_PER_TICK = 20
-
-
-#: The wall-clock bound on the participation turn's Honcho reads
-#: (`FirePath._read_memory`), and the default for
-#: `[honcho] read_timeout_seconds`.
-#:
-#: It lives HERE for `DEFAULT_DREAM_STORE_TIMEOUT_SECONDS`' reason above, the
-#: same arrangement `DEFAULT_STANDING_STORE_TIMEOUT_SECONDS` has in
-#: `nora.domain.standing`: `nora.app` may not import `nora.config`'s default
-#: past the config object, and both sides already import `nora.domain`.
-#:
-#: **5s over the WHOLE concurrent batch, not per read.** `HonchoClient` already
-#: bounds a single `representation` at 3s, so this is a belt over the PORT — a
-#: `MemoryStore` implementation is not obliged to time anything out, and these
-#: reads run while the heartbeat holds this conversation's slot. One bound over
-#: the gather means adding a speaker costs concurrency, never hold time.
-DEFAULT_MEMORY_READ_TIMEOUT_SECONDS = 5.0
 
 
 @runtime_checkable

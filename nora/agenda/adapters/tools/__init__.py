@@ -28,9 +28,6 @@ def build(deps):
     from nora.agenda.adapters.tools.events import _make_event_set_status
 
     event_set_status = _make_event_set_status(deps)
-    from nora.agenda.adapters.tools.events import _make_suggest_venue
-
-    suggest_venue = _make_suggest_venue(deps)
     return (
         _spec("remind", remind),
         _spec("list_reminders", list_reminders),
@@ -40,5 +37,4 @@ def build(deps):
         _spec("event_revise", event_revise),
         _spec("event_rsvp", event_rsvp),
         _spec("event_set_status", event_set_status),
-        _spec("suggest_venue", suggest_venue),
     )

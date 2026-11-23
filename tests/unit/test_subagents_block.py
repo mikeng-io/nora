@@ -36,7 +36,7 @@ from nora.engagement.subagents_context import SubagentsContextReader
 from nora.language.subagents_render import render_subagents
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
-from nora.testing import FakeComputeJobStore, FakeMemoryStore, FakeRecordStore
+from nora.testing import FakeComputeJobStore, FakeRecordStore
 
 NOW = datetime(2026, 10, 5, 12, tzinfo=UTC)
 ROOM = ("signal", "g-sub")
@@ -259,7 +259,7 @@ async def test_a_tag_turn_titles_the_document_for_its_tagger_and_not_for_another
     job = _job(state=ComputeJobState.DONE, finished_minutes=5, result_document_ids=(DOC,))
     docs = _Documents(creator=KEN, title="Ken's private title")
     reader = _reader(await _store(job), documents=docs)
-    people = {p: PersonRef(person_id=p, name=p.title(), honcho_peer_id=p) for p in (KEN, MEI)}
+    people = {p: PersonRef(person_id=p, name=p.title()) for p in (KEN, MEI)}
     persons = Persons(
         by_person=people,
         index={("signal", "sender-ken"): KEN, ("signal", "sender-mei"): MEI},
@@ -271,7 +271,7 @@ async def test_a_tag_turn_titles_the_document_for_its_tagger_and_not_for_another
             sender_id=sender, sender_name=sender, timestamp=1, body="how is it", raw={},
         )
         assembler = TranscriptInjection(
-            audit=FakeRecordStore(), memory=FakeMemoryStore(), persons=persons,
+            audit=FakeRecordStore(), persons=persons,
             context_window=10, metrics=Metrics(), subagents=reader,
         )
         ctx = await assembler.assemble(request=EngagementRequest(

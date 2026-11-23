@@ -151,7 +151,7 @@ MENTION_PLACEHOLDER = "\ufffc"
 def strip_mention_placeholders(text: str) -> str:
     """`text` without its mention placeholders and the whitespace they leave
     at either end: what a message SAYS, for a place that quotes it back
-    (the Honcho search feed, a computer session's objective)."""
+    (a computer session's objective)."""
     return text.replace(MENTION_PLACEHOLDER, "").strip()
 
 
@@ -237,7 +237,6 @@ class NormalizedMessage:
 class PersonRef:
     person_id: str
     name: str
-    honcho_peer_id: str            # == person_id, by construction
     first_name: str = ""
     last_name: str = ""
     # Other names the GROUP calls this person — 阿Miles, 米高, a handle. Shown to
@@ -589,7 +588,8 @@ class EditedMessage:
     or the message itself if it was never edited — because the gate compares
     an edit against the version it REPLACES. `mentions` is None when that
     version predates `messages.mentions_json`, which the gate reads as
-    «unknown». `first_body` is what it first said, for Honcho's framing.
+    «unknown». `first_body` is what it first said, whose media handles an
+    edit reuses (`nora.ingest.stages.edit_media`).
     `platform_message_id` is its own handle ("" where the platform has none):
     an edit that opens a turn is answered AS this message, so a reaction or a
     threaded reply points at it and not at the edit.
@@ -667,8 +667,7 @@ class UnattributedRow:
     platform cannot be re-resolved at all.
 
     `body` is `str | None` for the same reason the column is nullable: an
-    attachment-only message audits with no text. There is nothing to feed a
-    peer from such a row, only a `person_id` to record.
+    attachment-only message audits with no text.
 
     `raw_json` is the FULL stored envelope, and it is here for the operator
     control plane (`nora persons pending`), not for adoption — which ignores
@@ -693,19 +692,14 @@ class UnattributedRow:
     sender_id: str
     ts: int
     body: str | None
-    # The conversation the message was in — needed so lazy-adoption feeds it into
-    # the right conversation session, the same way the ambient feed does. Like
-    # `platform`, it is carried because a re-fed row must know its session, which
-    # `TranscriptRow` (already conversation-scoped) omits. REQUIRED, not
-    # defaulted: a `""` would build a malformed `nora-conv-` session, so an
-    # omission is a construction error, not a silent garbage feed.
+    # The conversation the message was in. Like `platform`, it is carried
+    # because `TranscriptRow` (already conversation-scoped) omits it. REQUIRED,
+    # not defaulted: an omission is a construction error, not a blank room.
     conversation_id: str
     raw_json: str | None = None
-    # The custody index for this row, exactly as `TranscriptRow` carries it.
-    # It is here because lazy adoption FEEDS these rows to Honcho and what a
-    # photo showed lives behind a join keyed on this column, not in `body` —
-    # without it, a back-filled row reaches memory as `[image a3f2c1]` and
-    # nothing else. Defaulted, so every existing construction stays valid.
+    # The custody index for this row, exactly as `TranscriptRow` carries it:
+    # what a photo showed lives behind a join keyed on this column, not in
+    # `body`. Defaulted, so every existing construction stays valid.
     media_json: str | None = None
 
 
@@ -719,11 +713,11 @@ class TagContext:
     transcript: tuple[TranscriptRow, ...]   # oldest-first rows from db.recent
     peer_card: tuple[str, ...]
     started_at: float              # perf_counter, for the latency histogram
-    # What Honcho has concluded about THE TAGGER — the same `representation`
-    # verb, with `target` set to them instead of to her.
+    # What her memory has concluded about THE TAGGER. Defaulted empty; no
+    # assembler fills it.
     #
     # `peer_card` above and this are NOT redundant: the card renders IDENTITY
-    # claims («Name: Miles Novak», «Aliases: …»); the representation states dated
+    # claims («Name: Miles Novak», «Aliases: …»); this states dated
     # episodes («asked what to eat for dinner»). Who they are, and what happened
     # with them.
     #
@@ -732,14 +726,6 @@ class TagContext:
     # doctrine's lane, and other people's cards are facts about them rather
     # than claims about her. So the asymmetry is deliberate — for her, no card;
     # for them, both.
-    #
-    # This DUPLICATES what `about` would return for the same person, which is
-    # the trade being made: her episodes with the person actually speaking are
-    # the likeliest recall in any turn, and paying for them up front costs
-    # less than a model→tool→model round trip and the risk she never asks.
-    # `Room.tagger_card_injected` is what stops the duplicate landing
-    # TWICE in one turn — `about` on the tagger points at this block instead of
-    # fetching it again.
     tagger_card: tuple[str, ...] = ()
     # The note tier — the INDEX of tracked
     # uncertainties, unit-keyed and unlike every block before it.
@@ -808,7 +794,7 @@ class TagContext:
     # through `read_profile` and rendered as `<profile>` blocks INSTEAD of
     # `self_account`, `culture`, `unit_culture`, `character`, `peer_card`,
     # `tagger_card` and `people_in_window` (all of which the assembler leaves
-    # unset when it fills this). Empty on the Honcho surface and in every
+    # unset when it fills this). Empty with `[memory.profile] read` off and in every
     # harness that wires no profile reader. Lines whose `exclude_persons` name
     # a member of the rendering room are dropped by the assembler before the
     # view is built (`ProfileView`'s docstring).
@@ -842,10 +828,9 @@ class TagContext:
     # Defaulted empty; `render_decisions` is not called at all for an empty
     # tuple.
     decisions: tuple[tuple[str, tuple[DecisionRow, ...]], ...] = ()
-    # `<people_in_window>` — what Honcho has concluded about EACH PERSON WHO SPOKE
-    # in the transcript window, as `(display name, conclusions)` pairs, most recent
-    # speaker first. The same `representation` verb as `tagger_card` above with
-    # `target` set to them, run once per speaker.
+    # `<people_in_window>` — what her memory has concluded about EACH PERSON WHO
+    # SPOKE in the transcript window, as `(display name, conclusions)` pairs, most
+    # recent speaker first. Defaulted empty; no assembler fills it.
     #
     # It exists because `tagger_card` is keyed on ONE person — whoever tagged
     # her — and the participation occasion has no tagger at all
@@ -858,9 +843,7 @@ class TagContext:
     # NOT a superset of `tagger_card` and not a replacement for it: that block
     # names the person who is ASKING, this one names the people who are
     # TALKING, and on the tag path those are different facts with different
-    # weight. Populated only for the participation occasion
-    # (`FirePath.build_context`), for `decisions`' reason: a reminder firing
-    # was decided when its row was written.
+    # weight.
     #
     # Defaulted empty; `_people_in_window_block` renders nothing for an empty
     # tuple.
@@ -917,7 +900,7 @@ class TagContext:
     # turn, as `nora.agent.memory_search.render_packet`'s items (the same
     # shape `memory_search` answers with), cut at `PREFETCH_TOKENS`. Tag turn
     # on the graph memory surface only (`[memory.index] read`); `()` on the
-    # Honcho surface, on a failed or empty search, and in every harness that
+    # `read = false` surface, on a failed or empty search, and in every harness that
     # wires no search: the block then renders nothing. `recalled_partial` is
     # the search's `partial`: the index was still being built.
     recalled: tuple[dict[str, Any], ...] = ()

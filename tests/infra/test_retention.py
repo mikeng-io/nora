@@ -42,7 +42,7 @@ from nora.infra.sql.schema import (
     SOURCE_HEALTH,
 )
 from nora.memory.adapters.act_store import SqlActStore
-from nora.memory.adapters.condition_matcher import _Batch
+from nora.memory.adapters.condition_matcher import SqlIntentionBatch
 from nora.memory.domain.acts import ActAuthority
 from nora.memory.domain.conditions import decode_condition
 from nora.memory.domain.registration import ITEM_SOURCES, PROTECTED_ITEM_SOURCES
@@ -305,7 +305,7 @@ async def test_predicate_is_unknown_over_expired_witness_input(engine):
     value = {"graph_id": head["graph_id"], "path": ["source_state", "state"], "equals": "open"}
     await _intention(engine, "waiting", "predicate", value)
     async with engine.begin() as conn:
-        batch = _Batch(conn, SqlCognitiveGraph(engine))
+        batch = SqlIntentionBatch(conn, SqlCognitiveGraph(engine))
         (row,) = await batch.open()
         assert (await batch.evaluate(row, decode_condition("predicate", value))).truth == "true"
         assert await tombstone_items(conn, PLATFORM_OBSERVATION)
@@ -322,13 +322,13 @@ async def test_person_event_is_unknown_after_its_matching_message_expires(engine
     store = SqlRecordStore(engine, registration=writer.registration, max_per_conversation=0)
     await store.append(message=replace(writer._message(), body=value["text"]), person_id=_PERSON)
     async with engine.begin() as conn:
-        batch = _Batch(conn, SqlCognitiveGraph(engine))
+        batch = SqlIntentionBatch(conn, SqlCognitiveGraph(engine))
         (row,) = await batch.open()
         condition = decode_condition("person_event", value)
         assert (await batch.evaluate(row, condition)).truth == "true"
     assert await store.prune_all() == 1
     async with engine.begin() as conn:
-        batch = _Batch(conn, SqlCognitiveGraph(engine))
+        batch = SqlIntentionBatch(conn, SqlCognitiveGraph(engine))
         (row,) = await batch.open()
         assert (await batch.evaluate(row, condition)).truth == "unknown"
 

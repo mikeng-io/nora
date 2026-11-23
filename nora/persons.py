@@ -11,7 +11,7 @@ Two independent axes:
     registration. Keys inside one block.
 
 Both flatten into one reverse index, so every id a person presents resolves to
-the same `person_id` and therefore to one Honcho peer card (A2). A hidden
+the same `person_id` and therefore to one person (A2). A hidden
 Signal phone number still resolves as long as the operator pasted in the ACI
 Nora saw.
 
@@ -59,7 +59,7 @@ class Life360Membership:
 
 
 def sanitize_unmapped(sender_id: str) -> str:
-    """'+85212345678' → '852…678'. Never used as a Honcho peer id — display only."""
+    """'+85212345678' → '852…678'. Never used as a person id — display only."""
     digits = sender_id.lstrip("+")
     if len(digits) <= 6:
         return sender_id.lstrip("+") or sender_id
@@ -155,13 +155,6 @@ class Persons:
     # this to say who a tag means (`instagram_username_owners`). Still never
     # MATCHED against a sender: a sender is resolved by platform id only.
     _instagram_usernames: dict[str, frozenset[str]] = field(default_factory=dict)
-    # Nora workspace -> the Honcho workspace id it is bound to, from
-    # `[workspaces.<name>] honcho_workspace = "..."` (DEC-214). Only the
-    # bindings the operator WROTE: resolving an unbound workspace to its own
-    # name, and the implicit workspace to `honcho.workspace_id`, is
-    # `nora.app.memory_routing`'s job, because it needs the policy and the
-    # config as well as this file.
-    honcho_workspaces: dict[str, str] = field(default_factory=dict)
     # Every person_id whose block sets `social = false`: the social stream
     # reads nothing of theirs.
     _social_off: frozenset[str] = field(default_factory=frozenset)
@@ -482,13 +475,13 @@ def load_persons(path: Path) -> Persons:
             p for p in (entry.first_name, entry.last_name) if p
         ) or person_id
         by_person[person_id] = PersonRef(
-            person_id=person_id, name=name, honcho_peer_id=person_id,
+            person_id=person_id, name=name,
             first_name=entry.first_name or "", last_name=entry.last_name or "",
             aliases=tuple(entry.aliases),
         )
         # Every kind of every account flattens into one
         # index, which is what makes all of a person's accounts land on a
-        # single `honcho_peer_id` (A2).
+        # single `person_id` (A2).
         for platform in PLATFORM_FIELDS:
             # (platform, value) → the index of the account block that claimed
             # it, so the two duplicate cases can be told apart below.
@@ -582,7 +575,7 @@ def load_persons(path: Path) -> Persons:
                         raise PersonsError(
                             f"duplicate ({platform}, {id_value}) mapped to both "
                             f"{existing!r} and {person_id!r} — an ambiguous identity "
-                            "would silently misattribute Honcho memory"
+                            "would silently misattribute memory"
                         )
                     index[key] = person_id
                     bound_accounts[key] = acct
@@ -595,10 +588,6 @@ def load_persons(path: Path) -> Persons:
         _instagram_igids={pid: frozenset(ids) for pid, ids in instagram_igids.items()},
         _instagram_usernames={
             handle: frozenset(pids) for handle, pids in instagram_usernames.items()
-        },
-        honcho_workspaces={
-            name: binding.honcho_workspace
-            for name, binding in parsed.workspaces.items()
         },
         _social_off=frozenset(pid for pid, entry in parsed.persons.items() if not entry.social),
     )

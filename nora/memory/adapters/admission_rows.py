@@ -36,7 +36,7 @@ _PLANES = (
     "persons",
     "excluded_persons",
     "exposure",
-    "lineage",
+    "lineage", "asserted_at",
 )
 _SPEECH = {"messages", "message_edit", "message_reaction"}
 
@@ -167,6 +167,7 @@ class SqlAdmissionRows:
             verdict_ending=row.get("ending") if table == "intention_verdict" else None,
             aimed_at_nora=bool(row.get("aimed_at_nora")),
             pointer_ref=row.get("pointer_ref"), part=row.get("part"),
+            asserted_at=row["asserted_at"], window_end=row.get("window_end"),
         )
 
 
@@ -178,7 +179,8 @@ def _select(table: sa.Table, id_column: str) -> sa.Select:
     needed.extend(
         table.c[name]
         for name in ("form", "trigger", "delivery_mode", "pointer_kind", "pointer_ref",
-                     "part", "ending", "source_ref_kind", "source_ref_value")
+                     "part", "ending", "source_ref_kind", "source_ref_value",
+                     "window_end")
         if name in table.c
     )
     if table.name == "fetched_pages":

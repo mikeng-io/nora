@@ -39,6 +39,10 @@ from nora.subject.model_gateway import (
 _admitted_egress: ContextVar[ResolvedGateway | None] = ContextVar(
     "admitted_egress", default=None)
 
+#: Teardown's budget for the shielded close: a close that outlives it must
+#: not hold the process-global guard the next case would inherit.
+_CLOSE_BUDGET = 60
+
 
 class IsolatedServices:
     """Own HTTP listeners and optional Redis for one evaluation case.
@@ -69,12 +73,14 @@ class IsolatedServices:
         self._directory: TemporaryDirectory[str] | None = None
         self._patches = contextlib.ExitStack()
         self._active = False
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._addresses: set[tuple[str, int]] = set()
         self._database_alias: tuple[str, int] | None = None
         self._database_addresses: set[str] = set()
         self._unix: set[str] = set()
         self._subjects: list[Any] = []
         self._before_tasks: set[asyncio.Task[Any]] = set()
+        self._case = ""
         #: The services plan that opened this environment, when the plan
         #: carries request-aware state a driver needs back (e.g. the journey
         #: world's counters). `None` for positional recordings.
@@ -225,9 +231,18 @@ class IsolatedServices:
     async def __aenter__(self) -> IsolatedServices:
         if self._active or self._runners:
             raise RuntimeError("an evaluation environment cannot be re-entered")
-        if getattr(socket.socket.connect, "_nora_eval_guard", False):
-            raise RuntimeError("evaluation cases must not share a network context")
+        holder = getattr(socket.socket.connect, "_nora_eval_environment", None)
+        if holder is not None:
+            if not holder._released():
+                raise RuntimeError("evaluation cases must not share a network context"
+                                   + (f"; held by {holder._case}" if holder._case else ""))
+            # A dead owner's stack is retired BEFORE this case patches, so a
+            # late-finalized predecessor exit cannot restore the originals
+            # underneath a live guard, and this case captures the real
+            # surfaces rather than the zombie's wrappers.
+            holder._unwind_guard()
         try:
+            self._case = os.environ.get("PYTEST_CURRENT_TEST", "")
             # OpenAI's SDK lazily reads platform.platform() for its user-agent.
             # macOS may run uname/file for that read; resolve host metadata
             # before the effect boundary, without exempting later subprocesses.
@@ -272,6 +287,7 @@ class IsolatedServices:
                 # Real resolution, before the guard installs: the declared
                 # upstream's addresses are pinned for the case's lifetime.
                 self._egress = self._gateway.resolve()
+            self._loop = asyncio.get_running_loop()
             self._guard_network()
             self._before_tasks = asyncio.all_tasks()
             self._active = True
@@ -313,29 +329,52 @@ class IsolatedServices:
                 if b"ready to accept connections" in line.lower():
                     break
 
+    def _released(self) -> bool:
+        """True when the guard no longer protects: unwound, or its owner loop
+        is gone — a teardown abandoned mid-suspension on a dead loop cannot
+        protect anything, and its flag must not poison the process."""
+        return (not self._active
+                or (self._loop is not None and self._loop.is_closed()))
+
+    def _allowed(self, address: Any) -> bool:
+        if isinstance(address, tuple) and len(address) >= 2:
+            if (str(address[0]), int(address[1])) in self._addresses:
+                return True
+            egress = _admitted_egress.get()
+            return (egress is not None
+                    and (str(address[0]), int(address[1])) in egress.addresses)
+        return isinstance(address, str) and address in self._unix
+
+    def _refuse(self, operation: str,
+                cause: str = "external_dependency_not_isolated") -> None:
+        self.denied.append({"operation": operation, "cause": cause})
+        held = f" (guard held by {self._case})" if self._case else ""
+        raise PermissionError(
+            errno.EACCES, f"evaluation dependency is not isolated{held}")
+
     def _guard_network(self) -> None:
         # ponytail: one case per process, as SDK max_workers=1 requires;
         # parallel case execution needs separate worker processes.
-        if getattr(socket.socket.connect, "_nora_eval_guard", False):
-            raise RuntimeError("evaluation cases must not share a network context")
+        holder = getattr(socket.socket.connect, "_nora_eval_environment", None)
+        if holder is not None and not holder._released():
+            raise RuntimeError("evaluation cases must not share a network context"
+                               + (f"; held by {holder._case}" if holder._case else ""))
+        self._guard_lookup()
+        # Loopback services are direct even on developer hosts with a proxy.
+        self._patches.enter_context(patch.dict(os.environ, {
+            "NO_PROXY": "127.0.0.1,localhost,::1",
+            "no_proxy": "127.0.0.1,localhost,::1",
+        }))
+        self._guard_requests()
+        self._guard_process()
+        self._guard_sockets()
 
-        def allowed(address: Any) -> bool:
-            if isinstance(address, tuple) and len(address) >= 2:
-                if (str(address[0]), int(address[1])) in self._addresses:
-                    return True
-                egress = _admitted_egress.get()
-                return (egress is not None
-                        and (str(address[0]), int(address[1])) in egress.addresses)
-            return isinstance(address, str) and address in self._unix
-
-        def refuse(operation: str,
-                   cause: str = "external_dependency_not_isolated") -> None:
-            self.denied.append({"operation": operation, "cause": cause})
-            raise PermissionError(errno.EACCES, "evaluation dependency is not isolated")
-
+    def _guard_lookup(self) -> None:
         original_lookup = socket.getaddrinfo
 
         def lookup(host: Any, port: Any, *args: Any, **kwargs: Any) -> Any:
+            if self._released():
+                return original_lookup(host, port, *args, **kwargs)
             if self._database_alias == (host, port):
                 result = []
                 for address in sorted(self._database_addresses):
@@ -362,37 +401,40 @@ class IsolatedServices:
                 return result
             addresses = {h for h, _ in self._addresses}
             if host not in addresses and host not in (None, "localhost"):
-                refuse("resolve")
+                self._refuse("resolve")
             result = original_lookup(host, port, *args, **kwargs)
-            if any(not allowed(item[4]) for item in result):
-                refuse("resolve")
+            if any(not self._allowed(item[4]) for item in result):
+                self._refuse("resolve")
             return result
 
         self._patches.enter_context(patch.object(socket, "getaddrinfo", lookup))
 
-        # Loopback services are direct even on developer hosts with a proxy.
-        self._patches.enter_context(patch.dict(os.environ, {
-            "NO_PROXY": "127.0.0.1,localhost,::1",
-            "no_proxy": "127.0.0.1,localhost,::1",
-        }))
-        self._guard_requests()
+    def _guard_process(self) -> None:
+        original_popen_init = subprocess.Popen.__init__
 
         def subprocess_refused(*args: Any, **kwargs: Any) -> Any:
-            refuse("subprocess")
+            if self._released():
+                return original_popen_init(*args, **kwargs)
+            self._refuse("subprocess")
 
         # SSH/browser/codec helpers otherwise escape the Python socket boundary.
         self._patches.enter_context(patch.object(subprocess.Popen, "__init__", subprocess_refused))
+
+    def _guard_sockets(self) -> None:
         for name in ("connect", "connect_ex"):
             original = getattr(socket.socket, name)
 
             def connect(sock: socket.socket, address: Any, *args: Any,
                         _original: Any = original, **kwargs: Any) -> Any:
-                if not allowed(address):
-                    refuse("connect")
+                if self._released():
+                    return _original(sock, address, *args, **kwargs)
+                if not self._allowed(address):
+                    self._refuse("connect")
                 return _original(sock, address, *args, **kwargs)
 
             connect._nora_eval_guard = True  # type: ignore[attr-defined]
             connect._nora_eval_environment = self  # type: ignore[attr-defined]
+            connect._nora_eval_case = self._case  # type: ignore[attr-defined]
             self._patches.enter_context(patch.object(socket.socket, name, connect))
 
         def check_connected(sock: socket.socket) -> None:
@@ -407,8 +449,8 @@ class IsolatedServices:
             serving = (egress is not None and isinstance(local, tuple)
                        and len(local) >= 2
                        and (str(local[0]), int(local[1])) in egress.addresses)
-            if not allowed(peer) and not allowed(local) and not serving:
-                refuse("send")
+            if not self._allowed(peer) and not self._allowed(local) and not serving:
+                self._refuse("send")
 
         for cls, names in ((socket.socket, ("send", "sendall")),
                            (ssl.SSLSocket, ("write",))):
@@ -417,7 +459,8 @@ class IsolatedServices:
 
                 def send(sock: socket.socket, *args: Any,
                          _original: Any = original, **kwargs: Any) -> Any:
-                    check_connected(sock)
+                    if not self._released():
+                        check_connected(sock)
                     return _original(sock, *args, **kwargs)
 
                 self._patches.enter_context(patch.object(cls, name, send))
@@ -425,8 +468,10 @@ class IsolatedServices:
         original_sendto = socket.socket.sendto
 
         def sendto(sock: socket.socket, data: Any, *args: Any) -> Any:
-            if not args or not allowed(args[-1]):
-                refuse("sendto")
+            if self._released():
+                return original_sendto(sock, data, *args)
+            if not args or not self._allowed(args[-1]):
+                self._refuse("sendto")
             return original_sendto(sock, data, *args)
 
         self._patches.enter_context(patch.object(socket.socket, "sendto", sendto))
@@ -440,6 +485,8 @@ class IsolatedServices:
 
             async def request_async(client: Any, request: Any,
                                     _original: Any = original_async) -> Any:
+                if self._released():
+                    return await _original(client, request)
                 if self.owns(str(request.url)):
                     return await _original(client, request)
                 cause = await self._model_refusal_async(client, request)
@@ -454,6 +501,8 @@ class IsolatedServices:
 
             def request_sync(client: Any, request: Any,
                              _original: Any = original_sync) -> Any:
+                if self._released():
+                    return _original(client, request)
                 if self.owns(str(request.url)):
                     return _original(client, request)
                 cause = self._model_refusal(client, request)
@@ -474,12 +523,27 @@ class IsolatedServices:
     async def __aexit__(self, exc_type: type[BaseException] | None,
                         exc: BaseException | None,
                         tb: TracebackType | None) -> None:
-        cleanup = asyncio.create_task(self._close(asyncio.current_task()))
         try:
-            await asyncio.shield(cleanup)
-        except asyncio.CancelledError:
-            await cleanup
-            raise
+            cleanup = asyncio.create_task(self._close(asyncio.current_task()))
+            try:
+                async with asyncio.timeout(_CLOSE_BUDGET):
+                    await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                async with asyncio.timeout(_CLOSE_BUDGET):
+                    await asyncio.shield(cleanup)
+                raise
+        finally:
+            # The guard is process-global: a teardown that cannot run the
+            # shielded close — no running loop, or the loop torn down
+            # first — must still unwind it, or the next case inherits the
+            # refusals.
+            self._unwind_guard()
+
+    def _unwind_guard(self) -> None:
+        self._active = False
+        self._patches.close()
+        if self._directory is not None:
+            self._directory.cleanup()
 
     async def _close(self, owner: asyncio.Task[Any] | None) -> None:
         errors: list[BaseException] = []
@@ -506,9 +570,6 @@ class IsolatedServices:
                     self._process.terminate()
                     await self._process.wait()
             finally:
-                self._active = False
-                self._patches.close()
-                if self._directory is not None:
-                    self._directory.cleanup()
+                self._unwind_guard()
         if errors:
             raise BaseExceptionGroup("evaluation dependency cleanup failed", errors)

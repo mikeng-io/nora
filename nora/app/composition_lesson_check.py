@@ -14,15 +14,20 @@ from nora.language.doctrine_check import CHECK_OBJECTIVE, DoctrineCheck
 from nora.obs.metrics import Metrics
 
 
+def independent_judge_model(cfg: Config) -> str:
+    model = cfg.endpoint("lesson_check", cfg.lessons.check_model)[2]
+    if model == cfg.endpoint("dreamer", cfg.dreamer_model())[2]:
+        raise StartupError("Graph lesson check requires an independent model from the wake")
+    return model
+
+
 def build_graph_lesson_check(
     cfg: Config, doctrine: DoctrineStore, instructions: DreamerInstructions,
     model_client_for: Callable[[str], AsyncOpenAI], metrics: Metrics,
 ) -> DoctrineCheck | None:
     if not cfg.cognition.enabled:
         return None
-    model = cfg.endpoint("lesson_check", cfg.lessons.check_model)[2]
-    if model == cfg.endpoint("dreamer", cfg.dreamer_model())[2]:
-        raise StartupError("Graph lesson check requires an independent model from the wake")
+    model = independent_judge_model(cfg)
     if not instructions.objective_body(CHECK_OBJECTIVE).strip():
         raise StartupError(f"the {CHECK_OBJECTIVE} objective is empty")
     return DoctrineCheck(

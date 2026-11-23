@@ -3,11 +3,10 @@
 Gathering has two adapters (the agent tools and the web read routes); both call
 these functions rather than each re-implementing what makes an event valid.
 
-Reuses three existing pieces:
+Reuses two existing pieces:
 - the reminders domain, for an event's linked one-shot notification;
 - the SAME `route_source` (`RouteClient`/`PlaceResolver`) the `place_info`
-  tool already uses, for venue resolution — behind the same R-28 screen;
-- Honcho's dialectic `chat()`, for `suggest_venue`'s per-person query.
+  tool already uses, for venue resolution — behind the same R-28 screen.
 """
 
 from __future__ import annotations
@@ -35,8 +34,6 @@ from nora.domain.gatherings import (
     GatheringStore,
     RoomClaims,
     RSVPResponse,
-    VenueCandidate,
-    VenueSuggestions,
     event_in_scope,
     merge_field_meta,
     still_open_gatherings,
@@ -67,17 +64,6 @@ TAG_SETTABLE_STATUSES: frozenset[GatheringStatus] = frozenset({
     GatheringStatus.CONFIRMED, GatheringStatus.CANCELLED,
     GatheringStatus.HAPPENED, GatheringStatus.LAPSED,
 })
-
-# The fixed-shape dialectic query: returns a short, directly-usable venue name
-# (or a clear "none") rather than free prose needing a separate extraction
-# step. Comparable across people and stable across calls because the wording
-# never varies.
-_VENUE_PREFERENCE_QUERY = (
-    "In one short phrase, name ONE restaurant or venue this person has "
-    "mentioned positively — food preferences and dietary constraints may "
-    "help you pick. Reply with just the name, or the single word 'none' "
-    "if you don't know one."
-)
 
 log = logging.getLogger("nora.app.gatherings")
 
@@ -110,13 +96,6 @@ class _PlaceAreas(Protocol):
     (`nora.infra.geocode.GoogleGeocoder.area_of_place`); None on a failure."""
 
     async def area_of_place(self, place_id: str) -> PlaceArea | None: ...
-
-
-class _Honcho(Protocol):
-    async def chat(
-        self, *, peer_id: str, query: str, reasoning_level: str = "low",
-        target: str | None = None, conversation_id: str | None = None,
-    ) -> str | None: ...
 
 
 def _tag_evidence(
@@ -169,8 +148,6 @@ class GatheringService:
         *,
         store: GatheringStore,
         route_source: _RouteSource | None,
-        honcho: _Honcho | None,
-        ai_peer: str,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         place_areas: _PlaceAreas | None = None,
         content_checks: bool = True,
@@ -182,8 +159,6 @@ class GatheringService:
         # (`GoogleGeocoder.area_of_place`); `None` (no Maps key) resolves
         # venues with no area, so the memory index gives them no `located_in`.
         self._place_areas = place_areas
-        self._honcho = honcho
-        self._ai_peer = ai_peer
         self._now = now
 
     async def create_event(
@@ -473,59 +448,6 @@ class GatheringService:
         underscore into `self._store` directly."""
         return await self._store.rsvps_for(event_id)
 
-    async def suggest_venue(
-        self, *, event_id: UUID, conversation_id: str,
-        roster_person_ids: Sequence[str],
-        person_names: frozenset[str] | None = None,
-        platform: str = "",
-        unit_id: str = "",
-    ) -> VenueSuggestions:
-        await self._require_in_conversation(
-            event_id,
-            conversation_id,
-            unit_id=unit_id,
-            platform=platform,
-        )
-        if self._honcho is None:
-            return VenueSuggestions(status="unavailable")
-
-        # One fixed-shape query per mapped person.
-        mentions: dict[str, int] = {}
-        for person_id in roster_person_ids:
-            answer = await self._honcho.chat(
-                peer_id=self._ai_peer, query=_VENUE_PREFERENCE_QUERY,
-                target=person_id, conversation_id=conversation_id,
-            )
-            if not answer:
-                continue
-            name = answer.strip()
-            if not name or name.lower() == "none":
-                continue
-            mentions[name] = mentions.get(name, 0) + 1
-
-        if not mentions:
-            return VenueSuggestions(status="nothing_found")
-
-        ranked = sorted(mentions.items(), key=lambda kv: kv[1], reverse=True)
-        candidates: list[VenueCandidate] = []
-        for venue_text, count in ranked[:3]:
-            resolved = await self._resolve_place(venue_text, person_names=person_names)
-            candidates.append(
-                VenueCandidate(
-                    venue_text=venue_text,
-                    place_id=resolved.get("place_id") if resolved else None,
-                    name=resolved.get("name") if resolved else None,
-                    address=resolved.get("address") if resolved else None,
-                    rating=resolved.get("rating") if resolved else None,
-                    price_level=(resolved or {}).get("price_level", ""),
-                    maps_url=resolved.get("maps_url") if resolved else None,
-                    source=(
-                        "mention_frequency" if count > 1 else "explicit_callback"
-                    ),
-                )
-            )
-        return VenueSuggestions(status="ok", candidates=tuple(candidates))
-
     # ── internals ────────────────────────────────────────────────────────
 
     async def _require(self, event_id: UUID) -> Gathering:
@@ -543,7 +465,7 @@ class GatheringService:
         """`_require`, plus the scope check `ReminderStore.cancel`
         (`nora.domain.reminders`) already documents the reasoning for: "a
         uuid carries no scope of its own — the STORE enforces the scope."
-        `update_event`/`cancel_event`/`rsvp`/`suggest_venue` all
+        `update_event`/`cancel_event`/`rsvp` all
         accept a bare event id from the model with no prior proof it belongs
         to the room asking — an id from ANOTHER conversation refuses exactly
         like an unknown one (`GatheringNotFoundError`), never a distinct "wrong

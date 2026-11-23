@@ -95,23 +95,6 @@ def _tool_result() -> str:
         [_row()], now=datetime(2026, 10, 10, tzinfo=UTC), display_name="Nora"))
 
 
-def _memory_backfill() -> str:
-    from nora.app.memory_backfill import _items
-
-    return repr(_items(_row()))
-
-
-def _memory_hits() -> str:
-    """search_memory / search_memory_workspace: Honcho's stored words, which
-    hold raw links for anything fed before links were rendered as handles."""
-    from nora.agent.toolkit.results import _memory_hits_result
-
-    return repr(_memory_hits_result(
-        hits=[("p1", f"budget {URL} pls")], roster={"p1": "A"},
-        record=lambda *_a, **_k: None, partial_view=None,
-    ))
-
-
 def _bullets() -> str:
     """Honcho conclusions and cards (`<peer_card>`, `<people_in_window>`)."""
     from nora.domain.blocks import render_bullets
@@ -175,8 +158,6 @@ RENDERERS = {
     "blocks.render_bullets": _bullets,
     "reaction.render_recent": _reaction,
     "tools._transcript_messages": _tool_result,
-    "tools._memory_hits_result": _memory_hits,
-    "memory_backfill._items": _memory_backfill,
     "cognition_render._message_row": _cognition_message,
     "cognition_render._own_row": _cognition_own,
     "observations.target_context": _affected_target,
@@ -255,14 +236,6 @@ HAND_BUILT = {
     ("nora/agent/toolkit/transcript.py", "_transcript_messages"):
         "load_transcript / room_read / record_query results",
     ("nora/conversation/adapters/tools/record.py", "who_said"): "who_said hits",
-    ("nora/agent/toolkit/results.py", "_memory_hits_result"): "search_memory(_workspace) hits",
-    ("nora/people/adapters/tools/__init__.py", "about"): "about's Honcho conclusions and card",
-    ("nora/memory/adapters/tools/search.py", "ask_memory"): "ask_memory's Honcho answer",
-    ("nora/ingest/stages/memory_feed.py", "run"): "the live Honcho feed",
-    ("nora/app/adoption.py", "backfill"): "adoption's Honcho back-feed",
-    ("nora/app/memory_backfill.py", "_items"): "`nora memory backfill`",
-    ("nora/app/fire.py", "_window_query"): "the fire path's recall search key",
-    ("nora/engagement/context.py", "_recall_tagger"): "the tagger recall search key",
     ("nora/language/cognition_render.py", "_words"):
         "the Cognition agenda's message and own-send words (record hits, own_sends)",
     ("nora/domain/blocks.py", "render_rows"): "every line renderer",
@@ -317,10 +290,8 @@ BUILDERS: dict[str, str | tuple[str, ...]] = {
     # and query.py below; the renderers themselves are in HAND_BUILT above.
     "nora/conversation/adapters/tools/query.py":
         "renders record hits through the shared _transcript_messages (HAND_BUILT)",
-    "nora/app/adoption.py": ("backfill",),
-    "nora/app/memory_backfill.py": ("_items",),
-    "nora/app/fire.py": ("_window_query",),
-    "nora/engagement/context.py": ("_recall_tagger",),
+    "nora/app/fire.py": "blocks: prefill.render_transcript (render_messages)",
+    "nora/engagement/context.py": "blocks: prefill.render_transcript (render_messages)",
     "nora/app/cognition_context.py": "blocks: shared context_render through render_messages",
     "nora/app/wake_floor.py": "blocks: shared context_render through render_messages",
     "nora/app/runtime.py": "blocks: the Dreamer's rows reach its adaptors' render_row_window",
@@ -348,47 +319,8 @@ def test_every_transcript_builder_is_classified():
             assert not missing, f"{rel}: {missing} are not checked in HAND_BUILT"
 
 
-#: Callers of `MemoryStore.feed` with the function that must render, or the
-#: reason the text is not a member's message.
-FEEDERS: dict[str, str] = {
-    "nora/ingest/stages/memory_feed.py": "run",
-    "nora/app/adoption.py": "backfill",
-    "nora/app/memory_backfill.py": "_items",
-}
-_FEED_EXEMPT = {
-    "nora/engagement/stages/feedback.py": "feeds Nora's OWN sent replies, never a member's text",
-    "nora/ingest/comprehension.py": "feeds a media comprehension, not message text",
-}
-
-
 def _sources() -> list[Path]:
     return sorted((ROOT / "nora").rglob("*.py")) + sorted((ROOT / "evals").rglob("*.py"))
-
-
-def _feeders() -> set[str]:
-    out = set()
-    for path in _sources():
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        if any(
-            isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
-            and n.func.attr == "feed" and any(k.arg == "text" for k in n.keywords)
-            for n in ast.walk(tree)
-        ):
-            out.add(path.relative_to(ROOT).as_posix())
-    return out
-
-
-def test_every_honcho_feed_is_classified_and_its_function_renders():
-    """Honcho's deriver is a model and recall hands its text back to her, so a
-    fed URL is a URL she reads later."""
-    feeders = _feeders()
-    assert "nora/ingest/stages/memory_feed.py" in feeders, "the discovery finds nothing"
-    assert feeders == set(FEEDERS) | set(_FEED_EXEMPT), (
-        f"unclassified feeders: {sorted(feeders - set(FEEDERS) - set(_FEED_EXEMPT))}; "
-        f"stale: {sorted((set(FEEDERS) | set(_FEED_EXEMPT)) - feeders)}"
-    )
-    for rel, fn in FEEDERS.items():
-        assert (rel, fn) in HAND_BUILT, f"{rel}::{fn} feeds Honcho and is not checked"
 
 
 #: Attributes that carry a member's message text.

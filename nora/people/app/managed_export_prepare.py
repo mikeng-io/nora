@@ -39,7 +39,7 @@ from nora.persons import PLATFORM_FIELDS
 from nora.policy import Policy, PolicyError, load_policy
 
 #: `nora/persons_file.py::_PERSON_ID_RE` — the person-id alphabet the file
-#: backend validates (it is used verbatim as the Honcho peer id).
+#: backend validates (it is used verbatim as a key in every store).
 _PERSON_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 #: Terminal `LinkState` values — a link journal at rest. Anything else is
@@ -556,16 +556,13 @@ def _group_accounts(
 def _emit_people(
     inv: ExportInventory,
     traits: dict[str, dict[str, Any]],
-    workspace_names: frozenset[str],
 ) -> tuple[list[_EmitPerson], list[tuple[str, str, str | None,
             list[tuple[str, str]]]], list[tuple[str, str, str | None, str,
-            list[tuple[str, str]]]], list[ExportRefusal], list[str], list[str],
-           list[tuple[str, str]]]:
+            list[tuple[str, str]]]], list[ExportRefusal], list[str], list[str]]:
     """The `identity.toml` model — live ownership, Kratos fields, archive overlay."""
     refused: list[ExportRefusal] = []
     dropped: list[str] = []
     nonportable: list[str] = []
-    workspace_rows: list[tuple[str, str]] = []
 
     archived = _parse_archive(inv)
     if isinstance(archived, str):
@@ -658,18 +655,10 @@ def _emit_people(
             kratos_identity_id=person.kratos_identity_id,
         ))
 
-    for name in sorted(archive_workspaces):
-        binding = archive_workspaces[name]
-        value = binding.get("honcho_workspace") if isinstance(binding, dict) else None
-        if not isinstance(value, str) or not value.strip():
-            dropped.append(f"workspaces:{name}")
-            continue
-        if name not in workspace_names:
-            dropped.append(f"workspaces:{name}")
-            continue
-        workspace_rows.append((name, value))
+    # The file no longer carries a `[workspaces]` table: an archived one is dropped.
+    dropped.extend(f"workspaces:{name}" for name in sorted(archive_workspaces))
     return (people, revoked_accounts, suspended_accounts, refused, dropped,
-            nonportable, workspace_rows)
+            nonportable)
 
 
 def _archived_person_fields(
@@ -693,8 +682,7 @@ def _archived_person_fields(
 # -- phase 6: document building (tomlkit — the installed TOML writer) ----------
 
 
-def _build_identity(people: tuple[_EmitPerson, ...],
-                    workspaces: tuple[tuple[str, str], ...]) -> str:
+def _build_identity(people: tuple[_EmitPerson, ...]) -> str:
     doc = tomlkit.document()
     persons_table = tomlkit.table(is_super_table=True)
     for person in people:
@@ -728,13 +716,6 @@ def _build_identity(people: tuple[_EmitPerson, ...],
                 existing.append(block)
         persons_table[person.person_id] = entry
     doc["persons"] = persons_table
-    if workspaces:
-        table = tomlkit.table(is_super_table=True)
-        for name, binding in workspaces:
-            row = tomlkit.table()
-            row["honcho_workspace"] = binding
-            table[name] = row
-        doc["workspaces"] = table
     return tomlkit.dumps(doc)
 
 

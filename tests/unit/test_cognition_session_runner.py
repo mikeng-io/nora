@@ -1168,7 +1168,7 @@ async def test_native_transcript_rendered_file_text_is_the_proposals_evidence():
     from nora.domain.models import NormalizedMessage
     from nora.obs.metrics import Metrics
     from nora.persons import Persons
-    from nora.testing import FakeMemoryStore, FakeRecordStore, FakeRosterSource
+    from nora.testing import FakeRecordStore, FakeRosterSource
     from tests.fakes import SinkSender
 
     raw = "dinner plan https://docs.google.com/document/d/generatedfile123/edit"
@@ -1191,7 +1191,7 @@ async def test_native_transcript_rendered_file_text_is_the_proposals_evidence():
     def reads(unit, rooms, **kw):
         specs = build_tool_specs(
             store=store, conversation_id="home-room", conversation_type="group",
-            persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+            persons=persons, deliverer=SinkSender(),
             metrics=Metrics(), room=room, transit_source=None,
             clock=lambda: datetime.fromtimestamp(NOW / 1000, UTC),
             on_rows=kw["on_rows"])

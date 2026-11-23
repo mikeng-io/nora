@@ -96,7 +96,7 @@ class _Rig:
         return {
             "store": None, "conversation_id": conversation_id,
             "conversation_type": conversation_type, "persons": persons,
-            "honcho": None, "deliverer": None, "metrics": Metrics(),
+            "deliverer": None, "metrics": Metrics(),
             "room": room}
 
 

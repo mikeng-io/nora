@@ -10,7 +10,6 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.surface import load_onto
 from nora.obs.metrics import Metrics
-from nora.testing.fakes import FakeMemoryStore
 from tests.unit.test_tool_registry import _deliverer, _FakePersons, _FakeStore
 
 AMBIENT = frozenset({
@@ -40,7 +39,7 @@ def _registry():
 def _surface(**kwargs):
     return _registry().surface(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         metrics=Metrics(), room=Room(platform="signal", conversation_id="g1",
                                      roster_source=None, persons=_FakePersons()),
         engagement=True, **kwargs,
@@ -73,8 +72,8 @@ def test_load_tools_cannot_reach_any_retired_tool(ambient):
 def test_dreamers_read_only_grant_keeps_its_legacy_sources():
     source = RegistryToolSource(
         registry=_registry(), store=_FakeStore(), persons=_FakePersons(),
-        honcho=FakeMemoryStore(), metrics=Metrics(),
+        metrics=Metrics(),
     )
-    expected = {"search_memory", "search_memory_workspace", "load_transcript"}
+    expected = {"load_transcript"}
     built = source.build(key="g1", adaptor="fixture", names=frozenset(expected | {"send_reply"}))
     assert {t.tool_name for t in built} == expected

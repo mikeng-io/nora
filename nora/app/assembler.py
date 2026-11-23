@@ -26,7 +26,6 @@ from nora.domain.media_join import MediaJoin
 from nora.domain.memo import MemoStore
 from nora.domain.ports import (
     CultureReader,
-    MemoryStore,
     RecordStore,
     RosterSource,
 )
@@ -61,7 +60,6 @@ def build_assembler(
     cfg: Config,
     *,
     audit: RecordStore,
-    memory: MemoryStore,
     persons: Persons,
     metrics: Metrics,
     policy: Policy,
@@ -86,7 +84,7 @@ def build_assembler(
     access: object = None,
 ) -> TranscriptInjection:
     return TranscriptInjection(
-        audit=audit, memory=memory, persons=persons,
+        audit=audit, persons=persons,
         context_window=cfg.store.context_window, metrics=metrics,
         prompt_window=cfg.store.effective_prompt_window,
         # SHARED (DEC-195) with `nora.app.fire.FirePath`, not built here from
@@ -96,8 +94,7 @@ def build_assembler(
         # not opted in) is the plain `context_window` fetch, no quote-aware
         # growth.
         quote_window=quote_window,
-        ai_peer=cfg.honcho.ai_peer, display_name=cfg.doctrine.display_name,
-        tagger_card_conclusions=cfg.honcho.tagger_card_conclusions,
+        ai_peer=cfg.agent.name, display_name=cfg.doctrine.display_name,
         notes=notes, policy=policy,
         memos=memos,
 
@@ -139,8 +136,7 @@ def build_assembler(
         subagents=subagents,
         # `<recalled>`, the pre-fetch (design/unified-memory/README.md): the
         # SAME `MemorySearch` the tool registry's `memory_search` holds.
-        # `None` on the Honcho surface (`[memory.index] read = false`),
-        # which renders no block.
+        # `None` with `[memory.index] read = false`, which renders no block.
         memory_search=memory_search,
         # The graph's one clock, so the pre-fetch dates and ranks its items
         # at the instant every other component reads.
@@ -148,7 +144,7 @@ def build_assembler(
         # THE SWITCH (design/unified-memory/profiles.md): the Profile accounts'
         # reader. `None` until `[memory.profile] read` is on beside `[memory.profile]
         # write`, and in every harness that wires none — the turn then
-        # renders the Honcho and prose-culture blocks it always has.
+        # renders the peer and prose-culture blocks it always has.
         profile=profile, rosters=rosters, self_ids=self_ids,
         # The typed platform-observation Record: the room's source events
         # (transcript) and folded object heads (standing slot). `None` in

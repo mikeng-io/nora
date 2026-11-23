@@ -22,7 +22,7 @@ from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import load_policy
-from nora.testing import FakeMemoryStore, FakeRecordStore, FakeRosterSource, InMemoryCultureStore
+from nora.testing import FakeRecordStore, FakeRosterSource, InMemoryCultureStore
 from tests.fakes import SinkSender
 
 NOW = datetime(2026, 10, 7, 4, 0, tzinfo=UTC)
@@ -99,7 +99,7 @@ def _tool(tmp_path, culture, *, lineage=True, metrics=None):
                 persons=persons)
     tools = build_tools(
         store=FakeRecordStore(), conversation_id="ROOM-A", conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=persons, deliverer=SinkSender(),
         metrics=metrics or Metrics(), room=room, transit_source=_UNREACHABLE,
         clock=lambda: NOW, culture=culture,
         lineage=LineagePolicy.from_policy(policy) if lineage else None,

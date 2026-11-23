@@ -94,7 +94,7 @@ async def replay_dependencies(
             instructions=corpus, metrics=metrics, model_name=model,
             tools=RegistryToolSource(
                 registry=ToolRegistry(content_checks=content_checks),
-                store=None, persons=persons, honcho=None, metrics=metrics, access=access,
+                store=None, persons=persons, metrics=metrics, access=access,
             ),
             budgets={}, default_budget=_adaptor_budget(cfg.dreamer.budget_for("cognition")),
             retry=factory.build_retry_policy(timeout_seconds=cfg.llm.timeout_seconds),

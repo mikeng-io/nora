@@ -70,13 +70,12 @@ def test_every_unavailable_name_is_a_real_read_tool():
 
 
 @pytest.mark.parametrize("name", sorted(
-    n for n in ("about", "memory_search", "memory_read", "note_read",
+    n for n in ("memory_search", "memory_read", "note_read",
                 "note_search", "memo_read", "social_read", "room_state_read",
                 "poll_list", "poll_read", "lookup_person",
                 "who_said", "group_members", "event_search", "rollup_read",
                 "standing_read", "character_read", "routine_read", "where_been",
-                "media_search", "file_fetch", "ask_memory", "search_memory",
-                "search_memory_workspace")
+                "media_search", "file_fetch")
 ))
 async def test_a_current_head_read_answers_unavailable_and_the_inner_tool_never_runs(name):
     """Fail-closed, named, and nothing read: `unavailable` with the real

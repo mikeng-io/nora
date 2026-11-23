@@ -16,14 +16,10 @@ problem, and `accept` returns payloads precisely so an adaptor never has to know
 its own instruction digest.
 
 **It synthesises ACROSS the stores Nora holds; the batch is one input among
-several (DEC-182).** What DEC-182 rules out is the CACHE shape — ask Honcho
-once, store the answer, do nothing else — not the use of memory. Honcho does
-not scope at the layer a cached `chat` answer would need: `chat` on a
-two-message probe session answers freely about people appearing nowhere in it,
-and `search` scoped to that session returns other rooms' hits byte-identical to
-the unscoped query. What survives is the ATTRIBUTION: **producing an account is
-a property of asking a model to write prose, not a property of that endpoint**,
-so the fold is the author and the dialectic call is not on this path.
+several (DEC-182).** What DEC-182 rules out is the CACHE shape — ask a memory
+store once, store the answer, do nothing else — not the use of memory.
+**Producing an account is a property of asking a model to write prose**, so the
+fold is the author.
 
 **What it reads.** `record.since(conversation_id=key, ...)` — `WHERE
 conversation_id = :key` in our own Postgres, hard-scoped by construction — is
@@ -154,16 +150,13 @@ CULTURE_TOOLS: frozenset[str] = frozenset({
     # the model to say what the room comes to her for and what it never
     # would; that is a claim about a relationship across months, and the batch
     # is a few days.
-    "ask_memory", "search_memory",
-    # The same reach on the graph surface (DEC-316): built instead of the two
-    # above while `[memory.index] read`, never beside them.
     "memory_search",
     # THE ROSTER — who is actually in this room, and who a handle IS. A batch
     # renders display names; an account that calls one person by two names, or
     # two people by one, is wrong in the way nobody notices. A room's own
     # nicknames («@熱咖啡☕少奶多糖») resolve against an index
     # (`lookup_person`) and not against more occurrences of the same handle.
-    "about", "lookup_person", "group_members",
+    "lookup_person", "group_members",
     # PRESENCE IS OUT (`where_been`, `online_now`). A room's culture is
     # INPUT to accounts that render beyond its room: every person session of
     # the unit and the unit's own account read it, and those render in rooms
@@ -184,8 +177,8 @@ CULTURE_TOOLS: frozenset[str] = frozenset({
     # names no `acts`, so it is refused twice (`culture_grant`).
     # `load_transcript`: the adaptor is HANDED its room's batch. A verb that
     # re-reads the same room is turns spent to arrive where it started.
-    # `route` / `transit` / `parking_status` / `find_parking` / `weather` /
-    # `suggest_venue`: these answer a question somebody is asking NOW. An
+    # `route` / `transit` / `parking_status` / `find_parking` / `weather`:
+    # these answer a question somebody is asking NOW. An
     # account is about what a room IS, and a background pass that looked up
     # tonight's traffic would be doing the participation turn's job a day
     # early.

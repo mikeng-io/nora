@@ -114,8 +114,8 @@ class Stores:
 
     def events(self) -> GatheringService:
         return GatheringService(
-            store=self.gatherings, route_source=None, honcho=None,
-            ai_peer="nora", now=lambda: datetime.fromtimestamp(NOW / 1000, UTC),
+            store=self.gatherings, route_source=None,
+            now=lambda: datetime.fromtimestamp(NOW / 1000, UTC),
         )
 
 

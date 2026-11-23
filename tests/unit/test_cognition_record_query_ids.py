@@ -31,7 +31,7 @@ from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import load_policy
-from nora.testing import FakeMemoryStore, FakeRecordStore
+from nora.testing import FakeRecordStore
 from tests.fakes import SinkSender
 
 NOW = datetime(2026, 9, 29, 4, 0, tzinfo=UTC)
@@ -101,7 +101,7 @@ async def _stream(tool: Any, **arguments: Any) -> dict[str, Any]:
 def _cognition_tool(policy, persons) -> Any:
     source = RegistryToolSource(
         registry=ToolRegistry(record=_Record(), lineage=LineagePolicy.from_policy(policy)),
-        store=FakeRecordStore(), persons=persons, honcho=FakeMemoryStore(),
+        store=FakeRecordStore(), persons=persons,
         metrics=Metrics(),
         scope_rooms={ROOM: HomeRoom(unit="u1", platform="signal", conversation_id=ROOM)},
     )
@@ -115,7 +115,7 @@ def _cognition_tool(policy, persons) -> Any:
 def _tag_tool(policy, persons) -> Any:
     tools = build_tools(
         store=FakeRecordStore(), conversation_id=ROOM, conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=persons, deliverer=SinkSender(),
         metrics=Metrics(),
         room=Room(platform="signal", conversation_id=ROOM, roster_source=None, persons=persons),
         transit_source=TransitClient(

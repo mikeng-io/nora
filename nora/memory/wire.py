@@ -14,13 +14,10 @@ from nora.agent.memory_search import MemorySearch
 from nora.agent.room import Room
 from nora.app.cognition_grounding import place_release
 from nora.app.composition_helpers import _unified_profile_writers_retired
-from nora.app.memory_routing import MemoryRoutingError, build_workspace_router
-from nora.app.startup import StartupError
 from nora.domain.live import LiveMapping
 from nora.domain.memory_index import QueryEmbedder
 from nora.domain.ports import SearchProvider
 from nora.infra.embedder import QUERY_TIMEOUT_SECONDS, LlamaEmbedder, fingerprint, model_file
-from nora.infra.honcho import HonchoClient
 from nora.infra.sql import SqlEntryStore
 from nora.infra.sql.item_registration import (
     RegistrationScope,
@@ -51,6 +48,7 @@ from nora.memory.adapters.pass_assembly import PassAssembler
 from nora.memory.adapters.proactive_claims import SqlProactiveClaims
 from nora.memory.adapters.replay_receipts import SqlReplayReceipts
 from nora.memory.adapters.retrieval_store import SqlRetrieval
+from nora.memory.adapters.review_anchors import SqlReviewTargets as SqlReviewTargets
 from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
 from nora.memory.adapters.tools.search import GraphReadTools
@@ -72,6 +70,7 @@ from nora.memory.app.retrieval import RetrievalService
 from nora.memory.app.verify import IntentionVerifier
 from nora.memory.app.watches import WatchPoller
 from nora.memory.domain.admission_ports import LessonChecker, RoomSlots
+from nora.memory.domain.graph_operations import REVIEW_PARTS as REVIEW_PARTS
 from nora.memory.domain.graph_operations import WAKE_OPERATIONS as WAKE_OPERATIONS
 from nora.persons import Persons
 from nora.policy import Policy
@@ -156,51 +155,6 @@ def notes(cfg, engine) -> NotesWiring:
 
 
 @dataclass(frozen=True)
-class HonchoWiring:
-    memory: Any
-
-
-async def honcho(allowlist, cfg, persons, owner=None) -> HonchoWiring:
-    # workspace > unit > room (DEC-214): every Honcho call is routed from its room or unit
-    # to the Honcho workspace its Nora workspace is bound to, and to the unit's named scope
-    # inside it. Resolved ONCE, here, from the three files that each hold one part of it…
-    try:
-        router = build_workspace_router(
-            policy=allowlist,
-            bindings=persons.honcho_workspaces,
-            default_workspace=cfg.honcho.workspace_id,
-        )
-    except MemoryRoutingError as exc:
-        raise StartupError(f"memory routing error: {exc}") from exc
-    memory = HonchoClient(
-        cfg.honcho.base_url,
-        cfg.honcho.workspace_id,
-        ai_peer=cfg.honcho.ai_peer,
-        workspace_router=router,
-    )
-    if owner is not None:
-        # Owned before `ensure_workspace` and the foreign-workspaces refusal
-        # below can strand it — the client exists from here on.
-        owner.own_memory(memory)
-    # Best-effort, never fatal — no try/except. Every bound Honcho workspace,
-    # the Nora aiPeer in each (her replies feed under it to build her
-    # self-model; peers are per Honcho workspace), and every unit's scope.
-    await memory.ensure_workspace()
-    # EXCEPT a bound Honcho workspace that belongs to another application: that is a wrong
-    # line in identity.toml, and running on it would write people's speech into someone
-    # else's peers. The client has already refused every call to it; this makes the refusal…
-    foreign = memory.foreign_workspaces()
-    if foreign:
-        raise StartupError(
-            f"memory routing error: Honcho workspace(s) {list(foreign)} hold "
-            "sessions and are not marked as this Nora's. Another application "
-            "uses them — bind the Nora workspace to a different "
-            "honcho_workspace in identity.toml."
-        )
-    return HonchoWiring(memory=memory)
-
-
-@dataclass(frozen=True)
 class SearchWiring:
     memory_index_reader: Any
     memory_search: Any
@@ -210,7 +164,7 @@ def search(cfg, engine, metrics, access=None) -> SearchWiring:
 
     # `[memory.index] read` (ships off): the one retrieval service, held by the tag path's
     # pre-fetch (`<recalled>`) and by the tool registry's `memory_search` below, one
-    # instance for both; `None` keeps the Honcho surface and no pre-fetch. The same…
+    # instance for both; `None` keeps the `read = false` surface and no pre-fetch.
     memory_index_reader = SqlMemoryIndex(engine)
     memory_search = (
         MemorySearch(

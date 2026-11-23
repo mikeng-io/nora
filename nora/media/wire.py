@@ -106,7 +106,6 @@ def describers(
     engine,
     extra_model_clients,
     media_objects,
-    memory,
     metrics,
     model_client_for,
     route_model,
@@ -172,12 +171,10 @@ def describers(
                 chunk_seconds=cfg.media.describe.video.chunk_seconds,
                 max_chunks=cfg.media.describe.video.chunk_max,
             ),
-            memory=memory,
             metrics=metrics,
             spawn=_spawn,
             stickers_enabled=cfg.media.sticker_descriptions,
             max_concurrent=cfg.media.comprehension_max_concurrent,
-            content_checks=content_checks,
         )
     # `[speech.stt]`'s transcriber: wired ONLY when enabled — the same inert-ship rule as
     # `stickers`. Off leaves the ingest stage without a transcriber and a voice note is

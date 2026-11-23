@@ -3,17 +3,15 @@
 `nora.testing.FakeRecordStore` is the audit double throughout — the project
 rule is that a port never gains a second implementation, including a test
 fake, without a shared contract suite both pass, and `FakeRecordStore` already
-has one (`tests/contract/test_audit_store_contract.py`). `MemoryStore` has no
-such suite yet, so `FakeMemory` below stays local to this test module rather
-than joining `nora.testing`.
+has one (`tests/contract/test_audit_store_contract.py`).
 """
 
 from __future__ import annotations
 
 from nora.access import IdentityAccess
-from nora.domain.models import NormalizedMessage, PersonRef
-from nora.domain.ports import EngageDecision, MemoryHealth
-from nora.ingest.stages import audit, gate, identity, memory_feed
+from nora.domain.models import NormalizedMessage
+from nora.domain.ports import EngageDecision
+from nora.ingest.stages import audit, gate, identity
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import permissive_policy
@@ -25,33 +23,6 @@ def _msg(sender_id: str = "+852111", body: str = "hello") -> NormalizedMessage:
         platform="signal", conversation_id="g1", conversation_type="group",
         sender_id=sender_id, sender_name="Miles", timestamp=1, body=body, raw={},
     )
-
-
-class FakeMemory:
-    """Local `MemoryStore` double for Honcho — see module docstring."""
-
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, str]] = []
-
-    async def ensure_workspace(self) -> None:
-        return None
-
-    async def ensure_peer(self, *, peer_id: str, **_route: str | None) -> None:
-        self.calls.append(("ensure_peer", peer_id))
-
-    async def feed(self, *, peer_id: str, text: str, conversation_id: str = "",
-                   metadata: dict | None = None) -> bool:
-        self.calls.append(("feed", peer_id))
-        return True
-
-    async def peer_card(self, *, peer_id: str, **_route: str | None) -> list[str]:
-        return []
-
-    async def health(self) -> MemoryHealth:
-        return MemoryHealth(reachable=True)
-
-    async def aclose(self) -> None:
-        return None
 
 
 class _RaisingPolicy:
@@ -100,15 +71,12 @@ async def test_audit_failure_counts_nora_errors_total_stage_ambient(monkeypatch)
 # --- row 3: identity ---------------------------------------------------------
 
 
-async def test_an_unmapped_sender_is_audited_but_never_fed():
-    """Peer mapping is manual and unmapped senders are never fed to the
-    semantic store. The audit row is still written — the audit record is not
-    conditional on identity."""
+async def test_an_unmapped_sender_is_audited_with_no_person():
+    """Person mapping is manual. The audit row is still written — the audit
+    record is not conditional on identity."""
     store = FakeRecordStore()
-    fake_memory = FakeMemory()
     metrics = Metrics()
     persons = Persons(by_person={}, index={})   # nobody mapped
-    spawned: list = []
     msg = _msg(sender_id="+85299999999")
 
     person = await identity.run(message=msg, metrics=metrics, access=IdentityAccess.for_files(
@@ -127,43 +95,6 @@ async def test_an_unmapped_sender_is_audited_but_never_fed():
     # platform display name — so without this counter "identity.toml is wrong"
     # looks exactly like "nobody talked to her".
     assert metrics.get("nora_unmapped_senders_total", platform="signal") == 1
-
-    await memory_feed.run(
-        message=msg, person=person, memory=fake_memory, metrics=metrics,
-        spawn=spawned.append,
-    )
-
-    assert spawned == []
-    assert fake_memory.calls == []
-
-
-# --- row 4: memory_feed -------------------------------------------------------
-
-
-async def test_memory_feed_runs_off_the_listener_path():
-    """Asserts `spawn` was called rather than the coroutine awaited inline.
-    `on_event` is awaited by the SSE reader (listener.py), so an inline
-    200-800ms Honcho call stalls the socket read for every adapter in the
-    process."""
-    person = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
-    msg = _msg()
-    fake_memory = FakeMemory()
-    metrics = Metrics()
-    spawned: list = []
-
-    await memory_feed.run(
-        message=msg, person=person, memory=fake_memory, metrics=metrics,
-        spawn=spawned.append,
-    )
-
-    # Nothing ran synchronously: the feed was handed to spawn, not awaited.
-    assert len(spawned) == 1
-    assert fake_memory.calls == []
-
-    # Running the spawned coroutine off-path confirms it actually does the feed.
-    await spawned[0]
-    assert fake_memory.calls == [("ensure_peer", "miles"), ("feed", "miles")]
-    assert metrics.get("honcho_feed_success") == 1
 
 
 # --- row 5: gate ---------------------------------------------------------------

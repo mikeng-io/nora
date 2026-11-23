@@ -134,7 +134,32 @@ def _content(source: str, image: Mapping[str, Any]) -> object:
         return {field: image[field] for field in (
             "intention_id", "ending", "ended_at", "witness_id", "form", "condition_form",
         )}
+    if source == "source_health":
+        return {field: image[field] for field in ("source", "scope", "event", "outcome")}
+    if source == "lesson_tally":
+        return {field: image[field] for field in ("claim_id", "support", "contradiction")}
     return {name: image[name] for name in SEARCHABLE_SOURCES.get(source, ()) if name in image}
+
+
+async def _guess_grades(
+    conn: AsyncConnection, rows: FromClause, scope: RetrievalScope, guesses: tuple[str, ...],
+) -> dict[str, str]:
+    if not guesses:
+        return {}
+    edge, grade = rows.alias("guess_grades").c, rows.alias("grade_rows").c
+    dst, src = edge.image["dst_id"].astext, edge.image["src_id"].astext
+    query = sa.select(dst, grade.image["grade"].astext).where(
+        edge.source == "edge", edge.state == "live", edge.image["type"].astext == "grades",
+        dst.in_(guesses), src == grade.graph_id, grade.source == "claim",
+        grade.state == "live", grade.image["part"].astext == "grade",
+    )
+    if scope.as_of is not None:
+        query = query.where(grade.graph_id.not_in(tombstoned_ids(scope.unit, since=scope.as_of)))
+    result = await conn.execute(query.order_by(grade.asserted_at, grade.graph_id))
+    grades: dict[str, str] = {}
+    for id_, value in result:
+        grades[id_] = value
+    return grades
 
 
 async def _support(
@@ -261,6 +286,10 @@ async def load_rows(
         key for key, entry in found.items() if entry["image"].get("part") == "lesson"
         and key not in tombstoned
     ))
+    grades = await _guess_grades(conn, rows, scope, tuple(
+        key for key, entry in found.items() if entry["image"].get("part") == "guess"
+        and key not in tombstoned
+    ))
     situations = {
         key: _staleness_cause(entry["origin_room"], scope, dm_rooms)
         for key, entry in found.items()
@@ -319,5 +348,7 @@ async def load_rows(
             input_digest=(
                 content_digest(source, image) if ceiling is not None and kind == "item" else None
             ),
+            grade=None if unavailable else grades.get(graph_id, image.get("grade")),
+            prediction=None if unavailable else image.get("prediction"),
         ))
     return tuple(result)

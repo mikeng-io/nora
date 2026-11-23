@@ -55,7 +55,7 @@ from nora.people.app.holder_link import HolderLinkService
 from nora.persons import Persons
 from nora.platform.signal.consent import SignalLinkDelivery
 from nora.policy import load_policy
-from nora.testing import FakeMemoryStore, FakeRecordStore
+from nora.testing import FakeRecordStore
 from nora.testing.fakes import FakeAdapter
 from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
@@ -447,9 +447,9 @@ async def portal_world(pg_module_url, ory, aiohttp_client, tmp_path):
 
             app.middlewares.append(record)
             register_web_routes(
-                app, store=FakeRecordStore(), honcho=FakeMemoryStore(),
+                app, store=FakeRecordStore(),
                 reminders=FakeReminderStore(),
-                persons=Persons(by_person={}, index={}), ai_peer="generated-nora",
+                persons=Persons(by_person={}, index={}),
                 started_at=0.0, presence=None, presence_circles=(),
                 skills_dir=NO_SKILLS_DIR, events=_fake_events(),
                 doctrine_store=doctrine, documents=documents,

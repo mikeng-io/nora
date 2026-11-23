@@ -4,7 +4,6 @@ import logging
 from types import SimpleNamespace
 from typing import Any, Literal
 
-from nora.agent.toolkit.media import _CONCLUSION_MAX_CHARS
 from nora.agent.toolkit.results import _record
 from nora.agent.toolkit.rooms import _asked_about, _miss
 from nora.domain.culture import character_key
@@ -30,96 +29,6 @@ from nora.memory.adapters.tools.shared import (
 )
 
 log = logging.getLogger("nora.tools")
-
-
-def _make_remember(deps):
-    ai_peer = deps.ai_peer
-    honcho = deps.honcho
-    metrics = deps.metrics
-    room = deps.room
-    _memory_route = deps._memory_route
-
-    async def remember(content: str) -> dict:
-        """Record a settled fact about the person speaking. Call this when
-        somebody tells you something about themselves that is now just TRUE.
-
-        The trigger word is «記低». It writes to your long-term memory of THAT
-        person, which `about` and `ask_memory` read back; nothing else can write a
-        person's settled fact. Check what it is first: a fact about the speaker
-        is this tool; one about the group or anyone else your notebook keeps after
-        this turn, so say it will be kept; an open question nothing settles is
-        `note_create`, something later is `remind`. It is not a scratchpad.
-
-        Returns `status`: ok, refused or unavailable, with a `note` on how to
-        report it.
-
-        Args:
-            content: The settled fact itself, one line, in the speaker's own
-                words."""
-        tagger = room.tagger
-        if tagger is None:
-            # Fail-closed on identity, the same refusal `note_create` makes:
-            # without a resolved tagger there is no observed peer to attach the
-            # fact to, and a conclusion written under a guessed peer id would be a
-            _record(metrics, "remember", "refused", reason="no_tagger")
-            return {
-                "status": "refused",
-                "note": "Nothing was saved: I don't know who you are well enough "
-                "to attach this to. Say you can't, and don't guess.",
-            }
-        text = content.strip()
-        if not text:
-            _record(metrics, "remember", "refused", reason="empty")
-            return {
-                "status": "refused",
-                "note": "Nothing was saved: there's no fact in that. Say the "
-                "fact itself, one line, then call again.",
-            }
-        if len(text) > _CONCLUSION_MAX_CHARS:
-            # The endpoint's own bound (see `_CONCLUSION_MAX_CHARS`): refuse
-            # with the fix rather than let the write die as an `unavailable`
-            # that reads like memory being down.
-            _record(metrics, "remember", "refused", reason="too_long")
-            return {
-                "status": "refused",
-                "note": f"Nothing was saved: that's past even a long memory's "
-                f"limit ({_CONCLUSION_MAX_CHARS} characters). Say the "
-                "fact itself, in one line, then call again.",
-            }
-        try:
-            written = await honcho.conclude(
-                peer_id=ai_peer,
-                target=tagger.honcho_peer_id,
-                content=text,
-                **_memory_route(),
-            )
-        except Exception:
-            # Belt-and-braces only, the same shape `note_create` carries: the
-            # adapter/double catches everything itself, so this handler is NOT
-            # where the outage is detected. `conclude`'s False on failure is the
-            log.exception("remember failed")
-            written = False
-        if not written:
-            # THE WHOLE POINT OF THREE STATES: memory got the call and could not
-            # commit it. This is `unavailable` — never a silent success, and never
-            # a fallback to the note tier (a failed conclusion is a failure;
-            _record(metrics, "remember", "unavailable")
-            return {
-                "status": "unavailable",
-                "note": "My memory isn't accepting writes right now, so nothing "
-                "was saved. Say so, never say 記低咗, and don't write it "
-                "down as a note instead.",
-            }
-        _record(metrics, "remember", "ok")
-        # ADR 0015: «say 記低咗 only when it is saved» is an OUTPUT rule, so
-        # it rides on the one result where it is true.
-        return {
-            "status": "ok",
-            "person": tagger.name,
-            "note": "It is saved. Only now may you say 記低咗.",
-        }
-
-    return remember
 
 
 def _make_remember_told(deps):

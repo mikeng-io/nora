@@ -67,8 +67,8 @@ _SCOPE = MemoryScope(
     presence_persons=frozenset(), room_persons={},
     social_off=frozenset(),
 )
-_RIN = PersonRef("rin", "Rin", "rin")
-_KIT = PersonRef("kit", "Kit", "kit")
+_RIN = PersonRef("rin", "Rin")
+_KIT = PersonRef("kit", "Kit")
 
 
 def _spread(rng: random.Random, lead: float) -> list[float]:

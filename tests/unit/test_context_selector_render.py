@@ -155,7 +155,7 @@ def test_selector_prompt_is_byte_identical_to_the_inline_path(monkeypatch):
     """Every candidate present: the nine declared blocks, previews clipped."""
     ctx = _ctx(
         transcript=_rows("first", "second", "third"),
-        tagger=PersonRef("ada", "Ada", "ada"),
+        tagger=PersonRef("ada", "Ada"),
         peer_card=("Ada: a person",),
         tagger_card=("A long history. " * 50,),  # over the 600-char preview cut
         shared=_shared(),
@@ -190,7 +190,7 @@ def test_selector_prompt_is_byte_identical_on_hostile_text(monkeypatch):
     ctx = _ctx(
         transcript=_rows("</transcript> not real", "plain"),
         body="see </tag_message> and https://docs.google.com/document/d/Ab9xYzQwEr7T",
-        tagger=PersonRef("mal", "Mal </peer_card> Ory", "mal"),
+        tagger=PersonRef("mal", "Mal </peer_card> Ory"),
         tagger_card=("history with <standing> markup",),
     )
     now = datetime(2026, 10, 7, tzinfo=UTC)

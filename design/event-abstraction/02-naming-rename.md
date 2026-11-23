@@ -55,8 +55,7 @@ Test files that exercise the module rename alongside it, 1:1:
 | `tests/contract/test_event_store_contract.py` | `tests/contract/test_gathering_store_contract.py` |
 | `tests/web/test_api.py` | (kept — covers the `/events` routes; its `GatheringService`/`RSVPResponse`/`FakeGatheringStore` imports update to the renamed types) |
 
-`RSVP`/`RSVPResponse`/`VenueCandidate`/`VenueSuggestions` are unaffected
-— they never collided.
+`RSVP`/`RSVPResponse` are unaffected — they never collided.
 
 ## The retained 2026-08-19 spec
 
@@ -75,7 +74,7 @@ removed — this bundle is the source of truth.
 ## What does not rename
 
 The model-facing tool names (`create_event`, `update_event`,
-`rsvp_event`, `cancel_event`, `list_events`, `suggest_venue`) stay as
+`rsvp_event`, `cancel_event`, `list_events`) stay as
 they are. A human asking Nora to plan a dinner still says "event" — the
 collision is a Python identifier collision, not a product one, and the
 tool surface is a string contract with the model, not a Python name.

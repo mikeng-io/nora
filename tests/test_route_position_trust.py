@@ -65,7 +65,7 @@ class _RecordingClient:
 
 def _tools(*, location_trusted: bool):
     fung = PersonRef(
-        person_id="p_fung", name="Fung", honcho_peer_id="p_fung",
+        person_id="p_fung", name="Fung",
         first_name="Fung", aliases=("Fung",),
     )
     persons = Persons(
@@ -82,7 +82,7 @@ def _tools(*, location_trusted: bool):
     client = _RecordingClient()
     tools = build_tools(
         store=None, conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=room, transit_source=None, route_source=client,
         presence_source=_CannedPresence(), presence_circles=(circle,),
         location_trusted=location_trusted, geocoder=FakeReverseGeocoder("Tsuen Wan Road"),
@@ -181,7 +181,7 @@ async def test_a_bound_place_label_that_is_a_disclosed_live_address_is_still_ref
             return self.place if place_id == 5 else None
 
     fung = PersonRef(
-        person_id="p_fung", name="Fung", honcho_peer_id="p_fung",
+        person_id="p_fung", name="Fung",
         first_name="Fung", aliases=("Fung",),
     )
     persons = Persons(by_person={"p_fung": fung}, index={("signal", FUNG_PHONE): "p_fung"})
@@ -194,7 +194,7 @@ async def test_a_bound_place_label_that_is_a_disclosed_live_address_is_still_ref
     client = _RecordingClient()
     tools = build_tools(
         store=None, conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=room, transit_source=None, route_source=client,
         presence_source=_CannedPresence(), presence_circles=(circle,),
         location_trusted=False, geocoder=FakeReverseGeocoder("Tsuen Wan Road"),

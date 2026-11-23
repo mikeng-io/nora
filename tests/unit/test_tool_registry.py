@@ -26,7 +26,7 @@ from nora.agent.surface import WORKER_ONLY_TOOLS
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget
 from nora.obs.metrics import Metrics
-from nora.testing import FakeBrowserRunner, FakeMemoryStore, FakeSandboxRuntime
+from nora.testing import FakeBrowserRunner, FakeSandboxRuntime
 from tests.fakes import SinkSender
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -118,7 +118,7 @@ def test_the_document_tools_are_offered_only_when_documents_are_wired():
 def _surface(registry: ToolRegistry, *, defer: bool):
     return registry.surface(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         metrics=Metrics(), room=_room(), defer=defer,
     )
 
@@ -163,15 +163,14 @@ def test_the_computer_tools_are_offered_only_when_a_computer_is_wired(defer):
 def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") -> list:
     """The DECLARED surface, which is what every caller below asks about.
 
-    `dream_adaptor` defaults to a name rather than `""` because
-    `search_memory_workspace` is Dreamer-only and a tag-path build does
-    not carry it — a declared-vs-built comparison run on the tag catalog
-    would be comparing against a deliberate subset. The subset itself is
-    pinned by `test_a_room_catalog_omits_the_dreamer_only_memory_verb`.
+    `dream_adaptor` defaults to a name rather than `""` because a
+    Dreamer-only tool is not carried by a tag-path build — a declared-vs-built
+    comparison run on the tag catalog would be comparing against a deliberate
+    subset.
     """
     return registry.build(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         metrics=Metrics(), room=_room(), dream_adaptor=dream_adaptor,
     )
 
@@ -197,7 +196,7 @@ def test_the_registry_exposes_every_declared_tool():
         "record_query",
         # the Dreamer-only reads.
         "rollup_read", "standing_read", "character_read", "social_read", "group_members",
-        "lookup_person", "about", "ask_memory", "search_memory", "recall_lookups", "calculate",
+        "lookup_person", "recall_lookups", "calculate",
         "transit", "route", "place_info", "saved_places", "where_is",
         # DEC-156: the coordinate -> street-address fetch surface. `where_is`
         # carries no address, so this is the ONLY tool that resolves one, and
@@ -238,7 +237,6 @@ def test_the_registry_exposes_every_declared_tool():
         "event_rsvp",
         "event_set_status",
         "event_search",
-        "suggest_venue",
         # Nora's computer (DEC-243).
         "computer_run", "computer_read", "computer_write", "computer_edit", "computer_export",
         "computer_import", "computer_session_list",
@@ -259,11 +257,8 @@ def test_the_registry_exposes_every_declared_tool():
         "note_read", "note_search", "note_create", "note_revise",
         # DEC-306: one kept memo of the unit.
         "memo_read",
-        # The remember verb — the conclusion write lane.
+        # The remember verb.
         "remember",
-        # The memory search variant, built for the Dreamer's unit key but
-        # reaching Honcho's whole workspace — every unit, not one.
-        "search_memory_workspace",
     }
 
 
@@ -287,7 +282,7 @@ def test_non_discord_catalog_omits_music_tools():
              "music_status", "set_music_volume"}
     signal = registry.surface(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         metrics=Metrics(), room=signal_room,
     )
     assert not {t.tool_name for t in signal.tools} & music
@@ -296,7 +291,7 @@ def test_non_discord_catalog_omits_music_tools():
     assert not signal.admitted & music
     discord = registry.surface(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         metrics=Metrics(), room=_room(),
     )
     assert music <= {t.tool_name for t in discord.tools}
@@ -331,19 +326,13 @@ def test_budgets_match_todays_table():
         "poll_list": 1, "poll_read": 2, "room_state_read": 1,
         # Sized against model round trips, not against work — see
         # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
-        "group_members": 1, "lookup_person": 4, "about": 4, "member_update": 4,
-        # 4 — the dialectic reasoning verb is slow (~14-19s), so the budget is
-        # sized by the loop wall clock (240s); four calls (~76s) still fit.
-        # Enough for the personalization decomposition's group turns.
-        "ask_memory": 4, "search_memory": 4,
-        # DEC-316: the graph surface's memory verb, offered instead of the two
-        # above while `[memory.index] read`; `ask_memory`'s number.
+        "group_members": 1, "lookup_person": 4, "member_update": 4,
+        # DEC-316: the graph surface's memory verb, offered while
+        # `[memory.index] read`.
         "memory_search": 8,
         "memory_read": 8,
         "intention_commit": 4,
-        # 2: the same shape `ask_memory`'s own
-        # note describes for a recall verb — run once, notice a different
-        # `limit` is needed, run once more.
+        # 2: run once, notice a different `limit` is needed, run once more.
         "recall_lookups": 2,
         # Nora's computer. `computer_run` 12: a
         # write, run, read the error, fix, run again loop, twice in a turn.
@@ -484,17 +473,14 @@ def test_budgets_match_todays_table():
         # `remind`, which no budget can substitute for.
         "remind": 2, "list_reminders": 2, "cancel_reminder": 2,
         # The Event module: `list_events` is 1 like `group_members` (a
-        # room-scoped read, same answer if called twice). `create_event`/
-        # `suggest_venue` are the ones that reach further — `suggest_venue`
-        # asks Honcho's dialectic once per roster member and resolves venues
-        # after, sized like `media_fetch`'s old 4; `event_propose` is 3, between
-        # `remind`'s 2 and `suggest_venue`'s 4, for the same round-trip
-        # reason (DEC-237).
+        # room-scoped read, same answer if called twice). `event_propose` is 3,
+        # the one that reaches further, for the same round-trip reason as
+        # `remind`'s 2 (DEC-237).
         # `event_revise`/`event_set_status` are 2, sized like the
         # reminder verbs. `event_rsvp` is 1 — a single yes/no/maybe, and a
         # second call in the same turn is a model looping on its own write.
         "event_search": 1, "event_propose": 3, "event_revise": 2,
-        "event_rsvp": 1, "event_set_status": 2, "suggest_venue": 4,
+        "event_rsvp": 1, "event_set_status": 2,
         # One metadata list, then notes for up to two selected releases.
         "version_list": 1, "version_read": 2,
         # The four note verbs. The RATIO is the
@@ -517,9 +503,6 @@ def test_budgets_match_todays_table():
         # remember verb's write lane). `profile_dispute` is its graph-surface
         # sibling (35 §2), the same one-call write.
         "remember": 1, "profile_dispute": 1,
-        # `search_memory_workspace` is 4 like its room-scoped sibling — the
-        # same verb at a wider scope, the same sizing.
-        "search_memory_workspace": 4,
         # `rollup_read` is 4 like `where_been` (cheap local SELECTs, so the round
         # trip is the cost); `standing_read` is 1 (the head does not move inside a
         # session's read of one room). A Cognition session raises both per agenda
@@ -552,10 +535,8 @@ def test_specs_carry_the_same_budgets_as_budgets():
     registry = ToolRegistry()
     specs = registry.specs(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
-        # The DECLARED surface — see `_built_tools`. Without an adaptor name
-        # this compares the table against the tag catalog, which is missing
-        # `search_memory_workspace` on purpose.
+        persons=_FakePersons(), deliverer=_deliverer(),
+        # The DECLARED surface — see `_built_tools`.
         metrics=Metrics(), room=_room(), dream_adaptor="proactive",
     )
     # Every BUILT spec's budget matches `budgets`. `budgets` is a superset:
@@ -626,10 +607,8 @@ def test_every_tool_declares_whether_it_can_be_asked_about_another_moment():
     registry = ToolRegistry()
     specs = registry.specs(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
-        # The DECLARED surface — see `_built_tools`. Without an adaptor name
-        # this compares the table against the tag catalog, which is missing
-        # `search_memory_workspace` on purpose.
+        persons=_FakePersons(), deliverer=_deliverer(),
+        # The DECLARED surface — see `_built_tools`.
         metrics=Metrics(), room=_room(), dream_adaptor="proactive",
     )
     assert {s.name: s.time_shiftable for s in specs} == {
@@ -851,7 +830,7 @@ async def test_the_built_surface_gates_a_servers_tools_on_its_aggregate_budget()
     )
     tools = {t.tool_name: t for t in registry.build(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         metrics=Metrics(), room=_room(), allowed_mcp=frozenset({"demo"}),
     ) if t.tool_name.startswith("demo_")}
     assert set(tools) == {"demo_server_status", "demo_weekly"}
@@ -879,7 +858,7 @@ def test_build_includes_only_the_allowed_mcp_servers_tools():
     registry = ToolRegistry(mcp_tools=_mcp_groups())
     tools = registry.build(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
-        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        persons=_FakePersons(), deliverer=_deliverer(),
         metrics=Metrics(), room=_room(), allowed_mcp=frozenset({"demo"}),
     )
     names = {t.tool_name for t in tools}
@@ -1015,13 +994,13 @@ READ_ONLY = frozenset({"document_list",
     # a Record read under lineage.
     "record_query", "poll_list", "poll_read", "room_state_read",
     "saved_places", "who_said", "load_transcript", "group_members", "lookup_person",
-    "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
+    "recall_lookups", "media_fetch",
     # DEC-316: the graph surface's memory search, an index read
     "memory_search", "memory_read",
     # reads a shared file; the account cannot write.
     "file_fetch", "media_search",
     "web_search", "web_fetch", "weather", "list_reminders", "event_search",
-    "suggest_venue", "version_list", "version_read", "search_gifs",
+    "version_list", "version_read", "search_gifs",
     # The two parking verbs: live reads that act on nothing —
     # vacancy lookups and nearby discovery, no writes anywhere.
     "parking_status", "find_parking",
@@ -1031,10 +1010,7 @@ READ_ONLY = frozenset({"document_list",
     # Dreamer-only SELECTs of the Rollup's
     # current build and of a room's Standing head.
     "rollup_read", "standing_read", "character_read", "social_read",
-    # The unit-wide memory variant — a pure read of a store the tag path
-    # already trusts, granted to a unit-keyed adaptor through
-    # `UNIT_SAFE_TOOLS`.
-    "search_memory_workspace", "music_status",
+    "music_status",
     # DEC-151, DEC-201: the X tools are pure reads at all three layers, the
     # tools' closed vocabulary, the bridge's host-side allowlist, this
     # declaration.
@@ -1116,22 +1092,11 @@ def test_the_read_and_act_halves_partition_the_table():
     assert not READ_ONLY & ACT_VERBS
 
 
-def test_a_room_catalog_omits_the_dreamer_only_memory_verb():
-    """`search_memory_workspace` returns VERBATIM lines, attributed by
-    name, from Honcho's workspace `/search` — the whole deployment, every
-    unit — filtered only by identity.toml's address book. Its own body says
-    it "exists for the Dreamer … never a quote into any room", so it must not
-    ship in a room's catalog.
-
-    `dream_adaptor` is the gate, so an ordinary tag turn must not see it and
-    a Dreamer build must.
-    """
+def test_a_tag_turn_holds_only_member_update_that_a_dreamer_build_does_not():
+    """The gate is one verb wide: a Dreamer build carries every tool a room's
+    catalog does, and the room's catalog carries `member_update` beside them."""
     tag = {t.tool_name for t in _built_tools(ToolRegistry(), dream_adaptor="")}
     dreamer = {t.tool_name for t in _built_tools(ToolRegistry())}
 
-    assert "search_memory_workspace" not in tag
-    assert "search_memory_workspace" in dreamer
-    # Nothing ELSE moved with it — the gate is one verb wide, not a catalog
-    # rewrite that happens to drop this one.
-    assert dreamer - tag == {"search_memory_workspace"}
+    assert dreamer - tag == set()
     assert tag - dreamer == {"member_update"}

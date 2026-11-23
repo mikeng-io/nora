@@ -6,14 +6,14 @@ from nora.agent.whereis import Circle
 from nora.app.gatherings import GatheringService
 from nora.domain.models import PersonRef
 from nora.persons import Persons
-from nora.testing import FakeMemoryStore, FakeRecordStore
+from nora.testing import FakeRecordStore
 from nora.testing.gatherings import FakeGatheringStore
 from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from tests.conftest import build_test_doctrine_store
 
-MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
-DAISY = PersonRef(person_id="daisy", name="Daisy", honcho_peer_id="daisy")
+MILES = PersonRef(person_id="miles", name="Miles")
+DAISY = PersonRef(person_id="daisy", name="Daisy")
 CIRCLE = Circle(circle_id="c1", person_ids=frozenset({"miles"}), people=(MILES,))
 
 
@@ -21,8 +21,6 @@ def _events() -> GatheringService:
     return GatheringService(
         store=FakeGatheringStore(),
         route_source=None,
-        honcho=None,
-        ai_peer="nora",
     )
 
 
@@ -93,10 +91,8 @@ def _app(*, presence: object | None, mobility: FakeAnalyticsStore) -> web.Applic
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        honcho=FakeMemoryStore(),
         reminders=FakeReminderStore(),
         persons=Persons(by_person={"miles": MILES, "daisy": DAISY}, index={}),
-        ai_peer="nora",
         started_at=0.0,
         presence=presence,
         presence_circles=(CIRCLE,),

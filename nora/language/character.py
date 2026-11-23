@@ -86,10 +86,7 @@ CHARACTER_PERSON_ADAPTOR_NAME = "character-person"
 #: The read verbs a person session holds, each for what it reads that the
 #: handed messages do not:
 #:
-#: - `ask_memory`, `search_memory`: what Nora has concluded about them, and
-#:   what they said before this batch. A hint the account may weigh, never a
-#:   citation (DEC-249) and never a pre-fetch.
-#: - `about`, `lookup_person`, `group_members`: who a name or handle in their
+#: - `lookup_person`, `group_members`: who a name or handle in their
 #:   messages IS, against the room's roster.
 #:
 #: Deliberately absent: `where_been`, `online_now` (presence, R-31; module
@@ -97,11 +94,11 @@ CHARACTER_PERSON_ADAPTOR_NAME = "character-person"
 #: `web_fetch`: the design never asked a person session to look a reference up,
 #: so they were the least that was not needed (DEC-290).
 #:
-#: `memory_search` is the same reach on the graph surface (DEC-316): built
-#: instead of `ask_memory` and `search_memory` while `[memory.index] read`.
+#: `memory_search` reads what Nora has concluded about them, and what they said
+#: before this batch, on the graph surface (DEC-316): a hint the account may
+#: weigh, never a citation (DEC-249) and never a pre-fetch.
 CHARACTER_PERSON_TOOLS: frozenset[str] = frozenset({
-    "ask_memory", "search_memory", "about", "lookup_person", "group_members",
-    "memory_search",
+    "lookup_person", "group_members", "memory_search",
 })
 
 #: Four account read/write sites plus three selected-identity operations.

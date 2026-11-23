@@ -42,6 +42,7 @@ from nora.app.bridge_payloads import (
     _now_ms,
     _payload_trace,
     _person_dict,
+    _person_from_dict,
     _queue_wait_ms,
 )
 from nora.domain.actions import ActionOwner
@@ -102,6 +103,8 @@ _STATE_EVENT: dict[str, bt.LifecycleEvent] = {
 #: no-duplicate arbiter (`FOR UPDATE SKIP LOCKED`, generation bump); ordering
 #: comes from the INGEST/SPEAK advisory locks — INDEPENDENCE, not new rules.
 _COMPREHEND_KINDS = frozenset({
+    # `memory_feed` is no longer enqueued; a row persisted before it left
+    # still claims here and ends `failed_retained` at `_dispatch`'s unhandled-kind branch.
     "ingest", "stimulus", "memory_feed", "participation", "receipt",
 })
 _SPEAK_KINDS = frozenset({"turn", "trace_debrief", "participation_fire"})
@@ -401,7 +404,7 @@ class WorkRunner:
                  ingest: Any, engagement: Any, slots: Any,
                  db_locks: DbSpeakingLocks,
                  adapters: dict[str, Any], gate: Any = None, metrics: Any = None,
-                 participation: Any = None, memory_feed: Any = None,
+                 participation: Any = None,
                  stimulus: Any = None, debrief: Any = None,
                  instance: str | None = None, lease_seconds: int = 300,
                  allowlist: Any = None, persons: Any = None,
@@ -419,7 +422,6 @@ class WorkRunner:
         self._gate = gate            # RelevanceGate | None (participation eval)
         self._metrics = metrics
         self._participation = participation  # ParticipationTrigger | None
-        self._memory_feed = memory_feed      # memory_feed stage deps bundle | None
         self._stimulus = stimulus            # stimulus_stage.Wiring | None
         self._debrief = debrief              # Callable(trace_payload) | None
         # The CURRENT policy + identity truth, consulted by deferred effects:
@@ -632,8 +634,6 @@ class WorkRunner:
             await self._run_participation(work)
         elif work.kind == "participation_fire":
             await self._run_participation_fire(work, key)
-        elif work.kind == "memory_feed":
-            await self._run_memory_feed(work)
         elif work.kind == "stimulus":
             await self._run_stimulus(work)
         elif work.kind == "receipt":
@@ -784,8 +784,6 @@ class WorkRunner:
     # ---- ingest ---------------------------------------------------------
 
     async def _run_ingest(self, work: Any) -> None:
-        from nora.domain.models import PersonRef
-
         envelope = Envelope.from_fields(work.payload["envelope"])
         async with self._store.advisory_lock(
                 INGEST_NS, work.platform, work.account_key,
@@ -819,7 +817,7 @@ class WorkRunner:
                     return
                 decision = EngageDecision(**handoff["decision"])
                 result_message = message_from_dict(handoff["message"])
-                person = (PersonRef(**handoff["person"])
+                person = (_person_from_dict(handoff["person"])
                           if handoff.get("person") else None)
                 absorbed = bool(handoff.get("absorbed", True))
                 unit = handoff.get("unit")
@@ -977,7 +975,7 @@ class WorkRunner:
                     observation_status=observation_status,
                     room_command=self._room_command,
                     participation=self._participation,
-                    memory_feed=self._memory_feed, stimulus=self._stimulus,
+                    stimulus=self._stimulus,
                     downstream=downstream)
                 # The queued receipt is BRIDGE-owned: the producer emits it
                 # once per canonical event at enqueue, so the app never
@@ -1401,98 +1399,6 @@ class WorkRunner:
         if room.unit != work.payload.get("unit"):
             return None, "unit binding moved"
         return room, None
-
-    async def _run_memory_feed(self, work: Any) -> None:
-        if self._memory_feed is None:
-            await self._finish(work, "intentional_skip",
-                               {"reason": "memory feed off"})
-            return
-        from nora.domain.models import PersonRef
-        from nora.ingest.stages import memory_feed as memory_feed_stage
-        wiring = self._memory_feed
-        person = PersonRef(**work.payload["person"])
-        # A committed start mark answers BEFORE permission does: once a POST
-        # may already have landed, the open question is the effect, not
-        # current policy — `feed` has no idempotency key, so the honest
-        # terminal is uncertain, never a blind repost or a clean skip.
-        if ((work.result or {}).get("effect", {}).get("feed", {})
-                .get("started_ms") is not None):
-            await self._finish(
-                work, "uncertain",
-                {"reason": "feed started before owner lost the work"})
-            return
-        # CURRENT permission, minutes after enqueue: the room must still be
-        # absorbed under the SAME unit binding, and the sender must still
-        # resolve to the same Honcho peer — a revoked mapping or a moved
-        # scope can never be fed under the stale snapshot.
-        room, refuse = self._current_room(
-            work, bool(work.payload.get("absorbed", True)))
-        if room is None:
-            await self._finish(work, "intentional_skip", {"reason": refuse})
-            return
-        current = (await self._access.resolve_ref(
-            work.platform, work.payload["message"].get("sender_id", ""))
-            if self._access is not None else None)
-        if (current is None or current.person_id != person.person_id
-                or current.honcho_peer_id != person.honcho_peer_id):
-            await self._finish(work, "intentional_skip",
-                               {"reason": "sender unmapped or changed"})
-            return
-        started = False
-
-        async def _mark_started() -> None:
-            # The fenced pre-POST commit: generation-checked, so a stale
-            # claimant raises out of `_feed` before the request exists.
-            nonlocal started
-            if not await self._store.mark_effect_started(
-                    work.id, work.generation, kind="feed", at_ms=_now_ms()):
-                raise _LeaseLostError(work.id)
-            started = True
-
-        # Durable completion, not fire-and-forget: collect the stage's
-        # scheduled coroutines and AWAIT each before finishing the work —
-        # a create_task here would let the obligation report done while the
-        # feed dies with the process.
-        pending: list[Any] = []
-        await memory_feed_stage.run(
-            message=message_from_dict(work.payload["message"]),
-            person=person,
-            memory=wiring["memory"], metrics=self._metrics,
-            spawn=lambda coro: pending.append(coro), absorbed=True,
-            on_effect_start=_mark_started)
-        if not pending:
-            # The stage declined on its own terms (self-authored, unmapped) —
-            # a legitimate non-effect, not a swallowed failure.
-            await self._finish(work, "intentional_skip",
-                               {"reason": "stage declined"})
-            return
-        try:
-            outcomes = [await coro for coro in pending]
-        except _LeaseLostError:
-            # The generation fence moved mid-attempt — the row's new owner
-            # resolves it; finishing here would write under a dead lease.
-            return
-        except Exception:  # noqa: BLE001 — the fault classifies on whether the POST boundary was crossed, not on its type
-            if started:
-                # The mark committed, then something raised — the POST may
-                # have landed. Retain, never replay.
-                await self._finish(work, "failed_retained",
-                                   {"reason": "feed started"})
-                return
-            # A raise before the POST boundary (ensure_peer, the mark
-            # itself) is pre-effect: retry while attempts remain.
-            state = ("failed_retained" if work.attempts >= 5
-                     else "retryable_failure")
-            await self._finish(work, state, {"reason": "feed raised"})
-            return
-        if all(o == "fed" for o in outcomes):
-            await self._finish(work, "done", {"fed": len(outcomes)})
-            return
-        # `feed` POSTs without an idempotent key: a False may mean the post
-        # landed and the response was lost. Blind replay could double-feed,
-        # so the honest terminal is retained-uncertain, not retry.
-        await self._finish(work, "failed_retained",
-                           {"reason": "feed unconfirmed"})
 
     async def _run_stimulus(self, work: Any) -> None:
         if self._stimulus is None:

@@ -126,7 +126,7 @@ async def test_debrief_anchors_own_items_room_and_open_local_or_unit_intentions(
 
 
 @pytest.mark.parametrize("lessons", [(), ("named-lesson",)])
-async def test_review_anchors_due_intentions_past_guesses_and_explicit_lessons(
+async def test_review_anchors_past_guesses_and_explicit_lessons(
     scenario, lessons,
 ) -> None:
     await intention(scenario, "past-deadline", deadline=NOW)
@@ -142,9 +142,8 @@ async def test_review_anchors_due_intentions_past_guesses_and_explicit_lessons(
     await scenario.claim("named-lesson", part="lesson")
     await scenario.claim("unrequested-lesson", part="lesson")
     result = await reader(scenario).build(declaration("review"), ReviewInput(lessons), SCOPE, NOW)
-    assert result.anchors == RetrievalAnchors((
-        "past-deadline", "past-drop", "past-guess", "past-review", *lessons,
-    ))
+    assert result.anchors == RetrievalAnchors(tuple(sorted(("past-guess", *lessons))))
+    assert result.review_due == result.anchors.graph_ids
 
 
 async def test_a_failed_anchor_statement_returns_an_unavailable_cause(scenario) -> None:

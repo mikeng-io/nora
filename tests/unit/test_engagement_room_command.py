@@ -158,7 +158,7 @@ async def test_an_admitted_room_command_releases_its_slot_and_runs_what_queued_b
     await _room_operator(bindings, backend, registry)
     adapter = _GatedAdapter()
     runner = ScriptedRunner(_reply_turns("queued answer"))
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         adapter=adapter, runner=runner, room_commands=management)
 
     command = asyncio.create_task(pipeline.run(_command()))
@@ -186,7 +186,7 @@ async def test_a_malformed_room_command_replies_its_usage_and_releases_the_slot(
     management, _b, _be, _r = _room_management()
     adapter = _FakeAdapter()
     runner = ScriptedRunner(_reply_turns())
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         adapter=adapter, runner=runner, room_commands=management)
     await pipeline.run(_command("!!!member", mentions=frozenset()))
     await _drain(background)
@@ -202,7 +202,7 @@ async def test_a_refused_room_command_delivers_its_refusal_and_releases_the_slot
     management, _b, _be, _r = _room_management()
     adapter = _FakeAdapter()
     runner = ScriptedRunner(_reply_turns())
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         adapter=adapter, runner=runner, room_commands=management)
     await pipeline.run(_command("!!!member add", sender="+852999"))
     await _drain(background)
@@ -217,7 +217,7 @@ async def test_a_faulting_room_command_is_silent_and_still_releases_the_slot():
     await _room_operator(bindings, backend, registry)
     adapter = _ExplodingAdapter()
     runner = ScriptedRunner(_reply_turns("after the fault"))
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         adapter=adapter, runner=runner, room_commands=management)
     await pipeline.run(_command())
     # The fault stayed silent AND freed the slot — the next tag ran its
@@ -242,7 +242,7 @@ async def test_a_durable_room_command_leaves_the_release_to_its_worker():
     await _room_operator(bindings, backend, registry)
     adapter = _FakeAdapter()
     runner = _BodyEcho()
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         adapter=adapter, runner=runner, room_commands=management)
     key = ("signal", "g1")
 
@@ -275,7 +275,7 @@ async def test_a_cancelled_room_command_still_releases_its_slot():
     await _room_operator(bindings, backend, registry)
     adapter = _GatedAdapter()
     runner = ScriptedRunner(_reply_turns("after the cancel"))
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         adapter=adapter, runner=runner, room_commands=management)
     command = asyncio.create_task(pipeline.run(_command()))
     await asyncio.wait_for(adapter.send_entered.wait(), timeout=5)
@@ -298,7 +298,7 @@ async def test_a_durable_tag_leaves_the_slot_release_to_its_worker():
     queued tag — two follow-ups overlapped."""
     adapter = _FakeAdapter()
     runner = ScriptedRunner(_reply_turns("the answer"))
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         adapter=adapter, runner=runner)
 
     pipeline._slots.acquire(G1)   # the worker's try_acquire

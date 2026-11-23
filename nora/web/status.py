@@ -17,7 +17,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from nora.domain.ports import MemoryStore, RecordStore
+from nora.domain.ports import RecordStore
 from nora.domain.reminders import ReminderStore
 
 # All-pending, not due(): the operator's-eye-view nora/app/cli.py's
@@ -32,7 +32,7 @@ _UPCOMING_SHOWN = 10
 
 
 async def build_status_payload(
-    *, store: RecordStore, honcho: MemoryStore, reminders: ReminderStore,
+    *, store: RecordStore, reminders: ReminderStore,
     started_at: float,
 ) -> dict[str, Any]:
     try:
@@ -41,11 +41,6 @@ async def build_status_payload(
     except Exception:                          # noqa: BLE001 — never raise from a status read
         store_reachable = False
 
-    try:
-        honcho_reachable = (await honcho.health()).reachable
-    except Exception:                          # noqa: BLE001
-        honcho_reachable = False
-
     rows = await reminders.all_pending(limit=_REMINDERS_LIMIT)
     ordered = sorted(rows, key=lambda r: r.due_at)
     next_due_at = ordered[0].due_at if ordered else None
@@ -53,7 +48,6 @@ async def build_status_payload(
     return {
         "uptime_seconds": time.time() - started_at,
         "store": {"reachable": store_reachable},
-        "honcho": {"reachable": honcho_reachable},
         "reminders": {
             "count": len(rows),
             "next_due_at": next_due_at.isoformat() if next_due_at else None,

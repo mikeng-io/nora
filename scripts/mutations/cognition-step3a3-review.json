@@ -1,12 +1,5 @@
 [
   {
-    "name": "blocker: the audit table must name every catalogue tool",
-    "file": "nora/app/cognition_wiring.py",
-    "old": "    \"search_memory\": \"Honcho session `search` read; counters only.\",\n",
-    "new": "",
-    "target": "tests/unit/test_cognition_wiring.py::test_every_tool_in_the_catalogue_has_an_audited_side_effect_line"
-  },
-  {
     "name": "major 1: the backoff is the plain cooldown, never longer",
     "file": "nora/domain/stimuli.py",
     "old": "    return int(max(cooldown, min(cap, cooldown * 2 ** min(failures - 1, 40))))",

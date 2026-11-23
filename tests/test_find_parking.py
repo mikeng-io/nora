@@ -90,12 +90,12 @@ def _find_parking(route_source, *, parking_source=None, street=None, presence=No
     from nora.obs.metrics import Metrics
     from nora.persons import Persons
 
-    tyler = PersonRef(person_id="p_tyler", name="Tyler", honcho_peer_id="p_tyler",
+    tyler = PersonRef(person_id="p_tyler", name="Tyler",
                       first_name="Tyler", aliases=("陳生",))
     persons = Persons(by_person={"p_tyler": tyler}, index={})
     tools = build_tools(
         store=None, conversation_id="g1", conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=Room(platform="signal", conversation_id="g1", roster_source=None,
                   persons=persons),
         transit_source=None, route_source=route_source,

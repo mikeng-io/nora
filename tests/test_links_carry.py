@@ -133,7 +133,7 @@ def _place_info_tool(links):
     persons = Persons(by_person={}, index={})
     tools = build_tools(
         store=None, conversation_id="g1", conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=Room(platform="signal", conversation_id="g1", roster_source=None,
                   persons=persons),
         transit_source=None, route_source=_Places(),
@@ -168,7 +168,7 @@ async def test_a_refused_or_unavailable_lookup_offers_nothing():
     persons = Persons(by_person={}, index={})
     down = {t.tool_name: t for t in build_tools(
         store=None, conversation_id="g1", conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=Room(platform="signal", conversation_id="g1", roster_source=None,
                   persons=persons),
         transit_source=None, route_source=_Down(), links=links,

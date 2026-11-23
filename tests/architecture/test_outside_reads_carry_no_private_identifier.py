@@ -91,9 +91,9 @@ PHONE = f"+1{202}{555}{101:04d}"
 FILE_ID = "1SyntheticEgressFile00000"
 FILE_URL = f"https://docs.google.com/document/d/{FILE_ID}/edit"
 PLACE = "Central Library"
-PERSON = PersonRef("test-person", "Juniper", "test-person")
+PERSON = PersonRef("test-person", "Juniper")
 
-# A bare name or a non-identifier handle can pass. Name screens follow ADR 0030.
+# A bare name or a non-identifier handle can pass. Name screens follow the content-filter decision.
 # reverse_geocode has only float arguments. Its coordinate provenance is a separate boundary.
 PROBES = {
     "computer_import": ("link", FILE_URL, "files", {}),
@@ -158,7 +158,7 @@ def _world(*, content_checks=True):
                 persons=persons, tagger=PERSON)
     tools = {tool.name: tool.call for tool in build_tool_specs(
         store=FakeRecordStore(), conversation_id="guild/room", conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(), room=room,
+        persons=persons, deliverer=None, metrics=Metrics(), room=room,
         content_checks=content_checks,
         unit_for=lambda *_: "unit", transit_source=SimpleNamespace(arrivals=calls["arrivals"]),
         route_source=SimpleNamespace(

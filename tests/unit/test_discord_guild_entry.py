@@ -277,7 +277,7 @@ from nora.ingest.pipeline import IngestPipeline  # noqa: E402
 from nora.ingest.policy import TriggerTextPolicy  # noqa: E402
 from nora.obs.metrics import Metrics  # noqa: E402
 from nora.persons import Persons  # noqa: E402
-from nora.testing.fakes import FakeMemoryStore, FakeRecordStore  # noqa: E402
+from nora.testing.fakes import FakeRecordStore  # noqa: E402
 
 
 def _pipeline_policy(tmp_path, extra=""):
@@ -299,13 +299,13 @@ def _discord_msg(channel_id, body="hello"):
 def _persons():
     return Persons(
         by_person={"miles": PersonRef(
-            person_id="miles", name="Miles", honcho_peer_id="miles",
+            person_id="miles", name="Miles",
         )},
         index={("discord", "424242424242424242"): "miles"},
     )
 
 
-def _pipeline(allowlist, memory, spawned, stimulus_calls, monkeypatch, audit=None):
+def _pipeline(allowlist, spawned, stimulus_calls, monkeypatch, audit=None):
     import nora.ingest.stages.stimulus as stimulus_stage
 
     async def _spy(**kwargs):
@@ -313,7 +313,7 @@ def _pipeline(allowlist, memory, spawned, stimulus_calls, monkeypatch, audit=Non
 
     monkeypatch.setattr(stimulus_stage, "run", _spy)
     return IngestPipeline(
-        audit=audit or FakeRecordStore(), memory=memory,
+        audit=audit or FakeRecordStore(),
         policy=TriggerTextPolicy("nora.000"), allowlist=allowlist,
         access=IdentityAccess.for_files(persons=_persons(), policy=allowlist),
         metrics=Metrics(), spawn=spawned.append,
@@ -323,11 +323,10 @@ def _pipeline(allowlist, memory, spawned, stimulus_calls, monkeypatch, audit=Non
 
 async def test_a_mention_only_channel_records_but_is_never_absorbed(tmp_path, monkeypatch):
     """The server-entry default: transcript kept, tag path open, but no
-    Honcho feed and no stimulus — `Conversation.absorbed` is False."""
-    memory = FakeMemoryStore()
+    stimulus — `Conversation.absorbed` is False."""
     spawned, stimuli = [], []
     pipeline = _pipeline(
-        _pipeline_policy(tmp_path), memory, spawned, stimuli, monkeypatch,
+        _pipeline_policy(tmp_path), spawned, stimuli, monkeypatch,
     )
 
     result = await pipeline.run(message=_discord_msg(CHANNEL_A))
@@ -335,24 +334,21 @@ async def test_a_mention_only_channel_records_but_is_never_absorbed(tmp_path, mo
     assert result.message is not None          # admitted and recorded
     for coro in spawned:
         await coro
-    assert memory.fed == []                    # never absorbed into memory
     assert stimuli == []                       # and never a stimulus
 
 
-async def test_an_ambient_channel_is_fed_and_stimulated(tmp_path, monkeypatch):
-    """`ambient = [...]` is the opt-in: the same turn absorbs fully."""
-    memory = FakeMemoryStore()
+async def test_an_ambient_channel_is_stimulated(tmp_path, monkeypatch):
+    """`ambient = [...]` is the opt-in: the same turn is absorbed."""
     spawned, stimuli = [], []
     pipeline = _pipeline(
         _pipeline_policy(tmp_path, extra='ambient = ["discussion"]\n'),
-        memory, spawned, stimuli, monkeypatch,
+        spawned, stimuli, monkeypatch,
     )
 
     await pipeline.run(message=_discord_msg(CHANNEL_B))
 
     for coro in spawned:
         await coro
-    assert memory.fed != []
     assert len(stimuli) == 1
 
 
@@ -479,25 +475,23 @@ async def _run_past_a_swap(tmp_path, monkeypatch, message, audit=None):
         return admitted
 
     monkeypatch.setattr(scope_stage, "run", _swap_after_scope)
-    memory = FakeMemoryStore()
     spawned, stimuli = [], []
-    pipeline = _pipeline(live, memory, spawned, stimuli, monkeypatch, audit=audit)
+    pipeline = _pipeline(live, spawned, stimuli, monkeypatch, audit=audit)
     result = await pipeline.run(message=message)
     for coro in spawned:
         await coro
-    return result, memory, stimuli
+    return result, stimuli
 
 
 async def test_a_room_vanishing_between_scope_and_the_absorb_read_is_not_absorbed(
     tmp_path, monkeypatch,
 ):
-    """A message the CURRENT policy denies is never fed or stimulated — the
+    """A message the CURRENT policy denies is never stimulated — the
     absorb read fails closed, never `or room.absorbed` on a missing room."""
-    result, memory, stimuli = await _run_past_a_swap(
+    result, stimuli = await _run_past_a_swap(
         tmp_path, monkeypatch, _discord_msg(CHANNEL_B),
     )
     assert result.message is not None          # recorded
-    assert memory.fed == []                    # but never absorbed
     assert stimuli == []
 
 
@@ -513,11 +507,10 @@ async def test_an_edit_whose_room_vanishes_mid_turn_is_not_absorbed(
         _discord_msg(CHANNEL_B, body="second"),
         timestamp=5, edit_of=EditTarget(message_id="edit-target-1"),
     )
-    result, memory, stimuli = await _run_past_a_swap(
+    result, stimuli = await _run_past_a_swap(
         tmp_path, monkeypatch, edit, audit=store,
     )
     assert result.message is not None          # the edit itself is recorded
-    assert memory.fed == []                    # but never absorbed
     assert stimuli == []
 
 

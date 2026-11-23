@@ -20,7 +20,7 @@ from nora.domain.models import NormalizedMessage
 from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
-from nora.testing import FakeMemoryStore, FakeRecordStore
+from nora.testing import FakeRecordStore
 from tests.fakes import SinkSender
 
 HKT = timezone(timedelta(hours=8), "HKT")
@@ -62,7 +62,7 @@ def _load_transcript(persons, store):
     room = Room(platform="signal", conversation_id=CONV, roster_source=None, persons=persons)
     tools = build_tools(
         store=store, conversation_id=CONV, conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=persons, deliverer=SinkSender(),
         metrics=Metrics(), room=room, transit_source=_UNREACHABLE_TRANSIT,
         question="what did we say yesterday", context_window=40,
         clock=lambda: NOW,
@@ -242,7 +242,7 @@ def _loader_with_rows(persons, store, on_rows):
     room = Room(platform="signal", conversation_id=CONV, roster_source=None, persons=persons)
     tools = build_tools(
         store=store, conversation_id=CONV, conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=persons, deliverer=SinkSender(),
         metrics=Metrics(), room=room, transit_source=_UNREACHABLE_TRANSIT,
         question="", context_window=40, clock=lambda: NOW, on_rows=on_rows,
     )

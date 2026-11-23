@@ -529,8 +529,7 @@ class DecisionLogRecorder:
             # gap degrades to a feature that is silently, permanently dark in
             # that room. `FirePath._unit_for` counts the same gap for the
             # same reason: «a block missing for the life of a deployment with
-            # nothing saying so» is how `nora_peer_card_empty_total`'s lesson
-            # was bought.
+            # nothing saying so» is a silent failure.
             log.warning(
                 "decision log: no policy unit for %s/%s — the row is "
                 "written but no reader will ever see it",

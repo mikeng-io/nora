@@ -670,7 +670,7 @@ def _tool_wiring(client: TransitClient) -> dict:
     metrics = Metrics()
     tools = build_tools(
         store=None, conversation_id="g1", conversation_type="group",
-        persons=Persons(by_person={}, index={}), honcho=None, deliverer=None,
+        persons=Persons(by_person={}, index={}), deliverer=None,
         metrics=metrics,
         room=Room(platform="signal", conversation_id="g1", roster_source=None,
                   persons=Persons(by_person={}, index={})),

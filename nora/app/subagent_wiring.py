@@ -44,7 +44,7 @@ def subagent_budget(b: Any) -> Any:
 
 def build_subagent_backend(
     *, cfg: Any, client: Any, tier: Any, registry: ToolRegistry, store: Any, persons: Any,
-    honcho: Any, metrics: Any, rosters: Mapping[str, Any], self_ids: frozenset[str],
+    metrics: Any, rosters: Mapping[str, Any], self_ids: frozenset[str],
     clock: Callable[[], datetime], result_caps: Mapping[str, int],
     reasoning_effort: str, jobs: Any = None,
     admission: Any = None,
@@ -72,7 +72,7 @@ def build_subagent_backend(
         retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
         metrics=metrics,
         tools=SubagentToolSource(
-            registry=registry, store=store, persons=persons, honcho=honcho,
+            registry=registry, store=store, persons=persons,
             metrics=metrics, rosters=rosters, self_ids=self_ids, access=access,
         ),
         system_prompt=load_system_prompt(

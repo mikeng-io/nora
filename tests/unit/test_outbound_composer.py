@@ -43,11 +43,11 @@ CONVERSATION = "Z3JvdXA="
 def _persons(**extra: PersonRef) -> Persons:
     by_person = {
         "grant": PersonRef(
-            person_id="grant", name="Grant", honcho_peer_id="grant",
+            person_id="grant", name="Grant",
             first_name="Grant", aliases=("阿豹", "阿豹妹"),
         ),
         "miles": PersonRef(
-            person_id="miles", name="Miles", honcho_peer_id="miles", first_name="Miles",
+            person_id="miles", name="Miles", first_name="Miles",
         ),
         **extra,
     }
@@ -266,7 +266,7 @@ async def test_an_ambiguous_handle_tags_neither_person():
     not a guess."""
     metrics = Metrics()
     twin = PersonRef(
-        person_id="twin", name="Twin", honcho_peer_id="twin", aliases=("阿豹",),
+        person_id="twin", name="Twin", aliases=("阿豹",),
     )
     composer = _composer(persons=_persons(twin=twin), metrics=metrics)
 
@@ -280,7 +280,7 @@ async def test_a_person_with_no_id_form_on_this_platform_is_unresolved():
     metrics = Metrics()
     persons = Persons(
         by_person={"ghost": PersonRef(
-            person_id="ghost", name="Ghost", honcho_peer_id="ghost",
+            person_id="ghost", name="Ghost",
         )},
         index={},
     )
@@ -300,7 +300,7 @@ DISCORD_CONVERSATION = "100000000000000203/100000000000000204"
 
 def _tyler() -> PersonRef:
     return PersonRef(
-        person_id="tyler_cortez", name="Tyler Cortez", honcho_peer_id="tyler_cortez",
+        person_id="tyler_cortez", name="Tyler Cortez",
         first_name="Tyler",
     )
 
@@ -615,7 +615,7 @@ async def test_only_the_id_the_platform_confirmed_is_sent():
     stale = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     persons = Persons(
         by_person={"grant": PersonRef(
-            person_id="grant", name="Grant", honcho_peer_id="grant",
+            person_id="grant", name="Grant",
         )},
         index={("signal", stale): "grant", ("signal", GRANT_PHONE): "grant"},
     )

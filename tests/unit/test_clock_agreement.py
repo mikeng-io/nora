@@ -27,7 +27,7 @@ def _now_tool(**kw):
     persons = Persons(by_person={}, index={})
     specs = build_tool_specs(**kw,
         store=None, conversation_id="g1", conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=Room(platform="signal", conversation_id="g1", roster_source=None,
                   persons=persons),
         transit_source=None,

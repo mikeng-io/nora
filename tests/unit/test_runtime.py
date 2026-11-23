@@ -2401,7 +2401,7 @@ def _person_adaptor_with(store):
     from nora.testing import InMemoryCultureStore
 
     pk = PersonKey(
-        unit="friends", person=PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada"),
+        unit="friends", person=PersonRef(person_id="ada", name="Ada"),
         rooms=(CharacterRoom(key="room-a", platform="signal", label="Friends"),),
         home="room-a",
     )

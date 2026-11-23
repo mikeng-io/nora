@@ -169,7 +169,7 @@ def _file_identity(cfg: Config, metrics: Metrics) -> tuple[Persons, Policy, Relo
     try:
         reload_files = ReloadFiles(
             policy_path=cfg.policy_file, identity_path=cfg.identity_file,
-            ai_peer=cfg.honcho.ai_peer, default_workspace=cfg.honcho.workspace_id,
+            ai_peer=cfg.agent.name,
             metrics=metrics, validate_persons=validate_persons,
         )
     except (PersonsError, PolicyError, ValueError) as exc:

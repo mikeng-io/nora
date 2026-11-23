@@ -53,13 +53,13 @@ from nora.testing import (
     InMemoryNoteStore,
     ScriptedTurn,
 )
-from nora.testing.fakes import FakeMemoryStore, FakeRecordStore
+from nora.testing.fakes import FakeRecordStore
 from nora.testing.reminders import FakeReminderStore
 
 T0 = datetime(2026, 8, 8, 19, 0, tzinfo=UTC)
 
 MILES = PersonRef(
-    person_id="miles", name="Miles", honcho_peer_id="miles", aliases=("阿Miles",),
+    person_id="miles", name="Miles", aliases=("阿Miles",),
 )
 
 
@@ -89,11 +89,6 @@ def record_store() -> FakeRecordStore:
 
 
 @pytest.fixture
-def memory_store() -> FakeMemoryStore:
-    return FakeMemoryStore(cards={"miles": ["drinks his coffee black"]})
-
-
-@pytest.fixture
 def metrics() -> Metrics:
     return Metrics()
 
@@ -102,7 +97,6 @@ def metrics() -> Metrics:
 def fire_path(
     persons: Persons,
     record_store: FakeRecordStore,
-    memory_store: FakeMemoryStore,
     doctrine_store,
     metrics: Metrics,
 ) -> FirePath:
@@ -110,7 +104,7 @@ def fire_path(
     because this test never calls `run()` — `build_context` touches none of
     them. Everything `build_context` DOES touch is real."""
     return FirePath(
-        persons=persons, records=record_store, memory=memory_store,
+        persons=persons, records=record_store,
         doctrine_store=doctrine_store, metrics=metrics,
         runner=None, adapters={}, registry=None,                # type: ignore[arg-type]
         canary="test-canary", display_name="Nora",
@@ -123,8 +117,8 @@ async def test_the_fire_turn_carries_the_requester(fire_path: FirePath) -> None:
     """The trap this test exists for: blanking sender_id is correct for
     reactions (indicate.begin returns None on a falsy author) and wrong for
     everything that reads it. A blank sender_id resolved through
-    ContextAssembler gives tagger=None, which empties peer_card, makes
-    Room.scope() unavailable, and makes search_memory refuse."""
+    ContextAssembler gives tagger=None, which makes Room.scope() unavailable and every
+    room-scoped tool refuse."""
     reminder = _reminder()
 
     ctx = await fire_path.build_context(reminder_occasion([reminder]))
@@ -135,16 +129,6 @@ async def test_the_fire_turn_carries_the_requester(fire_path: FirePath) -> None:
     assert ctx.message.sender_name != ""              # NOT Persons.display_name
     assert ctx.message.sender_id == ""                # so no reaction is placed
     assert ctx.message.timestamp == 0                 # falsy AND an int
-
-
-async def test_the_peer_card_is_read_for_the_requester(
-    fire_path: FirePath, memory_store: FakeMemoryStore,
-) -> None:
-    """`peer_card` goes silently empty when the tagger falls out — it is keyed on
-    `ref.honcho_peer_id`, so a `None` tagger yields `()` with nothing raising."""
-    ctx = await fire_path.build_context(reminder_occasion([_reminder()]))
-
-    assert ctx.peer_card == ("drinks his coffee black",)
 
 
 async def test_the_transcript_is_the_conversation_the_row_names(
@@ -188,7 +172,7 @@ async def test_an_unmapped_requester_leaves_the_tagger_none(
 
 
 async def test_build_context_chases_an_unresolved_quote_within_the_window(
-    persons: Persons, record_store: FakeRecordStore, memory_store: FakeMemoryStore,
+    persons: Persons, record_store: FakeRecordStore,
     doctrine_store, metrics: Metrics,
 ) -> None:
     """DEC-195 on the fire path's shape: a
@@ -218,7 +202,7 @@ async def test_build_context_chases_an_unresolved_quote_within_the_window(
         quote=Quote(author_id="x", text="", quoted_ts=5),
     ))
     path = FirePath(
-        persons=persons, records=record_store, memory=memory_store,
+        persons=persons, records=record_store,
         doctrine_store=doctrine_store, metrics=metrics,
         runner=None, adapters={}, registry=None,                 # type: ignore[arg-type]
         canary="test-canary", display_name="Nora",
@@ -326,35 +310,6 @@ class _FireAdapter:
         return [text for _, text in self.sent]
 
 
-class _OutagingMemory(FakeMemoryStore):
-    """Honcho answering everything except the one endpoint under test.
-
-    `FakeMemoryStore(fail=True)` degrades the way the shipped `HonchoClient`
-    does — `peer_card` returns `[]`, `feed` returns False — which is exactly why
-    it cannot express these two cases: the defect being probed is a RAISE, and a
-    fake that only ever degrades gracefully would let an unguarded call site
-    pass forever.
-    """
-
-    def __init__(
-        self, *, card_raises: bool = False, feed_raises: bool = False,
-        cards: dict[str, list[str]] | None = None,
-    ) -> None:
-        super().__init__(cards=cards)
-        self._card_raises = card_raises
-        self._feed_raises = feed_raises
-
-    async def peer_card(self, *, peer_id: str) -> list[str]:
-        if self._card_raises:
-            raise RuntimeError("honcho down")
-        return await super().peer_card(peer_id=peer_id)
-
-    async def feed(self, **kwargs: object) -> bool:
-        if self._feed_raises:
-            raise RuntimeError("honcho down")
-        return await super().feed(**kwargs)          # type: ignore[arg-type]
-
-
 class _HangsAfterSending(FakeAgentRunner):
     """Replays its script, then hangs past `[heartbeat] timeout_seconds`.
 
@@ -386,7 +341,6 @@ def _fire_path(
     runner,
     adapter: _FireAdapter | None = None,
     adapters: dict | None = None,
-    memory: FakeMemoryStore | None = None,
     records: FakeRecordStore | None = None,
     registry: ToolRegistry | None = None,
     rosters: dict | None = None,
@@ -413,7 +367,6 @@ def _fire_path(
     return FirePath(
         persons=persons,
         records=records if records is not None else FakeRecordStore(),
-        memory=memory if memory is not None else FakeMemoryStore(),
         doctrine_store=doctrine_store, metrics=metrics, runner=runner,
         adapters=adapters if adapters is not None else {
             "signal": adapter if adapter is not None else _FireAdapter()
@@ -549,51 +502,6 @@ async def test_a_fault_before_the_model_is_counted_as_a_heartbeat_handler_error(
     assert await path.run([_reminder()]) == "failed_error"
     assert metrics.get(
         "nora_silent_failures_total", reason="handler_error", audience="heartbeat",
-    ) == 1
-
-
-async def test_a_feedback_failure_names_the_platform_it_happened_on(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """`nora_errors_total` declares `(stage, platform)`. An increment that omits
-    the platform records `platform=""` and is invisible to an operator filtering
-    `nora_errors_total{platform="signal"}` — the filter the runbook reaches for
-    first."""
-    adapter = _FireAdapter()
-    path = _fire_path(
-        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
-        adapter=adapter, memory=_OutagingMemory(feed_raises=True),
-        runner=FakeAgentRunner(_send_turns("記得食藥")),
-    )
-
-    # The reminder still arrived; only her memory of saying it did not.
-    assert await path.run([_reminder()]) == "sent"
-    assert adapter.texts == ["記得食藥"]
-    assert metrics.get(
-        "nora_errors_total", stage="fire_feedback", platform="signal",
-    ) == 1
-
-
-async def test_a_peer_card_outage_does_not_cost_the_reminder(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """DEFENSIVE. The shipped `HonchoClient.peer_card` returns `[]` on
-    failure, so this is unreachable today — and at-most-once is what makes it
-    worth guarding anyway: a raise here writes `failed_error` and the reminder
-    is GONE, where the tag path's equivalent only makes the person re-tag.
-    A thinner turn beats no turn, exactly as the transcript read already has it.
-    """
-    adapter = _FireAdapter()
-    path = _fire_path(
-        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
-        adapter=adapter, memory=_OutagingMemory(card_raises=True),
-        runner=FakeAgentRunner(_send_turns("記得食藥")),
-    )
-
-    assert await path.run([_reminder()]) == "sent"
-    assert adapter.texts == ["記得食藥"]
-    assert metrics.get(
-        "nora_errors_total", stage="fire_peer_card", platform="signal",
     ) == 1
 
 
@@ -1068,14 +976,14 @@ async def test_legacy_reminder_row_still_fires_after_the_kind_columns_land(
 # --- <standing> on the fire path --------------------------------------
 
 async def _fire_path_with_standing(
-    persons, record_store, memory_store, doctrine_store, metrics,
+    persons, record_store, doctrine_store, metrics,
     standing, store_timeout: float = 5.0,
 ) -> FirePath:
     """`fire_path`'s own builder plus the standing collaborator — same
     model-side-collaborators-are-None shape, for the same reason: these tests
     call `build_context` only."""
     return FirePath(
-        persons=persons, records=record_store, memory=memory_store,
+        persons=persons, records=record_store,
         doctrine_store=doctrine_store, metrics=metrics,
         runner=None, adapters={}, registry=None,                # type: ignore[arg-type]
         canary="test-canary", display_name="Nora",
@@ -1088,7 +996,7 @@ async def _fire_path_with_standing(
 
 
 async def test_the_fire_path_renders_the_conversations_position(
-    persons, record_store, memory_store, doctrine_store, metrics,
+    persons, record_store, doctrine_store, metrics,
 ) -> None:
     """`<standing>` reaches the fire turn's prefill. `build_prefill` is shared
     and parameterised only by `header=`, so SUPPRESSING `<standing>` here is
@@ -1105,7 +1013,7 @@ async def test_the_fire_path_renders_the_conversations_position(
 
     store = InMemoryStandingStore()
     fire = await _fire_path_with_standing(
-        persons, record_store, memory_store, doctrine_store, metrics, store)
+        persons, record_store, doctrine_store, metrics, store)
     occasion = reminder_occasion([_reminder()])
     await store.write(standing=Standing(
         platform=occasion.platform, conversation_id=occasion.conversation_id,
@@ -1120,7 +1028,7 @@ async def test_the_fire_path_renders_the_conversations_position(
 
 
 async def test_a_hanging_standing_read_cannot_wedge_a_fire_turn(
-    persons, record_store, memory_store, doctrine_store, metrics,
+    persons, record_store, doctrine_store, metrics,
 ) -> None:
     """**An unbounded read here wedges the conversation.**
 
@@ -1138,7 +1046,7 @@ async def test_a_hanging_standing_read_cannot_wedge_a_fire_turn(
             raise AssertionError("should have been cut off")
 
     fire = await _fire_path_with_standing(
-        persons, record_store, memory_store, doctrine_store, metrics,
+        persons, record_store, doctrine_store, metrics,
         _Hangs(), store_timeout=0.05)
 
     ctx = await asyncio.wait_for(
@@ -1155,7 +1063,7 @@ async def test_a_hanging_standing_read_cannot_wedge_a_fire_turn(
 # these pin the read itself, the fail-soft accounting, and the wiring-gap state.
 
 async def _fire_path_with_tiers(
-    persons, record_store, memory_store, doctrine_store, metrics, *,
+    persons, record_store, doctrine_store, metrics, *,
     notes=None, policy="permissive", culture=None, shared=None, memos=None,
 ) -> FirePath:
     """`fire_path`'s own builder plus the tier collaborators — same
@@ -1163,7 +1071,7 @@ async def _fire_path_with_tiers(
     call `build_context` only. `policy="permissive"` resolves every room to
     the `nora` unit, matching where the seeds below are keyed."""
     return FirePath(
-        persons=persons, records=record_store, memory=memory_store,
+        persons=persons, records=record_store,
         doctrine_store=doctrine_store, metrics=metrics,
         runner=None, adapters={}, registry=None,                # type: ignore[arg-type]
         canary="test-canary", display_name="Nora",
@@ -1204,13 +1112,13 @@ def _seeded_note_store() -> InMemoryNoteStore:
 
 
 async def test_the_fire_path_reads_the_note_index(
-    persons, record_store, memory_store, doctrine_store, metrics,
+    persons, record_store, doctrine_store, metrics,
 ) -> None:
     """The determination's `<notes>` block: the standing index for the room's
     UNIT, not the room — DEC-105's keying, mirrored from
     `TranscriptInjection._notes`."""
     fire = await _fire_path_with_tiers(
-        persons, record_store, memory_store, doctrine_store, metrics,
+        persons, record_store, doctrine_store, metrics,
         notes=_seeded_note_store(),
     )
 
@@ -1220,7 +1128,7 @@ async def test_the_fire_path_reads_the_note_index(
 
 
 async def test_a_standing_and_culture_head_render_in_a_fire_turn(
-    persons, record_store, memory_store, doctrine_store, metrics,
+    persons, record_store, doctrine_store, metrics,
 ) -> None:
     """A room holding a Standing head AND a culture head renders both in a
     reminder-fired turn."""
@@ -1240,7 +1148,7 @@ async def test_a_standing_and_culture_head_render_in_a_fire_turn(
         established_by="fold",
     )
     fire = await _fire_path_with_tiers(
-        persons, record_store, memory_store, doctrine_store, metrics,
+        persons, record_store, doctrine_store, metrics,
         culture=culture, shared=_shared_reader(standing, rooms=[("signal", "conv-1")]),
     )
     ctx = await fire.build_context(occasion)
@@ -1250,7 +1158,7 @@ async def test_a_standing_and_culture_head_render_in_a_fire_turn(
 
 
 async def test_a_failed_note_read_is_counted_not_silent(
-    persons, record_store, memory_store, doctrine_store, metrics,
+    persons, record_store, doctrine_store, metrics,
 ) -> None:
     """R-27 on this path: an index that exists but could not be read is
     `unavailable` (counted), never folded silently into «there are none»."""
@@ -1259,7 +1167,7 @@ async def test_a_failed_note_read_is_counted_not_silent(
             raise RuntimeError("db down")
 
     fire = await _fire_path_with_tiers(
-        persons, record_store, memory_store, doctrine_store, metrics,
+        persons, record_store, doctrine_store, metrics,
         notes=_Down(),
     )
 
@@ -1270,13 +1178,13 @@ async def test_a_failed_note_read_is_counted_not_silent(
 
 
 async def test_a_wired_tier_without_a_policy_is_a_counted_wiring_gap(
-    persons, record_store, memory_store, doctrine_store, metrics,
+    persons, record_store, doctrine_store, metrics,
 ) -> None:
     """A store wired but no `Policy` to scope it by: the tier defaults safely
     AND the gap is counted ONCE for the turn — guessing a unit would
     render another social unit's notes into this room (DEC-105)."""
     fire = await _fire_path_with_tiers(
-        persons, record_store, memory_store, doctrine_store, metrics,
+        persons, record_store, doctrine_store, metrics,
         notes=_seeded_note_store(), policy=None,
     )
 
@@ -2276,7 +2184,7 @@ async def test_a_quiet_proactive_turn_is_silent_not_a_failure(
     runner = FakeAgentRunner(_send_turns("the tag runner must not run"))
     proactive_runner = FakeAgentRunner([ScriptedTurn(final_text="nothing to add")])
     path = FirePath(
-        persons=persons, records=FakeRecordStore(), memory=FakeMemoryStore(),
+        persons=persons, records=FakeRecordStore(),
         doctrine_store=doctrine_store, metrics=metrics, runner=runner,
         adapters={"signal": adapter}, registry=ToolRegistry(),
         canary="test-canary", display_name="Nora", ai_peer="nora",
@@ -2303,7 +2211,7 @@ async def test_a_proactive_turn_that_speaks_is_sent_and_counted(
 ) -> None:
     adapter = _FireAdapter()
     path = FirePath(
-        persons=persons, records=FakeRecordStore(), memory=FakeMemoryStore(),
+        persons=persons, records=FakeRecordStore(),
         doctrine_store=doctrine_store, metrics=metrics, runner=FakeAgentRunner([]),
         adapters={"signal": adapter}, registry=ToolRegistry(),
         canary="test-canary", display_name="Nora", ai_peer="nora",
@@ -2323,7 +2231,7 @@ async def test_a_proactive_turn_that_speaks_is_sent_and_counted(
 def _intent_path(persons, doctrine_store, metrics):
     records = FakeRecordStore()
     path = FirePath(
-        persons=persons, records=records, memory=FakeMemoryStore(),
+        persons=persons, records=records,
         doctrine_store=doctrine_store, metrics=metrics, runner=FakeAgentRunner([]),
         adapters={"signal": _FireAdapter()}, registry=ToolRegistry(),
         canary="test-canary", display_name="Nora", ai_peer="nora",
@@ -2368,7 +2276,7 @@ async def test_a_proactive_decline_is_readable_as_a_determination(
     would have said. The counter answers how many; only this answers what.
     """
     path = FirePath(
-        persons=persons, records=FakeRecordStore(), memory=FakeMemoryStore(),
+        persons=persons, records=FakeRecordStore(),
         doctrine_store=doctrine_store, metrics=metrics,
         runner=FakeAgentRunner([]), adapters={"signal": _FireAdapter()},
         registry=ToolRegistry(), canary="test-canary", display_name="Nora",
@@ -2401,7 +2309,7 @@ async def test_a_proactive_send_is_readable_as_a_determination(
     """The other half: a spoke determination reaches the same sink, so the two
     outcomes are counted AND read in one place rather than one each."""
     path = FirePath(
-        persons=persons, records=FakeRecordStore(), memory=FakeMemoryStore(),
+        persons=persons, records=FakeRecordStore(),
         doctrine_store=doctrine_store, metrics=metrics,
         runner=FakeAgentRunner([]), adapters={"signal": _FireAdapter()},
         registry=ToolRegistry(), canary="test-canary", display_name="Nora",
@@ -2897,7 +2805,7 @@ def test_a_fire_path_turn_is_never_spoken(caplog):
 
 
 async def test_a_fire_turn_reads_presence_for_the_occasions_room(
-    persons: Persons, record_store: FakeRecordStore, memory_store: FakeMemoryStore,
+    persons: Persons, record_store: FakeRecordStore,
     doctrine_store, metrics: Metrics,
 ) -> None:
     """A reminder, a participation turn and a
@@ -2913,7 +2821,7 @@ async def test_a_fire_turn_reads_presence_for_the_occasions_room(
             return Presence(platform=platform, label="Friends", here_state="up")
 
     path = FirePath(
-        persons=persons, records=record_store, memory=memory_store,
+        persons=persons, records=record_store,
         doctrine_store=doctrine_store, metrics=metrics,
         runner=None, adapters={}, registry=None,                # type: ignore[arg-type]
         canary="test-canary", display_name="Nora",
@@ -2930,7 +2838,7 @@ async def test_a_fire_turn_reads_presence_for_the_occasions_room(
 
 
 async def test_the_fire_context_reads_run_concurrently_not_one_after_another(
-    persons: Persons, record_store: FakeRecordStore, memory_store: FakeMemoryStore,
+    persons: Persons, record_store: FakeRecordStore,
     doctrine_store, metrics: Metrics,
 ) -> None:
     """The standing read below cannot finish until the presence read has
@@ -2956,7 +2864,7 @@ async def test_the_fire_context_reads_run_concurrently_not_one_after_another(
                             body="dinner is still open", fold_count=1, updated_at=1)
 
     path = FirePath(
-        persons=persons, records=record_store, memory=memory_store,
+        persons=persons, records=record_store,
         doctrine_store=doctrine_store, metrics=metrics,
         runner=None, adapters={}, registry=None,                # type: ignore[arg-type]
         canary="test-canary", display_name="Nora",
@@ -3028,7 +2936,7 @@ async def test_a_fire_turn_publishes_the_heartbeat_deadline_not_the_loops(
 
 
 async def test_a_fire_turn_reads_its_units_kept_memos_and_counts_a_failed_read(
-    persons, record_store, memory_store, doctrine_store, metrics,
+    persons, record_store, doctrine_store, metrics,
 ) -> None:
     """`<memos>` on the fire path (DEC-306), `_read_notes` mirrored: the unit's
     kept memos, another unit's never, and a failed read counted."""
@@ -3042,7 +2950,7 @@ async def test_a_fire_turn_reads_its_units_kept_memos_and_counts_a_failed_read(
             established_by="cognition:u", model=None, now_ms=1,
         )
     fire = await _fire_path_with_tiers(
-        persons, record_store, memory_store, doctrine_store, metrics, memos=memos,
+        persons, record_store, doctrine_store, metrics, memos=memos,
     )
     ctx = await fire.build_context(reminder_occasion([_reminder()]))
     assert [m.title for m in ctx.memos] == ["nora wifi"]
@@ -3052,7 +2960,7 @@ async def test_a_fire_turn_reads_its_units_kept_memos_and_counts_a_failed_read(
             raise RuntimeError("db down")
 
     fire = await _fire_path_with_tiers(
-        persons, record_store, memory_store, doctrine_store, metrics, memos=_Down(),
+        persons, record_store, doctrine_store, metrics, memos=_Down(),
     )
     ctx = await fire.build_context(reminder_occasion([_reminder()]))
     assert ctx.memos == ()
@@ -3154,7 +3062,7 @@ async def test_a_shadow_held_participation_turn_stays_strict_in_a_location_room(
 
 async def test_a_proactive_act_is_withheld_when_a_required_check_fails(
     persons: Persons, doctrine_store, metrics: Metrics,
-    record_store, memory_store,
+    record_store,
 ):
     """A proactive act's own checks — pending/FIRING arbitration (`reminders`),
     delivery facts (`turns`), authored sends (`sends`) — are fail-closed:
@@ -3168,7 +3076,7 @@ async def test_a_proactive_act_is_withheld_when_a_required_check_fails(
                      ("sends", "ok"), ("findings", "ok")),
         )
     path = FirePath(
-        persons=persons, records=record_store, memory=memory_store,
+        persons=persons, records=record_store,
         doctrine_store=doctrine_store, metrics=metrics,
         runner=None, registry=ToolRegistry(),                   # type: ignore[arg-type]
         canary="test-canary", display_name="Nora",
@@ -3187,7 +3095,7 @@ async def test_a_proactive_act_is_withheld_when_a_required_check_fails(
 
 async def test_a_proactive_act_runs_when_only_optional_display_coverage_fails(
     persons: Persons, doctrine_store, metrics: Metrics,
-    record_store, memory_store,
+    record_store,
 ):
     """Optional display coverage — positions/findings and ledger readbacks —
     degrades the prompt without withholding the act itself (design/cognition-loop/proactive.md:
@@ -3208,7 +3116,7 @@ async def test_a_proactive_act_runs_when_only_optional_display_coverage_fails(
                      ("findings", "unavailable"), ("ledger", "unavailable")),
         )
     path = FirePath(
-        persons=persons, records=record_store, memory=memory_store,
+        persons=persons, records=record_store,
         doctrine_store=doctrine_store, metrics=metrics,
         runner=None, registry=ToolRegistry(),                   # type: ignore[arg-type]
         canary="test-canary", display_name="Nora",
@@ -3227,7 +3135,7 @@ async def test_a_proactive_act_runs_when_only_optional_display_coverage_fails(
 
 async def test_a_proactive_act_is_withheld_when_the_whole_read_failed(
     persons: Persons, doctrine_store, metrics: Metrics,
-    record_store, memory_store,
+    record_store,
 ):
     """A whole-view failure — no per-source coverage at all — is still
     «could not check»: nothing read means none of the act's required checks
@@ -3239,7 +3147,7 @@ async def test_a_proactive_act_is_withheld_when_the_whole_read_failed(
             unit="u1", status="unavailable", as_of_ms=1, sources=(),
         )
     path = FirePath(
-        persons=persons, records=record_store, memory=memory_store,
+        persons=persons, records=record_store,
         doctrine_store=doctrine_store, metrics=metrics,
         runner=None, adapters={}, registry=None,                # type: ignore[arg-type]
         canary="test-canary", display_name="Nora",

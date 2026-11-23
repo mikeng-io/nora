@@ -98,7 +98,7 @@ def _online_now(
     sources threaded exactly as the composition root threads them."""
     specs = build_tool_specs(
         store=None, conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None,
+        persons=persons, deliverer=None,
         metrics=metrics if metrics is not None else Metrics(),
         room=_room(persons, members=members, fail=fail, tagger=tagger, roster=roster),
         transit_source=None,

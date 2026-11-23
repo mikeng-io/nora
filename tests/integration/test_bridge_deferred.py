@@ -4,12 +4,12 @@ Every test drives the production handoff against REAL Postgres + Redis:
 `StreamProducer.enqueue` → `StreamReader._register` → `WorkRunner._execute`.
 The pipelines are the harness's real `IngestPipeline`; allowlist, persons,
 participation state and the speaking slot are the harness's real objects.
-Only Honcho, the stimulus store and `FirePath.speak` are doubles — the
+Only the stimulus store and `FirePath.speak` are doubles — the
 shared `nora.testing` fakes or local doubles on the same contracts.
 
-Blocker 1 — deferred memory/stimulus must carry the admission-time
+Blocker 1 — the deferred stimulus must carry the admission-time
 absorption fact AND re-check current policy (room absorbed, room listed,
-sender still mapped to the same peer) before the effect runs.
+unit binding) before the effect runs.
 
 Blocker 4 — a kill between the audit commit and the downstream-obligation
 commit must resume from the snapshot the audit transaction persisted, never
@@ -22,7 +22,6 @@ reconstructed from all-message history.
 
 import asyncio
 import contextlib
-import sys
 import time
 from typing import Any
 
@@ -31,13 +30,18 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from nora.access import IdentityAccess
-from nora.app.bridge_queue import DbSpeakingLocks, StreamReader, WorkRunner, stream_name
+from nora.app.bridge_queue import (
+    _COMPREHEND_KINDS,
+    DbSpeakingLocks,
+    StreamReader,
+    WorkRunner,
+    stream_name,
+)
 from nora.app.participation import ParticipationTrigger
 from nora.domain.actions import ActionOwner
 from nora.domain.media import MediaRef
 from nora.domain.models import NormalizedMessage
 from nora.engagement.slots import ConversationSlots
-from nora.infra.honcho.client import HonchoClient
 from nora.infra.sql.bridge_store import SqlBridgeStore
 from nora.infra.sql.participation_state import SqlParticipationStateStore
 from nora.infra.sql.schema import (
@@ -54,8 +58,7 @@ from nora.platform.bridge.envelope import Envelope, canonical_source_key, event_
 from nora.platform.bridge.queue import CONSUMER_GROUP, StreamProducer, ensure_group
 from nora.platform.bridge.rehydrate import message_to_dict
 from nora.policy import Conversation
-from nora.testing import FakeMemoryStore, ScriptedTurn
-from tests.fakes import FakeHoncho
+from nora.testing import ScriptedTurn
 
 pytestmark = pytest.mark.integration
 
@@ -165,8 +168,7 @@ async def _finish_state(store, work_id: int) -> dict:
             BRIDGE_WORK.c.id == work_id))).mappings().one())
 
 
-_PERSON_DICT = {"person_id": "miles", "name": "Miles",
-                "honcho_peer_id": "miles"}
+_PERSON_DICT = {"person_id": "miles", "name": "Miles"}
 
 
 def _work_payload(ts: int, *, absorbed: bool,
@@ -211,49 +213,40 @@ def _listed_policy(tmp_path):
 
 async def test_ingest_obligations_carry_the_admission_absorption_fact(
         bridge, redis_client, harness):
-    """The pipeline's `absorbed` fact must reach the deferred works: a listed
-    room's message enqueues memory+stimulus obligations carrying
-    `absorbed=True` and the resolved person, not a constant."""
+    """The pipeline's `absorbed` fact must reach the deferred stimulus: a listed
+    room's message enqueues a stimulus obligation carrying `absorbed=True` and
+    the resolved person, not a constant — and no memory-feed obligation."""
     store, _, stream = bridge
     await _register(redis_client, store, stream,
                     _envelope("hello room", 5000, sender=MAPPED_SENDER))
     runner = _runner(store, redis_client, harness,
-                     memory_feed={"memory": harness.honcho},
                      stimulus=_stimulus_wiring(store))
     await runner._execute(await store.claim_next(owner="w", lease_seconds=60))
     rows = {r["kind"]: r for r in await _work_rows(store)}
-    feed, stim = rows["memory_feed"]["payload"], rows["stimulus"]["payload"]
-    assert feed["absorbed"] is True and stim["absorbed"] is True
-    assert feed["person"]["person_id"] == "miles"
-    # Executing them actually feeds and writes — the positive control.
+    stim = rows["stimulus"]["payload"]
+    assert stim["absorbed"] is True
+    assert stim["person_id"] == "miles"
+    assert "memory_feed" not in rows
+    # Executing it actually writes — the positive control.
     await runner._execute(await store.claim_next(owner="w", lease_seconds=60))
-    await runner._execute(await store.claim_next(owner="w", lease_seconds=60))
-    assert harness.honcho.fed != []
     async with store._engine.connect() as conn:
         assert (await conn.execute(sa.select(STIMULUS))).all() != []
 
 
-async def test_mention_only_room_obligation_never_feeds_or_stimulates(
+async def test_mention_only_room_obligation_never_stimulates(
         bridge, redis_client, harness):
     """The reviewed defect, on the exact seam: a mention-only room's work
-    payload carries `absorbed=False`, so the deferred executor must skip
-    BOTH effects — under the constant `absorbed=True` wiring this reached
-    Honcho."""
+    payload carries `absorbed=False`, so the deferred executor must skip the
+    stimulus."""
     store, _, _ = bridge
-    await _enqueue_work(store, kind="memory_feed",
-                        payload=_work_payload(5001, absorbed=False))
     await _enqueue_work(store, kind="stimulus",
                         payload=_work_payload(5001, absorbed=False))
     runner = _runner(store, redis_client, harness,
-                     memory_feed={"memory": harness.honcho},
                      stimulus=_stimulus_wiring(store))
-    for _ in range(2):
-        await runner._execute(await store.claim_next(owner="w", lease_seconds=60))
+    await runner._execute(await store.claim_next(owner="w", lease_seconds=60))
     rows = {r["kind"]: r for r in await _work_rows(store)}
-    assert rows["memory_feed"]["state"] == "intentional_skip"
     assert rows["stimulus"]["state"] == "intentional_skip"
-    assert rows["memory_feed"]["result"]["reason"] == "room not absorbed"
-    assert harness.honcho.fed == []
+    assert rows["stimulus"]["result"]["reason"] == "room not absorbed"
     async with store._engine.connect() as conn:
         assert (await conn.execute(sa.select(STIMULUS))).all() == []
 
@@ -264,9 +257,9 @@ async def test_absorption_revoked_after_enqueue_skips_with_typed_result(
     says `True`, but the room in the CURRENT allowlist is no longer absorbed
     — an intentional skip under the current truth, not a stale feed."""
     store, _, _ = bridge
-    await _enqueue_work(store, kind="memory_feed",
+    await _enqueue_work(store, kind="stimulus",
                         payload=_work_payload(5002, absorbed=True,
-                                              unit="room-g1"))
+                                              unit="room-g1", person=None))
     policy = _listed_policy(tmp_path)
     # The room still exists but is now discovered mention-only: absorbed
     # flips False under the CURRENT policy, exactly as a runtime revoke does.
@@ -275,14 +268,14 @@ async def test_absorption_revoked_after_enqueue_skips_with_typed_result(
         primary_id=ROOM, unit="room-g1", discovered=True)
     assert policy.conversation(PLATFORM, ROOM).absorbed is False
     runner = _runner(store, redis_client, harness,
-                     memory_feed={"memory": harness.honcho},
-                     allowlist=policy)
+                     stimulus=_stimulus_wiring(store), allowlist=policy)
     work = await store.claim_next(owner="w", lease_seconds=60)
     await runner._execute(work)
     row = await _finish_state(store, work.id)
     assert row["state"] == "intentional_skip"
     assert row["result"]["reason"] == "room not absorbed"
-    assert harness.honcho.fed == []
+    async with store._engine.connect() as conn:
+        assert (await conn.execute(sa.select(STIMULUS))).all() == []
 
 
 async def test_room_revoked_after_enqueue_skips(
@@ -290,75 +283,19 @@ async def test_room_revoked_after_enqueue_skips(
     """The room itself was removed from the allowlist after enqueue:
     `conversation()` answers None and the work fails closed."""
     store, _, _ = bridge
-    await _enqueue_work(store, kind="memory_feed",
+    await _enqueue_work(store, kind="stimulus",
                         payload=_work_payload(5003, absorbed=True,
-                                              unit="room-g1"))
+                                              unit="room-g1", person=None))
     policy = _listed_policy(tmp_path)
     del policy._by_id[(PLATFORM, ROOM)]
     runner = _runner(store, redis_client, harness,
-                     memory_feed={"memory": harness.honcho},
-                     allowlist=policy)
+                     stimulus=_stimulus_wiring(store), allowlist=policy)
     work = await store.claim_next(owner="w", lease_seconds=60)
     await runner._execute(work)
     row = await _finish_state(store, work.id)
     assert row["state"] == "intentional_skip"
-    assert harness.honcho.fed == []
-
-
-async def test_person_unmapped_after_enqueue_skips_feed(
-        bridge, redis_client, harness, tmp_path):
-    """A deferred feed rechecks the sender's current selected binding."""
-    store, _, _ = bridge
-    await _enqueue_work(store, kind="memory_feed",
-                        payload=_work_payload(5004, absorbed=True))
-    identity = tmp_path / "identity-empty.toml"
-    identity.write_text("")
-    from nora.persons import load_persons
-    runner = _runner(store, redis_client, harness,
-                     memory_feed={"memory": harness.honcho},
-                     access=IdentityAccess.for_files(
-                         load_persons(identity), harness.handler._dispatcher._ingest._allowlist))
-    work = await store.claim_next(owner="w", lease_seconds=60)
-    await runner._execute(work)
-    row = await _finish_state(store, work.id)
-    assert row["state"] == "intentional_skip"
-    assert row["result"]["reason"] == "sender unmapped or changed"
-    assert harness.honcho.fed == []
-
-
-async def test_memory_feed_false_is_uncertain_not_done(
-        bridge, redis_client, harness):
-    """An unconfirmed memory feed remains retained for reconciliation."""
-    store, _, _ = bridge
-    await _enqueue_work(store, kind="memory_feed",
-                        payload=_work_payload(5005, absorbed=True))
-    runner = _runner(store, redis_client, harness,
-                     memory_feed={"memory": FakeMemoryStore(fail=True)})
-    work = await store.claim_next(owner="w", lease_seconds=60)
-    await runner._execute(work)
-    row = await _finish_state(store, work.id)
-    assert row["state"] == "failed_retained"
-    assert row["result"]["reason"] == "feed unconfirmed"
-
-
-async def test_sender_account_unmapped_while_person_remains_skips_feed(
-        bridge, redis_client, harness):
-    from nora.domain.models import PersonRef
-    from nora.persons import Persons
-
-    store, _, _ = bridge
-    await _enqueue_work(store, kind="memory_feed",
-                        payload=_work_payload(5300, absorbed=True))
-    person = PersonRef(**_PERSON_DICT)
-    persons = Persons(by_person={person.person_id: person}, index={})
-    assert person.person_id in persons.by_person
-    assert persons.resolve(PLATFORM, MAPPED_SENDER) is None
-    runner = _runner(store, redis_client, harness, persons=persons,
-                     memory_feed={"memory": harness.honcho})
-    work = await store.claim_next(owner=runner._owner, lease_seconds=60)
-    await runner._execute(work)
-    assert (await _finish_state(store, work.id))["state"] == "intentional_skip"
-    assert harness.honcho.fed == []
+    async with store._engine.connect() as conn:
+        assert (await conn.execute(sa.select(STIMULUS))).all() == []
 
 
 async def test_stimulus_missing_append_receipt_is_retryable(
@@ -410,201 +347,6 @@ async def test_participation_fire_heartbeat_detects_killed_speaking_backend(
             await asyncio.wait_for(runner._lease_heartbeat(work, key), timeout=0.8)
     finally:
         await locks.release(key)
-
-
-async def test_memory_feed_exception_is_retryable_not_done(
-        bridge, redis_client, harness):
-    """A raise BEFORE the non-idempotent POST boundary (here `ensure_peer`)
-    is pre-effect: nothing non-idempotent started, so retryable is the
-    honest answer — the work is owed until the typed answer exists."""
-    store, _, _ = bridge
-    await _enqueue_work(store, kind="memory_feed",
-                        payload=_work_payload(5006, absorbed=True))
-
-    class _Down:
-        async def ensure_peer(self, **_k):
-            raise RuntimeError("honcho unreachable")
-
-        async def feed(self, **_k):
-            raise AssertionError("feed ran after the peer check failed")
-
-    runner = _runner(store, redis_client, harness,
-                     memory_feed={"memory": _Down()})
-    work = await store.claim_next(owner="w", lease_seconds=60)
-    await runner._execute(work)
-    row = await _finish_state(store, work.id)
-    assert row["state"] == "retryable_failure"
-
-
-async def test_feed_exception_after_the_start_mark_is_retained(
-        bridge, redis_client, harness):
-    """A raise AFTER the start mark commits is a POST that may have landed:
-    `feed` has no idempotency key, so the work is retained, not retried."""
-    store, _, _ = bridge
-    await _enqueue_work(store, kind="memory_feed",
-                        payload=_work_payload(5303, absorbed=True))
-
-    class _Lost:
-        async def ensure_peer(self, **_k):
-            return None
-
-        async def feed(self, **_k):
-            raise RuntimeError("response lost")
-
-    runner = _runner(store, redis_client, harness,
-                     memory_feed={"memory": _Lost()})
-    work = await store.claim_next(owner="w", lease_seconds=60)
-    await runner._execute(work)
-    row = await _finish_state(store, work.id)
-    assert row["state"] == "failed_retained"
-    assert row["result"]["reason"] == "feed started"
-
-
-async def test_feed_acceptance_before_finish_is_not_reposted_on_reclaim(
-        bridge, redis_client, harness):
-    store, _, _ = bridge
-    await _enqueue_work(store, kind="memory_feed",
-                        payload=_work_payload(5302, absorbed=True))
-    runner = _runner(store, redis_client, harness,
-                     memory_feed={"memory": harness.honcho})
-    finish = store.finish_work
-    fail_once = True
-
-    async def lose_completion(conn, work_id, **kw):
-        nonlocal fail_once
-        if fail_once:
-            fail_once = False
-            raise RuntimeError("completion unavailable after feed acceptance")
-        return await finish(conn, work_id, **kw)
-
-    store.finish_work = lose_completion
-    work = await store.claim_next(owner=runner._owner, lease_seconds=60)
-    try:
-        await runner._execute(work)
-    finally:
-        store.finish_work = finish
-    assert len(harness.honcho.fed) == 1
-    replacement = _runner(store, redis_client, harness,
-                          memory_feed={"memory": harness.honcho})
-    reclaimed = await store.claim_next(owner=replacement._owner, lease_seconds=60)
-    assert reclaimed is not None
-    await replacement._execute(reclaimed)
-    assert len(harness.honcho.fed) == 1
-    assert (await _finish_state(store, work.id))["state"] in (
-        "uncertain", "failed_retained")
-
-
-_FEED_WORKER = '''
-import asyncio
-import sys
-
-import redis.asyncio as aioredis
-from sqlalchemy.ext.asyncio import create_async_engine
-
-from nora.app.bridge_queue import DbSpeakingLocks, WorkRunner
-from nora.domain.models import PersonRef
-from nora.infra.honcho.client import HonchoClient
-from nora.infra.sql.bridge_store import SqlBridgeStore
-from nora.obs.metrics import Metrics
-from nora.persons import Persons
-from nora.policy import permissive_policy
-
-
-async def main() -> None:
-    dsn, redis_url, honcho_url, workspace = sys.argv[1:5]
-    engine = create_async_engine(dsn)
-    store = SqlBridgeStore(engine)
-    redis = aioredis.Redis.from_url(redis_url)
-    person = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
-    runner = WorkRunner(
-        store=store, redis=redis, ingest=None, engagement=None, slots=None,
-        db_locks=DbSpeakingLocks(store), adapters={}, gate=None,
-        metrics=Metrics(),
-        memory_feed={"memory": HonchoClient(honcho_url, workspace)},
-        allowlist=permissive_policy(),
-        persons=Persons(by_person={"miles": person},
-                        index={("signal", "+852111"): "miles"}),
-        lease_seconds=3)
-    work = await store.claim_next(owner=runner._owner, lease_seconds=3)
-    if work is not None:
-        await runner._execute(work)
-    await engine.dispose()
-    await redis.aclose()
-
-
-asyncio.run(main())
-'''
-
-_HONCHO_WORKSPACE = "it-ws"
-
-
-async def test_subprocess_kill_after_feed_acceptance_reposts_nothing(
-        bridge, redis_client, harness, tmp_path, clean_pg_url, _redis_container):
-    """The real fault window, end to end: a separate PROCESS claims the feed
-    work, its POST lands on the fake Honcho (server-side accepted), and the
-    process is SIGKILLed before its finish commit — the response never
-    returned, exactly the uncertain shape. A fresh worker process (here the
-    in-process replacement runner) must see the committed start mark and
-    retain the work WITHOUT reposting; a never-started work must still feed.
-    """
-    store, _, _ = bridge
-    fake = FakeHoncho()
-    url = await fake.start()
-    try:
-        fake.seed(_HONCHO_WORKSPACE, created_at="2026-01-01T00:00:00+00:00")
-        fake.hold_message_response = True
-        await _enqueue_work(store, kind="memory_feed",
-                            payload=_work_payload(5400, absorbed=True))
-        script = tmp_path / "feed_worker.py"
-        script.write_text(_FEED_WORKER)
-        redis_url = (
-            f"redis://{_redis_container.get_container_host_ip()}:"
-            f"{_redis_container.get_exposed_port(6379)}")
-        proc = await asyncio.create_subprocess_exec(
-            sys.executable, str(script), clean_pg_url, redis_url, url,
-            _HONCHO_WORKSPACE)
-        # The POST landing is the proof the process crossed the boundary:
-        # the write is recorded server-side while its response is held.
-        for _ in range(300):
-            if fake._message_posts:
-                break
-            if proc.returncode is not None:
-                raise AssertionError(
-                    f"worker exited {proc.returncode} before the POST")
-            await asyncio.sleep(0.1)
-        assert fake._message_posts == 1
-        proc.kill()
-        await proc.wait()
-        assert proc.returncode == -9
-        # The window is closed: the held handler answers (into nothing) and
-        # every later POST — the control's — responds normally.
-        fake.hold_message_response = False
-        fake.release_message_response.set()
-        # The dead owner's 3s lease lapses; expire_leases reparks the row.
-        await asyncio.sleep(3.5)
-        await store.expire_leases()
-        runner = _runner(
-            store, redis_client, harness,
-            memory_feed={"memory": HonchoClient(url, _HONCHO_WORKSPACE)})
-        reclaimed = await store.claim_next(owner=runner._owner,
-                                         lease_seconds=30)
-        assert reclaimed is not None
-        await runner._execute(reclaimed)
-        assert fake._message_posts == 1            # retained, never reposted
-        row = await _finish_state(store, reclaimed.id)
-        assert row["state"] == "uncertain"
-        # Positive control: a work whose start was never committed still
-        # runs its effect exactly once under the same replacement runner.
-        await _enqueue_work(store, kind="memory_feed",
-                            payload=_work_payload(5401, absorbed=True))
-        fresh = await store.claim_next(owner=runner._owner, lease_seconds=30)
-        assert fresh is not None
-        await runner._execute(fresh)
-        assert fake._message_posts == 2
-        assert (await _finish_state(store, fresh.id))["state"] == "done"
-    finally:
-        fake.release_message_response.set()
-        await fake.close()
 
 
 async def test_stimulus_append_exception_is_retryable_not_done(
@@ -672,7 +414,6 @@ async def test_kill_between_audit_and_handoff_resumes_from_snapshot(
     await _register(redis_client, store, stream, env)
     pipeline = harness.handler._dispatcher._ingest
     runner = _runner(store, redis_client, harness,
-                     memory_feed={"memory": harness.honcho},
                      stimulus=_stimulus_wiring(store))
 
     ingest_calls = {"n": 0}
@@ -719,6 +460,7 @@ async def test_kill_between_audit_and_handoff_resumes_from_snapshot(
     assert handoff["row_id"] and handoff["decision"]["reason"]
     assert handoff["absorbed"] is True
     assert handoff["person"]["person_id"] == "miles"
+    assert "honcho_peer_id" not in handoff["person"]   # what the writer emits now
 
     monkeypatch.undo()  # enqueue_work + gate restored for the replay
     work = await store.claim_next(owner="w", lease_seconds=60)
@@ -729,7 +471,7 @@ async def test_kill_between_audit_and_handoff_resumes_from_snapshot(
         assert len((await conn.execute(sa.select(MESSAGES))).all()) == 1
     assert (await _finish_state(store, work.id))["state"] == "done"
     kinds = {r["kind"] for r in await _work_rows(store)}
-    assert {"memory_feed", "stimulus"} <= kinds
+    assert "stimulus" in kinds and "memory_feed" not in kinds
     assert await _pending(redis_client, stream) == 0
 
 
@@ -745,8 +487,7 @@ async def test_legacy_event_without_handoff_fails_closed(
         await conn.execute(sa.update(BRIDGE_EVENT).where(
             BRIDGE_EVENT.c.id == env.event_id).values(
             payload={"envelope": env.to_fields(), "message_row_id": 1}))
-    runner = _runner(store, redis_client, harness,
-                     memory_feed={"memory": harness.honcho})
+    runner = _runner(store, redis_client, harness)
     work = await store.claim_next(owner="w", lease_seconds=60)
     await runner._execute(work)
     row = await _finish_state(store, work.id)
@@ -1158,7 +899,6 @@ async def test_handoff_carries_custody_identity_and_unit_through_replacement(
 
     monkeypatch.setattr(store, "enqueue_work", kill_once)
     runner_a = _runner(store, redis_client, harness,
-                       memory_feed={"memory": harness.honcho},
                        stimulus=_stimulus_wiring(store),
                        participation=_trigger(store, harness,
                                               clock=time.time))
@@ -1178,7 +918,6 @@ async def test_handoff_carries_custody_identity_and_unit_through_replacement(
 
     monkeypatch.undo()
     runner_b = _runner(store, redis_client, harness,
-                       memory_feed={"memory": harness.honcho},
                        stimulus=_stimulus_wiring(store),
                        participation=_trigger(store, harness,
                                               clock=time.time))
@@ -1189,13 +928,13 @@ async def test_handoff_carries_custody_identity_and_unit_through_replacement(
         assert len((await conn.execute(sa.select(MESSAGES))).all()) == 1
     rows = [r for r in await _work_rows(store) if r["kind"] != "ingest"]
     kinds = [r["kind"] for r in rows]
-    assert sorted(kinds) == ["memory_feed", "participation", "stimulus"]
+    assert sorted(kinds) == ["participation", "stimulus"]
     note = next(r for r in rows if r["kind"] == "participation")
     assert note["payload"]["note_message"]["media"][0]["platform_id"] \
         == "att-1"
-    feed = next(r for r in rows if r["kind"] == "memory_feed")
-    assert feed["payload"]["message"]["media"][0]["platform_id"] == "att-1"
-    assert feed["payload"]["unit"] == "nora"
+    stim = next(r for r in rows if r["kind"] == "stimulus")
+    assert stim["payload"]["message"]["media"][0]["platform_id"] == "att-1"
+    assert stim["payload"]["unit"] == "nora"
     assert await _pending(redis_client, stream) == 0
 
 
@@ -1203,14 +942,10 @@ async def test_moved_unit_binding_refuses_deferred_effects(
         bridge, redis_client, harness, tmp_path):
     """The pinned-scope defence: the room's unit binding moved between
     enqueue and drain — writing the content under the NEW unit is a
-    disclosure, not a delay. A store that routes by the CURRENT binding at
-    call time proves nothing reached the moved scope: both deferred
-    effects refuse with `unit binding moved`."""
+    disclosure, not a delay. The deferred stimulus refuses with
+    `unit binding moved`."""
     store, _, _ = bridge
     policy = _listed_policy(tmp_path)
-    await _enqueue_work(store, kind="memory_feed",
-                        payload=_work_payload(5703, absorbed=True,
-                                              unit="room-g1"))
     await _enqueue_work(store, kind="stimulus",
                         payload=_work_payload(5703, absorbed=True,
                                               unit="room-g1", person=None))
@@ -1220,27 +955,40 @@ async def test_moved_unit_binding_refuses_deferred_effects(
     policy._by_id[(PLATFORM, ROOM)] = dataclasses.replace(
         convo, unit="room-g2")
 
-    routed: list[tuple[str | None, str]] = []
-
-    class RoutedProbe(FakeMemoryStore):
-        async def feed(self, *, peer_id, text, conversation_id,
-                       metadata=None):
-            room = policy.conversation(PLATFORM, conversation_id)
-            routed.append((room.unit if room else None, text))
-            return await super().feed(
-                peer_id=peer_id, text=text,
-                conversation_id=conversation_id, metadata=metadata)
-
     runner = _runner(store, redis_client, harness,
-                     memory_feed={"memory": RoutedProbe()},
                      stimulus=_stimulus_wiring(store), allowlist=policy)
-    for _ in range(2):
-        await runner._execute(await store.claim_next(owner=runner._owner,
-                                                     lease_seconds=60))
+    await runner._execute(await store.claim_next(owner=runner._owner,
+                                                 lease_seconds=60))
     rows = {r["kind"]: r for r in await _work_rows(store)}
-    for kind in ("memory_feed", "stimulus"):
-        assert rows[kind]["state"] == "intentional_skip"
-        assert rows[kind]["result"]["reason"] == "unit binding moved"
-    assert routed == []   # nothing reached the moved scope at all
+    assert rows["stimulus"]["state"] == "intentional_skip"
+    assert rows["stimulus"]["result"]["reason"] == "unit binding moved"
     async with store._engine.connect() as conn:
         assert (await conn.execute(sa.select(STIMULUS))).all() == []
+
+
+async def test_a_memory_feed_row_persisted_before_it_left_ends_failed_retained(
+        bridge, redis_client, harness):
+    """`memory_feed` is no longer a work kind, but rows of that kind written
+    before it left are still in `bridge_work`. A claimed one must end
+    `failed_retained`, inspectable, never stay queued and never be dropped or
+    run as something else; and no new one can be enqueued."""
+    store, _, _ = bridge
+    async with store._engine.begin() as conn:
+        with pytest.raises(ValueError, match="unknown work kind"):
+            await store.enqueue_work(
+                conn, event_id=None, kind="memory_feed", ordinal=0,
+                platform=PLATFORM, account_key=ACCOUNT, conversation_id=ROOM,
+                payload=_work_payload(5704, absorbed=True))
+    async with store._engine.begin() as conn:      # a row from before the removal
+        await conn.execute(sa.insert(BRIDGE_WORK).values(
+            event_id=None, kind="memory_feed", ordinal=0, platform=PLATFORM,
+            account_key=ACCOUNT, conversation_id=ROOM,
+            payload=_work_payload(5704, absorbed=True)))
+    runner = _runner(store, redis_client, harness)
+    # The production lane claim, not a hand-picked kind filter.
+    work = await runner._claim_next(_COMPREHEND_KINDS)
+    assert work is not None, "a legacy memory_feed row must still be claimable"
+    await runner._execute(work)
+    row = await _finish_state(store, work.id)
+    assert row["state"] == "failed_retained"
+    assert row["result"]["reason"] == "unhandled kind memory_feed"

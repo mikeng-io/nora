@@ -21,10 +21,10 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.domain.models import PersonRef
 from nora.obs.metrics import Metrics
-from nora.testing import FakeMemoryStore, FakeSocialProvider
+from nora.testing import FakeSocialProvider
 from tests.fakes import SinkSender
 
-MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
+MILES = PersonRef(person_id="miles", name="Miles Novak")
 _OK = {"status": "ok", "text": "<social_post>the post</social_post>"}
 _X_ROWS = frozenset({("x", "post"), ("x", "profile"), ("x", "posts"), ("x", "search")})
 
@@ -56,7 +56,7 @@ def _specs(social) -> tuple:
     )
     return ToolRegistry(social=social).specs(
         store=_NoStore(), conversation_id="g1", conversation_type="group",
-        persons=_Persons(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=_Persons(), deliverer=SinkSender(),
         metrics=Metrics(), room=room,
     )
 

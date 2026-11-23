@@ -731,7 +731,7 @@ def _live_inputs() -> tuple[tuple[str, str], ...]:
         s.name: s
         for s in build_tool_specs(
             store=None, conversation_id="g1", conversation_type="group",
-            persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+            persons=persons, deliverer=None, metrics=Metrics(),
             room=room,
             transit_source=None, route_source=None,
             question="點去", context_window=40,

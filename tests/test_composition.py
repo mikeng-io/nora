@@ -122,7 +122,6 @@ async def test_build_dependencies_returns_the_wired_graph(cfg, tmp_path):
     deps = await build_dependencies(cfg)
     assert isinstance(deps, Dependencies)
     assert deps.audit is not None
-    assert deps.memory is not None
     assert deps.persons is not None
     assert deps.metrics is not None
     assert deps.policy is not None
@@ -275,7 +274,7 @@ async def test_the_root_hands_the_loader_the_tool_names_its_gate_needs(cfg, tmp_
     """The catalogue gate's backticked half is inert without `tool_names`, and an inert gate
     that nobody notices is worse than no gate.
 
-    It has to be a tool whose name is an ordinary English word, such as `now` or `about`.
+    It has to be a tool whose name is an ordinary English word, such as `now`.
     Every other native is snake_case, which the STRUCTURAL detector catches on its own, so
     injecting one of those would make this pass whether or not `tool_names` was ever
     handed over.
@@ -288,18 +287,17 @@ async def test_the_root_hands_the_loader_the_tool_names_its_gate_needs(cfg, tmp_
     conduct = d / "rooms" / "conduct.md"
     conduct.write_text(conduct.read_text().replace(
         "# Ground your understanding",
-        "Reach for `about` when you need to.\n\n# Ground your understanding", 1))
+        "Reach for `now` when you need to.\n\n# Ground your understanding", 1))
     with pytest.raises(StartupError, match="may not name a tool"):
         await build_dependencies(override_config(cfg, {"doctrine.dir": d}))
 
 
 async def test_the_nora_aipeer_id_is_reserved_and_no_human_may_hold_it(cfg):
-    """Honcho v2 corpus-safety: the aiPeer id is Nora's self-model peer. A human mapped to it
-    would feed under it and merge IRREVERSIBLY into her card (Honcho keeps conclusions,
-    not text). Setting `honcho.ai_peer` to an existing person id ("miles" in this fixture)
-    must refuse to start, not silently corrupt the corpus."""
+    """The aiPeer id is `[agent].name`, Nora's own person id. A human mapped to it
+    would be read as her. Setting `agent.name` to an existing person id ("miles" in
+    this fixture) must refuse to start, not silently merge the two."""
     with pytest.raises(StartupError, match="reserved for Nora"):
-        await build_dependencies(override_config(cfg, {"honcho.ai_peer": "miles"}))
+        await build_dependencies(override_config(cfg, {"agent.name": "miles"}))
 
 
 async def test_no_enabled_platform_refuses_to_start(cfg):
@@ -663,10 +661,10 @@ async def test_remind_writes_a_real_row_through_the_registry_the_root_builds(cfg
         # silently fell back to its defaults would ignore every operator value.
         assert registry._caps == ReminderCaps(**cfg.reminders.model_dump())
 
-        miles = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
+        miles = PersonRef(person_id="miles", name="Miles")
         specs = registry.specs(
             store=deps.audit, conversation_id="g1", conversation_type="group",
-            persons=deps.persons, honcho=deps.memory, deliverer=None,
+            persons=deps.persons, deliverer=None,
             metrics=deps.metrics,
             room=Room(platform="signal", conversation_id="g1", roster_source=None,
                       persons=deps.persons, tagger=miles),
@@ -1337,7 +1335,7 @@ async def test_the_culture_adaptor_is_wired_with_its_grant_and_its_OWN_room(
 async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_path):
     """The property the grant exists for, measured at the seam rather than inferred from it:
     `RegistryToolSource.build` with the culture adaptor's own name, key and grant returns
-    the room-scoped verbs (`group_members`, `ask_memory`) over a room with a real platform
+    the room-scoped verbs (`group_members`, `lookup_person`) over a room with a real platform
     rather than the empty one.
 
     Without the scope-keyed resolution this returns the same NAMES built against
@@ -1376,11 +1374,11 @@ async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_p
     names = {
         getattr(t, "tool_name", None) or getattr(t, "__name__", "") for t in built
     }
-    # `[memory.index]` is off here: the Honcho memory surface, so the graph's
-    # `memory_search` is granted and not built (DEC-316).
+    # `[memory.index]` is off here, so the graph's `memory_search` is granted and
+    # not built (DEC-316).
     expected = set(culture.tools) - GRAPH_MEMORY_TOOLS
     assert names == expected, sorted(expected - names)
-    assert "group_members" in names and "ask_memory" in names
+    assert "group_members" in names and "lookup_person" in names
     room = captured["room"]
     assert room.platform == "signal", "the verbs were built over the EMPTY room"
     assert room._roster_source is not None, "no roster: every verb is unavailable"
@@ -1738,7 +1736,7 @@ async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withho
     assert "character_read" not in off.cognition_runner._runner._read_only_tools
     assert "character_read" in with_culture.cognition_runner._runner._read_only_tools
     wired = off.cognition_runner._runner._read_only_tools
-    assert {"note_read", "about", "where_been", "event_search"} <= wired
+    assert {"note_read", "where_been", "event_search"} <= wired
     assert {"rollup_read", "standing_read"} <= wired                    # DEC-246
     assert "memo_read" in wired                                         # DEC-306
     assert "social_read" in wired       # a SELECT, so no flag
@@ -2116,7 +2114,7 @@ async def test_cognition_holds_the_memory_surface_the_flag_selects(cfg, tmp_path
     the session's memory verbs exactly as it picks every other occasion's.
     The session's `wired` set (its guard's read-only set) and what it BUILDS
     agree, and neither holds the other surface."""
-    from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS
+    from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, OFF_GRAPH_ONLY_TOOLS
 
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(
@@ -2126,8 +2124,8 @@ async def test_cognition_holds_the_memory_surface_the_flag_selects(cfg, tmp_path
     assert runner is not None
     unit, home = next(iter(runner._home_rooms.items()))
     built = {t.tool_name for t in runner._read_tools_for(unit, [home])}
-    on, off = (GRAPH_MEMORY_TOOLS, HONCHO_MEMORY_TOOLS) if graph else (
-        HONCHO_MEMORY_TOOLS, GRAPH_MEMORY_TOOLS)
+    on, off = (GRAPH_MEMORY_TOOLS, OFF_GRAPH_ONLY_TOOLS) if graph else (
+        OFF_GRAPH_ONLY_TOOLS, GRAPH_MEMORY_TOOLS)
     assert ("memory_search" in built) is graph
     assert not built & off and not runner._read_only_tools & off
     assert built & on and runner._read_only_tools & on
@@ -2170,7 +2168,7 @@ async def test_markdown_identity_reaches_live_tools_and_cognition_writers(cfg, t
                         delivery_status=DeliveryStatus.SENT, raw_json=None)
     tools = {t.name: t.call for t in registry.specs(
         store=deps.audit, conversation_id="g1", conversation_type="group",
-        persons=deps.persons, honcho=None, deliverer=None, metrics=deps.metrics,
+        persons=deps.persons, deliverer=None, metrics=deps.metrics,
         room=Room(platform="signal", conversation_id="g1", roster_source=None,
                   persons=deps.persons), transcript=(own,),
     )}

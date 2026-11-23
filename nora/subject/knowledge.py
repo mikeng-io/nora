@@ -3,7 +3,7 @@
 The seam this module covers is the *stores*: the data store, the state store
 and the fake store are things you configure BEHIND her. A case saying what she
 knows is stating INPUT. It is not substituting a collaborator: seeding fakes
-(`FakeRecordStore`, `FakeMemoryStore`, `InMemoryNoteStore`) into a
+(`FakeRecordStore`, `InMemoryNoteStore`) into a
 hand-assembled pipeline would measure a graph nothing deploys. This writes the
 same rows into the SAME Postgres the subject was composed against, through the
 same store classes production runs, and then gets out of the way.
@@ -240,20 +240,6 @@ class Knowledge:
 
     #: How long ago the standing was written; it renders as an AGE.
     standing_age_hours: float | None = None
-
-    #: What she has CONCLUDED about a person, keyed by Honcho peer id.
-    #:
-    #: Written through `MemoryStore.conclude` — production's own write lane, the
-    #: one the `remember` tool uses, over the same (observer, observed) pair
-    #: `representation` reads back. So this is not a substitution: it is the
-    #: write side of the tier whose read side the turn uses.
-    #:
-    #: The key is the peer id, which IS the person id
-    #: (`PersonRef.honcho_peer_id`). A key that is no person seeds a conclusion
-    #: nothing can read: `representation` looks up `target or peer_id` and an
-    #: unknown peer comes back reachable-and-knowing-nothing, so the case would
-    #: grade a prompt missing the very block it is about.
-    conclusions: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     #: OTHER rooms of the same workspace, each with its own transcript and
     #: standing. Empty for every single-room case, which is most of them.
@@ -747,51 +733,6 @@ async def know(
         if msg.label is not None:
             rows[msg.label] = row_id
 
-    # WHAT SHE HAS CONCLUDED, through the production write lane.
-    #
-    # Fail-LOUD rather than best-effort: `conclude` answers False on any
-    # failure because the `remember` tool must never take a reply path down
-    # with it. Here the opposite is true — a conclusion that did not land makes
-    # the `-known` half of a twin pair identical to its `-unknown` half, and
-    # the pair reports that the knowledge cut works having cut nothing.
-    known = set(await subject.deps.persons.all_ids()) if hasattr(
-        subject.deps.persons, "all_ids"
-    ) else {_KNOWN_PERSON, subject.cfg.honcho.ai_peer}
-    for peer, lines in knowledge.conclusions.items():
-        if peer not in known:
-            # LOUD. A conclusion under an id that is nobody is written and
-            # unreadable, which is the quietest way for a knowledge-cut twin
-            # pair to agree while asserting that it disagrees.
-            raise ValueError(
-                f"conclusion keyed {peer!r}, which is not a person this "
-                f"subject knows ({sorted(known)}); it would be written and "
-                "never read"
-            )
-        # Honcho requires `target` to already exist as a peer in this
-        # workspace, and the sandbox's workspace (`_baseline()`'s `-eval`
-        # sibling) is not production's — so unlike production, where a peer
-        # is always created by a real `feed()` call before anyone concludes
-        # about them, nothing here may have created `peer` yet. Skipping this
-        # 404s the write and this loop's fail-loud check misreports it as
-        # Honcho refusing a well-formed call.
-        #
-        # ROUTED by the room (DEC-214), exactly as the `remember` tool in a
-        # turn in this room would be: the room's unit decides the Honcho
-        # workspace and the named scope its reads look in, so a seed written
-        # anywhere else would be written and never read.
-        await subject.deps.memory.ensure_peer(
-            peer_id=peer, conversation_id=conversation_id,
-        )
-        for line in lines:
-            if not await subject.deps.memory.conclude(
-                peer_id=subject.cfg.honcho.ai_peer, content=line, target=peer,
-                conversation_id=conversation_id,
-            ):
-                raise RuntimeError(
-                    f"could not write a conclusion for {peer!r} — Honcho is "
-                    f"at {subject.cfg.honcho.base_url} and did not accept it"
-                )
-
     # The OTHER rooms of this workspace, each written into its own room.
     for extra in knowledge.rooms:
         extra_room = (extra.platform, extra.conversation_id)
@@ -861,9 +802,7 @@ async def know(
                     continue
                 await notes.create(
                     # The ROOM'S unit, resolved from its policy entry at
-                    # `obtain()` — not `honcho.workspace_id`, which is
-                    # Honcho's per-deployment workspace and in production is
-                    # not the unit of any room.
+                    # `obtain()`.
                     unit=subject.unit,
                     title=note.title,
                     description=note.description,

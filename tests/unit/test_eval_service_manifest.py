@@ -94,13 +94,11 @@ def test_a_journey_world_plan_carries_its_declared_external_recording(tmp_path):
     """`external` is the plan's embedded version-1 recording, carried into
     the `JourneyServices` the live-clock drive opens."""
     recording = {"version": 1,
-                 "bindings": {"honcho.base_url": "memory",
+                 "bindings": {"platforms.discord.base_url": "discord",
                               "platforms.signal.base_url": "bridge"},
                  "services": {
-                     "memory": [{"method": "GET",
-                                 "path": "/v3/workspaces/w/peers/p/card",
-                                 "response": {"status": 200,
-                                              "json": {"peer_card": []}}}],
+                     "discord": [{"method": "GET", "path": "/v1/groups",
+                                  "response": {"status": 200, "json": []}}],
                      "bridge": [{"method": "GET", "path": "/v1/self",
                                  "response": {"status": 200,
                                               "json": {"primary": "+8521"}}}]}}
@@ -115,7 +113,7 @@ def test_a_journey_world_plan_carries_its_declared_external_recording(tmp_path):
     from nora.subject.recorded_services import RecordedServices
 
     assert isinstance(plan.external, RecordedServices)
-    assert plan.external.bindings == {"honcho.base_url": "memory",
+    assert plan.external.bindings == {"platforms.discord.base_url": "discord",
                                     "platforms.signal.base_url": "bridge"}
 
 
@@ -165,7 +163,7 @@ def test_an_explicit_recorded_kind_stays_the_positional_recording(tmp_path):
     {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
      "external": "not-a-recording"},                                   # not an object
     {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
-     "external": {"version": 2, "bindings": {"honcho.base_url": "m"},
+     "external": {"version": 2, "bindings": {"platforms.discord.base_url": "m"},
                   "services": {"m": []}}},                             # not version 1
     {"kind": "journey_world", "policy": "p", "judges": ["a", "b"],
      "external": {"version": 1, "bindings": {"llm.base_url": "model"},

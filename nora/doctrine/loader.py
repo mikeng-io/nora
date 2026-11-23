@@ -117,13 +117,9 @@ CHANGE_POLICIES = ("operator-only", "agent-may-edit")
 
 # A bare snake_case identifier is how a tool catalogue is written, and an
 # `identity` or `conduct` file has no other reason to contain one. Structural on
-# purpose: it needs no list of today's tools, so it cannot go stale, and it
-# already covers six of the eight natives. `tool_names` on the store closes the
-# other two (`now`, `about` — ordinary English words, only detectable as
-# backticked code).
-#
-# `about` stays an English word rather than a snake_case name (DEC-39): the
-# snake_case name collapsed tool selection onto `lookup_person`.
+# purpose: it needs no list of today's tools, so it cannot go stale.
+# `tool_names` on the store closes the rest (`now` — an ordinary English word,
+# only detectable as backticked code).
 _SNAKE_CASE_RE = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
 
 # The kind taxonomy, read through RFC 2119. A `constraint` is a MUST,
@@ -414,8 +410,7 @@ def check_kind_boundaries(
     snake_case identifier is how a catalogue is written and an authored file has
     no other reason to carry one, so it needs no list of today's tools and
     cannot rot. `tool_names` adds the tools whose names are also ordinary
-    English (`now`, `about`), which are only recognisable as code when
-    backticked.
+    English (`now`), which are only recognisable as code when backticked.
     """
     if section.kind not in ("identity", "conduct"):
         return

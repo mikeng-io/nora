@@ -3,7 +3,7 @@
 
 Four tables and no writer yet. A note is TRACKED UNCERTAINTY, scoped to a
 WORKSPACE — never a settled claim (that is a `fact`, with a warrant) and never a
-conclusion about a person (Honcho's `(observer, observed)` axis). The tables land
+conclusion about a person (the graph's `claim` tier, keyed by asserter and subject). The tables land
 ahead of the tools and the store so both have a sink that already exists and is
 already tested when they arrive — see `nora/domain/notes.py` for the dataclasses
 these columns must hold every instance of, and reject every instance they forbid.

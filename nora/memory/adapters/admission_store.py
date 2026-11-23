@@ -17,6 +17,7 @@ from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, ENTITY, INTENTION
 from nora.infra.sql.cognitive_graph_store import (
     AdmissionTopic,
     GraphWriteError,
+    RowData,
     SqlCognitiveGraph,
     dependent_claims,
 )
@@ -29,6 +30,7 @@ from nora.memory.adapters.delivery_arbitration import (
     lock_deliveries,
 )
 from nora.memory.adapters.lesson_tally import rebuild_lesson_tally
+from nora.memory.adapters.review_grades import check_grade
 from nora.memory.app.condition_matcher import ConditionMatcher
 from nora.memory.domain.admission import Admitted, Refusal, fields
 from nora.memory.domain.admission_ports import (
@@ -108,8 +110,14 @@ class SqlAdmissionStore:
         )
 
         is_lesson = isinstance(data, CreateClaim) and data.part == "lesson"
+        grade_target: RowData | None = None
 
         async def before_write(conn: AsyncConnection) -> None:
+            nonlocal grade_target
+            if isinstance(data, CreateClaim) and data.part == "grade":
+                grade_target = await check_grade(conn, unit=context.unit, proposal=data)
+                row["asserted_at"] = sa.func.clock_timestamp()
+                return
             await conn.execute(sa.select(sa.func.pg_advisory_xact_lock(
                 sa.func.hashtextextended(f"lesson:unit:{context.unit}", 0),
             )))
@@ -140,6 +148,13 @@ class SqlAdmissionStore:
                 )
             if revisions:
                 await _dependency(conn, stored, row, context)
+            if (isinstance(data, CreateClaim) and data.grade == "weakened"
+                    and grade_target is not None and row["exposure"] != "operator"):
+                at = (await conn.execute(sa.select(sa.func.now()))).scalar_one()
+                await SqlGraphStimuli.append_in(conn, GraphStimulus(
+                    context.unit, "dependency", grade_target["id"], at, "review",
+                    room=grade_target["origin_room"], occurrence=stored.id,
+                ))
 
         try:
             await self._graph.write_admission(
@@ -150,7 +165,9 @@ class SqlAdmissionStore:
                 retire=isinstance(decision.proposal, Retire),
                 merge=(base.id, survivor.id) if base is not None and survivor is not None else None,
                 topics=topics,
-                before_write=before_write if is_lesson or context.occasion == "operator" else None,
+                before_write=before_write if is_lesson or context.occasion in (
+                    "operator", "review",
+                ) else None,
                 after_write=after_write if derive_about or revisions or scheduled else None,
             )
         except GraphWriteError as exc:
@@ -328,6 +345,7 @@ def _serialize(
     if isinstance(proposal, CreateClaim):
         planes.update(
             part=proposal.part,
+            grade=proposal.grade,
             content=proposal.content,
             prediction=proposal.prediction,
             window_end=proposal.window_end,

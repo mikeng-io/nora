@@ -22,10 +22,10 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.domain.models import PersonRef
 from nora.obs.metrics import Metrics
-from nora.testing import FakeMemoryStore, FakeSocialProvider
+from nora.testing import FakeSocialProvider
 from tests.fakes import SinkSender
 
-MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
+MILES = PersonRef(person_id="miles", name="Miles Novak")
 _OK = {"status": "ok", "text": "<social_post>a profile</social_post>"}
 _ROWS = frozenset({
     ("linkedin", "profile"), ("linkedin", "experience"), ("linkedin", "posts"),
@@ -60,7 +60,7 @@ def _specs(linkedin, **turn) -> tuple:
     )
     return ToolRegistry(social=linkedin, linkedin=linkedin).specs(
         store=_NoStore(), conversation_id="g1", conversation_type="group",
-        persons=_Persons(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=_Persons(), deliverer=SinkSender(),
         metrics=Metrics(), room=room, **turn,
     )
 
@@ -247,7 +247,7 @@ async def test_switched_off_is_not_set_up_and_sends_nothing(tool, kwargs):
                 persons=_Persons(), tagger=MILES)
     specs = ToolRegistry(social=x_only, linkedin=None).specs(
         store=_NoStore(), conversation_id="g1", conversation_type="group",
-        persons=_Persons(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=_Persons(), deliverer=SinkSender(),
         metrics=Metrics(), room=room,
     )
     out = await next(s.call for s in specs if s.name == tool)(**kwargs)

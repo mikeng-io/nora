@@ -34,12 +34,14 @@ from nora.infra.transit import TransitClient
 from nora.obs.logging import bind_tag_id, clear_tag_id, setup_logging
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
-from nora.testing import FakeMemoryStore, FakeRosterSource
+from nora.testing import FakeRosterSource
+from nora.testing.note_store import InMemoryNoteStore
 from tests.builders import make_logging_config
 from tests.fakes import SinkSender
 from tests.test_doctrine_loader import write
 
 GROUP = "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="
+UNIT = "household"
 NORA = frozenset({"+85290000100"})
 MILES = frozenset({"+85290000101"})
 TYLER = frozenset({"+85290000102"})
@@ -156,17 +158,16 @@ def wiring(tmp_path, restore_logging):
         roster_source=FakeRosterSource(groups={GROUP: (MILES, TYLER, NORA)}),
         persons=persons, self_ids=NORA,
     )
+    notes = InMemoryNoteStore()
     tools = build_tools(
         store=_Store(), conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(conclusions={"miles_novak": [
-            "Miles is from Ridgeline"
-        ]},
-                                           cards={"miles_novak": ["likes espresso"]}),
+        persons=persons,
         deliverer=deliverer, metrics=metrics, room=room, question="邊個係阿豹",
         transit_source=_UNREACHABLE_TRANSIT, context_window=40,
+        notes=notes, note_unit=lambda _platform, _cid: UNIT,
     )
     return {"tools": {t.tool_name: t for t in tools}, "log": log, "metrics": metrics,
-            "sink": sink}
+            "sink": sink, "notes": notes}
 
 
 class _FakeAudit:
@@ -209,7 +210,7 @@ async def test_a_turn_that_calls_lookup_person_says_so_in_the_log(wiring):
 
 
 async def test_every_tool_leaves_exactly_one_line_naming_itself(wiring):
-    """All seven, not just the one that was grepped for. The failure is not
+    """All six, not just the one that was grepped for. The failure is not
     "lookup_person is quiet", it is "a tool is not expected to say anything",
     and a test covering one tool would leave the others free to regress.
     """
@@ -218,14 +219,14 @@ async def test_every_tool_leaves_exactly_one_line_naming_itself(wiring):
     await _call(tools["load_transcript"], limit=40)
     await _call(tools["group_members"])
     await _call(tools["lookup_person"], name="阿豹")
-    await _call(tools["about"], person="俊爺")
     await _call(tools["calculate"], expression="1485/7")
     await _call(tools["send_reply"], text="七點半")
     named = [record["tool"] for record in _tool_lines(wiring["log"])]
     assert sorted(named) == sorted([
         "now", "load_transcript", "group_members",
-        "lookup_person", "about", "calculate", "send_reply",
+        "lookup_person", "calculate", "send_reply",
     ])
+    assert len(named) == 6
 
 
 async def test_no_calculate_line_carries_the_expression_the_model_wrote(wiring):
@@ -285,14 +286,14 @@ async def test_a_clamped_limit_is_reported_as_the_clamped_value(wiring):
 async def test_no_tool_line_carries_a_phone_number_or_an_aci(wiring):
     """The log leaves the process unscanned — nothing redacts identifiers on
     the way out.
-    `lookup_person` and `about` take a model-supplied string that has arrived
-    as a phone number or an ACI before (`_asked_about` exists for that) — so
-    both are called here with one."""
+    `lookup_person` takes a model-supplied string that has arrived as a phone
+    number or an ACI before (`_asked_about` exists for that) — so it is called
+    here with each."""
     tools = wiring["tools"]
     await _call(tools["lookup_person"], name="+85290000101")
     await _call(tools["lookup_person"], name="+85260000000")
     await _call(tools["lookup_person"], name="+85290000102")
-    await _call(tools["about"], person="a1000001-0000-4000-8000-000000000001")
+    await _call(tools["lookup_person"], name="a1000001-0000-4000-8000-000000000001")
     # ...and the remaining three, so the scan below covers the whole file
     # rather than the three lines that happened to be written. `now` emits an
     # ISO timestamp with a `+08:00` offset, which is the one detail in here
@@ -305,20 +306,41 @@ async def test_no_tool_line_carries_a_phone_number_or_an_aci(wiring):
     assert "+8529" not in text and "+8526" not in text
 
 
-async def test_no_tool_line_carries_a_conclusion_or_a_transcript_body(wiring):
-    """Counts and statuses only. A conclusion is distilled from what somebody
-    actually said about a person, and a transcript body is the group's own
-    words — neither becomes safe by being written to a different file."""
+async def test_no_tool_line_carries_a_transcript_body_or_a_reply(wiring):
+    """Counts and statuses only. A transcript body is the group's own words and a
+    reply is hers — neither becomes safe by being written to a different file."""
     tools = wiring["tools"]
-    await _call(tools["about"], person="俊爺")
     await _call(tools["load_transcript"], limit=40)
     await _call(tools["send_reply"], text="今晚七點半得")
     text = wiring["log"].read_text()
-    for secret in ("Miles is from Ridgeline", "likes espresso", "去邊食", "你屋企",
-                   "今晚七點半得"):
+    for secret in ("去邊食", "你屋企", "今晚七點半得"):
         assert secret not in text, secret
     # ...and the reply's LENGTH is there, which is the thing that is safe.
     assert _tool_lines(wiring["log"])[-1]["chars"] == 6
+
+
+async def test_no_tool_line_carries_what_a_memory_read_returned(wiring):
+    """The memory half of the same rule. What `note_read` hands the model is a
+    note body distilled from what people said, and it is as unsafe in a log nobody
+    scans as a transcript line is. Both halves are asserted: the RESULT carries the
+    marker (so the read really reached it) and the LOG does not (so absence means
+    something)."""
+    marker = "Miles is from Ridgeline and likes espresso"
+    await wiring["notes"].create(
+        unit=UNIT, title="Miles", description="where he is from",
+        uncertainty="not settled yet", closing_condition="somebody decides",
+        established_in=GROUP, body=f"## Decided\n## Open\n- {marker} [501]",
+        established_by="tag:miles", now_ms=1_770_000_000_000, anchor_date=20261011,
+    )
+
+    result = await _call(wiring["tools"]["note_read"], title="Miles")
+
+    assert result["status"] == "ok"
+    assert marker in json.dumps(result, ensure_ascii=False)
+    line = _tool_lines(wiring["log"])[-1]
+    assert line["tool"] == "note_read" and line["status"] == "ok"
+    text = wiring["log"].read_text()
+    assert "Ridgeline" not in text and "espresso" not in text
 
 
 # ---- the tag_id bridge -------------------------------------------------------

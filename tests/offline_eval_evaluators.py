@@ -63,14 +63,6 @@ class NoRedundantRead:
         return Result(True)
 
 
-class HonchoFedOncePerReply:
-    def evaluate(self, t) -> Result:
-        delivered = bool(t.sent)
-        expected = 1 if delivered else 0
-        ok = t.honcho_feeds == expected
-        return Result(ok, f"honcho fed {t.honcho_feeds} time(s), expected {expected}")
-
-
 # A turn ending in one of these is an ERROR for eval purposes, never a correct silence
 # (see `evaluate`).
 #
@@ -224,8 +216,8 @@ UNMEASURABLE_LIVE = frozenset({"media_fetch"})
 # - LOCATION: "where am I" (`where_is`, live GPS) vs "where's my work" (`saved_places`, a
 #   remembered label) vs "what's at this place" (`place_info`) vs "how do I get there"
 #   (`transit`/`route`) — four short questions, four different tools.
-# - MEMORY: `about` / `ask_memory` / `search_memory` are three verbs over the same store
-#   and the model picks among them on phrasing alone.
+# - MEMORY: the write lane (`remember`) vs the note lane (`note_create`), told apart by
+#   what the person asked for.
 SEED_INTENT_GRAPH = IntentGraph(
     [
         # local HK tools vs the generic web
@@ -250,20 +242,16 @@ SEED_INTENT_GRAPH = IntentGraph(
         ("place_info", "transit"),
         ("transit", "route"),
         ("place_info", "route"),
-        # the memory verbs — READ-READ edges DELIBERATELY ABSENT:
-        # `about`/`ask_memory`/`search_memory`/`search_knowledge` are different READ verbs
-        # over the SAME store, and a model that reaches for a raw-message search
-        # before/after a profile read is doing a normal multi-step lookup, not a routing
-        # error. An `(about, search_memory)` edge would grade that reasonable behaviour as
-        # a sibling leak. Only the WRITE lane is a true routing fork: answering 記唔記得 by
-        # WRITING, or a 記低 ask by reading — the pair these edges police.
+        # the memory verbs — READ-READ edges DELIBERATELY ABSENT: a model that reaches
+        # for a raw-message search before/after a profile read is doing a normal
+        # multi-step lookup, not a routing error. Only the WRITE lane is a true routing
+        # fork: answering 記唔記得 by WRITING, or a 記低 ask by reading — the pair these
+        # edges police.
         #
-        # the write lane: 「記低」 a settled person-fact, 「記唔記得」 a recall ask, and the note
-        # lane that refuses person facts by design. These edges are what make a recall ask
-        # answered by WRITING — or a 記低 ask answered by reading elsewhere — visible to
-        # NoSiblingLeakage; without them the remember tool could never fail a routing eval
-        # for leaking.
-        ("remember", "about"),
+        # the write lane: 「記低」 a settled person-fact and the note lane that refuses
+        # person facts by design. This edge is what makes a 記低 ask answered by the
+        # note lane visible to NoSiblingLeakage; without it the remember tool could never
+        # fail a routing eval for leaking.
         ("remember", "note_create"),
     ]
 )

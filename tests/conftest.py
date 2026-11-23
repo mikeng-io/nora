@@ -496,9 +496,6 @@ dir = "nora/doctrine"
 language_hint = "yue-Hant-HK"
 reload = "mtime"
 strict = true
-[honcho]
-base_url = "http://honcho.generated:8000"
-workspace_id = "nora"
 [engagement]
 policy = "trigger_text"
 [engagement.trigger]

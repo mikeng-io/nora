@@ -109,6 +109,7 @@ _NOT_A_TRANSCRIPT = {
     # THE HELD TOPIC INDEX — one element per held account, its own words, no message.
     "nora/language/topic_render.py": "renders the topic account index, not a transcript",
     "nora/memory/adapters/graph_row_render.py": "renders scoped Cognitive Graph presentation rows",
+    "nora/memory/adapters/review_blocks.py": "renders the judge's due claims and scoped evidence",
 }
 
 #: The operator's surfaces: a Discord review channel, not a prompt. Exempt from

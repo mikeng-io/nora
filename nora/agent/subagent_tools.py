@@ -14,7 +14,7 @@ or schedules. So the list is one allowlist, derived where the registry can answe
   `document_publish`. `skills` is the model's on-demand know-how and is wired by
   the agent factory, not built here, so it is in `granted_names` for the guard only.
 - `NOT_LOOKUPS` is what is read-only and still not the worker's: every read that
-  leaves the room (`room_list`, `room_read`, `search_memory_workspace`), the
+  leaves the room (`room_list`, `room_read`), the
   social reads, and the reads that only make sense to a live turn.
 - `NEVER` is what must never be held, stated so a test can walk it and so `build`
   can refuse a surface that contains one. It is a CHECK on the allowlist, not the
@@ -53,7 +53,7 @@ ACTS: frozenset[str] = frozenset({
 #: Read-only tools that are still not the worker's.
 NOT_LOOKUPS: frozenset[str] = frozenset({
     # reads that leave the launching room: the worker's reach is one room
-    "room_list", "room_read", "search_memory_workspace",
+    "room_list", "room_read",
     # `memory_search` (DEC-316) reads the memory index across the unit's
     # rooms, so it is not the worker's either
     "memory_search", "memory_read",
@@ -99,7 +99,7 @@ class SubagentToolSource:
     """Builds one job's tools. Holds the process-lifetime collaborators; `build` is per job."""
 
     def __init__(
-        self, *, registry: ToolRegistry, store: Any, persons: Any, honcho: Any,
+        self, *, registry: ToolRegistry, store: Any, persons: Any,
         metrics: Metrics, rosters: Mapping[str, Any] | None = None,
         self_ids: frozenset[str] = frozenset(), access: Any = None,
     ) -> None:
@@ -110,7 +110,6 @@ class SubagentToolSource:
         # The descriptive `Persons` the built tools close over: the selected
         # backend's view — absent under managed, never a stale file answer.
         self._view = access.persons_view() if access is not None else persons
-        self._honcho = honcho
         self._metrics = metrics
         self._rosters = dict(rosters or {})
         self._self_ids = frozenset(self_ids)
@@ -150,7 +149,7 @@ class SubagentToolSource:
         )
         specs = self._registry.specs(
             store=self._store, conversation_id=conversation_id,
-            conversation_type=conversation_type, persons=self._view, honcho=self._honcho,
+            conversation_type=conversation_type, persons=self._view,
             deliverer=None, metrics=self._metrics, room=room, subagent_job=job_id,
         )
         spec = next(s for s in specs if s.name == "computer_run")
@@ -170,7 +169,6 @@ class SubagentToolSource:
         surface = self._registry.surface(
             grant=grant, store=self._store, conversation_id=conversation_id,
             conversation_type=conversation_type, persons=self._view,
-            honcho=self._honcho,
             # No deliverer, ever: nothing the worker holds speaks to anybody.
             deliverer=None, metrics=self._metrics, room=room,
             subagent_job=job_id, checkpoint_sink=checkpoint_sink,

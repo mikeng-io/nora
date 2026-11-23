@@ -14,7 +14,7 @@ from typing import Any
 from nora.access import IdentityAccess
 from nora.domain.identity import BoundAccount, Identifier
 from nora.domain.models import EditTarget, NormalizedMessage, PersonRef, Quote
-from nora.domain.ports import EngageDecision, MemoryHealth
+from nora.domain.ports import EngageDecision
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import CompositePolicy, MentionPolicy, TriggerTextPolicy
 from nora.obs.metrics import Metrics
@@ -28,33 +28,6 @@ TRIGGER = "nora.000"
 ORIGINAL = EditTarget(sent_ts=1)
 
 
-class RecordingMemory:
-    """Records what Honcho would be fed, text and metadata included."""
-
-    def __init__(self) -> None:
-        self.fed: list[dict[str, Any]] = []
-
-    async def ensure_workspace(self) -> None:
-        return None
-
-    async def ensure_peer(self, *, peer_id: str, **_route: str | None) -> None:
-        return None
-
-    async def feed(self, *, peer_id: str, text: str, conversation_id: str = "",
-                   metadata: dict | None = None) -> bool:
-        self.fed.append({"peer_id": peer_id, "text": text, "metadata": metadata})
-        return True
-
-    async def peer_card(self, *, peer_id: str, **_route: str | None) -> list[str]:
-        return []
-
-    async def health(self) -> MemoryHealth:
-        return MemoryHealth(reachable=True)
-
-    async def aclose(self) -> None:
-        return None
-
-
 def _persons() -> Persons:
     """Miles has TWO accounts on one platform — the WhatsApp phone/LID shape."""
     miles = BoundAccount(
@@ -65,7 +38,7 @@ def _persons() -> Persons:
         }),
     )
     return Persons(
-        by_person={"miles": PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")},
+        by_person={"miles": PersonRef(person_id="miles", name="Miles")},
         index={("signal", "+852111"): "miles", ("signal", "lid:111"): "miles"},
         _accounts={("signal", "+852111"): miles, ("signal", "lid:111"): miles},
     )
@@ -88,35 +61,19 @@ def _edit(body: str, *, sender: str = "+852111", ts: int = 5,
     )
 
 
-def _pipeline(store: FakeRecordStore, *, memory: RecordingMemory | None = None,
-              policy: Any = None, metrics: Metrics | None = None,
-              spawned: list | None = None, **kwargs: Any) -> IngestPipeline:
-    def _spawn(coro):
-        # Kept for `_drain` when a test asks to observe the feed; closed
-        # otherwise, as the sibling suite's `lambda c: c.close()` does.
-        if spawned is not None:
-            spawned.append(coro)
-        else:
-            coro.close()
-
+def _pipeline(store: FakeRecordStore, *, policy: Any = None,
+              metrics: Metrics | None = None, **kwargs: Any) -> IngestPipeline:
     return IngestPipeline(
         audit=store,
-        memory=memory or RecordingMemory(),
         access=IdentityAccess.for_files(persons=_persons(), policy=permissive_policy()),
         policy=policy or CompositePolicy([
             MentionPolicy(frozenset({NORA})), TriggerTextPolicy(TRIGGER),
         ]),
         allowlist=permissive_policy(),
         metrics=metrics or Metrics(),
-        spawn=_spawn,
+        spawn=lambda coro: coro.close(),
         **kwargs,
     )
-
-
-async def _drain(spawned: list) -> None:
-    for coro in spawned:
-        await coro
-    spawned.clear()
 
 
 # ── where it lands ───────────────────────────────────────────────────────────
@@ -134,23 +91,19 @@ async def test_an_edit_is_recorded_beside_its_original_not_as_a_new_message():
     assert result.decision is not None and not result.decision.engage
 
 
-async def test_an_unchanged_edit_opens_no_turn_and_feeds_nothing_but_keeps_the_chain():
-    """Same text and mentions (a style-only Signal edit): no correction for
-    Honcho, no turn — but the row IS written when it is newer, because the
-    sender's next edit names THIS edit's timestamp, and leaving it unrecorded
-    would make every later edit an orphan."""
+async def test_an_unchanged_edit_opens_no_turn_but_keeps_the_chain():
+    """Same text and mentions (a style-only Signal edit): no turn — but the row
+    IS written when it is newer, because the sender's next edit names THIS
+    edit's timestamp, and leaving it unrecorded would make every later edit an
+    orphan."""
     store = FakeRecordStore()
-    memory = RecordingMemory()
-    spawned: list = []
     metrics = Metrics()
     await store.append(
         message=_msg("@nora hi", mentions=frozenset({NORA})), person_id="miles",
     )
-    pipe = _pipeline(store, memory=memory, spawned=spawned, metrics=metrics)
+    pipe = _pipeline(store, metrics=metrics)
     style_only = await pipe.run(message=_edit("@nora hi", ts=5, mentions=frozenset({NORA})))
-    await _drain(spawned)
     assert style_only.decision is None
-    assert memory.fed == []
     assert [e["ts"] for e in store.edits] == [5]
     assert metrics.get("nora_ingest_outcomes_total", outcome="edit_unchanged") == 1
 
@@ -209,22 +162,16 @@ async def test_a_skewed_clock_edit_cannot_let_a_redelivery_bring_back_old_text()
     """Phone edits at 1000 (v1); a desktop 200 ms behind edits v1 at 800
     (v2, admitted by the waiver). Signal then redelivers the phone's edit.
     Judged against the version SHOWN (800) it would look newer and resurrect
-    v1, fed to Honcho as a correction. Judged against the newest clock on
+    v1. Judged against the newest clock on
     record, and by its timestamp already being there, it is stale."""
     store = FakeRecordStore()
-    memory = RecordingMemory()
-    spawned: list = []
     await store.append(message=_msg("v0", ts=100), person_id="miles")
-    pipe = _pipeline(store, memory=memory, spawned=spawned)
+    pipe = _pipeline(store)
     await pipe.run(message=_edit("v1", ts=1000, target=EditTarget(sent_ts=100)))
     await pipe.run(message=_edit("v2", ts=800, target=EditTarget(sent_ts=1000)))
-    await _drain(spawned)
-    fed_before = len(memory.fed)
     await pipe.run(message=_edit("v1", ts=1000, target=EditTarget(sent_ts=100)))
-    await _drain(spawned)
     rows = await store.recent(conversation_id="g1", limit=5)
-    assert rows[0].body == "v2"
-    assert len(memory.fed) == fed_before, "a redelivery must not be fed as a correction"
+    assert rows[0].body == "v2", "a redelivery must not bring back old text"
 
 
 async def test_a_quote_on_another_platform_is_never_re_pointed():
@@ -320,18 +267,14 @@ async def test_an_unattributed_orphan_is_dropped():
 
 async def test_a_redelivered_or_out_of_order_edit_is_stale():
     """The transcript already shows the later text; recording the older one
-    would feed Honcho a stale version as the latest correction."""
+    would show a stale version as the latest one."""
     store = FakeRecordStore()
-    memory = RecordingMemory()
-    spawned: list = []
     metrics = Metrics()
     await store.append(message=_msg("dinner at 7"), person_id="miles")
-    pipe = _pipeline(store, memory=memory, spawned=spawned, metrics=metrics)
+    pipe = _pipeline(store, metrics=metrics)
     await pipe.run(message=_edit("dinner at 9", ts=9))
     await pipe.run(message=_edit("dinner at 8", ts=5))
-    await _drain(spawned)
     assert [e["body"] for e in store.edits] == ["dinner at 9"]
-    assert len(memory.fed) == 1
     assert metrics.get("nora_ingest_outcomes_total", outcome="edit_stale") == 1
 
 
@@ -339,18 +282,14 @@ async def test_a_redelivered_or_out_of_order_edit_is_stale():
 
 
 async def test_an_edit_naming_no_sender_takes_the_originals():
-    """Instagram. Identity — and so the Honcho peer — comes from the message
-    the edit changes."""
+    """Instagram. The edit names no sender; it is recorded beside the message
+    it changes."""
     store = FakeRecordStore()
-    memory = RecordingMemory()
-    spawned: list = []
     await store.append(message=_msg("dinner at 7", message_id="mid.$m"), person_id="miles")
-    await _pipeline(store, memory=memory, spawned=spawned).run(
+    await _pipeline(store).run(
         message=_edit("dinner at 8", sender="", target=EditTarget(message_id="mid.$m")),
     )
-    await _drain(spawned)
     assert [e["body"] for e in store.edits] == ["dinner at 8"]
-    assert [f["peer_id"] for f in memory.fed] == ["miles"]
 
 
 async def test_somebody_elses_edit_by_handle_is_refused():
@@ -401,25 +340,6 @@ async def test_an_edit_of_noras_own_message_is_refused():
     )
     assert store.edits == []
     assert metrics.get("nora_ingest_outcomes_total", outcome="edit_refused") == 1
-
-
-# ── what Honcho hears ────────────────────────────────────────────────────────
-
-
-async def test_honcho_is_fed_a_correction_naming_what_it_first_said():
-    store = FakeRecordStore()
-    memory = RecordingMemory()
-    spawned: list = []
-    await store.append(message=_msg("dinner at 7"), person_id="miles")
-    await _pipeline(store, memory=memory, spawned=spawned).run(
-        message=_edit("dinner at 8", ts=5),
-    )
-    await _drain(spawned)
-    assert memory.fed == [{
-        "peer_id": "miles",
-        "text": "[edited an earlier message; it first said: «dinner at 7»] dinner at 8",
-        "metadata": {"ts": 5, "edit_of_ts": 1},
-    }]
 
 
 # ── whether it opens a turn ──────────────────────────────────────────────────

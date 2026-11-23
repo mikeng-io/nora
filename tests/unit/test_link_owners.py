@@ -41,7 +41,6 @@ from nora.agent.link_owners import (
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.obs.metrics import Metrics
-from nora.testing import FakeMemoryStore
 from nora.testing.external_files import FakeExternalFilesSource, FakeFile
 from tests.fakes import SinkSender
 
@@ -67,7 +66,7 @@ def _built_specs(*, files_wired: bool = True):
     }) if files_wired else None
     return ToolRegistry(external_files=source).specs(
         store=_NoStore(), conversation_id="g1", conversation_type="group",
-        persons=_NoPersons(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=_NoPersons(), deliverer=SinkSender(),
         metrics=Metrics(), room=room,
     )
 

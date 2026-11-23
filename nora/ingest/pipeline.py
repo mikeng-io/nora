@@ -37,7 +37,6 @@ from nora.domain.ports import (
     EngageDecision,
     EngagePolicy,
     MediaObjectStore,
-    MemoryStore,
     RecordStore,
     Transcriber,
 )
@@ -56,7 +55,6 @@ from .stages import external_files as external_files_stage
 from .stages import gate as gate_stage
 from .stages import identity as identity_stage
 from .stages import media as media_stage
-from .stages import memory_feed as memory_feed_stage
 from .stages import quote_target as quote_target_stage
 from .stages import scope as scope_stage
 from .stages import stimulus as stimulus_stage
@@ -167,11 +165,11 @@ class IngestResult:
     # callers that never set it.
     outcome: str = ""
     # Set when durable=True so the caller can persist follow-on obligations
-    # (stimulus/memory_feed run as durable work instead of inline awaits).
+    # (the stimulus runs as durable work instead of an inline await).
     row_id: int | None = None
     person: PersonRef | None = None
     # The admission-time absorption fact (Conversation.absorbed as the canonical
-    # allowlist read it at ingest). A durable caller defers memory/stimulus by
+    # allowlist read it at ingest). A durable caller defers the stimulus by
     # minutes; the fact must travel with the message so a later recheck can
     # tell a room that was never absorbed from one whose policy moved.
     absorbed: bool = True
@@ -187,7 +185,6 @@ class IngestPipeline:
         self,
         *,
         audit: RecordStore,
-        memory: MemoryStore,
         policy: EngagePolicy,
         allowlist: Policy,
         access: IdentityAccess,
@@ -228,7 +225,7 @@ class IngestPipeline:
         itself, inline, because those words were captured synchronously and
         holding them behind a job that may not exist discarded them outright.
         Present, each held blob additionally gets one model pass whose three
-        fields land in `media_objects` and in Honcho, off this path.
+        fields land in `media_objects`, off this path.
 
         `transcriber` is `[speech.stt]`'s wiring state, the same shape as
         `stickers`: `None` (deployment default) records a voice note with a
@@ -244,7 +241,6 @@ class IngestPipeline:
         appends one stimulus row with its cues.
         """
         self._audit = audit
-        self._memory = memory
         self._access = access
         self._policy = policy
         self._allowlist = allowlist
@@ -336,10 +332,10 @@ class IngestPipeline:
             _outcome(m, message, "scope_refused")
             return IngestResult(message=None, decision=None,
                                 outcome="scope_refused")
-        # Whether this room's traffic is absorbed into memory/ambient
-        # processing (Honcho feed, stimulus). `Conversation.absorbed` is the
-        # one definition — a mention-only server-entry channel answers tags
-        # and keeps its transcript without either side effect.
+        # Whether this room's traffic is absorbed into ambient processing
+        # (the stimulus). `Conversation.absorbed` is the one definition — a
+        # mention-only server-entry channel answers tags and keeps its
+        # transcript without it.
         room = self._allowlist.conversation(message.platform, message.conversation_id)
         absorbed = room is not None and room.absorbed
         message = dataclasses.replace(message, admitted_unit=room.unit if room else "")
@@ -376,17 +372,16 @@ class IngestPipeline:
         # stage that returns a new message: the body gains the durable handle
         # for every attachment whose bytes are now Nora's, so the row and the
         # blob it names are committed by the same INSERT. See that module for
-        # why it is inline rather than spawned like `memory_feed`.
+        # why it is inline rather than spawned.
         with span("ingest.media"):
             message = await media_stage.run(
                 message=message, sources=self._media_sources, blobs=self._blobs,
                 media_store=self._media_store, metrics=m,
                 stickers=self._stickers, transcriber=self._transcriber,
                 comprehension=self._comprehension,
-                # `person` is resolved above and rides in ONLY so a spawned
-                # comprehension can be fed to Honcho under the sender's own
-                # peer (D6, mapped senders only). The custody stage neither
-                # resolves identity nor reads it for anything else.
+                # `person` is resolved above and passed on untouched to the
+                # spawned comprehension, which reads nothing from it. The
+                # custody stage neither resolves identity nor reads it.
                 person=person, language=self._language,
             )
         # Shared file links become handles in the record: pure, no network, on
@@ -427,10 +422,10 @@ class IngestPipeline:
         # The STIMULUS, right behind the Record row it names. Inside the
         # guard: a span for a stage that cannot run would claim work that never
         # happened.
-        # Under `durable` these two stages are NOT run inline: the caller
-        # (bridge WorkRunner) persists them as obligations in the same commit
+        # Under `durable` the stimulus is NOT run inline: the caller
+        # (bridge WorkRunner) persists it as an obligation in the same commit
         # that retires the ingest work, so the post-audit crash window cannot
-        # silently lose them. Inline stays the non-bridge behaviour.
+        # silently lose it. Inline stays the non-bridge behaviour.
         if not durable:
             if self._stimulus_wiring is not None and absorbed:
                 with span("ingest.stimulus"):
@@ -439,12 +434,6 @@ class IngestPipeline:
                         person_id=person.person_id if person else None,
                         wiring=self._stimulus_wiring, metrics=m,
                     )
-            with span("ingest.memory_feed"):
-                await memory_feed_stage.run(
-                    message=message, person=person, memory=self._memory,
-                    metrics=m, spawn=self._spawn, absorbed=absorbed,
-                )
-
             decision = await self._decide(message=message, person=person, m=m)
         if decision is None:
             raise AssertionError("gate did not run before the outcome")
@@ -510,9 +499,9 @@ class IngestPipeline:
     ) -> IngestResult:
         """An edit whose original is on record.
 
-        The ambient path's stages, in its order, with three differences:
+        The ambient path's stages, in its order, with two differences:
         the record is a `message_edit` row and is skipped when the text did not
-        change; Honcho is fed a framed correction; and the gate asks whether
+        change, and the gate asks whether
         the edit NEWLY addresses her (`edit_gate`). No standing event: the
         standing fold counts new messages, and an edit is not one.
 
@@ -557,11 +546,6 @@ class IngestPipeline:
                     person_id=person.person_id if person else original.person_id,
                     wiring=self._stimulus_wiring, metrics=m, target=original,
                 )
-        with span("ingest.memory_feed"):
-            await memory_feed_stage.run(
-                message=message, person=person, memory=self._memory, metrics=m,
-                spawn=self._spawn, edited=original, absorbed=absorbed,
-            )
         with span("ingest.gate"):
             decision = await edit_gate_stage.run(
                 message=message, previous=original, policy=self._policy, metrics=m,
@@ -593,7 +577,7 @@ class IngestPipeline:
     async def _run_touch(self, *, message: NormalizedMessage, touch: Touch) -> IngestResult:
         """A reaction or a delete/unsend:
         found, recorded beside its target, raising a stimulus — never a turn,
-        never fed to Honcho, never a transcript line. `touch` decides and
+        never a transcript line. `touch` decides and
         records; this only sequences."""
         m = self._metrics
         with span("ingest.touch"):

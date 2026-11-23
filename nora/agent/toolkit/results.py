@@ -2,16 +2,12 @@ from __future__ import annotations
 
 import itertools
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime, time
 from typing import Any, Literal, Protocol
 
-from nora.agent.egress import scan_reply
 from nora.agent.toolkit.clock import _HKT, _parse_when
 from nora.agent.toolkit.media import _MEDIA_READ
-from nora.domain.external_files import (
-    render_file_links,
-)
 from nora.domain.memo import MemoRevision
 
 log = logging.getLogger("nora.tools")
@@ -117,70 +113,6 @@ _MEMORY_FRAMING = (
 def _memory_result(payload: dict) -> dict:
     """Stamp a memory-bearing tool result with the prefill's own demotion."""
     return {**payload, "untrusted": True, "framing": _MEMORY_FRAMING}
-
-
-def _memory_hits_result(
-    *,
-    hits: Sequence[tuple[str, str]],
-    roster: Mapping[str, str],
-    record: Callable[..., None],
-    partial_view: bool | None,
-    content_checks: bool = True,
-) -> dict:
-    """The shared tail of both memory-search verbs: roster filter, withhold,"""
-    kept: list[dict] = []
-    withheld = 0
-    for peer, content in hits:
-        name = roster.get(peer)
-        if name is None:
-            continue  # only what named people said
-        if scan_reply(content, content_checks=content_checks) is not None:
-            withheld += 1
-            continue
-        # Honcho holds what it was fed, and older rows carry the raw URL:
-        # the handle here, never the link (R-18).
-        kept.append({"who": name, "said": render_file_links(content)})
-    if not kept:
-        # Third state, and it is NOT `nothing_found`. A result set emptied by the
-        # egress filter means the words exist and she may not repeat them — telling
-        # the group nobody said anything would be false, and DEC-95 makes it likelier
-        if withheld:
-            # A DISTINCT status, not `nothing_found` with a note attached: the
-            # model reads `status` first and prose second, so encoding «I found
-            # things I may not repeat» as «nothing was said» leaves the true
-            record("withheld", results=0, withheld=withheld)
-            return {
-                "status": "withheld",
-                "found_but_unquotable": withheld,
-                "note": "I found things but nothing I can repeat back. Say you "
-                "can't quote it. Never say nobody said anything, and "
-                "never paraphrase it into a quote.",
-            }
-        # `nothing_found`, not `ok`. A miss recorded as a success makes hit-rate
-        # unreadable on the counter — the one series that would show her searching
-        # constantly and finding nothing, which is what a broken index or a bad query
-        record("nothing_found", results=0)
-        return {
-            "status": "nothing_found",
-            "note": "I couldn't find anything like that in what's been said "
-            "here. Say so, and don't invent a quote.",
-        }
-    record("ok", results=len(kept))
-    result: dict = {"status": "ok", "results": kept}
-    # `partial_view` is present only on the ROOM verb (a degraded roster is a property of
-    # a room's live view; the unit verb has no view to degrade) — omitted entirely rather
-    # than nulled, so the unit result's shape does not carry a key that could only ever be
-    if partial_view is not None:
-        result["partial_view"] = partial_view
-        # ADR 0015 §3: the note that a partly known room only means that account's
-        # own words don't come back rides on the answer it is about, and only when
-        # it is true.
-        if partial_view:
-            result["note"] = (
-                "I could only see part of this room, so some people's words may "
-                "be missing. A line that is not here may still have been said."
-            )
-    return _memory_result(result)
 
 
 def _with_note(out: Mapping[str, object], notes: Mapping[str, str]) -> dict:

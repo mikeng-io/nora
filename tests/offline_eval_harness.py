@@ -58,7 +58,6 @@ from nora.policy import permissive_policy
 from nora.testing import (
     FakeAdapter,
     FakeAgentRunner,
-    FakeMemoryStore,
     FakeObservationStore,
     FakeRecordStore,
     FakeRosterSource,
@@ -84,9 +83,8 @@ from tests.offline_pipeline import build_offline_pipeline
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCTRINE_DIR = REPO_ROOT / "nora" / "doctrine"
 
-# The one sender `group_event`'s default produces, mapped so the post-reply Honcho
-# feed (which requires a resolved `ctx.tagger`, `nora/engagement/stages/feedback.py`)
-# actually fires — matches `tests/integration/harness.py`'s own default identity.
+# The one sender `group_event`'s default produces, mapped to match
+# `tests/integration/harness.py`'s own default identity.
 _IDENTITY_TOML = (
     '[persons.miles_novak]\nname = "Miles"\n'
     '[[persons.miles_novak.signal]]\nphone = "+852111"\n'
@@ -135,7 +133,6 @@ class Trajectory:
     tool_calls: list[str] = field(default_factory=list)
     sent: list[str] = field(default_factory=list)
     reply: str | None = None
-    honcho_feeds: int = 0
     prefill_sufficient: bool = True
     # HOW the agent loop ended, read back off `nora_llm_stop_reason_total`
     # (None when no stop reason was recorded).
@@ -241,20 +238,17 @@ def load_cases(path: Path | str) -> list[Case]:
 
 
 async def _drain(background) -> None:
-    """Await every background task spawned so far — ambient memory-feeds,
-    spawned tags, AND `EngagementPipeline`'s post-reply exchange feed all land
-    in the same shared `BackgroundTasks` (`EngagementPipeline` takes an injected
-    `spawn`; `tests.offline_pipeline.build_offline_pipeline` wires both
-    pipelines' spawns to this one `background.spawn`) — including ones spawned
-    by tasks that are themselves still in flight.
+    """Await every background task spawned so far: both pipelines' spawns are
+    wired to this one `background.spawn` by
+    `tests.offline_pipeline.build_offline_pipeline`, including tasks spawned by
+    tasks that are themselves still in flight.
 
     Mirrors `tests/integration/harness.py::Harness.drain` exactly (same
     `asyncio.sleep(0)`-after-`gather` shape, for the same reason: a task's own
     coroutine can be reported `done()` before its `add_done_callback` discard
     runs, since done-callbacks are delivered via `call_soon` one loop tick
     later). Deliberately NOT `BackgroundTasks.cancel_all()` — that cancels
-    outstanding tasks rather than letting them finish, which would lose the
-    post-reply Honcho feed `Trajectory.honcho_feeds` depends on.
+    outstanding tasks rather than letting them finish.
     """
     while background._tasks:
         pending = list(background._tasks)
@@ -265,13 +259,13 @@ async def _drain(background) -> None:
 # The counters that carry a per-tool `tool` label, so a live call's tool NAME can
 # be read back. `nora.agent.tools` does NOT record every tool through one series:
 # native tools use `nora_tool_calls_total{tool,status}` (`_record`), but the
-# room/memory tools — group_members, lookup_person, about, ask_memory,
-# search_memory — use `nora_room_lookups_total{tool,status}` (`_record_room`), a
+# room tools — group_members, lookup_person — use
+# `nora_room_lookups_total{tool,status}` (`_record_room`), a
 # SEPARATE series (`tests/test_tools.py::test_the_new_counter_never_double_counts_a
 # _room_scoped_tool` pins the split, asserting `nora_tool_calls_total == 0` and
-# `nora_room_lookups_total == 3` for a room tool). Reading only the first would be
-# BLIND to the whole MEMORY cluster of `SEED_INTENT_GRAPH`, silently false-PASSing
-# a `NoSiblingLeakage` leak into `about`/`ask_memory`. `media_fetch` records
+# `nora_room_lookups_total == 2` for a room tool). Reading only the first would be
+# BLIND to the room tools of `SEED_INTENT_GRAPH`, silently false-PASSing
+# a `NoSiblingLeakage` leak into them. `media_fetch` records
 # `nora_media_fetch_total` which carries NO `tool` label and so cannot be
 # reconstructed by name — it is deliberately not an intent-graph node, and
 # `evals.evaluators.UNMEASURABLE_LIVE` + its guard test fail closed if one is added.
@@ -506,11 +500,10 @@ async def run_case(
         persons = load_persons(identity_path)
 
         audit = FakeRecordStore()
-        memory = FakeMemoryStore()
         if seed is not None:
-            # Production-shape start state: real transcript rows + real Honcho
-            # read surfaces, so the model's prompt LOOKS like production's
-            # without any of this run's writes leaving the fakes. Rows are
+            # Production-shape start state: real transcript rows, so the model's
+            # prompt LOOKS like production's without any of this run's writes
+            # leaving the fakes. Rows are
             # seeded through the store's append-shaped in-memory list; they
             # must be transcript rows already remapped onto the eval room
             # (`_EVAL_GROUP_ID`), which `build_production_seed` does.
@@ -529,8 +522,6 @@ async def run_case(
                     "quoted_ts": row.quoted_ts, "raw_json": row.raw_json,
                     "media_json": row.media_json,
                 })
-            memory = FakeMemoryStore(cards=dict(seed.cards),
-                                 conclusions=dict(seed.conclusions))
         # The note/standing tiers, gated the same way `nora.app.
         # composition.build_dependencies` gates them — `cfg` here is the same
         # shipped `config.toml`/`config.example.toml` production reads, so a
@@ -610,7 +601,7 @@ async def run_case(
         )
         try:
             dispatcher, _engagement, background, trigger = build_offline_pipeline(
-                cfg, adapter=adapter, audit=audit, memory=memory,
+                cfg, adapter=adapter, audit=audit,
                 access=IdentityAccess.for_files(persons, permissive_policy()),
                 doctrine_store=doctrine_store, runner=runner, metrics=metrics,
                 tool_registry=tool_registry, roster_source=roster,
@@ -654,11 +645,6 @@ async def run_case(
         finally:
             await audit.aclose()
 
-        # HER feeds, counted by PEER rather than by a text prefix: Honcho takes
-        # one-speaker-per-peer streams (DEC-36), so no `"[Nora]"` prefix exists
-        # anywhere in `nora/` and a prefix count would be structurally 0.
-        # Vacuously true while nothing delivers on this path.
-        feeds = len([f for f in memory.fed if f[0] == cfg.honcho.ai_peer])
         sent = list(adapter.texts)
         # Live mode has no script to read tool intent from — reconstruct it from
         # what the tools actually recorded this run (see the helper's caveat).
@@ -687,7 +673,6 @@ async def run_case(
             tool_calls=tool_calls,
             sent=sent,
             reply=sent[-1] if sent else None,
-            honcho_feeds=feeds,
             prefill_sufficient=case.prefill_sufficient,
             stop_reason=stop_reason,
             silent_failures=silent_failures,

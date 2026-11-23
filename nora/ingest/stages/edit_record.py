@@ -14,8 +14,8 @@ update to a message with a photo in it would look like an edit.
 match the version it replaces (a style-only Signal edit, an update that
 changed nothing a reader sees) is still WRITTEN when it is newer: a Signal
 client addresses its next edit by this edit's timestamp, and an edit left
-unrecorded made every later one an orphan. It opens no turn and feeds Honcho
-nothing. Only a true duplicate — the same time and the same text as the
+unrecorded made every later one an orphan. It opens no turn and raises no
+stimulus. Only a true duplicate — the same time and the same text as the
 version on record — writes nothing at all.
 
 Mentions count as a change on their own: in a Signal body every mention is

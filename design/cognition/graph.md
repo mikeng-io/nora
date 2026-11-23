@@ -47,13 +47,14 @@ its reasons reconsiderable.
 closed by) is computed; an edge Nora judges (about a topic) is inferred; an
 edge from her own decision (rests on, serves) is committed.
 
-Three edge families never stand in for each other:
+Evidence, indexes and typed relations each have their own edge:
 
 | edge | from → to | is evidence |
 |---|---|---|
 | **cites** | a row → the observed or computed rows it rests on | yes, the only evidence |
 | **about** | a row → an entity it concerns. Admission computes links from claims and intentions to their resolved person pointers. Nora proposes inferred links from claims, intentions and recorded items. | no: an index for retrieval |
 | **draws on** | a claim or intention → another claim or intention | no: context or premise |
+| **grades** | a grade claim → the guess or lesson it assesses | no: the grade cites its evidence separately |
 
 **Support and dependency stay apart.** `cites` is evidential support: it gives
 a claim its strength and must trace to observed or computed rows. `draws on` is

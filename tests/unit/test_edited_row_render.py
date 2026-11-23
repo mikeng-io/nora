@@ -89,8 +89,8 @@ async def test_each_text_is_rehydrated_against_the_envelope_it_came_from():
     original envelope would name the wrong person — here, Tyler for Amy."""
     persons = Persons(
         by_person={
-            "tyler": PersonRef(person_id="tyler", name="Tyler", honcho_peer_id="tyler"),
-            "amy": PersonRef(person_id="amy", name="Amy", honcho_peer_id="amy"),
+            "tyler": PersonRef(person_id="tyler", name="Tyler"),
+            "amy": PersonRef(person_id="amy", name="Amy"),
         },
         index={("signal", "uuid-tyler"): "tyler", ("signal", "uuid-amy"): "amy"},
     )

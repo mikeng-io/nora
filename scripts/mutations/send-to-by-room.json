@@ -38,7 +38,7 @@
   "name": "an unmapped asker cannot borrow a mapped identity",
   "file": "nora/agent/relay.py",
   "old": "        if requester is None:\n            return self._refuse(\n                \"unmapped\",\n                \"I don't know who you are well enough to pass something on in your \"\n                \"name. Say you can't, and do not send it unattributed.\",\n            )\n",
-  "new": "        if requester is None:\n            requester = PersonRef(\n                person_id=next(iter(self._policy.conversations[0].persons)),\n                name=\"Kit\", honcho_peer_id=\"kit\",\n            )\n",
+  "new": "        if requester is None:\n            requester = PersonRef(\n                person_id=next(iter(self._policy.conversations[0].persons)),\n                name=\"Kit\",\n            )\n",
   "target": "tests/test_relay.py::test_an_unmapped_asker_is_refused_rather_than_sent_unattributed"
  },
  {

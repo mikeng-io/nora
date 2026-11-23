@@ -840,9 +840,9 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # transcript, so every call there is honestly `unavailable`. Room-scoped
         # is the fail-closed side and the correct one; it does not move.
         "who_said",
-        "load_transcript", "group_members", "lookup_person", "about",
-        "ask_memory", "search_memory", "recall_lookups", "media_fetch",
-        "list_reminders", "event_search", "suggest_venue", "search_gifs",
+        "load_transcript", "group_members", "lookup_person",
+        "recall_lookups", "media_fetch",
+        "list_reminders", "event_search", "search_gifs",
         # `music_status` reports on
         # ONE Discord conversation's voice session — the exact shape
         # `load_transcript`/`where_is` are room-scoped for, not a
@@ -899,13 +899,11 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         "subagent_list", "subagent_read",
     }
     # The unit-safe half is `UNIT_SAFE_TOOLS` itself, read from the module.
-    # It includes the unit-scoped reads (`note_read`/`note_search`,
-    # `search_memory_workspace`), which resolve their unit from the key that
+    # It includes the unit-scoped reads (`note_read`/`note_search`), which
+    # resolve their unit from the key that
     # `DreamerRuntime.run` SUPPLIES to the tool layer for a unit-keyed adaptor,
     # not through the Dreamer's synthetic room.
-    unit_scoped = {
-        "note_read", "note_search", "search_memory_workspace",
-    }
+    unit_scoped = {"note_read", "note_search"}
     assert unit_scoped <= UNIT_SAFE_TOOLS, (
         "a unit-scoped read fell out of UNIT_SAFE_TOOLS — 32 §3.4 "
         "grants these only with the supplied key path"
@@ -926,7 +924,7 @@ def test_the_tool_source_never_builds_a_tool_outside_the_ceiling():
     from nora.agent.registry import ToolRegistry
 
     source = RegistryToolSource(
-        registry=ToolRegistry(), store=None, persons=None, honcho=None,
+        registry=ToolRegistry(), store=None, persons=None,
         metrics=Metrics(),
         home_rooms={"friends": HomeRoom(
             unit="friends", platform="signal", conversation_id="g1",
@@ -977,7 +975,7 @@ def test_a_home_room_grant_builds_the_room_the_operator_named():
     registry = _RecordingRegistry()
     roster = object()
     source = RegistryToolSource(
-        registry=registry, store=None, persons=None, honcho=None,
+        registry=registry, store=None, persons=None,
         metrics=Metrics(),
         home_rooms={"friends": HomeRoom(
             unit="friends", platform="signal", conversation_id="g1",
@@ -1012,7 +1010,7 @@ def test_a_home_room_grant_with_no_home_room_falls_back_closed():
     the ungranted build — and never a guessed room."""
     registry = _RecordingRegistry()
     source = RegistryToolSource(
-        registry=registry, store=None, persons=None, honcho=None,
+        registry=registry, store=None, persons=None,
         metrics=Metrics(), home_rooms={},
     )
 
@@ -1042,7 +1040,7 @@ def test_a_SCOPE_keyed_grant_resolves_the_adaptors_OWN_room():
     registry = _RecordingRegistry()
     roster = object()
     source = RegistryToolSource(
-        registry=registry, store=None, persons=None, honcho=None,
+        registry=registry, store=None, persons=None,
         metrics=Metrics(),
         home_rooms={},
         scope_rooms={"g1": HomeRoom(
@@ -1079,7 +1077,7 @@ def test_a_scope_keyed_grant_for_an_unknown_room_falls_back_closed_and_says_so(
     fault the unit branch describes."""
     metrics = Metrics()
     source = RegistryToolSource(
-        registry=_RecordingRegistry(), store=None, persons=None, honcho=None,
+        registry=_RecordingRegistry(), store=None, persons=None,
         metrics=metrics, scope_rooms={},
     )
 
@@ -1102,7 +1100,7 @@ def test_two_broken_scopes_are_logged_SEPARATELY_not_collapsed_onto_one():
     the first broken room would be reported as though it were the only
     one."""
     source = RegistryToolSource(
-        registry=_RecordingRegistry(), store=None, persons=None, honcho=None,
+        registry=_RecordingRegistry(), store=None, persons=None,
         metrics=Metrics(), scope_rooms={},
     )
 
@@ -1149,7 +1147,7 @@ def test_the_missing_home_room_is_counted_every_pass_and_logged_once(caplog):
     """
     metrics = Metrics()
     source = RegistryToolSource(
-        registry=_RecordingRegistry(), store=None, persons=None, honcho=None,
+        registry=_RecordingRegistry(), store=None, persons=None,
         metrics=metrics, home_rooms={},
     )
 
@@ -1182,7 +1180,7 @@ def test_without_a_grant_the_build_is_byte_for_byte_the_old_one():
     granted it."""
     registry = _RecordingRegistry()
     source = RegistryToolSource(
-        registry=registry, store=None, persons=None, honcho=None,
+        registry=registry, store=None, persons=None,
         metrics=Metrics(),
         home_rooms={"friends": HomeRoom(
             unit="friends", platform="signal", conversation_id="g1",
@@ -1217,7 +1215,7 @@ def test_without_a_grant_a_SCOPE_keyed_build_is_the_closed_empty_room():
     happened to record»."""
     registry = _RecordingRegistry()
     source = RegistryToolSource(
-        registry=registry, store=None, persons=None, honcho=None,
+        registry=registry, store=None, persons=None,
         metrics=Metrics(),
         scope_rooms={"g1": HomeRoom(
             unit="friends", platform="discord", conversation_id="g1",
@@ -1244,7 +1242,7 @@ def test_the_tool_source_builds_the_unit_safe_tools():
     from nora.agent.registry import ToolRegistry
 
     source = RegistryToolSource(
-        registry=ToolRegistry(), store=None, persons=None, honcho=None,
+        registry=ToolRegistry(), store=None, persons=None,
         metrics=Metrics(),
     )
 
@@ -1263,7 +1261,7 @@ def test_asking_for_nothing_builds_nothing_and_touches_no_collaborator():
     from nora.agent.registry import ToolRegistry
 
     source = RegistryToolSource(
-        registry=ToolRegistry(), store=None, persons=None, honcho=None,
+        registry=ToolRegistry(), store=None, persons=None,
         metrics=Metrics(),
     )
 

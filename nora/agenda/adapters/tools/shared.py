@@ -292,10 +292,3 @@ _NOT_AN_EVENT_ID: Mapping[str, object] = {
     "status": "refused",
     "note": "That doesn't look like an event id. Use one from event_search.",
 }
-
-_VENUE_REPORT: Mapping[str, str] = {
-    "nothing_found": "Nobody here has said anything usable about places they "
-    "like. Say so, and don't invent a pick.",
-    "unavailable": "I can't read what people here like right now. Say you "
-    "couldn't check, and don't guess a venue.",
-}

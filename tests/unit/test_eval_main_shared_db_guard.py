@@ -104,7 +104,6 @@ def test_a_stable_run_captures_the_baseline_before_materialise_and_checks_it_las
     monkeypatch.setattr(
         m, "materialise", lambda **k: order.append("materialise") or "config.evaluation.toml",
     )
-    monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: order.append("sweep"))
     monkeypatch.setattr(m, "_run_one", lambda *a, **k: order.append("run") or True)
 
     async def _close() -> None:
@@ -139,7 +138,6 @@ def test_the_guard_wraps_print_input_too(monkeypatch):
     _stub_leaked_blank_sweep(monkeypatch)
     monkeypatch.setattr(m, "shared_database_versions", lambda url: sentinel_before)
     monkeypatch.setattr(m, "materialise", lambda **k: "config.evaluation.toml")
-    monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: None)
     monkeypatch.setattr(
         m, "_print_input", lambda *a, **k: order.append("print_input") or 0,
     )
@@ -171,7 +169,6 @@ def test_a_shared_database_mutation_is_never_swallowed_into_a_return_code(
     _stub_leaked_blank_sweep(monkeypatch)
     monkeypatch.setattr(m, "shared_database_versions", lambda url: object())
     monkeypatch.setattr(m, "materialise", lambda **k: "config.evaluation.toml")
-    monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: None)
     monkeypatch.setattr(m, "_run_one", lambda *a, **k: True)  # every case PASSED
 
     closed = []
@@ -209,7 +206,6 @@ def test_the_guard_still_runs_when_a_case_raises(monkeypatch):
     _stub_leaked_blank_sweep(monkeypatch)
     monkeypatch.setattr(m, "shared_database_versions", lambda url: object())
     monkeypatch.setattr(m, "materialise", lambda **k: "config.evaluation.toml")
-    monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: None)
 
     def _blows_up(*a: object, **k: object) -> bool:
         raise RuntimeError("the corpus itself blew up")
@@ -246,7 +242,6 @@ def test_a_case_raising_and_a_shared_mutation_both_surface(monkeypatch, capsys):
     _stub_leaked_blank_sweep(monkeypatch)
     monkeypatch.setattr(m, "shared_database_versions", lambda url: object())
     monkeypatch.setattr(m, "materialise", lambda **k: "config.evaluation.toml")
-    monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: None)
 
     case_error = RuntimeError("the corpus itself blew up")
 
@@ -301,7 +296,6 @@ def test_main_installs_the_handler_and_restores_the_previous_one(monkeypatch):
     _stub_leaked_blank_sweep(monkeypatch)
     monkeypatch.setattr(m, "shared_database_versions", lambda url: object())
     monkeypatch.setattr(m, "materialise", lambda **k: "config.evaluation.toml")
-    monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: None)
 
     seen_during_run: list[object] = []
 
@@ -341,7 +335,6 @@ def test_a_sigterm_mid_run_still_drops_the_private_template_and_checks_the_guard
     _stub_leaked_blank_sweep(monkeypatch)
     monkeypatch.setattr(m, "shared_database_versions", lambda url: object())
     monkeypatch.setattr(m, "materialise", lambda **k: "config.evaluation.toml")
-    monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: None)
 
     def _run_one_gets_killed(*a: object, **k: object) -> bool:
         order.append("run")
@@ -385,7 +378,6 @@ def test_context_experiment_requires_a_prefill_receipt_for_each_draw(monkeypatch
          "behavior": {"status": "UNMEASURED"}}))
     monkeypatch.setattr(m, "census", lambda _, *, cohort: "synthetic census")
     monkeypatch.setattr(m, "_print_spend", lambda: None)
-    monkeypatch.setattr(m, "_print_memory_overhead", lambda: None)
     receipts = [{"case": "generated#1"}]
     assert not m._run_one("tool_selection", source_url="URL", judge=None, sample=1,
                           context_receipts=receipts)
@@ -412,7 +404,6 @@ def test_main_resolves_the_memory_surface_from_the_generated_config(
     _stub_leaked_blank_sweep(monkeypatch)
     monkeypatch.setattr(m, "shared_database_versions", lambda url: object())
     monkeypatch.setattr(m, "materialise", lambda **k: generated)
-    monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: None)
     monkeypatch.setattr(m, "assert_shared_databases_unchanged", lambda url, before: None)
 
     async def _close() -> None:
@@ -449,7 +440,6 @@ def test_graph_preflight_cannot_dispatch_outside_the_case(monkeypatch, tmp_path)
     _stub_leaked_blank_sweep(monkeypatch)
     monkeypatch.setattr(m, "shared_database_versions", lambda url: object())
     monkeypatch.setattr(m, "materialise", lambda **k: generated)
-    monkeypatch.setattr(m, "_sweep_stale_workspaces", lambda: None)
     monkeypatch.setattr(m, "assert_shared_databases_unchanged", lambda url, before: None)
 
     async def _close() -> None:

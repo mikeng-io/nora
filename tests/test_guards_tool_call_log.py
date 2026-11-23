@@ -8,7 +8,7 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.domain.models import PersonRef
 from nora.obs.metrics import Metrics
-from nora.testing import FakeAgentRunner, FakeMemoryStore, FakeToolCallLogStore, ScriptedTurn
+from nora.testing import FakeAgentRunner, FakeToolCallLogStore, ScriptedTurn
 from tests.fakes import SinkSender
 
 CACHEABLE = frozenset({"place_info", "route", "web_search", "weather", "transit"})
@@ -198,7 +198,7 @@ async def test_a_failed_write_increments_the_writes_counter_as_failed():
 # work TOGETHER.
 
 CONVERSATION = "conv-e2e"
-MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
+MILES = PersonRef(person_id="miles", name="Miles Novak")
 
 
 class _FakeRoute:
@@ -245,7 +245,7 @@ async def _run_the_chain(*, tool_call_log_clock=None) -> tuple[Metrics, FakeTool
     registry = ToolRegistry(route=_FakeRoute(), tool_call_log_store=store)
     specs = registry.specs(
         store=_FakeStore(), conversation_id=CONVERSATION, conversation_type="group",
-        persons=_FakePersons(MILES), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=_FakePersons(MILES), deliverer=SinkSender(),
         metrics=metrics, room=_e2e_room(),
     )
     specs_by_name = {s.name: s for s in specs}
@@ -327,7 +327,7 @@ async def test_every_non_ok_recall_lookups_status_carries_a_note():
     def _recall(store):
         specs = ToolRegistry(tool_call_log_store=store).specs(
             store=_FakeStore(), conversation_id=CONVERSATION, conversation_type="group",
-            persons=_FakePersons(MILES), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+            persons=_FakePersons(MILES), deliverer=SinkSender(),
             metrics=Metrics(), room=_e2e_room(),
         )
         return next(s for s in specs if s.name == "recall_lookups").call

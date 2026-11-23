@@ -52,7 +52,6 @@ from nora.social.adapters.tools.shared import (
     _X_NOTES,
     _X_OFF,
 )
-from nora.testing import FakeMemoryStore
 from tests.fakes import SinkSender
 
 _DASH = re.compile("[–—]")
@@ -78,7 +77,7 @@ def _calls() -> dict:
     room = Room(platform="signal", conversation_id="g1", roster_source=None, persons=_NoPersons())
     specs = ToolRegistry().specs(
         store=_NoStore(), conversation_id="g1", conversation_type="group",
-        persons=_NoPersons(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=_NoPersons(), deliverer=SinkSender(),
         metrics=Metrics(), room=room,
     )
     return {s.name: s.call for s in specs if s.name in _TOOLS}
@@ -211,7 +210,7 @@ async def test_a_refusal_in_a_turn_nobody_asked_for_carries_no_dash():
     room = Room(platform="signal", conversation_id="g1", roster_source=None, persons=_NoPersons())
     specs = ToolRegistry().specs(
         store=_NoStore(), conversation_id="g1", conversation_type="group",
-        persons=_NoPersons(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=_NoPersons(), deliverer=SinkSender(),
         metrics=Metrics(), room=room, fire_turn=True,
     )
     read = next(s.call for s in specs if s.name == "instagram_read")

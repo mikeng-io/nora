@@ -80,7 +80,6 @@ from nora.domain.note_body import (
 )
 from nora.subject import (
     SNAPSHOT_KEYS,
-    DrawWorkspace,
     IndexCache,
     SubjectSpec,
     index_sandbox,
@@ -253,15 +252,19 @@ NORA_POSITION = "nora.position"
 NORA_WORKING_SET = "nora.working_set"
 NORA_SHOWN = "nora.shown"
 NORA_JUDGED_WHY = "nora.judged_why"
-#: The Honcho workspace this draw's subject read and wrote: a workspace of
-#: the draw's own, created empty and deleted after. Carried so a
-#: reading names the memory it was taken against.
-NORA_MEMORY_WORKSPACE = "nora.memory_workspace"
 
-#: This process's run, the middle of every draw workspace's name
-#: (`<deployment>-eval-<RUN_ID>-<case>-<nonce>`). Two arms run as two
-#: processes and so never share one.
+#: This process's run: it names the private blank templates a run builds and
+#: stamps its position receipts. Two arms run as two processes and so never
+#: share one.
 RUN_ID = new_run_id()
+
+#: One case's drive budget. `run_evaluations` runs `task` through
+#: `asyncio.to_thread` and can abandon that future when the failed case's
+#: worker is cancelled — the executor thread's `asyncio.run` keeps going,
+#: and a drive suspended inside `async with IsolatedServices` would hold
+#: the process-global guard forever. The bound cancels the coroutine so
+#: `__aexit__` runs and the guard unwinds, budget + close budget at worst.
+_DRIVE_BUDGET = 600
 
 #: The three verdicts, carried in `EvaluationOutput.label`.
 #:
@@ -360,20 +363,9 @@ def _blocks_empty(exporter: InMemorySpanExporter) -> str | None:
 #: time, in this process.
 _SPEND: list[dict[str, Any]] = []
 
-#: Every draw's Honcho workspace in this process, with what its create and
-#: delete cost. Process state for `_SPEND`'s reason.
-_DRAWS: list[DrawWorkspace] = []
-
 #: The graph surface's built sandbox indexes, for this run's later draws
 #: (`nora.subject.sandbox_index.IndexCache`).
 _INDEX_CACHE = IndexCache()
-
-
-def drain_draws() -> list[DrawWorkspace]:
-    """The draw workspaces since the last drain, and reset."""
-    out = list(_DRAWS)
-    _DRAWS.clear()
-    return out
 
 
 def drain_spend() -> dict[str, Any]:
@@ -2224,8 +2216,12 @@ def nora_task(spec: Spec):
     """
 
     def task(case: Case) -> dict[str, Any]:
+        async def bounded() -> dict[str, Any]:
+            async with asyncio.timeout(_DRIVE_BUDGET):
+                return await _drive(case, spec)
+
         try:
-            return asyncio.run(_drive(case, spec))
+            return asyncio.run(bounded())
         except Exception as exc:                      # noqa: BLE001 — see module docstring
             from evals.results import task_error
 

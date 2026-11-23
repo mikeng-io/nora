@@ -43,8 +43,7 @@ def _make_who_said(deps):
 
         It searches only what you were already shown, where the line usually is.
         For older lines, `load_transcript` reads further back in this
-        conversation and `search_memory` further still. Give it the words as
-        written, not a paraphrase.
+        conversation. Give it the words as written, not a paraphrase.
 
         Returns `status`: ok (`said_by`, oldest first), nothing_found or
         unavailable, with a `note` on how to report the last two.
@@ -216,7 +215,7 @@ async def _who_said__query(c):
                     (
                         "note"
                     ): "Nobody in the messages you can see said that. Do not put it in anyone's "
-                    "mouth. Look further back with load_transcript or search_memory, or say you "
+                    "mouth. Look further back with load_transcript, or say you "
                     "can't find it.",
                 },
             )

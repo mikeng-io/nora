@@ -17,23 +17,19 @@ which is why none of them describes a conversation (DEC-24): both scoped tools r
 their conversation from the closure, so asking for it adds nothing and costs one
 reply per wrong guess.
 
-feed_honcho is deliberately NOT a tool: the handler owns the single post-reply feed.
-
 `conversation_type` and `context_window` are injected but unread. They stay on the
 builder because `ToolRegistry` passes the same set to every tool it will ever
 register, not because anything here uses them. `metrics` is injected too, and is read
-by EVERY tool, because the counter cannot live anywhere else: Honcho answers
-200-with-an-empty-string for a peer it has never heard of, so "asked and nothing
-known" and "could not ask" are indistinguishable at the transport and only the call
-site knows which it got. See `_log_call` for the other half of the same argument —
+by EVERY tool, because the counter cannot live anywhere else: a transport can make
+"asked and nothing known" and "could not ask" look alike, and only the call site
+knows which it got. See `_log_call` for the other half of the same argument —
 the one an operator greps rather than alerts on.
 
 `room` and `question` are what the three room-scoped tools close over so the model
 never has to supply them: `room` is this conversation's membership (see
 `nora.agent.room` — scope is enforced where the answer is assembled, never at
-egress), and `question` is the tagging message, which `about` uses as its search
-query. Both are values Nora already holds, so under DEC-24 neither may appear in a
-schema.
+egress), and `question` is the tagging message. Both are values Nora already
+holds, so under DEC-24 neither may appear in a schema.
 
 `build_tool_specs` builds each tool as a plain, undecorated `ToolSpec`
 (`nora.agent.ports`) closed over this tag's dependencies — no `strands` import
@@ -157,10 +153,7 @@ _ORDER = [
     "social_read",
     "group_members",
     "lookup_person",
-    "about",
     "member_update",
-    "ask_memory",
-    "search_memory",
     "memory_search",
     "memory_read",
     "intention_commit",
@@ -201,8 +194,6 @@ _ORDER = [
     "event_revise",
     "event_rsvp",
     "event_set_status",
-    "suggest_venue",
-    "search_memory_workspace",
     "note_read",
     "note_search",
     "memo_read",
@@ -243,7 +234,6 @@ def build_tool_specs(
     conversation_id: str,
     conversation_type: str,
     persons,
-    honcho,
     deliverer,
     metrics,
     room: Room,
@@ -432,9 +422,8 @@ def build_tool_specs(
     # mailbox, named in `file_fetch`/`computer_import`'s NOT_SHARED note so the
     # owner knows who to share with. "" → the note says "Nora's Google account".
     google_account: str = "",
-    # `[memory.index] read`: the retrieval
-    # service `ask_memory` answers from instead of Honcho. `None` (the
-    # shipped default, offline, eval) is the Honcho path.
+    # `[memory.index] read`: the retrieval service. `None` (the shipped
+    # default, offline, eval) leaves it unwired.
     memory_retrieval: MemorySearch | None = None,
     graph_retrieval: Any = None,
     pass_scope: PassScope | None = None,
@@ -476,7 +465,6 @@ def build_tool_specs(
         conversation_id=conversation_id,
         conversation_type=conversation_type,
         persons=persons,
-        honcho=honcho,
         deliverer=deliverer,
         metrics=metrics,
         room=room,
@@ -627,7 +615,6 @@ def build_tools(
     conversation_id: str,
     conversation_type: str,
     persons,
-    honcho,
     deliverer,
     metrics,
     room: Room,
@@ -724,7 +711,7 @@ def build_tools(
     """Adapt native specs to Strands, deriving missing descriptions/schemas from callables."""
     specs = build_tool_specs(
         store=store, conversation_id=conversation_id, conversation_type=conversation_type,
-        persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics, room=room,
+        persons=persons, deliverer=deliverer, metrics=metrics, room=room,
         transit_source=transit_source, route_source=route_source, vision_source=vision_source,
         blob_store=blob_store, vision_cache=vision_cache, video_readings=video_readings,
         describe_models=describe_models, describe_providers=describe_providers,

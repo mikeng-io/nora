@@ -267,7 +267,7 @@ def test_one_ok_among_several_empties_lifts_the_refusal():
     call her tools in."""
     guard = _guard()
     guard._after_tool(_After("who_said", status="ok"))
-    guard._after_tool(_After("search_memory", status="nothing_found"))
+    guard._after_tool(_After("memory_search", status="nothing_found"))
     assert guard.evaluate("send_reply", {"text": "Grant said it"}) is None
 
 
@@ -279,7 +279,7 @@ def test_a_lookup_that_was_cancelled_or_raised_never_looked_anywhere():
     `nothing_found` substitution in the guard's own bookkeeping."""
     guard = _guard()
     guard._after_tool(_After("who_said", cancel_message="R-7: no"))
-    guard._after_tool(_After("search_memory", exception=RuntimeError("boom"),
+    guard._after_tool(_After("memory_search", exception=RuntimeError("boom"),
                              status="nothing_found"))
     assert guard.evaluate("send_reply", {"text": "here you go"}) is None
 
@@ -319,7 +319,7 @@ def test_lookup_tools_is_the_reads_that_declare_the_three_states():
     """
     lookups = ToolRegistry().lookup_tools()
     assert lookups, "R-97 armed on an empty set could never fire"
-    assert {"who_said", "search_memory", "weather", "note_read"} <= lookups
+    assert {"who_said", "memory_search", "weather", "note_read"} <= lookups
     assert "load_transcript" not in lookups          # read_only, no status axis
     assert "note_revise" not in lookups              # three_state, but a WRITE
     assert "send_reply" not in lookups

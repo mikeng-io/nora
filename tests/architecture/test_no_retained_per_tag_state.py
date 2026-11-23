@@ -30,7 +30,6 @@ from nora.domain.models import NormalizedMessage
 from nora.domain.ports import (
     EngageDecision,
     EngagementRequest,
-    MemoryHealth,
     PlatformIdentity,
     SendResult,
 )
@@ -62,26 +61,6 @@ class _FakeAdapter:
     ) -> SendResult:
         self.sent.append((target, text))
         return SendResult(ok=True)
-
-
-class _FakeMemory:
-    async def ensure_workspace(self) -> None:
-        return None
-
-    async def ensure_peer(self, *, peer_id: str) -> None:
-        return None
-
-    async def feed(self, *, peer_id: str, text: str) -> bool:
-        return True
-
-    async def peer_card(self, *, peer_id: str) -> list[str]:
-        return []
-
-    async def health(self) -> MemoryHealth:
-        return MemoryHealth(reachable=True)
-
-    async def aclose(self) -> None:
-        return None
 
 
 class _FakeDoctrineStore:
@@ -119,16 +98,15 @@ class _ReplyingRunner:
 
 def _build_pipeline() -> tuple[EngagementPipeline, BackgroundTasks]:
     audit = FakeRecordStore()
-    memory = _FakeMemory()
     metrics = Metrics()
     background = BackgroundTasks()
     persons = Persons(by_person={}, index={})
     assembler = TranscriptInjection(
-        audit=audit, memory=memory, persons=persons, context_window=10, metrics=metrics,
+        audit=audit, persons=persons, context_window=10, metrics=metrics,
     )
     pipeline = EngagementPipeline(
         adapters={"signal": _FakeAdapter()},
-        audit=audit, memory=memory, persons=persons,
+        audit=audit, persons=persons,
         doctrine_store=_FakeDoctrineStore(), context_assembler=assembler,
         runner=_ReplyingRunner(), tool_registry=ToolRegistry(),
         policy=permissive_policy(),

@@ -29,7 +29,7 @@ from nora.domain.computer_exports import ComputerExport
 from nora.domain.models import PersonRef
 from nora.persons import Persons
 from nora.policy import Conversation, Policy
-from nora.testing import FakeComputerExportStore, FakeMemoryStore, FakeRecordStore
+from nora.testing import FakeComputerExportStore, FakeRecordStore
 from nora.testing.fakes import FakeBlobStore
 from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
@@ -37,9 +37,9 @@ from nora.web.artifacts import download_headers, download_name
 from tests.conftest import build_test_doctrine_store
 from tests.web.test_api import NO_SKILLS_DIR, _fake_events
 
-KEN = PersonRef(person_id="ken", name="Ken", honcho_peer_id="ken")
-MEI = PersonRef(person_id="mei", name="Mei", honcho_peer_id="mei")
-SAM = PersonRef(person_id="sam", name="Sam", honcho_peer_id="sam")
+KEN = PersonRef(person_id="ken", name="Ken")
+MEI = PersonRef(person_id="mei", name="Mei")
+SAM = PersonRef(person_id="sam", name="Sam")
 T0 = datetime(2026, 10, 8, 9, 0, tzinfo=UTC)
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00\x01" * 40
@@ -91,10 +91,10 @@ async def world_client(aiohttp_client):
     world = _World()
     app = web.Application()
     register_web_routes(
-        app, store=FakeRecordStore(), honcho=FakeMemoryStore(),
+        app, store=FakeRecordStore(),
         reminders=FakeReminderStore(),
         persons=Persons(by_person={"ken": KEN, "mei": MEI, "sam": SAM}, index={}),
-        ai_peer="nora", started_at=0.0, presence=None,
+        started_at=0.0, presence=None,
         presence_circles=(), skills_dir=NO_SKILLS_DIR, events=_fake_events(),
         doctrine_store=build_test_doctrine_store(),
         rooms_of=world.rooms_of, blobs=world.blobs, artifacts=world.store,

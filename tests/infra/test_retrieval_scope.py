@@ -108,8 +108,8 @@ def claim_values(graph_id: str, **fields) -> dict:
 async def scenario(clean_pg_url: str) -> AsyncIterator[Scenario]:
     engine = create_sql_engine(clean_pg_url)
     people = {
-        PERSON: PersonRef(PERSON, "Fixture reader", PERSON),
-        OTHER: PersonRef(OTHER, "Fixture other reader", OTHER),
+        PERSON: PersonRef(PERSON, "Fixture reader"),
+        OTHER: PersonRef(OTHER, "Fixture other reader"),
     }
     rooms = (
         Conversation("signal", frozenset({ROOM}), frozenset({PERSON}), primary_id=ROOM, unit=UNIT),

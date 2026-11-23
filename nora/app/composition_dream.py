@@ -676,7 +676,7 @@ def _lessons_evidence(
 
 
 def _dream_tool_source(
-    allowlist: Any, audit: Any, cfg: Any, memory: Any,
+    allowlist: Any, audit: Any, cfg: Any,
     metrics: Any, persons: Any, proactive_homes: Any, registry: Any,
     rosters: Any, tool_registry: Any, access: Any,
 ) -> Any:
@@ -685,9 +685,8 @@ def _dream_tool_source(
         registry=tool_registry,
         store=audit, access=access,
         persons=persons,
-        honcho=memory,
         metrics=metrics,
-        ai_peer=cfg.honcho.ai_peer,
+        ai_peer=cfg.agent.name,
         # The home rooms, from the SAME allowlist read the adaptor's room map came from, with
         # each room's `location` flag threaded as DEC-74 threads it on a tag. Passed whether or
         # not the proactive adaptor is wired: the map is inert for an adaptor with no home-room…

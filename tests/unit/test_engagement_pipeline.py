@@ -38,7 +38,6 @@ from nora.domain.models import (
 from nora.domain.ports import (
     EngageDecision,
     EngagementRequest,
-    MemoryHealth,
     PlatformIdentity,
     ReactionResult,
     SendResult,
@@ -61,7 +60,7 @@ from nora.testing import (
 )
 from nora.testing.scripted_agent import _invoke_tool
 
-MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
+MILES = PersonRef(person_id="miles", name="Miles")
 PERSONS = Persons(by_person={"miles": MILES}, index={("signal", "+852111"): "miles"})
 LIMITS = {"turns": 4, "output_tokens": 400, "total_tokens": 24000}
 
@@ -137,32 +136,6 @@ class _FakeAdapter:
     @property
     def texts(self) -> list[str]:
         return [text for _, text in self.sent]
-
-
-class _FakeMemory:
-    def __init__(self) -> None:
-        self.fed: list[tuple[str, str, str]] = []
-        self.peers: list[str] = []
-
-    async def ensure_workspace(self) -> None:
-        return None
-
-    async def ensure_peer(self, *, peer_id: str, **_route: str | None) -> None:
-        self.peers.append(peer_id)
-
-    async def feed(self, *, peer_id: str, text: str, conversation_id: str,
-                   metadata: dict | None = None) -> bool:
-        self.fed.append((peer_id, text, conversation_id))
-        return True
-
-    async def peer_card(self, *, peer_id: str, **_route: str | None) -> list[str]:
-        return []
-
-    async def health(self) -> MemoryHealth:
-        return MemoryHealth(reachable=True)
-
-    async def aclose(self) -> None:
-        return None
 
 
 class _FakeDoctrineStore:
@@ -253,7 +226,7 @@ async def test_trace_retention_precedes_dispatch_and_cancel_releases(cancel_save
             await super().save(trace)
 
     store = BlockingStore()
-    pipeline, _, _, _, background = _build_pipeline(tag_trace_store=store)
+    pipeline, _, _, background = _build_pipeline(tag_trace_store=store)
     first = asyncio.create_task(pipeline.run(_request(tag_id="first")))
     await asyncio.wait_for(entered.wait(), timeout=5)
     await pipeline.run(_request(tag_id="queued"))
@@ -275,7 +248,6 @@ def _build_pipeline(
     *,
     runner=None,
     context_assembler=None,
-    memory=None,
     audit=None,
     adapter=None,
     adapters=None,
@@ -304,11 +276,10 @@ def _build_pipeline(
     audit = audit if audit is not None else FakeRecordStore()
     if debrief_wiring is not None:
         audit.delivery_acts = _DebriefPassActs()
-    memory = memory if memory is not None else _FakeMemory()
     metrics = metrics if metrics is not None else Metrics()
     background = background if background is not None else BackgroundTasks()
     context_assembler = context_assembler or TranscriptInjection(
-        audit=audit, memory=memory, persons=PERSONS, context_window=10, metrics=metrics,
+        audit=audit, persons=PERSONS, context_window=10, metrics=metrics,
     )
     if adapters is None:
         the_adapter = adapter or _FakeAdapter()
@@ -316,7 +287,7 @@ def _build_pipeline(
     extra, pol = {}, policy if policy is not None else permissive_policy()
     pipeline = EngagementPipeline(
         adapters=adapters,
-        audit=audit, memory=memory, persons=PERSONS,
+        audit=audit, persons=PERSONS,
         doctrine_store=_FakeDoctrineStore(),
         context_assembler=context_assembler,
         runner=runner or ScriptedRunner(_reply_turns()),
@@ -342,7 +313,7 @@ def _build_pipeline(
         clock=turn_clock, room_commands=room_commands,
         **extra,
     )
-    return pipeline, metrics, audit, memory, background
+    return pipeline, metrics, audit, background
 
 
 async def _drain(background: BackgroundTasks) -> None:
@@ -391,7 +362,7 @@ class _FakeMcpTool:
 
 
 async def test_unauthorized_conversation_never_receives_demo_tools():
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         tool_registry=_registry_with_demo(),
         policy=_policy_allowing(tools=frozenset()),  # not authorized for demo
     )
@@ -402,7 +373,7 @@ async def test_unauthorized_conversation_never_receives_demo_tools():
 
 
 async def test_authorized_conversation_receives_demo_tools():
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         tool_registry=_registry_with_demo(),
         policy=_policy_allowing(tools=frozenset({"demo"})),
     )
@@ -429,7 +400,7 @@ async def test_the_clock_line_states_the_injected_clock():
 
     Revert `now=` on the pipeline's `build_prefill` call and this goes RED."""
     frozen = datetime(2026, 10, 11, 1, 5, tzinfo=UTC)
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         turn_clock=lambda: frozen,
     )
     await pipeline.run(_request())
@@ -445,7 +416,7 @@ async def test_deferring_ships_the_hot_set_the_loader_and_the_catalogue():
     from nora.agent.catalog.groups import HOT_TOOLS, LEGACY_ENGAGEMENT_TOOLS, LOADER_TOOL
 
     registry = ToolRegistry(engagement_graph_retrieval=object(), intention_admission=object())
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         defer_tools=True, tool_registry=registry,
     )
     await pipeline.run(_request())
@@ -476,7 +447,7 @@ async def test_a_spoken_tag_is_handed_the_voice_tools_and_a_typed_one_is_not():
 
     handed = {}
     for voice in (True, False):
-        pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        pipeline, _metrics, _audit, background = _build_pipeline(
             defer_tools=True,
             tool_registry=_Spy(engagement_graph_retrieval=object(), intention_admission=object()),
             adapters={"discord": _DiscordFakeAdapter(account="555000111")},
@@ -496,7 +467,7 @@ async def test_without_deferral_nothing_changes():
     no loader, no catalogue block, the configured turn ceiling."""
     from nora.agent.catalog.groups import LOADER_TOOL
 
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline()
+    pipeline, _metrics, _audit, background = _build_pipeline()
     await pipeline.run(_request())
     await _drain(background)
     call = pipeline._runner.calls[-1]
@@ -512,10 +483,10 @@ async def test_without_deferral_nothing_changes():
 # ---------------------------------------------------------------------------
 
 
-async def test_a_successful_tag_delivers_releases_the_lock_and_feeds_the_exchange():
+async def test_a_successful_tag_delivers_and_releases_the_lock():
     adapter = _FakeAdapter()
     llm_state = _LLMState()
-    pipeline, metrics, _audit, memory, background = _build_pipeline(
+    pipeline, metrics, _audit, background = _build_pipeline(
         adapter=adapter, llm_state=llm_state,
     )
 
@@ -525,92 +496,24 @@ async def test_a_successful_tag_delivers_releases_the_lock_and_feeds_the_exchang
     assert adapter.texts == ["今晚七點半得"]
     assert _held(pipeline) is False
     assert llm_state.last_success_at is not None
-    # DEC-36: the tagger's own words, under the tagger's peer, and nothing
-    # else (no `"[Nora]"` marker of a two-speaker transcript in the fed text).
-    assert memory.fed == [("nora", "今晚七點半得", "g1")]
     assert len(metrics.observations("nora_tag_latency_seconds")) == 1
     assert len(metrics.observations("nora_overhead_seconds")) == 1
 
 
-async def test_an_unmapped_sender_delivers_with_no_honcho_feed():
-    pipeline, _metrics, _audit, memory, background = _build_pipeline(
+async def test_an_unmapped_sender_still_delivers_and_saves_its_trace():
+    pipeline, _metrics, _audit, background = _build_pipeline(
         runner=ScriptedRunner(_reply_turns()),
     )
 
     await pipeline.run(_request(_msg(sender_id="+852999999")))
     await _drain(background)
 
-    assert memory.fed == []
     assert _held(pipeline) is False
-    # `feedback.run`'s own gate — `if sent and
-    # ctx.tagger is not None` — is exactly what leaves `memory.fed == []`
-    # above for this UNMAPPED sender. The `TagTrace` save must NOT inherit
-    # that gate; this is the one scenario in the suite that actually
-    # exercises `ctx.tagger is None` on a turn that still delivered, so it is
-    # the only place independence from the `ctx.tagger` half of the gate (as
-    # opposed to the `sent` half, which the silent/vetoed/timeout/llm_error
-    # tests already cover) can be proven.
+    # The `TagTrace` save must not depend on `ctx.tagger`; this is the one
+    # scenario in the suite that exercises `ctx.tagger is None` on a turn that
+    # still delivered.
     assert len(pipeline._tag_trace_store.saved) == 1
     assert pipeline._tag_trace_store.saved[0].outcome == "send_reply"
-
-
-# ---------------------------------------------------------------------------
-# The feedback feed is spawned through the INJECTED tracker, not a private set
-# the pipeline rolls itself — see nora/engagement/pipeline.py's `spawn`
-# constructor parameter, which the composition roots pass as `background.spawn`.
-# Without that wiring, `App.run`'s
-# `finally: await deps.background.cancel_all()` would
-# neither see nor cancel a still-running feedback feed on shutdown.
-# ---------------------------------------------------------------------------
-
-
-async def test_the_feedback_feed_is_spawned_through_the_injected_tracker():
-    class _SlowMemory(_FakeMemory):
-        def __init__(self) -> None:
-            super().__init__()
-            self.started = asyncio.Event()
-
-        async def feed(self, *, peer_id: str, text: str, conversation_id: str = "",
-                       metadata: dict | None = None) -> bool:
-            self.started.set()
-            await asyncio.sleep(10)   # never completes within the test
-            self.fed.append((peer_id, text, conversation_id))
-            return True
-
-    memory = _SlowMemory()
-    background = BackgroundTasks()
-    pipeline, _metrics, _audit, _memory, _background = _build_pipeline(
-        memory=memory, background=background,
-    )
-
-    await pipeline.run(_request())
-    # Bounded, not a bare `await memory.started.wait()`: if the feed is never
-    # actually spawned, `.started` never fires and an unbounded wait would hang
-    # the suite instead of failing it.
-    await asyncio.wait_for(memory.started.wait(), timeout=2.0)
-
-    # The feedback feed is still in flight — it must be tracked by the
-    # injected `background`, the one `deps.background.cancel_all()` reaches.
-    #
-    # Filtered to tasks that have not finished, rather than `len(background)`:
-    # the progress-reaction lifecycle (`nora.engagement.stages.indicate`) is
-    # spawned through the SAME injected tracker, deliberately — it must be
-    # cancellable at shutdown for exactly the reason this test exists. Against
-    # this test's default `_FakeAdapter`, which has no `react` at all, both of
-    # those tasks complete on their first scheduling, but a completed task is
-    # only discarded from `_tasks` one `call_soon` tick later (see `_drain`'s
-    # docstring), so a raw count here would be racing that callback rather than
-    # asserting anything about the feed. The discrimination is unchanged: if the
-    # feed were not spawned through this tracker, `memory.started` would never
-    # fire and the `wait_for` above would fail first; if it were spawned and
-    # immediately awaited, nothing would be pending here at all.
-    pending = [task for task in background._tasks if not task.done()]
-    assert len(pending) == 1
-
-    await background.cancel_all()
-
-    assert len(background) == 0
-    assert memory.fed == [], "cancel_all() must reach the spawned feed and stop it mid-await"
 
 
 # ---------------------------------------------------------------------------
@@ -620,7 +523,7 @@ async def test_the_feedback_feed_is_spawned_through_the_injected_tracker():
 
 async def test_a_timeout_releases_the_lock_and_counts_invocation_timeout():
     adapter = _FakeAdapter()
-    pipeline, metrics, _audit, _memory, _background = _build_pipeline(
+    pipeline, metrics, _audit, _background = _build_pipeline(
         adapter=adapter, runner=ScriptedRunner(_reply_turns(), delay=5.0),
         timeout_seconds=0.05,
     )
@@ -636,7 +539,7 @@ async def test_a_timeout_releases_the_lock_and_counts_invocation_timeout():
 
 async def test_an_llm_error_releases_the_lock_and_counts_llm_error():
     adapter = _FakeAdapter()
-    pipeline, metrics, _audit, _memory, _background = _build_pipeline(
+    pipeline, metrics, _audit, _background = _build_pipeline(
         adapter=adapter, runner=ScriptedRunner(raises=RuntimeError("omniroute down")),
     )
 
@@ -657,7 +560,7 @@ async def test_a_max_tokens_partial_reply_is_salvaged_not_silent():
     deliver them — silence here would be the failure the group sees.
     """
     adapter = _FakeAdapter()
-    pipeline, metrics, _audit, _memory, _background = _build_pipeline(
+    pipeline, metrics, _audit, _background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner(raises=PartialReplyError("密碼寫咗喺島上面，去搵下啦")),
     )
@@ -678,7 +581,7 @@ async def test_a_max_tokens_cut_off_with_no_prose_stays_silent():
     blocks has nothing to salvage — `PartialReplyError.partial_text` is empty
     and the turn stays silent (R-5), exactly like a generic `llm_error`."""
     adapter = _FakeAdapter()
-    pipeline, metrics, _audit, _memory, _background = _build_pipeline(
+    pipeline, metrics, _audit, _background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner(raises=PartialReplyError("")),
     )
@@ -694,7 +597,7 @@ async def test_a_max_tokens_cut_off_with_no_prose_stays_silent():
 async def test_a_base_exception_only_fault_is_absorbed_silently():
     """R-5: even a fault that is not an `Exception` (a bare `BaseException`
     subclass) must never propagate out of `run` or leave the lock held."""
-    pipeline, metrics, _audit, _memory, _background = _build_pipeline(
+    pipeline, metrics, _audit, _background = _build_pipeline(
         context_assembler=_FaultingContextAssembler(),
     )
 
@@ -713,7 +616,7 @@ async def test_a_reply_written_without_calling_send_reply_is_recovered():
     prose does not distinguish "chose not to speak" from "spoke without using
     the tool". The words are recovered and delivered rather than discarded."""
     adapter = _FakeAdapter()
-    pipeline, metrics, _audit, memory, background = _build_pipeline(
+    pipeline, metrics, _audit, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner([ScriptedTurn(final_text="I would have said this")]),
     )
@@ -727,14 +630,6 @@ async def test_a_reply_written_without_calling_send_reply_is_recovered():
     # NOT the canned fallback — that is for a budget CUT-OFF, and these are
     # different failures with different fixes.
     assert metrics.get("nora_loop_exhausted_fallbacks_total") == 0
-    # And it DOES feed Honcho, unlike the fallback. The exclusion at
-    # `Deliverer.deliver` is `source != "fallback"` on purpose: the fallback is
-    # a canned apology nobody wrote, so feeding it would teach her self-model a
-    # sentence she never composed. A recovered reply is the opposite — these
-    # ARE her words, she simply failed to route them through the tool, and the
-    # group read them. Excluding them would make her memory of her own speech
-    # incomplete exactly where it is most confusing to her later.
-    assert [t for _peer, t, _conv in memory.fed] == ["I would have said this"]
 
 
 async def test_a_partial_multi_message_turn_is_not_topped_up_by_the_recovery():
@@ -746,7 +641,7 @@ async def test_a_partial_multi_message_turn_is_not_topped_up_by_the_recovery():
     partial reply into a duplicate-looking one. `not deliverer.delivered` is the
     guard — flip it to `not deliverer.called` and this reds."""
     adapter = _FakeAdapter()
-    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, metrics, _audit, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner([ScriptedTurn(
             tool_calls=[("send_reply", {"text": "first"})],
@@ -776,7 +671,7 @@ async def test_a_heads_up_then_work_then_prose_answer_is_recovered(monkeypatch):
 
     monkeypatch.setattr(ReplyGuard, "reply_still_owed", property(lambda _self: True))
     adapter = _FakeAdapter()
-    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, metrics, _audit, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner([ScriptedTurn(
             tool_calls=[("send_reply", {"text": "let me check", "heads_up": True}),
@@ -806,7 +701,7 @@ async def test_a_refused_send_reply_followed_by_prose_is_still_recovered():
     this one too — this is a second chance through the guards, never around
     them. Swap the guard to `not handle.deliverer.called` and this reds."""
     adapter = _FakeAdapter()
-    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, metrics, _audit, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner([ScriptedTurn(
             # R-18 refuses this INSIDE `deliver` — an E.164 in the reply. It
@@ -833,7 +728,7 @@ async def test_a_turn_that_wrote_nothing_at_all_is_still_a_silent_failure():
     there is nothing to recover, and that must still be counted — otherwise
     DEC-93 would have replaced a visible failure with an invisible one."""
     adapter = _FakeAdapter()
-    pipeline, metrics, _audit, memory, background = _build_pipeline(
+    pipeline, metrics, _audit, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner([ScriptedTurn(final_text="")]),
     )
@@ -844,7 +739,6 @@ async def test_a_turn_that_wrote_nothing_at_all_is_still_a_silent_failure():
     assert adapter.sent == []
     assert metrics.get("nora_silent_failures_total", reason="no_send_call") == 1
     assert metrics.get("nora_recovered_replies_total") == 0
-    assert memory.fed == []
     assert _held(pipeline) is False
 
 
@@ -854,7 +748,7 @@ async def test_the_never_silent_fallback_delivers_when_the_loop_is_cut_off():
     is NOT also counted a silent failure. One tool call spends the `total_tokens`
     cap, so the next cycle trips `limit_total_tokens` before any reply."""
     adapter = _FakeAdapter()
-    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, metrics, _audit, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner(
             [ScriptedTurn(tool_calls=[("now", {})], total_tokens=24_000)]
@@ -874,38 +768,18 @@ async def test_the_never_silent_fallback_delivers_when_the_loop_is_cut_off():
     ) == 0
 
 
-async def test_the_fallback_reply_is_not_fed_to_honchos_self_model():
-    """The fallback is a canned apology, NOT Nora's authored
-    words, so it must NOT feed her Honcho self-model card — only real replies do.
-    It still DELIVERED (the group saw it), it is just kept out of `sent_texts`."""
-    adapter = _FakeAdapter()
-    pipeline, _metrics, _audit, memory, background = _build_pipeline(
-        adapter=adapter,
-        runner=ScriptedRunner(
-            [ScriptedTurn(tool_calls=[("now", {})], total_tokens=24_000)]
-        ),
-    )
-
-    await pipeline.run(_request())
-    await _drain(background)
-
-    assert len(adapter.sent) == 1        # delivered — the group saw the fallback
-    assert memory.fed == []              # but nothing fed to her self-model
-
-
 # ---------------------------------------------------------------------------
 # The placeholder `TagTrace.outcome` `invoke.run` hands back
 # (`LiveAgentRunner`/`FakeAgentRunner` both stamp `"send_reply"` unconditionally)
 # is CORRECTED here to the turn's real disposition, mirroring
 # `deliver.check_outcome`'s own delivered/called split, and the corrected trace
-# is unconditionally saved — on every completed turn, not gated on
-# `feedback.run`'s own `if sent and ctx.tagger is not None`.
+# is unconditionally saved — on every completed turn.
 # ---------------------------------------------------------------------------
 
 
 async def test_a_normal_send_reply_is_saved_with_outcome_send_reply():
     adapter = _FakeAdapter()
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(adapter=adapter)
+    pipeline, _metrics, _audit, background = _build_pipeline(adapter=adapter)
 
     await pipeline.run(_request())
     await _drain(background)
@@ -918,7 +792,7 @@ async def test_a_normal_send_reply_is_saved_with_outcome_send_reply():
 
 async def test_a_recovered_reply_is_saved_with_outcome_recovered():
     adapter = _FakeAdapter()
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner([ScriptedTurn(final_text="I would have said this")]),
     )
@@ -935,7 +809,7 @@ async def test_a_silent_turn_is_saved_with_outcome_silent():
     """A turn that produced neither a tool call nor text — genuinely nothing
     to recover (`test_a_turn_that_wrote_nothing_at_all_is_still_a_silent_failure`
     is the metrics-side sibling of this test)."""
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         runner=ScriptedRunner([ScriptedTurn(final_text="")]),
     )
 
@@ -954,7 +828,7 @@ async def test_a_vetoed_turn_is_saved_with_outcome_vetoed():
     `test_a_refused_send_reply_followed_by_prose_is_still_recovered` uses,
     except the recovery text ALSO leaks here, so nothing ever delivers)."""
     leaking_text = "佢喺 +85298765432 嗰邊"
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         runner=ScriptedRunner([ScriptedTurn(
             tool_calls=[("send_reply", {"text": leaking_text})],
             final_text=leaking_text,
@@ -974,11 +848,10 @@ async def test_a_never_silent_fallback_delivery_is_saved_with_outcome_send_reply
     is True) but is not `"recovered"` — `recovered_delivered` only flips for the
     DEC-93 prose-recovery branch, never the fallback branch, so this lands on
     `"send_reply"`, the same bucket a normal tool-routed reply does. (The
-    fallback text itself is never fed to Honcho or attributed to her as
-    authored words — see `test_the_fallback_reply_is_not_fed_to_honchos_self_model`
-    — but `TagTrace.outcome` only has six values to choose from and none of
+    fallback text itself is not attributed to her as authored words, but
+    `TagTrace.outcome` only has six values to choose from and none of
     them is "fallback"; this is the documented judgment call, not an oversight.)"""
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         runner=ScriptedRunner(
             [ScriptedTurn(tool_calls=[("now", {})], total_tokens=24_000)]
         ),
@@ -993,7 +866,7 @@ async def test_a_never_silent_fallback_delivery_is_saved_with_outcome_send_reply
 
 
 async def test_a_timeout_is_saved_with_outcome_timeout():
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         runner=ScriptedRunner(_reply_turns(), delay=5.0), timeout_seconds=0.05,
     )
 
@@ -1006,7 +879,7 @@ async def test_a_timeout_is_saved_with_outcome_timeout():
 
 
 async def test_an_llm_error_is_saved_with_outcome_llm_error():
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         runner=ScriptedRunner(raises=RuntimeError("omniroute down")),
     )
 
@@ -1023,7 +896,7 @@ async def test_a_fault_before_invoke_run_ever_returns_saves_nothing():
     `agent.messages`, no transcript window, `invoke.run` never ran — nothing
     to attribute a trace to, so `finally` must not try (`trace` stays `None`,
     the guard clause at the save site skips it)."""
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         context_assembler=_FaultingContextAssembler(),
     )
 
@@ -1043,7 +916,7 @@ async def test_a_tag_trace_save_failure_never_takes_down_an_otherwise_successful
             raise RuntimeError("db down")
 
     adapter = _FakeAdapter()
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         adapter=adapter, tag_trace_store=_RaisingTagTraceStore(),
     )
 
@@ -1099,7 +972,7 @@ async def test_a_crash_after_invoke_run_never_saves_a_stale_placeholder_outcome(
     metrics = _FaultingMetricsAfterInvoke(
         Metrics(), fault_name="nora_loop_exhausted_fallbacks_total",
     )
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         metrics=metrics,
         runner=ScriptedRunner(
             [ScriptedTurn(tool_calls=[("now", {})], total_tokens=24_000)]
@@ -1118,21 +991,21 @@ async def test_a_crash_after_invoke_run_never_saves_a_stale_placeholder_outcome(
 
 async def test_latency_and_overhead_are_observed_on_every_path():
     metrics = Metrics()
-    ok_pipeline, _, _, _, ok_background = _build_pipeline(metrics=metrics)
+    ok_pipeline, _, _, ok_background = _build_pipeline(metrics=metrics)
     await ok_pipeline.run(_request(tag_id="t1"))
     await _drain(ok_background)
 
-    timeout_pipeline, _, _, _, _bg2 = _build_pipeline(
+    timeout_pipeline, _, _, _bg2 = _build_pipeline(
         metrics=metrics, runner=ScriptedRunner(_reply_turns(), delay=5.0), timeout_seconds=0.05,
     )
     await timeout_pipeline.run(_request(tag_id="t2"))
 
-    error_pipeline, _, _, _, _bg3 = _build_pipeline(
+    error_pipeline, _, _, _bg3 = _build_pipeline(
         metrics=metrics, runner=ScriptedRunner(raises=RuntimeError("boom")),
     )
     await error_pipeline.run(_request(tag_id="t3"))
 
-    fault_pipeline, _, _, _, _bg4 = _build_pipeline(
+    fault_pipeline, _, _, _bg4 = _build_pipeline(
         metrics=metrics, context_assembler=_FaultingContextAssembler(),
     )
     await fault_pipeline.run(_request(tag_id="t4"))
@@ -1153,7 +1026,7 @@ async def test_a_delivered_tag_observes_one_message():
     becomes a quota always spent in full.
     """
     metrics = Metrics()
-    pipeline, _, _, _, background = _build_pipeline(metrics=metrics)
+    pipeline, _, _, background = _build_pipeline(metrics=metrics)
 
     await pipeline.run(_request())
     await _drain(background)
@@ -1166,7 +1039,7 @@ async def test_a_silent_tag_observes_zero_rather_than_nothing_at_all():
     she say nothing", which is the same question. Every admitted tag
     contributes exactly one observation."""
     metrics = Metrics()
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         metrics=metrics,
         runner=ScriptedRunner([# DEC-93: a turn that wrote NOTHING. Prose would be RECOVERED and
         # delivered; this test is about a genuinely silent turn.
@@ -1184,7 +1057,7 @@ async def test_a_failed_send_observes_zero_not_one():
     accepted — R-2's latch counts attempts, and reading the latch instead would
     report a message the group never received."""
     metrics = Metrics()
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         metrics=metrics, adapter=_FakeAdapter(succeed=False),
     )
 
@@ -1199,7 +1072,7 @@ async def test_a_tag_that_faults_before_there_is_a_deliverer_still_observes_zero
     the pipeline has built a `DeliveryHandle` at all. A histogram silently
     missing its most interesting exit path is R-5's failure mode again."""
     metrics = Metrics()
-    pipeline, _, _, _, _background = _build_pipeline(
+    pipeline, _, _, _background = _build_pipeline(
         metrics=metrics, context_assembler=_FaultingContextAssembler(),
     )
 
@@ -1262,7 +1135,7 @@ async def test_three_tags_for_one_conversation_are_answered_in_fifo_order():
     branch and only the first reply is delivered."""
     adapter = _FakeAdapter()
     runner = _EchoRunner(delay=0.2)
-    pipeline, metrics, _, _, background = _build_pipeline(adapter=adapter, runner=runner)
+    pipeline, metrics, _, background = _build_pipeline(adapter=adapter, runner=runner)
 
     first = asyncio.create_task(pipeline.run(_req(body="q1", tag_id="t1")))
     await _wait_for(
@@ -1295,7 +1168,7 @@ async def test_a_queued_tag_sees_the_earlier_tags_reply_in_its_context():
     tag 2's transcript no longer contains tag 1's reply."""
     adapter = _FakeAdapter()
     runner = _EchoRunner(delay=0.2)
-    pipeline, _, _, _, background = _build_pipeline(adapter=adapter, runner=runner)
+    pipeline, _, _, background = _build_pipeline(adapter=adapter, runner=runner)
 
     first = asyncio.create_task(pipeline.run(_req(body="q1", tag_id="t1")))
     await _wait_for(
@@ -1317,7 +1190,7 @@ async def test_different_conversations_still_run_concurrently():
     serialise behind each other."""
     adapter = _FakeAdapter()
     runner = _EchoRunner(delay=0.2)
-    pipeline, _, _, _, background = _build_pipeline(adapter=adapter, runner=runner)
+    pipeline, _, _, background = _build_pipeline(adapter=adapter, runner=runner)
 
     a = asyncio.create_task(pipeline.run(_req(conversation_id="g1", body="qa", tag_id="ta")))
     b = asyncio.create_task(pipeline.run(_req(conversation_id="g2", body="qb", tag_id="tb")))
@@ -1348,7 +1221,7 @@ async def test_a_flood_past_the_queue_bound_is_shed_with_its_own_counter():
     is queued and answered instead of shed."""
     adapter = _FakeAdapter()
     runner = _EchoRunner(delay=0.2)
-    pipeline, metrics, _, _, background = _build_pipeline(
+    pipeline, metrics, _, background = _build_pipeline(
         adapter=adapter, runner=runner, queue_max=2,
     )
 
@@ -1374,7 +1247,7 @@ async def test_a_flood_past_the_queue_bound_is_shed_with_its_own_counter():
 
 async def test_a_debounced_tag_is_never_admitted_and_never_releases_a_lock():
     metrics = Metrics()
-    pipeline, _, _, _, background = _build_pipeline(metrics=metrics, debounce_seconds=30)
+    pipeline, _, _, background = _build_pipeline(metrics=metrics, debounce_seconds=30)
 
     await pipeline.run(_request(tag_id="first"))
     await _drain(background)
@@ -1387,7 +1260,7 @@ async def test_a_debounced_tag_is_never_admitted_and_never_releases_a_lock():
 
 
 async def test_a_self_tag_is_refused_and_admission_never_runs_the_pipeline():
-    pipeline, metrics, _audit, _memory, _background = _build_pipeline(
+    pipeline, metrics, _audit, _background = _build_pipeline(
         adapter=_FakeAdapter(account="+852111"),
     )
 
@@ -1444,7 +1317,7 @@ async def test_accepting_a_tag_reacts_to_the_tagging_message_then_resolves():
     PROBE: delete the `indicate.begin(...)` call in
     `nora/engagement/pipeline.py::_begin_indicator` and this fails."""
     adapter = _ReactingAdapter()
-    pipeline, metrics, _audit, _memory, background = _build_pipeline(adapter=adapter)
+    pipeline, metrics, _audit, background = _build_pipeline(adapter=adapter)
 
     await pipeline.run(_request())
     await _drain(background)
@@ -1465,7 +1338,7 @@ async def test_a_queued_tag_gets_its_eyes_promptly_while_it_waits():
     ahead of it finishes."""
     adapter = _ReactingAdapter()
     runner = ScriptedRunner(_reply_turns(), delay=0.3)
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         adapter=adapter, runner=runner,
     )
 
@@ -1507,13 +1380,12 @@ async def test_a_reaction_failure_never_prevents_the_reply():
     pipeline's spawned tasks start failing while this assertion on `texts`
     still passes — which is why the metric assertion is here too."""
     adapter = _ReactingAdapter(react_ok=False)
-    pipeline, metrics, _audit, memory, background = _build_pipeline(adapter=adapter)
+    pipeline, metrics, _audit, background = _build_pipeline(adapter=adapter)
 
     await pipeline.run(_request())
     await _drain(background)
 
     assert adapter.texts == ["今晚七點半得"]
-    assert memory.fed == [("nora", "今晚七點半得", "g1")]
     assert metrics.get("nora_reactions_total", status="failed") == 3.0
     assert metrics.get("nora_silent_failures_total") == 0.0
     assert _held(pipeline) is False
@@ -1526,7 +1398,7 @@ async def test_a_platform_that_cannot_react_still_replies_normally():
     PROBE: replace `getattr(adapter, "react", None)` in `indicate._react` with
     a direct attribute access and this tag fails with AttributeError."""
     adapter = _FakeAdapter()                     # no `react` method at all
-    pipeline, metrics, _audit, _memory, background = _build_pipeline(adapter=adapter)
+    pipeline, metrics, _audit, background = _build_pipeline(adapter=adapter)
 
     await pipeline.run(_request())
     await _drain(background)
@@ -1548,7 +1420,7 @@ async def test_reactions_do_not_consume_the_reply_budget():
     cap = ToolRegistry().budgets()["send_reply"]
     sent = [f"msg{i}" for i in range(cap)]
     adapter = _ReactingAdapter()
-    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, metrics, _audit, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner([ScriptedTurn(tool_calls=[
             ("send_reply", {"text": t}) for t in [*sent, "one too many"]
@@ -1568,7 +1440,7 @@ async def test_the_model_cannot_emit_a_reaction_itself():
     registered as a tool, so a model that invents one is vetoed before
     anything runs, and no reaction is produced by it."""
     adapter = _ReactingAdapter()
-    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, metrics, _audit, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner([ScriptedTurn(tool_calls=[
             ("react", {"conversation_id": "g1", "emoji": "\N{PILE OF POO}"}),
@@ -1594,7 +1466,7 @@ async def test_a_turn_that_never_replied_resolves_to_a_caution_and_says_nothing(
     PROBE: pass `delivered=True` unconditionally to `indicate.resolve` in the
     pipeline's `finally` and this fails on the ✅."""
     adapter = _ReactingAdapter()
-    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, metrics, _audit, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner([# DEC-93: a turn that wrote NOTHING. Prose would be RECOVERED and
         # delivered; this test is about a genuinely silent turn.
@@ -1618,7 +1490,7 @@ async def test_a_crashed_turn_still_resolves_the_indicator():
     PROBE: move `indicate.resolve(...)` out of the `finally` and up next to
     `check_outcome`, and this fails."""
     adapter = _ReactingAdapter()
-    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, metrics, _audit, background = _build_pipeline(
         adapter=adapter, context_assembler=_FaultingContextAssembler(),
     )
 
@@ -1668,7 +1540,7 @@ async def test_the_reply_does_not_wait_for_the_reaction():
     fails."""
     gate = asyncio.Event()   # never set until after the check below
     adapter = _ReactingAdapter(react_gate=gate)
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(adapter=adapter)
+    pipeline, _metrics, _audit, background = _build_pipeline(adapter=adapter)
 
     started = time.perf_counter()
     try:
@@ -1702,7 +1574,7 @@ async def test_a_slow_reaction_is_not_counted_as_tag_overhead():
     with a 1.0 s reaction, a critical-path regression reads >= 1.0 and a loaded
     box stays well under 0.5."""
     adapter = _ReactingAdapter(react_delay=1.0)
-    pipeline, metrics, _audit, _memory, background = _build_pipeline(adapter=adapter)
+    pipeline, metrics, _audit, background = _build_pipeline(adapter=adapter)
 
     await pipeline.run(_request())
     overhead = metrics.observations("nora_overhead_seconds")
@@ -1721,7 +1593,7 @@ async def test_a_timed_out_turn_resolves_to_a_caution_too():
     `finally` up next to `check_outcome` — the crash test alone does not catch
     a resolve placed after `invoke.run` but before delivery."""
     adapter = _ReactingAdapter()
-    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, metrics, _audit, background = _build_pipeline(
         adapter=adapter, runner=ScriptedRunner(_reply_turns(), delay=0.2),
         timeout_seconds=0.01,
     )
@@ -1747,7 +1619,7 @@ async def test_reactions_disabled_puts_nothing_on_the_message():
     PROBE: drop the `if self._reactions` guard in
     `nora/engagement/pipeline.py::_run_admitted` and this fails."""
     adapter = _ReactingAdapter()
-    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, metrics, _audit, background = _build_pipeline(
         adapter=adapter, reactions=False,
     )
 
@@ -1784,7 +1656,7 @@ async def test_the_room_scoped_tools_are_bound_to_the_tagged_conversation():
     """`group_members` takes no argument, so the ONLY thing that can decide
     which group it answers about is what the pipeline closed over."""
     runner = _RoomRunner("group_members")
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         runner=runner,
         roster_source=FakeRosterSource(groups={
             "g1": (frozenset({"+852111"}), frozenset({"+852000"})),
@@ -1802,7 +1674,7 @@ async def test_nora_is_not_reported_as_a_member_of_her_own_group():
     identity.toml, so without the identity threaded through the pipeline she
     would be counted as one member with no name — a stranger, who is her."""
     runner = _RoomRunner("group_members")
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         runner=runner,
         adapter=_FakeAdapter(account="+852000"),
         roster_source=FakeRosterSource(groups={
@@ -1818,19 +1690,10 @@ async def test_a_pipeline_with_no_roster_source_degrades_instead_of_emptying_the
     """`nora.app.offline` wires none — there is no daemon in a harness. The
     answer must be «I could not look», never «nobody is here» (R-5)."""
     runner = _RoomRunner("group_members")
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(runner=runner)
+    pipeline, _metrics, _audit, background = _build_pipeline(runner=runner)
     await pipeline.run(_request())
     await _drain(background)
     assert runner.result["status"] == "unavailable"
-
-
-async def test_the_called_pass_excludes_about_even_with_honcho_wired():
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline()
-    await pipeline.run(_request(_msg()))
-    await _drain(background)
-    names = {tool.tool_name for tool in pipeline._runner.calls[-1]["tools"]}
-    assert "about" not in names
-    assert {"load_transcript", "send_reply"} <= names
 
 
 # ---------------------------------------------------------------------------
@@ -1875,7 +1738,7 @@ async def test_multi_message_is_active_and_the_default_cap_is_three():
     """
     adapter = _FakeAdapter()
     metrics = Metrics()
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         adapter=adapter, metrics=metrics,
         runner=ScriptedRunner(_multi_turns("一", "二", "三")),
     )
@@ -1895,7 +1758,7 @@ async def test_the_cap_tracks_the_send_reply_budget_and_nothing_else():
     """
     adapter = _FakeAdapter()
     metrics = Metrics()
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         adapter=adapter, metrics=metrics, tool_registry=_RaisedCap(2),
         runner=ScriptedRunner(_multi_turns("一", "二", "三")),
     )
@@ -1909,7 +1772,7 @@ async def test_the_cap_tracks_the_send_reply_budget_and_nothing_else():
 
 async def test_the_raised_cap_is_still_a_cap():
     adapter = _FakeAdapter()
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         adapter=adapter, tool_registry=_RaisedCap(2),
         runner=ScriptedRunner(_multi_turns("一", "二", "三", "四")),
     )
@@ -1926,7 +1789,7 @@ async def test_the_canary_and_r18_run_on_every_message_not_just_the_first():
     into a leak."""
     adapter = _FakeAdapter()
     metrics = Metrics()
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         adapter=adapter, metrics=metrics, tool_registry=_RaisedCap(3),
         runner=ScriptedRunner(_multi_turns("等我搵下", "佢個號碼係 +85290000101", "問返佢啦")),
     )
@@ -1942,7 +1805,7 @@ async def test_every_message_gets_its_own_audit_row():
     row would leave the audit — and therefore `load_transcript`, and therefore the
     next turn's transcript — holding a conversation that did not happen."""
     adapter = _FakeAdapter()
-    pipeline, _, audit, _, background = _build_pipeline(
+    pipeline, _, audit, background = _build_pipeline(
         adapter=adapter, tool_registry=_RaisedCap(3),
         runner=ScriptedRunner(_multi_turns("一", "二", "三")),
     )
@@ -1953,23 +1816,6 @@ async def test_every_message_gets_its_own_audit_row():
     assert [r.body for r in nora_rows] == ["一", "二", "三"]
 
 
-async def test_a_multi_message_turn_feeds_each_of_noras_messages_under_her_peer():
-    """The tag path feeds NORA's replies under her aiPeer, and a multi-message
-    turn feeds EACH message, not only the last. All
-    three go under `nora` into the conversation session; none under the human's
-    peer (DEC-36 at the message level)."""
-    memory = _FakeMemory()
-    pipeline, _, _, _, background = _build_pipeline(
-        memory=memory, tool_registry=_RaisedCap(3),
-        runner=ScriptedRunner(_multi_turns("一", "二", "三")),
-    )
-    await pipeline.run(_request())
-    await _drain(background)
-
-    assert memory.fed == [("nora", "一", "g1"), ("nora", "二", "g1"),
-                          ("nora", "三", "g1")]
-
-
 # ---- the partial-delivery observable ---------------------------------------
 
 
@@ -1978,14 +1824,14 @@ async def test_a_turn_cut_off_between_messages_is_counted_as_partial():
     R-8's turn cap.
 
     Everything else about this turn looks successful: `delivered` is True,
-    `check_outcome` returns True, the indicator resolves ✅, Honcho is fed and
+    `check_outcome` returns True, the indicator resolves ✅ and
     `nora_silent_failures_total` never moves — R-23 only relabels turns that
     said NOTHING. Without this counter the group reads half a thought and no
     series anywhere says so.
     """
     adapter = _FakeAdapter()
     metrics = Metrics()
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         adapter=adapter, metrics=metrics, tool_registry=_RaisedCap(3),
         runner=ScriptedRunner([
             ScriptedTurn(tool_calls=[("send_reply", {"text": "一"})], total_tokens=20_000),
@@ -2010,7 +1856,7 @@ async def test_a_turn_that_said_nothing_is_a_silent_failure_not_a_partial_one():
     delivery problem, a silent one is a "she never spoke" problem, and summing
     them would put the two most different outcomes in one number."""
     metrics = Metrics()
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         metrics=metrics,
         runner=ScriptedRunner([# DEC-93: a turn that wrote NOTHING. Prose would be RECOVERED and
         # delivered; this test is about a genuinely silent turn.
@@ -2043,7 +1889,7 @@ async def test_a_timeout_after_the_messages_went_out_is_counted_as_partial():
     budget — DEC-25's argument, applied to this counter."""
     adapter = _FakeAdapter()
     metrics = Metrics()
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         adapter=adapter, metrics=metrics, tool_registry=_RaisedCap(3),
         runner=_HangsAfterReplying(_multi_turns("一", "二")), timeout_seconds=0.05,
     )
@@ -2062,7 +1908,7 @@ async def test_a_timeout_that_delivered_nothing_is_not_a_partial_reply():
     """The control: no messages, no partial. Otherwise every timeout would
     read as a truncated reply and the counter would measure timeouts."""
     metrics = Metrics()
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         metrics=metrics, runner=ScriptedRunner(_reply_turns(), delay=5.0),
         timeout_seconds=0.05,
     )
@@ -2078,7 +1924,7 @@ async def test_a_complete_turn_is_never_counted_as_partial():
     must leave this counter alone, or a dashboard built on it reads every
     successful reply as a truncation."""
     metrics = Metrics()
-    pipeline, _, _, _, background = _build_pipeline(metrics=metrics)
+    pipeline, _, _, background = _build_pipeline(metrics=metrics)
     await pipeline.run(_request())
     await _drain(background)
 
@@ -2097,9 +1943,9 @@ async def test_a_guard_cancelled_turn_never_delivers_the_guards_own_veto_string(
     sent — the turn is finished.»
 
     Without `cancelled_model_call` the recovery sends that to the group, writes
-    it to the audit as her authored body, and feeds it to Honcho as her own
-    speech. It passes R-6 and R-18 trivially, so no other guard can stop it —
-    which is the whole reason the signal has to come from the guard itself.
+    it to the audit as her authored body. It passes R-6 and R-18 trivially, so
+    no other guard can stop it — which is the whole reason the signal has to
+    come from the guard itself.
 
     Delete `not handle.guard.cancelled_model_call` and this reds."""
     # Spend the terminal budget on replies the Deliverer REFUSES (R-18), so
@@ -2118,7 +1964,7 @@ async def test_a_guard_cancelled_turn_never_delivers_the_guards_own_veto_string(
     # finished.» to the group in exactly this scripting.
     cap = ToolRegistry().budgets()["send_reply"]
     adapter = _FakeAdapter()
-    pipeline, metrics, _audit, memory, background = _build_pipeline(
+    pipeline, metrics, _audit, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner([
             ScriptedTurn(tool_calls=[
@@ -2135,7 +1981,6 @@ async def test_a_guard_cancelled_turn_never_delivers_the_guards_own_veto_string(
     assert adapter.sent == []
     assert not any("turn is finished" in t for _target, t in adapter.sent)
     assert metrics.get("nora_recovered_replies_total") == 0
-    assert memory.fed == []
 
 
 async def test_the_scripted_double_returns_the_cancel_text_like_the_real_sdk():
@@ -2393,7 +2238,7 @@ async def test_no_debrief_wiring_means_the_stage_is_never_reached(monkeypatch):
     exactly as long as without the stage."""
     spy = _RecordingDebrief()
     _patch_debrief(monkeypatch, spy)
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline()
+    pipeline, _metrics, _audit, background = _build_pipeline()
 
     await pipeline.run(_request())
     await _drain(background)
@@ -2418,7 +2263,7 @@ async def test_the_debrief_runs_on_a_delivered_turn_and_on_a_silence(
     """
     spy = _RecordingDebrief()
     _patch_debrief(monkeypatch, spy)
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         runner=ScriptedRunner(turns), debrief_wiring=_wiring(),
     )
 
@@ -2435,7 +2280,7 @@ async def test_the_debrief_runs_after_a_timeout_too(monkeypatch):
     before `completed = True`."""
     spy = _RecordingDebrief()
     _patch_debrief(monkeypatch, spy)
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         runner=ScriptedRunner(_reply_turns(), delay=1.0), timeout_seconds=0.01,
         debrief_wiring=_wiring(),
     )
@@ -2457,7 +2302,7 @@ async def test_a_context_failure_never_started_a_pass_to_debrief(monkeypatch):
     """
     spy = _RecordingDebrief()
     _patch_debrief(monkeypatch, spy)
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         context_assembler=_FaultingContextAssembler(), debrief_wiring=_wiring(),
     )
 
@@ -2481,7 +2326,7 @@ async def test_the_debrief_holds_the_slot_and_then_releases_it(monkeypatch):
         held_during.append(_held(pipeline_ref[0]))
 
     _patch_debrief(monkeypatch, _observe)
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         debrief_wiring=_wiring(),
     )
     pipeline_ref.append(pipeline)
@@ -2504,7 +2349,7 @@ async def test_a_debrief_that_blows_up_still_releases_the_lock(monkeypatch):
     `try/except Exception` here would let it through and this goes red.
     """
     _patch_debrief(monkeypatch, _RecordingDebrief(fail=asyncio.CancelledError()))
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         debrief_wiring=_wiring(),
     )
 
@@ -2525,7 +2370,7 @@ async def test_a_debrief_failure_never_reports_a_partial_reply(monkeypatch):
     """
     adapter = _FakeAdapter()
     _patch_debrief(monkeypatch, _RecordingDebrief(fail=RuntimeError("boom")))
-    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, metrics, _audit, background = _build_pipeline(
         adapter=adapter, debrief_wiring=_wiring(),
     )
 
@@ -2570,7 +2415,7 @@ async def test_the_debriefs_cost_is_excluded_from_the_tag_latency_series(monkeyp
     debrief_seconds = 300.0
 
     _patch_debrief(monkeypatch, _ClockAdvancingDebrief(timer, debrief_seconds))
-    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, metrics, _audit, background = _build_pipeline(
         debrief_wiring=_wiring(),
     )
 
@@ -2591,7 +2436,7 @@ async def test_every_retained_trace_is_counted_by_outcome(monkeypatch):
     a recording layer that silently stopped writing would otherwise be
     discovered at the first fold, which is precisely when the missing traces
     can no longer be reconstructed."""
-    pipeline, metrics, _audit, _memory, background = _build_pipeline()
+    pipeline, metrics, _audit, background = _build_pipeline()
 
     await pipeline.run(_request())
     await _drain(background)
@@ -2607,7 +2452,7 @@ async def test_nora_engagement_outcomes_total_counts_a_send_reply_turn():
     `outcome="send_reply"` — paired with the
     recovered/silent/no-store controls below so a `== 0` reading anywhere in
     this file can be told apart from an instrument that never fires."""
-    pipeline, metrics, _audit, _memory, background = _build_pipeline()
+    pipeline, metrics, _audit, background = _build_pipeline()
 
     await pipeline.run(_request())
     await _drain(background)
@@ -2623,7 +2468,7 @@ async def test_nora_engagement_outcomes_total_counts_a_recovered_reply_as_recove
     the two would hide the recovered share this counter exists to keep
     visible."""
     adapter = _FakeAdapter()
-    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, metrics, _audit, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner([ScriptedTurn(final_text="I would have said this")]),
     )
@@ -2640,7 +2485,7 @@ async def test_nora_engagement_outcomes_total_counts_a_silent_turn():
     wrote nothing at all lands under `outcome="silent"`, the same turn
     `nora_silent_failures_total{reason="no_send_call"}` already counts."""
     adapter = _FakeAdapter()
-    pipeline, metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, metrics, _audit, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner([ScriptedTurn(final_text="")]),
     )
@@ -2660,7 +2505,7 @@ async def test_nora_engagement_outcomes_total_does_not_depend_on_the_trace_store
     not wired a store — `nora.engagement.pipeline.EngagementPipeline`'s own
     docstring on `tag_trace_store`), because a deployment losing retention
     must not silently lose route-health visibility along with it."""
-    pipeline, metrics, _audit, _memory, background = _build_pipeline()
+    pipeline, metrics, _audit, background = _build_pipeline()
     # `_build_pipeline` always substitutes a fake store for `None` (so every
     # OTHER scenario in this file can read `pipeline._tag_trace_store.saved`
     # without wiring one itself) — unwiring it here has to go around that,
@@ -2699,7 +2544,7 @@ async def test_one_tagged_message_produces_exactly_one_trace(exported_spans):
     admission and turn spans become roots of their own traces — three trace ids,
     three roots.
     """
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline()
+    pipeline, _metrics, _audit, background = _build_pipeline()
 
     await pipeline.run(_request())
     await _drain(background)
@@ -2721,7 +2566,7 @@ async def test_every_stage_span_hangs_under_the_tag_root(exported_spans):
     PROBE: open the turn span around only part of `_run_turn`'s body, or hoist
     `engagement.invoke` out of it, and a parent link breaks.
     """
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline()
+    pipeline, _metrics, _audit, background = _build_pipeline()
 
     await pipeline.run(_request())
     await _drain(background)
@@ -2743,7 +2588,7 @@ async def test_the_turn_span_records_the_outcome_the_turn_actually_had(exported_
 
     PROBE: delete the `annotate(...)` in `_run_turn`'s `finally`.
     """
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline()
+    pipeline, _metrics, _audit, background = _build_pipeline()
     await pipeline.run(_request())
     await _drain(background)
     turn = _by_name(exported_spans)["engagement.turn"][0]
@@ -2755,7 +2600,7 @@ async def test_a_turn_that_says_nothing_is_recorded_as_silent(exported_spans):
     """The same attribute, a different value — so the assertion above is reading
     the turn rather than a constant. R-5's deliberate silence is the case that
     most needs a trace, because nothing else marks it as a decision."""
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         runner=ScriptedRunner([]),
     )
     await pipeline.run(_request())
@@ -2773,7 +2618,7 @@ async def test_a_rejected_tag_leaves_a_trace_that_says_it_was_rejected(exported_
     PROBE: drop `annotate(nora.admission=...)` in `run` and a refused tag is
     indistinguishable from one that crashed before its first stage.
     """
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         adapter=_FakeAdapter(account="+852111"),
     )
 
@@ -2801,7 +2646,7 @@ async def test_a_tag_turn_still_reaches_the_collector(exported_spans):
     zero while the ingest tests stay green — which is the pair that pins the
     rule to roots that CAN contain a generation rather than to trace volume.
     """
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline()
+    pipeline, _metrics, _audit, background = _build_pipeline()
 
     await pipeline.run(_request())
     await _drain(background)
@@ -2829,7 +2674,7 @@ async def test_a_tag_refused_at_admission_still_reaches_the_collector(exported_s
     PROBE: move the `generation` declaration off `run`'s root onto the invoke
     span and this reddens while the ordinary turn above stays green.
     """
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         adapter=_FakeAdapter(account="+852111"),
     )
 
@@ -2857,7 +2702,7 @@ async def test_a_queued_tag_lands_in_the_trace_that_admitted_it(exported_spans):
     """
     adapter = _FakeAdapter()
     runner = _EchoRunner(delay=0.2)
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         adapter=adapter, runner=runner,
     )
 
@@ -2895,7 +2740,7 @@ async def test_a_queued_tag_with_no_carried_context_starts_its_own_trace(exporte
     """
     adapter = _FakeAdapter()
     runner = _EchoRunner(delay=0.2)
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         adapter=adapter, runner=runner,
     )
 
@@ -2952,7 +2797,7 @@ async def test_a_tag_turn_that_replies_is_written_to_the_decision_log():
     `EngagementPipeline.run`.
     """
     store = InMemoryDecisionLogStore()
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         runner=ScriptedRunner(_reply_turns()),
         decisions=_decision_recorder(store),
     )
@@ -2983,7 +2828,7 @@ async def test_a_tag_turn_that_said_nothing_is_written_too():
     or collapse the three-way verdict to `replied`/`failed`.
     """
     store = InMemoryDecisionLogStore()
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         runner=ScriptedRunner([ScriptedTurn(tool_calls=[], final_text="")]),
         decisions=_decision_recorder(store),
     )
@@ -3010,7 +2855,7 @@ async def test_a_decision_log_that_is_down_never_fails_a_tag_reply():
 
     adapter = _FakeAdapter()
     metrics = Metrics()
-    pipeline, _, _, _, background = _build_pipeline(
+    pipeline, _, _, background = _build_pipeline(
         metrics=metrics,
         adapter=adapter, runner=ScriptedRunner(_reply_turns("今晚七點半得")),
         decisions=_decision_recorder(_Broken(), metrics=metrics),
@@ -3049,7 +2894,7 @@ async def test_a_tag_turn_that_faults_is_written_too():
             raise RuntimeError("the context assembly died")
 
     store = InMemoryDecisionLogStore()
-    pipeline, metrics, _, _, background = _build_pipeline(
+    pipeline, metrics, _, background = _build_pipeline(
         context_assembler=_ExplodingAssembler(),
         decisions=_decision_recorder(store),
     )
@@ -3072,7 +2917,7 @@ async def test_a_tag_turn_that_faults_is_written_too():
 async def test_the_graph_debrief_gets_the_pass_transcript_window(monkeypatch):
     spy = _RecordingDebrief()
     _patch_debrief(monkeypatch, spy)
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         runner=ScriptedRunner(_reply_turns()), debrief_wiring=_wiring(),
     )
     real = pipeline._context.assemble
@@ -3107,7 +2952,7 @@ async def test_the_tag_s_room_carries_the_record_row_of_the_message_that_raised_
     audit = FakeRecordStore()
     await audit.append(message=_msg("g1", "+852222"), person_id=None)      # someone else's
     mine = await audit.append(message=_msg(), person_id=None)
-    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+    pipeline, _metrics, _audit, background = _build_pipeline(
         audit=audit, tool_registry=_Spy(),
     )
     await pipeline.run(_request())
@@ -3130,14 +2975,13 @@ async def test_load_transcript_can_read_before_the_prompt_slice():
             platform="signal", conversation_id="g1", conversation_type="group",
             sender_id="+852111", sender_name="Miles", timestamp=100 + i, body=f"m{i}", raw={},
         ))
-    memory = _FakeMemory()
     metrics = Metrics()
     runner = _RoomRunner("load_transcript", limit=10)
-    pipeline, _m, _a, _mem, background = _build_pipeline(
-        audit=audit, memory=memory, metrics=metrics, runner=runner,
+    pipeline, _m, _a, background = _build_pipeline(
+        audit=audit, metrics=metrics, runner=runner,
         tool_registry=_Spy(),
         context_assembler=TranscriptInjection(
-            audit=audit, memory=memory, persons=PERSONS, context_window=10,
+            audit=audit, persons=PERSONS, context_window=10,
             prompt_window=4, metrics=metrics,
         ),
     )
@@ -3157,7 +3001,7 @@ async def test_a_reaction_only_turn_has_no_text_fallback_or_progress_overwrite()
     audit = FakeRecordStore()
     message = _msg()
     await audit.append(message=message)
-    pipeline, metrics, _, memory, background = _build_pipeline(
+    pipeline, metrics, _, background = _build_pipeline(
         adapter=adapter, audit=audit,
         runner=ScriptedRunner([ScriptedTurn(tool_calls=[
             ('reaction_send', {'emoji': '👍', 'reply_to': 1})])]),
@@ -3169,5 +3013,4 @@ async def test_a_reaction_only_turn_has_no_text_fallback_or_progress_overwrite()
         ('👀', False), ('👀', True), ('👍', False)]
     assert len(audit.reactions) == 1
     assert not any(r['is_nora'] for r in audit.rows)
-    assert not any(peer == 'nora' for peer, _, _ in memory.fed)
     assert metrics.get('nora_engagement_outcomes_total', outcome='send_reply') == 1

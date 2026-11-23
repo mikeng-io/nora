@@ -64,7 +64,7 @@ def test_the_catalogue_is_the_designs_and_names_the_enrichment_reads():
     providers', `place_info`) — public fetches the tag path already made,
     now on the session's own surface too."""
     assert {
-        "record_query", "note_read", "about", "event_search",
+        "record_query", "note_read", "memory_search", "event_search",
         "group_members", "poll_list", "poll_read", "room_state_read",
         "room_read", "load_transcript", "who_said", "lookup_person",
         "media_fetch", "media_search", "file_fetch",
@@ -113,7 +113,7 @@ def test_an_act_verb_is_never_wired_even_when_the_catalogue_names_it():
     surface = read_surface(
         read_only=frozenset({"note_read"}), enabled_flags=(), registry_withheld=frozenset())
     assert surface.wired == {"note_read"}
-    assert "about" in surface.missing
+    assert "event_search" in surface.missing
 
 
 # ---- budgets ------------------------------------------------------------------
@@ -185,9 +185,9 @@ def _tool(name: str) -> Any:
 
 def test_read_tools_are_built_for_the_agenda_room_under_the_cognition_grant():
     source = _Source()
-    build = read_tools_for(source, names=frozenset({"note_read", "about"}))
+    build = read_tools_for(source, names=frozenset({"note_read", "lookup_person"}))
     tools = build("friends", [Room("signal", "g1")])
-    assert sorted(t.__name__ for t in tools) == ["about", "note_read"]
+    assert sorted(t.__name__ for t in tools) == ["lookup_person", "note_read"]
     (call,) = source.calls
     assert call["key"] == "g1" and call["unit"] is None       # scope-resolved: the room's own
     assert call["adaptor"] == "cognition"
@@ -262,7 +262,7 @@ def _runner(
     runner = CognitionSessionRunner(
         store=ledger, stimulus_store=stimuli, agent_runner=agent,
         home_rooms={"u": HOME}, read_tools_for=read_tools_for or (lambda unit, rooms: []),
-        read_only_tools=frozenset({"note_read", "about"}),
+        read_only_tools=frozenset({"note_read", "lookup_person"}),
         skill_text_for=kw.pop("skill_text_for", lambda: ""),
         grounder=grounder or EmptyGrounder(),
         doctrine_text="FIXED", doctrine_sha256="fixed-sha",
@@ -321,7 +321,7 @@ async def test_an_agenda_spanning_rooms_asks_for_each_rooms_reads_and_never_the_
 
     def reads(unit: str, rooms: Sequence[Room]) -> list[Any]:
         asked.append(list(rooms))
-        return [_tool("note_read"), _tool("about")]
+        return [_tool("note_read"), _tool("lookup_person")]
 
     agent = _Agent()
     labels = Grounding(room_labels={"discord:other": "The Other Room", "whatsapp:third": "Third"})
@@ -477,7 +477,7 @@ async def test_the_guard_holds_the_safety_checks_and_no_call_ceiling(monkeypatch
 
     _patch_agent(monkeypatch, invoke)
     await _go(_live(
-        param_names={"note_read": frozenset({"x"})}, result_caps={"about": 4000},
+        param_names={"note_read": frozenset({"x"})}, result_caps={"lookup_person": 4000},
     ))
     (guard,) = _Guard.seen
     assert guard["adaptor"] == "cognition"
@@ -485,7 +485,7 @@ async def test_the_guard_holds_the_safety_checks_and_no_call_ceiling(monkeypatch
     assert set(guard["budgets"]) == {"note_read", "close"}       # the membership set
     assert "memory_budget" not in guard and "pass_budget" not in guard
     assert guard["param_names"] == {"note_read": frozenset({"x"})}
-    assert guard["result_caps"] == {"about": 4000}
+    assert guard["result_caps"] == {"lookup_person": 4000}
 
 
 # ---- skills, shutdown, the boot check -----------------------------------------

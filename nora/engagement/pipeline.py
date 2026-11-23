@@ -1,5 +1,5 @@
 """`EngagementPipeline` — runs admission → context → doctrine → tools →
-invoke → deliver → feedback for a tag `nora.ingest` already decided to
+invoke → deliver for a tag `nora.ingest` already decided to
 engage. A readable table of contents, not a decision-maker:
 every branch belongs to the stage that owns it (`nora.engagement.stages.*`)
 or, for doctrine/tools, to the collaborator it delegates straight to
@@ -78,7 +78,7 @@ import asyncio
 import dataclasses
 import logging
 import time
-from collections.abc import Awaitable, Callable, Coroutine, Mapping
+from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from contextlib import ExitStack
 from datetime import datetime
 from typing import Any
@@ -92,6 +92,7 @@ from nora.agent.prefill import engagement_floor
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room, trigger_message_ids
 from nora.domain import audience as audience_names
+from nora.domain.blocks import ContextBlock
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.external_files import render_file_links
 from nora.domain.framing import TAG_HEADER
@@ -99,7 +100,6 @@ from nora.domain.models import TagContext
 from nora.domain.ports import (
     EngagementRequest,
     LinkPreviewSource,
-    MemoryStore,
     RecordStore,
     RosterSource,
 )
@@ -124,7 +124,7 @@ from nora.tag import Debounce
 from .graph_context import EngagementGraph
 from .mentions import MentionRenderer
 from .slots import ConversationSlots, Key
-from .stages import admission, command, debrief, deliver, feedback, graph_debrief, indicate, invoke
+from .stages import admission, command, debrief, deliver, graph_debrief, indicate, invoke
 from .stages.admission import Admission
 from .stages.indicate import Indicator
 from .stages.invoke import AgentRunner
@@ -193,7 +193,6 @@ class EngagementPipeline:
         access: Any,
         adapters: Mapping[str, Any],
         audit: RecordStore,
-        memory: MemoryStore,
         persons: Persons,
         doctrine_store: Any,
         context_assembler: Any,
@@ -232,7 +231,7 @@ class EngagementPipeline:
         # the wrong group. Keyed by `NormalizedMessage.platform`, which is
         # the only thing that can answer "where did this come from".
         self._adapters = adapters
-        self._audit, self._memory, self._persons = audit, memory, persons
+        self._audit, self._persons = audit, persons
         self._access = access or IdentityAccess.for_files(persons, policy)
         self._doctrine_store, self._context = doctrine_store, context_assembler
         self._runner, self._tool_registry = runner, tool_registry
@@ -244,7 +243,7 @@ class EngagementPipeline:
         self._policy = policy
         self._debounce, self._canary = debounce, canary
         self._display_name = display_name
-        # The Nora aiPeer id (Honcho): her replies feed under it.
+        # Nora's own id (`[agent].name`).
         self._ai_peer = ai_peer
         self._context_window = context_window
         self._clock = clock
@@ -294,6 +293,27 @@ class EngagementPipeline:
         self._slots = slots
         # Opaque area collaborator; absent where room management is not wired.
         self._room_commands = room_commands
+
+    async def called_pass_prompt(
+        self, ctx: TagContext, *, floor: Sequence[ContextBlock],
+        display_name: str, now: datetime, header: str,
+        row_id: int | None = None, room: Room | None = None,
+    ) -> tuple[list[dict[str, Any]], str, frozenset[str]]:
+        """The `called` pass's prompt, for one assembled `ctx`.
+
+        The single entry for this render: the tag pipeline calls it inside
+        the turn and `nora.subject.as_of.render_tag_blocks` calls it from a
+        restore, both through this pipeline rather than at `_graph`/`_policy`
+        — the room's unit and the row/room inputs cannot drift between the
+        two callers.
+        """
+        msg = ctx.message
+        convo = self._policy.conversation(msg.platform, msg.conversation_id)
+        return await self._graph.prompt(
+            "called", ctx, floor=floor, unit=convo.unit if convo else None,
+            display_name=display_name, now=now, header=header,
+            row_id=row_id, room=room,
+        )
 
     def _adapter_for(self, platform: str) -> Any:
         """The adapter this tag's platform belongs to, or a hard failure.
@@ -706,7 +726,7 @@ class EngagementPipeline:
                 store=self._audit, conversation_id=msg.conversation_id,
                 conversation_type=msg.conversation_type,
                 persons=self._access.persons_view(),
-                honcho=self._memory, deliverer=handle.deliverer,
+                deliverer=handle.deliverer,
                 room=room, question=render_file_links(msg.body), message=msg,
                 context_window=self._context_window, metrics=self._metrics,
                 transcript=ctx.transcript, engagement=True,
@@ -723,10 +743,9 @@ class EngagementPipeline:
                 ctx, display_name=self._display_name, tagger_name=tagger_name, now=now,
                 context_window=self._context_window, catalogue=surface.prompt_catalogue,
             )
-            pre_fill, tag_message, shown = await self._graph.prompt(
-                "called", ctx, floor=floor, unit=convo.unit if convo else None,
-                display_name=self._display_name, now=now, header=TAG_HEADER,
-                row_id=request.message_row_id, room=room,
+            pre_fill, tag_message, shown = await self.called_pass_prompt(
+                ctx, floor=floor, display_name=self._display_name, now=now,
+                header=TAG_HEADER, row_id=request.message_row_id, room=room,
             )
             seed_pass_shown(shown)
 
@@ -789,8 +808,8 @@ class EngagementPipeline:
                 # so this branch cannot fire on a timeout or an API error.
                 # On successful delivery the turn FLOWS THROUGH to
                 # `check_outcome` rather than returning here — it read
-                # `deliverer.delivered` True, corrected the trace, fed Honcho
-                # and marked the turn completed exactly like a normal delivery.
+                # `deliverer.delivered` True, corrected the trace and marked
+                # the turn completed exactly like a normal delivery.
                 salvable = (
                     # Occasion-gated: a
                     # participation turn never delivers a draft on ANY branch —
@@ -813,10 +832,10 @@ class EngagementPipeline:
                         # NO early return and NO `delivered = True` here: the
                         # turn flows through to `check_outcome` below, which
                         # already reads `deliverer.delivered` (True after the
-                        # salvage) and corrects the trace, feeds Honcho and
-                        # marks the turn completed — the same accounting a
-                        # normal delivery gets. An early return here would
-                        # skip exactly those three things.
+                        # salvage) and corrects the trace and marks the turn
+                        # completed — the same accounting a normal delivery
+                        # gets. An early return here would skip exactly those
+                        # two things.
                     else:
                         # Delivery refused (R-2/R-4/R-6/R-18) — nothing went
                         # out, stay silent exactly like the generic paths.
@@ -878,10 +897,10 @@ class EngagementPipeline:
                 # cost the guarantee.
                 #
                 # `source` distinguishes them for `Deliverer`, and that is not
-                # cosmetic: `source="fallback"` is excluded from the Honcho
-                # feed because nobody composed it, while a drafted answer IS
-                # her own sentence and her memory of her own speech should
-                # contain it — exactly the argument DEC-93's recovery makes
+                # cosmetic: `source="fallback"` is excluded from
+                # `Deliverer.sent_texts` because nobody composed it, while a
+                # drafted answer IS her own sentence and the record of what she
+                # said should contain it — exactly the argument DEC-93's recovery makes
                 # below for the same reason.
                 drafted = final_text.strip()
                 if drafted and await handle.deliverer.deliver(
@@ -923,11 +942,11 @@ class EngagementPipeline:
             #     conversion, the link carry and the audit row all apply exactly
             #     as they would have. Nothing is bypassed to rescue it.
             #
-            # It DOES feed Honcho, unlike `_EXHAUSTED_FALLBACK`. `Deliverer`
-            # excludes only `source="fallback"`, and the distinction is real:
-            # the fallback is a canned apology nobody composed, while this is
-            # her own sentence that merely took the wrong exit. The group read
-            # it; her memory of her own speech should contain it.
+            # It IS kept in `Deliverer.sent_texts`, unlike `_EXHAUSTED_FALLBACK`.
+            # `Deliverer` excludes only `source="fallback"`, and the distinction
+            # is real: the fallback is a canned apology nobody composed, while
+            # this is her own sentence that merely took the wrong exit. The
+            # group read it; the record of what she said should contain it.
             #
             # Counted because the honest read of a non-zero value here is «the
             # provider is not honouring `required`», NOT «this feature is
@@ -1033,22 +1052,6 @@ class EngagementPipeline:
             if not delivered:
                 return                       # `finally` still resolves the indicator
 
-            # The tag path's semantic write — NORA'S replies, under the Nora
-            # aiPeer, into this conversation's session (Honcho). The human's
-            # words are already fed by the ambient memory_feed; this feeds only
-            # her side, building her self-model card. `sent_texts` is every
-            # message actually delivered (multi-message safe). Spawned off the
-            # reply path like every Honcho write.
-            # Gated on a MAPPED tagger, like the old feed: her self-model is
-            # built only from conversations with a known person (feeding her
-            # replies to unmapped senders is deliberately not done).
-            # `ctx.tagger is None` means an unmapped sender.
-            sent = handle.deliverer.sent_texts
-            if sent and ctx.tagger is not None:
-                self._spawn(feedback.run(
-                    memory=self._memory, ai_peer=self._ai_peer, sent_texts=sent,
-                    conversation_id=msg.conversation_id, metrics=self._metrics,
-                ))
             completed = True
         except BaseException:
             if disposition is not None:
@@ -1221,8 +1224,8 @@ class EngagementPipeline:
                 "nora.llm_seconds": llm_elapsed,
             })
             # DEC-40's observable. A turn that sent SOME of its messages and
-            # then stopped is not a silent turn — `delivered` is True, the
-            # indicator resolves ✅ and Honcho is fed — so nothing R-23 built
+            # then stopped is not a silent turn — `delivered` is True and the
+            # indicator resolves ✅ — so nothing R-23 built
             # can see it. Counted here, in the `finally`, because that is the
             # one point every exit path passes through: the cap-cut loop, the
             # timeout, the llm_error, and the outer `BaseException` alike.

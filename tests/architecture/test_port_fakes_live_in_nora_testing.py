@@ -235,7 +235,6 @@ def test_the_matcher_sees_the_shared_fakes_it_points_at() -> None:
     seen = {(h.key.split("::")[1], h.port) for h in stand_ins(SHARED_FAKES, ports)}
     for fake, port in (
         ("FakeBlobStore", "BlobStore"),
-        ("FakeMemoryStore", "MemoryStore"),
         ("FakeRosterSource", "RosterSource"),
         ("FakeMediaInterpreter", "MediaInterpreter"),
         ("FakeMediaObjectStore", "MediaObjectStore"),

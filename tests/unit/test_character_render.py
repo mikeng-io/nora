@@ -43,7 +43,7 @@ async def test_the_character_read_is_keyed_by_the_rooms_unit_for_its_listed_pers
                        written_at=1, established_by="x")
     await store.append(key=character_key("room-a", "ada"), body="per-room, old",
                        written_at=2, established_by="x")
-    ada = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
+    ada = PersonRef(person_id="ada", name="Ada")
     got = await read_character(
         store, unit="friends", members=(ada,), stage="tag_character",
         platform="signal", metrics=None,

@@ -7,7 +7,6 @@ import tomllib
 import tomlkit
 
 from evals.subject_config import build, divergences
-from nora.persons import load_persons
 from nora.subject.obtain import SubjectSpec, _baseline, _with, build_config
 
 
@@ -48,38 +47,6 @@ def test_generated_config_preserves_functional_settings_and_reports_feature_drif
     broken = tomlkit.parse(generated)
     broken["platforms"]["discord"]["enabled"] = False
     assert "platforms.discord.enabled" in divergences(tomlkit.dumps(broken), source)
-
-
-def test_workspace_isolation_preserves_separation_and_intentional_shared_units(
-    tmp_path, monkeypatch,
-):
-    from nora.app.memory_routing import build_workspace_router
-    from nora.policy import load_policy
-
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
-    policy = 'default = "deny"\n'
-    for unit, workspace in (("alpha", "first"), ("beta", "second"), ("gamma", "first")):
-        policy += (
-            f'[units.{unit}]\nworkspace = "{workspace}"\n'
-            f'[[conversations]]\nplatform = "signal"\nid = "generated-{unit}"\n'
-            f'label = "Generated {unit}"\npersons = "*"\nunit = "{unit}"\n'
-        )
-    identity = ('[workspaces.first]\nhoncho_workspace = "generated-a"\n'
-                '[workspaces.second]\nhoncho_workspace = "generated-b"\n')
-    cfg = build_config(SubjectSpec(database_url="sqlite://", workdir=tmp_path,
-                                  room=("signal", "generated-alpha"),
-                                  identity=identity, policy=policy))
-    bindings = load_persons(tmp_path / "identity.toml").honcho_workspaces
-    assert set(bindings) == {"first", "second"}
-    assert bindings["first"] != bindings["second"]
-    assert bindings == {"first": "generated-a", "second": "generated-b"}
-    router = build_workspace_router(policy=load_policy(tmp_path / "policy.toml"),
-                                    bindings=bindings, default_workspace=cfg.honcho.workspace_id)
-    assert router.for_unit("alpha").workspace == "generated-a"
-    assert router.for_unit("gamma").workspace == "generated-a"
-    assert router.for_unit("beta").workspace == "generated-b"
-    assert router.for_unit("unknown") is None
-    assert (tmp_path / "policy.toml").read_text() == policy
 
 
 def test_image_oauth_issuers_and_state_reach_both_kept_lanes(

@@ -50,7 +50,7 @@ def _trace(requirements, *, occasion="cognition"):
 
 
 def _room(*, fail=False, unnamed=False):
-    ref = PersonRef(person_id="p1", name="Member 1", honcho_peer_id="p1")
+    ref = PersonRef(person_id="p1", name="Member 1")
     return Room(
         platform="discord", conversation_id="room-b",
         roster_source=FakeRosterSource(
@@ -189,11 +189,11 @@ async def test_character_read_records_exclusions_and_location_subjects():
     from nora.infra.transit import TransitClient
     from nora.obs.metrics import Metrics
     from nora.policy import Conversation, Policy
-    from nora.testing import FakeMemoryStore, FakeRecordStore
+    from nora.testing import FakeRecordStore
     from tests.fakes import SinkSender
     from tests.unit.test_profile_disclosure import _Heads
 
-    ref = PersonRef(person_id="p1", name="Member 1", honcho_peer_id="p1")
+    ref = PersonRef(person_id="p1", name="Member 1")
     persons = Persons(by_person={"p1": ref}, index={("signal", "account-1"): "p1"})
     convo = Conversation(platform="signal", ids=frozenset({"room-a"}),
                          primary_id="room-a", unit="u1", label="Room", location=True,
@@ -213,7 +213,7 @@ async def test_character_read_records_exclusions_and_location_subjects():
     )
     tools = build_tools(
         store=FakeRecordStore(), conversation_id="room-a", conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(), metrics=Metrics(),
+        persons=persons, deliverer=SinkSender(), metrics=Metrics(),
         room=Room(platform="signal", conversation_id="room-a", persons=persons,
                   roster_source=FakeRosterSource(groups={"room-a": (frozenset({"account-1"}),)})),
         transit_source=TransitClient(kmb_base_url="http://127.0.0.1:1",
@@ -317,7 +317,7 @@ async def test_turn_citations_derive_note_and_memo_disclosure_and_refuse_unknown
                                    .with_live(live), origin=None)
     from nora.agent.registry import ToolRegistry
     from nora.obs.metrics import Metrics
-    from nora.testing import FakeMemoryStore, FakeRecordStore
+    from nora.testing import FakeRecordStore
     from tests.fakes import SinkSender
 
     for target, expected in ((B, "ok"), (replace(B, location=False), "nothing_found")):
@@ -330,7 +330,7 @@ async def test_turn_citations_derive_note_and_memo_disclosure_and_refuse_unknown
         room = _room()
         specs = registry.specs(
             store=FakeRecordStore(), conversation_id="room-b", conversation_type="group",
-            persons=Persons(by_person={}, index={}), honcho=FakeMemoryStore(),
+            persons=Persons(by_person={}, index={}),
             deliverer=SinkSender(),
             metrics=Metrics(), room=room,
         )

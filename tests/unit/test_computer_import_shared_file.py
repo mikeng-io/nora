@@ -140,7 +140,7 @@ def _tools(source, computer: _Computer, store=None, blobs=None) -> dict:
     specs = build_tool_specs(
         unit_for=lambda platform, cid: cid,
         store=store or FakeRecordStore(), conversation_id=GROUP, conversation_type="group",
-        persons=_NoPersons(), honcho=None, deliverer=None, metrics=Metrics(),
+        persons=_NoPersons(), deliverer=None, metrics=Metrics(),
         room=room, transit_source=None, blob_store=blobs or FakeBlobStore(),
         computer=computer.runtime, computer_events=computer.events,
         computer_settings=computer.settings, computer_leases=computer.leases,

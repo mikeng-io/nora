@@ -46,8 +46,8 @@ SHA = "ab" * 32
 
 _PERSONS = Persons(
     by_person={
-        "miles": PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles"),
-        "kit": PersonRef(person_id="kit", name="Kit", honcho_peer_id="kit"),
+        "miles": PersonRef(person_id="miles", name="Miles"),
+        "kit": PersonRef(person_id="kit", name="Kit"),
     },
     index={("signal", "+852111"): "miles", ("signal", "kit-uuid"): "kit"},
 )
@@ -87,13 +87,6 @@ def _request(msg: NormalizedMessage) -> EngagementRequest:
     )
 
 
-class _Memory:
-    """The Honcho port, inert: the pre-fetch never reads it."""
-
-    async def peer_card(self, **_: object) -> list[str]:
-        return []
-
-
 def _search(index: FakeMemoryIndex, metrics: Metrics) -> MemorySearch:
     graph = FakeMemoryGraph()
     graph.indexed.update(index.nodes)
@@ -114,7 +107,7 @@ async def _assemble(
     metrics = metrics or Metrics()
     policy = _policy()
     assembler = TranscriptInjection(
-        audit=audit or FakeRecordStore(), memory=_Memory(),  # type: ignore[arg-type]
+        audit=audit or FakeRecordStore(), # type: ignore[arg-type]
         persons=persons, context_window=10, metrics=metrics, policy=policy,
         lineage=LineagePolicy.from_policy(policy),
         memory_search=_search(index, metrics) if index is not None else None,
@@ -237,7 +230,7 @@ async def test_an_unlisted_mention_does_not_seed_person_facts() -> None:
     persons = replace(
         _PERSONS,
         by_person={**_PERSONS.by_person,
-                   "rin": PersonRef(person_id="rin", name="Rin", honcho_peer_id="rin")},
+                   "rin": PersonRef(person_id="rin", name="Rin")},
         index={**_PERSONS.index, ("signal", "rin-uuid"): "rin"},
     )
     index = FakeMemoryIndex(

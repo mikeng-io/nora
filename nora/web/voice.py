@@ -7,9 +7,8 @@ TRANSCRIPT here. This route builds the `NormalizedMessage` the Discord
 adapter's parser would have built for a typed message in that guild's own
 text room and hands it to the SAME entry point the adapter's `listen()` loop
 calls — the `Dispatcher`'s `on_message` — so a spoken utterance walks the identical
-path a typed one does: audit row, Honcho memory feed as a user input, the
-engage gate, and (when the gate admits it) the reactive turn that answers
-aloud through the TTS path.
+path a typed one does: audit row, the engage gate, and (when the gate admits
+it) the reactive turn that answers aloud through the TTS path.
 
 Deliberately a `register_*` function taking an existing `web.Application`,
 like `nora.web.api.register_web_routes`: the route joins the health app

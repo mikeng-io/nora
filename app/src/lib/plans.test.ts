@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Plan } from "./api/people";
 import { pastPlans, planToIcs, upcomingPlans } from "./plans";
-import { orderEpisodes, parseEpisode } from "./memory";
 
 const NOW = Date.parse("2026-09-27T12:00:00+08:00");
 const plan = (id: string, when: string | null, status: Plan["status"] = "confirmed"): Plan => ({
@@ -38,18 +37,6 @@ describe("plans in time", () => {
     expect(ics).toContain("LOCATION:Hotpot place\\, 1 Main St\\, Yuen Long");
     expect(ics.endsWith("END:VCALENDAR\r\n")).toBe(true);
     expect(planToIcs(plans[2], NOW)).toBeNull();
-  });
-});
-
-describe("episodes", () => {
-  it("pulls a leading date out and leaves the rest alone", () => {
-    expect(parseEpisode("2026-09-20 — asked about hotpot")).toMatchObject({ date: "2026-09-20", text: "asked about hotpot" });
-    expect(parseEpisode("likes hotpot")).toMatchObject({ date: null, text: "likes hotpot" });
-  });
-
-  it("orders dated episodes newest first, undated after in their own order", () => {
-    const out = orderEpisodes(["b", "2026-09-01: old", "a", "2026-09-10 — new"]).map((e) => e.text);
-    expect(out).toEqual(["new", "old", "b", "a"]);
   });
 });
 

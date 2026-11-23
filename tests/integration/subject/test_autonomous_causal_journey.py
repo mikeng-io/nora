@@ -33,7 +33,6 @@ from nora.subject.journey_world import (
     action_service,
     finite_boundary,
     make_causal_protocol,
-    memory_service,
 )
 from nora.subject.obtain import SubjectSpec, build_config, default_policy, obtain
 from nora.testing.causal_protocol import CAUSAL_TIMING, CORRECTION, INITIAL, TITLE
@@ -107,7 +106,6 @@ async def test_real_app_autonomous_cognition_fire_and_later_correction(
     protocol = make_causal_protocol(cfg)
     feeds, requests, owners = [], [], {}
     apps = services(cfg, requests)
-    apps["honcho.base_url"] = memory_service(feeds)
     model = finite_boundary(protocol)
     for key in tuple(apps):
         if key == "llm.base_url" or key.startswith("providers."):

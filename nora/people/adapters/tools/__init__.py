@@ -1,34 +1,25 @@
 from __future__ import annotations
 
-import asyncio
-import logging
 from types import SimpleNamespace
 from typing import Literal
 
 from nora.agent.room import find_by_name
-from nora.agent.security import scan_identifiers
-from nora.agent.toolkit.results import _memory_result, _record, _record_room
-from nora.agent.toolkit.rooms import _about_ok_note, _asked_about, _miss
+from nora.agent.toolkit.results import _record, _record_room
+from nora.agent.toolkit.rooms import _asked_about, _miss
 from nora.agent.toolkit.spec import _spec
 from nora.agent.whereis import (
     _dedupe,
-)
-from nora.domain.external_files import (
-    render_file_links,
 )
 from nora.domain.models import (
     PersonRef,
 )
 from nora.domain.ports import (
     DiscordPresenceState,
-    Recollection,
     SteamPlayerState,
     VoiceChannelRef,
 )
 
 from .membership import _make_member_update as _make_member_update
-
-log = logging.getLogger("nora.tools")
 
 
 def _make_group_members(deps):
@@ -137,49 +128,6 @@ def _make_lookup_person(deps):
     return lookup_person
 
 
-def _make_about(deps):
-    async def about(person: str, query: str | None = None) -> dict:
-        """What you know about someone in this conversation: their standing profile.
-        Call this when your answer depends on knowing somebody.
-
-        Use it for what they do, what they like and how they usually are, when
-        you were not given it. It returns conclusions built up over time, not messages; for
-        something actually said, use `load_transcript`. It knows only people in
-        THIS conversation.
-
-        SHOULD: write `query` yourself, as the question you need answered about
-        the person, not the raw tag message and not the topic.
-
-        Returns `status`: ok (`identity`, `profile`), already_present,
-        nothing_known, unavailable, not_found or ambiguous, with a `note` on
-        how to report it.
-
-        Args:
-            person: The name or nickname of the person, as the message said it.
-            query: The angle to recall them by; defaults to the tag message.
-        """
-        c = SimpleNamespace(
-            person=person,
-            query=query,
-            ai_peer=deps.ai_peer,
-            content_checks=deps.content_checks,
-            honcho=deps.honcho,
-            metrics=deps.metrics,
-            question=deps.question,
-            room=deps.room,
-            _memory_route=deps._memory_route,
-        )
-        k_, _, v_ = await _about__scope(c)
-        if k_:
-            return v_
-        k_, _, v_ = await _about__conclusions(c)
-        if k_:
-            return v_
-        return None  # type: ignore[return-value]
-
-    return about
-
-
 def _make_online_now(deps):
     async def online_now(
         what: Literal["online", "playing", "voice"],
@@ -237,144 +185,6 @@ def _make_online_now(deps):
         return None  # type: ignore[return-value]
 
     return online_now
-
-
-async def _about__scope(c):
-    c.view = await c.room.scope()
-    if not c.view.available:
-        _record_room(c.metrics, "about", "unavailable")
-        return (
-            True,
-            None,
-            {
-                "status": "unavailable",
-                "note": (
-                    "I can't work out who that is right "
-                    "now. Say you can't check, and do not say you don't know them."
-                ),
-            },
-        )
-    c.matches = c.view.find(c.person)
-    if not c.matches:
-        c.miss = _miss(c.person, c.view, content_checks=c.content_checks)
-        _record_room(c.metrics, "about", c.miss["status"], candidates=0)
-        return (True, None, c.miss)
-    if len(c.matches) > 1:
-        _record_room(c.metrics, "about", "ambiguous", candidates=len(c.matches))
-        return (
-            True,
-            None,
-            {
-                "status": "ambiguous",
-                **_asked_about(c.person, content_checks=c.content_checks),
-                ("could_be"): [p.name for p in c.matches],
-                "note": "More than one person here goes by that. Ask which one.",
-            },
-        )
-    c.ref = c.matches[0]
-    if (
-        c.room.tagger_card_injected
-        and c.room.tagger is not None
-        and (c.ref.person_id == c.room.tagger.person_id)
-    ):
-        _record_room(c.metrics, "about", "already_present", candidates=1)
-        return (
-            True,
-            None,
-            {
-                "status": "already_present",
-                "person": c.ref.name,
-                "note": (
-                    "Who they are and what you remember about them are both already in front of "
-                    "you, "
-                    "under peer_card and peer_history. Use those. Do not say you cannot remember, "
-                    "and "
-                    "do not look again."
-                ),
-            },
-        )
-
-    async def _card_of(peer: str) -> tuple[str, ...]:
-        try:
-            return tuple(await c.honcho.peer_card(peer_id=peer, **c._memory_route()))
-        except Exception:
-            log.exception("about: card read failed for %s", peer)
-            return ()
-
-    c._card_of = _card_of
-    try:
-        c.card, c.memory = await asyncio.gather(
-            c._card_of(c.ref.honcho_peer_id),
-            c.honcho.representation(
-                peer_id=c.ai_peer,
-                target=c.ref.honcho_peer_id,
-                **c._memory_route(),
-                search_query=(c.query or c.question or c.ref.name)[:500],
-            ),
-        )
-    except Exception:
-        log.exception("about failed for %s", c.ref.person_id)
-        c.card, c.memory = ((), Recollection(reachable=False))
-    if not c.memory.reachable:
-        c.metrics.inc("nora_recall_total", status="unavailable")
-        _record_room(c.metrics, "about", "unavailable")
-        return (
-            True,
-            None,
-            {
-                "status": "unavailable",
-                "person": c.ref.name,
-                "note": (
-                    "My memory is not answering. Say you can't check right now, and do not say "
-                    "you don't "
-                    "remember them."
-                ),
-            },
-        )
-    return (False, None, None)
-
-
-async def _about__conclusions(c):
-    c.kept = tuple(
-        __cv
-        for __cv in c.memory.conclusions
-        if scan_identifiers(__cv, content_checks=c.content_checks) is None
-    )
-    c.kept_card = tuple(
-        __cv for __cv in c.card if scan_identifiers(__cv, content_checks=c.content_checks) is None
-    )
-    c.withheld = len(c.memory.conclusions) - len(c.kept) + (len(c.card) - len(c.kept_card))
-    if not c.kept and (not c.kept_card):
-        c.metrics.inc("nora_recall_total", status="empty")
-        _record_room(c.metrics, "about", "ok", conclusions=0, withheld=c.withheld)
-        return (
-            True,
-            None,
-            {
-                "status": "nothing_known",
-                "person": c.ref.name,
-                "withheld": c.withheld,
-                (
-                    "note"
-                ): "I checked and I remember nothing about them yet. That is not the same as "
-                "not knowing who they are.",
-            },
-        )
-    c.metrics.inc("nora_recall_total", status="ok")
-    _record_room(c.metrics, "about", "ok", conclusions=len(c.kept), withheld=c.withheld)
-    c.result: dict = {
-        "status": "ok",
-        "person": c.ref.name,
-        "identity": [render_file_links(__cv) for __cv in c.kept_card],
-        ("profile"): [render_file_links(__cv) for __cv in c.kept],
-        "withheld": c.withheld,
-        "partial_view": c.view.degraded,
-    }
-    c.note = _about_ok_note(identity=bool(c.kept_card), profile=bool(c.kept))
-    if c.note:
-        c.result["note"] = c.note
-    return (True, None, _memory_result(c.result))
-    return (False, None, None)
 
 
 async def _online_now__check_what(c):
@@ -736,12 +546,10 @@ def build(deps):
     online_now = _make_online_now(deps)
     group_members = _make_group_members(deps)
     lookup_person = _make_lookup_person(deps)
-    about = _make_about(deps)
     member_update = _make_member_update(deps)
     return (
         _spec("online_now", online_now),
         _spec("group_members", group_members),
         _spec("lookup_person", lookup_person),
-        _spec("about", about),
         _spec("member_update", member_update),
     )

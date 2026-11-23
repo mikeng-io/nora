@@ -2,7 +2,7 @@
 voice, between her words being final and MiniMax reading them.
 
 **Why it is not Nora's job.** Her doctrine is written chat, and her reply
-text is recorded: the audit row, the Honcho feed and the notes carry it
+text is recorded: the audit row and the notes carry it
 exactly as she wrote it. Pause markers and interjection tags are for the ear.
 Putting them in her reply would put `<#0.40#>` into every store that reads
 garnish a cheap model never chooses (`nora.agent.

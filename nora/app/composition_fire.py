@@ -114,7 +114,7 @@ def path(
     clock: Any, computer_context: Any, culture_reader: Any, decision_log: Any,
     doctrine_store: Any, documents_context: Any, lessons_reader: Any, limits: Any,
     lineage: Any, llm_state: Any, lost_jobs: Any, media_join: Any,
-    memo_store: Any, memory: Any, metrics: Any, note_store: Any,
+    memo_store: Any, metrics: Any, note_store: Any,
     participation_runner: Any, persons: Any, presence_reader: Any, preview_source: Any,
     proactive_runner: Any, profile_reader: Any, quote_window: Any,
     reasoning_strip_store: Any, registry: Any, rosters: Any, runner: Any,
@@ -155,7 +155,6 @@ def path(
         runner,
         persons,
         proactive_runner,
-        memory,
         culture_reader,
         tool_call_log_store, ambient=ambient,
     )
@@ -172,7 +171,7 @@ def _fire_turn_args(
     doctrine_store: Any, participation_runner: Any, tag_trace_store: Any, cfg: Any,
     media_join: Any, decision_log: Any, clock: Any, tool_registry: Any,
     preview_source: Any, shared: Any, runner: Any, persons: Any,
-    proactive_runner: Any, memory: Any, culture_reader: Any, tool_call_log_store: Any,
+    proactive_runner: Any, culture_reader: Any, tool_call_log_store: Any,
     access: Any = None,
 ) -> Any:
     """The collaborators a fire turn shares with the tag path — one of each."""
@@ -181,7 +180,6 @@ def _fire_turn_args(
         "tag_trace_store": tag_trace_store,
         "persons": persons,
         "records": audit,
-        "memory": memory,
         "lineage": lineage,
         "shared": shared,
         "self_ids": registry.self_aliases(),
@@ -197,7 +195,7 @@ def _fire_turn_args(
         "registry": tool_registry,
         "canary": cfg.doctrine.canary,
         "display_name": cfg.doctrine.display_name,
-        "ai_peer": cfg.honcho.ai_peer,
+        "ai_peer": cfg.agent.name,
         "context_window": cfg.store.context_window,
         "limits": limits,
         "defer_tools": cfg.llm.defer_tools,
@@ -242,12 +240,6 @@ def _fire_grounding_args(
         "profile": profile_reader,
         "lessons": lessons_reader,
         "standing_store_timeout_seconds": cfg.standing.store_timeout_seconds,
-        # The participation turn's memory reads. ONE knob set, read at the composition root
-        # exactly as the tag assembler reads `tagger_card_conclusions` — two readers each
-        # carrying their own idea of how much memory a prompt may hold is how the fire path…
-        "people_in_window_conclusions": cfg.honcho.people_in_window_conclusions,
-        "people_in_window_speakers": cfg.honcho.people_in_window_speakers,
-        "memory_read_timeout_seconds": cfg.honcho.read_timeout_seconds,
         # The shared decision log, written from `_determined` — the one method all four
         # determination exits already converge on. Participation and proactive act turns only; a
         # reminder firing is not a decision about whether to speak.
@@ -308,7 +300,7 @@ def _wire_fire_path(
     note_store: Any, doctrine_store: Any, participation_runner: Any, tag_trace_store: Any,
     cfg: Any, media_join: Any, decision_log: Any, clock: Any,
     tool_registry: Any, preview_source: Any, shared: Any, runner: Any,
-    persons: Any, proactive_runner: Any, memory: Any, culture_reader: Any,
+    persons: Any, proactive_runner: Any, culture_reader: Any,
     tool_call_log_store: Any, ambient: AmbientEngagement | None = None,
 ) -> Any:
     """The real fire turn, built only when some occasion can fire one."""
@@ -346,7 +338,6 @@ def _wire_fire_path(
         "runner": runner,
         "persons": persons,
         "proactive_runner": proactive_runner,
-        "memory": memory,
         "culture_reader": culture_reader,
         "tool_call_log_store": tool_call_log_store,
         "access": access,

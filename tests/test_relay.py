@@ -28,8 +28,8 @@ from nora.persons import Persons
 from nora.platform.discord.channels import StaticChannelDirectory
 from nora.policy import Conversation, Policy
 
-MILES = PersonRef(person_id="miles_novak", name="Miles", honcho_peer_id="miles_novak")
-ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
+MILES = PersonRef(person_id="miles_novak", name="Miles")
+ADA = PersonRef(person_id="ada", name="Ada")
 
 SIGNAL_ROOM = "Z3JvdXA="
 DISCORD_ROOM = "111/222"

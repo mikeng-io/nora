@@ -168,8 +168,8 @@ class MediaRef:
     # The platform's OWN handle for something `platform_id` cannot name — a
     # Signal `(packId, stickerId)` pair, a Discord sticker id and format.
     # Opaque: the domain transports and stores it and never parses it. It is
-    # never rendered, never logged above debug, never fed to Honcho, and never
-    # placed in model context. Only the adapter that wrote it reads it.
+    # never rendered, never logged above debug, and never placed in model
+    # context. Only the adapter that wrote it reads it.
     fetch_token: str = ""
     # READ ONLY WHEN ASKED. Custody is unchanged: the bytes are still copied
     # and the handle is still rendered. What this turns off is the ingest
@@ -287,8 +287,8 @@ class MediaObject:
         partial read does the most damage.
 
         Kept apart, every renderer appends it LAST and after its own clip, so
-        no bound can eat it: the transcript join, `media_fetch`'s stored
-        reading, and the Honcho feed all carry it whole.
+        no bound can eat it: the transcript join and `media_fetch`'s stored
+        reading both carry it whole.
         """
         return str((self.provenance or {}).get("media_caveat", ""))
 
@@ -777,7 +777,7 @@ def sanitize_description(raw: str, *, max_chars: int = 0) -> str:
 # (`nora/ingest/stages/media.py`), and collapsing it to «title - description»
 # would have Nora read a summary of what people said instead of hearing it.
 # So this one label renders its `content` — the full transcript — and the
-# title/description it also carries exist for Honcho and for search.
+# title/description it also carries exist for search.
 #
 # It is a SET rather than a string comparison so a future label with the same
 # property (a transcribed video note) is one entry, not a second branch.
@@ -885,7 +885,7 @@ def render_placeholder(label: str, handle: str = "", description: str = "") -> s
     **The third argument is a RENDER-time value only.** It reaches
     this function from `enrich_placeholders`, called by the context assembler
     for one prompt; it never reaches `body_with_handles`, and so it never lands
-    in `messages.body`. One string cannot serve both «Honcho detailed» and
+    in `messages.body`. One string cannot serve both «`media_fetch` detailed» and
     «transcript short», so the durable string carries the handle and each
     consumer selects what it wants at render.
     """
@@ -986,8 +986,8 @@ def body_with_handles(
     """Re-render `body`'s attachment placeholders with the handles now held.
 
     **Handles only.** A description baked in here would ride into
-    `messages.body`, which `memory_feed` and the prefill both read VERBATIM, so
-    "Honcho detailed, transcript short" would be impossible. The comprehension
+    `messages.body`, which every transcript consumer reads VERBATIM, so
+    "detailed for one, short for another" would be impossible. The comprehension
     lives in `media_objects` and is joined at render time.
 
     Returns `body` UNCHANGED if its tail is not the placeholder run this

@@ -39,7 +39,6 @@ from nora.policy import load_policy
 from nora.testing import (
     FakeAgentRunner,
     FakeComputeJobStore,
-    FakeMemoryStore,
     FakeRosterSource,
     ScriptedTurn,
 )
@@ -61,8 +60,8 @@ NOW = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
 OTHER_ROOM = "g-other"
 PUBLIC = "https://nora.example"
 DOC_ID = "11111111-1111-1111-1111-111111111111"
-KEN = PersonRef(person_id="ken", name="Ken", honcho_peer_id="ken")
-MEI = PersonRef(person_id="mei", name="Mei", honcho_peer_id="mei")
+KEN = PersonRef(person_id="ken", name="Ken")
+MEI = PersonRef(person_id="mei", name="Mei")
 
 
 class _FakeWorker:
@@ -98,7 +97,7 @@ def _room(conversation_id: str = ROOM, *, tagger: Any = MILES) -> Room:
 def _specs(registry: ToolRegistry, *, conversation_id: str = ROOM, **kw: Any) -> dict[str, Any]:
     found = registry.specs(
         store=_Rows(), conversation_id=conversation_id, conversation_type="group",
-        persons=_Persons(), honcho=FakeMemoryStore(), deliverer=None, metrics=Metrics(),
+        persons=_Persons(), deliverer=None, metrics=Metrics(),
         room=_room(conversation_id, tagger=kw.pop("tagger", MILES)), **kw,
     )
     return {s.name: s.call for s in found}
@@ -107,7 +106,7 @@ def _specs(registry: ToolRegistry, *, conversation_id: str = ROOM, **kw: Any) ->
 def _surface_names(registry: ToolRegistry, **kw: Any) -> set[str]:
     surface = registry.surface(
         store=_Rows(), conversation_id=ROOM, conversation_type="group", persons=_Persons(),
-        honcho=FakeMemoryStore(), deliverer=None, metrics=Metrics(), room=_room(), **kw,
+        deliverer=None, metrics=Metrics(), room=_room(), **kw,
     )
     return {getattr(t, "tool_name", "") for t in surface.tools}
 
@@ -388,7 +387,7 @@ async def test_the_worker_cannot_hold_a_sub_agent_tool_even_over_a_registry_that
     assert SUBAGENT_TOOLS <= (NEVER | NOT_LOOKUPS)
     assert granted_names(registry) & SUBAGENT_TOOLS == set()
     source = SubagentToolSource(
-        registry=registry, store=_Rows(), persons=_Persons(), honcho=FakeMemoryStore(),
+        registry=registry, store=_Rows(), persons=_Persons(),
         metrics=rig.metrics, rosters={PLATFORM: FakeRosterSource(groups={ROOM: ()})},
     )
     held = {

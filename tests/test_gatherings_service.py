@@ -37,12 +37,11 @@ class _FakeRouteSource:
         return self._response
 
 
-class _FakeHoncho:
-    def __init__(self, answers: dict[str, str | None] | None = None) -> None:
-        self._answers = answers or {}
+class _NoHoncho:
+    """The service is still handed a Honcho store; any use of it fails."""
 
-    async def chat(self, *, peer_id, query, reasoning_level="low", target=None, **_route):
-        return self._answers.get(target)
+    def __getattr__(self, name):
+        raise AssertionError(f"Honcho.{name} was used")
 
 
 def _service(
@@ -55,8 +54,6 @@ def _service(
     return GatheringService(
         store=store or FakeGatheringStore(),
         route_source=route_source or _FakeRouteSource(),
-        honcho=honcho or _FakeHoncho(),
-        ai_peer="nora",
         now=lambda: NOW,
         place_areas=place_areas,
     )
@@ -220,44 +217,6 @@ async def test_list_events_filters_by_status():
         status=GatheringStatus.PROPOSED,
     )
     assert [e.title for e in proposed] == ["B"]
-
-
-async def test_suggest_venue_ranks_by_mention_and_fails_closed_when_empty():
-    honcho = _FakeHoncho({"miles": "Soi 29", "daisy": "Soi 29", "sam": None})
-    svc = _service(honcho=honcho)
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        platform="signal",
-    )
-    out = await svc.suggest_venue(
-        event_id=ev.id,
-        conversation_id="signal:group-1", platform="signal",
-        roster_person_ids=["miles", "daisy", "sam"],
-    )
-    assert out.status == "ok"
-    assert out.candidates[0].venue_text == "Soi 29"
-    assert out.candidates[0].source == "mention_frequency"
-    assert out.route_hints is None  # reserved, always None
-
-
-async def test_suggest_venue_nothing_found_when_every_person_is_empty():
-    honcho = _FakeHoncho({"miles": None, "daisy": None})
-    svc = _service(honcho=honcho)
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        platform="signal",
-    )
-    out = await svc.suggest_venue(
-        event_id=ev.id,
-        conversation_id="signal:group-1", platform="signal",
-        roster_person_ids=["miles", "daisy"],
-    )
-    assert out.status == "nothing_found"
-    assert out.candidates == ()
 
 
 async def test_create_event_raises_when_two_open_events_already_exist():
@@ -515,22 +474,6 @@ async def test_rsvp_refuses_a_mismatched_conversation_id():
         )
 
 
-async def test_suggest_venue_refuses_a_mismatched_conversation_id():
-    svc = _service()
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        platform="signal",
-    )
-    with pytest.raises(GatheringNotFoundError):
-        await svc.suggest_venue(
-            event_id=ev.id,
-            conversation_id="signal:some-other-group", platform="signal",
-            roster_person_ids=["miles"],
-        )
-
-
 # ── the FULL R-28 screen-call-screen sandwich, not just the half ────────────
 
 
@@ -772,7 +715,7 @@ async def test_a_room_moved_to_another_unit_does_not_take_its_old_events():
         conversation_id="signal:room-a", requester_person_id="miles",
         title="Work dinner", platform="signal", unit_id="work",
     )
-    friends = _service(store=store, honcho=_FakeHoncho())
+    friends = _service(store=store)
 
     assert not await friends.list_events(
         conversation_id="signal:room-a", unit_id="friends", platform="signal",
@@ -811,10 +754,6 @@ def _event_mutations(
             status=GatheringStatus.CONFIRMED,
             platform=platform, unit_id=unit_id,
         ),
-        "suggest_venue": lambda: svc.suggest_venue(
-            event_id=event_id, conversation_id="signal:room-a",
-            roster_person_ids=(), platform=platform, unit_id=unit_id,
-        ),
     }
 
 
@@ -827,7 +766,7 @@ async def test_every_event_mutation_refuses_the_same_room_id_on_another_platform
         conversation_id="signal:room-a", requester_person_id="miles",
         title="Work dinner", platform="signal", unit_id="work",
     )
-    svc = _service(store=store, honcho=_FakeHoncho())
+    svc = _service(store=store)
     for name, call in _event_mutations(
         svc, event.id, platform="whatsapp", unit_id="work",
     ).items():
@@ -844,7 +783,7 @@ async def test_every_event_mutation_refuses_another_units_event_with_the_same_ro
         conversation_id="signal:room-a", requester_person_id="miles",
         title="Work dinner", platform="signal", unit_id="work",
     )
-    svc = _service(store=store, honcho=_FakeHoncho())
+    svc = _service(store=store)
     for name, call in _event_mutations(svc, foreign.id).items():
         with pytest.raises(GatheringNotFoundError):
             await call()
@@ -859,7 +798,7 @@ async def test_every_event_mutation_refuses_a_row_with_no_stored_platform():
     legacy = await store.create(_legacy_event(
         conversation_id="signal:room-a", title="Pre-migration dinner",
     ))
-    svc = _service(store=store, honcho=_FakeHoncho())
+    svc = _service(store=store)
     for _name, call in _event_mutations(svc, legacy.id).items():
         with pytest.raises(GatheringNotFoundError):
             await call()

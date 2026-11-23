@@ -1,11 +1,11 @@
 """Pipeline wiring shared by every offline (no real platform/network) composition root —
 `tests/integration/harness.py` and `tests/offline_eval_harness.py` both assemble a
 real `IngestPipeline` + `EngagementPipeline`, glued by a real `Dispatcher`, against
-already-built collaborators (fakes for the adapter, memory store, and model runner
+already-built collaborators (fakes for the adapter and model runner
 everywhere except production). This is the one definition of that wiring, so neither
 harness needs a second copy of it.
 
-Deliberately builds NO collaborator itself — no `PlatformAdapter`, `MemoryStore`,
+Deliberately builds NO collaborator itself — no `PlatformAdapter`,
 `AgentRunner`, or `RecordStore` is constructed here. The caller always supplies those
 (real for `nora.app.composition.build_dependencies`'s production path; fakes from
 `nora.testing` everywhere else), which is what keeps this module free of any network
@@ -33,7 +33,6 @@ from nora.doctrine.loader import DoctrineStore
 from nora.domain.media_join import MediaJoin
 from nora.domain.ports import (
     EngagePolicy,
-    MemoryStore,
     RecordStore,
     RosterSource,
     StandingStore,
@@ -58,7 +57,6 @@ def build_offline_pipeline(
     *,
     adapter: Any,
     audit: RecordStore,
-    memory: MemoryStore,
     access: IdentityAccess,
     doctrine_store: DoctrineStore,
     runner: Any,
@@ -138,7 +136,7 @@ def build_offline_pipeline(
         if standing is not None or ledger is not None else None
     )
     assembler = build_assembler(
-        cfg, audit=audit, memory=memory, persons=persons, access=access, metrics=metrics,
+        cfg, audit=audit, persons=persons, access=access, metrics=metrics,
         policy=harness_policy,
         notes=notes,
         shared=shared,
@@ -193,7 +191,7 @@ def build_offline_pipeline(
         background.spawn(coro)
 
     ingest = IngestPipeline(
-        audit=audit, memory=memory, access=access,
+        audit=audit, access=access,
         policy=policy, allowlist=room_allowlist(), metrics=metrics, spawn=_spawn,
     )
 
@@ -221,13 +219,13 @@ def build_offline_pipeline(
         # Keyed by the platform each adapter declares itself to be: the
         # replayed platform's adapter plus any `extra_adapters`.
         adapters=adapters,
-        audit=audit, memory=memory, persons=persons,
+        audit=audit, persons=persons,
         doctrine_store=doctrine_store, context_assembler=assembler, runner=runner,
         tool_registry=tool_registry,
         # Use the same room topology as ingest when the harness supplies one.
         policy=room_allowlist(), access=access,
         debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-        ai_peer=cfg.honcho.ai_peer,
+        ai_peer=cfg.agent.name,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
         limits=limits, defer_tools=cfg.llm.defer_tools,
         metrics=metrics, spawn=background.spawn, llm_state=None,
@@ -263,7 +261,7 @@ def build_offline_pipeline(
         fire_path = FirePath(
             ambient=AmbientEngagement(EngagementGraph(access)),
             tag_trace_store=None,
-            persons=persons, access=access, records=audit, memory=memory,
+            persons=persons, access=access, records=audit,
             # The shared-state reader (design/notebook-memory-types/20-standing.md):
             # `None` in the harness, the assembler's reason above — which
             # also means an eval's proactive occasion never withholds on an
@@ -285,7 +283,7 @@ def build_offline_pipeline(
             runner=runner, adapters=adapters,
             registry=tool_registry,
             canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-            ai_peer=cfg.honcho.ai_peer,
+            ai_peer=cfg.agent.name,
             context_window=cfg.store.context_window,
             limits=limits, defer_tools=cfg.llm.defer_tools,
             # `[heartbeat]`, not `[llm]` — the same choice production makes;
@@ -313,17 +311,6 @@ def build_offline_pipeline(
                 "proactive": proactive_occasion,
             },
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
-            # The participation turn's memory reads. ONE knob set, read at the composition
-            # root exactly as the tag assembler reads `tagger_card_conclusions`: two
-            # readers each carrying their own idea of how much memory a prompt may hold
-            # would let the fire path render none at all. Not gated on
-            # `[participation] enabled`: every read is gated on
-            # `occasion.kind == "participation"` in `_read_memory`, which is a condition
-            # no other occasion can meet, and a second gate here would be a place for the
-            # two to disagree.
-            people_in_window_conclusions=cfg.honcho.people_in_window_conclusions,
-            people_in_window_speakers=cfg.honcho.people_in_window_speakers,
-            memory_read_timeout_seconds=cfg.honcho.read_timeout_seconds,
             # The shared decision log. `None` on purpose, and the keyword is written out
             # rather than defaulted so the parity gate can see the choice: an eval drives
             # ONE turn against a scripted world, so there is no prior loop to have decided

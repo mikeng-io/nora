@@ -12,7 +12,7 @@ This is the in-repo half of the hard block: a route query contains
 two locations and they LEAVE THE HOST to Google, so 「陳生屋企」 must never be
 turned into a home address and sent. The mechanical guarantee has two layers,
 and this module is the lower one: it consults **no store that knows a human** —
-not `identity.toml`, not Honcho, not the roster, not `Persons`. It calls one
+not `identity.toml`, not memory, not the roster, not `Persons`. It calls one
 Google endpoint about public places and reads back coordinates. It is
 structurally incapable of resolving a person to a location because it holds
 nothing that maps a person to one. The UPPER layer — refusing a query that

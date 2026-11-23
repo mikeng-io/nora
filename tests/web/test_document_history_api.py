@@ -15,7 +15,7 @@ from aiohttp import web
 from nora.documents.check import Checked
 from nora.domain.documents import RevisionIn
 from nora.persons import Persons
-from nora.testing import FakeMemoryStore, FakeRecordStore
+from nora.testing import FakeRecordStore
 from nora.testing.fakes import FakeBlobStore
 from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
@@ -82,10 +82,8 @@ async def history_client(aiohttp_client):
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        honcho=FakeMemoryStore(),
         reminders=FakeReminderStore(),
         persons=Persons(by_person={"ken": KEN, "mei": MEI, "jo": JO, "sam": SAM}, index={}),
-        ai_peer="nora",
         started_at=0.0,
         presence=None,
         presence_circles=(),

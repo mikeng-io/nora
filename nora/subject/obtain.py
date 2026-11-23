@@ -63,10 +63,6 @@ _DEFAULT_IDENTITY = (
 #: itself calls that machine.
 _DOCKER_HOST = "host.docker.internal"
 _LOOPBACK = "127.0.0.1"
-#: The name nora's container reaches Honcho by on the private `honcho_memory`
-#: network (DEC-259). It exists only inside that network; the host
-#: reaches the same service on loopback, where Honcho still publishes.
-_HONCHO_ALIAS = "honcho"
 
 
 def _resolves(host: str) -> bool:
@@ -80,20 +76,16 @@ def _resolves(host: str) -> bool:
 
 
 def _from_host(url: str) -> str:
-    """`url` with a name only a container can resolve (`host.docker.internal`,
-    or `honcho` on the private Honcho network) swapped for loopback; anything
-    else untouched.
+    """`url` with `host.docker.internal`, a name only a container can resolve,
+    swapped for loopback; anything else untouched.
 
-    `honcho` is here because nora reaches Honcho over a private network of its
-    own (DEC-259). Honcho also publishes on loopback, so the suite on the host
-    reaches the same service there; without this the host would try to resolve
-    a name it cannot, and every case would read as "memory unreachable".
+    The suite on the host reaches the services a container reaches through
+    that name on loopback, where they publish; without this the host would
+    try to resolve a name it cannot, and every model call would be unreachable.
     """
-    for name in (_DOCKER_HOST, _HONCHO_ALIAS):
-        url = url.replace(f"//{name}:", f"//{_LOOPBACK}:").replace(
-            f"//{name}/", f"//{_LOOPBACK}/"
-        )
-    return url
+    return url.replace(f"//{_DOCKER_HOST}:", f"//{_LOOPBACK}:").replace(
+        f"//{_DOCKER_HOST}/", f"//{_LOOPBACK}/"
+    )
 
 
 def resolve_credentials(path: Path) -> dict[str, str]:
@@ -108,8 +100,7 @@ def model_endpoint(path: Path | Config, purpose: str, model: str = "") -> tuple[
     reachable from where the measurer runs (the subject's own rewrite)."""
     cfg = path if isinstance(path, Config) else _load_config(path, require_secrets=False)
     url, key, name = cfg.endpoint(purpose, model)
-    if any(f"//{host}:" in url or f"//{host}/" in url
-           for host in (_DOCKER_HOST, _HONCHO_ALIAS)) and not _resolves(_DOCKER_HOST):
+    if (f"//{_DOCKER_HOST}:" in url or f"//{_DOCKER_HOST}/" in url) and not _resolves(_DOCKER_HOST):
         url = _from_host(url)
     return url, key, name
 
@@ -354,10 +345,6 @@ class Subject:
     #: neither is a function of `(platform, conversation_id)`. Carried here
     #: because `know()` writes notes and culture under them and would
     #: otherwise re-derive both from a second reading of the same file.
-    #:
-    #: NOT `cfg.honcho.workspace_id`. That is Honcho's workspace, one per
-    #: deployment (`nora`), while a unit is per room (`friends`, `ridgeline`);
-    #: the two are distinct.
     unit: str
     culture_key: str
 
@@ -407,15 +394,6 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     return cfg
 
 
-def memory_endpoint() -> tuple[str, str]:
-    """The template's external-memory origin and default workspace."""
-    cfg = _load_config(_TEMPLATE, require_secrets=False)
-    base_url = cfg.honcho.base_url
-    if not _resolves(_DOCKER_HOST):
-        base_url = _from_host(base_url)
-    return base_url, cfg.honcho.workspace_id
-
-
 def build_config(spec: SubjectSpec) -> Config:
     """The template, copied into `spec.workdir`, baselined, then overridden.
 
@@ -462,7 +440,6 @@ def build_config(spec: SubjectSpec) -> Config:
     # A case-owned environment binds origins itself without DNS discovery.
     if spec.environment is None and not _resolves(_DOCKER_HOST):
         cfg = _with(cfg, "llm.base_url", _from_host(cfg.llm.base_url))
-        cfg = _with(cfg, "honcho.base_url", _from_host(cfg.honcho.base_url))
         # Named model endpoints carry their own URL; a route through one would
         # otherwise still dial the container-only name.
         cfg = cfg.model_copy(update={"providers": {

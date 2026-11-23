@@ -57,7 +57,7 @@ def bindings_for(tmp_path):
     persons = load_persons(path)
     return {
         "store": None, "conversation_id": ROOM, "conversation_type": "group", "persons": persons,
-        "honcho": None, "deliverer": None, "metrics": Metrics(),
+        "deliverer": None, "metrics": Metrics(),
         "room": Room(platform="signal", conversation_id=ROOM, persons=persons, roster_source=None),
     }
 
@@ -409,7 +409,7 @@ async def _queued_row(tmp_path, tool, grant):
     )
     policy = Policy(conversations=(conversation,), _by_id={("signal", ROOM): conversation})
     dispatch = ComputerToolDispatch(
-        registry=registry, store=None, persons=bindings["persons"], honcho=None,
+        registry=registry, store=None, persons=bindings["persons"],
         metrics=bindings["metrics"], policy=policy, scope_for=lambda *_: scope,
     )
     task = asyncio.current_task()

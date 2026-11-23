@@ -11,7 +11,7 @@ import { signOutAction } from "@/server/actions";
 
 // Bumped when a schema changes shape, so a device never restores a cache
 // this build cannot read.
-export const CACHE_VERSION = "v2.0";
+export const CACHE_VERSION = "v2.1";
 const DAY = 24 * 60 * 60 * 1000;
 
 export const cacheKey = (personId: string) => `nora-cache:${personId}`;

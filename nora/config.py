@@ -221,49 +221,6 @@ class PlatformsConfig(BaseModel):
     instagram: InstagramPlatformConfig = Field(default_factory=InstagramPlatformConfig)
 
 
-class HonchoConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    base_url: str
-    workspace_id: str
-    # The Nora aiPeer id. Her replies feed under this peer into each conversation's
-    # session, building ONE global Nora self-model card. A peer id, never a secret.
-    ai_peer: str = "nora"
-    # How many of HER CONCLUSIONS ABOUT THE TAGGER ride in `<peer_history>`. 0
-    # disables the block, leaving `about` as the only way she reaches a person's
-    # episodes.
-    #
-    # A separate knob from the people-in-window one: the two blocks have different
-    # lifetimes and different arithmetic. This block is re-sent on every model call of
-    # the loop, so 8 conclusions (~1,080 chars, ~360 tokens) is ~7.2k of the 128k budget
-    # at `turns = 20`.
-    tagger_card_conclusions: int = 8
-    # `<people_in_window>` on the PARTICIPATION turn: how many of HER CONCLUSIONS ABOUT
-    # EACH SPEAKER in the window ride in the prompt. 0 disables the block entirely.
-    #
-    # Separate from `tagger_card_conclusions`: `<peer_history>` renders ONE person and is
-    # re-sent on every model call of a tag loop; this renders up to
-    # `people_in_window_speakers` of them on ONE fire turn. Eight each across four
-    # speakers is ~1,440 tokens of background, so the default is 3: the participation turn
-    # decides WHETHER to speak, and the top few conclusions answer «does this room mean
-    # her?».
-    people_in_window_conclusions: int = Field(default=3, ge=0)
-    # How many DISTINCT SPEAKERS of the window get a `<people_in_window>` entry, most
-    # recent speaker first. 0 disables the block.
-    #
-    # Bounded because the read is one Honcho round trip PER SPEAKER, concurrent, in front
-    # of a fire turn that already holds the conversation's heartbeat slot. The bound is on
-    # the READS, not just the render: raising it costs latency as well as tokens.
-    people_in_window_speakers: int = Field(default=4, ge=0)
-    # The wall-clock bound on the participation turn's memory reads, in seconds.
-    #
-    # `HonchoClient.representation` has its own 3s transport timeout, so this is a belt
-    # over the port: `MemoryStore` implementations are not obliged to time anything out,
-    # and these reads run while the heartbeat holds this conversation's slot. One bound
-    # over the whole concurrent batch, not one per read.
-    read_timeout_seconds: float = Field(default=5.0, gt=0)
-
-
 class LimitsConfig(BaseModel):
     """R-8's three caps, all of which bound the WHOLE agent loop for one tag.
 
@@ -887,7 +844,7 @@ class MediaConfig(BaseModel):
     # claimed, so the off state is a degrade rather than an error. One exception: a
     # voice note's words are written to `media_objects.content` by the custody stage
     # itself, inline, so they still reach the record and the transcript with this
-    # off. What they do not reach with it off is Honcho, which gets the marker alone.
+    # off.
     # `sticker_descriptions` above is the sticker sub-gate: off excludes stickers from
     # the read and leaves the identity ladder (custody, and what makes a repeat
     # sighting free) alone.
@@ -1096,10 +1053,8 @@ class MemoryIndexConfig(BaseModel):
 
     `read` (DEC-316) is the READ, and it selects ONE memory tool surface wherever
     tools are built: on, the memory graph's, `memory_search` over the index through
-    `nora.agent.memory_search`, with no Honcho behind it and none of `ask_memory`,
-    `search_memory`, `search_memory_workspace` or `who_said` offered; off (the default),
-    the Honcho surface, and no `memory_search`. `about`, `remember` and
-    `load_transcript` are on both.
+    `nora.agent.memory_search`, with no `who_said` offered; off (the default), no
+    `memory_search`, and `who_said`. `remember` and `load_transcript` are on both.
 
     `embed` starts the embedding worker on the same drain tick: up to `embed_batch`
     nodes per tick through llama-server at `embedder_url` (the `embedder` compose
@@ -1198,7 +1153,7 @@ class AnalyticsConfig(BaseModel):
     # handful of fresh trips, so this one is sized from the cost curve: one subject's
     # clustering must stay under ~2% of a `tick_seconds=120` tick, which puts the
     # limit near 560 trips; 500 leaves headroom for a host that also runs Nora,
-    # signal-cli, Postgres and Honcho, and for several subjects per tick.
+    # signal-cli and Postgres, and for several subjects per tick.
     #
     # The pool DRAINS (a trip leaves it the moment it is linked to a corridor), so
     # this bound is a ceiling against pathological growth (a subject whose routes
@@ -2603,7 +2558,7 @@ class ProfileConfig(BaseModel):
     #: accounts through `read_profile` and render `<profile>` blocks INSTEAD of
     #: `<peer_card>`, `<peer_history>`, `<people_in_window>`, `<culture>`,
     #: `<unit_culture>`, `<character>` and `<self>`. Off — the default — is the
-    #: shadow: the sessions keep writing and every prompt renders the Honcho and
+    #: shadow: the sessions keep writing and every prompt renders the peer and
     #: prose-culture blocks it always has, so the flag is the whole rollback.
     #: Ignored unless `write` is also on (no store is wired without it).
     read: bool = False
@@ -3042,10 +2997,10 @@ class DreamBudgetConfig(BaseModel):
     output_tokens: int = Field(default=4_000, ge=1)
     timeout_seconds: float = Field(default=120.0, gt=0)
     #: **The per-PASS memory ceiling**: how many reads a single run may make across
-    #: `nora.agent.dreamer.MEMORY_TOOLS` TOGETHER — `about`, `ask_memory`,
-    #: `search_memory_workspace`, `lookup_person`. The per-tool budgets above it
+    #: `nora.agent.dreamer.MEMORY_TOOLS` TOGETHER — `lookup_person`, `memory_search`,
+    #: `memory_read`. The per-tool budgets above it
     #: (`[llm.budgets]`, `NativeTool.budget`) bound each verb on its own, which a pass
-    #: spends by asking four verbs the same question.
+    #: spends by asking several verbs the same question.
     #:
     #: This is CODE and not instruction, and it fails closed: the (N+1)th read is
     #: answered `unavailable` with a reason, never an error and never a silent empty.
@@ -3858,9 +3813,10 @@ class AgentConfig(BaseModel):
     `name` is the MACHINE name: the Strands `agent_id` and the Langfuse trace
     span (`invoke_agent <name>`). Lowercase and STABLE — changing it starts a new
     trace lineage (orphans saved Langfuse views), which is what a genuinely new
-    agent wants. The HUMAN-facing name is authored in doctrine/core/identity.md and the wake
-    word is `[engagement].trigger.text`; a clone sets its identity and trigger (plus its own
-    doctrine files and its own Honcho `ai_peer`/`workspace_id`).
+    agent wants. It is also her own person id (`ai_peer`), so `identity.toml` may not
+    give it to a human. The HUMAN-facing name is authored in doctrine/core/identity.md
+    and the wake word is `[engagement].trigger.text`; a clone sets its identity and
+    trigger (plus its own doctrine files).
 
     Optional and defaulted like `[media]`/`[route]`; the default is the `nora`
     identity.
@@ -3940,6 +3896,14 @@ class ContentChecksConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     enabled: bool = False
+
+
+#: `[memory]` keys of a removed section. Named so an old file is told to delete
+#: them rather than handed a bare `extra_forbidden`.
+_REMOVED_MEMORY_KEYS = (
+    "base_url", "workspace_id", "ai_peer", "tagger_card_conclusions",
+    "people_in_window_conclusions", "people_in_window_speakers", "read_timeout_seconds",
+)
 
 
 class Config(BaseModel):
@@ -4036,9 +4000,9 @@ class Config(BaseModel):
         if isinstance(memory, dict):
             if "extraction" in memory:
                 raise ValueError("[memory.extraction] has been removed; delete the section")
-            for key in HonchoConfig.model_fields:
+            for key in _REMOVED_MEMORY_KEYS:
                 if key in memory:
-                    raise ValueError(f"[memory] {key} has been renamed to [honcho] {key}")
+                    raise ValueError(f"[memory] {key} has been removed; delete the key")
             for section, renames in renamed_keys.items():
                 values = memory.get(section, {})
                 if isinstance(values, dict):
@@ -4067,7 +4031,6 @@ class Config(BaseModel):
     # Platforms with `mode = "bridge"` read `redis_url_env`.
     bridges: BridgesConfig = Field(default_factory=BridgesConfig)
     llm: LLMConfig
-    honcho: HonchoConfig
     memory: MemoryConfig = MemoryConfig()
     store: StoreConfig
     # Optional, and defaulted — see `MediaConfig`.

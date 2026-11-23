@@ -571,7 +571,7 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "trace_id": "", "span_id": "", "status": "ok",
         "request": {"command": f"echo {n}"},
     },
-    # ADR 0020 (0084_documents): a document's identity and one snapshot per revision.
+    # 0084_documents: a document's identity and one snapshot per revision.
     "documents": lambda n: {
         "id": _uuid("doc", n), "platform": "signal", "conversation_id": "g1",
         "created_by": "ken",
@@ -581,11 +581,11 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "spec": {"version": 1}, "text": f"doc {n}", "sha256": f"{n:064x}",
         "written_by": "tag",
     },
-    # 0087_document_state (DEC-255): one row per change of a document's state.
+    # 0087_document_state: one row per change of a document's state.
     "document_state": lambda n: {
         "document_id": _uuid("doc", n), "state": "archived", "set_by": "ken",
     },
-    # 0097_otp (DEC-287): a one-time code, and one check of it.
+    # 0097_otp: a one-time code, and one check of it.
     "otp_challenge": lambda n: {
         "challenge_id": _uuid("otp", n), "person_id": "ken", "purpose": "sign_in",
         "platform": "signal", "code_hash": f"{n:064x}", "issued_at": T0,
@@ -614,7 +614,7 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "disputed_by": f"p{n}", "kind": "dispute", "claim": f"not so {n}",
         "message_id": n + 1, "unit": "u", "written_at": MS0 + n,
     },
-    # 0103_memos (DEC-306): a kept memo, and one revision of it.
+    # 0103_memos: a kept memo, and one revision of it.
     "memo": lambda n: {
         "id": _uuid("mm", n), "unit": "friends", "platform": "signal",
         "conversation_id": "g1", "created_at": MS0 + n,
@@ -659,7 +659,7 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "file": "policy.toml", "path": "/p", "content_sha256": f"{n:064x}", "loaded_at": T0,
     },
     "deploy_revision": lambda n: {"started_at": T0, "manifest_status": "absent"},
-    # Migration 0069/0070 (DEC-234): the cognition loop's stimuli, wake log and source
+    # Migration 0069/0070: the cognition loop's stimuli, wake log and source
     # health.
     "stimulus": lambda n: {
         "unit": "u", "kind": "message", "item": "message", "ref": f"messages:{n}",

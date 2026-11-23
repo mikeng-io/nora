@@ -32,7 +32,6 @@ from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import Conversation, Policy, load_policy
 from nora.testing import (
-    FakeMemoryStore,
     FakeRecordStore,
     FakeRosterSource,
     InMemoryCultureStore,
@@ -173,7 +172,7 @@ def _tools(policy, persons, store, *, reader=..., adapters=None, rosters=None,
     tools = build_tools(
         store=store, conversation_id=conversation_id,
         conversation_type=conversation_type, persons=persons,
-        honcho=FakeMemoryStore(), deliverer=SinkSender(), metrics=metrics or Metrics(),
+        deliverer=SinkSender(), metrics=metrics or Metrics(),
         room=room, transit_source=_UNREACHABLE_TRANSIT, rooms=reader,
         clock=lambda: NOW,
         culture=culture,

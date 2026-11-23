@@ -1011,7 +1011,7 @@ async def _tool_rig(
                             blobs=blobs)
     specs = registry.specs(
         store=_Media(*held), conversation_id=ROOM, conversation_type="group",
-        persons=_Persons(), honcho=None, deliverer=None, metrics=Metrics(), room=_room(),
+        persons=_Persons(), deliverer=None, metrics=Metrics(), room=_room(),
     )
     tools = {s.name: s.call for s in specs}
     return (tools["video_create"], sha), starter, store
@@ -1250,7 +1250,7 @@ async def test_a_refusal_that_says_why_reaches_her_note():
     registry = ToolRegistry(video=_desk(store, _Refusing()), video_ref_kinds=frozenset())
     specs = registry.specs(
         store=_Media(), conversation_id=ROOM, conversation_type="group", persons=_Persons(),
-        honcho=None, deliverer=None, metrics=Metrics(), room=_room(),
+        deliverer=None, metrics=Metrics(), room=_room(),
     )
     call = {s.name: s.call for s in specs}["video_create"]
     bind_tag_id("tag-r")
@@ -1336,8 +1336,7 @@ async def _deliver_a_finished_clip(
 ) -> dict[str, Any]:
     """Through the real backend, poller, `FirePath.speak` and deliverer, with the provider
     answering `clips` to the fetch. `reply` is what she sends; she never writes a link."""
-    persons = Persons(by_person={"miles": PersonRef(person_id="miles", name="Miles",
-                                                    honcho_peer_id="miles")},
+    persons = Persons(by_person={"miles": PersonRef(person_id="miles", name="Miles")},
                       index={("signal", "+85212345678"): "miles"})
     adapter = _AttachingAdapter()
     prompts: list[str] = []

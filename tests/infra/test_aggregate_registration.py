@@ -432,7 +432,7 @@ def _rollup_registration() -> SqlItemRegistration:
 
     unit = _UNITS[0]
     room = f"room-{unit}"
-    person = PersonRef(_PERSON, "Generated", _PERSON)
+    person = PersonRef(_PERSON, "Generated")
     member = Life360Membership(_PERSON, "test-member", _CIRCLE)
     conversation = Conversation("signal", frozenset({room}), frozenset({_PERSON}), unit=unit)
     policy = Policy((conversation,), _by_id={("signal", room): conversation})

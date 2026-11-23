@@ -50,13 +50,12 @@ from nora.testing import (
     FakeComputerExportStore,
     FakeDocumentStore,
     FakeMediaObjectStore,
-    FakeMemoryStore,
     FakeRosterSource,
     FakeSandboxRuntime,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
+MILES = PersonRef(person_id="miles", name="Miles Novak")
 PLATFORM, ROOM = "signal", "g-worker"
 SCOPE = computer_unit_scope(ROOM)
 
@@ -147,7 +146,7 @@ class _Rig:
             computer_exports=FakeComputerExportStore(),
         )
         self.source = SubagentToolSource(
-            registry=self.registry, store=_Rows(), persons=_Persons(), honcho=FakeMemoryStore(),
+            registry=self.registry, store=_Rows(), persons=_Persons(),
             metrics=self.metrics, rosters={PLATFORM: FakeRosterSource(groups={ROOM: ()})},
         )
         self.tmp = tmp_path
@@ -180,7 +179,7 @@ class _Rig:
     def specs(self, *, job: str = "", **kw: Any) -> dict[str, Any]:
         found = self.registry.specs(
             store=_Rows(), conversation_id=ROOM, conversation_type="group",
-            persons=_Persons(), honcho=FakeMemoryStore(), deliverer=None,
+            persons=_Persons(), deliverer=None,
             metrics=self.metrics, room=self.room(), subagent_job=job, **kw,
         )
         return {s.name: s.call for s in found}
@@ -238,7 +237,7 @@ def test_the_list_is_derived_from_the_registry_and_names_real_tools(tmp_path):
     assert set(rig.registry.tool_names()) >= NEVER | NOT_LOOKUPS | ACTS
     assert granted_names(rig.registry) & NEVER == set()
     # no read leaves the launching room
-    assert {"room_list", "room_read", "search_memory_workspace"} & granted_names(
+    assert {"room_list", "room_read"} & granted_names(
         rig.registry) == set()
 
 
@@ -427,11 +426,11 @@ def test_the_workers_guard_has_no_call_ceiling_and_every_other_adaptors_keeps_it
     """DEC-247, DEC-282: the sub-agent is exempt BY NAME; the default guard, which is
     what every other adaptor gets, still vetoes the call over a tool's ceiling."""
     rig = _Rig(tmp_path)
-    guard = rig.runner(_Script([]))._guard(["about"])
+    guard = rig.runner(_Script([]))._guard(["lookup_person"])
 
     class _Ev:
         def __init__(self, i: int) -> None:
-            self.tool_use = {"name": "about", "toolUseId": f"t{i}", "input": {}}
+            self.tool_use = {"name": "lookup_person", "toolUseId": f"t{i}", "input": {}}
             self.cancel_tool: Any = None
             self.exception = None
             self.cancel_message = None
@@ -442,7 +441,7 @@ def test_the_workers_guard_has_no_call_ceiling_and_every_other_adaptors_keeps_it
         guard._before_tool(before)
         assert before.cancel_tool is None
         guard._after_tool(_Ev(i))
-    other = DreamGuard(adaptor="proactive", budgets={"about": 4}, metrics=Metrics())
+    other = DreamGuard(adaptor="proactive", budgets={"lookup_person": 4}, metrics=Metrics())
     for i in range(4):
         before = _Ev(i)
         other._before_tool(before)
@@ -533,7 +532,7 @@ def test_the_workers_model_is_built_with_the_configured_reasoning_effort(
     for effort in ("low", "high"):
         backend = build_subagent_backend(
             cfg=cfg, client=object(), tier=SimpleNamespace(temperature=0.0, timeout_seconds=30),
-            registry=rig.registry, store=_Rows(), persons=_Persons(), honcho=FakeMemoryStore(),
+            registry=rig.registry, store=_Rows(), persons=_Persons(),
             metrics=rig.metrics, rosters={}, self_ids=frozenset(),
             clock=lambda: datetime(2026, 10, 4, tzinfo=UTC), result_caps={},
             reasoning_effort=effort,

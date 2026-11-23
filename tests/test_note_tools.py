@@ -21,11 +21,11 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.domain.models import DeliveryStatus, PersonRef, TranscriptRow
 from nora.obs.metrics import Metrics
-from nora.testing import FakeMemoryStore, FakeRosterSource
+from nora.testing import FakeRosterSource
 from nora.testing.note_store import InMemoryNoteStore
 from tests.fakes import SinkSender
 
-MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
+MILES = PersonRef(person_id="miles", name="Miles Novak")
 GROUP = "signal:group-1"
 UNIT = "household"
 NOW = 1_770_000_000_000
@@ -71,7 +71,7 @@ def _tools(
     specs = registry.specs(
         store=_NullStore(), conversation_id=conversation_id,
         conversation_type="group",
-        persons=_FakePersons(MILES), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=_FakePersons(MILES), deliverer=SinkSender(),
         metrics=metrics or Metrics(),
         room=_room(tagger=tagger, conversation_id=conversation_id),
         transcript=_WINDOW,

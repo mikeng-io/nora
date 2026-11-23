@@ -49,7 +49,7 @@ def world():
 def _tool(persons, world, room_id: str = ROOM_B, platform: str = "signal"):
     specs = build_tool_specs(
         store=world["store"], conversation_id=room_id, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=Room(platform=platform, conversation_id=room_id,
                   roster_source=FakeRosterSource(groups={}), persons=persons),
         transit_source=None, media_store=world["media"], clock=lambda: NOW,
@@ -253,7 +253,7 @@ def _fetch(persons, world, room_id: str = ROOM_B):
     blobs.blobs[PNG_SHA] = RED_PNG
     specs = build_tool_specs(
         store=world["store"], conversation_id=room_id, conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        persons=persons, deliverer=None, metrics=Metrics(),
         room=Room(platform="signal", conversation_id=room_id,
                   roster_source=FakeRosterSource(groups={}), persons=persons),
         transit_source=None, media_store=world["media"], clock=lambda: NOW,

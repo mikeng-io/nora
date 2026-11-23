@@ -225,7 +225,7 @@ def _authority_harness(tmp_path, *, requester: str):
                             computer_events=FakeComputerEventStore(),
                             computer_admission=admission, clock=lambda: NOW)
     dispatch = ComputerToolDispatch(
-        registry=registry, store=None, persons=persons, honcho=None,
+        registry=registry, store=None, persons=persons,
         metrics=Metrics(), policy=policy,
         scope_for=lambda p, c, t: computer_unit_scope(unit))
     return admission, dispatch, tasks, runtime, cid, unit
@@ -306,7 +306,7 @@ async def test_deferred_task_refused_when_scope_moved(tmp_path):
             blobs=FakeBlobStore(), computer=runtime,
             computer_events=FakeComputerEventStore(),
             computer_admission=admission, clock=lambda: NOW),
-        store=None, persons=_dispatch._persons, honcho=None,
+        store=None, persons=_dispatch._persons,
         metrics=Metrics(),
         policy=Policy(conversations=(convo,), _by_id={("signal", cid): convo}),
         scope_for=lambda p, c, t: "other-scope")

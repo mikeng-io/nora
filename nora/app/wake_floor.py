@@ -51,9 +51,10 @@ class WakeRoomFloor:
         self._media_join = media_join
 
     async def scope(self, claim: WakeClaim) -> tuple[PassScope, bool]:
-        room = resolve_slot_room(
-            self._policy.rooms(), claim.reading_room, unit=claim.group.unit,
-        )
+        return await self.scope_for(claim.group.unit, claim.reading_room)
+
+    async def scope_for(self, unit: str, reading_room: str) -> tuple[PassScope, bool]:
+        room = resolve_slot_room(self._policy.rooms(), reading_room, unit=unit)
         if room is None or not room.absorbed:
             raise LookupError("Wake reading room unavailable in claim unit")
         platform, id_ = room.platform, room.primary_id
@@ -64,7 +65,7 @@ class WakeRoomFloor:
             raise LookupError("Wake reading-room membership unavailable")
         direct = bool(room.ids & await self._access.direct_addresses(platform))
         return PassScope(
-            ReadingRoom(platform, id_, live), claim.group.unit, nora_name=self._display_name,
+            ReadingRoom(platform, id_, live), unit, nora_name=self._display_name,
         ), direct
 
     async def floor(

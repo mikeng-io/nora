@@ -7,11 +7,11 @@ system could produce it. This stage makes the claim true — it copies the bytes
 into a content-addressed store Nora owns and puts the hash in the same INSERT
 as the body that names it.
 
-**It runs INLINE, ahead of the audit write, unlike `memory_feed`'s spawned
-pattern**, because the two differ in the one way that decides it:
+**It runs INLINE, ahead of the audit write, unlike the spawned comprehension**,
+because the two differ in the one way that decides it:
 
-* `memory_feed` sends a message to Honcho, which is explicitly never
-  load-bearing. If it lands late, or never, the RECORD is unaffected.
+* A comprehension is never load-bearing. If it lands late, or never, the
+  RECORD is unaffected.
 * Custody is part OF the record. `[image a3f2c1]` is a promise that `a3f2c1`
   can be produced. Spawning the copy would write that promise first and keep it
   second — a window in which the audit row asserts custody that does not exist,
@@ -33,14 +33,14 @@ and nothing is claimed.
 
 **THE BODY CARRIES A LABEL AND A HANDLE. NOTHING ELSE.** A sticker's
 description and a voice note's transcript are not baked in beside the handle:
-that single string is read VERBATIM by two consumers with opposite needs —
-`memory_feed` wants everything, the prefill wants a line. The comprehension
+that single string is read VERBATIM by consumers with different needs —
+some want everything, the prefill wants a line. The comprehension
 lives in `media_objects` and each consumer selects the fields it wants at
 render time.
 
 **Bytes reach a prompt for EVERY medium Nora holds, and they reach it off this
-path.** The read is `nora/ingest/comprehension.py`'s, SPAWNED through the same
-injected `spawn` `memory_feed` uses, and this stage only says which blobs are
+path.** The read is `nora/ingest/comprehension.py`'s, SPAWNED through the
+injected `spawn`, and this stage only says which blobs are
 worth reading. The egress screen runs at RENDER time: `scan_identifiers` runs
 on every render, in the context assembler — stricter than running it here once,
 for the reason `nora/ingest/stickers.py` gives (a screen applied before caching
@@ -125,11 +125,10 @@ async def run(
     medium, and every attachment keeps its bare handle. A voice note's
     transcript is still written to `media_objects.content` below, because STT
     already ran on this awaited path and its words are conversation content
-    that needs no model. What the off state does cost is memory: with no job,
-    nothing feeds those words to Honcho. `person` rides along only so a
-    comprehension can be fed to Honcho under the sender's own peer (D6, mapped
-    senders only) — this stage never resolves identity and never reads it for
-    anything else.
+    that needs no model. What the off state does cost is the model read: with
+    no job, the transcript gets no title or description. `person` is passed on
+    to the job untouched — this stage never resolves identity and never reads
+    it.
     """
     if not message.media:
         return message
@@ -316,7 +315,7 @@ async def run(
     # THE READ, SCHEDULED — never awaited. Custody is finished at this line:
     # every handle in `handles` names bytes Nora holds, and the body about to
     # be written is true whether or not a model ever looks at them. So the read
-    # goes through the same injected `spawn` `memory_feed` uses, and the
+    # goes through the injected `spawn`, and the
     # listener moves on to the next message rather than waiting on a video.
     #
     # `scan_identifiers` does not run here: there is no free text in this body

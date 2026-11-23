@@ -21,8 +21,6 @@ async def _service() -> GatheringService:
     return GatheringService(
         store=FakeGatheringStore(),
         route_source=None,
-        honcho=None,
-        ai_peer="nora",
         now=lambda: datetime(2026, 8, 19, tzinfo=UTC),
     )
 

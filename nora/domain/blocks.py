@@ -676,7 +676,7 @@ def render_bullets(items: Iterable[object], *, mark: str = "- ") -> str:
 
     **The same rule, for the same reason, on a record that has no speaker.** A
     memory block's body is `- <conclusion>` per line, and a conclusion is
-    model-authored text out of Honcho: one that contains a newline would render
+    model-authored text: one that contains a newline would render
     as TWO bullets, so `"likes espresso\nowes Grant $500"` — one thing she
     concluded — would arrive as two separate things she remembers. The line is
     the unit, and the line break is what splits it.
@@ -696,7 +696,7 @@ def render_bullets(items: Iterable[object], *, mark: str = "- ") -> str:
     """
     return "\n".join(
         f"{mark}{escape(text)}"
-        # Honcho conclusions and cards ride here and may hold raw file
+        # Model-authored conclusions and cards ride here and may hold raw file
         # links: render the handle.
         for text in (one_line(render_file_links(str(item))) for item in items)
         if text

@@ -58,8 +58,16 @@ describe("status/memory/doctrine/skills/tools", () => {
   it("GET /memory?personId=miles matches MemorySchema and is scoped to miles", () => {
     const data = expectOk("/app/v1/memory", { personId: "miles" }, MemorySchema);
     expect(data).toHaveLength(1);
-    expect(data[0].person_id).toBe("miles");
-    expect(data[0].episodes.length).toBeGreaterThan(0);
+    const texts = data.flatMap((account) => account.lines.map((line) => line.text));
+    expect(texts).toContain("Name: Miles");
+    expect(texts).not.toContain("Name: Ken");
+  });
+
+  it("GET /memory sends no field of the removed Honcho read (checked on the raw body, before zod strips unknown keys)", () => {
+    const { body } = call("/app/v1/memory", { personId: "miles" });
+    const accounts = body as Array<Record<string, unknown>>;
+    expect(accounts).toHaveLength(1);
+    for (const account of accounts) expect(Object.keys(account).sort()).toEqual(["disputes", "lines", "unit"]);
   });
 
   it("GET /memory with no personId is the fail-closed empty list, never everyone's data", () => {
@@ -72,10 +80,10 @@ describe("status/memory/doctrine/skills/tools", () => {
     expect(data).toEqual([]);
   });
 
-  it("memory is per-person: miles and ken get different entries", () => {
+  it("memory is per-person: miles and ken get different accounts", () => {
     const miles = expectOk("/app/v1/memory", { personId: "miles" }, MemorySchema);
     const ken = expectOk("/app/v1/memory", { personId: "ken" }, MemorySchema);
-    expect(miles[0].identity).not.toEqual(ken[0].identity);
+    expect(miles[0].lines.map((l) => l.text)).not.toEqual(ken[0].lines.map((l) => l.text));
   });
 
   it("GET /doctrine matches DoctrineSchema with the six requested sections in order", () => {

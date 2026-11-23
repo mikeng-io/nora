@@ -72,7 +72,7 @@ class ComputerToolDispatch:
     holds; `__call__` is per row."""
 
     def __init__(
-        self, *, registry: Any, store: Any, persons: Any, honcho: Any,
+        self, *, registry: Any, store: Any, persons: Any,
         metrics: Any, rosters: Mapping[str, Any] | None = None,
         self_ids: frozenset[str] = frozenset(),
         policy: Any, scope_for: Any, access: Any = None,
@@ -81,7 +81,6 @@ class ComputerToolDispatch:
         self._store = store
         self._persons = persons
         self._access = access
-        self._honcho = honcho
         self._metrics = metrics
         self._rosters = dict(rosters or {})
         self._self_ids = frozenset(self_ids)
@@ -194,7 +193,7 @@ class ComputerToolDispatch:
                 "store": self._store,
                 "conversation_id": conversation_id,
                 "conversation_type": conversation_type,
-                "persons": self._persons, "honcho": self._honcho,
+                "persons": self._persons,
                 # No deliverer, ever: a deferred segment speaks through its
                 # terminal row and the delivery path, never live.
                 "deliverer": None, "metrics": self._metrics,

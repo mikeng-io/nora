@@ -123,8 +123,7 @@ async def _tools() -> list[Any]:
         memory=_wake_memory(),
         notes=InMemoryNoteStore(),
         events=GatheringService(
-            store=FakeGatheringStore(), route_source=None, honcho=None,
-            ai_peer="nora",
+            store=FakeGatheringStore(), route_source=None,
             now=lambda: datetime.fromtimestamp(NOW / 1000, UTC)),
         standing=InMemoryStandingStore(),
         reminders=FakeReminderStore(),

@@ -67,7 +67,7 @@ _CONTENT: dict[sa.Table, tuple[str, ...]] = {
     ENTITY: (
         "name", "aliases", "pointer_kind", "pointer_ref", "source_ref_kind", "source_ref_value",
     ),
-    CLAIM: ("content", "prediction", "window_end"),
+    CLAIM: ("content", "prediction", "window_end", "grade"),
     INTENTION: (
         "done_when_form",
         "done_when",

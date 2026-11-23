@@ -23,7 +23,6 @@ from nora.testing import (
     FakeMediaInterpreter,
     FakeMediaObjectStore,
     FakeMediaSource,
-    FakeMemoryStore,
     FakeRecordStore,
 )
 
@@ -33,12 +32,14 @@ _R90_BYTES = b"\x89PNG r-89 pixels"
 _R90_SHA = hashlib.sha256(_R90_BYTES).hexdigest()
 _R90_PERSONS = Persons(
     by_person={"miles": PersonRef(
-        person_id="miles", name="Miles", honcho_peer_id="miles")},
+        person_id="miles", name="Miles")},
     index={("signal", "+85212345678"): "miles"},
 )
 
 ROOT = Path(__file__).resolve().parents[1]
 RULE_TESTS = {
+    "review-grade": "test_review_grades_due_guess_once_and_removes_it_from_anchors",
+    "review-independent": "test_review_fails_startup_when_the_resolved_judge_is_the_writer",
     "verify-clock": "test_the_first_clock_ending_has_the_deadline_and_no_witness",
     "verify-health": "test_every_source_must_be_healthy_over_the_whole_lineage_window",
     "computed-verdict": "test_every_ended_achieve_head_has_one_verdict_and_stimulus",
@@ -52,9 +53,7 @@ RULE_TESTS = {
     "DEC-324": "test_a_server_entry_admits_a_discovered_channel_by_guild_id",
     "DEC-323": "test_policy_reload_admits_the_next_message_from_a_new_room",
     "DEC-329": "test_cognition_is_the_live_topic_writer",
-    # R-1: participation evaluates one quiescence-closed window in an opted-in room.
     "R-1": "test_ambient_reaches_the_agent_only_through_participation_gating",
-    # R-1b pins the tag pipeline and FirePath.speak as the only callers of deliver.build.
     "R-1b": "test_only_the_tag_path_and_the_fire_path_can_send",
     "R-2": "test_a_reaction_and_a_text_reply_share_the_message_cap",
     "R-2b": "test_deliverer_latch_is_single_shot",
@@ -95,7 +94,7 @@ RULE_TESTS = {
     "R-17": "test_degraded_identity_enrichment_is_counted_and_r12_still_holds",
     "R-20": "test_a_forged_quote_cannot_put_words_in_someone_elses_mouth",
     "R-21": "test_not_being_here_is_indistinguishable_from_not_existing",
-    "R-22": "test_nothing_known_is_distinguishable_from_could_not_ask",
+    "R-22": "test_lookup_person_says_unavailable_not_not_found_when_it_could_not_look",
     "R-23": "test_a_budget_stop_is_distinguishable_from_a_silent_model",
     "R-24": "test_no_single_call_can_spend_the_whole_turn_budget",
     "R-27": "test_an_unknown_route_is_never_reported_as_no_service",
@@ -217,10 +216,6 @@ RULE_TESTS = {
     # R-49 (DEC-105): a relay crosses into another room only within one
     # unit, only for somebody allowed in both, and only under their name.
     "R-49": "test_a_room_in_another_unit_is_refused",
-    # R-50 (DEC-106): her memory OF THE TAGGER rides in the prefill, and the
-    # tool that would fetch it again points at the block instead. The duplicate
-    # is the whole risk the block carries, so the guard is the named rule.
-    "R-50": "test_about_the_tagger_points_at_the_block_instead_of_fetching_it",
     # R-90: `messages.body` carries a media label and a handle and nothing else;
     # the comprehension is joined at RENDER time, in the context assembler, and
     # `scan_identifiers` runs on every render. The durable body is read verbatim
@@ -409,7 +404,7 @@ RULE_TESTS = {
     # row a 40-row window would clip.
     "R-87": "test_r87_the_standing_fold_reads_since_a_row_id_watermark",
     # R-91: one memory ration for the whole Dreamer pass, spent across
-    # `about`/`ask_memory`/`search_memory_workspace`/`lookup_person` together and
+    # `lookup_person`/`memory_search`/`memory_read` together and
     # answered — R-27 `unavailable` — rather than vetoed. The named test runs the
     # REAL Strands loop, because the property is what the MODEL gets back: an
     # error result is a correction, and a model corrects by retrying, which is
@@ -592,11 +587,10 @@ async def test_r51_a_media_description_is_never_invented():
         (FakeMediaInterpreter("", title="", content=""), "empty"),
     ):
         store = FakeMediaObjectStore()
-        memory = FakeMemoryStore()
         metrics = Metrics()
         spawn = _CollectingSpawn()
         job = MediaComprehension(
-            blobs=blobs, store=store, interpreter=interpreter, memory=memory,
+            blobs=blobs, store=store, interpreter=interpreter,
             metrics=metrics, spawn=spawn,
         )
         job.schedule(
@@ -620,7 +614,7 @@ async def test_r51_a_media_description_is_never_invented():
     spawn = _CollectingSpawn()
     job = MediaComprehension(
         blobs=blobs, store=store, interpreter=FakeMediaInterpreter("a cartoon cat"),
-        memory=FakeMemoryStore(), metrics=Metrics(), spawn=spawn,
+        metrics=Metrics(), spawn=spawn,
     )
     job.schedule(
         subjects=(subject,), platform="signal", conversation_id="g1",
@@ -1026,7 +1020,7 @@ async def test_r90_the_body_carries_the_handle_and_the_render_carries_the_readin
         content="生記粥麵", created_at_ms=1,
     )])
     assembler = TranscriptInjection(
-        audit=audit, memory=FakeMemoryStore(), persons=_R90_PERSONS,
+        audit=audit, persons=_R90_PERSONS,
         context_window=10, metrics=Metrics(),
         # The SHARED join, with the REAL screen — the same object every other
         # transcript builder is handed (`tests/architecture/

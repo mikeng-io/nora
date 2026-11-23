@@ -431,14 +431,14 @@ def _tool_wiring(route_source):
     from nora.persons import Persons
 
     tyler = PersonRef(
-        person_id="p_tyler", name="Tyler", honcho_peer_id="p_tyler",
+        person_id="p_tyler", name="Tyler",
         first_name="Tyler", aliases=("陳生", "阿豹"),
     )
     persons = Persons(by_person={"p_tyler": tyler}, index={})
     metrics = Metrics()
     tools = build_tools(
         store=None, conversation_id="g1", conversation_type="group",
-        persons=persons, honcho=None, deliverer=None, metrics=metrics,
+        persons=persons, deliverer=None, metrics=metrics,
         room=Room(platform="signal", conversation_id="g1", roster_source=None,
                   persons=persons),
         transit_source=None, route_source=route_source,

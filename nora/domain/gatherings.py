@@ -427,35 +427,6 @@ class RSVP:
     responded_at: datetime
 
 
-@dataclass(frozen=True, slots=True)
-class VenueCandidate:
-    """One `suggest_venue` candidate. `source` names WHY it was suggested —
-    "mention_frequency" or "explicit_callback" — so a reply can say why,
-    not just what."""
-
-    venue_text: str
-    place_id: str | None
-    name: str | None
-    address: str | None
-    rating: float | None
-    price_level: str
-    maps_url: str | None
-    source: str
-
-
-@dataclass(frozen=True, slots=True)
-class VenueSuggestions:
-    """`status` is the R-27 three-state shape: `ok` / `nothing_found` /
-    `unavailable` — an ERROR is never a PASS. `route_hints` is the reserved
-    seam: always `None` today; it may later be filled via `saved_places()` +
-    `route()` per attendee under the R-28 guard those tools already enforce,
-    without changing the type."""
-
-    status: str
-    candidates: tuple[VenueCandidate, ...] = ()
-    route_hints: None = None
-
-
 class GatheringNotFoundError(Exception):
     """Raised by `GatheringService` (`nora.app.gatherings`) whenever an `event_id`
     does not resolve. Lives here, not on `GatheringService` itself, so

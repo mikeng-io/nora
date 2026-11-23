@@ -316,7 +316,7 @@ forbidden_modules = [
     "nora.ingest", "nora.instructions", "nora.language", "nora.obs", "nora.persons",
     "nora.persons_file", "nora.platform",
     "nora.policy", "nora.presence", "nora.skills", "nora.subagent", "nora.subject", "nora.tag",
-    "nora.testing", "nora.web", "nora.config_reload", "nora.memory_routing", "nora.secret",
+    "nora.testing", "nora.web", "nora.config_reload", "nora.secret",
     "nora.agenda", "nora.computer", "nora.conversation", "nora.location",
     "nora.media", "nora.memory", "nora.people", "nora.social",
     "nora.subagents", "nora.voice",

@@ -25,7 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Panel, PanelHeader, Rows } from "@/components/ui/panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UnavailableState } from "@/components/ui/states";
-import { useDoctrine, useMemory, useSkills, useStatus, useTools } from "@/lib/queries";
+import { useDoctrine, useSkills, useStatus, useTools } from "@/lib/queries";
 import { formatDuration, formatRelative, formatTime, formatWeekdayDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { useNow } from "@/hooks/use-now";
@@ -130,16 +130,11 @@ function HowSheIs() {
       <h2 id="health-title" className="sr-only">
         {t("health")}
       </h2>
-      <dl className="grid divide-y divide-hairline sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+      <dl className="grid divide-y divide-hairline sm:grid-cols-2 sm:divide-x sm:divide-y-0">
         <HealthItem
           label={t("record")}
           ok={s.store.reachable}
           value={s.store.reachable ? t("recordOk") : t("recordDown")}
-        />
-        <HealthItem
-          label={t("memory")}
-          ok={s.honcho.reachable}
-          value={s.honcho.reachable ? t("memoryOk") : t("memoryDown")}
         />
         <div className="grid content-start gap-1 p-4 sm:p-5">
           <dt className="text-label font-medium text-ink-muted">{t("uptime")}</dt>
@@ -239,12 +234,10 @@ function Reminders() {
 function WaysIn() {
   const t = useTranslations("noraPage");
   const tNav = useTranslations("nav");
-  const memory = useMemory();
   const doctrine = useDoctrine();
   const tools = useTools();
   const skills = useSkills();
 
-  const episodes = memory.data?.[0]?.episodes.length;
   const count = (n: number | undefined, pending: boolean): ReactNode =>
     pending ? <Skeleton className="h-3.5 w-24" /> : n === undefined ? t("countUnknown") : null;
 
@@ -255,10 +248,6 @@ function WaysIn() {
         icon={NotebookPen}
         title={tNav("memory")}
         lede={t("memoryLede")}
-        meta={
-          count(episodes, memory.isPending) ??
-          t("memoryCount", { n: episodes ?? 0 })
-        }
       />
       <WayIn
         href="/nora/doctrine"
@@ -295,7 +284,7 @@ function WayIn({
   icon: LucideIcon;
   title: string;
   lede: string;
-  meta: ReactNode;
+  meta?: ReactNode;
 }) {
   return (
     <Link
@@ -308,7 +297,7 @@ function WayIn({
       <span className="grid min-w-0 flex-1 gap-1">
         <span className="text-[0.9375rem] font-semibold text-ink">{title}</span>
         <span className="text-meta text-ink-soft">{lede}</span>
-        <span className="text-label text-ink-muted tnum">{meta}</span>
+        {meta ? <span className="text-label text-ink-muted tnum">{meta}</span> : null}
       </span>
       <ArrowRight
         className="mt-1 size-4 shrink-0 text-ink-muted transition-transform duration-160 ease-nora group-hover:translate-x-0.5"

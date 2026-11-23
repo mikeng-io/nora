@@ -197,7 +197,7 @@ def test_every_spec_carries_the_declaration_the_registry_reports():
     registry = ToolRegistry()
     specs = registry.specs(
         store=_Store(), conversation_id="g1", conversation_type="group",
-        persons=_Persons(), honcho=None, deliverer=_NeverLatches(),
+        persons=_Persons(), deliverer=_NeverLatches(),
         metrics=Metrics(), room=None,
     )
     assert {s.name for s in specs if s.terminal} == set(registry.terminal_tools())

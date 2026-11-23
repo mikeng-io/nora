@@ -30,8 +30,8 @@
   {
     "name": "R-31: a presence read comes back into the room fold's grant",
     "file": "nora/language/culture.py",
-    "old": "    \"about\", \"lookup_person\", \"group_members\",\n",
-    "new": "    \"about\", \"lookup_person\", \"group_members\", \"where_been\",\n",
+    "old": "    \"lookup_person\", \"group_members\",\n",
+    "new": "    \"lookup_person\", \"group_members\", \"where_been\",\n",
     "target": "tests/unit/test_culture_adaptor.py -k no_presence_read_reaches"
   },
   {

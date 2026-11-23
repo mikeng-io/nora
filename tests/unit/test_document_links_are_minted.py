@@ -198,7 +198,7 @@ def _service(public_url: str = PUBLIC) -> Any:
 async def _tools_with(carrier: LinkCarry, service: Any = None) -> dict[str, Any]:
     from nora.agent.registry import ToolRegistry
     from nora.agent.room import Room
-    from nora.testing import FakeMemoryStore, FakeRosterSource
+    from nora.testing import FakeRosterSource
     from tests.fakes import SinkSender
     from tests.unit.test_document_tools import MILES, ROOM, _Persons, _Rows
 
@@ -209,7 +209,7 @@ async def _tools_with(carrier: LinkCarry, service: Any = None) -> dict[str, Any]
     )
     specs = ToolRegistry(documents=service or _service()).specs(
         store=_Rows(), conversation_id=ROOM, conversation_type="group", persons=_Persons(),
-        honcho=FakeMemoryStore(), deliverer=SinkSender(), metrics=Metrics(), room=room,
+        deliverer=SinkSender(), metrics=Metrics(), room=room,
         links=carrier,
     )
     return {s.name: s.call for s in specs}

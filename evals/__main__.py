@@ -12,7 +12,6 @@ import asyncio
 import json
 import os
 import signal
-import statistics
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -30,7 +29,6 @@ from evals.backbone import (
     RUN_ID,
     Spec,
     _prefill_capture,
-    drain_draws,
     drain_spend,
     nora_task,
     retain_report,
@@ -68,7 +66,6 @@ from nora.subject import (
     refuse_if_source_diverges_from_head,
     shared_database_versions,
     source_coverage,
-    sweep_stale_draw_workspaces,
     sweep_stale_private_blank_templates,
 )
 from nora.subject.context_filter import exposure
@@ -310,49 +307,10 @@ def _print_spend() -> None:
         )
 
 
-def _print_memory_overhead() -> None:
-    """What giving every draw its own Honcho workspace cost:
-    the create and the delete, per draw, and any workspace left behind.
-
-    Printed on every run for `_print_spend`'s reason: it is free, and the
-    question it answers ("what does isolation cost, and did it clean up")
-    otherwise costs a second run.
-    """
-    draws = drain_draws()
-    if not draws:
-        return
-    create = sorted(d.create_ms for d in draws)
-    delete = sorted(d.delete_ms for d in draws if d.delete_ms is not None)
-    left = [d.id for d in draws if not d.deleted]
-    line = (
-        f"  honcho: {len(draws)} draw workspace(s), create median "
-        f"{statistics.median(create):.0f}ms (max {create[-1]:.0f}ms)"
-    )
-    if delete:
-        line += f", delete median {statistics.median(delete):.0f}ms (max {delete[-1]:.0f}ms)"
-    if left:
-        line += f"   NOT DELETED: {left}"
-    print(line)
-
-
-def _sweep_stale_workspaces() -> None:
-    """Delete draw workspaces a killed run left behind, before this run
-    starts. Never fatal: a sweep that cannot reach Honcho says so, and every
-    draw's own create will then fail and read ERROR."""
-    try:
-        swept = asyncio.run(sweep_stale_draw_workspaces())
-    except Exception as exc:  # noqa: BLE001 — reported, never a reading
-        print(f"honcho: stale draw-workspace sweep failed: {type(exc).__name__}: {exc}")
-        return
-    if swept:
-        print(f"honcho: swept {len(swept)} stale draw workspace(s) left by a killed run")
-
-
 def _sweep_stale_private_blanks(source_url: str) -> None:
     """Drop private blank templates (`nora.subject.sandbox._blank_template`'s
     own, `<template>_run_<ts>-<nonce>`) a KILLED run left behind, before this
-    run starts — the same point, and the same reason, `_sweep_stale_
-    workspaces` sweeps Honcho's leftovers. Never fatal: a sweep that cannot
+    run starts. Never fatal: a sweep that cannot
     reach Postgres says so, and this run's own `_blank_template` call would
     hit the exact same connection problem moments later regardless."""
     try:
@@ -441,7 +399,6 @@ def _run_one(
     print(f"mode: {measurement.phrase}; model behavior: {outcome['behavior']['status']}")
     describe_outcome(coverage, outcome)
     _print_spend()
-    _print_memory_overhead()
     if positions:
         _print_positions(report)
     if sample > 1:

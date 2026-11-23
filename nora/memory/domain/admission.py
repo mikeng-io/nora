@@ -34,6 +34,11 @@ from nora.memory.domain.lesson_admission import (
     LessonInventoryRefusal,
     lesson_form,
 )
+from nora.memory.domain.review_admission import (
+    ReviewRefusal,
+    claim_evidence_refusal,
+    review_operation,
+)
 
 FormRefusal = Literal[
     "unknown_kind",
@@ -59,13 +64,13 @@ FormRefusal = Literal[
     "invalid_field",
     "unbacked_page_reference",
     "unpollable_watch_target",
-    LessonFormRefusal,
+    LessonFormRefusal, ReviewRefusal,
 ]
 WriteRefusal = Literal[
     "stale_base", "credential", "doctrine", "content", "unsafe_page_reference",
     "not_open", "witness_not_met", "untyped_condition", "duplicate_delivery",
     "not_this_delivery", "citation_outside_pass", "not_a_commit", "room_busy", "occasion_part",
-    LessonInventoryRefusal, "loosens_law", "check_unavailable",
+    LessonInventoryRefusal, "loosens_law", "check_unavailable", "already_graded",
 ]
 RefusalReason = Literal[FormRefusal, WriteRefusal]
 
@@ -110,10 +115,10 @@ _OCCASIONS = {
     "debrief": ("committed",),
     "wake": ("committed", "inferred"),
     "operator": ("inferred",),
-    "wake_history": ("inferred",),
+    "wake_history": ("inferred",), "review": ("inferred",),
 }
 _OCCASION_PARTS = {
-    "operator": frozenset({"lesson"}),
+    "operator": frozenset({"lesson"}), "review": frozenset({"grade"}),
     "wake_history": frozenset({"fact", "trait", "guess", "situation"}),
 }
 _REVISION_STATES = {
@@ -301,6 +306,8 @@ class _Admission:
             raise _RefusalError("invalid_field", "id")
         if data.scope.unit != self.context.unit:
             raise _RefusalError("wrong_unit", "unit")
+        if self.context.occasion == "review" and not review_operation(proposal):
+            raise _RefusalError("occasion_basis", "basis")
         base, survivor = self._transition(proposal)
         if self.context.occasion == "operator" and (
             self.context.writer != "operator" or not isinstance(proposal, Retire)
@@ -328,8 +335,11 @@ class _Admission:
                 and data.part not in allowed_parts):
             raise _RefusalError("occasion_part", "part")
         evidence = self._citations(data, base.kind if survivor and base else kind)
-        if isinstance(data, CreateClaim) and not evidence:
-            raise _RefusalError("missing_evidence", "citations")
+        if isinstance(data, CreateClaim) and (
+            claim_refusal := claim_evidence_refusal(data, self.context, self.rows, self.shown,
+                                                   evidence)
+        ):
+            raise _RefusalError(*claim_refusal)
         if isinstance(data, MergeEntities) and not evidence:
             raise _RefusalError("invalid_merge", "citations")
         if (
@@ -401,6 +411,8 @@ class _Admission:
         if not isinstance(proposal, (Revise, Retire)):
             return None, None
         base = self._get(proposal.base, "base", reason="illegal_transition")
+        if base.part == "grade" and self.context.occasion != "operator":
+            raise _RefusalError("grade_owned_by_judge", "base")
         if base.pointer_kind is not None:
             raise _RefusalError("pointer_entity", "base")
         states = _REVISION_STATES if isinstance(proposal, Revise) else _RETIRE_STATES
@@ -498,7 +510,8 @@ class _Admission:
             window = data.window_end is not None
             if (
                 data.content is None
-                or data.part not in get_args(graph.ClaimPart)
+                or data.part not in get_args(graph.ClaimPart) or (
+                    (data.grade is not None) != (data.part == "grade"))
                 or ((prediction, window) != ((data.part == "guess"), (data.part == "guess")))
             ):
                 raise _RefusalError("invalid_field", "claim")
@@ -651,7 +664,9 @@ class _Admission:
     ) -> tuple[RowFacts, RowFacts]:
         if link.type not in graph.EDGES:
             raise _RefusalError("unknown_edge_type", "type")
-        if link.type == "merged_into" or (
+        if link.type == "merged_into" or (link.type == "grades" and (
+            not isinstance(data, CreateClaim) or data.part != "grade"
+        )) or (
             not isinstance(data, AddEdge)
             and (row.id not in (link.source, link.target) or link.type == "cites")
         ):

@@ -767,7 +767,7 @@ async def test_circle_gif_absence_reaches_existing_registry_boundary():
     from nora.obs.metrics import Metrics
     from nora.testing import FakeRecordStore
     specs = registry.specs(store=FakeRecordStore(), conversation_id='generated-room',
-        conversation_type='group', persons=None, honcho=None,
+        conversation_type='group', persons=None,
         deliverer=SimpleNamespace(), metrics=Metrics(), room=None)
     tools = {spec.name: spec for spec in specs}
     result = await tools['search_gifs'].call(query='laughing noodles')

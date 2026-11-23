@@ -174,7 +174,7 @@ _OUTCOME_GLOSS: Mapping[str, str] = {
 #: the turn ends the fold is the last reader it will ever have. At one flat 600
 #: the fold would see a small fraction of a typical `web_search` result, so a
 #: search that found eight restaurants and sent two would leave no trace of
-#: the other six. 4000 carries most `web_fetch` and `ask_memory` results
+#: the other six. 4000 carries most `web_fetch` results
 #: whole. Her own narration and her tool
 #: The mark on one of Nora's OWN rows, and the LEGEND that says what it means.
 #: Without it, a row of hers that had actually reached the room looks exactly

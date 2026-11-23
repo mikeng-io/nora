@@ -47,7 +47,7 @@ def _sum_series(metrics, name: str) -> float:
 
 
 def build_health_app(
-    *, adapter, store, honcho, doctrine_store, metrics, started_at: float,
+    *, adapter, store, doctrine_store, metrics, started_at: float,
     llm_state: LLMState,
     adapters=None,
     identity_file: str | Path | None = None, policy_file: str | Path | None = None,
@@ -73,7 +73,6 @@ def build_health_app(
     else:
         app["adapters"] = {adapter.platform: adapter} if adapter is not None else {}
     app["store"] = store
-    app["honcho"] = honcho
     app["doctrine_store"] = doctrine_store
     app["metrics"] = metrics
     app["config_reload"] = config_reload
@@ -153,14 +152,6 @@ def build_health_app(
             healthy = False
 
         try:
-            reachable = (await a["honcho"].health()).reachable
-        except Exception:                      # noqa: BLE001
-            reachable = False
-        honcho_health = {"reachable": reachable}
-        if not reachable:
-            healthy = False
-
-        try:
             doctrine_sha256 = a["doctrine_store"].get().sha256
         except Exception:                      # noqa: BLE001
             doctrine_sha256 = None
@@ -170,7 +161,6 @@ def build_health_app(
             "sse": sse,
             "platforms": platforms,
             "store": store,
-            "honcho": honcho_health,
             "omniroute": {"last_success_at": a["llm_state"].last_success_at},
             "errors_since_restart": _sum_series(a["metrics"], "nora_errors_total"),
             "uptime_seconds": time.time() - a["started_at"],

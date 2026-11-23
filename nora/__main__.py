@@ -135,10 +135,6 @@ class App:
         return self.deps.audit
 
     @property
-    def honcho(self):
-        return self.deps.memory
-
-    @property
     def llm_state(self):
         return self.deps.llm_state
 
@@ -150,15 +146,15 @@ class App:
         started_at = time.time()
         health_app = build_health_app(
             adapter=deps.adapter, adapters=deps.registry.adapters,
-            store=deps.audit, honcho=deps.memory,
+            store=deps.audit,
             doctrine_store=deps.doctrine_store, metrics=deps.metrics,
             started_at=started_at, llm_state=deps.llm_state,
             identity_file=self.cfg.identity_file, policy_file=self.cfg.policy_file,
             index_state=deps.index_state, config_reload=deps.config_reload.status,
         )
         register_web_routes(
-            health_app, store=deps.audit, honcho=deps.memory, reminders=deps.reminders,
-            persons=deps.persons, ai_peer=self.cfg.honcho.ai_peer, started_at=started_at,
+            health_app, store=deps.audit, reminders=deps.reminders,
+            persons=deps.persons, started_at=started_at,
             presence=deps.presence, presence_circles=deps.presence_circles,
             mobility=deps.mobility,
             skills_dir=deps.skills_dir, events=deps.events,
@@ -422,11 +418,10 @@ class App:
         """Adapts `adoption.backfill`'s `AdoptionCounts` return to the
         `Coroutine[Any, Any, None]` `BackgroundTasks.spawn` accepts. The counts
         are for callers that want them (tests); production reads the log line
-        and the two `nora_*adoption*` counters."""
+        and `nora_lazy_adoptions_total`."""
         deps = self.deps
         await adoption.backfill(
-            audit=deps.audit, memory=deps.memory, persons=deps.persons,
-            metrics=deps.metrics, media_join=deps.media_join,
+            audit=deps.audit, persons=deps.persons, metrics=deps.metrics,
             start_delay_seconds=ADOPTION_START_DELAY_SECONDS,
         )
 

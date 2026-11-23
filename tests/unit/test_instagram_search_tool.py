@@ -34,7 +34,7 @@ from nora.infra.social.instagram_client import SEARCH_MAX_ACCOUNTS, InstagramSoc
 from nora.infra.social.router import SocialRouter
 from nora.obs.metrics import Metrics
 from nora.social.adapters.tools.shared import _INSTAGRAM_SEARCH_MAX_ACCOUNTS, social_read_vocabulary
-from nora.testing import FakeMemoryStore, FakeSocialProvider
+from nora.testing import FakeSocialProvider
 from tests.fakes import SinkSender
 
 _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "instagram_bridge"
@@ -104,7 +104,7 @@ def _specs(social, *, metrics=None, fire_turn=False, dream_adaptor=""):
     room = Room(platform="signal", conversation_id="g1", roster_source=None, persons=_NoPersons())
     return ToolRegistry(social=social).specs(
         store=_NoStore(), conversation_id="g1", conversation_type="group",
-        persons=_NoPersons(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+        persons=_NoPersons(), deliverer=SinkSender(),
         metrics=metrics or Metrics(), room=room,
         fire_turn=fire_turn, dream_adaptor=dream_adaptor,
     )

@@ -51,7 +51,6 @@ from nora.policy import load_policy
 from nora.testing import (
     FakeAdapter,
     FakeAgentRunner,
-    FakeMemoryStore,
     InMemoryNoteStore,
     InMemoryStandingStore,
     ScriptedTurn,
@@ -254,7 +253,6 @@ async def _drive(tmp_path: Path, engine: AsyncEngine) -> _Journey:
             memory_wire.act_envelope(engine), registration.scope, registration.revisions,
         ),
     )
-    memory = FakeMemoryStore()
     standing_store = InMemoryStandingStore()
     note_store = InMemoryNoteStore()
     adapter = FakeAdapter()
@@ -293,7 +291,7 @@ async def _drive(tmp_path: Path, engine: AsyncEngine) -> _Journey:
     )
 
     dispatcher, _engagement, background, trigger = build_offline_pipeline(
-        cfg, adapter=adapter, audit=audit, memory=memory,
+        cfg, adapter=adapter, audit=audit,
         access=access, room_policy=policy,
         doctrine_store=doctrine_store, runner=tag_runner, metrics=metrics,
         notes=note_store, standing=standing_store,

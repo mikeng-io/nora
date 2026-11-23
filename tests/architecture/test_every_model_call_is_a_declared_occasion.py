@@ -146,7 +146,7 @@ RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
     "nora/app/fire.py": (("nora/agent/prefill.py",), "imports"),
     "nora/app/summons.py": (("nora/domain/summons.py",), "imports"),
     "nora/app/cognition_agent_runner.py": (
-        ("nora/language/cognition_render.py",), "dispatched",
+        ("nora/language/cognition_render.py", "nora/app/review_pass.py"), "dispatched",
     ),
     "nora/engagement/stages/debrief.py": (
         ("nora/engagement/debrief_render.py",), "imports",

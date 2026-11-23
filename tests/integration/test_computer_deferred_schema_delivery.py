@@ -104,7 +104,7 @@ def _rig(persons):
     )
     surface = registry.surface(
         store=None, conversation_id="g-computer", conversation_type="group",
-        persons=persons, honcho=None, deliverer=None,
+        persons=persons, deliverer=None,
         metrics=Metrics(), room=room, defer=True)
     return room, registry, runtime, surface
 

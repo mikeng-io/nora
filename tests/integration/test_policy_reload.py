@@ -57,8 +57,6 @@ async def test_policy_reload_admits_the_next_message_from_a_new_room(running, cf
     os.utime(cfg.policy_file, ns=(old_stat.st_atime_ns, old_stat.st_mtime_ns))
     await reloaded(running, "policy.toml", "applied")  # positive control: poller ran
     assert await admitted(running, "g2")
-    # The Honcho router must know the added room too; admission alone is insufficient.
-    assert running.memory._router.unit_of("g2") == "nora"
     assert {r.label for r in running.assembler._lineage.rooms} == {"First", "Second"}
     assert not running.config_reload.status()["policy"]["stale"]
 
@@ -134,8 +132,10 @@ async def test_identity_reload_resolves_a_new_person_and_keeps_last_good(running
     assert "nora" not in running.persons.by_person
 
 
-async def test_identity_binding_change_requires_restart_without_changing_people(running, cfg):
-    # A declared unit permits a valid Honcho binding. Establish it before composing.
+async def test_a_reload_carrying_a_removed_identity_table_is_refused_without_changing_people(
+    running, cfg,
+):
+    # The host's shape arriving on a hot reload: refused, the last good file kept.
     await running.background.cancel_all()
     cfg.policy_file.write_text(
         'default = "deny"\n[units.nora]\nworkspace = "home"\n' + room("g1", "First")
@@ -146,7 +146,7 @@ async def test_identity_binding_change_requires_restart_without_changing_people(
             '[workspaces.home]\nhoncho_workspace = "nora-home"\n'
             '[persons.miles_old_id]\nname = "Miles"\n'
         )
-        await reloaded(deps, "identity.toml", "restart_required")
+        await reloaded(deps, "identity.toml", "refused")
         assert "miles" in deps.persons.by_person
         assert "miles_old_id" not in deps.persons.by_person
     finally:
@@ -204,19 +204,17 @@ async def test_removing_the_last_room_keeps_its_declared_workspace_binding(cfg, 
     )
     second = room("g2", "Second") + 'unit = "work"\n'
     cfg.policy_file.write_text(declarations + room("g1", "First") + second)
-    cfg.identity_file.write_text(
-        '[persons.miles]\nname = "Miles"\n'
-        '[workspaces.home]\nhoncho_workspace = "nora-home"\n'
-        '[workspaces.work]\nhoncho_workspace = "nora-work"\n'
-    )
+    cfg.identity_file.write_text('[persons.miles]\nname = "Miles"\n')
     deps = await build_dependencies(cfg)
     try:
         cfg.policy_file.write_text(declarations + second)
         await reloaded(deps, "policy.toml", "applied")
         assert not await admitted(deps, "g1")
         assert await admitted(deps, "g2")
-        assert deps.memory._router.for_unit("nora").workspace == "nora-home"
-        assert deps.memory._router.workspaces() == ("nora-home", "nora-work")
+        # The DECLARATION outlives the room: `workspace_of` reads `[units]`,
+        # not the rooms, so adding a room back needs no new declaration.
+        assert deps.ingest._allowlist.workspace_of("nora") == "home"
+        assert deps.ingest._allowlist.workspace_of("work") == "work"
     finally:
         await deps.background.cancel_all()
         await deps.audit.aclose()

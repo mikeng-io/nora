@@ -4,7 +4,7 @@ from nora.domain.models import PersonRef
 from nora.persons import Persons
 from nora.web.persons import build_person_profile_payload, build_persons_roster_payload
 
-MILES = PersonRef(person_id="miles_novak", name="Miles Novak", honcho_peer_id="miles_novak")
+MILES = PersonRef(person_id="miles_novak", name="Miles Novak")
 
 
 def _persons(*refs: PersonRef) -> Persons:
@@ -13,8 +13,8 @@ def _persons(*refs: PersonRef) -> Persons:
 
 def test_roster_lists_everyone_sorted_by_display_name():
     persons = _persons(
-        PersonRef(person_id="zack", name="Zack", honcho_peer_id="zack"),
-        PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada"),
+        PersonRef(person_id="zack", name="Zack"),
+        PersonRef(person_id="ada", name="Ada"),
     )
 
     roster = build_persons_roster_payload(persons=persons)

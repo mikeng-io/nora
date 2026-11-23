@@ -1,8 +1,7 @@
 """The voice utterance endpoint through the REAL wired pipeline: a POSTed
 transcript must produce the same artifacts a typed Discord message would —
-an audit row in Postgres (with the speaker resolved to their person) and a
-Honcho memory feed as a user input — and the route must answer 202 without
-waiting on any of it.
+an audit row in Postgres (with the speaker resolved to their person) — and
+the route must answer 202 without waiting on any of it.
 
 Same wiring posture as `tests/integration/harness.py` (real ingest +
 dispatcher + `SqlRecordStore` against a throwaway database, fakes only at
@@ -29,7 +28,7 @@ from nora.ingest.policy import TriggerTextPolicy
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import load_policy
-from nora.testing import FakeAgentRunner, FakeMemoryStore
+from nora.testing import FakeAgentRunner
 from nora.web.voice import register_voice
 from tests.builders import load_example_config, override_config
 from tests.conftest import build_test_doctrine_store
@@ -46,7 +45,7 @@ TEXT = "喂 Nora 聽日天氣點"
 
 
 async def _drain(background) -> None:
-    """Await every spawned background task — the memory feed is SPAWNED off
+    """Await every spawned background task — work is SPAWNED off
     the ingest path, so a 202 can (correctly) precede it. Same loop as
     `tests/integration/harness.py`'s `drain`."""
     while background._tasks:
@@ -98,12 +97,10 @@ async def client(tmp_path, monkeypatch, clean_pg_url, aiohttp_client):
     run_migrations(database_url)
     engine = create_sql_engine(database_url)
     store = SqlRecordStore(engine)
-    memory = FakeMemoryStore()
     dispatcher, _engagement, background, _trigger = build_offline_pipeline(
         cfg,
         adapter=SinkSender(),
         audit=store,
-        memory=memory,
         access=IdentityAccess.for_files(
             persons=load_persons(persons_path), policy=load_policy(policy_path)),
         doctrine_store=build_test_doctrine_store(),
@@ -122,14 +119,13 @@ async def client(tmp_path, monkeypatch, clean_pg_url, aiohttp_client):
     )
     client = await aiohttp_client(app)
     client.store = store
-    client.memory = memory
     client.background = background
     yield client
     await background.cancel_all()
     await store.aclose()
 
 
-async def test_a_posted_utterance_lands_as_an_ingest_row_and_a_memory_feed(client):
+async def test_a_posted_utterance_lands_as_an_ingest_row(client):
     resp = await client.post(
         "/app/v1/voice/utterance",
         headers=AUTH,
@@ -149,10 +145,6 @@ async def test_a_posted_utterance_lands_as_an_ingest_row_and_a_memory_feed(clien
     # same attribution a typed message gets, not an anonymous speaker.
     assert row.person_id == "miles"
     assert json.loads(row.raw_json)["voice"] is True
-
-    # Honcho was fed the utterance as MILES's input — the memory-feed half of
-    # "the reactive path receives the transcript as a user input".
-    assert client.memory.fed == [("miles", TEXT, CONV)]
 
 
 async def test_an_utterance_from_an_unmarked_guild_records_nothing(
@@ -196,10 +188,9 @@ async def test_an_utterance_from_an_unmarked_guild_records_nothing(
     run_migrations(database_url)
     engine = create_sql_engine(database_url)
     store = SqlRecordStore(engine)
-    memory = FakeMemoryStore()
     background = BackgroundTasks()
     ingest = IngestPipeline(
-        audit=store, memory=memory,
+        audit=store,
         access=IdentityAccess.for_files(
             load_persons(persons_path), load_policy(policy_path)),
         policy=TriggerTextPolicy(cfg.engagement.trigger.text),
@@ -231,7 +222,6 @@ async def test_an_utterance_from_an_unmarked_guild_records_nothing(
         assert resp.status == 400
         await _drain(background)
         assert await store.recent(conversation_id=CONV, limit=10) == []
-        assert memory.fed == []
     finally:
         await background.cancel_all()
         await store.aclose()

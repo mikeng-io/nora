@@ -1185,6 +1185,7 @@ CACHE 1;
 CASE
 CASE
 CASE
+CASE
 COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
 COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';
 CONSTRAINT ck_assess_report_kind CHECK ((kind = 'nightly_dq'::text)),
@@ -1201,11 +1202,12 @@ CONSTRAINT ck_claim_basis CHECK ((basis = 'inferred'::text)),
 CONSTRAINT ck_claim_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_claim_content CHECK (((state = 'tombstoned'::text) OR (content IS NOT NULL))),
 CONSTRAINT ck_claim_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_claim_grade CHECK (
 CONSTRAINT ck_claim_guess CHECK (((state = 'tombstoned'::text) OR (part <> 'guess'::text) OR ((prediction IS NOT NULL) AND (window_end IS NOT NULL)))),
 CONSTRAINT ck_claim_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
 CONSTRAINT ck_claim_kind CHECK ((kind = 'claim'::text)),
 CONSTRAINT ck_claim_non_guess CHECK (((part = 'guess'::text) OR ((prediction IS NULL) AND (window_end IS NULL)))),
-CONSTRAINT ck_claim_part CHECK ((part = ANY (ARRAY['fact'::text, 'trait'::text, 'guess'::text, 'lesson'::text, 'situation'::text]))),
+CONSTRAINT ck_claim_part CHECK ((part = ANY (ARRAY['fact'::text, 'trait'::text, 'guess'::text, 'lesson'::text, 'situation'::text, 'grade'::text]))),
 CONSTRAINT ck_claim_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
 CONSTRAINT ck_claim_state CHECK ((state = ANY (ARRAY['live'::text, 'superseded'::text, 'hidden'::text, 'awaiting_weighing'::text, 'retired'::text, 'tombstoned'::text])))
 CONSTRAINT ck_claim_support_graph_basis CHECK ((basis = 'computed'::text)),
@@ -1275,7 +1277,7 @@ CONSTRAINT ck_edge_inferred_detail CHECK (((basis = 'inferred'::text) = ((reason
 CONSTRAINT ck_edge_kind CHECK ((kind = 'edge'::text)),
 CONSTRAINT ck_edge_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
 CONSTRAINT ck_edge_state CHECK ((state = ANY (ARRAY['live'::text, 'superseded'::text, 'retired'::text, 'tombstoned'::text]))),
-CONSTRAINT ck_edge_type CHECK ((type = ANY (ARRAY['cites'::text, 'about'::text, 'draws_on'::text, 'rests_on'::text, 'serves'::text, 'watches'::text, 'closed_by'::text, 'merged_into'::text])))
+CONSTRAINT ck_edge_type CHECK ((type = ANY (ARRAY['cites'::text, 'about'::text, 'draws_on'::text, 'rests_on'::text, 'serves'::text, 'watches'::text, 'closed_by'::text, 'merged_into'::text, 'grades'::text])))
 CONSTRAINT ck_entity_basis CHECK ((basis = ANY (ARRAY['computed'::text, 'inferred'::text]))),
 CONSTRAINT ck_entity_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
 CONSTRAINT ck_entity_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
@@ -2425,6 +2427,7 @@ ELSE
 ELSE
 ELSE ((due_ms / 60000) +
 ELSE ((prediction IS NULL) AND (prediction_observable IS NULL) AND (prediction_window_end IS NULL))
+ELSE (grade IS NULL)
 ELSE 0
 END
 END
@@ -2456,6 +2459,7 @@ END IF;
 END LOOP;
 END)
 END))),
+END),
 END),
 END;
 ERRCODE = 'check_violation';
@@ -2805,6 +2809,7 @@ UPDATE row_history SET superseded_at = at, superseded_by = version_id
 UPDATE row_history SET superseded_at = at, superseded_by = version_id
 VALUES (version_id, TG_TABLE_NAME, new_key, lower(TG_OP), new_image, at);
 VALUES (version_id, TG_TABLE_NAME, old_key, 'delete', old_image, at);
+WHEN ((part = 'grade'::text) AND (state <> 'tombstoned'::text)) THEN ((grade IS NOT NULL) AND (grade = ANY (ARRAY['confirmed'::text, 'refuted'::text, 'expired'::text, 'holds'::text, 'weakened'::text])))
 WHEN (due_ms IS NULL) THEN NULL::bigint
 WHEN (mod(due_ms, (60000)::bigint) > 0) THEN 1
 WHEN (mode = 'abduced'::text) THEN ((prediction IS NOT NULL) AND (prediction_observable IS NOT NULL) AND (prediction_window_end IS NOT NULL))
@@ -3549,6 +3554,7 @@ from_stimulus_id bigint NOT NULL,
 frontier_ts bigint NOT NULL,
 generation integer DEFAULT 0 NOT NULL,
 git_sha text,
+grade text,
 graph_id text NOT NULL,
 graph_id text NOT NULL,
 graph_id text NOT NULL,

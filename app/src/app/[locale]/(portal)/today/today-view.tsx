@@ -18,7 +18,6 @@ import { PresenceIcon, PresenceMeta, usePresenceWords } from "@/components/prese
 import { PlanDate } from "@/components/plans/plan-date";
 import {
   useDerivedPlaces,
-  useMemory,
   usePlans,
   useRoster,
   useSavedPlaces,
@@ -28,7 +27,6 @@ import type { PresenceEntry } from "@/lib/api/presence";
 import { formatDuration, formatLongDate, formatRelative, formatTime, partOfDay } from "@/lib/format";
 import { isLive, presenceKind, sortPresence } from "@/lib/presence";
 import { upcomingPlans } from "@/lib/plans";
-import { episodeOfTheDay } from "@/lib/memory";
 import { personStyle } from "@/lib/person";
 import { cn } from "@/lib/cn";
 import { usePresenceNow } from "@/hooks/use-presence";
@@ -69,7 +67,6 @@ export function TodayView() {
           <ComingUp />
         </div>
         <div className="stagger grid gap-5 lg:gap-6">
-          <FromHerNotes />
           <Circle />
         </div>
       </div>
@@ -313,46 +310,6 @@ function ComingUp() {
         </Link>
       ) : null}
     </Panel>
-  );
-}
-
-// ------------------------------------------------------ from her notes
-
-function FromHerNotes() {
-  const t = useTranslations("today.notes");
-  const memory = useMemory();
-  const now = useNow();
-  const entry = memory.data?.[0];
-  const episode = entry ? episodeOfTheDay(entry.episodes, now || Date.now()) : null;
-
-  if (memory.isPending) {
-    return (
-      <Panel>
-        <PanelHeader title={t("title")} />
-        <div className="px-4 pb-4 sm:px-5">
-          <Skeleton className="h-16 w-full" />
-        </div>
-      </Panel>
-    );
-  }
-  if (!episode) return null;
-  return (
-    <Link
-      href="/nora/memory"
-      className="group grid gap-3 rounded-panel border border-hairline bg-surface p-4 transition-colors duration-100 hover:border-seam sm:p-5"
-    >
-      <span className="flex items-center gap-2 text-meta font-medium text-ink-muted">
-        <NoraAvatar size={22} />
-        {t("title")}
-      </span>
-      <blockquote className="rounded-panel bg-blush-wash px-4 py-3 text-[0.9375rem] leading-relaxed text-ink">
-        {episode.text}
-      </blockquote>
-      <span className="flex items-center gap-1.5 text-meta font-semibold text-denim">
-        {t("more")}
-        <ArrowRight className="size-4 transition-transform duration-160 ease-nora group-hover:translate-x-0.5" aria-hidden="true" />
-      </span>
-    </Link>
   );
 }
 
