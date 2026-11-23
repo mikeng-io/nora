@@ -88,10 +88,9 @@ async def transcribe(
     return None
 
 
-# The canonical service API (design/service-api/conventions.md). Shapes are
-# the contract's generated schema; what a schema cannot say is checked here:
-# the status an outcome is answered with, `settled` on all but `pending`, and
-# the installation scope.
+# Shapes come from the contract's generated schema; checked here is what a
+# schema cannot say: an outcome's status, `settled` on all but `pending`, and
+# the installation scope (design/service-api/conventions.md).
 _STATUS = {"complete": 200, "pending": 202, "denied": 403, "rejected": 200,
            "unsupported": 200, "incomplete": 200, "uncertain": 200,
            "unavailable": 503}
@@ -229,8 +228,7 @@ async def _submit(session: aiohttp.ClientSession, url: str, request: dict,
 
 async def _read_back(session: aiohttp.ClientSession, url: str,
                      headers: dict[str, str], deadline: float | None) -> str:
-    """The record's settled outcome by GET, or the last label once the bound
-    or the deadline runs out."""
+    """The record's settled outcome by GET, or the last label at the bound or deadline."""
     label = "lost"
     for attempt in range(_READ_BACKS):
         if attempt:
