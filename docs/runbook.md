@@ -684,7 +684,7 @@ build version and provenance.
 healthcheck polls) only says the process is up; `/health` says the
 published files reflect current authorization truth — it reports 503 while
 any platform is stale (unloaded config/policy, refused reload, unreachable
-`/v1/self`, unavailable guild directory, failed write, env/config leg
+account read, unavailable guild directory, failed write, env/config leg
 mismatch). A stale `/health` with a live `/live` is information, not a
 restart candidate — the last-good or deny file is what bridges act on.
 `/metrics` on the same port exposes the shared registry.

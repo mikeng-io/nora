@@ -34,7 +34,7 @@ USER nora
 # mounted read-only (require_secrets=False — secret.toml is never opened), the
 # projection volume is its only write. account_key arrives via
 # NORA_BRIDGE_ACCOUNT_KEY; the bearer token envs only matter if --self-url is
-# pointed at a bridge's /v1/self. entry.py is the composition root: it wires
+# pointed at a bridge's account read. entry.py is the composition root: it wires
 # the real config loader into nora.platform.bridge.projection, which stays
 # layer-pure (no config/policy/engagement imports from nora.platform).
 ENTRYPOINT ["/app/.venv/bin/python", "/app/entry.py"]

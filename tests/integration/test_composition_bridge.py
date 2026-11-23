@@ -26,7 +26,8 @@ from nora.app.bridge_queue import BridgeRuntime, stream_name
 from nora.app.composition_media import _build_media_custody
 from nora.config import load as load_config
 from nora.domain.media import MediaRef
-from nora.platform.bridge.client import BridgeAdapter
+from nora.platform.bridge.client import ACCOUNT_PATH, BridgeAdapter
+from nora.platform.bridge.contract import read_body
 from nora.platform.bridge.inspection import QueueInspector
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.bridge_control import BridgeDiscordAdapter
@@ -47,11 +48,11 @@ async def test_all_bridge_media_sources_fetch_every_attachment_type(
         assert request.headers.get("Authorization") == f"Bearer {TOKEN}"
         received.append((request.match_info["platform"], request.match_info["key"]))
         if request.match_info["key"] == "missing":
-            raise web.HTTPNotFound()
+            return web.json_response(read_body("nothing_found", None, source="x", trace=""))
         return web.Response(body=payload)
 
     app = web.Application()
-    app.router.add_get("/{platform}/v1/attachments/{key}", attachment)
+    app.router.add_get("/{platform}/v1/platform/blobs/{key}", attachment)
     server = await aiohttp_server(app)
     data = tomllib.loads(example_config_path.read_text())
     data["media"].update(enabled=True, encryption_key_env="NORA_TEST_MEDIA_KEY")
@@ -92,13 +93,14 @@ def _fake_bridge(routes: dict[str, dict]) -> web.Application:
     app = web.Application()
 
     async def _self(request: web.Request) -> web.Response:
-        return web.json_response(routes["self"])
+        return web.json_response(read_body("ok", routes["self"], source="x", trace=""))
 
     async def _health(request: web.Request) -> web.Response:
-        return web.json_response(routes.get("health", {"ok": True}))
+        return web.json_response(read_body(
+            "ok", routes.get("health", {"ok": True}), source="x", trace=""))
 
-    app.router.add_get("/v1/self", _self)
-    app.router.add_get("/v1/health", _health)
+    app.router.add_get(ACCOUNT_PATH, _self)
+    app.router.add_get("/v1/operations/status", _health)
     return app
 
 

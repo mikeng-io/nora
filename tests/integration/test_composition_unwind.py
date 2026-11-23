@@ -37,7 +37,8 @@ from nora.config_reload import ReloadFiles
 from nora.infra.computer.manager import ScopeBrowserManager
 from nora.infra.sql.audit import SqlRecordStore
 from nora.obs.metrics import Metrics
-from nora.platform.bridge.client import BridgeAdapter
+from nora.platform.bridge.client import ACCOUNT_PATH, BridgeAdapter
+from nora.platform.bridge.contract import read_body
 from nora.platform.registry import AdapterRegistry, AdapterRegistryError
 from nora.tag import Debounce
 from tests.builders import override_config
@@ -90,7 +91,7 @@ class _PlatformsCfg:
 
 
 def _bridge_app(state: dict[str, Any]) -> web.Application:
-    """A fake bridge's `/v1/self` — see `_state` for the knobs."""
+    """A fake bridge's account read — see `_state` for the knobs."""
 
     @web.middleware
     async def auth(req: web.Request, handler):
@@ -103,14 +104,14 @@ def _bridge_app(state: dict[str, Any]) -> web.Application:
         if state["response_delay"]:
             await asyncio.sleep(state["response_delay"])
         if state["calls"] <= state["not_ready"]:
-            return web.json_response(
-                {"error": "identity_unavailable"}, status=state["status"])
-        return web.json_response(
-            {"platform": state["platform"], "primary": PRIMARY,
-             "aliases": [PRIMARY], "handle": "nora"})
+            return web.json_response(read_body(
+                "unavailable", None, source=state["platform"], trace=""), status=state["status"])
+        return web.json_response(read_body("ok", {
+            "platform": state["platform"], "primary": PRIMARY,
+            "aliases": [PRIMARY], "handle": "nora"}, source=state["platform"], trace=""))
 
     app = web.Application(middlewares=[auth])
-    app.router.add_get("/v1/self", get_self)
+    app.router.add_get(ACCOUNT_PATH, get_self)
     return app
 
 
@@ -295,7 +296,7 @@ async def test_a_later_bridge_failure_closes_the_adapters_already_built(
 async def test_cancelling_identity_resolution_closes_the_in_flight_adapter(
     track_bridge_sessions,
 ):
-    """A cancellation mid-`/v1/self` — the task is inside `resolve_identity`
+    """A cancellation mid-account-read — the task is inside `resolve_identity`
     — still closes the adapter's opened session, and the cancellation is
     what propagates, not a substitute error."""
     owner = StartupOwner()

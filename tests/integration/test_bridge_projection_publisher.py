@@ -20,6 +20,9 @@ import threading
 import time
 from pathlib import Path
 
+from nora.domain.service_api import status_for
+from nora.platform.bridge.client import ACCOUNT_PATH, QUERIES_PATH
+from nora.platform.bridge.contract import read_body
 from tests.builders import copy_example_config
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -80,11 +83,15 @@ persons = ["miles"]
 
 
 class _BridgeHandler(http.server.BaseHTTPRequestHandler):
-    """The discord control worker's wire shape: POST /v1/reads -> {available,
-    value:{channels, threads}}; GET /v1/self -> {primary, aliases}. Answers
+    """The discord bridge's contract shape: the `channels` query reads
+    `{channels, threads}`, the account read `{primary, aliases}`. Answers
     come from `server.state` per request so tests mutate upstream truth."""
 
     def _send(self, payload: dict, status: int = 200) -> None:
+        if status in (200, 503):
+            outcome = "ok" if status == 200 else "unavailable"
+            payload, status = read_body(
+                outcome, payload, source="discord", trace=""), status_for(outcome)
         data = json.dumps(payload).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -96,24 +103,24 @@ class _BridgeHandler(http.server.BaseHTTPRequestHandler):
         body = json.loads(
             self.rfile.read(int(self.headers["Content-Length"])),
         )
-        if self.path != "/v1/reads" or body.get("op") != "channels":
+        if self.path != QUERIES_PATH or body.get("kind") != "channels":
             self._send({"error": "unknown"}, status=404)
             return
         gid = body["params"]["guild_id"]
         if not self.server.state.get("available", True):
-            self._send({"available": False})
+            self._send({}, status=503)
             return
-        self._send({"available": True, "value": {
+        self._send({
             "channels": dict(self.server.state["channels"].get(gid, {})),
             "threads": dict(self.server.state.get("threads", {})),
-        }})
+        })
 
     def do_GET(self) -> None:
-        if self.path != "/v1/self":
+        if self.path != ACCOUNT_PATH:
             self._send({"error": "unknown"}, status=404)
             return
         if not self.server.state.get("self_available", True):
-            self._send({"error": "unavailable"}, status=503)
+            self._send({}, status=503)
             return
         self._send({
             "primary": self.server.state.get("primary"),
@@ -160,7 +167,7 @@ def _sources(root: Path, policy: str = _POLICY, identity: str = _IDENTITY) -> No
 
 def _enable_account(root: Path) -> None:
     """Signal's configured `account` is the identity floor — without it (and
-    with no /v1/self wired) the publisher correctly reports self-stale."""
+    with no account read wired) the publisher correctly reports self-stale."""
     cfg = root / "config.toml"
     text = cfg.read_text()
     assert 'account = ""' in text
@@ -433,8 +440,8 @@ def test_discord_guild_scope_updates_while_app_absent(tmp_path: Path):
         # default — env must equal it whenever the field exists.
         proc, target = _launch(
             tmp_path, platform="discord", account_key="default", extra=[
-                "--reads-url", f"{base}/v1/reads",
-                "--self-url", f"{base}/v1/self",
+                "--reads-url", f"{base}{QUERIES_PATH}",
+                "--self-url", f"{base}{ACCOUNT_PATH}",
             ],
         )
         try:

@@ -71,8 +71,16 @@ from nora.platform.discord.bridge_control import (
 )
 from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.discord.roster import DiscordRoster
+from tests.integration.platform_contract import (
+    Bridge,
+    assert_serves_the_contract,
+    drive_outcomes,
+    envelope,
+    swapped,
+)
 
 TOKEN = "it-bearer"  # noqa: S105 — a synthetic fixture token, not a secret
+AUTH = {"Authorization": f"Bearer {TOKEN}"}
 ACCOUNT = "it-account"
 GUILD = "100000000000000001"
 TEXT_CHANNEL = "100000000000000002"
@@ -489,6 +497,15 @@ async def bridge(world, clean_pg_url):
     await server.close()
 
 
+OPERATIONS = "/v1/platform/operations"
+BLOBS = "/v1/platform/blobs"
+
+
+async def _query(http, kind: str, params: dict) -> dict:
+    return await envelope(await http.post(
+        "/v1/platform/queries", json={"kind": kind, "params": params}, headers=AUTH))
+
+
 def _app_side(world) -> tuple[BridgeControlClient, BridgeDiscordAdapter]:
     """One 'app' — the real forwarding layer. Constructed, stopped and
     constructed again mid-test: recreation must leave the bridge's graph
@@ -523,39 +540,21 @@ async def test_the_bridge_owns_the_whole_graph_while_the_app_proxies(bridge):
     http = world["http"]
 
     # --- shared reads, from the bridge, over the live cache --------------
-    resp = await http.post("/v1/reads", json={
-        "op": "voice_presence", "params": {"member_ids": [MEMBER]}},
-        headers={"Authorization": f"Bearer {TOKEN}"})
-    body = await resp.json()
-    assert body["available"] is True
-    assert body["value"] == {
+    body = await _query(http, "voice_presence", {"member_ids": [MEMBER]})
+    assert body["outcome"] == "ok"
+    assert body["payload"] == {
         MEMBER: {"channel_id": VOICE_CHANNEL, "channel_name": "voice"}}
-    assert isinstance(body["observed_ms"], int) and body["observed_ms"] > 0
-
-    resp = await http.post("/v1/reads", json={
-        "op": "member_presence", "params": {"member_ids": [MEMBER]}},
-        headers={"Authorization": f"Bearer {TOKEN}"})
-    body = await resp.json()
-    assert body["available"] is True
-    assert body["value"][MEMBER]["status"] == "online"
-
-    resp = await http.post("/v1/reads", json={
-        "op": "channels", "params": {"guild_id": GUILD}},
-        headers={"Authorization": f"Bearer {TOKEN}"})
-    body = await resp.json()
-    assert body["available"] is True
-    assert body["value"] == {
+    assert body["when"]["observed_at_ms"] > 0
+    body = await _query(http, "member_presence", {"member_ids": [MEMBER]})
+    assert body["payload"][MEMBER]["status"] == "online"
+    body = await _query(http, "channels", {"guild_id": GUILD})
+    assert body["payload"] == {
         "channels": {
             TEXT_CHANNEL: "general", ANNOUNCE: "announce",
             ANNOUNCE_2: "announce-2"},
         "threads": {}}
-
-    resp = await http.post("/v1/reads", json={
-        "op": "roster", "params": {"conversation_id": CONV}},
-        headers={"Authorization": f"Bearer {TOKEN}"})
-    body = await resp.json()
-    assert body["available"] is True
-    assert {MEMBER} in {frozenset(m) for m in body["value"]["members"]}
+    body = await _query(http, "roster", {"conversation_id": CONV})
+    assert {MEMBER} in {frozenset(m) for m in body["payload"]["members"]}
     assert world["rest_state"]["member_reads"] == [GUILD]
 
     # --- the app's forwarded music call, app process "absent" by fiat ----
@@ -564,8 +563,7 @@ async def test_the_bridge_owns_the_whole_graph_while_the_app_proxies(bridge):
     # `DiscordMusicToolBridge` the slash command drives.
     resp = await http.post("/v1/music/play", json={
         "conversation_id": CONV, "sender_ids": [MEMBER],
-        "query_or_url": "song-a"},
-        headers={"Authorization": f"Bearer {TOKEN}"})
+        "query_or_url": "song-a"}, headers=AUTH)
     outcome = (await resp.json())["outcome"]
     assert outcome["status"] == "ok" and outcome["title"] == "Track A"
     assert len(controller["join_calls"]) == 1
@@ -575,8 +573,7 @@ async def test_the_bridge_owns_the_whole_graph_while_the_app_proxies(bridge):
     assert play_body["stream_url"] == TRACK.stream_url
 
     # ONE session, ONE generation — the state route says what the app sees.
-    resp = await http.get(f"/v1/voice/{GUILD}",
-                          headers={"Authorization": f"Bearer {TOKEN}"})
+    resp = await http.get(f"/v1/voice/{GUILD}", headers=AUTH)
     state = await resp.json()
     assert state == {"connected": True, "session": True,
                      "generation": GEN, "channel_id": VOICE_CHANNEL}
@@ -584,8 +581,7 @@ async def test_the_bridge_owns_the_whole_graph_while_the_app_proxies(bridge):
     # A second track queues behind the first, through the same session.
     resp = await http.post("/v1/music/play", json={
         "conversation_id": CONV, "sender_ids": [MEMBER],
-        "query_or_url": "song-b"},
-        headers={"Authorization": f"Bearer {TOKEN}"})
+        "query_or_url": "song-b"}, headers=AUTH)
     assert (await resp.json())["outcome"]["queued"] is True
     assert len(controller["join_calls"]) == 1  # still ONE join, ONE generation
 
@@ -593,8 +589,7 @@ async def test_the_bridge_owns_the_whole_graph_while_the_app_proxies(bridge):
     resp = await http.post("/v1/voice/event", json={
         "type": "track-finished", "event_id": "ev-1", "event_seq": 1,
         "guild_id": GUILD, "generation": GEN,
-        "playback_id": controller["playback_id"]},
-        headers={"Authorization": f"Bearer {TOKEN}"})
+        "playback_id": controller["playback_id"]}, headers=AUTH)
     assert resp.status == 200
     plays = [b for p, b in controller["music_calls"] if p == "/music/play"]
     assert plays[-1]["stream_url"] == TRACK_B.stream_url  # advanced
@@ -641,23 +636,16 @@ async def test_the_bridge_owns_the_whole_graph_while_the_app_proxies(bridge):
 
     # --- fail-closed controls: a dead client is UNAVAILABLE, never empty --
     await client.close()  # the gateway dropped; the cache is unreadable
-    resp = await http.post("/v1/reads", json={
-        "op": "voice_presence", "params": {"member_ids": [MEMBER]}},
-        headers={"Authorization": f"Bearer {TOKEN}"})
-    assert (await resp.json())["available"] is False
-    resp = await http.post("/v1/reads", json={
-        "op": "channels", "params": {"guild_id": GUILD}},
-        headers={"Authorization": f"Bearer {TOKEN}"})
-    body = await resp.json()
-    # An unreadable cache announces WHY and stamps when it was observed —
+    body = await _query(http, "voice_presence", {"member_ids": [MEMBER]})
+    assert body["outcome"] == "unavailable"
+    body = await _query(http, "channels", {"guild_id": GUILD})
+    # An unreadable cache is unavailable and stamps when it was observed —
     # it can never be mistaken for an empty guild.
-    assert body["available"] is False and body["value"] is None
-    assert body["reason"] == "cache_unavailable"
-    assert isinstance(body["observed_ms"], int)
+    assert body["outcome"] == "unavailable" and body["payload"] is None
+    assert isinstance(body["when"]["observed_at_ms"], int)
     resp = await http.post("/v1/music/play", json={
         "conversation_id": CONV, "sender_ids": [MEMBER],
-        "query_or_url": "song-a"},
-        headers={"Authorization": f"Bearer {TOKEN}"})
+        "query_or_url": "song-a"}, headers=AUTH)
     assert (await resp.json())["outcome"]["status"] == "unavailable"
     await control.close()
 
@@ -666,41 +654,40 @@ async def test_voice_death_reconciles_then_a_new_generation_serves(bridge):
     world = bridge
     controller = world["controller_state"]
     http = world["http"]
-    auth = {"Authorization": f"Bearer {TOKEN}"}
 
     await world["bridge"].start()
     await http.post("/v1/music/play", json={
         "conversation_id": CONV, "sender_ids": [MEMBER],
-        "query_or_url": "song-a"}, headers=auth)
+        "query_or_url": "song-a"}, headers=AUTH)
     assert world["hub"].generation_for(GUILD) == GEN
 
     # The controller's own death event reconciles the session — the REAL
     # VoiceEventConsumer path: event-id dedupe, generation check, teardown.
     resp = await http.post("/v1/voice/event", json={
         "type": "voice-death", "event_id": "ev-death", "event_seq": 1,
-        "guild_id": GUILD, "generation": GEN}, headers=auth)
+        "guild_id": GUILD, "generation": GEN}, headers=AUTH)
     assert resp.status == 200
     assert world["hub"].session_for(GUILD) is None
     # A replayed delivery is a duplicate, not a second teardown.
     resp = await http.post("/v1/voice/event", json={
         "type": "voice-death", "event_id": "ev-death", "event_seq": 1,
-        "guild_id": GUILD, "generation": GEN}, headers=auth)
+        "guild_id": GUILD, "generation": GEN}, headers=AUTH)
     assert (await resp.json())["status"] == "duplicate"
 
     # Speech with no session is refused — 409, never a silent drop.
     resp = await http.post(
-        f"/v1/voice/{GUILD}/speech", data=b"pcm", headers=auth)
+        f"/v1/voice/{GUILD}/speech", data=b"pcm", headers=AUTH)
     assert resp.status == 409
 
     # A fresh join mints a NEW generation; speech lands on it, not gen-1.
     controller["generation"] = "gen-2"
     controller["connected"] = False
     resp = await http.post(f"/v1/voice/{GUILD}/join", json={
-        "channel_id": VOICE_CHANNEL}, headers=auth)
+        "channel_id": VOICE_CHANNEL}, headers=AUTH)
     assert resp.status == 200
     assert world["hub"].generation_for(GUILD) == "gen-2"
     resp = await http.post(
-        f"/v1/voice/{GUILD}/speech", data=b"pcm-2", headers=auth)
+        f"/v1/voice/{GUILD}/speech", data=b"pcm-2", headers=AUTH)
     assert resp.status == 204
     assert controller["stream_calls"][-1]["generation"] == "gen-2"
     assert base64.b64decode(
@@ -719,17 +706,16 @@ async def test_speech_is_bounded_and_actions_use_the_real_sender(bridge, mime, f
     world = bridge
     controller = world["controller_state"]
     http = world["http"]
-    auth = {"Authorization": f"Bearer {TOKEN}"}
 
     await world["bridge"].start()
     await http.post("/v1/music/play", json={
         "conversation_id": CONV, "sender_ids": [MEMBER],
-        "query_or_url": "song-a"}, headers=auth)
+        "query_or_url": "song-a"}, headers=AUTH)
 
     # Over the bound → 413, and nothing reached the controller.
     too_big = world["bridge"]._max_speech_bytes + 1
     resp = await http.post(
-        f"/v1/voice/{GUILD}/speech", data=b"x" * too_big, headers=auth)
+        f"/v1/voice/{GUILD}/speech", data=b"x" * too_big, headers=AUTH)
     assert resp.status == 413
     assert controller["stream_calls"] == []
 
@@ -740,8 +726,8 @@ async def test_speech_is_bounded_and_actions_use_the_real_sender(bridge, mime, f
     # platform/account/target.
     key = "out-test-1"
     payload = b"generated-media" * 100_000
-    put = await http.put(f"/v1/attachments/{key}", data=payload, headers=auth)
-    assert put.status == 200
+    put = await http.put(f"{BLOBS}/{key}", data=payload, headers=AUTH)
+    assert (await put.json())["outcome"] == "complete"
     async with world["engine"].begin() as conn:
         rid = int((await conn.execute(sa.insert(MESSAGES).values(
             platform="discord", conversation_id=CONV,
@@ -749,11 +735,11 @@ async def test_speech_is_bounded_and_actions_use_the_real_sender(bridge, mime, f
             body="pending", is_nora=1, delivery_status="pending",
             raw_json=json.dumps({"tag_id": "t-1"}))
             .returning(MESSAGES.c.id))).scalar_one())
-    resp = await http.post("/v1/actions", json={
-        "action_id": "live:test:1",
+    resp = await http.post(OPERATIONS, json={
+        "operation_id": "live:test:1",
         "owner": {"kind": "live_invocation", "id": str(rid)},
-        "op": "send",
-        "request": {
+        "kind": "send",
+        "effect": {
             "target": {"kind": "group", "id": CONV, "thread": "999888"},
             "text": "posted reply",
             "mentions": [{"start": 0, "length": 5, "recipient": MEMBER,
@@ -762,10 +748,10 @@ async def test_speech_is_bounded_and_actions_use_the_real_sender(bridge, mime, f
             "attachments": [{"key": key, "file_name": filename,
                              "media_type": mime}],
             "quote": None,
-        }}, headers=auth)
+        }}, headers=AUTH)
     body = await resp.json()
-    assert body["state"] == "confirmed"
-    assert body["platform_ref"] == "777000111"
+    assert body["outcome"] == "complete"
+    assert body["from"]["platform_ref"] == "777000111"
     # The post went to the THREAD's channel id, as DiscordSender routes it.
     channel_id, _req = world["rest_state"]["posts"][-1]
     assert channel_id == "999888"
@@ -775,9 +761,9 @@ async def test_speech_is_bounded_and_actions_use_the_real_sender(bridge, mime, f
     }
 
     # Unauthenticated calls answer 401 before reaching any handler.
-    resp = await http.post("/v1/actions", json={
-        "action_id": "x", "owner": {"kind": "live_invocation", "id": "app"},
-        "op": "send", "request": {}})
+    resp = await http.post(OPERATIONS, json={
+        "operation_id": "x", "owner": {"kind": "live_invocation", "id": "app"},
+        "kind": "send", "effect": {}})
     assert resp.status == 401
 
 
@@ -805,14 +791,13 @@ async def test_forwarded_music_ops_are_deny_closed(bridge):
     the room's sender grant are all 403s — and the controller never sees
     a join. `dm_allowed_senders` is a DM grant, never the group allowlist."""
     world = bridge
-    auth = {"Authorization": f"Bearer {TOKEN}"}
     http = world["http"]
     await world["bridge"].start()
 
     async def play(conv: str = CONV, senders=(MEMBER,)) -> web.Response:
         return await http.post("/v1/music/play", json={
             "conversation_id": conv, "sender_ids": list(senders),
-            "query_or_url": "song-a"}, headers=auth)
+            "query_or_url": "song-a"}, headers=AUTH)
 
     # Disabled projection — denied before ANY effect.
     world["projection"]["enabled"] = False
@@ -823,7 +808,7 @@ async def test_forwarded_music_ops_are_deny_closed(bridge):
 
     # Missing conversation_id — denied.
     resp = await http.post("/v1/music/play", json={
-        "sender_ids": [MEMBER], "query_or_url": "song-a"}, headers=auth)
+        "sender_ids": [MEMBER], "query_or_url": "song-a"}, headers=AUTH)
     assert resp.status == 403
 
     # A room the projection does not name — denied.
@@ -857,10 +842,10 @@ async def test_forwarded_music_ops_are_deny_closed(bridge):
     # The same gate binds skip/stop/volume (the mutations that carry no
     # requester on the wire): unknown room → refused before any effect.
     resp = await http.post("/v1/music/stop", json={
-        "conversation_id": f"{GUILD}/100000000000000099"}, headers=auth)
+        "conversation_id": f"{GUILD}/100000000000000099"}, headers=AUTH)
     assert resp.status == 403
     resp = await http.post("/v1/music/set_volume", json={
-        "conversation_id": CONV, "percent": 50}, headers=auth)
+        "conversation_id": CONV, "percent": 50}, headers=AUTH)
     # Gate passed → a real outcome, whatever the session's state.
     assert resp.status == 200 and "outcome" in await resp.json()
 
@@ -917,14 +902,13 @@ async def test_music_channel_routing_follows_the_current_projection(bridge):
     recreation and a policy change; an absent map falls back to where
     the session started."""
     world = bridge
-    auth = {"Authorization": f"Bearer {TOKEN}"}
     http = world["http"]
     await world["bridge"].start()
 
     async def play(query: str) -> None:
         resp = await http.post("/v1/music/play", json={
             "conversation_id": CONV, "sender_ids": [MEMBER],
-            "query_or_url": query}, headers=auth)
+            "query_or_url": query}, headers=AUTH)
         assert (await resp.json())["outcome"]["status"] in ("ok",)
 
     # Queue A + B; the skip's "now playing" announcement routes to the
@@ -932,7 +916,7 @@ async def test_music_channel_routing_follows_the_current_projection(bridge):
     await play("song-a")
     await play("song-b")
     resp = await http.post("/v1/music/skip", json={
-        "conversation_id": CONV}, headers=auth)
+        "conversation_id": CONV}, headers=AUTH)
     assert (await resp.json())["outcome"]["status"] == "ok"
     world["announce"].send.assert_called()
     assert "Track B" in world["announce"].send.call_args.args[0]
@@ -945,7 +929,7 @@ async def test_music_channel_routing_follows_the_current_projection(bridge):
     world["announce"].send.reset_mock()
     await play("song-a")
     resp = await http.post("/v1/music/skip", json={
-        "conversation_id": CONV}, headers=auth)
+        "conversation_id": CONV}, headers=AUTH)
     world["announce_2"].send.assert_called()
     assert "Track A" in world["announce_2"].send.call_args.args[0]
     world["announce"].send.assert_not_called()
@@ -957,7 +941,7 @@ async def test_music_channel_routing_follows_the_current_projection(bridge):
     world["announce_2"].send.reset_mock()
     await play("song-b")
     resp = await http.post("/v1/music/skip", json={
-        "conversation_id": CONV}, headers=auth)
+        "conversation_id": CONV}, headers=AUTH)
     world["text"].send.assert_called()
     assert "Track B" in world["text"].send.call_args.args[0]
     world["announce_2"].send.assert_not_called()
@@ -966,55 +950,51 @@ async def test_music_channel_routing_follows_the_current_projection(bridge):
 
 async def test_attachment_body_limit_applies_only_to_uploads(bridge, monkeypatch):
     client = bridge["http"]
-    auth = {"Authorization": f"Bearer {TOKEN}"}
     limit = 2 * 1024 * 1024
     monkeypatch.setattr("nora.platform.discord.bridge_app.MAX_ATTACHMENT_BYTES", limit)
     for index, size in enumerate((1300 * 1024, limit)):
         payload = b"x" * size
-        path = f"/v1/attachments/large-{index}"
-        put = await client.put(path, data=payload, headers=auth)
-        assert put.status == 200
-        got = await client.get(path, headers=auth)
+        path = f"{BLOBS}/large-{index}"
+        put = await client.put(path, data=payload, headers=AUTH)
+        assert (await put.json())["outcome"] == "complete"
+        got = await client.get(path, headers=AUTH)
         assert got.status == 200 and await got.read() == payload
-        repeated = await client.put(path, data=payload, headers=auth)
-        assert repeated.status == 200
-        conflict = await client.put(path, data=b"different bytes", headers=auth)
-        assert conflict.status == 409
-        unchanged = await client.get(path, headers=auth)
+        repeated = await client.put(path, data=payload, headers=AUTH)
+        assert (await repeated.json())["outcome"] == "complete"
+        conflict = await client.put(path, data=b"different bytes", headers=AUTH)
+        assert (await conflict.json())["payload"]["error"]["kind"] == "conflict"
+        unchanged = await client.get(path, headers=AUTH)
         assert unchanged.status == 200 and await unchanged.read() == payload
-    refused = await client.put("/v1/attachments/too-large", data=b"x" * (limit + 1),
-                               headers=auth)
-    assert refused.status == 413
-    missing = await client.get("/v1/attachments/too-large", headers=auth)
-    assert missing.status == 404
-    ordinary = await client.post("/v1/actions", data=b"x" * (1300 * 1024), headers=auth)
+    refused = await client.put(f"{BLOBS}/too-large", data=b"x" * (limit + 1), headers=AUTH)
+    assert (await envelope(refused))["payload"]["error"]["kind"] == "too_large"
+    missing = await client.get(f"{BLOBS}/too-large", headers=AUTH)
+    assert (await missing.json())["outcome"] == "nothing_found"
+    ordinary = await client.post(OPERATIONS, data=b"x" * (1300 * 1024), headers=AUTH)
     assert ordinary.status == 413
 
 
 @pytest.mark.parametrize("method", ["PUT", "GET"])
 async def test_attachment_paths_stay_in_custody(bridge, method):
     client = bridge["http"]
-    auth = {"Authorization": f"Bearer {TOKEN}"}
     outside = bridge["tmp"] / "outside"
     outside.write_bytes(b"outside custody")
     (bridge["tmp"] / "custody" / "escape").symlink_to(outside)
-    refused = await client.request(method, "/v1/attachments/escape",
-                                   data=b"outside custody", headers=auth)
+    refused = await client.request(method, f"{BLOBS}/escape",
+                                   data=b"outside custody", headers=AUTH)
     assert refused.status == 400
     assert outside.read_bytes() == b"outside custody"
-    accepted = await client.put("/v1/attachments/safe", data=b"safe", headers=auth)
-    assert accepted.status == 200
-    got = await client.get("/v1/attachments/safe", headers=auth)
+    accepted = await client.put(f"{BLOBS}/safe", data=b"safe", headers=AUTH)
+    assert (await accepted.json())["outcome"] == "complete"
+    got = await client.get(f"{BLOBS}/safe", headers=AUTH)
     assert got.status == 200 and await got.read() == b"safe"
 
 
 async def test_actions_and_capture_fail_closed_without_collaborators(bridge):
-    """The collaborator fence: no `ActionService` → `/v1/actions` is
+    """The collaborator fence: no `ActionService` → an operation is
     `unavailable` (503), and NO SDK side-effect is attempted; no
     `CaptureSink` → an admitted room's event is dropped, not written
     to journal or stream half-formed."""
     world = bridge
-    auth = {"Authorization": f"Bearer {TOKEN}"}
     http = world["http"]
     await world["bridge"].start()
     b = world["bridge"]
@@ -1023,15 +1003,15 @@ async def test_actions_and_capture_fail_closed_without_collaborators(bridge):
     try:
         b._actions = None
         posts_before = len(world["rest_state"]["posts"])
-        resp = await http.post("/v1/actions", json={
-            "action_id": "w:test:1",
+        resp = await http.post(OPERATIONS, json={
+            "operation_id": "w:test:1",
             "owner": {"kind": "work", "id": "w", "generation": 1},
-            "op": "send",
-            "request": {"target": {"kind": "group", "id": CONV},
-                        "text": "must never post"}}, headers=auth)
+            "kind": "send",
+            "effect": {"target": {"kind": "group", "id": CONV},
+                       "text": "must never post"}}, headers=AUTH)
         body = await resp.json()
-        assert resp.status == 503 and body["state"] == "unavailable"
-        assert body["error"]["kind"] == "unavailable"
+        assert resp.status == 503 and body["outcome"] == "unavailable"
+        assert body["payload"]["error"]["kind"] == "unavailable"
         assert len(world["rest_state"]["posts"]) == posts_before
 
         b._capture_sink = None
@@ -1046,6 +1026,26 @@ async def test_actions_and_capture_fail_closed_without_collaborators(bridge):
                 if "envelope" in r] == []
     finally:
         b._actions, b._capture_sink = actions, capture
+
+
+async def test_the_bridge_serves_the_platform_contract_routes(bridge, monkeypatch):
+    assert_serves_the_contract(bridge["bridge"].routes())
+    assert (await bridge["http"].get("/ready", headers=AUTH)).status == 200
+    monkeypatch.setattr(bridge["client"], "is_ready", lambda: False)
+    assert (await bridge["http"].get("/ready", headers=AUTH)).status == 503
+
+
+async def test_operation_outcomes_follow_the_contract(bridge, monkeypatch):
+    b = bridge["bridge"]
+    await b.start()
+    await drive_outcomes(Bridge(
+        http=bridge["http"], auth=AUTH, store=b._actions._store, engine=bridge["engine"],
+        platform="discord", account_key=ACCOUNT, conversation_id=CONV,
+        no_ledger=lambda: swapped(b, "_actions"), logged_out=lambda: swapped(b, "self_id"),
+        query_ok=("channels", {"guild_id": GUILD}),
+        query_unavailable=("channels", {"guild_id": "1"}),
+        blob_limit=lambda n: monkeypatch.setattr(
+            "nora.platform.discord.bridge_app.MAX_ATTACHMENT_BYTES", n)))
 
 
 class _Emoji:

@@ -9,8 +9,8 @@
   {
     "name": "an unreadable JSON roster remains unavailable",
     "file": "nora/platform/bridge/client.py",
-    "old": "        except (TimeoutError, aiohttp.ClientError, ValueError):\n",
-    "new": "        except (TimeoutError, aiohttp.ClientError):\n",
+    "old": "            except ValueError:\n                body = None\n",
+    "new": "            except ZeroDivisionError:\n                body = None\n",
     "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_bridge_roster_decodes_accounts_once_and_keeps_unknown_unavailable"
   },
   {

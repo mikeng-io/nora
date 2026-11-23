@@ -8,6 +8,8 @@ from dataclasses import replace
 import pytest
 from aiohttp import web
 
+from nora.domain.service_api import status_for
+from nora.platform.bridge.contract import read_body
 from nora.policy import load_policy
 from nora.subject import SubjectSpec, obtain
 from nora.subject.environment import IsolatedServices
@@ -40,22 +42,25 @@ async def test_subject_uses_composed_policy_with_real_guild_directory(
     # A standalone policy has no observed directory and cannot authorize the room.
     assert load_policy(tmp_path / "policy.toml").conversation(*spec.room) is None
     requests, reads = [], []
-    bridge = _bridge_app([])
+    def answer(outcome, payload=None):
+        return web.json_response(read_body(outcome, payload, source="discord", trace=""),
+                                 status=status_for(outcome))
 
     async def directory(request):
         body = await request.json()
+        if body == {"kind": "groups", "params": {}}:
+            return answer("ok", [{"id": "g1", "members": []}])
         reads.append(body)
-        if body == {"op": "channels", "params": {"guild_id": GUILD}}:
-            return web.json_response({"available": available, "value": {
-                "channels": {CHANNEL: "generated-channel"}, "threads": {}}})
-        if body == {"op": "roster", "params": {"conversation_id": f"{GUILD}/{CHANNEL}"}}:
-            return web.json_response({"available": True, "value": {
-                "members": [["generated-user-a"], ["generated-user-b"]]}})
-        if body == {"op": "roster", "params": {"conversation_id": f"{GUILD}/unknown"}}:
-            return web.json_response({"available": False})
-        return web.json_response({"available": False}, status=400)
+        if body == {"kind": "channels", "params": {"guild_id": GUILD}}:
+            return answer("ok" if available else "unavailable", {
+                "channels": {CHANNEL: "generated-channel"}, "threads": {}})
+        if body == {"kind": "roster", "params": {"conversation_id": f"{GUILD}/{CHANNEL}"}}:
+            return answer("ok", {"members": [["generated-user-a"], ["generated-user-b"]]})
+        if body == {"kind": "roster", "params": {"conversation_id": f"{GUILD}/unknown"}}:
+            return answer("unavailable")
+        return web.json_response({"error": "unexpected query"}, status=422)
 
-    bridge.router.add_post("/v1/reads", directory)
+    bridge = _bridge_app([], queries=directory)
     apps = {"platforms.discord.base_url": bridge, "platforms.signal.base_url": bridge,
             "llm.base_url": _model_app(requests)}
     apps.update({f"providers.{name}.base_url": _model_app(requests) for name in cfg.providers})
@@ -105,10 +110,10 @@ async def test_subject_uses_composed_policy_with_real_guild_directory(
         else:
             with pytest.raises(RoomNotInPolicyError, match="names no conversation"):
                 await acquire()
-        channels = [row for row in reads if row["op"] == "channels"]
-        assert channels and all(row == {"op": "channels", "params": {"guild_id": GUILD}}
+        channels = [row for row in reads if row["kind"] == "channels"]
+        assert channels and all(row == {"kind": "channels", "params": {"guild_id": GUILD}}
                                 for row in channels)
-        assert [row["params"]["conversation_id"] for row in reads if row["op"] == "roster"] == (
+        assert [row["params"]["conversation_id"] for row in reads if row["kind"] == "roster"] == (
             [spec.room[1], f"{GUILD}/unknown"] if available else [])
         assert requests == []
         assert owned and all(not deps.background._tasks for deps, _, _ in owned)

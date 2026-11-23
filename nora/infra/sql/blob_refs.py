@@ -177,7 +177,7 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
     ("bridge_work", "result"): "outcome verdicts, tag/message ids and attempt records",
     ("bridge_action", "request"): (
         "the outbound op body; `attachments[].key` are `out-*` custody keys "
-        "the bridge serves under /v1/attachments, never a blob_store address"
+        "the bridge serves under /v1/platform/blobs, never a blob_store address"
     ),
     ("bridge_action", "error"): "failure kind and message",
     ("tool_call_log", "tool_input"): _TRACE,

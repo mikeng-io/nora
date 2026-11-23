@@ -48,7 +48,7 @@ REUSE_RECIPES = {
     'discord-bridge': '3cc65dcaa72c4aed758f0feb217cac20dff60c7f23e09a7cf62ae2486bd9f787',
     'whatsapp-bridge': '87c1750d428b4b95dabd2a3fb4e1f06926611e1044fce330b93d40ba0f131bfc',
     'instagram-bridge': '05604eae52ed58fae938b6044f0915f94369ae46e23697af53ed6dcc4c5039cf',
-    'bridge-projection': 'a462cc260c45ee373a39d1af772daa24da76b030463a79217dba5bada41a2c85',
+    'bridge-projection': '30a9a55b4a5055e4f1a9ba12773b69d22315653e4d61ad6eec96ff3520ad5bdb',
 }
 
 # Python entrypoints whose images COPY the whole nora tree but execute only a

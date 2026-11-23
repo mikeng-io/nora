@@ -30,7 +30,6 @@
  },
  "deploy/signal-bridge/wrapper.py": {
   "comment_blocks": 3,
-  "file_lines": 822,
   "internal_docstrings": 11
  },
  "deploy/stt/server.py": {
@@ -1635,7 +1634,7 @@
   "internal_docstrings": 1
  },
  "nora/platform/bridge/client.py": {
-  "comment_blocks": 3,
+  "comment_blocks": 1,
   "internal_docstrings": 1
  },
  "nora/platform/bridge/envelope.py": {
@@ -1674,7 +1673,7 @@
  },
  "nora/platform/discord/bridge_app.py": {
   "comment_blocks": 10,
-  "file_lines": 1985,
+  "file_lines": 1783,
   "functions": {
    "DiscordBridge._observation_events": 217
   },
@@ -2527,7 +2526,7 @@
   "comment_blocks": 3,
   "file_lines": 1147,
   "functions": {
-   "test_the_bridge_owns_the_whole_graph_while_the_app_proxies": 160
+   "test_the_bridge_owns_the_whole_graph_while_the_app_proxies": 131
   },
   "internal_docstrings": 4
  },
@@ -2988,7 +2987,7 @@
   "internal_docstrings": 1
  },
  "tests/unit/test_bridge_projection.py": {
-  "file_lines": 990,
+  "file_lines": 989,
   "internal_docstrings": 2
  },
  "tests/unit/test_cognition_agenda_skills.py": {

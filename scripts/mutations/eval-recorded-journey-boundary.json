@@ -13,7 +13,7 @@
     "old": "            if before is not None:\n                before(name, app)",
     "new": "            if False:\n                before(name, app)",
     "target": "tests/integration/subject/test_journey_recorded_boundary.py::test_a_recorded_action_receipt_cannot_stand_in_for_execution",
-    "comment": "Without the hook, the recorded POST /v1/actions row answers instead of the real DurableActionService."
+    "comment": "Without the hook, the recorded platform-operation row answers instead of the real DurableActionService."
   },
   {
     "name": "keep the action seam when the recording binds no signal reads",

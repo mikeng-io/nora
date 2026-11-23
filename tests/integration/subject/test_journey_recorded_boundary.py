@@ -44,13 +44,13 @@ RECORDING = {
     "bindings": {"platforms.discord.base_url": "discord",
                  "platforms.signal.base_url": "bridge"},
     "services": {
-        "discord": [{"method": "GET", "path": "/v1/groups",
+        "discord": [{"method": "GET", "path": "/v1/operations/status",
                      "response": {"status": 200, "json": [
                          {"id": "generated-channel", "members": [["generated-user"]]}]}}],
-        "bridge": [{"method": "GET", "path": "/v1/self",
+        "bridge": [{"method": "GET", "path": "/v1/platform/accounts/self",
                     "response": {"status": 200, "json": {
                         "primary": "+85290000001", "aliases": []}}},
-                   {"method": "GET", "path": "/v1/groups",
+                   {"method": "GET", "path": "/v1/operations/status",
                     "response": {"status": 200, "json": [
                         {"id": "g1", "members": [["+852111"], ["+852222"]]}]}}],
     },
@@ -79,10 +79,10 @@ def _wire_actions(plan, env, database_url: str):
     return engine, store
 
 
-def _send(action_id: str, rid: int, text: str = "generated reply") -> dict:
-    return {"action_id": action_id, "op": "send",
+def _send(operation_id: str, rid: int, text: str = "generated reply") -> dict:
+    return {"operation_id": operation_id, "kind": "send",
             "owner": {"kind": "live_invocation", "id": str(rid)},
-            "request": {"target": {"id": "g1", "kind": "group"}, "text": text}}
+            "effect": {"target": {"id": "g1", "kind": "group"}, "text": text}}
 
 
 async def test_the_declared_recording_serves_history_and_the_real_action_seam(
@@ -101,27 +101,27 @@ async def test_the_declared_recording_serves_history_and_the_real_action_seam(
             rid = await _pending_row(store)
             async with aiohttp.ClientSession() as client:
                 async with client.get(
-                        bound.platforms.discord.base_url + "/v1/groups") as r:
+                        bound.platforms.discord.base_url + "/v1/operations/status") as r:
                     assert r.status == 200
                     assert (await r.json()) == [
                         {"id": "generated-channel", "members": [["generated-user"]]}]
                 async with client.get(
-                        bound.platforms.signal.base_url + "/v1/self") as r:
+                        bound.platforms.signal.base_url + "/v1/platform/accounts/self") as r:
                     assert r.status == 200
                     assert (await r.json())["primary"] == "+85290000001"
                 async with client.get(
-                        bound.platforms.signal.base_url + "/v1/groups") as r:
+                        bound.platforms.signal.base_url + "/v1/operations/status") as r:
                     assert r.status == 200
                     assert (await r.json()) == [
                         {"id": "g1", "members": [["+852111"], ["+852222"]]}]
                 async with client.post(
-                        bound.platforms.signal.base_url + "/v1/actions",
+                        bound.platforms.signal.base_url + "/v1/platform/operations",
                         json=_send("generated-action-1", rid)) as r:
                     reply = await r.json()
         finally:
             await engine.dispose()
-        assert reply["action_id"] == "generated-action-1"
-        assert reply["state"] == "confirmed"
+        assert reply["from"]["target"] == "g1"
+        assert reply["outcome"] == "complete"
         assert plan.daemon is not None and plan.daemon.rpc_calls == ["send"]
         env.check()
 
@@ -144,15 +144,15 @@ async def test_a_missing_response_fails_closed_never_a_generated_fill(
                 rid = await _pending_row(store)
                 async with aiohttp.ClientSession() as client:
                     async with client.get(
-                            env.urls["platforms.discord.base_url"] + "/v1/groups") as r:
+                            env.urls["platforms.discord.base_url"] + "/v1/operations/status") as r:
                         assert r.status == 200
                     async with client.post(
-                            signal + "/v1/actions",
+                            signal + "/v1/platform/operations",
                             json=_send("generated-action-3", rid)) as r:
                         reply = await r.json()
-                        assert reply["state"] == "confirmed"
+                        assert reply["outcome"] == "complete"
                     assert plan.daemon is not None and plan.daemon.rpc_calls == ["send"]
-                    async with client.get(signal + "/v1/self") as r:
+                    async with client.get(signal + "/v1/platform/accounts/self") as r:
                         assert r.status == 404
                         assert "generated-self" not in await r.text()
                 env.check()
@@ -172,9 +172,9 @@ async def test_a_mismatched_request_is_a_named_error_after_the_caught_500(
         async with plan.open(clean_pg_url) as env:
             async with aiohttp.ClientSession() as client:
                 signal = env.urls["platforms.signal.base_url"]
-                async with client.get(signal + "/v1/groups") as r:
+                async with client.get(signal + "/v1/operations/status") as r:
                     assert r.status == 500
-                async with client.get(signal + "/v1/self") as r:
+                async with client.get(signal + "/v1/platform/accounts/self") as r:
                     assert r.status == 200
                     assert (await r.json())["primary"] == "+85290000001"
             env.check()
@@ -182,16 +182,16 @@ async def test_a_mismatched_request_is_a_named_error_after_the_caught_500(
 
 async def test_a_recorded_action_receipt_cannot_stand_in_for_execution(
         clean_pg_url, evaluation_config, tmp_path, monkeypatch):
-    """A row declaring `POST /v1/actions` is unreachable: the real route is
+    """A row declaring the operations `POST` is unreachable: the real route is
     claimed ahead of the recording, the real executor answers, and the
     unused recorded receipt is a named error at close."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
     recording = {"version": 1,
                  "bindings": {"platforms.signal.base_url": "bridge"},
                  "services": {"bridge": [
-                     {"method": "POST", "path": "/v1/actions",
+                     {"method": "POST", "path": "/v1/platform/operations",
                       "response": {"status": 200, "json": {
-                          "action_id": "forged", "state": "confirmed"}}}]}}
+                          "outcome": "complete", "from": {"target": "forged"}}}}]}}
     plan = _manifest(tmp_path, recording)
     with pytest.raises(EvidenceError, match="external_response_not_consumed"):
         async with plan.open(clean_pg_url) as env:
@@ -199,14 +199,14 @@ async def test_a_recorded_action_receipt_cannot_stand_in_for_execution(
             try:
                 rid = await _pending_row(store)
                 async with aiohttp.ClientSession() as client, client.post(
-                        env.urls["platforms.signal.base_url"] + "/v1/actions",
+                        env.urls["platforms.signal.base_url"] + "/v1/platform/operations",
                         json=_send("generated-action-2", rid)) as r:
                     reply = await r.json()
             finally:
                 await engine.dispose()
             # The production executor answered — the recorded receipt did not.
-            assert reply["action_id"] == "generated-action-2"
-            assert reply["state"] == "confirmed"
+            assert reply["from"]["target"] == "g1"
+            assert reply["outcome"] == "complete"
             assert plan.daemon is not None and plan.daemon.rpc_calls == ["send"]
 
 
@@ -222,7 +222,7 @@ async def test_each_open_gets_independent_consumption_state(
     async with plan.open(clean_pg_url) as env:
         async with aiohttp.ClientSession() as client:
             signal = env.urls["platforms.signal.base_url"]
-            for path in ("/v1/self", "/v1/groups"):
+            for path in ("/v1/platform/accounts/self", "/v1/operations/status"):
                 async with client.get(signal + path) as r:
                     assert r.status == 200
         env.check()
@@ -230,7 +230,7 @@ async def test_each_open_gets_independent_consumption_state(
         async with plan.open(clean_pg_url) as env:
             async with aiohttp.ClientSession() as client:
                 async with client.get(
-                        env.urls["platforms.signal.base_url"] + "/v1/self") as r:
+                        env.urls["platforms.signal.base_url"] + "/v1/platform/accounts/self") as r:
                     assert r.status == 200
 
 
@@ -302,7 +302,7 @@ async def test_explicit_generated_bindings_survive_additional_recorded_services(
                             "discord": [
                                 {
                                     "method": "GET",
-                                    "path": "/v1/self",
+                                    "path": "/v1/platform/accounts/self",
                                     "response": {
                                         "status": 200,
                                         "json": {"primary": "generated-discord", "aliases": []},
@@ -322,11 +322,11 @@ async def test_explicit_generated_bindings_survive_additional_recorded_services(
         async with plan.open(clean_pg_url) as env:
             async with aiohttp.ClientSession() as client:
                 async with client.get(
-                    env.urls["platforms.signal.base_url"] + "/v1/self"
+                    env.urls["platforms.signal.base_url"] + "/v1/platform/accounts/self"
                 ) as response:
-                    assert (await response.json())["primary"] == "generated-self"
+                    assert (await response.json())["payload"]["primary"] == "generated-self"
                 async with client.get(
-                    env.urls["platforms.discord.base_url"] + "/v1/self"
+                    env.urls["platforms.discord.base_url"] + "/v1/platform/accounts/self"
                 ) as response:
                     assert (await response.json())["primary"] == "generated-discord"
                 async with client.get(

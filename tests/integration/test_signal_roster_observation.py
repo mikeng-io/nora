@@ -64,7 +64,7 @@ async def test_roster_route_produces_and_discovery_preserves_source_time(roster_
 
     missing = await SignalDiscovery(fetch=fetch, own_account=OWN).members(collection="absent")
     assert not missing.available and not missing.members
-    denied = await client.post("/v1/reads", json={"op": "roster",
+    denied = await client.post("/v1/platform/queries", json={"kind": "roster",
         "params": {"conversation_id": ROOM}}, headers={"Authorization": "Bearer wrong"})
     assert denied.status == 401
     assert daemon.rpc_calls == ["listGroups", "listGroups"]

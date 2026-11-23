@@ -4,8 +4,8 @@ Every test drives the REAL `BridgeControlClient` against a real (local)
 aiohttp server speaking the bridge's `/v1/*` shapes, so the fail-closed
 mapping is measured on the wire, not asserted against a stub of the client
 itself. The fake server is the bridge's surface, not a port double — it
-answers wrong-call shapes the way the bridge does (`available: false`,
-non-200s, unknown ops).
+answers wrong-call shapes the way the bridge does (`unavailable`,
+non-200s, unknown kinds).
 """
 
 from __future__ import annotations
@@ -24,7 +24,10 @@ from nora.domain.ports import (
     SpeakResult,
     VoiceChannelRef,
 )
+from nora.domain.service_api import status_for
 from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint
+from nora.platform.bridge.contract import operation_body, read_body
+from nora.platform.bridge.service import ActionReply
 from nora.platform.discord.bridge_control import (
     BridgeChannelDirectory,
     BridgeControlClient,
@@ -63,13 +66,15 @@ def _bridge_app(state: dict) -> web.Application:
         state["reads"].append(body)
         # Per-guild answers when the test needs them: a guild the bridge
         # cannot enumerate answers `available: false`, never an empty map.
-        per_guild = state["reads_by_guild"].get(
-            (body.get("op"), (body.get("params") or {}).get("guild_id")))
-        if per_guild is not None:
-            return web.json_response(per_guild)
-        if body.get("op") not in state["reads_ops"]:
-            return web.json_response({"error": "unknown op"}, status=400)
-        return web.json_response(state["reads_ops"][body["op"]])
+        answer = state["reads_by_guild"].get(
+            (body.get("kind"), (body.get("params") or {}).get("guild_id")))
+        if answer is None and body.get("kind") not in state["reads_ops"]:
+            return web.json_response({"error": "unknown kind"}, status=422)
+        answer = answer or state["reads_ops"][body["kind"]]
+        outcome = "ok" if answer.get("available") else "unavailable"
+        return web.json_response(
+            read_body(outcome, answer.get("value"), source="discord", trace=""),
+            status=status_for(outcome))
 
     async def voice_state(req: web.Request) -> web.Response:
         state["voice_state"].append(req.match_info["guild_id"])
@@ -84,27 +89,26 @@ def _bridge_app(state: dict) -> web.Application:
     async def actions(req: web.Request) -> web.Response:
         body = await req.json()
         state["actions"].append(body)
-        return web.json_response({
-            "action_id": body["action_id"], "state": "confirmed",
-            "outcome": "confirmed", "platform_ms": 1, "error": None})
+        return web.json_response(operation_body(
+            ActionReply("confirmed", platform_ms=1), target="t", trace=""))
 
     async def health(req: web.Request) -> web.Response:
-        return web.json_response({"ok": True, "connected_at_ms": 1,
-                                  "detail": None})
+        return web.json_response(read_body("ok", {
+            "ok": True, "connected_at_ms": 1, "detail": None}, source="discord", trace=""))
 
     async def self_id(req: web.Request) -> web.Response:
-        return web.json_response({
+        return web.json_response(read_body("ok", {
             "platform": "discord", "primary": "999", "aliases": ["999"],
-            "handle": "nora"})
+            "handle": "nora"}, source="discord", trace=""))
 
     app = web.Application(middlewares=[auth])
     app.router.add_post("/v1/music/{op}", music)
-    app.router.add_post("/v1/reads", reads)
+    app.router.add_post("/v1/platform/queries", reads)
     app.router.add_get("/v1/voice/{guild_id}", voice_state)
     app.router.add_post("/v1/voice/{guild_id}/speech", speech)
-    app.router.add_post("/v1/actions", actions)
-    app.router.add_get("/v1/health", health)
-    app.router.add_get("/v1/self", self_id)
+    app.router.add_post("/v1/platform/operations", actions)
+    app.router.add_get("/v1/operations/status", health)
+    app.router.add_get("/v1/platform/accounts/self", self_id)
     return app
 
 
@@ -253,7 +257,7 @@ async def test_channel_directory_refresh_binds_the_real_guild_ids(
     await directory.refresh()
     # Both guilds were queried — the refresh really walks the configured set.
     queried = {
-        (b["op"], (b.get("params") or {}).get("guild_id"))
+        (b["kind"], (b.get("params") or {}).get("guild_id"))
         for b in bridge_state["reads"]}
     assert {("channels", GUILD), ("channels", other_guild)} <= queried
     assert directory.guild_channels(guild_id=GUILD) == {CHANNEL: "general"}
@@ -302,7 +306,7 @@ async def test_voice_send_without_session_falls_back_to_text(
     result = await adapter.send(target=target, text="read it instead")
     assert result.ok is True
     # Text fallback went through the shared action API, speech never paid for.
-    assert bridge_state["actions"], "expected a text send through /v1/actions"
+    assert bridge_state["actions"], "expected a text send through the operations route"
     assert bridge_state["speech"] == []
 
 

@@ -29,10 +29,13 @@ from nora.domain.models import (
     PersonRef,
     Touch,
 )
+from nora.domain.service_api import status_for
 from nora.ingest.stages import touch as touch_stage
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint
+from nora.platform.bridge.contract import operation_body
+from nora.platform.bridge.service import ActionReply
 from nora.policy import permissive_policy
 from nora.testing import FakeRecordStore
 
@@ -66,26 +69,31 @@ def _persons() -> Persons:
 
 
 async def _server(reply: dict) -> TestServer:
+    """A bridge answering one stored reply (`state`, refs, time) as its envelope."""
+    envelope = operation_body(ActionReply(**{
+        **reply, "platform_refs": tuple(reply.get("platform_refs") or ())}),
+        target=ROOM, trace="")
+
     async def post(request: web.Request) -> web.Response:
         body = await request.json()
-        action = body.get("request") or {}
+        action = body.get("effect") or {}
         target = action.get("target") or {}
         owner = body.get("owner") or {}
         if not (
             request.headers.get("Authorization") == "Bearer synthetic"
-            and body.get("op") == "send"
-            and body.get("action_id")
+            and body.get("kind") == "send"
+            and body.get("operation_id")
             and target.get("kind") == "group"
             and target.get("id") == ROOM
             and action.get("text") == "see you at eight"
             and owner.get("kind") == "live_invocation"
             and owner.get("id") == "1"
         ):
-            return web.json_response({"state": "rejected"}, status=400)
-        return web.json_response(reply)
+            return web.json_response({"error": "unexpected operation"}, status=400)
+        return web.json_response(envelope, status=status_for(envelope["outcome"]))
 
     app = web.Application()
-    app.router.add_post("/v1/actions", post)
+    app.router.add_post("/v1/platform/operations", post)
     server = TestServer(app)
     await server.start_server()
     return server
@@ -101,33 +109,33 @@ async def _deliver_against(server: TestServer, store: FakeRecordStore) -> bool:
         await adapter.close()
 
 
-@pytest.mark.parametrize("wrong_field", ["op", "room", "text", "owner"])
+@pytest.mark.parametrize("wrong_field", ["kind", "room", "text", "owner"])
 async def test_the_fake_bridge_rejects_wrong_action_requests(wrong_field: str):
     server = await _server({"state": "confirmed", "platform_ref": REF})
     body = {
-        "action_id": "synthetic-send",
+        "operation_id": "synthetic-send",
         "owner": {"kind": "live_invocation", "id": "1"},
-        "op": "send",
-        "request": {
+        "kind": "send",
+        "effect": {
             "target": {"kind": "group", "id": ROOM},
             "text": "see you at eight",
         },
     }
-    if wrong_field == "op":
-        body["op"] = "react"
+    if wrong_field == "kind":
+        body["kind"] = "react"
     elif wrong_field == "room":
-        body["request"]["target"]["id"] = "other-room"
+        body["effect"]["target"]["id"] = "other-room"
     elif wrong_field == "text":
-        body["request"]["text"] = "different message"
+        body["effect"]["text"] = "different message"
     else:
         body["owner"]["id"] = "9999"
     try:
         async with (
             ClientSession(headers={"Authorization": "Bearer synthetic"}) as client,
-            client.post(server.make_url("/v1/actions"), json=body) as response,
+            client.post(server.make_url("/v1/platform/operations"), json=body) as response,
         ):
             assert response.status == 400
-            assert (await response.json())["state"] == "rejected"
+            assert "outcome" not in await response.json()
     finally:
         await server.close()
 

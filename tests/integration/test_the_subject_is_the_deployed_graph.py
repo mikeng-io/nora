@@ -24,7 +24,15 @@ from nora.app.composition import Dependencies
 from nora.app.wake_poller import WakePoller
 from nora.domain.actions import ActionOwner
 from nora.domain.models import ConversationTarget
-from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint, BridgeUnavailableError
+from nora.platform.bridge.client import (
+    ACCOUNT_PATH,
+    QUERIES_PATH,
+    BridgeAdapter,
+    BridgeEndpoint,
+    BridgeUnavailableError,
+)
+from nora.platform.bridge.contract import operation_body, read_body
+from nora.platform.bridge.service import ActionReply
 from nora.subject import SubjectSpec, obtain
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import EvidenceError
@@ -32,30 +40,37 @@ from nora.subject.obtain import build_config, default_policy
 from nora.testing.signal_daemon import FakeSignalDaemon
 from scripts.cognition_loop.egress import assert_no_egress
 
+OPERATIONS = "/v1/platform/operations"
 
-def _bridge_app(received: list[dict]) -> web.Application:
+
+def _bridge_app(received: list[dict], queries=None) -> web.Application:
     app = web.Application()
 
     async def identity(request: web.Request) -> web.Response:
-        return web.json_response({"primary": "generated-self", "aliases": ["generated-alias"]})
+        return web.json_response(read_body("ok", {
+            "primary": "generated-self", "aliases": ["generated-alias"]},
+            source="signal", trace=""))
 
     async def action(request: web.Request) -> web.Response:
         body = await request.json()
-        if body.get("op") != "send" or not body.get("request", {}).get("text"):
+        if body.get("kind") != "send" or not body.get("effect", {}).get("text"):
             return web.json_response({"cause": "wrong_action"}, status=422)
         received.append(body)
-        state = "rejected" if body["request"]["text"] == "reject" else "confirmed"
-        return web.json_response({"state": state, "platform_ref": f"generated-{len(received)}"})
+        state = "rejected" if body["effect"]["text"] == "reject" else "confirmed"
+        return web.json_response(operation_body(ActionReply(
+            state, kind="platform" if state == "rejected" else "",
+            platform_ref=f"generated-{len(received)}"), target="generated-room", trace=""))
 
     async def groups(request: web.Request) -> web.Response:
-        return web.json_response([{"id": "g1", "members": []}])
+        return web.json_response(read_body(
+            "ok", [{"id": "g1", "members": []}], source="signal", trace=""))
 
     async def absent(request: web.Request) -> web.Response:
         return web.json_response({"error": "known_missing"}, status=404)
 
-    app.router.add_get("/v1/self", identity)
-    app.router.add_post("/v1/actions", action)
-    app.router.add_get("/v1/groups", groups)
+    app.router.add_get(ACCOUNT_PATH, identity)
+    app.router.add_post(OPERATIONS, action)
+    app.router.add_post(QUERIES_PATH, queries or groups)
     app.router.add_get("/known-absent", absent)
     return app
 
@@ -76,10 +91,11 @@ async def test_bridge_roster_decodes_accounts_once_and_keeps_unknown_unavailable
         if members == "invalid-json":
             return web.Response(text="{", content_type="application/json")
         if members == "invalid-root":
-            return web.json_response(None)
-        return web.json_response([{"id": "generated-room", "members": members}])
+            return web.json_response(read_body("ok", None, source="signal", trace=""))
+        return web.json_response(read_body(
+            "ok", [{"id": "generated-room", "members": members}], source="signal", trace=""))
 
-    application.router.add_get("/v1/groups", groups)
+    application.router.add_post(QUERIES_PATH, groups)
     async with IsolatedServices(database_url="sqlite:///generated", applications={
         "platforms.signal.base_url": application,
     }) as environment:
@@ -171,19 +187,19 @@ async def test_real_bridge_identity_bound_sends_and_refusals_stay_in_owned_servi
             refused = await bound.send(target=target, text="reject")
             assert accepted.ok and accepted.platform_message_id == "generated-1"
             assert not refused.ok
-            assert [row["request"]["text"] for row in received] == ["accept", "reject"]
+            assert [row["effect"]["text"] for row in received] == ["accept", "reject"]
             assert received[0]["owner"] == {"kind": "work", "id": "generated-work", "generation": 1}
-            assert received[0]["action_id"] != received[1]["action_id"]
+            assert received[0]["operation_id"] != received[1]["operation_id"]
             subject = SimpleNamespace(
                 environment=environment, database_url=environment.database_url,
                 deps=SimpleNamespace(fire_path=object(), bridge_runtime=object()))
             assert assert_no_egress(subject)["workers"]["fire_path"]
             assert not environment.denied
             with pytest.raises(BridgeUnavailableError, match="404"):
-                await adapter._get("/known-absent")
+                await adapter._call("GET", "/known-absent", "read")
             environment.check()
             with pytest.raises(BridgeUnavailableError, match="404"):
-                await adapter._get("/unrecorded-read")
+                await adapter._call("GET", "/unrecorded-read", "read")
             with pytest.raises(EvidenceError, match="external_response_not_recorded"):
                 environment.check()
         finally:
@@ -284,21 +300,22 @@ async def test_http_dispatch_and_redirects_cannot_bypass_owned_services(http):
     await web.SockSite(unowned, listener).start()
     try:
         # Show the unowned listener is available before testing its exclusion.
-        async with aiohttp.ClientSession() as client, client.get(f"{url}/v1/self") as response:
+        account = f"{url}{ACCOUNT_PATH}"
+        async with aiohttp.ClientSession() as client, client.get(account) as response:
             assert response.status == 200
         app = _bridge_app([])
 
         async def redirect(request):
-            raise web.HTTPFound(f"{url}/v1/self")
+            raise web.HTTPFound(f"{url}{ACCOUNT_PATH}")
 
         app.router.add_get("/redirect", redirect)
         async with IsolatedServices(database_url="sqlite:///generated",
                 applications={"platforms.signal.base_url": app}) as environment:
             owned = environment.urls["platforms.signal.base_url"]
             async with http.AsyncClient(follow_redirects=True) as client:
-                response = await client.get(f"{owned}/v1/self")
-                assert response.json()["primary"] == "generated-self"
-                for target in (f"{url}/v1/actions", f"{owned}/redirect"):
+                response = await client.get(f"{owned}{ACCOUNT_PATH}")
+                assert response.json()["payload"]["primary"] == "generated-self"
+                for target in (f"{url}{OPERATIONS}", f"{owned}/redirect"):
                     refusal = None
                     try:
                         await client.get(target)
@@ -308,7 +325,7 @@ async def test_http_dispatch_and_redirects_cannot_bypass_owned_services(http):
                         "the HTTP dispatch reached transport instead of its isolation refusal: "
                         f"{type(refusal).__name__}")
             with http.Client() as client, pytest.raises(PermissionError, match="not isolated"):
-                client.post(f"{url}/v1/actions", json={"op": "send", "request": {"text": "leak"}})
+                client.post(f"{url}{OPERATIONS}", json={"kind": "send", "effect": {"text": "leak"}})
             assert [row["operation"] for row in environment.denied] == ["http"] * 3
             assert received == []
             with pytest.raises(EvidenceError, match="external_dependency_not_isolated"):
@@ -336,14 +353,15 @@ async def test_failed_case_cleans_listeners_and_cancels_its_spawned_work():
             task = asyncio.create_task(worker())
             await started.wait()
             url = environment.urls["platforms.signal.base_url"]
-            async with aiohttp.ClientSession() as client, client.get(f"{url}/v1/self") as response:
+            account = f"{url}{ACCOUNT_PATH}"
+            async with aiohttp.ClientSession() as client, client.get(account) as response:
                 assert response.status == 200
             raise ValueError("generated failure")
     assert task.cancelled() and stopped.is_set()
     assert socket.socket.connect is original
     async with aiohttp.ClientSession() as client:
         with pytest.raises(aiohttp.ClientConnectorError):
-            await client.get(f"{url}/v1/self")
+            await client.get(f"{url}{ACCOUNT_PATH}")
 
 
 @pytest.mark.asyncio

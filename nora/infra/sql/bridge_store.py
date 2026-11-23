@@ -85,7 +85,7 @@ def _work(row: sa.RowMapping | dict[str, Any]) -> BridgeWork:
 
 def request_hash(request: dict[str, Any]) -> str:
     """Canonical request identity — the reservation-equality check that makes a
-    replayed POST /v1/actions idempotent and a mutated one a conflict."""
+    replayed platform operation idempotent and a mutated one a conflict."""
     return hashlib.sha256(
         json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()

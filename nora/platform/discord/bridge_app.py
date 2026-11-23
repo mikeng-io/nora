@@ -23,17 +23,16 @@ ONE OF EACH, no shadow path:
 - ONE controller-event sink — `POST /v1/voice/event` runs the SAME
   `VoiceEventConsumer` the app's `/app/v1/voice/event` ran (injected; it
   lives in `nora.app` which this package may not import).
-- `POST /v1/reads` — the common read ops (roster, channels,
-  member_presence, voice_presence) over the REAL implementations
-  (`ClientChannelDirectory`, `DiscordVoicePresence`, `DiscordPresence`,
-  `DiscordRoster`) on the live client cache, fail-closed: an unreadable
-  cache answers `available=false`, never a fabricated empty/offline state.
+- `POST /v1/platform/queries` — the platform contract's query kinds over
+  the REAL implementations (`ClientChannelDirectory`, `DiscordVoicePresence`,
+  `DiscordPresence`, `DiscordRoster`) on the live client cache, fail-closed:
+  an unreadable cache answers `unavailable`, never a fabricated empty state.
 - `POST /v1/voice/{guild}/speech` — bounded speech bytes to the SAME hub
   session, the bridge half of the app's forwarded `send(target.voice)`.
 
 Deliberately NOT here: the wake→`/app/v1/voice/utterance` non-queued route
 stays app-owned, and the durable queue/action core
-(envelope/journal/`StreamProducer`, `POST /v1/actions`) is the core
+(envelope/journal/`StreamProducer`, the platform operations) is the core
 worker's — this module consumes it unchanged.
 """
 
@@ -47,7 +46,6 @@ import logging
 import time
 from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
-from os.path import realpath
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 from urllib.parse import urlsplit
@@ -70,6 +68,7 @@ from nora.infra.voice.http_controller import VoiceControllerError
 from nora.infra.voice.hub import VoiceControllerHub
 from nora.obs.metrics import Metrics
 from nora.platform.bridge import telemetry as bt
+from nora.platform.bridge.contract import ActionService, PlatformSurface, QueryAnswer
 from nora.platform.bridge.envelope import (
     Envelope,
     canonical_source_key,
@@ -80,13 +79,9 @@ from nora.platform.bridge.rehydrate import message_to_dict, observation_to_dict
 from nora.platform.bridge.service import (
     ActionReply,
     JournalPublisher,
-    _reply_from_row,
-    action_http_status,
-    action_response,
     commit_transition,
     resolve_clockless_transition,
 )
-from nora.platform.bridge.wire import attachment_key_ok
 
 from . import music_messages as m
 from .adapter import DiscordAdapter
@@ -139,6 +134,8 @@ MAX_SPEECH_BYTES = 24 * 1024 * 1024
 # Inbound attachment custody: anything bigger than the capture pipeline would
 # accept anyway is not journaled bytes here.
 MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024
+#: A query whose cache could not be read; distinct from a real `None` value.
+_UNREADABLE = object()
 
 #: Cap on the wire-provenance fingerprint table — beyond it the buffer is
 #: cleared wholesale (provenance falls to the durable ledger) rather than
@@ -299,30 +296,12 @@ def _admission_rev(proj: Mapping[str, Any]) -> int:
     return max(0, min(rev, _MAX_ADMISSION_REV))
 
 
-def _reject(action_id: str, kind: str, message: str,
-            outcome: str = "rejected") -> web.Response:
-    return web.json_response({
-        "action_id": action_id, "state": outcome, "outcome": outcome,
-        "error": {"kind": kind, "message": message}})
-
-
 class _VoiceEventSink(Protocol):
     """`VoiceEventConsumer`'s shape, declared locally: it lives in
     `nora.app.voice_events`, and `nora.platform` may not import `nora.app`
     (pyproject import-linter layers), so the composition entry injects it."""
 
     async def consume(self, body: object) -> tuple[int, dict[str, Any]]: ...
-
-
-class ActionService(Protocol):
-    """The injected `/v1/actions` executor — the shared
-    `DurableActionService` (`nora.platform.bridge.service`): owner gate +
-    reservation CAS under one transaction, then the platform executor.
-    The bridge never fabricates an outcome: no service → `unavailable`."""
-
-    async def run(self, action: Mapping[str, Any]) -> ActionReply: ...
-
-    async def get(self, action_id: str) -> dict[str, Any] | None: ...
 
 
 class CaptureSink(Protocol):
@@ -413,7 +392,7 @@ class DiscordBridge:
         self._voice_event_sink = voice_event_sink
         self._max_speech_bytes = max_speech_bytes
         # The collaborator fence: `None` means the surface FAILS CLOSED —
-        # `/v1/actions` answers unavailable and capture drops admitted
+        # a platform operation answers unavailable and capture drops admitted
         # events — rather than performing a raw SDK send or a
         # journal/stream write outside the wired collaborator. `entry.py`
         # attaches the shared `DurableActionService` +
@@ -1357,7 +1336,7 @@ class DiscordBridge:
     async def _capture_attachments(self, msg: Any, raw: Any) -> None:
         """Custody the message's attachments under their `platform_id` keys —
         the app's `BridgeMediaSource` resolves them from
-        `GET /v1/attachments/{key}`. CDN-host allowlisted, size-bounded,
+        `GET /v1/platform/blobs/{key}`. CDN-host allowlisted, size-bounded,
         best-effort: a custody failure must not drop the event itself."""
         if self._custody_dir is None:
             return
@@ -1404,22 +1383,11 @@ class DiscordBridge:
 
         app = web.Application(middlewares=[_auth])
         app.router.add_get("/metrics", self.get_metrics)
-        app.router.add_post("/v1/actions", self.post_action)
-        app.router.add_get("/v1/actions/{aid}", self.get_action)
-        app.router.add_get("/v1/self", self.get_self)
-        app.router.add_get("/v1/health", self.get_health)
-        app.router.add_get("/health", self.get_health)
-        app.router.add_get("/ready", self.get_ready)
-        app.router.add_get("/v1/groups", self.get_groups)
-        app.router.add_get("/v1/guilds/{guild_id}/members", self.get_members)
-        app.router.add_get("/v1/guilds/{guild_id}/members/{user_id}",
-                           self.get_member)
-        app.router.add_get("/v1/channels/{channel_id}", self.get_channel)
-        app.router.add_get("/v1/presence/{guild_id}/{user_id}", self.get_presence)
-        app.router.add_put("/v1/attachments/{key}", self.put_attachment)
-        app.router.add_get("/v1/attachments/{key}", self.get_attachment)
-        # The shared read surface (common bridge client contract).
-        app.router.add_post("/v1/reads", self.post_reads)
+        PlatformSurface(
+            platform=PLATFORM, actions=lambda: self._actions, account=self.account,
+            status=self.status, query=self.query,
+            custody_dir=lambda: self._custody_dir,
+            max_blob_bytes=lambda: MAX_ATTACHMENT_BYTES).add_routes(app)
         # Deterministic control — the app's forwarded music tool calls.
         app.router.add_post("/v1/music/{op}", self.post_music_op)
         # Voice — through the hub only; the controller owns the connection.
@@ -1455,208 +1423,76 @@ class DiscordBridge:
         except (TypeError, ValueError):
             return None
 
-    # ---- durable actions (core worker's contract — unchanged semantics) ------
+    # ---- the platform contract's account, status and queries -----------------
 
-    async def post_action(self, req: web.Request) -> web.Response:
-        """`/v1/actions` → the injected `ActionService`. With none wired
-        the route FAILS CLOSED — 503 `unavailable`, never a raw SDK effect
-        and never a stubbed confirmation (the shared client's non-200 →
-        `BridgeUnavailableError` maps the same way). The body renders the
-        SAME frozen vocabulary Signal's route does (`action_response` /
-        `action_http_status`) — one contract across platforms."""
-        try:
-            body = await req.json()
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return web.json_response({"error": "body must be JSON"}, status=400)
-        aid = str(body.get("action_id") or "")
-        if self._actions is None:
-            reply = ActionReply(
-                "unavailable", kind="unavailable",
-                message="no action service")
-        else:
-            reply = await self._actions.run(body, links=bt.carrier_links({
-                "traceparent": req.headers.get("traceparent") or "",
-                "tracestate": req.headers.get("tracestate") or ""}))
-        return web.json_response(
-            action_response(aid, reply), status=action_http_status(reply))
-
-    async def get_action(self, req: web.Request) -> web.Response:
-        """Persisted, scoped result — Signal parity: 404 only for a
-        definitely-absent (or foreign-platform/account) id; `started` is
-        a 200 with the row's truth; a dead ledger is a 503, not a 404."""
-        aid = req.match_info["aid"]
-        if self._actions is None:
-            return web.json_response({"error": "store unavailable"}, status=503)
-        try:
-            row = await self._actions.get(aid)
-        except Exception:  # noqa: BLE001 — ledger unreachable is a 503, not a 404
-            return web.json_response({"error": "store unavailable"}, status=503)
-        if row is None:
-            return web.json_response({"error": "unknown action"}, status=404)
-        return web.json_response(action_response(aid, _reply_from_row(row)))
-
-    # ---- identity / health ----------------------------------------------------
-
-    async def get_self(self, req: web.Request) -> web.Response:
+    async def account(self) -> dict[str, Any] | None:
+        """The bridge's own account, `None` until the gateway login lands."""
         if not self.self_id:
-            return web.json_response({"error": "identity_unavailable"}, status=503)
+            return None
         user = getattr(self._client, "user", None) if self._client else None
-        return web.json_response({
-            "platform": PLATFORM, "primary": self.self_id,
-            "aliases": [self.self_id] if self.self_id else [],
+        return {
+            "platform": PLATFORM, "primary": self.self_id, "aliases": [self.self_id],
             "handle": render_handle(
-                getattr(user, "name", None),
-                getattr(user, "discriminator", None))})
+                getattr(user, "name", None), getattr(user, "discriminator", None))}
 
-    async def get_health(self, req: web.Request) -> web.Response:
+    async def status(self) -> dict[str, Any]:
         client = self.current_client()
         ready = client is not None and client.is_ready()
-        return web.json_response({
-            "ok": ready, "connected_at_ms": self.connected_at_ms,
-            "detail": None if ready else "gateway_down"})
+        return {"ok": ready, "connected_at_ms": self.connected_at_ms,
+                "detail": None if ready else "gateway_down"}
 
-    async def get_ready(self, req: web.Request) -> web.Response:
-        """Readiness — the gateway is up AND the HTTP surface is serving.
-        `/v1/health` is the same read for the app-side client."""
-        return await self.get_health(req)
-
-    # ---- reads (compat routes first, then the common /v1/reads op surface) ---
-
-    async def get_groups(self, req: web.Request) -> web.Response:
-        out = []
-        client = self.current_client()
-        for guild in (client.guilds if client else ()):
-            for ch in guild.text_channels:
-                out.append({"id": str(ch.id), "guild_id": str(guild.id),
-                            "name": ch.name,
-                            "members": [str(m.id) for m in ch.members]})
-        return web.json_response(out)
-
-    async def get_members(self, req: web.Request) -> web.Response:
-        guild = self._guild(req.match_info["guild_id"])
-        if guild is None:
-            return web.json_response({"error": "unknown guild"}, status=404)
-        return web.json_response([
-            {"id": str(m.id), "name": m.name, "display": m.display_name,
-             "bot": bool(m.bot)}
-            async for m in guild.fetch_members(limit=None)])
-
-    async def get_member(self, req: web.Request) -> web.Response:
-        guild = self._guild(req.match_info["guild_id"])
-        if guild is None:
-            return web.json_response({"error": "unknown guild"}, status=404)
-        member = guild.get_member(int(req.match_info["user_id"]))
-        if member is None:
-            try:
-                member = await guild.fetch_member(int(req.match_info["user_id"]))
-            except Exception as exc:  # noqa: BLE001 — not-found is typed per-library
-                log.debug("member fetch failed: %s", type(exc).__name__)
-                return web.json_response({"error": "unknown member"}, status=404)
-        return web.json_response({
-            "id": str(member.id), "name": member.name,
-            "display": member.display_name, "bot": bool(member.bot),
-            "roles": [str(r.id) for r in member.roles]})
-
-    async def get_channel(self, req: web.Request) -> web.Response:
-        ch = self._channel(req.match_info["channel_id"])
-        if ch is None:
-            return web.json_response({"error": "unknown channel"}, status=404)
-        return web.json_response({
-            "id": str(ch.id), "name": getattr(ch, "name", ""),
-            "guild_id": str((getattr(ch, "guild", None) and ch.guild.id) or ""),
-            "parent_id": str(getattr(ch, "parent_id", None) or "") or None,
-            "type": str(ch.type)})
-
-    async def get_presence(self, req: web.Request) -> web.Response:
-        guild = self._guild(req.match_info["guild_id"])
-        member = guild.get_member(int(req.match_info["user_id"])) if guild else None
-        if member is None:
-            return web.json_response({"error": "unknown"}, status=404)
-        return web.json_response({
-            "user_id": str(member.id), "status": str(member.status),
-            "activities": [getattr(a, "name", "") for a in member.activities]})
-
-    async def post_reads(self, req: web.Request) -> web.Response:
-        """`{op, params}` → `{available, value, observed_ms, reason?}` —
-        the common read ops over the real implementations.
-        `available=false` means the cache could not be read — with a
-        `reason` so an unavailable cache can never read as an empty one;
-        a real "nothing found" is the per-op empty/absent shape with
-        `available=true`. `observed_ms` stamps when the underlying cache
-        read happened (these reads are live, so it is the read's own
-        time — never a replayed staleness)."""
+    async def query(self, kind: str, params: Mapping[str, Any]) -> QueryAnswer:
+        """A closed query kind over the live caches; a cache that cannot be read is
+        `unavailable`, never an empty answer. Reads are live: the bridge's own clock."""
         try:
-            body = await req.json()
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return web.json_response({"error": "body must be JSON"}, status=400)
-        op = body.get("op")
-        params = body.get("params") or {}
-
-        def reply(available: bool, value: Any,
-                  reason: str | None = None) -> web.Response:
-            out: dict[str, Any] = {
-                "available": available, "value": value,
-                "observed_ms": int(time.time() * 1000)}
-            if reason is not None:
-                out["reason"] = reason
-            return web.json_response(out)
-
-        try:
-            if op == "roster":
-                roster = await self._read_roster(
-                    conversation_id=str(params.get("conversation_id") or ""))
-                available = roster is not None and roster.available
-                value: Any = None if not available else {
-                    "members": [sorted(ids) for ids in roster.members]}
-                return reply(
-                    available, value,
-                    None if available else "cache_unavailable")
-            if op == "members":
-                # RAW member rows — `roster` unprojected — `bot`/`system` kept.
-                if self._roster is None:
-                    return reply(False, None, "cache_unavailable")
-                rows = await self._roster.guild_members(
-                    str(params.get("guild_id") or ""))
-                return reply(rows is not None,
-                             None if rows is None else {"members": rows},
-                             None if rows is not None else "cache_unavailable")
-            if op == "channels":
-                guild_id = str(params.get("guild_id") or "")
-                channels = self._channels.guild_channels(guild_id=guild_id)
-                if channels is None:
-                    return reply(False, None, "cache_unavailable")
-                return reply(True, {
-                    "channels": channels,
-                    "threads": self._guild_threads(guild_id)})
-            if op == "channel":
-                # `available` is "the cache could be read"; `value` None is a
-                # real "not found". A dead client is not a missing channel.
-                if self.current_client() is None:
-                    return reply(False, None, "cache_unavailable")
-                return reply(
-                    True, self._read_channel(str(params.get("channel_id") or "")))
-            if op == "member_presence":
-                states = await self._presence.presence(member_ids=frozenset(
-                    str(m) for m in params.get("member_ids") or ()))
-                value = None if states is None else {
-                    mid: dataclasses.asdict(s) for mid, s in states.items()}
-                return reply(
-                    states is not None, value,
-                    None if states is not None else "cache_unavailable")
-            if op == "voice_presence":
-                members = await self._voice_presence.in_voice(member_ids=frozenset(
-                    str(m) for m in params.get("member_ids") or ()))
-                value = None if members is None else {
-                    mid: {"channel_id": ref.channel_id,
-                          "channel_name": ref.channel_name}
-                    for mid, ref in members.items()}
-                return reply(
-                    members is not None, value,
-                    None if members is not None else "cache_unavailable")
+            value = await self._query_value(kind, params)
         except Exception as exc:  # noqa: BLE001 — read boundary; logged by type
-            log.error("read op %s failed: %s", op, type(exc).__name__)
-            return reply(False, None, "read_failed")
-        return web.json_response({"error": "unknown op"}, status=400)
+            log.error("query %s failed: %s", kind, type(exc).__name__)
+            value = _UNREADABLE
+        if value is _UNREADABLE:
+            return QueryAnswer("unavailable")
+        return QueryAnswer("ok", value, int(time.time() * 1000))
+
+    async def _query_value(self, kind: str, params: Mapping[str, Any]) -> Any:
+        """The kind's value, or `_UNREADABLE`; a channel's `None` is a real not-found."""
+        member_ids = frozenset(str(m) for m in params.get("member_ids") or ())
+        if kind == "roster":
+            roster = await self._read_roster(
+                conversation_id=str(params.get("conversation_id") or ""))
+            if roster is None or not roster.available:
+                return _UNREADABLE
+            return {"members": [sorted(ids) for ids in roster.members]}
+        if kind == "members":
+            # RAW member rows — `roster` unprojected — `bot`/`system` kept.
+            rows = (await self._roster.guild_members(str(params.get("guild_id") or ""))
+                    if self._roster is not None else None)
+            return _UNREADABLE if rows is None else {"members": rows}
+        if kind == "channels":
+            guild_id = str(params.get("guild_id") or "")
+            channels = self._channels.guild_channels(guild_id=guild_id)
+            if channels is None:
+                return _UNREADABLE
+            return {"channels": channels, "threads": self._guild_threads(guild_id)}
+        if kind == "channel":
+            if self.current_client() is None:
+                return _UNREADABLE
+            return self._read_channel(str(params.get("channel_id") or ""))
+        if kind == "member_presence":
+            states = await self._presence.presence(member_ids=member_ids)
+            return _UNREADABLE if states is None else {
+                mid: dataclasses.asdict(s) for mid, s in states.items()}
+        if kind == "voice_presence":
+            members = await self._voice_presence.in_voice(member_ids=member_ids)
+            return _UNREADABLE if members is None else {
+                mid: {"channel_id": ref.channel_id, "channel_name": ref.channel_name}
+                for mid, ref in members.items()}
+        if kind == "groups":
+            if (client := self.current_client()) is None:
+                return _UNREADABLE
+            return [{"id": str(ch.id), "guild_id": str(guild.id), "name": ch.name,
+                     "members": [str(m.id) for m in ch.members]}
+                    for guild in client.guilds for ch in guild.text_channels]
+        return _UNREADABLE
 
     async def _read_roster(self, *, conversation_id: str) -> Any:
         if self._roster is None:
@@ -1821,44 +1657,6 @@ class DiscordBridge:
         status, payload = await self._voice_event_sink.consume(body)
         return web.json_response(payload, status=status)
 
-    # ---- attachment custody -----------------------------------------------------
-
-    def _custody_path(self, key: str) -> Path | None:
-        if self._custody_dir is None or not attachment_key_ok(key):
-            return None
-        root = realpath(self._custody_dir) + "/"
-        filename = realpath(root + key)
-        if not filename.startswith(root):
-            return None
-        return Path(filename)
-
-    async def put_attachment(self, req: web.Request) -> web.Response:
-        if self._custody_dir is None:
-            return web.json_response({"error": "custody disabled"}, status=404)
-        key = req.match_info["key"]
-        path = self._custody_path(key)
-        if path is None:
-            return web.json_response({"error": "bad key"}, status=400)
-        data = await req.clone(client_max_size=MAX_ATTACHMENT_BYTES + 1).read()
-        if len(data) > MAX_ATTACHMENT_BYTES:
-            return web.json_response({"error": "too large"}, status=413)
-        if path.is_file() and path.read_bytes() != data:
-            return web.json_response({"error": "key conflict"}, status=409)
-        path.write_bytes(data)
-        return web.json_response({"ok": True, "key": key})
-
-    async def get_attachment(self, req: web.Request) -> web.Response:
-        if self._custody_dir is None:
-            return web.json_response({"error": "custody disabled"}, status=404)
-        key = req.match_info["key"]
-        p = self._custody_path(key)
-        if p is None:
-            return web.json_response({"error": "bad key"}, status=400)
-        if not p.is_file():
-            return web.json_response({"error": "unknown"}, status=404)
-        return web.Response(body=p.read_bytes())
-
-
 class DiscordRestActionService:
     """The REAL outbound execution the bridge used to run inline —
     `DiscordSender`/`DiscordReactor` for send/react (mention resolution,
@@ -1970,7 +1768,7 @@ class DiscordRestActionService:
             platform_message_id=str(q["platform_message_id"]))
 
     def _attachment(self, att: Any) -> OutboundAttachment | None:
-        """Custody bytes live under `/v1/attachments/{key}` on the bridge;
+        """Custody bytes live under `/v1/platform/blobs/{key}` on the bridge;
         read them back so the send carries real bytes, not a stale ref."""
         custody_dir = self._bridge._custody_dir
         if custody_dir is None or not isinstance(att, Mapping):
