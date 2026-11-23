@@ -85,21 +85,19 @@ export function parseWorkId(ownerId) {
   return /^\d+$/.test(s) ? s : null;
 }
 
-/** The wire's ActionResponse derived from a stored row (or a verdict). */
+/** An action result derived from a stored row; `contract.js` maps it onto
+ * the operation envelope. */
 export function actionResponse(row) {
-  const state = row.state;
-  let outcome = null;
-  if (state === 'confirmed' || state === 'uncertain') outcome = state;
-  else if (state === 'rejected') outcome = row.error?.kind === 'unsupported' ? 'unsupported' : 'rejected';
   return {
     action_id: row.action_id,
-    state,
-    outcome,
+    state: row.state,
     platform_ref: row.platform_ref ?? null,
     platform_refs: row.platform_refs ?? null,
     platform_ms: row.platform_ms ?? null,
     message_id: row.message_id ?? null,
     error: row.error ?? null,
+    started_at: row.started_at ?? null,
+    completed_at: row.completed_at ?? null,
   };
 }
 
@@ -118,7 +116,7 @@ export class ActionStore {
 
   /**
    * Reserve `action_id` for `request` under `owner`. Returns
-   *   {verdict:'execute'}                — caller runs the op, then finish()
+   *   {verdict:'execute', messageId}     — caller runs the op, then finish()
    *   {verdict:'replay', row}            — return the recorded row verbatim
    *                                        (includes a row just rejected by
    *                                        the in-tx owner fence)
@@ -175,7 +173,7 @@ export class ActionStore {
         `UPDATE bridge_action SET state='started', started_at=now(), message_id=$2
          WHERE action_id = $1`, [actionId, ownerVerdict.messageId ?? null]);
       await client.query('COMMIT');
-      return { verdict: 'execute' };
+      return { verdict: 'execute', messageId: ownerVerdict.messageId ?? null };
     } catch (err) {
       try { await client.query('ROLLBACK'); } catch { /* already closed */ }
       throw err;
@@ -326,7 +324,7 @@ export class ActionStore {
     return res.rowCount;
   }
 
-  /** The recorded row for `GET /v1/actions/{id}` — this bridge's rows only. */
+  /** The recorded row an operation read-back answers — this bridge's rows only. */
   async get(actionId) {
     const res = await this.pool.query(
       `SELECT * FROM bridge_action

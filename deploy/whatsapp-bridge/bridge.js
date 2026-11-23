@@ -11,13 +11,13 @@
  *  - DURABLE (design/platform-bridges, frozen nora-bridge-wire v1): every
  *    inbound transition is normalized once, fsync-journaled, dedupe-
  *    enqueued to `nq:in:whatsapp:{account_key}` and may earn a queued
- *    receipt; outbound effects go through the reserved-action API
- *    `POST /v1/actions` backed by Postgres `bridge_action`.
+ *    receipt; outbound effects go through the platform contract's
+ *    `POST /v1/platform/operations`, backed by Postgres `bridge_action`.
  *
  * Durable mode engages when `NORA_BRIDGE_JOURNAL` is set. It requires
  * `NORA_REDIS_URL` and `NORA_BRIDGE_CORRELATION_KEY` (+`_VERSION`); without
- * `DATABASE_URL` the action API answers 503 rather than execute an
- * unreserved effect.
+ * `DATABASE_URL` an operation answers `unavailable` (503) rather than execute
+ * an unreserved effect.
  *
  * Adapted from Hermes' scripts/whatsapp-bridge/ (MIT). Deliberately NOT
  * copied: express (built-in http instead), qrcode-terminal (pairing-code
@@ -27,6 +27,7 @@
  *
  * Endpoints:
  *   GET  /health      - liveness + drop counter (always 200 while serving)
+ *   GET  /ready       - 200 only when the platform contract can be served
  *   GET  /events      - SSE stream; replays bounded offline buffer on connect
  *   GET  /self        - the bot's own id forms (503 until socket open)
  *   POST /send        - { jid, text }                         (legacy)
@@ -34,12 +35,10 @@
  *   POST /edit        - { jid, id, text }                     (legacy)
  *   POST /react       - { jid, message_id, emoji, remove? }   (legacy)
  *   GET  /metrics     - Prometheus counters (bearer required)
- *   POST /v1/actions                - reserved durable action
- *   GET  /v1/actions/{action_id}    - recorded action state (readback)
- *   GET  /v1/self                   - {platform, primary, aliases[]}
- *   GET  /v1/health                 - {ok, detail, degraded}
- *   POST /v1/reads                  - {op:'roster', params:{conversation_id}}
- *   PUT|GET /v1/attachments/{key}   - custody bytes
+ *   the platform contract (actions.js; docs/service-api/openapi.json):
+ *   POST /v1/platform/operations, GET /v1/platform/operations/{operation_id},
+ *   POST /v1/platform/queries, GET /v1/platform/accounts/self,
+ *   PUT|GET /v1/platform/blobs/{key}, GET /v1/operations/status
  *
  * Usage:
  *   node bridge.js --port 18081 --session /app/session
@@ -153,7 +152,7 @@ if (DURABLE) {
     process.exit(2);
   }
   if (!DATABASE_URL) {
-    console.error('[bridge] WARNING: DATABASE_URL unset — /v1/actions will answer 503 (no durable action reservation)');
+    console.error('[bridge] WARNING: DATABASE_URL unset — operations will answer unavailable (no durable action reservation)');
   }
 } else if (!PAIR_MODE) {
   console.log('[bridge] NORA_BRIDGE_JOURNAL unset — legacy SSE mode (no durable capture)');
@@ -241,7 +240,7 @@ if (DURABLE && tracer) {
   console.log(`[bridge] otel spans → ${otlpEndpoint().replace(/\/v1\/traces.*$/, '/v1/traces')}`);
 }
 
-// The executor context shared by /v1/actions and the queued-receipt step.
+// The executor context shared by platform operations and the queued-receipt step.
 const actionCtx = {
   get sock() { return sock; },
   connected: () => Boolean(sock && connected),
@@ -754,15 +753,15 @@ function handleEvents(req, res) {
   });
 }
 
-function handleHealth(req, res) {
-  sendJson(res, 200, {
+function liveness() {
+  return {
     ok: true,
     connected,
     paired,
     dropped_events: buffer.dropped,
     buffered_events: buffer.size,
     uptime_seconds: Math.floor((Date.now() - STARTED_AT) / 1000),
-  });
+  };
 }
 
 function handleSelf(req, res) {
@@ -917,6 +916,9 @@ const handleV1 = createV1({
     };
   },
   health: healthV1,
+  liveness,
+  // The contract needs the durable stores and a live, paired socket.
+  ready: () => Boolean(DURABLE && actionStore && attachments && healthV1().ok),
   metrics,
 });
 
@@ -932,9 +934,9 @@ const server = http.createServer(async (req, res) => {
     )) {
       return sendJson(res, 401, { error: 'unauthorized' });
     }
-    if (DURABLE && url.pathname.startsWith('/v1/') && await handleV1(req, res, url)) return;
+    // The probes answer in every mode; the contract only in durable mode.
+    if ((DURABLE || !url.pathname.startsWith('/v1/')) && await handleV1(req, res, url)) return;
     switch (route) {
-      case 'GET /health': return handleHealth(req, res);
       case 'GET /events': return handleEvents(req, res);
       case 'GET /self': return handleSelf(req, res);
       case 'GET /metrics': {
