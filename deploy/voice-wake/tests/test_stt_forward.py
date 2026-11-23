@@ -6,13 +6,15 @@ or to the outcome field alone, and a bare `{"outcome": "complete"}`,
 `rejected`, `unavailable`-under-200 and the disagreeing status read as
 success; let it follow redirects and the 307 does; drop the transport
 catch and an unreachable Nora raises; drop the read-back and a timeout
-after Nora recorded the utterance, or a `pending` that settles, is lost.
+after Nora recorded the utterance, or a `pending` that settles, is lost;
+drop the `traceparent` and the POST and its read-back carry no trace.
 """
 
 # ruff: noqa: S101, S105 - synthetic wire tests use assertions and a fake bearer.
 
 import asyncio
 import json
+import re
 
 import aiohttp
 from aiohttp import web
@@ -20,6 +22,7 @@ from aiohttp.test_utils import TestServer
 from wakegate.stt import forward_utterance
 
 TOKEN = "t" * 32
+TRACEPARENT = re.compile(r"00-(?!0{32})[0-9a-f]{32}-(?!0{16})[0-9a-f]{16}-01")
 PATH = "/v1/intake/operations"
 
 
@@ -107,6 +110,7 @@ async def test_forward_reads_the_outcome():
     assert ok is True
     request = seen[0]["body"]
     assert seen[0]["headers"]["Authorization"] == f"Bearer {TOKEN}"
+    assert TRACEPARENT.fullmatch(seen[0]["headers"]["traceparent"])
     assert set(request) == {"operation_id", "kind", "effect"}
     assert request["kind"] == "record"
     effect = request["effect"]
@@ -120,6 +124,7 @@ async def test_forward_reads_the_outcome():
     assert second["effect"]["voice_channel_id"] == "c1"
     assert second["operation_id"] != request["operation_id"]
     assert second["effect"]["event_id"] != effect["event_id"]
+    assert again[0]["headers"]["traceparent"] != seen[0]["headers"]["traceparent"]
 
     refused = [
         _answer(200, "rejected"),
@@ -192,6 +197,8 @@ async def test_a_lost_or_unsettled_answer_is_read_back():
                               reads=[_read("ok", _envelope("pending")), done])
     assert ok is True
     assert len(_gets(seen)) == 2
+    traces = {entry["headers"]["traceparent"] for entry in seen}
+    assert len(traces) == 1 and TRACEPARENT.fullmatch(traces.pop())
 
     # uncertain is read back; a settled uncertain record stays undelivered
     ok, seen = await _forward(_answer(200, "uncertain"),

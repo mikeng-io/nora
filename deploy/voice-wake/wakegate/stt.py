@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 import uuid
 
 import aiohttp
@@ -171,7 +172,9 @@ async def forward_utterance(
         effect["voice_channel_id"] = voice_channel_id
     operation_id = str(uuid.uuid4())
     request = {"operation_id": operation_id, "kind": "record", "effect": effect}
-    headers = {"Authorization": f"Bearer {token}"}
+    # One W3C trace per utterance, on the POST and every read-back.
+    traceparent = f"00-{secrets.token_hex(16)}-{secrets.token_hex(8)}-01"
+    headers = {"Authorization": f"Bearer {token}", "traceparent": traceparent}
     outcome = await _submit(session, url, request, headers)
     if outcome in _READ_BACK_ON:
         outcome = await _read_back(session, f"{url}/{operation_id}", headers)

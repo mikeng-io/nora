@@ -256,7 +256,7 @@ async def test_the_utterance_forward_carries_the_service_bearer():
     assert ok is True
     url, kwargs = session.calls[0]
     assert url == "http://nora:9100/v1/intake/operations"
-    assert kwargs["headers"] == {"Authorization": f"Bearer {TOKEN}"}
+    assert kwargs["headers"]["Authorization"] == f"Bearer {TOKEN}"
 
 
 async def test_slow_drip_cannot_extend_a_frame_deadline():
