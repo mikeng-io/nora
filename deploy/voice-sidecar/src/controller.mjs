@@ -483,18 +483,18 @@ export function createFrontDoor({
       const read = await readJson(req, res, MAX_BODY_BYTES);
       if (!read) return;
       const { body } = read;
+      // Only `speak` carries audio; every other body keeps the control bound,
+      // as sent and as parsed (so the strings a snapshot echoes stay within it).
+      if (body.kind !== 'speak' && (read.bytes > MAX_CONTROL_BYTES
+        || Buffer.byteLength(JSON.stringify(body)) > MAX_CONTROL_BYTES)) {
+        return sendRefusal(res, 413, 'body_too_large');
+      }
       const { operation_id: id, kind, effect } = body;
       if (!(typeof id === 'string' && OPERATION_ID_RE.test(id))) {
         return sendRefusal(res, 400, 'invalid_operation_id');
       }
       if (!VOICE_KINDS.includes(kind)) return sendRefusal(res, 422, 'unknown_kind');
       if (!isObject(effect)) return sendRefusal(res, 400, 'invalid_body');
-      // Only `speak` carries audio; every other kind keeps the control bound,
-      // as sent and as parsed (so the strings a snapshot echoes stay within it).
-      if (kind !== 'speak' && (read.bytes > MAX_CONTROL_BYTES
-        || Buffer.byteLength(JSON.stringify(body)) > MAX_CONTROL_BYTES)) {
-        return sendRefusal(res, 413, 'body_too_large');
-      }
       if (kind !== 'report' && !(typeof effect.guild_id === 'string' && SNOWFLAKE_RE.test(effect.guild_id))) {
         return sendRefusal(res, 400, 'wrong_guild');
       }

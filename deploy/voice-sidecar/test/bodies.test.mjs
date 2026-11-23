@@ -33,6 +33,9 @@ test('only speak runs past the control bound, whatever the key order or escapes'
   assertNoEnvelope(await rawStream(h.port, padded), 413, 'whitespace padding');
   assertNoEnvelope(await rawStream(h.port, operationBody({ ...play,
     effect: { ...play.effect, title: 'x'.repeat(70 * 1024) } })), 413, 'a large play');
+  // The bound comes first: an oversized play with no usable effect is 413.
+  assertNoEnvelope(await rawStream(h.port, operationBody({ operation_id: 'null-effect', kind: 'play', effect: null,
+    pad: 'x'.repeat(70 * 1024) })), 413, 'oversized, effect null');
   // A repeated kind is read as JSON reads it, the last one.
   const repeated = operationBody({ operation_id: 'dup', kind: 'speak',
     effect: { guild_id: GUILD, generation, stream_url: 'https://cdn.test/a', pad: 'x'.repeat(70 * 1024) } });
