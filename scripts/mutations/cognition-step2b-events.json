@@ -42,13 +42,6 @@
     "target": "tests/unit/test_event_domain.py -k test_the_full_lifecycle_has_seven_statuses"
   },
   {
-    "name": "update_event actually refuses on EVERY terminal status, not just cancelled",
-    "file": "nora/app/gatherings.py",
-    "old": "        if current.status in TERMINAL_STATUSES:\n            # Only a status BEFORE `happened` may be",
-    "new": "        if current.status is GatheringStatus.CANCELLED:\n            # Only a status BEFORE `happened` may be",
-    "target": "tests/test_gatherings_service.py -k test_update_event_refuses_on_every_terminal_status"
-  },
-  {
     "name": "rsvp actually refuses on EVERY terminal status, not just cancelled",
     "file": "nora/app/gatherings.py",
     "old": "        if current.status in TERMINAL_STATUSES:\n            # The same set `update_event` refuses on:",

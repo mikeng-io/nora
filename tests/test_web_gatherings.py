@@ -9,6 +9,7 @@ from nora.app.gatherings import GatheringService
 from nora.domain.gatherings import Gathering, RSVPResponse
 from nora.testing.gatherings import FakeGatheringStore
 from nora.web.gatherings import build_gathering_payload, build_gatherings_payload
+from tests.builders import make_gathering
 
 pytestmark = pytest.mark.asyncio
 
@@ -17,22 +18,22 @@ def _ROOMS(person_id: str) -> frozenset[tuple[str, str]]:
     return frozenset({("signal", "group-1")}) if person_id == "miles" else frozenset()
 
 
-async def _service() -> GatheringService:
+def _service(store: FakeGatheringStore) -> GatheringService:
     return GatheringService(
-        store=FakeGatheringStore(),
+        store=store,
         route_source=None,
         now=lambda: datetime(2026, 8, 19, tzinfo=UTC),
     )
 
 
 async def test_build_gatherings_payload_lists_events_for_person():
-    svc = await _service()
-    await svc.create_event(
+    store = FakeGatheringStore()
+    svc = _service(store)
+    await store.create(make_gathering(
         conversation_id="signal:group-1",
-        requester_person_id="miles",
+        created_by="miles",
         title="Dinner",
-        platform="signal",
-    )
+    ))
     out = await build_gatherings_payload(events=svc, person_id="miles")
     assert len(out) == 1
     assert out[0]["title"] == "Dinner"
@@ -40,19 +41,20 @@ async def test_build_gatherings_payload_lists_events_for_person():
 
 
 async def test_build_gatherings_payload_excludes_events_im_not_part_of():
-    svc = await _service()
-    await svc.create_event(
+    store = FakeGatheringStore()
+    svc = _service(store)
+    await store.create(make_gathering(
         conversation_id="signal:group-1",
-        requester_person_id="daisy",
+        created_by="daisy",
         title="Someone else's dinner",
-        platform="signal",
-    )
+    ))
     out = await build_gatherings_payload(events=svc, person_id="miles")
     assert out == []
 
 
 async def test_build_gathering_payload_returns_none_for_missing_event():
-    svc = await _service()
+    store = FakeGatheringStore()
+    svc = _service(store)
     assert (
         await build_gathering_payload(
             events=svc,
@@ -64,25 +66,25 @@ async def test_build_gathering_payload_returns_none_for_missing_event():
 
 
 async def test_build_gathering_payload_returns_none_when_not_a_participant():
-    svc = await _service()
-    ev = await svc.create_event(
+    store = FakeGatheringStore()
+    svc = _service(store)
+    ev = await store.create(make_gathering(
         conversation_id="signal:group-1",
-        requester_person_id="daisy",
+        created_by="daisy",
         title="Someone else's dinner",
-        platform="signal",
-    )
+    ))
     out = await build_gathering_payload(events=svc, event_id=ev.id, person_id="miles")
     assert out is None
 
 
 async def test_build_gathering_payload_includes_rsvps():
-    svc = await _service()
-    ev = await svc.create_event(
+    store = FakeGatheringStore()
+    svc = _service(store)
+    ev = await store.create(make_gathering(
         conversation_id="signal:group-1",
-        requester_person_id="miles",
+        created_by="miles",
         title="Dinner",
-        platform="signal",
-    )
+    ))
     await svc.rsvp(
         event_id=ev.id,
         conversation_id="signal:group-1", platform="signal",
@@ -98,19 +100,20 @@ async def test_an_event_in_a_room_i_am_in_is_shown_under_either_id_form():
     """Cognition records an event as `cognition:<unit>`, with no RSVPs; a
     member of its room sees it, by the room's bare id or its `platform:` form,
     in the list and in the detail read. A room they are not in stays hidden."""
-    svc = await _service()
-    bare = await svc.create_event(
-        conversation_id="group-1", requester_person_id="cognition:u",
-        title="Saturday dinner", platform="signal",
-    )
-    prefixed = await svc.create_event(
-        conversation_id="signal:group-1", requester_person_id="cognition:u",
-        title="Sunday lunch", platform="signal",
-    )
-    await svc.create_event(
-        conversation_id="group-2", requester_person_id="cognition:u",
-        title="Another room's dinner", platform="signal",
-    )
+    store = FakeGatheringStore()
+    svc = _service(store)
+    bare = await store.create(make_gathering(
+        conversation_id="group-1", created_by="cognition:u",
+        title="Saturday dinner",
+    ))
+    prefixed = await store.create(make_gathering(
+        conversation_id="signal:group-1", created_by="cognition:u",
+        title="Sunday lunch",
+    ))
+    await store.create(make_gathering(
+        conversation_id="group-2", created_by="cognition:u",
+        title="Another room's dinner",
+    ))
     asked: list[tuple[str, str, str]] = []
 
     def shown(event: Gathering, viewer: str, platform: str, cid: str) -> bool:
@@ -133,11 +136,12 @@ async def test_an_event_in_a_room_i_am_in_is_shown_under_either_id_form():
 
 
 async def test_a_room_event_the_rule_withholds_is_absent_from_the_list_and_the_detail():
-    svc = await _service()
-    ev = await svc.create_event(
-        conversation_id="group-1", requester_person_id="cognition:u",
-        title="Surprise party", platform="signal",
-    )
+    store = FakeGatheringStore()
+    svc = _service(store)
+    ev = await store.create(make_gathering(
+        conversation_id="group-1", created_by="cognition:u",
+        title="Surprise party",
+    ))
 
     def never(event: Gathering, viewer: str, platform: str, cid: str) -> bool:
         return False
@@ -152,11 +156,12 @@ async def test_a_room_event_the_rule_withholds_is_absent_from_the_list_and_the_d
 
 async def test_without_a_rule_no_room_only_event_is_shown():
     """Fail closed: rooms without the visibility rule list nothing extra."""
-    svc = await _service()
-    await svc.create_event(
-        conversation_id="group-1", requester_person_id="cognition:u",
-        title="Saturday dinner", platform="signal",
-    )
+    store = FakeGatheringStore()
+    svc = _service(store)
+    await store.create(make_gathering(
+        conversation_id="group-1", created_by="cognition:u",
+        title="Saturday dinner",
+    ))
     assert await build_gatherings_payload(events=svc, person_id="miles", rooms_of=_ROOMS) == []
 
 
@@ -166,11 +171,11 @@ async def test_a_surprise_is_never_shown_to_the_person_it_is_kept_from():
     from nora.agent.lineage import LineagePolicy
     from nora.app.gatherings import room_event_shown
 
-    svc = await _service()
-    ev = await svc.create_event(
-        conversation_id="group-1", requester_person_id="cognition:u",
-        title="Party", platform="signal",
-    )
+    store = FakeGatheringStore()
+    ev = await store.create(make_gathering(
+        conversation_id="group-1", created_by="cognition:u",
+        title="Party",
+    ))
     surprise = replace(ev, exclude_persons=("miles",))
     off = LineagePolicy()
     claims = {"group-1": frozenset({("", "signal")})}

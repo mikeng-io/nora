@@ -31,15 +31,7 @@ _CHARSET = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 #: on Saturday» has none), not `list` (it filters by time, author and words, and
 #: enumerates nothing fixed).
 #:
-#: `propose`, `revise`, `set_status`, `rsvp` (the event verbs, DEC-237):
-#: `event_propose` is not `create` — it stages or proposes, a status
-#: `event_set_status` may later move on, never a finished write; `event_revise`
-#: is not `update` — it appends a REVISION to a chain (`base_revision_id`), never
-#: an in-place change; `event_set_status` is not `cancel` — it moves an event
-#: through the WHOLE lifecycle (confirmed, happened, lapsed, not only
-#: cancelled), so one verb covers what `cancel` alone could not; `event_rsvp` is
-#: not `create` or `update` — a person's own response, appended (RSVP transition
-#: rows), naming neither.
+#: `rsvp` records a person's own response with an appended transition.
 VERBS: tuple[str, ...] = (
     "read", "fetch", "search", "list", "create", "update", "cancel", "send",
     "query", "propose", "revise", "set_status", "rsvp",
@@ -100,12 +92,12 @@ def _shape(verbs: tuple[str, ...] = VERBS) -> re.Pattern[str]:
     return re.compile(rf"^[a-z][a-z0-9]*(_[a-z0-9]+)*_({'|'.join(verbs)})$")
 
 
-#: Every tool name that existed when ADR 0015 landed. A SNAPSHOT,
-#: never edited: its digest is pinned below, so adding a name to it (exempting a
+#: The retained names from when ADR 0015 landed.
+#: The snapshot may only shrink: its digest is pinned below, so adding a name to it (exempting a
 #: new tool by hand) fails the build. A name leaves the exemption by being
 #: added to `_RENAMED_SINCE`, which is how the exempt set only shrinks.
 _SNAPSHOT_2026_09_24 = frozenset({
-    "about", "ask_memory", "calculate", "cancel_event", "cancel_reminder",
+    "about", "ask_memory", "calculate", "cancel_reminder",
     "create_event", "find_parking", "generate_image", "group_members",
     "list_events", "list_reminders", "load_tools", "load_transcript",
     "lookup_person", "make_artifact", "media_fetch", "media_search",
@@ -119,7 +111,7 @@ _SNAPSHOT_2026_09_24 = frozenset({
     "weather", "web_fetch", "web_search", "where_been", "where_is", "who_said",
 })
 _SNAPSHOT_SHA256 = (
-    "51189c39c8934b8fe595bdad19f7bc0103c6da453706231f4b310aa2ff8789e3"
+    "ef4a84d816b536d0f733b7fc00e083684b30eac6b8177c23716219252f4865f7"
 )
 
 #: Snapshot names renamed to the pattern or removed since. Grows; the exempt
@@ -132,7 +124,7 @@ _RENAMED_SINCE: frozenset[str] = frozenset({
     # DEC-201: retired into `x_read` and `x_search`, which meet the pattern.
     "social_fetch",
     # DEC-237: renamed to the event verbs and `event_search`.
-    "create_event", "update_event", "rsvp_event", "cancel_event", "list_events",
+    "create_event", "update_event", "rsvp_event", "list_events",
     # Retired. A file is made on the computer and leaves through
     # `computer_export`; a document is published through `document_publish`
     # (ADR 0020).
@@ -144,7 +136,7 @@ _RENAMED_SINCE: frozenset[str] = frozenset({
     "suggest_venue",
     # Retired: `intention_commit` opens, revises, drops and closes a scheduled delivery.
     "remind", "list_reminders", "cancel_reminder",
-    "event_propose", "event_revise", "event_rsvp", "event_search", "event_set_status",
+    "event_rsvp", "event_search",
     # Retired: the graph's `graph_profile` presentation carries the accounts it read.
     "character_read",
 })
@@ -186,7 +178,7 @@ def test_a_misnamed_new_tool_is_actually_caught(monkeypatch: pytest.MonkeyPatch)
     assert _misnamed(_catalog_entries.NATIVE_TOOLS) == ["read_instagram"]
 
 
-def test_the_snapshot_is_never_edited() -> None:
+def test_the_snapshot_matches_its_pinned_digest() -> None:
     """Pinning a LENGTH let a name be swapped in at the same size. The digest
     pins the exact set: exempting a new tool now means changing this hash, a
     diff nobody can make by accident."""

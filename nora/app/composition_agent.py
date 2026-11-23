@@ -194,9 +194,6 @@ def _build_tool_registry(
         # The document tools: ships OFF, and off the
         # registry withholds all three from every turn.
         documents=document_service if cfg.documents.enabled else None,
-        # the five event tools (`create_event`/`update_event`/`rsvp_event`/
-        # `cancel_event`/`list_events`) answer `unavailable` (R-5) whenever a
-        # composition has not wired one; every deployment here has, since it needs nothing this…
         events=events,
         # `[llm.budgets]`, the per-deployment delta over the table. Threaded here for the same
         # reason `reminder_caps` is: `nora.agent` may not import `nora.config`, so the

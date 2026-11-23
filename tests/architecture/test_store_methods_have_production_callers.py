@@ -249,10 +249,8 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("gatherings.py", "revisions_for"): _Pin(
         "read_back_affordance",
         "An event's full revision chain (design/cognition-loop/data.md; migration "
-        "0074_event_revision). No prompt block or tool reads the chain today "
-        "— `event_propose`/`event_revise`/`event_set_status` only ever read "
-        "the head through `head_revision_id` for `base_revision_id`'s "
-        "compare-and-swap. Its consumer is a `History` section on an event "
+        "0074_event_revision). No prompt block or tool reads the chain. "
+        "Its consumer is a `History` section on an event "
         "(design/cognition-loop/data.md's `Changes`, 'every revision: field, from, to, "
         "mode, why, when'), not built at step 2b.",
     ),

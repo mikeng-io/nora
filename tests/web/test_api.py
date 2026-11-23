@@ -15,6 +15,7 @@ from nora.testing import FakeRecordStore
 from nora.testing.gatherings import FakeGatheringStore
 from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
+from tests.builders import make_gathering
 from tests.conftest import build_test_doctrine_store
 from tests.web.test_memory import _line, _Profile
 
@@ -335,16 +336,13 @@ async def client_with_events(aiohttp_client):
     -> store path, not a fixture whose store is always empty regardless of
     what a test asks for (CLAUDE.md's fake-fidelity rule; FakeGatheringStore's
     own docstring makes the same commitment for its store-level contract)."""
-    events_service = GatheringService(
-        store=FakeGatheringStore(),
-        route_source=None,
-    )
-    event = await events_service.create_event(
+    gatherings = FakeGatheringStore()
+    events_service = GatheringService(store=gatherings, route_source=None)
+    event = await gatherings.create(make_gathering(
         conversation_id="signal:group-1",
-        requester_person_id="miles",
+        created_by="miles",
         title="Dinner",
-        platform="signal",
-    )
+    ))
     await events_service.rsvp(
         event_id=event.id,
         conversation_id="signal:group-1", platform="signal",
@@ -378,13 +376,12 @@ async def test_the_events_routes_show_a_member_every_event_of_their_room(aiohttp
     from nora.agent.lineage import LineagePolicy
     from nora.app.gatherings import room_event_shown
 
-    events_service = GatheringService(
-        store=FakeGatheringStore(), route_source=None,
-    )
-    event = await events_service.create_event(
-        conversation_id="group-1", requester_person_id="cognition:u",
-        title="Saturday dinner", platform="signal",
-    )
+    gatherings = FakeGatheringStore()
+    events_service = GatheringService(store=gatherings, route_source=None)
+    event = await gatherings.create(make_gathering(
+        conversation_id="group-1", created_by="cognition:u",
+        title="Saturday dinner",
+    ))
     app = web.Application()
     register_web_routes(
         app, store=FakeRecordStore(), reminders=FakeReminderStore(),
@@ -415,13 +412,12 @@ async def test_the_events_routes_do_not_show_a_rooms_old_event_after_it_moved_un
     from nora.agent.lineage import LineagePolicy
     from nora.app.gatherings import room_event_shown
 
-    events_service = GatheringService(
-        store=FakeGatheringStore(), route_source=None,
-    )
-    event = await events_service.create_event(
-        conversation_id="group-1", requester_person_id="cognition:u",
-        title="Work offsite", platform="signal", unit_id="work",
-    )
+    gatherings = FakeGatheringStore()
+    events_service = GatheringService(store=gatherings, route_source=None)
+    event = await gatherings.create(make_gathering(
+        conversation_id="group-1", created_by="cognition:u",
+        title="Work offsite", unit_id="work",
+    ))
     app = web.Application()
     register_web_routes(
         app, store=FakeRecordStore(), reminders=FakeReminderStore(),

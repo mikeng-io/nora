@@ -18,7 +18,6 @@ import psycopg
 import pytest
 import sqlalchemy as sa
 
-from nora.app.gatherings import GatheringService
 from nora.domain.gatherings import (
     EventCitation,
     EventEvidence,
@@ -261,55 +260,6 @@ async def test_per_field_reasoning_round_trips_through_the_head_and_the_revision
 # ---------------------------------------------------------------------------
 # the service paths
 # ---------------------------------------------------------------------------
-
-def _service(store: SqlGatheringStore) -> GatheringService:
-    return GatheringService(
-        store=store,
-        route_source=None,
-    )
-
-
-async def test_a_tag_turn_s_event_cites_the_message_that_raised_it_and_rests_on_its_room(engine):
-    """The tag path cites what `Room.trigger_message_ids` names (code's own
-    knowledge): the lineage is `message:<room>` (the message was said in this room)."""
-    mid = await _message(engine, conversation_id="ga")
-    service = _service(SqlGatheringStore(engine))
-    event = await service.create_event(
-        conversation_id="ga", requester_person_id="p_ada", title="dinner",
-        platform="signal", unit_id="u", message_ids=(mid,),
-    )
-    assert event.lineage.section("what") == (message(ROOM_A),)
-    assert event.lineage.section("status") == (message(ROOM_A),)
-    assert event.lineage.section("start") == ()            # it stated no time
-    moved = await service.update_event(
-        event_id=event.id, conversation_id="ga", platform="signal", unit_id="u",
-        venue_text="place one", message_ids=(mid,),
-    )
-    assert moved.lineage.section("place") == (message(ROOM_A),)
-
-
-async def test_the_tag_path_s_new_citation_changes_no_lineage_so_no_lineage_mode_reads_a_difference(
-    engine,
-):
-    """Event lineage is read by one reader, the cognition grounding, which applies
-    it per `[lineage] mode` (`off` applies nothing; `shadow` reports; `on`
-    removes). The tag path cites the message that raised the turn, which is
-    said in the room the turn is in, so the section it adds is the one the turn
-    itself always added: the lineage is the SAME VALUE with and without the
-    citation, hence no mode reads a different answer."""
-    mid = await _message(engine, conversation_id="ga")
-    service = _service(SqlGatheringStore(engine))
-    cited = await service.create_event(
-        conversation_id="ga", requester_person_id="p_ada", title="dinner",
-        platform="signal", unit_id="u", message_ids=(mid,), venue_text="place one",
-    )
-    bare = await service.create_event(
-        conversation_id="ga", requester_person_id="p_ada", title="dinner 2",
-        platform="signal", unit_id="u", venue_text="place one",
-    )
-    assert cited.lineage == bare.lineage
-    assert cited.lineage.section("place") == (message(ROOM_A),)
-
 
 async def test_a_note_citing_a_rollup_row_takes_the_rows_lineage(engine):
     """A note resting on a presence row brings the row's own entries into its

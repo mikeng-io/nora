@@ -34,11 +34,10 @@ from nora.domain.reminders import (
 )
 
 
-def session_verbs(d: SessionDeps) -> tuple[tuple[Any, ...], ...]:
+def session_verbs(d: SessionDeps) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
     """The session's write verbs, built against the runner's
     collaborators in `d` (`d.runner` is `CognitionSessionRunner`)."""
     return (
-        (),  # The session runner expects the event, wake and reminder slots.
         (_make_wake_at(d), _make_wake_move(d), _make_wake_cancel(d),),
         (_make_remind(d), _make_remind_move(d), _make_remind_cancel(d),),
     )

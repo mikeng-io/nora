@@ -1,46 +1,28 @@
 """The act receipt rides the register row's own transaction.
 
 A crash after a create verb's commit but before the receipt used to lose the
-idempotency key, and a retried `event_propose` wrote a second gathering. This
-probe drives a real session over the real SQL register store and receipt
-table: a receipt-boundary crash rolls the row back atomically, a later
-post-commit crash leaves row + receipt, and a restart's identical retry
+idempotency key and let a retry write a second row. This probe drives a
+real session over the SQL register store and receipt table. A receipt-boundary
+crash rolls the row back atomically, a later post-commit crash leaves row and
+receipt, and a restart's identical retry
 replays that receipt instead of writing a second row, then re-links the same
 register association. Generated data only.
 """
-from datetime import UTC, datetime
-
 import pytest
 import sqlalchemy as sa
 
-from nora.app.gatherings import GatheringService
 from nora.infra.sql.comprehend import SqlComprehendRecords
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.gatherings import SqlGatheringStore
+from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.schema import COMPREHEND_RESULT as RESULT
-from nora.infra.sql.schema import EVENTS
+from nora.infra.sql.schema import NOTE as NOTE_TABLE
 from nora.obs.metrics import Metrics
 from nora.testing.memory_graph import FakeMemoryGraph
-from tests.unit.cognition_rig import NOW, RECORDS, Stores
+from tests.unit.cognition_rig import GOOD_BODY, NOTE, NOW, RECORDS, Stores
 from tests.unit.cognition_rig import session as rig_session
-from tests.unit.test_cognition_session_runner import proposal
+from tests.unit.test_cognition_session_runner import _about_proposal, _seed_event
 
 pytestmark = pytest.mark.anyio
-
-
-class SqlStores(Stores):
-    """The rig's stores with the gathering + receipt side on real SQL."""
-
-    def __init__(self, engine, records):
-        super().__init__()
-        self.sql_gatherings = SqlGatheringStore(engine)
-        self.records = records
-
-    def events(self) -> GatheringService:
-        return GatheringService(
-            store=self.sql_gatherings, route_source=None,
-            now=lambda: datetime.fromtimestamp(NOW / 1000, UTC),
-        )
 
 
 async def _count(conn, table, *where) -> int:
@@ -71,24 +53,24 @@ async def test_receipt_boundary_crash_restart_retry_does_not_duplicate(clean_pg_
             # The register row's own text plus its cited record source, the
             # shape the SQL loader returns; an unprojected stimulus answers
             # NoResultFound, exactly as the real load does.
-            if work.source[0] == "event_entry":
+            if work.source[0] == "note":
                 return ComprehendItem(work, (
-                    Source(work.source, "notebook", "u", (), "generated gala"),
+                    Source(work.source, "notebook", "u", (), GOOD_BODY),
                     Source(("message", "101"), "record", "u", ("p_ada",), "generated"),
                 ), "signal", "room-a", snapshot={"messages": [], "context": []})
             return await real_load(work)
 
         records.load = load
         graph = FakeMemoryGraph()
-        memory = WakeMemory(graph=graph, records=records, metrics=Metrics())
-        stores = SqlStores(engine, records)
+        memory = WakeMemory(graph=graph, records=records, metrics=Metrics(), content_checks=False)
+        stores = Stores(notes=SqlNoteStore(engine))
+        event = _seed_event(memory, "u:event:generated-gala")
         answers = []
 
         async def behave(by, tools):
-            await by["memory_propose"](**proposal())
-            answers.append(await by["event_propose"](
-                title="generated gala", reasoning="told", confidence="high",
-                cited_ids=["101"]))
+            await by["memory_propose"](**_about_proposal(event.id))
+            answers.append(await by["note_create"](
+                body=GOOD_BODY, associations=[["event", event.id]], **NOTE))
 
         kwargs = {"memory": memory,
                   "grounder": StaticGrounder(Grounding(records=dict(RECORDS)))}
@@ -99,9 +81,9 @@ async def test_receipt_boundary_crash_restart_retry_does_not_duplicate(clean_pg_
 
         records.act_result_on = crash
         await rig_session(behave, stores=stores, runner_kwargs=kwargs)
-        assert answers[-1]["status"] == "unavailable"
+        assert answers[-1]["status"] == "unavailable", answers[-1]
         async with engine.connect() as conn:
-            assert await _count(conn, EVENTS) == 0
+            assert await _count(conn, NOTE_TABLE) == 0
             assert await _count(conn, RESULT, RESULT.c.part == "act_result") == 0
 
         # Attempt 2: row + receipt commit; the projection step crashes after.
@@ -112,22 +94,22 @@ async def test_receipt_boundary_crash_restart_retry_does_not_duplicate(clean_pg_
 
         memory.link_result = link_outage
         await rig_session(behave, stores=stores, runner_kwargs=kwargs)
-        assert answers[-1]["status"] == "unavailable"
+        assert answers[-1]["status"] == "unavailable", answers[-1]
         async with engine.connect() as conn:
-            assert await _count(conn, EVENTS) == 1
+            assert await _count(conn, NOTE_TABLE) == 1
             assert await _count(conn, RESULT, RESULT.c.part == "act_result") == 1
 
         # Attempt 3 (restart): the identical call replays the receipt, never
         # writes a second row, and re-links the same register row.
         del memory.link_result
         await rig_session(behave, stores=stores, runner_kwargs=kwargs)
-        assert answers[-1]["status"] == "ok"
+        assert answers[-1]["status"] == "ok", answers[-1]
         async with engine.connect() as conn:
-            assert await _count(conn, EVENTS) == 1
+            assert await _count(conn, NOTE_TABLE) == 1
             assert await _count(conn, RESULT, RESULT.c.part == "act_result") == 1
-        event_id = answers[-1]["id"]
+        note_id = answers[-1]["note_id"]
         assert any(
-            r.src == ("event_entry", event_id) and r.rel == "records"
+            r.src == ("note", note_id) and r.rel == "concerns" and r.dst == event.key
             for r in graph.relations.values()
         )
     finally:
@@ -137,7 +119,6 @@ async def test_receipt_boundary_crash_restart_retry_does_not_duplicate(clean_pg_
 async def test_revision_receipt_commits_inside_the_append_transaction(clean_pg_url):
     """A revision's receipt rides the same append transaction: a crash leaves
     the head unmoved and no receipt; the retry writes revision + receipt."""
-    from nora.infra.sql.notes import SqlNoteStore
     from nora.infra.sql.schema import NOTE, NOTE_REVISION
 
     engine = create_sql_engine(clean_pg_url)

@@ -9,12 +9,8 @@ would write a status that was never recorded. As an element every FIELD is an
 attribute, where `escape_attr` closes the quote a value cannot write, and the
 title is the content, collapsed to one line so one event stays one row.
 
-**What it carries**: the id (what the
-session's `event_revise` and `event_set_status` take as `event_id`), the status,
-when it is for (`no time set` when nothing is), the venue as it was said (cut to
-`VENUE_CHARS`), and the head revision (what their `base_revision_id` takes),
-dropped when there is none. Pure: rows in, a string out, no clock but the zone it
-is handed.
+The index includes the event id, status, time (`no time set` if absent),
+venue (cut to `VENUE_CHARS`), and head revision when present.
 
 It renders rows and nothing else, like `note_render.render_note_rows`: the
 envelope (the `events` block, its room, how many rows a budget left out) belongs

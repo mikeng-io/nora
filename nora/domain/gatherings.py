@@ -105,10 +105,7 @@ class InvalidEventFieldModeError(Exception):
 
 
 class StaleEventRevisionError(Exception):
-    """Raised on an `event_revise`/`event_set_status`-shaped write whose
-    `base_revision_id` is not the event's current `head_revision_id`
-    (a stale one is refused `stale_base`, with the current row). Carries the
-    row so the caller can show it without a second read."""
+    """An event write used a stale base revision. Carries the current row."""
 
     def __init__(self, event_id: UUID, current: Gathering) -> None:
         super().__init__(f"event {event_id}: base_revision_id is stale")

@@ -1,4 +1,4 @@
-"""Test-side construction seams for the config tree.
+"""Test-side builders for generated fixtures.
 
 `nora.config`'s tree is pydantic (frozen `BaseModel`s), not dataclasses. Every
 direct use of `model_copy` or a `nora.config` constructor in the suite is a site
@@ -10,8 +10,10 @@ construct or copy a config object.
 from __future__ import annotations
 
 import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from nora.config import (
     Config,
@@ -20,8 +22,23 @@ from nora.config import (
     TracingConfig,
 )
 from nora.config import load as _load_config
+from nora.domain.gatherings import Gathering, GatheringStatus
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def make_gathering(
+    *, conversation_id: str, title: str, created_by: str, platform: str = "signal",
+    unit_id: str = "", status: GatheringStatus = GatheringStatus.PROPOSED,
+    when: datetime | None = None, created_at: datetime = datetime(2026, 8, 19, tzinfo=UTC),
+) -> Gathering:
+    return Gathering(
+        id=uuid4(), conversation_id=conversation_id, title=title, created_by=created_by,
+        platform=platform, unit_id=unit_id, status=status, when=when, created_at=created_at,
+        venue_text=None, venue_place_id=None, venue_name=None, venue_address=None,
+        venue_rating=None, venue_price_level="", venue_maps_url=None,
+        venue_resolved_at=None, reminder_id=None,
+    )
 
 
 def _with(obj: Any, path: str, value: Any) -> Any:

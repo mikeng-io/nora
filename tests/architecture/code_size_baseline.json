@@ -408,10 +408,10 @@
  },
  "nora/app/cognition_session.py": {
   "comment_blocks": 25,
-  "file_lines": 2042,
+  "file_lines": 2033,
   "functions": {
    "CognitionSessionRunner.__init__": 124,
-   "CognitionSessionRunner._build_tools": 338,
+   "CognitionSessionRunner._build_tools": 330,
    "CognitionSessionRunner._run_session": 160,
    "CognitionSessionRunner.on_wake": 168
   },
@@ -2715,11 +2715,6 @@
   "comment_blocks": 5,
   "internal_docstrings": 2
  },
- "tests/test_gatherings_service.py": {
-  "comment_blocks": 2,
-  "file_lines": 821,
-  "internal_docstrings": 1
- },
  "tests/test_geocode.py": {
   "internal_docstrings": 1
  },
@@ -2986,7 +2981,7 @@
   "internal_docstrings": 4
  },
  "tests/unit/test_cognition_session_runner.py": {
-  "file_lines": 1353,
+  "file_lines": 1351,
   "internal_docstrings": 2
  },
  "tests/unit/test_cognition_source_rows.py": {

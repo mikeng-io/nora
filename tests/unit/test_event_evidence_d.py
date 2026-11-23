@@ -179,7 +179,7 @@ def test_a_shown_message_a_carried_one_and_a_read_rollup_row_pass():
 ])
 def test_anything_else_is_refused_with_the_rule_a_note_would_name(cited, rule):
     with pytest.raises(NoteBodyError) as caught:
-        check_citations(cited, SHOWN, what="event_propose")
+        check_citations(cited, SHOWN, what="event evidence")
     assert caught.value.rule == rule
 
 

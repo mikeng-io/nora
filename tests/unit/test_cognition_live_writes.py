@@ -14,13 +14,13 @@ import pytest
 from nora.app.cognition_session import now_utc
 from nora.domain.cognition_ground import Grounding, NoteLine
 from nora.domain.cognition_session import AgendaItem, Room, build_agenda
-from nora.domain.gatherings import GatheringStatus
 from nora.domain.notes import Note, NoteSupersedeReason, likely_duplicates
 from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import StandingHead
 from nora.domain.stimuli import Stimulus
 from nora.language.cognition_render import render_agenda
 from nora.testing.note_store import InMemoryNoteStore
+from tests.builders import make_gathering
 from tests.unit.cognition_rig import GOOD_BODY, NOTE, NOW, A, Stores, iso, session
 
 PROVENANCE = "cognition:u"
@@ -115,53 +115,6 @@ async def test_note_merge_folds_the_duplicate_into_the_survivor():
     assert folded.retire_reason == NoteSupersedeReason.RETIRED_MERGED
     assert folded.replaced_by == survivor.id
     assert [n.id for n in await stores.notes.standing(unit="u")] == [survivor.id]
-
-
-async def test_events_commit_with_their_stated_mode_and_move_on_the_live_service():
-    answers: list[Any] = []
-
-    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        answers.append(await by["event_propose"](
-            title="dinner", reasoning="abduced", confidence="low", cited_ids=["101"],
-            when=iso(NOW + 86_400_000),
-        ))
-        answers.append(await by["event_set_status"](
-            event_id=answers[0]["id"], status="confirmed", reasoning="told",
-            confidence="high", cited_ids=["102"],
-        ))
-
-    stores, _ = await session(behave)
-    assert [a["status"] for a in answers] == ["ok", "ok"]
-    (event,) = await stores.gatherings.list_for_conversation(
-        conversation_id=A.conversation_id, unit_id="u", platform=A.platform,
-    )
-    assert event.created_by == PROVENANCE and event.status is GatheringStatus.CONFIRMED
-    assert {m.field: m.reasoning for m in event.field_meta}["start"] == "abduced"
-
-
-async def test_an_event_with_a_time_owns_no_reminder():
-    """DEC-303: an event is a record, never a reminder's owner. Proposing one
-    with a start and moving that start write no reminder row; whether, when and
-    what to remind is the session's own `remind`, which cites the event."""
-    answers: list[Any] = []
-
-    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        answers.append(await by["event_propose"](
-            title="dinner", reasoning="told", confidence="high", cited_ids=["101"],
-            when=iso(NOW + 86_400_000),
-        ))
-        answers.append(await by["event_revise"](
-            event_id=answers[0]["id"], when=iso(NOW + 2 * 86_400_000),
-            reasoning="told", confidence="high", cited_ids=["102"],
-        ))
-
-    stores, _ = await session(behave)
-    assert [a["status"] for a in answers] == ["ok", "ok"]
-    (event,) = await stores.gatherings.list_for_conversation(
-        conversation_id=A.conversation_id, unit_id="u", platform=A.platform,
-    )
-    assert event.when is not None and event.reminder_id is None
-    assert list(await stores.reminders.all_pending(limit=100)) == []
 
 
 async def test_standing_revise_writes_the_rooms_position():
@@ -427,12 +380,14 @@ async def test_remind_refuses_when_a_same_act_is_firing_in_a_unit_room_off_agend
     stores = Stores()
     result = []
 
+    t = datetime.fromtimestamp(NOW / 1000, UTC)
+    event = await stores.gatherings.create(make_gathering(
+        conversation_id=A.conversation_id, platform=A.platform, unit_id="u",
+        title="generated-event", created_by=PROVENANCE, created_at=t,
+        when=t + timedelta(days=1),
+    ))
+
     async def behave(by, tools):
-        event = await by["event_propose"](
-            title="generated-event", reasoning="told", confidence="high",
-            cited_ids=["101"], when=iso(NOW + 86_400_000))
-        assert event["status"] == "ok", event
-        t = datetime.fromtimestamp(NOW / 1000, UTC)
         existing = Reminder(
             id=uuid.uuid4(), kind="proactive", requester_person_id="nora",
             platform="signal", conversation_id="room-b",
@@ -441,12 +396,12 @@ async def test_remind_refuses_when_a_same_act_is_firing_in_a_unit_room_off_agend
             state=ReminderState.FIRING, outcome=None,
             payload={
                 "unit": "u", "subject_kind": "event",
-                "subject_id": event["id"], "action": "generated-ask",
+                "subject_id": str(event.id), "action": "generated-ask",
                 "plan_id": "generated-existing-plan"})
         await stores.reminders.create(existing)
         result.append(await by["remind"](
             intent="ask", text="generated duplicate act",
-            subject=f"event:{event['id']}", action="generated-ask",
+            subject=f"event:{event.id}", action="generated-ask",
             subject_rows=["101"], at=iso(NOW + 300_000)))
 
     await session(
@@ -454,7 +409,7 @@ async def test_remind_refuses_when_a_same_act_is_firing_in_a_unit_room_off_agend
         runner_kwargs={
             "rooms_of_unit": lambda unit: (
                 ("signal", "room-a"), ("signal", "room-b"))})
-    assert result[0]["status"] in ("refused", "unavailable"), result
+    assert (result[0]["status"], result[0]["reason"]) == ("refused", "duplicate_pending")
 
 
 async def test_remind_refuses_a_same_act_already_delivered():
@@ -514,22 +469,20 @@ async def test_cognition_can_revise_a_unit_room_without_adding_it_to_the_agenda(
 async def test_one_room_agenda_can_schedule_an_explicit_two_room_unit_plan():
     from tests.unit.cognition_rig import B
 
-    stores, event_ids, answers = Stores(), [], []
+    stores, answers = Stores(), []
+    t = datetime.fromtimestamp(NOW / 1000, UTC)
+    event = await stores.gatherings.create(make_gathering(
+        conversation_id=B.conversation_id, platform=B.platform, unit_id="u",
+        title="generated gathering", created_by=PROVENANCE, created_at=t,
+        when=t + timedelta(days=1),
+    ))
+
     def unit_rooms(unit):
         return ((A.platform, A.conversation_id), (B.platform, B.conversation_id))
 
-    async def seed(by, tools):
-        made = await by["event_propose"](
-            title="generated gathering", reasoning="told", confidence="high",
-            cited_ids=["201"], when=iso(NOW + 86_400_000))
-        assert made["status"] == "ok"
-        event_ids.append(made["id"])
-
-    await session(seed, stores=stores, rooms=(B,), runner_kwargs={"rooms_of_unit": unit_rooms})
-
     async def behave(by, tools):
         answers.append(await by["remind"](
-            intent="ask", text="generated confirmation", subject=f"event:{event_ids[0]}",
+            intent="ask", text="generated confirmation", subject=f"event:{event.id}",
             action="generated-confirmation", subject_rows=["101"], at=iso(NOW + 300_000),
             also_rooms=["signal:room-b"],
         ))
