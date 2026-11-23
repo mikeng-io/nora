@@ -17,7 +17,7 @@ test('boot treats a persisted channel mismatching env CHANNEL_ID as absent: ERRO
   const errors = [];
   const log = (event, fields) => (event === 'error' ? errors.push(fields) : null);
   // The operator changed the channel; boot-joining the OLD one would park
-  // the controller where /voice/join refuses every command.
+  // the controller where `join` refuses every command.
   assert.equal(bootChannel({ desired: 'connected', channel_id: 'c-old' }, 'c-new', log), 'c-new');
   assert.equal(errors.length, 1);
   assert.equal(errors[0].event, 'desired_state_channel_mismatch');

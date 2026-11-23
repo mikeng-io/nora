@@ -1,35 +1,26 @@
-// HTTP control plane (design/voice-channel/audio.md):
-// the audio-controller is the SOLE owner of the Discord voice connection;
-// nora decides everything and drives it through these routes.
+// HTTP control plane (design/voice-channel/audio.md; the `voice` contract,
+// design/service-api/contracts.md «Voice»): the audio-controller is the SOLE
+// owner of the Discord voice connection; nora decides everything and drives it
+// through `POST /v1/voice/operations`, reads it through `POST /v1/voice/queries`
+// and reads an operation back through `GET /v1/voice/operations/{operation_id}`.
 //
-// Every POST answers { ok: true, request_id, state } and every error
-// { error, request_id, state } — nora codes against these shapes, do not
-// deviate. Every state-changing command except /voice/join is
-// generation-scoped: a stale generation gets 409 generation_conflict and
-// nothing happens. Any body guild_id != the configured guild gets 400
-// wrong_guild (single-guild hard-bound, design/voice-channel/audio.md «Connection lifecycle»).
+// Every answer on those routes is an envelope written by contract.mjs, except
+// the refusals that carry none (400, 401, 404, 408, 409, 413, 422). Every
+// connection operation except `join` is generation-scoped: a stale generation
+// is `rejected` with `generation_conflict` and the current generation in the
+// payload's `state`, and nothing happens.
 //
-// /voice/join admits ANY channel in that guild (design/voice-channel/audio.md «Connection lifecycle», reversed 2026-09-17).
-// Phase 1 pinned one immutable CHANNEL_ID; a real server's voice channels are
-// not a fixed list (Zone 42 has 10+ and gains more), so the channel half of
-// the binding could not be kept true and the guild half — which the
-// controller already enforces — is the one that was doing the work. The
-// machinery was always here: lifecycle.join() has taken a target channel from
-// the start, and desired_state has persisted `channel_id` from the start.
-// CHANNEL_ID is now only the FIRST-BOOT channel (see bootChannel).
-//
-// One connection per guild is Discord's own limit, not a policy: joining a
-// second channel while connected is still 409 connected_elsewhere.
+// `join` admits ANY channel in a configured guild (design/voice-channel/
+// audio.md «Connection lifecycle»). One connection per guild is Discord's own
+// limit: joining a second channel while connected is `rejected` with
+// `connected_elsewhere`.
 //
 // Every route requires the shared service bearer (NORA_BRIDGE_TOKEN). The check
 // runs before any body is read, and a missing or wrong bearer is 401.
 //
-// Request dedupe (design/voice-channel/audio.md «Connection lifecycle»): control POSTs may carry request_id; the FIRST
-// occurrence reserves an in-flight promise BEFORE the handler runs, so
-// concurrent duplicates await the same execution and get the same response;
-// once completed, the response is memoized for 5 minutes and a retry
-// returns the memo without re-acting. 5xx responses are NOT memoized
-// (nothing acted, a retry may re-try).
+// The operation ledger (ledger.mjs) is process-wide and lives at the front
+// door: the same `operation_id` with the same kind and effect is answered from
+// it without running again; with another kind or effect it is 409.
 
 import http from 'node:http';
 import { isHttpError, httpError } from './errors.mjs';
@@ -37,30 +28,38 @@ import { createArbiter } from './arbiter.mjs';
 import { createLifecycle } from './lifecycle.mjs';
 import { createOutbox, realClock } from './outbox.mjs';
 import { bearerMatches } from './auth.mjs';
+import { operationEnvelope, readEnvelope, sendEnvelope, sendJson, sendRefusal, traceOf } from './contract.mjs';
+import { createLedger, fingerprint } from './ledger.mjs';
 
-const MAX_SPEECH_BYTES = 2 * 1024 * 1024; // decoded b64 budget per /stream
-const MAX_BODY_BYTES = 4 * 1024 * 1024; // raw /stream body (b64 ~4/3 of decoded)
+const MAX_SPEECH_BYTES = 2 * 1024 * 1024; // decoded b64 budget per `speak`
+// Raw operations body: every kind shares the route, so the cap on arrival is
+// speech's (b64 is ~4/3 of decoded); a non-speak body over the control bound
+// is refused once parsed.
+// ponytail: a request may buffer up to 4 MiB before its kind is known, so the
+// read buffers are at most 4 MiB × the 64-connection listener limit, as speech's are.
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
+// A query body (on arrival), and every operation but `speak` (once parsed).
 const MAX_CONTROL_BYTES = 64 * 1024;
-const DEDUPE_TTL_MS = 5 * 60 * 1000;
-// Dedupe budget, shared by in-flight and completed entries. A caller that
-// never stops sending fresh request_ids must not grow this map without bound.
-const DEDUPE_MAX_ENTRIES = 256;
-const DEDUPE_MAX_BYTES = 512 * 1024;
-const DEDUPE_SWEEP_MS = 30 * 1000;
-// A request_id is a caller's correlation token: a short ASCII word, nothing
-// that could be a path, a header or a log-injection payload.
-const REQUEST_ID_RE = /^[A-Za-z0-9._:-]{1,64}$/;
+// An operation_id is the ledger key: a short ASCII word, nothing that could be
+// a path, a header or a log-injection payload.
+const OPERATION_ID_RE = /^[A-Za-z0-9._:-]{1,64}$/;
+// A Discord snowflake: `guild_id` names a state file and mints a core.
+const SNOWFLAKE_RE = /^[0-9]{15,25}$/;
 // Whole-request read deadline (body included): a stalled upload is cut.
 const BODY_TIMEOUT_MS = 15 * 1000;
 const MAX_CONNECTIONS = 64;
 
-// Resolves { ok: true, raw } | { ok: false, reason: 'too_large' | 'timeout' | 'read_error' }.
+/** The `voice` operation kinds, closed (nora/domain/service_api_voice.py). */
+export const VOICE_KINDS = Object.freeze([
+  'join', 'leave', 'play', 'stop', 'pause', 'resume', 'set_volume', 'speak', 'report',
+]);
+
+// Resolves { ok: true, raw, bytes } | { ok: false, reason: 'too_large' | 'timeout' | 'read_error' }.
 // An over-limit body is answered at the moment it crosses the limit, without
 // reading the rest: the front door writes 413 and closes the socket
 // (`closeUnread`). A body that is still arriving at the deadline is 'timeout'
 // (408). A transport failure mid-body ('error', or 'close' before 'end') is a
-// read error, NOT an over-limit body — the two used to share one 400
-// body_too_large (2026-09-16 audit C-5).
+// read error, not an over-limit body.
 function readBody(req, limit, timeoutMs) {
   return new Promise((resolve) => {
     let size = 0;
@@ -86,38 +85,22 @@ function readBody(req, limit, timeoutMs) {
       }
       chunks.push(chunk);
     });
-    req.on('end', () => done({ ok: true, raw: Buffer.concat(chunks).toString('utf8') }));
+    req.on('end', () => done({ ok: true, raw: Buffer.concat(chunks).toString('utf8'), bytes: size }));
     req.on('error', () => done({ ok: false, reason: 'read_error' }));
     req.on('close', () => done({ ok: false, reason: 'read_error' }));
   });
 }
 
 // Answers, then closes WITHOUT reading the rest of the request. Used for every
-// refusal that can leave a body unread (401, 413): draining would let a caller
-// stream unbounded bytes into a listener that holds them only to discard them.
+// refusal that can leave a body unread (401, 408, 413): draining would let a
+// caller stream unbounded bytes into a listener that holds them only to discard them.
 function closeUnread(req, res, status, error) {
-  res.writeHead(status, { 'content-type': 'application/json', connection: 'close' });
   req.pause();
   res.once('finish', () => req.socket.destroySoon());
-  res.end(JSON.stringify({ error, request_id: null, state: null }));
+  sendJson(res, status, { error }, { connection: 'close' });
 }
 
-//: The control-plane routes, as a fact about the PROTOCOL rather than about
-//: any one guild's controller. The front door has to answer "is this a route
-//: we serve" BEFORE it knows the guild, and asking a core for that was a
-//: cold-boot deadlock: with no core yet, every route — including the join
-//: that would create the first one — answered 404. Voice could never be
-//: joined for the life of the process.
-export const CONTROL_ROUTES = new Set([
-  'POST /voice/join',
-  'POST /voice/exit',
-  'POST /music/play',
-  'POST /music/stop',
-  'POST /music/pause',
-  'POST /music/resume',
-  'POST /music/volume',
-  'POST /stream',
-]);
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 export function createController({
   guildId,
@@ -126,20 +109,8 @@ export function createController({
   outbox,
   getWakeStats = () => ({}),
   pumpInfo = () => ({}),
-  clock = realClock,
-  dedupeTtlMs = DEDUPE_TTL_MS,
-  dedupeMaxEntries = DEDUPE_MAX_ENTRIES,
-  dedupeMaxBytes = DEDUPE_MAX_BYTES,
-  dedupeSweepMs = DEDUPE_SWEEP_MS,
   log = () => {},
 }) {
-  // request_id -> in-flight { promise, bytes } | completed { status, body, expiresAt, bytes }
-  // Bounded by dedupeMaxEntries and dedupeMaxBytes, counting both kinds. Only
-  // completed entries are evictable: an in-flight entry is the promise a
-  // duplicate is waiting on.
-  const dedupe = new Map();
-  let dedupeBytes = 0;
-
   function snapshot() {
     const a = arbiter.statusSnapshot();
     const v = lifecycle.voice();
@@ -161,206 +132,129 @@ export function createController({
     };
   }
 
-  function respond(res, status, body) {
-    res.writeHead(status, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(body));
-  }
-
-  function respondError(res, status, error, requestId) {
-    respond(res, status, { error, request_id: requestId ?? null, state: snapshot() });
-  }
-
-  function forget(id) {
-    const entry = dedupe.get(id);
-    if (!entry) return;
-    dedupe.delete(id);
-    dedupeBytes -= entry.bytes;
-  }
-
-  function pruneDedupe() {
-    const now = clock.now();
-    for (const [id, entry] of dedupe) {
-      if (entry.expiresAt !== undefined && entry.expiresAt <= now) forget(id);
-    }
-  }
-
-  // Room for one more entry of `bytes`, evicting COMPLETED entries oldest-first
-  // only as far as needed. False when everything held is in flight: the caller
-  // is refused (503 dedupe_full) rather than the map growing past its budget.
-  function makeRoom(bytes) {
-    const fits = () => dedupe.size < dedupeMaxEntries && dedupeBytes + bytes <= dedupeMaxBytes;
-    for (const [id, entry] of dedupe) {
-      if (fits()) return true;
-      if (entry.expiresAt !== undefined) forget(id);
-    }
-    return fits();
-  }
-
-  // Expiry does not wait for traffic: a completed memo past its TTL is dropped
-  // by this timer, so an idle controller releases what an attacker stored.
-  // unref() so the timer alone never keeps the process alive.
-  const sweepTimer = setInterval(pruneDedupe, dedupeSweepMs);
-  sweepTimer.unref();
-
-  function checkGuild(body) {
-    if (body.guild_id !== undefined && body.guild_id !== guildId) {
+  function checkGuild(effect) {
+    if (effect.guild_id !== undefined && effect.guild_id !== guildId) {
       throw httpError(400, 'wrong_guild');
     }
   }
 
-  function checkGeneration(body) {
-    if (!body.generation || body.generation !== lifecycle.generation()) {
+  function checkGeneration(effect) {
+    if (!effect.generation || effect.generation !== lifecycle.generation()) {
       throw httpError(409, 'generation_conflict');
     }
   }
 
   // Each handler returns nothing; it throws httpError on failure.
   const handlers = {
-    'POST /voice/join': async (body) => {
-      if (body.guild_id !== guildId) throw httpError(400, 'wrong_guild');
-      if (typeof body.channel_id !== 'string' || !body.channel_id) {
+    join: async (effect) => {
+      if (effect.guild_id !== guildId) throw httpError(400, 'wrong_guild');
+      if (typeof effect.channel_id !== 'string' || !effect.channel_id) {
         throw httpError(400, 'invalid_body', 'channel_id is required');
       }
-      // Any channel in this guild (design/voice-channel/audio.md «Connection lifecycle», reversed 2026-09-17). The guild
-      // check above is the whole admission; nora's own join gate has already
-      // required the caller to be a member physically sitting in the channel
-      // it is naming.
-      await lifecycle.join(body.channel_id);
+      // Any channel in this guild (design/voice-channel/audio.md «Connection
+      // lifecycle»). The guild check above is the whole admission; nora's own
+      // join gate has already required the caller to be a member physically
+      // sitting in the channel it is naming.
+      await lifecycle.join(effect.channel_id);
     },
-    'POST /voice/exit': async (body) => {
-      checkGuild(body);
-      checkGeneration(body);
+    leave: async (effect) => {
+      checkGuild(effect);
+      checkGeneration(effect);
       await lifecycle.exit();
     },
-    'POST /music/play': async (body) => {
-      checkGuild(body);
-      checkGeneration(body);
-      if (typeof body.stream_url !== 'string' || !body.stream_url) {
+    play: async (effect, operationId) => {
+      checkGuild(effect);
+      checkGeneration(effect);
+      if (typeof effect.stream_url !== 'string' || !effect.stream_url) {
         throw httpError(400, 'invalid_body', 'stream_url is required');
       }
-      // Optional source capability (design/voice-channel/audio.md «Speech and music arbitration»): false marks a
-      // live/non-seekable stream; absent leaves the arbiter's default.
-      if (body.resumable !== undefined && typeof body.resumable !== 'boolean') {
+      // Optional source capability (design/voice-channel/audio.md «Speech and
+      // music arbitration»): false marks a live/non-seekable stream; absent
+      // or null leaves the arbiter's default.
+      if (effect.resumable != null && typeof effect.resumable !== 'boolean') {
         throw httpError(400, 'invalid_body', 'resumable must be a boolean when present');
       }
       arbiter.playMusic({
-        streamUrl: body.stream_url,
-        title: typeof body.title === 'string' ? body.title : null,
-        durationSeconds: typeof body.duration_seconds === 'number' ? body.duration_seconds : null,
-        requestId: body.request_id ?? null,
-        resumable: body.resumable,
+        streamUrl: effect.stream_url,
+        title: typeof effect.title === 'string' ? effect.title : null,
+        durationSeconds: typeof effect.duration_seconds === 'number' ? effect.duration_seconds : null,
+        requestId: operationId,
+        resumable: effect.resumable ?? undefined,
       });
     },
-    'POST /music/stop': async (body) => {
-      checkGuild(body);
-      checkGeneration(body);
-      arbiter.stopMusic(); // no-op (200) when nothing is playing/suspended
+    stop: async (effect) => {
+      checkGuild(effect);
+      checkGeneration(effect);
+      arbiter.stopMusic(); // complete, a no-op, when nothing is playing/suspended
     },
-    'POST /music/pause': async (body) => {
-      checkGuild(body);
-      checkGeneration(body);
+    pause: async (effect) => {
+      checkGuild(effect);
+      checkGeneration(effect);
       const r = arbiter.pauseMusic();
       if (r.status !== 200) throw httpError(r.status, r.error);
     },
-    'POST /music/resume': async (body) => {
-      checkGuild(body);
-      checkGeneration(body);
+    resume: async (effect) => {
+      checkGuild(effect);
+      checkGeneration(effect);
       const r = arbiter.resumeMusic();
       if (r.status !== 200) throw httpError(r.status, r.error);
     },
-    'POST /music/volume': async (body) => {
-      checkGuild(body);
-      checkGeneration(body);
-      const percent = body.percent;
+    set_volume: async (effect) => {
+      checkGuild(effect);
+      checkGeneration(effect);
+      const percent = effect.percent;
       if (typeof percent !== 'number' || !Number.isFinite(percent) || percent < 0 || percent > 200) {
         throw httpError(400, 'percent_out_of_range');
       }
       arbiter.setVolume(percent);
     },
-    'POST /stream': async (body) => {
-      checkGuild(body);
-      checkGeneration(body);
-      if (typeof body.audio_b64 !== 'string' || !body.audio_b64) {
+    speak: async (effect, operationId) => {
+      checkGuild(effect);
+      checkGeneration(effect);
+      if (typeof effect.audio_b64 !== 'string' || !effect.audio_b64) {
         throw httpError(400, 'invalid_body', 'audio_b64 (base64) is required');
       }
-      const audio = Buffer.from(body.audio_b64, 'base64');
+      const audio = Buffer.from(effect.audio_b64, 'base64');
       if (!audio.length) throw httpError(400, 'invalid_body', 'audio_b64 decoded to empty bytes');
       if (audio.length > MAX_SPEECH_BYTES) throw httpError(400, 'audio_too_large');
       const accepted = arbiter.enqueueSpeech({
         audio,
-        mediaType: typeof body.media_type === 'string' ? body.media_type : 'audio/mpeg',
-        requestId: body.request_id ?? null,
+        mediaType: typeof effect.media_type === 'string' ? effect.media_type : 'audio/mpeg',
+        requestId: operationId,
       });
       if (!accepted) throw httpError(503, 'speech_queue_full');
     },
   };
 
-  // Runs a handler and shapes its outcome; never rejects.
-  async function execute(route, body, requestId) {
+  // Runs a connection operation and classifies it («Outcomes on the
+  // controller»); never rejects. A 400 is a refusal with no envelope; every
+  // other refusal is an outcome carrying the current snapshot.
+  async function execute(kind, effect, operationId) {
     try {
-      await handlers[route](body);
-      return { status: 200, body: { ok: true, request_id: requestId, state: snapshot() } };
+      await handlers[kind](effect, operationId);
+      return { outcome: 'complete', state: snapshot() };
     } catch (err) {
       if (isHttpError(err)) {
-        return { status: err.status, body: { error: err.error, request_id: requestId, state: snapshot() } };
+        if (err.status === 400) return { refusal: { status: 400, error: err.error } };
+        return {
+          outcome: err.status === 503 ? 'unavailable' : 'rejected',
+          state: snapshot(),
+          // The kind again, never the detail: a join's carries upstream text.
+          error: { kind: err.error, message: err.error },
+        };
       }
-      log('error', { event: 'handler_error', route, error: String(err?.message ?? err) });
-      return { status: 500, body: { error: 'internal_error', request_id: requestId, state: snapshot() } };
+      log('error', { event: 'handler_error', kind, error: String(err?.message ?? err) });
+      return {
+        outcome: 'uncertain',
+        state: snapshot(),
+        error: { kind: 'internal_error', message: 'controller operation failed' },
+      };
     }
   }
 
-  // The body arrives ALREADY read, parsed and shape-checked: reading it is
-  // what tells the front door which guild's controller to hand it to, so it
-  // cannot happen in here any more (multi-guild, 2026-09-17). Everything from
-  // the dedupe down is unchanged and still per-guild — the dedupe map, the
-  // 5-minute memo and `snapshot()` all belong to ONE connection.
-  async function handleParsedPost(res, route, body) {
-    const requestId = typeof body.request_id === 'string' ? body.request_id : null;
-    if (!requestId) {
-      const result = await execute(route, body, null);
-      respond(res, result.status, result.body);
-      return;
-    }
-    pruneDedupe();
-    const existing = dedupe.get(requestId);
-    if (existing) {
-      // Completed memo OR an in-flight duplicate: same response, no
-      // re-execution.
-      const result = existing.promise ? await existing.promise : existing;
-      respond(res, result.status, result.body);
-      return;
-    }
-    // Only the id and promise live in the dedupe map, never the upload.
-    // Reserve a small fixed allowance for the promise/entry metadata; completed
-    // entries below account for their actual serialized outcome instead.
-    const retainedBytes = Buffer.byteLength(requestId) + 128;
-    if (!makeRoom(retainedBytes)) {
-      // Every slot is an in-flight request: refuse, do not queue behind them.
-      respond(res, 503, { error: 'dedupe_full', request_id: requestId, state: snapshot() });
-      return;
-    }
-    const entry = { promise: execute(route, body, requestId), bytes: retainedBytes };
-    dedupe.set(requestId, entry); // reserved BEFORE the handler settles
-    dedupeBytes += entry.bytes;
-    const result = await entry.promise;
-    forget(requestId);
-    if (result.status < 500) {
-      // The memo holds a whole response body, so it can overflow the byte
-      // budget even though the in-flight slot it replaces was tiny. It makes
-      // its own room; if none can be made (everything else is in flight) the
-      // answer is served but not remembered, so a retry re-executes — the one
-      // place this map trades replay protection for its bound.
-      const memoBytes = Buffer.byteLength(requestId) + Buffer.byteLength(JSON.stringify(result.body));
-      if (makeRoom(memoBytes)) {
-        dedupe.set(requestId, { status: result.status, body: result.body, expiresAt: clock.now() + dedupeTtlMs, bytes: memoBytes });
-        dedupeBytes += memoBytes;
-      }
-    }
-    respond(res, result.status, result.body);
-  }
-
-  function handleStatus(res) {
-    respond(res, 200, {
+  // The status query's `ok` payload.
+  function status() {
+    return {
       ...snapshot(),
       last_event_seq: outbox.lastEventSeq(),
       outbox_dropped: outbox.dropped(),
@@ -369,39 +263,12 @@ export function createController({
       state_write_ok: lifecycle.stateWriteOk ? lifecycle.stateWriteOk() : true,
       wake: getWakeStats(),
       pump: pumpInfo(),
-    });
+    };
   }
 
-  function handleHealth(res) {
-    // LIVENESS, deliberately 200 while healthy-but-idle — the Dockerfile
-    // HEALTHCHECK and the compose healthcheck curl this.
-    const a = arbiter.statusSnapshot();
-    respond(res, 200, {
-      status: 'ok',
-      voice: lifecycle.voice(),
-      player: { playing: a.player.status === 'playing', queued: a.speech_queue },
-      ...(arbiter.lastError() ? { last_error: arbiter.lastError() } : {}),
-      pump: pumpInfo(),
-      users: getWakeStats(),
-    });
-  }
-
-  // NO SERVER HERE any more. One process owns several controllers (one per
-  // guild) behind ONE port, so the socket belongs to the front door below.
-  // What a controller exposes is the handling of an already-parsed request
-  // for ITS guild.
-  return {
-    snapshot,
-    handleParsedPost,
-    handleStatus,
-    handleHealth,
-    knowsRoute: (route) => Boolean(handlers[route]),
-    dedupeSize: () => dedupe.size,
-    dedupeBytes: () => dedupeBytes,
-    // Stops the sweep timer. A discarded core must call this, or each failed join leaves a
-    // timer and its closure behind.
-    dispose: () => clearInterval(sweepTimer),
-  };
+  // NO SERVER HERE. One process owns several controllers (one per guild)
+  // behind ONE port, so the socket and the ledger belong to the front door.
+  return { snapshot, execute, status };
 }
 
 // The per-guild core map and the mint-vs-reuse decision every request makes
@@ -450,7 +317,6 @@ export function createCoreRegistry({ makeCore, canCreate = () => true, log = () 
     if (cores.get(guildId) !== core) return false; // superseded already
     if (core.lifecycle.voice() !== 'error' || core.lifecycle.session()) return false;
     cores.delete(guildId);
-    core.controller.dispose?.();
     log('core_pruned', { guild_id: guildId, reason: 'join_failed' });
     return true;
   }
@@ -473,7 +339,6 @@ export function createCoreRegistry({ makeCore, canCreate = () => true, log = () 
     let existing = cores.get(guildId);
     if (existing && create && existing.lifecycle.voice() === 'error' && !existing.lifecycle.session()) {
       cores.delete(guildId);
-      existing.controller.dispose?.();
       log('core_pruned', { guild_id: guildId, reason: 'stale_error_core_on_mint' });
       existing = undefined;
     }
@@ -524,43 +389,185 @@ export function buildCore(registry, guildId, coreOptions) {
   return core;
 }
 
-// The ONE socket, in front of N per-guild controllers (multi-guild,
-// 2026-09-17). It owns everything that must happen BEFORE a guild is known —
-// reading the body is how the guild becomes known at all — and nothing else.
+// The ONE socket, in front of N per-guild controllers. It owns everything that
+// must happen BEFORE a guild is known (reading the body is how the guild
+// becomes known at all) and the process-wide operation ledger.
 //
-// Body limits, the 413/400 split and the clientError shape are moved here
-// VERBATIM from the controller that used to own the socket; every one of them
-// is pinned by `endpoints.test.mjs`, which is what made the move safe.
+// The route table is static and also does the routing: route knowledge never
+// depends on state a join creates (a cold boot must accept its first join).
+const ROUTES = [
+  ['POST', '/v1/voice/operations', 'operation', 'submit'],
+  ['GET', '/v1/voice/operations/{operation_id}', 'read', 'readOperation'],
+  ['POST', '/v1/voice/queries', 'read', 'query'],
+  ['GET', '/health', 'probe', 'health'],
+  ['GET', '/ready', 'probe', 'ready'],
+].map(([method, path, family, name]) => ({
+  method, path, family, name,
+  pattern: new RegExp(`^${path.replace(/\{[a-z_]+\}/g, '([^/]+)')}$`),
+}));
+
+/** The routes this controller serves, as `METHOD path` with the contract's parameter names. */
+export const SERVED_ROUTES = Object.freeze(ROUTES.map((r) => `${r.method} ${r.path}`));
+
+const INTERNAL = Object.freeze({ kind: 'internal_error', message: 'controller operation failed' });
+
 export function createFrontDoor({
   controllerFor,
   health,
+  // Whether the control plane can serve (`GET /ready`).
+  ready = () => true,
   log = () => {},
   authToken,
   authorizeGuild = async () => true,
+  clock = realClock,
+  ledgerOptions = {},
   bodyTimeoutMs = BODY_TIMEOUT_MS,
   maxConnections = MAX_CONNECTIONS,
 }) {
   // Refuses to exist without a token: every route here moves audio or holds
   // a voice connection, and the bridges already refuse to start unauthenticated.
   if (!authToken) throw new Error('createFrontDoor needs an authToken (NORA_BRIDGE_TOKEN)');
+  const ledger = createLedger({ clock, ...ledgerOptions });
 
-  function respond(res, status, body) {
-    res.writeHead(status, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(body));
+  // Reads, parses and shape-checks a JSON object body, answering the refusal
+  // itself; null when it did.
+  async function readJson(req, res, limit) {
+    const read = await readBody(req, limit, bodyTimeoutMs);
+    if (!read.ok) {
+      // Over-limit and timed-out requests close without reading any more.
+      if (read.reason === 'too_large') closeUnread(req, res, 413, 'body_too_large');
+      else if (read.reason === 'timeout') closeUnread(req, res, 408, 'body_timeout');
+      else sendRefusal(res, 400, 'body_read_failed');
+      return null;
+    }
+    let body;
+    try {
+      body = JSON.parse(read.raw || '{}');
+    } catch {
+      sendRefusal(res, 400, 'invalid_json');
+      return null;
+    }
+    if (!isObject(body)) {
+      sendRefusal(res, 400, 'invalid_body');
+      return null;
+    }
+    return { body, bytes: read.bytes };
   }
 
-  // No controller resolved, so there is no `state` to attach — the shape
-  // stays the contract's three keys with `state: null`. The `request_id` IS
-  // echoed whenever the body was parsed far enough to carry one: the module
-  // header promises `{error, request_id, state}` and dropping the echo made a
-  // retried command indistinguishable from a fresh one in a log.
-  function bareError(res, status, error, requestId = null) {
-    respond(res, status, { error, request_id: requestId, state: null });
+  // An operation's outcome before envelope parts are stamped.
+  async function run(kind, effect, operationId) {
+    if (kind === 'report') {
+      return { outcome: 'unsupported', error: { kind: 'unsupported', message: 'the controller takes no reports' } };
+    }
+    if (!await authorizeGuild(effect.guild_id)) {
+      return { outcome: 'denied', error: { kind: 'forbidden_guild', message: 'forbidden_guild' } };
+    }
+    // `create` ONLY on a join: every other kind addresses a connection that
+    // must already exist, so minting for them would grow an unbounded map
+    // keyed by whatever a caller put in `guild_id`.
+    const controller = controllerFor(effect.guild_id, { create: kind === 'join' });
+    if (!controller) {
+      // The ordinary state after a restart into idle: nora reads it as
+      // "reconnect me".
+      return { outcome: 'rejected', error: { kind: 'unknown_guild', message: 'no connection for this guild' } };
+    }
+    return controller.execute(kind, effect, operationId);
   }
 
-  function requestIdOf(body) {
-    return typeof body?.request_id === 'string' ? body.request_id : null;
-  }
+  const answer = (res, a) => (a.refusal
+    ? sendRefusal(res, a.refusal.status, a.refusal.error)
+    : sendEnvelope(res, a.envelope));
+
+  const handlers = {
+    async submit(req, res, trace) {
+      const read = await readJson(req, res, MAX_BODY_BYTES);
+      if (!read) return;
+      const { body } = read;
+      // Only `speak` carries audio; every other body keeps the control bound,
+      // as sent and as parsed (so the strings a snapshot echoes stay within it).
+      if (body.kind !== 'speak' && (read.bytes > MAX_CONTROL_BYTES
+        || Buffer.byteLength(JSON.stringify(body)) > MAX_CONTROL_BYTES)) {
+        return sendRefusal(res, 413, 'body_too_large');
+      }
+      const { operation_id: id, kind, effect } = body;
+      if (!(typeof id === 'string' && OPERATION_ID_RE.test(id))) {
+        return sendRefusal(res, 400, 'invalid_operation_id');
+      }
+      if (!VOICE_KINDS.includes(kind)) return sendRefusal(res, 422, 'unknown_kind');
+      if (!isObject(effect)) return sendRefusal(res, 400, 'invalid_body');
+      if (kind !== 'report' && !(typeof effect.guild_id === 'string' && SNOWFLAKE_RE.test(effect.guild_id))) {
+        return sendRefusal(res, 400, 'wrong_guild');
+      }
+      const print = fingerprint(kind, effect);
+      const held = ledger.get(id);
+      if (held) {
+        if (held.fingerprint !== print) return sendRefusal(res, 409, 'operation_id_reused');
+        return answer(res, held.promise ? await held.promise : { envelope: held.envelope });
+      }
+      const target = typeof effect.guild_id === 'string' ? effect.guild_id : '';
+      const startedAtMs = clock.now();
+      const stamp = (result) => operationEnvelope(trace, { ...result, target, startedAtMs, settledAtMs: clock.now() });
+      let settle;
+      const promise = new Promise((resolve) => { settle = resolve; });
+      if (!ledger.reserve(id, print, promise, operationEnvelope(trace, { outcome: 'pending', target, startedAtMs }))) {
+        // Every slot is an operation in flight: refuse, do not queue behind them.
+        return sendEnvelope(res, stamp({ outcome: 'unavailable',
+          error: { kind: 'dedupe_full', message: 'too many operations in flight' } }));
+      }
+      let result;
+      try {
+        result = await run(kind, effect, id);
+      } catch (err) {
+        log('error', { event: 'request_error', kind, error: String(err?.message ?? err) });
+        result = { outcome: 'uncertain', error: INTERNAL };
+      }
+      const answered = result.refusal ? result : { envelope: stamp(result) };
+      if (answered.envelope) ledger.settle(id, print, answered.envelope);
+      else ledger.release(id);
+      settle(answered);
+      return answer(res, answered);
+    },
+
+    async readOperation(req, res, trace, [rawId]) {
+      let id;
+      try {
+        id = decodeURIComponent(rawId);
+      } catch {
+        return sendRefusal(res, 400, 'malformed path parameter');
+      }
+      const held = ledger.get(id);
+      const record = held ? (held.envelope ?? held.pending) : null;
+      return sendEnvelope(res, readEnvelope(trace, {
+        outcome: record ? 'ok' : 'nothing_found', payload: record, observedAtMs: clock.now(),
+      }));
+    },
+
+    async query(req, res, trace) {
+      const got = await readJson(req, res, MAX_CONTROL_BYTES);
+      if (!got) return;
+      const { body } = got;
+      if (body.kind !== 'status') return sendRefusal(res, 422, 'unknown_kind');
+      const guildId = isObject(body.params) ? body.params.guild_id : undefined;
+      if (typeof guildId !== 'string' || !guildId) return sendRefusal(res, 400, 'guild_id is required');
+      const read = (outcome, payload = null) => sendEnvelope(res, readEnvelope(trace, {
+        outcome, payload, observedAtMs: clock.now(),
+      }));
+      // Every core and configured guild is a snowflake, so anything else
+      // resolves to nothing; it never reaches admission's Discord lookup.
+      if (!SNOWFLAKE_RE.test(guildId)) return read('nothing_found');
+      // A guild outside admission reads exactly as one with no connection.
+      if (!await authorizeGuild(guildId)) return read('nothing_found');
+      const controller = controllerFor(guildId, { create: false });
+      return controller ? read('ok', controller.status()) : read('nothing_found');
+    },
+
+    // Process liveness: 200 while healthy-but-idle (the HEALTHCHECK curls it).
+    health: (req, res) => sendJson(res, 200, health()),
+    ready: (req, res) => {
+      const ok = Boolean(ready());
+      return sendJson(res, ok ? 200 : 503, { ready: ok });
+    },
+  };
 
   const server = http.createServer((req, res) => {
     // Before the route, before any body is read: an unauthenticated caller
@@ -568,79 +575,27 @@ export function createFrontDoor({
     if (!bearerMatches(req.headers.authorization, authToken)) {
       return closeUnread(req, res, 401, 'unauthorized');
     }
-    const [path, query] = String(req.url).split('?');
-    const route = `${req.method} ${path}`;
-    if (route === 'GET /health') return respond(res, 200, health());
-    (async () => {
-    if (route === 'GET /voice/status') {
-      // A GET carries no body, so the guild rides the query string. Absent is
-      // an error rather than a default: defaulting would report one guild's
-      // playback as another's the moment a second one connected.
-      const guildId = new URLSearchParams(query ?? '').get('guild_id');
-      if (!guildId) return bareError(res, 400, 'guild_id is required');
-      if (!await authorizeGuild(guildId)) return bareError(res, 403, 'forbidden_guild');
-      const c = controllerFor(guildId, { create: false });
-      if (!c) return bareError(res, 404, 'unknown_guild');
-      return c.handleStatus(res);
+    const path = String(req.url).split('?')[0];
+    let route = null;
+    let match = null;
+    for (const r of ROUTES) {
+      match = req.method === r.method && r.pattern.exec(path);
+      if (match) {
+        route = r;
+        break;
+      }
     }
-      // Static: see CONTROL_ROUTES. Asking a core whether it knows the route
-      // deadlocked a cold boot.
-      if (!CONTROL_ROUTES.has(route)) {
-        return respond(res, 404, { error: 'not_found', request_id: null, state: null });
-      }
-      const read = await readBody(req, route === 'POST /stream' ? MAX_BODY_BYTES : MAX_CONTROL_BYTES, bodyTimeoutMs);
-      if (!read.ok) {
-        // 413 for over-limit, 408 for a body that did not finish in time, 400
-        // for a transport-level read failure (2026-09-16 audit C-5). nora's
-        // client maps only 400/409 explicitly, so 408 and 413 land on its
-        // generic fail-closed unavailable path. Over-limit and timed-out
-        // requests close without reading any more of the body.
-        if (read.reason === 'too_large') return closeUnread(req, res, 413, 'body_too_large');
-        if (read.reason === 'timeout') return closeUnread(req, res, 408, 'body_timeout');
-        return bareError(res, 400, 'body_read_failed');
-      }
-      let body;
+    if (!route) return sendRefusal(res, 404, 'not_found');
+    const trace = traceOf(req);
+    (async () => handlers[route.name](req, res, trace, match.slice(1)))().catch((err) => {
+      log('error', { event: 'request_error', route: `${route.method} ${route.path}`, error: String(err?.message ?? err) });
       try {
-        body = JSON.parse(read.raw || '{}');
-      } catch {
-        return bareError(res, 400, 'invalid_json');
-      }
-      // `null` (and arrays/scalars) parse fine but are not command bodies —
-      // reject before any field access.
-      if (body === null || typeof body !== 'object' || Array.isArray(body)) {
-        return bareError(res, 400, 'invalid_body');
-      }
-      const guildId = typeof body.guild_id === 'string' ? body.guild_id : null;
-      if (!guildId) return bareError(res, 400, 'wrong_guild', requestIdOf(body));
-      // A Discord snowflake, and nothing else. `guild_id` reaches
-      // `path.join(STATE_DIR, ...)` and mints a core, on the authenticated control plane — so "../../etc/evil" must die here, not at the
-      // Discord API by luck.
-      if (!/^[0-9]{15,25}$/.test(guildId)) {
-        return bareError(res, 400, 'wrong_guild', requestIdOf(body));
-      }
-      // `request_id` is the dedupe key, so its shape is bounded here, before a
-      // dedupe slot can be spent on it. Absent or null is the un-deduped path.
-      const rid = body.request_id;
-      if (rid !== undefined && rid !== null && !(typeof rid === 'string' && REQUEST_ID_RE.test(rid))) {
-        return bareError(res, 400, 'invalid_request_id');
-      }
-      // `create` ONLY on a join: every other verb addresses a connection that
-      // must already exist.
-      if (!await authorizeGuild(guildId)) return bareError(res, 403, 'forbidden_guild');
-      const controller = controllerFor(guildId, { create: route === 'POST /voice/join' });
-      if (!controller) {
-        // NOT `wrong_guild`. "I hold no connection for this guild" is the
-        // same fact `GET /voice/status` answers 404 `unknown_guild` for, and
-        // after a restart into idle it is the ordinary state — nora reads it
-        // as "reconnect me", where `wrong_guild` reads as "you are
-        // misconfigured".
-        return bareError(res, 404, 'unknown_guild', requestIdOf(body));
-      }
-      return controller.handleParsedPost(res, route, body);
-    })().catch((err) => {
-      log('error', { event: 'request_error', route, error: String(err?.message ?? err) });
-      try {
-        bareError(res, 500, 'internal_error');
+        if (res.headersSent) return res.end();
+        if (route.family === 'operation') return sendEnvelope(res, operationEnvelope(trace, { outcome: 'uncertain', error: INTERNAL }));
+        if (route.family === 'read') {
+          return sendEnvelope(res, readEnvelope(trace, { outcome: 'unavailable', healthy: false, observedAtMs: clock.now() }));
+        }
+        return sendJson(res, 503, { ready: false });
       } catch {
         /* response already gone */
       }
@@ -649,20 +604,22 @@ export function createFrontDoor({
 
   // A request that dies at the transport level (FIN/reset mid-body, garbage
   // bytes) never reaches the router above, and Node's default answer is a
-  // bare 400 with no body. Answer with the contract's error shape instead.
+  // bare 400 with no body. Answer with the refusal shape instead.
   server.on('clientError', (err, socket) => {
     log('error', { event: 'client_error', error: String(err?.code ?? err?.message ?? err) });
-    const body = JSON.stringify({ error: 'body_read_failed', request_id: null, state: null });
+    const body = JSON.stringify({ error: 'body_read_failed' });
     if (socket.writable) {
       socket.end(`HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\nconnection: close\r\ncontent-length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
     } else {
       socket.destroy();
     }
   });
+  server.on('close', () => ledger.dispose());
 
   // The socket count is capped for this listener. The body deadline is in
   // readBody; Node's own request timeout does not cover a body being read.
   server.maxConnections = maxConnections;
+  server.ledger = ledger;
 
   return server;
 }

@@ -1,0 +1,103 @@
+// The process's operation ledger (design/service-api/conventions.md
+// «Operations»): one bounded in-memory map, keyed by `operation_id`, holding
+// a hash of the kind and effect and the answered envelope, never audio.
+//
+// The first occurrence of an id reserves an in-flight entry BEFORE its handler
+// runs, so a concurrent duplicate awaits the same execution. Each entry is
+// counted at its actual serialized size, and a settled envelope always
+// replaces its reservation. Nothing unexpired is ever evicted: an entry leaves
+// only when its TTL passes, so a receipt stays readable for its whole five
+// minutes. A NEW id is refused before it runs once either bound (256 entries,
+// 512 KiB) is reached, and the refusal removes nothing.
+//
+// ponytail: an admitted answer is kept even past the byte bound, and an
+// operation outlives its socket, so up to 256 admitted entries can settle at
+// their largest. The largest answer is a snapshot echoing two parsed control
+// bodies' strings (the connection's channel_id and the current track's title
+// and url, each body at most 64 KiB as JSON) plus fixed fields of under 4 KiB:
+// about 132 KiB. The ceiling is 256 × 132 KiB, about 33 MiB.
+
+import { createHash } from 'node:crypto';
+
+import { realClock } from './outbox.mjs';
+
+const TTL_MS = 5 * 60 * 1000;
+const MAX_ENTRIES = 256;
+const MAX_BYTES = 512 * 1024;
+const SWEEP_MS = 30 * 1000;
+
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map((k) => [k, canonical(value[k])]));
+  }
+  return value;
+}
+
+/** The hash an operation is compared by: its kind together with its effect. */
+export function fingerprint(kind, effect) {
+  return createHash('sha256').update(JSON.stringify([kind, canonical(effect)])).digest('hex');
+}
+
+export function createLedger({
+  clock = realClock,
+  ttlMs = TTL_MS,
+  maxEntries = MAX_ENTRIES,
+  maxBytes = MAX_BYTES,
+  sweepMs = SWEEP_MS,
+} = {}) {
+  // id -> { fingerprint, bytes } plus in-flight { promise, pending } | settled { envelope, expiresAt }
+  const entries = new Map();
+  let bytes = 0;
+
+  function forget(id) {
+    const entry = entries.get(id);
+    if (!entry) return;
+    entries.delete(id);
+    bytes -= entry.bytes;
+  }
+
+  function prune() {
+    const now = clock.now();
+    for (const [id, entry] of entries) {
+      if (entry.expiresAt !== undefined && entry.expiresAt <= now) forget(id);
+    }
+  }
+
+  // Room for one more entry of `size` once expired entries are gone. Never
+  // evicts anything live.
+  function hasRoom(size) {
+    prune();
+    return entries.size < maxEntries && bytes + size <= maxBytes;
+  }
+
+  // Expiry does not wait for traffic; unref() so the timer never holds the process.
+  const sweep = setInterval(prune, sweepMs);
+  sweep.unref();
+
+  return {
+    get(id) {
+      prune();
+      return entries.get(id);
+    },
+    /** Reserve `id` for an execution in flight; false when no room can be made. */
+    reserve(id, print, promise, pending) {
+      const size = Buffer.byteLength(id) + print.length + Buffer.byteLength(JSON.stringify(pending));
+      if (!hasRoom(size)) return false;
+      entries.set(id, { fingerprint: print, promise, pending, bytes: size });
+      bytes += size;
+      return true;
+    },
+    /** Keep the settled envelope in its reservation's place, at its own size; it is always kept. */
+    settle(id, print, envelope) {
+      forget(id);
+      const size = Buffer.byteLength(id) + print.length + Buffer.byteLength(JSON.stringify(envelope));
+      entries.set(id, { fingerprint: print, envelope, expiresAt: clock.now() + ttlMs, bytes: size });
+      bytes += size;
+    },
+    release: forget,
+    size: () => entries.size,
+    bytes: () => bytes,
+    dispose: () => clearInterval(sweep),
+  };
+}

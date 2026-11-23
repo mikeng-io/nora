@@ -16,7 +16,8 @@
 //
 // Health semantics: /health is LIVENESS, and it is deliberately 200 while
 // the service is healthy-but-idle. A missing token is a configuration
-// posture (voice not enabled on this deployment), not a process failure.
+// posture (voice not enabled on this deployment), not a process failure;
+// it is what /ready answers 503 for, beside a boot still restoring state.
 //
 // Privacy posture: audio is transient. PCM is forwarded over the TCP seam
 // and music flows CDN -> ffmpeg -> Discord; nothing is written to disk.
@@ -46,10 +47,10 @@ const HOST = process.env.HOST ?? '127.0.0.1';
 const PORT = Number(process.env.PORT ?? 4600);
 const PUMP_HOST = process.env.PUMP_HOST ?? '127.0.0.1';
 const PUMP_PORT = Number(process.env.PUMP_PORT ?? 4599);
-// In bridge mode the discord-bridge owns the VoiceEventConsumer
-// (/v1/voice/event, bearer-authed like every /v1 route there) — the app
-// relinquished it, so the shipped default targets the bridge.
-const NORA_EVENT_URL = process.env.NORA_EVENT_URL ?? 'http://discord-bridge:18093/v1/voice/event';
+// The hub's `report` route. In bridge mode the discord-bridge holds the hub
+// (its /v1/voice/operations, bearer-authed like every /v1 route there), so
+// the shipped default targets the bridge.
+const NORA_EVENT_URL = process.env.NORA_EVENT_URL ?? 'http://discord-bridge:18093/v1/voice/operations';
 // A DIRECTORY now, one `<guild_id>.json` inside it (multi-guild 2026-09-17).
 // Configured guilds come from Nora's existing [speech.tts].sidecars list,
 // mounted read-only at /app/config.toml. State records desired connections,
@@ -214,6 +215,63 @@ print(json.dumps(guilds))
   }
 }
 
+// Boot (design/voice-channel/audio.md «Connection lifecycle»): restore
+// whatever the state directory says was connected, for guilds still in the
+// shared configuration. Each restored guild is minted in `registry` and joined
+// through its own lifecycle, never through the control plane.
+//
+// A guild whose file says `idle` is NOT restored and NOT created: a restart
+// must not rejoin a channel someone just left. A file that cannot be read
+// is not a first boot either — fail closed, log loudly, stay out.
+export async function restoreConnections({ stateDir, configuredGuilds, registry, log }) {
+  let files = [];
+  try {
+    files = (await readdir(stateDir)).filter((f) => f.endsWith('.json'));
+  } catch (err) {
+    if (err?.code !== 'ENOENT') {
+      log('error', { event: 'state_dir_read_failed', path: stateDir, error: String(err?.message ?? err) });
+    }
+  }
+  const { guilds, skipped } = guildsFromStateFiles(files);
+  for (const file of skipped) {
+    log('boot_skip_state_file', {
+      file,
+      reason: 'not a guild snowflake (pre-multi-guild state file or junk)',
+    });
+  }
+  for (const guildId of guilds) {
+    if (!configuredGuilds.has(guildId)) continue;
+    const file = `${guildId}.json`;
+    const store = createStateStore({ path: containedFile(stateDir, file) });
+    const stored = await store.read();
+    if (stored.status === 'corrupt' || stored.status === 'error') {
+      log('error', {
+        event: 'state_store_read_failed',
+        guild_id: guildId,
+        status: stored.status,
+        path: store.path,
+        error: stored.error ?? null,
+      });
+      continue;
+    }
+    // No env fallback channel any more: `bootChannel`'s second argument was
+    // CHANNEL_ID, and the only honest first-boot posture for a process that
+    // serves N guilds is idle until someone joins.
+    const channel = bootChannel(stored.state, null, log);
+    if (!channel) {
+      log('boot_idle', { guild_id: guildId, reason: stored.state?.desired === 'idle' ? 'desired_state_idle' : 'no_channel' });
+      continue;
+    }
+    registry.mint(guildId).lifecycle.join(channel).catch(() => {
+      // Join failed: already logged by the lifecycle, and its own
+      // `onJoinFailed` hook (wired by `buildCore`) has already
+      // dropped this core from the registry — /health does not carry it.
+      // Nothing left to do here; compose's restart policy gives the retry.
+    });
+  }
+  if (!guilds.length) log('boot_idle', { reason: 'no_persisted_guilds' });
+}
+
 async function main() {
   const configuredGuilds = loadConfiguredGuilds();
   // ONE CORE PER GUILD, in one process (multi-guild, 2026-09-17). Each is the
@@ -275,6 +333,9 @@ async function main() {
   // Without a token there is nothing to join with, so nothing is created —
   // same posture as before this was `!TOKEN` inline in `controllerFor`.
   const registry = createCoreRegistry({ makeCore, canCreate: () => Boolean(TOKEN), log });
+  // Ready once boot has restored what the state directory holds; never
+  // without a bot token, since no connection could be made.
+  let booted = false;
 
   const server = createFrontDoor({
     authToken: BRIDGE_TOKEN,
@@ -292,6 +353,7 @@ async function main() {
       return response.ok;
     },
     controllerFor: registry.controllerFor,
+    ready: () => booted && Boolean(TOKEN),
     // Process-level liveness, not a guild's. The compose HEALTHCHECK curls
     // this and it must answer 200 while idle with no guild at all.
     health: () => ({
@@ -317,62 +379,12 @@ async function main() {
     log('listening_http', { host: HOST, port: PORT });
   });
 
-  // Boot (design/voice-channel/audio.md «Connection lifecycle»): restore whatever the STATE DIRECTORY says was connected.
-  // Restore only guilds still present in the shared configuration.
-  //
-  // A guild whose file says `idle` is NOT restored and NOT created: a restart
-  // must not rejoin a channel someone just left. A file that cannot be read
-  // is not a first boot either — fail closed, log loudly, stay out.
   if (TOKEN) {
-    let files = [];
-    try {
-      files = (await readdir(STATE_DIR)).filter((f) => f.endsWith('.json'));
-    } catch (err) {
-      if (err?.code !== 'ENOENT') {
-        log('error', { event: 'state_dir_read_failed', path: STATE_DIR, error: String(err?.message ?? err) });
-      }
-    }
-    const { guilds, skipped } = guildsFromStateFiles(files);
-    for (const file of skipped) {
-      log('boot_skip_state_file', {
-        file,
-        reason: 'not a guild snowflake (pre-multi-guild state file or junk)',
-      });
-    }
-    for (const guildId of guilds) {
-      if (!configuredGuilds.has(guildId)) continue;
-      const file = `${guildId}.json`;
-      const store = createStateStore({ path: containedFile(STATE_DIR, file) });
-      const stored = await store.read();
-      if (stored.status === 'corrupt' || stored.status === 'error') {
-        log('error', {
-          event: 'state_store_read_failed',
-          guild_id: guildId,
-          status: stored.status,
-          path: store.path,
-          error: stored.error ?? null,
-        });
-        continue;
-      }
-      // No env fallback channel any more: `bootChannel`'s second argument was
-      // CHANNEL_ID, and the only honest first-boot posture for a process that
-      // serves N guilds is idle until someone joins.
-      const channel = bootChannel(stored.state, null, log);
-      if (!channel) {
-        log('boot_idle', { guild_id: guildId, reason: stored.state?.desired === 'idle' ? 'desired_state_idle' : 'no_channel' });
-        continue;
-      }
-      registry.mint(guildId).lifecycle.join(channel).catch(() => {
-        // Join failed: already logged by the lifecycle, and its own
-        // `onJoinFailed` hook (wired in `makeCore`, above) has already
-        // dropped this core from the registry — /health does not carry it.
-        // Nothing left to do here; compose's restart policy gives the retry.
-      });
-    }
-    if (!guilds.length) log('boot_idle', { reason: 'no_persisted_guilds' });
+    await restoreConnections({ stateDir: STATE_DIR, configuredGuilds, registry, log });
   } else {
     log('boot_idle', { reason: 'healthy-but-idle', missing: 'DISCORD_BOT_TOKEN' });
   }
+  booted = true;
 
   async function shutdown(signal) {
     log('shutdown', { signal });

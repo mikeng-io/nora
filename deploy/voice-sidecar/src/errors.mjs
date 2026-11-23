@@ -1,5 +1,5 @@
-// HTTP-shaped errors: handlers throw these, the controller renders them as
-// { error, request_id, state } with the carried status code.
+// HTTP-shaped errors: handlers throw these, the controller classifies them
+// into outcomes by the carried status code.
 
 export function httpError(status, error, detail) {
   const err = new Error(detail ?? error);

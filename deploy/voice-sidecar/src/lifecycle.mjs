@@ -27,7 +27,7 @@
 // teardown then boots to idle instead of rejoining a channel the user just
 // left. Writes are best-effort for the command itself but LOUD: a failure is
 // an ERROR log and flips stateWriteOk, surfaced as state_write_ok:false in
-// /voice/status.
+// the status query.
 //
 // Empty-channel auto-leave (design/voice-channel/audio.md «Connection lifecycle»): the last human leaving (or Nora joining
 // an already-empty channel) arms a 1-minute grace timer instead of exiting
@@ -47,7 +47,7 @@ import { realClock } from './outbox.mjs';
 // is absent AND env CHANNEL_ID is set (first boot). `idle` wins over env.
 // The persisted channel is honored only while it IS the configured one: if
 // the operator changed CHANNEL_ID, boot-joining the OLD channel would park
-// the controller in a channel /voice/join then refuses (2026-09-16 audit
+// the controller in a channel `join` then refuses (2026-09-16 audit
 // C-2) — a mismatch logs an ERROR and the persisted state reads as absent.
 export function bootChannel(desired, envChannelId, log = () => {}) {
   if (desired?.desired === 'connected') {
@@ -77,7 +77,7 @@ export function createLifecycle({
   onTeardown = () => {}, // stop music + speech before the socket dies
   // Fired synchronously, right after `voice` flips to 'error', from the ONE
   // place that ever sets it (#345) — both the boot-restore path and the HTTP
-  // /voice/join handler call this same `join()`, so a single hook here covers
+  // `join` operation call this same `join()`, so a single hook here covers
   // both without either caller needing its own copy. The registry (the only
   // thing that knows whether THIS core is still the one it holds for the
   // guild — a concurrent second join may already have replaced it) is what
