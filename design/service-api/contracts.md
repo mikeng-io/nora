@@ -8,13 +8,13 @@ whatever the network allows.
 
 | contract | owner | implemented by | called by | holds |
 |---|---|---|---|---|
-| `intake` | `ingest/` | the app's intake | bridges, collectors, audio controllers, executors, the portal, any principal registered as a source | events in one envelope: messages, edits, reactions, deletions, summons, activity changes, social items, membership, source health |
+| `intake` | `ingest/` | the app's intake | bridges, collectors, wake gates, executors, the portal, any principal registered as a source | events in one envelope: messages, edits, reactions, deletions, summons, activity changes, social items, membership, source health |
 | `platform` | `platform/` | every bridge | the app | delivery operations (send, react, typing), reads (self, roster, channels, members), attachment custody |
 | `sources` | `social/` | each source adapter | the app's tools, the reflection loop | on-demand reads of one outside reference: an account's items, an identity's live activity |
 | `graph` | `memory/` | the app | the portal, tools, MCP | scoped reads with the retrieval semantics |
 | `management` | `people/` | the management service | the portal, in-room management, bridges' roster sync | the identity, membership and grant operations |
 | `documents` | `documents/` | the app | the portal, tools | documents, revisions, artifacts and their media |
-| `voice` | `voice/` | each audio controller, and a bridge that fronts one | whoever holds the connection's hub: the app, or the bridge | the voice connection's operations and its status |
+| `voice` | `voice/` | each audio controller, and a bridge that fronts one | the app, and a bridge that holds the connection's hub | the voice connection's operations and its status |
 | `computer` | `computer/` | computerd | the app | sandbox operations, browser sessions, exports |
 | `operations` | `app/` | every Nora process | the operator, monitors, the portal | the process's own status, tool and skill catalogue and doctrine; config and policy reload, queue inspection and drain, loop pause and resume, replay |
 
@@ -49,7 +49,7 @@ contracts do not offer.
 ```
  outside sources ─► adapters ──┐
  platforms ──────► bridges ────┼─► intake ─► items ─► the loops ─► admission ─► graph
- executors, controllers, portal┘                          │
+ executors, wake gates,  portal┘                          │
                                                           ├─► platform  (deliveries, engagement loop only)
                                                           ├─► voice, computer, documents
                                                           └─► sources   (on-demand reads)
@@ -105,21 +105,28 @@ guild, and a player that plays what it is given
 ([audio ownership](../voice-channel/audio.md)).
 
 - Its operations are join, leave, play a stream, stop, pause, resume, set
-  volume and speak; its read is the connection's status. Speech audio is a
-  blob bound to the `speak` operation that names its key.
-- The hub that owns the connection calls it: the bridge where the bridge
-  owns the gateway, the app otherwise. A bridge that fronts a controller
-  implements `voice` too, relaying the same operations under the same paths
-  and answering `unsupported` for one it does not relay.
-- A voice operation names the connection generation it observed. A stale
-  generation is `rejected` with the current one, and a refusal by the
-  player's arbiter is `rejected` with its reason; neither is a 409.
+  volume and speak; its read is the connection's status. `speak` carries
+  its bounded audio in the operation, and the record keeps the effect's
+  hash, never the bytes.
+- The hub that owns the connection calls the controller: the bridge where
+  the bridge owns the gateway, the app otherwise. A bridge that holds the
+  hub implements `voice` too, for the app: it relays the same operations
+  under the same paths and answers `unsupported` for one it does not relay.
+- Every voice operation but `join` names the connection generation it
+  observed. A stale or absent generation is `rejected` with the current
+  one, and a lifecycle or arbiter refusal is `rejected` with its reason;
+  none is a 409 or a 404.
+- A controller reports what happened (a track finished, a connection died)
+  to the hub that owns its connection, as a `report` operation of `voice`
+  that the hub implements, idempotent on the event's id.
 - The music queue (what plays next, skipping, reordering, resolving a
-  source) belongs to the process that owns it and is a `platform`
-  capability of that bridge: its commands are `platform` operations, never
-  `voice` routes ([music](../voice-channel/music.md)).
-- What a controller or a wake gate reports (a track finished, a connection
-  died, a woken utterance) is an intake event, never a callback route.
+  source) belongs to the process that owns the player, never to `voice`
+  ([music](../voice-channel/music.md)). When a bridge owns it, its commands
+  are `platform` operations and its status is a `platform` read.
+- A woken utterance is an intake event with the wake gate's own event id.
+  One from a guild with no designated voice room is `rejected` before it
+  is recorded, and its text is not kept
+  ([receiving speech](../voice-channel/receive.md)).
 
 ## Deriving consumers
 

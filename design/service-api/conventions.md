@@ -54,7 +54,8 @@ hash.
 Every response body is one envelope: the outcome, the payload, and the facts
 that make the outcome checkable. Three answers are not envelopes: the bytes
 a blob `GET` returns, a stream's frames, and the root probes. A blob `GET`
-with no bytes to return answers a read envelope: `nothing_found` or
+answers its bytes as `application/octet-stream`, never JSON; when the blob
+is absent or unreadable it answers a read envelope, `nothing_found` or
 `unavailable`.
 
 | part | read | operation |
@@ -146,8 +147,8 @@ Field names are `snake_case`; times are integer epoch milliseconds named
   a caller names a subject, never its own scope. Each contract declares the
   level it scopes at: a room, a unit, an agent, an identity, a workspace,
   the installation, or none for a public surface without a unit.
-- A read whose scope cannot be resolved at all, such as when the membership
-  it needs cannot be read, is `unavailable`, never `nothing_found`.
+- A read whose scope cannot be checked because a dependency it needs, such
+  as membership, cannot be read is `unavailable`, never `nothing_found`.
 - A read resolves within its scope, never resolves and then filters: what
   the principal's scope or exposure does not reach answers `nothing_found`,
   exactly as what does not exist, and a page is complete for that scope.
