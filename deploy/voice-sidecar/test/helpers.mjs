@@ -3,6 +3,7 @@
 // synchronously so no test needs a token, a network, or a real ffmpeg.
 
 import { EventEmitter } from 'node:events';
+import net from 'node:net';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -373,3 +374,57 @@ export async function playTrack(h, { generation, url = 'https://cdn.test/a', tit
   await tick();
   return { res, proc, playbackId: res.state.playback_id };
 }
+
+// Raw HTTP over a socket, for what fetch will not send: a body that stops
+// short. Resolves with the status and the parsed body.
+export function rawRequest(port, head, body, { end = false } = {}) {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect({ host: '127.0.0.1', port }, () => {
+      socket.write(head + body);
+      if (end) socket.end();
+    });
+    let data = '';
+    socket.on('data', (chunk) => { data += chunk.toString(); });
+    socket.on('close', () => {
+      const status = Number(/^HTTP\/1\.1 (\d{3}) /.exec(data)?.[1]);
+      // The body may be chunked: the JSON is the one object in it.
+      resolve({ status, body: JSON.parse(data.slice(data.indexOf('{'), data.lastIndexOf('}') + 1)) });
+    });
+    socket.on('error', reject);
+  });
+}
+// Streams `body` in pieces over a raw socket, stopping once an answer
+// arrives, so a refusal mid-upload is read rather than lost to a reset.
+// Resolves with the status, the parsed body and the elapsed milliseconds.
+export function rawStream(port, body, { contentLength = Buffer.byteLength(body), path = '/v1/voice/operations' } = {}) {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    let data = '';
+    const socket = net.connect({ host: '127.0.0.1', port }, () => {
+      socket.write([`POST ${path} HTTP/1.1`, 'host: x', `authorization: Bearer ${TOKEN}`,
+        'content-type: application/json', `content-length: ${contentLength}`, 'connection: close', '', ''].join('\r\n'));
+      // One piece at a time, paced, so the answer is read before the server
+      // closes on what it did not read.
+      let at = 0;
+      const pump = () => {
+        if (at >= body.length || data || socket.destroyed) return;
+        const piece = body.slice(at, at + 16 * 1024);
+        at += piece.length;
+        socket.write(piece, () => setTimeout(pump, 1));
+      };
+      pump();
+    });
+    socket.on('data', (chunk) => { data += chunk.toString(); });
+    socket.on('close', () => resolve({
+      status: Number(/^HTTP\/1\.1 (\d{3}) /.exec(data)?.[1]),
+      body: data.includes('{') ? JSON.parse(data.slice(data.indexOf('{'), data.lastIndexOf('}') + 1)) : null,
+      ms: Date.now() - started,
+    }));
+    socket.on('error', (err) => { if (!['ECONNRESET', 'EPIPE'].includes(err.code)) reject(err); });
+  });
+}
+export const operationBody = (request) => JSON.stringify(request);
+export const partialHead = (port) => [
+  'POST /v1/voice/operations HTTP/1.1', 'host: x', `authorization: Bearer ${TOKEN}`,
+  'content-type: application/json', 'content-length: 100', 'connection: close', '', '',
+].join('\r\n');
