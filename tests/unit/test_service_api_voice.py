@@ -20,7 +20,7 @@ from nora.domain.service_api_voice import (
     VoiceOperationRequest,
     VoiceQueryKind,
 )
-from nora.infra.service_api_schema import validator
+from nora.infra.service_api_schema import VOICE_ANSWERS, validator
 from scripts.service_api_contract import DOCUMENT
 
 THE_WIRE = {
@@ -129,5 +129,34 @@ def test_a_report_answer_and_a_connection_answer_never_pass_for_each_other():
     assert not answer.is_valid(_settled({"status": "garbled"}))
     assert not answer.is_valid(_settled({"status": "ok", "state": None}))
     assert answer.is_valid(_settled({"status": "duplicate"}))
-    assert answer.is_valid(_settled({"state": {"voice": "connected"}}))
+    assert answer.is_valid(_settled({"state": {"generation": "gen-1", "channel_id": "c1"}}))
     assert answer.is_valid(_settled({"error": {"kind": "denied", "message": ""}}))
+
+
+def test_each_kind_complete_carries_what_the_kind_returns():
+    """A connection kind's `complete` is the snapshot (its kernel fields required);
+    a report's is the hub's status. Refusals keep `error` without a snapshot."""
+    connection, report = validator(VOICE_ANSWERS["join"]), validator(VOICE_ANSWERS["report"])
+    snapshot = {"generation": "gen-1", "channel_id": "c1", "voice": "connected"}
+
+    for payload in ({}, {"state": {}}, {"state": None}, {"status": "ok"}):
+        assert not connection.is_valid(_settled(payload)), payload
+    assert connection.is_valid(_settled({"state": snapshot}))
+    assert connection.is_valid({**_settled({"state": None, "error": {
+        "kind": "unknown_guild", "message": ""}}), "outcome": "rejected"})
+    for payload in (None, {}, {"status": "garbled"}, {"state": snapshot}):
+        assert not report.is_valid(_settled(payload)), payload
+    assert report.is_valid(_settled({"status": "stale"}))
+
+
+def test_an_ok_status_carries_the_snapshot():
+    status = validator("VoiceStatusReadEnvelope")
+    read = {"when": {"observed_at_ms": 1, "known_by": "controller_clock"},
+            "from": {"source": "voice-controller", "healthy": True, "failed_sources": []},
+            "scope": {"level": "installation"}, "trace": ""}
+
+    assert not status.is_valid({**read, "outcome": "ok", "payload": {}})
+    assert not status.is_valid({**read, "outcome": "ok", "payload": None})
+    assert status.is_valid({**read, "outcome": "nothing_found", "payload": None})
+    assert status.is_valid({**read, "outcome": "ok", "payload": {
+        "generation": None, "channel_id": None, "connected": False}})

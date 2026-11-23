@@ -79,8 +79,29 @@ def component_schemas() -> dict[str, Any]:
     for name in [n for n in wired if n.endswith("Envelope")] + list(_CLOSED_PARTS):
         wired[name]["additionalProperties"] = False
     _bind_effects(wired)
+    _bind_answers(wired)
     wired[BLOB_PUT] = _blob_put(wired["OperationEnvelope"])
     return wired
+
+
+def _when(outcome: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return {"if": {"properties": {"outcome": {"const": outcome}}},
+            "then": {"properties": {"payload": payload}}}
+
+
+def _bind_answers(schemas: dict[str, Any]) -> None:
+    """Give each voice kind an answer whose `complete` carries what that kind returns."""
+    base = schemas["VoiceOperationEnvelope"]
+    for component, tp in VOICE_ANSWER_TYPES.items():
+        payload = ({"type": "object", "required": ["state"], "properties": {"state": _ref(tp)}}
+                   if tp is voice.VoiceConnectionState else _ref(tp))
+        schemas[component] = {
+            **base, "title": component, "allOf": [_when("complete", payload)],
+            "description": f"A voice operation's answer whose `complete` is {tp.__name__}."}
+    schemas["VoiceOperationRequest"]["x-answers"] = {
+        kind: {"$ref": REF.format(model=VOICE_ANSWERS[kind])} for kind in voice.VOICE_COMPLETE}
+    schemas["VoiceStatusReadEnvelope"]["allOf"] = [
+        _when("ok", _ref(voice.VoiceConnectionState))]
 
 
 def _bind_effects(schemas: dict[str, Any]) -> None:
@@ -109,6 +130,14 @@ _CLOSED_PARTS: Final = ("ReadWhen", "ReadFrom", "OperationWhen", "OperationFrom"
 #: The blob `PUT` answer: an operation envelope whose `complete` names a key and
 #: whose `rejected` says why.
 BLOB_PUT: Final = "BlobPutEnvelope"
+#: Per voice kind, the answer component a caller validates by: the route's own
+#: schema with `complete` held to what the kind returns.
+VOICE_ANSWER_TYPES: Final[dict[str, type]] = {
+    "VoiceConnectionEnvelope": voice.VoiceConnectionState,
+    "VoiceReportEnvelope": voice.VoiceReportPayload}
+VOICE_ANSWERS: Final[dict[str, str]] = {
+    kind: next(name for name, tp in VOICE_ANSWER_TYPES.items() if tp is done)
+    for kind, done in voice.VOICE_COMPLETE.items()}
 #: The component each route answers with, by route name.
 ANSWERS: Final[dict[str, str]] = {
     route.name: BLOB_PUT if route.name == "put_blob" else route.response.__name__
@@ -116,14 +145,10 @@ ANSWERS: Final[dict[str, str]] = {
 
 
 def _blob_put(envelope: dict[str, Any]) -> dict[str, Any]:
-    def when(outcome: str, payload: dict[str, Any]) -> dict[str, Any]:
-        return {"if": {"properties": {"outcome": {"const": outcome}}},
-                "then": {"properties": {"payload": payload}}}
-
     return {**envelope, "title": BLOB_PUT, "description": "The answer to a blob PUT.", "allOf": [
-        when("complete", {"type": "object", "required": ["key"],
+        _when("complete", {"type": "object", "required": ["key"],
                           "properties": {"key": {"type": "string"}}}),
-        when("rejected", {"type": "object", "required": ["error"],
+        _when("rejected", {"type": "object", "required": ["error"],
                           "properties": {"error": {"$ref": REF.format(model="OperationError")}}}),
     ]}
 

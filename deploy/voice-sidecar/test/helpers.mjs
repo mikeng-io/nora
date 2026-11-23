@@ -28,7 +28,9 @@ export const EVENT_URL = 'http://nora.test/v1/voice/operations';
 
 // The hub's answer to a `report`: an envelope with `outcome`, at the
 // kernel's status for it unless `status` overrides it.
-export function hubAnswer(outcome, { status = STATUS[outcome], payload = {} } = {}) {
+export function hubAnswer(outcome, {
+  status = STATUS[outcome], payload = outcome === 'complete' ? { status: 'ok' } : {},
+} = {}) {
   const envelope = {
     outcome,
     payload,

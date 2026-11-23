@@ -9,7 +9,9 @@ import { strict as assert } from 'node:assert';
 
 import { readFileSync } from 'node:fs';
 
-import { OPERATION_OUTCOMES, OPERATION_STATES, SCOPE_LEVELS } from '../src/contract.mjs';
+import {
+  OPERATION_OUTCOMES, OPERATION_STATES, REPORT_STATUSES, SCOPE_LEVELS,
+} from '../src/contract.mjs';
 import { createOutbox } from '../src/outbox.mjs';
 import { EVENT_URL as URL, createFakeClock, hubAnswer, tick } from './helpers.mjs';
 
@@ -363,6 +365,9 @@ test('reports are retried only when the hub could not take them', async () => {
       ...envelopeOf(hubAnswer('complete')), when: { state: 'settled', started_at_ms: '1', settled_at_ms: null } }) },
     'an undeclared scope level': { status: 200, json: async () => ({
       ...envelopeOf(hubAnswer('complete')), scope: { level: 'galaxy' } }) },
+    'a complete with a null payload': hubAnswer('complete', { payload: null }),
+    'a complete with a garbled status': hubAnswer('complete', { payload: { status: 'garbled' } }),
+    'a complete with a connection payload': hubAnswer('complete', { payload: { state: null } }),
   };
   for (const [label, answer] of Object.entries(retried)) {
     const { outbox, attempts } = await firstAnswerIs(answer);
@@ -430,6 +435,9 @@ test('the acknowledgement check reads the contract\'s own closed sets', () => {
   assert.deepEqual([...SCOPE_LEVELS], schemas.ScopeLevel.enum);
   assert.deepEqual([...OPERATION_STATES], schemas.OperationState.enum);
   assert.deepEqual([...OPERATION_OUTCOMES], schemas.OperationOutcome.enum);
+  assert.deepEqual([...REPORT_STATUSES], schemas.VoiceReportPayload.properties.status.enum);
+  assert.deepEqual(schemas.VoiceReportPayload.required, ['status']);
+  assert.equal(schemas.VoiceReportPayload.additionalProperties, false);
   const parts = { OperationWhen: ['settled_at_ms', 'started_at_ms', 'state'],
     OperationFrom: ['platform_ref', 'target'], Scope: ['id', 'level'] };
   for (const [name, fields] of Object.entries(parts)) {

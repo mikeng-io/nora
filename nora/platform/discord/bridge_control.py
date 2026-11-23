@@ -66,7 +66,7 @@ from nora.domain.ports import (
     speakable,
 )
 from nora.domain.service_api import OperationConflictError, status_for
-from nora.infra.service_api_schema import validator
+from nora.infra.service_api_schema import VOICE_ANSWERS, validator
 from nora.memory import ActAuthority, EffectRecorder, Outcome
 from nora.platform.bridge.client import (
     ACCOUNT_PATH,
@@ -215,7 +215,7 @@ class BridgeControlClient:
             return None
         except BridgeUnavailableError as exc:
             return False if exc.status == 400 else None
-        if not _VOICE_OPERATION.is_valid(answer.body) \
+        if not _SPEAK_ANSWER.is_valid(answer.body) \
                 or (answer.body["when"]["state"] == "settled") == (answer.outcome == "pending"):
             return None  # an answer off the contract says nothing about the audio
         if answer.outcome == "complete":
@@ -228,7 +228,7 @@ class BridgeControlClient:
 
 #: The voice routes' answer schemas, as the contract generates them.
 _VOICE_STATUS = validator("VoiceStatusReadEnvelope")
-_VOICE_OPERATION = validator("VoiceOperationEnvelope")
+_SPEAK_ANSWER = validator(VOICE_ANSWERS["speak"])
 
 
 def _stated(answer: BridgeAnswer) -> bool:

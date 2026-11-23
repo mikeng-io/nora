@@ -1351,6 +1351,119 @@
         "title": "UtteranceEffect",
         "type": "object"
       },
+      "VoiceConnectionEnvelope": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "complete"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "properties": {
+                    "state": {
+                      "$ref": "#/components/schemas/VoiceConnectionState"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A voice operation's answer whose `complete` is VoiceConnectionState.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/OperationFrom"
+          },
+          "outcome": {
+            "enum": [
+              "complete",
+              "pending",
+              "denied",
+              "rejected",
+              "unsupported",
+              "incomplete",
+              "uncertain",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceOperationPayload"
+              },
+              {
+                "$ref": "#/components/schemas/VoiceReportPayload"
+              }
+            ],
+            "title": "Payload"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/OperationWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "VoiceConnectionEnvelope",
+        "type": "object"
+      },
+      "VoiceConnectionState": {
+        "description": "A connection snapshot: the fields every implementer writes; each adds its own.",
+        "properties": {
+          "channel_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Id"
+          },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          }
+        },
+        "required": [
+          "generation",
+          "channel_id"
+        ],
+        "title": "VoiceConnectionState",
+        "type": "object"
+      },
       "VoiceOperationEnvelope": {
         "additionalProperties": false,
         "description": "The answer to a voice operation; a taken `report` carries the hub's own answer.",
@@ -1437,15 +1550,13 @@
           "state": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/VoiceConnectionState"
               },
               {
                 "type": "null"
               }
             ],
-            "default": null,
-            "title": "State"
+            "default": null
           }
         },
         "title": "VoiceOperationPayload",
@@ -1725,6 +1836,35 @@
         ],
         "title": "VoiceOperationRequest",
         "type": "object",
+        "x-answers": {
+          "join": {
+            "$ref": "#/components/schemas/VoiceConnectionEnvelope"
+          },
+          "leave": {
+            "$ref": "#/components/schemas/VoiceConnectionEnvelope"
+          },
+          "pause": {
+            "$ref": "#/components/schemas/VoiceConnectionEnvelope"
+          },
+          "play": {
+            "$ref": "#/components/schemas/VoiceConnectionEnvelope"
+          },
+          "report": {
+            "$ref": "#/components/schemas/VoiceReportEnvelope"
+          },
+          "resume": {
+            "$ref": "#/components/schemas/VoiceConnectionEnvelope"
+          },
+          "set_volume": {
+            "$ref": "#/components/schemas/VoiceConnectionEnvelope"
+          },
+          "speak": {
+            "$ref": "#/components/schemas/VoiceConnectionEnvelope"
+          },
+          "stop": {
+            "$ref": "#/components/schemas/VoiceConnectionEnvelope"
+          }
+        },
         "x-effects": {
           "join": {
             "$ref": "#/components/schemas/JoinEffect"
@@ -1778,6 +1918,78 @@
         "const": "status",
         "type": "string"
       },
+      "VoiceReportEnvelope": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "complete"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/VoiceReportPayload"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A voice operation's answer whose `complete` is VoiceReportPayload.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/OperationFrom"
+          },
+          "outcome": {
+            "enum": [
+              "complete",
+              "pending",
+              "denied",
+              "rejected",
+              "unsupported",
+              "incomplete",
+              "uncertain",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceOperationPayload"
+              },
+              {
+                "$ref": "#/components/schemas/VoiceReportPayload"
+              }
+            ],
+            "title": "Payload"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/OperationWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "VoiceReportEnvelope",
+        "type": "object"
+      },
       "VoiceReportPayload": {
         "additionalProperties": false,
         "description": "What the hub did with a reported event.",
@@ -1814,7 +2026,25 @@
       },
       "VoiceStatusReadEnvelope": {
         "additionalProperties": false,
-        "description": "A connection's status, in the implementer's own shape; none is `nothing_found`.",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "ok"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/VoiceConnectionState"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A connection's status: the snapshot plus the implementer's own fields.",
         "properties": {
           "from": {
             "$ref": "#/components/schemas/ReadFrom"
@@ -1831,14 +2061,12 @@
           "payload": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/VoiceConnectionState"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Payload"
+            ]
           },
           "scope": {
             "$ref": "#/components/schemas/Scope"
