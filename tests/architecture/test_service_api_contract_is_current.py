@@ -35,7 +35,9 @@ def test_the_committed_contract_is_current():
 
 def test_the_envelope_keys_are_the_wire_keys():
     schemas = json.loads(DOCUMENT.read_text(encoding="utf-8"))["components"]["schemas"]
-    for envelope in ("ReadEnvelope", "OperationEnvelope"):
+    envelopes = [name for name in schemas if name.endswith("Envelope")]
+    assert {"ReadEnvelope", "OperationEnvelope", "PlatformOperationEnvelope"} <= set(envelopes)
+    for envelope in envelopes:
         assert set(schemas[envelope]["properties"]) == ENVELOPE_PARTS, envelope
     properties = list(_properties(schemas))
     assert any(name.endswith("_ms") for name, _ in properties)

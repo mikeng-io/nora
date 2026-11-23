@@ -19,19 +19,21 @@ import { createServer } from 'node:http';
 import { sendJson } from './http_util.js';
 
 import { AttachmentStore, validAttachmentKey } from './media.js';
-import { ActionStore, actionResponse } from './store.js';
-import { ActionRejected, createV1, executors, recipientToJid, runAction } from './actions.js';
+import { ActionStore, actionResponse, requestHash } from './store.js';
+import { ActionRejected, SERVED_ROUTES, createV1, executors, recipientToJid, runAction } from './actions.js';
 import { createPipeline } from './pipeline.js';
 import { Projection } from './projection.js';
 import { Journal } from './journal.js';
 import { StreamProducer } from './queue.js';
 import { Metrics } from './obs.js';
 import { canonicalJson } from './canon.js';
+import { authorizedBridgeRequest } from './bridge_helpers.js';
 
 const tmpDir = () => mkdtempSync(path.join(tmpdir(), 'wa-bridge-'));
 
-test('handled v1 JSON routes do not fall through to the legacy 404', async (t) => {
-  const handleV1 = createV1({ health: () => ({ ok: true }), self: () => ({ platform: 'whatsapp' }) });
+test('handled contract routes do not fall through to the legacy 404', async (t) => {
+  const handleV1 = createV1({ store: {}, attachments: {}, health: () => ({ ok: true }),
+    self: () => ({ platform: 'whatsapp' }), liveness: () => ({ ok: true }), ready: () => true });
   let fallbacks = 0;
   let errors = 0;
   const server = createServer(async (req, res) => {
@@ -47,7 +49,7 @@ test('handled v1 JSON routes do not fall through to the legacy 404', async (t) =
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const base = `http://127.0.0.1:${server.address().port}`;
-  for (const route of ['/v1/health', '/v1/self']) {
+  for (const route of ['/v1/operations/status', '/v1/platform/accounts/self', '/health', '/ready']) {
     const response = await fetch(base + route);
     assert.equal(response.status, 200);
     assert.ok(await response.json());
@@ -471,7 +473,6 @@ test('runAction executes once and answers confirmed with the stanza ref', async 
   const res = await runAction({ store, ctx, actionId: 'a1',
     owner: { kind: 'work', id: 'w-1', generation: 4 }, op: 'send', request: REQ });
   assert.equal(res.state, 'confirmed');
-  assert.equal(res.outcome, 'confirmed');
   assert.equal(res.platform_ref, 'S1');
   assert.equal(res.platform_ms, 1730300005000);
   assert.equal(ctx.calls.length, 1);
@@ -506,10 +507,11 @@ test('multi-post send keeps every stanza ref — initial, replay and GET agree',
   const v1 = createV1({ store, ctx, attachments: null,
     self: () => null, health: () => ({}), metrics: null });
   const hit = fakeRes();
-  await v1(fakeReq('GET', '/v1/actions/m1'), hit, new URL('http://b/v1/actions/m1'));
-  assert.equal(hit.json.state, 'confirmed');
-  assert.deepEqual(hit.json.platform_refs, ['S1', 'S2']);
-  assert.equal(hit.json.platform_ref, 'S2');
+  await v1(fakeReq('GET', '/v1/platform/operations/m1'), hit, new URL('http://b/v1/platform/operations/m1'));
+  assert.equal(hit.json.outcome, 'ok');
+  assert.equal(hit.json.payload.outcome, 'complete');
+  assert.deepEqual(hit.json.payload.payload.platform_refs, ['S1', 'S2']);
+  assert.equal(hit.json.payload.from.platform_ref, 'S2');
 });
 
 test('a stalemated generation fence rejects before any upstream bytes', async () => {
@@ -545,12 +547,10 @@ test('a started row is NEVER blindly retried — the replay answers uncertain', 
   const first = await runAction({ store, ctx, actionId: 'a4',
     owner: { kind: 'work', id: 'w-1', generation: 1 }, op: 'send', request: REQ });
   assert.equal(first.state, 'uncertain');      // may have gone out
-  assert.equal(first.outcome, 'uncertain');
 
   const second = await runAction({ store, ctx, actionId: 'a4',
     owner: { kind: 'work', id: 'w-1', generation: 1 }, op: 'send', request: REQ });
   assert.equal(second.state, 'uncertain');     // recorded state replayed
-  assert.equal(second.outcome, 'uncertain');
   assert.equal(JSON.stringify([first, second]).includes('generated-private-sdk-detail'), false);
   assert.equal(effects, 1);
 });
@@ -566,6 +566,7 @@ test('same id + different request conflicts without an upstream call', async () 
     owner: { kind: 'work', id: 'w-1', generation: 1 }, op: 'send',
     request: { ...REQ, text: 'tampered' } });
   assert.equal(res.state, 'rejected');
+  assert.equal(res.conflict, true);
   assert.equal(res.error.kind, 'conflict');
   assert.equal(ctx.calls.length, 1);
 });
@@ -578,7 +579,7 @@ test('a disconnected socket answers unavailable BEFORE reserving a row', async (
   const res = await runAction({ store, ctx, actionId: 'a6',
     owner: { kind: 'event_receipt', id: 'e1', generation: null }, op: 'send', request: REQ });
   assert.equal(res.state, 'unavailable');
-  assert.equal(res._status, 503);
+  assert.equal(res.error.kind, 'not_connected');
   assert.equal(pg.actions.size, 0);             // no 'started' row pretending
 });
 
@@ -845,53 +846,56 @@ test('HTTP errors retain outcomes without exposing exception details', async () 
     attachments: { put: broken }, health: () => ({}), self: () => null,
   };
   const v1 = createV1(deps);
+  deps.attachments.maxBytes = 1 << 20;
   const cases = [
-    ['POST', '/v1/actions', { action_id: 'error-case', owner: { kind: 'live_invocation', id: 'i1' },
-      op: 'send', request: REQ }, 503],
-    ['GET', '/v1/actions/error-case', null, 500],
-    ['PUT', '/v1/attachments/key', Buffer.from('body'), 500],
-    ['POST', '/v1/actions', Buffer.from('{"generated-private-detail":'), 400],
+    ['POST', '/v1/platform/operations', { operation_id: 'error-case',
+      owner: { kind: 'live_invocation', id: 'i1' }, kind: 'send', effect: REQ }, 503],
+    ['GET', '/v1/platform/operations/error-case', null, 503],
+    ['PUT', '/v1/platform/blobs/key', Buffer.from('body'), 503],
+    ['POST', '/v1/platform/operations', Buffer.from('{"generated-private-detail":'), 400],
   ];
   for (const [method, pathname, body, status] of cases) {
     const res = fakeRes();
     await v1(fakeReq(method, pathname, body), res, new URL(`http://b${pathname}`));
     assert.equal(res.status, status);
-    assert.ok(res.json.error);
     assert.equal(res.body.includes('generated-private-detail'), false);
     assert.equal(res.body.includes('/private/generated'), false);
-    if (status === 503) assert.equal(res.json.state, 'unavailable');
+    if (status === 503) assert.equal(res.json.outcome, 'unavailable');
+    else assert.ok(res.json.error);
   }
 });
 
-test('POST /v1/actions validates owner kinds before touching the store', async () => {
+test('an operation validates owner kinds before touching the store', async () => {
   const pg = fakePg();
   const v1 = createV1({
     store: new ActionStore(pg, { platform: 'whatsapp', accountKey: 'a' }),
     ctx: fakeCtx(), attachments: null, self: () => null, health: () => ({}), metrics: null,
   });
   const res = fakeRes();
-  const url = new URL('http://b/v1/actions');
-  await v1(fakeReq('POST', '/v1/actions', {
-    action_id: 'a1', owner: { kind: 'bogus', id: 'x' }, op: 'send', request: REQ,
+  const url = new URL('http://b/v1/platform/operations');
+  await v1(fakeReq('POST', '/v1/platform/operations', {
+    operation_id: 'a1', owner: { kind: 'bogus', id: 'x' }, kind: 'send', effect: REQ,
   }), res, url);
   assert.equal(res.status, 400);
   assert.equal(pg.actions.size, 0);
 });
 
-test('unsupported ops are honest rejections, never 500s', async () => {
+test('an operation kind outside the closed set is 422 and reserves no row, never a 500', async () => {
+  const pg = fakePg();
   const v1 = createV1({
-    store: new ActionStore(fakePg(), { platform: 'whatsapp', accountKey: 'a' }),
+    store: new ActionStore(pg, { platform: 'whatsapp', accountKey: 'a' }),
     ctx: fakeCtx(), attachments: null, self: () => null, health: () => ({}), metrics: null,
   });
   const res = fakeRes();
-  await v1(fakeReq('POST', '/v1/actions', {
-    action_id: 'a1', owner: { kind: 'live_invocation', id: 'i1' }, op: 'teleport', request: {},
-  }), res, new URL('http://b/v1/actions'));
-  assert.equal(res.status, 200);
-  assert.equal(res.json.outcome, 'unsupported');
+  await v1(fakeReq('POST', '/v1/platform/operations', {
+    operation_id: 'a1', owner: { kind: 'live_invocation', id: 'i1' }, kind: 'teleport', effect: {},
+  }), res, new URL('http://b/v1/platform/operations'));
+  assert.equal(res.status, 422);
+  assert.equal(res.json.outcome, undefined);
+  assert.equal(pg.actions.size, 0);
 });
 
-test('GET /v1/actions/{id} returns the recorded row or 404', async () => {
+test('an operation read-back returns the recorded row or nothing_found', async () => {
   const pg = fakePg();
   const store = new ActionStore(pg, { platform: 'whatsapp', accountKey: 'a',
     receiptIntents: () => new Set(['e1']) });
@@ -900,14 +904,15 @@ test('GET /v1/actions/{id} returns the recorded row or 404', async () => {
     owner: { kind: 'event_receipt', id: 'e1', generation: null }, op: 'send', request: REQ });
   const v1 = createV1({ store, ctx, attachments: null, self: () => null, health: () => ({}), metrics: null });
   const hit = fakeRes();
-  await v1(fakeReq('GET', '/v1/actions/a9'), hit, new URL('http://b/v1/actions/a9'));
-  assert.equal(hit.json.state, 'confirmed');
+  await v1(fakeReq('GET', '/v1/platform/operations/a9'), hit, new URL('http://b/v1/platform/operations/a9'));
+  assert.equal(hit.json.payload.outcome, 'complete');
   const miss = fakeRes();
-  await v1(fakeReq('GET', '/v1/actions/zzz'), miss, new URL('http://b/v1/actions/zzz'));
-  assert.equal(miss.status, 404);
+  await v1(fakeReq('GET', '/v1/platform/operations/zzz'), miss, new URL('http://b/v1/platform/operations/zzz'));
+  assert.equal(miss.status, 200);
+  assert.equal(miss.json.outcome, 'nothing_found');
 });
 
-test('PUT/GET /v1/attachments round-trips bytes; conflict answers 409', async () => {
+test('PUT/GET blobs round-trip bytes; other bytes under a key are rejected', async () => {
   const dir = tmpDir();
   try {
     const v1 = createV1({
@@ -915,20 +920,29 @@ test('PUT/GET /v1/attachments round-trips bytes; conflict answers 409', async ()
       self: () => null, health: () => ({}), metrics: null,
     });
     const put = fakeRes();
-    await v1(fakeReq('PUT', '/v1/attachments/out-a-0', Buffer.from('png-bytes')),
-      put, new URL('http://b/v1/attachments/out-a-0'));
-    assert.equal(put.status, 201);
+    await v1(fakeReq('PUT', '/v1/platform/blobs/out-a-0', Buffer.from('png-bytes')),
+      put, new URL('http://b/v1/platform/blobs/out-a-0'));
+    assert.equal(put.status, 200);
+    assert.equal(put.json.outcome, 'complete');
     const get = fakeRes();
-    await v1(fakeReq('GET', '/v1/attachments/out-a-0'), get, new URL('http://b/v1/attachments/out-a-0'));
+    await v1(fakeReq('GET', '/v1/platform/blobs/out-a-0'), get, new URL('http://b/v1/platform/blobs/out-a-0'));
     assert.deepEqual(get.body, Buffer.from('png-bytes'));
     const conflict = fakeRes();
-    await v1(fakeReq('PUT', '/v1/attachments/out-a-0', Buffer.from('other')),
-      conflict, new URL('http://b/v1/attachments/out-a-0'));
-    assert.equal(conflict.status, 409);
+    await v1(fakeReq('PUT', '/v1/platform/blobs/out-a-0', Buffer.from('other')),
+      conflict, new URL('http://b/v1/platform/blobs/out-a-0'));
+    assert.equal(conflict.status, 200);
+    assert.equal(conflict.json.outcome, 'rejected');
+    assert.equal(conflict.json.payload.error.kind, 'conflict');
     const bad = fakeRes();
-    // `..` must be percent-encoded or the URL parser collapses it pre-route.
-    await v1(fakeReq('GET', '/v1/attachments/..%2F..'), bad, new URL('http://b/v1/attachments/..%2F..'));
-    assert.equal(bad.status, 404);
+    // `..` must be percent-encoded or the URL parser collapses it pre-route;
+    // a traversal key never joins a path and holds nothing.
+    await v1(fakeReq('GET', '/v1/platform/blobs/..%2F..'), bad, new URL('http://b/v1/platform/blobs/..%2F..'));
+    assert.equal(bad.status, 200);
+    assert.equal(bad.json.outcome, 'nothing_found');
+    const badPut = fakeRes();
+    await v1(fakeReq('PUT', '/v1/platform/blobs/..%2F..', Buffer.from('x')), badPut,
+      new URL('http://b/v1/platform/blobs/..%2F..'));
+    assert.equal(badPut.status, 400);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -964,32 +978,32 @@ test('large attachment uploads reach the same send executor unchanged', async (t
       t.after(() => new Promise((resolve) => server.close(resolve)));
       const base = `http://127.0.0.1:${server.address().port}`;
       const bytes = Buffer.alloc(1319325, 0x5a);
-      const put = await fetch(base + '/v1/attachments/generated-large', {
+      const put = await fetch(base + '/v1/platform/blobs/generated-large', {
         method: 'PUT', body: bytes,
       });
-      assert.equal(put.status, 201);
-      await put.arrayBuffer();
-      for (const [body, expected] of [[bytes, 201], [Buffer.from('different bytes'), 409]]) {
-        const repeat = await fetch(base + '/v1/attachments/generated-large', { method: 'PUT', body });
-        assert.equal(repeat.status, expected);
-        await repeat.arrayBuffer();
+      assert.equal(put.status, 200);
+      assert.equal((await put.json()).outcome, 'complete');
+      for (const [body, expected] of [[bytes, 'complete'], [Buffer.from('different bytes'), 'rejected']]) {
+        const repeat = await fetch(base + '/v1/platform/blobs/generated-large', { method: 'PUT', body });
+        assert.equal(repeat.status, 200);
+        assert.equal((await repeat.json()).outcome, expected);
       }
-      const get = await fetch(base + '/v1/attachments/generated-large');
+      const get = await fetch(base + '/v1/platform/blobs/generated-large');
       assert.equal(get.status, 200);
       assert.deepEqual(Buffer.from(await get.arrayBuffer()), bytes);
       const action = {
-        action_id: 'large-send', owner: { kind: 'work', id: 'w-1', generation: 1 },
-        op: 'send', request: { ...REQ, text: '', attachments: [
+        operation_id: 'large-send', owner: { kind: 'work', id: 'w-1', generation: 1 },
+        kind: 'send', effect: { ...REQ, text: '', attachments: [
           { key: 'generated-large', media_type: mime, file_name: filename },
         ] },
       };
       for (let i = 0; i < 2; i++) {
-        const response = await fetch(base + '/v1/actions', {
+        const response = await fetch(base + '/v1/platform/operations', {
           method: 'POST', body: JSON.stringify(action),
           headers: { 'content-type': 'application/json' },
         });
         assert.equal(response.status, 200);
-        assert.equal((await response.json()).state, 'confirmed');
+        assert.equal((await response.json()).outcome, 'complete');
       }
       assert.equal(ctx.calls.length, 1);
       assert.equal(ctx.calls[0][0], 'send');
@@ -1369,7 +1383,7 @@ test('metrics accumulate low-cardinality counters and render text', () => {
 
 // -- action trace links -------------------------------------------------------------
 
-test('POST /v1/actions links the caller traceparent; invalid context carries none', async () => {
+test('an operation links the caller traceparent; invalid context carries none', async () => {
   const { InMemorySpanExporter } = await import('@opentelemetry/sdk-trace-node');
   const { initTracing } = await import('./tracing.js');
   const exporter = new InMemorySpanExporter();
@@ -1383,19 +1397,21 @@ test('POST /v1/actions links the caller traceparent; invalid context carries non
       health: () => ({}), metrics: null, tracer });
 
     const tp = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
-    const body = { action_id: 'tl-1', owner: { kind: 'work', id: '1', generation: 3 },
-      op: 'send', request: REQ };
-    const req = fakeReq('POST', '/v1/actions', body);
+    const body = { operation_id: 'tl-1', owner: { kind: 'work', id: '1', generation: 3 },
+      kind: 'send', effect: REQ };
+    const req = fakeReq('POST', '/v1/platform/operations', body);
     req.headers = { traceparent: tp };
     const res = fakeRes();
-    await v1(req, res, new URL('http://b/v1/actions'));
-    assert.equal(res.json.state, 'confirmed');
+    await v1(req, res, new URL('http://b/v1/platform/operations'));
+    assert.equal(res.json.outcome, 'complete');
+    assert.equal(res.json.trace, '4bf92f3577b34da6a3ce929d0e0e4736');
 
-    const bad = fakeReq('POST', '/v1/actions', { ...body, action_id: 'tl-2' });
+    const bad = fakeReq('POST', '/v1/platform/operations', { ...body, operation_id: 'tl-2' });
     bad.headers = { traceparent: 'not-a-traceparent' };
     const res2 = fakeRes();
-    await v1(bad, res2, new URL('http://b/v1/actions'));
-    assert.equal(res2.json.state, 'confirmed');   // invalid context never blocks
+    await v1(bad, res2, new URL('http://b/v1/platform/operations'));
+    assert.equal(res2.json.outcome, 'complete');   // invalid context never blocks
+    assert.equal(res2.json.trace, '');
 
     await tracer.flush();
     const spans = exporter.getFinishedSpans().filter((s) => s.name === 'bridge.action.attempt');
@@ -1406,4 +1422,262 @@ test('POST /v1/actions links the caller traceparent; invalid context carries non
     assert.equal(spans[0].attributes['nora.trace_kind'], 'queue');
     assert.equal(spans[1].links.length, 0);
   } finally { await tracer.shutdown().catch(() => {}); }
+});
+
+// -- the platform contract (docs/service-api/openapi.json) ----------------------
+
+// The kernel's status table (nora/domain/service_api.py `_STATUS`), restated
+// here so the bridge's own table is checked, not reused.
+const KERNEL_STATUS = {
+  ok: 200, nothing_found: 200, unavailable: 503,
+  complete: 200, pending: 202, denied: 403, rejected: 200,
+  unsupported: 200, incomplete: 200, uncertain: 200,
+};
+const ENVELOPE_PARTS = ['from', 'outcome', 'payload', 'scope', 'trace', 'when'];
+
+async function call(v1, method, pathname, body = null) {
+  const res = fakeRes();
+  const handled = await v1(fakeReq(method, pathname, body), res, new URL(`http://b${pathname}`));
+  return Object.assign(res, { handled });
+}
+
+function assertEnvelope(res, outcome, label) {
+  assert.deepEqual(Object.keys(res.json).sort(), ENVELOPE_PARTS, label);
+  assert.equal(res.json.outcome, outcome, label);
+  assert.equal(res.status, KERNEL_STATUS[outcome], label);
+}
+
+test('routes match the platform contract', async () => {
+  const doc = JSON.parse(readFileSync(
+    new URL('../../docs/service-api/openapi.json', import.meta.url), 'utf8'));
+  const documented = Object.entries(doc.paths)
+    .filter(([p]) => p.startsWith('/v1/platform/') || p.startsWith('/v1/operations/'))
+    .flatMap(([p, ops]) => Object.keys(ops).map((m) => `${m.toUpperCase()} ${p}`)).sort();
+  const served = SERVED_ROUTES
+    .filter((r) => / \/v1\/(platform|operations)\//.test(r)).sort();
+  assert.ok(documented.length > 0);
+  assert.deepEqual(served, documented);
+  assert.ok(SERVED_ROUTES.includes('GET /health'));
+  assert.ok(SERVED_ROUTES.includes('GET /ready'));
+
+  // Each documented route is answered by the router, with `{param}` filled.
+  const deps = { store: null, ctx: fakeCtx(), attachments: null, self: () => null,
+    health: () => ({ ok: false }), liveness: () => ({ ok: true }) };
+  const v1 = createV1(deps);
+  for (const route of documented) {
+    const [method, template] = route.split(' ');
+    const res = await call(v1, method, template.replace(/\{[a-z_]+\}/g, 'x1'), method === 'GET' ? null : {});
+    assert.equal(res.handled, true, route);
+  }
+  // None of the old wire is served (built from its collections, so no file
+  // names an old route as a literal).
+  const oldWire = ['actions', 'actions/a1', 'self', 'reads', 'attachments/k1', 'health', 'groups',
+    'guilds/g1/members', 'channels/c1', 'presence/g1/u1'].map((rest) => `/v1/${rest}`);
+  for (const old of oldWire) {
+    for (const method of ['GET', 'POST', 'PUT']) {
+      assert.equal((await call(v1, method, old, method === 'GET' ? null : {})).handled, false, `${method} ${old}`);
+    }
+  }
+  // The probes: /ready follows whether the contract can be served; both keep
+  // the unauthenticated access /health has.
+  assert.equal((await call(v1, 'GET', '/ready')).status, 503);
+  Object.assign(deps, { store: {}, attachments: {}, self: () => ({ platform: 'whatsapp' }),
+    health: () => ({ ok: true }) });
+  assert.equal((await call(v1, 'GET', '/ready')).status, 200);
+  assert.equal((await call(v1, 'GET', '/health')).status, 200);
+  assert.equal(authorizedBridgeRequest('GET', '/ready', undefined, 't0k'), true);
+  assert.equal(authorizedBridgeRequest('GET', '/health', undefined, 't0k'), true);
+  assert.equal(authorizedBridgeRequest('GET', '/v1/operations/status', undefined, 't0k'), false);
+});
+
+test('operation outcomes follow the contract', async () => {
+  const dir = tmpDir();
+  try {
+    const pg = fakePg();
+    const store = new ActionStore(pg, { platform: 'whatsapp', accountKey: 'a',
+      receiptIntents: () => new Set(['e1']) });
+    const ctx = fakeCtx();
+    const group = '152099000000000000@g.us';
+    ctx.sock.groupMetadata = async (jid) => ({ participants: jid === group
+      ? [{ id: '85290000100@s.whatsapp.net' }, { id: '60000000000001@lid' }] : [] });
+    let me = null;
+    const attachments = new AttachmentStore(dir, { maxBytes: 8 });
+    const v1 = createV1({ store, ctx, attachments, self: () => me, metrics: null,
+      health: () => ({ ok: true, detail: null, degraded: false, connected: true, paired: true }) });
+    const owner = { kind: 'event_receipt', id: 'e1' };
+    const op = (id, effect = REQ, kind = 'send', who = owner) => call(v1, 'POST',
+      '/v1/platform/operations', { operation_id: id, owner: who, kind, effect });
+    const seed = (id, fields) => pg.actions.set(id, {
+      action_id: id, platform: 'whatsapp', account_key: 'a', owner_kind: 'event_receipt',
+      owner_id: 'e1', owner_generation: null, op: 'send', request: REQ,
+      request_hash: requestHash(REQ), platform_ref: null, platform_refs: null,
+      platform_ms: null, error: null, message_id: null, ...fields });
+
+    // complete
+    const done = await op('o-complete');
+    assertEnvelope(done, 'complete', 'complete');
+    assert.equal(done.json.when.state, 'settled');
+    assert.deepEqual(done.json.payload.platform_refs, ['S1']);
+    assert.deepEqual(done.json.from, { target: REQ.target.id, platform_ref: 'S1' });
+    assert.deepEqual(done.json.scope, { level: 'room', id: REQ.target.id });
+    // pending: a row still `started` replays, never re-executes
+    seed('o-pending', { state: 'started' });
+    const pending = await op('o-pending');
+    assertEnvelope(pending, 'pending', 'pending');
+    assert.equal(pending.json.when.state, 'started');
+    // a stored row's time arrives from Postgres as a string and leaves as a number
+    seed('o-stored', { state: 'confirmed', platform_ref: 'S9', platform_ms: '1730300005000' });
+    const stored = await op('o-stored');
+    assertEnvelope(stored, 'complete', 'complete');
+    assert.strictEqual(stored.json.payload.platform_ms, 1730300005000);
+    // rejected: refused before any upstream bytes
+    const rejected = await op('o-rejected', { target: { kind: 'group', id: 'not-a-group' }, text: 'hi' });
+    assertEnvelope(rejected, 'rejected', 'rejected');
+    assert.equal(rejected.json.payload.error.kind, 'bad_request');
+    // unsupported: a stored row rejected as unsupported replays as unsupported
+    seed('o-unsupported', { state: 'rejected', error: { kind: 'unsupported', message: 'no such op' } });
+    assertEnvelope(await op('o-unsupported'), 'unsupported', 'unsupported');
+    // uncertain: the upstream call may have gone out
+    const send = ctx.sendWithTimeout;
+    ctx.sendWithTimeout = async () => { throw new Error('generated-sdk-timeout'); };
+    const uncertain = await op('o-uncertain');
+    ctx.sendWithTimeout = send;
+    assertEnvelope(uncertain, 'uncertain', 'uncertain');
+    // denied: the owner fence rejects in the reservation
+    pg.works.set('9', workRow(5));
+    const denied = await op('o-denied', REQ, 'send', { kind: 'work', id: 'w-9', generation: 3 });
+    assertEnvelope(denied, 'denied', 'denied');
+    assert.equal(denied.json.when.state, 'settled');
+    // unavailable: no ledger, and a ledger that fails before any effect
+    const bare = createV1({ store: null, ctx, attachments: null, self: () => null, health: () => ({}) });
+    const noStore = await call(bare, 'POST', '/v1/platform/operations',
+      { operation_id: 'o-none', owner, kind: 'send', effect: REQ });
+    assertEnvelope(noStore, 'unavailable', 'no ledger');
+    assert.equal(noStore.json.when.state, 'settled');
+    const failing = createV1({ store: { reserve: async () => { throw new Error('pg down'); } },
+      ctx, attachments: null, self: () => null, health: () => ({}) });
+    assertEnvelope(await call(failing, 'POST', '/v1/platform/operations',
+      { operation_id: 'o-down', owner, kind: 'send', effect: REQ }), 'unavailable', 'ledger down');
+    const sent = ctx.calls.length;
+
+    // read-back: ok carries the operation's own envelope; a missing record is nothing_found
+    const back = await call(v1, 'GET', '/v1/platform/operations/o-complete');
+    assertEnvelope(back, 'ok', 'read-back ok');
+    assert.deepEqual(Object.keys(back.json.payload).sort(), ENVELOPE_PARTS);
+    assert.equal(back.json.payload.outcome, 'complete');
+    assertEnvelope(await call(v1, 'GET', '/v1/platform/operations/o-ghost'), 'nothing_found', 'read-back miss');
+    assertEnvelope(await call(bare, 'GET', '/v1/platform/operations/o-ghost'), 'unavailable', 'read-back no ledger');
+
+    // a kind outside the closed set: 422, no envelope, no row
+    const rows = pg.actions.size;
+    const unknownKind = await op('o-teleport', REQ, 'teleport');
+    assert.equal(unknownKind.status, 422);
+    assert.equal(unknownKind.json.outcome, undefined);
+    assert.equal(pg.actions.size, rows);
+    // an operation_id reused for another effect: 409, no envelope, no effect
+    const conflict = await op('o-complete', { ...REQ, text: 'another effect' });
+    assert.equal(conflict.status, 409);
+    assert.equal(conflict.json.outcome, undefined);
+    assert.equal(ctx.calls.length, sent);
+
+    // queries
+    const roster = await call(v1, 'POST', '/v1/platform/queries',
+      { kind: 'roster', params: { conversation_id: group } });
+    assertEnvelope(roster, 'ok', 'roster');
+    assert.deepEqual(roster.json.payload, { available: true, members: ['+85290000100', '60000000000001'] });
+    assert.deepEqual(roster.json.scope, { level: 'room', id: group });
+    assert.equal(roster.json.from.source, 'whatsapp');
+    assertEnvelope(await call(v1, 'POST', '/v1/platform/queries',
+      { kind: 'roster', params: { conversation_id: REQ.target.id } }), 'unavailable', 'roster of a dm');
+    assertEnvelope(await call(v1, 'POST', '/v1/platform/queries',
+      { kind: 'members', params: {} }), 'unavailable', 'closed kind not implemented');
+    const unknownQuery = await call(v1, 'POST', '/v1/platform/queries', { kind: 'weather', params: {} });
+    assert.equal(unknownQuery.status, 422);
+    assert.equal(unknownQuery.json.outcome, undefined);
+
+    // the account read
+    assertEnvelope(await call(v1, 'GET', '/v1/platform/accounts/self'), 'unavailable', 'before login');
+    me = { platform: 'whatsapp', primary: '+85290000100', aliases: ['+85290000100'], phone: '85290000100' };
+    const account = await call(v1, 'GET', '/v1/platform/accounts/self');
+    assertEnvelope(account, 'ok', 'account');
+    assert.deepEqual(account.json.payload, me);
+    assertEnvelope(await call(v1, 'GET', '/v1/platform/accounts/85290000100'), 'nothing_found', 'other account');
+
+    // the status read
+    const status = await call(v1, 'GET', '/v1/operations/status');
+    assertEnvelope(status, 'ok', 'status');
+    assert.equal(status.json.payload.ok, true);
+    assert.equal(status.json.payload.connected_at_ms, null);
+
+    // blobs
+    const put = (bytes) => call(v1, 'PUT', '/v1/platform/blobs/k-1', Buffer.from(bytes));
+    const first = await put('abc');
+    assertEnvelope(first, 'complete', 'blob new');
+    assert.deepEqual(first.json.payload, { key: 'k-1' });
+    assertEnvelope(await put('abc'), 'complete', 'blob same bytes');
+    const other = await put('xyz');
+    assertEnvelope(other, 'rejected', 'blob other bytes');
+    assert.equal(other.json.payload.error.kind, 'conflict');
+    const big = await call(v1, 'PUT', '/v1/platform/blobs/k-2', Buffer.alloc(9));
+    assertEnvelope(big, 'rejected', 'blob over bound');
+    assert.equal(big.json.payload.error.kind, 'too_large');
+    const bytes = await call(v1, 'GET', '/v1/platform/blobs/k-1');
+    assert.equal(bytes.status, 200);
+    assert.deepEqual(bytes.body, Buffer.from('abc'));
+    const absent = await call(v1, 'GET', '/v1/platform/blobs/k-2');
+    assertEnvelope(absent, 'nothing_found', 'blob absent');
+    assert.equal(absent.json.payload, null);
+    assertEnvelope(await call(bare, 'PUT', '/v1/platform/blobs/k-1', Buffer.from('abc')), 'unavailable', 'no custody put');
+    assertEnvelope(await call(bare, 'GET', '/v1/platform/blobs/k-1'), 'unavailable', 'no custody get');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('request hash covers the effect only', async () => {
+  // What BridgeAdapter.send builds; the Python and Go bridges pin the same digest.
+  const effect = { attachments: [], mentions: [], preview: null, quote: null, styles: [],
+    target: { id: 'conv-1', kind: 'group', thread: '' }, text: 'hello' };
+  const digest = '2769bc2bbbf2d02f1cf2a8d29db8261987258a0d6873e5b1e5c81aeb54d54035';
+  assert.equal(requestHash(effect), digest);
+  // The stored hash is over the inner `effect`, whatever id, owner and kind carry it.
+  const pg = fakePg();
+  const v1 = createV1({ store: new ActionStore(pg, { platform: 'whatsapp', accountKey: 'a',
+    receiptIntents: () => new Set(['e1']) }), ctx: fakeCtx(), attachments: null,
+  self: () => null, health: () => ({}) });
+  await call(v1, 'POST', '/v1/platform/operations',
+    { operation_id: 'h-1', owner: { kind: 'event_receipt', id: 'e1' }, kind: 'send', effect });
+  assert.equal(pg.actions.get('h-1').request_hash, digest);
+});
+
+test('a send whose terminal writes fail after the effect ran is uncertain, never unavailable', async () => {
+  const pg = fakePg();
+  const store = new ActionStore(pg, { platform: 'whatsapp', accountKey: 'a' });
+  const ctx = fakeCtx();
+  pg.works.set('1', workRow(4));
+  const writes = [];
+  store.finish = async (id, state) => { writes.push(state); throw new Error('generated write failure'); };
+  const v1 = createV1({ store, ctx, attachments: null, self: () => null,
+    health: () => ({ ok: true }), metrics: null });
+  const res = await call(v1, 'POST', '/v1/platform/operations', { operation_id: 'wf1',
+    owner: { kind: 'work', id: 'w-1', generation: 4 }, kind: 'send', effect: REQ });
+  assertEnvelope(res, 'uncertain', 'post-effect write failure');
+  assert.equal(ctx.calls.length, 1);              // the effect ran upstream
+  assert.deepEqual(writes, ['confirmed', 'uncertain']);
+});
+
+test('ready needs every delivery dependency beside a healthy socket', async () => {
+  const me = { platform: 'whatsapp', primary: '+85290000100', aliases: ['+85290000100'] };
+  const deps = { store: {}, ctx: fakeCtx(), attachments: {}, self: () => me,
+    health: () => ({ ok: true, detail: null }), liveness: () => ({ ok: true }) };
+  const v1 = createV1(deps);
+  assert.equal((await call(v1, 'GET', '/ready')).status, 200);
+  for (const [missing, value] of [['store', null], ['attachments', null], ['self', () => null]]) {
+    const kept = deps[missing];
+    deps[missing] = value;
+    assert.equal((await call(v1, 'GET', '/ready')).status, 503, missing);
+    const status = await call(v1, 'GET', '/v1/operations/status');
+    assertEnvelope(status, 'ok', missing);
+    assert.equal(status.json.payload.ok, false, missing);
+    assert.ok(status.json.payload.detail, missing);
+    deps[missing] = kept;
+  }
 });

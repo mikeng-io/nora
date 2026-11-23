@@ -20,6 +20,8 @@ from aiohttp import web
 
 from nora import config
 from nora.persons import load_persons
+from nora.platform.bridge.client import ACCOUNT_PATH, QUERIES_PATH
+from nora.platform.bridge.contract import read_body
 from nora.platform.bridge.projection import (
     BridgeChannelDirectory,
     ProjectionPublisher,
@@ -211,34 +213,36 @@ def _enable_whatsapp(path: Path) -> None:
     )
 
 
+def _answer(outcome: str, payload: object = None) -> dict:
+    return read_body(outcome, payload, source="discord", trace="")  # type: ignore[arg-type]
+
+
 async def _bridge_server(state: dict) -> tuple[web.AppRunner, str]:
-    """A REAL bridge subset — `POST /v1/reads` + `GET /v1/self` — answered
+    """A REAL bridge subset — the `channels` query and the account read — answered
     from `state` at request time so a test can mutate upstream truth between
     ticks (a channel appears, the bridge goes unavailable), exactly as the
     discord control worker's endpoints behave. Returns (runner, base_url)."""
 
     async def reads(request: web.Request) -> web.Response:
         body = await request.json()
-        assert body["op"] == "channels"
+        assert body["kind"] == "channels"
         gid = body["params"]["guild_id"]
         if not state.get("available", True):
-            return web.json_response({"available": False})
-        return web.json_response({"available": True, "value": {
+            return web.json_response(_answer("unavailable"), status=503)
+        return web.json_response(_answer("ok", {
             "channels": dict(state.get("channels", {}).get(gid, {})),
             "threads": dict(state.get("threads", {})),
-        }})
+        }))
 
     async def self_ep(request: web.Request) -> web.Response:
         if not state.get("self_available", True):
-            return web.Response(status=503)
-        return web.json_response({
-            "primary": state.get("primary"),
-            "aliases": list(state.get("aliases", [])),
-        })
+            return web.json_response(_answer("unavailable"), status=503)
+        return web.json_response(_answer("ok", {
+            "primary": state.get("primary"), "aliases": list(state.get("aliases", []))}))
 
     app = web.Application()
-    app.router.add_post("/v1/reads", reads)
-    app.router.add_get("/v1/self", self_ep)
+    app.router.add_post(QUERIES_PATH, reads)
+    app.router.add_get(ACCOUNT_PATH, self_ep)
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "127.0.0.1", 0).start()
@@ -297,7 +301,7 @@ async def test_publishes_exactly_the_admitted_scope(example_config_path: Path):
     }
     # No guild carries a music route in this policy; the map exists anyway.
     assert proj["music_channels"] == {}
-    # No bridge to answer /v1/self: the config-floor account is the whole set.
+    # No bridge to answer the account read: the config-floor account is the whole set.
     assert proj["self_aliases"] == [NORA_ACCOUNT]
     assert proj["deterministic_triggers"] == ["nora"]
     assert proj["receipt_emoji"] == "👀"
@@ -683,7 +687,7 @@ async def test_revision_is_content_addressed(example_config_path: Path):
 async def test_self_aliases_union_config_floor_and_bridge_self(
     example_config_path: Path,
 ):
-    """The platform's configured account is the floor; the bridge's /v1/self
+    """The platform's configured account is the floor; the bridge's account read
     answer unions on top. A VARYING answer replaces, never accretes — an old
     identity must not keep granting self-reply eligibility."""
     _sources(example_config_path.parent)
@@ -694,9 +698,7 @@ async def test_self_aliases_union_config_floor_and_bridge_self(
     }
     runner, base = await _bridge_server(state)
     try:
-        pub = _publisher(
-            example_config_path.parent, self_url=f"{base}/v1/self",
-        )
+        pub = _publisher(example_config_path.parent, self_url=f"{base}{ACCOUNT_PATH}")
         await pub.tick()
         assert set(_read(pub)["self_aliases"]) == {
             NORA_ACCOUNT, "a85290000108-0000-4000-8000-85290000109", "+85290000107",
@@ -717,7 +719,7 @@ async def test_self_aliases_union_config_floor_and_bridge_self(
 async def test_self_fetch_failure_fails_closed_and_marks_stale(
     example_config_path: Path,
 ):
-    """A failed /v1/self EMPTIES the fetched alias set — self-reply receipt
+    """A failed account read EMPTIES the fetched alias set — self-reply receipt
     eligibility must never be granted against a possibly-rotated identity.
     The config floor survives (Signal), rooms still publish, and staleness
     is reported honestly."""
@@ -726,13 +728,11 @@ async def test_self_fetch_failure_fails_closed_and_marks_stale(
     state = {"primary": "a85290000108-0000-4000-8000-85290000109"}
     runner, base = await _bridge_server(state)
     try:
-        pub = _publisher(
-            example_config_path.parent, self_url=f"{base}/v1/self",
-        )
+        pub = _publisher(example_config_path.parent, self_url=f"{base}{ACCOUNT_PATH}")
         await pub.tick()
         assert "a85290000108-0000-4000-8000-85290000109" in _read(pub)["self_aliases"]
 
-        # The bridge stops answering /v1/self: fetched aliases DROP to empty —
+        # The bridge stops answering the account read: fetched aliases DROP to empty —
         # a possibly-rotated identity grants no self-reply eligibility.
         state["self_available"] = False
         await pub.tick()
@@ -751,7 +751,7 @@ async def test_self_fetch_failure_fails_closed_and_marks_stale(
 async def test_no_self_source_and_no_floor_is_stale_but_publishes_scope(
     example_config_path: Path,
 ):
-    """A platform with neither a bridge /v1/self nor a configured account
+    """A platform with neither a bridge account read nor a configured account
     floor publishes room grants (capture is authorized) while self-reply
     eligibility fails closed on an empty alias set and health says stale."""
     _sources(example_config_path.parent)
@@ -771,7 +771,7 @@ async def test_guild_scope_expands_through_live_directory(
     example_config_path: Path,
 ):
     """A `guild =` entry admits exactly the room-channels the bridge's
-    /v1/reads enumerates — through the SAME `ChannelDirectory` port the app
+    `channels` query enumerates — through the SAME `ChannelDirectory` port the app
     feeds (`policy_channels` on `ReloadFiles`), never a guessed set. The map
     updates while no app process exists, and an unavailable bridge denies
     rather than inventing an empty or stale grant."""
@@ -786,7 +786,7 @@ async def test_guild_scope_expands_through_live_directory(
     try:
         pub = _publisher(
             example_config_path.parent, platform="discord",
-            reads_url=f"{base}/v1/reads", self_url=f"{base}/v1/self",
+            reads_url=f"{base}{QUERIES_PATH}", self_url=f"{base}{ACCOUNT_PATH}",
         )
         await pub.tick()
         proj = _read(pub)
@@ -834,7 +834,7 @@ async def test_guild_policy_denies_scope_when_directory_never_available(
     _enable_discord(example_config_path)
     pub = _publisher(
         example_config_path.parent, platform="discord",
-        reads_url="http://127.0.0.1:1/v1/reads",
+        reads_url=f"http://127.0.0.1:1{QUERIES_PATH}",
     )
     await pub.tick()
     proj = _read(pub)
@@ -861,21 +861,20 @@ async def test_directory_threads_and_ttl_expiry():
         async def __aexit__(self, *exc):
             return False
 
-        def raise_for_status(self):
-            pass
+        status, content_type = 200, "application/json"
 
-        async def json(self):
+        async def json(self, **_):
             return self._body
 
     class _Session:
-        def post(self, _url, **kw):
+        def request(self, _method, _url, **kw):
             gid = kw["json"]["params"]["guild_id"]
-            return _Resp({"available": True, "value": {
+            return _Resp(_answer("ok", {
                 "channels": channels.get(gid, {}), "threads": threads,
-            }})
+            }))
 
     directory = BridgeChannelDirectory(
-        reads_url="http://bridge/v1/reads", ttl_seconds=30.0,
+        reads_url=f"http://bridge{QUERIES_PATH}", ttl_seconds=30.0,
         clock=lambda: now[0],
     )
     await directory.refresh(_Session(), {GUILD_ID})

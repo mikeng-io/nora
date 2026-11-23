@@ -11,6 +11,8 @@ import pytest
 from nora.domain.models import NormalizedMessage
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
+from nora.platform.bridge.client import ACCOUNT_PATH
+from nora.platform.bridge.contract import read_body
 from nora.subject import close_private_blank_templates
 from nora.subject.obtain import SubjectSpec, build_config, default_policy
 from nora.subject.recorded_services import RecordedServices
@@ -24,8 +26,9 @@ def recording(cfg, wakes):
     bindings = {"llm.base_url": "model", "platforms.signal.base_url": "bridge"}
     bindings.update({f"providers.{name}.base_url": "model" for name in cfg.providers})
     return RecordedServices({"version": 1, "bindings": bindings, "services": {
-        "model": [], "bridge": [{"method": "GET", "path": "/v1/self",
-            "response": {"status": 200, "json": {"primary": "generated-self", "aliases": []}}}
+        "model": [], "bridge": [{"method": "GET", "path": ACCOUNT_PATH,
+            "response": {"status": 200, "json": read_body("ok", {
+                "primary": "generated-self", "aliases": []}, source="signal", trace="")}}
             for _ in range(wakes)],
     }})
 

@@ -58,22 +58,22 @@
   {
     "name": "an uncertain bridge reply exposes unconfirmed native handles",
     "file": "nora/platform/bridge/client.py",
-    "old": "            return SendResult(ok=False, uncertain=True)",
-    "new": "            return SendResult(ok=False, uncertain=True,\n                              platform_message_ids=tuple(data.get(\"platform_refs\") or ()))",
+    "old": "    return SendResult(ok=False, uncertain=True)\n",
+    "new": "    return SendResult(ok=False, uncertain=True, platform_message_ids=tuple(\n        (envelope.get(\"payload\") or {}).get(\"platform_refs\") or ()))\n",
     "target": "tests/integration/test_bridge_send_native_identity.py::test_an_unconfirmed_reply_exposes_no_native_handles"
   },
   {
     "name": "the bridge client ignores the platform_refs list",
     "file": "nora/platform/bridge/client.py",
-    "old": "                platform_message_ids=tuple(\n                    str(r) for r in (data.get(\"platform_refs\") or ()) if r\n                ) or ((",
-    "new": "                platform_message_ids=tuple(\n                    str(r) for r in () if r\n                ) or ((",
+    "old": "        refs = tuple(str(r) for r in (payload.get(\"platform_refs\") or ()) if r)",
+    "new": "        refs = tuple(str(r) for r in () if r)",
     "target": "tests/integration/test_bridge_send_native_identity.py::test_a_multi_post_send_lands_every_native_id_for_a_later_reaction"
   },
   {
     "name": "the action reply drops the stored ref list",
     "file": "deploy/instagram-bridge/internal/transport/http/v1.go",
-    "old": "\t\tPlatformRefs: row.PlatformRefs,",
-    "new": "\t\tPlatformRefs: nil,",
+    "old": "\trefs := row.PlatformRefs\n",
+    "new": "\tvar refs []string\n",
     "target": "go:deploy/instagram-bridge ./internal/transport/http -run ^TestV1SendMultiPostKeepsEveryRef"
   },
   {

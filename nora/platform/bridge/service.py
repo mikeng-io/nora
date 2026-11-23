@@ -34,12 +34,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import replace
+from datetime import datetime
 from typing import Any, Protocol
 
 from nora.domain.actions import ActionOwner
-from nora.infra.sql.bridge_store import SqlBridgeStore
+from nora.infra.sql.bridge_store import SqlBridgeStore, request_hash
 from nora.memory import ActAuthority, EffectRecorder, Outcome
 from nora.platform.bridge import telemetry as bt
 from nora.platform.bridge.actions import stored_request, validate_owner
@@ -107,13 +109,15 @@ class ActionReply:
     the ledger/executor could not be reached BEFORE an effect, `conflict`
     the id was spent on a different request or immutable context, and
     `uncertain` when the upstream call was made (or may have been) and the
-    result cannot be proven — never a stubbed success."""
+    result cannot be proven — never a stubbed success. `started_ms` and
+    `settled_ms` are the row's own times, `None` where no row stands behind it."""
 
     def __init__(
         self, state: str, *, kind: str = "", message: str = "",
         platform_ref: str | None = None, platform_ms: int | None = None,
         message_id: int | None = None,
         platform_refs: tuple[str, ...] = (),
+        started_ms: int | None = None, settled_ms: int | None = None,
     ) -> None:
         self.state = state
         self.kind = kind
@@ -122,6 +126,8 @@ class ActionReply:
         self.platform_ms = platform_ms
         self.message_id = message_id
         self.platform_refs = tuple(platform_refs)
+        self.started_ms = started_ms
+        self.settled_ms = settled_ms
 
 
 class _Executor(Protocol):
@@ -132,51 +138,12 @@ class _Executor(Protocol):
     async def __call__(self, action: Mapping[str, Any]) -> ActionReply: ...
 
 
-def action_http_status(reply: ActionReply) -> int:
-    """The wire status for an `ActionReply` — Signal's contract: a malformed
-    body is 400, a denied owner 403, a spent id 409, a ledger unreachable
-    BEFORE the effect 503, every executed outcome 200 — including a
-    terminal-write failure, which is an `uncertain` the client must see,
-    not a transport failure."""
-    if reply.state == "unavailable":
-        return 503
-    if reply.state == "conflict":
-        return 409
-    if reply.kind == "bad_request":
-        return 400
-    if reply.kind == "owner":
-        return 403
-    return 200
+def _epoch_ms(value: Any) -> int | None:
+    return int(value.timestamp() * 1000) if isinstance(value, datetime) else None
 
 
-def action_response(action_id: str, reply: ActionReply) -> dict[str, Any]:
-    """The frozen wire body — Signal and Discord render the identical
-    shape so `BridgeAdapter._action` parses one contract. `outcome` is
-    the terminal vocabulary (`confirmed|rejected|unsupported|uncertain`)
-    or null while a state is still in flight; `state` is the row's own
-    word — `conflict`/`unavailable` only ever ride non-2xx bodies."""
-    if reply.state in ("confirmed", "uncertain"):
-        outcome: str | None = reply.state
-    elif reply.state == "rejected":
-        outcome = ("unsupported" if reply.kind == "unsupported"
-                   else "rejected")
-    elif reply.state in ("conflict", "unavailable"):
-        outcome = reply.state
-    else:
-        outcome = None
-    return {
-        "action_id": action_id, "state": reply.state, "outcome": outcome,
-        "platform_ref": reply.platform_ref,
-        "platform_refs": list(reply.platform_refs) or None,
-        "platform_ms": reply.platform_ms,
-        "message_id": reply.message_id,
-        "error": (
-            {"kind": reply.kind, "message": reply.message}
-            if reply.kind else None),
-    }
-
-
-def _reply_from_row(row: Mapping[str, Any]) -> ActionReply:
+def reply_from_row(row: Mapping[str, Any]) -> ActionReply:
+    """A stored `bridge_action` row as the reply it settled to, with its times."""
     error = row.get("error") or {}
     return ActionReply(
         str(row["state"]), kind=str(error.get("kind") or ""),
@@ -184,7 +151,9 @@ def _reply_from_row(row: Mapping[str, Any]) -> ActionReply:
         platform_ref=row.get("platform_ref"),
         platform_refs=tuple(row.get("platform_refs") or ()),
         platform_ms=row.get("platform_ms"),
-        message_id=row.get("message_id"))
+        message_id=row.get("message_id"),
+        started_ms=_epoch_ms(row.get("started_at")),
+        settled_ms=_epoch_ms(row.get("completed_at")))
 
 
 def receipt_via(
@@ -402,7 +371,7 @@ class JournalCaptureSink:
 
 
 class DurableActionService:
-    """`ActionService`: the shared ledger behind `/v1/actions` and the
+    """`ActionService`: the shared ledger behind the platform operations and the
     bridge's own internal effects (the receipt lane).
 
     `run` is the HTTP path — parse/closed-kind owner → `validate_owner`
@@ -477,6 +446,12 @@ class DurableActionService:
         # Refuse BEFORE any effect when the ledger is unreachable — an
         # unrecorded effect is the one thing this API must never produce.
         try:
+            # A spent id answers from its stored row: the owner's authority is
+            # checked only before work runs, and a settled send has already
+            # spent it (its audit row is no longer pending).
+            stored = await self._store.action(aid)
+            if stored is not None and stored["state"] != "prepared":
+                return self._replay_or_conflict(stored, owner, r)
             async with self._store._engine.begin() as conn:
                 verdict_owner = await validate_owner(
                     conn, platform=self._platform,
@@ -501,7 +476,7 @@ class DurableActionService:
         if verdict == "replay":
             # Immutable binding on replay: same id + same request + same
             # owner — return the persisted outcome, no second effect.
-            return _reply_from_row(prior)  # type: ignore[arg-type]
+            return reply_from_row(prior)  # type: ignore[arg-type]
         if verdict == "conflict":
             return ActionReply(
                 "conflict", kind="id_reused", message="action id spent")
@@ -513,6 +488,7 @@ class DurableActionService:
                                action_id=aid) as sp:
             bt.lifecycle(self._metrics, "delivery_started",
                          platform=self._platform, action_id=aid, trace=bt.span_ref(sp))
+            started_ms = int(time.time() * 1000)
             reply = await self._invoke_action(action)
             final = await self._terminal(
                 aid, reply.state, platform_ref=reply.platform_ref,
@@ -525,17 +501,27 @@ class DurableActionService:
             # The effect ran but the outcome was NOT persisted — report the
             # retained ambiguity, never a terminal the ledger doesn't hold.
             return ActionReply(
-                "uncertain", kind="store",
-                message="terminal write failed")
+                "uncertain", kind="store", message="terminal write failed",
+                message_id=verdict_owner.message_id, started_ms=started_ms)
         return ActionReply(
             final, kind=reply.kind, message=reply.message,
             platform_ref=reply.platform_ref, platform_ms=reply.platform_ms,
-            platform_refs=reply.platform_refs)
+            platform_refs=reply.platform_refs, message_id=verdict_owner.message_id,
+            started_ms=started_ms, settled_ms=int(time.time() * 1000))
+
+    def _replay_or_conflict(self, row: Mapping[str, Any], owner: ActionOwner,
+                            request: dict[str, Any]) -> ActionReply:
+        """A spent row: its own reply for the same id, owner and effect, else 409."""
+        if (row["platform"] == self._platform and row["account_key"] == self._account_key
+                and row["request_hash"] == request_hash(request)
+                and row["owner_kind"] == owner.kind and row["owner_id"] == owner.id):
+            return reply_from_row(row)
+        return ActionReply("conflict", kind="id_reused", message="action id spent")
 
     async def get(self, action_id: str) -> dict[str, Any] | None:
-        """`GET /v1/actions/{id}` — the persisted truth, scoped: another
-        platform's or account's action answers `None`, same as absent —
-        a scoped 404, never a cross-tenant read."""
+        """An operation's persisted row, scoped: another platform's or
+        account's action answers `None`, same as absent — never a
+        cross-tenant read."""
         row = await self._store.action(action_id)
         if (row is None or row["platform"] != self._platform
                 or row["account_key"] != self._account_key):
@@ -652,9 +638,8 @@ __all__ = [
     "DurableActionService",
     "JournalCaptureSink",
     "JournalPublisher",
-    "action_http_status",
-    "action_response",
     "admitted",
     "receipt_intent_ids",
     "receipt_via",
+    "reply_from_row",
 ]

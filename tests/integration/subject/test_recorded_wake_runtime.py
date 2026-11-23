@@ -18,6 +18,8 @@ from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import COGNITION_WAKE_OUTCOME
 from nora.infra.sql.stimuli import SqlStimulusStore
+from nora.platform.bridge.client import ACCOUNT_PATH, QUERIES_PATH
+from nora.platform.bridge.contract import read_body
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import RunEvidence, read_events, validate_events
 from nora.subject.obtain import SubjectSpec, build_config, default_policy
@@ -62,15 +64,17 @@ def services(cfg, requests):
     model.router.add_post("/v1/chat/completions", respond)
     bridge = web.Application()
 
-    async def read(request):
-        return web.json_response({
-            "/v1/self": {"primary": "generated-self", "aliases": []},
-            "/v1/groups": [{"id": "g1", "members": [["+852111"]]}],
-            "/v1/health": {"ok": True},
-        }[request.path])
+    reads = {ACCOUNT_PATH: {"primary": "generated-self", "aliases": []},
+             QUERIES_PATH: [{"id": "g1", "members": [["+852111"]]}],
+             "/v1/operations/status": {"ok": True}}
 
-    for path in ("/v1/self", "/v1/groups", "/v1/health"):
-        bridge.router.add_get(path, read)
+    async def read(request):
+        return web.json_response(read_body(
+            "ok", reads[request.path], source="signal", trace=""))
+
+    bridge.router.add_get(ACCOUNT_PATH, read)
+    bridge.router.add_get("/v1/operations/status", read)
+    bridge.router.add_post(QUERIES_PATH, read)
     apps = {"llm.base_url": model, "platforms.signal.base_url": bridge}
     apps.update({f"providers.{name}.base_url": model for name in cfg.providers})
     return apps

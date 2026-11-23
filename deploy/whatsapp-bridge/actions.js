@@ -1,18 +1,26 @@
 /**
- * The shared `/v1` bridge API (design/platform-bridges/02-wire-and-platforms.md «One synchronous wire API»): actions, self,
- * health, reads and attachment custody, all behind the shared bearer.
+ * The `platform` contract this bridge serves (design/service-api/, the routes
+ * in docs/service-api/openapi.json): delivery operations, queries, the account
+ * read, blob custody and the `operations` status read, all behind the shared
+ * bearer, plus the root probes `/health` and `/ready`. Every answer on the two
+ * prefixes is written by `contract.js`.
  *
  * Action truth: `confirmed` means Baileys' sendMessage RESOLVED with a stanza —
  * an HTTP-200-shaped answer, not a guess. `rejected` means the op was refused
  * before any upstream bytes (validation, fence, media custody) — definitely
  * not submitted. `uncertain` means the upstream call may have gone out and the
  * result could not be determined — never resolved to success, never retried
- * blindly. `unsupported` means the platform has no such op.
+ * blindly. Those stored states become outcomes only at the edge.
  */
 import { ACTION_OPS, OWNER_KINDS, actionResponse } from './store.js';
 import { isValidTargetJid, isGroupJid, isLidJid, jidUserDigits, buildMediaPayload, timestampMs } from './bridge_helpers.js';
 import { lidForm, phoneForm } from './wa_jid.js';
-import { readBody, sendJson } from './http_util.js';
+import { validAttachmentKey } from './media.js';
+import { readBody, readBoundedBody, sendJson } from './http_util.js';
+import {
+  operationEnvelope, readEnvelope, scopeOf, sendOperation, sendRead, sendRefusal,
+  settledOperation, traceOf,
+} from './contract.js';
 
 export class ActionRejected extends Error {
   constructor(kind, message) { super(message); this.kind = kind; }
@@ -164,14 +172,15 @@ export const executors = {
   },
 };
 
-function badRequest(res, message) {
-  return sendJson(res, 400, { error: 'bad_request', detail: message });
-}
+/** The closed query kinds of the platform contract; this bridge implements `roster`. */
+export const QUERY_KINDS = new Set([
+  'roster', 'members', 'channels', 'channel', 'member_presence', 'voice_presence', 'groups',
+]);
 
 /**
- * The /v1 action pipeline shared by `POST /v1/actions` and the receipt step:
- * reserve → (fence) → execute → record → respond. `reserve` answers replay
- * and conflict before any upstream call.
+ * The action pipeline shared by `POST /v1/platform/operations` and the
+ * receipt step: reserve → (fence) → execute → record → result. `reserve`
+ * answers replay and conflict before any upstream call.
  */
 export async function runAction({ store, ctx, actionId, owner, op, request, metrics, tracer, traceLinks = [] }) {
   const span = tracer?.startSpan('bridge.action.attempt', {
@@ -185,19 +194,18 @@ export async function runAction({ store, ctx, actionId, owner, op, request, metr
   return out;
 }
 
+function unavailable(actionId, kind, message) {
+  return { action_id: actionId, state: 'unavailable', platform_ref: null, platform_refs: null,
+    platform_ms: null, message_id: null, error: { kind, message } };
+}
+
 async function runActionInner({ store, ctx, actionId, owner, op, request, metrics }) {
-  if (!store) {
-    return { action_id: actionId, state: 'unavailable', outcome: null,
-      platform_ref: null, platform_refs: null, platform_ms: null,
-      error: { kind: 'store_unavailable', message: 'bridge_action store not configured' }, _status: 503 };
-  }
+  if (!store) return unavailable(actionId, 'store_unavailable', 'bridge_action store not configured');
   if (ctx.connected && !ctx.connected()) {
     // Definitely not submitted — answered BEFORE reserving so no 'started'
     // row pretends the upstream call may have happened. The caller treats
     // this as transport-unavailable (retryable upstream), not a rejection.
-    return { action_id: actionId, state: 'unavailable', outcome: null,
-      platform_ref: null, platform_refs: null, platform_ms: null,
-      error: { kind: 'not_connected', message: 'upstream socket is not connected' }, _status: 503 };
+    return unavailable(actionId, 'not_connected', 'upstream socket is not connected');
   }
   let verdict;
   try {
@@ -205,14 +213,12 @@ async function runActionInner({ store, ctx, actionId, owner, op, request, metric
   } catch (err) {
     // The reservation never landed — nothing ran, safe to say unavailable.
     metrics?.inc('bridge_action_total', { op, state: 'unavailable' });
-    return { action_id: actionId, state: 'unavailable', outcome: null,
-      platform_ref: null, platform_refs: null, platform_ms: null,
-      error: { kind: 'store_unavailable', message: sanitizeError(err, 'store').message }, _status: 503 };
+    return unavailable(actionId, 'store_unavailable', sanitizeError(err, 'store').message);
   }
   if (verdict.verdict === 'conflict') {
     metrics?.inc('bridge_action_total', { op, state: 'conflict' });
-    return { action_id: actionId, state: 'rejected', outcome: 'rejected',
-      platform_ref: null, platform_refs: null, platform_ms: null,
+    return { action_id: actionId, state: 'rejected', conflict: true,
+      platform_ref: null, platform_refs: null, platform_ms: null, message_id: null,
       error: { kind: 'conflict', message: 'action_id reused with a different request' } };
   }
   if (verdict.verdict === 'replay') {
@@ -225,138 +231,233 @@ async function runActionInner({ store, ctx, actionId, owner, op, request, metric
   }
   // verdict 'execute' — the row is 'started' and owner authorization already
   // happened inside the reservation transaction.
+  const startedAt = Date.now();
+  const messageId = verdict.messageId ?? null;
+  const settled = (state, fields) => ({ action_id: actionId, state, message_id: messageId,
+    platform_ref: null, platform_refs: null, platform_ms: null, error: null,
+    started_at: startedAt, completed_at: Date.now(), ...fields });
+  let state;
+  let fields;
   try {
     const out = await executors[op](request, ctx);
-    await store.finish(actionId, 'confirmed', {
-      platformRef: out.platform_ref, platformMs: out.platform_ms,
-      platformRefs: out.platform_refs });
-    metrics?.inc('bridge_action_total', { op, state: 'confirmed' });
-    return { action_id: actionId, state: 'confirmed', outcome: 'confirmed',
-      platform_ref: out.platform_ref, platform_refs: out.platform_refs ?? null,
-      platform_ms: out.platform_ms, error: null };
+    state = 'confirmed';
+    fields = { platform_ref: out.platform_ref, platform_refs: out.platform_refs ?? null,
+      platform_ms: out.platform_ms };
   } catch (err) {
-    if (err instanceof ActionRejected) {
-      const error = { kind: err.kind, message: sanitizeError(err).message };
-      await store.finish(actionId, 'rejected', { error });
-      metrics?.inc('bridge_action_total', { op, state: 'rejected' });
-      return { action_id: actionId, state: 'rejected', outcome: 'rejected',
-        platform_ref: null, platform_refs: null, platform_ms: null, error };
-    }
-    const error = sanitizeError(err);
-    await store.finish(actionId, 'uncertain', { error });
-    metrics?.inc('bridge_action_total', { op, state: 'uncertain' });
-    return { action_id: actionId, state: 'uncertain', outcome: 'uncertain',
-      platform_ref: null, platform_refs: null, platform_ms: null, error };
+    state = err instanceof ActionRejected ? 'rejected' : 'uncertain';
+    fields = { error: err instanceof ActionRejected
+      ? { kind: err.kind, message: sanitizeError(err).message } : sanitizeError(err) };
   }
+  // The row is `started`: a terminal write that does not land leaves the
+  // outcome unrecorded, which is `uncertain` — never `unavailable`, whose
+  // meaning is "not attempted".
+  for (const [s, f] of [[state, fields], ['uncertain', { error: sanitizeError(null, 'ledger') }]]) {
+    try {
+      await store.finish(actionId, s, { platformRef: f.platform_ref ?? null,
+        platformMs: f.platform_ms ?? null, platformRefs: f.platform_refs ?? null, error: f.error ?? null });
+      metrics?.inc('bridge_action_total', { op, state: s });
+      return settled(s, f);
+    } catch { /* the next attempt records uncertainty */ }
+  }
+  metrics?.inc('bridge_action_total', { op, state: 'uncertain' });
+  return settled('uncertain', { error: sanitizeError(null, 'ledger') });
+}
+
+const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+async function jsonBody(req) {
+  return JSON.parse((await readBody(req)).toString('utf8') || '{}');
+}
+
+/** The operation request's refusal reason, or null when it is well formed. */
+function operationFault(body) {
+  const { operation_id: id, owner, effect } = body || {};
+  if (typeof id !== 'string' || !id) return [400, 'operation_id required'];
+  if (!isObject(owner) || !OWNER_KINDS.has(owner.kind) || typeof owner.id !== 'string' || !owner.id) {
+    return [400, 'owner.kind must be work|event_receipt|otp_challenge|live_invocation with an id'];
+  }
+  if (owner.kind === 'work' && !Number.isInteger(owner.generation)) {
+    return [400, 'work owner requires integer generation'];
+  }
+  // A kind outside the closed set never reserves a row.
+  if (typeof body.kind !== 'string' || !ACTION_OPS.has(body.kind)) return [422, 'unknown operation kind'];
+  if (!isObject(effect)) return [400, 'effect must be an object'];
+  return null;
 }
 
 /**
- * Route the /v1 surface. `deps`: { store, ctx, attachments, self, health,
- * metrics, sock } — `self` is a callable returning the identity snapshot,
- * `health` likewise. Returns true when it handled the request.
+ * The contract's routes. `deps`: { store, ctx, attachments, self, health,
+ * liveness, ready, metrics, tracer } — `self`, `health`, `liveness` and
+ * `ready` are callables read per request.
+ */
+function routeTable(deps) {
+  const healthy = () => Boolean(deps.health?.()?.ok);
+
+  /** The bridge's status, `ok` only when it can also deliver; `/ready` agrees. */
+  function readiness() {
+    const status = { connected_at_ms: null, ...deps.health?.() };
+    const missing = !deps.store ? 'action_store_missing'
+      : !deps.attachments ? 'custody_missing'
+        : !deps.self?.() ? 'no_account_identity'
+          : deps.ready && !deps.ready() ? 'not_ready' : null;
+    if (missing && status.ok) Object.assign(status, { ok: false, detail: missing });
+    return { ...status, ok: Boolean(status.ok) };
+  }
+
+  async function submitOperation(req, res, trace) {
+    const body = await jsonBody(req);
+    const fault = operationFault(body);
+    if (fault) return sendRefusal(res, fault[0], fault[1]);
+    const { operation_id: actionId, owner, kind: op, effect } = body;
+    const target = typeof effect.target?.id === 'string' ? effect.target.id : '';
+    const out = await runAction({ store: deps.store, ctx: deps.ctx,
+      actionId, owner: { kind: owner.kind, id: owner.id, generation: owner.generation ?? null },
+      op, request: effect, metrics: deps.metrics, tracer: deps.tracer,
+      // The caller's W3C context — a span link, never a parent, and
+      // absent/invalid headers simply carry no link.
+      traceLinks: req.headers?.['traceparent'] ? [String(req.headers['traceparent'])] : [] });
+    if (out.conflict) return sendRefusal(res, 409, 'operation_id reused for another effect');
+    return sendOperation(res, operationEnvelope(trace, out, target));
+  }
+
+  async function readOperation(req, res, trace, [id]) {
+    const read = (outcome, payload = null) => sendRead(res, readEnvelope(trace,
+      { outcome, payload, healthy: healthy() }));
+    if (!deps.store) return read('unavailable');
+    let row;
+    try { row = await deps.store.get(id); } catch { return read('unavailable'); }
+    if (!row) return read('nothing_found');
+    const target = typeof row.request?.target?.id === 'string' ? row.request.target.id : '';
+    const env = operationEnvelope(trace, actionResponse(row), target);
+    return sendRead(res, readEnvelope(trace, { outcome: 'ok', payload: env,
+      healthy: healthy(), scope: env.scope }));
+  }
+
+  async function query(req, res, trace) {
+    const body = await jsonBody(req);
+    if (!isObject(body) || typeof body.kind !== 'string' || !QUERY_KINDS.has(body.kind)) {
+      return sendRefusal(res, 422, 'unknown query kind');
+    }
+    const params = isObject(body.params) ? body.params : {};
+    const jid = params.conversation_id;
+    const scope = scopeOf(typeof jid === 'string' ? jid : null);
+    const read = (outcome, payload = null) => sendRead(res, readEnvelope(trace,
+      { outcome, payload, healthy: healthy(), scope }));
+    // A closed kind this bridge does not implement is unavailable, never empty.
+    if (body.kind !== 'roster') return read('unavailable');
+    if (typeof jid !== 'string' || !isGroupJid(jid) || !deps.ctx?.sock || !deps.ctx.connected?.()) {
+      return read('unavailable');
+    }
+    let meta;
+    try { meta = await deps.ctx.sock.groupMetadata(jid); } catch { return read('unavailable'); }
+    const members = [];
+    for (const p of meta?.participants || []) {
+      const raw = p.phoneNumber ? `${p.phoneNumber}@s.whatsapp.net` : (p.id || p.lid || '');
+      const digits = jidUserDigits(raw);
+      if (!digits) continue;
+      members.push(isLidJid(raw) ? lidForm(digits) : phoneForm(digits));
+    }
+    return read('ok', { available: true, members });
+  }
+
+  async function readAccount(req, res, trace, [id]) {
+    const read = (outcome, payload = null) => sendRead(res, readEnvelope(trace,
+      { outcome, payload, healthy: healthy() }));
+    if (id !== 'self') return read('nothing_found');
+    const me = deps.self();
+    return me ? read('ok', me) : read('unavailable');
+  }
+
+  async function putBlob(req, res, trace, [key]) {
+    const settle = (outcome, payload = null) => sendOperation(res,
+      settledOperation(trace, { outcome, payload, target: key }));
+    const store = deps.attachments;
+    if (!store) return settle('unavailable');
+    if (!validAttachmentKey(key)) return sendRefusal(res, 400, 'invalid blob key');
+    const { data, over } = await readBoundedBody(req, store.maxBytes);
+    const refuse = (kind, message) => settle('rejected', { error: { kind, message } });
+    if (over) return refuse('too_large', 'blob over the size bound');
+    let result;
+    try { result = store.put(key, data); } catch { return settle('unavailable'); }
+    if (result === 'conflict') return refuse('conflict', 'blob key already holds different bytes');
+    deps.metrics?.inc('bridge_attachment_put_total', { result });
+    return settle('complete', { key });
+  }
+
+  async function getBlob(req, res, trace, [key]) {
+    const read = (outcome) => sendRead(res, readEnvelope(trace,
+      { outcome, healthy: healthy() }));
+    if (!deps.attachments) return read('unavailable');
+    let data;
+    try { data = deps.attachments.fetch(key); } catch { return read('unavailable'); }
+    if (data === null) return read('nothing_found');
+    res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': data.length });
+    res.end(data);
+    return true;
+  }
+
+  async function readStatus(req, res, trace) {
+    const status = readiness();
+    return sendRead(res, readEnvelope(trace, { outcome: 'ok', payload: status,
+      healthy: status.ok }));
+  }
+
+  return [
+    ['POST', '/v1/platform/operations', 'operation', submitOperation],
+    ['GET', '/v1/platform/operations/{operation_id}', 'read', readOperation],
+    ['POST', '/v1/platform/queries', 'read', query],
+    ['GET', '/v1/platform/accounts/{account_id}', 'read', readAccount],
+    ['PUT', '/v1/platform/blobs/{key}', 'operation', putBlob],
+    ['GET', '/v1/platform/blobs/{key}', 'read', getBlob],
+    ['GET', '/v1/operations/status', 'read', readStatus],
+    ['GET', '/health', 'probe', (req, res) => sendJson(res, 200, deps.liveness?.() ?? { ok: true })],
+    ['GET', '/ready', 'probe', (req, res) => {
+      const ready = readiness().ok;
+      return sendJson(res, ready ? 200 : 503, { ready });
+    }],
+  ].map(([method, path, family, handler]) => ({
+    method, path, family, handler,
+    pattern: new RegExp(`^${path.replace(/\{[a-z_]+\}/g, '([^/]+)')}$`),
+  }));
+}
+
+/** The routes this bridge serves, as `METHOD path` with the contract's parameter names. */
+export const SERVED_ROUTES = Object.freeze(routeTable({}).map((r) => `${r.method} ${r.path}`));
+
+/**
+ * Route the contract. Returns true when it handled the request; false for a
+ * path it does not serve (the caller's 404).
  */
 export function createV1(deps) {
+  const routes = routeTable(deps);
   return async function handleV1(req, res, url) {
-    const route = `${req.method} ${url.pathname}`;
+    let route = null;
+    let match = null;
+    for (const r of routes) {
+      match = req.method === r.method && r.pattern.exec(url.pathname);
+      if (match) { route = r; break; }
+    }
+    if (!route) return false;
+    const trace = traceOf(req);
     try {
-      switch (true) {
-        case route === 'POST /v1/actions': {
-          const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
-          const { action_id: actionId, owner, op, request } = body || {};
-          if (typeof actionId !== 'string' || !actionId) return badRequest(res, 'action_id required');
-          if (!owner || typeof owner !== 'object' || !OWNER_KINDS.has(owner.kind)
-              || typeof owner.id !== 'string' || !owner.id) {
-            return badRequest(res, 'owner.kind must be work|event_receipt|otp_challenge|live_invocation with an id');
-          }
-          if (owner.kind === 'work' && !Number.isInteger(owner.generation)) {
-            return badRequest(res, 'work owner requires integer generation');
-          }
-          if (typeof op !== 'string' || !ACTION_OPS.has(op) || !executors[op]) {
-            return sendJson(res, 200, { action_id: actionId, state: 'rejected',
-              outcome: 'unsupported', platform_ref: null, platform_refs: null,
-              platform_ms: null,
-              error: { kind: 'unsupported', message: String(op).slice(0, 40) } });
-          }
-          if (typeof request !== 'object' || request === null || Array.isArray(request)) {
-            return badRequest(res, 'request must be an object');
-          }
-          const out = await runAction({ store: deps.store, ctx: deps.ctx,
-            actionId, owner: { kind: owner.kind, id: owner.id, generation: owner.generation ?? null },
-            op, request, metrics: deps.metrics, tracer: deps.tracer,
-            // The caller's W3C context — a span link, never a parent, and
-            // absent/invalid headers simply carry no link.
-            traceLinks: req.headers?.['traceparent'] ? [String(req.headers['traceparent'])] : [] });
-          return sendJson(res, out._status || 200, out);
-        }
-        case req.method === 'GET' && url.pathname.startsWith('/v1/actions/'): {
-          const id = decodeURIComponent(url.pathname.slice('/v1/actions/'.length));
-          if (!deps.store) return sendJson(res, 503, { error: 'store_unavailable' });
-          const row = await deps.store.get(id);
-          if (!row) return sendJson(res, 404, { error: 'unknown action' });
-          return sendJson(res, 200, actionResponse(row));
-        }
-        case req.method === 'PUT' && url.pathname.startsWith('/v1/attachments/'): {
-          const key = decodeURIComponent(url.pathname.slice('/v1/attachments/'.length));
-          const data = await readBody(req);
-          try {
-            const r = deps.attachments.put(key, data);
-            if (r === 'conflict') {
-              return sendJson(res, 409, { error: 'attachment key already holds different bytes' });
-            }
-            deps.metrics?.inc('bridge_attachment_put_total', { result: r });
-            return sendJson(res, 201, { ok: true });
-          } catch (err) {
-            const bad = /over bound|invalid/.test(String(err?.message || ''));
-            return sendJson(res, bad ? (String(err.message).includes('bound') ? 413 : 400) : 500,
-              { error: bad ? 'invalid attachment or size' : 'attachment store failed' });
-          }
-        }
-        case req.method === 'GET' && url.pathname.startsWith('/v1/attachments/'): {
-          const key = decodeURIComponent(url.pathname.slice('/v1/attachments/'.length));
-          const data = deps.attachments.read(key);
-          if (data === null) return sendJson(res, 404, { error: 'unknown attachment' });
-          res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': data.length });
-          return res.end(data);
-        }
-        case route === 'GET /v1/self': {
-          const me = deps.self();
-          if (!me) return sendJson(res, 503, { error: 'not_connected' });
-          return sendJson(res, 200, me);
-        }
-        case route === 'GET /v1/health': {
-          return sendJson(res, 200, deps.health());
-        }
-        case route === 'POST /v1/reads': {
-          const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
-          if (body.op === 'roster') {
-            const jid = (body.params || {}).conversation_id;
-            if (typeof jid !== 'string' || !isGroupJid(jid)
-                || !deps.ctx.sock || !deps.ctx.connected?.()) {
-              return sendJson(res, 200, { available: false, members: [] });
-            }
-            const meta = await deps.ctx.sock.groupMetadata(jid);
-            const members = [];
-            for (const p of meta?.participants || []) {
-              const raw = p.phoneNumber ? `${p.phoneNumber}@s.whatsapp.net` : (p.id || p.lid || '');
-              const digits = jidUserDigits(raw);
-              if (!digits) continue;
-              members.push(isLidJid(raw) ? lidForm(digits) : phoneForm(digits));
-            }
-            return sendJson(res, 200, { available: true, members });
-          }
-          return sendJson(res, 404, { error: 'unknown read' });
-        }
-        default:
-          return false;
+      let params;
+      try { params = match.slice(1).map(decodeURIComponent); } catch {
+        return sendRefusal(res, 400, 'malformed path parameter');
       }
+      return await route.handler(req, res, trace, params);
     } catch (err) {
-      if (!res.headersSent) {
-        const status = err instanceof SyntaxError ? 400 : (err?.message === 'body too large' ? 413 : 500);
-        return sendJson(res, status, { error: status === 400 ? 'invalid json body'
-          : status === 413 ? 'body too large' : 'bridge operation failed' });
+      if (res.headersSent) { res.end(); return true; }
+      if (err instanceof SyntaxError) return sendRefusal(res, 400, 'invalid json body');
+      // The server's refusal of a JSON body over the cap, before any handler ran.
+      if (err?.message === 'body too large') return sendRefusal(res, 413, 'body too large');
+      // Anything else is a measurer that could not answer: unavailable, never a 500.
+      if (route.family === 'probe') return sendJson(res, 503, { ok: false });
+      if (route.family === 'operation') {
+        return sendOperation(res, settledOperation(trace, { outcome: 'unavailable',
+          payload: { platform_refs: [], platform_ms: null, message_id: null,
+            error: { kind: 'unavailable', message: 'bridge operation failed' } } }));
       }
-      res.end();
-      return true;
+      return sendRead(res, readEnvelope(trace, { outcome: 'unavailable', healthy: false }));
     }
   };
 }

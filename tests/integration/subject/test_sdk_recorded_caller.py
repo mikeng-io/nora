@@ -15,6 +15,8 @@ from evals.backbone import MeetsGrader, Spec, nora_task, state_of
 from nora.domain.models import NormalizedMessage
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
+from nora.platform.bridge.client import ACCOUNT_PATH
+from nora.platform.bridge.contract import read_body
 from nora.subject import effect_capture as effects_mod
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import EvidenceError, RunEvidence, read_events, validate_events
@@ -54,8 +56,9 @@ def recording(cfg, path="/v1/chat/completions", *, model_responses=None):
     bindings.update({f"providers.{name}.base_url": "model" for name in cfg.providers})
     model = cfg.endpoint("relevance_gate", cfg.relevance_gate.model)[2]
     data = {"version": 1, "bindings": bindings, "services": {
-        "bridge": [{"method": "GET", "path": "/v1/self", "response": {"status": 200,
-                     "json": {"primary": "generated-self", "aliases": []}}}],
+        "bridge": [{"method": "GET", "path": ACCOUNT_PATH, "response": {"status": 200,
+                     "json": read_body("ok", {"primary": "generated-self", "aliases": []},
+                                       source="signal", trace="")}}],
         "model": [{
             "method": "POST", "path": path, "response": {"status": 200, "json": {
                 "id": "generated-completion", "model": model, "created": 1,

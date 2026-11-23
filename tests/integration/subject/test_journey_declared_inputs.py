@@ -20,14 +20,13 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
-from aiohttp import web
 
 from evals.rebuilt.journey_turns import _admission_declared
 from nora.domain.models import NormalizedMessage
 from nora.infra.sql.schema import BRIDGE_EVENT
+from nora.platform.bridge.contract import action_of, effect_target, operation_response
 from nora.platform.bridge.envelope import Envelope, canonical_source_key
 from nora.platform.bridge.rehydrate import message_to_dict
-from nora.platform.bridge.service import action_http_status, action_response
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import EvidenceError
 from nora.subject.journey import (
@@ -93,12 +92,10 @@ async def _world(clean_pg_url: str, tmp_path: Path, name: str):
     async def action(request):
         body = await request.json()
         daemon.sent_at_ms = int(time.time() * 1000)
-        result = await owners["actions"].run(body)
-        return web.json_response(
-            action_response(body["action_id"], result),
-            status=action_http_status(result))
+        result = await owners["actions"].run(action_of(body))
+        return operation_response(result, target=effect_target(body.get("effect")), trace="")
 
-    apps["platforms.signal.base_url"].router.add_post("/v1/actions", action)
+    apps["platforms.signal.base_url"].router.add_post("/v1/platform/operations", action)
     apps["platforms.signal.base_url"].router.add_post(
         "/api/v1/rpc", daemon.rpc)
     async with IsolatedServices(database_url=clean_pg_url,

@@ -3,7 +3,7 @@
  * volume class as the journal (`NORA_BRIDGE_ATTACH_DIR`, defaulting beside the
  * journal file so one durable mount serves both).
  *
- * - Outbound: `PUT /v1/attachments/{key}` stores raw bytes before the action
+ * - Outbound: `PUT /v1/platform/blobs/{key}` stores raw bytes before the action
  *   that references `key` executes. Identical bytes under the same key are
  *   idempotent; a DIFFERENT body under a taken key is refused (a custody key
  *   is immutable — the wire's "conflicting hash refused").
@@ -11,7 +11,7 @@
  *   `sha256[:32]` content key, which becomes the envelope `attachments[].key`
  *   and `media[].platform_id` the app later GETs to copy into its own
  *   content-addressed store.
- * - Bounded: a single body cap; the route answers 413 over it.
+ * - Bounded: a single body cap; a blob over it is a `rejected` PUT.
  *
  * v1 has no release route — pins live for the volume's life. Key charset is
  * `{1,128}` of `[A-Za-z0-9._~:-]` (covers the client's `out-{action_id}-{i}`
@@ -40,9 +40,18 @@ export class AttachmentStore {
   has(key) { return validAttachmentKey(key) && existsSync(this._path(key)); }
 
   read(key) {
+    try { return this.fetch(key); } catch { return null; }
+  }
+
+  /** The bytes under `key`, or null when it holds none; an unreadable spool
+   * throws, so a blob read can answer unavailable instead of absent. */
+  fetch(key) {
     // Reads are key-validated too — never join an untrusted path segment.
     if (!validAttachmentKey(key)) return null;
-    try { return readFileSync(this._path(key)); } catch { return null; }
+    try { return readFileSync(this._path(key)); } catch (err) {
+      if (err?.code === 'ENOENT') return null;
+      throw err;
+    }
   }
 
   /**

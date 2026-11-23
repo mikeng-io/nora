@@ -442,6 +442,17 @@ func TestPGMarkStartedCarriesMessageID(t *testing.T) {
 	if err != nil || row == nil || row.MessageID == nil || *row.MessageID != 77 {
 		t.Fatalf("message_id must persist: %v/%v", row, err)
 	}
+	// The envelope's `when` reads the row's own times: started now, not settled.
+	if row.StartedAtMS == nil || row.SettledAtMS != nil {
+		t.Fatalf("started row times = %v/%v, want started only", row.StartedAtMS, row.SettledAtMS)
+	}
+	if err := store.Finish(ctx, "w-1:send:0", ActionConfirmed, "mid-1", nil, nil, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	row, err = store.Get(ctx, "w-1:send:0")
+	if err != nil || row == nil || row.SettledAtMS == nil || *row.SettledAtMS < *row.StartedAtMS {
+		t.Fatalf("settled row times = %v, %v", row, err)
+	}
 }
 
 // An otp_challenge send persists the REDACTED request while request_hash

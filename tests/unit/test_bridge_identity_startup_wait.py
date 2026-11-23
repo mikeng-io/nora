@@ -1,12 +1,12 @@
 """`AdapterRegistry.from_config` waits a bounded time for a bridge that is
 reachable but still starting — the measured deploy defect where a
 `config.toml` reload recreates nora and its bridges in the same moment,
-so the first `/v1/self` answers 503 until the platform login lands and a
+so the first account read answers 503 until the platform login lands and a
 boot fails that a Docker restart then succeeds on.
 
-The fake is a real aiohttp server answering `/v1/self` the way the real
-bridge does — 503 `{"error": "identity_unavailable"}` until its "login"
-lands (`nora.platform.discord.bridge_app.get_self`), then the real body,
+The fake is a real aiohttp server answering the account read the way the
+real bridge does — a 503 `unavailable` envelope until its "login" lands
+(`nora.platform.bridge.contract.PlatformSurface.read_account`), then the real body,
 with the bearer auth the real bridge requires. Time is the injected
 `sleep`/`clock` seam, so the 60 s bound is exercised without waiting in
 real time.
@@ -27,6 +27,7 @@ from aiohttp.test_utils import TestServer
 
 from nora.obs.metrics import Metrics
 from nora.platform import registry as reg
+from nora.platform.bridge.contract import read_body
 from nora.platform.registry import AdapterRegistry, AdapterRegistryError
 
 TOKEN = "test-bearer"  # noqa: S105 — a synthetic fixture token, not a secret
@@ -102,7 +103,7 @@ class _FakeTime:
 
 
 def _bridge_app(state: dict) -> web.Application:
-    """A fake bridge's `/v1/self`: the still-starting answer
+    """A fake bridge's account read: the still-starting answer
     (`{"error": "identity_unavailable"}` at `state["status"]`) for the
     first `not_ready` calls, then `state["body"]` — the real route's
     success shape. Wrong auth gets the real bridge's 401, so a client
@@ -131,11 +132,12 @@ def _bridge_app(state: dict) -> web.Application:
             await asyncio.sleep(state["response_delay"])
         if state["calls"] <= state["not_ready"]:
             return web.json_response(
-                {"error": "identity_unavailable"}, status=state["status"])
-        return web.json_response(state["body"])
+                read_body("unavailable", None, source="discord", trace=""),
+                status=state["status"])
+        return web.json_response(read_body("ok", state["body"], source="discord", trace=""))
 
     app = web.Application(middlewares=[auth])
-    app.router.add_get("/v1/self", get_self)
+    app.router.add_get("/v1/platform/accounts/self", get_self)
     return app
 
 
@@ -348,7 +350,7 @@ async def test_a_request_in_flight_at_the_bound_is_not_accepted():
 
 
 async def test_the_bound_is_wall_time(monkeypatch: pytest.MonkeyPatch):
-    """In real time the attempt is really cut at the bound: a `/v1/self`
+    """In real time the attempt is really cut at the bound: an account read
     answer that would arrive after it is cancelled in flight — measured
     against the real clock, not the fake one."""
     bound = 0.3

@@ -30,6 +30,7 @@ from nora.domain.models import NormalizedMessage
 from nora.infra.sql.bridge_store import SqlBridgeStore
 from nora.infra.sql.schema import BRIDGE_ACTION, BRIDGE_WORK, MESSAGES, OTP_CHALLENGE
 from nora.testing.signal_daemon import FakeSignalDaemon
+from tests.integration import platform_contract as pc
 
 pytestmark = pytest.mark.integration
 
@@ -200,10 +201,17 @@ async def bridge_app(clean_pg_url, redis_client, tmp_path, daemon):
         await _teardown(bridge, publisher, client)
 
 
+OPS = "/v1/platform/operations"
+BLOBS = "/v1/platform/blobs"
+
+
 def _send(aid: str, owner: dict, text: str = "hello") -> dict:
-    return {"action_id": aid, "op": "send", "owner": owner,
-            "request": {"target": {"id": ROOM, "kind": "group"},
-                        "text": text}}
+    return {"operation_id": aid, "kind": "send", "owner": owner,
+            "effect": {"target": {"id": ROOM, "kind": "group"}, "text": text}}
+
+
+async def _outcome(resp) -> str:
+    return (await pc.envelope(resp))["outcome"]
 
 
 # ---- durable owner rows (the authority the closed gate checks) ---------------
@@ -333,7 +341,7 @@ def _drained(bridge) -> bool:
     return bridge._replay_offset >= len(bridge.journal.recover())
 
 
-# ---- durable /v1/actions -----------------------------------------------------
+# ---- durable platform operations -------------------------------------------
 
 
 async def test_duplicate_post_one_upstream_effect(bridge_app):
@@ -342,35 +350,25 @@ async def test_duplicate_post_one_upstream_effect(bridge_app):
     bridge, client, daemon = bridge_app
     owner, _ = await _live_owner(bridge)
     a, b = await asyncio.gather(
-        client.post("/v1/actions", json=_send("a-1", owner), headers=AUTH),
-        client.post("/v1/actions", json=_send("a-1", owner), headers=AUTH))
-    bodies = [await a.json(), await b.json()]
-    assert {r["state"] for r in bodies} <= {"confirmed", "started", "rejected"}
+        client.post(OPS, json=_send("a-1", owner), headers=AUTH),
+        client.post(OPS, json=_send("a-1", owner), headers=AUTH))
+    outcomes = {await _outcome(a), await _outcome(b)}
+    assert outcomes <= {"complete", "pending"}
     assert len(daemon.sent) == 1  # exactly one upstream effect, on the wire
-    got = await client.get("/v1/actions/a-1", headers=AUTH)
-    assert got.status == 200
-    assert (await got.json())["state"] == "confirmed"
+    got = await pc.envelope(await client.get(f"{OPS}/a-1", headers=AUTH))
+    assert got["payload"]["outcome"] == "complete"
 
 
 async def test_action_scoped_get(bridge_app):
-    """Absent is 404; another platform's action is 404 (scoped); a settled
-    action returns its persisted truth."""
+    """Another platform's or account's action reads `nothing_found`, as absent does."""
     bridge, client, _ = bridge_app
-    got = await client.get("/v1/actions/never-existed", headers=AUTH)
-    assert got.status == 404
     async with bridge.store._engine.begin() as conn:
         await bridge.store.reserve_action(
             conn, action_id="a-2", platform="discord", account_key="other",
             owner_kind="work", owner_id="w-2", owner_generation=None,
-            op="send", request={"target": {"id": "x", "kind": "group"},
-                                "text": "t"})
-    got = await client.get("/v1/actions/a-2", headers=AUTH)
-    assert got.status == 404  # scoped: another platform/account's row
-    owner, _ = await _live_owner(bridge)
-    r = await client.post("/v1/actions", json=_send("a-3", owner), headers=AUTH)
-    assert (await r.json())["state"] == "confirmed"
-    got = await client.get("/v1/actions/a-3", headers=AUTH)
-    assert (await got.json())["state"] == "confirmed"
+            op="send", request={"target": {"id": "x", "kind": "group"}, "text": "t"})
+    got = await client.get(f"{OPS}/a-2", headers=AUTH)
+    assert await _outcome(got) == "nothing_found"
 
 
 async def test_lost_upstream_answer_is_uncertain_and_never_resent(bridge_app):
@@ -379,42 +377,14 @@ async def test_lost_upstream_answer_is_uncertain_and_never_resent(bridge_app):
     bridge, client, daemon = bridge_app
     owner, _ = await _live_owner(bridge)
     daemon.drop_next_rpc = 1
-    r = await client.post("/v1/actions", json=_send("a-lost", owner),
-                          headers=AUTH)
-    assert (await r.json())["state"] == "uncertain"
+    r = await client.post(OPS, json=_send("a-lost", owner), headers=AUTH)
+    assert await _outcome(r) == "uncertain"
     assert len(daemon.sent) == 1  # effect applied upstream, answer lost
-    r2 = await client.post("/v1/actions", json=_send("a-lost", owner),
-                           headers=AUTH)
-    assert (await r2.json())["state"] == "uncertain"
+    r2 = await client.post(OPS, json=_send("a-lost", owner), headers=AUTH)
+    assert await _outcome(r2) == "uncertain"
     assert len(daemon.sent) == 1  # never blindly retried
-    got = await client.get("/v1/actions/a-lost", headers=AUTH)
-    assert (await got.json())["state"] == "uncertain"
-
-
-async def test_get_reports_in_progress_row(bridge_app):
-    """A `started` row is 200-with-truth, not absent and not terminal."""
-    bridge, client, _ = bridge_app
-    async with bridge.store._engine.begin() as conn:
-        await bridge.store.reserve_action(
-            conn, action_id="a-mid", platform="signal", account_key=ACCT,
-            owner_kind="work", owner_id="w-9", owner_generation=None,
-            op="send", request=_send("a-mid", {"kind": "work", "id": "w-9",
-                                             "generation": 1})["request"])
-    got = await client.get("/v1/actions/a-mid", headers=AUTH)
-    assert got.status == 200
-    assert (await got.json())["state"] == "started"
-
-
-async def test_unknown_work_owner_fails_closed(bridge_app):
-    """A `w-{int}` owner must name a real `bridge_work` row — refused BEFORE
-    the CAS and before any upstream effect."""
-    bridge, client, daemon = bridge_app
-    body = _send("a-ghost", owner={"kind": "work", "id": "w-999999",
-                                 "generation": 1})
-    r = await client.post("/v1/actions", json=body, headers=AUTH)
-    assert r.status == 403
-    assert len(daemon.sent) == 0
-    assert await bridge.store.action("a-ghost") is None
+    got = await pc.envelope(await client.get(f"{OPS}/a-lost", headers=AUTH))
+    assert got["payload"]["outcome"] == "uncertain"
 
 
 async def test_db_unavailable_refuses_before_effect(bridge_app, tmp_path,
@@ -429,32 +399,11 @@ async def test_db_unavailable_refuses_before_effect(bridge_app, tmp_path,
     await client.start_server()
     try:
         r = await client.post(
-            "/v1/actions",
-            json=_send("a-dead", {"kind": "live_invocation", "id": "1"}),
-            headers=AUTH)
+            OPS, json=_send("a-dead", {"kind": "live_invocation", "id": "1"}), headers=AUTH)
         assert r.status == 503
         assert len(daemon.sent) == 0
     finally:
         await client.close()
-
-
-async def test_attachment_custody(bridge_app):
-    """Bounded key validation on both verbs; unknown vs bad key distinct;
-    a conflicting same-key write is a 409 — immutable custody."""
-    _, client, _ = bridge_app
-    bad = await client.get("/v1/attachments/bad..key", headers=AUTH)
-    assert bad.status == 400
-    missing = await client.get("/v1/attachments/nope1", headers=AUTH)
-    assert missing.status == 404
-    put = await client.put("/v1/attachments/k1", data=b"one", headers=AUTH)
-    assert put.status == 201
-    conflict = await client.put("/v1/attachments/k1", data=b"two",
-                                headers=AUTH)
-    assert conflict.status == 409
-    same = await client.put("/v1/attachments/k1", data=b"one", headers=AUTH)
-    assert same.status == 201  # identical payload is a no-op, not a conflict
-    got = await client.get("/v1/attachments/k1", headers=AUTH)
-    assert got.status == 200 and (await got.read()) == b"one"
 
 
 async def test_attachment_body_limit_applies_only_to_uploads(bridge_app, monkeypatch):
@@ -463,23 +412,22 @@ async def test_attachment_body_limit_applies_only_to_uploads(bridge_app, monkeyp
     monkeypatch.setattr(wrapper, "MAX_ATTACHMENT_BYTES", limit)
     for index, size in enumerate((1300 * 1024, limit)):
         payload = b"x" * size
-        path = f"/v1/attachments/large-{index}"
+        path = f"{BLOBS}/large-{index}"
         put = await client.put(path, data=payload, headers=AUTH)
-        assert put.status == 201
+        assert await _outcome(put) == "complete"
         got = await client.get(path, headers=AUTH)
         assert got.status == 200 and await got.read() == payload
         repeated = await client.put(path, data=payload, headers=AUTH)
-        assert repeated.status == 201
+        assert await _outcome(repeated) == "complete"
         conflict = await client.put(path, data=b"different bytes", headers=AUTH)
-        assert conflict.status == 409
+        assert await _outcome(conflict) == "rejected"
         unchanged = await client.get(path, headers=AUTH)
         assert unchanged.status == 200 and await unchanged.read() == payload
-    refused = await client.put("/v1/attachments/too-large", data=b"x" * (limit + 1),
-                               headers=AUTH)
-    assert refused.status == 413
-    missing = await client.get("/v1/attachments/too-large", headers=AUTH)
-    assert missing.status == 404
-    ordinary = await client.post("/v1/reads", data=b"x" * (1300 * 1024), headers=AUTH)
+    refused = await client.put(f"{BLOBS}/too-large", data=b"x" * (limit + 1), headers=AUTH)
+    assert (await pc.envelope(refused))["payload"]["error"]["kind"] == "too_large"
+    missing = await client.get(f"{BLOBS}/too-large", headers=AUTH)
+    assert await _outcome(missing) == "nothing_found"
+    ordinary = await client.post("/v1/platform/queries", data=b"x" * (1300 * 1024), headers=AUTH)
     assert ordinary.status == 413
 
 
@@ -489,10 +437,9 @@ async def test_attachment_custody_accepts_the_client_key_shape(bridge_app):
     route must admit them; the alnum-only rule used to 400 every one."""
     _, client, _ = bridge_app
     key = "out-w-369:send:1-0"
-    put = await client.put(f"/v1/attachments/{key}", data=b"img",
-                           headers=AUTH)
-    assert put.status == 201
-    got = await client.get(f"/v1/attachments/{key}", headers=AUTH)
+    put = await client.put(f"{BLOBS}/{key}", data=b"img", headers=AUTH)
+    assert await _outcome(put) == "complete"
+    got = await client.get(f"{BLOBS}/{key}", headers=AUTH)
     assert got.status == 200 and (await got.read()) == b"img"
 
 
@@ -510,12 +457,11 @@ async def test_send_action_rehydrates_custody_and_decoration(bridge_app, mime, f
     attachment data-URI — plus the mention/style/quote the client
     serializes. This is the path an `[image sha]` reply actually takes."""
     bridge, client, daemon = bridge_app
-    put = await client.put("/v1/attachments/out-a-img-0", data=b"png-bytes",
-                           headers=AUTH)
-    assert put.status == 201
+    put = await client.put(f"{BLOBS}/out-a-img-0", data=b"png-bytes", headers=AUTH)
+    assert await _outcome(put) == "complete"
     owner, _ = await _live_owner(bridge)
     body = _send("a-img", owner, text="see this pic now")
-    body["request"].update({
+    body["effect"].update({
         "attachments": [{"key": "out-a-img-0", "file_name": filename,
                          "media_type": mime}],
         "mentions": [{"start": 0, "length": 3, "recipient": SENDER,
@@ -524,8 +470,8 @@ async def test_send_action_rehydrates_custody_and_decoration(bridge_app, mime, f
                    {"start": 0, "length": 1, "style": "NOTASTYLE"}],
         "quote": {"ts": 1700000000000, "author_id": SENDER},
     })
-    r = await client.post("/v1/actions", json=body, headers=AUTH)
-    assert (await r.json())["state"] == "confirmed"
+    r = await client.post(OPS, json=body, headers=AUTH)
+    assert await _outcome(r) == "complete"
     assert len(daemon.sent) == 1
     params = daemon.sent[0]["params"]
     assert params["attachments"] == [
@@ -544,11 +490,11 @@ async def test_send_action_with_absent_custody_key_is_rejected(bridge_app):
     bridge, client, daemon = bridge_app
     owner, _ = await _live_owner(bridge)
     body = _send("a-noatt", owner)
-    body["request"]["attachments"] = [
+    body["effect"]["attachments"] = [
         {"key": "out-nowhere-0", "file_name": "m.png",
          "media_type": "image/png"}]
-    r = await client.post("/v1/actions", json=body, headers=AUTH)
-    assert (await r.json())["state"] == "rejected"
+    r = await client.post(OPS, json=body, headers=AUTH)
+    assert await _outcome(r) == "rejected"
     assert len(daemon.sent) == 0
 
 
@@ -559,9 +505,9 @@ async def test_dm_send_action_reaches_the_daemon(bridge_app):
     bridge, client, daemon = bridge_app
     owner, _ = await _live_owner(bridge, conversation_id="+00000000009")
     body = _send("a-dm", owner)
-    body["request"]["target"] = {"id": "+00000000009", "kind": "dm"}
-    r = await client.post("/v1/actions", json=body, headers=AUTH)
-    assert (await r.json())["state"] == "confirmed"
+    body["effect"]["target"] = {"id": "+00000000009", "kind": "dm"}
+    r = await client.post(OPS, json=body, headers=AUTH)
+    assert await _outcome(r) == "complete"
     assert len(daemon.sent) == 1
     assert daemon.sent[0]["params"]["recipient"] == ["+00000000009"]
 
@@ -569,7 +515,7 @@ async def test_dm_send_action_reaches_the_daemon(bridge_app):
 async def test_auth_required(bridge_app):
     _, client, _ = bridge_app
     r = await client.post(
-        "/v1/actions",
+        OPS,
         json=_send("a-4", {"kind": "live_invocation", "id": "1"}))
     assert r.status == 401
 
@@ -583,9 +529,9 @@ async def test_media_custody_roundtrips_through_the_app_source(bridge_app):
     from nora.platform.bridge.client import BridgeEndpoint, BridgeMediaSource
 
     _, client, _ = bridge_app
-    put = await client.put("/v1/attachments/inhash1",
+    put = await client.put(f"{BLOBS}/inhash1",
                            data=b"payload-bytes", headers=AUTH)
-    assert put.status == 201
+    assert await _outcome(put) == "complete"
     source = BridgeMediaSource("signal", BridgeEndpoint(
         base_url=str(client.make_url("")).rstrip("/"),
         token="test-token"))  # noqa: S106 — fixture secret
@@ -906,7 +852,7 @@ async def test_owner_gate_denies_every_unbound_shape(bridge_app):
     for i, (name, mutate, want) in enumerate(cases):
         body = _send(f"deny-{i}", {"kind": "live_invocation", "id": "1"})
         mutate(body)
-        r = await client.post("/v1/actions", json=body, headers=AUTH)
+        r = await client.post(OPS, json=body, headers=AUTH)
         assert r.status == want, f"{name}: {r.status} != {want} ({await r.json()})"
         assert await bridge.store.action(f"deny-{i}") is None, name
     assert len(daemon.sent) == 0
@@ -918,35 +864,31 @@ async def test_work_owner_real_row_authority(bridge_app):
     denied before any effect."""
     bridge, client, daemon = bridge_app
     owner = await _work_owner(bridge, generation=3)
-    r = await client.post("/v1/actions", json=_send("w-ok", owner), headers=AUTH)
-    assert (await r.json())["state"] == "confirmed"
+    r = await client.post(OPS, json=_send("w-ok", owner), headers=AUTH)
+    assert await _outcome(r) == "complete"
     assert len(daemon.sent) == 1
     # Stale generation — the row moved on; the claim is dead.
     stale = await _work_owner(bridge, generation=1)
     stale["generation"] = 0
-    r = await client.post("/v1/actions", json=_send("w-stale", stale),
-                          headers=AUTH)
+    r = await client.post(OPS, json=_send("w-stale", stale), headers=AUTH)
     assert r.status == 403
     # Terminal work keeps no authority.
     dead = await _work_owner(bridge, state="done")
-    r = await client.post("/v1/actions", json=_send("w-dead", dead), headers=AUTH)
+    r = await client.post(OPS, json=_send("w-dead", dead), headers=AUTH)
     assert r.status == 403
     # Live-but-unclaimed: a re-parked row is not acting either — the next
     # claimer's generation is the only one that may sign.
     parked = await _work_owner(bridge, state="pending", lease_seconds=None)
-    r = await client.post("/v1/actions", json=_send("w-parked", parked),
-                          headers=AUTH)
+    r = await client.post(OPS, json=_send("w-parked", parked), headers=AUTH)
     assert r.status == 403
     # A lease the DB clock reads as dead — the expire_leases sweep need not
     # have run for the owner to be refused.
     lapsed = await _work_owner(bridge, lease_seconds=-60)
-    r = await client.post("/v1/actions", json=_send("w-lapsed", lapsed),
-                          headers=AUTH)
+    r = await client.post(OPS, json=_send("w-lapsed", lapsed), headers=AUTH)
     assert r.status == 403
     # Foreign platform/account.
     alien = await _work_owner(bridge, platform="discord")
-    r = await client.post("/v1/actions", json=_send("w-alien", alien),
-                          headers=AUTH)
+    r = await client.post(OPS, json=_send("w-alien", alien), headers=AUTH)
     assert r.status == 403
     assert len(daemon.sent) == 1
 
@@ -1122,18 +1064,18 @@ async def test_same_action_different_code_conflicts(bridge_app):
     bridge, client, daemon = bridge_app
     owner, cid = await _otp_owner(bridge)
     first = await client.post(
-        "/v1/actions", json=_send(f"{cid}:send:0", owner,
+        OPS, json=_send(f"{cid}:send:0", owner,
                                   text="code is 111111"), headers=AUTH)
-    assert (await first.json())["state"] == "confirmed"
+    assert await _outcome(first) == "complete"
     second = await client.post(
-        "/v1/actions", json=_send(f"{cid}:send:0", owner,
+        OPS, json=_send(f"{cid}:send:0", owner,
                                   text="code is 222222"), headers=AUTH)
     assert second.status == 409
     assert len(daemon.sent) == 1  # the second code never left
     again = await client.post(
-        "/v1/actions", json=_send(f"{cid}:send:0", owner,
+        OPS, json=_send(f"{cid}:send:0", owner,
                                   text="code is 111111"), headers=AUTH)
-    assert (await again.json())["state"] == "confirmed"  # verbatim replay
+    assert await _outcome(again) == "complete"  # verbatim replay
     assert len(daemon.sent) == 1
 
 
@@ -1183,11 +1125,11 @@ async def test_uncertain_send_reaches_deliverer_as_uncertain(bridge_app):
 
 
 async def test_lost_post_answer_reconciles_same_row_by_get(bridge_app):
-    """A POST /v1/actions whose answer was lost does NOT make the client
-    send a second time: `BridgeAdapter.send` reconciles through
-    `GET /v1/actions/{id}` — the deterministic action id names the SAME
+    """An operation whose answer was lost does NOT make the client send a
+    second time: `BridgeAdapter.send` reads the record back — the
+    deterministic operation id names the SAME
     reservation, `message_id` binds the SAME pending audit row. A landed
-    `confirmed` reads as delivered, a 404 leaves an in-flight POST uncertain, and a row
+    `confirmed` reads as delivered, `nothing_found` leaves an in-flight POST uncertain, and a row
     that bound a different audit row stays `uncertain`, never claimed."""
     from nora.domain.actions import ActionOwner
     from nora.domain.ports import ConversationTarget
@@ -1219,7 +1161,7 @@ async def test_lost_post_answer_reconciles_same_row_by_get(bridge_app):
                 conn, f"{mid}:send:0", state, platform_ref=f"ref-{mid}")
 
     class DropPost(BridgeAdapter):
-        async def _post(self, path, body):  # answer lost after the call
+        async def _operation(self, kind, effect, operation_id):  # answer lost
             raise BridgeUnavailableError("post answer lost")
 
     target = ConversationTarget("signal", ROOM, "group")
@@ -1257,16 +1199,72 @@ async def test_event_receipt_owner_requires_journal_intent(bridge_app):
     await _wait_for(lambda: _drained(bridge))
     intents = bridge._receipt_intent_ids()
     assert intents  # the journaled addressed event minted receipt authority
-    body = {"action_id": "r-http-1", "op": "react",
+    body = {"operation_id": "r-http-1", "kind": "react",
             "owner": {"kind": "event_receipt", "id": next(iter(intents))},
-            "request": {"target": {"id": ROOM, "kind": "group"},
+            "effect": {"target": {"id": ROOM, "kind": "group"},
                         "emoji": "👀", "to_author": SENDER,
                         "to_timestamp": 1701}}
-    r = await client.post("/v1/actions", json=body, headers=AUTH)
-    assert (await r.json())["state"] == "confirmed"
+    r = await client.post(OPS, json=body, headers=AUTH)
+    assert await _outcome(r) == "complete"
     assert len(daemon.reactions) >= 1
     row = await bridge.store.action("r-http-1")
     assert row["owner_kind"] == "event_receipt" and row["state"] == "confirmed"
+
+
+async def _daemon_down(*_: object) -> None:
+    raise ConnectionError("generated daemon outage")
+
+
+async def test_the_bridge_serves_the_platform_contract_routes(bridge_app):
+    bridge, client, _ = bridge_app
+    pc.assert_serves_the_contract(bridge.routes())
+    await pc.assert_ready_needs(client, AUTH, (bridge, "_rpc", _daemon_down), (bridge, "_actions"))
+
+
+async def test_operation_outcomes_follow_the_contract(bridge_app, monkeypatch):
+    bridge, client, daemon = bridge_app
+    daemon.groups = [{"id": ROOM, "members": [{"number": SENDER}]}]
+    await pc.drive_outcomes(pc.Bridge(
+        http=client, auth=AUTH, store=bridge.store, engine=bridge.store._engine,
+        platform="signal", account_key=ACCT, conversation_id=ROOM,
+        no_ledger=lambda: pc.swapped(bridge, "_actions"),
+        logged_out=lambda: pc.swapped(bridge, "_rpc", _daemon_down),
+        query_ok=("roster", {"conversation_id": ROOM}), query_unavailable=("channels", {}),
+        blob_limit=lambda n: monkeypatch.setattr(wrapper, "MAX_ATTACHMENT_BYTES", n)))
+
+
+#: What `BridgeAdapter.send` builds for "hello" to group conv-1, and the request
+#: hash the bridges stored for it before the switch; Go and JS pin the same pair.
+PINNED_EFFECT = {"target": {"kind": "group", "id": "conv-1", "thread": ""}, "text": "hello",
+                 "mentions": [], "styles": [], "preview": None, "attachments": [], "quote": None}
+PINNED_HASH = "2769bc2bbbf2d02f1cf2a8d29db8261987258a0d6873e5b1e5c81aeb54d54035"
+
+
+async def test_a_row_reserved_before_the_switch_is_the_same_operation(bridge_app):
+    from nora.domain.actions import ActionOwner
+    from nora.domain.ports import ConversationTarget, SendResult
+    from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint
+
+    bridge, client, daemon = bridge_app
+    sent = {}
+    for state in ("confirmed", "started"):
+        rid = await _pending_row(bridge, conversation_id="conv-1")
+        async with bridge.store._engine.begin() as conn:
+            await conn.execute(sa.insert(BRIDGE_ACTION).values(
+                action_id=f"{rid}:send:0", platform="signal", account_key=ACCT,
+                owner_kind="live_invocation", owner_id=str(rid), op="send", state=state,
+                request=PINNED_EFFECT, request_hash=PINNED_HASH, message_id=rid))
+        adapter = BridgeAdapter("signal", BridgeEndpoint(
+            str(client.make_url("")).rstrip("/"), "test-token"),
+            owner=ActionOwner("live_invocation", str(rid)))
+        try:
+            sent[state] = await adapter.send(
+                target=ConversationTarget("signal", "conv-1", "group"), text="hello")
+        finally:
+            await adapter.close()
+    assert sent == {"confirmed": SendResult(ok=True),
+                    "started": SendResult(ok=False, uncertain=True)}
+    assert daemon.sent == []
 
 
 def _envelope(sk: str, receipt: dict | None):
@@ -1289,8 +1287,8 @@ def _envelope(sk: str, receipt: dict | None):
 
 async def test_action_post_links_the_deliver_span_to_the_caller(
         bridge_app, exported_spans):
-    """The ENTIRE action path proves its lineage: `BridgeAdapter._post`
-    injects the ambient span's `traceparent`, the shared `/v1/actions`
+    """The ENTIRE action path proves its lineage: the client's reader
+    injects the ambient span's `traceparent`, the shared operations
     boundary parses it into an OTel `Link`, and the bridge's `queue.deliver`
     bounded ROOT carries it — a real authenticated POST, no fabricated
     context (design/platform-bridges/04-operations.md)."""
@@ -1308,9 +1306,10 @@ async def test_action_post_links_the_deliver_span_to_the_caller(
         owner=None)
     tracer = trace.get_tracer("test.action.attempt")
     with tracer.start_as_current_span("test.attempt") as attempt:
-        out = await adapter._post("/v1/actions", _send("a-link", owner))
+        out = await adapter._call("POST", OPS, "operation", json=_send("a-link", owner))
     await adapter.close()
-    assert out["state"] == "confirmed"
+    assert out.outcome == "complete"
+    assert out.body["trace"] == format(attempt.get_span_context().trace_id, "032x")
     assert len(daemon.sent) == 1
 
     attempt_ctx = attempt.get_span_context()
@@ -1336,13 +1335,12 @@ async def test_an_invalid_or_absent_action_context_never_blocks(
             ["not-a-traceparent",
              "00-00000000000000000000000000000000-0000000000000000-01"]):
         r = await client.post(
-            "/v1/actions", json=_send(f"bad-{i}", owner),
+            OPS, json=_send(f"bad-{i}", owner),
             headers={**AUTH, "traceparent": tp})
-        assert (await r.json())["state"] == "confirmed", tp
+        assert await _outcome(r) == "complete", tp
     # And a request with no headers at all still executes.
-    r = await client.post("/v1/actions", json=_send("none", owner),
-                          headers=AUTH)
-    assert (await r.json())["state"] == "confirmed"
+    r = await client.post(OPS, json=_send("none", owner), headers=AUTH)
+    assert await _outcome(r) == "complete"
     assert len(daemon.sent) == 3
 
     delivers = [s for s in exported_spans.get_finished_spans()

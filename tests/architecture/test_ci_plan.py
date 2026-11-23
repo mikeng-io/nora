@@ -224,6 +224,7 @@ def test_agent_skill_link_ci_uses_the_same_document_classification(
 def test_shared_component_contracts_select_their_readers():
     assert ci_plan.classify(["nora/documents/node.schema.json"])["portal"]
     assert ci_plan.classify(["tests/fixtures/instagram_bridge/account.json"])["go"]
+    assert ci_plan.classify(["docs/service-api/openapi.json"])["go"]
 
 
 def test_shared_document_reader_keeps_full_suite_fallback(tmp_path, monkeypatch):

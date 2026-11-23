@@ -189,7 +189,7 @@ func main() {
 		}
 		if err := sink.Start(ctx); err != nil {
 			// Not fatal to the process — the gate simply never opens, and
-			// /v1/health reports capture as not_capturing. Compat routes
+			// GET /v1/operations/status reports capture as not_capturing. Compat routes
 			// (reads, writes, health) keep serving.
 			slog.Error("durable capture preflight failed; upstream receive stays closed", "error", err)
 		}

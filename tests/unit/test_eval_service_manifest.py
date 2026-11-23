@@ -97,9 +97,9 @@ def test_a_journey_world_plan_carries_its_declared_external_recording(tmp_path):
                  "bindings": {"platforms.discord.base_url": "discord",
                               "platforms.signal.base_url": "bridge"},
                  "services": {
-                     "discord": [{"method": "GET", "path": "/v1/groups",
+                     "discord": [{"method": "GET", "path": "/v1/operations/status",
                                   "response": {"status": 200, "json": []}}],
-                     "bridge": [{"method": "GET", "path": "/v1/self",
+                     "bridge": [{"method": "GET", "path": "/v1/platform/accounts/self",
                                  "response": {"status": 200,
                                               "json": {"primary": "+8521"}}}]}}
     data = {"version": 1, "corpora": {"autonomous_journey": {"the_outing": {

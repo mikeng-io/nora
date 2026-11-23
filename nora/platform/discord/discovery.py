@@ -11,7 +11,7 @@ sender's snowflake types to `discord:user_id` without another read.
 The `fetch` seam returns the row list AND the instant the upstream read
 finished, so direct mode (`DiscordRoster.guild_members`, the real
 paginated REST read) and bridge mode (the bridge's own `members` read
-over `/v1/reads`, which stamps `observed_ms` on its envelope) share this
+as a platform query, which stamps `observed_at_ms` on its envelope) share this
 one classification path — the bridge runs the same `DiscordRoster`
 upstream, so either way the rows carry the provider's own `bot`/`system`
 flags rather than a shape we guessed, and the observation time is the
@@ -59,7 +59,7 @@ class DiscordDiscovery:
     member rows plus the instant the upstream read finished, or `None`
     when the read cannot complete (the same availability contract
     `DiscordRoster.guild_members` keeps). Injecting it keeps the
-    transport choice — direct REST or the bridge's `/v1/reads` mirror —
+    transport choice — direct REST or the bridge's `members` query —
     out of the normalization.
     """
 

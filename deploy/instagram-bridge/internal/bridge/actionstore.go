@@ -68,6 +68,8 @@ type ActionRow struct {
 	PlatformMS      *int64
 	Error           json.RawMessage // {"kind","message"} or NULL
 	MessageID       *int64          // bound pending outbound audit row, if any
+	StartedAtMS     *int64          // started_at, epoch ms
+	SettledAtMS     *int64          // completed_at, epoch ms
 }
 
 // ReserveOutcome is what Reserve decided for one action_id.
@@ -183,7 +185,8 @@ func RequestHash(request any) (string, []byte, error) {
 
 var errValidOwner = errors.New("owner.kind must be one of work|event_receipt|otp_challenge|live_invocation")
 
-func validOwnerKind(k string) bool {
+// ValidOwnerKind reports whether k is in the owner CHECK constraint's set.
+func ValidOwnerKind(k string) bool {
 	switch k {
 	case OwnerWork, OwnerEventReceipt, OwnerOTPChallenge, OwnerLiveInvocation:
 		return true
@@ -199,7 +202,7 @@ func validOwnerKind(k string) bool {
 // ownerGeneration is required for kind=work (the caller passes the app's
 // claim; execution then fences it through ValidateOwner).
 func (s *ActionStore) Reserve(ctx context.Context, actionID, ownerKind, ownerID string, ownerGeneration *int, op string, request json.RawMessage, requestHash string) (ReserveOutcome, *ActionRow, error) {
-	if !validOwnerKind(ownerKind) || ownerID == "" {
+	if !ValidOwnerKind(ownerKind) || ownerID == "" {
 		return ReserveConflict, nil, errValidOwner
 	}
 	tag, err := s.pool.Exec(ctx,
@@ -246,12 +249,14 @@ func (s *ActionStore) Get(ctx context.Context, actionID string) (*ActionRow, err
 	var r ActionRow
 	err := s.pool.QueryRow(ctx,
 		`SELECT action_id, owner_kind, owner_id, owner_generation, op, request, request_hash,
-		        state, platform_ref, platform_refs, platform_ms, error, message_id
+		        state, platform_ref, platform_refs, platform_ms, error, message_id,
+		        (extract(epoch FROM started_at) * 1000)::bigint,
+		        (extract(epoch FROM completed_at) * 1000)::bigint
 		 FROM bridge_action WHERE action_id=$1 AND platform=$2 AND account_key=$3`,
 		actionID, s.platform, s.accountKey).
 		Scan(&r.ActionID, &r.OwnerKind, &r.OwnerID, &r.OwnerGeneration, &r.Op,
 			&r.Request, &r.RequestHash, &r.State, &r.PlatformRef, &r.PlatformRefs,
-			&r.PlatformMS, &r.Error, &r.MessageID)
+			&r.PlatformMS, &r.Error, &r.MessageID, &r.StartedAtMS, &r.SettledAtMS)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

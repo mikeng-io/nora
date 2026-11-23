@@ -108,7 +108,7 @@ async def validate_owner(
     conn: Any, *, platform: str, account_key: str, owner: ActionOwner,
     target_id: str, receipt_intents: frozenset[str] = frozenset(),
 ) -> OwnerVerdict:
-    """Closed typed authority for `POST /v1/actions`, under the reservation's
+    """Closed typed authority for a platform operation, under the reservation's
     own transaction. `receipt_intents` is the bridge's journal-derived set of
     ids (canonical event ids AND source digests) whose envelopes carry a
     frozen receipt — the producer evidence an `event_receipt` owner must

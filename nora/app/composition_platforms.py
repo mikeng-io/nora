@@ -337,7 +337,7 @@ def policies(
         )
     if "discord" in registry:
         if discord_control is not None:
-            # Bridge mode: the roster read crosses the bridge's `/v1/reads`
+            # Bridge mode: the roster read crosses the bridge's platform query
             # surface — the app holds no Discord client for a live answer.
             rosters["discord"] = BridgeDiscordRoster(control=discord_control)
         else:

@@ -266,7 +266,7 @@ def platforms(
     if "discord" in registry:
         discord_adapter = registry.get("discord")
         if _discord_bridge and discord_control is not None:
-            # Bridge mode: both presence reads cross `/v1/reads` — a dead
+            # Bridge mode: both presence reads are platform queries — a dead
             # bridge answers `unavailable`, never a stale live-cache read.
             voice_presence = BridgeVoicePresence(control=discord_control)
             discord_presence = BridgeDiscordPresence(control=discord_control)
