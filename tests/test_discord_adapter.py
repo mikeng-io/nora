@@ -396,6 +396,43 @@ async def test_voice_channel_send_without_a_voice_session_falls_back_to_text(aio
     assert posted == ["/channels/999/messages"], "the reply reached the room"
 
 
+async def test_a_conflict_on_speech_falls_back_to_text(aiohttp_server):
+    """A 409 from the controller on `speak` is a failed speech, so the reply
+    is POSTED as text, once, and the speech is not sent again."""
+    posted: list[str] = []
+    speaks: list[str] = []
+
+    async def operation(request: web.Request) -> web.Response:
+        body = await request.json()
+        if body["kind"] == "speak":
+            speaks.append(body["operation_id"])
+            return web.json_response({"error": "operation_id_reused"}, status=409)
+        return web.json_response(operation_envelope("complete", {"state": {
+            "voice": "connected", "generation": "gen-1", "channel_id": "222"}}))
+
+    async def messages_handler(request: web.Request) -> web.Response:
+        posted.append(request.path)
+        return web.json_response({"id": "1"})
+
+    app = web.Application()
+    app.router.add_post("/v1/voice/operations", operation)
+    app.router.add_post("/channels/{cid}/messages", messages_handler)
+    server = await aiohttp_server(app)
+    base = str(server.make_url("")).rstrip("/")
+    hub = VoiceControllerHub({"111": VoiceControllerClient(base)})
+    await hub.join("111", "222")
+    adapter = DiscordAdapter(
+        "tok", base_url=base, voice_hub=hub, voice_guild_ids=frozenset({"111"}),
+        speaker=_FakeSpeaker(SpeakResult(available=True, audio=b"mp3", media_type="audio/mpeg")),
+    )
+
+    result = await adapter.send(
+        target=ConversationTarget("discord", "111/999", "group", voice=True), text="喂 Nora，收到。")
+
+    assert result.ok is True
+    assert posted == ["/channels/999/messages"] and len(speaks) == 1
+
+
 async def test_a_voice_target_with_no_speaker_wired_falls_back_to_text(aiohttp_server):
     """The unwired posture: the send falls back to text, so the answer is not
     lost and the room can still read it."""

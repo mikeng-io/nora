@@ -110,6 +110,9 @@ class FakeVoiceController:
         #: Whether the fake holds a connection core for its guild: made by the
         #: first `join`, kept across a `leave`.
         self.has_core = False
+        #: Kinds answered 409 `operation_id_reused`, as for an id reused with
+        #: another effect.
+        self.conflicts: set[str] = set()
         #: A reason the next operations fail with (`internal_error` is `uncertain`).
         self.fault: str | None = None
         #: operation_id -> (expires_at, effect hash, answer, started_at_ms); the
@@ -230,6 +233,8 @@ class FakeVoiceController:
             return web.json_response({"error": "body_too_large"}, status=413)
         if kind != "report" and not _snowflake(effect.get("guild_id")):
             return web.json_response({"error": "wrong_guild"}, status=400)
+        if kind in self.conflicts:
+            return web.json_response({"error": "operation_id_reused"}, status=409)
         now = time.monotonic()
         self._ledger = {k: v for k, v in self._ledger.items() if v[0] > now}
         digest = hashlib.sha256(json.dumps([kind, effect], sort_keys=True).encode()).hexdigest()
