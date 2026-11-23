@@ -55,7 +55,7 @@ OLD_VOICE_ROUTES = ("/voice/join", "/voice/exit", "/voice/status", "/voice/event
 OLD_VOICE_PATTERNS = (
     re.compile(r"(?<!/v1)/music/(?:play|stop|pause|resume|volume)"),
     # A whole path segment after `/v1/voice/` that is not one of the contract's.
-    re.compile(r"/v1/voice/(?!(?:operations|queries)(?![\w{}-]))[\w{}-]+"),
+    re.compile(r"/v1/voice/(?!(?:operations|queries)(?![\w-]))(?:\{\w+\}|[\w-]+)"),
 )
 #: The controller's old speech route, named only where a voice caller or server lives.
 QUOTED_STREAM = re.compile(r"""["'`]/stream["'`]""")
@@ -98,6 +98,7 @@ def test_the_voice_rule_reads_whole_segments() -> None:
     rule = OLD_VOICE_PATTERNS[1]
     named = ["/v1/voice/operations-legacy", "/v1/voice/{guild_id}/join", "/v1/voice/event"]
     clean = ["/v1/voice/operations", "/v1/voice/operations/{operation_id}",
+             "${URL:-http://bridge/v1/voice/operations}",
              "/v1/voice/queries", 'startswith("/v1/voice/")']
     assert all(rule.search(text) for text in named)
     assert not any(rule.search(text) for text in clean)
