@@ -130,8 +130,7 @@ RULE_TESTS = {
     # R-31: the presence disclosure seam is fail-closed (DEC-54). `whereis`
     # refuses to disclose a circle member's position into a conversation whose
     # people are NOT a subset of the circle — a REFUSAL, not a silent omission.
-    # This is the INVERSE of the room tools' R-21, and nothing else in Nora
-    # enforces it.
+    # The INVERSE of the room tools' R-21; nothing else in Nora enforces it.
     "R-31": "test_whereis_refuses_to_disclose_outside_the_circle",
     # R-32: the collector is a change-recorder, not a sampler (DEC-55). A row is
     # written only when a member's `ts` advances, so two reads of an UNMOVED
@@ -463,6 +462,7 @@ RULE_TESTS = {
     "R-100": "test_a_reply_with_a_made_up_link_is_sent_without_it_and_counted",
     # Nobody outside identity.toml is sent, or recorded from, a direct message.
     "R-101": "test_a_dm_to_an_address_not_in_identity_toml_is_refused",
+    "R-102": "test_an_identity_failure_degrades_that_platform_and_the_rest_start_live",
 }
 
 

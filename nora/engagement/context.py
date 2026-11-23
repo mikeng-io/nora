@@ -21,7 +21,7 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence, Set
 from dataclasses import replace
 from datetime import datetime
 from typing import Any, NamedTuple, Protocol
@@ -210,7 +210,7 @@ class TranscriptInjection:
         clock: Callable[[], datetime] | None = None,
         profile: ProfileHeads | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
-        self_ids: frozenset[str] = frozenset(),
+        self_ids: Set[str] = frozenset(),
         observations: Any = None, access: Any = None,
     ) -> None:
         self._rosters = rosters or {}

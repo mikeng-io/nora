@@ -112,13 +112,17 @@ class SignalLinkDelivery:
     challenge through the authenticated view instead.
     """
 
-    def __init__(self, base_url: str, *, sender: SignalSender | None = None) -> None:
+    def __init__(self, base_url: str, *, sender: SignalSender | None = None,
+                 live: Callable[[], bool] | None = None) -> None:
         self._sender = sender if sender is not None else SignalSender(
             base_url, dm_recipients=None)
+        self._live = live  # the registry's Signal liveness; degraded sends nothing
 
     async def deliver(self, *, account: Identifier, text: str) -> bool:
         if account.platform != "signal" or not account.value.strip():
             return False
+        if self._live is not None and not self._live():
+            return False  # degraded: the authenticated view carries the challenge
         target = ConversationTarget(
             platform="signal", conversation_id=account.value,
             conversation_type="dm")

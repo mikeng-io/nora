@@ -13,6 +13,8 @@ outage silently stops explicit `nora.000` tags from working (R-5).
 
 from __future__ import annotations
 
+from collections.abc import Set
+
 from nora.domain.models import NormalizedMessage
 from nora.domain.ports import EngageDecision, EngagePolicy
 from nora.policy import Policy
@@ -52,7 +54,7 @@ class MentionPolicy:
     zero-width characters, or produced by accident.
     """
 
-    def __init__(self, self_ids: frozenset[str]) -> None:
+    def __init__(self, self_ids: Set[str]) -> None:
         self._self_ids = self_ids
 
     async def should_engage(self, *, message: NormalizedMessage) -> EngageDecision:
@@ -78,7 +80,7 @@ class ReplyToNoraPolicy:
     impersonate Nora and trigger her by quoting themselves.
     """
 
-    def __init__(self, self_ids: frozenset[str]) -> None:
+    def __init__(self, self_ids: Set[str]) -> None:
         self._self_ids = self_ids
 
     async def should_engage(self, *, message: NormalizedMessage) -> EngageDecision:

@@ -12,7 +12,7 @@ The authenticated live voice-utterance HTTP route remains app-local, non-queued 
 |---|---|
 | signal-bridge, discord-bridge, whatsapp-bridge, instagram-bridge | Independent process/container; account session, normalization, durable enqueue, attachments, synchronous transport operations, optional queued receipt |
 | Redis | Streams directly, consumer group delivery/pending state, AOF and durable volume; no eviction or unsafe trimming |
-| Nora app | Current identity/policy admission, context assembly, model/tool execution, authored replies through existing Deliverer and send_reply |
+| Nora app | Current identity/policy admission, per-platform liveness (a platform without a resolved identity is degraded alone, see [liveness](platform-liveness.md)), context assembly, model/tool execution, authored replies through existing Deliverer and send_reply |
 | Postgres | Recorded ingestion, per-event phase ownership/completion, deferred obligations, stable action evidence |
 | Existing audio controllers | Voice connections, playout and their existing durable controller protocol |
 

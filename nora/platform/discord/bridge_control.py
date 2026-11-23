@@ -47,6 +47,7 @@ import aiohttp
 
 from nora.domain.actions import ActionOwner
 from nora.domain.identity import PlatformIdentity
+from nora.domain.latch import DegradeLatch
 from nora.domain.models import ConversationTarget, NormalizedMessage
 from nora.domain.ports import (
     AdapterHealth,
@@ -368,7 +369,7 @@ class BridgeChannelDirectory:
         return self._snapshot.parent_channel(channel_id=channel_id)
 
 
-class BridgeDiscordAdapter:
+class BridgeDiscordAdapter(DegradeLatch):
     """`PlatformAdapter` for `mode = "bridge"`: the shared `BridgeAdapter`
     for identity/listen/react/health/text-send, plus the ONE thing the
     shared adapter cannot express — the `target.voice` send path, forwarded
@@ -393,6 +394,9 @@ class BridgeDiscordAdapter:
         self._owns_control = True
         self._own_handle: str | None = None
         self._handle_fetched = False
+        # ONE latch with the text delegate: the voice branch below is gated
+        # by the same state the delegate's sends are.
+        self.share_latch(delegate)
 
     def bind_owner(self, owner: ActionOwner | None) -> BridgeDiscordAdapter:
         bound = BridgeDiscordAdapter(
@@ -406,13 +410,6 @@ class BridgeDiscordAdapter:
         """The delegate's bound owner, surfaced so `Deliverer`'s record-first
         `live_invocation` binding never rebinds over a real work owner."""
         return self._delegate.action_owner
-
-    def degrade(self, reason: str) -> None:
-        self._delegate.degrade(reason)
-
-    @property
-    def degraded(self) -> bool:
-        return self._delegate.degraded
 
     async def close(self) -> None:
         await self._delegate.close()

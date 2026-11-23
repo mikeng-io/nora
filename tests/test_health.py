@@ -318,3 +318,86 @@ async def test_an_index_read_failure_is_unavailable_and_not_unhealthy(aiohttp_cl
 async def test_health_omits_the_index_block_when_unwired(aiohttp_client):
     c = await aiohttp_client(_fake_health_app())
     assert "index" not in await (await c.get("/health")).json()
+
+
+async def test_health_reports_each_platform_state(aiohttp_client, store):
+    """`platforms.<name>.state` is the registry's liveness state, and
+    `account` is the REGISTERED identity — no `/v1/self` round trip per poll
+    (design/platform-bridges/platform-liveness.md «Visibility»)."""
+    from nora.doctrine.loader import DoctrineStore
+    from nora.domain.ports import PlatformIdentity
+    from nora.platform.registry import AdapterRegistry
+    from nora.testing import FakePlatformAdapter
+
+    live = FakePlatformAdapter("signal")
+    degraded = FakePlatformAdapter("whatsapp")
+    degraded.degrade("logged out")
+    registry = AdapterRegistry(
+        adapters={"signal": live, "whatsapp": degraded},
+        identities={"signal": PlatformIdentity(platform="signal", primary="+852999")})
+    metrics = Metrics()
+    app = build_health_app(
+        adapter=live, adapters=registry.adapters, registry=registry,
+        store=store, honcho=FakeMemoryStore(),
+        doctrine_store=DoctrineStore(
+            __import__("pathlib").Path("nora/doctrine"), canary="C", metrics=metrics),
+        metrics=metrics, started_at=0.0, llm_state=LLMState(),
+    )
+    client = await aiohttp_client(app)
+    response = await client.get("/health")
+    body = await response.json()
+
+    assert body["platforms"]["signal"]["state"] == "live"
+    assert body["platforms"]["signal"]["account"] == "+852999"
+    assert body["platforms"]["whatsapp"]["state"] == "degraded"
+    assert body["platforms"]["whatsapp"]["degraded"] is True
+    assert body["platforms"]["whatsapp"]["account"] is None
+    assert live.resolve_calls == degraded.resolve_calls == 0
+    assert response.status == 200, "a degraded platform never makes Nora unhealthy"
+
+
+async def test_a_hung_degraded_bridge_does_not_stall_health(aiohttp_client, store):
+    """Through the real handler: a degraded bridge whose fake never answers
+    any request still lets `/health` respond well inside the container
+    probe's 5 s — the latch answers its health, the registry its account."""
+    import asyncio
+    import time
+
+    from aiohttp import web
+
+    from nora.doctrine.loader import DoctrineStore
+    from nora.domain.ports import PlatformIdentity
+    from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint
+    from nora.platform.registry import AdapterRegistry
+    from nora.testing import FakePlatformAdapter
+
+    async def hang(request):
+        await asyncio.Event().wait()
+
+    hung = web.Application()
+    hung.router.add_route("*", "/{tail:.*}", hang)
+    server = await aiohttp_client(hung)
+    bridge = BridgeAdapter("whatsapp", BridgeEndpoint(
+        str(server.make_url("")).rstrip("/"), "t"))
+    bridge.degrade("identity wait expired")
+    live = FakePlatformAdapter("signal")
+    registry = AdapterRegistry(
+        adapters={"signal": live, "whatsapp": bridge},
+        identities={"signal": PlatformIdentity(platform="signal", primary="+852999")})
+    metrics = Metrics()
+    app = build_health_app(
+        adapter=live, adapters=registry.adapters, registry=registry,
+        store=store, honcho=FakeMemoryStore(),
+        doctrine_store=DoctrineStore(
+            __import__("pathlib").Path("nora/doctrine"), canary="C", metrics=metrics),
+        metrics=metrics, started_at=0.0, llm_state=LLMState(),
+    )
+    client = await aiohttp_client(app)
+    started = time.monotonic()
+    response = await client.get("/health")
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 1.0, f"/health took {elapsed:.2f}s behind a hung degraded bridge"
+    assert response.status == 200
+    assert (await response.json())["platforms"]["whatsapp"]["state"] == "degraded"
+    await bridge.close()

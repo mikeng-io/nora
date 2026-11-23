@@ -24,6 +24,7 @@ from opentelemetry.trace.propagation.tracecontext import (
 
 from nora.domain.actions import ActionOwner
 from nora.domain.identity import PlatformIdentity
+from nora.domain.latch import DegradeLatch
 from nora.domain.models import ConversationTarget, NormalizedMessage
 from nora.domain.ports import (
     AdapterHealth,
@@ -71,8 +72,11 @@ class BridgeEndpoint:
     token: str
 
 
-class BridgeAdapter:
-    """One per platform account in bridge mode."""
+class BridgeAdapter(DegradeLatch):
+    """One per platform account in bridge mode. Its liveness latch is
+    `DegradeLatch`'s; a `bind_owner` facade shares the root's latch."""
+
+    latch_send_paths = ("send_via_bridge",)
 
     def __init__(self, platform: str, endpoint: BridgeEndpoint,
                  owner: ActionOwner | None = None,
@@ -83,7 +87,6 @@ class BridgeAdapter:
         self._owner = owner
         self._dm_recipients = dm_recipients
         self._dm_gate = dm_gate
-        self._degraded_reason = ""
         self._session: aiohttp.ClientSession | None = None
         self._transport_owner: BridgeAdapter | None = None
         self._ordinal = 0
@@ -95,6 +98,9 @@ class BridgeAdapter:
                               dm_recipients=self._dm_recipients,
                               dm_gate=self._dm_gate)
         bound._transport_owner = self._transport_owner or self
+        # One latch for the root and every facade: a work-bound or OTP send
+        # can never pass a degraded root (platform-liveness.md).
+        bound.share_latch(bound._transport_owner)
         return bound
 
     @property
@@ -104,16 +110,6 @@ class BridgeAdapter:
         `live_invocation` owner (a bound `work`/`otp_challenge` owner is
         never replaced)."""
         return self._owner
-
-    def degrade(self, reason: str) -> None:
-        """Present-but-unable, latched — the same word `InstagramAdapter`
-        uses for the same state, so a registry caller can degrade either."""
-        self._degraded_reason = reason
-        log.error("%s bridge is ENABLED but DEGRADED: %s", self.platform, reason)
-
-    @property
-    def degraded(self) -> bool:
-        return bool(self._degraded_reason)
 
     async def _client(self) -> aiohttp.ClientSession:
         if self._transport_owner is not None:

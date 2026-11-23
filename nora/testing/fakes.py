@@ -69,6 +69,7 @@ from nora.domain.documents import (
     normalize_query,
 )
 from nora.domain.external_files import external_files_json
+from nora.domain.latch import DegradeLatch
 from nora.domain.media import (
     MediaBlob,
     MediaBytes,
@@ -885,7 +886,7 @@ class FakeRosterSource:
         return Roster(available=True, members=tuple(self.groups[conversation_id]))
 
 
-class FakeAdapter:
+class FakeAdapter(DegradeLatch):
     """Records sends instead of performing them; parses signal-cli-shaped envelopes
     inline (spec E.3) rather than importing `nora.platform.signal.parser` — `nora.testing`
     sits below `nora.platform` in the layers contract (`nora.agent | nora.platform` may
@@ -918,8 +919,7 @@ class FakeAdapter:
         self, *, succeed: bool = True, account: str = "", react_fails: bool = False,
     ) -> None:
         self.sent: list[tuple[ConversationTarget, str]] = []
-        # Parallel to `sent`, one entry per send — see `send`'s docstring for
-        # why the decoration is beside the list rather than inside its tuples.
+        # Parallel to `sent`, one entry per send (see `send`'s docstring).
         self.sent_mentions: list[tuple[Mention, ...]] = []
         self.sent_styles: list[tuple[TextStyle, ...]] = []
         self.sent_previews: list[LinkPreview | None] = []

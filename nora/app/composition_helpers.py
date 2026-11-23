@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Set
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -219,7 +219,7 @@ def _profile_room_keys(allowlist: Any)-> dict[str, CollectiveKey]:
 
 
 def _roster_names_of(
-    rosters: Mapping[str, RosterSource], persons: Persons, self_ids: frozenset[str],
+    rosters: Mapping[str, RosterSource], persons: Persons, self_ids: Set[str],
 ) -> Callable[[str, str], Awaitable[Mapping[str, str] | None]]:
     """A cognition session's roster seam: the room's roster NAMES with their"""
 

@@ -654,7 +654,7 @@ def _lessons_evidence(
             clock_ms=_now_ms,
             correction_quiet_seconds=(cfg.lessons.correction_quiet_seconds or None),
             stale_seconds=cfg.lessons.stale_seconds,
-            self_ids=frozenset(registry.self_aliases()),
+            self_ids=registry.self_aliases(),
         ),
         book=lesson_book,
         keys=lessons_keys,
