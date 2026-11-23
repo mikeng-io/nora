@@ -24,9 +24,12 @@ whatever the network allows.
   also implements; it is never a bridge-only route.
 - `operations` controls a running process. Building, deploying and restarting
   services belong to the deployment, never to the API.
-- The portal is a caller, not a contract: its pages read `graph`,
-  `documents` and `management`, so the portal and Nora read the same rows
-  with the same scope rules.
+- The portal is a caller, not a contract. Its Next.js server is its
+  backend-for-frontend: it holds the browser session, calls the contracts as
+  the viewer's principal, and composes pages from their resources. The API
+  is named for what it serves, never for a consumer; it returns resources,
+  never a page's shape, and it checks the viewer's scope itself rather than
+  trusting the portal to have done so.
 
 ## Where it runs
 
