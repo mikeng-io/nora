@@ -139,6 +139,12 @@ async def drive_outcomes(bridge: Bridge) -> None:
     with bridge.no_ledger():
         assert (await envelope(await operation("op-dark")))["outcome"] == "unavailable"
     assert (await operation("op-bogus", kind="bogus")).status == 422
+    for malformed in ([], {}, 1, None):
+        refused = await http.post(OPERATIONS, headers=auth, json={
+            "operation_id": "op-malformed", "owner": owner, "kind": malformed,
+            "effect": effect})
+        assert refused.status == 422 and "outcome" not in await refused.json()
+    assert await bridge.store.action("op-malformed") is None
     conflict = await operation("op-complete", text="another effect")
     assert conflict.status == 409 and "outcome" not in await conflict.json()
 
@@ -167,6 +173,10 @@ async def _drive_reads(bridge: Bridge) -> None:
     assert ok["from"]["source"] == bridge.platform
     assert (await envelope(await query(*bridge.query_unavailable)))["outcome"] == "unavailable"
     assert (await query("bogus", {})).status == 422
+    for malformed in ([], {}, 1, None):
+        refused = await http.post("/v1/platform/queries", headers=auth,
+                                  json={"kind": malformed, "params": {}})
+        assert refused.status == 422 and "outcome" not in await refused.json()
     account = await envelope(await http.get("/v1/platform/accounts/self", headers=auth))
     assert account["outcome"] == "ok" and account["payload"]["primary"]
     with bridge.logged_out():
@@ -218,3 +228,10 @@ async def replay_after_its_audit_row_settled(bridge: Bridge) -> dict[str, Any]:
         "effect": {**effect, "text": "another effect"}})
     assert conflict.status == 409
     return body
+
+
+async def assert_not_ready(http: Any, auth: dict[str, str]) -> None:
+    """`/ready` is 503 and the status read's `ok` agrees with it."""
+    assert (await http.get("/ready", headers=auth)).status == 503
+    status = await envelope(await http.get("/v1/operations/status", headers=auth))
+    assert status["payload"]["ok"] is False and status["payload"]["detail"]

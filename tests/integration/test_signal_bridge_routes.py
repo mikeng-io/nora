@@ -1223,6 +1223,14 @@ async def test_the_bridge_serves_the_platform_contract_routes(bridge_app):
         assert (await client.get("/ready", headers=AUTH)).status == 503
 
 
+async def test_ready_needs_the_action_service(bridge_app):
+    """The daemon answers, so only the missing ledger can make the bridge unready."""
+    bridge, client, _ = bridge_app
+    assert (await client.get("/ready", headers=AUTH)).status == 200
+    with pc.swapped(bridge, "_actions"):
+        await pc.assert_not_ready(client, AUTH)
+
+
 async def test_operation_outcomes_follow_the_contract(bridge_app, monkeypatch):
     bridge, client, daemon = bridge_app
     daemon.groups = [{"id": ROOM, "members": [{"number": SENDER}]}]

@@ -73,6 +73,7 @@ from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.discord.roster import DiscordRoster
 from tests.integration.platform_contract import (
     Bridge,
+    assert_not_ready,
     assert_serves_the_contract,
     drive_outcomes,
     envelope,
@@ -1031,9 +1032,20 @@ async def test_actions_and_capture_fail_closed_without_collaborators(bridge):
 
 async def test_the_bridge_serves_the_platform_contract_routes(bridge, monkeypatch):
     assert_serves_the_contract(bridge["bridge"].routes())
+    await bridge["bridge"].start()
     assert (await bridge["http"].get("/ready", headers=AUTH)).status == 200
     monkeypatch.setattr(bridge["client"], "is_ready", lambda: False)
     assert (await bridge["http"].get("/ready", headers=AUTH)).status == 503
+
+
+@pytest.mark.parametrize("missing", ["_actions", "self_id"])
+async def test_ready_needs_every_delivery_dependency(bridge, missing):
+    """The gateway is ready, so only the missing ledger or account makes it unready."""
+    b = bridge["bridge"]
+    await b.start()
+    assert (await bridge["http"].get("/ready", headers=AUTH)).status == 200
+    with swapped(b, missing):
+        await assert_not_ready(bridge["http"], AUTH)
 
 
 async def test_operation_outcomes_follow_the_contract(bridge, monkeypatch):
