@@ -20,9 +20,9 @@ import logging
 from aiohttp import web
 
 from nora.app.voice_events import VoiceEventConsumer
-from nora.domain.service_api import status_for
 from nora.infra.voice.hub import VoiceControllerHub
 from nora.web.voice import register_voice
+from tests.integration.platform_contract import assert_settled_operation
 
 GUILD = "guild-1"
 PLAYBACK = "pb-1"
@@ -335,9 +335,7 @@ async def test_report_outcomes_follow_the_contract(aiohttp_client, monkeypatch):
             "Authorization": "Bearer tok"}, json={
             "operation_id": operation_id, "kind": "report", "effect": event})
         body = await resp.json()
-        assert set(body) == {"outcome", "payload", "when", "from", "scope", "trace"}
-        assert resp.status == status_for(body["outcome"])
-        assert body["when"]["state"] == "settled" and body["scope"]["level"] == "installation"
+        assert_settled_operation(resp.status, body)
         return body
 
     applied = await report("op-1", _event("track-finished", playback_id=PLAYBACK))
@@ -358,3 +356,15 @@ async def test_report_outcomes_follow_the_contract(aiohttp_client, monkeypatch):
 
 async def _never(message) -> None:
     raise AssertionError("a report never ingests a message")
+
+
+async def test_a_report_without_an_integer_event_seq_is_a_400():
+    consumer, manager, _ = await _consumer()
+
+    for event_seq in (None, "1", True, 1.5):
+        event = _event("speech-finished", event_seq=event_seq)
+        if event_seq is None:
+            del event["event_seq"]
+        status, _ = await consumer.consume(event)
+        assert status == 400, event_seq
+    assert manager.calls == []

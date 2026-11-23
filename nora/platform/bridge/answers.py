@@ -97,7 +97,7 @@ async def operation_request(req: web.Request, kinds: frozenset[str], *,
         body = None
     if not isinstance(body, dict):
         return web.json_response({"error": "body must be a JSON object"}, status=400)
-    if body.get("kind") not in kinds:
+    if not isinstance(body.get("kind"), str) or body["kind"] not in kinds:
         return web.json_response({"error": "unknown_kind"}, status=422)
     operation_id, effect = body.get("operation_id"), body.get("effect")
     if not isinstance(operation_id, str) or not operation_id or not isinstance(effect, dict):

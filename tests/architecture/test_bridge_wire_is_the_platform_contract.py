@@ -54,7 +54,8 @@ OLD_VOICE_ROUTES = ("/voice/join", "/voice/exit", "/voice/status", "/voice/event
                     "/voice/utterance", "/app/v1/voice")
 OLD_VOICE_PATTERNS = (
     re.compile(r"(?<!/v1)/music/(?:play|stop|pause|resume|volume)"),
-    re.compile(r"/v1/voice/(?!operations\b|queries\b)[\w{]"),
+    # A whole path segment after `/v1/voice/` that is not one of the contract's.
+    re.compile(r"/v1/voice/(?!(?:operations|queries)(?![\w{}-]))[\w{}-]+"),
 )
 #: The controller's old speech route, named only where a voice caller or server lives.
 QUOTED_STREAM = re.compile(r"""["'`]/stream["'`]""")
@@ -90,3 +91,13 @@ def test_no_old_voice_route_is_named() -> None:
         if name.startswith(STREAM_SCOPES):
             named += [f"{name}: {m.group()}" for m in QUOTED_STREAM.finditer(text)]
     assert not named, "the old voice wire is still named:\n  " + "\n  ".join(named)
+
+
+def test_the_voice_rule_reads_whole_segments() -> None:
+    """Positive control for the `/v1/voice/` rule."""
+    rule = OLD_VOICE_PATTERNS[1]
+    named = ["/v1/voice/operations-legacy", "/v1/voice/{guild_id}/join", "/v1/voice/event"]
+    clean = ["/v1/voice/operations", "/v1/voice/operations/{operation_id}",
+             "/v1/voice/queries", 'startswith("/v1/voice/")']
+    assert all(rule.search(text) for text in named)
+    assert not any(rule.search(text) for text in clean)

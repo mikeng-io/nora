@@ -79,6 +79,9 @@ class VoiceEventConsumer:
         guild_id = body.get("guild_id")
         if not isinstance(guild_id, str) or not guild_id:
             return 400, {"error": "guild_id is required"}
+        event_seq = body.get("event_seq")
+        if not isinstance(event_seq, int) or isinstance(event_seq, bool):
+            return 400, {"error": "event_seq must be an integer"}
         # A guild nora has no controller for cannot have emitted this. The
         # route has no auth by design (its only caller is a controller on the
         # private compose network), so without this check every distinct
@@ -95,15 +98,13 @@ class VoiceEventConsumer:
             return 403, {"error": "unknown guild"}
         if self._hub.seen_event(event_id):
             return 200, {"status": "duplicate"}
-        event_seq = body.get("event_seq")
-        if isinstance(event_seq, int) and not isinstance(event_seq, bool):
-            last = self._hub.last_event_seq(guild_id)
-            if last is not None and event_seq > last + 1:
-                log.warning(
-                    "voice event seq gap for guild %s: last consumed %d, arrived "
-                    "%d — %d event(s) may have been lost while nora was down",
-                    guild_id, last, event_seq, event_seq - last - 1,
-                )
+        last = self._hub.last_event_seq(guild_id)
+        if last is not None and event_seq > last + 1:
+            log.warning(
+                "voice event seq gap for guild %s: last consumed %d, arrived "
+                "%d — %d event(s) may have been lost while nora was down",
+                guild_id, last, event_seq, event_seq - last - 1,
+            )
 
         try:
             with act_event(event_id, ActAuthority(None)):
@@ -122,8 +123,7 @@ class VoiceEventConsumer:
         # Commit the dedupe ONLY on success — and only now bookmark the
         # seq, so a failed delivery never moves the gap baseline forward.
         self._hub.consume_event_id(event_id)
-        if isinstance(event_seq, int) and not isinstance(event_seq, bool):
-            self._hub.note_event_seq(guild_id, event_seq)
+        self._hub.note_event_seq(guild_id, event_seq)
         return status, payload
 
     async def _process(

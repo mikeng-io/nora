@@ -18,7 +18,7 @@ from nora.infra.voice.http_controller import VoiceControllerClient
 from nora.infra.voice.hub import VoiceControllerHub
 from nora.platform.discord.bridge_app import DiscordBridge
 from nora.testing.voice import FakeVoiceController, operation_envelope
-from tests.integration.platform_contract import DOCUMENT, envelope
+from tests.integration.platform_contract import DOCUMENT, assert_settled_operation, envelope
 
 TOKEN = "test-bridge-token"  # noqa: S105 — a synthetic fixture token
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -180,3 +180,34 @@ async def test_a_conflict_from_the_controller_is_an_envelope(aiohttp_client):
     joined = await _op(http, "join", guild_id=GUILD, channel_id=CHANNEL)
 
     assert [spoken["outcome"], left["outcome"], joined["outcome"]] == ["unavailable"] * 3
+
+
+@pytest.mark.parametrize(("hub_status", "outcome"), [
+    (200, "complete"), (403, "denied"), (500, "unavailable"),
+])
+async def test_a_report_is_answered_with_a_settled_envelope(aiohttp_client, hub_status, outcome):
+    """Whatever the event consumer answers, the bridge's report is the settled
+    envelope a controller's outbox counts delivered."""
+    class _Sink:
+        async def consume(self, body: object) -> tuple[int, dict]:
+            return hub_status, {"status": "ok"} if hub_status == 200 else {"error": "x"}
+
+    http = await aiohttp_client(DiscordBridge(
+        api_token=TOKEN, account_key="generated-account", client=object(),
+        voice_event_sink=_Sink()).routes())
+    resp = await http.post("/v1/voice/operations", headers={**AUTH, "traceparent": (
+        "00-" + "ab" * 16 + "-" + "cd" * 8 + "-01")}, json={
+        "operation_id": "op-1", "kind": "report", "effect": {
+            "type": "speech-finished", "event_id": "evt-1", "event_seq": 1, "guild_id": GUILD}})
+
+    body = await resp.json()
+    assert_settled_operation(resp.status, body)
+    assert body["outcome"] == outcome and body["trace"] == "ab" * 16
+
+
+@pytest.mark.parametrize("kind", [["join"], {"k": 1}, 7, None])
+async def test_a_kind_that_is_not_a_string_is_422(bridge, kind):
+    _fake, _hub, _app, http = bridge
+    resp = await http.post("/v1/voice/operations", headers=AUTH, json={
+        "operation_id": "op-1", "kind": kind, "effect": {"guild_id": GUILD}})
+    assert resp.status == 422
