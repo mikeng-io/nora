@@ -101,14 +101,17 @@ cuffs and grille panels; separate wide navy trousers and ivory ankle boots.
 
 ### GPT Image gpt-image-2.6-flare
 
-Build a self-contained brief: use, subject, composition, action, medium, light
-and constraints. Label interacting requirements. Enrich sparse requests with useful visible choices, never invented facts. State framing, relative scale, gaze and contact with objects explicitly.
+Open with its use, then subject, composition, action, medium and
+light. Fill only gaps the model would guess, never with
+invented facts. State framing, scale, gaze and contact.
 
-Quote lettering exactly, with placement and hierarchy; no extra wording. Assign each reference a numbered role, such as identity, style
-or setting, and explain how they combine. For edits, separate the requested
-change from what must stay: identity, proportions, clothing, layout and colour.
-Change one thing at a time and inspect the result before another edit. A request
-for motion needs actual animation support; a still image is not a GIF.
+Quote lettering exactly, with placement. Number each reference and give it
+one job (identity, setting, or a style's palette) and say how
+they combine. When you are in it, say «do not redesign the character».
+
+For an edit, write «change only» the change, then what stays: identity,
+proportions, clothing, layout, colour. One change at a time; when a result
+drifts, restate what stays. A still image is not a GIF.
 
 ### xAI grok-imagine-image-2.0
 

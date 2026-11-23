@@ -593,6 +593,10 @@ services:
       #   The rotating token after it lives in ./state/openai-codex-oauth.json.
       #   Read only when `[image_gen] provider = "openai_codex"`.
       - OPENAI_CODEX_REFRESH_TOKEN=${OPENAI_CODEX_REFRESH_TOKEN:-}
+      #   OPENAI_IMAGE_API_KEY — the metered OpenAI platform image lane, a
+      #   key scoped to its own budgeted project. Read only when
+      #   `[image_gen] provider = "openai"`.
+      - OPENAI_IMAGE_API_KEY=${OPENAI_IMAGE_API_KEY:-}
       #   DISCORD_BOT_TOKEN     — the Gateway/REST credential for the Discord
       #   adapter ([platforms.discord] enabled, DEC-102). Passed explicitly for
       #   the same reason as every value above: Compose does not inherit host

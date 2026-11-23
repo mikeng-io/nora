@@ -45,6 +45,7 @@ RULE_TESTS = {
     "DEC-324": "test_a_server_entry_admits_a_discovered_channel_by_guild_id",
     "DEC-323": "test_policy_reload_admits_the_next_message_from_a_new_room",
     "DEC-329": "test_cognition_is_the_live_topic_writer",
+    "DEC-330": "test_a_generation_carries_the_key_and_no_chatgpt_headers",
     # R-1: untagged ambient traffic reaches the agent ONLY under the participation
     # occasion's gating: an operator-opted-in room, one quiescence-closed window, one
     # evaluation through `FirePath.speak`. The named test pins that ordinary ambient
@@ -145,8 +146,7 @@ RULE_TESTS = {
     # with the honest caveat that a bare local number is a residual risk equal
     # to R-18's. A describable modality with no describer configured is
     # `unavailable` (a wiring gap, R-27); only a blob no describer reads is
-    # `not_an_image` (DEC-114). Inert-by-config behind [media] enabled. See
-    # DEC-56.
+    # `not_an_image` (DEC-114). Inert-by-config behind [media] enabled. See DEC-56.
     "R-33": "test_a_stored_image_is_read_only_within_scope_and_screened_on_serve",
     # R-34 is retired (DEC-73); the number is not reused.
     # R-35: saved-place resolution is subset-scoped and falls through, never

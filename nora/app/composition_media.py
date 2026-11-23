@@ -189,7 +189,20 @@ def _image_gen_wiring(
         if codex_token
         else None
     )
-    if cfg.image_gen.provider == "openai_codex":
+    if cfg.image_gen.provider == "openai":
+        api_cfg = cfg.image_gen.openai
+        token_env = api_cfg.api_key_env
+        selected_token = environ.get(token_env, "")
+        image_generator = build_image_generator(
+            provider="openai",
+            api_key=selected_token,
+            model=api_cfg.model,
+            standard_quality=api_cfg.standard_quality,
+            high_quality=api_cfg.high_quality,
+            timeout_seconds=api_cfg.timeout_seconds,
+            max_reference_images=api_cfg.max_reference_images,
+        )
+    elif cfg.image_gen.provider == "openai_codex":
         token_env = codex_cfg.refresh_token_env
         image_generator = (
             build_image_generator(
