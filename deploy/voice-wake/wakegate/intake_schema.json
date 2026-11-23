@@ -1,0 +1,285 @@
+{
+  "components": {
+    "schemas": {
+      "IntakeOperationEnvelope": {
+        "description": "The answer to an intake `record`.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/OperationFrom"
+          },
+          "outcome": {
+            "enum": [
+              "complete",
+              "pending",
+              "denied",
+              "rejected",
+              "unsupported",
+              "incomplete",
+              "uncertain",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/IntakeOperationPayload"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/OperationWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "IntakeOperationEnvelope",
+        "type": "object"
+      },
+      "IntakeOperationPayload": {
+        "description": "Why an event was not recorded, when it was not.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationError"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "title": "IntakeOperationPayload",
+        "type": "object"
+      },
+      "IntakeOperationReadEnvelope": {
+        "description": "An intake operation read back: `ok` carries the operation's own envelope.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/ReadFrom"
+          },
+          "outcome": {
+            "enum": [
+              "ok",
+              "nothing_found",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntakeOperationEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/ReadWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "IntakeOperationReadEnvelope",
+        "type": "object"
+      },
+      "OperationError": {
+        "description": "A classified, sanitised reason; never raw upstream text.",
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "message"
+        ],
+        "title": "OperationError",
+        "type": "object"
+      },
+      "OperationFrom": {
+        "description": "The target of the effect and its platform reference when one exists.",
+        "properties": {
+          "platform_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Platform Ref"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "title": "OperationFrom",
+        "type": "object"
+      },
+      "OperationWhen": {
+        "description": "Where the record is in its lifecycle, and when it got there.",
+        "properties": {
+          "settled_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Settled At Ms"
+          },
+          "started_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Started At Ms"
+          },
+          "state": {
+            "enum": [
+              "prepared",
+              "started",
+              "settled"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "OperationWhen",
+        "type": "object"
+      },
+      "ReadFrom": {
+        "description": "The source, its health, and the sources that failed when coverage is partial.",
+        "properties": {
+          "failed_sources": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Failed Sources",
+            "type": "array"
+          },
+          "healthy": {
+            "title": "Healthy",
+            "type": "boolean"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "healthy"
+        ],
+        "title": "ReadFrom",
+        "type": "object"
+      },
+      "ReadWhen": {
+        "description": "When the source observed the answer, by its own clock.",
+        "properties": {
+          "known_by": {
+            "title": "Known By",
+            "type": "string"
+          },
+          "observed_at_ms": {
+            "title": "Observed At Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "observed_at_ms",
+          "known_by"
+        ],
+        "title": "ReadWhen",
+        "type": "object"
+      },
+      "Scope": {
+        "description": "The scope a request resolved to, at its contract's level.",
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Id"
+          },
+          "level": {
+            "enum": [
+              "room",
+              "unit",
+              "agent",
+              "identity",
+              "workspace",
+              "installation",
+              "none"
+            ],
+            "title": "Level",
+            "type": "string"
+          }
+        },
+        "required": [
+          "level"
+        ],
+        "title": "Scope",
+        "type": "object"
+      }
+    }
+  }
+}

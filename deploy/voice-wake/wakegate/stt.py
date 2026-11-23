@@ -17,11 +17,14 @@ is transient by design.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import secrets
 import uuid
+from pathlib import Path
 
 import aiohttp
+from jsonschema import Draft202012Validator
 
 log = logging.getLogger("wakegate.stt")
 
@@ -84,50 +87,37 @@ async def transcribe(
     return None
 
 
-# The canonical service API's operation envelope (design/service-api/
-# conventions.md), mirrored because this service may not import nora.
+# The canonical service API (design/service-api/conventions.md). Shapes are
+# the contract's generated schema; what a schema cannot say is checked here:
+# the status an outcome is answered with, `settled` on all but `pending`, and
+# the installation scope.
 _STATUS = {"complete": 200, "pending": 202, "denied": 403, "rejected": 200,
            "unsupported": 200, "incomplete": 200, "uncertain": 200,
            "unavailable": 503}
 _READ_STATUS = {"ok": 200, "nothing_found": 200, "unavailable": 503}
 _NO_ENVELOPE = frozenset({400, 401, 404, 409, 422})
-# A lost or unsettled answer is read back by its operation_id, never resent;
-# the bound keeps a slow Nora from holding an utterance task for long.
+_SCHEMA = json.loads(Path(__file__).with_name("intake_schema.json").read_text())
+_OPERATION = Draft202012Validator(
+    {**_SCHEMA, "$ref": "#/components/schemas/IntakeOperationEnvelope"})
+_READ = Draft202012Validator(
+    {**_SCHEMA, "$ref": "#/components/schemas/IntakeOperationReadEnvelope"})
+# A lost or unsettled answer is read back by its operation_id, never resent.
+# The POST, every read-back and the gaps share one deadline, the session's
+# total timeout: each request gets only what is left of it.
 _READ_BACK_ON = frozenset({"pending", "uncertain", "lost"})
 _READ_BACKS = 3
 _READ_BACK_GAP_S = 0.2
-_STATES = frozenset({"prepared", "started", "settled"})
-_LEVELS = frozenset({"room", "unit", "agent", "identity", "workspace",
-                     "installation", "none"})
-
-
-def _optional(value: object, kind: type) -> bool:
-    return value is None or (isinstance(value, kind) and not isinstance(value, bool))
-
-
-def _scope_and_trace(body: dict) -> bool:
-    scope = body.get("scope")
-    return (isinstance(scope, dict) and scope.get("level") in _LEVELS
-            and _optional(scope.get("id"), str) and isinstance(body.get("trace"), str))
 
 
 def _operation_outcome(body: object) -> str | None:
-    """The outcome of a well-formed operation envelope, else None."""
-    if not isinstance(body, dict) or body.get("outcome") not in _STATUS:
+    """The outcome of a valid intake operation envelope, else None."""
+    if not _OPERATION.is_valid(body):
         return None
     outcome = body["outcome"]
-    when, from_ = body.get("when"), body.get("from")
-    well_formed = (
-        isinstance(body.get("payload"), dict)
-        and isinstance(when, dict) and when.get("state") in _STATES
-        and (when["state"] == "settled") != (outcome == "pending")
-        and _optional(when.get("started_at_ms"), int)
-        and _optional(when.get("settled_at_ms"), int)
-        and isinstance(from_, dict) and isinstance(from_.get("target"), str)
-        and _optional(from_.get("platform_ref"), str)
-        and _scope_and_trace(body)
-    )
-    return outcome if well_formed else None
+    settled = body["when"]["state"] == "settled"
+    if settled == (outcome == "pending") or body["scope"]["level"] != "installation":
+        return None
+    return outcome
 
 
 async def forward_utterance(
@@ -145,11 +135,13 @@ async def forward_utterance(
     a refused forward drops the utterance (transient by design) and is
     visible in the log.
 
-    True only for a whole envelope whose outcome is `complete`, answered
-    with that outcome's status. On `pending`, `uncertain` or a lost or
-    invalid answer the record is read back by the same `operation_id`, a
-    bounded number of times; only a settled `complete` there is True.
-    Every other answer, a redirect included, is False after one POST.
+    True only for an envelope valid against the contract whose outcome is
+    `complete`, answered with that outcome's status. On `pending`,
+    `uncertain` or a lost or invalid answer the record is read back by the
+    same `operation_id`, up to three times; only a settled `complete` there
+    is True. Every other answer, a redirect included, is False after one
+    POST. The POST, the read-backs and the gaps share one deadline, the
+    session's total timeout.
 
     `token` is the shared service bearer; Nora refuses the utterance without it.
 
@@ -175,20 +167,34 @@ async def forward_utterance(
     # One W3C trace per utterance, on the POST and every read-back.
     traceparent = f"00-{secrets.token_hex(16)}-{secrets.token_hex(8)}-01"
     headers = {"Authorization": f"Bearer {token}", "traceparent": traceparent}
-    outcome = await _submit(session, url, request, headers)
+    total = session.timeout.total
+    deadline = None if total is None else asyncio.get_running_loop().time() + total
+    outcome = await _submit(session, url, request, headers, deadline)
     if outcome in _READ_BACK_ON:
-        outcome = await _read_back(session, f"{url}/{operation_id}", headers)
+        outcome = await _read_back(session, f"{url}/{operation_id}", headers, deadline)
     if outcome == "complete":
         return True
-    log.warning("nora did not record the utterance (%s)", outcome)
+    if outcome in _READ_BACK_ON:
+        log.warning("nora delivery unconfirmed (%s)", outcome)
+    else:
+        log.warning("nora did not record the utterance (%s)", outcome)
     return False
 
 
+def _left(deadline: float | None) -> float | None:
+    return None if deadline is None else deadline - asyncio.get_running_loop().time()
+
+
 async def _answer(session: aiohttp.ClientSession, method: str, url: str,
-                  **kwargs) -> tuple[int, object] | str:
+                  deadline: float | None, **kwargs) -> tuple[int, object] | str:
     """(status, JSON body or None), or a fixed label for no answer."""
+    left = _left(deadline)
+    if left is not None and left <= 0:
+        return "lost"
+    timeout = aiohttp.ClientTimeout(total=left) if left is not None else session.timeout
     try:
-        async with session.request(method, url, allow_redirects=False, **kwargs) as response:
+        async with session.request(method, url, allow_redirects=False,
+                                   timeout=timeout, **kwargs) as response:
             try:
                 body = await response.json(content_type=None)
             except ValueError:
@@ -201,9 +207,9 @@ async def _answer(session: aiohttp.ClientSession, method: str, url: str,
 
 
 async def _submit(session: aiohttp.ClientSession, url: str, request: dict,
-                  headers: dict[str, str]) -> str:
+                  headers: dict[str, str], deadline: float | None) -> str:
     """The POST's validated outcome, or a fixed label: `lost`, `redirect`, `http_<n>`."""
-    answer = await _answer(session, "POST", url, json=request, headers=headers)
+    answer = await _answer(session, "POST", url, deadline, json=request, headers=headers)
     if isinstance(answer, str):
         return answer
     status, body = answer
@@ -216,13 +222,17 @@ async def _submit(session: aiohttp.ClientSession, url: str, request: dict,
 
 
 async def _read_back(session: aiohttp.ClientSession, url: str,
-                     headers: dict[str, str]) -> str:
-    """The record's settled outcome by GET, or the last label once the bound runs out."""
+                     headers: dict[str, str], deadline: float | None) -> str:
+    """The record's settled outcome by GET, or the last label once the bound
+    or the deadline runs out."""
     label = "lost"
     for attempt in range(_READ_BACKS):
         if attempt:
+            left = _left(deadline)
+            if left is not None and left <= _READ_BACK_GAP_S:
+                break
             await asyncio.sleep(_READ_BACK_GAP_S)
-        answer = await _answer(session, "GET", url, headers=headers)
+        answer = await _answer(session, "GET", url, deadline, headers=headers)
         if isinstance(answer, str):
             continue
         status, body = answer
@@ -234,20 +244,10 @@ async def _read_back(session: aiohttp.ClientSession, url: str,
 
 def _read_outcome(status: int, body: object) -> str:
     """The read-back's answer: the record's outcome, `nothing_found`, or `lost`."""
-    if not isinstance(body, dict) or body.get("outcome") not in _READ_STATUS:
+    if (not _READ.is_valid(body) or _READ_STATUS[body["outcome"]] != status
+            or body["scope"]["level"] != "installation"
+            or body["outcome"] == "unavailable"):
         return "lost"
-    outcome = body["outcome"]
-    when, from_ = body.get("when"), body.get("from")
-    well_formed = (
-        _READ_STATUS[outcome] == status
-        and isinstance(when, dict) and isinstance(when.get("known_by"), str)
-        and isinstance(when.get("observed_at_ms"), int)
-        and isinstance(from_, dict) and isinstance(from_.get("source"), str)
-        and isinstance(from_.get("healthy"), bool)
-        and _scope_and_trace(body)
-    )
-    if not well_formed or outcome == "unavailable":
-        return "lost"
-    if outcome == "nothing_found":
+    if body["outcome"] == "nothing_found":
         return "nothing_found"
-    return _operation_outcome(body.get("payload")) or "lost"
+    return _operation_outcome(body["payload"]) or "lost"

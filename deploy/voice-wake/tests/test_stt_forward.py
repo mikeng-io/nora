@@ -1,13 +1,14 @@
 """The utterance forward reads Nora's answer by outcome, not by status,
 and reads a lost or unsettled answer back instead of guessing.
 
-Falsification: reduce the check in `forward_utterance` to `status == 200`,
-or to the outcome field alone, and a bare `{"outcome": "complete"}`,
-`rejected`, `unavailable`-under-200 and the disagreeing status read as
-success; let it follow redirects and the 307 does; drop the transport
-catch and an unreachable Nora raises; drop the read-back and a timeout
-after Nora recorded the utterance, or a `pending` that settles, is lost;
-drop the `traceparent` and the POST and its read-back carry no trace.
+Falsification: accept any body as an envelope and a bare
+`{"outcome": "complete"}`, a string `payload.error` or a `room` scope reads
+as delivered, and an array `outcome` raises; reduce the check to the status
+and `rejected` under 200 does; follow redirects and the 307 does; drop the
+read-back and a dropped answer after Nora recorded the utterance, or a
+`pending` that settles, is lost; give each request its own timeout and a
+stalled Nora holds the utterance four times as long; drop the
+`traceparent` and the POST and its read-back carry no trace.
 """
 
 # ruff: noqa: S101, S105 - synthetic wire tests use assertions and a fake bearer.
@@ -15,6 +16,10 @@ drop the `traceparent` and the POST and its read-back carry no trace.
 import asyncio
 import json
 import re
+import subprocess
+import sys
+import time
+from pathlib import Path
 
 import aiohttp
 from aiohttp import web
@@ -74,7 +79,7 @@ def _read(outcome: str, payload: dict | None = None, status: int | None = None):
     return (status or (503 if outcome == "unavailable" else 200)), body
 
 
-async def _forward(handler, *, reads=(), timeout: float | None = None, **kwargs):
+async def _forward(handler, *, reads=(), **kwargs):
     """Drive one forward; `reads` are the read-back answers in order, then
     `nothing_found`."""
     app = web.Application()
@@ -94,8 +99,7 @@ async def _forward(handler, *, reads=(), timeout: float | None = None, **kwargs)
     server = TestServer(app)
     await server.start_server()
     try:
-        client_timeout = aiohttp.ClientTimeout(total=timeout) if timeout else None
-        async with aiohttp.ClientSession(timeout=client_timeout) as session:
+        async with aiohttp.ClientSession() as session:
             ok = await forward_utterance(
                 session, nora_url=str(server.make_url("/")), user_id="u1",
                 text="hi", guild_id="g1", token=TOKEN, **kwargs,
@@ -146,6 +150,10 @@ async def test_forward_reads_the_outcome():
         _answer(200, body=_envelope("complete", when={"state": "started"})),
         _answer(200, body=_envelope("complete", payload=[])),
         _answer(200, body=_envelope("complete", **{"from": {}})),
+        _answer(200, body=_envelope("complete", payload={"error": "boom"})),
+        _answer(200, body=_envelope("complete", scope={"level": "room", "id": "r1"})),
+        _answer(200, body={**_envelope("complete"), "outcome": ["complete"]}),
+        _answer(200, body={**_envelope("complete"), "outcome": {"complete": True}}),
     ]
     for handler in refused:
         ok, _ = await _forward(handler)
@@ -174,9 +182,9 @@ def _gets(seen: list[dict]) -> list[dict]:
     return [entry for entry in seen if "get" in entry]
 
 
-async def _slow_complete(request: web.Request) -> web.Response:
+async def _recorded_then_dropped(request: web.Request) -> web.Response:
     request.app["seen"].append({"body": await request.json()})
-    await asyncio.sleep(0.5)  # the answer is lost to the client's timeout
+    request.transport.close()  # Nora recorded it; the answer never arrives
     return web.json_response(_envelope("complete"))
 
 
@@ -184,7 +192,7 @@ async def test_a_lost_or_unsettled_answer_is_read_back():
     done = _read("ok", _envelope("complete"))
 
     # recorded, then the answer was lost: the read-back finds it complete
-    ok, seen = await _forward(_slow_complete, reads=[done], timeout=0.2)
+    ok, seen = await _forward(_recorded_then_dropped, reads=[done])
     assert ok is True
     assert _gets(seen)[0]["get"] == seen[0]["body"]["operation_id"]
 
@@ -217,9 +225,68 @@ async def test_a_lost_or_unsettled_answer_is_read_back():
     assert ok is False
     assert len(_gets(seen)) == 3
 
+    # a malformed read is one failed read: the next one still counts
+    ok_body = _read("ok", _envelope("complete"))[1]
+    bad_reads = (
+        (200, {**ok_body, "when": {"observed_at_ms": True, "known_by": "bridge_clock"}}),
+        (200, {**ok_body, "from": {"source": "intake", "healthy": True,
+                                   "failed_sources": "db"}}),
+        (200, {**ok_body, "outcome": ["ok"]}),
+        (200, {**ok_body, "scope": {"level": "room"}}),
+        _read("ok", _envelope("complete", scope={"level": "room"})),
+        _read("ok", _envelope("complete", payload={"error": "boom"})),
+    )
+    for bad in bad_reads:
+        ok, seen = await _forward(_answer(202, "pending"), reads=[bad, done])
+        assert ok is True
+        assert len(_gets(seen)) == 2
+
     # a read-back that is not a whole read envelope proves nothing
     for bad in ((200, {"outcome": "ok", "payload": _envelope("complete")}),
                 _read("ok", {"outcome": "complete"}),
                 _read("ok", _envelope("complete"), status=503)):
         ok, _ = await _forward(_answer(202, "pending"), reads=[bad] * 3)
         assert ok is False
+
+
+async def _stall(request: web.Request) -> web.Response:
+    await asyncio.sleep(1.0)
+    return web.json_response(_envelope("complete"))
+
+
+async def test_one_deadline_covers_the_post_and_every_read_back():
+    app = web.Application()
+    app.router.add_post(PATH, _stall)
+    app.router.add_get(PATH + "/{operation_id}", _stall)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=0.3)) as session:
+            started = time.monotonic()
+            ok = await forward_utterance(
+                session, nora_url=str(server.make_url("/")), user_id="u1",
+                text="hi", guild_id="g1", token=TOKEN,
+            )
+            elapsed = time.monotonic() - started
+    finally:
+        await server.close()
+    assert ok is False
+    assert elapsed <= 0.3 + 0.15
+
+
+async def test_the_warning_says_whether_delivery_is_unknown(caplog):
+    still = _read("ok", _envelope("pending"))
+    await _forward(_answer(202, "pending"), reads=[still] * 3)
+    assert "delivery unconfirmed (pending)" in caplog.text
+    caplog.clear()
+    await _forward(_answer(200, "rejected"))
+    assert "did not record the utterance (rejected)" in caplog.text
+    assert "unconfirmed" not in caplog.text
+
+
+def test_the_shipped_schema_is_the_contract_document():
+    check = subprocess.run(
+        [sys.executable, str(Path(__file__).parents[1] / "scripts" / "intake_schema.py"), "--check"],
+        capture_output=True, text=True, check=False,
+    )
+    assert check.returncode == 0, check.stderr

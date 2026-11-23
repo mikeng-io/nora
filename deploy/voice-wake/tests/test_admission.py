@@ -237,6 +237,8 @@ class _Response:
 
 
 class _Session:
+    timeout = SimpleNamespace(total=None)
+
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
 
