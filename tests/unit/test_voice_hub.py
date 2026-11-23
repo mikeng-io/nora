@@ -1,7 +1,7 @@
 """`VoiceControllerHub` (nora/infra/voice/hub.py) against a fake controller:
 per-guild session caching, the boot reconciliation (a rejected join → adopt
 the existing connection via the `status` query), the fail-closed speech paths, and
-the bounded exactly-once event-id dedupe.
+the per-guild `event_seq` bookmark.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from nora.infra.voice.http_controller import (
     VoiceControllerClient,
     VoiceControllerUnavailable,
 )
-from nora.infra.voice.hub import _EVENT_ID_BOUND_PER_GUILD, VoiceControllerHub
+from nora.infra.voice.hub import VoiceControllerHub
 from nora.testing.voice import operation_envelope, read_envelope
 
 
@@ -214,27 +214,6 @@ async def test_clear_forgets_without_an_exit_call(aiohttp_client):
     assert [kind for kind, _ in record if kind == "exit"] == []
 
 
-async def test_consume_event_id_is_true_exactly_once(aiohttp_client):
-    hub = await _hub(aiohttp_client, _app())
-
-    assert hub.consume_event_id("evt-1") is True
-    assert hub.consume_event_id("evt-1") is False
-    assert hub.consume_event_id("evt-2") is True
-
-
-async def test_the_event_id_window_is_bounded_fifo(aiohttp_client):
-    hub = await _hub(aiohttp_client, _app())
-
-    assert hub.consume_event_id("evt-oldest") is True
-    bound = _EVENT_ID_BOUND_PER_GUILD * 2  # the fixture wires two guilds
-    for i in range(bound):
-        assert hub.consume_event_id(f"evt-{i}") is True
-
-    # The oldest entry fell out of the window; newer ones are still held.
-    assert hub.consume_event_id("evt-oldest") is True
-    assert hub.consume_event_id(f"evt-{bound - 1}") is False
-
-
 async def test_adopting_a_status_with_an_event_seq_gap_warns(aiohttp_client, caplog):
     """Reconciliation guard: the controller's `last_event_seq` ahead
     of the last seq nora consumed means events were emitted while nora was
@@ -279,19 +258,6 @@ async def test_note_event_seq_is_monotonic(aiohttp_client):
     hub.note_event_seq("guild-1", 7)
 
     assert hub.last_event_seq("guild-1") == 7
-
-
-async def test_seen_event_reads_the_dedupe_window_without_consuming(aiohttp_client):
-    """The check-then-commit split: `seen_event` is the pure check the
-    consumer runs BEFORE processing; `consume_event_id` is the commit it
-    runs only after success."""
-    hub = await _hub(aiohttp_client, _app())
-
-    assert hub.seen_event("evt-1") is False
-    assert hub.seen_event("evt-1") is False, "a pure check consumes nothing"
-
-    assert hub.consume_event_id("evt-1") is True
-    assert hub.seen_event("evt-1") is True
 
 
 async def test_generation_for_reads_the_cached_sessions_generation(aiohttp_client):
