@@ -11,7 +11,7 @@ from aiohttp.test_utils import TestServer
 
 from nora.domain.actions import ActionOwner
 from nora.domain.models import ConversationTarget, NormalizedMessage
-from nora.domain.ports import SendResult
+from nora.domain.ports import OutboundAttachment, SendResult
 from nora.domain.service_api import OperationConflictError, status_for
 from nora.ingest.policy import MentionPolicy
 from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint, BridgeUnavailableError
@@ -311,13 +311,14 @@ def _counting(post_answer, read_answer=None):
     return calls, _bridge(post=post, get=get)
 
 
-async def _send(server):
-    adapter = _adapter(server)
+async def _send(server, owner=None):
+    root = _adapter(server)
+    adapter = root.bind_owner(owner) if owner is not None else root
     try:
         return await adapter.send(
             target=ConversationTarget("signal", "synthetic-room", "group"), text="reply")
     finally:
-        await adapter.close()
+        await root.close()
 
 
 async def test_a_lost_answer_reads_the_record_back():
@@ -387,3 +388,378 @@ async def test_a_conflict_is_never_read_back():
         with pytest.raises(OperationConflictError):
             await _send(server)
     assert calls == {"post": 1, "get": 0}
+
+
+def _bare_complete():
+    return {"outcome": "complete"}
+
+
+def _other_row():
+    return _operation("complete", platform_ms=7, platform_ref="ref-1", message_id=999)
+
+
+def _list_payload():
+    return {**_operation("complete", platform_ms=7, platform_ref="ref-1"), "payload": []}
+
+
+def _complete_while_started():
+    body = _operation("complete", platform_ms=7, platform_ref="ref-1")
+    return {**body, "when": {**body["when"], "state": "started"}}
+
+
+_LIVE = ActionOwner("live_invocation", "41")
+
+
+@pytest.mark.parametrize("invalid", [_bare_complete, _other_row, _list_payload,
+                                     _complete_while_started])
+async def test_an_invalid_direct_answer_is_read_back(invalid):
+    """A POST answer that is not a well-formed envelope of this send is never a
+    confirmation: it reads `unavailable`, so the record is read back once."""
+    async def post(request):
+        return web.json_response(invalid(), status=200)
+
+    async def absent(request):
+        return _read("nothing_found")
+
+    calls, server = _counting(post, absent)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _UNCERTAIN
+    assert calls == {"post": 1, "get": 1}
+
+
+async def test_a_valid_direct_answer_of_this_send_confirms():
+    async def post(request):
+        return web.json_response(_operation(
+            "complete", platform_ms=7, platform_ref="ref-1", message_id=41))
+
+    calls, server = _counting(post)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _OK
+    assert calls == {"post": 1, "get": 0}
+
+
+async def _read_back_conflict(request):
+    return web.json_response({"error": "operation_id reused"}, status=409)
+
+
+async def _read_back_list(request):
+    return _read("ok", [])
+
+
+async def _read_back_list_payload(request):
+    return _read("ok", _list_payload())
+
+
+async def _read_back_started(request):
+    return _read("ok", _complete_while_started())
+
+
+async def _read_back_other_row(request):
+    return _read("ok", _other_row())
+
+
+async def _read_back_bare(request):
+    return _read("ok", _bare_complete())
+
+
+@pytest.mark.parametrize("read_back", [
+    _read_back_conflict, _read_back_list, _read_back_list_payload, _read_back_started,
+    _read_back_other_row, _read_back_bare,
+])
+async def test_an_invalid_read_back_is_uncertain(read_back):
+    """Whatever the read-back answers short of a valid settled record of this send
+    — a 409, a malformed record, a `complete` still `started` — the send is
+    uncertain, never failed and never confirmed."""
+    async def pending(request):
+        body = _operation("pending")
+        return web.json_response(body, status=status_for("pending"))
+
+    calls, server = _counting(pending, read_back)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _UNCERTAIN
+    assert calls == {"post": 1, "get": 1}
+
+
+async def test_an_invalid_react_completion_is_not_a_reaction():
+    async def post(request):
+        return web.json_response(_bare_complete(), status=200)
+
+    calls, server = _counting(post)
+    async with server:
+        adapter = _adapter(server)
+        try:
+            with pytest.raises(BridgeUnavailableError):
+                await adapter.react(
+                    target=ConversationTarget("signal", "synthetic-room", "group"),
+                    emoji="+", to_author="synthetic-author", to_timestamp=1)
+        finally:
+            await adapter.close()
+    assert calls["post"] == 1
+
+
+@pytest.mark.parametrize("answer", [
+    _bare_complete, lambda: _operation("complete"),
+    lambda: {**_operation("complete"), "payload": None},
+], ids=["bare", "delivery_payload", "null_payload"])
+async def test_an_invalid_blob_completion_is_not_custody(answer):
+    puts: list[str] = []
+
+    async def put(request):
+        puts.append(request.match_info["key"])
+        return web.json_response(answer(), status=200)
+
+    async def post(request):
+        raise AssertionError("no operation follows an unproven blob")
+
+    server = _bridge(post=post)
+    server.app.router.add_put("/v1/platform/blobs/{key}", put)
+    async with server:
+        adapter = _adapter(server)
+        try:
+            with pytest.raises(BridgeUnavailableError):
+                await adapter.send(
+                    target=ConversationTarget("signal", "synthetic-room", "group"),
+                    text="reply", attachments=(OutboundAttachment(
+                        content=b"x", filename="a.txt", media_type="text/plain"),))
+        finally:
+            await adapter.close()
+    assert len(puts) == 1
+
+
+def _bound_complete(**over):
+    body = _operation("complete", platform_ms=7, platform_ref="ref-1", message_id=41)
+    return {**body, **over}
+
+
+def _unbound_complete_record():
+    return _operation("complete", platform_ms=7, platform_ref="ref-1")
+
+
+@pytest.mark.parametrize("invalid", [
+    lambda: _bound_complete(payload=None), lambda: _bound_complete(payload={}),
+    lambda: _bound_complete(outcome=["complete"]), _unbound_complete_record,
+], ids=["null_payload", "empty_payload", "array_outcome", "no_audit_row"])
+async def test_a_direct_answer_must_carry_its_delivery_payload(invalid):
+    """No payload, an empty one, an outcome that is not a string, or a completion
+    naming no audit row for a bound send: never a confirmation, so it is read back."""
+    async def post(request):
+        return web.json_response(invalid(), status=200)
+
+    async def absent(request):
+        return _read("nothing_found")
+
+    calls, server = _counting(post, absent)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _UNCERTAIN
+    assert calls == {"post": 1, "get": 1}
+
+
+async def _partial_read_back(request):
+    return web.json_response({"outcome": "ok", "payload": _bound_complete()})
+
+
+async def _read_back_unbound(request):
+    return _read("ok", _unbound_complete_record())
+
+
+async def _read_back_array_outcome(request):
+    return _read("ok", _bound_complete(outcome=["complete"]))
+
+
+async def _read_back_outer_array_outcome(request):
+    body = read_body("ok", _bound_complete(), source="signal", trace="")
+    return web.json_response({**body, "outcome": ["ok"]}, status=200)
+
+
+@pytest.mark.parametrize("read_back", [
+    _partial_read_back, _read_back_unbound, _read_back_array_outcome,
+    _read_back_outer_array_outcome,
+])
+async def test_a_read_back_must_be_a_whole_record_of_this_send(read_back):
+    async def pending(request):
+        return web.json_response(_operation("pending"), status=status_for("pending"))
+
+    calls, server = _counting(pending, read_back)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _UNCERTAIN
+    assert calls == {"post": 1, "get": 1}
+
+
+async def test_a_whole_read_back_of_this_send_confirms():
+    async def pending(request):
+        return web.json_response(_operation("pending"), status=status_for("pending"))
+
+    async def record(request):
+        return _read("ok", _bound_complete())
+
+    calls, server = _counting(pending, record)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _OK
+    assert calls == {"post": 1, "get": 1}
+
+
+def _error_object_empty():
+    body = _bound_complete()
+    return {**body, "payload": {**body["payload"], "error": {}}}
+
+
+def _read_back_with(outcome_body, *, when=None, scope=None):
+    """A read-back answer wrapping `outcome_body`, with its `when` or `scope` replaced."""
+    body = read_body("ok", outcome_body, source="signal", trace="")
+    if when is not None:
+        body["when"] = when
+    if scope is not None:
+        body["scope"] = scope
+    return web.json_response(body, status=200)
+
+
+_SOL = {
+    "error_object_empty": lambda: _read_back_with(_error_object_empty()),
+    "observed_at_missing": lambda: _read_back_with(
+        _bound_complete(), when={"known_by": "bridge_clock"}),
+    "observed_at_null": lambda: _read_back_with(
+        _bound_complete(), when={"observed_at_ms": None, "known_by": "bridge_clock"}),
+    "unknown_scope_level": lambda: _read_back_with(_bound_complete(), scope={"level": "galaxy"}),
+}
+
+
+@pytest.mark.parametrize("answer", list(_SOL), ids=list(_SOL))
+async def test_a_read_back_off_the_schema_is_uncertain(answer):
+    async def pending(request):
+        return web.json_response(_operation("pending"), status=status_for("pending"))
+
+    async def read_back(request):
+        return _SOL[answer]()
+
+    calls, server = _counting(pending, read_back)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _UNCERTAIN
+    assert calls == {"post": 1, "get": 1}
+
+
+@pytest.mark.parametrize("invalid", [
+    _error_object_empty, lambda: _bound_complete(scope={"level": "galaxy", "id": None}),
+], ids=["error_object_empty", "unknown_scope_level"])
+async def test_a_direct_answer_off_the_schema_is_read_back(invalid):
+    async def post(request):
+        return web.json_response(invalid(), status=200)
+
+    async def absent(request):
+        return _read("nothing_found")
+
+    calls, server = _counting(post, absent)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _UNCERTAIN
+    assert calls == {"post": 1, "get": 1}
+
+
+async def test_an_unbound_completion_with_an_empty_payload_is_read_back():
+    """An answer carries every payload field: a `complete` whose payload is `{}` is
+    not a confirmation even when the send bound no audit row."""
+    async def post(request):
+        return web.json_response({**_operation("complete"), "payload": {}}, status=200)
+
+    async def absent(request):
+        return _read("nothing_found")
+
+    calls, server = _counting(post, absent)
+    async with server:
+        result = await _send(server)
+    assert result == _UNCERTAIN
+    assert calls == {"post": 1, "get": 1}
+
+
+def _seventh(body):
+    return {**body, "extra": "generated"}
+
+
+@pytest.mark.parametrize("read_back", [
+    lambda: _read_back_with(_seventh(_bound_complete())),
+    lambda: web.json_response(_seventh(read_body(
+        "ok", _bound_complete(), source="signal", trace="")), status=200),
+    lambda: web.json_response({**read_body("ok", _bound_complete(), source="signal", trace=""),
+                               "from": {"source": "signal", "healthy": True}}, status=200),
+], ids=["nested_seventh_field", "outer_seventh_field", "failed_sources_missing"])
+async def test_a_read_back_beyond_its_six_parts_is_uncertain(read_back):
+    async def pending(request):
+        return web.json_response(_operation("pending"), status=status_for("pending"))
+
+    async def answer(request):
+        return read_back()
+
+    calls, server = _counting(pending, answer)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _UNCERTAIN
+    assert calls == {"post": 1, "get": 1}
+
+
+async def test_a_direct_answer_beyond_its_six_parts_is_read_back():
+    async def post(request):
+        return web.json_response(_seventh(_bound_complete()), status=200)
+
+    async def absent(request):
+        return _read("nothing_found")
+
+    calls, server = _counting(post, absent)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _UNCERTAIN
+    assert calls == {"post": 1, "get": 1}
+
+
+def _blob_rejected(payload):
+    body = operation_body(ActionReply("rejected", kind="conflict"), target="k", trace="")
+    return {**body, "payload": payload}
+
+
+@pytest.mark.parametrize("payload", [{"error": {}}, "refused", 1],
+                         ids=["error_object_empty", "scalar_payload", "number_payload"])
+async def test_a_malformed_blob_refusal_is_not_a_definite_failure(payload):
+    """A `rejected` blob answer must say why; one that cannot is an invalid answer,
+    never a refused attachment."""
+    async def put(request):
+        return web.json_response(_blob_rejected(payload), status=200)
+
+    async def post(request):
+        raise AssertionError("no operation follows an unproven blob")
+
+    server = _bridge(post=post)
+    server.app.router.add_put("/v1/platform/blobs/{key}", put)
+    async with server:
+        adapter = _adapter(server)
+        try:
+            with pytest.raises(BridgeUnavailableError):
+                await adapter.send(
+                    target=ConversationTarget("signal", "synthetic-room", "group"),
+                    text="reply", attachments=(OutboundAttachment(
+                        content=b"x", filename="a.txt", media_type="text/plain"),))
+        finally:
+            await adapter.close()
+
+
+async def test_a_typed_blob_refusal_is_a_failed_send():
+    async def put(request):
+        return web.json_response(_blob_rejected(
+            {"error": {"kind": "conflict", "message": "the key holds other bytes"}}))
+
+    server = _bridge()
+    server.app.router.add_put("/v1/platform/blobs/{key}", put)
+    async with server:
+        adapter = _adapter(server)
+        try:
+            result = await adapter.send(
+                target=ConversationTarget("signal", "synthetic-room", "group"),
+                text="reply", attachments=(OutboundAttachment(
+                    content=b"x", filename="a.txt", media_type="text/plain"),))
+        finally:
+            await adapter.close()
+    assert result == SendResult(ok=False)

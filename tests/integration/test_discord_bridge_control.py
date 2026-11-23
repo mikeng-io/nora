@@ -74,6 +74,7 @@ from nora.platform.discord.roster import DiscordRoster
 from nora.testing.voice import operation_envelope, read_envelope
 from tests.integration.platform_contract import (
     Bridge,
+    assert_ready_needs,
     assert_serves_the_contract,
     drive_outcomes,
     envelope,
@@ -995,12 +996,11 @@ async def test_actions_and_capture_fail_closed_without_collaborators(bridge):
     try:
         b._actions = None
         posts_before = len(world["rest_state"]["posts"])
-        resp = await http.post(OPERATIONS, json={
+        resp = await http.post(OPERATIONS, headers=AUTH, json={
             "operation_id": "w:test:1",
             "owner": {"kind": "work", "id": "w", "generation": 1},
             "kind": "send",
-            "effect": {"target": {"kind": "group", "id": CONV},
-                       "text": "must never post"}}, headers=AUTH)
+            "effect": {"target": {"kind": "group", "id": CONV}, "text": "must never post"}})
         body = await resp.json()
         assert resp.status == 503 and body["outcome"] == "unavailable"
         assert body["payload"]["error"]["kind"] == "unavailable"
@@ -1022,9 +1022,9 @@ async def test_actions_and_capture_fail_closed_without_collaborators(bridge):
 
 async def test_the_bridge_serves_the_platform_contract_routes(bridge, monkeypatch):
     assert_serves_the_contract(bridge["bridge"].routes())
-    assert (await bridge["http"].get("/ready", headers=AUTH)).status == 200
-    monkeypatch.setattr(bridge["client"], "is_ready", lambda: False)
-    assert (await bridge["http"].get("/ready", headers=AUTH)).status == 503
+    await bridge["bridge"].start()
+    await assert_ready_needs(bridge["http"], AUTH, (bridge["client"], "is_ready", lambda: False),
+                             (bridge["bridge"], "_actions"), (bridge["bridge"], "self_id"))
 
 
 async def test_operation_outcomes_follow_the_contract(bridge, monkeypatch):

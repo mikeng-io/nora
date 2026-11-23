@@ -1218,9 +1218,7 @@ async def _daemon_down(*_: object) -> None:
 async def test_the_bridge_serves_the_platform_contract_routes(bridge_app):
     bridge, client, _ = bridge_app
     pc.assert_serves_the_contract(bridge.routes())
-    assert (await client.get("/ready", headers=AUTH)).status == 200
-    with pc.swapped(bridge, "_rpc", _daemon_down):
-        assert (await client.get("/ready", headers=AUTH)).status == 503
+    await pc.assert_ready_needs(client, AUTH, (bridge, "_rpc", _daemon_down), (bridge, "_actions"))
 
 
 async def test_operation_outcomes_follow_the_contract(bridge_app, monkeypatch):
