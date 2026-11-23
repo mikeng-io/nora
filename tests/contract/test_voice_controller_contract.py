@@ -238,6 +238,21 @@ async def test_a_volume_out_of_range_is_rejected(controller):
     assert excinfo.value.reason == "percent_out_of_range"
 
 
+async def test_a_stream_url_ffmpeg_could_not_take_is_rejected(controller):
+    """The controller refuses a URL that is not http(s), or that carries
+    whitespace or a control character, before it applies anything."""
+    fake, client, _ = controller
+    generation = await _join(client)
+
+    for url in ("https://cdn.example/a\x00b", "https://cdn.example/a\nb", "file:///etc/passwd",
+                "ftp://cdn.example/a", "not a url", " https://cdn.example/a",
+                "https://cdn.example/a ", "https://cdn.example/a\u00a0b"):
+        with pytest.raises(VoiceControllerRejected) as excinfo:
+            await client.play(generation, url, guild_id=GUILD, operation_id=str(uuid4()))
+        assert excinfo.value.reason == "invalid_body", url
+    assert fake.playback_id is None, "nothing was applied"
+
+
 async def test_resume_during_speech_is_a_409(controller):
     """Speech owns the pipeline; a music resume (like a pause)
     while it does is undefined and rejected LOUDLY — surfaced to nora as
