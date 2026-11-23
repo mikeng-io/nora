@@ -88,6 +88,34 @@ async def test_references_use_the_edits_endpoint(api_server):
     ]
 
 
+GIF = b"GIF89a" + b"\x00" * 32
+
+
+@pytest.mark.parametrize(("asked", "sent"), [(6, 6), (40, 16), (1, 2)])
+async def test_a_gif_asks_for_frames_and_comes_back_as_a_gif(api_server, asked, sent):
+    base, api = api_server
+    api["reply"] = lambda req, b: web.json_response(
+        {"data": [{"b64_json": base64.b64encode(GIF).decode()}]},
+    )
+    result = await _gen(base, max_gif_frames=16).generate(prompt="a ball", gif_frames=asked)
+    assert (result.status, result.media_type, result.raw) == ("ok", "image/gif", GIF)
+    body = api["requests"][0][2]
+    assert (body["output_format"], body["frame_count"], body["size"]) == ("gif", sent, "auto")
+
+
+async def test_a_stills_only_lane_makes_no_gif_call(api_server):
+    base, api = api_server
+    result = await _gen(base).generate(prompt="a ball", gif_frames=6)
+    assert (result.status, result.reason) == ("unavailable", "no_gif")
+    assert api["requests"] == []
+
+
+async def test_a_png_where_a_gif_was_asked_is_not_ok(api_server):
+    base, _ = api_server
+    result = await _gen(base, max_gif_frames=16).generate(prompt="a ball", gif_frames=6)
+    assert (result.status, result.reason) == ("unavailable", "bad_response")
+
+
 @pytest.mark.parametrize(
     ("status", "body", "reason"),
     [
@@ -132,13 +160,17 @@ def test_the_api_section_is_validated():
     cfg = ImageGenConfig.model_validate({"provider": "openai", "openai": {"high_quality": "max"}})
     assert cfg.openai.model == "gpt-image-2.6-flare"
     assert cfg.openai.api_key_env == "OPENAI_IMAGE_API_KEY"
-    for bad in ({"refresh_token_env": "X"}, {"standard_quality": "ultra"}, {"timeout_seconds": 0}):
+    assert cfg.openai.max_gif_frames == 0  # stills unless the operator turns GIFs on
+    for bad in ({"refresh_token_env": "X"}, {"standard_quality": "ultra"}, {"timeout_seconds": 0},
+                {"max_gif_frames": 17}):
         with pytest.raises(ValidationError):
             ImageGenConfig.model_validate({"openai": bad})
 
 
 async def test_composition_selects_the_api_lane_by_its_key(example_config, tmp_path):
-    lane = example_config.image_gen.openai.model_copy(update={"model": "gpt-image-2.6-sunburst"})
+    lane = example_config.image_gen.openai.model_copy(
+        update={"model": "gpt-image-2.6-sunburst", "max_gif_frames": 12},
+    )
     image_gen = example_config.image_gen.model_copy(
         update={"enabled": True, "provider": "openai", "openai": lane},
     )
@@ -148,6 +180,7 @@ async def test_composition_selects_the_api_lane_by_its_key(example_config, tmp_p
     )
     assert isinstance(generator, OpenAIImageGenerator)
     assert generator._model == "gpt-image-2.6-sunburst"  # the configured model, not the default
+    assert generator.max_gif_frames == 12
     assert keeper is None  # a key has no login to keep alive
     missing, _ = _image_gen_wiring(cfg, Metrics(), {}, state_dir=tmp_path)
     assert missing is None

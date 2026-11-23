@@ -32,6 +32,7 @@ class OpenAICodexImageGenerator(GptImageGenerator):
         timeout_seconds: float = 180.0,
         base_url: str = CODEX_BASE_URL,
         max_reference_images: int | None = None,
+        max_gif_frames: int = 0,
     ) -> None:
         super().__init__(
             model=model,
@@ -39,6 +40,7 @@ class OpenAICodexImageGenerator(GptImageGenerator):
             high_quality=high_quality,
             timeout_seconds=timeout_seconds,
             max_reference_images=max_reference_images,
+            max_gif_frames=max_gif_frames,
         )
         self._oauth = oauth
         self._url = f"{base_url.rstrip('/')}/images"

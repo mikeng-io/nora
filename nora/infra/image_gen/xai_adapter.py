@@ -89,6 +89,8 @@ class XaiImageGenerator:
     never hosts, uploads to `drop`, or reaches for any external service.
     """
 
+    max_gif_frames = 0  # Grok Imagine makes stills only
+
     def __init__(
         self,
         *,
@@ -123,7 +125,7 @@ class XaiImageGenerator:
         reference_images: Sequence[ImageReference] | None = None,
         size: ImageSize | None = None,
         quality: Literal["standard", "quality"] | None = None,
-        reference_resolver: ReferenceResolver | None = None,
+        reference_resolver: ReferenceResolver | None = None, gif_frames: int | None = None,
     ) -> ImageResult:
         if not prompt.strip():
             return ImageResult(status="nothing_found", reason="empty_prompt")

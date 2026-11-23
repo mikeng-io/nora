@@ -716,7 +716,7 @@ def _live_inputs() -> tuple[tuple[str, str], ...]:
             return 3
 
         async def generate(self, *, prompt, reference_images=None, size=None,
-                            quality=None, reference_resolver=None) -> ImageResult:
+                            quality=None, reference_resolver=None, gif_frames=None) -> ImageResult:
             return ImageResult(
                 status="ok", artifact=f"{SENTINEL_ORIGIN}/img/xYz9", provider="test",
             )

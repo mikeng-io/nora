@@ -176,6 +176,7 @@ def _make_generate_image(deps):
         size: Literal["small", "medium", "large"] | None = None,
         aspect: Literal["1:1", "16:9", "9:16", "3:2", "2:3"] | None = None,
         quality: Literal["standard", "quality"] | None = None,
+        gif_frames: int | None = None,
     ) -> dict:
         """Make an image from a prompt, optionally from photos in this
         conversation, and post it to this chat. Call this when somebody asks
@@ -208,6 +209,7 @@ def _make_generate_image(deps):
             size: Optional size tier.
             aspect: Optional aspect ratio.
             quality: Optional model tier; "quality" is the costlier one.
+            gif_frames: Optional; makes a looping GIF with this many frames (2 to 16).
         """
         c = SimpleNamespace(
             prompt=prompt,
@@ -215,6 +217,7 @@ def _make_generate_image(deps):
             size=size,
             aspect=aspect,
             quality=quality,
+            gif_frames=gif_frames,
             blob_store=deps.blob_store,
             conversation_id=deps.conversation_id,
             deliverer=deps.deliverer,
@@ -225,6 +228,9 @@ def _make_generate_image(deps):
             _held_image=_make__held_image(deps),
         )
         k_, _, v_ = await _generate_image__prepare(c)
+        if k_:
+            return v_
+        k_, _, v_ = await _generate_image__gif(c)
         if k_:
             return v_
         k_, _, v_ = await _generate_image__generate(c)
@@ -367,6 +373,13 @@ async def _generate_image__prepare(c):
     return (False, None, None)
 
 
+async def _generate_image__gif(c):
+    if c.gif_frames and not c.image_generator.max_gif_frames:
+        note = "I can only make still images right now, not GIFs. Say so, and offer a still."
+        return (True, None, {"status": "unavailable", "note": note})
+    return (False, None, None)
+
+
 async def _generate_image__generate(c):
     try:
         c.result = await c.image_generator.generate(
@@ -375,6 +388,7 @@ async def _generate_image__generate(c):
             size=c.image_size,
             quality=c.quality_kind,
             reference_resolver=c.resolve if c.refs else None,
+            gif_frames=c.gif_frames or None,
         )
     except Exception:
         log.exception("generate_image raised")
@@ -432,7 +446,9 @@ async def _generate_image__store_blob(c):
         log.exception("generate_image: media_store save failed")
     c.caption = ""
     c.media_type = c.result.media_type or "image/png"
-    c.filename = f"nora-generated-{int(datetime.now(UTC).timestamp())}.png"
+    c.filename = f"nora-generated-{int(datetime.now(UTC).timestamp())}." + (
+        "gif" if c.media_type == "image/gif" else "png"
+    )
     c.media_blobs: tuple[MediaBlob, ...] = ()
     if c.sha256:
         c.media_blobs = (

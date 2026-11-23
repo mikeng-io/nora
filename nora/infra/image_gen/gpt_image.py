@@ -31,6 +31,9 @@ _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 #: OpenAI documents «up to 16 images» for GPT image models on `images/edits`.
 GPT_IMAGE_MAX_REFERENCE_IMAGES = 16
+#: The API takes `frame_count` 2..16 for GIF output (gpt-image-2.6 onward).
+GPT_IMAGE_MAX_GIF_FRAMES = 16
+_GIF_MAGIC = (b"GIF87a", b"GIF89a")
 
 # ponytail: `ImageSize.tier` is not mapped;
 # the output may ignore even the size asked for, so a tier knob would
@@ -84,8 +87,10 @@ class GptImageGenerator:
         high_quality: str,
         timeout_seconds: float,
         max_reference_images: int | None,
+        max_gif_frames: int = 0,
     ) -> None:
         self._max_refs = _reference_limit(max_reference_images, GPT_IMAGE_MAX_REFERENCE_IMAGES)
+        self._max_gif_frames = min(max(max_gif_frames, 0), GPT_IMAGE_MAX_GIF_FRAMES)
         self._model = model
         self._standard_quality = standard_quality
         self._high_quality = high_quality
@@ -94,6 +99,11 @@ class GptImageGenerator:
     @property
     def max_reference_images(self) -> int:
         return self._max_refs
+
+    @property
+    def max_gif_frames(self) -> int:
+        """0 when the configured model makes stills only."""
+        return self._max_gif_frames
 
     def _unavailable(self, reason: str) -> ImageResult:
         return ImageResult(status="unavailable", reason=reason, provider=self.provider)
@@ -112,9 +122,12 @@ class GptImageGenerator:
         size: ImageSize | None = None,
         quality: Literal["standard", "quality"] | None = None,
         reference_resolver: ReferenceResolver | None = None,
+        gif_frames: int | None = None,
     ) -> ImageResult:
         if not prompt.strip():
             return ImageResult(status="nothing_found", reason="empty_prompt")
+        if gif_frames and not self._max_gif_frames:
+            return self._unavailable("no_gif")
 
         images: list[dict[str, str]] = []
         refs = reference_images or ()
@@ -147,6 +160,10 @@ class GptImageGenerator:
             "quality": self._high_quality if quality == "quality" else self._standard_quality,
             "size": _SIZE_BY_ASPECT.get(size.aspect_ratio, "auto") if size else "auto",
         }
+        if gif_frames:
+            # A GIF renders its frames on one sheet; "auto" picks a size the sheet fits.
+            frames = min(max(gif_frames, 2), self._max_gif_frames)
+            payload.update(output_format="gif", frame_count=frames, size="auto")
         if images:
             payload["images"] = images
         sent = await self._send(payload, "edits" if images else "generations")
@@ -156,7 +173,7 @@ class GptImageGenerator:
         if status is None:
             return self._unavailable("down")
         if status == 200:
-            return self._read_image(body)
+            return self._read_image(body, gif=bool(gif_frames))
 
         try:
             parsed: object = json.loads(body)
@@ -181,7 +198,7 @@ class GptImageGenerator:
             return self._unavailable("bad_request")
         return self._unavailable("down")
 
-    def _read_image(self, body: bytes) -> ImageResult:
+    def _read_image(self, body: bytes, *, gif: bool) -> ImageResult:
         try:
             response = json.loads(body)
         except ValueError:
@@ -205,12 +222,13 @@ class GptImageGenerator:
             raw = base64.b64decode(b64, validate=True)
         except ValueError:
             return self._unavailable("bad_response")
-        if not raw.startswith(_PNG_MAGIC):
+        if not raw.startswith(_GIF_MAGIC if gif else _PNG_MAGIC):
             return self._unavailable("bad_response")
+        media_type = "image/gif" if gif else "image/png"
         return ImageResult(
             status="ok",
-            artifact=f"data:image/png;base64,{b64}",
+            artifact=f"data:{media_type};base64,{b64}",
             provider=self.provider,
             raw=raw,
-            media_type="image/png",
+            media_type=media_type,
         )

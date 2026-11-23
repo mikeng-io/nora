@@ -111,7 +111,7 @@ they combine. When you are in it, say «do not redesign the character».
 
 For an edit, write «change only» the change, then what stays: identity,
 proportions, clothing, layout, colour. One change at a time; when a result
-drifts, restate what stays. A still image is not a GIF.
+drifts, restate what stays. For a GIF set `gif_frames`.
 
 ### xAI grok-imagine-image-2.0
 
