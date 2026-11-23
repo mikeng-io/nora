@@ -28,6 +28,7 @@ import aiohttp
 
 from nora.domain.playback_liveness import PlaybackReading
 from nora.infra.service_auth import service_auth_headers
+from nora.memory import ActAuthority, EffectRecorder, Outcome
 
 log = logging.getLogger("nora.infra.voice")
 
@@ -98,8 +99,10 @@ class VoiceControllerClient:
         *,
         session: aiohttp.ClientSession | None = None,
         timeout_seconds: float = 30.0,
+        effects: EffectRecorder | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
+        self._effects = effects
         self._session = session
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
 
@@ -224,6 +227,19 @@ class VoiceControllerClient:
         """A control POST's return is the `state` snapshot out of the
         success envelope. A 2xx WITHOUT it is a contract violation, reported
         as `unavailable` — never as success."""
+        if self._effects is None:
+            return await self._control_request(path, body)
+
+        async def call() -> dict[str, Any]:
+            return await self._control_request(path, body)
+
+        return await self._effects.invoke(
+            "voice.speech" if path == "/stream" else "voice.control",
+            f"voice-controller:{body.get('guild_id', '')}", str(body.get("request_id") or ""),
+            ActAuthority(None), call, judge=lambda _result: Outcome("done"),
+        )
+
+    async def _control_request(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         payload = await self._request("POST", path, body)
         state = payload.get("state")
         if not isinstance(state, dict):

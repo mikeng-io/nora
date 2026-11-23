@@ -132,6 +132,14 @@ def test_only_the_tag_path_and_the_fire_path_can_send():
     file's `CALLERS` are the two places that have to say so.
     """
     sources = _sources()
+    delivery = dict(sources)[SENDER]
+    assert any(
+        isinstance(node, ast.Call)
+        and ast.unparse(node.func) == "self._delivery_acts.run"
+        and any(isinstance(part, ast.Constant) and part.value == "platform.reply"
+                for part in ast.walk(node))
+        for node in ast.walk(delivery)
+    )
     assert _modules_where(sources, _is_port_send) == {SENDER}, (
         "something other than Deliverer.deliver reaches adapter.send — that "
         "bypasses R-2's latch, R-4, R-6's leak scan, R-18's egress scan and "

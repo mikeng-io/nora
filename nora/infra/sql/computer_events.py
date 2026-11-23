@@ -14,7 +14,10 @@ from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.computer_events import ComputerEvent, normalise_computer_event
+from nora.domain.computer_tasks import current_segment
+from nora.infra.sql.act_item_planes import executor_item_planes
 from nora.infra.sql.schema import COMPUTER_EVENTS, COMPUTER_SESSIONS
+from nora.memory import without_reasoning
 
 _FIELDS = (
     "id", "operation_id", "phase", "created_at", "started_at", "finished_at", "actor",
@@ -39,8 +42,13 @@ class SqlComputerEventStore:
         row = normalise_computer_event(event)
         values = {f: getattr(row, f) for f in _FIELDS}
         for column in ("request", "result", "output_ref"):
-            values[column] = dict(values[column])
+            values[column] = without_reasoning(dict(values[column]))
         async with self._engine.begin() as conn:
+            values.update(await executor_item_planes(
+                conn, COMPUTER_EVENTS, row.id, row.created_at, room=row.conversation_id,
+                platform=row.platform, person=row.requester_person_id,
+                task_id=current_segment.get() or row.operation_id, tag=row.tag_id,
+            ))
             await conn.execute(sa.insert(COMPUTER_EVENTS).values(**values))
 
     async def recent(

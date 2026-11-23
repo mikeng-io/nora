@@ -14,7 +14,7 @@ class ItemSource:
     writer: str
 
 
-ITEM_SOURCES = MappingProxyType({
+BACKFILL_ITEM_SOURCES = MappingProxyType({
     "messages": ItemSource(("person_id",), "external", "SqlRecordStore"),
     "message_edit": ItemSource(("messages.person_id",), "external", "SqlRecordStore"),
     "message_reaction": ItemSource(("person_id",), "external", "SqlRecordStore"),
@@ -28,6 +28,15 @@ ITEM_SOURCES = MappingProxyType({
     "platform_observation": ItemSource(("actor_id", "target_author_id"), "external",
                                        "SqlObservationStore"),
     "source_health": ItemSource((), "internal", "SqlSourceHealthLog"),
+})
+
+ITEM_SOURCES = MappingProxyType({
+    **BACKFILL_ITEM_SOURCES,
+    "nora_act": ItemSource(("authority_person",), "internal", "SqlActStore"),
+    "nora_act_outcome": ItemSource(("nora_act.authority_person",), "internal", "SqlActStore"),
+    "nora_pass_output": ItemSource((), "internal", "SqlActStore"),
+    "computer_events": ItemSource(("requester_person_id",), "internal", "SqlComputerEventStore"),
+    "tool_call_log": ItemSource((), "internal", "SqlToolCallLogStore"),
 })
 
 AggregateFamily = Literal["interval", "bucket", "head"]
@@ -48,18 +57,18 @@ AGGREGATE_FAMILIES: MappingProxyType[str, AggregateFamily] = MappingProxyType({
 })
 
 NonGraphReason = Literal[
-    "graph kind", "act or tool outcome", "operational", "transport", "blob storage", "legacy",
+    "graph kind", "operational", "transport", "blob storage", "legacy",
 ]
 NON_GRAPH_TABLES: MappingProxyType[str, NonGraphReason] = MappingProxyType({
     "analytics_watermark": "operational",
     "artifacts": "blob storage",
     "assess_report": "operational",
     "blob_tombstone": "blob storage",
-    "bridge_action": "act or tool outcome",
+    "bridge_action": "operational",
     "bridge_event": "transport",
     "bridge_event_alias": "transport",
     "bridge_work": "transport",
-    "browser_tasks": "act or tool outcome",
+    "browser_tasks": "operational",
     "claim": "graph kind",
     "cognition_carry": "operational",
     "cognition_self_wake": "operational",
@@ -70,10 +79,9 @@ NON_GRAPH_TABLES: MappingProxyType[str, NonGraphReason] = MappingProxyType({
     "comprehend_result": "legacy",
     "comprehend_web_page": "legacy",
     "compute_jobs": "operational",
-    "computer_events": "act or tool outcome",
     "computer_exports": "blob storage",
     "computer_sessions": "operational",
-    "computer_tasks": "act or tool outcome",
+    "computer_tasks": "operational",
     "config_revision": "operational",
     "consolidation_watermark": "operational",
     "culture": "legacy",
@@ -161,7 +169,7 @@ NON_GRAPH_TABLES: MappingProxyType[str, NonGraphReason] = MappingProxyType({
     "room_portrait": "legacy",
     "row_history": "operational",
     "self_tension": "operational",
-    "social_perception": "act or tool outcome",
+    "social_perception": "operational",
     "standing": "legacy",
     "standing_commitment": "legacy",
     "standing_commitment_revision": "legacy",
@@ -177,7 +185,6 @@ NON_GRAPH_TABLES: MappingProxyType[str, NonGraphReason] = MappingProxyType({
     "stimulus_retraction": "operational",
     "tag_debounce_state": "operational",
     "tag_trace": "operational",
-    "tool_call_log": "act or tool outcome",
     "turn_verdict": "operational",
     "version_announcements": "transport",
     "video_readings": "legacy",

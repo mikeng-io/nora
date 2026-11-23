@@ -130,11 +130,21 @@ class AuditWiring:
 
 def build_audit(cfg: Any, engine: Any, metrics: Any)-> AuditWiring:
 
+    import nora.memory as memory
+    from nora.agent.delivery_acts import DeliveryActs
+
+    registration = engine.get_execution_options().get("item_registration")
     audit = SqlRecordStore(
         engine,
         max_per_conversation=cfg.store.max_per_conversation,
         metrics=metrics,
-        registration=engine.get_execution_options().get("item_registration"),
+        registration=registration,
+        delivery_acts=(
+            DeliveryActs(
+                memory.wire.act_envelope(engine), registration.scope, registration.revisions,
+            )
+            if registration is not None else None
+        ),
     )
     return AuditWiring(audit=audit)
 

@@ -201,6 +201,10 @@ class ModelSource:
             tool_choice=self._spec.tool_choice,
         )
 
+    @property
+    def model_id(self) -> str:
+        return self._spec.model
+
 
 def build_limits(*, output_tokens: int, turns: int, total_tokens: int) -> dict:
     """R-8: the three caps Strands enforces around the WHOLE agent loop.
@@ -215,10 +219,6 @@ def build_limits(*, output_tokens: int, turns: int, total_tokens: int) -> dict:
     Strands returns an `AgentResult` whose `stop_reason` is `limit_turns` /
     `limit_total_tokens` / `limit_output_tokens`, raises nothing, and logs
     nothing (R-23).
-
-    Takes scalars (from `nora.app.composition.build_dependencies` and from each
-    run that builds its own agent), which keeps this module's inputs
-    framework-free like `create_client`/`create_model_provider`.
     """
     return {
         "turns": turns,

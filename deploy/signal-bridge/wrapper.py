@@ -1,16 +1,7 @@
-"""signal-bridge — the durable Signal boundary (design/platform-bridges).
+"""Signal's durable bridge for journaled capture and fenced outbound actions.
 
-Wraps an UNCHANGED signal-cli child: preflights the capture journal BEFORE the
-CLI may start receiving (on every restart, not once), captures the daemon's
-SSE, normalizes each envelope once via nora.platform.signal.parser, durably
-journals it, dedupe-enqueues to Redis Streams, and serves the shared /v1
-actions + custody API. Every outbound effect is a `bridge_action` row:
-reserve (prepared→started CAS) → effect → terminal CAS, so a restart after
-`started` retains uncertainty instead of blind-repeating, and a replayed
-request returns the persisted outcome.
-
-Env: read once by `BridgeConfig.from_env` (tests construct the dataclass
-directly — no module-level singletons).
+Probe the journal before the daemon starts receiving. An action left started
+after a restart retains uncertainty.
 """
 
 from __future__ import annotations
@@ -32,6 +23,7 @@ import redis.asyncio as aioredis
 from aiohttp import web
 from sqlalchemy.ext.asyncio import create_async_engine
 
+import nora.memory as memory
 from nora.domain.actions import ActionOwner
 from nora.domain.models import ConversationTarget
 from nora.domain.ports import (
@@ -43,6 +35,7 @@ from nora.domain.ports import (
     TextStyle,
 )
 from nora.infra.sql.bridge_store import SqlBridgeStore
+from nora.infra.sql.migrations_runner import run_migrations
 from nora.obs.metrics import Metrics
 from nora.platform.bridge import telemetry as bt
 from nora.platform.bridge.envelope import (
@@ -51,6 +44,7 @@ from nora.platform.bridge.envelope import (
     event_id,
 )
 from nora.platform.bridge.journal import Journal, JournalError
+from nora.platform.bridge.projection import projected_room_unit
 from nora.platform.bridge.queue import StreamProducer
 from nora.platform.bridge.rehydrate import (
     message_from_dict,
@@ -283,6 +277,7 @@ class Bridge:
         redis_client: Any | None = None,
         store: SqlBridgeStore | None = None,
         metrics: Metrics | None = None,
+        effects: memory.EffectRecorder | None = None,
     ) -> None:
         _valid_account_key(cfg)
         self.cfg = cfg
@@ -308,10 +303,7 @@ class Bridge:
         # canonical_id → env whose receipt reserve failed while enqueued;
         # retried by the publisher loop without a restart.
         self._pending_receipts: dict[str, Envelope] = {}
-        # The shared durable halves (nora.platform.bridge.service): the
-        # ONE journal→stream writer, the capture sink that freezes receipt
-        # intent + appends + wakes it, and the ledger-fenced action service
-        # the /v1/actions route and the receipt lane both run through.
+        # The action service serves both HTTP actions and receipts.
         self._executor = _SignalExecutor(
             self.sender, self.reactor, attach_dir=cfg.attach_dir)
         self._publisher = JournalPublisher(
@@ -327,9 +319,9 @@ class Bridge:
             store=self.store, platform=PLATFORM,
             account_key=self.cfg.account_key, execute=self._executor,
             receipt_intents=self._receipt_intent_ids,
-            ops=frozenset({"send", "react"}), metrics=metrics)
-        # Kept as the object tests poke (`bridge._dirty.set()` is "_handle
-        # appended"): it IS the publisher's wake flag.
+            ops=frozenset({"send", "react"}), metrics=metrics,
+            effects=effects, room_unit=self._projected_unit,
+        )
         self._dirty = self._publisher._dirty
 
     @property
@@ -353,17 +345,19 @@ class Bridge:
         except (OSError, json.JSONDecodeError):
             return {"revision": 0, "enabled": False}
 
+    def _projected_unit(self, room: str) -> str | None:
+        return projected_room_unit(
+            self.cfg.projection_dir / f"{PLATFORM}.json", self.load_projection(), room,
+        )
+
     # ---- capture ----------------------------------------------------------
 
     async def capture(self) -> None:
         self.journal.probe()  # preflight before every receive window
         url = f"{self.cfg.signal_http}/api/v1/events"
         timeout = aiohttp.ClientTimeout(total=None, sock_read=None)
-        # The wrapper owns the LOCAL reconnect to signal-cli's HTTP — the
-        # daemon binds it a beat after launch and drops it on a restart, and
-        # neither may take the journal or the /v1 site down with it. Journal
-        # failures still propagate: capture without a durable spool must stop
-        # upstream (`supervise`'s JournalError branch), not reconnect.
+        # The journal and action API survive a signal-cli reconnect.
+        # A journal failure propagates to supervise, which stops capture.
         backoff = 1.0
         while True:
             try:
@@ -786,7 +780,12 @@ async def supervise() -> None:
     # Preflight BEFORE the child may receive a byte — every restart, not once.
     journal.probe()
     cfg.attach_dir.mkdir(parents=True, exist_ok=True)
-    bridge = Bridge(cfg, metrics=Metrics())
+    run_migrations(cfg.database_url)
+    engine = create_async_engine(cfg.database_url)
+    bridge = Bridge(
+        cfg, metrics=Metrics(), store=SqlBridgeStore(engine),
+        effects=memory.EffectRecorder(memory.wire.bridge_act_envelope(engine)),
+    )
     replay_task = asyncio.ensure_future(bridge.replay_journal())
     child = await asyncio.create_subprocess_exec(
         # signal-cli's raw JSON-RPC binds LOOPBACK only: co-networked

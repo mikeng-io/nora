@@ -299,6 +299,57 @@ sa.Index("idx_edge_src", EDGE.c.src_id, EDGE.c.type)
 sa.Index("idx_edge_dst", EDGE.c.dst_id, EDGE.c.type)
 
 
+NORA_ACT = sa.Table(
+    "nora_act", METADATA,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("executor", sa.Text, nullable=False),
+    sa.Column("trigger_id", sa.Text, nullable=False),
+    sa.Column("ordinal", sa.Integer, nullable=False),
+    sa.Column("act_kind", sa.Text, nullable=False),
+    sa.Column("destination", sa.Text, nullable=False),
+    sa.Column("authority_person", sa.Text),
+    sa.Column("authority_intention", sa.Text),
+    sa.Column("guarantee", sa.Text, nullable=False),
+    sa.Column("idempotency_key", sa.Text),
+    sa.CheckConstraint("ordinal >= 0", name="ck_nora_act_ordinal"),
+    sa.CheckConstraint(
+        "act_kind IN ('delivery', 'effect', 'delegation')", name="ck_nora_act_act_kind",
+    ),
+    sa.CheckConstraint(
+        "guarantee IN ('idempotent_effect', 'read_back', 'unknown')",
+        name="ck_nora_act_guarantee",
+    ),
+    sa.CheckConstraint(
+        "(guarantee = 'idempotent_effect') = (idempotency_key IS NOT NULL)",
+        name="ck_nora_act_key",
+    ),
+)
+
+NORA_ACT_OUTCOME = sa.Table(
+    "nora_act_outcome", METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
+    sa.Column("act_id", sa.Text, sa.ForeignKey("nora_act.id", name="fk_nora_act_outcome_id"),
+              nullable=False),
+    sa.Column("verdict", sa.Text, nullable=False),
+    sa.Column("result", pg.JSONB(none_as_null=True)),
+    sa.CheckConstraint(
+        "verdict IN ('done', 'failed', 'uncertain')", name="ck_nora_act_outcome_verdict",
+    ),
+)
+
+NORA_PASS_OUTPUT = sa.Table(
+    "nora_pass_output", METADATA,
+    sa.Column("id", sa.Text, primary_key=True),
+    sa.Column("output_kind", sa.Text, nullable=False),
+    sa.Column("content", pg.JSONB(none_as_null=True)),
+    sa.CheckConstraint(
+        "output_kind IN ('expression', 'silence')", name="ck_nora_pass_output_kind",
+    ),
+    sa.CheckConstraint(
+        "(output_kind = 'expression') = (content IS NOT NULL)", name="ck_nora_pass_output_content",
+    ),
+)
+
 _ITEM_WRITERS = {
     "messages": ("SqlRecordStore", "external"),
     "message_edit": ("SqlRecordStore", "external"),
@@ -312,6 +363,11 @@ _ITEM_WRITERS = {
     "social_poll": ("SqlSocialStreamStore", "external"),
     "platform_observation": ("SqlObservationStore", "external"),
     "source_health": ("SqlSourceHealthLog", "internal"),
+    "nora_act": ("SqlActStore", "internal"),
+    "nora_act_outcome": ("SqlActStore", "internal"),
+    "nora_pass_output": ("SqlActStore", "internal"),
+    "computer_events": ("SqlComputerEventStore", "internal"),
+    "tool_call_log": ("SqlToolCallLogStore", "internal"),
 }
 
 _AGGREGATE_WRITERS = {
@@ -363,7 +419,8 @@ def _registration_planes(
         yield field
     yield sa.CheckConstraint(
         "(unit IS NULL) = (graph_id IS NULL)",
-        name=f"ck_{table}_graph_pair", postgresql_not_valid=True,
+        name=f"ck_{table}_graph_pair",
+        postgresql_not_valid=table not in {"nora_act", "nora_act_outcome", "nora_pass_output"},
     )
 
 
@@ -377,7 +434,21 @@ def _attach_registration_planes() -> None:
                 table.append_constraint(field)
 
 
+for _log in ("computer_events", "tool_call_log"):
+    METADATA.tables[_log].append_column(sa.Column("act_id", sa.Text))
+
 _attach_registration_planes()
+
+NORA_ACT.append_constraint(sa.UniqueConstraint("id", "unit", name="uq_nora_act_id_unit"))
+sa.Index("idx_nora_act_pass", NORA_ACT.c.unit, NORA_ACT.c["pass"])
+sa.Index("uq_nora_act_executor_key", NORA_ACT.c.executor, NORA_ACT.c.idempotency_key, unique=True)
+sa.Index("idx_nora_act_outcome_act", NORA_ACT_OUTCOME.c.act_id, NORA_ACT_OUTCOME.c.id)
+sa.Index("idx_nora_pass_output_pass", NORA_PASS_OUTPUT.c.unit, NORA_PASS_OUTPUT.c["pass"])
+for _name in ("nora_act_outcome", "computer_events", "tool_call_log"):
+    _table = METADATA.tables[_name]
+    _table.append_constraint(sa.ForeignKeyConstraint(
+        ["act_id", "unit"], ["nora_act.id", "nora_act.unit"], name=f"fk_{_name}_act",
+    ))
 
 sa.Index(
     "uq_social_item_key", METADATA.tables["social_item"].c.network,
@@ -457,13 +528,13 @@ def _live_content_check(columns: tuple[str, ...]) -> str:
     return f"state = 'tombstoned' OR ({expr})"
 
 
-for _table, _columns in _TOMBSTONE_NULLABLE.items():
-    _target = METADATA.tables[_table]
+for _table_name, _columns in _TOMBSTONE_NULLABLE.items():
+    _target = METADATA.tables[_table_name]
     for _column in _columns:
         _target.c[_column].nullable = True
     _target.append_constraint(
         sa.CheckConstraint(
             _live_content_check(_columns),
-            name=f"ck_{_table}_tombstone_content",
+            name=f"ck_{_table_name}_tombstone_content",
         )
     )

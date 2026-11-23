@@ -128,9 +128,10 @@ async def test_obtain_returns_the_production_graph(spec, clean_pg_url) -> None:
         subject = await obtain(replace(spec, environment=environment))
     assert isinstance(subject.deps, Dependencies)
     fields = {f.name for f in dataclasses.fields(Dependencies)}
-    assert len(fields) == 85, "Dependency shape changed; reconcile the production subject."
+    assert len(fields) == 86, "Dependency shape changed; reconcile the production subject."
     assert {"access", "managed_services", "managed_session"} <= fields
     assert subject.deps.access is subject.deps.ingest._access
+    assert subject.deps.managed_link_delivery is None  # the generated subject uses file identity
 
 
 @pytest.mark.asyncio

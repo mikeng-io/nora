@@ -13,7 +13,9 @@ from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.tool_call_log import ToolCallLogEntry, normalise_tool_call_log_entry
+from nora.infra.sql.act_item_planes import executor_item_planes
 from nora.infra.sql.schema import TOOL_CALL_LOG
+from nora.memory import without_reasoning
 
 
 def _row_to_entry(r: Row[*tuple[Any, ...]]) -> ToolCallLogEntry:
@@ -38,11 +40,14 @@ class SqlToolCallLogStore:
         stmt = sa.insert(TOOL_CALL_LOG).values(
             id=row.id, conversation_id=row.conversation_id,
             conversation_type=row.conversation_type, tag_id=row.tag_id,
-            tool_name=row.tool_name, tool_input=row.tool_input,
-            tool_result=row.tool_result, created_at=row.created_at,
+            tool_name=row.tool_name, tool_input=without_reasoning(row.tool_input),
+            tool_result=without_reasoning(row.tool_result), created_at=row.created_at,
         )
         async with self._engine.begin() as conn:
-            await conn.execute(stmt)
+            await conn.execute(stmt.values(**await executor_item_planes(
+                conn, TOOL_CALL_LOG, row.id, row.created_at, room=row.conversation_id,
+                tag=row.tag_id,
+            )))
 
     async def recent(
         self, *, conversation_id: str, since: datetime, limit: int,

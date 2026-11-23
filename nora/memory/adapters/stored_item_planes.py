@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from nora.infra.sql.cognitive_graph_store import RowData
 from nora.infra.sql.item_registration import RegistrationScope, epoch_ms, item_graph_id
 from nora.infra.sql.schema import MESSAGES, SOCIAL_ITEM
-from nora.memory.domain.registration import ITEM_SOURCES
+from nora.memory.domain.registration import BACKFILL_ITEM_SOURCES
 
 
 def _clock(value: datetime | str | int) -> datetime:
@@ -93,6 +93,10 @@ class ItemPlanes:
             if key not in self._probes:
                 self._probes[key] = await self.scope.health_units(*key)
             units = self._probes[key]
+        elif name in {"computer_events", "tool_call_log", "nora_act", "nora_act_outcome",
+                      "nora_pass_output"}:
+            # Executor items are scoped when written, using their original authority.
+            return (), None, []
         else:
             if name == "presence_fixes":
                 person = row["person_id"]
@@ -125,7 +129,7 @@ class ItemPlanes:
             "message_delete": "created_at", "fetched_pages": "fetched_at",
         }.get(name, "recorded_at")
         at = _clock(occurred)
-        source = ITEM_SOURCES[name]
+        source = BACKFILL_ITEM_SOURCES[name]
         return {
             "unit": unit, "graph_id": item_graph_id(name, key, unit),
             "persons": persons, "origin_room": origin, "exposure": source.exposure,

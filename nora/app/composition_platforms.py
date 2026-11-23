@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+import nora.memory as memory
 from nora.agent.room import Room
 from nora.agent.whereis import Circle, check_disclosure_invariant
 from nora.app.composition_helpers import _presence_reader
@@ -32,6 +33,7 @@ from nora.platform.discord.bridge_control import (
     BridgeDiscordRoster,
 )
 from nora.platform.discord.channels import ClientChannelDirectory
+from nora.platform.discord.command_acts import DiscordCommandActs
 from nora.platform.registry import AdapterRegistry, AdapterRegistryError
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.roster import SignalRoster
@@ -171,25 +173,23 @@ def channels(cfg: Any, reload_files: Any)-> ChannelsWiring:
     )
 
 
-def signal_link_consent(cfg: Any, services: Any) -> Any:
-    """The private link-consent dispatch for a direct signal-cli daemon —
-    `None` when linking cannot run (the `file` backend honestly refuses
-    managed mutations) or Signal isn't a direct daemon (bridge mode has
-    no daemon envelopes to read).
-
-    Returns a FACTORY, not the dispatcher itself: `AdapterRegistry` calls
-    it with the DERIVED daemon account so the parser's provenance check
-    binds the account signal-cli actually serves, never the configured
-    claim.
-    """
+def signal_link_delivery(cfg: Any, envelope: Any) -> Any:
     signal = cfg.platforms.signal
     if (cfg.identity.backend != "managed" or not signal.enabled
             or getattr(signal, "mode", "direct") != "direct"):
         return None
-    from nora.platform.signal.consent import SignalLinkConsent, SignalLinkDelivery
+    from nora.platform.signal.consent import SignalLinkDelivery
+
+    return SignalLinkDelivery(signal.base_url, envelope=envelope)
+
+
+def signal_link_consent(services: Any, delivery: Any) -> Any:
+    """Bind the private consent parser to the account the daemon actually serves."""
+    if delivery is None:
+        return None
+    from nora.platform.signal.consent import SignalLinkConsent
 
     holder = importlib.import_module("nora.people").wire.holder_links(services)
-    delivery = SignalLinkDelivery(signal.base_url)
 
     def build(account: str) -> Any:
         return SignalLinkConsent(
@@ -211,10 +211,10 @@ class AdaptersWiring:
 async def adapters(
     cfg: Any, discord_box: Any, discord_token: Any, metrics: Any,
     music_manager: Any, persons: Any, resolve_music_channel: Any, speaker: Any,
-    summons_inbox: Any, voice_guild_ids: Any, voice_hub: Any, owner: Any = None,
-    signal_consent: Any = None,
-    access: Any = None,
+    summons_inbox: Any, voice_guild_ids: Any, voice_hub: Any, engine: Any,
+    owner: Any = None, signal_consent: Any = None, access: Any = None,
 ) -> AdaptersWiring:
+    scope = engine.get_execution_options()["item_registration"].scope
     try:
         registry = await AdapterRegistry.from_config(
             cfg.platforms,
@@ -225,6 +225,12 @@ async def adapters(
             voice_hub=voice_hub,
             voice_guild_ids=voice_guild_ids,
             resolve_music_channel=resolve_music_channel,
+            discord_command_acts=DiscordCommandActs(
+                memory.wire.act_envelope(engine),
+                lambda room: scope.room_unit("discord", room),
+                lambda account: scope.person_id("discord", account),
+            ),
+            discord_control_effects=memory.EffectRecorder(memory.wire.act_envelope(engine)),
             instagram_summons=summons_inbox,
             bridge_token=cfg.credentials.get(cfg.bridges.token_env, ""),
             owner=owner,

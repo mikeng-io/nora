@@ -7,9 +7,14 @@ $$;
 $$;
 $$;
 $$;
+$$;
 $_$;
 )
 ) SELECT array_agg(id) INTO retired FROM changed;
+);
+);
+);
+);
 );
 );
 );
@@ -228,6 +233,7 @@ ADD CONSTRAINT bridge_event_pkey PRIMARY KEY (id);
 ADD CONSTRAINT bridge_work_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.bridge_event(id);
 ADD CONSTRAINT bridge_work_pkey PRIMARY KEY (id);
 ADD CONSTRAINT browser_tasks_pkey PRIMARY KEY (id);
+ADD CONSTRAINT ck_computer_events_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
 ADD CONSTRAINT ck_fetched_pages_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
 ADD CONSTRAINT ck_message_delete_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
 ADD CONSTRAINT ck_message_edit_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
@@ -253,6 +259,7 @@ ADD CONSTRAINT ck_social_item_graph_pair CHECK (((unit IS NULL) = (graph_id IS N
 ADD CONSTRAINT ck_social_item_state_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
 ADD CONSTRAINT ck_social_poll_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
 ADD CONSTRAINT ck_source_health_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
+ADD CONSTRAINT ck_tool_call_log_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))) NOT VALID;
 ADD CONSTRAINT cognition_carry_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_self_wake_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_self_wake_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.cognition_session(id);
@@ -312,6 +319,9 @@ ADD CONSTRAINT fetched_pages_pkey PRIMARY KEY (conversation_id, url);
 ADD CONSTRAINT fk_claim_registry FOREIGN KEY (id, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT fk_claim_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT fk_cognition_session_close_session_id FOREIGN KEY (session_id) REFERENCES public.cognition_session(id);
+ADD CONSTRAINT fk_computer_events_act FOREIGN KEY (act_id, unit) REFERENCES public.nora_act(id, unit);
+ADD CONSTRAINT fk_computer_events_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_computer_events_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT fk_edge_dst FOREIGN KEY (dst_id, unit) REFERENCES public.registry(id, unit);
 ADD CONSTRAINT fk_edge_registry FOREIGN KEY (id, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT fk_edge_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
@@ -330,6 +340,14 @@ ADD CONSTRAINT fk_message_reaction_graph_registry FOREIGN KEY (graph_id, unit, k
 ADD CONSTRAINT fk_message_reaction_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT fk_messages_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT fk_messages_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_nora_act_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_nora_act_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_nora_act_outcome_act FOREIGN KEY (act_id, unit) REFERENCES public.nora_act(id, unit);
+ADD CONSTRAINT fk_nora_act_outcome_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_nora_act_outcome_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_nora_act_outcome_id FOREIGN KEY (act_id) REFERENCES public.nora_act(id);
+ADD CONSTRAINT fk_nora_pass_output_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_nora_pass_output_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT fk_platform_object_state_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT fk_platform_object_state_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT fk_platform_observation_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
@@ -370,6 +388,9 @@ ADD CONSTRAINT fk_social_poll_graph_registry FOREIGN KEY (graph_id, unit, kind) 
 ADD CONSTRAINT fk_social_poll_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT fk_source_health_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT fk_source_health_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_tool_call_log_act FOREIGN KEY (act_id, unit) REFERENCES public.nora_act(id, unit);
+ADD CONSTRAINT fk_tool_call_log_graph_registry FOREIGN KEY (graph_id, unit, kind) REFERENCES public.registry(id, unit, kind);
+ADD CONSTRAINT fk_tool_call_log_graph_replaces FOREIGN KEY (replaces, unit, kind) REFERENCES public.registry(id, unit, kind);
 ADD CONSTRAINT geocode_cache_pkey PRIMARY KEY (lat_rounded, lng_rounded);
 ADD CONSTRAINT graph_arrival_pkey PRIMARY KEY (unit, message_id, revision);
 ADD CONSTRAINT graph_refusal_pkey PRIMARY KEY (id);
@@ -418,6 +439,9 @@ ADD CONSTRAINT message_reaction_pkey PRIMARY KEY (id);
 ADD CONSTRAINT messages_pkey PRIMARY KEY (id);
 ADD CONSTRAINT music_queue_pkey PRIMARY KEY (id);
 ADD CONSTRAINT music_session_pkey PRIMARY KEY (guild_id);
+ADD CONSTRAINT nora_act_outcome_pkey PRIMARY KEY (id);
+ADD CONSTRAINT nora_act_pkey PRIMARY KEY (id);
+ADD CONSTRAINT nora_pass_output_pkey PRIMARY KEY (id);
 ADD CONSTRAINT note_candidate_pkey PRIMARY KEY (id);
 ADD CONSTRAINT note_candidate_probe_key UNIQUE (unit, probe);
 ADD CONSTRAINT note_entity_entity_id_fkey FOREIGN KEY (entity_id) REFERENCES public.fact_entity(id);
@@ -511,6 +535,7 @@ ADD CONSTRAINT uq_bridge_event_source UNIQUE (platform, account_key, source_dige
 ADD CONSTRAINT uq_bridge_work_obligation UNIQUE (event_id, kind, ordinal);
 ADD CONSTRAINT uq_browser_tasks_target UNIQUE (scope, instance, target_id);
 ADD CONSTRAINT uq_claim_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_computer_events_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_computer_events_operation_phase UNIQUE (operation_id, phase);
 ADD CONSTRAINT uq_edge_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_entity_replaces UNIQUE (replaces);
@@ -526,6 +551,10 @@ ADD CONSTRAINT uq_message_edit_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_message_reaction_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_messages_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_music_queue_guild_position UNIQUE (guild_id, "position");
+ADD CONSTRAINT uq_nora_act_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_nora_act_id_unit UNIQUE (id, unit);
+ADD CONSTRAINT uq_nora_act_outcome_graph_replaces UNIQUE (replaces);
+ADD CONSTRAINT uq_nora_pass_output_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_occupancy_bin UNIQUE (subject_id, place_id, hour_of_week);
 ADD CONSTRAINT uq_platform_object_state_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_platform_object_state_object UNIQUE NULLS NOT DISTINCT (platform, account_key, conversation_id, thread, source_kind, object_ref, unit);
@@ -552,6 +581,7 @@ ADD CONSTRAINT uq_social_item_state_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_social_poll_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_source_health_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT uq_tag_trace_turn_id UNIQUE (turn_id);
+ADD CONSTRAINT uq_tool_call_log_graph_replaces UNIQUE (replaces);
 ADD CONSTRAINT version_announcements_pkey PRIMARY KEY (version, platform, conversation_id);
 ADD CONSTRAINT video_readings_pkey PRIMARY KEY (sha256, provider, model, chunk_seconds, chunk_max, reading_digest);
 ALTER SEQUENCE public.relation_evidence_id_seq OWNED BY public.legacy_relation_evidence.id;
@@ -587,6 +617,10 @@ ALTER TABLE ONLY public.cognition_wake_outcome
 ALTER TABLE ONLY public.comprehend_result
 ALTER TABLE ONLY public.comprehend_web_page
 ALTER TABLE ONLY public.compute_jobs
+ALTER TABLE ONLY public.computer_events
+ALTER TABLE ONLY public.computer_events
+ALTER TABLE ONLY public.computer_events
+ALTER TABLE ONLY public.computer_events
 ALTER TABLE ONLY public.computer_events
 ALTER TABLE ONLY public.computer_events
 ALTER TABLE ONLY public.computer_exports
@@ -729,6 +763,21 @@ ALTER TABLE ONLY public.messages
 ALTER TABLE ONLY public.music_queue
 ALTER TABLE ONLY public.music_queue
 ALTER TABLE ONLY public.music_session
+ALTER TABLE ONLY public.nora_act
+ALTER TABLE ONLY public.nora_act
+ALTER TABLE ONLY public.nora_act
+ALTER TABLE ONLY public.nora_act
+ALTER TABLE ONLY public.nora_act
+ALTER TABLE ONLY public.nora_act_outcome
+ALTER TABLE ONLY public.nora_act_outcome
+ALTER TABLE ONLY public.nora_act_outcome
+ALTER TABLE ONLY public.nora_act_outcome
+ALTER TABLE ONLY public.nora_act_outcome
+ALTER TABLE ONLY public.nora_act_outcome
+ALTER TABLE ONLY public.nora_pass_output
+ALTER TABLE ONLY public.nora_pass_output
+ALTER TABLE ONLY public.nora_pass_output
+ALTER TABLE ONLY public.nora_pass_output
 ALTER TABLE ONLY public.note
 ALTER TABLE ONLY public.note
 ALTER TABLE ONLY public.note_candidate
@@ -868,6 +917,10 @@ ALTER TABLE ONLY public.tag_debounce_state
 ALTER TABLE ONLY public.tag_trace
 ALTER TABLE ONLY public.tag_trace
 ALTER TABLE ONLY public.tool_call_log
+ALTER TABLE ONLY public.tool_call_log
+ALTER TABLE ONLY public.tool_call_log
+ALTER TABLE ONLY public.tool_call_log
+ALTER TABLE ONLY public.tool_call_log
 ALTER TABLE ONLY public.turn_verdict
 ALTER TABLE ONLY public.version_announcements
 ALTER TABLE ONLY public.video_readings
@@ -881,6 +934,7 @@ ALTER TABLE public.cognition_session_close ALTER COLUMN id ADD GENERATED BY DEFA
 ALTER TABLE public.cognition_wake ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.cognition_wake_outcome ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.comprehend_result ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.computer_events
 ALTER TABLE public.config_revision ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.deploy_revision ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.doctrine_revision ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
@@ -902,6 +956,7 @@ ALTER TABLE public.message_reaction
 ALTER TABLE public.message_reaction ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.messages
 ALTER TABLE public.messages ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.nora_act_outcome ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.otp_attempt ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.platform_object_state
 ALTER TABLE public.platform_object_state ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
@@ -944,9 +999,11 @@ ALTER TABLE public.stimulus_claim ALTER COLUMN id ADD GENERATED BY DEFAULT AS ID
 ALTER TABLE public.stimulus_pending ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.stimulus_retraction ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
 ALTER TABLE public.tag_trace ALTER COLUMN turn_id ADD GENERATED BY DEFAULT AS IDENTITY (
+ALTER TABLE public.tool_call_log
 AND (source = ANY(source_ids) OR source = ANY(context_ids))
 AND superseded_at IS NULL;
 AND superseded_at IS NULL;
+AS $$
 AS $$
 AS $$
 AS $$
@@ -960,6 +1017,8 @@ BEGIN
 BEGIN
 BEGIN
 BEGIN
+BEGIN
+CACHE 1
 CACHE 1
 CACHE 1
 CACHE 1
@@ -1048,6 +1107,13 @@ CONSTRAINT ck_cognition_wake_outcome_outcome CHECK ((outcome = ANY (ARRAY['close
 CONSTRAINT ck_cognition_wake_reason CHECK ((reason = ANY (ARRAY['settled'::text, 'strong_cue'::text, 'rollup'::text, 'batch'::text, 'max_age'::text, 'time'::text, 'self'::text])))
 CONSTRAINT ck_compute_jobs_state CHECK ((state = ANY (ARRAY['pending'::text, 'firing'::text, 'done'::text, 'failed'::text, 'cancelled'::text])))
 CONSTRAINT ck_computer_events_actor CHECK (((actor = ANY (ARRAY['cognition'::text, 'fire'::text, 'operator'::text, 'subagent'::text, 'sweeper'::text, 'tag'::text])) OR (starts_with(actor, 'dreamer:'::text) AND (length(actor) > 8)))),
+CONSTRAINT ck_computer_events_graph_basis CHECK ((basis = 'observed'::text)),
+CONSTRAINT ck_computer_events_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_computer_events_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_computer_events_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_computer_events_graph_kind CHECK ((kind = 'item'::text)),
+CONSTRAINT ck_computer_events_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_computer_events_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
 CONSTRAINT ck_computer_events_path CHECK ((path = ANY (ARRAY['direct'::text, 'subagent'::text]))),
 CONSTRAINT ck_computer_events_phase CHECK ((phase = ANY (ARRAY['finished'::text, 'started'::text]))),
 CONSTRAINT ck_computer_events_phase_times CHECK ((((phase = 'started'::text) AND (finished_at IS NULL)) OR ((phase = 'finished'::text) AND (finished_at IS NOT NULL) AND (finished_at >= started_at))))
@@ -1204,6 +1270,37 @@ CONSTRAINT ck_messages_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning
 CONSTRAINT ck_messages_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
 CONSTRAINT ck_music_queue_position_non_negative CHECK (("position" >= 0))
 CONSTRAINT ck_music_session_volume_range CHECK (((volume >= (0.0)::double precision) AND (volume <= (2.0)::double precision)))
+CONSTRAINT ck_nora_act_act_kind CHECK ((act_kind = ANY (ARRAY['delivery'::text, 'effect'::text, 'delegation'::text]))),
+CONSTRAINT ck_nora_act_graph_basis CHECK ((basis = 'observed'::text)),
+CONSTRAINT ck_nora_act_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_nora_act_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_nora_act_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_nora_act_graph_kind CHECK ((kind = 'item'::text)),
+CONSTRAINT ck_nora_act_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))),
+CONSTRAINT ck_nora_act_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_nora_act_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
+CONSTRAINT ck_nora_act_guarantee CHECK ((guarantee = ANY (ARRAY['idempotent_effect'::text, 'read_back'::text, 'unknown'::text]))),
+CONSTRAINT ck_nora_act_key CHECK (((guarantee = 'idempotent_effect'::text) = (idempotency_key IS NOT NULL))),
+CONSTRAINT ck_nora_act_ordinal CHECK ((ordinal >= 0))
+CONSTRAINT ck_nora_act_outcome_graph_basis CHECK ((basis = 'observed'::text)),
+CONSTRAINT ck_nora_act_outcome_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_nora_act_outcome_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_nora_act_outcome_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_nora_act_outcome_graph_kind CHECK ((kind = 'item'::text)),
+CONSTRAINT ck_nora_act_outcome_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))),
+CONSTRAINT ck_nora_act_outcome_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_nora_act_outcome_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
+CONSTRAINT ck_nora_act_outcome_verdict CHECK ((verdict = ANY (ARRAY['done'::text, 'failed'::text, 'uncertain'::text])))
+CONSTRAINT ck_nora_pass_output_content CHECK (((output_kind = 'expression'::text) = (content IS NOT NULL))),
+CONSTRAINT ck_nora_pass_output_graph_basis CHECK ((basis = 'observed'::text)),
+CONSTRAINT ck_nora_pass_output_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_nora_pass_output_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_nora_pass_output_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_nora_pass_output_graph_kind CHECK ((kind = 'item'::text)),
+CONSTRAINT ck_nora_pass_output_graph_pair CHECK (((unit IS NULL) = (graph_id IS NULL))),
+CONSTRAINT ck_nora_pass_output_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_nora_pass_output_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text]))),
+CONSTRAINT ck_nora_pass_output_kind CHECK ((output_kind = ANY (ARRAY['expression'::text, 'silence'::text])))
 CONSTRAINT ck_occupancy_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168))),
 CONSTRAINT ck_otp_challenge_code_hash CHECK ((code_hash ~ '^[0-9a-f]{64}$'::text)),
 CONSTRAINT ck_otp_challenge_expiry CHECK ((expires_at > issued_at)),
@@ -1431,6 +1528,13 @@ CONSTRAINT ck_source_health_graph_state CHECK ((state = ANY (ARRAY['live'::text,
 CONSTRAINT ck_source_health_tombstone_content CHECK (((state = 'tombstoned'::text) OR (detail IS NOT NULL)))
 CONSTRAINT ck_stimulus_due_tick CHECK ((NOT (due_tick IS DISTINCT FROM
 CONSTRAINT ck_stimulus_kind CHECK ((kind = ANY (ARRAY['message'::text, 'social'::text, 'play'::text, 'rollup'::text, 'time'::text, 'self'::text, 'observation'::text])))
+CONSTRAINT ck_tool_call_log_graph_basis CHECK ((basis = 'observed'::text)),
+CONSTRAINT ck_tool_call_log_graph_confidence CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_tool_call_log_graph_exposure CHECK ((exposure = ANY (ARRAY['external'::text, 'internal'::text, 'operator'::text]))),
+CONSTRAINT ck_tool_call_log_graph_inferred_detail CHECK (((basis = 'inferred'::text) = ((reasoning IS NOT NULL) AND (confidence IS NOT NULL)))),
+CONSTRAINT ck_tool_call_log_graph_kind CHECK ((kind = 'item'::text)),
+CONSTRAINT ck_tool_call_log_graph_reasoning CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'induced'::text, 'abduced'::text])))),
+CONSTRAINT ck_tool_call_log_graph_state CHECK ((state = ANY (ARRAY['live'::text, 'tombstoned'::text])))
 CONSTRAINT ck_version_announcements_state CHECK ((state = ANY (ARRAY['announcing'::text, 'done'::text, 'failed'::text])))
 CONSTRAINT config_revision_file_check CHECK ((file = ANY (ARRAY['config.toml'::text, 'policy.toml'::text, 'identity.toml'::text])))
 CONSTRAINT culture_has_a_key_check CHECK ((length(btrim(key)) > 0))
@@ -1602,6 +1706,7 @@ CREATE FUNCTION public.computer_exports_refuse_change() RETURNS trigger
 CREATE FUNCTION public.extraction_retire(source integer) RETURNS void
 CREATE FUNCTION public.extraction_source_changed() RETURNS trigger
 CREATE FUNCTION public.nora_media_keys(ref text) RETURNS text[]
+CREATE FUNCTION public.nora_refuse_act_mutation() RETURNS trigger
 CREATE FUNCTION public.nora_row_history() RETURNS trigger
 CREATE FUNCTION public.nora_row_history_refuse_truncate() RETURNS trigger
 CREATE INDEX idx_assess_report_kind_run ON public.assess_report USING btree (kind, run_at_ms);
@@ -1671,6 +1776,9 @@ CREATE INDEX idx_messages_conv_platform_message_id ON public.messages USING btre
 CREATE INDEX idx_messages_conv_ts ON public.messages USING btree (conversation_id, ts DESC);
 CREATE INDEX idx_messages_dream_lag ON public.messages USING btree (conversation_id, id) WHERE (is_nora = 0);
 CREATE INDEX idx_messages_is_nora ON public.messages USING btree (is_nora);
+CREATE INDEX idx_nora_act_outcome_act ON public.nora_act_outcome USING btree (act_id, id);
+CREATE INDEX idx_nora_act_pass ON public.nora_act USING btree (unit, pass);
+CREATE INDEX idx_nora_pass_output_pass ON public.nora_pass_output USING btree (unit, pass);
 CREATE INDEX idx_note_anchor ON public.note USING btree (unit, anchor_date) WHERE (retired_at IS NULL);
 CREATE INDEX idx_note_merge_decision_unit_ts ON public.note_merge_decision USING btree (unit, ts);
 CREATE INDEX idx_note_revision_body_trgm ON public.note_revision USING gin (body public.gin_trgm_ops);
@@ -1826,6 +1934,9 @@ CREATE TABLE public.message_reaction (
 CREATE TABLE public.messages (
 CREATE TABLE public.music_queue (
 CREATE TABLE public.music_session (
+CREATE TABLE public.nora_act (
+CREATE TABLE public.nora_act_outcome (
+CREATE TABLE public.nora_pass_output (
 CREATE TABLE public.note (
 CREATE TABLE public.note_candidate (
 CREATE TABLE public.note_entity (
@@ -1899,6 +2010,9 @@ CREATE TRIGGER computer_exports_no_truncate BEFORE TRUNCATE ON public.computer_e
 CREATE TRIGGER extraction_changed BEFORE DELETE OR UPDATE ON public.messages FOR EACH ROW EXECUTE FUNCTION public.extraction_source_changed();
 CREATE TRIGGER extraction_changed BEFORE INSERT ON public.message_delete FOR EACH ROW EXECUTE FUNCTION public.extraction_source_changed();
 CREATE TRIGGER extraction_changed BEFORE INSERT ON public.message_edit FOR EACH ROW EXECUTE FUNCTION public.extraction_source_changed();
+CREATE TRIGGER nora_act_append_only BEFORE DELETE OR UPDATE ON public.nora_act FOR EACH ROW EXECUTE FUNCTION public.nora_refuse_act_mutation();
+CREATE TRIGGER nora_act_outcome_append_only BEFORE DELETE OR UPDATE ON public.nora_act_outcome FOR EACH ROW EXECUTE FUNCTION public.nora_refuse_act_mutation();
+CREATE TRIGGER nora_pass_output_append_only BEFORE DELETE OR UPDATE ON public.nora_pass_output FOR EACH ROW EXECUTE FUNCTION public.nora_refuse_act_mutation();
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.analytics_watermark FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('deriver_name', 'subject_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.claim FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id', 'unit');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.compute_jobs FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
@@ -2059,6 +2173,7 @@ CREATE UNIQUE INDEX uq_entry_live_subject ON public.notebook_entry USING btree (
 CREATE UNIQUE INDEX uq_entry_revision_seq ON public.notebook_entry_revision USING btree (entry_id, seq);
 CREATE UNIQUE INDEX uq_lesson_revision_seq ON public.lesson_revision USING btree (lesson_id, seq);
 CREATE UNIQUE INDEX uq_memo_revision_seq ON public.memo_revision USING btree (memo_id, seq);
+CREATE UNIQUE INDEX uq_nora_act_executor_key ON public.nora_act USING btree (executor, idempotency_key);
 CREATE UNIQUE INDEX uq_otp_attempt_ok ON public.otp_attempt USING btree (challenge_id) WHERE ok;
 CREATE UNIQUE INDEX uq_profile_line_supersedes ON public.profile_line USING btree (supersedes) WHERE (supersedes IS NOT NULL);
 CREATE UNIQUE INDEX uq_reminders_proactive_open_note ON public.reminders USING btree (((payload ->> 'note_id'::text))) WHERE ((kind = 'proactive'::text) AND (state = ANY (ARRAY['pending'::text, 'firing'::text])));
@@ -2101,6 +2216,8 @@ END LOOP;
 END)
 END))),
 END),
+END;
+ERRCODE = 'check_violation';
 ERRCODE = 'insufficient_privilege';
 ERRCODE = 'insufficient_privilege';
 FOREACH col IN ARRAY TG_ARGV LOOP
@@ -2168,8 +2285,10 @@ INCREMENT BY 1
 INCREMENT BY 1
 INCREMENT BY 1
 INCREMENT BY 1
+INCREMENT BY 1
 INSERT INTO row_history (id, table_name, row_key, op, image, recorded_at)
 INSERT INTO row_history (id, table_name, row_key, op, image, recorded_at)
+LANGUAGE plpgsql
 LANGUAGE plpgsql
 LANGUAGE plpgsql
 LANGUAGE plpgsql
@@ -2228,6 +2347,8 @@ NO MAXVALUE
 NO MAXVALUE
 NO MAXVALUE
 NO MAXVALUE
+NO MAXVALUE
+NO MINVALUE
 NO MINVALUE
 NO MINVALUE
 NO MINVALUE
@@ -2288,6 +2409,7 @@ PERFORM id FROM messages WHERE id = NEW.message_id FOR UPDATE;
 RAISE EXCEPTION USING
 RAISE EXCEPTION USING
 RAISE EXCEPTION USING MESSAGE = 'TRUNCATE ' || TG_TABLE_NAME
+RAISE EXCEPTION USING MESSAGE = TG_TABLE_NAME || ' is append-only',
 RETURN NEW;
 RETURN NULL;
 RETURN NULL;
@@ -2326,6 +2448,7 @@ SEQUENCE NAME public.message_delete_id_seq
 SEQUENCE NAME public.message_edit_id_seq
 SEQUENCE NAME public.message_reaction_id_seq
 SEQUENCE NAME public.messages_id_seq
+SEQUENCE NAME public.nora_act_outcome_id_seq
 SEQUENCE NAME public.otp_attempt_id_seq
 SEQUENCE NAME public.platform_object_state_id_seq
 SEQUENCE NAME public.platform_observation_id_seq
@@ -2348,6 +2471,7 @@ SEQUENCE NAME public.stimulus_id_seq
 SEQUENCE NAME public.stimulus_pending_id_seq
 SEQUENCE NAME public.stimulus_retraction_id_seq
 SEQUENCE NAME public.tag_trace_turn_id_seq
+START WITH 1
 START WITH 1
 START WITH 1
 START WITH 1
@@ -2426,6 +2550,10 @@ account_proof jsonb,
 accuracy_m double precision,
 act text NOT NULL,
 act text NOT NULL,
+act_id text NOT NULL,
+act_id text,
+act_id text,
+act_kind text NOT NULL,
 action_id text NOT NULL,
 actor text NOT NULL,
 actor text NOT NULL,
@@ -2509,6 +2637,11 @@ asserted_at timestamp with time zone DEFAULT now() NOT NULL,
 asserted_at timestamp with time zone DEFAULT now() NOT NULL,
 asserted_at timestamp with time zone DEFAULT now() NOT NULL,
 asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
+asserted_at timestamp with time zone DEFAULT now() NOT NULL,
 asserted_by text,
 asserted_by text,
 at timestamp with time zone NOT NULL,
@@ -2531,6 +2664,8 @@ attempts integer DEFAULT 1 NOT NULL,
 attribute text,
 attributes jsonb DEFAULT '{}'::jsonb CONSTRAINT entity_attributes_not_null NOT NULL,
 author_igid text NOT NULL,
+authority_intention text,
+authority_person text,
 avg_speed_kmh double precision,
 backend_job_id text NOT NULL,
 base_revision_id text,
@@ -2547,6 +2682,11 @@ basis text DEFAULT 'computed'::text NOT NULL,
 basis text DEFAULT 'computed'::text NOT NULL,
 basis text DEFAULT 'computed'::text NOT NULL,
 basis text DEFAULT 'computed'::text NOT NULL,
+basis text DEFAULT 'observed'::text NOT NULL,
+basis text DEFAULT 'observed'::text NOT NULL,
+basis text DEFAULT 'observed'::text NOT NULL,
+basis text DEFAULT 'observed'::text NOT NULL,
+basis text DEFAULT 'observed'::text NOT NULL,
 basis text DEFAULT 'observed'::text NOT NULL,
 basis text DEFAULT 'observed'::text NOT NULL,
 basis text DEFAULT 'observed'::text NOT NULL,
@@ -2700,6 +2840,11 @@ confidence text,
 confidence text,
 confidence text,
 confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
+confidence text,
 config_revision_id bigint,
 consolidator_name text NOT NULL,
 consumed_verdict_tag text,
@@ -2707,6 +2852,7 @@ consumed_verdict_tag text,
 content jsonb DEFAULT '{}'::jsonb NOT NULL,
 content jsonb NOT NULL,
 content jsonb NOT NULL,
+content jsonb,
 content jsonb,
 content text DEFAULT ''::text NOT NULL
 content text NOT NULL,
@@ -2787,7 +2933,7 @@ created_at timestamp with time zone DEFAULT now() NOT NULL
 created_at timestamp with time zone DEFAULT now() NOT NULL
 created_at timestamp with time zone DEFAULT now() NOT NULL
 created_at timestamp with time zone DEFAULT now() NOT NULL
-created_at timestamp with time zone DEFAULT now() NOT NULL
+created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -2832,6 +2978,7 @@ describe_model text,
 description text DEFAULT ''::text NOT NULL,
 description text NOT NULL,
 description text,
+destination text NOT NULL,
 destination text NOT NULL,
 detail jsonb DEFAULT '{}'::jsonb NOT NULL,
 detail jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -2970,6 +3117,12 @@ excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
 excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
 excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
 excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+excluded_persons text[] DEFAULT '{}'::text[] NOT NULL,
+executor text NOT NULL,
 expired_at timestamp with time zone,
 expired_reason text,
 expires_at bigint
@@ -2988,6 +3141,11 @@ exposure text DEFAULT 'external'::text NOT NULL,
 exposure text DEFAULT 'external'::text NOT NULL,
 exposure text DEFAULT 'external'::text NOT NULL,
 exposure text DEFAULT 'external'::text NOT NULL,
+exposure text DEFAULT 'internal'::text NOT NULL,
+exposure text DEFAULT 'internal'::text NOT NULL,
+exposure text DEFAULT 'internal'::text NOT NULL,
+exposure text DEFAULT 'internal'::text NOT NULL,
+exposure text DEFAULT 'internal'::text NOT NULL,
 exposure text DEFAULT 'internal'::text NOT NULL,
 exposure text DEFAULT 'internal'::text NOT NULL,
 exposure text DEFAULT 'internal'::text NOT NULL,
@@ -3075,7 +3233,13 @@ graph_id text,
 graph_id text,
 graph_id text,
 graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
+graph_id text,
 grounded boolean NOT NULL,
+guarantee text NOT NULL,
 guild_id text NOT NULL,
 guild_id text NOT NULL,
 head_observation_id bigint,
@@ -3102,6 +3266,7 @@ i_owe text,
 id bigint CONSTRAINT graph_refusal_id_not_null NOT NULL,
 id bigint CONSTRAINT relation_evidence_id_not_null NOT NULL,
 id bigint CONSTRAINT signal_id_not_null NOT NULL,
+id bigint NOT NULL,
 id bigint NOT NULL,
 id bigint NOT NULL,
 id bigint NOT NULL,
@@ -3167,6 +3332,8 @@ id text NOT NULL,
 id text NOT NULL,
 id text NOT NULL,
 id text NOT NULL,
+id text NOT NULL,
+id text NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -3205,6 +3372,7 @@ id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
+idempotency_key text,
 image jsonb NOT NULL,
 image_id text,
 input_hash text CONSTRAINT memory_work_item_input_hash_not_null NOT NULL,
@@ -3255,6 +3423,11 @@ kind text DEFAULT 'aggregate'::text NOT NULL,
 kind text DEFAULT 'aggregate'::text NOT NULL,
 kind text DEFAULT 'item'::text CONSTRAINT platform_observation_kind_not_null1 NOT NULL,
 kind text DEFAULT 'item'::text CONSTRAINT social_item_kind_not_null1 NOT NULL,
+kind text DEFAULT 'item'::text NOT NULL,
+kind text DEFAULT 'item'::text NOT NULL,
+kind text DEFAULT 'item'::text NOT NULL,
+kind text DEFAULT 'item'::text NOT NULL,
+kind text DEFAULT 'item'::text NOT NULL,
 kind text DEFAULT 'item'::text NOT NULL,
 kind text DEFAULT 'item'::text NOT NULL,
 kind text DEFAULT 'item'::text NOT NULL,
@@ -3390,6 +3563,11 @@ lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
+lineage jsonb DEFAULT '{}'::jsonb NOT NULL,
 lng double precision,
 lng double precision,
 lng double precision,
@@ -3457,6 +3635,11 @@ model text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
+model text,
+model text,
+model text,
+model text,
+model text,
 model text,
 model text,
 model text,
@@ -3569,6 +3752,16 @@ occasion text,
 occasion text,
 occasion text,
 occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occasion text,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
+occurred_at timestamp with time zone,
 occurred_at timestamp with time zone,
 occurred_at timestamp with time zone,
 occurred_at timestamp with time zone,
@@ -3631,12 +3824,18 @@ operation_id uuid NOT NULL,
 ordering text DEFAULT 'arrival'::text NOT NULL,
 ordinal integer NOT NULL,
 ordinal integer NOT NULL,
+ordinal integer NOT NULL,
 origin jsonb DEFAULT '{}'::jsonb NOT NULL,
 origin text NOT NULL,
 origin text NOT NULL,
 origin_room text NOT NULL,
 origin_room text NOT NULL,
 origin_room text NOT NULL,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
+origin_room text,
 origin_room text,
 origin_room text,
 origin_room text,
@@ -3681,6 +3880,7 @@ outcome text,
 outcome text,
 outcome_reason text,
 outings integer,
+output_kind text NOT NULL,
 output_ref jsonb DEFAULT '{}'::jsonb NOT NULL,
 output_tokens bigint,
 owed_since timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
@@ -3711,6 +3911,11 @@ part_id text CONSTRAINT graph_refusal_part_id_not_null NOT NULL,
 part_of_speech text,
 participants text[] NOT NULL,
 participants text[] NOT NULL,
+pass text,
+pass text,
+pass text,
+pass text,
+pass text,
 pass text,
 pass text,
 pass text,
@@ -3781,6 +3986,11 @@ person_id text,
 person_id text,
 person_id text,
 persons text[] DEFAULT '{}'::text[] CONSTRAINT relation_persons_not_null NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
+persons text[] DEFAULT '{}'::text[] NOT NULL,
 persons text[] DEFAULT '{}'::text[] NOT NULL,
 persons text[] DEFAULT '{}'::text[] NOT NULL,
 persons text[] DEFAULT '{}'::text[] NOT NULL,
@@ -3956,6 +4166,11 @@ reasoning text,
 reasoning text,
 reasoning text,
 reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
+reasoning text,
 reasoning_effort text NOT NULL,
 received_ms bigint NOT NULL,
 received_ms bigint NOT NULL,
@@ -4072,6 +4287,11 @@ replaces text,
 replaces text,
 replaces text,
 replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
+replaces text,
 replies integer,
 replies_ab integer,
 replies_ba integer,
@@ -4094,6 +4314,7 @@ responders text[] DEFAULT '{}'::text[],
 response text NOT NULL,
 result jsonb DEFAULT '{}'::jsonb NOT NULL,
 result jsonb DEFAULT '{}'::jsonb NOT NULL,
+result jsonb,
 result jsonb,
 result_document_ids jsonb,
 result_report text,
@@ -4135,6 +4356,16 @@ rev_code text,
 rev_code text,
 rev_code text,
 rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_code text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
+rev_config text,
 rev_config text,
 rev_config text,
 rev_config text,
@@ -4193,6 +4424,16 @@ rev_identity text,
 rev_identity text,
 rev_identity text,
 rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_identity text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
+rev_instruction text,
 rev_instruction text,
 rev_instruction text,
 rev_instruction text,
@@ -4251,6 +4492,16 @@ rev_policy text,
 rev_policy text,
 rev_policy text,
 rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_policy text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
+rev_skill text,
 rev_skill text,
 rev_skill text,
 rev_skill text,
@@ -4477,6 +4728,11 @@ state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
+state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'open'::text NOT NULL,
 state text DEFAULT 'pending'::text CONSTRAINT memory_work_item_state_not_null NOT NULL,
 state text DEFAULT 'pending'::text NOT NULL,
@@ -4648,6 +4904,11 @@ trace text,
 trace text,
 trace text,
 trace text,
+trace text,
+trace text,
+trace text,
+trace text,
+trace text,
 trace_id text NOT NULL,
 trace_id text,
 trace_id text,
@@ -4656,6 +4917,7 @@ tracked integer DEFAULT 0 NOT NULL,
 transcript jsonb NOT NULL,
 transition text NOT NULL,
 trigger jsonb,
+trigger_id text NOT NULL,
 ts bigint NOT NULL,
 ts bigint NOT NULL,
 ts bigint NOT NULL,
@@ -4713,6 +4975,11 @@ unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
+unit text,
+unit text,
+unit text,
+unit text,
+unit text,
 unit text,
 unit text,
 unit text,
@@ -4802,12 +5069,22 @@ valid_from timestamp with time zone,
 valid_from timestamp with time zone,
 valid_from timestamp with time zone,
 valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
+valid_from timestamp with time zone,
 valid_from_ms bigint NOT NULL,
 valid_from_ms bigint NOT NULL,
 valid_from_ms bigint NOT NULL,
 valid_from_ms bigint NOT NULL,
 valid_from_ms bigint NOT NULL,
 valid_to bigint,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
+valid_to timestamp with time zone,
 valid_to timestamp with time zone,
 valid_to timestamp with time zone,
 valid_to timestamp with time zone,
@@ -4866,6 +5143,7 @@ venue_text text,
 venue_text text,
 verb text NOT NULL,
 verdict text NOT NULL,
+verdict text NOT NULL,
 verdict text,
 verdict_at bigint,
 verdict_by text,
@@ -4899,6 +5177,10 @@ working_set jsonb DEFAULT '[]'::jsonb NOT NULL,
 would_have_said text NOT NULL,
 writer text DEFAULT 'PresenceStore'::text NOT NULL,
 writer text DEFAULT 'PresenceStore'::text NOT NULL,
+writer text DEFAULT 'SqlActStore'::text NOT NULL,
+writer text DEFAULT 'SqlActStore'::text NOT NULL,
+writer text DEFAULT 'SqlActStore'::text NOT NULL,
+writer text DEFAULT 'SqlComputerEventStore'::text NOT NULL,
 writer text DEFAULT 'SqlFetchedPageStore'::text NOT NULL,
 writer text DEFAULT 'SqlMobilityStore'::text NOT NULL,
 writer text DEFAULT 'SqlMobilityStore'::text NOT NULL,
@@ -4922,6 +5204,7 @@ writer text DEFAULT 'SqlSocialStreamStore'::text NOT NULL,
 writer text DEFAULT 'SqlSocialStreamStore'::text NOT NULL,
 writer text DEFAULT 'SqlSocialStreamStore'::text NOT NULL,
 writer text DEFAULT 'SqlSourceHealthLog'::text NOT NULL,
+writer text DEFAULT 'SqlToolCallLogStore'::text NOT NULL,
 writer text NOT NULL,
 writer text NOT NULL,
 writer text NOT NULL,

@@ -79,6 +79,7 @@ import dataclasses
 import logging
 import time
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
+from contextlib import ExitStack
 from datetime import datetime
 from typing import Any
 
@@ -106,6 +107,7 @@ from nora.domain.ports import (
 from nora.domain.profile import ProfileView
 from nora.domain.tag_trace import VALID_OUTCOMES, TagTrace
 from nora.domain.tool_call_log import ToolCallLogStore
+from nora.memory import record_pass_silence
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.obs.tracing import (
     TRACE_KIND,
@@ -484,6 +486,7 @@ class EngagementPipeline:
             adapter=adapter or self._adapter_for(request.message.platform),
             message=request.message, tag_id=request.tag_id,
             metrics=self._metrics, spawn=self._spawn,
+            delivery_acts=getattr(self._audit, "delivery_acts", None),
         )
 
     async def _run_queued(
@@ -664,31 +667,14 @@ class EngagementPipeline:
         # can exceed 1 (DEC-40).
         handle: deliver.DeliveryHandle | None = None
         # Bound BEFORE the `try` for the same reason `handle` is: the
-        # `finally` saves whatever `invoke.run` handed back on EVERY exit path,
-        # including the two (`ok=False`) where `_run_admitted` returns before
-        # reaching this method's own `completed = True`. `None` here means
-        # `invoke.run` never returned at all (a fault before it was ever
-        # called) — the outer `except BaseException` case, which has no
-        # `agent.messages` and no `ctx.transcript` window to attribute a
-        # trace to, so nothing is saved for it.
+        # Save a trace when invocation returns one, even on refusal or failure.
         trace: TagTrace | None = None
-        # The room's account the turn read at its start (DEC-207), handed to
-        # the debrief so the fold reads the SAME account the reply did rather
-        # than a second read that could land either side of a fold. Bound
-        # here, before the `try`, for `trace`'s reason.
+        # The debrief uses the same culture and profile revisions as the turn.
         culture: CultureRevision | None = None
-        # The turn's Profile views under the switch (45 §5): the room's one is
-        # what the debrief folds against, handed through like `culture`.
         profiles: tuple[ProfileView, ...] = ()
-        # Every log line emitted for the rest of this tag — across every stage
-        # this method calls into — carries tag_id without any of them naming
-        # it explicitly (nora.obs.logging's contextvar bridge).
         bind_tag_id(request.tag_id)
-        # `indicator` (the 👀 handle) is created by `run` at ADMISSION time and
-        # passed in, so a QUEUED tag's 👀 fires the moment it takes its place in
-        # line, not when its turn finally starts — see `run`'s docstring and
-        # `_begin_indicator`. It is None when reactions are off, which
-        # `indicate.resolve` treats as "nothing to replace".
+        # `run` places the indicator at admission, including while a tag waits in the queue.
+        act_scope = ExitStack()
         try:
             ctx = await self._context.assemble(request=request)
             culture = ctx.culture
@@ -705,6 +691,11 @@ class EngagementPipeline:
                 metrics=self._metrics,
                 content_checks=self._tool_registry.content_checks).rehydrate(ctx)
             doctrine = self._doctrine_store.get(applies_to="tag")
+            acts = getattr(self._audit, "delivery_acts", None)
+            if acts is not None:
+                act_scope.enter_context(acts.pass_scope(
+                    ctx, "called", getattr(self._runner, "model_id", ""), doctrine.sha256,
+                ))
             log.info(
                 "tag start (tag_id=%s conversation_id=%s sender_id=%s person_id=%s "
                 "doctrine_sha256=%s doctrine_versions=%s)",
@@ -713,21 +704,7 @@ class EngagementPipeline:
                 doctrine.sha256, doctrine.versions(),
             )
 
-            # `convo is not None` is defensive, not load-bearing: by this
-            # point ingest has already proven the conversation is admitted
-            # (DEC-18), so `self._policy.conversation(...)` returning `None`
-            # here would indicate the ingest and engagement pipelines
-            # disagree about which `Policy` they were given — a wiring bug
-            # worth defaulting safely on (empty allowlist) rather than
-            # crashing the tag over.
-            #
-            # Computed BEFORE `deliver.build()` and reused for its `budgets=`:
-            # `ToolRegistry.budgets()` only folds an MCP tool's budget in when
-            # its server name is in `allowed_mcp`, so this pipeline's
-            # `ReplyGuard` — and the R-7 unknown-tool veto message it renders —
-            # must be built from the SAME set `.build()` below uses, or an
-            # unauthorized conversation's guard would still disclose a
-            # `demo_*` name it cannot call.
+            # The guard and tool surface use the same allowlist to keep MCP names private.
             convo = self._policy.conversation(msg.platform, msg.conversation_id)
             allowed_mcp = convo.tools if convo is not None else frozenset()
             # DEC-74: the per-conversation location-disclosure trust, sourced the
@@ -1226,6 +1203,13 @@ class EngagementPipeline:
             # None` guard skips it).
             trace = None
         finally:
+            try:
+                if completed and handle is not None and not handle.deliverer.called:
+                    await record_pass_silence()
+            except Exception:
+                log.exception("engagement silence write failed (tag=%s)", request.tag_id)
+            finally:
+                act_scope.close()
             # Resolved here, not after `check_outcome`, so that EVERY exit path
             # a tag has — timeout, llm_error, guard veto, no_send_call, and the
             # outer BaseException — replaces the 👀 with a terminal state. A

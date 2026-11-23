@@ -42,6 +42,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from typing import Any
+from uuid import uuid4
 
 import aiohttp
 
@@ -64,6 +65,7 @@ from nora.domain.ports import (
     VoiceChannelRef,
     speakable,
 )
+from nora.memory import ActAuthority, EffectRecorder, Outcome
 from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint
 
 from .channels import StaticChannelDirectory
@@ -75,10 +77,14 @@ class BridgeControlClient:
     """The bridge's `/v1/*` control surface, as the app consumes it."""
 
     def __init__(self, endpoint: BridgeEndpoint, *,
-                 timeout_seconds: float = 30.0) -> None:
+                 timeout_seconds: float = 30.0, effects: EffectRecorder | None = None) -> None:
         self._endpoint = endpoint
+        self._effects = effects
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._session: aiohttp.ClientSession | None = None
+
+    def attach_effects(self, effects: EffectRecorder) -> None:
+        self._effects = effects
 
     async def _client(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -93,6 +99,19 @@ class BridgeControlClient:
     async def music(self, op: str, body: dict[str, Any]) -> dict[str, Any] | None:
         """`POST /v1/music/{op}` → the `outcome` dict, or `None` on any
         transport failure — the `unavailable` half of the read."""
+        if self._effects is None or op == "status":
+            return await self._music(op, body)
+        room = body.get("conversation_id")
+        return await self._effects.invoke(
+            "bridge.music", f"discord-music:{room}", str(uuid4()),
+            ActAuthority(None, room=room), lambda: self._music(op, body),
+            judge=lambda result: Outcome(
+                "uncertain" if result is None or result.get("status") == "unavailable"
+                else "done" if result.get("status") == "ok" else "failed"
+            ),
+        )
+
+    async def _music(self, op: str, body: dict[str, Any]) -> dict[str, Any] | None:
         try:
             session = await self._client()
             async with session.post(
@@ -149,6 +168,17 @@ class BridgeControlClient:
         bridge refused (no session / oversized / controller failed), `None`
         transport unknown. Callers treat `False` and `None` identically:
         the reply falls back to text."""
+        if self._effects is None:
+            return await self._speech(guild_id, audio, media_type)
+        return await self._effects.invoke(
+            "bridge.speech", f"discord-voice:{guild_id}", str(uuid4()), ActAuthority(None),
+            lambda: self._speech(guild_id, audio, media_type),
+            judge=lambda value: Outcome(
+                "uncertain" if value is None else "done" if value else "failed"
+            ),
+        )
+
+    async def _speech(self, guild_id: str, audio: bytes, media_type: str) -> bool | None:
         try:
             session = await self._client()
             async with session.post(
