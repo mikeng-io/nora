@@ -131,7 +131,6 @@ def _foreground_declarations(cfg, request, tool_spec):
 
 
 def _language_declarations(cfg, request, background, tool_spec):
-    profiles = tool_spec("profile_no_change", "why", "string")
     return {
         "nora/language/character.py": [
             (background(name), name, "Generated protocol retains the previous account.")
@@ -162,32 +161,6 @@ def _language_declarations(cfg, request, background, tool_spec):
                 ),
                 "doctrine_check",
                 {"verdict": "consistent"},
-            ),
-        ],
-        "nora/language/profile.py": [
-            (
-                background("profile-person", tools=(profiles,)),
-                "profile-person",
-                ("profile_no_change", {"why": "Generated protocol retains the previous account."}),
-            ),
-        ],
-        "nora/language/profile_collective.py": [
-            (
-                background(name, tools=(profiles,)),
-                name,
-                ("profile_no_change", {"why": "Generated protocol retains the previous account."}),
-            )
-            for name in ("profile-nora", "profile-room", "profile-unit")
-        ],
-        "nora/language/profile_verdict.py": [
-            (
-                background(
-                    "profile-verdict",
-                    '<profile_verdict_docket><guess id="H1"/></profile_verdict_docket>',
-                    tools=(tool_spec("profile_verdict", "verdicts", "array"),),
-                ),
-                "profile-verdict",
-                ("profile_verdict", {"verdicts": [{"line": "H1", "verdict": "unknown"}]}),
             ),
         ],
         "nora/language/subagent_render.py": [
@@ -301,9 +274,7 @@ def test_generated_subject_answers_every_production_declaration(tmp_path, evalua
                 usage, found = reply.usage, reply.choices[0].message.content
             assert usage and usage.total_tokens == usage.prompt_tokens + usage.completion_tokens > 0
             assert (json.loads(found) if isinstance(expected, dict) else found) == expected
-            if isinstance(expected, tuple) and occasion in {
-                "profile-person", "profile-room", "profile-unit", "profile-nora", "profile-verdict",
-            }:
+            if isinstance(expected, tuple) and occasion == "culture":
                 continuation = dict(body, messages=[
                     *body["messages"], {"role": "tool", "content": '{"status":"ok"}'},
                 ])

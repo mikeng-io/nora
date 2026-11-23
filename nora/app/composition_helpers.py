@@ -21,13 +21,6 @@ from nora.language.character import (
     PersonKey,
     UnitKey,
 )
-from nora.language.profile import PROFILE_PERSON_ADAPTOR_NAME
-from nora.language.profile_collective import (
-    PROFILE_NORA_ADAPTOR_NAME,
-    PROFILE_ROOM_ADAPTOR_NAME,
-    PROFILE_UNIT_ADAPTOR_NAME,
-    CollectiveKey,
-)
 from nora.persons import Persons
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.bridge_control import BridgeDiscordAdapter
@@ -54,25 +47,6 @@ def _room_claims(allowlist: Policy)-> dict[str, frozenset[tuple[str, str]]]:
         for cid in conv.ids:
             out.setdefault(cid, set()).add((conv.unit, conv.platform))
     return {cid: frozenset(owners) for cid, owners in out.items()}
-
-
-def _collective_members(
-    policy: Policy, keys: Mapping[str, CollectiveKey],
-) -> dict[str, tuple[str, ...]]:
-    return {
-        k: tuple(
-            sorted(
-                {
-                    pid
-                    for r in ck.rooms
-                    for convo in policy.rooms()
-                    if convo.primary_id == r.key
-                    for pid in convo.persons or ()
-                }
-            )
-        )
-        for k, ck in keys.items()
-    }
 
 
 def _presence_reader(
@@ -203,21 +177,6 @@ def _person_keys(rows: Any) -> dict[str, PersonKey]:
     }
 
 
-def _profile_room_keys(allowlist: Any)-> dict[str, CollectiveKey]:
-
-    """Room `primary_id` -> the room's CollectiveKey, for every room policy"""
-    return {
-        conv.primary_id: CollectiveKey(
-            unit=conv.unit,
-            rooms=(CharacterRoom(key=conv.primary_id, platform=conv.platform, label=conv.label),),
-            label=conv.label or "",
-            description=conv.description or "",
-        )
-        for conv in allowlist.rooms()
-        if conv.primary_id and conv.unit
-    }
-
-
 def _roster_names_of(
     rosters: Mapping[str, RosterSource], persons: Persons, self_ids: frozenset[str],
 ) -> Callable[[str, str], Awaitable[Mapping[str, str] | None]]:
@@ -299,26 +258,12 @@ def _adaptor_budget(b: DreamBudgetConfig)-> AdaptorBudget:
     )
 
 
-def _unified_profile_writers_retired(
+def _cognition_writes_profile(
     profile_index: bool, graph_comprehend: bool, cognition_enabled: bool,
     units: frozenset[str], home_units: frozenset[str],
-) -> frozenset[str]:
-    """The Dreamer profile writers the unified Cognition session replaces —"""
-    return (
-        frozenset(
-            {
-                PROFILE_PERSON_ADAPTOR_NAME,
-                PROFILE_ROOM_ADAPTOR_NAME,
-                PROFILE_UNIT_ADAPTOR_NAME,
-                PROFILE_NORA_ADAPTOR_NAME,
-            }
-        )
-        if (
-            profile_index
-            and graph_comprehend
-            and cognition_enabled
-            and units
-            and units <= home_units
-        )
-        else frozenset()
+) -> bool:
+    """Whether Cognition owns the Profile accounts: every switch is on and each unit has a home."""
+    return bool(
+        profile_index and graph_comprehend and cognition_enabled
+        and units and units <= home_units
     )

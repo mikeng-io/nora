@@ -148,11 +148,9 @@ async def enabled(
     cognition_upcoming = None
     if cfg.dreamer.enabled:
         objectives = _dream_objectives(
-            allowlist=allowlist, cfg=cfg, clock=clock,
-            content_checks=content_checks, engine=engine,
-            media_join=media_join, metrics=metrics, note_store=note_store,
-            persons=persons, profile_index=profile_index,
-            unit_scopes=unit_scopes, access=access,
+            allowlist=allowlist, cfg=cfg, content_checks=content_checks,
+            engine=engine, metrics=metrics, note_store=note_store,
+            persons=persons, profile_index=profile_index, access=access,
         )
         dream_adaptors = objectives.adaptors
         dream_schedules = objectives.schedules

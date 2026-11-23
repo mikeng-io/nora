@@ -599,7 +599,7 @@
  },
  "nora/domain/block_types.py": {
   "comment_blocks": 17,
-  "file_lines": 1094,
+  "file_lines": 1086,
   "internal_docstrings": 1
  },
  "nora/domain/blocks.py": {
@@ -1326,14 +1326,6 @@
   "comment_blocks": 2,
   "internal_docstrings": 5
  },
- "nora/infra/sql/profile_inputs.py": {
-  "comment_blocks": 1,
-  "file_lines": 869,
-  "functions": {
-   "SqlProfileInputs.register": 122,
-   "SqlProfileInputs.rollup": 187
-  }
- },
  "nora/infra/sql/record_query.py": {
   "comment_blocks": 2
  },
@@ -1557,26 +1549,9 @@
  "nora/language/presence_render.py": {
   "internal_docstrings": 2
  },
- "nora/language/profile.py": {
-  "comment_blocks": 1,
-  "file_lines": 1295,
-  "functions": {
-   "ProfilePersonAdaptor.inputs": 394
-  },
-  "internal_docstrings": 2
- },
- "nora/language/profile_collective.py": {
-  "comment_blocks": 3,
-  "functions": {
-   "ProfileCollectiveAdaptor.inputs": 230
-  }
- },
  "nora/language/profile_render.py": {
   "comment_blocks": 2,
   "internal_docstrings": 1
- },
- "nora/language/profile_verdict.py": {
-  "internal_docstrings": 3
  },
  "nora/language/shared_render.py": {
   "functions": {
@@ -1601,8 +1576,8 @@
   "internal_docstrings": 4
  },
  "nora/obs/metric_specs.py": {
-  "comment_blocks": 91,
-  "file_lines": 2553
+  "comment_blocks": 90,
+  "file_lines": 2500
  },
  "nora/obs/metrics.py": {
   "internal_docstrings": 1
@@ -2103,7 +2078,7 @@
   "comment_blocks": 2
  },
  "tests/architecture/test_dream_store_calls_are_declared.py": {
-  "comment_blocks": 7,
+  "comment_blocks": 6,
   "internal_docstrings": 9
  },
  "tests/architecture/test_dream_unit_is_wall_clocked.py": {
@@ -2412,16 +2387,7 @@
    "test_upgrade_downgrade_upgrade_preserves_every_row_and_cursor": 172
   }
  },
- "tests/infra/test_profile_source_inputs.py": {
-  "file_lines": 1154,
-  "functions": {
-   "test_message_checks_reuse_media_lookups_per_attachment_value": 123
-  }
- },
  "tests/infra/test_profile_store.py": {
-  "internal_docstrings": 1
- },
- "tests/infra/test_profile_verdict.py": {
   "internal_docstrings": 1
  },
  "tests/infra/test_rollup_lineage.py": {
@@ -2694,7 +2660,7 @@
  },
  "tests/test_composition.py": {
   "comment_blocks": 9,
-  "file_lines": 2179,
+  "file_lines": 2114,
   "internal_docstrings": 2
  },
  "tests/test_config.py": {
@@ -3338,9 +3304,6 @@
  },
  "tests/unit/test_pr584_astra_readiness.py": {
   "internal_docstrings": 1
- },
- "tests/unit/test_profile_collective.py": {
-  "comment_blocks": 1
  },
  "tests/unit/test_prompt_adversarial.py": {
   "comment_blocks": 8,

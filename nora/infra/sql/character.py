@@ -367,8 +367,8 @@ class SqlCharacterEvidence:
 
     async def rows_by_id(self, *, ids: Sequence[int]) -> list[RoomMessage]:
         """The Record rows `ids` names that are not hidden, each with its
-        room: what a Profile session checks a citation an older account
-        carried by (its time, speaker and room, 45 §4)."""
+        room: what resolves a citation an account carries to its time, speaker
+        and room."""
         if not ids:
             return []
         stmt = (transcript_select().add_columns(MESSAGES.c.conversation_id)

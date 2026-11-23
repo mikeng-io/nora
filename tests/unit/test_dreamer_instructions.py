@@ -478,16 +478,6 @@ NATIVELY_AUTHORED = {
     "character-unit",
     # Her own Character session.
     "character-nora",
-    # A person's Profile session, in shadow (DEC-317).
-    "profile-person",
-    # The hypothesis verdict judge: it grades what profile-person wrote, and is
-    # never the writer (45 §3).
-    "profile-verdict",
-    # The collective Profile sessions, in shadow (45 §4): a room's, the
-    # unit's, and Nora's own account.
-    "profile-room",
-    "profile-unit",
-    "profile-nora",
     # The doctrine check: an instrument's instruction, read through
     # `objective_body`, never with the Dreamer doctrine.
     "doctrine-check",

@@ -40,7 +40,7 @@ CAUSAL_TIMING = {
 #: room fold (`{"standing": ...}` contract).
 _UNIT_SCOPE_MARKER = "Scope of this call: UNIT"
 
-BackgroundAnswer = Literal["session_close", "culture", "profile", "profile_verdict"]
+BackgroundAnswer = Literal["session_close", "culture"]
 
 #: Total background calls the finite world answers. A workload bound, not a
 #: threshold production raised: past it the request is a named `exhausted`
@@ -306,7 +306,7 @@ class CausalProtocol:
         """Answer the declared adaptor objective; an unsettled close holds its watermark."""
         why = "Generated protocol retains the previous account."
         answer = self.background_answers.get(objective)
-        if answer in {"culture", "profile", "profile_verdict"}:
+        if answer == "culture":
             messages = request["messages"]
             tool_results = [row.get("content") for row in messages if row.get("role") == "tool"]
             if tool_results:
@@ -314,21 +314,7 @@ class CausalProtocol:
                 return completion(request["model"], "Generated pass settled.", stream=True)[
                     "response"
                 ]
-            if answer == "culture":
-                return self.tool(request, "character_no_change", {"entity": "room", "why": why})
-            if answer == "profile_verdict":
-                docket = _user_text(request)
-                handles = re.findall(r'<guess id="(H\d+)"', docket)
-                assert handles
-                return self.tool(
-                    request,
-                    "profile_verdict",
-                    {
-                        "verdicts": [{"line": handle, "verdict": "unknown"} for handle in handles],
-                    },
-                )
-            if request.get("tools"):
-                return self.tool(request, "profile_no_change", {"why": why})
+            return self.tool(request, "character_no_change", {"entity": "room", "why": why})
         if answer == "session_close":
             return completion(request["model"], why, stream=True)["response"]
         raise UnmatchedError("unsupported_objective", objective)

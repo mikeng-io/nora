@@ -52,14 +52,6 @@ CONVERTED = {
     "nora/ingest/relevance_gate.py": "the window the gate decides on",
     "nora/language/culture.py": "the batch the culture fold reads",
     "nora/language/character.py": "a person's own lines a Character session reads",
-    "nora/language/profile.py":
-        "a person's own lines and the episodes they answered a Profile session reads",
-    "nora/language/profile_collective.py":
-        "a collective's own evidence a Profile session reads: the room's "
-        "messages, the rows the rooms' cultures cited, a response episode's "
-        "replies",
-    "nora/language/profile_verdict.py":
-        "the window's Record rows the verdict judge reads",
     "nora/engagement/debrief_render.py":
         "the window the fold and the grounding verdict read",
     "nora/language/context_render.py": "shared chronological transcript via render_messages",

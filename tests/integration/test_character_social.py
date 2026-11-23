@@ -580,8 +580,8 @@ async def test_an_item_whose_tagged_place_changed_is_still_read_and_counted(soci
     assert sorted(_cites(await _wake(adaptor))) == ["9301", "9302"]
 
 
-def _selected_background_adaptor(access, engine, example_config, kind):
-    from nora.app.composition_dream import _character_adaptors, _profile_person_adaptors
+def _selected_background_adaptor(access, engine, example_config):
+    from nora.app.composition_dream import _character_adaptors
     from tests.unit.test_managed_background_access import _population_rooms
 
     persons = access.persons_view()
@@ -589,23 +589,23 @@ def _selected_background_adaptor(access, engine, example_config, kind):
         allowlist=_population_rooms(), cfg=example_config, content_checks=False,
         engine=engine, metrics=Metrics(), note_store=None,
         persons=persons, access=access)
-    adaptor = next(a for a in character.adaptors if a.name == "character-person")
-    if kind == "profile":
-        _, adaptors, *_ = _profile_person_adaptors(
-            allowlist=_population_rooms(), cfg=example_config, character=character,
-            clock=lambda: NOW, content_checks=False, engine=engine, media_join=None,
-            metrics=Metrics(), persons=persons, profile_collective_keys={},
-            profile_index=None, access=access)
-        adaptor = next(a for a in adaptors if a.name == "profile-person")
-    return adaptor
+    return next(a for a in character.adaptors if a.name == "character-person")
 
 
-@pytest.mark.parametrize("kind", ["character", "profile"])
+async def _message(engine, *, ident=10, person, room, body):
+    from nora.infra.sql.schema import MESSAGES
+
+    async with engine.begin() as conn:
+        await conn.execute(sa.insert(MESSAGES).values(
+            id=ident, platform="signal", conversation_id=room, conversation_type="group",
+            sender_id="synthetic-sender", sender_name="Synthetic", person_id=person,
+            ts=1_790_000_000_000, body=body, is_nora=0, delivery_status="sent",
+        ))
+
+
 async def test_selected_background_composition_enforces_managed_social_preference(
-    social, example_config, kind,
+    social, example_config,
 ):
-    from nora.domain.profile_inputs import PersonSourceRevision
-    from tests.infra.test_profile_source_inputs import message
     from tests.unit.test_managed_background_access import (
         _background_identity_case,
         _population_keys,
@@ -616,26 +616,19 @@ async def test_selected_background_composition_enforces_managed_social_preferenc
     person = case.people[0]
     await _record(store, "generated-selected-social", person=person,
                   caption="Generated SQL Social Token")
-    adaptor = _selected_background_adaptor(case.access, engine, example_config, kind)
+    adaptor = _selected_background_adaptor(case.access, engine, example_config)
     keys = await _population_keys(adaptor)
     key = character_key("generated-unit", person)
     assert key in keys
     assert await adaptor.evidence.count(key=key, after=0) > 0
     batch, _ = await adaptor.evidence.newest(key=key, after=0, limit=10)
-    assert any(isinstance(item, PersonSocialItem) or (
-        isinstance(item, PersonSourceRevision) and item.domain == "social") for item in batch)
+    assert any(isinstance(item, PersonSocialItem) for item in batch)
     case.registry.identities[person]["traits"]["social"] = False
     count = await adaptor.evidence.count(key=key, after=0)
     fresh, _ = await adaptor.evidence.newest(key=key, after=0, limit=10)
-    assert not any(isinstance(item, PersonSocialItem) or (
-        isinstance(item, PersonSourceRevision) and item.domain == "social") for item in fresh)
-    if kind == "character":
-        assert count == 0
-    else:
-        # The absent Rollup build remains explicitly unavailable, not silent absence.
-        assert count == 1
-        assert [(item.domain, item.state) for item in fresh] == [("rollup", "unavailable")]
-    await message(engine, person=person, room="g1", body="Generated SQL Message")
+    assert not any(isinstance(item, PersonSocialItem) for item in fresh)
+    assert count == 0
+    await _message(engine, person=person, room="g1", body="Generated SQL Message")
     messages, _ = await adaptor.evidence.newest(key=key, after=0, limit=10)
     text = await adaptor.inputs(key=key, batch=[*messages, *batch])
     assert "Generated SQL Message" in text
@@ -680,22 +673,18 @@ async def _assert_history_uses_only_the_selected_identity_source(
     assert await reader.person_count(rooms=[("signal", "g1")], person_id=survivor, after=0) >= 2
 
 
-@pytest.mark.parametrize("kind", ["character", "profile"])
 async def test_selected_background_reads_retired_sources_after_a_fresh_engine(
-    social, clean_pg_url, example_config, kind,
+    social, clean_pg_url, example_config,
 ):
     from dataclasses import replace
     from uuid import uuid4
 
     from nora.domain.culture import RoomMessage
     from nora.domain.managed import OutcomeStatus
-    from nora.domain.profile_inputs import PersonSourceRevision
     from nora.infra.sql.managed_identity import SqlBindingStore
     from nora.infra.sql.schema import MESSAGES
-    from nora.language.profile import Mention
     from nora.people.app.managed import ManagedServices
     from nora.testing.managed import FakeAuthorityBackend, FakeLinkRequests
-    from tests.infra.test_profile_source_inputs import message
     from tests.unit.test_managed_background_access import (
         _background_identity_case,
         _population_keys,
@@ -716,7 +705,7 @@ async def test_selected_background_reads_retired_sources_after_a_fresh_engine(
         (12, original, "g3", "Generated other unit message"),
         (13, outsider, "g1", "Generated old identity mention"),
     ):
-        await message(engine, ident=ident, person=person, room=room, body=text)
+        await _message(engine, ident=ident, person=person, room=room, body=text)
     async with engine.begin() as conn:
         await conn.execute(sa.update(MESSAGES).where(MESSAGES.c.id == 13).values(
             mention_persons_json='["' + original + '"]'))
@@ -731,47 +720,21 @@ async def test_selected_background_reads_retired_sources_after_a_fresh_engine(
     try:
         access = ManagedServices(SqlBindingStore(fresh), FakeAuthorityBackend(), case.topology,
                                  case.registry, FakeLinkRequests()).access
-        adaptor = _selected_background_adaptor(access, fresh, example_config, kind)
+        adaptor = _selected_background_adaptor(access, fresh, example_config)
         key = character_key("generated-unit", survivor)
         assert key in await _population_keys(adaptor)
         batch, _ = await adaptor.evidence.newest(key=key, after=0, limit=20)
         messages = [item for item in batch if isinstance(item, RoomMessage)]
-        revisions = [item for item in batch if isinstance(item, PersonSourceRevision)]
-        messages += [root for item in revisions for root in item.roots]
-        messages += [item.message for item in batch if isinstance(item, Mention)]
         ids = {item.row.id for item in messages}
         assert {10, 11} <= ids
         assert 12 not in ids
-        if kind == "profile":
-            assert 13 in ids
         assert all(item.row.person_id == survivor for item in messages if item.row.id in {10, 11})
         assert all(item.row.sender_id == "synthetic-sender" for item in messages)
         text = await adaptor.inputs(key=key, batch=batch)
         assert "Generated original message" in text and "Generated survivor message" in text
         assert "Generated other unit message" not in text
         expected = {10: original, 11: survivor, 12: original, 13: outsider}
-        if kind == "profile":
-            # Acknowledge this read page, then exercise the independent source-revision path.
-            await adaptor.evidence.settle(key=key)
-            for ident, person, room, body in (
-                (14, original, "g1", "Generated delayed original message"),
-                (15, outsider, "g1", "Generated delayed old mention"),
-                (16, original, "g3", "Generated delayed other unit"),
-            ):
-                await message(fresh, ident=ident, person=person, room=room, body=body)
-                expected[ident] = person
-            async with fresh.begin() as conn:
-                await conn.execute(sa.update(MESSAGES).where(MESSAGES.c.id == 15).values(
-                    mention_persons_json='["' + original + '"]'))
-            batch, _ = await adaptor.evidence.newest(key=key, after=0, limit=20)
-            revisions = [item for item in batch if isinstance(item, PersonSourceRevision)]
-            source_ids = {root.row.id for item in revisions for root in item.roots}
-            assert source_ids == {14, 15}
-            text = await adaptor.inputs(key=key, batch=batch)
-            assert "Generated delayed original message" in text
-            assert "Generated delayed other unit" not in text
         items = {item.item_id for item in batch if isinstance(item, PersonSocialItem)}
-        items |= {item.social.item_id for item in revisions if item.social is not None}
         assert items == {"generated-original-post", "generated-survivor-post"}
         async with fresh.connect() as conn:
             rows = await conn.execute(sa.select(MESSAGES.c.id, MESSAGES.c.person_id))
@@ -782,15 +745,5 @@ async def test_selected_background_reads_retired_sources_after_a_fresh_engine(
         assert mention == '["' + original + '"]'
         await _assert_history_uses_only_the_selected_identity_source(
             fresh, access, original, survivor)
-        if kind == "profile":
-            from nora.infra.sql.profile_inputs import SqlProfileInputs
-
-            async with fresh.begin() as conn:
-                await conn.execute(sa.delete(MESSAGES).where(MESSAGES.c.id.in_([10, 12, 13])))
-            deleted = await SqlProfileInputs(fresh, identity_ids=access.identity_ids).messages(
-                key="generated-withdrawals", rooms=[("signal", "g1")], person=survivor, limit=20)
-            absent = {r.source for r in deleted if r.state == "absent"}
-            assert {"message:10", "message:13"} <= absent
-            assert "message:12" not in absent
     finally:
         await fresh.dispose()

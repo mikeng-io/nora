@@ -186,17 +186,16 @@ async def test_an_unmatched_claim_is_recorded_and_nothing_is_touched(env) -> Non
     assert dispute.line_id is None
 
 
-async def test_pending_disputes_close_when_the_session_settles(env) -> None:
-    """The wake stimulus: a dispute counts until a session settles the account
+async def test_open_disputes_close_when_the_session_settles(env) -> None:
+    """A dispute is open until a session settles the account
     (`profile.settled_at`), then no longer."""
     await _write(env, [_told("vegetarian")])
     await env.store.record_dispute(
         account=ACCOUNT, disputed_by="p-other", kind="dispute", claim="vegetarian",
         message_id=102, now_ms=NOW + DAY)
-    assert await env.store.pending_disputes(key=ACCOUNT.key) == 1
+    assert len(await env.store.open_disputes(key=ACCOUNT.key, limit=10)) == 1
     assert (await _write(env, [_told("x", "103")], now=NOW + 2 * DAY,
                          apply_decay=True)).status == "ok"
-    assert await env.store.pending_disputes(key=ACCOUNT.key) == 0
     assert await env.store.open_disputes(key=ACCOUNT.key, limit=10) == ()
 
 

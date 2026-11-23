@@ -1,5 +1,6 @@
 """Background tool construction reads the selected identity scope and fails closed."""
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -7,6 +8,7 @@ import pytest
 from nora.agent.dreamer import AdaptorGrant
 from nora.agent.room import Room
 from nora.app.composition_dream import _dream_tool_source
+from nora.domain.social_stream import PersonSocialItem, RecordedCounts
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import permissive_policy
@@ -150,12 +152,10 @@ async def _population_keys(adaptor):
     return await keys if inspect.isawaitable(keys) else keys
 
 
-async def test_character_and_profile_composition_enumerate_the_selected_managed_population(
+async def test_character_composition_enumerates_the_selected_managed_population(
     example_config,
 ):
-    from datetime import UTC, datetime
-
-    from nora.app.composition_dream import _character_adaptors, _profile_person_adaptors
+    from nora.app.composition_dream import _character_adaptors
     from nora.domain.culture import character_key
 
     bindings, access = _managed()
@@ -176,17 +176,10 @@ async def test_character_and_profile_composition_enumerate_the_selected_managed_
     assert (pk.person.person_id, pk.person.name, pk.home, pk.listed) == (
         _M_PERSON, "Generated Unit Person", "g1", ("g1",))
     assert tuple(r.key for r in pk.rooms) == ("g1", "g2")
-    _, adaptors, *_ = _profile_person_adaptors(
-        allowlist=_population_rooms(), cfg=example_config, character=character,
-        clock=lambda: datetime.now(UTC), content_checks=None, engine=None,
-        media_join=None, metrics=Metrics(), persons=persons,
-        profile_collective_keys={}, profile_index=None, access=access)
-    profile = next(a for a in adaptors if a.name == "profile-person")
-    assert await _population_keys(profile) == (expected,)
 
     await bindings.set_scoped_name(person_id=_M_PERSON, scope=_M_UNIT,
         nickname="Generated Renamed Unit Person", operation_id="generated-unit-person-rename")
-    assert await _population_keys(profile) == (expected,)
+    assert await _population_keys(person) == (expected,)
     assert character.person_keys[expected].person.name == "Generated Renamed Unit Person"
     bindings.down = True
     with pytest.raises(RuntimeError):
@@ -194,7 +187,7 @@ async def test_character_and_profile_composition_enumerate_the_selected_managed_
     with pytest.raises(RuntimeError, match="population is unavailable"):
         character.person_keys[expected]
     bindings.down = False
-    assert await _population_keys(profile) == (expected,)
+    assert await _population_keys(person) == (expected,)
 
 
 async def test_selected_person_population_keeps_units_separate_and_observes_departure():
@@ -364,81 +357,65 @@ def _background_message(person, rid=1):
     return replace(message, row=replace(message.row, person_id=person))
 
 
-def _person_background_adaptor(case, kind, *, reads=None, profile=None, culture=None):
+_NOW = datetime.fromtimestamp((1_760_000_000_000 + 3_600_000) / 1000, tz=UTC)
+
+
+def _social_item(item_id: str, *, us: int) -> PersonSocialItem:
+    return PersonSocialItem(
+        network="instagram", item_id=item_id, kind="post", collab=False,
+        taken_at=datetime.fromtimestamp(us / 1_000_000, tz=UTC), origin="poll",
+        caption="lunch", recorded_us=us,
+    )
+
+
+class _SocialFake:
+    def __init__(self, items: list[PersonSocialItem], *, polled: int = 0) -> None:
+        self._items = items
+        self._polled = polled
+        self.counts_asked: list[tuple[str, str]] = []
+
+    async def polled_count(self, *, persons, after_us) -> int:
+        return self._polled
+
+    async def now(self) -> datetime:
+        return _NOW
+
+    async def person_items(self, *, persons, after_us, limit):
+        return [i for i in self._items if i.recorded_us > after_us][:limit]
+
+    async def current_counts(self, *, items):
+        self.counts_asked = list(items)
+        return {
+            item: RecordedCounts(likes=12, comments=3, reposts=None,
+                                 likes_hidden=False, read_at=_NOW)
+            for item in items
+        }
+
+
+def _person_background_adaptor(case, *, culture=None):
     from dataclasses import replace
 
     from nora.domain.culture import character_key
     from nora.language.background_identity import BackgroundIdentity
     from nora.language.character import CharacterPersonAdaptor, PersonEvidence
-    from nora.language.profile import ProfileEvidence, ProfilePersonAdaptor
     from nora.testing import InMemoryCharacterEvidence, InMemoryCultureStore
-    from tests.unit.test_profile_social_input import (
-        NOW,
-        T0,
-        _item,
-        _ProfileFake,
-        _ReadsFake,
-        _SocialFake,
-    )
 
     person = case.people[0]
     key = character_key(_M_UNIT.id, person)
-    item = replace(_item("generated-private-social", us=10),
+    item = replace(_social_item("generated-private-social", us=10),
                    caption="Generated Private Social Token")
     social = _SocialFake([item], polled=1)
-    if kind == "character":
-        evidence = PersonEvidence(store=InMemoryCharacterEvidence(), keys=case.keys,
-            social=social, access=case.access)
-        adaptor = CharacterPersonAdaptor(culture=culture or InMemoryCultureStore(),
-            evidence=evidence, keys=case.keys, screen=lambda _text: None,
-            render_chars=1000, identity=BackgroundIdentity(case.access), clock=lambda: NOW)
-    else:
-        reads, profile = reads or _ReadsFake(), profile or _ProfileFake()
-        evidence = ProfileEvidence(store=reads, profile=profile, keys=case.keys,
-            wake_batch=1, social=social, access=case.access)
-        adaptor = ProfilePersonAdaptor(profile=profile, culture=InMemoryCultureStore(),
-            evidence=evidence, reads=reads, keys=case.keys,
-            name_of=lambda _pid: "Generated Unscoped Fallback", clock_ms=lambda: T0,
-            clock=lambda: NOW, social=social, screen=lambda _text: None,
-            identity=BackgroundIdentity(case.access))
+    evidence = PersonEvidence(store=InMemoryCharacterEvidence(), keys=case.keys,
+        social=social, access=case.access)
+    adaptor = CharacterPersonAdaptor(culture=culture or InMemoryCultureStore(),
+        evidence=evidence, keys=case.keys, screen=lambda _text: None,
+        render_chars=1000, identity=BackgroundIdentity(case.access), clock=lambda: _NOW)
     return key, adaptor, social, item
 
 
-async def test_profile_sources_use_fresh_unit_names_and_no_unscoped_or_sibling_substitute():
-    from tests.unit.test_profile_social_input import _ReadsFake
-
-    case = await _background_identity_case()
-    person, peer, outsider = case.people
-
-    class ReferencedReads(_ReadsFake):
-        async def tie_totals(self, **kwargs):
-            return [(peer, 1, 1, 1, 1, 1, 1), (outsider, 1, 1, 1, 1, 1, 1)]
-
-    key, adaptor, _, _ = _person_background_adaptor(case, "profile", reads=ReferencedReads())
-    await case.bindings.set_scoped_name(person_id=person, scope=_M_UNIT,
-        nickname="Generated Live Subject Name", operation_id="generated-live-subject")
-    await case.bindings.set_scoped_name(person_id=peer, scope=_M_UNIT,
-        nickname="Generated Live Peer Name", operation_id="generated-live-peer")
-    batch = [_background_message(p, i + 1) for i, p in enumerate(case.people)]
-    text = await adaptor.inputs(key=key, batch=batch)
-    assert "Generated Live Subject Name" in text
-    assert "Generated Live Peer Name" in text
-    assert "Generated Unit Name 2" not in text
-    assert "Generated Global 2" in text  # Identity knowledge is not a membership grant.
-    assert "Generated Global 0" not in text and "Generated Global 1" not in text
-    assert "Generated Unscoped Fallback" not in text
-    assert "Generated message 3" in text
-    case.bindings.down = True
-    with pytest.raises(RuntimeError):
-        await adaptor.inputs(key=key, batch=batch)
-    case.bindings.down = False
-    assert "Generated Live Peer Name" in await adaptor.inputs(key=key, batch=batch)
-
-
-@pytest.mark.parametrize("kind", ["character", "profile"])
 @pytest.mark.parametrize("retired", [False, True])
 async def test_background_social_obeys_current_managed_preference_even_for_a_held_batch(
-    kind, retired,
+    retired,
 ):
     from nora.access import SocialPreferenceUnavailableError
     from nora.domain.social_stream import PersonSocialItem
@@ -454,7 +431,7 @@ async def test_background_social_obeys_current_managed_preference_even_for_a_hel
         case.bindings.aliases[owner] = person
         await case.registry.ensure_identity(external_id=owner, traits={"social": True})
         await case.registry.set_state(external_id=owner, active=False)
-    key, adaptor, social, _ = _person_background_adaptor(case, kind)
+    key, adaptor, social, _ = _person_background_adaptor(case)
     assert await adaptor.evidence.count(key=key, after=0) == 1
     batch, _ = await adaptor.evidence.newest(key=key, after=0, limit=10)
     assert any(isinstance(item, PersonSocialItem) for item in batch)
@@ -477,47 +454,20 @@ async def test_background_social_obeys_current_managed_preference_even_for_a_hel
     assert "Generated Private Social Token" in await adaptor.inputs(key=key, batch=batch)
 
 
-@pytest.mark.parametrize("kind", ["character", "profile", "profile-marker"])
-async def test_background_rechecks_social_consent_after_assembly_reads(kind):
+async def test_background_rechecks_social_consent_after_assembly_reads():
     from nora.testing import InMemoryCultureStore
-    from tests.unit.test_profile_social_input import _ProfileFake
 
     case = await _background_identity_case()
     person = case.people[0]
-
-    class RevokeProfile(_ProfileFake):
-        async def account_heads(self, **kwargs):
-            case.registry.identities[person]["traits"]["social"] = False
-            return ()
 
     class RevokeCulture(InMemoryCultureStore):
         async def head(self, **kwargs):
             case.registry.identities[person]["traits"]["social"] = False
             return await super().head(**kwargs)
 
-    key, adaptor, _, item = _person_background_adaptor(
-        case, kind, profile=RevokeProfile(), culture=RevokeCulture())
-    if kind == "profile-marker":
-        from nora.domain.profile_inputs import PersonSourceRevision
-
-        item = PersonSourceRevision(domain="social", source="generated-withheld-social",
-            revision="one", state="withheld", recorded_at="2026-10-05T09:00:00+00:00")
+    key, adaptor, _, item = _person_background_adaptor(case, culture=RevokeCulture())
     with pytest.raises(RuntimeError, match="social preference changed"):
         await adaptor.inputs(key=key, batch=[_background_message(person), item])
-
-
-async def test_profile_input_refuses_a_consolidated_target_until_its_key_is_reselected():
-    case = await _background_identity_case()
-    person, survivor, outsider = case.people
-    key, adaptor, _, _ = _person_background_adaptor(case, "profile")
-    case.bindings.aliases[person] = survivor
-    await case.registry.set_state(external_id=person, active=False)
-    with pytest.raises(RuntimeError, match="profile subject changed"):
-        await adaptor.inputs(key=key, batch=[_background_message(person)])
-    case.people = (survivor, person, outsider)
-    key, adaptor, _, _ = _person_background_adaptor(case, "profile")
-    assert "Generated Unit Name 1" in await adaptor.inputs(
-        key=key, batch=[_background_message(survivor)])
 
 
 async def test_social_batch_excludes_disallowed_items_and_source_revisions_but_keeps_chat():
@@ -526,7 +476,7 @@ async def test_social_batch_excludes_disallowed_items_and_source_revisions_but_k
 
     case = await _background_identity_case()
     person = case.people[0]
-    _, _, _, item = _person_background_adaptor(case, "profile")
+    _, _, _, item = _person_background_adaptor(case)
     message = _background_message(person)
     source = PersonSourceRevision(domain="social", source="generated-social-source",
         revision="one", state="readable", recorded_at="2026-10-05T09:00:00+00:00", social=item)

@@ -1,12 +1,5 @@
 [
   {
-    "name": "unit cutover and rollback use independent counters",
-    "file": "nora/language/profile_collective.py",
-    "old": "self.watermark_name = \"profile-unit:profile\" if kind == \"unit\" and render else None",
-    "new": "self.watermark_name = None",
-    "target": "tests/infra/test_profile_collective.py::test_unit_switch_and_rollback_keep_independent_durable_cursors"
-  },
-  {
     "name": "resolved relationship target remains searchable",
     "file": "nora/infra/sql/memory_index.py",
     "old": "if row.fact_key == \"relationship\" and isinstance(row.fact_value, dict):",
