@@ -82,9 +82,9 @@ def _refs(node: object) -> list[str]:
 
 
 def _answer_carries_every_field(schemas: dict[str, Any], name: str) -> None:
-    """An answer's payload type, and the types it nests, require every property: a
-    bridge always writes each one (null where the type allows it). An envelope
-    nested as a payload keeps its own rule."""
+    """Require every property of an answer's payload type and the types it nests."""
+    # A bridge always writes each field (null where the type allows it); an
+    # envelope nested as a payload keeps its own rule.
     if name.endswith("Envelope"):
         return
     properties = schemas[name].get("properties", {})
