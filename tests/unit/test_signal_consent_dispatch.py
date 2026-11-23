@@ -163,3 +163,23 @@ async def test_the_adapter_offers_consent_before_the_room_parser():
 
     await passthrough._handle_event(_room_event(), collect_room)
     assert len(messages) == 1  # reached on_message as an ordinary room message
+
+
+async def test_a_degraded_signal_sends_no_link_challenge():
+    """The managed link challenge has its own `SignalSender`, so it is gated
+    on the registry's Signal liveness (platform-liveness.md): degraded sends
+    nothing and answers False, which routes the challenge to the
+    authenticated view; once live, it sends."""
+    from nora.domain.identity import Identifier
+
+    live = {"signal": False}
+    sends = _Sends()
+    delivery = SignalLinkDelivery("http://daemon", sender=sends,
+                                  live=lambda: live["signal"])
+    account = Identifier(platform="signal", kind="phone", value="+85290000001")
+
+    assert await delivery.deliver(account=account, text="code") is False
+    assert sends.sent == []
+    live["signal"] = True
+    assert await delivery.deliver(account=account, text="code") is True
+    assert len(sends.sent) == 1

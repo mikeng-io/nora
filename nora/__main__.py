@@ -192,7 +192,9 @@ class App:
         # without.
         if deps.otp is not None:
             register_otp_routes(health_app, otp=deps.otp, api_token=deps.otp_api_token)
-        await mount_management(health_app, cfg=self.cfg, services=deps.managed_services)
+        await mount_management(
+            health_app, cfg=self.cfg, services=deps.managed_services,
+            signal_live=functools.partial(deps.registry.is_live, "signal"))
         # The voice channel's text entry point: the wake service POSTs transcripts
         # here, and they enter through the dispatcher exactly like a typed Discord
         # message (same adapter callback, ingest and reactive path). `on_voice_event`

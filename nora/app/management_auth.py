@@ -1,5 +1,6 @@
 """Compose authentication issuers without sharing service-provisioning credentials."""
 
+from collections.abc import Callable
 from typing import Any
 
 from aiohttp import web
@@ -13,6 +14,7 @@ from nora.web.management_sessions import register_session_routes
 
 def mount_authentication(
     app: web.Application, *, cfg: Config, services: Any,
+    signal_live: Callable[[], bool] | None = None,
 ) -> AuthenticationVerifier | None:
     if not cfg.identity.authentication:
         return None
@@ -46,7 +48,7 @@ def mount_authentication(
     delivery = None
     if signal.enabled and getattr(signal, "mode", "direct") == "direct":
         from nora.platform.signal.consent import SignalLinkDelivery
-        delivery = SignalLinkDelivery(signal.base_url)
+        delivery = SignalLinkDelivery(signal.base_url, live=signal_live)
     register_holder_routes(
         app,
         holder=importlib.import_module("nora.people").wire.holder_links(

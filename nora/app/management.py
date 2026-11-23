@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from aiohttp import web
@@ -15,10 +16,12 @@ from nora.web.managed_viewer import register_managed_viewer
 from nora.web.management_api import ProvisioningCredential, register_management_routes
 
 
-async def mount_management(app: web.Application, *, cfg: Config, services: Any) -> None:
+async def mount_management(app: web.Application, *, cfg: Config, services: Any,
+                           signal_live: Callable[[], bool] | None = None) -> None:
     if cfg.identity.backend != "managed":
         return
-    authentication = mount_authentication(app, cfg=cfg, services=services)
+    authentication = mount_authentication(app, cfg=cfg, services=services,
+                                          signal_live=signal_live)
     register_managed_viewer(app, bindings=services.bindings, registry=services.registry,
         scopes=PortalScopes(services.bindings, services.topology, services.authority),
         verifier=authentication)

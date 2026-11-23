@@ -229,7 +229,9 @@ def platform_warnings(rows: list[dict]) -> list[str]:
         body = json.loads(_docker(
             "exec", nora[0]["container_id"], "curl", "-sS", "--max-time", "5",
             NORA_HEALTH_URL))
-    except (SystemExit, OSError, ValueError) as exc:
+    # Any failure — including the Komodo wrapper's own `CommandError` around
+    # `_docker` — is a warning: this read is optional, the container decided.
+    except (Exception, SystemExit) as exc:  # noqa: BLE001
         return [f"WARNING: could not read Nora's /health for platform state: {exc}"]
     platforms = body.get("platforms") if isinstance(body, dict) else None
     if not isinstance(platforms, dict):

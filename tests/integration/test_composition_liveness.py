@@ -6,6 +6,8 @@ degraded platform with no restart."""
 
 from __future__ import annotations
 
+import functools
+
 import pytest
 
 from nora.app.composition import build_dependencies
@@ -83,7 +85,7 @@ async def test_bridge_mode_without_a_redis_url_refuses_to_start(
 
 
 async def test_all_platforms_degraded_composes_serves_503_and_recovers(
-        cfg, monkeypatch, aiohttp_client):
+        cfg, monkeypatch, aiohttp_client, clean_pg_url):
     """Every enabled platform's identity fails: Nora still composes, the
     health app `App.run` serves answers 503 (nobody can reach her), and the
     recovery `App.run` spawns promotes Signal once it answers — the SAME
@@ -111,6 +113,20 @@ async def test_all_platforms_degraded_composes_serves_503_and_recovers(
         return MemoryHealth(reachable=True)
 
     monkeypatch.setattr(deps.memory, "health", reachable)
+    # The lessons evidence through its OWN wiring, built while Signal is degraded.
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from nora.app.composition_dream import _lessons_evidence
+
+    engine = create_async_engine(clean_pg_url)
+    lessons = _lessons_evidence(
+        allowlist=None, cfg=override_config(cfg, {"lessons.enabled": True}),
+        content_checks=True, doctrine_store=deps.doctrine_store,
+        dreamer_instructions=deps.dreamer_instructions, engine=engine,
+        metrics=deps.metrics, model_client_for=lambda name: deps.client,
+        persons=deps.persons, registry=deps.registry,
+        route_model=lambda name, model: model or "nora")
+    assert "+85290000100" not in lessons._evidence._self_ids
     # The listener is not running in this test; report its socket up so the
     # only variable /health sees is liveness.
     deps.registry.get("signal")._listener = SimpleNamespace(
@@ -133,4 +149,37 @@ async def test_all_platforms_degraded_composes_serves_503_and_recovers(
     assert response.status == 200, body
     assert body["platforms"]["signal"]["state"] == "live"
     assert deps.registry.identity_for("signal") == identity
+    # The COMPOSED long-lived alias holders were built while Signal was
+    # degraded; each now sees her promoted id (a startup copy would not).
+    holders = [*_reachable(deps, ("MentionPolicy", "ReplyToNoraPolicy")), lessons._evidence]
+    assert {type(h).__name__ for h in holders} >= {
+        "MentionPolicy", "ReplyToNoraPolicy", "LessonEvidence"}
+    assert all("+85290000100" in h._self_ids for h in holders)
     await task
+    await engine.dispose()
+
+
+def _reachable(root, names, limit=500000):
+    """Objects of the named classes reachable from `root`: the wired graph."""
+    seen, found, queue = set(), [], [root]
+    while queue and len(seen) < limit:
+        obj = queue.pop()
+        if id(obj) in seen or isinstance(obj, (str, bytes, int, float, type)):
+            continue
+        seen.add(id(obj))
+        if type(obj).__name__ in names:
+            found.append(obj)
+        if isinstance(obj, dict):
+            queue.extend(obj.values())
+        elif isinstance(obj, (list, tuple, set, frozenset)):
+            queue.extend(obj)
+        else:
+            queue.extend(getattr(obj, "__dict__", {}).values())
+            queue.extend(getattr(obj, attr, None) for attr in getattr(obj, "__slots__", ()))
+            # Closures, partials and bound methods hold wired objects too.
+            queue.extend(c.cell_contents for c in getattr(obj, "__closure__", None) or ()
+                         if c.cell_contents is not None)
+            queue.append(getattr(obj, "__self__", None))
+            if isinstance(obj, functools.partial):
+                queue.extend((obj.func, *obj.args, *obj.keywords.values()))
+    return found

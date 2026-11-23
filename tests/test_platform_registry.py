@@ -542,7 +542,37 @@ async def test_misconfiguration_still_refuses_to_start(aiohttp_server, case, err
         await case(aiohttp_server)
 
 
-async def test_a_new_platform_needs_only_a_table_entry(aiohttp_client):
+async def _inbound_rig(registry, database_url):
+    """The telegram stream reader, and a runner over one older telegram row."""
+    import asyncio
+    import functools
+
+    import sqlalchemy as sa
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from nora.app.bridge_queue import DbSpeakingLocks, StreamReader, WorkRunner
+    from nora.infra.sql.bridge_store import SqlBridgeStore
+    from nora.infra.sql.schema import BRIDGE_WORK
+    from tests.integration.test_platform_liveness import _CountingRedis, _ElectedStore
+
+    redis = _CountingRedis()
+    reader = asyncio.ensure_future(StreamReader(
+        platform="telegram", account_key="a", redis=redis, store=_ElectedStore(),
+        wait_live=functools.partial(registry.wait_live, "telegram")).run())
+    engine = create_async_engine(database_url)
+    store = SqlBridgeStore(engine)
+    async with engine.begin() as conn:
+        for platform in ("telegram", "sibling"):  # telegram's row is older
+            await conn.execute(sa.insert(BRIDGE_WORK).values(
+                kind="participation", ordinal=0, platform=platform,
+                account_key="a", conversation_id="g", payload={}))
+    runner = WorkRunner(store=store, redis=None, ingest=None, engagement=None,
+                        slots=None, db_locks=DbSpeakingLocks(store), adapters={},
+                        live_platforms=registry.live_platforms)
+    return redis, reader, runner, engine
+
+
+async def test_a_new_platform_needs_only_a_table_entry(aiohttp_client, clean_pg_url):
     """The abstraction, end to end. A test-only `telegram` row — a fake adapter
     on the shared `DegradeLatch` and one `PlatformEntry` — goes through boot
     degrade, the state gauge, `/health`, the gated listener, recovery and
@@ -564,15 +594,20 @@ async def test_a_new_platform_needs_only_a_table_entry(aiohttp_client):
     identity = PlatformIdentity(platform="telegram", primary="tg-nora")
     fake = FakePlatformAdapter(
         "telegram", identities=[RuntimeError("logged out"), identity])
+    sibling = FakePlatformAdapter("sibling")  # a live row beside it in the table
 
     async def build(section, ctx):
         return Built(fake, bridge=False)
 
-    table = (*PLATFORMS, PlatformEntry("telegram", build))
+    async def build_sibling(section, ctx):
+        return Built(sibling, bridge=False)
+
+    table = (*PLATFORMS, PlatformEntry("telegram", build),
+             PlatformEntry("sibling", build_sibling))
     cfg = SimpleNamespace(
         signal=_SignalCfg(base_url="", account="", enabled=False),
         discord=_DiscordCfg(), whatsapp=_WhatsAppCfg(), instagram=_InstagramCfg(),
-        telegram=SimpleNamespace(enabled=True))
+        telegram=SimpleNamespace(enabled=True), sibling=SimpleNamespace(enabled=True))
     metrics = Metrics()
 
     registry = await AdapterRegistry.from_config(cfg, metrics=metrics, table=table)
@@ -611,9 +646,16 @@ async def test_a_new_platform_needs_only_a_table_entry(aiohttp_client):
     target = ConversationTarget(platform="telegram", conversation_id="g",
                                 conversation_type="group")
     assert not (await fake.send(target=target, text="hi")).ok
+    # Its stream reader makes no stream call, and the work runner claims the
+    # live sibling's row first and never the OLDER degraded row (real SQL).
+    redis, reader, runner, engine = await _inbound_rig(registry, clean_pg_url)
+    lane = frozenset({"participation"})
     for _ in range(5):
         await asyncio.sleep(0)
-    assert fake.listen_calls == 0 and fake.sent == []
+    assert fake.listen_calls == 0 and fake.sent == [] and redis.calls == []
+    first = await runner._claim_next(lane)
+    assert first is not None and first.platform == "sibling"
+    assert await runner._claim_next(lane) is None
 
     # Recovery promotes it: identity first, then the listener opens.
     async def no_wait(seconds):
@@ -623,9 +665,14 @@ async def test_a_new_platform_needs_only_a_table_entry(aiohttp_client):
     for _ in range(5):
         await asyncio.sleep(0)
     assert seen == [True]
+    assert redis.calls, "the reader made its first stream call once live"
+    promoted = await runner._claim_next(lane)
+    assert promoted is not None and promoted.platform == "telegram"
     assert registry.state_of("telegram") == "live"
     assert (gauge("live"), gauge("degraded")) == (1.0, 0.0)
     assert (await fake.send(target=target, text="hi")).ok and len(fake.sent) == 1
     entry = (await (await client.get("/health")).json())["platforms"]["telegram"]
     assert entry["state"] == "live" and entry["account"] == "tg-nora"
     task.cancel()
+    await asyncio.gather(task, reader, return_exceptions=True)
+    await engine.dispose()

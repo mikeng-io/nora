@@ -134,3 +134,28 @@ def test_an_unhealthy_or_restarted_nora_still_fails_with_platform_warnings_wired
     monkeypatch.setattr(vd.time, 'sleep', lambda s: None)
     with pytest.raises(RuntimeError, match=match):
         vd.verify_services('nora', {'nora': 'synthetic-image'}, settle=0, timeout=0)
+
+
+def test_a_failed_health_read_through_the_komodo_wrapper_is_only_a_warning(
+        monkeypatch, capsys):
+    """Komodo replaces `_docker` with a wrapper that raises its own
+    `CommandError` (`scripts/komodo_deploy.py`). An optional `/health` read
+    that fails that way after `VERIFIED` must stay a warning, never fail the
+    deploy."""
+    spec = importlib.util.spec_from_file_location(
+        "komodo_deploy", SCRIPT.with_name("komodo_deploy.py"))
+    assert spec and spec.loader
+    komodo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(komodo)
+    vd = _load()
+    monkeypatch.setattr(vd, 'image_id', lambda image: 'sha256:new')
+    monkeypatch.setattr(vd, 'containers_for_services', lambda project, services: [
+        dict(_row(), service='nora', container_id='c1')])
+
+    def wrapper(*args):
+        raise komodo.CommandError("readback", 124, None)
+
+    monkeypatch.setattr(vd, '_docker', wrapper)
+    vd.verify_services('nora', {'nora': 'synthetic-image'}, settle=0, timeout=0)
+    out = capsys.readouterr().out
+    assert "VERIFIED" in out and "WARNING: could not read Nora's /health" in out

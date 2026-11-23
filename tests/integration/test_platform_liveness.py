@@ -239,6 +239,72 @@ async def _no_wait(seconds: float) -> None:
     return None
 
 
+class _Addressed:
+    """`LessonEvidence`'s store: records which ids it was asked to match."""
+
+    def __init__(self) -> None:
+        self.self_ids: frozenset[str] = frozenset()
+
+    async def last_run_ms(self, *, adaptor, key):
+        return None
+
+    async def addressed_since(self, *, self_ids, **kwargs):
+        self.self_ids = frozenset(self_ids)
+        return []
+
+
+class _AliasConsumers:
+    """The long-lived holders of `self_aliases()`, wired the way composition
+    wires them (`composition_platforms.policies`, `composition_dream`), and
+    each exercised on Nora's promoted Telegram id."""
+
+    def __init__(self, registry) -> None:
+        from types import SimpleNamespace
+
+        from nora.engagement.mentions import MentionRenderer
+        from nora.ingest.policy import MentionPolicy, ReplyToNoraPolicy
+        from nora.language.lessons import LessonEvidence, LessonsKey
+
+        view = registry.self_aliases()
+        self.mention = MentionPolicy(view)
+        self.reply = ReplyToNoraPolicy(view)
+        nobody = SimpleNamespace(resolve=lambda platform, value: None)
+        self.renderer = MentionRenderer(persons=nobody, display_name="Nora",
+                                        self_ids=view, metrics=Metrics())
+        self.addressed = _Addressed()
+        self.lessons = LessonEvidence(
+            store=self.addressed, book=None,
+            keys={"u": LessonsKey(unit="u", rooms=())}, clock_ms=lambda: 10**12,
+            correction_quiet_seconds=60, self_ids=view)
+
+    async def see_her(self):
+        from types import SimpleNamespace
+
+        from nora.domain.models import NormalizedMessage, Quote
+
+        def message(**kw):
+            return NormalizedMessage(
+                platform="telegram", conversation_id="g", conversation_type="group",
+                sender_id="someone", sender_name=None, timestamp=1, body="hi", raw={},
+                **kw)
+
+        mention = await self.mention.should_engage(
+            message=message(mentions=frozenset({"tg-nora"})))
+        reply = await self.reply.should_engage(message=message(
+            quote=Quote(author_id="tg-nora", text="", quoted_ts=1)))
+        rendered = await self.renderer._handle(
+            SimpleNamespace(ids=("tg-nora",)), "telegram")
+        await self.lessons.corrections("u")
+        seen = {"mention_policy": mention.engage, "reply_policy": reply.engage,
+                "renderer": rendered == "@Nora",
+                "lessons": "tg-nora" in self.addressed.self_ids}
+        return seen
+
+
+def _alias_consumers(registry) -> _AliasConsumers:
+    return _AliasConsumers(registry)
+
+
 class _FakeTime:
     """Records every backoff sleep and every attempt bound; a hung attempt is
     abandoned at its bound on THIS clock, not the event loop's."""
@@ -300,6 +366,8 @@ async def test_promotion_registers_identity_before_the_first_event(
     runner = WorkRunner(store=_ClaimProbe(), redis=None, ingest=None,
                         engagement=None, slots=None, db_locks=None, adapters={},
                         live_platforms=registry.live_platforms)
+    consumers = _alias_consumers(registry)  # built BEFORE promotion, as at startup
+    assert not any((await consumers.see_her()).values())
     time = _FakeTime()
     try:
         await _settle()
@@ -321,6 +389,9 @@ async def test_promotion_registers_identity_before_the_first_event(
     if hung:
         assert time.now == 10.0 + 5.0  # abandoned at 10 s, then the 5 s backoff
     assert probes == {"listen": True, "stream": True, "claim": True}
+    assert await consumers.see_her() == {
+        "mention_policy": True, "reply_policy": True, "renderer": True,
+        "lessons": True}
 
 
 async def test_platform_state_gauge_is_one_hot_and_follows_promotion():
