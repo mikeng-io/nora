@@ -374,7 +374,12 @@ async def _generate_image__prepare(c):
 
 
 async def _generate_image__gif(c):
-    if c.gif_frames and not c.image_generator.max_gif_frames:
+    if c.gif_frames is None:
+        return (False, None, None)
+    if c.gif_frames < 2:
+        note = "A GIF needs 2 to 16 frames. Leave gif_frames out for a still picture."
+        return (True, None, {"status": "unavailable", "note": note})
+    if not c.image_generator.max_gif_frames:
         note = "I can only make still images right now, not GIFs. Say so, and offer a still."
         return (True, None, {"status": "unavailable", "note": note})
     return (False, None, None)
@@ -388,7 +393,7 @@ async def _generate_image__generate(c):
             size=c.image_size,
             quality=c.quality_kind,
             reference_resolver=c.resolve if c.refs else None,
-            gif_frames=c.gif_frames or None,
+            gif_frames=c.gif_frames,
         )
     except Exception:
         log.exception("generate_image raised")

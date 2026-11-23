@@ -11,7 +11,7 @@ import re
 import tomllib
 from functools import cached_property
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from pydantic import (
@@ -2802,9 +2802,10 @@ class _GptImageLaneConfig(BaseModel):
     standard_quality: _GptImageQuality = "medium"
     high_quality: _GptImageQuality = "high"
     timeout_seconds: float = Field(default=180.0, gt=0)
-    #: References per call. Unset is OpenAI's documented limit for gpt-image (16,
-    #: DEC-307); a value may only lower it. The bound is `GPT_IMAGE_MAX_REFERENCE_IMAGES`.
+    #: References per call; unset is `GPT_IMAGE_MAX_REFERENCE_IMAGES`, a value only lowers it.
     max_reference_images: int | None = Field(default=None, ge=1, le=16)
+    #: Most GIF frames (the API takes 2..16); 0 makes stills only (a model before gpt-image-2.6).
+    max_gif_frames: Literal[0] | Annotated[int, Field(ge=2, le=16)] = 0
 
 
 class OpenAICodexImageGenConfig(_GptImageLaneConfig):

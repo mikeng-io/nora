@@ -103,9 +103,12 @@ async def test_a_gif_asks_for_frames_and_comes_back_as_a_gif(api_server, asked, 
     assert (body["output_format"], body["frame_count"], body["size"]) == ("gif", sent, "auto")
 
 
-async def test_a_stills_only_lane_makes_no_gif_call(api_server):
+@pytest.mark.parametrize("cap", [0, 1])  # one frame is below the API's minimum of two
+async def test_a_stills_only_lane_makes_no_gif_call(api_server, cap):
     base, api = api_server
-    result = await _gen(base).generate(prompt="a ball", gif_frames=6)
+    gen = _gen(base, max_gif_frames=cap)
+    assert gen.max_gif_frames == 0
+    result = await gen.generate(prompt="a ball", gif_frames=6)
     assert (result.status, result.reason) == ("unavailable", "no_gif")
     assert api["requests"] == []
 
@@ -162,7 +165,7 @@ def test_the_api_section_is_validated():
     assert cfg.openai.api_key_env == "OPENAI_IMAGE_API_KEY"
     assert cfg.openai.max_gif_frames == 0  # stills unless the operator turns GIFs on
     for bad in ({"refresh_token_env": "X"}, {"standard_quality": "ultra"}, {"timeout_seconds": 0},
-                {"max_gif_frames": 17}):
+                {"max_gif_frames": 17}, {"max_gif_frames": 1}):
         with pytest.raises(ValidationError):
             ImageGenConfig.model_validate({"openai": bad})
 

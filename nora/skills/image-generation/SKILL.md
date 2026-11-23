@@ -2,7 +2,7 @@
 name: image-generation
 description: >-
   Load before you make or edit any image: a drawing, a picture of someone,
-  yourself in a scene, a photo turned into something else. Not for finding
+  yourself in a scene, a photo or sticker turned into something else, a GIF. Not for finding
   or resending an image you already made, or for reading a photo someone
   sent: those are lookups, and loading this costs a turn.
 ---
@@ -91,7 +91,7 @@ style for these pictures. Not photorealism, tactile doll rendering, Pixar-style
 exaggeration or generic AI-girl. A realistic setting or cinematic light is fine;
 your proportions and 2D face stay.
 
-Eight anchors, stable in every current picture: mascot proportions; compact
+Eight anchors, stable in every picture: mascot proportions; compact
 dark-brown high bun and broad face-framing locks; option08 eyes and one tiny
 mouth without a nose marker; cheek blush; five-petal Bauhinia clasp; ivory
 blouse and navy waistcoat with three copper frogs; grey hooded coat with ivory
@@ -111,13 +111,16 @@ they combine. When you are in it, say «do not redesign the character».
 
 For an edit, write «change only» the change, then what stays: identity,
 proportions, clothing, layout, colour. One change at a time; when a result
-drifts, restate what stays. For a GIF set `gif_frames`.
+drifts, restate what stays.
+
+A GIF (`gif_frames`) only when movement is asked for: the scene, then one
+movement, camera and style fixed, ending where it starts.
 
 ### xAI grok-imagine-image-2.0
 
-Name the desired aesthetic and aspect. Without an explicit aspect, the first
-reference determines framing. Refine the held result instead of starting over.
+Name the aesthetic and aspect. Without an aspect, the first
+reference sets the framing. Refine the held result instead of starting over.
 
 ### xAI grok-imagine-image-quality
 
-Retired; requesting it buys no quality improvement.
+Retired; it buys no better quality.

@@ -90,7 +90,9 @@ class GptImageGenerator:
         max_gif_frames: int = 0,
     ) -> None:
         self._max_refs = _reference_limit(max_reference_images, GPT_IMAGE_MAX_REFERENCE_IMAGES)
-        self._max_gif_frames = min(max(max_gif_frames, 0), GPT_IMAGE_MAX_GIF_FRAMES)
+        # Below the API's minimum of two frames a GIF cannot be asked for at all.
+        cap = min(max_gif_frames, GPT_IMAGE_MAX_GIF_FRAMES)
+        self._max_gif_frames = cap if cap >= 2 else 0
         self._model = model
         self._standard_quality = standard_quality
         self._high_quality = high_quality

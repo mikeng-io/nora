@@ -83,6 +83,14 @@ async def test_a_stills_only_model_refuses_a_gif_before_any_call(persons):
     assert gen.calls == [] and out.attachments == []
 
 
+@pytest.mark.parametrize("frames", [0, 1])
+async def test_fewer_than_two_frames_is_refused_not_made_a_still(persons, frames):
+    gen = _Generator(max_gif_frames=16)
+    result = await _tool(persons, gen, _Deliverer())(prompt="a ball", gif_frames=frames)
+    assert result["status"] == "unavailable" and "2 to 16" in result["note"]
+    assert gen.calls == []
+
+
 async def test_a_still_asks_for_no_frames(persons):
     gen = _Generator(max_gif_frames=16)
     await _tool(persons, gen, _Deliverer())(prompt="a ball")
