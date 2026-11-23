@@ -113,8 +113,8 @@ def test_every_skill_names_no_scenario(skills):
 #: space first (`" ".join(text.split())`), which gives the SAME count for every
 #: rewrap of the same words while staying in cl100k tokens.
 _TOKEN_CEILING = 1_500
-# The current 2D Bauhinia appearance fits the default 1,500-token ceiling.
-_TOKEN_CEILINGS: dict[str, int] = {}
+# image-generation: her 2D appearance (identity, not compressible) plus the GIF rule.
+_TOKEN_CEILINGS: dict[str, int] = {"image-generation": 1_525}
 _HARD_LIMIT = 5_000
 _DESCRIPTION_CEILING = 80
 
@@ -716,7 +716,7 @@ def _live_inputs() -> tuple[tuple[str, str], ...]:
             return 3
 
         async def generate(self, *, prompt, reference_images=None, size=None,
-                            quality=None, reference_resolver=None) -> ImageResult:
+                            quality=None, reference_resolver=None, gif_frames=None) -> ImageResult:
             return ImageResult(
                 status="ok", artifact=f"{SENTINEL_ORIGIN}/img/xYz9", provider="test",
             )

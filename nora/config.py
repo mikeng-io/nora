@@ -11,7 +11,7 @@ import re
 import tomllib
 from functools import cached_property
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from pydantic import (
@@ -2790,59 +2790,58 @@ class XaiImageGenConfig(BaseModel):
     refresh_interval_hours: float = Field(default=24.0, ge=1, le=72)
 
 
-_GptImageQuality = Literal["low", "medium", "high", "auto"]
+_GptImageQuality = Literal["low", "medium", "high", "xhigh", "max", "auto"]
 
 
-class OpenAICodexImageGenConfig(BaseModel):
-    """`[image_gen.openai_codex]`: gpt-image via a ChatGPT subscription (DEC-304).
-
-    `model` is the image renderer called directly;
-    `responses_model` is retained for old config files but unused by the
-    direct Images API. `standard_quality` / `high_quality` map the port's
-    `quality="standard"` / `"quality"`. `refresh_token_env` NAMES the env var
-    holding the BOOTSTRAP refresh token `nora openai-codex-login` writes
-    (DEC-8); the rotating token after it lives in the state file.
-    `keepalive` / `refresh_interval_hours` as `[image_gen.xai]` (DEC-308).
-    """
+class _GptImageLaneConfig(BaseModel):
+    """Every GPT Image lane's knobs; the qualities map `"standard"` / `"quality"`."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    issuer_url: str = "https://auth.openai.com"
     model: str = Field(default="gpt-image-2.6-flare", min_length=1)
-    responses_model: str = Field(default="gpt-5.5", min_length=1)
     standard_quality: _GptImageQuality = "medium"
     high_quality: _GptImageQuality = "high"
     timeout_seconds: float = Field(default=180.0, gt=0)
-    # Names an env var, not a secret.
-    refresh_token_env: str = Field(default="OPENAI_CODEX_REFRESH_TOKEN", min_length=1)
-    #: References per call. Unset is OpenAI's documented limit for gpt-image (16,
-    #: DEC-307); a value may only lower it. The bound is `CODEX_MAX_REFERENCE_IMAGES`.
+    #: References per call; unset is `GPT_IMAGE_MAX_REFERENCE_IMAGES`, a value only lowers it.
     max_reference_images: int | None = Field(default=None, ge=1, le=16)
+    #: Most GIF frames (the API takes 2..16); 0 makes stills only (a model before gpt-image-2.6).
+    max_gif_frames: Literal[0] | Annotated[int, Field(ge=2, le=16)] = 0
+
+
+class OpenAICodexImageGenConfig(_GptImageLaneConfig):
+    """`[image_gen.openai_codex]`: gpt-image via a ChatGPT subscription (DEC-304).
+
+    `responses_model` is a legacy no-op. `refresh_token_env` NAMES the env var
+    holding the BOOTSTRAP token `nora openai-codex-login` writes (DEC-8); the
+    rotating one lives in the state file. `keepalive` / `refresh_interval_hours`
+    as `[image_gen.xai]` (DEC-308).
+    """
+
+    issuer_url: str = "https://auth.openai.com"
+    responses_model: str = Field(default="gpt-5.5", min_length=1)
+    refresh_token_env: str = Field(default="OPENAI_CODEX_REFRESH_TOKEN", min_length=1)
     keepalive: bool = True
     refresh_interval_hours: float = Field(default=24.0, ge=1, le=72)
 
 
+class OpenAIImageGenConfig(_GptImageLaneConfig):
+    """`[image_gen.openai]`: gpt-image on the platform API, billed per token; the cap is the
+    project's enforced hard spend limit. `api_key_env` NAMES the key's env var, never the key."""
+
+    api_key_env: str = Field(default="OPENAI_IMAGE_API_KEY", min_length=1)
+
+
 class ImageGenConfig(BaseModel):
-    """The image-generation tool's gate (DEC-137).
+    """The image-generation tool's gate (DEC-137): off by default, and a
+    misconfigured lane degrades the tool to `unavailable`, never a crash.
 
-    `enabled` defaults **False**, the same reasoning every other optional
-    subsystem's gate gives: a new capability does not switch itself on. A
-    misconfigured lane degrades the tool to `unavailable` rather than crashing
-    the daemon (the DEC-136 RustFS posture).
-
-    `provider` is the port selector: the composition root builds the
-    `ImageGenerator` implementation the name selects (`xai`, DEC-137, or
-    `openai_codex`, DEC-304); the model-facing tool never names a provider.
-    It stays a plain string: an unknown name degrades the tool to
-    `unavailable` with a logged warning, it does not stop the daemon.
-
-    `allow_reference_images` is the privacy gate for the edits API: reference
-    images (a friend's photo) upload to a third-party cloud, so the default
-    is OFF, and when ON the adapter still enforces that every reference is a
-    Nora-held custody handle (never an external URL).
-
-    Credential env vars follow the DEC-8 `api_key_env`-style convention:
-    config names the env var, the host's `.env` holds the secret.
+    `provider` selects the `ImageGenerator` (`xai`, DEC-137, `openai_codex`,
+    DEC-304, or `openai`); the model-facing tool never names one, and an
+    unknown name is `unavailable` with a logged warning.
+    `allow_reference_images` gates the edits API: a reference (a friend's
+    photo) uploads to a third-party cloud, so it is OFF, and when ON every
+    reference is still a Nora-held custody handle, never an external URL.
+    Credentials: config names the env var (DEC-8); the secret lives outside.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -2854,6 +2853,7 @@ class ImageGenConfig(BaseModel):
 
     xai: XaiImageGenConfig = XaiImageGenConfig()
     openai_codex: OpenAICodexImageGenConfig = OpenAICodexImageGenConfig()
+    openai: OpenAIImageGenConfig = OpenAIImageGenConfig()
 
 
 class MiniMaxCnVideoGenConfig(BaseModel):

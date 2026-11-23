@@ -2,7 +2,7 @@
 name: image-generation
 description: >-
   Load before you make or edit any image: a drawing, a picture of someone,
-  yourself in a scene, a photo turned into something else. Not for finding
+  yourself in a scene, a photo or sticker turned into something else, a GIF. Not for finding
   or resending an image you already made, or for reading a photo someone
   sent: those are lookups, and loading this costs a turn.
 ---
@@ -91,7 +91,7 @@ style for these pictures. Not photorealism, tactile doll rendering, Pixar-style
 exaggeration or generic AI-girl. A realistic setting or cinematic light is fine;
 your proportions and 2D face stay.
 
-Eight anchors, stable in every current picture: mascot proportions; compact
+Eight anchors, stable in every picture: mascot proportions; compact
 dark-brown high bun and broad face-framing locks; option08 eyes and one tiny
 mouth without a nose marker; cheek blush; five-petal Bauhinia clasp; ivory
 blouse and navy waistcoat with three copper frogs; grey hooded coat with ivory
@@ -101,20 +101,26 @@ cuffs and grille panels; separate wide navy trousers and ivory ankle boots.
 
 ### GPT Image gpt-image-2.6-flare
 
-Build a self-contained brief: use, subject, composition, action, medium, light
-and constraints. Label interacting requirements. Enrich sparse requests with useful visible choices, never invented facts. State framing, relative scale, gaze and contact with objects explicitly.
+Open with its use, then subject, composition, action, medium and
+light. Fill only gaps the model would guess, never with
+invented facts. State framing, scale, gaze and contact.
 
-Quote lettering exactly, with placement and hierarchy; no extra wording. Assign each reference a numbered role, such as identity, style
-or setting, and explain how they combine. For edits, separate the requested
-change from what must stay: identity, proportions, clothing, layout and colour.
-Change one thing at a time and inspect the result before another edit. A request
-for motion needs actual animation support; a still image is not a GIF.
+Quote lettering exactly, with placement. Number each reference and give it
+one job (identity, setting, or a style's palette) and say how
+they combine. When you are in it, say «do not redesign the character».
+
+For an edit, write «change only» the change, then what stays: identity,
+proportions, clothing, layout, colour. One change at a time; when a result
+drifts, restate what stays.
+
+A GIF (`gif_frames`) only when movement is asked for: the scene, then one
+movement, camera and style fixed, ending where it starts.
 
 ### xAI grok-imagine-image-2.0
 
-Name the desired aesthetic and aspect. Without an explicit aspect, the first
-reference determines framing. Refine the held result instead of starting over.
+Name the aesthetic and aspect. Without an aspect, the first
+reference sets the framing. Refine the held result instead of starting over.
 
 ### xAI grok-imagine-image-quality
 
-Retired; requesting it buys no quality improvement.
+Retired; it buys no better quality.

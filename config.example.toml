@@ -381,8 +381,21 @@ high_quality = "high"
 refresh_token_env = "OPENAI_CODEX_REFRESH_TOKEN"
 timeout_seconds = 180.0
 # max_reference_images = 16
+# Most frames in a looping GIF (2..16); 0 makes stills only, as any model before
+# gpt-image-2.6 must.
+max_gif_frames = 0
 keepalive = true
 refresh_interval_hours = 24.0
+
+[image_gen.openai]
+# The platform API, billed per token; quality is low, medium, high, xhigh, max or auto.
+model = "gpt-image-2.6-flare"
+standard_quality = "medium"
+high_quality = "high"
+api_key_env = "OPENAI_IMAGE_API_KEY"
+timeout_seconds = 180.0
+# max_reference_images = 16
+max_gif_frames = 0
 
 [video_gen]
 enabled = false
