@@ -84,6 +84,10 @@ async def test_forward_reads_the_outcome():
         _answer(503, "unavailable"),
         _answer(200, "unavailable"),   # status disagrees with the outcome
         _answer(403, "denied"),
+        _answer(202, "pending"),
+        _answer(200, "unsupported"),
+        _answer(200, "incomplete"),
+        _answer(200, "uncertain"),
         _answer(202, "complete"),      # status disagrees with the outcome
         _answer(400),
         _answer(200, raw="[]"),        # not an envelope
