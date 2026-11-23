@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import secrets
 import uuid
 from pathlib import Path
@@ -141,7 +142,7 @@ async def forward_utterance(
     same `operation_id`, up to three times; only a settled `complete` there
     is True. Every other answer, a redirect included, is False after one
     POST. The POST, the read-backs and the gaps share one deadline, the
-    session's total timeout.
+    session's total timeout, of which the POST may use at most half.
 
     `token` is the shared service bearer; Nora refuses the utterance without it.
 
@@ -168,8 +169,11 @@ async def forward_utterance(
     traceparent = f"00-{secrets.token_hex(16)}-{secrets.token_hex(8)}-01"
     headers = {"Authorization": f"Bearer {token}", "traceparent": traceparent}
     total = session.timeout.total
-    deadline = None if total is None else asyncio.get_running_loop().time() + total
-    outcome = await _submit(session, url, request, headers, deadline)
+    now = asyncio.get_running_loop().time()
+    deadline = None if total is None else now + total
+    # The POST gets at most half the budget, so a read-back always fits after it.
+    post_deadline = None if total is None else now + total / 2
+    outcome = await _submit(session, url, request, headers, post_deadline)
     if outcome in _READ_BACK_ON:
         outcome = await _read_back(session, f"{url}/{operation_id}", headers, deadline)
     if outcome == "complete":
@@ -191,7 +195,9 @@ async def _answer(session: aiohttp.ClientSession, method: str, url: str,
     left = _left(deadline)
     if left is not None and left <= 0:
         return "lost"
-    timeout = aiohttp.ClientTimeout(total=left) if left is not None else session.timeout
+    # ceil_threshold=inf: aiohttp would otherwise round a long timer up to a second.
+    timeout = (aiohttp.ClientTimeout(total=left, ceil_threshold=math.inf)
+               if left is not None else session.timeout)
     try:
         async with session.request(method, url, allow_redirects=False,
                                    timeout=timeout, **kwargs) as response:

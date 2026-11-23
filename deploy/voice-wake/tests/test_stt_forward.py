@@ -7,7 +7,8 @@ as delivered, and an array `outcome` raises; reduce the check to the status
 and `rejected` under 200 does; follow redirects and the 307 does; drop the
 read-back and a dropped answer after Nora recorded the utterance, or a
 `pending` that settles, is lost; give each request its own timeout and a
-stalled Nora holds the utterance four times as long; drop the
+stalled Nora holds the utterance four times as long; let the POST use the
+whole budget and a stalled POST leaves no time to read back; drop the
 `traceparent` and the POST and its read-back carry no trace.
 """
 
@@ -250,18 +251,17 @@ async def test_a_lost_or_unsettled_answer_is_read_back():
 
 
 async def _stall(request: web.Request) -> web.Response:
+    request.app["seen"].append({"get": request.match_info.get("operation_id")})
     await asyncio.sleep(1.0)
     return web.json_response(_envelope("complete"))
 
 
-async def test_one_deadline_covers_the_post_and_every_read_back():
-    app = web.Application()
-    app.router.add_post(PATH, _stall)
-    app.router.add_get(PATH + "/{operation_id}", _stall)
+async def _timed_forward(app: web.Application, budget: float):
     server = TestServer(app)
     await server.start_server()
     try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=0.3)) as session:
+        timeout = aiohttp.ClientTimeout(total=budget)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             started = time.monotonic()
             ok = await forward_utterance(
                 session, nora_url=str(server.make_url("/")), user_id="u1",
@@ -270,10 +270,40 @@ async def test_one_deadline_covers_the_post_and_every_read_back():
             elapsed = time.monotonic() - started
     finally:
         await server.close()
+    return ok, elapsed
+
+
+async def test_one_deadline_covers_the_post_and_every_read_back():
+    app = web.Application()
+    app["seen"] = []
+    app.router.add_post(PATH, _stall)
+    app.router.add_get(PATH + "/{operation_id}", _stall)
+    ok, elapsed = await _timed_forward(app, 0.3)
     assert ok is False
-    assert elapsed <= 0.3 + 0.15
+    assert elapsed <= 0.3 + 0.1
+    assert [entry for entry in app["seen"] if entry["get"]], "no read-back was attempted"
 
 
+async def test_a_stalled_post_leaves_time_to_read_back():
+    app = web.Application()
+    app["posts"], app["gets"] = 0, 0
+
+    async def recorded_then_stalled(request: web.Request) -> web.Response:
+        request.app["posts"] += 1
+        await asyncio.sleep(1.0)  # recorded; the answer is held past the POST's share
+        return web.json_response(_envelope("complete"))
+
+    async def settled(request: web.Request) -> web.Response:
+        request.app["gets"] += 1
+        status, body = _read("ok", _envelope("complete"))
+        return web.json_response(body, status=status)
+
+    app.router.add_post(PATH, recorded_then_stalled)
+    app.router.add_get(PATH + "/{operation_id}", settled)
+    ok, elapsed = await _timed_forward(app, 0.4)
+    assert ok is True
+    assert (app["posts"], app["gets"] >= 1) == (1, True)
+    assert elapsed <= 0.4 + 0.1
 async def test_the_warning_says_whether_delivery_is_unknown(caplog):
     still = _read("ok", _envelope("pending"))
     await _forward(_answer(202, "pending"), reads=[still] * 3)
