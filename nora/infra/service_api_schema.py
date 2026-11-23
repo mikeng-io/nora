@@ -36,6 +36,7 @@ _COMPONENTS: Final[dict[str, Any]] = {
     "VoiceQueryKind": voice.VoiceQueryKind,
     "IntakeOperationKind": voice.IntakeOperationKind,
     "VoicePlayState": voice.VoicePlayState,
+    "VoiceJoinState": voice.VoiceJoinState,
     **{
         tp.__name__: tp
         for route in ROUTES
@@ -139,6 +140,7 @@ BLOB_PUT: Final = "BlobPutEnvelope"
 VOICE_ANSWER_TYPES: Final[dict[str, type]] = {
     "VoiceConnectionEnvelope": voice.VoiceConnectionState,
     "VoicePlayEnvelope": voice.VoicePlayState,
+    "VoiceJoinEnvelope": voice.VoiceJoinState,
     "VoiceReportEnvelope": voice.VoiceReportPayload}
 VOICE_ANSWERS: Final[dict[str, str]] = {
     kind: next(name for name, tp in VOICE_ANSWER_TYPES.items() if tp is done)

@@ -136,7 +136,7 @@ def test_a_report_answer_and_a_connection_answer_never_pass_for_each_other():
 def test_each_kind_complete_carries_what_the_kind_returns():
     """A connection kind's `complete` is the snapshot (its kernel fields required);
     a report's is the hub's status. Refusals keep `error` without a snapshot."""
-    connection, report = validator(VOICE_ANSWERS["join"]), validator(VOICE_ANSWERS["report"])
+    connection, report = validator(VOICE_ANSWERS["leave"]), validator(VOICE_ANSWERS["report"])
     snapshot = {"generation": "gen-1", "channel_id": "c1", "voice": "connected"}
 
     for payload in ({}, {"state": {}}, {"state": None}, {"status": "ok"}):
@@ -159,6 +159,17 @@ def test_a_play_complete_names_its_playback():
     assert play.is_valid(_settled({"state": {**snapshot, "playback_id": "pb-1"}}))
     assert play.is_valid({**_settled({"state": snapshot, "error": {
         "kind": "generation_conflict", "message": ""}}), "outcome": "rejected"})
+
+
+def test_a_join_complete_carries_its_playback_key():
+    """`null` when idle, a non-empty id while playing; the key is never left out."""
+    join = validator(VOICE_ANSWERS["join"])
+    snapshot = {"generation": "gen-1", "channel_id": "c1"}
+
+    assert not join.is_valid(_settled({"state": snapshot}))
+    assert not join.is_valid(_settled({"state": {**snapshot, "playback_id": ""}}))
+    assert join.is_valid(_settled({"state": {**snapshot, "playback_id": None}}))
+    assert join.is_valid(_settled({"state": {**snapshot, "playback_id": "pb-1"}}))
 
 
 def test_an_ok_status_carries_the_snapshot():

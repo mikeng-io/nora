@@ -572,7 +572,7 @@ async def test_the_bridge_owns_the_whole_graph_while_the_app_proxies(bridge):
 
     # ONE session, ONE generation — the status query says what the app sees.
     state = (await _voice(http, "status", guild_id=GUILD))["payload"]
-    assert state == {"connected": True, "session": True,
+    assert state == {"connected": True, "session": True, "playback_id": "pb-1",
                      "generation": GEN, "channel_id": VOICE_CHANNEL}
 
     # A second track queues behind the first, through the same session.

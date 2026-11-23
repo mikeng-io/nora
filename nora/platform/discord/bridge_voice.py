@@ -86,7 +86,8 @@ class BridgeVoiceSurface:
         hub = self._hub()
         session = hub.session_for(guild_id) if hub is not None else None
         return {"generation": session.generation if session is not None else None,
-                "channel_id": hub.channel_for(guild_id) if hub is not None else None}
+                "channel_id": hub.channel_for(guild_id) if hub is not None else None,
+                "playback_id": session.playback_id if session is not None else None}
 
     async def submit_operation(self, req: web.Request) -> web.Response:
         # The JSON body carries a `speak`'s audio as base64: 4/3 of the bound, and room.
@@ -157,12 +158,13 @@ class BridgeVoiceSurface:
             else:
                 await hub.leave(guild_id)
         except GenerationConflict as exc:
-            # The controller restarted or replaced the connection behind the
-            # cache: adopt the generation its rejection names. A snapshot with
-            # no connection drops the session; no snapshot keeps it.
+            # The controller restarted or replaced the connection behind the cache:
+            # adopt the generation its rejection names. Only a snapshot stating no
+            # connection drops the session; one without `voice`, or none, keeps it.
             state = exc.state
+            voice = state.get("voice") if state is not None else None
             if state is not None and not session.adopt(state) \
-                    and state.get("voice") != "connected":
+                    and isinstance(voice, str) and voice != "connected":
                 hub.drop(guild_id)
             return "rejected", self._refusal(guild_id, "generation_conflict")
         except VoiceControllerNoConnection:

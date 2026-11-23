@@ -132,8 +132,16 @@ class VoicePlayState(VoiceConnectionState):
     playback_id: str
 
 
+@dataclass(frozen=True)
+class VoiceJoinState(VoiceConnectionState):
+    """A `join`'s snapshot: the playback still live on the connection, or `None` idle."""
+
+    playback_id: str | None
+
+
 #: Fields a caller later matches against an event: a non-empty string on the wire.
-MATCHED_IDS: Final[Mapping[type, tuple[str, ...]]] = {VoicePlayState: ("playback_id",)}
+MATCHED_IDS: Final[Mapping[type, tuple[str, ...]]] = {
+    VoicePlayState: ("playback_id",), VoiceJoinState: ("playback_id",)}
 
 
 @dataclass(frozen=True)
@@ -217,9 +225,10 @@ class IntakeOperationReadEnvelope(ReadEnvelope):
 
 
 #: The answer each voice kind's `complete` carries: a report the hub's own, a
-#: play the snapshot naming its playback, any other kind the connection snapshot.
+#: play or a join the snapshot with its playback, any other kind the snapshot.
 VOICE_COMPLETE: Final[Mapping[VoiceOperationKind, type]] = {
-    kind: {"report": VoiceReportPayload, "play": VoicePlayState}.get(kind, VoiceConnectionState)
+    kind: {"report": VoiceReportPayload, "play": VoicePlayState,
+           "join": VoiceJoinState}.get(kind, VoiceConnectionState)
     for kind in VOICE_EFFECTS}
 
 #: Each operation request's kind, mapped to the effect it carries.

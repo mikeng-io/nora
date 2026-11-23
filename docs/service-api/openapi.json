@@ -1464,6 +1464,132 @@
         "title": "VoiceConnectionState",
         "type": "object"
       },
+      "VoiceJoinEnvelope": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "complete"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "properties": {
+                    "state": {
+                      "$ref": "#/components/schemas/VoiceJoinState"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A voice operation's answer whose `complete` is VoiceJoinState.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/OperationFrom"
+          },
+          "outcome": {
+            "enum": [
+              "complete",
+              "pending",
+              "denied",
+              "rejected",
+              "unsupported",
+              "incomplete",
+              "uncertain",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceOperationPayload"
+              },
+              {
+                "$ref": "#/components/schemas/VoiceReportPayload"
+              }
+            ],
+            "title": "Payload"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/OperationWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "VoiceJoinEnvelope",
+        "type": "object"
+      },
+      "VoiceJoinState": {
+        "description": "A `join`'s snapshot: the playback still live on the connection, or `None` idle.",
+        "properties": {
+          "channel_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Id"
+          },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          },
+          "playback_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "minLength": 1,
+            "title": "Playback Id"
+          }
+        },
+        "required": [
+          "generation",
+          "channel_id",
+          "playback_id"
+        ],
+        "title": "VoiceJoinState",
+        "type": "object"
+      },
       "VoiceOperationEnvelope": {
         "additionalProperties": false,
         "description": "The answer to a voice operation; a taken `report` carries the hub's own answer.",
@@ -1838,7 +1964,7 @@
         "type": "object",
         "x-answers": {
           "join": {
-            "$ref": "#/components/schemas/VoiceConnectionEnvelope"
+            "$ref": "#/components/schemas/VoiceJoinEnvelope"
           },
           "leave": {
             "$ref": "#/components/schemas/VoiceConnectionEnvelope"
