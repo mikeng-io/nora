@@ -802,41 +802,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "blocked) so the design/system/grounding.md count-vs-block call can be revisited "
         "against real queries.",
     ),
-    # Reminders, the two halves. CREATED is the `remind` tool's own answer:
-    # `status` separates an accepted row from each way the tool refuses one, which
-    # is the only visibility into a cap that is set too tight.
-    #
-    # The help text lists ALL NINE values `nora.agent.tools._record_created` can
-    # emit, not just the caps, so a status such as `fire_turn`, `unmapped`,
-    # `unparseable`, `past` or `unavailable` is not mistaken for a typo.
-    # `unavailable` means reminders are not wired at all: an outage rather than a
-    # policy decision. Keep this list in step with `_record_created`'s call sites.
-    _CounterSpec(
-        "nora_reminders_created_total",
-        "Reminder creation attempts, by status: created; the caps' refusals "
-        "(too_soon / too_far / too_many); the turn-provenance refusal "
-        "(fire_turn); the input refusals (unmapped / unparseable / past); "
-        "screened, a proactive row whose text failed the Dreamer's "
-        "identifier/coordinate screen (design/cognition-loop/README.md D3); "
-        "refused_origin_unresolvable / refused_origin_wrong_unit / "
-        "refused_origin_not_proactive, a note-linked proactive row whose "
-        "origin room cannot be resolved, drifted across a unit, or is "
-        "not proactive-trusted — design/cognition-loop/proactive.md (#248), where "
-        "the row's destination is the note's own room, never a fallback to "
-        "home; duplicate_note, a proactive row about a note that already has "
-        "one waiting or firing (issue #158: one reminder per thing, held at "
-        "the write and by uq_reminders_proactive_open_note); the "
-        "recurrence refusals (bad_repeat, a repeat unit or every_n I do not "
-        "accept; bad_bound, a times/until that cannot be honoured or was "
-        "given with no repeat at all; too_often, a sub-day repeat faster than "
-        "[reminders].min_interval_seconds — #109's floor, where a sustained "
-        "rate means people want it finer than a room running one turn at a "
-        "time can actually serve); and unavailable, which means no "
-        "reminders store is wired, the write failed, or [reminders].timezone "
-        "does not resolve.",
-        ("status",),
-    ),
-    # FIRED is the tick's outcome per reminder, and it counts the FAILURES the
+    # The tick's outcome per reminder row, and it counts the FAILURES the
     # group never sees: `failed_policy` (trust withdrawn between setting and firing;
     # R-5 keeps that silent in the room, so this is the only trace) and
     # `failed_error` (the fire turn raised, or a crash left the row FIRING and boot

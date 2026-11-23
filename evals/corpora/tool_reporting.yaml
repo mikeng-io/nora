@@ -16,8 +16,8 @@
 # does answer, the same criterion grades a plain report as correct, so the
 # corpus is not a test that she always says "I can't".
 #
-# The four tools are ADR 0015's first batch: `where_is`, `where_been`,
-# `online_now`, `remind`. Run BEFORE and AFTER that batch, on the same build
+# The three tools are ADR 0015's first batch: `where_is`, `where_been`,
+# `online_now`. Run BEFORE and AFTER that batch, on the same build
 # otherwise, with `--judge --sample 3`.
 #
 # ANCHOR: ROOM A, the measured Signal room `tool_selection.yaml` uses, at the

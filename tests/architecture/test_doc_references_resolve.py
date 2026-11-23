@@ -446,6 +446,14 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ("design/event-abstraction/04-dispatch-and-batching.md", "tests/test_events.py"): (
         "same event-abstraction planning-doc-vs-shipped-name drift as 02-naming-rename.md"
     ),
+    ("design/event-abstraction/02-naming-rename.md", "tests/test_gathering_tools.py"): (
+        "deleted with the tag path's event tools; the record pass (6f) retires the "
+        "planning doc and removes this pin"
+    ),
+    ("design/event-abstraction/03-reminder-schema.md", "tests/test_reminder_tools.py"): (
+        "deleted with the tag path's reminder tools; the record pass (6f) retires the "
+        "planning doc and removes this pin"
+    ),
     ("docs/adr/0020-documents-are-json-specs-the-portal-renders.md",
      "nora/compute/smith/page_shell.py"): (
         "an accepted ADR names the file whose choice it reverses; the file was deleted "

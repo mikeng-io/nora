@@ -91,27 +91,6 @@
   "target": "tests/infra/test_event_citations.py::test_forgetting_the_author_of_the_message_that_raised_a_tag_turn_marks_its_event tests/infra/test_event_citations.py::test_a_tag_turn_s_event_cites_the_message_that_raised_it_and_rests_on_its_room"
  },
  {
-  "name": "review #669: event_propose hands the tag path no message id",
-  "file": "nora/agenda/adapters/tools/events.py",
-  "old": "                title=title,\n                when=due_at,\n                venue_text=venue_text or None,\n                person_names=_route_person_names,\n                platform=room.platform,\n                unit_id=_unit() or \"\",\n                message_ids=room.trigger_message_ids,\n",
-  "new": "                title=title,\n                when=due_at,\n                venue_text=venue_text or None,\n                person_names=_route_person_names,\n                platform=room.platform,\n                unit_id=_unit() or \"\",\n",
-  "target": "tests/test_gathering_tools.py::test_a_tag_turn_s_event_writes_cite_the_message_that_raised_the_turn"
- },
- {
-  "name": "review #669: event_revise hands the tag path no message id",
-  "file": "nora/agenda/adapters/tools/events.py",
-  "old": "                base_revision_id=UUID(base_revision_id) if base_revision_id else None,\n                message_ids=room.trigger_message_ids,\n            )\n        except GatheringNotFoundError:\n            _record(metrics, \"event_revise\"",
-  "new": "                base_revision_id=UUID(base_revision_id) if base_revision_id else None,\n            )\n        except GatheringNotFoundError:\n            _record(metrics, \"event_revise\"",
-  "target": "tests/test_gathering_tools.py::test_a_tag_turn_s_event_writes_cite_the_message_that_raised_the_turn"
- },
- {
-  "name": "review #669: event_set_status hands the tag path no message id",
-  "file": "nora/agenda/adapters/tools/events.py",
-  "old": "                status=parsed_status,\n                base_revision_id=UUID(base_revision_id) if base_revision_id else None,\n                platform=room.platform,\n                unit_id=_unit() or \"\",\n                message_ids=room.trigger_message_ids,",
-  "new": "                status=parsed_status,\n                base_revision_id=UUID(base_revision_id) if base_revision_id else None,\n                platform=room.platform,\n                unit_id=_unit() or \"\",",
-  "target": "tests/test_gathering_tools.py::test_a_tag_turn_s_event_writes_cite_the_message_that_raised_the_turn"
- },
- {
   "name": "review #669: the pipeline builds the Room without the triggering row",
   "file": "nora/engagement/pipeline.py",
   "old": "                trigger_message_ids=trigger_message_ids(\n                    ctx.transcript, sender_id=msg.sender_id, timestamp=msg.timestamp,\n                ),",
@@ -123,7 +102,7 @@
   "file": "nora/agent/room.py",
   "old": "        if not r.is_nora and r.sender_id == sender_id and r.ts == timestamp\n",
   "new": "        if not r.is_nora and r.sender_id == sender_id\n",
-  "target": "tests/test_gathering_tools.py::test_the_triggering_row_is_the_taggers_row_at_the_messages_own_time"
+  "target": "tests/unit/test_agent_room.py::test_the_triggering_row_is_the_taggers_row_at_the_messages_own_time"
  },
  {
   "name": "review #669: a note's lineage ignores the Rollup row it cites",

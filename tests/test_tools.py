@@ -187,11 +187,6 @@ def test_every_declared_tool_is_built(wiring):
         # The loader. Built for every turn;
         # `surface()` hands it to the model only when something is deferred.
         "load_tools",
-        "remind",
-        "list_reminders",
-        "cancel_reminder",
-        # The Event module (gatherings/RSVP).
-        "event_propose", "event_revise", "event_rsvp", "event_set_status", "event_search",
         # Nora's computer (DEC-243).
         "computer_run",
         "computer_read",

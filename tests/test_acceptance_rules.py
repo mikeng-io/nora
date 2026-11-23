@@ -152,7 +152,7 @@ RULE_TESTS = {
     # refusal: there the subject is a person's position and silence would lie;
     # here the dictionary entry's existence is itself the secret).
     "R-35": "test_a_non_subset_room_resolves_no_saved_place",
-    # R-36…R-39: reminders + the heartbeat (DEC-70).
+    # R-36…R-37b: the heartbeat (DEC-70).
     #
     # R-36: a reminder NEVER fires early. The tick's batch is `due_at <= now` and
     # nothing else — no rounding, no "close enough", no catch-up window. It is
@@ -171,20 +171,6 @@ RULE_TESTS = {
     # delivered, so re-queueing double-sends anything that died after egress.
     # At-most-once — losing one reminder visibly beats saying it twice.
     "R-37b": "test_sweep_resolves_firing_rows_to_failed",
-    # R-38: only a MAPPED person may create a reminder. `requester_person_id` is
-    # what the fire-time policy re-check runs against, so an unmapped sender
-    # has no owner to write and inventing one would put unprompted speech into a
-    # room under nobody's name. Enforced at `remind()` and re-checked at fire
-    # time, because identity.toml loads once at startup and the horizon is 30 days.
-    "R-38": "test_remind_refuses_an_unmapped_requester",
-    # R-39: `remind` refuses on a FIRE TURN — the structural bar on recurrence.
-    # Without it Nora re-arms her own reminder each time one comes due, and none
-    # of the reminder caps can stop her: `max_pending_per_requester` counts
-    # PENDING rows and the fire has already freed one before the replacement is
-    # written. The flag is turn PROVENANCE (`fire_turn`), threaded from
-    # `ToolRegistry.build`, because a fire turn is otherwise a well-formed turn
-    # in the same conversation and no tool can tell the two apart.
-    "R-39": "test_remind_refuses_on_a_fire_turn",
     # R-40: an MCP server's tools reach `Agent(tools=...)` for a tag only when
     # `policy.toml`'s per-conversation `tools` allowlist names that server —
     # resolved and enforced at ASSEMBLY (`EngagementPipeline._run_admitted`
@@ -338,10 +324,6 @@ RULE_TESTS = {
     # boot-time resume that finds nothing playing re-seeds the autoplay
     # chain from it instead of sitting silent in a live voice channel.
     "R-88": "test_advance_seeds_autoplay_from_last_played_when_nothing_playing",
-    # R-89 (DEC-159): a series may not repeat faster than
-    # `[reminders] min_interval_seconds`, and the tool REFUSES rather than
-    # clamping — a silently shortened series is a broken promise.
-    "R-89": "test_an_every_minute_ask_is_refused_with_something_she_can_say",
     # R-69 names the FIRST of four tests (the naming convention this dict
     # follows), and it is the one whose failure is unrecoverable: an exception
     # raised inside a `finally` skips the rest of that `finally`, and the

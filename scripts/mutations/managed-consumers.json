@@ -1,31 +1,17 @@
 [
  {
-  "name": "reminder owner is the resolved canonical person",
-  "file": "nora/agenda/adapters/tools/reminders.py",
-  "old": "    c.owner = c.tagger.person_id",
-  "new": "    c.owner = c.tagger.name",
-  "target": "tests/unit/test_managed_reminders.py::test_the_reminder_owner_is_the_canonical_person_the_room_scope_names"
- },
- {
-  "name": "reminder tagger carries the room scoped name",
+  "name": "a room member carries the room scoped name",
   "file": "nora/access.py",
   "old": "        scoped = await self._scoped_name(person.person_id, scope)",
   "new": "        scoped = None",
-  "target": "tests/unit/test_managed_reminders.py::test_the_reminder_owner_is_the_canonical_person_the_room_scope_names"
- },
- {
-  "name": "an unmapped tagger is refused before the owner is read",
-  "file": "nora/agenda/adapters/tools/reminders.py",
-  "old": "    if c.tagger is None:",
-  "new": "    if False and c.tagger is None:",
-  "target": "tests/unit/test_managed_reminders.py::test_an_unmapped_sender_names_nobody_and_sets_no_reminder"
+  "target": "tests/unit/test_managed_reminders.py::test_the_room_names_its_member_by_the_room_scopes_nickname"
  },
  {
   "name": "unmapped roster accounts count as unnamed",
   "file": "nora/agent/room.py",
   "old": "                unnamed += 1",
   "new": "                unnamed += 0",
-  "target": "tests/unit/test_managed_reminders.py::test_an_unmapped_sender_names_nobody_and_sets_no_reminder"
+  "target": "tests/unit/test_managed_reminders.py::test_an_unmapped_sender_names_nobody_and_is_counted_unnamed"
  },
  {
   "name": "scoped refs SELECT budget compares the real count",
@@ -137,7 +123,7 @@
   "file": "nora/testing/managed.py",
   "old": "            if s == scope and m.state is MembershipState.MEMBER",
   "new": "            if m.state is MembershipState.MEMBER",
-  "target": "tests/unit/test_managed_reminders.py::test_a_member_only_of_a_sibling_unit_is_denied_this_rooms_reminders"
+  "target": "tests/unit/test_managed_reminders.py::test_a_member_only_of_a_sibling_unit_is_nobody_in_this_room"
  },
  {
   "name": "unit population reads only its own memberships",

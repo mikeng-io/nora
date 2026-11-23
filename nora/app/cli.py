@@ -157,8 +157,8 @@ def add_subcommands(
     # the deployment, as a `GRANT SELECT`-only role — so the write would not
     # merely be discouraged, it would raise at the server. The operator's kill
     # switch is `[heartbeat] enabled = false` plus a restart, which stops all
-    # firing rather than one row; cancelling ONE reminder is the model's job
-    # (`cancel_reminder`), in the conversation it was set in.
+    # firing rather than one row; cancelling ONE of her own rows is the Cognition
+    # session's job (`remind_cancel`).
     reminders_list = reminders_sub.add_parser(
         "list", parents=[parent],
         help="every reminder still pending, soonest first, with what is overdue",

@@ -71,7 +71,7 @@ COGNITION_OBJECTIVE = "cognition"
 #: under ADR 0015 §1's `<domain>_<verb>` name.
 COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     # the warehouse queries
-    "record_query", "rollup_read", "event_search", "memo_read", "character_read",
+    "record_query", "rollup_read", "memo_read", "character_read",
     "standing_read", "social_read",
     # the typed source-object reads (platform-observations/exposure.md)
     "poll_list", "poll_read", "room_state_read", "group_members",
@@ -121,7 +121,6 @@ READ_TOOL_AUDIT: Mapping[str, str] = {
     "rollup_read": "SQL SELECT of the CURRENT rollup build's rows (`rollup_build` "
                    "status=current) and derived places; counters only. It starts, "
                    "advances and switches no build, and folds nothing. No write.",
-    "event_search": "SQL read of the unit's gatherings; counters only. No write.",
     "memo_read": "SQL SELECT of one memo of the unit and its revisions "
                  "(`SqlMemoStore.get`, `revisions`); counters only. No write.",
     "character_read": "SQL SELECT of `culture` heads (`CultureReader.head`) of the "

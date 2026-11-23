@@ -201,8 +201,8 @@ class Room:
     def platform(self) -> str:
         """Which platform this conversation is on.
 
-        Read by `remind`, which stores `(platform, conversation_id,
-        conversation_type)` because every conversation key is a tuple: a row
+        Read by every writer that stores `(platform, conversation_id,
+        conversation_type)`, because every conversation key is a tuple: a row
         holding `conversation_id` alone can build neither a
         `ConversationTarget`, nor the `ConversationSlots` key, nor a
         `Policy.is_allowed` call. Both constructors of this object (the tag
@@ -235,9 +235,9 @@ class Room:
         """Who this turn is FOR, or None when the sender is unmapped.
 
         `scope()` surfaces the tagger only in its degraded branch, and a
-        `None` check is not what the caller needs: `remind` writes
-        `tagger.person_id` into `reminders.requester_person_id`, the id the
-        fire-time policy re-check runs against. So this is a reader, not a
+        `None` check is not what the caller needs: a writer that records who a
+        row is for stores `tagger.person_id`, the id a later policy re-check
+        runs against. So this is a reader, not a
         predicate: «is there a mapped requester» and «who is it» are one
         question, and answering only the first would have the tool invent an
         owner for the row.

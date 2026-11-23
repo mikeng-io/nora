@@ -142,6 +142,8 @@ _RENAMED_SINCE: frozenset[str] = frozenset({
     "about", "ask_memory", "search_memory", "search_memory_workspace",
     # Retired: a venue suggestion needs a place entity type and a trait polarity.
     "suggest_venue",
+    # Retired: `intention_commit` opens, revises, drops and closes a scheduled delivery.
+    "remind", "list_reminders", "cancel_reminder",
 })
 
 _PREDATES_THE_RULE = _SNAPSHOT_2026_09_24 - _RENAMED_SINCE
@@ -196,6 +198,11 @@ def test_every_exempt_name_is_still_a_tool() -> None:
     set quietly keeps a name nobody is using."""
     gone = sorted(_PREDATES_THE_RULE - set(NATIVE_TOOLS))
     assert not gone, f"add to _RENAMED_SINCE, no longer tools: {gone}"
+
+
+def test_a_retired_name_is_not_a_tool() -> None:
+    """The other direction: a name in _RENAMED_SINCE never returns to the catalog."""
+    assert not sorted(_RENAMED_SINCE & set(NATIVE_TOOLS))
 
 
 def test_the_shape_accepts_the_pattern_and_refuses_the_rest() -> None:

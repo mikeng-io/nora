@@ -216,7 +216,7 @@ def render_reminders(
     **No paste-ready stanza, unlike the other two reports, and that is the
     point.** `nora groups` and `nora persons pending` end in a block the
     operator edits into a file; there is nothing equivalent here, because the
-    only actions on a reminder are model-side (`cancel_reminder`) or
+    only actions on a reminder are model-side (`remind_cancel`) or
     deployment-side (`[heartbeat] enabled = false` plus a restart, which stops
     all firing rather than one row). The control plane is read-only by
     construction — `create_readonly_sql_engine` plus a `SELECT`-only grant — so

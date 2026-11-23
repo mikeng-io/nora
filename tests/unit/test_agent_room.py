@@ -267,3 +267,22 @@ def test_a_view_that_is_available_and_empty_is_a_real_state():
     a caller must be able to build both."""
     assert RoomView(available=True).people == ()
     assert RoomView(available=False).available is False
+
+
+def test_the_triggering_row_is_the_taggers_row_at_the_messages_own_time():
+    from nora.agent.room import trigger_message_ids
+    from nora.domain.models import TranscriptRow
+
+    def row(id_: int, sender: str, ts: int, *, nora: bool = False) -> TranscriptRow:
+        return TranscriptRow(
+            id=id_, sender_id=sender, sender_name=None, ts=ts, body="x", is_nora=nora,
+            delivery_status="sent", raw_json=None,  # type: ignore[arg-type]
+        )
+
+    window = (
+        row(1, "+1", 1000), row(2, "+2", 2000), row(3, "+1", 2000, nora=True),
+        row(4, "+1", 2000), row(5, "+1", 3000),
+    )
+    assert trigger_message_ids(window, sender_id="+1", timestamp=2000) == (4,)
+    # Not in the window: no id, and never a nearby row.
+    assert trigger_message_ids(window, sender_id="+1", timestamp=2500) == ()

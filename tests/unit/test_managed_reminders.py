@@ -1,13 +1,12 @@
-"""The reminder tools read the selected managed authority, not a file roster."""
+"""A room's people and a due row's fire-time re-check read the selected managed
+authority, not a file roster."""
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
-from nora.agenda.adapters.tools import build
-from nora.agenda.adapters.tools.shared import _UNKNOWN_OWNER
 from nora.agent.room import Room
-from nora.agent.tool_deps import ToolDeps
 from nora.domain.identity import Identifier
 from nora.domain.managed import (
     AccountState,
@@ -19,6 +18,7 @@ from nora.domain.managed import (
     room_scope_id,
 )
 from nora.domain.management import Scope, ScopeKind
+from nora.domain.reminders import Reminder, ReminderState
 from nora.obs.metrics import Metrics
 from nora.people.app.managed import ManagedServices
 from nora.testing import FakeRosterSource
@@ -41,7 +41,6 @@ from tests.unit.test_scoped_engagement_names import (
 
 _T0 = datetime(2026, 2, 1, 12, 0, tzinfo=UTC)
 _FOREIGN_UNIT = Scope(ScopeKind.UNIT, "generated-foreign-unit")
-_SOON = (_T0 + timedelta(hours=2)).isoformat()
 _S_UNIT = Scope(ScopeKind.UNIT, "generated-sibling-unit")
 _S_ROOM = Scope(ScopeKind.ROOM, room_scope_id("signal", "g9"))
 _S_PERSON = "generated-sibling-member"
@@ -52,16 +51,16 @@ def _room(access, tagger=None, members=("+852111",)):
                 roster_source=FakeRosterSource(groups={"g1": (frozenset(members),)}))
 
 
-def _tools(room, store):
-    deps = ToolDeps(
-        store=None, conversation_id="g1", conversation_type="group",
-        persons=room.access.persons_view(), deliverer=None,
-        metrics=Metrics(), room=room, transit_source=None,
-        reminders=store, clock=lambda: _T0)
-    return {tool.name: tool.call for tool in build(deps)}
+def _due(person_id: str, text: str) -> Reminder:
+    return Reminder(
+        id=uuid.uuid4(), requester_person_id=person_id, platform="signal",
+        conversation_id="g1", conversation_type="group", text=text,
+        created_at=_T0, due_at=_T0 + timedelta(hours=2), state=ReminderState.PENDING,
+        fired_at=None, outcome=None,
+    )
 
 
-async def test_the_reminder_owner_is_the_canonical_person_the_room_scope_names():
+async def test_the_room_names_its_member_by_the_room_scopes_nickname():
     bindings, access = _managed()
     await _managed_person(bindings)
     for scope, nickname in (
@@ -76,35 +75,17 @@ async def test_the_reminder_owner_is_the_canonical_person_the_room_scope_names()
     # The room's ancestry answers its own nick; a foreign unit's never substitutes.
     assert tagger.name == "Generated Room Nick"
 
-    store = FakeReminderStore()
-    tools = _tools(_room(access, tagger=tagger), store)
-    assert (await tools["remind"](when=_SOON, text="generated wash"))["status"] == "ok"
-    [row] = await store.pending_for("g1")
-    assert row.requester_person_id == _M_PERSON  # the canonical id, never the sender_id
 
-    listed = (await tools["list_reminders"]())["reminders"]
-    # managed `persons_view` is the honest empty view: an unknown owner is
-    # reported, never a foreign unit's or a file name.
-    assert [r["set_by"] for r in listed] == [_UNKNOWN_OWNER]
-    assert "Generated Foreign Unit Nick" not in str(listed)
-
-
-async def test_an_unmapped_sender_names_nobody_and_sets_no_reminder():
+async def test_an_unmapped_sender_names_nobody_and_is_counted_unnamed():
     _, access = _managed()
     view = await _room(access, members=("+852999",)).members()
     assert view.people == () and view.unnamed == 1
 
-    store = FakeReminderStore()
-    tools = _tools(_room(access, tagger=None, members=("+852999",)), store)
-    assert (await tools["remind"](when=_SOON, text="generated wash"))["status"] == "refused"
-    assert not await store.pending_for("g1")
 
-
-async def test_a_member_only_of_a_sibling_unit_is_denied_this_rooms_reminders():
+async def test_a_member_only_of_a_sibling_unit_is_nobody_in_this_room():
     """Admitted in a sibling unit's room, nobody here: the selected
-    authority's member view for this room excludes them, the room's own
-    resolve set cannot name them, and the sender the room cannot name is
-    refused at the same `build(deps)` entry the member is admitted by."""
+    authority's member view for this room excludes them, and the room's own
+    resolve set cannot name them."""
     bindings, _ = _managed()
     access = ManagedServices(bindings, FakeAuthorityBackend(), FakeTopologySource(
         rooms={_M_ROOM.id: (_M_UNIT.id, False), _M_SIBLING.id: (_M_UNIT.id, False),
@@ -128,27 +109,17 @@ async def test_a_member_only_of_a_sibling_unit_is_denied_this_rooms_reminders():
         scope=_M_ROOM, person_id=_S_PERSON, permit="view")).allowed
     assert [r.person_id for r in await access.room_refs("signal", "g1")] == [_M_PERSON]
 
-    # The roster the reminder tools resolve in holds only the admitted
-    # member — the bound sibling resolves as nobody in this room.
+    # The room's roster holds only the admitted member — the bound sibling
+    # resolves as nobody in this room.
     view = await _room(access).members()
     assert [p.person_id for p in view.people] == [_M_PERSON]
     assert view.unnamed == 0 and view.find("Generated Sibling Member") == ()
 
-    store = FakeReminderStore()
-    tools = _tools(_room(access, tagger=None), store)
-    assert (await tools["remind"](when=_SOON, text="generated wash"))["status"] == "refused"
-    assert not await store.pending_for("g1")
-
-    [tagger] = view.people
-    tools = _tools(_room(access, tagger=tagger), store)
-    assert (await tools["remind"](when=_SOON, text="generated wash"))["status"] == "ok"
-    assert [row.requester_person_id for row in await store.pending_for("g1")] == [_M_PERSON]
-
 
 async def test_a_sibling_only_requesters_due_reminder_fails_the_fire_time_recheck():
-    """A real tagger resolution for a member only of the sibling unit:
-    the write trusts the room's word and the row is journaled — but the
-    grant is (room, person), so the fire-time re-check is the denial.
+    """A real tagger resolution for a member only of the sibling unit: a
+    row journaled under them still fires only under the grant, which is
+    (room, person), so the fire-time re-check is the denial.
     Their due row resolves `failed_policy` and never fires, while the
     in-unit member's same due row delivers."""
     from nora.app.heartbeat import HeartbeatLoop
@@ -186,13 +157,8 @@ async def test_a_sibling_only_requesters_due_reminder_fails_the_fire_time_rechec
     assert member_tagger is not None and member_tagger.person_id == _M_PERSON
 
     store = FakeReminderStore()
-    tools = _tools(_room(access, tagger=tagger,
-                         members=("+852111", "+852222")), store)
-    assert (await tools["remind"](when=_SOON, text="generated sibling")
-            )["status"] == "ok"
-    tools = _tools(_room(access, tagger=member_tagger), store)
-    assert (await tools["remind"](when=_SOON, text="generated member")
-            )["status"] == "ok"
+    await store.create(_due(tagger.person_id, "generated sibling"))
+    await store.create(_due(member_tagger.person_id, "generated member"))
     rows = {r.requester_person_id: r for r in await store.pending_for("g1")}
     assert set(rows) == {_S_PERSON, _M_PERSON}
 

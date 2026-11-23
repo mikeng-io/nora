@@ -48,7 +48,7 @@ from nora.domain.compute import DocumentReadBack
 from nora.domain.models import PersonRef
 from nora.domain.ports import JobResult, JobStatus
 from nora.domain.prompt import escape
-from nora.domain.reminders import Recurrence, Reminder, Series, remaining_occurrences
+from nora.domain.reminders import Reminder
 
 Entry = Literal["escaped", "carried", "joined", "system"]
 
@@ -85,25 +85,7 @@ class Header(Protocol):
     def render(self) -> str: ...
 
 
-# ---- how a recurrence reads, and a stamp ------------------------------------
-
-#: How a recurrence reads in the fire header. English prose, like the rest of the
-#: header: the header is the SITUATION she is told about, and `doctrine` decides
-#: what language she answers in.
-#:
-#: EVERY member of `Recurrence` except NONE must be here: `RepeatClause`
-#: subscripts this bare, and a missing unit would raise KeyError inside the fire
-#: header after `claim` minted the successor and before the model is called, so
-#: the occurrence would be claimed, nothing said, and the next one armed.
-#: `tests/unit/test_fire_path.py` covers the shape.
-CADENCE_UNITS: Mapping[Recurrence, str] = {
-    Recurrence.MINUTELY: "minute",
-    Recurrence.HOURLY: "hour",
-    Recurrence.DAILY: "day",
-    Recurrence.WEEKLY: "week",
-    Recurrence.MONTHLY: "month",
-    Recurrence.YEARLY: "year",
-}
+# ---- a stamp -----------------------------------------------------------------
 
 
 def stamp(moment: datetime) -> str:
@@ -111,38 +93,6 @@ def stamp(moment: datetime) -> str:
     the prompt states time locally (`ClockLine`), and two clocks in one prompt
     is how she answers with the wrong hour."""
     return moment.astimezone().strftime("%-d %b %H:%M")
-
-
-@dataclass(frozen=True)
-class RepeatClause:
-    """« (every day, 11 more after this) » — or nothing at all for a one-shot.
-
-    `remaining_occurrences` is the series' COUNT bound, so this over-states when
-    an `until` or a cancel will end the series sooner. That is the right way to
-    be wrong here: the number is context for her tone, not a promise she is
-    asked to repeat, and the header already tells her not to read the times back
-    unless they asked in those terms.
-    """
-
-    series: Series | None
-
-    def render(self) -> str:
-        series = self.series
-        if series is None:
-            return ""
-        left = remaining_occurrences(series)
-        more = "last one" if left == 0 else f"{_figure(left)} more after this"
-        # The INTERVAL, not just the unit: `rule.every` alone would render a
-        # fortnightly arrangement as «every week» and a ten-minute one as
-        # «every minute», wrong by the whole multiplier.
-        step = series.rule.interval
-        unit = CADENCE_UNITS[series.rule.every]
-        cadence = unit if step == 1 else f"{_figure(step)} {unit}s"
-        return f" (every {cadence}, {more})"
-
-
-def _repeat(series: Series | None) -> str:
-    return RepeatClause(series).render()
 
 
 def _name(person: PersonRef | None) -> str:
@@ -156,65 +106,6 @@ def _name(person: PersonRef | None) -> str:
 
 
 @dataclass(frozen=True)
-class ReminderHeader:
-    """The situation paragraph for a reminder fire turn — `build_prefill`'s
-    `header`.
-
-    Every clause of the tag header is false here: nobody called her, and that is
-    not why this turn is happening. `ContextHeader` is parameterised rather than
-    branched so the block catalogue, the notation and — the part that actually
-    matters — R-13/R-13b escaping stay shared.
-
-    The name is escaped because everything else a prompt carries is, and
-    `identity.toml` is operator-authored text like any other.
-
-    `tagger` is typed optional only because `Event.header` is one callable type
-    for both occasions; a reminders occasion always names a requester, and a turn
-    whose requester fell out of `identity.toml` is refused by `FirePath._turn`
-    before this is ever rendered.
-    """
-
-    rows: tuple[Reminder, ...]
-    tagger: PersonRef | None
-
-    def _asked(self) -> str:
-        return "".join(
-            f"- asked {stamp(row.created_at)}, due {stamp(row.due_at)}"
-            f"{_repeat(row.series)}\n" for row in self.rows
-        )
-
-    def _repeats(self) -> str:
-        # Stated only when it is true, so a one-shot turn's prompt carries no
-        # repeat text (DEC-85). Without it she cannot know this is the third of
-        # fourteen and announces a standing arrangement as if it were new
-        # («記住喇, 我會日日提你») every day.
-        if any(row.series is not None for row in self.rows):
-            return (
-                "\nSome of these repeat, as marked. A repeat is not a new "
-                "arrangement — you already told them you would do this, so bring "
-                "the thing up rather than announcing the reminder again.\n"
-            )
-        return ""
-
-    def _request(self) -> str:
-        return "request" if len(self.rows) == 1 else "requests"
-
-    def render(self) -> str:
-        return (
-            "You are in a group chat you have been reading all along. Nobody has "
-            f"just called you. Earlier, {_name(self.tagger)} asked you to bring "
-            "something back up at a particular time, and that time has come — "
-            "that is why this turn is happening, and it is the only reason.\n"
-            f"When the {self._request()} in tag_message below were made, and when "
-            "each came due (in the same order):\n"
-            f"{self._asked()}{self._repeats()}"
-            f"Say it to {_name(self.tagger)} now, in your own words, as the "
-            "person who was asked to remember. Do not read the times back at them "
-            "unless they asked in those terms."
-        )
-
-
-@dataclass(frozen=True)
 class ProactiveHeader:
     """The situation paragraph for a proactive act turn (DEC-162).
 
@@ -225,9 +116,9 @@ class ProactiveHeader:
     belongs with the turn. The base rate («most turns like this one end that
     way») is stated here too.
 
-    Times are stamped the way `ReminderHeader` stamps them — the reader's own
-    zone, never UTC. The note title is escaped like every other value a prompt
-    carries (R-13); it was model-chosen and code-resolved.
+    Times are stamped with `stamp` — the reader's own zone, never UTC. The
+    note title is escaped like every other value a prompt carries (R-13); it
+    was model-chosen and code-resolved.
 
     **The closing clause is about the whole apparatus, not just the reminder.**
     The turn's prompt also carries the note's title, the `<notes>` index, and the
@@ -405,7 +296,6 @@ class ParticipationHeader:
 #: refuses an `Event` of a kind that is not in it, a kind built twice, and a
 #: header written inline at the construction site.
 FIRE_HEADERS: Mapping[str, type[Header]] = {
-    "reminder": ReminderHeader,
     "proactive": ProactiveHeader,
     "compute": ComputeHeader,
     "relay": RelayHeader,
@@ -419,9 +309,9 @@ FIRE_HEADERS: Mapping[str, type[Header]] = {
 
 @dataclass(frozen=True)
 class RequestBody:
-    """The requester's OWN sentence(s), joined, as the words put to her. That is
-    the premise of a reminder: a deferred request, put to her at the due time AS a
-    request, so the set-at and due-at facts belong in the header, never here.
+    """The due rows' OWN sentence(s), joined, as the words put to her: what was
+    asked, in the asker's words, so the decided-at and due-at facts belong in the
+    header, never here.
     Carried: `build_tag_message` escapes the body once, in its block. Joined: a
     text that is not a str raises `TypeError`, as `"\n".join` did, so a row that
     somehow holds none fails the turn closed instead of putting «None» to her."""
@@ -621,7 +511,7 @@ class SummonsHead:
 #: the table and a table row cannot outlive its builder.
 FRAMING: Mapping[str, type] = {
     cls.__name__: cls for cls in (
-        RepeatClause, ReminderHeader, ProactiveHeader, ComputeHeader,
+        ProactiveHeader, ComputeHeader,
         RelayHeader, LostJobHeader, ParticipationHeader,
         RequestBody, ComputeBody, LostJobBody, ContextHeader, ClockLine, SummonsHead,
     )

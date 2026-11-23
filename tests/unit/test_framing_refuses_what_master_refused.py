@@ -1,6 +1,6 @@
 """The typed builders fail closed exactly where the code they replaced did.
 
-`RequestBody` must not format its texts with `str()`: a reminder row whose
+`RequestBody` must not format its texts with `str()`: a row whose
 `text` was not a str (unreachable today: the column is NOT NULL text) would
 put the literal «None» or «5» to the model, where
 `"\\n".join(...)` raised `TypeError` and the turn failed closed. Every
@@ -21,7 +21,6 @@ from nora.app.fire import (
     participation_occasion,
     proactive_occasion,
     relay_occasion,
-    reminder_occasion,
 )
 from nora.domain import framing
 from tests.unit.test_headers_goldens import _row
@@ -31,10 +30,9 @@ IDS = ["none", "int", "bytes", "list"]
 
 
 @pytest.mark.parametrize("value", NOT_STR, ids=IDS)
-@pytest.mark.parametrize("factory", [reminder_occasion, proactive_occasion])
-def test_a_request_whose_text_is_not_a_str_fails_the_turn_closed(factory, value):
+def test_a_request_whose_text_is_not_a_str_fails_the_turn_closed(value):
     with pytest.raises(TypeError):
-        factory([_row(text=value)])
+        proactive_occasion([_row(text=value)])
 
 
 @pytest.mark.parametrize("value", NOT_STR, ids=IDS)

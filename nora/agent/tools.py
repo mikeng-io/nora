@@ -123,7 +123,6 @@ _AREAS = (
     "nora.documents",
     "nora.social",
     "nora.voice",
-    "nora.agenda",
     "nora.computer",
     "nora.subagents",
 )
@@ -186,14 +185,6 @@ _ORDER = [
     "stop_music",
     "music_status",
     "set_music_volume",
-    "remind",
-    "list_reminders",
-    "cancel_reminder",
-    "event_search",
-    "event_propose",
-    "event_revise",
-    "event_rsvp",
-    "event_set_status",
     "note_read",
     "note_search",
     "memo_read",
@@ -441,11 +432,10 @@ def build_tool_specs(
 ) -> tuple[ToolSpec, ...]:
     """Build native specs closed over one turn's collaborators.
 
-    fire_turn marks heartbeat provenance; remind refuses recursive fire reminders.
+    fire_turn marks fire-path provenance.
     dream_adaptor identifies the Dreamer source, whose screened proactive writes use
     the AI peer, home room and referenced note rather than model-supplied authority.
-    reminders, reminder_caps and clock belong to the registry. Missing caps/clock
-    use ReminderCaps()/utc_now; an unwired reminder store reports unavailable.
+    clock belongs to the registry; a missing clock uses utc_now.
     versions is the immutable build/release snapshot shared by both version tools.
     Missing recall logs, mobility or other read sources report unavailable, never
     nothing_found. Mobility shares the where_is room/circle/disclosure boundary.

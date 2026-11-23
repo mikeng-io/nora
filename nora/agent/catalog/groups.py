@@ -85,12 +85,11 @@ GRAPH_MEMORY_TOOLS: frozenset[str] = frozenset({"memory_search", "memory_read", 
 # These tools are offered by a graph pass through its own dependencies.
 GRAPH_PASS_TOOLS: frozenset[str] = frozenset({"intention_commit"})
 
-# Legacy stores behind engagement's retired memory and agenda tools.
+# Legacy stores behind engagement's retired memory tools.
 LEGACY_ENGAGEMENT_TOOLS: frozenset[str] = frozenset({
-    "cancel_reminder", "character_read", "checkpoint_update",
-    "event_propose", "event_revise", "event_rsvp", "event_search", "event_set_status",
-    "list_reminders", "memo_read", "note_create", "note_read", "note_revise", "note_search",
-    "profile_dispute", "recall_lookups", "remember", "remind", "standing_read",
+    "character_read", "checkpoint_update",
+    "memo_read", "note_create", "note_read", "note_revise", "note_search",
+    "profile_dispute", "recall_lookups", "remember", "standing_read",
     "who_said",
 })
 

@@ -979,8 +979,8 @@ GEOCODE_CACHE = sa.Table(
 # `reminders` — one-shot deferred requests, the heartbeat's fire queue.
 #
 # Keyed by a UUID rather than an identity column, unlike every other table here:
-# the id is minted by the `remind` tool INSIDE a turn and spoken back to the
-# requester in the same breath, so `cancel_reminder` can name it — a value that
+# the id is minted by `remind` INSIDE a turn and returned in the same call, so
+# `remind_move`/`remind_cancel` can name it — a value that
 # has to exist before the row is written cannot come from a sequence.
 #
 # `platform` / `conversation_id` / `conversation_type` are all three stored, not
