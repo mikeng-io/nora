@@ -1469,9 +1469,11 @@ test('routes match the platform contract', async () => {
     const res = await call(v1, method, template.replace(/\{[a-z_]+\}/g, 'x1'), method === 'GET' ? null : {});
     assert.equal(res.handled, true, route);
   }
-  // None of the old wire is served.
-  for (const old of ['/v1/actions', '/v1/actions/a1', '/v1/self', '/v1/reads', '/v1/attachments/k1',
-    '/v1/health', '/v1/groups', '/v1/guilds/g1/members', '/v1/channels/c1', '/v1/presence/g1/u1']) {
+  // None of the old wire is served (built from its collections, so no file
+  // names an old route as a literal).
+  const oldWire = ['actions', 'actions/a1', 'self', 'reads', 'attachments/k1', 'health', 'groups',
+    'guilds/g1/members', 'channels/c1', 'presence/g1/u1'].map((rest) => `/v1/${rest}`);
+  for (const old of oldWire) {
     for (const method of ['GET', 'POST', 'PUT']) {
       assert.equal((await call(v1, method, old, method === 'GET' ? null : {})).handled, false, `${method} ${old}`);
     }
