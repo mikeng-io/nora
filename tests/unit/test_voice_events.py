@@ -15,6 +15,7 @@ manager under its per-guild lock (covered in
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from aiohttp import web
@@ -51,6 +52,9 @@ class _StubManager:
     def __init__(self) -> None:
         self.calls: list[str] = []
         self.failures: int = 0
+        #: Holds `on_stream_failed` open until set, so a repeat can arrive mid-transition.
+        self.gate: asyncio.Event | None = None
+        self.raise_at_gate = False
 
     async def on_track_finished(self, guild_id: str, *, playback_id: str | None = None) -> bool:
         if self.failures:
@@ -63,6 +67,11 @@ class _StubManager:
         self, guild_id: str, *, playback_id: str | None = None, reason: str | None = None,
     ) -> bool:
         self.calls.append(f"stream-failed:{guild_id}:{playback_id}:{reason}")
+        if self.gate is not None:
+            await self.gate.wait()
+            if self.raise_at_gate:
+                self.raise_at_gate = False
+                raise RuntimeError("play commit failed")
         return playback_id == PLAYBACK
 
     async def on_voice_death(self, guild_id: str, *, generation: str | None = None) -> None:
@@ -368,3 +377,75 @@ async def test_a_report_without_an_integer_event_seq_is_a_400():
         status, _ = await consumer.consume(event)
         assert status == 400, event_seq
     assert manager.calls == []
+
+
+async def _reporter(aiohttp_client, monkeypatch, consumer):
+    monkeypatch.setenv("NORA_BRIDGE_TOKEN", "tok")
+    app = web.Application()
+    register_voice(app, ingest=_never, resolve_voice_room=lambda _g: None,
+                   on_voice_event=consumer.consume)
+    client = await aiohttp_client(app)
+
+    async def report(operation_id: str, event: dict) -> dict:
+        resp = await client.post("/v1/voice/operations", headers={
+            "Authorization": "Bearer tok"}, json={
+            "operation_id": operation_id, "kind": "report", "effect": event})
+        body = await resp.json()
+        assert_settled_operation(resp.status, body)
+        return body
+
+    return report
+
+
+async def _until(condition) -> None:
+    for _ in range(200):
+        if condition():
+            return
+        await asyncio.sleep(0.005)
+    raise AssertionError("the condition never held")
+
+
+async def test_a_retry_while_the_first_transition_runs_applies_it_once(
+        aiohttp_client, monkeypatch):
+    """The outbox retries an event under a new operation id while its first
+    transition is still running: the retry waits and answers `duplicate`, and
+    the stream failure starts one play commit, not two."""
+    consumer, manager, _ = await _consumer()
+    manager.gate = asyncio.Event()
+    report = await _reporter(aiohttp_client, monkeypatch, consumer)
+    event = _event("stream-failed", playback_id=PLAYBACK, reason="eof")
+
+    first = asyncio.ensure_future(report("op-1", event))
+    await _until(lambda: manager.calls)
+    retry = asyncio.ensure_future(report("op-2", event))
+    await asyncio.sleep(0.05)
+    assert not retry.done(), "the retry was answered before the first transition settled"
+    manager.gate.set()
+
+    applied, repeated = await first, await retry
+    assert (applied["outcome"], applied["payload"]) == ("complete", {"status": "ok"})
+    assert (repeated["outcome"], repeated["payload"]) == ("complete", {"status": "duplicate"})
+    assert manager.calls == [f"stream-failed:{GUILD}:{PLAYBACK}:eof"]
+
+
+async def test_a_failed_first_transition_fails_its_waiter_and_a_later_retry_applies(
+        aiohttp_client, monkeypatch):
+    """The first transition raises while a retry waits on it: both are
+    `unavailable`, nothing is kept, and the next retry applies it once."""
+    consumer, manager, hub = await _consumer()
+    manager.gate, manager.raise_at_gate = asyncio.Event(), True
+    report = await _reporter(aiohttp_client, monkeypatch, consumer)
+    event = _event("stream-failed", playback_id=PLAYBACK, reason="eof")
+
+    first = asyncio.ensure_future(report("op-1", event))
+    await _until(lambda: manager.calls)
+    waiting = asyncio.ensure_future(report("op-2", event))
+    await asyncio.sleep(0.05)
+    manager.gate.set()
+
+    assert (await first)["outcome"] == "unavailable"
+    assert (await waiting)["outcome"] == "unavailable"
+    assert hub.last_event_seq(GUILD) is None, "a failed transition moved the seq bookmark"
+    later = await report("op-3", event)
+    assert (later["outcome"], later["payload"]) == ("complete", {"status": "ok"})
+    assert manager.calls == [f"stream-failed:{GUILD}:{PLAYBACK}:eof"] * 2

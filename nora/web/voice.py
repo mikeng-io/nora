@@ -49,10 +49,8 @@ was spoken in, which the resolved `conversation_id` no longer carries.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
-from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from typing import Any, get_args
 
@@ -63,6 +61,7 @@ from nora.domain.service_api import OperationOutcome
 from nora.domain.service_api_voice import IntakeOperationKind, VoiceOperationKind
 from nora.infra.service_auth import service_auth_ok
 from nora.platform.bridge.answers import (
+    EventOnce,
     InvalidOperation,
     OperationLedger,
     now_ms,
@@ -79,51 +78,6 @@ INTAKE_KINDS = frozenset(get_args(IntakeOperationKind))
 VOICE_KINDS = frozenset(get_args(VoiceOperationKind))
 SOURCE = "nora"
 Answer = tuple[OperationOutcome, dict[str, Any]]
-
-
-class _EventIds:
-    """The utterances ingested in the last five minutes, by `event_id`, and the
-    ones being ingested now; a repeat waits for, or is answered by, the first."""
-
-    def __init__(self, *, ttl_s: float = 300.0, bound: int = 4096) -> None:
-        self._ttl_s = ttl_s
-        self._bound = bound
-        #: event_id -> the ingest in flight, or when its retention ends.
-        self._held: OrderedDict[str, asyncio.Future[None] | float] = OrderedDict()
-
-    def _settled(self) -> list[tuple[str, float]]:
-        return [(k, v) for k, v in self._held.items() if isinstance(v, float)]
-
-    async def once(self, event_id: str, ingest: Callable[[], Awaitable[None]]) -> None:
-        """Run `ingest` for an event id not ingested in the window; a failure keeps nothing."""
-        now = time.monotonic()
-        for key, expires_at in self._settled():
-            if expires_at <= now:
-                del self._held[key]
-        held = self._held.get(event_id)
-        if isinstance(held, float):
-            return
-        if held is not None:
-            await asyncio.shield(held)
-            return
-        for key, _ in self._settled()[:max(0, len(self._held) - self._bound + 1)]:
-            del self._held[key]
-        running: asyncio.Future[None] = asyncio.get_running_loop().create_future()
-        self._held[event_id] = running
-        try:
-            await ingest()
-        except BaseException as exc:
-            if self._held.get(event_id) is running:
-                del self._held[event_id]
-            if isinstance(exc, Exception):
-                running.set_exception(exc)
-                running.exception()
-            else:
-                running.cancel()
-            raise
-        self._held[event_id] = time.monotonic() + self._ttl_s
-        self._held.move_to_end(event_id)
-        running.set_result(None)
 
 
 def _text(effect: dict[str, Any], key: str) -> str:
@@ -157,7 +111,8 @@ def register_voice(
     routing decision; this route reads its (status, payload) verdict as an
     outcome. When `None`, the voice routes do not exist at all."""
     ledger = OperationLedger()
-    recorded = _EventIds()
+    #: Utterances ingested in the last five minutes, by `event_id`.
+    recorded = EventOnce(bound=4096, ttl_s=300.0)
 
     async def record(effect: dict[str, Any]) -> Answer:
         event_id, user_id = _text(effect, "event_id"), _text(effect, "user_id")
