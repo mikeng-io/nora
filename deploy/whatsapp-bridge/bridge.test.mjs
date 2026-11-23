@@ -56,6 +56,7 @@ test('legacy HTTP errors never expose SDK or request exception details', async (
   const handler = runInNewContext(`${effects}\n${httpHandler}\nserver`, {
     http: { createServer: (callback) => callback }, URL, Buffer, SyntaxError,
     DURABLE: false, BRIDGE_TOKEN: 'test-bearer', authorizedBridgeRequest, sendJson,
+    handleV1: async () => false,
     requireSocket: () => true, validJidOr400: (_res, jid) => isValidTargetJid(jid),
     readJsonBody: async (req) => {
       if (req.failRead) throw new Error(detail);

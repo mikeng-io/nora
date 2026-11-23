@@ -893,7 +893,8 @@ export function ensureDir(dir) {
  * and this stays fail-closed if that check is ever bypassed.
  */
 export function authorizedBridgeRequest(method, pathname, authorization, token) {
-  if (method === 'GET' && pathname === '/health') return true;
+  // The probes are unauthenticated, as /health has always been.
+  if (method === 'GET' && (pathname === '/health' || pathname === '/ready')) return true;
   if (!token || typeof authorization !== 'string') return false;
   // Compare BYTE lengths, not JavaScript string lengths. A non-ASCII header can
   // have the expected string length and a different UTF-8 byte length, and
