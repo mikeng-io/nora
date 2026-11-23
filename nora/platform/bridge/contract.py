@@ -286,11 +286,14 @@ class PlatformSurface:
         if data is None or len(data) > limit:
             return self._blob_settled(req, "rejected", {"error": {
                 "kind": "too_large", "message": f"over {limit} bytes"}})
-        if path.is_file() and path.read_bytes() != data:
-            return self._blob_settled(req, "rejected", {"error": {
-                "kind": "conflict", "message": "the key holds other bytes"}})
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
+        try:
+            if path.is_file() and path.read_bytes() != data:
+                return self._blob_settled(req, "rejected", {"error": {
+                    "kind": "conflict", "message": "the key holds other bytes"}})
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        except OSError:
+            return self._blob_settled(req, "unavailable", None)
         return self._blob_settled(req, "complete", {"key": key})
 
     async def get_blob(self, req: web.Request) -> web.Response:

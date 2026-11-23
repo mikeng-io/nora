@@ -1487,11 +1487,11 @@ class DiscordBridge:
                 mid: {"channel_id": ref.channel_id, "channel_name": ref.channel_name}
                 for mid, ref in members.items()}
         if kind == "groups":
-            client = self.current_client()
+            if (client := self.current_client()) is None:
+                return _UNREADABLE
             return [{"id": str(ch.id), "guild_id": str(guild.id), "name": ch.name,
                      "members": [str(m.id) for m in ch.members]}
-                    for guild in (client.guilds if client else ())
-                    for ch in guild.text_channels]
+                    for guild in client.guilds for ch in guild.text_channels]
         return _UNREADABLE
 
     async def _read_roster(self, *, conversation_id: str) -> Any:

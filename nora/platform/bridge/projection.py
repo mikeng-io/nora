@@ -380,6 +380,7 @@ class BridgeChannelDirectory:
             try:
                 answer = await bridge_call(
                     session, "POST", self._url, "read", headers=headers,
+                    timeout_s=_BRIDGE_FETCH_TIMEOUT,
                     json={"kind": "channels", "params": {"guild_id": guild_id}})
                 if answer.outcome != "ok":
                     failed.add(guild_id)
@@ -522,7 +523,8 @@ class ProjectionPublisher:
                 if self._self_token else {}
             )
             answer = await bridge_call(
-                self._session, "GET", self.self_url, "read", headers=headers)
+                self._session, "GET", self.self_url, "read", headers=headers,
+                timeout_s=_BRIDGE_FETCH_TIMEOUT)
             body = answer.payload
             if answer.outcome != "ok" or not isinstance(body, dict):
                 raise BridgeUnavailableError(f"account -> {answer.outcome}")
