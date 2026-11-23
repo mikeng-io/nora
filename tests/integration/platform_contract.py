@@ -157,6 +157,7 @@ async def drive_outcomes(bridge: Bridge) -> None:
     absent = await envelope(await http.get(f"{OPERATIONS}/op-never", headers=auth))
     assert absent["outcome"] == "nothing_found" and absent["payload"] is None
 
+    await replay_after_its_audit_row_settled(bridge)
     await _drive_reads(bridge)
     await _drive_blobs(bridge)
 
@@ -227,11 +228,16 @@ async def replay_after_its_audit_row_settled(bridge: Bridge) -> dict[str, Any]:
         "operation_id": "op-settled", "owner": owner, "kind": "send",
         "effect": {**effect, "text": "another effect"}})
     assert conflict.status == 409
+    assert (await bridge.store.action("op-settled"))["state"] == "confirmed"
     return body
 
 
-async def assert_not_ready(http: Any, auth: dict[str, str]) -> None:
-    """`/ready` is 503 and the status read's `ok` agrees with it."""
-    assert (await http.get("/ready", headers=auth)).status == 503
-    status = await envelope(await http.get("/v1/operations/status", headers=auth))
-    assert status["payload"]["ok"] is False and status["payload"]["detail"]
+async def assert_ready_needs(http: Any, auth: dict[str, str], *gone: tuple[Any, ...]) -> None:
+    """`/ready` is 200; with each `(owner, attr[, value])` swapped in alone it is 503,
+    and the status read's `ok` agrees with it."""
+    assert (await http.get("/ready", headers=auth)).status == 200
+    for owner, attr, *value in gone:
+        with swapped(owner, attr, *value):
+            assert (await http.get("/ready", headers=auth)).status == 503, attr
+            status = await envelope(await http.get("/v1/operations/status", headers=auth))
+        assert status["payload"]["ok"] is False and status["payload"]["detail"], attr

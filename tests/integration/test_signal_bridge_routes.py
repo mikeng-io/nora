@@ -1218,17 +1218,7 @@ async def _daemon_down(*_: object) -> None:
 async def test_the_bridge_serves_the_platform_contract_routes(bridge_app):
     bridge, client, _ = bridge_app
     pc.assert_serves_the_contract(bridge.routes())
-    assert (await client.get("/ready", headers=AUTH)).status == 200
-    with pc.swapped(bridge, "_rpc", _daemon_down):
-        assert (await client.get("/ready", headers=AUTH)).status == 503
-
-
-async def test_ready_needs_the_action_service(bridge_app):
-    """The daemon answers, so only the missing ledger can make the bridge unready."""
-    bridge, client, _ = bridge_app
-    assert (await client.get("/ready", headers=AUTH)).status == 200
-    with pc.swapped(bridge, "_actions"):
-        await pc.assert_not_ready(client, AUTH)
+    await pc.assert_ready_needs(client, AUTH, (bridge, "_rpc", _daemon_down), (bridge, "_actions"))
 
 
 async def test_operation_outcomes_follow_the_contract(bridge_app, monkeypatch):
@@ -1241,18 +1231,6 @@ async def test_operation_outcomes_follow_the_contract(bridge_app, monkeypatch):
         logged_out=lambda: pc.swapped(bridge, "_rpc", _daemon_down),
         query_ok=("roster", {"conversation_id": ROOM}), query_unavailable=("channels", {}),
         blob_limit=lambda n: monkeypatch.setattr(wrapper, "MAX_ATTACHMENT_BYTES", n)))
-
-
-async def test_a_settled_operation_replays_after_its_audit_row_settled(bridge_app, monkeypatch):
-    bridge, client, daemon = bridge_app
-    await pc.replay_after_its_audit_row_settled(pc.Bridge(
-        http=client, auth=AUTH, store=bridge.store, engine=bridge.store._engine,
-        platform="signal", account_key=ACCT, conversation_id=ROOM,
-        no_ledger=lambda: pc.swapped(bridge, "_actions"),
-        logged_out=lambda: pc.swapped(bridge, "_rpc", _daemon_down),
-        query_ok=("roster", {"conversation_id": ROOM}), query_unavailable=("channels", {}),
-        blob_limit=lambda n: monkeypatch.setattr(wrapper, "MAX_ATTACHMENT_BYTES", n)))
-    assert daemon.sent == []
 
 
 #: What `BridgeAdapter.send` builds for "hello" to group conv-1, and the request

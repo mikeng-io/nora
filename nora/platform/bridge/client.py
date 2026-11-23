@@ -16,7 +16,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Set
 from dataclasses import dataclass
-from typing import Any, get_args
+from typing import Any, TypeGuard, get_args
 
 import aiohttp
 from opentelemetry.trace.propagation.tracecontext import (
@@ -480,7 +480,8 @@ def _str_or_none(value: object) -> bool:
     return value is None or isinstance(value, str)
 
 
-def valid_operation(body: object, *, message_id: int | None) -> bool:
+def valid_operation(body: object, *,
+                    message_id: int | None) -> TypeGuard[Mapping[str, Any]]:
     """Whether `body` is a well-formed operation envelope, and of the audit row
     `message_id` when the operation bound one: six parts, an operation outcome,
     `settled` for every outcome but `pending`. Its status is `parse_response`'s."""

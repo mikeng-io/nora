@@ -193,8 +193,7 @@ class PlatformSurface:
         return web.json_response({"ok": True})
 
     async def _readiness(self) -> dict[str, Any]:
-        """The bridge's status, `ok` only when it can also deliver: a ledger and
-        an account identity beside a healthy platform connection."""
+        """The status, `ok` only with a ledger and an account beside a live platform."""
         status = dict(await self._status())
         missing = ("no action service" if self._actions() is None
                    else None if await self._account() else "no account identity")

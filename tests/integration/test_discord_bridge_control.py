@@ -73,11 +73,10 @@ from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.discord.roster import DiscordRoster
 from tests.integration.platform_contract import (
     Bridge,
-    assert_not_ready,
+    assert_ready_needs,
     assert_serves_the_contract,
     drive_outcomes,
     envelope,
-    replay_after_its_audit_row_settled,
     swapped,
 )
 
@@ -1005,12 +1004,11 @@ async def test_actions_and_capture_fail_closed_without_collaborators(bridge):
     try:
         b._actions = None
         posts_before = len(world["rest_state"]["posts"])
-        resp = await http.post(OPERATIONS, json={
+        resp = await http.post(OPERATIONS, headers=AUTH, json={
             "operation_id": "w:test:1",
             "owner": {"kind": "work", "id": "w", "generation": 1},
             "kind": "send",
-            "effect": {"target": {"kind": "group", "id": CONV},
-                       "text": "must never post"}}, headers=AUTH)
+            "effect": {"target": {"kind": "group", "id": CONV}, "text": "must never post"}})
         body = await resp.json()
         assert resp.status == 503 and body["outcome"] == "unavailable"
         assert body["payload"]["error"]["kind"] == "unavailable"
@@ -1033,19 +1031,8 @@ async def test_actions_and_capture_fail_closed_without_collaborators(bridge):
 async def test_the_bridge_serves_the_platform_contract_routes(bridge, monkeypatch):
     assert_serves_the_contract(bridge["bridge"].routes())
     await bridge["bridge"].start()
-    assert (await bridge["http"].get("/ready", headers=AUTH)).status == 200
-    monkeypatch.setattr(bridge["client"], "is_ready", lambda: False)
-    assert (await bridge["http"].get("/ready", headers=AUTH)).status == 503
-
-
-@pytest.mark.parametrize("missing", ["_actions", "self_id"])
-async def test_ready_needs_every_delivery_dependency(bridge, missing):
-    """The gateway is ready, so only the missing ledger or account makes it unready."""
-    b = bridge["bridge"]
-    await b.start()
-    assert (await bridge["http"].get("/ready", headers=AUTH)).status == 200
-    with swapped(b, missing):
-        await assert_not_ready(bridge["http"], AUTH)
+    await assert_ready_needs(bridge["http"], AUTH, (bridge["client"], "is_ready", lambda: False),
+                             (bridge["bridge"], "_actions"), (bridge["bridge"], "self_id"))
 
 
 async def test_operation_outcomes_follow_the_contract(bridge, monkeypatch):
@@ -1059,20 +1046,6 @@ async def test_operation_outcomes_follow_the_contract(bridge, monkeypatch):
         query_unavailable=("channels", {"guild_id": "1"}),
         blob_limit=lambda n: monkeypatch.setattr(
             "nora.platform.discord.bridge_app.MAX_ATTACHMENT_BYTES", n)))
-
-
-async def test_a_settled_operation_replays_after_its_audit_row_settled(bridge, monkeypatch):
-    b = bridge["bridge"]
-    await b.start()
-    await replay_after_its_audit_row_settled(Bridge(
-        http=bridge["http"], auth=AUTH, store=b._actions._store, engine=bridge["engine"],
-        platform="discord", account_key=ACCOUNT, conversation_id=CONV,
-        no_ledger=lambda: swapped(b, "_actions"), logged_out=lambda: swapped(b, "self_id"),
-        query_ok=("channels", {"guild_id": GUILD}),
-        query_unavailable=("channels", {"guild_id": "1"}),
-        blob_limit=lambda n: monkeypatch.setattr(
-            "nora.platform.discord.bridge_app.MAX_ATTACHMENT_BYTES", n)))
-    assert bridge["rest_state"]["posts"] == []
 
 
 class _Emoji:
