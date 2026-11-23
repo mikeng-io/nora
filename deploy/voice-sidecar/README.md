@@ -77,12 +77,11 @@ one of them has room.
 **Every route requires `Authorization: Bearer $NORA_BRIDGE_TOKEN`**, the shared
 service bearer that nora and the bridges already hold. A missing or wrong
 bearer is `401 unauthorized` before the body is read. The process refuses to
-start without the token. Bodies are bounded on bytes as they arrive: a query,
-and every operation but `speak`, is `413` the moment it passes 64 KiB, and
-closes unread. An operation body runs on past 64 KiB, to the 4 MiB speech
-cap, only if its first 64 KiB already name `"kind": "speak"` at the top
-level, so a large speech names its kind before its effect. A body still
-arriving after 15 s is `408`. The listener accepts at most 64
+start without the token. A query body over 64 KiB, and an operation body over
+the 4 MiB speech cap, is `413` the moment it crosses the limit and closes
+unread; a body still arriving after 15 s is `408`. Once parsed, every
+operation but `speak` keeps the 64 KiB control bound: over it is `413`
+before any effect runs. The listener accepts at most 64
 connections.
 
 Events (`track-finished`, `stream-failed`, `speech-finished`,

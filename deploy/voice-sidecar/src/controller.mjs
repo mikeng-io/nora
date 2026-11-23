@@ -30,13 +30,15 @@ import { createOutbox, realClock } from './outbox.mjs';
 import { bearerMatches } from './auth.mjs';
 import { operationEnvelope, readEnvelope, sendEnvelope, sendJson, sendRefusal, traceOf } from './contract.mjs';
 import { createLedger, fingerprint } from './ledger.mjs';
-import { leadingKind, readBody } from './body.mjs';
 
 const MAX_SPEECH_BYTES = 2 * 1024 * 1024; // decoded b64 budget per `speak`
-// Raw operations body: every kind shares the route, so the cap is speech's
-// (b64 is ~4/3 of decoded).
+// Raw operations body: every kind shares the route, so the cap on arrival is
+// speech's (b64 is ~4/3 of decoded); a non-speak body over the control bound
+// is refused once parsed.
+// ponytail: a request may buffer up to 4 MiB before its kind is known, so the
+// read buffers are at most 4 MiB × the 64-connection listener limit, as speech's are.
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
-// A query body, and every operation but `speak`, in arriving bytes.
+// A query body (on arrival), and every operation but `speak` (once parsed).
 const MAX_CONTROL_BYTES = 64 * 1024;
 // What a snapshot echoes from requests is bounded, so an answer is small: the
 // current track's url (at most 8 KiB as JSON, else 400) and title (cut to
@@ -70,6 +72,43 @@ const MAX_CONNECTIONS = 64;
 export const VOICE_KINDS = Object.freeze([
   'join', 'leave', 'play', 'stop', 'pause', 'resume', 'set_volume', 'speak', 'report',
 ]);
+
+// Resolves { ok: true, raw, bytes } | { ok: false, reason: 'too_large' | 'timeout' | 'read_error' }.
+// An over-limit body is answered at the moment it crosses the limit, without
+// reading the rest: the front door writes 413 and closes the socket
+// (`closeUnread`). A body that is still arriving at the deadline is 'timeout'
+// (408). A transport failure mid-body ('error', or 'close' before 'end') is a
+// read error, not an over-limit body.
+function readBody(req, limit, timeoutMs) {
+  return new Promise((resolve) => {
+    let size = 0;
+    let settled = false;
+    const done = (result) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        resolve(result);
+      }
+    };
+    // Explicit rather than Node's requestTimeout: that one does not fire while
+    // a body is being consumed (measured on Node 26), so a slow-drip upload
+    // would hold its socket until the peer gave up.
+    const timer = setTimeout(() => done({ ok: false, reason: 'timeout' }), timeoutMs);
+    const chunks = [];
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (settled) return;
+      if (size > limit) {
+        req.pause();
+        return done({ ok: false, reason: 'too_large' });
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => done({ ok: true, raw: Buffer.concat(chunks).toString('utf8'), bytes: size }));
+    req.on('error', () => done({ ok: false, reason: 'read_error' }));
+    req.on('close', () => done({ ok: false, reason: 'read_error' }));
+  });
+}
 
 // Answers, then closes WITHOUT reading the rest of the request. Used for every
 // refusal that can leave a body unread (401, 408, 413): draining would let a
@@ -411,11 +450,8 @@ export function createFrontDoor({
 
   // Reads, parses and shape-checks a JSON object body, answering the refusal
   // itself; null when it did.
-  // Reads, parses and shape-checks a JSON object body, answering the refusal
-  // itself; null when it did. Past `limit` bytes it reads on, to `hardLimit`,
-  // only while `mayExceed(prefix)` says the body is one allowed to.
-  async function readJson(req, res, limit, { hardLimit = limit, mayExceed } = {}) {
-    const read = await readBody(req, { limit, hardLimit, mayExceed, timeoutMs: bodyTimeoutMs });
+  async function readJson(req, res, limit) {
+    const read = await readBody(req, limit, bodyTimeoutMs);
     if (!read.ok) {
       // Over-limit and timed-out requests close without reading any more.
       if (read.reason === 'too_large') closeUnread(req, res, 413, 'body_too_large');
@@ -463,12 +499,7 @@ export function createFrontDoor({
 
   const handlers = {
     async submit(req, res, trace) {
-      // Every kind shares this route, so the kind is read off the arriving
-      // bytes: only a body that names `speak` before it passes the control
-      // bound may run on to the speech cap.
-      const read = await readJson(req, res, MAX_CONTROL_BYTES, {
-        hardLimit: MAX_BODY_BYTES, mayExceed: (prefix) => leadingKind(prefix) === 'speak',
-      });
+      const read = await readJson(req, res, MAX_BODY_BYTES);
       if (!read) return;
       const { body } = read;
       const { operation_id: id, kind, effect } = body;
@@ -477,7 +508,7 @@ export function createFrontDoor({
       }
       if (!VOICE_KINDS.includes(kind)) return sendRefusal(res, 422, 'unknown_kind');
       if (!isObject(effect)) return sendRefusal(res, 400, 'invalid_body');
-      // The parsed kind decides, not the prefix (JSON keeps a repeated key's last value).
+      // Only `speak` carries audio; every other kind keeps the control bound.
       if (kind !== 'speak' && read.bytes > MAX_CONTROL_BYTES) return sendRefusal(res, 413, 'body_too_large');
       if (kind !== 'report' && !(typeof effect.guild_id === 'string' && SNOWFLAKE_RE.test(effect.guild_id))) {
         return sendRefusal(res, 400, 'wrong_guild');

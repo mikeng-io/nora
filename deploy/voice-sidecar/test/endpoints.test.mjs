@@ -196,7 +196,8 @@ test('voice outcomes follow the contract', async () => {
   // connection operation over the control bound, before its effect.
   const unauthorized = await fetch(`http://127.0.0.1:${h.port}/v1/voice/operations`, { method: 'POST', body: '{}' });
   assertNoEnvelope({ status: unauthorized.status, body: await unauthorized.json() }, 401, 'no bearer');
-  assertNoEnvelope(await rawStream(h.port, operationBody({ pad: 'x'.repeat(70 * 1024) })), 413, 'over the control bound');
+  assertNoEnvelope(await rawStream(h.port, operationBody({ operation_id: 'op-pad', kind: 'stop',
+    effect: { guild_id: GUILD, generation }, pad: 'x'.repeat(70 * 1024) })), 413, 'over the control bound');
   const spawnedBefore = h.procs.length;
   const longTitle = await rawStream(h.port, operationBody({ operation_id: 'op-long-title', kind: 'play',
     effect: { guild_id: GUILD, generation, stream_url: 'https://cdn.test/t', title: 'x'.repeat(550 * 1024) } }));
