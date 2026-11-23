@@ -39,6 +39,7 @@ from nora.domain.memory_index import (
 )
 from nora.domain.otp import CHECK_OUTCOMES as OTP_CHECK_OUTCOMES
 from nora.domain.otp import REQUEST_OUTCOMES as OTP_REQUEST_OUTCOMES
+from nora.domain.platform_state import PLATFORM_STATES
 from nora.domain.profile import PROFILE_OUTCOMES
 from nora.domain.reasoning_strip import (
     PATHS_HELP,
@@ -2280,14 +2281,10 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "Seconds since the last ingest event, per platform.",
         ("platform",),
     ),
-    # `Gauge`, not `Counter`, on purpose: prometheus-client's exposition format
-    # unconditionally appends `_total` to every counter-typed series' rendered name
-    # (`exposition.py::generate_latest`, not configurable). These two names do not end
-    # in `_total`; a `Counter` would silently rename them to `honcho_feed_success_total`
-    # / `honcho_feed_failure_total`, which the append-only metric-name contract
-    # forbids. A `Gauge` only ever incremented (see `Metrics.inc`) renders under its
-    # exact declared name and is otherwise indistinguishable from a counter for these
-    # call sites.
+    # `Gauge`, not `Counter`, on purpose: prometheus-client appends `_total` to
+    # every counter's rendered name (`exposition.py::generate_latest`), which would
+    # rename these two and break the append-only metric-name contract. A `Gauge`
+    # only ever incremented (`Metrics.inc`) renders under its exact declared name.
     _GaugeSpec("honcho_feed_success", "Successful Honcho feed calls."),
     _GaugeSpec("honcho_feed_failure", "Failed Honcho feed calls."),
     # R-17's other half. A failure COUNTER alone cannot distinguish "0 because
@@ -2460,6 +2457,9 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "may have happened and need an operator.",
         ("platform", "state"),
     ),
+    # One-hot liveness per platform, `disabled` included (platform-liveness.md).
+    _GaugeSpec("nora_platform_state", "1 for the platform's current liveness state, "
+               "0 for the others: " + ", ".join(PLATFORM_STATES), ("platform", "state")),
 )
 
 _HISTOGRAMS: tuple[_HistogramSpec, ...] = (

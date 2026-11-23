@@ -17,6 +17,7 @@ from typing import Any
 
 import discord
 
+from ...domain.latch import DegradeLatch
 from ...domain.models import ConversationTarget, NormalizedMessage
 from ...domain.observations import Observation
 from ...domain.ports import (
@@ -54,7 +55,7 @@ from .send import DEFAULT_API_BASE, DiscordSender
 log = logging.getLogger("nora.platform.discord")
 
 
-class DiscordAdapter:
+class DiscordAdapter(DegradeLatch):
     platform = "discord"
 
     def __init__(

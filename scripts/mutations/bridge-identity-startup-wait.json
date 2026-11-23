@@ -2,22 +2,22 @@
   {
     "name": "signal bridge identity is waited for, not asked once",
     "file": "nora/platform/registry.py",
-    "old": "            identity = await _resolve_or_refuse(\n                adapter, \"signal\", bridge=True, sleep=sleep, clock=clock)",
-    "new": "            identity = await _resolve_or_refuse(\n                adapter, \"signal\", bridge=False, sleep=sleep, clock=clock)",
+    "old": "dm_gate=ctx.dm_gates.get(\"signal\")), bridge=True)",
+    "new": "dm_gate=ctx.dm_gates.get(\"signal\")), bridge=False)",
     "target": "tests/unit/test_bridge_identity_startup_wait.py::test_a_still_starting_bridge_is_waited_for_until_its_identity_resolves[signal]"
   },
   {
     "name": "discord bridge identity is waited for, not asked once",
     "file": "nora/platform/registry.py",
-    "old": "            discord_identity = await _resolve_or_refuse(\n                discord_adapter, \"discord\", bridge=True, sleep=sleep, clock=clock)",
-    "new": "            discord_identity = await _resolve_or_refuse(\n                discord_adapter, \"discord\", bridge=False, sleep=sleep, clock=clock)",
+    "old": "speaker=ctx.discord_speaker), bridge=True)",
+    "new": "speaker=ctx.discord_speaker), bridge=False)",
     "target": "tests/unit/test_bridge_identity_startup_wait.py::test_a_still_starting_bridge_is_waited_for_until_its_identity_resolves[discord]"
   },
   {
     "name": "whatsapp bridge identity is waited for, not asked once",
     "file": "nora/platform/registry.py",
-    "old": "            whatsapp_identity = await _resolve_or_refuse(\n                whatsapp_adapter, \"whatsapp\", bridge=True, sleep=sleep, clock=clock)",
-    "new": "            whatsapp_identity = await _resolve_or_refuse(\n                whatsapp_adapter, \"whatsapp\", bridge=False, sleep=sleep, clock=clock)",
+    "old": "dm_gate=ctx.dm_gates.get(\"whatsapp\")), bridge=True)",
+    "new": "dm_gate=ctx.dm_gates.get(\"whatsapp\")), bridge=False)",
     "target": "tests/unit/test_bridge_identity_startup_wait.py::test_a_still_starting_bridge_is_waited_for_until_its_identity_resolves[whatsapp]"
   },
   {
@@ -46,7 +46,7 @@
     "file": "nora/platform/registry.py",
     "old": "            if not bridge_not_ready(exc):",
     "new": "            if False:",
-    "target": "tests/unit/test_bridge_identity_startup_wait.py::test_a_bridge_failure_that_is_not_still_starting_fails_immediately"
+    "target": "tests/unit/test_bridge_identity_startup_wait.py::test_a_bridge_failure_that_is_not_still_starting_degrades_immediately"
   },
   {
     "name": "an answer landing after the bound is refused, not accepted",

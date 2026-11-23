@@ -107,7 +107,7 @@ class SignalPlatformConfig(BaseModel):
     # "direct" (default): base_url is signal-cli's JSON-RPC/HTTP daemon.
     # "bridge": base_url is the standalone signal-bridge's action API —
     # inbound then arrives over Redis Streams, not SSE (design/platform-bridges).
-    mode: str = "direct"
+    mode: Literal["direct", "bridge"] = "direct"
     # The stream's account leg: an explicit opaque key, NOT derived from the
     # registered number — it must equal signal-bridge's NORA_BRIDGE_ACCOUNT_KEY
     # or the reader and producer name different streams.
@@ -137,7 +137,7 @@ class DiscordPlatformConfig(BaseModel):
     # "bridge": a standalone discord-bridge holds Gateway+voice+music; the app
     # consumes Redis and calls its action API at `base_url`. `account_key`
     # names the stream's account leg (one bot per bridge).
-    mode: str = "direct"
+    mode: Literal["direct", "bridge"] = "direct"
     base_url: str = "http://discord-bridge:18093"
     account_key: str = "default"
 
@@ -161,7 +161,7 @@ class WhatsAppPlatformConfig(BaseModel):
     # "direct" (default): inbound over the bridge's SSE and sends over its
     # REST API. "bridge": inbound over Redis Streams (the durable handoff),
     # sends via the shared action API.
-    mode: str = "direct"
+    mode: Literal["direct", "bridge"] = "direct"
     account_key: str = "default"
 
 
@@ -190,7 +190,7 @@ class InstagramPlatformConfig(BaseModel):
 
     enabled: bool = False
     base_url: str = "http://instagram-bridge:18082"
-    mode: str = "direct"
+    mode: Literal["direct", "bridge"] = "direct"
     account_key: str = "default"
 
 

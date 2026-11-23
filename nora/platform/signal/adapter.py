@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Awaitable, Callable, Set
 
+from ...domain.latch import DegradeLatch
 from ...domain.models import ConversationTarget, NormalizedMessage
 from ...domain.ports import (
     AdapterHealth,
@@ -24,7 +25,7 @@ from .self_id import MetricsSink, derive_identifiers
 from .send import SignalSender
 
 
-class SignalAdapter:
+class SignalAdapter(DegradeLatch):
     platform = "signal"
 
     def __init__(

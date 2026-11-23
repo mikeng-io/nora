@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
 from typing import Any
 
 import redis.asyncio as aioredis
 
 from nora.app.bridge_queue import BridgeRuntime, DbSpeakingLocks, StreamReader, WorkRunner
-from nora.app.startup import StartupError
 from nora.infra.sql.bridge_store import WORK_KINDS, SqlBridgeStore
 from nora.infra.sql.participation_state import SqlParticipationStateStore
 from nora.platform.bridge.inspection import QueueInspector
 from nora.platform.bridge.inspection import prime as prime_queue_metrics
+from nora.platform.registry import bridge_platforms
 
 """Bridge runtime wiring step."""
 
@@ -31,20 +32,12 @@ async def runtime(
     # ---- platform bridges (design/platform-bridges) ------------------------- Any platform
     # with `mode = "bridge"` consumes inbound over Redis Streams instead of its live
     # listener, and its adapter is a BridgeAdapter client of that bridge's action API. The…
-    bridge_platforms = [
-        p
-        for p in ("signal", "discord", "whatsapp", "instagram")
-        if getattr(cfg.platforms, p).enabled and getattr(cfg.platforms, p).mode == "bridge"
-    ]
+    bridged = bridge_platforms(cfg.platforms)
     bridge_runtime: BridgeRuntime | None = None
-    if bridge_platforms:
+    if bridged:
+        # Present by construction: `composition_platforms.adapters` refused
+        # startup before the registry was built if it was not.
         redis_url = cfg.credentials.get(cfg.bridges.redis_url_env, "")
-        if not redis_url:
-            raise StartupError(
-                f"bridge mode is enabled for {bridge_platforms} but "
-                f"${cfg.bridges.redis_url_env} (bridges.redis_url_env) is not "
-                "set — refusing to start deaf"
-            )
         bridge_store = SqlBridgeStore(engine)
         bridge_redis = aioredis.from_url(redis_url)
         if owner is not None:
@@ -73,6 +66,9 @@ async def runtime(
             slots=slots,
             db_locks=bridge_locks,
             adapters=dict(registry.adapters),
+            # Claims only rows of LIVE platforms: a degraded platform's work
+            # stays pending until its identity is registered.
+            live_platforms=registry.live_platforms,
             gate=policy,
             metrics=metrics,
             participation=participation_trigger,
@@ -106,8 +102,10 @@ async def runtime(
                     redis=bridge_redis,
                     store=bridge_store,
                     metrics=metrics,
+                    # The first stream call waits for the platform to be live.
+                    wait_live=functools.partial(registry.wait_live, p),
                 )
-                for p in bridge_platforms
+                for p in bridged
             ],
             runner=bridge_runner,
             inspector=queue_inspector,
@@ -117,5 +115,5 @@ async def runtime(
         # Zero-series for the counters the runtime increments — the REAL
         # work-kind and action-op tuples, so `increase()` over a series the
         # first event creates does not lose it.
-        prime_queue_metrics(metrics, bridge_platforms, work_kinds=sorted(WORK_KINDS))
+        prime_queue_metrics(metrics, bridged, work_kinds=sorted(WORK_KINDS))
     return RuntimeWiring(bridge_runtime=bridge_runtime)

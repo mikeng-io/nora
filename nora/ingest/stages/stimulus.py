@@ -37,7 +37,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Set
 from dataclasses import dataclass
 from typing import Any
 
@@ -69,14 +69,14 @@ class Wiring:
 
     store: StimulusStore
     unit_of: Callable[[str, str], str | None]
-    self_ids: frozenset[str]
+    self_ids: Set[str]
     reply_quiet_seconds: float
     timeout_seconds: float = 2.0
     clock: Callable[[], float] = time.time
 
 
 def _authored_by_nora(
-    message: NormalizedMessage, target: EditedMessage | None, self_ids: frozenset[str],
+    message: NormalizedMessage, target: EditedMessage | None, self_ids: Set[str],
 ) -> bool:
     if message.sender_id and message.sender_id in self_ids:
         return True
@@ -85,7 +85,7 @@ def _authored_by_nora(
 
 def _answers_nora_at(
     message: NormalizedMessage, item: MessageItem, target: EditedMessage | None,
-    self_ids: frozenset[str],
+    self_ids: Set[str],
 ) -> int | None:
     """The time of Nora's message this item answers, or None."""
     if item == "message" and message.quote is not None:

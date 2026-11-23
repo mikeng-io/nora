@@ -123,7 +123,8 @@ class App:
         return self.deps.adapter
 
     @property
-    def account(self) -> str:
+    def account(self) -> str | None:
+        """Her Signal account, or None while Signal is degraded."""
         return self.deps.account
 
     @property
@@ -142,20 +143,35 @@ class App:
     def llm_state(self):
         return self.deps.llm_state
 
-    async def run(self) -> None:
+    def health_app(self, *, started_at: float):
+        """The `/health` application `run` serves — one builder, so a test
+        reads the same handler production does."""
         deps = self.deps
-        # Shared with register_web_routes below so /health's uptime and
-        # /app/v1/status's uptime never disagree about when this process
-        # started.
-        started_at = time.time()
-        health_app = build_health_app(
+        return build_health_app(
             adapter=deps.adapter, adapters=deps.registry.adapters,
+            registry=deps.registry,
             store=deps.audit, honcho=deps.memory,
             doctrine_store=deps.doctrine_store, metrics=deps.metrics,
             started_at=started_at, llm_state=deps.llm_state,
             identity_file=self.cfg.identity_file, policy_file=self.cfg.policy_file,
             index_state=deps.index_state, config_reload=deps.config_reload.status,
         )
+
+    def start_platform_recovery(self, *, sleep=asyncio.sleep):
+        """Spawn the background re-resolution of every platform degraded at
+        startup (`AdapterRegistry.recover_forever`) — the one spawn `run`
+        makes, so a promoted platform needs no restart
+        (design/platform-bridges/platform-liveness.md)."""
+        return self.deps.background.spawn(
+            self.deps.registry.recover_forever(sleep=sleep))
+
+    async def run(self) -> None:
+        deps = self.deps
+        # Shared with register_web_routes below so /health's uptime and
+        # /app/v1/status's uptime never disagree about when this process
+        # started.
+        started_at = time.time()
+        health_app = self.health_app(started_at=started_at)
         register_web_routes(
             health_app, store=deps.audit, honcho=deps.memory, reminders=deps.reminders,
             persons=deps.persons, ai_peer=self.cfg.honcho.ai_peer, started_at=started_at,
@@ -406,13 +422,16 @@ class App:
         if deps.onboarding is not None:
             deps.background.spawn(deps.onboarding.run())
 
+        self.start_platform_recovery()
         adapter_tasks = runtime.start_adapters(
             deps.background,
             [
                 runtime.SupervisedAdapter(
                     platform=adapter.platform,
+                    # A degraded platform listens only once its identity is in.
                     listen=functools.partial(
-                        adapter.listen, **_listen_kwargs(deps, adapter)),
+                        _listen_when_live, deps.registry, adapter,
+                        _listen_kwargs(deps, adapter)),
                 )
                 for adapter in deps.registry
             ],
@@ -481,6 +500,12 @@ class App:
 
     async def shutdown(self) -> None:
         await lifecycle.close_dependencies(self.deps, health_runner=self._health_runner)
+
+
+async def _listen_when_live(registry: Any, adapter: Any, kwargs: dict[str, Any]) -> None:
+    """Await the platform's liveness gate, then listen (platform-liveness.md)."""
+    await registry.wait_live(adapter.platform)
+    await adapter.listen(**kwargs)
 
 
 def _listen_kwargs(deps: Dependencies, adapter: Any) -> dict[str, Any]:

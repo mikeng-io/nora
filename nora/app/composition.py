@@ -302,7 +302,7 @@ class Dependencies:
     # paths that must not be — starting each listener, routing a reply back to
     # the platform it came from, reporting health per platform — read instead.
     registry: AdapterRegistry
-    account: str
+    account: str | None  # her Signal account; None while Signal is degraded
     doctrine: Doctrine
     doctrine_store: DoctrineStore
     debounce: Debounce

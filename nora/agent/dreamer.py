@@ -73,7 +73,7 @@ import functools
 import json
 import logging
 import time
-from collections.abc import Callable, Coroutine, Mapping, Sequence
+from collections.abc import Callable, Coroutine, Mapping, Sequence, Set
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal, Protocol, TypeVar, get_args
@@ -889,7 +889,7 @@ class RegistryToolSource:
         home_rooms: Mapping[str, HomeRoom] | None = None,
         scope_rooms: Mapping[str, HomeRoom] | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
-        self_ids: frozenset[str] = frozenset(),
+        self_ids: Set[str] = frozenset(),
     ) -> None:
         self._registry = registry
         self._store = store
@@ -914,7 +914,7 @@ class RegistryToolSource:
         # room on a platform with no roster answers `available=False`, the
         # honest state, never an empty room.
         self._rosters = dict(rosters or {})
-        self._self_ids = frozenset(self_ids)
+        self._self_ids = self_ids  # the live view, never a copy
         # (adaptor, unit) pairs already reported for the missing-home-room branch
         # below. The condition is a CONFIG state, true on every pass until
         # policy.toml changes, so an error per pass is a stream of identical lines

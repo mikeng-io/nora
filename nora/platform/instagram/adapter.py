@@ -47,6 +47,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 
+from ...domain.latch import DegradeLatch
 from ...domain.models import ConversationTarget, NormalizedMessage
 from ...domain.ports import (
     AdapterHealth,
@@ -70,7 +71,7 @@ from .summons import SUMMONS_KIND, parse_summons
 log = logging.getLogger("nora.instagram.adapter")
 
 
-class InstagramAdapter:
+class InstagramAdapter(DegradeLatch):
     platform = "instagram"
 
     def __init__(self, base_url: str, *, summons: SummonsSink | None = None) -> None:
@@ -84,50 +85,29 @@ class InstagramAdapter:
         self._sender = InstagramSender(base_url)
         self._reactor = InstagramReactor(base_url)
         self._identity: PlatformIdentity | None = None
-        self._degraded_reason: str = ""
 
     # --- the degraded state ------------------------------------------
 
     @property
     def degraded(self) -> bool:
-        """True once `degrade()` has been called, or once a heartbeat has
-        reported a session that cannot act.
+        """True while the registry's liveness latch is set (`DegradeLatch`), or
+        while a heartbeat reports a session that cannot act.
 
-        TWO sources because there are two ways to lose the session and only
-        one of them happens at startup. The startup half is latched — a
-        process that began degraded stays degraded until it restarts, because
-        nothing re-runs `resolve_identity` — and the runtime half tracks the
-        live heartbeat, so a session that recovers stops being reported as
-        degraded without a restart.
+        TWO sources because there are two ways to lose the session. The latch
+        is the registry's (set when `resolve_identity` failed, cleared when its
+        background recovery promotes the platform); the runtime half tracks
+        the live heartbeat, so a session that recovers stops being reported as
+        degraded without a restart either way.
         """
-        return bool(self._degraded_reason) or self._listener.session_degraded
+        return bool(self._latch.reason) or self._listener.session_degraded
 
     @property
     def degraded_reason(self) -> str:
-        if self._degraded_reason:
-            return self._degraded_reason
+        if self._latch.reason:
+            return self._latch.reason
         if self._listener.session_degraded:
             return f"instagram session is {self._listener.session_state!r}"
         return ""
-
-    def degrade(self, reason: str) -> None:
-        """Register this adapter as present-but-unable, with a stated reason.
-
-        Called by `AdapterRegistry.from_config` when `resolve_identity()`
-        failed. The ERROR line is the startup half of the visibility
-        requirement; `health()` is the other half, and neither replaces the
-        other — a log line scrolls away and a health field says nothing about
-        when it started.
-        """
-        self._degraded_reason = reason
-        log.error(
-            "instagram is ENABLED but DEGRADED: %s. Nora is registered on instagram and "
-            "will neither send nor hear anything there until this is cleared and she is "
-            "restarted. Signal and Discord are unaffected — this platform is allowed to "
-            "start degraded precisely so one Instagram checkpoint cannot take them down "
-            "(design/instagram-adoption/bridge.md).",
-            reason,
-        )
 
     # --- the port ---------------------------------------------------------
 

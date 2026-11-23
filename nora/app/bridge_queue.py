@@ -27,6 +27,7 @@ import contextlib
 import json
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -192,13 +193,9 @@ def stream_name(platform: str, account_key: str) -> str:
 
 @dataclass
 class BridgeRuntime:
-    """The bridge-mode runtime surface composition hands to `nora/__main__`:
-    one elected `StreamReader` per (platform, account_key) stream and the one
-    `WorkRunner`. `run()` is cancelled by the app's `background.cancel_all`
-    like every other spawned loop; `health()` reports each reader's liveness
-    honestly — an unavailable Redis or a lost election is degraded, never
-    reported healthy.
-    """
+    """The bridge-mode runtime composition hands to `nora/__main__`: one
+    elected `StreamReader` per stream and the one `WorkRunner`, cancelled by
+    `background.cancel_all`; a lost election or Redis is degraded, never healthy."""
 
     redis: aioredis.Redis
     store: SqlBridgeStore
@@ -214,9 +211,8 @@ class BridgeRuntime:
         try:
             await asyncio.gather(*children)
         except BaseException:
-            # Same drain contract as WorkRunner.run: a plain gather returns
-            # on the first child's end while siblings still unwind — and a
-            # re-cancel would kill an already-unwinding child's cleanup.
+            # WorkRunner.run's drain contract: never re-cancel a child that is
+            # already unwinding.
             self._stop.set()
             for child in children:
                 if not child.done() and child.cancelling() == 0:
@@ -225,10 +221,8 @@ class BridgeRuntime:
             raise
 
     async def inspect_forever(self, *, interval_seconds: float = 60.0) -> None:
-        """The runtime inspection loop — composition spawns it beside
-        `run()`. One bounded `QueueInspector.inspect` per reader stream per
-        interval; a degraded read publishes `unavailable` and NO backlog
-        gauges, per the inspector's own posture."""
+        """One bounded inspection per reader stream per interval, beside `run()`;
+        a degraded read publishes `unavailable` and no backlog gauges."""
         if self.inspector is None:
             return
         while not self._stop.is_set():
@@ -240,13 +234,10 @@ class BridgeRuntime:
                                        timeout=interval_seconds)
 
     async def queue_snapshot(self) -> dict[str, Any]:
-        """The HTTP-mount surface (composition mounts it): one bounded
-        inspection per reader stream as a JSON-safe dict. `unavailable`
-        when the inspector is unwired — an absent readout is honest, a
-        fabricated empty one is not."""
+        """One bounded inspection per reader stream as a JSON-safe dict;
+        `unavailable` when unwired, never a fabricated empty readout."""
         if self.inspector is None:
-            return {"status": "unavailable",
-                    "detail": "queue inspector not wired"}
+            return {"status": "unavailable", "detail": "queue inspector not wired"}
         return {
             reader.stream: asdict(await self.inspector.inspect(
                 [reader.stream], platform=reader._platform))
@@ -259,8 +250,7 @@ class BridgeRuntime:
             redis_ok = True
         except aioredis.RedisError:
             redis_ok = False
-        return {"ok": redis_ok,
-                "streams": [r.stream for r in self.readers],
+        return {"ok": redis_ok, "streams": [r.stream for r in self.readers],
                 "detail": "" if redis_ok else "redis unavailable"}
 
     def stop(self) -> None:
@@ -283,8 +273,10 @@ class StreamReader:
     def __init__(self, *, platform: str, account_key: str,
                  redis: aioredis.Redis, store: SqlBridgeStore,
                  consumer: str | None = None,
-                 metrics: Any = None) -> None:
+                 metrics: Any = None, wait_live: Callable[[], Awaitable[None]] | None = None,
+                 ) -> None:
         self._platform = platform
+        self._wait_live = wait_live  # no stream call before the platform is live
         self._account_key = account_key
         self.stream = stream_name(platform, account_key)
         self._redis = redis
@@ -294,6 +286,8 @@ class StreamReader:
         self._stop = asyncio.Event()
 
     async def run(self) -> None:
+        if self._wait_live is not None:
+            await self._wait_live()
         while not self._stop.is_set():
             async with self._store.advisory_lock(
                     READER_NS, self.stream) as elected:
@@ -407,8 +401,10 @@ class WorkRunner:
                  allowlist: Any = None, persons: Any = None,
                  fire_speak: Any = None, participation_state: Any = None,
                  observations: Any = None, onboarding: Any = None, access: Any = None,
-                 room_command: Any = None) -> None:
+                 room_command: Any = None,
+                 live_platforms: Callable[[], frozenset[str]] | None = None) -> None:
         self._store = store
+        self._live_platforms = live_platforms  # claim only live platforms' rows
         self._redis = redis
         self._ingest = ingest
         self._engagement = engagement
@@ -499,8 +495,12 @@ class WorkRunner:
         # the commit — the outcome then resolves server-side with the
         # receipt lost, and a committed `running` row is orphaned under a
         # dead owner until lease expiry.
+        live = self._live_platforms() if self._live_platforms else None
+        if live is not None and not live:
+            return None
         claim = asyncio.ensure_future(self._store.claim_next(
-            owner=self._owner, lease_seconds=self._lease, kinds=kinds))
+            owner=self._owner, lease_seconds=self._lease, kinds=kinds,
+            platforms=live))
         try:
             return await asyncio.shield(claim)
         except asyncio.CancelledError:

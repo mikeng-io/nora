@@ -66,7 +66,7 @@ import logging
 import mimetypes
 import time
 import uuid
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence, Set
 from dataclasses import replace
 from datetime import datetime
 from typing import Any
@@ -600,7 +600,7 @@ class FirePath:
         media_join: MediaJoin | None = None,
         quote_window: QuoteWindow | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
-        self_ids: frozenset[str] = frozenset(),
+        self_ids: Set[str] = frozenset(),
         preview_source: LinkPreviewSource | None = None,
         llm_state: Any = None,
         tool_call_log_store: ToolCallLogStore | None = None,

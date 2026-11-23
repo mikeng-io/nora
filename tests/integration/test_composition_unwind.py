@@ -13,6 +13,7 @@ reload task's cancellation.
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -253,6 +254,11 @@ async def _bridge_cfg(base: Any, state: dict[str, Any], monkeypatch):
     """`base` with signal in BRIDGE mode against a local fake bridge."""
     async with _serve(state) as base_url:
         monkeypatch.setenv("NORA_BRIDGE_TOKEN", TOKEN)
+        # Bridge mode refuses to start without a Redis URL before any adapter
+        # is built; these builds fail (or are cancelled) before the bridge
+        # runtime ever dials it. A test that reaches Redis sets its own.
+        if not os.environ.get("NORA_REDIS_URL"):
+            monkeypatch.setenv("NORA_REDIS_URL", "redis://127.0.0.1:1/0")
         yield override_config(base, {
             "platforms.signal.mode": "bridge",
             "platforms.signal.base_url": base_url,
@@ -274,11 +280,13 @@ async def test_a_later_bridge_failure_closes_the_adapters_already_built(
     track_bridge_sessions,
 ):
     """Signal's identity resolves against one fake; Discord's first answer
-    is a hard failure. The registry raises — and the adapter it already
-    built, PLUS the one in flight, close their real sessions."""
+    refuses Nora's credentials (401 — misconfiguration, fatal; a merely
+    unavailable identity would degrade Discord instead). The registry
+    raises — and the adapter it already built, PLUS the one in flight,
+    close their real sessions."""
     owner = StartupOwner()
     signal_state = _state("signal")
-    discord_state = _state("discord", not_ready=10**9, status=500)
+    discord_state = _state("discord", not_ready=10**9, status=401)
     async with _serve(signal_state) as signal_url, _serve(discord_state) as discord_url:
         cfg = _PlatformsCfg(
             signal=_SignalCfg(enabled=True, mode="bridge", base_url=signal_url),

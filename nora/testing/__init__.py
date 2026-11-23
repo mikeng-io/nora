@@ -151,6 +151,7 @@ from nora.testing.online import (
     FakeSteamPresenceProvider,
     FakeVoicePresenceSource,
 )
+from nora.testing.platform import HANG, FakePlatformAdapter
 from nora.testing.scripted_agent import (
     TOOL_CHOICE_FIRST_CALL,
     FakeAgentRunner,
@@ -166,6 +167,7 @@ from nora.testing.summons_ledger import InMemorySummonsLedger
 __all__ = [
     "BACKED_TOOLS",
     "EVAL_CIRCLE_ID",
+    "HANG",
     "TOOL_CHOICE_FIRST_CALL",
     "CannedParkingProvider",
     "CannedPresenceReader",
@@ -197,6 +199,7 @@ __all__ = [
     "FakeMediaSource",
     "FakeMemoryStore",
     "FakeObservationStore",
+    "FakePlatformAdapter",
     "FakeRecordStore",
     "FakeReverseGeocoder",
     "FakeRosterSource",

@@ -11,7 +11,7 @@ every person would pass a test that the real query fails.
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Sequence, Set
 from dataclasses import dataclass, replace
 
 from nora.domain.culture import Episode, RoomMessage
@@ -91,7 +91,7 @@ class InMemoryCharacterEvidence:
 
     async def addressed_since(
         self, *, rooms: Sequence[tuple[str, str]], since_ms: int, until_ms: int,
-        limit: int, self_ids: frozenset[str] = frozenset(),
+        limit: int, self_ids: Set[str] = frozenset(),
     ) -> list[RoomMessage]:
         """`SqlCharacterEvidence.addressed_since`: a human message in `rooms`
         in `(since_ms, until_ms]` that quotes one of her messages in the same
