@@ -16,8 +16,8 @@ from opentelemetry import trace
 from nora.__main__ import App
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import BRIDGE_ACTION, MESSAGES, STIMULUS
+from nora.platform.bridge.contract import action_of, effect_target, operation_response
 from nora.platform.bridge.queue import StreamProducer
-from nora.platform.bridge.service import action_http_status, action_response
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import RunEvidence, read_events, validate_events
 from nora.subject.journey import envelope, settled_event
@@ -113,14 +113,13 @@ async def test_real_app_bridge_admission_settles_before_cancellation(
 
         async def action(request):
             body = await request.json()
-            if body.get("op") not in {"send", "react"} or not body.get("owner"):
-                return web.json_response({"error": "invalid action"}, status=422)
+            if body.get("kind") not in {"send", "react"} or not body.get("owner"):
+                return web.json_response({"error": "invalid operation"}, status=422)
             actions.append(body)
-            reply = await owners["actions"].run(body)
-            return web.json_response(action_response(body["action_id"], reply),
-                                     status=action_http_status(reply))
+            reply = await owners["actions"].run(action_of(body))
+            return operation_response(reply, target=effect_target(body.get("effect")), trace="")
 
-        apps["platforms.signal.base_url"].router.add_post("/v1/actions", action)
+        apps["platforms.signal.base_url"].router.add_post("/v1/platform/operations", action)
         apps["platforms.signal.base_url"].router.add_post("/api/v1/rpc", daemon.rpc)
     async with IsolatedServices(database_url=clean_pg_url,
                                 applications=apps, redis=True) as env:

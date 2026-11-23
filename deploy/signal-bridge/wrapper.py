@@ -13,7 +13,7 @@ import logging
 import os
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -38,6 +38,7 @@ from nora.infra.sql.bridge_store import SqlBridgeStore
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.obs.metrics import Metrics
 from nora.platform.bridge import telemetry as bt
+from nora.platform.bridge.contract import PlatformSurface, QueryAnswer
 from nora.platform.bridge.envelope import (
     Envelope,
     canonical_source_key,
@@ -56,9 +57,6 @@ from nora.platform.bridge.service import (
     DurableActionService,
     JournalCaptureSink,
     JournalPublisher,
-    _reply_from_row,
-    action_http_status,
-    action_response,
     admitted,
     receipt_intent_ids,
     receipt_via,
@@ -135,7 +133,7 @@ def _valid_account_key(cfg: BridgeConfig) -> None:
 
 class _SignalExecutor:
     """Signal's half of the durable action contract — the `DurableActionService`
-    executor the /v1/actions route and the receipt lane share. The ledger
+    executor the platform operations and the receipt lane share. The ledger
     decides WHEN an effect may run; this only performs it, with Signal's own
     honesty: `SignalReactor`/`SignalSender` never raise, so every non-`ok`
     answer that is not a definitive `retryable` refusal is `uncertain` — the
@@ -209,7 +207,7 @@ class _SignalExecutor:
                 "uncertain", kind="transport", message=type(exc).__name__)
 
     def _attachment(self, att: Any) -> OutboundAttachment | None:
-        """Custody bytes live under `/v1/attachments/{key}` — read them back
+        """Custody bytes live under `/v1/platform/blobs/{key}` — read them back
         so the send carries real bytes, not a stale ref. A miss returns None
         and the whole send is REJECTED upstream — deliberately NOT
         `DiscordRestActionService._attachment`'s policy, which drops the
@@ -498,7 +496,7 @@ class Bridge:
     async def _custody(self, msg: Any) -> tuple[Any, list[dict[str, Any]]]:
         """Download each attachment into custody AND rebind the serialized
         `MediaRef.platform_id` to the custody key — the app's
-        `BridgeMediaSource` fetches `GET /v1/attachments/{platform_id}`, so
+        `BridgeMediaSource` fetches `GET /v1/platform/blobs/{platform_id}`, so
         the rehydrated reference must name the key bytes answer to, never
         the upstream handle that no byte answers to (same binding the
         WhatsApp bridge makes: `ref.platform_id = key`).
@@ -603,13 +601,11 @@ class Bridge:
     def routes(self) -> web.Application:
         app = web.Application(middlewares=[self._auth])
         app.router.add_get("/metrics", self.get_metrics)
-        app.router.add_post("/v1/actions", self.post_action)
-        app.router.add_get("/v1/actions/{aid}", self.get_action)
-        app.router.add_get("/v1/self", self.get_self)
-        app.router.add_get("/v1/health", self.get_health)
-        app.router.add_post("/v1/reads", self.post_read)
-        app.router.add_put("/v1/attachments/{key}", self.put_attachment)
-        app.router.add_get("/v1/attachments/{key}", self.get_attachment)
+        PlatformSurface(
+            platform=PLATFORM, actions=lambda: self._actions, account=self.account,
+            status=self.status, query=self.query,
+            custody_dir=lambda: self.cfg.attach_dir,
+            max_blob_bytes=lambda: MAX_ATTACHMENT_BYTES).add_routes(app)
         return app
 
     async def get_metrics(self, req: web.Request) -> web.Response:
@@ -630,85 +626,39 @@ class Bridge:
         AND rotation-stable source digest of every frozen intent."""
         return receipt_intent_ids(self.journal)
 
-    async def post_action(self, req: web.Request) -> web.Response:
-        try:
-            body = await req.json()
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return web.json_response({"error": "body must be JSON"}, status=400)
-        reply = await self._actions.run(body, links=bt.carrier_links({
-            "traceparent": req.headers.get("traceparent") or "",
-            "tracestate": req.headers.get("tracestate") or ""}))
-        return web.json_response(
-            action_response(str(body.get("action_id") or ""), reply),
-            status=action_http_status(reply))
-
-    async def get_action(self, req: web.Request) -> web.Response:
-        """Persisted, scoped result — 404 only for a definitely-absent id;
-        `started` (in progress or uncertain) is a 200 with the row's truth.
-        The shared service does the tenant scoping; the shared renderer the
-        honest outcome shape (`message_id` rides for client reconcile)."""
-        aid = req.match_info["aid"]
-        try:
-            row = await self._actions.get(aid)
-        except Exception:  # noqa: BLE001 — ledger unreachable is a 503, not a 404
-            return web.json_response({"error": "store unavailable"}, status=503)
-        if row is None:
-            return web.json_response({"error": "unknown action"}, status=404)
-        return web.json_response(action_response(aid, _reply_from_row(row)))
-
-    async def get_self(self, req: web.Request) -> web.Response:
+    async def account(self) -> dict[str, Any] | None:
+        """The linked account, `None` while the daemon cannot answer for it."""
         try:
             await self._rpc("getUserStatus", {})
-            return web.json_response({"platform": PLATFORM,
-                                      "primary": self.cfg.signal_account,
-                                      "aliases": [self.cfg.signal_account]})
-        except Exception as exc:  # noqa: BLE001 — status facade
-            return web.json_response({"error": type(exc).__name__}, status=502)
+        except Exception:  # noqa: BLE001 — an unanswered daemon is not logged in yet
+            return None
+        return {"platform": PLATFORM, "primary": self.cfg.signal_account,
+                "aliases": [self.cfg.signal_account]}
 
-    async def get_health(self, req: web.Request) -> web.Response:
+    async def status(self) -> dict[str, Any]:
         try:
             await self._rpc("getUserStatus", {})
-            return web.json_response({"ok": True, "detail": None})
-        except Exception as exc:  # noqa: BLE001 — health is the probe
-            return web.json_response({"ok": False, "detail": type(exc).__name__})
+            return {"ok": True, "detail": None}
+        except Exception as exc:  # noqa: BLE001 — status is the probe
+            return {"ok": False, "detail": type(exc).__name__}
 
-    async def post_read(self, req: web.Request) -> web.Response:
-        body = await req.json()
-        if body["op"] == "roster":
+    async def query(self, kind: str, params: Mapping[str, Any]) -> QueryAnswer:
+        """`roster` from the daemon's `listGroups`; every other kind is not served here."""
+        if kind != "roster":
+            return QueryAnswer("unavailable")
+        try:
             groups = await self._rpc("listGroups", {})
-            # Stamp the completed daemon read, never the caller's receipt time.
-            observed_ms = int(time.time() * 1000)
-            gid = (body.get("params") or {}).get("conversation_id")
-            members = next((g.get("members") or [] for g in groups or []
-                            if g.get("id") == gid or g.get("groupId") == gid), None)
-            return web.json_response({"available": members is not None, "members": members or [],
-                                      "observed_ms": observed_ms})
-        return web.json_response({"error": "unknown read"}, status=404)
-
-    async def put_attachment(self, req: web.Request) -> web.Response:
-        key = req.match_info["key"]
-        if not attachment_key_ok(key):
-            return web.json_response({"error": "bad key"}, status=400)
-        body = await req.clone(client_max_size=MAX_ATTACHMENT_BYTES + 1).read()
-        if len(body) > MAX_ATTACHMENT_BYTES:
-            return web.json_response({"error": "too large"}, status=413)
-        path = self.cfg.attach_dir / key
-        if path.is_file() and path.read_bytes() != body:
-            # Immutable custody: a key names ONE payload; a different body
-            # under the same key is a conflict, never a silent overwrite.
-            return web.json_response({"error": "key conflict"}, status=409)
-        self.cfg.attach_dir.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(body)
-        return web.Response(status=201)
-
-    async def get_attachment(self, req: web.Request) -> web.Response:
-        key = req.match_info["key"]
-        if not attachment_key_ok(key):
-            return web.json_response({"error": "bad key"}, status=400)
-        path = self.cfg.attach_dir / key
-        if not path.is_file():
-            return web.json_response({"error": "unknown"}, status=404)
-        return web.Response(body=path.read_bytes())
+        except Exception as exc:  # noqa: BLE001 — read boundary; logged by type
+            log.error("roster read failed: %s", type(exc).__name__)
+            return QueryAnswer("unavailable")
+        # Stamp the completed daemon read, never the caller's receipt time.
+        observed_ms = int(time.time() * 1000)
+        gid = params.get("conversation_id")
+        members = next((g.get("members") or [] for g in groups or []
+                        if g.get("id") == gid or g.get("groupId") == gid), None)
+        if members is None:
+            return QueryAnswer("unavailable")
+        return QueryAnswer("ok", {"members": members}, observed_ms)
 
 
 def _admitted(proj: dict[str, Any], conversation_id: str, sender_id: str,

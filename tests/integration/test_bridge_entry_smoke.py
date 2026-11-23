@@ -240,7 +240,7 @@ def test_discord_entry_serves_v1_before_connecting(
             try:
                 conn = http.client.HTTPConnection(
                     "127.0.0.1", port, timeout=2)
-                conn.request("GET", "/v1/health")
+                conn.request("GET", "/v1/operations/status")
                 status = conn.getresponse().status
                 conn.close()
                 assert status == 401  # serving AND authing — never open
@@ -338,16 +338,16 @@ async def test_discord_entry_owns_the_voice_graph_from_the_deployed_config(
         async with aiohttp.ClientSession() as http:
             while True:
                 assert proc.returncode is None, (
-                    "entry died before serving /v1")
+                    "entry died before serving the contract")
                 try:
                     async with http.get(
-                            f"{base}/v1/health", headers=headers) as r:
+                            f"{base}/v1/operations/status", headers=headers) as r:
                         if r.status == 200:
                             break
                 except aiohttp.ClientError:
                     pass
                 assert time.monotonic() < deadline, (
-                    "entry never served an authenticated /v1/health")
+                    "entry never served an authenticated status read")
                 await asyncio.sleep(0.2)
 
             # join → the controller's /voice/join, on the config's allow-list.
@@ -398,14 +398,14 @@ async def test_discord_entry_owns_the_voice_graph_from_the_deployed_config(
             # the (host-mapped) volume path.
             blob = b"\x01\x02\x03" * 16
             async with http.put(
-                    f"{base}/v1/attachments/att-1", data=blob,
+                    f"{base}/v1/platform/blobs/att-1", data=blob,
                     headers=headers) as r:
-                assert r.status == 200, await r.text()
+                assert (await r.json())["outcome"] == "complete", await r.text()
             assert (
                 Path(env["NORA_BRIDGE_ATTACH_DIR"]) / "att-1"
             ).read_bytes() == blob
             async with http.get(
-                    f"{base}/v1/attachments/att-1", headers=headers) as r:
+                    f"{base}/v1/platform/blobs/att-1", headers=headers) as r:
                 assert r.status == 200
                 assert await r.read() == blob
     finally:

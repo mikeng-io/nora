@@ -61,7 +61,7 @@ class SignalDiscovery:
     `members[]` rows plus the instant the upstream read finished, or
     `None` when the read cannot complete — direct mode calls
     `directory.group_members`, bridge mode calls the bridge's
-    `/v1/reads` roster op and takes its `observed_ms`. `own_account` is
+    `roster` query and takes its `observed_at_ms`. `own_account` is
     the service's own number so the roster never onboards Nora herself.
     """
 

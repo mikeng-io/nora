@@ -42,6 +42,7 @@ from nora import config
 from nora.engagement.stages.indicate import ACK
 from nora.obs.logging import setup_logging
 from nora.obs.metrics import Metrics
+from nora.platform.bridge.client import ACCOUNT_PATH, QUERIES_PATH
 from nora.platform.bridge.projection import (
     DEFAULT_PROJECTION_DIR,
     ENV_ACCOUNT_KEY,
@@ -72,25 +73,25 @@ def _bridge_base(platform: str) -> str | None:
 
 
 def _self_url(platform: str) -> str | None:
-    """The bridge's own /v1/self. Explicit env wins; the platform's base or a
+    """The bridge's own account read. Explicit env wins; the platform's base or a
     same-container bridge (`NORA_BRIDGE_PORT` set) derive it."""
     if url := _platform_env(platform, "SELF_URL") or os.environ.get(ENV_SELF_URL):
         return url
     if base := _bridge_base(platform):
-        return f"{base}/v1/self"
+        return f"{base}{ACCOUNT_PATH}"
     if port := os.environ.get(ENV_BRIDGE_PORT):
-        return f"http://127.0.0.1:{port}/v1/self"
+        return f"http://127.0.0.1:{port}{ACCOUNT_PATH}"
     return None
 
 
 def _reads_url(platform: str) -> str | None:
-    """The bridge's POST /v1/reads (guild channel directory). Explicit env,
+    """The bridge's platform queries (guild channel directory). Explicit env,
     then the platform base — the publisher's last resort is the platform's
     configured `base_url` (bridge-mode deployments only)."""
     if url := _platform_env(platform, "READS_URL") or os.environ.get(ENV_READS_URL):
         return url
     if base := _bridge_base(platform):
-        return f"{base}/v1/reads"
+        return f"{base}{QUERIES_PATH}"
     return None
 
 
@@ -128,9 +129,9 @@ def _fleet_publishers(
             out_dir=out_dir,
             config_loader=functools.partial(config.load, require_secrets=False),
             ack_emoji=ACK, metrics=metrics,
-            self_url=_self_url(platform) or (f"{base}/v1/self" if base else None),
+            self_url=_self_url(platform) or (f"{base}{ACCOUNT_PATH}" if base else None),
             self_token=token,
-            reads_url=_reads_url(platform) or (f"{base}/v1/reads" if base else None),
+            reads_url=_reads_url(platform) or (f"{base}{QUERIES_PATH}" if base else None),
         )
         try:
             publishers.append(build(account_key=key))
@@ -164,12 +165,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--self-url", default=None,
-        help="single mode only: bridge /v1/self URL (env: NORA_BRIDGE_SELF_URL, "
+        help="single mode only: bridge account-read URL (env: NORA_BRIDGE_SELF_URL, "
         "or NORA_BRIDGE_PORT loopback). Unset: config floor only.",
     )
     parser.add_argument(
         "--reads-url", default=None,
-        help="single mode only: bridge POST /v1/reads endpoint for the guild "
+        help="single mode only: bridge platform-queries URL for the guild "
         "channel directory (env: NORA_BRIDGE_READS_URL or NORA_BRIDGE_BASE_URL; "
         "fallback: the platform's configured base_url).",
     )

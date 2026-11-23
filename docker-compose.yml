@@ -125,8 +125,8 @@ services:
       - NORA_TRACING_HEADERS_ENV=${NORA_TRACING_HEADERS_ENV:-}
       - LANGFUSE_OTLP_HEADERS=${LANGFUSE_OTLP_HEADERS:-}
     healthcheck:
-      # /v1/health reports gateway-side readiness; the app's depends_on waits on it.
-      test: ["CMD-SHELL", "printf 'Authorization: Bearer %s\\n' \"$$NORA_BRIDGE_API_TOKEN\" | curl -fsS -m 5 -H @- http://127.0.0.1:18090/v1/health || exit 1"]
+      # /ready answers 200 only when the bridge can serve; the app's depends_on waits on it.
+      test: ["CMD-SHELL", "printf 'Authorization: Bearer %s\\n' \"$$NORA_BRIDGE_API_TOKEN\" | curl -fsS -m 5 -H @- http://127.0.0.1:18090/ready || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -171,7 +171,7 @@ services:
       - NORA_BRIDGE_PORT=18093
     command: ["--config", "/app/config.toml"]
     healthcheck:
-      test: ["CMD-SHELL", "printf 'Authorization: Bearer %s\\n' \"$$NORA_BRIDGE_API_TOKEN\" | curl -fsS -m 5 -H @- http://127.0.0.1:18093/v1/health || exit 1"]
+      test: ["CMD-SHELL", "printf 'Authorization: Bearer %s\\n' \"$$NORA_BRIDGE_API_TOKEN\" | curl -fsS -m 5 -H @- http://127.0.0.1:18093/ready || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -349,7 +349,7 @@ services:
   # into the shared named volume every bridge above mounts READ-ONLY. It
   # reads config/policy/identity through the same loaders the app composes
   # — never a second authorization parser — and keeps publishing while the
-  # `nora` container is stopped: files in, bridge `/v1/self` + `/v1/reads`
+  # `nora` container is stopped: files in, each bridge's account read and queries
   # opportunistically, no app anywhere in the loop. The same /app mount
   # targets nora carries so komodo's scoped config-reload reader detection
   # already sees it.

@@ -76,7 +76,7 @@ def _sources(
     template = template.replace(
         'account_key = "signal-acct-1"', f'account_key = "{platform_key}"')
     # The configured-account floor establishes identity without a live
-    # /v1/self — matches the deploy shape where signal keeps its number here.
+    # account read — matches the deploy shape where signal keeps its number here.
     template = template.replace(
         'account = ""                     # empty = derive from the signal-cli daemon',
         'account = "+85287654321"')
@@ -283,10 +283,10 @@ def test_url_env_chain_per_platform_then_shared_then_config(
         tmp_path, monkeypatch):
     entry = _load_entry(monkeypatch)
     monkeypatch.setenv('SIGNAL_BRIDGE_BASE_URL', 'http://sig-bridge:18090')
-    monkeypatch.setenv('DISCORD_BRIDGE_SELF_URL', 'http://dc:18093/v1/self')
-    assert entry._self_url('signal') == 'http://sig-bridge:18090/v1/self'
-    assert entry._reads_url('signal') == 'http://sig-bridge:18090/v1/reads'
-    assert entry._self_url('discord') == 'http://dc:18093/v1/self'
+    monkeypatch.setenv('DISCORD_BRIDGE_SELF_URL', 'http://dc:18093/explicit')
+    assert entry._self_url('signal') == 'http://sig-bridge:18090/v1/platform/accounts/self'
+    assert entry._reads_url('signal') == 'http://sig-bridge:18090/v1/platform/queries'
+    assert entry._self_url('discord') == 'http://dc:18093/explicit'
     monkeypatch.setenv('NORA_BRIDGE_BASE_URL', 'http://shared:8080')
-    assert entry._reads_url('whatsapp') == 'http://shared:8080/v1/reads'
-    assert entry._self_url('instagram') == 'http://shared:8080/v1/self'
+    assert entry._reads_url('whatsapp') == 'http://shared:8080/v1/platform/queries'
+    assert entry._self_url('instagram') == 'http://shared:8080/v1/platform/accounts/self'

@@ -28,8 +28,8 @@ from aiohttp import web
 from opentelemetry import trace
 
 from evals import backbone
-from nora.platform.bridge.service import ActionReply, action_response
-from nora.platform.bridge.wire import ActionRequest
+from nora.platform.bridge.contract import PlatformSurface, QueryAnswer
+from nora.platform.bridge.service import ActionReply
 from nora.subject import Knowledge, Message, SubjectSpec, know, obtain
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import EvidenceError, RunEvidence, read_events
@@ -82,29 +82,34 @@ class OfflineSubjectServices:
         daemon = FakeSignalDaemon()
         bridge = web.Application()
 
-        async def identity(_request: web.Request) -> web.Response:
-            return web.json_response({"primary": "generated-self", "aliases": []})
+        async def account() -> dict[str, object]:
+            return {"platform": "signal", "primary": "generated-self", "aliases": []}
 
-        async def groups(_request: web.Request) -> web.Response:
-            return web.json_response(daemon.groups)
+        async def status() -> dict[str, object]:
+            return {"ok": True}
 
-        async def health(_request: web.Request) -> web.Response:
-            return web.json_response({"ok": True})
+        async def query(kind: str, params: object) -> QueryAnswer:
+            if kind != "groups":
+                return QueryAnswer("unavailable")
+            return QueryAnswer("ok", daemon.groups)
 
-        async def action(request: web.Request) -> web.Response:
-            body = await request.json()
-            try:
-                action = ActionRequest.from_dict(body)
-                target = action.request["target"]
-                payload = action.request[{"send": "text", "react": "emoji"}[action.op]]
-                if not action.action_id or not target["id"] or not isinstance(payload, str):
-                    raise ValueError("invalid bridge action")
-            except (KeyError, TypeError, ValueError):
-                return web.json_response({"error": "unexpected bridge action"}, status=400)
-            return web.json_response(action_response(
-                action.action_id, ActionReply("confirmed", platform_ms=daemon.sent_at_ms),
-            ))
+        class Actions:
+            async def run(self, action: dict, *, links: object = None) -> ActionReply:
+                try:
+                    effect = action["request"]
+                    payload = effect[{"send": "text", "react": "emoji"}[action["op"]]]
+                    if not action["action_id"] or not effect["target"]["id"] \
+                            or not isinstance(payload, str):
+                        raise ValueError("invalid bridge action")
+                except (KeyError, TypeError, ValueError):
+                    return ActionReply("rejected", kind="bad_request",
+                                       message="unexpected bridge action")
+                return ActionReply("confirmed", platform_ms=daemon.sent_at_ms)
 
+            async def get(self, action_id: str) -> None:
+                return None
+
+        actions = Actions()
         async def signal_rpc(request: web.Request) -> web.Response:
             body = await request.json()
             if not isinstance(body, list):
@@ -116,10 +121,10 @@ class OfflineSubjectServices:
             ])
 
         bridge.router.add_post("/api/v1/rpc", signal_rpc)
-        bridge.router.add_get("/v1/self", identity)
-        bridge.router.add_get("/v1/groups", groups)
-        bridge.router.add_get("/v1/health", health)
-        bridge.router.add_post("/v1/actions", action)
+        PlatformSurface(
+            platform="signal", actions=lambda: actions, account=account, status=status,
+            query=query, custody_dir=lambda: None, max_blob_bytes=lambda: 0,
+        ).add_routes(bridge)
         async with IsolatedServices(database_url=database_url, redis=redis, applications={
             "llm.base_url": model,
             "platforms.signal.base_url": bridge,

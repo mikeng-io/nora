@@ -15,13 +15,13 @@ whole integration API):
   (`POST /v1/music/{op}`; the bridge re-verifies the requester against its
   own live voice cache and the projection-derived guild allow-list).
 - `voice_presence` — `DiscordVoicePresence` → `BridgeVoicePresence`
-  (`/v1/reads` op `voice_presence`).
+  (the `voice_presence` query).
 - `discord_presence` — `DiscordPresence` → `BridgeDiscordPresence`
-  (`/v1/reads` op `member_presence`).
+  (the `member_presence` query).
 - `rosters["discord"]` — `DiscordRoster` → `BridgeDiscordRoster`
-  (`/v1/reads` op `roster`).
+  (the `roster` query).
 - `policy_channels` — `ClientChannelDirectory` → `BridgeChannelDirectory`
-  (`/v1/reads` ops `channels`+`threads`, TTL'd snapshot: the policy port is
+  (the `channels` query, TTL'd snapshot: the policy port is
   synchronous, so it reads a freshness-bounded snapshot and answers `None`
   — the same "unavailable" a dead client gave — the moment it goes stale).
 - the adapter — `BridgeAdapter` → `BridgeDiscordAdapter`: same adapter, plus
@@ -66,7 +66,15 @@ from nora.domain.ports import (
     speakable,
 )
 from nora.memory import ActAuthority, EffectRecorder, Outcome
-from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint
+from nora.platform.bridge.client import (
+    ACCOUNT_PATH,
+    BridgeAdapter,
+    BridgeAnswer,
+    BridgeEndpoint,
+    BridgeUnavailableError,
+    bridge_call,
+    bridge_query,
+)
 
 from .channels import StaticChannelDirectory
 
@@ -124,22 +132,21 @@ class BridgeControlClient:
             return None
         return data.get("outcome") if isinstance(data, dict) else None
 
-    async def read(self, op: str, params: dict[str, Any]) -> dict[str, Any] | None:
-        """`POST /v1/reads` → `{available, value}` — `available` is the
-        bridge's own "the cache could be read" flag; transport failure is
-        `None`, which every caller maps to its port's unavailable answer."""
+    async def read(self, kind: str, params: dict[str, Any]) -> BridgeAnswer | None:
+        """A platform query's `ok` answer; any other outcome or a transport
+        failure is `None`, which every caller maps to its port's unavailable answer."""
+        return await bridge_query(self._endpoint, kind, params, session=await self._client(),
+                                  timeout_s=self._timeout.total or 30)
+
+    async def account(self) -> dict[str, Any] | None:
+        """The bridge's own account payload, `None` for any other outcome."""
         try:
-            session = await self._client()
-            async with session.post(
-                    f"{self._endpoint.base_url}/v1/reads",
-                    json={"op": op, "params": params},
-                    timeout=self._timeout) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-        except (TimeoutError, aiohttp.ClientError, ValueError):
+            answer = await bridge_call(
+                await self._client(), "GET", f"{self._endpoint.base_url}{ACCOUNT_PATH}", "read")
+        except BridgeUnavailableError:
             return None
-        return data if isinstance(data, dict) else None
+        return answer.payload if answer.outcome == "ok" and isinstance(answer.payload, dict) \
+            else None
 
     async def get(self, path: str) -> dict[str, Any] | None:
         """`GET` on the shared surface — `None` on any non-200/transport
@@ -248,7 +255,7 @@ class BridgeMusicTool:
 
 
 class BridgeVoicePresence:
-    """`VoicePresenceSource` over `/v1/reads` op `voice_presence`. NEVER
+    """`VoicePresenceSource` over the `voice_presence` query. NEVER
     raises; `None` is "the bridge could not read the cache", an absent key
     is that member's real "not in voice"."""
 
@@ -262,9 +269,9 @@ class BridgeVoicePresence:
             return {}
         data = await self._control.read(
             "voice_presence", {"member_ids": sorted(member_ids)})
-        if data is None or not data.get("available"):
+        if data is None:
             return None
-        members = data.get("value") or {}
+        members = data.payload or {}
         return {
             mid: VoiceChannelRef(
                 channel_id=str(ref.get("channel_id") or ""),
@@ -276,7 +283,7 @@ class BridgeVoicePresence:
 
 
 class BridgeDiscordPresence:
-    """`DiscordPresenceSource` over `/v1/reads` op `member_presence`.
+    """`DiscordPresenceSource` over the `member_presence` query.
     NEVER raises; `None` is "the bridge could not read the cache"."""
 
     def __init__(self, *, control: BridgeControlClient) -> None:
@@ -289,9 +296,9 @@ class BridgeDiscordPresence:
             return {}
         data = await self._control.read(
             "member_presence", {"member_ids": sorted(member_ids)})
-        if data is None or not data.get("available"):
+        if data is None:
             return None
-        states = data.get("value") or {}
+        states = data.payload or {}
         return {
             mid: DiscordPresenceState(
                 status=str(s.get("status") or "offline"),
@@ -303,7 +310,7 @@ class BridgeDiscordPresence:
 
 
 class BridgeDiscordRoster:
-    """`RosterSource` over `/v1/reads` op `roster` — the bridge runs the real
+    """`RosterSource` over the `roster` query — the bridge runs the real
     `DiscordRoster` (REST members list) and this mirrors its contract:
     `available=False` on any read failure, never an empty room."""
 
@@ -315,16 +322,16 @@ class BridgeDiscordRoster:
     async def roster(self, *, conversation_id: str) -> Roster:
         data = await self._control.read(
             "roster", {"conversation_id": conversation_id})
-        if data is None or not data.get("available"):
+        if data is None:
             return Roster(available=False)
-        members = (data.get("value") or {}).get("members") or []
+        members = (data.payload or {}).get("members") or []
         return Roster(
             available=True,
             members=tuple(frozenset(str(i) for i in ids) for ids in members))
 
 
 class BridgeChannelDirectory:
-    """The policy's `ChannelDirectory` over `/v1/reads` — a TTL'd snapshot,
+    """The policy's `ChannelDirectory` over the `channels` query — a TTL'd snapshot,
     because the policy port is SYNCHRONOUS and the bridge is not. Reads
     answer the last successfully refreshed map; the moment it goes stale
     they answer `None` — the same "unavailable" a dead client gave, never a
@@ -361,9 +368,9 @@ class BridgeChannelDirectory:
             self._guild_ids() if callable(self._guild_ids) else self._guild_ids)
         for guild_id in guild_ids:
             data = await self._control.read("channels", {"guild_id": guild_id})
-            if data is None or not data.get("available"):
+            if data is None:
                 continue
-            value = data.get("value") or {}
+            value = data.payload or {}
             gmap = value.get("channels")
             if isinstance(gmap, dict):
                 channels[guild_id] = {str(k): str(v) for k, v in gmap.items()}
@@ -453,14 +460,14 @@ class BridgeDiscordAdapter:
         return await self._delegate.resolve_identity()
 
     async def own_handle(self) -> str | None:
-        """Her `@handle`, memoized from the bridge's `/v1/self` — the same
+        """Her `@handle`, memoized from the bridge's account read — the same
         once-a-process read `DiscordAdapter.own_handle` made off
         `/users/@me`. Display text for `<presence>` only; `None` when the
         bridge cannot answer (a missing handle degrades a display, never a
         reply decision)."""
         if not self._handle_fetched:
             self._handle_fetched = True
-            data = await self._control.get("/v1/self")
+            data = await self._control.account()
             handle = (data or {}).get("handle")
             self._own_handle = handle if isinstance(handle, str) else None
         return self._own_handle

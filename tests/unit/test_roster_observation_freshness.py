@@ -43,7 +43,8 @@ from nora.domain.managed import (
     ObservedRows,
 )
 from nora.people import PlatformOnboarding
-from nora.platform.bridge.client import BridgeEndpoint
+from nora.platform.bridge.client import BridgeAnswer, BridgeEndpoint
+from nora.platform.bridge.contract import read_body
 from nora.platform.discord.discovery import DiscordDiscovery
 from nora.platform.discord.roster import DiscordRoster
 from nora.platform.signal import directory
@@ -232,9 +233,10 @@ class TestBridgeEnvelopesCarryTheStamp:
         stamp = NOW_MS - 1_000
 
         class Control:
-            async def read(self, op, params):
-                return {"available": True, "observed_ms": stamp,
-                        "value": {"members": [{"user": {"id": "10001"}}]}}
+            async def read(self, kind, params):
+                return BridgeAnswer("ok", 200, read_body(
+                    "ok", {"members": [{"user": {"id": "10001"}}]},
+                    source="discord", trace="", observed_ms=stamp))
 
         platforms = SimpleNamespace(
             discord=SimpleNamespace(mode="bridge"),
@@ -257,9 +259,9 @@ class TestBridgeEnvelopesCarryTheStamp:
         services, _ = _graph()
 
         class Control:
-            async def read(self, op, params):
-                return {"available": True,
-                        "value": {"members": [{"user": {"id": "10001"}}]}}
+            async def read(self, kind, params):
+                return BridgeAnswer("ok", 200, {
+                    "outcome": "ok", "payload": {"members": [{"user": {"id": "10001"}}]}})
 
         platforms = SimpleNamespace(
             discord=SimpleNamespace(mode="bridge"),
@@ -285,13 +287,13 @@ class TestBridgeEnvelopesCarryTheStamp:
 
         async def reads(req):
             seen.append(await req.json())
-            return web.json_response({
-                "available": True, "observed_ms": stamp,
+            return web.json_response(read_body("ok", {
                 "members": [{"number": "+852001",
-                             "uuid": "00000000-0000-4abc-8def-000000000001"}]})
+                             "uuid": "00000000-0000-4abc-8def-000000000001"}]},
+                source="signal", trace="", observed_ms=stamp))
 
         app = web.Application()
-        app.router.add_post("/v1/reads", reads)
+        app.router.add_post("/v1/platform/queries", reads)
         server = TestServer(app)
         await server.start_server()
         try:
@@ -303,16 +305,16 @@ class TestBridgeEnvelopesCarryTheStamp:
             await server.close()
         assert result is not None and result.observed_ms == stamp
         assert len(result.rows) == 1
-        assert seen and seen[0]["op"] == "roster"
+        assert seen and seen[0]["kind"] == "roster"
 
     async def test_signal_bridge_fetch_without_a_stamp_stays_undated(self):
         async def reads(req):
-            return web.json_response({
-                "available": True,
-                "members": [{"number": "+852001"}]})
+            body = read_body("ok", {"members": [{"number": "+852001"}]},
+                             source="signal", trace="")
+            return web.json_response({**body, "when": {**body["when"], "observed_at_ms": 0}})
 
         app = web.Application()
-        app.router.add_post("/v1/reads", reads)
+        app.router.add_post("/v1/platform/queries", reads)
         server = TestServer(app)
         await server.start_server()
         try:

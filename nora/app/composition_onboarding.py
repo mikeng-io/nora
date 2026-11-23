@@ -6,7 +6,7 @@ runtime spawns nothing (the default file mode and empty config keep
 today's behavior exactly — see `config_identity.OnboardingConfig`).
 
 Each rule's discovery is platform-shaped: Discord gets the guild member
-read (direct REST or the bridge's `/v1/reads` mirror), Signal the
+read (direct REST or the bridge's platform query), Signal the
 `listGroups` member rows (direct RPC or the bridge's roster op), and a
 platform that cannot enumerate a member set — Telegram's OIDC identity,
 WhatsApp — refuses to BUILD rather than fabricate a roster. A rule that
@@ -23,13 +23,11 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
-import aiohttp
-
 from nora.domain.managed import ObservedRows
 from nora.domain.managed_ports import CollectionDiscovery
 from nora.domain.management import Actor, ActorKind, Scope, ScopeKind
 from nora.people import OnboardingRule, PlatformOnboarding, RosterProvisioning
-from nora.platform.bridge.client import BridgeEndpoint
+from nora.platform.bridge.client import BridgeEndpoint, bridge_query
 from nora.platform.discord.discovery import DiscordDiscovery
 from nora.platform.discord.roster import DiscordRoster
 from nora.platform.signal import directory
@@ -106,15 +104,14 @@ def _discovery_for(
             ) -> ObservedRows | None:
                 data = await discord_control.read(
                     "members", {"guild_id": guild_id})
-                if data is None or not data.get("available"):
+                if data is None:
                     return None
-                rows = (data.get("value") or {}).get("members")
+                rows = (data.payload or {}).get("members")
                 if not isinstance(rows, list):
                     return None
                 # The bridge read live when asked; its own stamp is the
                 # observation time — an envelope without one stays undated.
-                return ObservedRows(
-                    rows=tuple(rows), observed_ms=_observed_ms(data))
+                return ObservedRows(rows=tuple(rows), observed_ms=data.observed_ms)
 
             return DiscordDiscovery(fetch=bridge_fetch)
         if not discord_token:
@@ -159,39 +156,18 @@ def _discovery_for(
     return None
 
 
-def _observed_ms(data: dict[str, Any]) -> int | None:
-    """The producer timestamp, or zero when no timestamp is present."""
-    stamp = data.get("observed_ms")
-    return stamp if isinstance(stamp, int) and stamp > 0 else None
-
-
 def _signal_bridge_fetch(
     endpoint: BridgeEndpoint,
 ) -> Callable[[str], Awaitable[ObservedRows | None]]:
     """The Signal bridge roster and its producer timestamp."""
-    timeout = aiohttp.ClientTimeout(total=30.0)
 
     async def fetch(collection: str) -> ObservedRows | None:
-        try:
-            async with aiohttp.ClientSession(timeout=timeout) as session, session.post(
-                f"{endpoint.base_url}/v1/reads",
-                json={"op": "roster",
-                      "params": {"conversation_id": collection}},
-                headers={
-                    "Authorization": f"Bearer {endpoint.token}"},
-            ) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-        except (TimeoutError, aiohttp.ClientError, ValueError):
-            return None
-        if not isinstance(data, dict) or not data.get("available"):
-            return None
-        members = data.get("members")
-        if not isinstance(members, list):
+        data = await bridge_query(endpoint, "roster", {"conversation_id": collection})
+        members = (data.payload or {}).get("members") if data is not None else None
+        if data is None or not isinstance(members, list):
             return None
         return ObservedRows(
             rows=tuple(m for m in members if isinstance(m, dict)),
-            observed_ms=_observed_ms(data))
+            observed_ms=data.observed_ms)
 
     return fetch

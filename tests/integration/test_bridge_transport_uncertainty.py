@@ -11,10 +11,53 @@ from aiohttp.test_utils import TestServer
 
 from nora.domain.actions import ActionOwner
 from nora.domain.models import ConversationTarget, NormalizedMessage
+from nora.domain.ports import SendResult
+from nora.domain.service_api import OperationConflictError, status_for
 from nora.ingest.policy import MentionPolicy
 from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint, BridgeUnavailableError
+from nora.platform.bridge.contract import operation_body, read_body
+from nora.platform.bridge.service import ActionReply
 from nora.platform.discord.bridge_app import DiscordBridge
 from nora.platform.discord.bridge_control import BridgeControlClient, BridgeDiscordAdapter
+
+OPERATIONS = "/v1/platform/operations"
+ACCOUNT = "/v1/platform/accounts/{account_id}"
+STATE = {"complete": "confirmed", "pending": "started", "rejected": "rejected",
+         "unsupported": "rejected", "denied": "rejected", "uncertain": "uncertain",
+         "unavailable": "unavailable"}
+KIND = {"unsupported": "unsupported", "denied": "owner", "rejected": "platform"}
+
+
+def _read(outcome, payload=None, status=None):
+    return web.json_response(read_body(outcome, payload, source="signal", trace=""),
+                             status=status or status_for(outcome))
+
+
+def _operation(outcome, **reply):
+    """An operation envelope as a bridge renders it; `incomplete` has no stored state."""
+    if outcome == "incomplete":
+        body = operation_body(ActionReply("rejected", kind="platform"), target="r", trace="")
+        body["outcome"] = "incomplete"
+    else:
+        body = operation_body(ActionReply(STATE[outcome], kind=KIND.get(outcome, ""), **reply),
+                              target="r", trace="")
+    return body
+
+
+def _bridge(*, post=None, get=None, account=None):
+    app = web.Application()
+    if post is not None:
+        app.router.add_post(OPERATIONS, post)
+    if get is not None:
+        app.router.add_get(OPERATIONS + "/{operation_id}", get)
+    if account is not None:
+        app.router.add_get(ACCOUNT, account)
+    return TestServer(app)
+
+
+def _adapter(server):
+    return BridgeAdapter("signal", BridgeEndpoint(
+        str(server.make_url("")).rstrip("/"), "synthetic"), owner=ActionOwner("work", "w-1", 1))
 
 
 @pytest.mark.parametrize("body", [
@@ -22,11 +65,9 @@ from nora.platform.discord.bridge_control import BridgeControlClient, BridgeDisc
 ])
 async def test_bridge_identity_rejects_unusable_primary(body):
     async def identity(request):
-        return web.json_response(body)
+        return _read("ok", body)
 
-    app = web.Application()
-    app.router.add_get("/v1/self", identity)
-    async with TestServer(app) as server:
+    async with _bridge(account=identity) as server:
         adapter = BridgeAdapter("discord", BridgeEndpoint(
             str(server.make_url("")).rstrip("/"), "synthetic"))
         try:
@@ -44,7 +85,7 @@ async def test_discord_identity_unavailable_until_ready_then_mention_engages():
         adapter = BridgeAdapter("discord", BridgeEndpoint(
             str(server.make_url("")).rstrip("/"), "synthetic"))
         try:
-            with pytest.raises(BridgeUnavailableError, match="/v1/self -> 503"):
+            with pytest.raises(BridgeUnavailableError, match="accounts/self -> unavailable"):
                 await adapter.resolve_identity()
             bridge._client.user = SimpleNamespace(
                 id=123, name="generated-nora", discriminator="0")
@@ -81,17 +122,12 @@ async def test_absent_readback_does_not_reject_an_inflight_post():
         return web.Response()
 
     async def get(request: web.Request) -> web.Response:
-        reads.append(request.match_info["action_id"])
-        return web.Response(status=404)
+        reads.append(request.match_info["operation_id"])
+        return _read("nothing_found")
 
-    app = web.Application()
-    app.router.add_post("/v1/actions", post)
-    app.router.add_get("/v1/actions/{action_id}", get)
-    server = TestServer(app)
+    server = _bridge(post=post, get=get)
     await server.start_server()
-    adapter = BridgeAdapter(
-        "signal", BridgeEndpoint(str(server.make_url("")).rstrip("/"), "synthetic"),
-        owner=ActionOwner("work", "w-1", 1))
+    adapter = _adapter(server)
     try:
         result = await adapter.send(
             target=ConversationTarget("signal", "synthetic-room", "group"),
@@ -123,22 +159,22 @@ async def test_bound_facades_borrow_root_sessions_and_isolate_actions(discord, w
 
     async def health(request):
         health_reads.append(request.path)
-        return web.json_response({"ok": True})
+        return _read("ok", {"ok": True})
 
     async def identity(request):
-        return web.json_response({"primary": "synthetic-self", "handle": "nora"})
+        return _read("ok", {"primary": "synthetic-self", "handle": "nora"})
 
     async def post(request):
         body = await request.json()
-        if body.get("op") != "send" or not body.get("request", {}).get("text"):
+        if body.get("kind") != "send" or not body.get("effect", {}).get("text"):
             return web.Response(status=400)
         actions.append(body)
-        return web.json_response({"state": "confirmed", "platform_ms": len(actions)})
+        return web.json_response(_operation("complete", platform_ms=len(actions)))
 
     app = web.Application(middlewares=[auth])
-    app.router.add_get("/v1/health", health)
-    app.router.add_get("/v1/self", identity)
-    app.router.add_post("/v1/actions", post)
+    app.router.add_get("/v1/operations/status", health)
+    app.router.add_get(ACCOUNT, identity)
+    app.router.add_post(OPERATIONS, post)
     async with TestServer(app) as server:
         endpoint = BridgeEndpoint(str(server.make_url("")).rstrip("/"), "synthetic")
         transport = BridgeAdapter("discord" if discord else "signal", endpoint)
@@ -174,7 +210,7 @@ async def test_bound_facades_borrow_root_sessions_and_isolate_actions(discord, w
                                      (rebound, "retry"), (live, "live")]))
             assert all(result.ok for result in results)
             assert (await bound.send(target=target, text="work-second")).ok
-            by_text = {a["request"]["text"]: (a["owner"], a["action_id"])
+            by_text = {a["effect"]["text"]: (a["owner"], a["operation_id"])
                        for a in actions}
             assert by_text == {
                 "work-first": (owner.to_dict(), "w-synthetic:send:0"),
@@ -221,3 +257,133 @@ async def test_bound_facades_borrow_root_sessions_and_isolate_actions(discord, w
                 await facade.close()
             await root.close()
             await control.close()
+
+
+@pytest.mark.parametrize(("outcome", "status"), [("unavailable", 200), ("ok", 503)])
+async def test_a_status_that_disagrees_with_its_outcome_is_unavailable(outcome, status):
+    async def identity(request):
+        return _read(outcome, {"primary": "synthetic-self"}, status=status)
+
+    async with _bridge(account=identity) as server:
+        adapter = _adapter(server)
+        try:
+            with pytest.raises(BridgeUnavailableError, match="-> unavailable"):
+                await adapter.resolve_identity()
+        finally:
+            await adapter.close()
+
+
+async def test_a_redirect_is_unavailable():
+    followed: list[str] = []
+
+    async def redirect(request):
+        raise web.HTTPFound("/elsewhere")
+
+    async def elsewhere(request):
+        followed.append(request.path)
+        return _read("ok", {"primary": "synthetic-self"})
+
+    server = _bridge(account=redirect)
+    server.app.router.add_get("/elsewhere", elsewhere)
+    async with server:
+        adapter = _adapter(server)
+        try:
+            with pytest.raises(BridgeUnavailableError, match="-> unavailable"):
+                await adapter.resolve_identity()
+        finally:
+            await adapter.close()
+    assert followed == []
+
+
+def _counting(post_answer, read_answer=None):
+    """A bridge whose POST and read-back answers are fixed; it counts both."""
+    calls = {"post": 0, "get": 0}
+
+    async def post(request):
+        calls["post"] += 1
+        await request.json()
+        return await post_answer(request)
+
+    async def get(request):
+        calls["get"] += 1
+        return await read_answer(request)
+
+    return calls, _bridge(post=post, get=get)
+
+
+async def _send(server):
+    adapter = _adapter(server)
+    try:
+        return await adapter.send(
+            target=ConversationTarget("signal", "synthetic-room", "group"), text="reply")
+    finally:
+        await adapter.close()
+
+
+async def test_a_lost_answer_reads_the_record_back():
+    async def lost(request):
+        request.transport.close()
+        return web.Response()
+
+    async def absent(request):
+        return _read("nothing_found")
+
+    calls, server = _counting(lost, absent)
+    async with server:
+        result = await _send(server)
+    assert calls == {"post": 1, "get": 1}
+    assert result == SendResult(ok=False, uncertain=True)
+
+
+async def test_an_uncertain_operation_is_never_resent():
+    async def uncertain(request):
+        return web.json_response(_operation("uncertain"))
+
+    calls, server = _counting(uncertain)
+    async with server:
+        result = await _send(server)
+    assert calls == {"post": 1, "get": 0}
+    assert result == SendResult(ok=False, uncertain=True)
+
+
+_OK = SendResult(ok=True, timestamp=7, platform_message_id="ref-1",
+                 platform_message_ids=("ref-1",))
+_FAILED = SendResult(ok=False)
+_UNCERTAIN = SendResult(ok=False, uncertain=True)
+
+
+@pytest.mark.parametrize(("answer", "record", "expected"), [
+    ("complete", None, _OK), ("rejected", None, _FAILED), ("unsupported", None, _FAILED),
+    ("denied", None, _FAILED), ("uncertain", None, _UNCERTAIN),
+    ("incomplete", None, _UNCERTAIN), ("pending", "complete", _OK),
+    ("pending", "pending", _UNCERTAIN), ("pending", "nothing_found", _UNCERTAIN),
+])
+async def test_send_maps_each_outcome(answer, record, expected):
+    async def post(request):
+        body = _operation(answer, platform_ms=7, platform_ref="ref-1")
+        return web.json_response(body, status=status_for(body["outcome"]))
+
+    async def read_back(request):
+        if record == "nothing_found":
+            return _read("nothing_found")
+        return _read("ok", _operation(record, platform_ms=7, platform_ref="ref-1"))
+
+    calls, server = _counting(post, read_back)
+    async with server:
+        result = await _send(server)
+    assert result == expected
+    assert calls == {"post": 1, "get": 1 if record else 0}
+
+
+async def test_a_conflict_is_never_read_back():
+    async def conflict(request):
+        return web.json_response({"error": "operation_id reused"}, status=409)
+
+    async def unexpected(request):
+        return _read("nothing_found")
+
+    calls, server = _counting(conflict, unexpected)
+    async with server:
+        with pytest.raises(OperationConflictError):
+            await _send(server)
+    assert calls == {"post": 1, "get": 0}

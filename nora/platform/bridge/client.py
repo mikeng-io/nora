@@ -1,9 +1,10 @@
-"""`BridgeAdapter` — the PlatformAdapter whose transport is the shared bridge
-wire API instead of a platform SDK or listener.
+"""`BridgeAdapter` — the PlatformAdapter whose transport is the bridges'
+`platform` contract (`nora.domain.service_api_platform`) instead of a
+platform SDK or listener.
 
 Inbound never flows through `listen` here: events arrive via Redis Streams and
 the elected stream reader; `listen` idles so existing supervision semantics
-stay intact. Outbound `send`/`react` are POST /v1/actions calls carrying a
+stay intact. Outbound `send`/`react` are platform operations carrying a
 durable `ActionOwner` when one is bound via `bind_owner` — the binding is how
 a turn work row's fenced identity reaches the action reservation without
 changing the port's signature.
@@ -13,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Set
+from collections.abc import Awaitable, Callable, Mapping, Set
 from dataclasses import dataclass
 from typing import Any
 
@@ -36,6 +37,13 @@ from nora.domain.ports import (
     SendResult,
     TextStyle,
 )
+from nora.domain.service_api import (
+    Family,
+    OperationConflictError,
+    Outcome,
+    parse_response,
+)
+from nora.domain.service_api_platform import SELF_ACCOUNT_ID
 
 log = logging.getLogger("nora.platform.bridge.client")
 
@@ -47,12 +55,12 @@ class BridgeUnavailableError(RuntimeError):
     def __init__(self, message: str, *, status: int | None = None) -> None:
         super().__init__(message)
         #: The HTTP status the bridge answered, when it answered at all —
-        #: `/v1/self`'s 503-until-login is what `bridge_not_ready` reads.
+        #: the account read's 503-until-login is what `bridge_not_ready` reads.
         self.status = status
 
 
 def bridge_not_ready(exc: BaseException) -> bool:
-    """True only while a bridge is up but still starting: `/v1/self`
+    """True only while a bridge is up but still starting: the account read
     answering 503 (the platform login has not landed yet) or the connection
     refused (its HTTP surface is not bound). Anything else — another
     status, a malformed body, a timeout — is a real startup failure."""
@@ -129,69 +137,32 @@ class BridgeAdapter:
         if self._session is not None and not self._session.closed:
             await self._session.close()
 
-    async def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        # The ambient span's W3C context rides the POST headers — the
-        # bridge's deliver span links to it instead of opening an orphan
-        # root. Standard OTel propagation only: headers, never the body, so
-        # the request hash and idempotence never see it.
-        carrier: dict[str, str] = {}
-        try:
-            TraceContextTextMapPropagator().inject(carrier)
-        except Exception:  # noqa: BLE001 — tracing is never load-bearing
-            carrier = {}
-        try:
-            session = await self._client()
-            async with session.post(
-                    f"{self._endpoint.base_url}{path}", json=body,
-                    headers=carrier or None,
-                    timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                if resp.status != 200:
-                    raise BridgeUnavailableError(
-                        f"{path} -> {resp.status}", status=resp.status)
-                return await resp.json()
-        except (TimeoutError, aiohttp.ClientError) as exc:
-            raise BridgeUnavailableError(f"{path}: {type(exc).__name__}") from exc
+    async def _call(self, method: str, path: str, family: Family, *,
+                    json: object = None, data: bytes | None = None,
+                    timeout_s: float = 10) -> BridgeAnswer:
+        return await bridge_call(await self._client(), method,
+                                 f"{self._endpoint.base_url}{path}", family,
+                                 json=json, data=data, timeout_s=timeout_s)
 
-    async def _get(self, path: str) -> dict[str, Any]:
-        try:
-            session = await self._client()
-            async with session.get(
-                    f"{self._endpoint.base_url}{path}",
-                    timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status != 200:
-                    raise BridgeUnavailableError(
-                        f"{path} -> {resp.status}", status=resp.status)
-                return await resp.json()
-        except (TimeoutError, aiohttp.ClientError) as exc:
-            raise BridgeUnavailableError(f"{path}: {type(exc).__name__}") from exc
-
-    async def _put_bytes(self, path: str, data: bytes) -> None:
-        try:
-            session = await self._client()
-            async with session.put(
-                    f"{self._endpoint.base_url}{path}", data=data,
-                    timeout=aiohttp.ClientTimeout(total=60)) as resp:
-                if resp.status not in (200, 201):
-                    raise BridgeUnavailableError(
-                        f"{path} -> {resp.status}", status=resp.status)
-        except (TimeoutError, aiohttp.ClientError) as exc:
-            raise BridgeUnavailableError(f"{path}: {type(exc).__name__}") from exc
-
-    async def _action(self, op: str, request: dict[str, Any],
-                      action_id: str) -> dict[str, Any]:
+    async def _operation(self, kind: str, effect: dict[str, Any],
+                         operation_id: str) -> BridgeAnswer:
         owner = (self._owner.to_dict() if self._owner is not None
                  else {"kind": "live_invocation", "id": "app"})
-        return await self._post("/v1/actions", {
-            "action_id": action_id, "owner": owner, "op": op,
-            "request": request})
+        return await self._call("POST", "/v1/platform/operations", "operation", json={
+            "operation_id": operation_id, "owner": owner, "kind": kind,
+            "effect": effect}, timeout_s=30)
 
     # ---- PlatformAdapter -------------------------------------------------
 
     async def resolve_identity(self) -> PlatformIdentity:
-        data = await self._get("/v1/self")
+        answer = await self._call("GET", ACCOUNT_PATH, "read")
+        if answer.outcome != "ok":
+            raise BridgeUnavailableError(
+                f"{ACCOUNT_PATH} -> {answer.outcome}", status=answer.status)
+        data = answer.payload if isinstance(answer.payload, dict) else {}
         primary = data.get("primary")
         if not isinstance(primary, str) or not primary.strip():
-            raise BridgeUnavailableError("/v1/self returned no usable primary identity")
+            raise BridgeUnavailableError(f"{ACCOUNT_PATH} returned no usable primary identity")
         return PlatformIdentity(
             platform=self.platform, primary=primary,
             aliases=frozenset(data.get("aliases") or ()))
@@ -245,11 +216,17 @@ class BridgeAdapter:
         # ordinal BEFORE the action's own id is minted below, so a key
         # embeds `send:N` while its action is `send:N+k` — the binding is
         # still deterministic per bound-owner retry, and a re-PUT with
-        # different bytes is a 409 (fail-closed), never a silent swap.
+        # different bytes is `rejected` (fail-closed), never a silent swap.
         keys = []
         for i, a in enumerate(attachments):
             key = f"out-{self._next_action_id('send')}-{i}"
-            await self._put_bytes(f"/v1/attachments/{key}", a.content)
+            put = await self._call("PUT", f"/v1/platform/blobs/{key}", "operation",
+                                   data=a.content, timeout_s=60)
+            if put.outcome == "rejected":
+                # A refused attachment is a failed send, never a sent one.
+                return SendResult(ok=False)
+            if put.outcome != "complete":
+                raise BridgeUnavailableError(f"blob {key} -> {put.outcome}", status=put.status)
             keys.append({"key": key, "file_name": a.filename,
                          "media_type": a.media_type})
         request: dict[str, Any] = {
@@ -266,61 +243,37 @@ class BridgeAdapter:
             "attachments": keys,
             "quote": vars(quote) if quote else None,
         }
-        action_id = self._next_action_id("send")
+        operation_id = self._next_action_id("send")
         try:
-            data = await self._action("send", request, action_id)
+            answer = await self._operation("send", request, operation_id)
+            outcome: str = answer.outcome
+            envelope: Mapping[str, Any] = answer.body
         except BridgeUnavailableError:
-            # The POST answer was lost — the reservation may already have
-            # executed upstream. Reconcile through the persisted truth
-            # (GET /v1/actions/{id}) instead of guessing: the deterministic
-            # action id makes the read idempotent, and a lost `confirmed`
-            # resolves the SAME audit row, never a second send.
-            data = await self._reconcile(action_id)
-        state = data["state"]
-        if state == "confirmed":
-            # `platform_ref` is the platform's own handle for the sent
-            # message — `Deliverer` lands it on the audited row so a later
-            # reaction, edit or quote naming it resolves.
-            return SendResult(
-                ok=True, timestamp=data.get("platform_ms"),
-                platform_message_id=data.get("platform_ref") or None,
-                platform_message_ids=tuple(
-                    str(r) for r in (data.get("platform_refs") or ()) if r
-                ) or ((
-                    str(data["platform_ref"]),)
-                    if data.get("platform_ref") else ()))
-        if state == "rejected":
-            return SendResult(ok=False)
-        if state == "uncertain":
-            # The send may have landed. The flag keeps the ambiguity REACHABLE
-            # — `Deliverer` records it as such and nothing retries blindly.
-            return SendResult(ok=False, uncertain=True)
-        raise BridgeUnavailableError(f"send left {state}")
+            outcome, envelope = "unavailable", {}
+        if outcome in ("pending", "unavailable"):
+            # The answer was lost or is not settled — the reservation may already
+            # have run upstream. Read the record back once, never resend.
+            outcome, envelope = await self._read_back(operation_id)
+        return _send_result(outcome, envelope)
 
-    async def _reconcile(self, action_id: str) -> dict[str, Any]:
-        """One `GET /v1/actions/{id}` after a lost POST answer — the honest
-        recovery, not a retry. An absent reservation can belong to a POST
-        still in flight, so a 404 remains `uncertain`, like a failed read.
-        A bound `live_invocation` owner's `message_id`
-        must match the audit row it bound; a mismatch means the row that
-        answered is not ours, which is `uncertain`, not a claim."""
+    async def _read_back(self, operation_id: str) -> tuple[str, Mapping[str, Any]]:
+        """One read of the operation's record; anything short of a settled record
+        that is provably ours is `uncertain`. An absent record can belong to a
+        POST still in flight, so `nothing_found` is never a refusal."""
         try:
-            session = await self._client()
-            async with session.get(
-                    f"{self._endpoint.base_url}/v1/actions/{action_id}",
-                    timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status == 404:
-                    return {"state": "uncertain"}
-                if resp.status != 200:
-                    return {"state": "uncertain"}
-                row = await resp.json()
-        except (TimeoutError, aiohttp.ClientError):
-            return {"state": "uncertain"}
+            answer = await self._call(
+                "GET", f"/v1/platform/operations/{operation_id}", "read")
+        except BridgeUnavailableError:
+            return "uncertain", {}
+        record = answer.payload if answer.outcome == "ok" else None
+        if not isinstance(record, dict):
+            return "uncertain", {}
+        message_id = (record.get("payload") or {}).get("message_id")
         if (self._owner is not None and self._owner.kind == "live_invocation"
-                and row.get("message_id") is not None
-                and str(row["message_id"]) != self._owner.id):
-            return {"state": "uncertain"}
-        return row
+                and message_id is not None and str(message_id) != self._owner.id):
+            return "uncertain", {}
+        outcome = str(record.get("outcome"))
+        return (outcome if outcome != "pending" else "uncertain"), record
 
     async def react(self, *, target: ConversationTarget, emoji: str,
                     to_author: str, to_timestamp: int,
@@ -331,19 +284,22 @@ class BridgeAdapter:
                    "emoji": emoji, "to_author": to_author,
                    "to_timestamp": to_timestamp, "to_message_id": to_message_id,
                    "remove": remove}
-        data = await self._action("react", request, self._next_action_id("react"))
-        state = data["state"]
-        if state == "confirmed":
+        answer = await self._operation("react", request, self._next_action_id("react"))
+        if answer.outcome == "complete":
             return ReactionResult(ok=True)
-        if state == "unsupported":
+        if answer.outcome == "unsupported":
             return ReactionResult(ok=False, supported=False)
-        if state in ("rejected", "uncertain"):
+        if answer.outcome in ("rejected", "denied", "uncertain", "incomplete"):
             return ReactionResult(ok=False)
-        raise BridgeUnavailableError(f"react left {state}")
+        raise BridgeUnavailableError(f"react left {answer.outcome}", status=answer.status)
 
     async def health(self) -> AdapterHealth:
         try:
-            data = await self._get("/v1/health")
+            answer = await self._call("GET", "/v1/operations/status", "read")
+            data = answer.payload if answer.outcome == "ok" else None
+            if not isinstance(data, dict):
+                raise BridgeUnavailableError(
+                    f"status -> {answer.outcome}", status=answer.status)
             return AdapterHealth(
                 platform=self.platform, connected=bool(data.get("ok")),
                 degraded=bool(data.get("degraded", False)),
@@ -355,8 +311,7 @@ class BridgeAdapter:
 
 class BridgeMediaSource:
     """The `MediaSource` whose bytes live in bridge custody — `ref.platform_id`
-    is the attachment custody key the bridge stored under PUT
-    /v1/attachments at capture time."""
+    is the blob key the bridge stored at capture time."""
 
     def __init__(self, platform: str, endpoint: BridgeEndpoint) -> None:
         self.platform = platform
@@ -365,25 +320,24 @@ class BridgeMediaSource:
     async def fetch(self, *, ref: Any) -> Any:
         from nora.domain.media import MediaBytes
         try:
-            async with aiohttp.ClientSession(headers={
-                    "Authorization": f"Bearer {self._endpoint.token}"}) as s, s.get(
-                    f"{self._endpoint.base_url}/v1/attachments/{ref.platform_id}",
-                    timeout=aiohttp.ClientTimeout(total=60)) as resp:
-                if resp.status == 200:
-                    return MediaBytes(available=True, data=await resp.read())
-                if resp.status == 404:
-                    return MediaBytes(available=False, reason="absent")
-                return MediaBytes(available=False,
-                                  reason=f"bridge_{resp.status}")
-        except (TimeoutError, aiohttp.ClientError):
+            async with _session(self._endpoint) as session:
+                answer = await bridge_call(
+                    session, "GET",
+                    f"{self._endpoint.base_url}/v1/platform/blobs/{ref.platform_id}",
+                    "read", timeout_s=60, answers_bytes=True)
+        except BridgeUnavailableError:
             return MediaBytes(available=False, reason="bridge_unreachable")
+        if answer.data is not None:
+            return MediaBytes(available=True, data=answer.data)
+        if answer.outcome == "nothing_found":
+            return MediaBytes(available=False, reason="absent")
+        return MediaBytes(available=False, reason=f"bridge_{answer.outcome}")
 
 
 class BridgeRoster:
-    """`RosterSource` over the bridge's `GET /v1/groups` — the bridge proxies
-    the platform's own membership list (signal-cli `listGroups`). Follows
-    `SignalRoster`'s fail-closed rule exactly: a group the bridge does not
-    list is `available=False`, never an empty roster.
+    """`RosterSource` over the bridge's `groups` query — the platform's own
+    membership list. Follows `SignalRoster`'s fail-closed rule exactly: a
+    group the bridge does not list is `available=False`, never an empty roster.
     """
 
     def __init__(self, platform: str, endpoint: BridgeEndpoint) -> None:
@@ -391,16 +345,8 @@ class BridgeRoster:
         self._endpoint = endpoint
 
     async def roster(self, *, conversation_id: str) -> Roster:
-        try:
-            async with aiohttp.ClientSession(headers={
-                    "Authorization": f"Bearer {self._endpoint.token}"}) as s, s.get(
-                    f"{self._endpoint.base_url}/v1/groups",
-                    timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                if resp.status != 200:
-                    return Roster(available=False)
-                groups = await resp.json()
-        except (TimeoutError, aiohttp.ClientError, ValueError):
-            return Roster(available=False)
+        answer = await bridge_query(self._endpoint, "groups", {}, timeout_s=30)
+        groups = answer.payload if answer is not None else None
         if not isinstance(groups, list):
             return Roster(available=False)
         for g in groups:
@@ -417,3 +363,110 @@ class BridgeRoster:
                 return Roster(available=True,
                               members=tuple(frozenset(account) for account in members))
         return Roster(available=False)
+
+
+# ---- the one reader of the platform contract --------------------------------
+
+ACCOUNT_PATH = f"/v1/platform/accounts/{SELF_ACCOUNT_ID}"
+QUERIES_PATH = "/v1/platform/queries"
+
+
+@dataclass(frozen=True)
+class BridgeAnswer:
+    """A bridge answer read by its outcome; `data` is a blob's bytes."""
+
+    outcome: Outcome
+    status: int
+    body: Mapping[str, Any]
+    data: bytes | None = None
+
+    @property
+    def payload(self) -> Any:
+        return self.body.get("payload")
+
+    @property
+    def observed_ms(self) -> int | None:
+        stamp = (self.body.get("when") or {}).get("observed_at_ms")
+        return stamp if isinstance(stamp, int) and stamp > 0 else None
+
+
+def _session(endpoint: BridgeEndpoint) -> aiohttp.ClientSession:
+    return aiohttp.ClientSession(headers={"Authorization": f"Bearer {endpoint.token}"})
+
+
+def _trace_headers() -> dict[str, str]:
+    """The ambient span's W3C context; headers only, so no request hash sees it."""
+    carrier: dict[str, str] = {}
+    try:
+        TraceContextTextMapPropagator().inject(carrier)
+    except Exception:  # noqa: BLE001 — tracing is never load-bearing
+        return {}
+    return carrier
+
+
+async def bridge_call(session: aiohttp.ClientSession, method: str, url: str,
+                      family: Family, *, json: object = None, data: bytes | None = None,
+                      timeout_s: float = 10, answers_bytes: bool = False,
+                      headers: Mapping[str, str] | None = None) -> BridgeAnswer:
+    """One call on the platform contract, read through `parse_response`.
+
+    A redirect is never followed: it reaches the parser and reads `unavailable`.
+    A 409 raises `OperationConflictError`; any other answer with no envelope,
+    or a transport failure, raises `BridgeUnavailableError`.
+    """
+    try:
+        async with session.request(
+                method, url, json=json, data=data, allow_redirects=False,
+                headers={**_trace_headers(), **(headers or {})},
+                timeout=aiohttp.ClientTimeout(total=timeout_s)) as resp:
+            if answers_bytes and resp.status == 200 \
+                    and resp.content_type != "application/json":
+                return BridgeAnswer("ok", 200, {}, data=await resp.read())
+            try:
+                body = await resp.json(content_type=None)
+            except ValueError:
+                body = None
+            status = resp.status
+    except (TimeoutError, aiohttp.ClientError) as exc:
+        raise BridgeUnavailableError(f"{url}: {type(exc).__name__}") from exc
+    parsed = parse_response(family, status, body)
+    if parsed.caller_fault == 409:
+        raise OperationConflictError(url)
+    if parsed.outcome is None:
+        raise BridgeUnavailableError(f"{url} -> {status}", status=status)
+    return BridgeAnswer(parsed.outcome, status, body if isinstance(body, Mapping) else {})
+
+
+async def bridge_query(endpoint: BridgeEndpoint, kind: str, params: Mapping[str, Any], *,
+                       session: aiohttp.ClientSession | None = None,
+                       timeout_s: float = 30) -> BridgeAnswer | None:
+    """A platform query's `ok` answer, or `None` for every other outcome or failure."""
+    try:
+        if session is not None:
+            answer = await bridge_call(
+                session, "POST", f"{endpoint.base_url}{QUERIES_PATH}", "read",
+                json={"kind": kind, "params": dict(params)}, timeout_s=timeout_s)
+        else:
+            async with _session(endpoint) as own:
+                answer = await bridge_call(
+                    own, "POST", f"{endpoint.base_url}{QUERIES_PATH}", "read",
+                    json={"kind": kind, "params": dict(params)}, timeout_s=timeout_s)
+    except BridgeUnavailableError:
+        return None
+    return answer if answer.outcome == "ok" else None
+
+
+def _send_result(outcome: str, envelope: Mapping[str, Any]) -> SendResult:
+    """An operation's outcome as the port's `SendResult` («What `send` returns»)."""
+    if outcome == "complete":
+        payload = envelope.get("payload") or {}
+        ref = (envelope.get("from") or {}).get("platform_ref") or None
+        refs = tuple(str(r) for r in (payload.get("platform_refs") or ()) if r)
+        return SendResult(ok=True, timestamp=payload.get("platform_ms"),
+                          platform_message_id=ref,
+                          platform_message_ids=refs or ((str(ref),) if ref else ()))
+    if outcome in ("rejected", "unsupported", "denied"):
+        return SendResult(ok=False)
+    # `uncertain`, `incomplete`, and a record that never settled: the send may
+    # have landed — reachable as such, and nothing retries it blindly.
+    return SendResult(ok=False, uncertain=True)

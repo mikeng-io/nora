@@ -21,7 +21,7 @@ Semantics, matching `nora.ingest.stages.scope` rather than re-deriving it:
 * `rooms` carries every admitted conversation id — a denied room is ABSENT, so
   the bridge drops its bodies/attachments before journaling anything. Discord
   guild entries expand through the same `ChannelDirectory` port the app feeds
-  (a live `/v1/reads` snapshot — never a guessed room set).
+  (a live `channels` query snapshot — never a guessed room set).
 * `room_receipt_senders` maps every admitted room to its engage/receipt grant:
   the literal `"*"` only for a `persons = "*"` policy wildcard, else the
   sender-id set derived THROUGH `Policy.is_allowed` membership resolved to
@@ -32,7 +32,7 @@ Semantics, matching `nora.ingest.stages.scope` rather than re-deriving it:
   and a room-allowed person needs no DM grant for a group receipt.
 * `dm_allowed_senders` is `[dm] persons` resolved the same way — a DM from
   anyone else is denied before capture, exactly as scope denies unknown DMs.
-* `self_aliases` is the bridge's own `/v1/self` answer unioned with the
+* `self_aliases` is the bridge's own account read unioned with the
   platform's configured account id when the platform carries one (Signal).
   On a failed or absent lookup the FETCHED set empties — self-reply receipt
   eligibility fails closed on identity never established — while room capture
@@ -46,7 +46,7 @@ invalid RELOAD keeps the last-good holders, so the file simply does not change
 and `status()` reports the file stale; the same honesty covers a failed
 directory refresh, a failed write, and an env/config account-key mismatch.
 None of this needs the app process: the publisher reads files and the bridge's
-`/v1/self` + `/v1/reads`, nothing else.
+account read and its `channels` query, nothing else.
 """
 
 from __future__ import annotations
@@ -69,6 +69,7 @@ import aiohttp
 from nora.config_reload import POLL_SECONDS, ReloadFiles
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
+from nora.platform.bridge.client import QUERIES_PATH, BridgeUnavailableError, bridge_call
 
 __all__ = [
     "DEFAULT_PROJECTION_DIR",
@@ -303,9 +304,9 @@ def _write_atomic(path: Path, data: bytes) -> None:
 
 
 class BridgeChannelDirectory:
-    """`ChannelDirectory` served by the bridge's authenticated `POST /v1/reads`
-    `channels` op — the wire shape the discord control worker exposes:
-    `{available: bool, value: {channels: {id: name}, threads: {id: parent}}}`.
+    """`ChannelDirectory` served by the bridge's authenticated `channels`
+    query — an `ok` read whose payload is
+    `{channels: {id: name}, threads: {id: parent}}`.
 
     The policy port is SYNCHRONOUS and the bridge is not, so — exactly like
     the worker's own `BridgeChannelDirectory` — this answers a TTL-bounded
@@ -377,16 +378,13 @@ class BridgeChannelDirectory:
         failed: set[str] = set()
         for guild_id in self._needed:
             try:
-                async with session.post(
-                    self._url, headers=headers,
-                    json={"op": "channels", "params": {"guild_id": guild_id}},
-                ) as resp:
-                    resp.raise_for_status()
-                    body = await resp.json()
-                if not body.get("available"):
+                answer = await bridge_call(
+                    session, "POST", self._url, "read", headers=headers,
+                    json={"kind": "channels", "params": {"guild_id": guild_id}})
+                if answer.outcome != "ok":
                     failed.add(guild_id)
                     continue
-                value = body.get("value") or {}
+                value = answer.payload or {}
                 gmap = value.get("channels")
                 if isinstance(gmap, dict):
                     channels[guild_id] = {str(k): str(v) for k, v in gmap.items()}
@@ -485,7 +483,7 @@ class ProjectionPublisher:
                     getattr(self._cfg.platforms, self.platform), "base_url", None,
                 )
                 if base:
-                    self._directory._url = f"{base}/v1/reads"
+                    self._directory._url = f"{base}{QUERIES_PATH}"
         if self._reloads is None:
             try:
                 self._reloads = ReloadFiles(
@@ -503,7 +501,7 @@ class ProjectionPublisher:
         return True
 
     async def _refresh_self(self) -> None:
-        """Fetch the bridge's `/v1/self` into the alias set — replace whole.
+        """Fetch the bridge's own account into the alias set — replace whole.
 
         A FAILED or absent lookup empties the fetched set: self-reply receipt
         eligibility fails closed until real identity exists, never retaining a
@@ -523,9 +521,11 @@ class ProjectionPublisher:
                 {"Authorization": f"Bearer {self._self_token}"}
                 if self._self_token else {}
             )
-            async with self._session.get(self.self_url, headers=headers) as resp:
-                resp.raise_for_status()
-                body = await resp.json()
+            answer = await bridge_call(
+                self._session, "GET", self.self_url, "read", headers=headers)
+            body = answer.payload
+            if answer.outcome != "ok" or not isinstance(body, dict):
+                raise BridgeUnavailableError(f"account -> {answer.outcome}")
             got = {body.get("primary"), body.get("self_id")} | set(
                 body.get("aliases") or ()
             )

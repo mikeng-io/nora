@@ -712,6 +712,7 @@ class TestComposition:
         from types import SimpleNamespace
 
         from nora.app.composition_onboarding import onboarding as build
+        from nora.platform.bridge.client import BridgeAnswer
 
         services, _ = _graph()
 
@@ -719,10 +720,10 @@ class TestComposition:
             def __init__(self):
                 self.calls = []
 
-            async def read(self, op, params):
-                self.calls.append((op, params))
-                return {"available": True, "value": {"members": [
-                    {"user": {"id": "10001"}}]}}
+            async def read(self, kind, params):
+                self.calls.append((kind, params))
+                return BridgeAnswer("ok", 200, {"outcome": "ok", "payload": {"members": [
+                    {"user": {"id": "10001"}}]}})
 
         control = Control()
         wiring = build(

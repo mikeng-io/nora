@@ -92,7 +92,7 @@ def cfg(tmp_path, monkeypatch, clean_pg_url, example_config_path, owned_dependen
     # (or faked) signal-cli daemon reachable at the example config's placeholder URL.
     #
     # The template now defaults signal to mode = "bridge" (base_url names the
-    # standalone bridge, which build_dependencies() dials for /v1/self). These
+    # standalone bridge, whose account build_dependencies() reads). These
     # tests' subject is the DIRECT graph — the app holds the signal-cli
     # connection itself — so the fixture pins direct mode and a loopback
     # daemon address explicitly rather than inheriting a default that changed.

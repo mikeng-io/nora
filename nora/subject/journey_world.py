@@ -34,7 +34,8 @@ from nora.language.culture import CULTURE_ADAPTOR_NAME
 from nora.language.profile import PROFILE_PERSON_ADAPTOR_NAME
 from nora.language.profile_collective import PROFILE_COLLECTIVE_ADAPTOR_NAMES
 from nora.language.profile_verdict import PROFILE_VERDICT_ADAPTOR_NAME
-from nora.platform.bridge.service import DurableActionService, action_http_status, action_response
+from nora.platform.bridge.contract import PlatformSurface, QueryAnswer
+from nora.platform.bridge.service import DurableActionService
 from nora.platform.signal.react import SignalReactor
 from nora.platform.signal.send import SignalSender
 from nora.subject.environment import IsolatedServices
@@ -310,37 +311,48 @@ class JourneyServices:
         """Bind the real `DurableActionService` once the composed runtime exists."""
         self.owners["actions"] = action_service(runtime, environment)
 
-    async def _actions(self, request: web.Request) -> web.Response:
-        body = await request.json()
+    async def run(self, action: Any, *, links: Any = None) -> Any:
+        """The case-owned `DurableActionService`, stamping the daemon's send time."""
         if self.daemon is not None:
             self.daemon.sent_at_ms = int(time.time() * 1000)
-        actions = self.owners.get("actions")
-        if actions is None:
-            return web.json_response({"error": "actions not wired"}, status=422)
-        result = await actions.run(body)
-        return web.json_response(action_response(body["action_id"], result),
-                                 status=action_http_status(result))
+        return await self.owners["actions"].run(action)
+
+    async def get(self, action_id: str) -> Any:
+        return await self.owners["actions"].get(action_id)
+
+    def _surface(self) -> PlatformSurface:
+        async def account() -> dict[str, Any]:
+            return {"platform": "signal", "primary": "generated-self", "aliases": []}
+
+        async def status() -> dict[str, Any]:
+            return {"ok": True}
+
+        async def query(kind: str, params: Any) -> QueryAnswer:
+            if kind != "groups":
+                return QueryAnswer("unavailable")
+            return QueryAnswer("ok", [{"id": "g1", "members": [["+852111"]]}])
+
+        return PlatformSurface(
+            platform="signal", account=account, status=status, query=query,
+            actions=lambda: self if "actions" in self.owners else None,
+            custody_dir=lambda: None, max_blob_bytes=lambda: 0)
 
     def _action_routes(self, application: web.Application) -> None:
-        """The bridge's live action/RPC routes, ahead of any recorded catch-all."""
+        """The bridge's live operation/RPC routes, ahead of any recorded catch-all."""
         if self.daemon is None:
             raise RuntimeError("journey world bridge is unbound")
-        application.router.add_post("/v1/actions", self._actions)
+        surface = self._surface()
+        application.router.add_post("/v1/platform/operations", surface.submit_operation)
+        application.router.add_get(
+            "/v1/platform/operations/{operation_id}", surface.read_operation)
         application.router.add_post("/api/v1/rpc", self.daemon.rpc)
 
     def _bridge_app(self) -> web.Application:
         application = web.Application()
-
-        async def read(request):
-            return web.json_response({
-                "/v1/self": {"primary": "generated-self", "aliases": []},
-                "/v1/groups": [{"id": "g1", "members": [["+852111"]]}],
-                "/v1/health": {"ok": True},
-            }[request.path])
-
-        for path in ("/v1/self", "/v1/groups", "/v1/health"):
-            application.router.add_get(path, read)
-        self._action_routes(application)
+        if self.daemon is None:
+            raise RuntimeError("journey world bridge is unbound")
+        self._surface().add_routes(application)
+        application.router.add_post("/api/v1/rpc", self.daemon.rpc)
         return application
 
     def _declared_config(self, database_url: str, workdir: Path) -> Any:

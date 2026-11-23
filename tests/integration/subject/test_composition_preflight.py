@@ -21,6 +21,8 @@ from sqlalchemy import text
 from nora.app.computer_queue import SegmentRegistry
 from nora.app.startup import StartupError
 from nora.infra.blobs import RustfsBlobStore
+from nora.platform.bridge.client import ACCOUNT_PATH, QUERIES_PATH
+from nora.platform.bridge.contract import read_body
 from nora.subject.environment import IsolatedServices
 from nora.subject.obtain import SubjectSpec, build_config, default_policy, obtain
 
@@ -49,21 +51,20 @@ def boundary_apps(cfg, received, payloads):
 
         async def read(request, platform=name):
             received.append(f"{platform}:{request.path}")
-            return web.json_response({
-                "/v1/self": {"primary": f"generated-{platform}", "aliases": []},
-                "/v1/health": {"ok": True},
-                "/v1/groups": [],
-            }[request.path])
+            return web.json_response(read_body("ok", {
+                ACCOUNT_PATH: {"primary": f"generated-{platform}", "aliases": []},
+                "/v1/operations/status": {"ok": True},
+            }[request.path], source=platform, trace=""))
 
-        async def reads(request):
+        async def reads(request, platform=name):
             body = await request.json()
-            assert body["op"] in {"channels", "threads"}, body
-            received.append(f"discord:{body['op']}")
-            return web.json_response({"available": True, "value": []})
+            assert body["kind"] in {"channels", "groups"}, body
+            received.append(f"{platform}:{body['kind']}")
+            return web.json_response(read_body("ok", [], source=platform, trace=""))
 
-        for path in ("/v1/self", "/v1/health", "/v1/groups"):
+        for path in (ACCOUNT_PATH, "/v1/operations/status"):
             app.router.add_get(path, read)
-        app.router.add_post("/v1/reads", reads)
+        app.router.add_post(QUERIES_PATH, reads)
         apps[f"platforms.{name}.base_url"] = app
     s3 = web.Application()
 
@@ -203,7 +204,7 @@ async def assert_live_composition(subject, cfg, apps, env, spec, playback, recei
             assert json.loads(state.read_text())["refresh_token"].startswith("generated-")
         assert set(deps.oauth_keepalive.lanes) == {"xai", "openai_codex"}
 
-    assert {f"{name}:/v1/self" for name in deps.registry.adapters} <= set(received)
+    assert {f"{name}:{ACCOUNT_PATH}" for name in deps.registry.adapters} <= set(received)
     assert "rustfs:head_bucket" in received
     assert "MODEL_DISPATCH" not in received
     assert len(deps.blobs._s3._endpoint.http_session._manager.pools) == 1

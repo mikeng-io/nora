@@ -78,7 +78,7 @@ class AdapterRegistryError(Exception):
 
 
 # A deploy that recreates nora and its bridges in the same moment asks
-# `/v1/self` before the bridge's platform login has landed, so the first
+# for its account before the bridge's platform login has landed, so the first
 # answer is the still-starting one (`bridge_not_ready`). Wait it out once
 # for every bridge-backed platform — a slow start, never a guessed
 # identity; the bound keeps a bridge that never readies a startup failure
@@ -111,7 +111,7 @@ async def _resolve_bridge_identity(
                 "%s bridge identity still unavailable after %.0fs",
                 adapter.platform, _BRIDGE_IDENTITY_WAIT_SECONDS)
             raise BridgeUnavailableError(
-                "/v1/self stayed unavailable through the whole identity wait")
+                "the account read stayed unavailable through the whole identity wait")
         try:
             identity = await asyncio.wait_for(
                 adapter.resolve_identity(), timeout=remaining)
@@ -137,7 +137,7 @@ async def _resolve_bridge_identity(
                 "%s bridge identity still unavailable after %.0fs",
                 adapter.platform, _BRIDGE_IDENTITY_WAIT_SECONDS)
             raise BridgeUnavailableError(
-                "/v1/self answered only after the identity wait bound")
+                "the account read answered only after the identity wait bound")
         if waited:
             log.info("%s bridge identity resolved after waiting",
                      adapter.platform)

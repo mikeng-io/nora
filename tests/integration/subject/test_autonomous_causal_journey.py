@@ -8,7 +8,6 @@ from dataclasses import replace
 
 import pytest
 import sqlalchemy as sa
-from aiohttp import web
 
 from nora.__main__ import App
 from nora.domain.ticks import TICK_SECONDS
@@ -23,8 +22,8 @@ from nora.infra.sql.schema import (
     NOTE_REVISION,
     REMINDERS,
 )
+from nora.platform.bridge.contract import action_of, effect_target, operation_response
 from nora.platform.bridge.queue import StreamProducer
-from nora.platform.bridge.service import action_http_status, action_response
 from nora.subject.effects import effect_boundary, effect_scope, prepare_effect_reads, read_effects
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import read_events
@@ -115,11 +114,10 @@ async def test_real_app_autonomous_cognition_fire_and_later_correction(
     async def action(request):
         body = await request.json()
         daemon.sent_at_ms = int(time.time() * 1000)
-        result = await owners["actions"].run(body)
-        return web.json_response(action_response(body["action_id"], result),
-                                 status=action_http_status(result))
+        result = await owners["actions"].run(action_of(body))
+        return operation_response(result, target=effect_target(body.get("effect")), trace="")
 
-    apps["platforms.signal.base_url"].router.add_post("/v1/actions", action)
+    apps["platforms.signal.base_url"].router.add_post("/v1/platform/operations", action)
     apps["platforms.signal.base_url"].router.add_post("/api/v1/rpc", daemon.rpc)
     async with IsolatedServices(database_url=clean_pg_url, applications=apps, redis=True) as env:
         subject = await obtain(replace(spec, environment=env))

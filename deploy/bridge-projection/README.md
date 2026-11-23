@@ -37,13 +37,13 @@ File shape (the frozen `nora-bridge-wire` contract):
 
 - `rooms` — admitted conversation ids, sorted. Absent = denied = no
   body/attachment capture. Discord guild-wide entries expand through the
-  bridge's live channel directory (`POST /v1/reads`).
+  bridge's live channel directory (the `channels` query, `POST /v1/platform/queries`).
 - `room_receipt_senders` — per-room receipt grants: listed platform sender
   ids, or `["*"]` only when the policy grants the room a wildcard sender
   class. A room missing from this map grants no receipts — denied senders
   may still be *absorbed* (room content captured, no engage/receipt grant).
 - `dm_allowed_senders` — explicit DM admission set (platform ids).
-- `self_aliases` — live `/v1/self` ∪ configured account. Empty/degraded
+- `self_aliases` — the live account read (`GET /v1/platform/accounts/self`) ∪ configured account. Empty/degraded
   upstream identity fails closed for self-reply eligibility; room capture
   still publishes. Signal keeps the configured-account floor.
 - `music_channels` — routing-only metadata for the Discord bridge's
@@ -78,9 +78,9 @@ its own `enabled:false`/stale file — while the others keep publishing.
 |---|---|---|
 | `SIGNAL_BRIDGE_ACCOUNT_KEY` etc. | `--all` | Per-platform opaque stream leg. Must equal `[platforms.<p>] account_key` in config.toml when that platform is enabled — a mismatch publishes a deny artifact and reports `key_mismatch` stale. A **disabled** platform needs no leg. |
 | `NORA_BRIDGE_ACCOUNT_KEY` | both | Fallback leg when the per-platform env is unset (single mode: the primary source). Refuses rc=2 if missing/blank in `--platform` mode — a guessed leg is a guessed grant. |
-| `NORA_BRIDGE_API_TOKEN` (fallback `NORA_BRIDGE_TOKEN`) | both | Bearer for `/v1/self` and `/v1/reads` calls. |
-| `<P>_BRIDGE_SELF_URL` / `NORA_BRIDGE_SELF_URL` | both | Explicit `/v1/self` endpoint; else derived from the platform's `base_url` (env `*_BRIDGE_BASE_URL`/`NORA_BRIDGE_BASE_URL`, then `[platforms.<p>] base_url`), else `NORA_BRIDGE_PORT` loopback. |
-| `<P>_BRIDGE_READS_URL` / `NORA_BRIDGE_READS_URL` | both | Explicit `POST /v1/reads` endpoint for the guild channel directory; same base_url fallback chain. |
+| `NORA_BRIDGE_API_TOKEN` (fallback `NORA_BRIDGE_TOKEN`) | both | Bearer for the account read and the platform queries. |
+| `<P>_BRIDGE_SELF_URL` / `NORA_BRIDGE_SELF_URL` | both | Explicit account-read endpoint; else derived from the platform's `base_url` (env `*_BRIDGE_BASE_URL`/`NORA_BRIDGE_BASE_URL`, then `[platforms.<p>] base_url`), else `NORA_BRIDGE_PORT` loopback. |
+| `<P>_BRIDGE_READS_URL` / `NORA_BRIDGE_READS_URL` | both | Explicit platform-queries endpoint for the guild channel directory; same base_url fallback chain. |
 | `NORA_BRIDGE_PROJECTION_DIR` | both | Output dir (default `/bridge-projection` in the image). |
 | `NORA_BRIDGE_PROJECTION_PORT` | both | Health port (alternative to `--health-port`). |
 

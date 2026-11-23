@@ -36,7 +36,7 @@ async def env(tmp_path, monkeypatch, aiohttp_server, clean_pg_url, example_confi
     cfg["platforms"]["signal"]["base_url"] = base
     # This fixture's aiohttp server fakes a DIRECT signal-cli (/api/v1/accounts
     # + a working catch-all). The example ships `mode = "bridge"`, which would
-    # make the registry build a BridgeAdapter and call `/v1/self` — a route the
+    # make the registry build a BridgeAdapter and read its account — a route the
     # fake does not serve and these tests do not exercise.
     cfg["platforms"]["signal"]["mode"] = "direct"
     cfg["store"]["data_dir"] = str(tmp_path)

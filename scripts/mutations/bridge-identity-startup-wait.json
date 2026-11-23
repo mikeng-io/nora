@@ -21,7 +21,7 @@
     "target": "tests/unit/test_bridge_identity_startup_wait.py::test_a_still_starting_bridge_is_waited_for_until_its_identity_resolves[whatsapp]"
   },
   {
-    "name": "a 503 /v1/self is the waitable answer",
+    "name": "a 503 account read is the waitable answer",
     "file": "nora/platform/bridge/client.py",
     "old": "    if exc.status == 503:",
     "new": "    if False:",
