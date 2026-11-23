@@ -566,6 +566,34 @@ async def test_coverage_requests_bounded_low_reasoning_without_changing_other_ju
     assert coverage.plan(doc)["max_response_tokens"] == coverage.plan(doc)["planned_calls"] * 4096
 
 
+@pytest.mark.parametrize("stop", ["length", "content_filter", "stop"])
+async def test_a_returned_judge_response_survives_a_finish_rejection(monkeypatch, stop):
+    from evals.backbone import drain_spend
+
+    raw = json.dumps([{"id": "line-1", "label": "covered", "why": "Generated grounding"}])
+
+    class Client:
+        def __init__(self):
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+
+        async def create(self, **request):
+            return SimpleNamespace(
+                model="physical-judge", id="response-1", usage=None,
+                choices=[SimpleNamespace(finish_reason=stop,
+                                         message=SimpleNamespace(content=raw))])
+
+        async def close(self):
+            pass
+
+    drain_spend()
+    monkeypatch.setattr(Judge, "_client", lambda self: Client())
+    draw = await Judge("unused").coverage_batch("Generated coverage prompt")
+    assert ("error" in draw) == (stop != "stop")
+    assert draw["actual_model"] == "physical-judge" and draw["response_id"] == "response-1"
+    assert draw["raw"] == raw and draw["usage_known"] is False
+    assert drain_spend()["unknown_usage_calls"] == 1
+
+
 def test_serialized_coverage_contract_preserves_claim_and_complete_provenance():
     """Render contract only: no fake verdict establishes semantic accuracy."""
     doc = census_input()

@@ -1643,7 +1643,7 @@ async def _drive_uncaptured(case: Case, spec: Spec) -> dict[str, Any]:
 
 async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) -> dict[str, Any]:
     """Drive the deployment subject at its real anchor; unanchored cases are errors."""
-    from evals.rebuilt.domain import Moment, Outcome
+    from evals.rebuilt.domain import Moment
     from evals.rebuilt.entry import ENTRY_POINTS
 
     port = ENTRY_POINTS[spec.entry]
@@ -1696,13 +1696,6 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
     room = (str(shot["platform"]), str(shot["conversation_id"]))
     before_ms = int(shot["before_ms"])
     clock_ms = before_ms
-    if port.synthetic_sources:
-        private = md.get("profile_input") or {}
-        if not md.get("private_profile_file") or not isinstance(private.get("clock_ms"), int):
-            raise ValueError("profile writer requires private synthetic source file and clock")
-        clock_ms = private["clock_ms"]
-        if clock_ms < before_ms:
-            raise ValueError("synthetic writer clock cannot precede the restored anchor")
     now = datetime.fromtimestamp(clock_ms / 1000, tz=UTC)
     workdir = Path(tempfile.mkdtemp(prefix="nora-case-"))
     subject = None
@@ -1759,7 +1752,6 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
                     source_url=spec.source_url,
                     before_ms=before_ms,
                     leave_room_for_arrival=port.delivers_input,
-                    **({"stimulus_clock_ms": clock_ms} if port.synthetic_sources else {}),
                 )
             # A case about a document she already made
             # has to make it, the production source holding none. Refused on a
@@ -1811,16 +1803,11 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
                 finally:
                     await job_engine.dispose()
 
-            from evals.rebuilt.profile_identity import REPRESENTATION_PROPERTIES
             from nora.subject.context_filter import case_scope
 
             capture = await owned.enter_async_context(subject_effects(subject))
-            if (port.judged_on == "identity" and nora_case.name in REPRESENTATION_PROPERTIES
-                    and spec.judge is None and not md.get("print_input")):
-                outcome = Outcome(admitted=None, error="representation requires a semantic judge")
-            else:
-                with case_scope(case.name):
-                    outcome = await capture.drive(port, nora_case, now_ms=clock_ms)
+            with case_scope(case.name):
+                outcome = await capture.drive(port, nora_case, now_ms=clock_ms)
             if spec.judge is not None and outcome.error is None:
                 spec = dataclasses.replace(spec, judge=spec.judge.bind_evidence(capture.latest))
             blocks_empty = _blocks_empty(exporter)
@@ -1853,17 +1840,6 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
             blocks_rendered = _blocks_rendered(exporter)
             shown = shown_where(exporter.get_finished_spans())
             _SPEND.append(spend)
-            if port.synthetic_sources and outcome.position is not None:
-                receipt = json.loads(outcome.position)
-                receipt.update(
-                    run_id=RUN_ID, case=case.name,
-                    trace_ids=sorted({format(s.context.trace_id, "032x")
-                                      for s in exporter.get_finished_spans() if s.context}),
-                    model_calls=spend,
-                )
-                outcome = dataclasses.replace(
-                    outcome, position=json.dumps(receipt, ensure_ascii=False, sort_keys=True),
-                )
             measured_overlay = (dataclasses.replace(overlay, memory=None)
                                 if port.public_audience and overlay else overlay)
             problem = _circle_execution_problem(
@@ -1883,31 +1859,7 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
             # case's one stated property, read over the turn's RECORD — the
             # same evidence on both arms of a comparison. Selected by the
             # port's declared `judged_on`, not by its name.
-            if (port.judged_on == "identity" and outcome.judged == "REVIEW"
-                    and outcome.error is None):
-                if spec.judge is None:
-                    outcome = dataclasses.replace(
-                        outcome, error="representation requires a semantic judge",
-                    )
-                else:
-                    judgement = await spec.judge.grade_identity(
-                        heads=outcome.position, evidence=outcome.evidence,
-                    )
-                    if (draw := getattr(judgement, "receipt", None)) is not None:
-                        receipt = json.loads(outcome.position)
-                        receipt["judge"] = draw
-                        outcome = dataclasses.replace(
-                            outcome,
-                            position=json.dumps(receipt, ensure_ascii=False, sort_keys=True),
-                        )
-                    judged_why = judgement.why
-                    outcome = dataclasses.replace(
-                        outcome, judged=judgement.verdict,
-                        error=judgement.error or (
-                            "representation judge returned no rating"
-                            if judgement.verdict == "REVIEW" else None),
-                    )
-            elif (
+            if (
                 spec.judge is not None and port.judged_on == "position"
                 and outcome.position is not None and outcome.error is None
             ):
@@ -2012,15 +1964,6 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
                     EnvironmentState(name=NORA_CHANGED_COUNT_2, state=len(repeat_outcome.changed)),
                     EnvironmentState(name=NORA_STAGED_COUNT_2, state=len(repeat_outcome.staged)),
                 ]
-
-            if port.synthetic_sources and outcome.position is not None:
-                # Retain normal tool decisions for readback after the sandbox
-                # closes. Append AFTER judging so diagnostics cannot cue its verdict.
-                receipt = json.loads(outcome.position)
-                receipt.update(tool_inputs=tool_inputs, tool_results=tool_results)
-                outcome = dataclasses.replace(
-                    outcome, position=json.dumps(receipt, ensure_ascii=False, sort_keys=True),
-                )
 
             await _close(subject)
             subject = None

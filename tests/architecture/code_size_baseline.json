@@ -101,11 +101,6 @@
    "measure": 152
   }
  },
- "evals/rebuilt/profile_identity.py": {
-  "functions": {
-   "check_identity": 140
-  }
- },
  "evals/rebuilt/rubric.py": {
   "comment_blocks": 10
  },
@@ -1881,11 +1876,6 @@
  },
  "nora/subject/proactive.py": {
   "comment_blocks": 3
- },
- "nora/subject/profile_writer.py": {
-  "functions": {
-   "run_writer": 170
-  }
  },
  "nora/subject/sandbox.py": {
   "comment_blocks": 12,

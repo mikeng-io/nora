@@ -23,7 +23,6 @@ THREE STATES, and the middle one is the point (`design/evaluation/subject.md`
 
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -79,14 +78,12 @@ COUNTERFACTUAL_KEYS = frozenset({"varies", "why"})
 #: bears on. The varied lessons ride in `metadata.lessons` (her own
 #: words, as the live lesson reads), which no other case may state.
 COUNTERFACTUAL_TIERS = frozenset({
-    "culture", "transport", "prior", "lessons", "profile_sources",
-    "unit_record",
+    "culture", "transport", "prior", "lessons", "unit_record",
 })
 #: Tiers that mean something in one corpus only. `prior` is the standing
 #: fold's; that corpus varies nothing else. `lessons` is the lessons corpus's.
 _TIER_CORPORA = {
     "prior": frozenset({"standing"}), "lessons": frozenset({"lessons"}),
-    "profile_sources": frozenset({"profile_identity"}),
     "unit_record": frozenset({"standing_unit"}),
 }
 
@@ -140,41 +137,7 @@ def _rows(name: str) -> list[dict[str, Any]]:
                 "configure it (design/evaluation/subject.md)"
             )
         return list(doc.get("cases") or [])
-    rows = list(doc)
-    if name == "profile_identity" and os.environ.get("NORA_EVAL_PROFILE_CASES"):
-        private = yaml.safe_load(Path(os.environ["NORA_EVAL_PROFILE_CASES"]).read_text())
-        from nora.subject.profile_writer import (
-            REPRESENTATION_VECTORS,
-            SOURCE_VECTORS,
-            SOURCE_VECTORS_V2,
-            validate_sources,
-        )
-        registered = {r["name"] for r in rows}
-        if (not isinstance(private, dict) or not registered.issubset(private)
-                or set(private) - registered not in (
-                    set(), set(SOURCE_VECTORS), set(SOURCE_VECTORS_V2),
-                    set(REPRESENTATION_VECTORS))):
-            raise ValueError("private profile file must supply exactly the registered vectors")
-        rows.extend({"name": name, "entry": "profile_identity", "expect": "identity",
-                     "metadata": {"synthetic_evidence": True}}
-                    for name in (*SOURCE_VECTORS, *SOURCE_VECTORS_V2, *REPRESENTATION_VECTORS)
-                    if name in private)
-        for row in rows:
-            value = private[row["name"]]
-            if (not isinstance(value, dict)
-                    or set(value) != {"snapshot", "person", "sources", "clock_ms"}):
-                raise ValueError("private profile vector requires snapshot, roster person, sources")
-            validate_sources(value["sources"], value["clock_ms"], vector=row["name"])
-            row.update(snapshot=value["snapshot"], person=value["person"], counterfactual={
-                "varies": "profile_sources",
-                "why": "Private invented source arrivals and held birthday, at a declared clock; "
-                       "the real anchor is background only, not evidence for these facts.",
-            })
-            row["metadata"] = {**row.get("metadata", {}),
-                               "profile_input": {"sources": value["sources"],
-                                                 "clock_ms": value["clock_ms"]},
-                               "private_profile_file": True}
-    return rows
+    return list(doc)
 
 
 def _check(name: str, row: dict[str, Any]) -> None:
@@ -420,7 +383,6 @@ CORPUS_ENTRY: dict[str, str] = {
     "presence": "tag",
     "standing": "standing",
     "standing_unit": "standing_unit",
-    "profile_identity": "profile_identity",
     "profile_coverage": "profile_coverage",
     "tool_reporting": "tag",
     # What she says about her OWN FORM. A tag, and judged — "did she reply"
@@ -483,7 +445,7 @@ ROUTED_CORPORA = frozenset({
 #: judging unconditionally (once a judge is configured) adds no second
 #: selection rule.
 JUDGED_CORPORA = frozenset({
-    "profile_coverage", "profile_identity",
+    "profile_coverage",
     "being_contradicted", "identity_grounding", "source_scope",
     "injections", "transcript_injection", "standing", "standing_unit", "presence",
     # ADR 0015 §4: what she SAYS after a tool returns a status. Its opted-in
