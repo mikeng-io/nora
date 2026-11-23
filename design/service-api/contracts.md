@@ -14,7 +14,7 @@ whatever the network allows.
 | `graph` | `memory/` | the app | the portal, tools, MCP | scoped reads with the retrieval semantics |
 | `management` | `people/` | the management service | the portal, in-room management, bridges' roster sync | the identity, membership and grant operations |
 | `documents` | `documents/` | the app | the portal, tools | documents, revisions, artifacts and their media |
-| `voice` | `voice/` | each audio controller | the app | join, leave, speak, play and their status |
+| `voice` | `voice/` | each audio controller, and a bridge that fronts one | whoever holds the connection's hub: the app, or the bridge | the voice connection's operations and its status |
 | `computer` | `computer/` | computerd | the app | sandbox operations, browser sessions, exports |
 | `operations` | `app/` | every Nora process | the operator, monitors, the portal | the process's own status, tool and skill catalogue and doctrine; config and policy reload, queue inspection and drain, loop pause and resume, replay |
 
@@ -97,6 +97,29 @@ enqueue times, the conversation or subject it concerns, and the trace context.
 - Intake places each item by the observation rules
   ([observation](../cognition/observation.md#rules)); an adapter never names
   a unit.
+
+## Voice
+
+`voice` is the audio controller's control plane: one voice connection per
+guild, and a player that plays what it is given
+([audio ownership](../voice-channel/audio.md)).
+
+- Its operations are join, leave, play a stream, stop, pause, resume, set
+  volume and speak; its read is the connection's status. Speech audio is a
+  blob bound to the `speak` operation that names its key.
+- The hub that owns the connection calls it: the bridge where the bridge
+  owns the gateway, the app otherwise. A bridge that fronts a controller
+  implements `voice` too, relaying the same operations under the same paths
+  and answering `unsupported` for one it does not relay.
+- A voice operation names the connection generation it observed. A stale
+  generation is `rejected` with the current one, and a refusal by the
+  player's arbiter is `rejected` with its reason; neither is a 409.
+- The music queue (what plays next, skipping, reordering, resolving a
+  source) belongs to the process that owns it and is a `platform`
+  capability of that bridge: its commands are `platform` operations, never
+  `voice` routes ([music](../voice-channel/music.md)).
+- What a controller or a wake gate reports (a track finished, a connection
+  died, a woken utterance) is an intake event, never a callback route.
 
 ## Deriving consumers
 
