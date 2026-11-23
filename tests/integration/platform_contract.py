@@ -19,6 +19,7 @@ from aiohttp import web
 
 from nora.domain.service_api import status_for
 from nora.infra.sql.schema import MESSAGES
+from nora.platform.bridge.schema import validator
 
 DOCUMENT = Path(__file__).resolve().parents[2] / "docs/service-api/openapi.json"
 OPERATIONS = "/v1/platform/operations"
@@ -46,11 +47,27 @@ def assert_serves_the_contract(app: web.Application) -> None:
     assert not [p for _, p in served if p.startswith(old)]
 
 
+#: The route's documented response schema, by method and the path's first segments.
+_SCHEMAS = {
+    ("POST", "/v1/platform/operations"): validator("PlatformOperationEnvelope"),
+    ("GET", "/v1/platform/operations"): validator("OperationReadEnvelope"),
+    ("PUT", "/v1/platform/blobs"): validator("OperationEnvelope"),
+    ("GET", "/v1/platform/blobs"): validator("ReadEnvelope"),
+    ("POST", "/v1/platform/queries"): validator("ReadEnvelope"),
+    ("GET", "/v1/platform/accounts"): validator("AccountReadEnvelope"),
+    ("GET", "/v1/operations/status"): validator("StatusReadEnvelope"),
+}
+
+
 async def envelope(resp: Any) -> dict[str, Any]:
-    """An answer's body, held to the six parts and its outcome's status."""
+    """An answer's body, held to the six parts, its route's documented schema (the
+    one the app's client validates by) and its outcome's status."""
     body = await resp.json()
     assert set(body) == PARTS, body
     assert resp.status == status_for(body["outcome"]), (resp.status, body)
+    route = (resp.method, "/".join(resp.url.path.split("/")[:4]))
+    errors = [e.message for e in _SCHEMAS[route].iter_errors(body)]
+    assert not errors, (route, errors, body)
     return body
 
 

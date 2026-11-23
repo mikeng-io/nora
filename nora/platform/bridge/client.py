@@ -16,7 +16,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Set
 from dataclasses import dataclass
-from typing import Any, TypeGuard, get_args
+from typing import Any, TypeGuard
 
 import aiohttp
 from opentelemetry.trace.propagation.tracecontext import (
@@ -40,12 +40,11 @@ from nora.domain.ports import (
 from nora.domain.service_api import (
     Family,
     OperationConflictError,
-    OperationOutcome,
     Outcome,
-    ReadOutcome,
     parse_response,
 )
 from nora.domain.service_api_platform import SELF_ACCOUNT_ID
+from nora.platform.bridge.schema import validator
 
 log = logging.getLogger("nora.platform.bridge.client")
 
@@ -282,9 +281,9 @@ class BridgeAdapter:
                 "GET", f"/v1/platform/operations/{operation_id}", "read")
         except Exception:  # noqa: BLE001 — any failed read-back leaves the send uncertain
             return "uncertain", {}
-        record = answer.payload if answer.outcome == "ok" else None
-        if not valid_read(answer.body) \
-                or not valid_delivery(record, message_id=self._bound_message_id()):
+        record = (valid_read_back(answer.body, message_id=self._bound_message_id())
+                  if answer.outcome == "ok" else None)
+        if record is None:
             return "uncertain", {}
         outcome = str(record["outcome"])
         return (outcome if outcome != "pending" else "uncertain"), record
@@ -470,88 +469,47 @@ async def bridge_query(endpoint: BridgeEndpoint, kind: str, params: Mapping[str,
     return answer if answer.outcome == "ok" else None
 
 
-_PARTS = frozenset({"outcome", "payload", "when", "from", "scope", "trace"})
-_OPERATION_OUTCOMES: frozenset[str] = frozenset(get_args(OperationOutcome))
-_READ_OUTCOMES: frozenset[str] = frozenset(get_args(ReadOutcome))
-_DELIVERY_PAYLOAD = frozenset({"platform_refs", "platform_ms", "message_id", "error"})
+#: The kernel's own schemas for the answers the client reads, compiled once.
+_DELIVERY = validator("PlatformOperationEnvelope")
+_READ_BACK = validator("OperationReadEnvelope")
+_BLOB = validator("OperationEnvelope")
 
 
-def _int_or_none(value: object) -> bool:
-    return value is None or (isinstance(value, int) and not isinstance(value, bool))
-
-
-def _str_or_none(value: object) -> bool:
-    return value is None or isinstance(value, str)
-
-
-def _envelope_ok(body: object, outcomes: frozenset[str]) -> TypeGuard[Mapping[str, Any]]:
-    """Six parts, a string outcome of the family, a string trace, a typed scope."""
-    if not isinstance(body, Mapping) or set(body) != _PARTS:
-        return False
-    scope = body["scope"]
-    return (isinstance(body["outcome"], str) and body["outcome"] in outcomes
-            and isinstance(body["trace"], str) and isinstance(scope, Mapping)
-            and isinstance(scope.get("level"), str) and _str_or_none(scope.get("id")))
-
-
-def valid_read(body: object) -> TypeGuard[Mapping[str, Any]]:
-    """A whole read envelope: the kernel's `ReadWhen` and `ReadFrom` shapes."""
-    if not _envelope_ok(body, _READ_OUTCOMES):
-        return False
-    when, origin = body["when"], body["from"]
-    if not (isinstance(when, Mapping) and isinstance(origin, Mapping)):
-        return False
-    failed = origin.get("failed_sources")
-    return (_int_or_none(when.get("observed_at_ms")) and isinstance(when.get("known_by"), str)
-            and isinstance(origin.get("source"), str) and isinstance(origin.get("healthy"), bool)
-            and isinstance(failed, list) and all(isinstance(f, str) for f in failed))
-
-
-def _operation_ok(body: object) -> TypeGuard[Mapping[str, Any]]:
-    """A whole operation envelope: `settled` for every outcome but `pending`."""
-    if not _envelope_ok(body, _OPERATION_OUTCOMES):
-        return False
-    when, origin = body["when"], body["from"]
-    return (isinstance(when, Mapping) and isinstance(origin, Mapping)
-            and when.get("state") in ("prepared", "started", "settled")
-            and (when["state"] == "settled") != (body["outcome"] == "pending")
-            and _int_or_none(when.get("started_at_ms"))
-            and _int_or_none(when.get("settled_at_ms"))
-            and isinstance(origin.get("target"), str)
-            and _str_or_none(origin.get("platform_ref")))
+def _settled_agrees(body: Mapping[str, Any]) -> bool:
+    """`settled` for every outcome but `pending`: the record's lifecycle rule."""
+    return (body["when"]["state"] == "settled") != (body["outcome"] == "pending")
 
 
 def valid_delivery(body: object, *,
                    message_id: int | None) -> TypeGuard[Mapping[str, Any]]:
-    """A send or react envelope of this operation: the delivery payload's four
-    fields, and — when the operation bound audit row `message_id` — a
-    confirmation naming exactly that row."""
-    if not _operation_ok(body):
+    """A send or react envelope by the contract's schema, settled by its outcome,
+    and — when the operation bound audit row `message_id` — a confirmation
+    naming exactly that row."""
+    if not isinstance(body, Mapping) or not _DELIVERY.is_valid(body) \
+            or not _settled_agrees(body):
         return False
-    payload = body["payload"]
-    if not isinstance(payload, Mapping) or set(payload) != _DELIVERY_PAYLOAD:
-        return False
-    refs, stated = payload["platform_refs"], payload["message_id"]
-    if not (isinstance(refs, list) and all(isinstance(r, str) for r in refs)
-            and _int_or_none(payload["platform_ms"]) and _int_or_none(stated)
-            and isinstance(payload["error"], Mapping | None)):
-        return False
-    if message_id is None:
+    stated = body["payload"].get("message_id")
+    if message_id is None or stated == message_id:
         return True
-    return stated == message_id or (stated is None and body["outcome"] != "complete")
+    return stated is None and body["outcome"] != "complete"
+
+
+def valid_read_back(body: object, *, message_id: int | None) -> Mapping[str, Any] | None:
+    """The operation record an `ok` read-back carries, when the whole answer is valid."""
+    if not isinstance(body, Mapping) or not _READ_BACK.is_valid(body):
+        return None
+    record = body["payload"]
+    return record if valid_delivery(record, message_id=message_id) else None
 
 
 def valid_blob(body: object, *, key: str) -> TypeGuard[Mapping[str, Any]]:
-    """A blob `PUT` envelope: `complete` names its key, `rejected` says why."""
-    if not _operation_ok(body):
+    """A blob `PUT` envelope by the contract's schema whose `complete` names its key."""
+    if not isinstance(body, Mapping) or not _BLOB.is_valid(body) \
+            or not _settled_agrees(body):
         return False
-    payload, outcome = body["payload"], body["outcome"]
-    if outcome == "complete":
-        return isinstance(payload, Mapping) and payload.get("key") == key
-    if outcome == "rejected":
-        error = payload.get("error") if isinstance(payload, Mapping) else None
-        return isinstance(error, Mapping) and isinstance(error.get("kind"), str)
-    return payload is None or isinstance(payload, Mapping)
+    payload = body["payload"]
+    return body["outcome"] != "complete" or (
+        isinstance(payload, Mapping) and payload.get("key") == key)
 
 
 def _send_result(outcome: str, envelope: Mapping[str, Any]) -> SendResult:

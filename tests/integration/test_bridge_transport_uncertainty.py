@@ -602,3 +602,60 @@ async def test_a_whole_read_back_of_this_send_confirms():
         result = await _send(server, owner=_LIVE)
     assert result == _OK
     assert calls == {"post": 1, "get": 1}
+
+
+def _error_object_empty():
+    body = _bound_complete()
+    return {**body, "payload": {**body["payload"], "error": {}}}
+
+
+def _read_back_with(outcome_body, *, when=None, scope=None):
+    """A read-back answer wrapping `outcome_body`, with its `when` or `scope` replaced."""
+    body = read_body("ok", outcome_body, source="signal", trace="")
+    if when is not None:
+        body["when"] = when
+    if scope is not None:
+        body["scope"] = scope
+    return web.json_response(body, status=200)
+
+
+_SOL = {
+    "error_object_empty": lambda: _read_back_with(_error_object_empty()),
+    "observed_at_missing": lambda: _read_back_with(
+        _bound_complete(), when={"known_by": "bridge_clock"}),
+    "observed_at_null": lambda: _read_back_with(
+        _bound_complete(), when={"observed_at_ms": None, "known_by": "bridge_clock"}),
+    "unknown_scope_level": lambda: _read_back_with(_bound_complete(), scope={"level": "galaxy"}),
+}
+
+
+@pytest.mark.parametrize("answer", list(_SOL), ids=list(_SOL))
+async def test_a_read_back_off_the_schema_is_uncertain(answer):
+    async def pending(request):
+        return web.json_response(_operation("pending"), status=status_for("pending"))
+
+    async def read_back(request):
+        return _SOL[answer]()
+
+    calls, server = _counting(pending, read_back)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _UNCERTAIN
+    assert calls == {"post": 1, "get": 1}
+
+
+@pytest.mark.parametrize("invalid", [
+    _error_object_empty, lambda: _bound_complete(scope={"level": "galaxy", "id": None}),
+], ids=["error_object_empty", "unknown_scope_level"])
+async def test_a_direct_answer_off_the_schema_is_read_back(invalid):
+    async def post(request):
+        return web.json_response(invalid(), status=200)
+
+    async def absent(request):
+        return _read("nothing_found")
+
+    calls, server = _counting(post, absent)
+    async with server:
+        result = await _send(server, owner=_LIVE)
+    assert result == _UNCERTAIN
+    assert calls == {"post": 1, "get": 1}
