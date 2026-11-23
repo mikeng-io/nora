@@ -1,27 +1,8 @@
-"""What each kind of context block IS — declared once, per TYPE.
+"""Define each context block's description once, at its type.
 
-**A block's description is a property of the TYPE, not of the render.** What a
-`<notes>` block is does not vary by which turn produced it, so nothing about it
-is composed at inject time by whoever writes the renderer. A renderer SELECTS a
-description rather than composing one, so two renderers cannot describe the
-same block differently, and inventing a new description is indistinguishable
-from declaring a new type: a visible act in a reviewable place.
-
-**There is no `title` and no catalogue.** The tag is the title. A catalogue
-(a «What you can see:» list) would be a second copy, in a different message, of
-what each block's own description already says in its opening tag; a second
-copy of what the thing already says is deleted, not maintained (DEC-28,
-DEC-29).
-
-**There is no `untrusted`.** A token standing in for a description says less
-than a sentence to every audience, and it names the wrong axis: a transcript is
-the most RELIABLE content in the prompt, while a fold may hold laundered
-injection.
-
-**What a description has to do**, and the bar every entry here is written
-against: a reader who knows no vocabulary of ours can act on it. Say what the
-block is, whose words are in it, what its absence means, and what NOT to
-conclude from it. Never a label, never a word that needs a glossary.
+The opening tag carries the description and its field meanings. Say what the
+block is, whose words it contains, what its absence means and what the reader
+can conclude. Descriptions use language the reader already knows.
 """
 
 from __future__ import annotations
@@ -74,13 +55,7 @@ def _t(
     return BlockType(name, description, pulled + tuple(annotations.items()), store)
 
 
-#: Fields that mean the same thing in every block that carries them. Declared
-#: once here rather than repeated per type, for the reason the whole module
-#: exists: `n` meaning one thing in the transcript and another in
-#: note-candidates is a real difference worth stating, but `age` meaning "how
-#: long ago" everywhere is not worth restating five times and drifting.
-#: A type pulls these in by naming them: `_t(..., "age", "from")`; a table
-#: entry no type names is never rendered.
+#: Field meanings shared by every type that names them.
 _SHARED: dict[str, str] = {
     "age": "how long ago it was sent",
     "from": "who sent it",
@@ -93,6 +68,8 @@ _SHARED: dict[str, str] = {
     "rev": "the source revision, scoped to its own sequence",
     "coverage": "the reported scope and gaps, never upstream completeness",
     "object": "the scoped handle of the source object",
+    "cause": "why the graph read is unavailable or incomplete",
+    "limit": "which retrieval bounds curtailed the read",
 }
 
 
@@ -111,6 +88,28 @@ def _profile_types() -> dict[str, BlockType]:
 BLOCK_TYPES: dict[str, BlockType] = {
     **_profile_types(),
     **{t.name: t for t in (
+    # ponytail: phase 6 renames the first three types to profile, standing and lessons.
+    _t("graph_profile",
+       "Claims about one subject, organized as facts, traits and guesses from the graph. "
+       "They are your accounts of the evidence. An empty result found no claims in this read. "
+       "A missing block says nothing about the subject, and a claim can still be wrong.",
+       "cause", "limit", store="cognitive_graph.profile", of="the subject's id",
+       name="the subject's name from the identity view"),
+    _t("graph_standing",
+       "Your open and recently settled commitments and your claims about this room. "
+       "An empty result found none in this read. A missing block says nothing about the room, "
+       "and your claims may no longer describe the current situation.",
+       "cause", "limit", store="cognitive_graph.standing"),
+    _t("graph_lessons",
+       "Claims you recorded about your practice in this unit, with the evidence they cite. "
+       "An empty result found none in this read. A missing block says nothing about what "
+       "you learned, and a lesson can still be wrong.",
+       "cause", "limit", store="cognitive_graph.lessons"),
+    _t("related",
+       "Messages and claims reached from the starting references. They carry the original "
+       "speakers' words or your earlier judgments. An empty result found no additional rows. "
+       "A missing block says nothing about what exists, and closeness does not establish truth.",
+       "cause", "limit", store="cognitive_graph.related"),
     _t("cognition_orient", "How to keep each kind of memory with the tools this session offers. "
        "These are instructions, not evidence."),
     _t("cognition_act", "How to carry out a decision with the tools this session offers. "
