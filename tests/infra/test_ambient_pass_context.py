@@ -11,6 +11,7 @@ from nora.memory import wire
 from nora.memory.adapters.pass_assembly import PassAssembler
 from nora.memory.app.retrieval import RetrievalService
 from nora.testing import FakeAgentRunner, FakeComputeJobStore, ScriptedTurn
+from nora.testing.memory_index import FakeQueryEmbedder
 from tests.infra.test_called_pass_context import called as called
 from tests.infra.test_called_pass_context import elements
 from tests.infra.test_pass_anchors import reader
@@ -31,7 +32,7 @@ async def test_ambient_presents_window_people_and_the_room_floor_in_assembled_or
     async with scenario.engine.begin() as conn:
         await conn.execute(sa.delete(GRAPH_SEARCH))
     retrieval = CountedRetrieval(scenario)
-    assembler = PassAssembler(reader(scenario), RetrievalService(retrieval, None))
+    assembler = PassAssembler(reader(scenario), RetrievalService(retrieval, FakeQueryEmbedder()))
     jobs = FakeComputeJobStore()
     await jobs.create(_job(room=("signal", ROOM), title="Generated task in this room"))
     await jobs.create(_job(title="Generated task in another room"))
@@ -61,5 +62,5 @@ async def test_ambient_presents_window_people_and_the_room_floor_in_assembled_or
     assert "Generated task in another room" not in call["tag_message"]
     assert blocks[11].get("of") == "person-here"
     assert "Generated sender fact" in (blocks[11].text or "")
-    assert blocks[11].get("cause") == "query_embedding_failed"
+    assert blocks[11].get("cause") is None
     assert len(retrieval.reads) == 1

@@ -10,7 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from nora.infra.sql.cognitive_graph_store import RowData
 from nora.infra.sql.item_registration import RegistrationScope, epoch_ms, item_graph_id
 from nora.infra.sql.schema import MESSAGES, SOCIAL_ITEM
+from nora.infra.sql.social_privacy import public_accounts
 from nora.memory.domain.registration import BACKFILL_ITEM_SOURCES
+
+_SOCIAL_ITEMS = frozenset({"social_item", "social_item_count", "social_item_state"})
 
 
 def _clock(value: datetime | str | int) -> datetime:
@@ -27,7 +30,10 @@ class ItemPlanes:
         self.scope = scope
         self._person_units: dict[str, tuple[str, ...]] = {}
         self._probes: dict[tuple[str, str], tuple[str, ...]] = {}
+        self._circles: dict[tuple[str, str], tuple[str, ...]] = {}
         self._rooms: dict[tuple[str, str], str | None] = {}
+        # (network, person) -> whether their latest recorded probe said public.
+        self._public: dict[tuple[str, str], bool] = {}
 
     async def _person(self, person: str) -> tuple[str, ...]:
         if person not in self._person_units:
@@ -58,8 +64,17 @@ class ItemPlanes:
                 sa.select(SOCIAL_ITEM.c.network, SOCIAL_ITEM.c.item_id, SOCIAL_ITEM.c.person)
                 .where(item_key.in_({(r["network"], r["item_id"]) for r in batch})),
             )
-            return {(r.network, r.item_id): r.person for r in rows}
+            parents = {(r.network, r.item_id): r.person for r in rows}
+            await self._privacy(conn, {(n, person) for (n, _), person in parents.items()})
+            return parents
+        if family == "social_item":
+            await self._privacy(conn, {(r["network"], r["person"]) for r in batch})
         return {}
+
+    async def _privacy(self, conn: AsyncConnection, pairs: set[tuple[str, str]]) -> None:
+        missing = pairs - self._public.keys()
+        public = await public_accounts(conn, missing)
+        self._public.update({pair: pair in public for pair in missing})
 
     async def scope_for(
         self, name: str, row: RowData, parents: Mapping[Any, Any],
@@ -97,15 +112,24 @@ class ItemPlanes:
                       "nora_pass_output"}:
             # Executor items are scoped when written, using their original authority.
             return (), None, []
+        elif name == "presence_fixes":
+            persons = [row["person_id"]]
+            key = row["person_id"], row["circle_id"]
+            if key not in self._circles:
+                self._circles[key] = await self.scope.presence_units(*key)
+            units = self._circles[key]
         else:
-            if name == "presence_fixes":
-                person = row["person_id"]
-            elif name in {"social_item_count", "social_item_state"}:
+            if name in {"social_item_count", "social_item_state"}:
                 person = parents.get((row["network"], row["item_id"]))
             else:
                 person = row["person"]
             persons = [person] if person else []
-            units = await self._person(person) if person else ()
+            # As its writer: a social item reaches units only from an account
+            # whose latest recorded probe said public.
+            placed = name not in _SOCIAL_ITEMS or (
+                person is not None and self._public.get((row["network"], person), False)
+            )
+            units = await self._person(person) if person and placed else ()
         return units, origin, sorted({person for person in persons if person})
 
     @staticmethod

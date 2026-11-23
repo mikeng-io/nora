@@ -27,7 +27,7 @@ _OUTCOMES = NORA_ACT_OUTCOME.c
 P = NORA_PASS_OUTPUT.c
 KEY = ("unit", "kind", "graph_id", "occurrence")
 _MATCH = sa.and_(*(C[key] == S[key] for key in KEY), C.claimant == "proactive")
-_RECHECK_ATTEMPT_LIMIT = 3  # Provisional until there is runtime evidence.
+_ATTEMPT_LIMIT = 3  # Provisional until there is runtime evidence.
 
 
 def _silence(unit: sa.ColumnElement, pass_id: sa.ColumnElement, reason: sa.ColumnElement):
@@ -113,7 +113,7 @@ class SqlProactiveClaims:
 
     async def settle(self, claim: ProactiveClaim, now: datetime) -> str | None:
         async with self._engine.begin() as conn:
-            results = await _settle_claims(conn, now, *_claim_key(claim), count_recheck=True)
+            results = await _settle_claims(conn, now, *_claim_key(claim), count_attempt=True)
             return results[0][2] if results else None
 
 
@@ -127,15 +127,14 @@ def _claim_key(claim: ProactiveClaim) -> tuple[sa.ColumnElement[bool], ...]:
 
 async def _settle_claims(
     conn: AsyncConnection, now: datetime, *where: sa.ColumnElement[bool],
-    count_recheck: bool = False,
+    count_attempt: bool = False,
 ) -> list[tuple[str, str, str]]:
     recorded = _reply_recorded(C.unit, C.pass_id)
     attempts: sa.ColumnElement[int] = C.attempts
-    if count_recheck:
-        incomplete = _silence(C.unit, C.pass_id, P.silence_reason == RECHECK_UNAVAILABLE)
-        attempts = C.attempts + sa.case((~recorded & incomplete, 1), else_=0)
+    if count_attempt:
+        attempts = C.attempts + sa.case((~recorded, 1), else_=0)
     updated = await conn.execute(sa.update(GRAPH_STIMULUS_CLAIM).where(*where).values(
-        state=sa.case((recorded, "closed"), (attempts >= _RECHECK_ATTEMPT_LIMIT, "parked"),
+        state=sa.case((recorded, "closed"), (attempts >= _ATTEMPT_LIMIT, "parked"),
                       else_="released"),
         attempts=attempts,
         settled=now,

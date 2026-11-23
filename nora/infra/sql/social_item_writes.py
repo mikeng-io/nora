@@ -26,6 +26,7 @@ from nora.infra.sql import memory_index
 from nora.infra.sql.item_registration import SqlItemRegistration
 from nora.infra.sql.memory_index import social_source_id
 from nora.infra.sql.schema import SOCIAL_ITEM, SOCIAL_ITEM_COUNT, SOCIAL_ITEM_STATE, SOCIAL_POLL
+from nora.infra.sql.social_privacy import public_accounts
 
 
 class SocialItemWrites:
@@ -48,7 +49,9 @@ class SocialItemWrites:
     ) -> bool:
         """Record one item. True when it is new; False when `(network, item_id)`
         was already recorded, in which case nothing was written and the first
-        row stands unchanged."""
+        row stands unchanged. Only an account whose latest recorded probe answered
+        public has its item placed in the person's units; any other is stored
+        unscoped, and so are the count and state rows that follow it."""
         stmt = (
             pg_insert(SOCIAL_ITEM)
             .values(
@@ -66,7 +69,10 @@ class SocialItemWrites:
             if (reg := self._registration) is None:
                 wrote = bool((await conn.execute(stmt)).rowcount)
             else:
-                for unit in await reg.scope.person_units(person) or (None,):
+                account = (item.network, person)
+                public = account in await public_accounts(conn, (account,))
+                units = await reg.scope.person_units(person) if public else ()
+                for unit in units or (None,):
                     inserted = await reg.insert_once(
                         conn, SOCIAL_ITEM, stmt, unit=unit, persons=(person,),
                         occurred_at=item.taken_at, cues=graph_item_cues(item.caption),
@@ -85,17 +91,18 @@ class SocialItemWrites:
         total_clips_count: int | None = None, advanced_marker: bool = False,
         advanced_counts: bool = False, latency_ms: int | None = None,
         id: str | None = None, cursor: str | None = None,
-        end_reason: BackfillEnd | None = None,
+        end_reason: BackfillEnd | None = None, is_private: bool | None = None,
     ) -> None:
         """Append one probe or read. A read passes its own `id`, the
         `read_id` its items were recorded with; a back-fill page its next
-        `cursor`, None when the walk ended on it, and its `end_reason`."""
+        `cursor`, None when the walk ended on it, and its `end_reason`; and
+        `is_private`, the account privacy its probe answered."""
         values = {
             "network": network, "person": person, "stage": stage, "outcome": outcome,
             "latest_reel_media": latest_reel_media, "media_count": media_count,
             "total_clips_count": total_clips_count, "advanced_marker": advanced_marker,
             "advanced_counts": advanced_counts, "latency_ms": latency_ms,
-            "cursor": cursor, "end_reason": end_reason,
+            "cursor": cursor, "end_reason": end_reason, "is_private": is_private,
         }
         if id is not None:
             values["id"] = id
@@ -123,6 +130,7 @@ class SocialItemWrites:
                 **await reg.planes(
                     conn, table, unit=unit, occurred_at=now, persons=(person,),
                     key=(values["id"],) if "id" in values else None,
+                    own=table is SOCIAL_POLL,  # a routine probe; its items are the stimulus
                 ),
             }
         await conn.execute(sa.insert(table).values(values))

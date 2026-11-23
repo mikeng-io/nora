@@ -392,16 +392,26 @@ def retrieval(
     return RetrievalService(SqlRetrieval(engine, access, lineage, embedding_model), embedder)
 
 
+def query_embedder(cfg) -> tuple[QueryEmbedder | None, str | None]:
+    """The configured graph query embedder and its model fingerprint; none without vectors."""
+    index = cfg.memory.index
+    if not index.embed:
+        return None, None
+    return LlamaEmbedder(
+        index.embedder_url, timeout_seconds=QUERY_TIMEOUT_SECONDS,
+        query_model_file=model_file(index.embedder_model),
+    ), fingerprint(index.embedder_model)
+
+
 def configured_graph_reads(cfg, engine, access, lineage) -> GraphReadTools | None:
     if not cfg.memory.index.read:
         return None
-    index = cfg.memory.index
-    embedder = LlamaEmbedder(
-        index.embedder_url, timeout_seconds=QUERY_TIMEOUT_SECONDS,
-        query_model_file=model_file(index.embedder_model),
-    ) if index.embed else None
-    model = fingerprint(index.embedder_model) if index.embed else None
-    return graph_read_tools(engine, access, lineage, embedder, model)
+    return graph_read_tools(engine, access, lineage, *query_embedder(cfg))
+
+
+def configured_pass_assembler(cfg, engine, access, lineage) -> PassAssembler:
+    """The pass assembler every occasion's prefetch shares, seeded by the configured embedder."""
+    return pass_assembler(engine, access, lineage, *query_embedder(cfg))
 
 
 def graph_read_tools(

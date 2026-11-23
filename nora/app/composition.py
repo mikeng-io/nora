@@ -910,9 +910,9 @@ async def _compose_dependencies(
         _memory_wire, dreamer_instructions, cfg, engine, access, lineage, persons_view,
         allowlist, doctrine_store, content_checks, clock, metrics, slots, model_client_for,
     )
+    graph_assembler = _memory_wire.configured_pass_assembler(cfg, engine, access, lineage)
     engagement_graph = EngagementGraph(
-        access, _memory_wire.message_graph_ids(engine),
-        _memory_wire.pass_assembler(engine, access, lineage, None, None),
+        access, _memory_wire.message_graph_ids(engine), graph_assembler,
     )
     graph_reads = _memory_wire.configured_graph_reads(cfg, engine, access, lineage)
     _agent_registry = build_registry(
@@ -1118,7 +1118,7 @@ async def _compose_dependencies(
                       cfg.doctrine.display_name, cfg.store.context_window, limits,
                       cfg.llm.defer_tools, cfg.heartbeat.timeout_seconds, metrics,
                       graph_debrief.revisions, tool_call_log_store, reasoning_strip_store),
-            graph_debrief, lineage).run())
+            graph_debrief, graph_assembler).run())
     _fire_compute_poller = compute_poller(
         allowlist=allowlist,
         background=background,
@@ -1435,7 +1435,7 @@ async def _compose_dependencies(
         social_perception=social_perception,
         story_expiry=story_expiry,
         graph_observe=graph_observe(engine, op_clock, metrics, fetch_client or search_client,
-            analytics=cfg.analytics, room_slots=WakeRoomSlots(policy, slots)),
+            analytics=cfg.analytics, room_slots=WakeRoomSlots(allowlist, slots)),
         graph_batches=(
             GraphBatchProducer(engine, metrics=metrics) if cfg.memory.graph.enabled else None
         ),

@@ -420,6 +420,29 @@ async def test_three_unavailable_rechecks_park_and_discard_the_staged_debrief(sc
     assert debrief.metrics.get("nora_proactive_stimulus_parked_total") == 1
 
 
+class FailingRunner(ScriptedRunner):
+    async def invoke(self, **call):
+        self.calls.append(call)
+        raise RuntimeError("generated model failure")
+
+
+async def test_three_failed_turns_park_instead_of_rerunning_every_tick(scenario):
+    await seed_due(scenario)
+    runner = FailingRunner()
+    worker, sender, debrief = setup(scenario, runner)
+    for attempt, state in enumerate(("released", "released", "parked"), 1):
+        await worker.poll()
+        [claim] = await claim_rows(scenario)
+        assert (claim["state"], claim["attempts"]) == (state, attempt)
+    await worker.poll()
+
+    assert len(runner.calls) == 3 and sender.sent == []
+    async with scenario.engine.connect() as conn:
+        obligations = await conn.scalars(sa.select(DEBRIEF_OBLIGATION.c.pass_id))
+        assert obligations.all() == []
+    assert debrief.metrics.get("nora_proactive_stimulus_parked_total") == 1
+
+
 async def test_restart_recovery_releases_an_incomplete_recheck_without_counting_it(scenario):
     await seed_due(scenario)
     claims = SqlProactiveClaims(scenario.engine)

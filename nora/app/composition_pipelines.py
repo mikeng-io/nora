@@ -237,7 +237,7 @@ def build_graph_debrief(
                 cfg, doctrine_store, objective, model_client_for, metrics,
             ),
         ),
-        assembler=memory_wire.pass_assembler(engine, access, lineage, None, None),
+        assembler=memory_wire.configured_pass_assembler(cfg, engine, access, lineage),
         client=_debrief_client(cfg), objective=objective, clock=clock,
         revisions=engine.get_execution_options()["item_registration"].revisions,
         metrics=metrics, timeout_seconds=cfg.standing.timeout_seconds,

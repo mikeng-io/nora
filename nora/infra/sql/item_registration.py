@@ -150,31 +150,68 @@ class RegistrationScope:
             )
         }))
 
+    async def _subject(self, person: str) -> str:
+        if self._managed is not None:
+            return await self._managed.canonical_person(person) or person
+        return self._persons.subject_id_for(person) if self._persons is not None else person
+
+    async def _life360(self) -> Sequence[_Membership]:
+        if self._managed is not None:
+            return await self._managed.life360_memberships()
+        return self._persons.life360 if self._persons is not None else ()
+
+    async def _unit_members(self, unit: str) -> frozenset[str] | None:
+        """A unit's members as subject ids; None when the unit admits anyone."""
+        if self._managed is not None:
+            return await self._managed.unit_members(unit)
+        rooms = [c for c in self._policy.conversations if c.unit == unit]
+        if self._persons is None or any(c.persons is None for c in rooms):
+            return None
+        return frozenset({await self._subject(m) for c in rooms for m in c.persons or ()})
+
     async def circle_placements(
         self, circle: str, *, observed_persons: Iterable[str] | None = None,
     ) -> dict[str | None, tuple[str, ...]] | None:
-        """Map units to the circle members they contain, or None if unavailable."""
+        """Map each unit whose members all share the circle to those members, or None if
+        unavailable; a unit the circle only partly covers receives nothing."""
         try:
-            access = self._managed
             if observed_persons is None:
-                memberships = await access.life360_memberships() if access else (
-                    self._persons.life360 if self._persons is not None else ()
-                )
                 observed_persons = (
-                    member.person_id for member in memberships if member.circle_id == circle
+                    m.person_id for m in await self._life360() if m.circle_id == circle
                 )
             people = tuple(sorted(set(observed_persons)))
-            placements: dict[str | None, list[str]] = {}
+            sharing = {await self._subject(person): person for person in people}
+            candidates: set[str] = set()
             for person in people:
-                units = (
-                    await access.member_units(person) if access else self._file_person_units(person)
-                )
-                for unit in units:
-                    placements.setdefault(unit, []).append(person)
-            return {unit: tuple(ids) for unit, ids in placements.items()} or {None: people}
+                candidates.update(await self._managed.member_units(person) if self._managed
+                                  else self._file_person_units(person))
+            placements: dict[str | None, tuple[str, ...]] = {}
+            for unit in sorted(candidates):
+                members = await self._unit_members(unit)
+                if members and members <= sharing.keys():
+                    placements[unit] = tuple(sorted(sharing[m] for m in members if m in sharing))
+            return placements or {None: people}
         except Exception:  # noqa: BLE001 — unknown membership must stay unscoped
             log.warning("graph registration circle membership unavailable")
             return None
+
+    async def presence_units(self, person: str, circle: str | None = None) -> tuple[str, ...]:
+        """Units a person's location from `circle`, or from any of their circles, is placed in."""
+        try:
+            subject = await self._subject(person)
+            circles = {circle} if circle is not None else {
+                m.circle_id for m in await self._life360()
+                if m.circle_id and await self._subject(m.person_id) == subject
+            }
+            units = set()
+            for each in sorted(c for c in circles if c is not None):
+                for unit, members in (await self.circle_placements(each) or {}).items():
+                    if unit is not None and subject in {await self._subject(m) for m in members}:
+                        units.add(unit)
+        except Exception:  # noqa: BLE001 — unknown membership must stay unscoped
+            log.warning("graph registration circle membership unavailable")
+            return ()
+        return tuple(sorted(units))
 
     async def health_units(self, source: str, scope: str) -> tuple[str, ...]:
         if source == "presence":

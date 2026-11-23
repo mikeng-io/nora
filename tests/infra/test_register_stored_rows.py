@@ -9,6 +9,7 @@ import sqlalchemy as sa
 from nora.infra.sql.cognitive_graph_schema import GRAPH_STIMULUS, REGISTRY
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import MESSAGES, METADATA, SOURCE_HEALTH
+from nora.infra.sql.social_stream import SqlSocialStreamStore
 from nora.memory.adapters.stored_row_registration import SqlStoredRows
 from nora.memory.app.register_stored_rows import RegisterStoredRows
 from nora.memory.domain.registration import BACKFILL_AGGREGATE_FAMILIES, BACKFILL_ITEM_SOURCES
@@ -22,7 +23,7 @@ from tests.infra.test_aggregate_registration import (
     _store,
 )
 from tests.infra.test_cognitive_graph_schema import PLANES as KIND_PLANES
-from tests.infra.test_item_registration import _SECOND, _UNIT, _registration, _Writer
+from tests.infra.test_item_registration import _PERSON, _SECOND, _UNIT, _registration, _Writer
 
 pytestmark = pytest.mark.fresh_database
 
@@ -60,6 +61,11 @@ async def _legacy_fixture(engine):
     for name in BACKFILL_ITEM_SOURCES:
         if name not in ("messages", "presence_fixes"):
             await writer.write(name)
+    # The account's latest probe said public, so its social items are placed.
+    await SqlSocialStreamStore(engine, registration=reg).record_poll(
+        network="instagram", person=_PERSON, stage="probe", outcome="unchanged",
+        is_private=False,
+    )
     await _build_rollup(engine, reg, message)
     await _store(engine, _UNITS[:1]).replace_places(circle_id=_CIRCLE, places=[_place("one")])
     await _Writer(engine, reg, room="generated-outside").write("messages")
@@ -331,3 +337,22 @@ async def test_backfill_registers_probes_and_keeps_unscoped_acts(engine):
             assert row == (None, None)
         registered = await conn.scalar(sa.select(sa.func.count()).select_from(REGISTRY))
     assert registered == 1
+
+
+@pytest.mark.parametrize("name", ["social_item", "social_item_count", "social_item_state"])
+@pytest.mark.parametrize("is_private,units", [(False, [_UNIT]), (True, [None]), (None, [None])])
+async def test_stored_social_rows_reach_units_only_from_an_account_last_probed_public(
+    engine, name, is_private, units,
+):
+    reg = _registration()
+    await _Writer(engine, reg, public=False).write(name)
+    await SqlSocialStreamStore(engine, registration=reg).record_poll(
+        network="instagram", person=_PERSON, stage="probe", outcome="unchanged",
+        is_private=is_private,
+    )
+    report = await RegisterStoredRows(SqlStoredRows(engine, reg.scope), batch_size=2).run()
+    table = METADATA.tables[name]
+    async with engine.connect() as conn:
+        placed = (await conn.execute(sa.select(table.c.unit))).scalars().all()
+    assert placed == units
+    assert report[name].unscoped == (0 if is_private is False else 1)

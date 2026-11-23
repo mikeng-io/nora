@@ -1125,7 +1125,7 @@ class SocialPoller:
             latest_reel_media=latest_reel_media, media_count=media_count,
             total_clips_count=total_clips_count, advanced_marker=advanced_marker,
             advanced_counts=advanced_counts, latency_ms=ms, id=read_id, cursor=cursor,
-            end_reason=end_reason,
+            end_reason=end_reason, is_private=probe.is_private if probe else None,
         )
         self._metrics.inc(
             "nora_social_polls_total", network=self._network, stage=stage, outcome=outcome,

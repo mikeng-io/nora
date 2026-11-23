@@ -14,7 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from nora.domain.graph_registration import Exposure
 from nora.domain.lineage import ROW, Lineage, split_room
 from nora.infra.sql.cognitive_graph_store import RowData, SqlCognitiveGraph
-from nora.infra.sql.item_registration import SqlItemRegistration, epoch_ms, item_graph_id
+from nora.infra.sql.item_registration import (
+    RegistrationScope,
+    SqlItemRegistration,
+    epoch_ms,
+    item_graph_id,
+)
 from nora.infra.sql.schema import (
     MESSAGE_REACTION,
     MESSAGES,
@@ -316,6 +321,27 @@ class AggregateWrites:
             asserted_at=existing["recorded_at"] if existing else None,
         )
 
+    async def presence_units(
+        self, conn: AsyncConnection, scope: RegistrationScope, table: sa.Table, values: RowData,
+    ) -> tuple[str, ...]:
+        """Units a presence aggregate is placed in: those its inputs' circles cover."""
+        from nora.infra.sql.schema import PRESENCE_TRIPS
+
+        if table.name in {"presence_occupancy", "presence_place_rhythm"}:
+            places = await self.span_copies(conn, PRESENCE_DERIVED_PLACES, values["place_id"])
+            return tuple(sorted({place["unit"] for place in places if place["unit"] is not None}))
+        if table.name != "presence_corridors":
+            return await scope.presence_units(values["subject_id"], values["circle_id"])
+        trips = PRESENCE_TRIPS.c
+        circles = (await conn.scalars(sa.select(trips.circle_id).distinct().where(
+            trips.subject_id == values["subject_id"], trips.build_id == values["build_id"],
+            trips.state == "live",
+            trips.started_ts.between(values["first_seen_ts"], values["last_seen_ts"]),
+        ))).all()
+        # A corridor is shared only where every circle its trips came from is shared.
+        placed = [set(await scope.presence_units(values["subject_id"], c)) for c in circles]
+        return tuple(sorted(set.intersection(*placed))) if placed else ()
+
     async def store_presence(
         self,
         conn: AsyncConnection,
@@ -325,7 +351,7 @@ class AggregateWrites:
         old: RowData | None = None,
     ) -> int | None:
         reg = self.registration
-        units = await reg.scope.person_units(values["subject_id"]) if reg else ()
+        units = await self.presence_units(conn, reg.scope, table, values) if reg else ()
         picked = None
         for unit in units or (None,):
             existing = old if old is not None and old["unit"] == unit else None

@@ -22,7 +22,7 @@ from nora.infra.sql.schema import MESSAGES, PRESENCE_FIXES
 from nora.infra.sql.source_health import SqlSourceHealthLog
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.obs.metrics import Metrics
-from nora.persons import Persons
+from nora.persons import Life360Membership, Persons
 from nora.policy import Conversation, Policy
 
 
@@ -56,7 +56,10 @@ class RollupFixture:
             conversations, _by_id={(room.platform, room.primary_id): room for room in conversations}
         )
         accounts = {(platform, p): p for platform, _ in self.rooms for p in people}
-        persons = Persons({p: PersonRef(p, p) for p in people}, accounts)
+        persons = Persons(
+            {p: PersonRef(p, p) for p in people}, accounts,
+            life360=tuple(Life360Membership(p, f"{p}-member", self.circle) for p in people),
+        )
         self.registration = SqlItemRegistration(
             RegistrationScope(policy, persons), RuntimeRevisions({}, policy, persons)
         )

@@ -14,7 +14,7 @@ from nora.domain.presence import PresenceFix, WireState
 from nora.domain.social_stream import ItemCounts, SocialItem
 from nora.domain.tool_call_log import ToolCallLogEntry
 from nora.infra.sql.audit import SqlRecordStore
-from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY, INTENTION, REGISTRY
+from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY, GRAPH_STIMULUS, INTENTION, REGISTRY
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.computer_events import SqlComputerEventStore
 from nora.infra.sql.engine import create_sql_engine
@@ -23,7 +23,7 @@ from nora.infra.sql.item_registration import RegistrationScope, SqlItemRegistrat
 from nora.infra.sql.migrations_runner import sync_url_for
 from nora.infra.sql.observations import SqlObservationStore
 from nora.infra.sql.presence import PresenceStore
-from nora.infra.sql.schema import METADATA
+from nora.infra.sql.schema import METADATA, SOCIAL_POLL
 from nora.infra.sql.social_stream import SqlSocialStreamStore
 from nora.infra.sql.source_health import SqlSourceHealthLog
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
@@ -129,6 +129,7 @@ class _Writer:
     engine: AsyncEngine
     registration: SqlItemRegistration
     room: str = _ROOM
+    public: bool = True
 
     def _message(self) -> NormalizedMessage:
         return NormalizedMessage(
@@ -158,6 +159,10 @@ class _Writer:
                 network=item.network, person=_PERSON, stage="probe", outcome="unchanged",
             )
             return
+        await store.record_poll(  # the probe its placement reads
+            network=item.network, person=_PERSON, stage="probe", outcome="unchanged",
+            is_private=not self.public,
+        )
         await store.insert_item(item, person=_PERSON, origin="poll", seen_at=_AT)
         if table == "social_item_state":
             await store.record_state(network=item.network, item_id=item.item_id, state="hidden")
@@ -361,7 +366,7 @@ async def test_item_writer_rolls_back_after_registry_insert(
     prerequisites = 3 if name == "watch_result" else int(name in {
         "message_edit", "message_reaction", "message_delete",
         "social_item_count", "social_item_state", "nora_act_outcome", "dispute",
-    })
+    }) + int(name.startswith("social_item"))  # the account's probe
     assert count == 0
     assert registered == prerequisites
 
@@ -430,3 +435,104 @@ async def test_one_item_per_observing_unit(engine: AsyncEngine, name: str) -> No
             network="instagram", since=datetime(1970, 1, 1, tzinfo=UTC),
         )
         assert len(calls) == 1
+
+
+async def _stimuli(engine: AsyncEngine, source: str) -> list[tuple[str, str]]:
+    stimulus = GRAPH_STIMULUS.c
+    async with engine.connect() as conn:
+        return [tuple(row) for row in await conn.execute(
+            sa.select(stimulus.unit, stimulus.kind).where(stimulus.source == source),
+        )]
+
+
+@pytest.mark.parametrize("name", ["source_health", "social_poll"])
+async def test_a_routine_probe_registers_without_waking_its_unit(
+    engine: AsyncEngine, name: str,
+) -> None:
+    await _Writer(engine, _registration()).write(name)
+    table = METADATA.tables[name]
+    async with engine.connect() as conn:
+        assert (await conn.execute(sa.select(table.c.unit))).scalars().all() == [_UNIT]
+    assert await _stimuli(engine, name) == []
+
+
+async def test_a_health_transition_wakes_its_unit(engine: AsyncEngine) -> None:
+    await SqlSourceHealthLog(engine, registration=_registration()).record(
+        source="presence", scope=_CIRCLE, event="transition", outcome="down", at_ms=_MS,
+    )
+    assert await _stimuli(engine, "source_health") == [(_UNIT, "new_item")]
+
+
+def _partly_covered() -> SqlItemRegistration:
+    outsider = "test-outsider"
+    people = Persons(
+        {_PERSON: PersonRef(_PERSON, "Generated"),
+         outsider: PersonRef(outsider, "Generated outsider")},
+        {("signal", _AUTHOR): _PERSON},
+        life360=(Life360Membership(_PERSON, "test-member", _CIRCLE),),
+    )
+    rooms = (
+        Conversation("signal", frozenset({_ROOM}), frozenset({_PERSON}), unit=_UNIT),
+        Conversation("signal", frozenset({"test-room-2"}), frozenset({_PERSON, outsider}),
+                     unit=_SECOND),
+    )
+    policy = Policy(rooms, _by_id={(c.platform, key): c for c in rooms for key in c.ids})
+    return SqlItemRegistration(RegistrationScope(policy, people), _FixedRevisions())
+
+
+@pytest.mark.parametrize("name", ["presence_fixes", "source_health"])
+async def test_a_circle_source_reaches_only_units_whose_members_all_share_it(
+    engine: AsyncEngine, name: str,
+) -> None:
+    await _Writer(engine, _partly_covered()).write(name)
+    table = METADATA.tables[name]
+    async with engine.connect() as conn:
+        assert (await conn.execute(sa.select(table.c.unit))).scalars().all() == [_UNIT]
+
+
+@pytest.mark.parametrize("name", ["social_item", "social_item_count", "social_item_state"])
+async def test_a_social_item_of_an_account_not_known_public_reaches_no_unit(
+    engine: AsyncEngine, name: str,
+) -> None:
+    await _Writer(engine, _registration(multiple=True), public=False).write(name)
+    table = METADATA.tables[name]
+    async with engine.connect() as conn:
+        units = (await conn.execute(sa.select(table.c.unit))).scalars().all()
+        registered = set((await conn.execute(sa.select(REGISTRY.c.id))).scalars())
+        probes = set((await conn.execute(sa.select(SOCIAL_POLL.c.graph_id))).scalars())
+    assert units == [None]
+    assert registered == probes and len(probes) == 2  # only the private probe, in each unit
+    assert await _stimuli(engine, name) == []
+
+
+class _BrokenMemberAccess:
+    """Managed identity that cannot resolve one circle member."""
+
+    is_file_backend = False
+
+    async def canonical_person(self, person_id: str) -> str | None:
+        if person_id == "test-broken-member":
+            raise RuntimeError("generated identity outage")
+        return person_id
+
+
+class _CircleWithBrokenMember(RegistrationScope):
+    async def circle_placements(
+        self, circle: str, **_: object,
+    ) -> dict[str | None, tuple[str, ...]]:
+        return {_UNIT: (_PERSON, "test-broken-member")}
+
+
+async def test_a_member_identity_error_stores_the_presence_fix_unscoped(
+    engine: AsyncEngine,
+) -> None:
+    room = Conversation("signal", frozenset({_ROOM}), frozenset({_PERSON}), unit=_UNIT)
+    scope = _CircleWithBrokenMember(
+        Policy((room,), _by_id={("signal", _ROOM): room}), None,
+        access=_BrokenMemberAccess(),  # type: ignore[arg-type]
+    )
+    await _Writer(engine, SqlItemRegistration(scope, _FixedRevisions())).write("presence_fixes")
+    async with engine.connect() as conn:
+        fixes = METADATA.tables["presence_fixes"]
+        units = (await conn.execute(sa.select(fixes.c.unit))).scalars().all()
+    assert units == [None]
