@@ -105,6 +105,8 @@ type fakeActionStore struct {
 	gens map[string]int
 	// down makes every call fail, as an unreachable ledger does.
 	down error
+	// failFinish fails the terminal write; failGet fails every read.
+	failFinish, failGet error
 }
 
 func newFakeActionStore() *fakeActionStore {
@@ -137,6 +139,9 @@ func (f *fakeActionStore) Get(_ context.Context, id string) (*bridge.ActionRow, 
 	if f.down != nil {
 		return nil, f.down
 	}
+	if f.failGet != nil {
+		return nil, f.failGet
+	}
 	return f.rows[id], nil
 }
 func (f *fakeActionStore) MarkStarted(_ context.Context, id string, messageID *int64) (bool, error) {
@@ -155,6 +160,9 @@ func (f *fakeActionStore) MarkStarted(_ context.Context, id string, messageID *i
 func (f *fakeActionStore) Finish(_ context.Context, id, state, ref string, refs []string, ms *int64, ek, em string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.failFinish != nil {
+		return f.failFinish
+	}
 	row := f.rows[id]
 	row.State = state
 	at := time.Now().UnixMilli()
