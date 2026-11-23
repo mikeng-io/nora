@@ -1444,7 +1444,7 @@
   "internal_docstrings": 6
  },
  "nora/infra/voice/http_controller.py": {
-  "internal_docstrings": 3
+  "internal_docstrings": 2
  },
  "nora/infra/voice/hub.py": {
   "comment_blocks": 6,

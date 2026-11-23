@@ -220,8 +220,7 @@ class BridgeControlClient:
 
 
 def _stated(answer: BridgeAnswer) -> bool:
-    """Whether the outcome is the answer's own, under its own status: not one
-    `parse_response` put in place of a missing or self-contradicting envelope."""
+    """Whether the outcome is the answer's own, not one `parse_response` stood in."""
     return answer.body.get("outcome") == answer.outcome \
         and answer.status == status_for(answer.outcome)
 
