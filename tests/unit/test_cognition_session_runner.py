@@ -196,8 +196,6 @@ async def test_cognition_offers_reminders_and_wakes_without_event_writes():
     assert names.isdisjoint({"event_propose", "event_revise", "event_set_status"})
 
 
-
-
 async def test_a_wake_at_call_is_recorded_with_a_minted_ref():
     fake = FakeCognitionAgentRunner(script=[(
         "wake_at", {"subject_rows": ["event:1"], "at": iso(NOW + 3_600_000), "why": "check it"},
