@@ -85,7 +85,7 @@ def _item(item_id: str, caption: str, read_id: str) -> dict:
         "item_id": item_id,
         "person": PERSON,
         "account": "generated-account",
-        "kind": "post",
+        "source_kind": "post",
         "taken_at": datetime(2026, 10, 29, 12, 0, tzinfo=UTC),
         "caption": caption,
         "seen_at": datetime(2026, 10, 29, 12, 5, tzinfo=UTC),
@@ -145,7 +145,7 @@ async def test_the_replay_preparation_indexes_the_restored_sandbox(clean_pg_url,
             await conn.execute(sa.insert(SOCIAL_ITEM).values(
                 _item("item-3", "Generated post-instant caption", uuid4().hex)))
             await conn.execute(sa.insert(SOCIAL_ITEM_STATE).values(
-                network=NET, item_id="item-2", state="hidden"))
+                network=NET, item_id="item-2", source_state="hidden"))
             await conn.execute(sa.update(MESSAGES).where(
                 MESSAGES.c.id == 1000 + FILLER).values(body="Generated post-instant edit"))
         # The source's index is today's: built and embedded over the rows as

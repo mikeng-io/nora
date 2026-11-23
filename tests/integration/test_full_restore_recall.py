@@ -32,6 +32,7 @@ from evals.recall import recall_facts
 from nora.domain.media_join import HANDLE_CHARS
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.notes import SqlNoteStore
+from nora.infra.sql.schema import ROLLUP_OUTING
 from nora.subject import (
     Knowledge,
     Message,
@@ -41,6 +42,7 @@ from nora.subject import (
     sandbox_as_of,
 )
 from nora.subject.evidence import EvidenceUnavailableError
+from tests.infra.rollup_fixtures import insert_rollup_row
 from tests.sandbox_fixtures import ROOM, offline_subject, seed_source
 
 MINUTE = 60_000
@@ -115,13 +117,12 @@ async def _seed(
         ), {"t": seeded_until})).scalar_one()
 
         async def outing(unit: str, start: int) -> int:
-            return int((await conn.execute(sa.text(
-                "INSERT INTO rollup_outing (build_id, unit, lineage, valid_from_ms, "
-                "valid_to_ms, as_of_ms, persons, lat, lng, place_label) VALUES "
-                "(:b, :u, '[]'::jsonb, :f, :t, :t, ARRAY['miles_novak', 'not_in_roster'], "
-                ":lat, 114.15, :p) RETURNING id"
-            ), {"b": build, "u": unit, "f": start, "t": start + 60 * MINUTE,
-                "lat": LAT, "p": PLACE})).scalar_one())
+            end = start + 60 * MINUTE
+            return await insert_rollup_row(
+                conn, ROLLUP_OUTING, build_id=build, unit=unit, build_lineage=[],
+                valid_from_ms=start, valid_to_ms=end, as_of_ms=end, lat=LAT, lng=114.15,
+                persons=["miles_novak", "not_in_roster"], place_label=PLACE,
+            )
 
         inside = await outing("nora", seeded_until - 2 * DAY)
         outside = await outing("nora", seeded_until - 10 * DAY)
@@ -306,11 +307,13 @@ async def _refusal_extras(conn: Any, seed: dict[str, Any]) -> dict[str, Any]:
         "INSERT INTO rollup_build (code_version, params_sha256, status, through_ms) "
         "VALUES ('t', 'old', 'superseded', :t) RETURNING id"
     ), {"t": until - DAY})).scalar_one()
-    stale = int((await conn.execute(sa.text(
-        "INSERT INTO rollup_outing (build_id, unit, lineage, valid_from_ms, valid_to_ms, "
-        "as_of_ms, persons, lat, lng, place_label) VALUES (:b, 'nora', '[]'::jsonb, :f, :t, "
-        ":t, ARRAY['miles_novak'], 22.1, 114.1, 'somewhere') RETURNING id"
-    ), {"b": old_build, "f": until - 3 * DAY, "t": until - 3 * DAY + 60 * MINUTE})).scalar_one())
+    start = until - 3 * DAY
+    end = start + 60 * MINUTE
+    stale = await insert_rollup_row(
+        conn, ROLLUP_OUTING, build_id=old_build, unit="nora", build_lineage=[],
+        valid_from_ms=start, valid_to_ms=end, as_of_ms=end, persons=["miles_novak"],
+        lat=22.1, lng=114.1, place_label="somewhere",
+    )
     return {
         "other_room": other_room, "events": events, "secret": secret, "stale": stale,
     }

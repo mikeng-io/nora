@@ -27,6 +27,7 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.schema import MESSAGES
 from nora.testing import InMemoryCharacterEvidence
+from tests.infra.rollup_fixtures import insert_rollup_row
 
 ROOMS = [("signal", "room-a"), ("discord", "room-b")]
 
@@ -351,12 +352,12 @@ async def episodes(request: Any) -> AsyncIterator[tuple[Any, dict[str, int]]]:
             ).returning(ROLLUP_BUILD.c.id))).scalar_one()
 
             async def resp(build, unit, name, ts, outcome, reactions=0, follows=0):
-                await conn.execute(sa.insert(ROLLUP_RESPONSE).values(
-                    build_id=build, unit=unit, lineage=[], valid_from_ms=ts,
+                await insert_rollup_row(conn, ROLLUP_RESPONSE,
+                    build_id=build, unit=unit, build_lineage=[], valid_from_ms=ts,
                     valid_to_ms=ts + 3600, as_of_ms=ts + 3600, message_id=ids[name],
                     platform="signal", conversation_id="room-a", sent_ts=ts,
                     replies=0, reactions=reactions, edits=0, follows=follows, outcome=outcome,
-                ))
+                )
             await resp(cur, "friends", "dinner", 1000, "responded", reactions=1)
             await resp(cur, "friends", "list", 2000, "unanswered")
             await resp(cur, "friends", "unk", 2500, "unknown")
@@ -596,13 +597,13 @@ async def ties(request: Any) -> AsyncIterator[Any]:
                     status="current" if current else "superseded",
                 ).returning(ROLLUP_BUILD.c.id))).scalar_one()
             for week, (current, unit, a, b, ra, rb, ma, mb, xa, xb) in enumerate(_TIES):
-                await conn.execute(sa.insert(ROLLUP_TIE).values(
-                    build_id=builds[current], unit=unit, lineage=[], valid_from_ms=0,
+                await insert_rollup_row(conn, ROLLUP_TIE,
+                    build_id=builds[current], unit=unit, build_lineage=[], valid_from_ms=0,
                     valid_to_ms=1, as_of_ms=1, person_a=a, person_b=b,
                     iso_week=f"2026-W{week:02d}", replies_ab=ra, replies_ba=rb,
                     mentions_ab=ma, mentions_ba=mb, reactions_ab=xa, reactions_ba=xb,
                     colocation_ms=123_456,
-                ))
+                )
         yield SqlCharacterEvidence(engine)
     finally:
         async with engine.begin() as conn:

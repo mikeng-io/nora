@@ -256,6 +256,8 @@ async def test_advance_counts_exactly_the_rows_it_landed(
     source = create_sql_engine(clean_pg_url)
     stimulus = METADATA.tables["stimulus"]
     social_item = METADATA.tables["social_item"]
+    registry = METADATA.tables["registry"]
+    graph_id = "generated-social-graph-id"
     try:
         async with source.begin() as conn:
             t1 = (await conn.execute(
@@ -270,9 +272,13 @@ async def test_advance_counts_exactly_the_rows_it_landed(
                         await conn.execute(
                             sa.insert(stimulus).values(APPEND["stimulus"](i)))
                     for i in range(2):
-                        await conn.execute(
-                            sa.insert(social_item).values(
-                                APPEND["social_item"](i)))
+                        item = ROWS["social_item"](i)
+                        if i == 0:
+                            await conn.execute(sa.insert(registry).values(
+                                id=graph_id, unit="generated-unit", kind="item",
+                            ))
+                            item.update(graph_id=graph_id, unit="generated-unit")
+                        await conn.execute(sa.insert(social_item).values(item))
                     t2 = (await conn.execute(
                         sa.text("SELECT clock_timestamp()"))).scalar_one()
                 await bump_sequences(source, sandbox)
@@ -282,6 +288,15 @@ async def test_advance_counts_exactly_the_rows_it_landed(
                     at_ms=int(t2.timestamp() * 1000) + 5)
                 assert report.written["stimulus"] == 3
                 assert report.written["social_item"] == 2
+                async with sandbox.connect() as conn:
+                    scoped = await conn.execute(sa.select(
+                        social_item.c.item_id, registry.c.id,
+                    ).join(registry, social_item.c.graph_id == registry.c.id).where(
+                        social_item.c.unit == "generated-unit",
+                        registry.c.unit == social_item.c.unit,
+                        registry.c.kind == "item",
+                    ))
+                    assert scoped.one() == ("item0", graph_id)
                 assert all(n >= 0 for n in report.written.values())
                 # The same window again lands nothing: the conflicted
                 # rows count 0 and drop out of the receipt entirely.

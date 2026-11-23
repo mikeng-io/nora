@@ -66,7 +66,7 @@ async def _item(engine, person, item_id, taken, *, kind="post", recorded=None, o
     async with engine.begin() as conn:
         await conn.execute(sa.insert(SOCIAL_ITEM).values(
             network="instagram", item_id=item_id, person=person, account=f"ig-{person}",
-            kind=kind, taken_at=taken_utc, seen_at=taken_utc,
+            source_kind=kind, taken_at=taken_utc, seen_at=taken_utc,
             expires_at=taken_utc + timedelta(days=1) if kind == "story_frame" else None,
             origin=origin, recorded_at=(recorded or taken).astimezone(UTC),
         ))

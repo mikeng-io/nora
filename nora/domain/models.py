@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Collection, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
 
@@ -195,11 +195,6 @@ class NormalizedMessage:
     # produced by `nora.ingest.stages.media`, never by the parser, and empty on
     # every message that carried none or whose bytes could not be fetched.
     #
-    # It rides the message rather than being a parameter on `RecordStore.append`
-    # for exactly the reason `quote.quoted_ts` does (DEC-23, and DEC-15 before
-    # it): WAL permits one writer, the ingest path drops a message on
-    # contention, and a second write to attach custody to an already-inserted
-    # row would be a second contender for it. Same INSERT, no extra parameter.
     media_blobs: tuple[MediaBlob, ...] = ()
     # The shared file links in `body` a provider recognised: produced by
     # `nora.ingest.stages.external_files`, never by the parser, and written to
@@ -228,6 +223,8 @@ class NormalizedMessage:
     # room is still `conversation_id` (the parent channel); the tag lets a
     # reply land back inside the same thread. See `ConversationTarget.thread`.
     thread: str = ""
+    # None before admission, empty when admission found no enclosing unit.
+    admitted_unit: str | None = field(default=None, compare=False, repr=False)
 
     def target(self) -> ConversationTarget:
         return ConversationTarget(

@@ -20,6 +20,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.ports import HealthRow, SourceHealthEvent
+from nora.infra.sql.item_registration import SqlItemRegistration, epoch_ms
 from nora.infra.sql.schema import SOURCE_HEALTH
 
 log = logging.getLogger("nora.infra.sql.source_health")
@@ -30,9 +31,11 @@ class SqlSourceHealthLog:
 
     def __init__(
         self, engine: AsyncEngine, *, clock: Callable[[], float] = time.time,
+        registration: SqlItemRegistration | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
+        self._registration = registration or engine.get_execution_options().get("item_registration")
 
     async def record(
         self, *, source: str, scope: str, event: SourceHealthEvent, outcome: str,
@@ -44,8 +47,14 @@ class SqlSourceHealthLog:
             recorded_at=datetime.fromtimestamp(self._clock(), tz=UTC),
         )
         try:
+            registration = self._registration
+            units = await registration.scope.health_units(source, scope) if registration else ()
             async with self._engine.begin() as conn:
-                await conn.execute(stmt)
+                for unit in units or (None,):
+                    values = await registration.planes(
+                        conn, SOURCE_HEALTH, unit=unit, occurred_at=epoch_ms(at_ms),
+                    ) if registration else {}
+                    await conn.execute(stmt.values(**values))
         except Exception:
             log.exception("source health row not written (%s %s %s)", source, event, outcome)
             return False

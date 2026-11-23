@@ -35,6 +35,7 @@ from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.schema import ROLLUP_BUILD, ROLLUP_OUTING
+from tests.infra.rollup_fixtures import insert_rollup_row
 
 pytestmark = pytest.mark.asyncio
 
@@ -173,12 +174,12 @@ async def test_happened_place_mismatch_fails_when_place_disagrees_with_the_outin
         build_id = (await conn.execute(
             sa.select(ROLLUP_BUILD.c.id).order_by(ROLLUP_BUILD.c.id.desc()).limit(1)
         )).scalar_one()
-        await conn.execute(sa.insert(ROLLUP_OUTING).values(
-            build_id=build_id, unit="u", lineage={}, valid_from_ms=0,
+        await insert_rollup_row(conn, ROLLUP_OUTING,
+            build_id=build_id, unit="u", build_lineage={}, valid_from_ms=0,
             valid_to_ms=9_999_999_999_999, as_of_ms=0,
             persons=["miles", "ann"], lat=1.0, lng=1.0,
             saved_place_id="place-seen", open=0,
-        ))
+        )
     async with engine.connect() as conn:
         result = await happened_place_mismatch(conn)
     assert result.status == "fail"

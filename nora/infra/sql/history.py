@@ -121,6 +121,12 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
         "sha256", "provider", "model", "chunk_seconds", "chunk_max", "reading_digest",
     ),
     "presence_fixes": ("id",),
+    "fetched_pages": ("conversation_id", "url"),
+    "social_item": ("id",),
+    "social_item_count": ("id",),
+    "social_item_state": ("id",),
+    "social_poll": ("id",),
+    "source_health": ("id",),
     "music_queue": ("id",),
     "music_session": ("guild_id",),
     "geocode_cache": ("lat_rounded", "lng_rounded"),
@@ -135,7 +141,7 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     # recomputed and diffed); a superseded build is never touched again. The
     # trigger keeps each version, so the Rollup as of T is the build
     # `rollup_build` says was current at T, with its rows as they were at T.
-    "presence_places": ("circle_id", "place_id"),
+    "presence_places": ("circle_id", "place_id", "unit"),
     "presence_stays": ("id",),
     "presence_trips": ("id",),
     "presence_derived_places": ("id",),
@@ -208,15 +214,8 @@ APPEND_ONLY: dict[str, str] = {
     # withdrawal) a revision.
     "memo": "recorded_at",
     "memo_revision": "recorded_at",
-    # 0107_social_stream: an item a member's network showed, every probe and read
-    # of it, and a frame gone or hidden; a change to an item is a state row.
-    "social_item": "recorded_at",
-    "social_poll": "recorded_at",
-    "social_item_state": "recorded_at",
     # 0108_social_perception: each attempt to perceive an item's media.
     "social_perception": "recorded_at",
-    # 0119_social_item_count: a post's or reel's counts, a row where they moved.
-    "social_item_count": "recorded_at",
     # 0109_blob_tombstone: a story frame's bytes deleted at their bound.
     "blob_tombstone": "recorded_at",
     "decision_log": "recorded_at",
@@ -233,11 +232,9 @@ APPEND_ONLY: dict[str, str] = {
     "config_revision": "recorded_at",
     "deploy_revision": "recorded_at",
     # 0069 (DEC-234): the cognition loop's stimuli,
-    # its wake log (a unit's watermark is its newest row, never a row
-    # rewritten) and source health.
+    # its wake log (a unit's watermark is its newest row).
     "stimulus": "recorded_at",
     "cognition_wake": "recorded_at",
-    "source_health": "recorded_at",
     # 0074_event_revision: the chain `events` is a compare-and-swap cache
     # over, and RSVPs, append-only — a repeat RSVP is an INSERT, never an
     # upsert; the current response is the newest row per (event_id, person_id).
@@ -323,10 +320,7 @@ NOT_RESTORED: dict[str, str] = {
         "live scope-FIFO ledger; obligations of the running deployment, not replayed as of T"
     ),
     "browser_tasks": "live CDP target bindings; no restore holds tabs on absent VMs",
-    # 0152_fetched_pages: a 24h materialization of a public page — its bytes
-    # live in RustFS under `blob_key`; a restore re-fetches the url rather
-    # than replaying a cache, and the row's own expires_at bounds it.
-    "fetched_pages": "ephemeral page materialization; refetched on demand, never restored",
+
 }
 
 

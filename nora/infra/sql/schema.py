@@ -446,11 +446,11 @@ IDX_PRESENCE_MEMBER_TS = sa.Index(
 PRESENCE_PLACES = sa.Table(
     "presence_places",
     METADATA,
-    sa.Column("circle_id", sa.Text, primary_key=True),
-    sa.Column("place_id", sa.Text, primary_key=True),
-    sa.Column("name", sa.Text, nullable=False),
-    sa.Column("lat", sa.Float, nullable=False),
-    sa.Column("lng", sa.Float, nullable=False),
+    sa.Column("circle_id", sa.Text, nullable=False),
+    sa.Column("place_id", sa.Text, nullable=False),
+    sa.Column("name", sa.Text),
+    sa.Column("lat", sa.Float),
+    sa.Column("lng", sa.Float),
     sa.Column("radius_m", sa.Float),
     # Life360 wire address (address1/address2 joined) — falls back to null,
     # never fabricated.
@@ -487,7 +487,7 @@ PRESENCE_STAYS = sa.Table(
     # The build that computed this row, the lineage it rests on (one person's
     # fixes, `[["presence", <subject>, null]]`) and system time.
     sa.Column("build_id", sa.BigInteger, nullable=False),
-    sa.Column("lineage", pg.JSONB, nullable=False),
+    sa.Column("build_lineage", pg.JSONB, nullable=False),
     _recorded_at(),
 )
 
@@ -509,25 +509,25 @@ PRESENCE_DERIVED_PLACES = sa.Table(
     sa.Column("lat", sa.Float, nullable=False),
     sa.Column("lng", sa.Float, nullable=False),
     sa.Column("radius_m", sa.Float, nullable=False),
-    sa.Column("kind", sa.Text, nullable=False),
-    sa.Column("confidence", sa.Float, nullable=False),
+    sa.Column("source_kind", sa.Text, nullable=False),
+    sa.Column("place_confidence", sa.Float, nullable=False),
     sa.Column("label", sa.Text, nullable=True),
     sa.Column("saved_place_id", sa.Text, nullable=True),
     sa.Column("first_seen_ts", sa.BigInteger, nullable=False),
     sa.Column("last_seen_ts", sa.BigInteger, nullable=False),
     # Build, lineage, system time — see `presence_stays`.
     sa.Column("build_id", sa.BigInteger, nullable=False),
-    sa.Column("lineage", pg.JSONB, nullable=False),
+    sa.Column("build_lineage", pg.JSONB, nullable=False),
     _recorded_at(),
     sa.CheckConstraint(
-        "kind IN ('home','work','unlabeled')", name="ck_derived_places_kind"
+        "source_kind IN ('home','work','unlabeled')", name="ck_derived_places_kind"
     ),
 )
 
 IDX_PRESENCE_DERIVED_PLACES_SUBJECT_KIND = sa.Index(
     "idx_presence_derived_places_subject_kind",
     PRESENCE_DERIVED_PLACES.c.subject_id,
-    PRESENCE_DERIVED_PLACES.c.kind,
+    PRESENCE_DERIVED_PLACES.c.source_kind,
 )
 
 # `presence_occupancy` / `presence_place_rhythm` (DEC-119). Both are keyed off
@@ -550,7 +550,7 @@ PRESENCE_OCCUPANCY = sa.Table(
     sa.Column("updated_ts", sa.BigInteger, nullable=False),
     # Build, lineage, system time — see `presence_stays`.
     sa.Column("build_id", sa.BigInteger, nullable=False),
-    sa.Column("lineage", pg.JSONB, nullable=False),
+    sa.Column("build_lineage", pg.JSONB, nullable=False),
     _recorded_at(),
     sa.UniqueConstraint(
         "subject_id", "place_id", "hour_of_week", name="uq_occupancy_bin"
@@ -581,7 +581,7 @@ PRESENCE_PLACE_RHYTHM = sa.Table(
     sa.Column("updated_ts", sa.BigInteger, nullable=False),
     # Build, lineage, system time — see `presence_stays`.
     sa.Column("build_id", sa.BigInteger, nullable=False),
-    sa.Column("lineage", pg.JSONB, nullable=False),
+    sa.Column("build_lineage", pg.JSONB, nullable=False),
     _recorded_at(),
 )
 
@@ -621,7 +621,7 @@ PRESENCE_TRIPS = sa.Table(
     sa.Column("corridor_id", sa.Integer, nullable=True),
     # Build, lineage, system time — see `presence_stays`.
     sa.Column("build_id", sa.BigInteger, nullable=False),
-    sa.Column("lineage", pg.JSONB, nullable=False),
+    sa.Column("build_lineage", pg.JSONB, nullable=False),
     _recorded_at(),
 )
 
@@ -648,7 +648,7 @@ PRESENCE_CORRIDORS = sa.Table(
     sa.Column("last_seen_ts", sa.BigInteger, nullable=False),
     # Build, lineage, system time — see `presence_stays`.
     sa.Column("build_id", sa.BigInteger, nullable=False),
-    sa.Column("lineage", pg.JSONB, nullable=False),
+    sa.Column("build_lineage", pg.JSONB, nullable=False),
     _recorded_at(),
 )
 
@@ -789,7 +789,7 @@ def _unit_rollup_columns() -> list[sa.Column[Any]]:
         sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
         sa.Column("build_id", sa.BigInteger, nullable=False),
         sa.Column("unit", sa.Text, nullable=False),
-        sa.Column("lineage", pg.JSONB, nullable=False),
+        sa.Column("build_lineage", pg.JSONB, nullable=False),
         sa.Column("valid_from_ms", sa.BigInteger, nullable=False),
         sa.Column("valid_to_ms", sa.BigInteger, nullable=False),
         sa.Column("as_of_ms", sa.BigInteger, nullable=False),
@@ -4920,8 +4920,7 @@ MEMORY_INDEX_STATE = sa.Table(
 # showed, one row per story frame, post or reel; one row per probe and per read;
 # and a frame gone or hidden. ALL THREE APPEND-ONLY: nothing is updated after
 # insert, and what changes about an item is a `social_item_state` row. No
-# foreign keys, for the reason `documents` gives. `social_item` is unique on
-# `(network, item_id)` and has no unit column: a person in two units is one row.
+# source-table foreign keys; the graph registry holds the identity.
 SOCIAL_ITEM = sa.Table(
     "social_item",
     METADATA,
@@ -4931,7 +4930,7 @@ SOCIAL_ITEM = sa.Table(
     sa.Column("item_id", sa.Text, nullable=False),
     sa.Column("person", sa.Text, nullable=False),
     sa.Column("account", sa.Text, nullable=False),
-    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("source_kind", sa.Text, nullable=False),
     sa.Column("taken_at", sa.DateTime(timezone=True), nullable=False),
     sa.Column("expires_at", sa.DateTime(timezone=True)),
     sa.Column("caption", sa.Text),
@@ -4948,18 +4947,14 @@ SOCIAL_ITEM = sa.Table(
     # waits for that read's items alone. NULL on a row recorded before it.
     sa.Column("read_id", pg.UUID(as_uuid=False)),
     sa.CheckConstraint(
-        "kind IN ('story_frame', 'post', 'reel', 'thread_post')", name="ck_social_item_kind",
+        "source_kind IN ('story_frame', 'post', 'reel', 'thread_post')", name="ck_social_item_kind",
     ),
     sa.CheckConstraint("origin IN ('poll', 'backfill')", name="ck_social_item_origin"),
     sa.CheckConstraint(
-        "kind <> 'story_frame' OR expires_at IS NOT NULL",
+        "source_kind <> 'story_frame' OR expires_at IS NOT NULL",
         name="ck_social_item_story_frame_expires",
     ),
     sa.CheckConstraint("length(btrim(item_id)) > 0", name="ck_social_item_has_an_id"),
-)
-# The dedupe: a frame, post or reel already recorded is not written again.
-UQ_SOCIAL_ITEM_KEY = sa.Index(
-    "uq_social_item_key", SOCIAL_ITEM.c.network, SOCIAL_ITEM.c.item_id, unique=True,
 )
 IDX_SOCIAL_ITEM_PERSON = sa.Index(
     "idx_social_item_person", SOCIAL_ITEM.c.network, SOCIAL_ITEM.c.person,
@@ -5008,17 +5003,17 @@ SOCIAL_ITEM_STATE = sa.Table(
               server_default=sa.text("gen_random_uuid()")),
     sa.Column("network", sa.Text, nullable=False),
     sa.Column("item_id", sa.Text, nullable=False),
-    sa.Column("state", sa.Text, nullable=False),
+    sa.Column("source_state", sa.Text, nullable=False),
     sa.Column("reason", sa.Text),
     _recorded_at(),
     # A `place` row's new tagged place, NULL when the tag was removed; NULL on
     # every other state.
     sa.Column("place", sa.Text),
     sa.CheckConstraint(
-        "state IN ('gone', 'hidden', 'place')", name="ck_social_item_state_state",
+        "source_state IN ('gone', 'hidden', 'place')", name="ck_social_item_state_state",
     ),
     sa.CheckConstraint(
-        "place IS NULL OR state = 'place'", name="ck_social_item_state_place",
+        "place IS NULL OR source_state = 'place'", name="ck_social_item_state_place",
     ),
 )
 IDX_SOCIAL_ITEM_STATE_ITEM = sa.Index(
@@ -5796,7 +5791,7 @@ PLATFORM_OBSERVATION = sa.Table(
     # position exists (`nora.domain.observations.fold_observation`).
     sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
     sa.Column("contract", sa.Integer, nullable=False),
-    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("source_kind", sa.Text, nullable=False),
     # Source provenance by value — the bridge's public event alias and the
     # key-version-independent source digest (the replay/dedupe identity).
     sa.Column("event_id", sa.Text, nullable=False),
@@ -5845,7 +5840,7 @@ PLATFORM_OBSERVATION = sa.Table(
     sa.UniqueConstraint("platform", "account_key", "source_digest",
                         name="uq_platform_observation_source"),
     sa.CheckConstraint(
-        "kind IN ('reaction','message_metadata','poll','room','membership',"
+        "source_kind IN ('reaction','message_metadata','poll','room','membership',"
         "'pin','artifact')",
         name="ck_platform_observation_kind"),
     sa.CheckConstraint(
@@ -5863,7 +5858,7 @@ PLATFORM_OBSERVATION = sa.Table(
 IDX_PLATFORM_OBSERVATION_OBJECT = sa.Index(
     "idx_platform_observation_object",
     PLATFORM_OBSERVATION.c.platform, PLATFORM_OBSERVATION.c.account_key,
-    PLATFORM_OBSERVATION.c.conversation_id, PLATFORM_OBSERVATION.c.kind,
+    PLATFORM_OBSERVATION.c.conversation_id, PLATFORM_OBSERVATION.c.source_kind,
     PLATFORM_OBSERVATION.c.object_ref, PLATFORM_OBSERVATION.c.id,
 )
 
@@ -5878,7 +5873,7 @@ IDX_PLATFORM_OBSERVATION_UNRESOLVED = sa.Index(
 # `target_message_id IN (...)` window (`audit.reaction_states`).
 IDX_PLATFORM_OBSERVATION_TARGET = sa.Index(
     "idx_platform_observation_target",
-    PLATFORM_OBSERVATION.c.kind, PLATFORM_OBSERVATION.c.target_message_id,
+    PLATFORM_OBSERVATION.c.source_kind, PLATFORM_OBSERVATION.c.target_message_id,
 )
 
 PLATFORM_OBJECT_STATE = sa.Table(
@@ -5891,11 +5886,11 @@ PLATFORM_OBJECT_STATE = sa.Table(
     sa.Column("account_key", sa.Text, nullable=False),
     sa.Column("conversation_id", sa.Text, nullable=False),
     sa.Column("thread", sa.Text, nullable=False, server_default=""),
-    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("source_kind", sa.Text, nullable=False),
     sa.Column("object_ref", sa.Text, nullable=False),
     # Folded state (kind-specific JSON shape from the domain fold),
     # the newest applied observation, and the fold's own flags.
-    sa.Column("state", pg.JSONB, nullable=False),
+    sa.Column("source_state", pg.JSONB, nullable=False),
     sa.Column("applied", sa.Integer, nullable=False, server_default="0"),
     sa.Column("head_observation_id", sa.BigInteger),
     sa.Column("source_position", sa.BigInteger),
@@ -5911,9 +5906,6 @@ PLATFORM_OBJECT_STATE = sa.Table(
               server_default=sa.func.now()),
     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
               server_default=sa.func.now()),
-    sa.UniqueConstraint("platform", "account_key", "conversation_id",
-                        "thread", "kind", "object_ref",
-                        name="uq_platform_object_state_object"),
     sa.CheckConstraint("ordering IN ('ordered','arrival','gap')",
                        name="ck_platform_object_state_ordering"),
 )
@@ -5921,5 +5913,5 @@ PLATFORM_OBJECT_STATE = sa.Table(
 IDX_PLATFORM_OBJECT_STATE_ROOM = sa.Index(
     "idx_platform_object_state_room",
     PLATFORM_OBJECT_STATE.c.platform, PLATFORM_OBJECT_STATE.c.account_key,
-    PLATFORM_OBJECT_STATE.c.conversation_id, PLATFORM_OBJECT_STATE.c.kind,
+    PLATFORM_OBJECT_STATE.c.conversation_id, PLATFORM_OBJECT_STATE.c.source_kind,
 )

@@ -111,7 +111,7 @@ async def rollup_lineage(
             table.c.build_id == current_build_id(), table.c.subject_id == subject,
             within(table.c.started_ts, start), within(table.c.ended_ts, end),
         ]
-        stmt = sa.select(table.c.lineage).where(*where)
+        stmt = sa.select(table.c.build_lineage).where(*where)
     else:
         unit_part, _, members = subject.partition("|")
         if not unit or unit_part != unit or not members:
@@ -128,7 +128,7 @@ async def rollup_lineage(
             )
         else:
             return None
-        stmt = sa.select(table.c.lineage).where(
+        stmt = sa.select(table.c.build_lineage).where(
             table.c.build_id == current_build_id(), table.c.unit == unit, who,
             within(table.c.valid_from_ms, start), within(table.c.valid_to_ms, end),
         )
@@ -137,7 +137,7 @@ async def rollup_lineage(
         return None
     merged = Lineage()
     for r in rows:
-        merged = merged.union(Lineage.from_json(r.lineage))
+        merged = merged.union(Lineage.from_json(r.build_lineage))
     return merged
 
 

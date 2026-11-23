@@ -14,10 +14,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-
-class StaleBaseError(Exception):
-    """A revision named a base that already has a successor."""
-
+from nora.domain.graph_registration import (
+    Exposure as Exposure,
+)
+from nora.domain.graph_registration import (
+    StaleBaseError as StaleBaseError,
+)
 
 #: Bases (graph.md «the planes»): `authored` rows live outside the graph; the
 #: other four are what a graph row or edge may carry.
@@ -31,7 +33,6 @@ IntentionBasis = Literal["committed"]
 #: the later phases that create their tables.
 Kind = Literal["entity", "item", "aggregate", "claim", "intention", "edge"]
 
-Exposure = Literal["external", "internal", "operator"]
 Reasoning = Literal["told", "deduced", "induced", "abduced"]
 Confidence = Literal["low", "medium", "high"]
 

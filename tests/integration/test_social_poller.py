@@ -70,6 +70,7 @@ from nora.testing import (
     FakeSocialSubjectIndex,
 )
 from nora.testing.stimuli import InMemorySourceHealthLog
+from tests.infra.rollup_fixtures import insert_rollup_row
 
 ADA, BEA = "10000001", "10000002"
 _CDN = "https://scontent.cdninstagram.com/v/t51"
@@ -155,19 +156,19 @@ class World:
                 .where(p.c.person == person).order_by(p.c.recorded_at, p.c.id),
             )).all()
         return [tuple(r) for r in rows]  # type: ignore[misc]
-
     async def items(self) -> dict[str, str | None]:
         async with self.engine.connect() as conn:
             rows = (await conn.execute(
                 sa.select(SOCIAL_ITEM.c.item_id, SOCIAL_ITEM.c.media_ref),
             )).all()
         return {r.item_id: r.media_ref for r in rows}
-
     async def states(self) -> list[tuple[str, str]]:
         s = SOCIAL_ITEM_STATE
         async with self.engine.connect() as conn:
-            rows = (await conn.execute(sa.select(s.c.item_id, s.c.state).order_by(s.c.id))).all()
-        return [(r.item_id, r.state) for r in rows]
+            rows = (await conn.execute(
+                sa.select(s.c.item_id, s.c.source_state).order_by(s.c.id)
+            )).all()
+        return [(r.item_id, r.source_state) for r in rows]
 
     def transitions(self, scope: str = "") -> list[str]:
         return [
@@ -1256,7 +1257,7 @@ async def places(world: World) -> list[tuple[str, str | None]]:
     s = SOCIAL_ITEM_STATE
     async with world.engine.connect() as conn:
         rows = (await conn.execute(
-            sa.select(s.c.item_id, s.c.place).where(s.c.state == "place")
+            sa.select(s.c.item_id, s.c.place).where(s.c.source_state == "place")
             .order_by(s.c.recorded_at, s.c.id),
         )).all()
     return [(r.item_id, r.place) for r in rows]
@@ -1700,11 +1701,10 @@ async def test_activity_boost_reads_only_the_persons_current_unit_activity(world
             ).returning(ROLLUP_BUILD.c.id))).scalar_one()
             table = ROLLUP_OUTING if kind == "outing" else ROLLUP_COLOCATION
             extra = {} if kind == "outing" else {"radius_m": 50.0, "stay_count": 2}
-            await conn.execute(sa.insert(table).values(
-                build_id=build, unit="friends", lineage={}, valid_from_ms=ms-1000,
-                valid_to_ms=ms, as_of_ms=ms, persons=["ada"], lat=0.0, lng=0.0,
-                open=1, **extra,
-            ))
+            await insert_rollup_row(conn, table, build_id=build, unit="friends", build_lineage=[],
+                valid_from_ms=ms-1000, valid_to_ms=ms, as_of_ms=ms,
+                persons=["ada"], lat=0.0, lng=0.0, open=1, **extra,
+            )
     args = {"person": "ada", "units": ("friends",), "rooms": (("signal", "g1"),),
             "now": now, "timezone": "Asia/Hong_Kong"}
     assert await world.store.social_activity(**args)

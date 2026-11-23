@@ -441,7 +441,7 @@ async def test_a_person_known_only_through_a_stay_leaves_with_the_build(clean_pg
             await conn.execute(sa.insert(PRESENCE_STAYS).values(
                 subject_id="solo", person_id="solo", circle_id="c1", started_ts=1_000_000,
                 ended_ts=2_000_000, lat=0.0, lng=0.0, radius_m=10.0, fix_count=3,
-                build_id=old, lineage=[],
+                build_id=old, build_lineage=[],
             ))
             await memory_index.reproject_episodes(conn)
         assert ("person", "solo") in {(n[0], n[1]) for n in (await _index(engine))[0]}
