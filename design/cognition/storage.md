@@ -46,7 +46,7 @@ is in.
 - An aggregate rebuilt across expired input records that span as **expired
   coverage**, never as observed absence; a condition over it evaluates
   unknown.
-- A forget request from a person hides at once what it names from rendering and
+- A forget request from an identity hides at once what it names from rendering and
   retrieval; physical deletion follows the source's horizon or the request's
   own terms.
 - Aggregates rebuild from what remains, at their watermark.

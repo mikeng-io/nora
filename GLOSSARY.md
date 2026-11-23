@@ -25,41 +25,43 @@ Ordered by how much confusion each has caused.
 - **Learning** — revising evidence-backed Character entries and lessons used as
   future context. It is not model retraining or permission to rewrite doctrine.
 
-## Identity — three different things
+## Identity, and the things that are not one
 
-The worst collision in the codebase. All three are live, all three are called
-"identity" somewhere.
+An **identity** is the subject Nora knows: a human, a bot or an agent, in one
+model where no type decides permissions
+([managed identity](design/managed-identity-access/identity.md#one-identity-many-accounts)).
+Design and the API say identity; the code still says `person`, and the two
+other things named "identity" are spelled out below so they never collide.
 
 | term | means | where |
 |---|---|---|
-| **identity (resolution)** | mapping a platform *account* — phone number, ACI — to a person | `nora/ingest/stages/identity.py` |
-| **`PlatformIdentity`** | **Nora's own account** on a platform, used for self-tag checks (R-12) | `domain/models.py`, `adapter.resolve_identity()` |
-| **`doctrine/core/identity.md`** | who Nora *is* — her voice and conduct, not accounts (her place in a room is `doctrine/rooms/belonging.md`) | the doctrine layer |
+| **identity** | the canonical registered subject; in code a person: **`person_id`** (`miles_novak`), stable, operator-assigned and also the Honcho peer id (A2, DEC-14), and **`PersonRef`**, the resolved record (id, name, aliases) | `nora/persons.py`, `identity.toml` |
+| **identity resolution** | mapping a platform *account* — phone number, ACI — to an identity | `nora/ingest/stages/identity.py` |
+| **`self`** | **Nora's own account** on a platform, used for self-tag checks (R-12); in code `PlatformIdentity` | `domain/models.py`, `adapter.resolve_identity()` |
+| **seed** | who Nora *is* — her voice and conduct, not accounts; the file is `doctrine/core/identity.md` (her place in a room is `doctrine/rooms/belonging.md`) | the doctrine layer |
 
-Because of this, tools that answer *"who is 阿豹?"* are named **`person_*`**,
-never `identity_*`. See Person below. Who Nora *is* is doctrine, never the
-Character tier.
+Tools that answer *"who is 阿豹?"* are named **`person_*`** in code, never
+`identity_*`. Who Nora *is* is doctrine, never the Character tier.
 
-## Person, and the things that are not a person
-
-- **person** — a human being. Identified by **`person_id`** (`miles_novak`), which
-  is stable, operator-assigned, and is also their Honcho peer id (A2, DEC-14).
-- **`PersonRef`** — the resolved record: person_id, name, first/last, aliases.
+- **entity** — anything the Cognitive Graph is about. An identity is the
+  entity with registered accounts; an unregistered handle, an organisation or
+  a stranger is an entity without one. Whether an entity is human is a claim,
+  never its type.
 - **platform account** — one platform login, always spelled out this way.
   "Account" means only a platform account, never a Character entry
   ([ADR 0026](docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md)).
-  **One person may hold several** (DEC-14);
-  the Ridgeline room holds three platform accounts and two people, one of whom
-  is Nora.
+  **One identity may hold several** (DEC-14);
+  the Ridgeline room holds three platform accounts and two identities, one of
+  which is Nora.
 - **alias** — a nickname the *operator* wrote in `identity.toml` (阿豹妹,
   峰哥). Trusted, because a human on disk authored it.
 - **display name** — what someone set on their own Signal profile.
   **Untrusted** — anyone can set it to anything, which is why design/10-identity-and-policy-schema.md §1.3
   forbids an alias or display name ever resolving a *sender*. Resolving a
   lookup *target* is a different, safe operation.
-- **unmapped sender** — an account with no person in `identity.toml`. Reported
-  as a **count**, never as an id, because the only thing Nora holds for them is
-  a phone number or ACI. `nora_unmapped_senders_total` is the tell.
+- **unmapped sender** — an account with no identity in `identity.toml`.
+  Reported as a **count**, never as an id, because the only thing Nora holds
+  for them is a phone number or ACI. `nora_unmapped_senders_total` is the tell.
 
 ## Memory — record versus interpretation
 

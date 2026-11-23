@@ -52,7 +52,7 @@ Evidence, indexes and typed relations each have their own edge:
 | edge | from → to | is evidence |
 |---|---|---|
 | **cites** | a row → the observed or computed rows it rests on | yes, the only evidence |
-| **about** | a row → an entity it concerns. Admission computes links from claims and intentions to their resolved person pointers. Nora proposes inferred links from claims, intentions and recorded items. | no: an index for retrieval |
+| **about** | a row → an entity it concerns. Admission computes links from claims and intentions to their resolved identity pointers. Nora proposes inferred links from claims, intentions and recorded items. | no: an index for retrieval |
 | **draws on** | a claim or intention → another claim or intention | no: context or premise |
 | **grades** | a grade claim → the guess or lesson it assesses | no: the grade cites its evidence separately |
 
@@ -80,14 +80,14 @@ endpoint kinds. A new meaning is a reviewed edge type, never a new store.
   affiliates never read each other, and no unit reads another agent's; a DM is
   the one exception ([boundaries](boundaries.md#scope)).
 - **membership** — every affiliate member is a primary member. An affiliate
-  listing anyone else is refused; a person leaving the primary leaves its
+  listing anyone else is refused; an identity leaving the primary leaves its
   affiliates before any further read, and an affiliate whose membership cannot
   be confirmed reads only itself.
 - **origin room** — where the row was established: where an act about it
   lands and, for raw DM items, the only room they render in. It never hides a
   unit's other rows from that unit's rooms or from its affiliates.
-- **persons** — the people it concerns, by id.
-- **excluded persons** — people it must not be revealed to or through.
+- **identities** — the identities it concerns, by id.
+- **excluded identities** — identities it must not be revealed to or through.
 - **lineage** — the source restrictions inherited from what it cites, draws
   on or rests on, across an affiliate's edges to its primary too: what a row
   may be rendered as, where, and to whom. Exclusions, exposure and DM origin
@@ -122,7 +122,7 @@ row inspectable.
 
 | kind | basis | is | lifecycle |
 |---|---|---|---|
-| **entity** | computed when code resolves it; inferred when its identity is judged | an anchor: a person, room, unit, an agent, a game, a place, a topic | admitted, merged, retired |
+| **entity** | computed when code resolves it; inferred when its identity is judged | an anchor: an identity (human, bot or agent), a room, a unit, a game, a place, a topic | admitted, merged, retired |
 | **item** | observed | something that happened: a message, link, reaction, online-status change, location fix, fetched page, watch result, tool outcome, Nora's own send | append-only |
 | **aggregate** | computed | a derivation over items: episodes, rollups, counts and baselines, verdicts, track records, support tallies | recomputed, never edited |
 | **claim** | inferred | a belief about an entity or a relation | revised, retired, or ended by its valid-to time |
@@ -137,9 +137,23 @@ boundary. A sender code cannot resolve stays unresolved on the item. Other
 entities are inferred and exist only as endpoints of admitted, evidenced edges;
 a graph entity or inferred same-as claim never establishes account ownership.
 
+The graph is **entity-neutral** and its subjects are **identity-neutral**:
+
+- No kind, rule or code path branches on whether an identity is a human, a
+  bot or an agent. What an entity is — a human, a bot, an organisation — is a
+  claim about it, never its type.
+- Every protection holds for every identity: exclusion, disclosure, lineage
+  and consent are never loosened because an identity is, or claims to be, a
+  bot. A platform's bot flag describes an account and decides nothing.
+- Nora's own agents are identities like any other; each agent's own accounts
+  are its `self`.
+- An unregistered handle, organisation or stranger is an entity without an
+  identity: it can be the subject of claims, never of scope or exclusion,
+  which need accounts to enforce.
+
 ### Intentions
 
-An intention names its **owner** (Nora, or the person whose request she holds)
+An intention names its **owner** (Nora, or the identity whose request she holds)
 and who it is **owed to**, and has one of two **forms**:
 
 - **achieve** — closes when its **done-when** condition is met by the recorded
@@ -182,7 +196,7 @@ true, false or unknown. The form decides the witness and who writes the ending:
 | what it waits for | form | closing witness | written by |
 |---|---|---|---|
 | Nora's own work done | event match on her act | the act's outcome item reporting done | observe's compute |
-| a person's response, such as accepting a suggestion | event match on their item | the person's explicit item: the acceptance, the pick, the confirmation | observe's compute |
+| an identity's response, such as accepting a suggestion | event match on their item | the identity's explicit item: the acceptance, the pick, the confirmation | observe's compute |
 | a state reached | predicate over an aggregate or current head, such as a poll having a winner | the aggregate revision that meets it | observe's compute |
 | time passing | deadline | the clock instant, with the health of the sources it depended on | study's verify; no closed-by edge |
 | nothing code can evaluate | untyped | none | study's verify, at its deadline |
@@ -220,7 +234,7 @@ presentation.
   each situation claim's age and how many items arrived since it was
   asserted, so a stale claim reads as stale. Nothing writes it.
 - **lessons** — lesson claims about Nora's own practice in a unit.
-- **likes** — the claims about what people enjoy, for a fixed destination
+- **likes** — the claims about what identities enjoy, for a fixed destination
   audience.
 
 ## The existing names, in these kinds
@@ -232,7 +246,7 @@ presentation.
 | memory-graph entity and relation | entity; claim, or an observed or computed edge |
 | note (an open matter) | achieve intention |
 | memo (a settled matter) | a closed intention, kept with its verdict |
-| commitment | achieve intention owed to a person |
+| commitment | achieve intention owed to an identity |
 | decision | intention whose deliberation recorded the options; "reopen if" is a rests-on condition |
 | reminder | the scheduled delivery of an intention |
 | event, a gathering | an item once it happens; before it, a claim about the plan, and an intention for Nora's own part |

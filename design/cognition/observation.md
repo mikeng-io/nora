@@ -34,8 +34,8 @@ expressed — the drafts and conclusions Nora wrote — is among its items; hidd
 reasoning is never kept, and what it decided is an intention.
 
 A fetched outside page is an item with its fetch provenance. It can support
-public attributes of a place, work, event or organisation, never a private
-person's attendance, traits or relationships.
+public attributes of a place, work, event or organisation, never an
+identity's attendance, traits or relationships.
 
 A perception reading of a media item is not observation: it is a claim,
 written in orient and cited to the item.
@@ -48,12 +48,12 @@ written in orient and cited to the item.
 - A source shared with a group outside Nora, such as a location circle, is
   placed in the highest unit whose members all share it: the primary when the
   group covers all of it, otherwise each covered affiliate, which then reads
-  nothing of it from the primary. Belonging to another unit never places a
-  person's source there; a unit the group only partly covers receives nothing.
+  nothing of it from the primary. Belonging to another unit never places an
+  identity's source there; a unit the group only partly covers receives nothing.
 - A social item is placed only from a public account. A private account's
   audience is not observed, so its items reach no unit; unknown privacy is
   private.
-- Face matching identifies only a person labelled by themselves or the
+- Face matching identifies only an identity labelled by themselves or the
   operator; an unmatched face stays unknown, and a non-member's biometric
   vector is transient, never stored.
 - Media custody stays with the source room.
@@ -75,11 +75,11 @@ aggregates (routines, relationships, counts) and baselines.
   aggregate folded from its items, carrying its source position, coverage and
   any target it cannot resolve. A partial snapshot replaces only what it
   covers.
-- **Presence** is a current head per person, folded from every source's
+- **Presence** is a current head per identity, folded from every source's
   latest items: where they are or that they are travelling, and since when;
   whether they are online, playing or listening, and to what. Each part
   carries the source and time it was observed and that source's health, so a
-  stale or unhealthy part reads as such, never as current. Where a person is
+  stale or unhealthy part reads as such, never as current. Where an identity is
   going is not presence: it is a guess, written in orient from their routines.
 - Verdicts, track records and support tallies also read the conditions and
   rests-on edges of the intentions they evaluate. No computed row reads a
@@ -88,7 +88,7 @@ aggregates (routines, relationships, counts) and baselines.
 ## Stimuli
 
 A stimulus is a durable, per-unit reference to something that changed, with
-its source, its room or person where one exists, deterministic cues and the
+its source, its room or identity where one exists, deterministic cues and the
 time it becomes eligible. It is not a conclusion and not an instruction.
 
 | stimulus | from |
@@ -99,7 +99,7 @@ time it becomes eligible. It is not a conclusion and not an instruction.
 | a presence change: arriving at or leaving a place, starting or ending travel, starting or stopping play | compute |
 | an intention due, a review time, a valid-to time ending, a deadline passing | the clock |
 | a verdict written | study's verify |
-| a person's correction aimed at Nora, or a person's statement about themselves | record, by an addressing or self-reference cue; a **strong cue**, so a wake follows quickly |
+| an identity's correction aimed at Nora, or an identity's statement about themselves | record, by an addressing or self-reference cue; a **strong cue**, so a wake follows quickly |
 | a row revised, retired or contradicted that others draw on or rest on | admission; names the row, its new revision and the dependents, each in the dependent's own unit |
 
 **Rules**
@@ -108,7 +108,7 @@ time it becomes eligible. It is not a conclusion and not an instruction.
   it computes; a change item alone wakes nothing.
 - Absence is a stimulus only when every source needed to prove it was healthy
   over the interval.
-- Nora's own acts never stimulate by themselves; what people do next does. A
+- Nora's own acts never stimulate by themselves; what others do next does. A
   revision's dependency stimulus is the exception: it names work the revision
   made due.
 - An aggregate change rides with a wake started for any reason; it is context
