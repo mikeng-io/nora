@@ -144,6 +144,7 @@ _RENAMED_SINCE: frozenset[str] = frozenset({
     "suggest_venue",
     # Retired: `intention_commit` opens, revises, drops and closes a scheduled delivery.
     "remind", "list_reminders", "cancel_reminder",
+    "event_propose", "event_revise", "event_rsvp", "event_search", "event_set_status",
 })
 
 _PREDATES_THE_RULE = _SNAPSHOT_2026_09_24 - _RENAMED_SINCE
