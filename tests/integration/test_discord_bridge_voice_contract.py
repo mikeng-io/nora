@@ -136,7 +136,7 @@ async def test_a_controller_restart_behind_the_cache_is_a_generation_conflict(br
     """The controller restarted under a new generation while the bridge still
     holds the old one: the operation is `rejected` `generation_conflict` with
     the generation the controller holds now, and nothing was applied."""
-    fake, hub, _app, http = bridge
+    fake, _hub, _app, http = bridge
     stale = (await _op(http, "join", guild_id=GUILD, channel_id=CHANNEL)
              )["payload"]["state"]["generation"]
     fake.restart()

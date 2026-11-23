@@ -28,7 +28,7 @@ The wire (`docs/service-api/openapi.json`, «Outcomes on the controller»):
   `unavailable` `join_failed`, an answer the real controller also gives;
 - `join` admits ANY channel in the guild, is idempotent in the same channel
   and `rejected` `connected_elsewhere` otherwise, its `channel_id` at most 64
-  characters; `play.resumable` is a
+  characters; `play.stream_url` at most 8 KiB as JSON; `play.resumable` is a
   boolean or absent (null reads as absent);
 - every generation-scoped kind is `rejected` `generation_conflict` on a stale
   generation, with the current one in the payload's `state`;
@@ -351,7 +351,8 @@ class FakeVoiceController:
 
     async def _play(self, effect: dict[str, Any]) -> tuple[OperationOutcome, dict[str, Any]]:
         stream_url = effect.get("stream_url")
-        if not isinstance(stream_url, str) or not stream_url:
+        if not isinstance(stream_url, str) or not stream_url or len(
+                json.dumps(stream_url)) > 8 * 1024:
             raise _BadRequestError("invalid_body")
         if effect.get("resumable") is not None and not isinstance(effect["resumable"], bool):
             raise _BadRequestError("invalid_body")

@@ -26,12 +26,12 @@ from uuid import uuid4
 from nora.domain.playback_liveness import PlaybackReading
 from nora.infra.voice.http_controller import (
     GenerationConflict,
-    conflicts_fail,
     HttpVoiceSession,
     VoiceControllerClient,
     VoiceControllerError,
     VoiceControllerNoConnection,
     VoiceControllerUnavailable,
+    conflicts_fail,
 )
 
 log = logging.getLogger("nora.infra.voice")

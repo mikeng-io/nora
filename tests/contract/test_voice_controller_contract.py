@@ -500,3 +500,13 @@ async def test_a_duplicate_in_flight_awaits_the_first_answer(controller):
 
     assert answers[0] == answers[1] and answers[0]["outcome"] == "complete"
     assert len(fake.plays) == 1
+
+
+async def test_an_over_long_stream_url_is_refused(controller):
+    fake, client, _ = controller
+    generation = await _join(client)
+
+    with pytest.raises(VoiceControllerRejected):
+        await client.play(generation, "https://cdn.example/" + "a" * 9000, guild_id=GUILD,
+                          operation_id=str(uuid4()))
+    assert fake.plays == []

@@ -156,6 +156,27 @@ async def test_play_records_the_playback_id_from_the_state_snapshot(aiohttp_clie
     assert session.playback_id == "pb-1"
 
 
+async def test_an_operation_body_names_its_kind_before_its_effect(aiohttp_client):
+    """The controller reads `kind` from the first 64 KiB of a body, so a `speak`
+    whose audio came first would be refused."""
+    raw: list[bytes] = []
+    app = web.Application()
+
+    async def handler(request: web.Request) -> web.Response:
+        raw.append(await request.read())
+        return web.json_response(operation_envelope("complete", {"state": _state()}))
+
+    app.router.add_post(OPERATIONS, handler)
+    vc = await _client(aiohttp_client, app)
+
+    await vc.stream("gen-1", b"x" * 100_000, media_type="audio/wav", guild_id=GUILD,
+                    operation_id="op-1")
+
+    (body,) = raw
+    assert body.index(b'"operation_id"') < body.index(b'"kind"') < body.index(b'"effect"')
+    assert body.index(b'"kind"') < 1024
+
+
 async def test_play_sends_the_pinned_body(aiohttp_client):
     record: list = []
     vc = await _client(aiohttp_client, _app(record=record))
