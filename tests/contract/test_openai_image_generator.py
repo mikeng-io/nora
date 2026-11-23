@@ -135,12 +135,16 @@ def test_the_api_section_is_validated():
 
 
 async def test_composition_selects_the_api_lane_by_its_key(example_config, tmp_path):
-    image_gen = example_config.image_gen.model_copy(update={"enabled": True, "provider": "openai"})
+    lane = example_config.image_gen.openai.model_copy(update={"model": "gpt-image-2.6-sunburst"})
+    image_gen = example_config.image_gen.model_copy(
+        update={"enabled": True, "provider": "openai", "openai": lane},
+    )
     cfg = example_config.model_copy(update={"image_gen": image_gen})
     generator, keeper = _image_gen_wiring(
         cfg, Metrics(), {"OPENAI_IMAGE_API_KEY": "sk"}, state_dir=tmp_path,
     )
     assert isinstance(generator, OpenAIImageGenerator)
+    assert generator._model == "gpt-image-2.6-sunburst"  # the configured model, not the default
     assert keeper is None  # a key has no login to keep alive
     missing, _ = _image_gen_wiring(cfg, Metrics(), {}, state_dir=tmp_path)
     assert missing is None
