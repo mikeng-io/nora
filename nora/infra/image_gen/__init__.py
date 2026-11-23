@@ -36,6 +36,7 @@ def build_image_generator(
     high_quality: str = "high",
     max_reference_images: int | None = None,
     api_key: str = "",
+    max_gif_frames: int = 0,
 ) -> ImageGenerator | None:
     """Build the `ImageGenerator` the config selects.
 
@@ -59,6 +60,7 @@ def build_image_generator(
             high_quality=high_quality,
             timeout_seconds=timeout_seconds,
             max_reference_images=max_reference_images,
+            max_gif_frames=max_gif_frames,
         )
     if provider == "openai_codex":
         # `refresh_token` is the BOOTSTRAP token from `.env`; the live,
@@ -78,6 +80,7 @@ def build_image_generator(
             high_quality=high_quality,
             timeout_seconds=timeout_seconds,
             max_reference_images=max_reference_images,
+            max_gif_frames=max_gif_frames,
         )
     if provider == "xai":
         lane = oauth if isinstance(oauth, XaiOAuth) else None

@@ -118,7 +118,7 @@
  "nora/app/summons.py": 4,
  "nora/app/wake.py": 5,
  "nora/computer/wire.py": 5,
- "nora/config.py": 107,
+ "nora/config.py": 106,
  "nora/conversation/adapters/tools/replies.py": 2,
  "nora/conversation/wire.py": 3,
  "nora/doctrine/loader.py": 6,

@@ -201,6 +201,7 @@ def _image_gen_wiring(
             high_quality=api_cfg.high_quality,
             timeout_seconds=api_cfg.timeout_seconds,
             max_reference_images=api_cfg.max_reference_images,
+            max_gif_frames=api_cfg.max_gif_frames,
         )
     elif cfg.image_gen.provider == "openai_codex":
         token_env = codex_cfg.refresh_token_env
@@ -214,6 +215,7 @@ def _image_gen_wiring(
                 high_quality=codex_cfg.high_quality,
                 timeout_seconds=codex_cfg.timeout_seconds,
                 max_reference_images=codex_cfg.max_reference_images,
+                max_gif_frames=codex_cfg.max_gif_frames,
             )
             if codex_lane is not None
             else None
