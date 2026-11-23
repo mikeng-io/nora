@@ -10,7 +10,14 @@ from urllib.parse import unquote
 from nora.agent.egress import LeakGuard, scan_identifiers, scan_reply
 from nora.agent.security import looks_like_coordinate
 from nora.memory.app.admission_identity import AdmissionIdentity
-from nora.memory.domain.admission import Refusal, admit_batch, fields, row_references
+from nora.memory.domain.admission import (
+    Refusal,
+    decide_admission,
+    fields,
+    pending_topics,
+    row_references,
+    topic_targets,
+)
 from nora.memory.domain.admission_ports import AdmissionStore, AdmissionUnavailableError, Stored
 from nora.memory.domain.admission_proposals import (
     CreateIntention,
@@ -67,36 +74,56 @@ class AdmissionService:
         try:
             context_or_refusal = await self._context(context)
         except AdmissionUnavailableError as exc:
-            outcomes = tuple(
+            unavailable = tuple(
                 refusal or Unavailable(fields(proposal).id, exc.commit_uncertain)
                 for proposal, refusal in zip(proposals, screened, strict=True)
             )
-            return AdmissionResult(outcomes, (), ())
+            return AdmissionResult(unavailable, (), ())
         if isinstance(context_or_refusal, Refusal):
-            outcomes = tuple(refusal or context_or_refusal for refusal in screened)
-            return AdmissionResult(outcomes, (), ())
+            refused = tuple(refusal or context_or_refusal for refusal in screened)
+            return AdmissionResult(refused, (), ())
         context = context_or_refusal
         shown_ids = set(shown)
         unknown: set[str] = set()
-        outcomes_list: list[Stored | Refusal | Unavailable] = []
-        revisions: list[Stored] = []
-        retirements: list[Stored] = []
-        for proposal, refusal in zip(proposals, screened, strict=True):
-            outcome = refusal or await self._try(proposal, context, shown_ids, unknown)
-            outcomes_list.append(outcome)
+        outcomes: dict[int, Stored | Refusal | Unavailable] = {
+            index: refusal for index, refusal in enumerate(screened) if refusal is not None
+        }
+        pending = pending_topics({
+            index: proposal for index, proposal in enumerate(proposals) if index not in outcomes
+        })
+        deferred = set(pending.values())
+        for index, proposal in enumerate(proposals):
+            if index in outcomes or index in deferred:
+                continue
+            topics = tuple(
+                proposals[pending[key]] for key in topic_targets(proposal) if key in pending
+            )
+            outcome, related = await self._try(proposal, context, shown_ids, unknown, topics)
+            outcomes[index] = outcome
             if isinstance(outcome, Unavailable) and outcome.commit_uncertain:
                 unknown.add(outcome.id)
                 if isinstance(proposal, (Revise, Retire)):
                     unknown.add(proposal.base)
                 elif isinstance(proposal, MergeEntities):
                     unknown.add(proposal.source)
+                for topic in related:
+                    unknown.add(topic.id)
+                    if topic.base is not None:
+                        unknown.add(topic.base)
+                    outcomes[pending.pop(topic.id)] = Unavailable(topic.id, commit_uncertain=True)
             if isinstance(outcome, Stored):
                 shown_ids.add(outcome.id)
-                if isinstance(proposal, Revise):
-                    revisions.append(outcome)
-                elif isinstance(proposal, Retire):
-                    retirements.append(outcome)
-        return AdmissionResult(tuple(outcomes_list), tuple(revisions), tuple(retirements))
+                for topic in related:
+                    shown_ids.add(topic.id)
+                    outcomes[pending.pop(topic.id)] = topic
+        for index in pending.values():
+            outcomes[index], _ = await self._try(proposals[index], context, shown_ids, unknown)
+        ordered = tuple(outcomes[index] for index in range(len(proposals)))
+        revisions = tuple(outcome for proposal, outcome in zip(proposals, ordered, strict=True)
+                          if isinstance(proposal, Revise) and isinstance(outcome, Stored))
+        retirements = tuple(outcome for proposal, outcome in zip(proposals, ordered, strict=True)
+                            if isinstance(proposal, Retire) and isinstance(outcome, Stored))
+        return AdmissionResult(ordered, revisions, retirements)
 
     async def _context(self, context: PassContext) -> PassContext | Refusal:
         if self._identity.resolve_admission_unit(context.unit) is None:
@@ -116,47 +143,55 @@ class AdmissionService:
         context: PassContext,
         shown: set[str],
         unknown: set[str],
-    ) -> Stored | Refusal | Unavailable:
+        topics: tuple[Proposal, ...] = (),
+    ) -> tuple[Stored | Refusal | Unavailable, tuple[Stored, ...]]:
         data = fields(proposal)
         if not isinstance(data, ProposalFields):
-            return Refusal("unknown_kind", "kind")
-        ids = row_references(proposal)
+            return Refusal("unknown_kind", "kind"), ()
+        ids = frozenset().union(*(row_references(part) for part in (proposal, *topics)))
         if ids & unknown:
-            return Unavailable(data.id, commit_uncertain=False)
+            return Unavailable(data.id, commit_uncertain=False), ()
         # IDs supplied by the model grant no additional reads.
         readable = ids & shown
+        related: tuple[Stored, ...] = ()
+        inputs = (data, *(fields(topic) for topic in topics))
         try:
             rooms, persons = await self._identity.references(
                 context.unit,
-                rooms=(data.scope.origin_room,) if data.scope.origin_room is not None else (),
-                persons=(*data.scope.persons, *data.scope.excluded_persons),
+                rooms=tuple(part.scope.origin_room for part in inputs
+                            if part.scope.origin_room is not None),
+                persons=tuple(ref for part in inputs
+                              for ref in (*part.scope.persons, *part.scope.excluded_persons)),
                 principals=(data.owner, data.owed_to) if isinstance(data, CreateIntention) else (),
             )
             rows = await self._store.read(context.unit, frozenset(readable))
-            (choice,) = admit_batch(
-                (proposal,),
+            choice = decide_admission(
+                proposal,
                 context,
                 shown,
                 rows,
                 ResolvedReferences(rooms, persons),
                 watch_kinds=self._watch_kinds,
+                topics=topics,
             )
             if isinstance(choice, Refusal):
-                return choice
-            references = [choice.row.source_ref]
+                return choice, ()
+            references = [part.row.source_ref for part in (choice, *choice.topics)]
             references.extend(
                 rows[link.target].source_ref
                 for link in choice.links if link.type == "watches" and link.target != choice.row.id
             )
             if any(_unsafe_page(ref) for ref in references):
-                return Refusal("unsafe_page_reference", "source_ref")
+                return Refusal("unsafe_page_reference", "source_ref"), ()
             stored = Stored(choice.row.id, choice.base.id if choice.base is not None else None)
+            related = tuple(Stored(topic.row.id, topic.base.id if topic.base else None)
+                            for topic in choice.topics)
             await self._store.persist_admitted_proposal(choice, context, stored)
         except StaleBaseError:
-            return Refusal("stale_base", "base")
+            return Refusal("stale_base", "base"), ()
         except AdmissionUnavailableError as exc:
-            return Unavailable(data.id, exc.commit_uncertain)
-        return stored
+            return Unavailable(data.id, exc.commit_uncertain), related
+        return stored, related
 
     def _protect(self, proposal: Proposal) -> Refusal | None:
         for field, text in _text(proposal):

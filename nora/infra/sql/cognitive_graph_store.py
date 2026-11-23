@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, cast
 from uuid import uuid4
@@ -36,6 +37,15 @@ from nora.infra.sql.cognitive_graph_schema import (
 )
 
 RowData = Mapping[str, Any] | sa.RowMapping
+
+
+@dataclass(frozen=True, slots=True)
+class AdmissionTopic:
+    row: Mapping[str, Any]
+    edges: Sequence[Mapping[str, Any]]
+    base_state: str | None
+
+
 # person_pointer_in, _admission_base and _merge support writes and use raw identities.
 GRAPH_READERS = (
     "nora.memory.adapters.claim_support",
@@ -305,12 +315,21 @@ class SqlCognitiveGraph:
         base_state: str | None = None,
         retire: bool = False,
         merge: tuple[str, str] | None = None,
+        topics: Sequence[AdmissionTopic] = (),
         after_write: Callable[[AsyncConnection], Awaitable[None]] | None = None,
     ) -> None:
         """Write a model proposal and all its edges as one graph transaction."""
         committing = False
         try:
             async with self._engine.begin() as conn:
+                for topic in topics:
+                    if topic.base_state is None:
+                        await self._insert(conn, ENTITY, topic.row)
+                    else:
+                        await self._admission_base(conn, ENTITY, topic.row, topic.base_state)
+                        await self._revise(conn, ENTITY, topic.row)
+                    for edge in topic.edges:
+                        await self._insert(conn, EDGE, edge)
                 if merge is not None:
                     await self._merge(conn, row, merge)
                 if base_state is None:

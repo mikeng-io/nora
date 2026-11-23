@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import cast
 from uuid import NAMESPACE_DNS, uuid5
 
@@ -26,6 +27,7 @@ from nora.memory.app.admission import AdmissionService, Stored, Unavailable
 from nora.memory.app.admission_identity import AdmissionIdentity
 from nora.memory.domain.admission import Refusal
 from nora.memory.domain.admission_proposals import (
+    AddEdge,
     CreateClaim,
     CreateEntity,
     Link,
@@ -69,6 +71,17 @@ CLAIM_PROPOSAL = CreateClaim(
     citations=("item-1",),
     content={"text": "The fixture records an event."},
 )
+TOPIC = CreateEntity(
+    id="topic", basis="inferred", scope=Scope("u"), reasoning="deduced",
+    confidence="high", name="Generated topic",
+)
+
+
+def _about(source: str, target: str) -> Link:
+    return Link(
+        type="about", basis="inferred", source=source, target=target,
+        reasoning="deduced", confidence="high",
+    )
 
 
 def _authority() -> tuple[Persons, Policy, LeakGuard]:
@@ -139,6 +152,54 @@ async def engine(clean_pg_url: str) -> AsyncIterator[AsyncEngine]:
 async def _rows(engine: AsyncEngine, table: sa.Table) -> dict[str, sa.RowMapping]:
     async with engine.connect() as conn:
         return {row["id"]: row for row in (await conn.execute(sa.select(table))).mappings()}
+
+
+async def test_interest_edge_type_is_refused(engine) -> None:
+    proposal = AddEdge(
+        id="old-interest", basis="inferred", scope=Scope("u"),
+        type="interested_in", source="item-1", target="item-1",
+        reasoning="deduced", confidence="high",
+    )
+    result = await _service(engine).admit((proposal,), PASS, ("item-1",))
+    assert result.outcomes == (Refusal("unknown_edge_type", "type"),)
+
+
+@pytest.mark.parametrize("part", ["lesson", "situation"])
+async def test_non_profile_claim_parts_are_admitted(engine, part) -> None:
+    proposal = replace(CLAIM_PROPOSAL, part=part)
+    result = await _service(engine).admit((proposal,), PASS, ("item-1",))
+    assert result.outcomes == (Stored(proposal.id),)
+    assert (await _rows(engine, CLAIM))[proposal.id]["part"] == part
+
+
+async def test_lesson_cannot_carry_a_prediction(engine) -> None:
+    lesson = replace(
+        CLAIM_PROPOSAL, part="lesson", prediction="The fixture recurs.",
+        window_end=datetime(2099, 1, 1, tzinfo=UTC),
+    )
+    result = await _service(engine).admit((lesson,), PASS, ("item-1",))
+    assert result.outcomes == (Refusal("invalid_field", "claim"),)
+
+
+@pytest.mark.parametrize("topic_first", [True, False])
+async def test_evidenced_about_admits_claim_and_new_topic(engine, topic_first) -> None:
+    trait = replace(
+        CLAIM_PROPOSAL, part="trait", links=(_about(CLAIM_PROPOSAL.id, TOPIC.id),),
+    )
+    proposals = (TOPIC, trait) if topic_first else (trait, TOPIC)
+    result = await _service(engine).admit(proposals, PASS, ("item-1",))
+    assert result.outcomes == tuple(Stored(proposal.id) for proposal in proposals)
+    assert (await _rows(engine, ENTITY))[TOPIC.id]["name"] == TOPIC.name
+    assert {(row["type"], row["src_id"], row["dst_id"]) for row in
+            (await _rows(engine, EDGE)).values()} == {
+        ("about", trait.id, TOPIC.id), ("cites", trait.id, "item-1"),
+    }
+
+
+async def test_topic_without_evidenced_about_is_refused(engine) -> None:
+    result = await _service(engine).admit((TOPIC,), PASS, ("item-1",))
+    assert result.outcomes == (Refusal("orphan_entity", "links"),)
+    assert TOPIC.id not in await _rows(engine, ENTITY)
 
 
 async def test_batch_commits_valid_sibling_and_returns_typed_refusal(engine) -> None:
@@ -357,21 +418,14 @@ async def test_merge_stores_relation_and_evidence_without_replacing_either_entit
                 confidence="high",
                 citations=("item-1",),
                 name="a revised topic",
-                links=(
-                    Link(
-                        type="interested_in",
-                        basis="inferred",
-                        source=f"refresh-{base}",
-                        target=peer,
-                        reasoning="deduced",
-                        confidence="high",
-                    ),
-                ),
             ),
         )
-        for base, peer in (("source", "survivor"), ("survivor", "source"))
+        for base in ("source", "survivor")
     )
-    result = await svc.admit(revisions, PASS, shown)
+    supporter = replace(CLAIM_PROPOSAL, links=tuple(
+        _about(CLAIM_PROPOSAL.id, revision.replacement.id) for revision in revisions
+    ))
+    result = await svc.admit((*revisions, supporter), PASS, shown)
     assert result.revisions == (
         Stored("refresh-source", "source"),
         Stored("refresh-survivor", "survivor"),
