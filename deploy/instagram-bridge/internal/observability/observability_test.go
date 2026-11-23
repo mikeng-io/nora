@@ -22,13 +22,13 @@ func TestPollingDoesNotHideBusinessTraces(t *testing.T) {
 	handler := TraceHTTP(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
-	for _, path := range []string{"/health", "/v1/health", "/v1/self", "/metrics", "/events"} {
+	for _, path := range []string{"/health", "/ready", "/v1/operations/status", "/v1/platform/accounts/self", "/metrics", "/events"} {
 		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
 	}
 	if got := len(recorder.Ended()); got != 0 {
 		t.Fatalf("polling exported %d spans", got)
 	}
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/actions", nil))
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/platform/operations", nil))
 	if got := len(recorder.Ended()); got != 1 {
 		t.Fatalf("business request exported %d spans, want one", got)
 	}

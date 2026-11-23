@@ -1,7 +1,8 @@
 package httptransport
 
-// Focused proofs for the /v1 facade: auth, owner/generation fences, honest
-// action states, request-hash replay/conflict, and custody endpoints. The
+// Focused proofs for the platform contract routes: auth, owner/generation
+// fences, honest outcomes and their statuses, request-hash replay/conflict,
+// and blob custody. The
 // fakes behave like the real seams — including their refusal shapes — so a
 // regression in reservation or outcome mapping turns red.
 
@@ -14,6 +15,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -66,8 +69,8 @@ func (f *fakeMessaging) Typing(_ context.Context, _ domain.ThreadRef, _ bool) er
 func (f *fakeMessaging) Unsend(_ context.Context, _ domain.ThreadRef, _ string) (bool, error) {
 	return true, nil
 }
-func (f *fakeMessaging) Members(_ context.Context, _ domain.ThreadRef) (domain.Thread, error) {
-	return domain.Thread{}, nil
+func (f *fakeMessaging) Members(_ context.Context, ref domain.ThreadRef) (domain.Thread, error) {
+	return domain.Thread{IsGroup: true, Title: "the group", Members: []domain.Member{{FBID: "fb-2", Username: "two"}}}, nil
 }
 
 type fakeSocial struct{}
@@ -100,6 +103,8 @@ type fakeActionStore struct {
 	mu   sync.Mutex
 	rows map[string]*bridge.ActionRow
 	gens map[string]int
+	// down makes every call fail, as an unreachable ledger does.
+	down error
 }
 
 func newFakeActionStore() *fakeActionStore {
@@ -109,6 +114,9 @@ func newFakeActionStore() *fakeActionStore {
 func (f *fakeActionStore) Reserve(_ context.Context, id, ok, oid string, og *int, op string, req json.RawMessage, hash string) (bridge.ReserveOutcome, *bridge.ActionRow, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.down != nil {
+		return 0, nil, f.down
+	}
 	if row, seen := f.rows[id]; seen {
 		if row.RequestHash != hash {
 			return bridge.ReserveConflict, row, nil
@@ -126,6 +134,9 @@ func (f *fakeActionStore) Reserve(_ context.Context, id, ok, oid string, og *int
 func (f *fakeActionStore) Get(_ context.Context, id string) (*bridge.ActionRow, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.down != nil {
+		return nil, f.down
+	}
 	return f.rows[id], nil
 }
 func (f *fakeActionStore) MarkStarted(_ context.Context, id string, messageID *int64) (bool, error) {
@@ -137,6 +148,8 @@ func (f *fakeActionStore) MarkStarted(_ context.Context, id string, messageID *i
 	}
 	row.State = bridge.ActionStarted
 	row.MessageID = messageID
+	at := time.Now().UnixMilli()
+	row.StartedAtMS = &at
 	return true, nil
 }
 func (f *fakeActionStore) Finish(_ context.Context, id, state, ref string, refs []string, ms *int64, ek, em string) error {
@@ -144,6 +157,8 @@ func (f *fakeActionStore) Finish(_ context.Context, id, state, ref string, refs 
 	defer f.mu.Unlock()
 	row := f.rows[id]
 	row.State = state
+	at := time.Now().UnixMilli()
+	row.SettledAtMS = &at
 	row.PlatformRef = nil
 	if ref != "" {
 		row.PlatformRef = &ref
@@ -185,310 +200,630 @@ func (f *fakeActionStore) ValidateOwner(_ context.Context, kind, id string, gen 
 
 // --- harness ------------------------------------------------------------------
 
+var v1Session = domain.Session{State: domain.StateAuthenticated, Connected: true, HasClient: true,
+	Self: domain.Self{FBID: "fb-self", IGID: "ig-self"}}
+
 func v1Server(t *testing.T, store ActionStore, msg *fakeMessaging, custody *bridge.Custody) *httptest.Server {
 	t.Helper()
-	svc := app.New(fakeSession{snap: domain.Session{State: domain.StateAuthenticated, Connected: true, HasClient: true, Self: domain.Self{FBID: "fb-self"}}}, msg, &fakeSocial{})
+	return v1ServerAs(t, v1Session, store, msg, custody)
+}
+
+func v1ServerAs(t *testing.T, snap domain.Session, store ActionStore, msg *fakeMessaging, custody *bridge.Custody) *httptest.Server {
+	t.Helper()
+	svc := app.New(fakeSession{snap: snap}, msg, &fakeSocial{})
 	srv := New(svc, stream.NewHub(), time.Now())
-	srv = srv.WithV1(&V1{
-		App: svc, Store: store, Custody: custody,
+	v1 := &V1{
+		App: svc, Custody: custody,
 		Metrics: bridge.NewMetrics(), AccountKey: "acct",
 		UpstreamOK: func() bool { return true },
-	})
+	}
+	if store != nil {
+		v1.Store = store
+	}
+	srv = srv.WithV1(v1)
 	ts := httptest.NewServer(RequireToken("tok")(srv.Routes()))
 	t.Cleanup(ts.Close)
 	return ts
 }
 
-func postAction(t *testing.T, ts *httptest.Server, body map[string]any) (int, map[string]any) {
+func newCustody(t *testing.T) *bridge.Custody {
 	t.Helper()
-	raw, _ := json.Marshal(body)
-	req, _ := http.NewRequest("POST", ts.URL+"/v1/actions", bytes.NewReader(raw))
+	c, err := bridge.NewCustody(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// call sends one v1Session request and returns its status and body.
+func call(t *testing.T, ts *httptest.Server, method, path string, body io.Reader, headers ...string) (int, []byte) {
+	t.Helper()
+	req, err := http.NewRequest(method, ts.URL+path, body)
+	if err != nil {
+		t.Fatal(err)
+	}
 	req.Header.Set("Authorization", "Bearer tok")
-	req.Header.Set("Content-Type", "application/json")
+	for i := 0; i+1 < len(headers); i += 2 {
+		req.Header.Set(headers[i], headers[i+1])
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	var out map[string]any
-	json.NewDecoder(resp.Body).Decode(&out)
-	return resp.StatusCode, out
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp.StatusCode, raw
 }
 
-func sendAction(actionID string, gen *int) map[string]any {
+func callJSON(t *testing.T, ts *httptest.Server, method, path string, body any, headers ...string) (int, map[string]any) {
+	t.Helper()
+	var r io.Reader
+	if body != nil {
+		raw, _ := json.Marshal(body)
+		r = bytes.NewReader(raw)
+	}
+	code, raw := call(t, ts, method, path, r, append([]string{"Content-Type", "application/json"}, headers...)...)
+	var out map[string]any
+	_ = json.Unmarshal(raw, &out)
+	return code, out
+}
+
+func postOp(t *testing.T, ts *httptest.Server, body map[string]any) (int, map[string]any) {
+	t.Helper()
+	return callJSON(t, ts, http.MethodPost, "/v1/platform/operations", body)
+}
+
+func sendOp(operationID string, gen *int) map[string]any {
 	owner := map[string]any{"kind": "work", "id": "w-1"}
 	if gen != nil {
 		owner["generation"] = *gen
 	}
 	return map[string]any{
-		"action_id": actionID, "owner": owner, "op": "send",
-		"request": map[string]any{
+		"operation_id": operationID, "owner": owner, "kind": "send",
+		"effect": map[string]any{
 			"target": map[string]any{"kind": "dm", "id": "100000000000042"},
 			"text":   "hi there",
 		},
 	}
 }
 
-// --- tests ---------------------------------------------------------------------
+// part reads one nested field of a decoded body: part(out, "payload", "error").
+func part(out map[string]any, keys ...string) any {
+	var v any = out
+	for _, k := range keys {
+		m, _ := v.(map[string]any)
+		v = m[k]
+	}
+	return v
+}
+
+// --- the contract document ------------------------------------------------------
+
+// contractPath is docs/service-api/openapi.json from this package's directory.
+const contractPath = "../../../../../docs/service-api/openapi.json"
+
+type contractDoc struct {
+	Paths      map[string]map[string]json.RawMessage `json:"paths"`
+	Components struct {
+		Schemas map[string]struct {
+			Status map[string]int `json:"x-http-status"`
+		} `json:"schemas"`
+	} `json:"components"`
+}
+
+func readContract(t *testing.T) contractDoc {
+	t.Helper()
+	raw, err := os.ReadFile(contractPath)
+	if err != nil {
+		t.Fatalf("the contract document must be readable: %v", err)
+	}
+	var doc contractDoc
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	return doc
+}
+
+// contractStatus is the kernel's status for every outcome, as the document
+// states it.
+func contractStatus(t *testing.T) map[string]int {
+	t.Helper()
+	doc := readContract(t)
+	out := map[string]int{}
+	for _, name := range []string{"OperationOutcome", "ReadOutcome"} {
+		table := doc.Components.Schemas[name].Status
+		if len(table) == 0 {
+			t.Fatalf("the document has no x-http-status for %s", name)
+		}
+		for outcome, status := range table {
+			out[outcome] = status
+		}
+	}
+	return out
+}
+
+// assertEnvelope checks a body is exactly the six parts, carries want, and
+// was answered under the document's status for it.
+func assertEnvelope(t *testing.T, status map[string]int, code int, out map[string]any, want string) {
+	t.Helper()
+	keys := make([]string, 0, len(out))
+	for k := range out {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	if got := strings.Join(keys, ","); got != "from,outcome,payload,scope,trace,when" {
+		t.Fatalf("envelope parts = %s, want the six (body %v)", got, out)
+	}
+	if out["outcome"] != want {
+		t.Fatalf("outcome = %v, want %s (body %v)", out["outcome"], want, out)
+	}
+	if code != status[want] {
+		t.Fatalf("%s answered %d, the contract says %d", want, code, status[want])
+	}
+	if want == "pending" {
+		if s := part(out, "when", "state"); s == "settled" {
+			t.Fatalf("a pending answer is not settled: %v", out["when"])
+		}
+	} else if _, isOp := out["when"].(map[string]any)["state"]; isOp && part(out, "when", "state") != "settled" {
+		t.Fatalf("%s must be settled, got %v", want, out["when"])
+	}
+}
+
+func assertNoEnvelope(t *testing.T, code int, out map[string]any, want int) {
+	t.Helper()
+	if code != want {
+		t.Fatalf("status = %d, want %d (body %v)", code, want, out)
+	}
+	if _, ok := out["outcome"]; ok {
+		t.Fatalf("a %d carries no envelope, got %v", want, out)
+	}
+}
+
+// --- item 2: the routes ---------------------------------------------------------
+
+// oldRoutes are the retired wire's collections under /v1/, spelled in parts
+// so the repository-wide scan for an old route name finds none here.
+var oldRoutes = []string{"actions", "self", "reads", "attachments", "health",
+	"groups", "guilds", "channels", "presence"}
+
+func TestRoutesMatchThePlatformContract(t *testing.T) {
+	doc := readContract(t)
+	documented := map[string]bool{}
+	for path, ops := range doc.Paths {
+		for method := range ops {
+			documented[strings.ToUpper(method)+" "+path] = true
+		}
+	}
+	if len(documented) == 0 {
+		t.Fatal("the document lists no routes")
+	}
+	svc := app.New(fakeSession{snap: v1Session}, &fakeMessaging{}, &fakeSocial{})
+	srv := New(svc, stream.NewHub(), time.Now()).WithV1(&V1{App: svc, Metrics: bridge.NewMetrics()})
+	_, patterns := srv.routes()
+	served := map[string]bool{}
+	for _, p := range patterns {
+		served[p] = true
+		path := p[strings.Index(p, " ")+1:]
+		if strings.HasPrefix(path, "/v1/platform/") || strings.HasPrefix(path, "/v1/operations/") {
+			if !documented[p] {
+				t.Errorf("serves %s, which the contract does not document", p)
+			}
+		}
+		for _, old := range oldRoutes {
+			if strings.HasPrefix(path, "/v1/"+old) {
+				t.Errorf("still serves the old route %s", p)
+			}
+		}
+	}
+	for route := range documented {
+		if !served[route] {
+			t.Errorf("the contract documents %s, which is not served", route)
+		}
+	}
+	for _, probe := range []string{"GET /health", "GET /ready"} {
+		if !served[probe] {
+			t.Errorf("%s must be registered", probe)
+		}
+	}
+
+	// Each documented route answers through its handler, not the mux's 404 or
+	// 405, and each old path is the mux's 404.
+	ts := v1Server(t, newFakeActionStore(), &fakeMessaging{}, newCustody(t))
+	for route := range documented {
+		method, path, _ := strings.Cut(route, " ")
+		path = strings.NewReplacer("{operation_id}", "op-x", "{account_id}", "self", "{key}", "key-x").Replace(path)
+		code, _ := call(t, ts, method, path, strings.NewReader("{}"))
+		if code == http.StatusNotFound || code == http.StatusMethodNotAllowed {
+			t.Errorf("%s %s answered %d from the mux", method, path, code)
+		}
+	}
+	for _, old := range []string{"actions", "actions/x", "self", "reads", "attachments/k", "health",
+		"groups", "guilds/g/members", "channels/c", "presence/g/u"} {
+		old = "/v1/" + old
+		for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut} {
+			if code, _ := call(t, ts, method, old, strings.NewReader("{}")); code != http.StatusNotFound {
+				t.Errorf("%s %s = %d, want 404", method, old, code)
+			}
+		}
+	}
+
+	// /ready: 200 only when the bridge can serve the contract.
+	for _, tc := range []struct {
+		name    string
+		snap    domain.Session
+		store   ActionStore
+		custody *bridge.Custody
+		want    int
+	}{
+		{"serving", v1Session, newFakeActionStore(), newCustody(t), http.StatusOK},
+		{"no action store", v1Session, nil, newCustody(t), http.StatusServiceUnavailable},
+		{"no custody", v1Session, newFakeActionStore(), nil, http.StatusServiceUnavailable},
+		{"checkpointed", domain.Session{State: domain.StateCheckpointed}, newFakeActionStore(), newCustody(t), http.StatusServiceUnavailable},
+	} {
+		ts := v1ServerAs(t, tc.snap, tc.store, &fakeMessaging{}, tc.custody)
+		code, out := callJSON(t, ts, http.MethodGet, "/ready", nil)
+		if code != tc.want {
+			t.Errorf("/ready %s = %d, want %d (%v)", tc.name, code, tc.want, out)
+		}
+		if _, ok := out["outcome"]; ok {
+			t.Errorf("/ready is a probe, not an envelope: %v", out)
+		}
+	}
+	unmounted := httptest.NewServer(New(svc, stream.NewHub(), time.Now()).Routes())
+	defer unmounted.Close()
+	resp, err := http.Get(unmounted.URL + "/ready")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("/ready without the contract mounted = %d, want 503", resp.StatusCode)
+	}
+}
 
 func TestV1AuthRequired(t *testing.T) {
 	ts := v1Server(t, newFakeActionStore(), &fakeMessaging{}, nil)
-	for _, path := range []string{"/v1/actions", "/v1/self", "/v1/health", "/v1/reads", "/v1/attachments/k"} {
-		resp, err := http.Post(ts.URL+path, "application/json", strings.NewReader("{}"))
+	for _, route := range []string{"POST /v1/platform/operations", "GET /v1/platform/operations/x",
+		"POST /v1/platform/queries", "GET /v1/platform/accounts/self", "PUT /v1/platform/blobs/k",
+		"GET /v1/platform/blobs/k", "GET /v1/operations/status", "GET /health", "GET /ready"} {
+		method, path, _ := strings.Cut(route, " ")
+		req, _ := http.NewRequest(method, ts.URL+path, strings.NewReader("{}"))
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("%s without token = %d, want 401", path, resp.StatusCode)
+			t.Fatalf("%s without token = %d, want 401", route, resp.StatusCode)
 		}
 	}
 }
 
-func TestV1HealthShape(t *testing.T) {
-	ts := v1Server(t, newFakeActionStore(), &fakeMessaging{}, nil)
-	req, _ := http.NewRequest("GET", ts.URL+"/v1/health", nil)
-	req.Header.Set("Authorization", "Bearer tok")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
+// --- item 3: outcomes and statuses ----------------------------------------------
+
+func TestOperationOutcomesFollowTheContract(t *testing.T) {
+	status := contractStatus(t)
+	gen := 7
+	tp := "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+	fresh := func(msg *fakeMessaging) (*fakeActionStore, *httptest.Server) {
+		store := newFakeActionStore()
+		store.gens["w-1"] = gen
+		return store, v1Server(t, store, msg, newCustody(t))
 	}
-	defer resp.Body.Close()
-	var out map[string]any
-	json.NewDecoder(resp.Body).Decode(&out)
-	if _, ok := out["ok"]; !ok {
-		t.Fatalf("/v1/health must carry ok: %v", out)
-	}
+
+	t.Run("complete", func(t *testing.T) {
+		_, ts := fresh(&fakeMessaging{})
+		raw, _ := json.Marshal(sendOp("w-1:send:0", &gen))
+		code, body := call(t, ts, http.MethodPost, "/v1/platform/operations", bytes.NewReader(raw), "traceparent", tp)
+		var out map[string]any
+		_ = json.Unmarshal(body, &out)
+		assertEnvelope(t, status, code, out, "complete")
+		if part(out, "from", "platform_ref") != "mid-1" || part(out, "from", "target") != "100000000000042" {
+			t.Fatalf("from = %v", out["from"])
+		}
+		if part(out, "scope", "level") != "room" || part(out, "scope", "id") != "100000000000042" {
+			t.Fatalf("scope = %v", out["scope"])
+		}
+		if out["trace"] != "4bf92f3577b34da6a3ce929d0e0e4736" {
+			t.Fatalf("trace = %v", out["trace"])
+		}
+		if part(out, "when", "started_at_ms") == nil || part(out, "when", "settled_at_ms") == nil {
+			t.Fatalf("a settled row carries its times: %v", out["when"])
+		}
+	})
+	t.Run("pending", func(t *testing.T) {
+		store, ts := fresh(&fakeMessaging{})
+		body := sendOp("w-1:send:p", &gen)
+		var effect any
+		raw, _ := json.Marshal(body["effect"])
+		_ = json.Unmarshal(raw, &effect)
+		hash, canon, _ := bridge.RequestHash(effect)
+		store.rows["w-1:send:p"] = &bridge.ActionRow{ActionID: "w-1:send:p", OwnerKind: "work", OwnerID: "w-1",
+			Op: "send", Request: canon, RequestHash: hash, State: bridge.ActionStarted}
+		code, out := postOp(t, ts, body)
+		assertEnvelope(t, status, code, out, "pending")
+		if part(out, "when", "state") != "started" {
+			t.Fatalf("when.state = %v, want started", part(out, "when", "state"))
+		}
+	})
+	t.Run("rejected", func(t *testing.T) {
+		_, ts := fresh(&fakeMessaging{sendErr: domain.ErrUpstreamRejected})
+		code, out := postOp(t, ts, sendOp("w-1:send:r", &gen))
+		assertEnvelope(t, status, code, out, "rejected")
+		if part(out, "payload", "error", "kind") != "upstream" {
+			t.Fatalf("payload.error = %v", part(out, "payload", "error"))
+		}
+	})
+	t.Run("unsupported", func(t *testing.T) {
+		_, ts := fresh(&fakeMessaging{})
+		code, out := postOp(t, ts, map[string]any{
+			"operation_id": "w-1:edit:0", "owner": map[string]any{"kind": "work", "id": "w-1", "generation": gen},
+			"kind":   "edit",
+			"effect": map[string]any{"target": map[string]any{"kind": "dm", "id": "100000000000042"}, "message_ref": "1802", "text": "x"},
+		})
+		assertEnvelope(t, status, code, out, "unsupported")
+	})
+	t.Run("uncertain", func(t *testing.T) {
+		_, ts := fresh(&fakeMessaging{reactOK: false})
+		code, out := postOp(t, ts, map[string]any{
+			"operation_id": "w-1:react:0", "owner": map[string]any{"kind": "work", "id": "w-1", "generation": gen},
+			"kind": "react",
+			"effect": map[string]any{
+				"target": map[string]any{"kind": "dm", "id": "100000000000042"},
+				"emoji":  "❤️", "to_message_id": "18025123456789012",
+			},
+		})
+		assertEnvelope(t, status, code, out, "uncertain")
+	})
+	t.Run("denied by a stale owner", func(t *testing.T) {
+		store, ts := fresh(&fakeMessaging{})
+		stale := gen - 1
+		code, out := postOp(t, ts, sendOp("w-1:send:d", &stale))
+		assertEnvelope(t, status, code, out, "denied")
+		if row, _ := store.Get(context.Background(), "w-1:send:d"); row == nil || row.PlatformRef != nil {
+			t.Fatal("a fenced operation is stored rejected and never reaches the platform")
+		}
+	})
+	t.Run("denied before any row", func(t *testing.T) {
+		store, ts := fresh(&fakeMessaging{})
+		code, out := postOp(t, ts, map[string]any{
+			"operation_id": "x:send:0", "owner": map[string]any{"kind": "stranger", "id": "x"},
+			"kind": "send", "effect": map[string]any{"text": "hi"},
+		})
+		assertEnvelope(t, status, code, out, "denied")
+		if len(store.rows) != 0 {
+			t.Fatal("an owner refused before reservation writes no row")
+		}
+	})
+	t.Run("unavailable without a ledger", func(t *testing.T) {
+		ts := v1Server(t, nil, &fakeMessaging{}, nil)
+		code, out := postOp(t, ts, sendOp("w-1:send:u", &gen))
+		assertEnvelope(t, status, code, out, "unavailable")
+	})
+	t.Run("unavailable with the ledger down", func(t *testing.T) {
+		store, ts := fresh(&fakeMessaging{})
+		store.down = errors.New("connection refused")
+		code, out := postOp(t, ts, sendOp("w-1:send:u", &gen))
+		assertEnvelope(t, status, code, out, "unavailable")
+		code, out = callJSON(t, ts, http.MethodGet, "/v1/platform/operations/w-1:send:u", nil)
+		assertEnvelope(t, status, code, out, "unavailable")
+	})
+	t.Run("read-back ok and nothing_found", func(t *testing.T) {
+		_, ts := fresh(&fakeMessaging{})
+		postOp(t, ts, sendOp("w-1:send:0", &gen))
+		code, out := callJSON(t, ts, http.MethodGet, "/v1/platform/operations/w-1:send:0", nil)
+		assertEnvelope(t, status, code, out, "ok")
+		inner, _ := out["payload"].(map[string]any)
+		assertEnvelope(t, status, http.StatusOK, inner, "complete")
+		if part(inner, "from", "platform_ref") != "mid-1" {
+			t.Fatalf("read-back payload = %v", inner)
+		}
+		code, out = callJSON(t, ts, http.MethodGet, "/v1/platform/operations/unknown", nil)
+		assertEnvelope(t, status, code, out, "nothing_found")
+		if out["payload"] != nil {
+			t.Fatalf("nothing_found carries no payload: %v", out["payload"])
+		}
+	})
+	t.Run("a kind outside the closed set is 422 and reserves nothing", func(t *testing.T) {
+		store, ts := fresh(&fakeMessaging{})
+		body := sendOp("w-1:poke:0", &gen)
+		body["kind"] = "poke"
+		code, out := postOp(t, ts, body)
+		assertNoEnvelope(t, code, out, http.StatusUnprocessableEntity)
+		if len(store.rows) != 0 {
+			t.Fatal("an unknown kind reserves no row")
+		}
+	})
+	t.Run("an operation_id reused for another effect is 409", func(t *testing.T) {
+		_, ts := fresh(&fakeMessaging{})
+		postOp(t, ts, sendOp("w-1:send:0", &gen))
+		body := sendOp("w-1:send:0", &gen)
+		body["effect"] = map[string]any{"target": map[string]any{"kind": "dm", "id": "100000000000042"}, "text": "different"}
+		code, out := postOp(t, ts, body)
+		assertNoEnvelope(t, code, out, http.StatusConflict)
+	})
+	t.Run("queries", func(t *testing.T) {
+		_, ts := fresh(&fakeMessaging{})
+		code, out := callJSON(t, ts, http.MethodPost, "/v1/platform/queries",
+			map[string]any{"kind": "roster", "params": map[string]any{"conversation_id": "100000000000042"}})
+		assertEnvelope(t, status, code, out, "ok")
+		if part(out, "payload", "conversation_id") != "100000000000042" || part(out, "payload", "is_group") != true {
+			t.Fatalf("roster payload = %v", out["payload"])
+		}
+		if part(out, "from", "source") != "instagram" || part(out, "when", "known_by") == nil {
+			t.Fatalf("read parts = %v %v", out["from"], out["when"])
+		}
+		code, out = callJSON(t, ts, http.MethodPost, "/v1/platform/queries",
+			map[string]any{"kind": "channels", "params": map[string]any{}})
+		assertEnvelope(t, status, code, out, "unavailable")
+		code, out = callJSON(t, ts, http.MethodPost, "/v1/platform/queries",
+			map[string]any{"kind": "weather", "params": map[string]any{}})
+		assertNoEnvelope(t, code, out, http.StatusUnprocessableEntity)
+	})
+	t.Run("account", func(t *testing.T) {
+		_, ts := fresh(&fakeMessaging{})
+		code, out := callJSON(t, ts, http.MethodGet, "/v1/platform/accounts/self", nil)
+		assertEnvelope(t, status, code, out, "ok")
+		if part(out, "payload", "platform") != "instagram" || part(out, "payload", "primary") != "fb-self" {
+			t.Fatalf("account payload = %v", out["payload"])
+		}
+		code, out = callJSON(t, ts, http.MethodGet, "/v1/platform/accounts/someone-else", nil)
+		assertEnvelope(t, status, code, out, "nothing_found")
+		before := v1ServerAs(t, domain.Session{State: domain.StateLoggedOut}, newFakeActionStore(), &fakeMessaging{}, nil)
+		code, out = callJSON(t, before, http.MethodGet, "/v1/platform/accounts/self", nil)
+		assertEnvelope(t, status, code, out, "unavailable")
+	})
+	t.Run("status", func(t *testing.T) {
+		_, ts := fresh(&fakeMessaging{})
+		code, out := callJSON(t, ts, http.MethodGet, "/v1/operations/status", nil)
+		assertEnvelope(t, status, code, out, "ok")
+		if part(out, "payload", "ok") != true || part(out, "payload", "capture") != "capturing" {
+			t.Fatalf("status payload = %v", out["payload"])
+		}
+	})
+	t.Run("blobs", func(t *testing.T) {
+		_, ts := fresh(&fakeMessaging{})
+		put := func(data []byte) (int, map[string]any) {
+			code, raw := call(t, ts, http.MethodPut, "/v1/platform/blobs/blob-1?pin=w-1", bytes.NewReader(data))
+			var out map[string]any
+			_ = json.Unmarshal(raw, &out)
+			return code, out
+		}
+		code, out := put([]byte("blob bytes"))
+		assertEnvelope(t, status, code, out, "complete")
+		if part(out, "payload", "key") != "blob-1" {
+			t.Fatalf("complete payload = %v", out["payload"])
+		}
+		code, out = put([]byte("blob bytes"))
+		assertEnvelope(t, status, code, out, "complete")
+		code, out = put([]byte("other bytes"))
+		assertEnvelope(t, status, code, out, "rejected")
+		if part(out, "payload", "error", "kind") != "conflict" {
+			t.Fatalf("conflict payload = %v", out["payload"])
+		}
+		code, raw := call(t, ts, http.MethodPut, "/v1/platform/blobs/blob-big",
+			bytes.NewReader(make([]byte, bridge.MaxAttachmentBytes+1)))
+		_ = json.Unmarshal(raw, &out)
+		assertEnvelope(t, status, code, out, "rejected")
+		if part(out, "payload", "error", "kind") != "too_large" {
+			t.Fatalf("too_large payload = %v", out["payload"])
+		}
+		code, raw = call(t, ts, http.MethodGet, "/v1/platform/blobs/blob-1", nil)
+		if code != http.StatusOK || string(raw) != "blob bytes" {
+			t.Fatalf("GET blob = %d %q", code, raw)
+		}
+		code, out = callJSON(t, ts, http.MethodGet, "/v1/platform/blobs/nope", nil)
+		assertEnvelope(t, status, code, out, "nothing_found")
+		if out["payload"] != nil {
+			t.Fatalf("a blob GET envelope carries no payload: %v", out["payload"])
+		}
+		off := v1Server(t, newFakeActionStore(), &fakeMessaging{}, nil)
+		code, raw = call(t, off, http.MethodPut, "/v1/platform/blobs/blob-1", strings.NewReader("x"))
+		_ = json.Unmarshal(raw, &out)
+		assertEnvelope(t, status, code, out, "unavailable")
+		code, out = callJSON(t, off, http.MethodGet, "/v1/platform/blobs/blob-1", nil)
+		assertEnvelope(t, status, code, out, "unavailable")
+	})
 }
 
-func TestV1SelfShape(t *testing.T) {
-	ts := v1Server(t, newFakeActionStore(), &fakeMessaging{}, nil)
-	req, _ := http.NewRequest("GET", ts.URL+"/v1/self", nil)
-	req.Header.Set("Authorization", "Bearer tok")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
+// --- item 5: the request hash -----------------------------------------------------
+
+// The digest of the effect today's BridgeAdapter.send builds, computed by the
+// Python request_hash. A send reserved before the switch replays only if Go
+// hashes the same effect to the same digest.
+const pinnedEffect = `{"attachments":[],"mentions":[],"preview":null,"quote":null,"styles":[],"target":{"id":"conv-1","kind":"group","thread":""},"text":"hello"}`
+const pinnedDigest = "2769bc2bbbf2d02f1cf2a8d29db8261987258a0d6873e5b1e5c81aeb54d54035"
+
+func TestRequestHashCoversTheEffectOnly(t *testing.T) {
+	var effect any
+	if err := json.Unmarshal([]byte(pinnedEffect), &effect); err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
-	var out map[string]any
-	json.NewDecoder(resp.Body).Decode(&out)
-	if out["platform"] != "instagram" {
-		t.Fatalf("self.platform = %v", out["platform"])
+	if got, _, _ := bridge.RequestHash(effect); got != pinnedDigest {
+		t.Fatalf("RequestHash(effect) = %s, want %s", got, pinnedDigest)
 	}
-	if _, ok := out["primary"]; !ok {
-		t.Fatalf("self must carry primary: %v", out)
-	}
-	if _, ok := out["aliases"]; !ok {
-		t.Fatalf("self must carry aliases: %v", out)
-	}
-}
-
-func TestV1SendConfirmed(t *testing.T) {
+	// The stored hash is the effect's alone: the same effect under another
+	// operation id, owner and kind stores the same digest.
 	store := newFakeActionStore()
 	store.gens["w-1"] = 7
+	store.gens["w-2"] = 3
 	ts := v1Server(t, store, &fakeMessaging{}, nil)
-	gen := 7
-	code, out := postAction(t, ts, sendAction("w-1:send:0", &gen))
-	if code != 200 {
-		t.Fatalf("send = %d %v", code, out)
-	}
-	if out["state"] != "confirmed" || out["outcome"] != "confirmed" {
-		t.Fatalf("confirmed send expected, got %v", out)
-	}
-	if out["platform_ref"] != "mid-1" {
-		t.Fatalf("platform_ref = %v, want mid-1", out["platform_ref"])
+	for _, body := range []map[string]any{
+		{"operation_id": "w-1:send:0", "owner": map[string]any{"kind": "work", "id": "w-1", "generation": 7},
+			"kind": "send", "effect": json.RawMessage(pinnedEffect)},
+		{"operation_id": "w-2:typing:5", "owner": map[string]any{"kind": "work", "id": "w-2", "generation": 3},
+			"kind": "typing", "effect": json.RawMessage(pinnedEffect)},
+	} {
+		postOp(t, ts, body)
+		row, _ := store.Get(context.Background(), body["operation_id"].(string))
+		if row == nil {
+			t.Fatalf("%s reserved no row", body["operation_id"])
+		}
+		if row.RequestHash != pinnedDigest {
+			t.Fatalf("%s stored hash %s, want %s", body["operation_id"], row.RequestHash, pinnedDigest)
+		}
 	}
 }
 
-// Text plus an attachment is TWO platform items — the action row keeps
-// every confirmed native id, and replay/readback return the same list.
+// --- behaviour carried over from the old wire ---------------------------------
+
+// Text plus an attachment is TWO platform items — the row keeps every
+// confirmed native id, and replay and read-back answer the same list.
 func TestV1SendMultiPostKeepsEveryRef(t *testing.T) {
 	store := newFakeActionStore()
 	store.gens["w-1"] = 7
-	custody, err := bridge.NewCustody(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	custody := newCustody(t)
 	if _, err := custody.Put("k1", bytes.NewReader([]byte("generated-bytes")),
 		"image/png", "a.png", "w-1"); err != nil {
 		t.Fatal(err)
 	}
 	ts := v1Server(t, store, &fakeMessaging{}, custody)
 	gen := 7
-	body := sendAction("w-1:send:0", &gen)
-	body["request"].(map[string]any)["attachments"] = []any{
+	body := sendOp("w-1:send:0", &gen)
+	body["effect"].(map[string]any)["attachments"] = []any{
 		map[string]any{"key": "k1", "file_name": "a.png", "media_type": "image/png"},
 	}
-	code, out := postAction(t, ts, body)
-	if code != 200 || out["state"] != "confirmed" {
+	wantRefs := func(where string, refs any) {
+		t.Helper()
+		list, _ := refs.([]any)
+		if len(list) != 2 || list[0] != "mid-1" || list[1] != "mid-2" {
+			t.Fatalf("%s platform_refs = %v, want [mid-1 mid-2]", where, refs)
+		}
+	}
+	code, out := postOp(t, ts, body)
+	if code != 200 || out["outcome"] != "complete" {
 		t.Fatalf("multi-post send = %d %v", code, out)
 	}
-	refs, _ := out["platform_refs"].([]any)
-	if len(refs) != 2 || refs[0] != "mid-1" || refs[1] != "mid-2" {
-		t.Fatalf("platform_refs = %v, want [mid-1 mid-2]", out["platform_refs"])
+	wantRefs("send", part(out, "payload", "platform_refs"))
+	if part(out, "from", "platform_ref") != "mid-2" {
+		t.Fatalf("platform_ref = %v, want the last piece's id mid-2", part(out, "from", "platform_ref"))
 	}
-	if out["platform_ref"] != "mid-2" {
-		t.Fatalf("platform_ref = %v, want the last piece's id mid-2", out["platform_ref"])
-	}
-	// Replay returns the stored row — same full list, no second send.
-	code, out = postAction(t, ts, body)
-	if code != 200 || out["state"] != "confirmed" {
+	code, out = postOp(t, ts, body)
+	if code != 200 || out["outcome"] != "complete" {
 		t.Fatalf("replay = %d %v", code, out)
 	}
-	refs, _ = out["platform_refs"].([]any)
-	if len(refs) != 2 || refs[0] != "mid-1" || refs[1] != "mid-2" {
-		t.Fatalf("replay platform_refs = %v, want [mid-1 mid-2]", out["platform_refs"])
-	}
-	// GET readback sees the same durable list.
-	req, _ := http.NewRequest("GET", ts.URL+"/v1/actions/w-1:send:0", nil)
-	req.Header.Set("Authorization", "Bearer tok")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	var got map[string]any
-	json.NewDecoder(resp.Body).Decode(&got)
-	refs, _ = got["platform_refs"].([]any)
-	if len(refs) != 2 || refs[0] != "mid-1" || refs[1] != "mid-2" {
-		t.Fatalf("GET platform_refs = %v, want [mid-1 mid-2]", got["platform_refs"])
-	}
+	wantRefs("replay", part(out, "payload", "platform_refs"))
+	_, out = callJSON(t, ts, http.MethodGet, "/v1/platform/operations/w-1:send:0", nil)
+	wantRefs("read-back", part(out, "payload", "payload", "platform_refs"))
 }
 
-// A stale owner generation must never reach the platform call.
-func TestV1GenerationFence(t *testing.T) {
-	store := newFakeActionStore()
-	store.gens["w-1"] = 8 // platform says 8; caller claims 7
-	msg := &fakeMessaging{}
-	ts := v1Server(t, store, msg, nil)
-	gen := 7
-	code, out := postAction(t, ts, sendAction("w-1:send:0", &gen))
-	if code != 200 || out["state"] != "rejected" {
-		t.Fatalf("stale generation must reject: %d %v", code, out)
-	}
-	// And the request must never have touched the messaging port — the fake
-	// would have handed back mid-1 if it had.
-	row, _ := store.Get(context.Background(), "w-1:send:0")
-	if row.PlatformRef != nil {
-		t.Fatal("fenced action must have no platform ref")
-	}
-}
-
-// Replay by the same request hash returns the stored row — no second send.
+// Replay by the same effect returns the stored row — no second send.
 func TestV1ReplaySameRequest(t *testing.T) {
 	store := newFakeActionStore()
 	store.gens["w-1"] = 7
 	msg := &fakeMessaging{sent: []domain.Sent{{ID: "mid-1", TimestampMS: 1}}}
 	ts := v1Server(t, store, msg, nil)
 	gen := 7
-	postAction(t, ts, sendAction("w-1:send:0", &gen))
-	code, out := postAction(t, ts, sendAction("w-1:send:0", &gen))
-	if code != 200 || out["platform_ref"] != "mid-1" {
+	postOp(t, ts, sendOp("w-1:send:0", &gen))
+	code, out := postOp(t, ts, sendOp("w-1:send:0", &gen))
+	if code != 200 || part(out, "from", "platform_ref") != "mid-1" {
 		t.Fatalf("replay must return the stored row: %d %v", code, out)
 	}
 	if len(msg.sent) != 0 {
 		t.Fatal("replay must not execute the op again")
-	}
-}
-
-// Same action_id, different request → 409, never a silent second send.
-func TestV1ConflictOnDifferentRequest(t *testing.T) {
-	store := newFakeActionStore()
-	store.gens["w-1"] = 7
-	ts := v1Server(t, store, &fakeMessaging{}, nil)
-	gen := 7
-	postAction(t, ts, sendAction("w-1:send:0", &gen))
-	body := sendAction("w-1:send:0", &gen)
-	body["request"] = map[string]any{"target": map[string]any{"kind": "dm", "id": "100000000000042"}, "text": "different"}
-	code, _ := postAction(t, ts, body)
-	if code != http.StatusConflict {
-		t.Fatalf("same id different request = %d, want 409", code)
-	}
-}
-
-// An unconfirmed reaction answer is UNCERTAIN, not confirmed and not a
-// blind retry candidate.
-func TestV1ReactUncertain(t *testing.T) {
-	store := newFakeActionStore()
-	store.gens["w-1"] = 7
-	ts := v1Server(t, store, &fakeMessaging{reactOK: false}, nil)
-	gen := 7
-	body := map[string]any{
-		"action_id": "w-1:react:0", "owner": map[string]any{"kind": "work", "id": "w-1", "generation": gen},
-		"op": "react",
-		"request": map[string]any{
-			"target":        map[string]any{"kind": "dm", "id": "100000000000042"},
-			"emoji":         "❤️",
-			"to_message_id": "18025123456789012",
-		},
-	}
-	code, out := postAction(t, ts, body)
-	if code != 200 || out["state"] != "uncertain" || out["outcome"] != "uncertain" {
-		t.Fatalf("silent post-state reaction must be uncertain: %d %v", code, out)
-	}
-}
-
-// Instagram has no outbound edit: rejected as unsupported, never faked.
-func TestV1EditUnsupported(t *testing.T) {
-	store := newFakeActionStore()
-	store.gens["w-1"] = 7
-	ts := v1Server(t, store, &fakeMessaging{}, nil)
-	gen := 7
-	body := map[string]any{
-		"action_id": "w-1:edit:0", "owner": map[string]any{"kind": "work", "id": "w-1", "generation": gen},
-		"op":      "edit",
-		"request": map[string]any{"target": map[string]any{"kind": "dm", "id": "100000000000042"}, "message_ref": "1802", "text": "x"},
-	}
-	code, out := postAction(t, ts, body)
-	if code != 200 || out["state"] != "rejected" || out["outcome"] != "unsupported" {
-		t.Fatalf("edit must answer rejected/unsupported: %d %v", code, out)
-	}
-}
-
-func TestV1ActionsUnavailableWithoutStore(t *testing.T) {
-	ts := v1Server(t, nil, &fakeMessaging{}, nil)
-	code, out := postAction(t, ts, sendAction("w-1:send:0", nil))
-	if code != http.StatusServiceUnavailable {
-		t.Fatalf("nil store = %d, want 503", code)
-	}
-	_ = out
-}
-
-func TestV1AttachmentPutGet(t *testing.T) {
-	custody, err := bridge.NewCustody(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	ts := v1Server(t, newFakeActionStore(), &fakeMessaging{}, custody)
-	req, _ := http.NewRequest("PUT", ts.URL+"/v1/attachments/test-key?pin=w-1",
-		strings.NewReader("blob bytes"))
-	req.Header.Set("Authorization", "Bearer tok")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("PUT attachment = %d, want 201", resp.StatusCode)
-	}
-	req2, _ := http.NewRequest("GET", ts.URL+"/v1/attachments/test-key", nil)
-	req2.Header.Set("Authorization", "Bearer tok")
-	resp2, err := http.DefaultClient.Do(req2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp2.Body.Close()
-	buf := make([]byte, 64)
-	n, _ := resp2.Body.Read(buf)
-	if string(buf[:n]) != "blob bytes" {
-		t.Fatalf("GET attachment = %q", string(buf[:n]))
-	}
-	req3, _ := http.NewRequest("GET", ts.URL+"/v1/attachments/nope", nil)
-	req3.Header.Set("Authorization", "Bearer tok")
-	resp3, _ := http.DefaultClient.Do(req3)
-	resp3.Body.Close()
-	if resp3.StatusCode != http.StatusNotFound {
-		t.Fatalf("unknown attachment = %d, want 404", resp3.StatusCode)
 	}
 }
 
@@ -502,56 +837,47 @@ func TestV1LargeAttachmentReachesSendUnchanged(t *testing.T) {
 		{"application/octet-stream", "generated.bin"},
 	} {
 		t.Run(media.mime, func(t *testing.T) {
-			custody, err := bridge.NewCustody(t.TempDir())
-			if err != nil {
-				t.Fatal(err)
-			}
 			store := newFakeActionStore()
 			store.gens["w-1"] = 7
 			msg := &fakeMessaging{}
-			ts := v1Server(t, store, msg, custody)
+			ts := v1Server(t, store, msg, newCustody(t))
 			data := bytes.Repeat([]byte{0x5a}, 1319325)
 			for _, tc := range []struct {
-				method string
-				data   []byte
-				code   int
+				method  string
+				data    []byte
+				outcome string
 			}{
-				{http.MethodPut, data, http.StatusCreated},
-				{http.MethodPut, data, http.StatusCreated},
-				{http.MethodPut, []byte("different bytes"), http.StatusConflict},
-				{http.MethodGet, nil, http.StatusOK},
+				{http.MethodPut, data, "complete"},
+				{http.MethodPut, data, "complete"},
+				{http.MethodPut, []byte("different bytes"), "rejected"},
+				{http.MethodGet, nil, ""},
 			} {
-				req, err := http.NewRequest(tc.method, ts.URL+"/v1/attachments/generated-large", bytes.NewReader(tc.data))
-				if err != nil {
-					t.Fatal(err)
+				code, body := call(t, ts, tc.method, "/v1/platform/blobs/generated-large", bytes.NewReader(tc.data))
+				if code != http.StatusOK {
+					t.Fatalf("%s blob = %d", tc.method, code)
 				}
-				req.Header.Set("Authorization", "Bearer tok")
-				resp, err := http.DefaultClient.Do(req)
-				if err != nil {
-					t.Fatal(err)
+				if tc.method == http.MethodGet {
+					if !bytes.Equal(body, data) {
+						t.Fatal("GET must return the original bytes after a rejected overwrite")
+					}
+					continue
 				}
-				body, err := io.ReadAll(resp.Body)
-				resp.Body.Close()
-				if err != nil {
-					t.Fatal(err)
-				}
-				if resp.StatusCode != tc.code {
-					t.Fatalf("%s attachment = %d, want %d", tc.method, resp.StatusCode, tc.code)
-				}
-				if tc.method == http.MethodGet && !bytes.Equal(body, data) {
-					t.Fatal("GET must return the original bytes after a rejected overwrite")
+				var out map[string]any
+				_ = json.Unmarshal(body, &out)
+				if out["outcome"] != tc.outcome {
+					t.Fatalf("PUT blob outcome = %v, want %s", out["outcome"], tc.outcome)
 				}
 			}
 			gen := 7
-			body := sendAction("w-1:send:large", &gen)
-			request := body["request"].(map[string]any)
-			request["text"] = ""
-			request["attachments"] = []any{
+			body := sendOp("w-1:send:large", &gen)
+			effect := body["effect"].(map[string]any)
+			effect["text"] = ""
+			effect["attachments"] = []any{
 				map[string]any{"key": "generated-large", "media_type": media.mime, "file_name": media.filename},
 			}
 			for range 2 {
-				code, out := postAction(t, ts, body)
-				if code != http.StatusOK || out["state"] != "confirmed" {
+				code, out := postOp(t, ts, body)
+				if code != http.StatusOK || out["outcome"] != "complete" {
 					t.Fatalf("send = %d %v", code, out)
 				}
 			}
@@ -563,37 +889,7 @@ func TestV1LargeAttachmentReachesSendUnchanged(t *testing.T) {
 	}
 }
 
-// GET /v1/actions/{id} is the recovery readback.
-func TestV1ActionReadback(t *testing.T) {
-	store := newFakeActionStore()
-	store.gens["w-1"] = 7
-	ts := v1Server(t, store, &fakeMessaging{}, nil)
-	gen := 7
-	postAction(t, ts, sendAction("w-1:send:0", &gen))
-	req, _ := http.NewRequest("GET", ts.URL+"/v1/actions/w-1:send:0", nil)
-	req.Header.Set("Authorization", "Bearer tok")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	var out map[string]any
-	json.NewDecoder(resp.Body).Decode(&out)
-	if out["state"] != "confirmed" || out["platform_ref"] != "mid-1" {
-		t.Fatalf("readback = %v", out)
-	}
-	req2, _ := http.NewRequest("GET", ts.URL+"/v1/actions/unknown", nil)
-	req2.Header.Set("Authorization", "Bearer tok")
-	resp2, _ := http.DefaultClient.Do(req2)
-	resp2.Body.Close()
-	if resp2.StatusCode != http.StatusNotFound {
-		t.Fatalf("unknown action readback = %d, want 404", resp2.StatusCode)
-	}
-}
-
-var _ = fmt.Sprint // keep fmt for later additions
-
-// A valid caller traceparent becomes a span LINK on the action's bounded
+// A valid caller traceparent becomes a span LINK on the operation's bounded
 // deliver root — never a parent — and an absent or invalid header simply
 // carries no link (design/instagram-adoption/bridge.md «Messaging contract»).
 func TestV1ActionDeliverSpanLinksCallerContext(t *testing.T) {
@@ -604,18 +900,11 @@ func TestV1ActionDeliverSpanLinksCallerContext(t *testing.T) {
 	gen := 7
 	tp := "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
 
-	raw, _ := json.Marshal(sendAction("w-1:send:0", &gen))
-	req, _ := http.NewRequest("POST", ts.URL+"/v1/actions", bytes.NewReader(raw))
-	req.Header.Set("Authorization", "Bearer tok")
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("traceparent", tp)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != 200 {
-		t.Fatalf("send = %d", resp.StatusCode)
+	raw, _ := json.Marshal(sendOp("w-1:send:0", &gen))
+	code, _ := call(t, ts, http.MethodPost, "/v1/platform/operations", bytes.NewReader(raw),
+		"Content-Type", "application/json", "traceparent", tp)
+	if code != 200 {
+		t.Fatalf("send = %d", code)
 	}
 
 	var deliver sdktrace.ReadOnlySpan
@@ -651,18 +940,17 @@ func TestV1ActionInvalidTraceparentIsNoLinkNotAFailure(t *testing.T) {
 
 	for i, tp := range []string{"", "garbage", "00-zz-00-01",
 		"00-00000000000000000000000000000000-0000000000000000-01"} {
-		raw, _ := json.Marshal(sendAction(fmt.Sprintf("w-1:send:x%d", i), &gen))
-		req, _ := http.NewRequest("POST", ts.URL+"/v1/actions", bytes.NewReader(raw))
-		req.Header.Set("Authorization", "Bearer tok")
-		req.Header.Set("Content-Type", "application/json")
+		raw, _ := json.Marshal(sendOp(fmt.Sprintf("w-1:send:x%d", i), &gen))
+		headers := []string{"Content-Type", "application/json"}
 		if tp != "" {
-			req.Header.Set("traceparent", tp)
+			headers = append(headers, "traceparent", tp)
 		}
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
+		_, body := call(t, ts, http.MethodPost, "/v1/platform/operations", bytes.NewReader(raw), headers...)
+		var out map[string]any
+		_ = json.Unmarshal(body, &out)
+		if out["trace"] != "" {
+			t.Fatalf("an absent or invalid traceparent is trace \"\", got %v", out["trace"])
 		}
-		resp.Body.Close()
 	}
 	for _, s := range rec.Ended() {
 		if s.Name() == "queue.deliver" && len(s.Links()) != 0 {

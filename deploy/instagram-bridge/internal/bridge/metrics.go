@@ -46,7 +46,7 @@ func (m *Metrics) Count(name string) {
 	c.Add(1)
 }
 
-// Value is the counter's current value (for /v1/health and tests).
+// Value is the counter's current value (for tests).
 func (m *Metrics) Value(name string) int64 {
 	if c, ok := m.counters[name]; ok {
 		return c.Load()

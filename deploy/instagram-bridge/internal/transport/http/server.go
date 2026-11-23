@@ -6,12 +6,13 @@
 // never a wire struct.
 //
 // The routes are design/instagram-adoption/bridge.md «Messaging contract»:' table: nouns (a thread, its messages, an
-// account, a post), plus the two paths where the bridge talks about ITSELF
-// (`/health`, `/events`), which are operational and not resources.
+// account, a post), plus the paths where the bridge talks about ITSELF
+// (`/health`, `/ready`, `/events`), which are operational and not resources.
 //
-// Every route shares ONE status table and ONE failure envelope (errors.go).
-// Success is the resource, with no `ok` field: the status carries success or
-// failure.
+// Every resource route shares ONE status table and ONE failure envelope
+// (errors.go). Success is the resource, with no `ok` field: the status
+// carries success or failure. The platform contract's routes (v1.go) answer
+// its envelope instead (envelope.go).
 package httptransport
 
 import (
@@ -58,8 +59,8 @@ func New(svc *app.Service, events Events, startedAt time.Time) *Server {
 	return &Server{app: svc, events: events, startedAt: startedAt}
 }
 
-// WithV1 mounts the shared bridge facade (/v1/*, /metrics) when the durable
-// wiring is configured.
+// WithV1 mounts the platform contract (/v1/platform/*, /v1/operations/*,
+// /metrics) when the durable wiring is configured.
 func (s *Server) WithV1(v *V1) *Server {
 	s.v1 = v
 	return s
@@ -67,9 +68,28 @@ func (s *Server) WithV1(v *V1) *Server {
 
 // Routes is the whole handler, traced.
 func (s *Server) Routes() http.Handler {
-	mux := http.NewServeMux()
-	// The bridge talking about ITSELF: its health, its event stream.
+	h, _ := s.routes()
+	return h
+}
+
+// recordingMux is a ServeMux that keeps every pattern registered on it, so
+// the route test reads what is served rather than a copy of it.
+type recordingMux struct {
+	*http.ServeMux
+	patterns []string
+}
+
+func (m *recordingMux) HandleFunc(pattern string, h func(http.ResponseWriter, *http.Request)) {
+	m.patterns = append(m.patterns, pattern)
+	m.ServeMux.HandleFunc(pattern, h)
+}
+
+// routes is the traced handler and every pattern it serves.
+func (s *Server) routes() (http.Handler, []string) {
+	mux := &recordingMux{ServeMux: http.NewServeMux()}
+	// The bridge talking about ITSELF: its probes, its event stream.
 	mux.HandleFunc("GET /health", s.handleHealth)
+	mux.HandleFunc("GET /ready", s.handleReady)
 	mux.HandleFunc("GET /events", s.handleEvents)
 	// --- RESOURCES ---------------------------------------------------------
 	//
@@ -125,19 +145,18 @@ func (s *Server) Routes() http.Handler {
 	// and people's words, none of which may become a span attribute.
 	mux.HandleFunc("GET /posts/{shortcode}/comments", observability.PatternOnlyRoute("GET /posts/{shortcode}/comments", s.handleComments))
 	mux.HandleFunc("POST /posts/{shortcode}/comments", observability.PatternOnlyRoute("POST /posts/{shortcode}/comments", s.handlePostComment))
-	// The shared durable-bridge facade (frozen nora-bridge-wire v1): actions,
-	// self, health, reads, attachment custody and metrics.
+	// The platform contract (v1.go) and the durable-path metrics.
 	if s.v1 != nil {
-		mux.HandleFunc("POST /v1/actions", s.v1.handleActions)
-		mux.HandleFunc("GET /v1/actions/{action_id}", s.v1.handleActionGet)
-		mux.HandleFunc("GET /v1/self", s.v1.handleV1Self)
-		mux.HandleFunc("GET /v1/health", s.v1.handleV1Health)
-		mux.HandleFunc("POST /v1/reads", s.v1.handleV1Reads)
-		mux.HandleFunc("PUT /v1/attachments/{key}", s.v1.handleV1AttachmentPut)
-		mux.HandleFunc("GET /v1/attachments/{key}", s.v1.handleV1AttachmentGet)
+		mux.HandleFunc("POST /v1/platform/operations", s.v1.handleOperation)
+		mux.HandleFunc("GET /v1/platform/operations/{operation_id}", s.v1.handleOperationGet)
+		mux.HandleFunc("POST /v1/platform/queries", s.v1.handleQuery)
+		mux.HandleFunc("GET /v1/platform/accounts/{account_id}", s.v1.handleAccount)
+		mux.HandleFunc("PUT /v1/platform/blobs/{key}", s.v1.handleBlobPut)
+		mux.HandleFunc("GET /v1/platform/blobs/{key}", s.v1.handleBlobGet)
+		mux.HandleFunc("GET /v1/operations/status", s.v1.handleStatus)
 		mux.HandleFunc("GET /metrics", s.v1.handleMetrics)
 	}
-	return observability.TraceHTTP(mux)
+	return observability.TraceHTTP(mux.ServeMux), mux.patterns
 }
 
 // --- /health ------------------------------------------------------------------
@@ -187,6 +206,22 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		RejectedClients: rejected,
 		UptimeSeconds:   int(time.Since(s.startedAt).Seconds()),
 	})
+}
+
+// --- /ready -------------------------------------------------------------------
+
+// handleReady is 200 only when the bridge can serve the platform contract
+// (the status read's `ok`), 503 otherwise. A probe, not an envelope.
+func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
+	ready, detail := false, "the platform contract is not mounted"
+	if s.v1 != nil {
+		ready, detail = s.v1.readiness()
+	}
+	status := http.StatusOK
+	if !ready {
+		status = http.StatusServiceUnavailable
+	}
+	writeJSON(w, status, map[string]any{"ready": ready, "detail": detail})
 }
 
 // --- /events ------------------------------------------------------------------
