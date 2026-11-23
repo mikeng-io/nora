@@ -57,9 +57,9 @@ a blob `GET` returns, a stream's frames, and the root probes.
 
 | part | read | operation |
 |---|---|---|
-| outcome | a read outcome | an operation outcome and its state |
+| outcome | a read outcome | an operation outcome |
 | payload | the resource, or the page | the applied effect, or the reason it was not applied |
-| when | observed at, by the source's clock, and how that time was known | started and settled times |
+| when | observed at, by the source's clock, and how that time was known | the record's state, and its started and settled times |
 | from | the source, its health, and its coverage when partial | the target and the platform reference when one exists |
 | scope | the scope the read resolved to, at its contract's level | the same, for the effect |
 | trace | the trace id | the trace id |
@@ -144,6 +144,8 @@ Field names are `snake_case`; times are integer epoch milliseconds named
   a caller names a subject, never its own scope. Each contract declares the
   level it scopes at: a room, a unit, an agent, an identity, a workspace,
   the installation, or none for a public surface without a unit.
+- A read whose scope cannot be resolved at all, such as when the membership
+  it needs cannot be read, is `unavailable`, never `nothing_found`.
 - A read resolves within its scope, never resolves and then filters: what
   the principal's scope or exposure does not reach answers `nothing_found`,
   exactly as what does not exist, and a page is complete for that scope.
