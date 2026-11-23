@@ -221,7 +221,10 @@ async def test_an_idle_seam_is_not_cut_by_the_read_deadline():
 
 
 class _Response:
-    status = 202
+    status = 200
+
+    async def json(self, content_type=None):
+        return {"outcome": "complete"}
 
     async def __aenter__(self):
         return self
@@ -249,7 +252,7 @@ async def test_the_utterance_forward_carries_the_service_bearer():
 
     assert ok is True
     url, kwargs = session.calls[0]
-    assert url == "http://nora:9100/app/v1/voice/utterance"
+    assert url == "http://nora:9100/v1/intake/operations"
     assert kwargs["headers"] == {"Authorization": f"Bearer {TOKEN}"}
 
 

@@ -5,7 +5,7 @@ wake gate, and the **only** consumer of the voice-sidecar's TCP seam
 (`deploy/voice-sidecar/TRANSPORT.md`). Per-user PCM comes in, openWakeWord
 listens for 「喂 Nora」, the utterance that follows is transcribed by the
 local `stt` service, and the **text** is forwarded to Nora's
-`POST /app/v1/voice/utterance`, where it walks the same ingest path as a
+`POST /v1/intake/operations` as a `record` operation, where it walks the same ingest path as a
 typed Discord message.
 
 **Audio is transient:** frames are consumed, scored, and dropped — never
@@ -23,7 +23,7 @@ sidecar frames (TCP :4599)        [u32be len][u8 id_len][user_id][pcm]
   -> gate.WakeGate (per user)     LISTENING -(score >= threshold)-> COLLECTING
                                   -1s silence tail / 10s ceiling-> Utterance
   -> stt.transcribe               16kHz mono WAV -> stt:8000 (model=$STT_MODEL, default sensevoice, language=yue)
-  -> stt.forward_utterance        JSON {user_id, text, guild_id} -> nora:9100
+  -> stt.forward_utterance        intake record {event_id, guild_id, user_id, text} -> nora:9100
      (guild_id from the connection's hello frame, not from config)
 ```
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 
 import aiohttp
 
@@ -92,9 +93,14 @@ async def forward_utterance(
     token: str,
     voice_channel_id: str | None = None,
 ) -> bool:
-    """The transcript -> Nora's `/app/v1/voice/utterance` as JSON. Text only —
-    audio never crosses this boundary. Never raises; a refused forward drops
-    the utterance (transient by design) and is visible in the log.
+    """The transcript -> Nora's `POST /v1/intake/operations` as a `record`
+    operation. Text only — audio never crosses this boundary. Never raises;
+    a refused forward drops the utterance (transient by design) and is
+    visible in the log.
+
+    True only for a 200 whose envelope's outcome is `complete`; any other
+    outcome, a status that disagrees with it, a body with no envelope, a
+    redirect or a transport failure is False.
 
     `token` is the shared service bearer; Nora refuses the utterance without it.
 
@@ -105,16 +111,30 @@ async def forward_utterance(
     `voice_channel_id` is provenance and OPTIONAL. It is whatever the
     controller reports it is CURRENTLY connected to; omitted when that could
     not be read, because a stale channel id in a trace is worse than none."""
-    url = nora_url.rstrip("/") + "/app/v1/voice/utterance"
-    payload: dict[str, str] = {"user_id": user_id, "text": text, "guild_id": guild_id}
+    url = nora_url.rstrip("/") + "/v1/intake/operations"
+    effect: dict[str, str] = {
+        "event_id": str(uuid.uuid4()),
+        "kind": "utterance",
+        "guild_id": guild_id,
+        "user_id": user_id,
+        "text": text,
+    }
     if voice_channel_id:
-        payload["voice_channel_id"] = voice_channel_id
+        effect["voice_channel_id"] = voice_channel_id
+    request = {"operation_id": str(uuid.uuid4()), "kind": "record", "effect": effect}
     try:
         async with session.post(
-            url, json=payload, headers={"Authorization": f"Bearer {token}"},
+            url, json=request, headers={"Authorization": f"Bearer {token}"},
+            allow_redirects=False,
         ) as response:
-            if response.status != 202:
-                log.warning("nora refused the utterance (http %s)", response.status)
+            try:
+                body = await response.json(content_type=None)
+            except ValueError:
+                body = None
+            outcome = body.get("outcome") if isinstance(body, dict) else None
+            if response.status != 200 or outcome != "complete":
+                log.warning("nora refused the utterance (http %s, outcome %s)",
+                            response.status, outcome)
                 return False
             return True
     except asyncio.CancelledError:
