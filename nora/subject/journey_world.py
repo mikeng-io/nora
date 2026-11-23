@@ -331,7 +331,7 @@ class JourneyServices:
             # What the Signal bridge serves: `roster` only; `groups` is unavailable.
             if kind != "roster" or params.get("conversation_id") != "g1":
                 return QueryAnswer("unavailable")
-            return QueryAnswer("ok", {"members": [["+852111"]]})
+            return QueryAnswer("ok", {"members": [{"number": "+852111"}]})
 
         return PlatformSurface(
             platform="signal", account=account, status=status, query=query,
