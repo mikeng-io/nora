@@ -28,7 +28,8 @@ is in.
 
 - **Database-enforced:** every edge references both endpoints by id and unit
   through the registry, so the database refuses an edge to an id that was never
-  registered and an edge across units.
+  registered, and any edge across units other than from an affiliate's row to
+  a row of its primary.
 - **Written together:** a registry row and its kind row are created, and later
   tombstoned, in one transaction. No graph row is physically removed while
   anything points at it.
@@ -56,7 +57,7 @@ is in.
 
 - Retrieval walks the edge table from scoped anchors and loads current rows
   from their tables ([loop](loop.md)).
-- The unit is applied before any ranking or walk.
+- The readable units are applied before any ranking or walk.
 - Only code writes. Model proposals reach a table only through admission.
 
 ## Why this shape

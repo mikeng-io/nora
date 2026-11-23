@@ -47,16 +47,16 @@ has no group-send authority. Computer and job leases retain their distinct
 purposes; the DM turn slot and per-scope computer lease are not interchangeable.
 
 Before every deferred result send, the system re-resolves the active grant,
-anchor, direct target and launching-platform opt-out. Revocation or a default
+anchor, direct target and launching-platform opt-out. Revocation or a primary-unit
 change holds the result privately without redirecting it to another account,
 unit or group. Unchanged authority delivers once through the launching target
 and scope turn slot.
 
-Computer and subagent spend shares one per-person budget across linked
-platforms, anchors and concurrent launches. Admission reserves atomically,
+Computer and subagent spend shares one budget per person and agent across
+linked platforms, anchors and concurrent launches. Admission reserves atomically,
 completion settles actual usage and cancellation releases unused reservation.
 Changing account or unit cannot reset an exhausted allowance, and another
-person's budget remains independent.
+person's or another agent's budget remains independent.
 
 ## Backup and failure
 

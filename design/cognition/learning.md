@@ -25,7 +25,7 @@ alone does not prove the revision caused it.
 |---|---|---|---|
 | **verdict** | the outcome of one achieve intention: achieved, dropped, leaked or unknown | computed | when it closes |
 | **track record** | the verdicts of one class of intention | computed | at read time |
-| **lesson** | how to act in a unit, citing several verdicts or one correction | inferred, induced | stored with provenance; revised as evidence changes |
+| **lesson** | how to act in a unit, citing several verdicts or one correction; an affiliate also reads its primary's, its own first | inferred, induced | stored with provenance; revised as evidence changes |
 | **reconsideration** | an intention due again because a row it rests on was revised | committed, by the rests-on edge | when that row changes |
 
 - The **class** of an intention is computed: its form, who it is owed to, its

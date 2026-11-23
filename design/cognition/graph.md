@@ -68,19 +68,32 @@ endpoint kinds. A new meaning is a reviewed edge type, never a new store.
 
 ## Scope
 
-- **unit** — the read boundary. A row is read only inside its unit. Each Nora
-  has one **primary** unit, her home circle; other units are **affiliates**,
-  helper or ad hoc circles, each still its own boundary. A person's DM with
-  Nora is a room of her primary unit.
-- **origin room** — where the row was established, which governs where it may
-  render and where an act about it lands.
+- **unit** — the read boundary. Every unit belongs to one
+  [agent](boundaries.md#agents). Its **primary** unit is the whole circle the
+  agent serves; an **affiliate** is a sub-group inside that circle, such as a
+  trip or a game group. A unit shares its rows unit-wide: every room of it
+  reads them, bounded only by the DM, exclusion and exposure rules here.
+- **inheritance** — an affiliate reads its primary read-only, because everyone
+  in it already shares the primary. Its rooms and reflection passes see the
+  primary's rows; every write — a row, a revision, a retirement, a closing
+  edge, an act — stays in the affiliate. The primary never reads an affiliate,
+  affiliates never read each other, and no unit reads another agent's; a DM is
+  the one exception ([boundaries](boundaries.md#scope)).
+- **membership** — every affiliate member is a primary member. An affiliate
+  listing anyone else is refused; a person leaving the primary leaves its
+  affiliates before any further read, and an affiliate whose membership cannot
+  be confirmed reads only itself.
+- **origin room** — where the row was established: where an act about it
+  lands and, for raw DM items, the only room they render in. It never hides a
+  unit's other rows from that unit's rooms or from its affiliates.
 - **persons** — the people it concerns, by id.
 - **excluded persons** — people it must not be revealed to or through.
-- **lineage** — the source restrictions inherited from what it cites: what a
-  row may be rendered as, where, and to whom. Exclusions and exposure always
-  inherit. For DM-origin evidence the raw items stay in the DM, while a claim
-  citing them may be shown to the model in any room of the primary unit, marked
-  with its DM origin ([boundaries](boundaries.md)).
+- **lineage** — the source restrictions inherited from what it cites, draws
+  on or rests on, across an affiliate's edges to its primary too: what a row
+  may be rendered as, where, and to whom. Exclusions, exposure and DM origin
+  always inherit. For DM-origin evidence the raw items stay in the DM, while a claim
+  citing them may be shown to the model in any room that reads the primary
+  unit, marked with its DM origin ([boundaries](boundaries.md)).
 - **exposure** — **external** (may reach a room through the guards),
   **internal** (Nora reads it, it never egresses), or **operator** (Nora never
   reads it).
@@ -109,15 +122,16 @@ row inspectable.
 
 | kind | basis | is | lifecycle |
 |---|---|---|---|
-| **entity** | computed when code resolves it; inferred when its identity is judged | an anchor: a person, room, unit, Nora, a game, a place, a topic | admitted, merged, retired |
+| **entity** | computed when code resolves it; inferred when its identity is judged | an anchor: a person, room, unit, an agent, a game, a place, a topic | admitted, merged, retired |
 | **item** | observed | something that happened: a message, link, reaction, online-status change, location fix, fetched page, watch result, tool outcome, Nora's own send | append-only |
 | **aggregate** | computed | a derivation over items: episodes, rollups, counts and baselines, verdicts, track records, support tallies | recomputed, never edited |
 | **claim** | inferred | a belief about an entity or a relation | revised, retired, or ended by its valid-to time |
 | **intention** | committed | what Nora has committed to | open, then closed by an outcome or dropped |
 
 Registered [identities](../managed-identity-access/identity.md#one-identity-many-accounts),
-rooms, units and Nora have code-resolved pointers to authored identity and policy;
-no model proposes, merges or retires those canonical records. Each unit has its
+rooms, units and agents have code-resolved pointers to authored identity and
+policy, and each unit points to its agent; no model proposes, merges or
+retires those canonical records. Each unit has its
 own graph pointer to a canonical identity, preserving that unit's disclosure
 boundary. A sender code cannot resolve stays unresolved on the item. Other
 entities are inferred and exist only as endpoints of admitted, evidenced edges;

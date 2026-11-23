@@ -37,7 +37,7 @@ average of its members. Nora's profile describes how she has come across.
   cannot be represented faithfully stays a reading of its source.
 - Depicting or sharing something establishes no ownership, residence,
   expertise or liking. Copies of the same bytes or occasion add no support.
-  Another agent's output is never evidence about the person who runs it.
+  Another bot's output is never evidence about the person who runs it.
 - A plan is not attendance without evidence from the window; a cancelled plan
   does not prove an event happened.
 

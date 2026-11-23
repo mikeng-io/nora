@@ -29,6 +29,7 @@ but shared posts and reels still require an asked turn.
 
 Background social observation is separate from interactive reads. It polls
 only listed members who have not opted out, records their items and perceptions,
+places only public accounts' items in units ([observation](../cognition/observation.md)),
 and never crawls tagged strangers. Live social lookup verbs are not silently
 granted to Cognition merely because the recorded stream exists.
 

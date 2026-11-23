@@ -44,6 +44,14 @@ written in orient and cited to the item.
 - Recording is unconditional within the admitted source scope.
 - Social observation covers admitted members and their opted-in accounts; a
   stranger on a member's item stays a handle and is not read as a member.
+- A source shared with a group outside Nora, such as a location circle, is
+  placed in the highest unit whose members all share it: the primary when the
+  group covers all of it, otherwise each covered affiliate, which then reads
+  nothing of it from the primary. Belonging to another unit never places a
+  person's source there; a unit the group only partly covers receives nothing.
+- A social item is placed only from a public account. A private account's
+  audience is not observed, so its items reach no unit; unknown privacy is
+  private.
 - Face matching identifies only a person labelled by themselves or the
   operator; an unmatched face stays unknown, and a non-member's biometric
   vector is transient, never stored.
@@ -91,7 +99,7 @@ time it becomes eligible. It is not a conclusion and not an instruction.
 | an intention due, a review time, a valid-to time ending, a deadline passing | the clock |
 | a verdict written | study's verify |
 | a person's correction aimed at Nora, or a person's statement about themselves | record, by an addressing or self-reference cue; a **strong cue**, so a wake follows quickly |
-| a row revised, retired or contradicted that others draw on or rest on | admission; names the row, its new revision and the dependents |
+| a row revised, retired or contradicted that others draw on or rest on | admission; names the row, its new revision and the dependents, each in the dependent's own unit |
 
 **Rules**
 

@@ -2,26 +2,27 @@
 
 ## Authority before side effects
 
-A conversational DM requires the feature grant, an eligible declared person, a
-supported platform and a valid anchor unit. The sender and the direct peer must
+A conversational DM requires the agent's feature grant, an eligible declared person, a
+supported platform and the receiving agent's primary unit as its anchor. The sender and the direct peer must
 resolve independently to that same person through operator-authored account
 identifiers. Display names, profile names and text claims never match.
 
-The anchor must explicitly list the person. An operator may choose it; inference
-is allowed only when exactly one unit is eligible. Zero or ambiguous eligibility
-or an unknown direct peer refuses before Record, media custody, memory feeds,
-stimulus, provider creation or filesystem work; an invalid explicit choice is an
-invalid configuration and fails startup.
+The account that received the DM names the agent, and the anchor is that
+agent's primary unit, which must explicitly list the person. A person the
+primary does not list, an account bound to no agent, or an unknown direct peer
+refuses before Record, media custody, memory feeds,
+stimulus, provider creation or filesystem work; an agent without a primary
+unit is an invalid configuration and fails startup.
 
 Linked platforms are admitted within that grant by default, with an explicit
-per-platform opt-out applying to both inbound work and later sends. A supported
+per-agent, per-platform opt-out applying to both inbound work and later sends. A supported
 transport is not implied by a direct-send route or an OTP template. Unsupported
 media is refused before custody rather than retained without a scoped reader.
 
 ## One scope across accounts
 
-The DM scope binds the person and anchor unit once. Every admitted account on
-every admitted platform uses that scope for transcript, workspace and turn
+The DM scope binds the person and anchor unit once. Every admitted account of
+that person messaging that agent uses that scope for transcript, workspace and turn
 serialization. Its opaque identity replaces phone-bearing direct chat IDs in
 logs, traces and provider metadata; native targeting remains intact in the
 authorized transport and Record.
@@ -44,23 +45,25 @@ Retries and fallbacks never select another linked account.
 
 ## Reading across units
 
-The DM may read the default unit's permitted context and, when the topic calls
-for it, the context of another unit that explicitly lists the person. It does
+The DM may read the primary unit's permitted context and, when the topic calls
+for it, the context of the agent's affiliates that explicitly list the person.
+Another agent's units are never read. It does
 not render every unit indiscriminately; unclear topic scope asks rather than
 guesses.
 
 Each source unit gets a DM audience projection containing only this person.
-Every room, item and nested lineage entry must pass for that audience in its
-own unit. A room the person is not listed in is unreadable even when its unit
-is shared. Ambiguous or unresolved origins withhold the whole item.
+Every item and nested lineage entry must pass for that audience in its own
+unit. A unit shares its rows unit-wide, so a unit that lists the person is
+readable across its rooms; raw items of another DM never are. Ambiguous or unresolved origins withhold the whole item.
 
-Another person's DM is never readable. Group turns keep the ordinary same-unit
-resolver and gain no cross-unit content. Unit membership alone never grants raw
+Another person's DM is never readable. Group turns keep the ordinary unit read
+rule — their own unit, and the primary for an affiliate's rooms — and gain no
+DM-only reads. Unit membership alone never grants raw
 DM access to a group-facing turn or to a model argument.
 
 ## Change and revocation
 
-Changing the default unit selects a different DM scope and workspace. Old
+Changing an agent's primary unit selects a different DM scope and workspace. Old
 messages, redeliveries, files and queued work remain bound to their original
 partition. Existing publications remain in their original unit until ordinary
 correction or retirement.

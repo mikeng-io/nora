@@ -125,7 +125,7 @@ pass's input**; everything after the input is the same run.
 
 ## The debrief
 
-Nora is sessionless: every engagement pass is a fresh agent, and nothing in
+Nora is sessionless: every engagement pass is a fresh run, and nothing in
 her own run follows the reply. The debrief is the one exception that carries a
 pass's working state to the next: it serializes that state into the graph
 before the room's slot is released.
