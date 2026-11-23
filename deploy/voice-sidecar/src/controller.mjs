@@ -40,25 +40,6 @@ const MAX_SPEECH_BYTES = 2 * 1024 * 1024; // decoded b64 budget per `speak`
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 // A query body (on arrival), and every operation but `speak` (once parsed).
 const MAX_CONTROL_BYTES = 64 * 1024;
-// What a snapshot echoes from requests is bounded, so an answer is small: the
-// current track's url (at most 8 KiB as JSON, else 400) and title (cut to
-// 1 KiB as JSON; it is display only) and a channel_id of at most 64
-// characters. With the fixed fields that makes an answer at most 12 KiB, which
-// the ledger reserves before an operation runs. Its 256 entries then take at
-// most 3 MiB; in flight at once is at most the listener's 64 connections.
-const MAX_URL_JSON_BYTES = 8 * 1024;
-const MAX_TITLE_JSON_BYTES = 1024;
-export const MAX_ANSWER_BYTES = 12 * 1024;
-const MAX_CHANNEL_ID = 64;
-
-const jsonBytes = (value) => Buffer.byteLength(JSON.stringify(value));
-
-// The title cut to its bound, on code point boundaries.
-function boundedTitle(title) {
-  const points = Array.from(title);
-  while (jsonBytes(points.join('')) > MAX_TITLE_JSON_BYTES) points.length = Math.floor(points.length * 0.9);
-  return points.join('');
-}
 // An operation_id is the ledger key: a short ASCII word, nothing that could be
 // a path, a header or a log-injection payload.
 const OPERATION_ID_RE = /^[A-Za-z0-9._:-]{1,64}$/;
@@ -167,7 +148,7 @@ export function createController({
   const handlers = {
     join: async (effect) => {
       if (effect.guild_id !== guildId) throw httpError(400, 'wrong_guild');
-      if (typeof effect.channel_id !== 'string' || !effect.channel_id || effect.channel_id.length > MAX_CHANNEL_ID) {
+      if (typeof effect.channel_id !== 'string' || !effect.channel_id) {
         throw httpError(400, 'invalid_body', 'channel_id is required');
       }
       // Any channel in this guild (design/voice-channel/audio.md «Connection
@@ -184,8 +165,8 @@ export function createController({
     play: async (effect, operationId) => {
       checkGuild(effect);
       checkGeneration(effect);
-      if (typeof effect.stream_url !== 'string' || !effect.stream_url || jsonBytes(effect.stream_url) > MAX_URL_JSON_BYTES) {
-        throw httpError(400, 'invalid_body', 'stream_url is required, at most 8 KiB');
+      if (typeof effect.stream_url !== 'string' || !effect.stream_url) {
+        throw httpError(400, 'invalid_body', 'stream_url is required');
       }
       // Optional source capability (design/voice-channel/audio.md «Speech and
       // music arbitration»): false marks a live/non-seekable stream; absent
@@ -195,7 +176,7 @@ export function createController({
       }
       arbiter.playMusic({
         streamUrl: effect.stream_url,
-        title: typeof effect.title === 'string' ? boundedTitle(effect.title) : null,
+        title: typeof effect.title === 'string' ? effect.title : null,
         durationSeconds: typeof effect.duration_seconds === 'number' ? effect.duration_seconds : null,
         requestId: operationId,
         resumable: effect.resumable ?? undefined,
@@ -446,7 +427,7 @@ export function createFrontDoor({
   // Refuses to exist without a token: every route here moves audio or holds
   // a voice connection, and the bridges already refuse to start unauthenticated.
   if (!authToken) throw new Error('createFrontDoor needs an authToken (NORA_BRIDGE_TOKEN)');
-  const ledger = createLedger({ clock, answerBytes: MAX_ANSWER_BYTES, ...ledgerOptions });
+  const ledger = createLedger({ clock, ...ledgerOptions });
 
   // Reads, parses and shape-checks a JSON object body, answering the refusal
   // itself; null when it did.
@@ -508,8 +489,12 @@ export function createFrontDoor({
       }
       if (!VOICE_KINDS.includes(kind)) return sendRefusal(res, 422, 'unknown_kind');
       if (!isObject(effect)) return sendRefusal(res, 400, 'invalid_body');
-      // Only `speak` carries audio; every other kind keeps the control bound.
-      if (kind !== 'speak' && read.bytes > MAX_CONTROL_BYTES) return sendRefusal(res, 413, 'body_too_large');
+      // Only `speak` carries audio; every other kind keeps the control bound,
+      // as sent and as parsed (so the strings a snapshot echoes stay within it).
+      if (kind !== 'speak' && (read.bytes > MAX_CONTROL_BYTES
+        || Buffer.byteLength(JSON.stringify(body)) > MAX_CONTROL_BYTES)) {
+        return sendRefusal(res, 413, 'body_too_large');
+      }
       if (kind !== 'report' && !(typeof effect.guild_id === 'string' && SNOWFLAKE_RE.test(effect.guild_id))) {
         return sendRefusal(res, 400, 'wrong_guild');
       }

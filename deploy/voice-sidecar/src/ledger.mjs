@@ -3,12 +3,18 @@
 // a hash of the kind and effect and the answered envelope, never audio.
 //
 // The first occurrence of an id reserves an in-flight entry BEFORE its handler
-// runs, so a concurrent duplicate awaits the same execution. The reservation
-// charges `answerBytes`, the most an answer can hold, and the settled envelope
-// replaces it in place. Nothing unexpired is ever evicted: an entry leaves only
-// when its TTL passes, so a receipt stays readable for its whole five minutes.
-// When the bounds are reached a NEW id is refused before it runs, and the
-// refusal removes nothing.
+// runs, so a concurrent duplicate awaits the same execution. Each entry is
+// counted at its actual serialized size, and a settled envelope always
+// replaces its reservation. Nothing unexpired is ever evicted: an entry leaves
+// only when its TTL passes, so a receipt stays readable for its whole five
+// minutes. A NEW id is refused before it runs once either bound (256 entries,
+// 512 KiB) is reached, and the refusal removes nothing.
+//
+// ponytail: an admitted answer is kept even past the byte bound, so the bytes
+// held can exceed 512 KiB by what the operations then in flight answer. An
+// answer echoes at most two control bodies' strings (a channel_id, the current
+// track), about 132 KiB, and at most 64 are in flight (the listener limit):
+// about 9 MiB in the worst case.
 
 import { createHash } from 'node:crypto';
 
@@ -16,8 +22,8 @@ import { realClock } from './outbox.mjs';
 
 const TTL_MS = 5 * 60 * 1000;
 const MAX_ENTRIES = 256;
+const MAX_BYTES = 512 * 1024;
 const SWEEP_MS = 30 * 1000;
-const ANSWER_BYTES = 12 * 1024;
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -36,10 +42,8 @@ export function createLedger({
   clock = realClock,
   ttlMs = TTL_MS,
   maxEntries = MAX_ENTRIES,
+  maxBytes = MAX_BYTES,
   sweepMs = SWEEP_MS,
-  answerBytes = ANSWER_BYTES,
-  // Room for every entry at its largest answer, plus its id and hash.
-  maxBytes = maxEntries * (answerBytes + 256),
 } = {}) {
   // id -> { fingerprint, bytes } plus in-flight { promise, pending } | settled { envelope, expiresAt }
   const entries = new Map();
@@ -77,14 +81,13 @@ export function createLedger({
     },
     /** Reserve `id` for an execution in flight; false when no room can be made. */
     reserve(id, print, promise, pending) {
-      const size = Buffer.byteLength(id) + print.length
-        + Math.max(answerBytes, Buffer.byteLength(JSON.stringify(pending)));
+      const size = Buffer.byteLength(id) + print.length + Buffer.byteLength(JSON.stringify(pending));
       if (!hasRoom(size)) return false;
       entries.set(id, { fingerprint: print, promise, pending, bytes: size });
       bytes += size;
       return true;
     },
-    /** Keep the settled envelope in its reservation's place; it is always kept. */
+    /** Keep the settled envelope in its reservation's place, at its own size; it is always kept. */
     settle(id, print, envelope) {
       forget(id);
       const size = Buffer.byteLength(id) + print.length + Buffer.byteLength(JSON.stringify(envelope));

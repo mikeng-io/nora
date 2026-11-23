@@ -397,6 +397,17 @@ test('replace-play: old playback emits no track-finished, new playback_id is min
   await h.close();
 });
 
+test('a play with a long stream_url and title, under the control bound, completes and echoes both', async () => {
+  const h = await makeHarness();
+  const { generation } = await h.join();
+  const url = `https://cdn.test/${'u'.repeat(8222 - 'https://cdn.test/'.length)}`;
+  const title = 't'.repeat(40 * 1024);
+  const res = await h.op('play', { guild_id: GUILD, generation, stream_url: url, title });
+  assert.equal(res.outcome, 'complete');
+  assert.deepEqual(res.state.player.current, { title, url });
+  await h.close();
+});
+
 test('stop stays connected: connection and wake pump survive, no-op when idle', async () => {
   const h = await makeHarness();
   const { generation } = await h.join();
