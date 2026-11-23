@@ -35,8 +35,8 @@ from ...infra.voice.hub import VoiceControllerHub
 from .channels import ClientChannelDirectory
 from .command_acts import DiscordCommandActs
 from .listener import DiscordListener
+from .music_commands import recover_voice_sessions
 from .music_commands import register as register_music_commands
-from .music_commands import resume_persisted_sessions as resume_persisted_music_sessions
 from .music_manager import MusicPlayerManager
 from .music_notify import ResolveMusicChannel, no_music_channel
 from .parser import (
@@ -177,13 +177,6 @@ class DiscordAdapter:
         self._current_client = client
 
         async def _register_music_commands() -> None:
-            # A guild with no persisted MUSIC row never calls `hub.join` in the
-            # resume, so a wake-reply-only boot would leave the controller's
-            # connection un-adopted and every speech reply dropped. Adoption runs
-            # first, so a session it recovers is the resume's cache hit and a
-            # guild with a persisted session never holds one without a player.
-            if self._voice_hub is not None:
-                await self._voice_hub.adopt_boot_voice_sessions(self._voice_guild_ids)
             # The command tree shares the gateway client's lifecycle.
             if self._music_manager is not None:
                 await register_music_commands(
@@ -194,15 +187,16 @@ class DiscordAdapter:
                     client_getter=self.current_client,
                     command_acts=self._command_acts,
                 )
-                # Safe to run on every on_ready, not just a genuine boot
-                # (resume_persisted_sessions's own guard against clobbering
-                # an already-live player).
-                await resume_persisted_music_sessions(
-                    client, self._music_manager, hub=self._voice_hub,
-                    resolve_music_channel=self._resolve_music_channel,
-                    client_getter=self.current_client,
-                    command_acts=self._command_acts,
-                )
+            # Every on_ready: each persisted music guild is recovered under its
+            # player's lock, then every other voice guild adopts its connection.
+            await recover_voice_sessions(
+                client, self._music_manager, hub=self._voice_hub,
+                voice_guild_ids=self._voice_guild_ids,
+                resolve_music_channel=self._resolve_music_channel,
+                client_getter=self.current_client,
+                command_acts=self._command_acts,
+            )
+            if self._music_manager is not None:
                 # Idempotent, so every on_ready is safe: the watch asks the
                 # controller whether sound is actually moving, because
                 # otherwise nora would only learn that music stopped from

@@ -301,13 +301,11 @@ class VoiceControllerHub:
             self._last_event_seq[guild_id] = event_seq
 
     async def adopt_boot_voice_sessions(self, voice_guild_ids: Iterable[str]) -> None:
-        """Boot-time reconciliation for guilds with NO persisted music session.
+        """Boot-time reconciliation: adopt the connection each guild's controller kept alive.
 
-        `resume_persisted_sessions` (music_commands.py) only calls
-        `hub.join` for a guild that has a persisted MUSIC row — a
-        wake-only/speech-only guild never calls it at all, so the
-        controller's boot-joined connection (its own durable desired-state)
-        sits un-adopted in this process: `stream_speech` then
+        Without it a wake-only/speech-only guild (no persisted MUSIC row)
+        leaves the controller's boot-joined connection (its own durable
+        desired-state) un-adopted in this process: `stream_speech` then
         silently returns `False` for every wake reply until a human
         happens to run `/discord join` or `/music play`.
 
@@ -323,8 +321,8 @@ class VoiceControllerHub:
         opposite of that.
 
         Idempotent with an already-cached session — `hub.join` short-
-        circuits on the cache. Runs BEFORE `resume_persisted_sessions`, so a
-        session it recovers is the resume's cache hit and gets its player.
+        circuits on the cache. A persisted music guild calls it under its
+        player's lock (`recover_voice_sessions`, music_commands.py).
         Best-effort: a controller unreachable at this exact boot instant
         must not fail nora's boot; the next `/discord join`, `/music play`,
         or voice-channel send retries the same `hub.join` path."""

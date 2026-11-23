@@ -1,6 +1,6 @@
-"""Boot recovery on the Discord bridge's `on_ready`: whichever join first
-yields a valid connection snapshot, the guild with a persisted music session
-ends up with its player, so the live track's finish still advances the queue."""
+"""Boot recovery on the Discord bridge's `on_ready`: a guild with a persisted
+music session ends up with its player whichever join first yields a valid
+snapshot, and a track-finished arriving mid-recovery advances that player."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import asyncio
 from datetime import UTC, datetime
 
 import discord
+import pytest
 from aiohttp import web
 
 from nora.app.voice_events import VoiceEventConsumer
@@ -34,8 +35,8 @@ from tests.integration.test_discord_bridge_control import (
 
 
 def _controller(state: dict) -> web.Application:
-    # Connected and playing `pb-live`; the first join answer leaves out
-    # the `playback_id` key, as a malformed reply would.
+    # The first `malformed` joins omit `playback_id`; with `hold`, the
+    # first join's answer (snapshotted on arrival) waits for it.
 
     def snap() -> dict:
         return {"voice": "connected", "generation": "gen-1", "channel_id": VOICE_CHANNEL,
@@ -47,8 +48,12 @@ def _controller(state: dict) -> web.Application:
         kind, effect = body["kind"], body["effect"]
         state["calls"].append(kind)
         snapshot = snap()
-        if kind == "join" and state["calls"].count("join") == 1:
+        joins = state["calls"].count("join")
+        if kind == "join" and joins <= state["malformed"]:
             snapshot.pop("playback_id")
+        if kind == "join" and joins == 1 and state["hold"] is not None:
+            state["join_arrived"].set()
+            await state["hold"].wait()
         if kind == "play":
             state["plays"].append(effect["stream_url"])
             state["playback_id"] = f"pb-{len(state['plays'])}"
@@ -65,13 +70,14 @@ def _controller(state: dict) -> web.Application:
     return app
 
 
-async def test_a_malformed_first_join_still_leaves_the_guild_its_player(
-        aiohttp_client, monkeypatch):
+async def _boot(aiohttp_client, monkeypatch, *, playback_id: str | None, malformed: int = 0,
+                hold: asyncio.Event | None = None):
     async def _sync(self):
         return None
 
     monkeypatch.setattr(discord.app_commands.CommandTree, "sync", _sync)
-    state: dict = {"playback_id": "pb-live", "calls": [], "plays": []}
+    state: dict = {"playback_id": playback_id, "malformed": malformed, "hold": hold,
+                   "join_arrived": asyncio.Event(), "calls": [], "plays": []}
     controller = await aiohttp_client(_controller(state))
     hub = VoiceControllerHub({GUILD: VoiceControllerClient(
         str(controller.make_url("")).rstrip("/"))})
@@ -97,18 +103,75 @@ async def test_a_malformed_first_join_still_leaves_the_guild_its_player(
     bridge = DiscordBridge(api_token="t", account_key="a",  # noqa: S106 — synthetic
                            client=FakeDiscordClient([guild]),
                            manager=manager, hub=hub, voice_guild_ids=frozenset({GUILD}))
+    return state, hub, manager, bridge
 
+
+def _finished(playback_id: str) -> dict:
+    return {"type": "track-finished", "event_id": f"ev-{playback_id}", "event_seq": 1,
+            "guild_id": GUILD, "playback_id": playback_id}
+
+
+@pytest.mark.parametrize(("live", "malformed", "plays_on_boot", "finishing"), [
+    ("pb-live", 0, [], "pb-live"),
+    (None, 0, [TRACK.stream_url], "pb-1"),
+    ("pb-live", 1, [], "pb-live"),
+])
+async def test_recovery_keeps_or_restarts_the_track_then_advances(
+        aiohttp_client, monkeypatch, live, malformed, plays_on_boot, finishing):
+    """A live id is adopted, not replayed; none restarts the track; one
+    malformed join is retried. Either way the finish advances to the queue."""
+    state, hub, manager, bridge = await _boot(
+        aiohttp_client, monkeypatch, playback_id=live, malformed=malformed)
     try:
         await bridge.on_gateway_ready()
         assert hub.session_for(GUILD) is not None
-        assert state["plays"] == [], "the live track is adopted, never replayed"
-        finished = await VoiceEventConsumer(manager, hub).consume({
-            "type": "track-finished", "event_id": "ev-1", "event_seq": 1,
-            "guild_id": GUILD, "playback_id": "pb-live"})
+        assert state["plays"] == plays_on_boot
+        finished = await VoiceEventConsumer(manager, hub).consume(_finished(finishing))
+    finally:
+        if manager._liveness_task is not None:
+            manager._liveness_task.cancel()
+
+    assert finished == (200, {"status": "ok"})
+    assert state["plays"] == [*plays_on_boot, TRACK_B.stream_url]
+
+
+async def test_two_malformed_joins_leave_no_session_and_no_player(aiohttp_client, monkeypatch):
+    state, hub, manager, bridge = await _boot(
+        aiohttp_client, monkeypatch, playback_id="pb-live", malformed=2)
+    try:
+        await bridge.on_gateway_ready()
+    finally:
+        if manager._liveness_task is not None:
+            manager._liveness_task.cancel()
+
+    assert hub.session_for(GUILD) is None
+    assert GUILD not in manager._players
+    assert state["calls"].count("join") == 2 and state["plays"] == []
+
+
+async def test_a_finish_during_recovery_waits_for_the_player_and_advances(
+        aiohttp_client, monkeypatch):
+    """The live track ends while recovery awaits its join answer: the finish
+    waits for the guild's player, then advances to the queued track; the
+    finished track is never adopted as live and replayed."""
+    hold = asyncio.Event()
+    state, hub, manager, bridge = await _boot(
+        aiohttp_client, monkeypatch, playback_id="pb-live", hold=hold)
+    consumer = VoiceEventConsumer(manager, hub)
+    try:
+        ready = asyncio.create_task(bridge.on_gateway_ready())
+        await asyncio.wait_for(state["join_arrived"].wait(), 5)
+        state["playback_id"] = None  # the controller's own state after the end
+        finish = asyncio.create_task(consumer.consume(_finished("pb-live")))
+        for _ in range(20):
+            await asyncio.sleep(0)
+        assert not finish.done(), "the finish waits for recovery, never answers stale"
+        hold.set()
+        await asyncio.wait_for(ready, 5)
+        finished = await asyncio.wait_for(finish, 5)
     finally:
         if manager._liveness_task is not None:
             manager._liveness_task.cancel()
 
     assert finished == (200, {"status": "ok"})
     assert state["plays"] == [TRACK_B.stream_url]
-
