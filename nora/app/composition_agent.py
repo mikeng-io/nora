@@ -256,9 +256,14 @@ def _memory_tool_args(
     profile_index: Any, profile_reader: Any, standing_store: Any, graph_retrieval: Any,
 ) -> Any:
     """The memory tier's tools: index search, graph verbs, standing, ledger."""
+    import nora.memory as memory_area
+
     return {
         "memory_search": memory_search,
         "graph_retrieval": graph_retrieval,
+        # `profile_dispute`'s writes: the graph's dispute and forget verbs. No flag:
+        # the engagement turn always reads the graph whose IDs the tool takes.
+        "memory_intake": memory_area.wire.memory_intake(engine),
         # The graph surface's `remember` writes a Profile `told` line
         # (design/unified-memory/profiles.md); wired with `memory_search`, never alone.
         "profile": (

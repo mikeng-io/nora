@@ -419,6 +419,8 @@ def build_tool_specs(
     graph_retrieval: Any = None,
     pass_scope: PassScope | None = None,
     intention_admission: Any = None,
+    # The graph's dispute and forget verbs; `None` withholds `profile_dispute`.
+    memory_intake: Any = None,
     all_memory_surfaces: bool = False,
     # The Profile write (design/unified-memory/profiles.md): the graph surface's
     # `remember` writes a `told` line through it. `None` answers `unavailable`.
@@ -550,6 +552,7 @@ def build_tool_specs(
         google_account=google_account,
         memory_retrieval=memory_retrieval, graph_retrieval=graph_retrieval,
         pass_scope=pass_scope, intention_admission=intention_admission,
+        memory_intake=memory_intake,
         all_memory_surfaces=all_memory_surfaces,
         profile=profile,
         profile_read=profile_read,
@@ -592,9 +595,7 @@ def _on_surface(name: str, deps: ToolDeps) -> bool:
         return deps.all_memory_surfaces or deps.intention_admission is not None
     graph = deps.graph_retrieval is not None
     legacy = deps.memory_retrieval is not None
-    if name == "profile_dispute":
-        graph = legacy
-    elif name not in {"memory_read", "memory_search"}:
+    if name not in {"memory_read", "memory_search", "profile_dispute"}:
         graph = graph or legacy
     return on_memory_surface(name, graph=graph, everything=deps.all_memory_surfaces)
 
@@ -690,6 +691,7 @@ def build_tools(
     graph_retrieval: Any = None,
     pass_scope: PassScope | None = None,
     intention_admission: Any = None,
+    memory_intake: Any = None,
     profile: ProfileWriter | None = None,
     profile_read: ProfileHeads | None = None,
     relay: Relay | None = None,
@@ -724,7 +726,7 @@ def build_tools(
         culture=culture, observations=observations, social_items=social_items, subagent=subagent,
         video=video, video_ref_kinds=video_ref_kinds, memory_retrieval=memory_retrieval,
         graph_retrieval=graph_retrieval, pass_scope=pass_scope,
-        intention_admission=intention_admission,
+        intention_admission=intention_admission, memory_intake=memory_intake,
         profile=profile, profile_read=profile_read, relay=relay, relay_turn=relay_turn,
         room_management=room_management, message=message,
         content_checks=content_checks

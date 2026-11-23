@@ -223,6 +223,8 @@ class ToolDeps:
     graph_retrieval: Any = None
     pass_scope: PassScope | None = None
     intention_admission: Any = None
+    # The graph's dispute and forget verbs (`SqlMemoryIntake`).
+    memory_intake: Any = None
     all_memory_surfaces: bool = False
     profile: ProfileWriter | None = None
     profile_read: ProfileHeads | None = None

@@ -100,6 +100,7 @@ def _registry(graph: bool) -> ToolRegistry:
     return ToolRegistry(
         memory_search=MemorySearch(FakeMemoryIndex([]), Metrics()) if graph else None,
         graph_retrieval=object() if graph else None,
+        memory_intake=object(),
     )
 
 

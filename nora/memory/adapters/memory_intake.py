@@ -45,6 +45,14 @@ class SqlMemoryIntake:
         self._registration = registration
         self._graph = graph
 
+    async def claim_persons(self, *, unit: str, claim_id: str) -> tuple[str, ...] | None:
+        """Who a claim of this unit is about, or `None` when the unit holds no such claim."""
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(sa.select(CLAIM.c.persons).where(
+                CLAIM.c.unit == unit, CLAIM.c.id == claim_id,
+            ))).first()
+        return None if row is None else tuple(row.persons or ())
+
     async def forget(
         self, *, unit: str, author: str, targets: Sequence[str], at: datetime,
         delete_now: bool = False,

@@ -374,6 +374,9 @@ class ToolRegistry:
         graph_retrieval: Any = None,
         engagement_graph_retrieval: Any = None,
         intention_admission: Any = None,
+        # The graph's dispute and forget verbs `profile_dispute` writes through;
+        # without them the registry withholds the tool from every turn.
+        memory_intake: Any = None,
         # The Profile write the graph surface's `remember` makes (a `told`
         # line, design/unified-memory/profiles.md). Wired with `memory_search`.
         profile: ProfileWriter | None = None,
@@ -400,6 +403,7 @@ class ToolRegistry:
         self._graph_retrieval = graph_retrieval
         self._engagement_graph_retrieval = engagement_graph_retrieval
         self._intention_admission = intention_admission
+        self._memory_intake = memory_intake
         self._record = record
         self._documents = documents
         self._lineage = lineage
@@ -428,7 +432,7 @@ class ToolRegistry:
             | (frozenset() if documents is not None else DOCUMENT_TOOLS)
             | (frozenset() if subagent is not None else SUBAGENT_TOOLS)
             | (frozenset() if video is not None else VIDEO_TOOLS)
-            | ({"profile_dispute"} if memory_search is None else set())
+            | ({"profile_dispute"} if memory_intake is None else set())
             | ({"memory_search", "memory_read"} if graph_retrieval is None else set())
             | (OFF_GRAPH_ONLY_TOOLS
                if graph_retrieval is not None or memory_search is not None else set())
@@ -774,7 +778,7 @@ class ToolRegistry:
 
         scoped = copy(self)
         scoped._memory_search = search
-        scoped._withheld = (self._withheld - {"profile_dispute"}) | OFF_GRAPH_ONLY_TOOLS
+        scoped._withheld = self._withheld | OFF_GRAPH_ONLY_TOOLS
         return scoped
 
     def with_clock(self, clock: Callable[[], datetime]) -> ToolRegistry:
@@ -1159,6 +1163,7 @@ class ToolRegistry:
             graph_retrieval=(self._engagement_graph_retrieval if engagement
                              else self._graph_retrieval),
             intention_admission=self._intention_admission if engagement else None,
+            memory_intake=self._memory_intake,
             profile=self._profile,
             lineage=self._lineage,
             rollup=self._rollup,
