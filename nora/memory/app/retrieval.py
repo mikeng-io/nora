@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 
 from nora.domain.memory_index import QueryEmbedder
 from nora.memory.domain.retrieval import (
@@ -69,16 +69,19 @@ class RetrievalService:
     async def retrieve(
         self, room: ReadingRoom, anchors: RetrievalAnchors, bounds: RetrievalBounds,
         *, concerns: frozenset[str] = frozenset(), as_of: datetime | None = None,
-        already_shown: frozenset[str] = frozenset(),
+        already_shown: frozenset[str] = frozenset(), now: datetime | None = None,
     ) -> RetrievalResult:
         """Return the bounded subgraph that the reading room may see."""
         walk = _Walk(bounds)
         try:
-            async with self._reader.open_retrieval(room, concerns, as_of, bounds) as graph:
+            async with self._reader.open_retrieval(
+                room, concerns, as_of, bounds, now if now is not None else datetime.now(UTC),
+            ) as graph:
                 degraded = await self._seed(graph, anchors, walk)
                 if not walk.distances:
                     return RetrievalResult(
-                        "partial" if walk.limits else "nothing_found", limits=tuple(walk.limits),
+                        "partial" if walk.limits else "nothing_found", bounds,
+                        limits=tuple(walk.limits),
                     )
                 await walk.expand(graph, tuple(walk.distances))
                 fresh = await graph.fresh_items(walk.distances)
@@ -92,15 +95,20 @@ class RetrievalService:
                     walk.limits["time_window"] = None
                 rows = await graph.load(walk.distances, already_shown)
         except RetrievalUnavailableError as exc:
-            return RetrievalResult("unavailable", cause=str(exc))
+            return RetrievalResult("unavailable", bounds, cause=str(exc))
         if any(row.unavailable for row in rows):
             return RetrievalResult(
-                "unavailable", rows=rows, cause="tombstoned_since",
+                "unavailable", bounds, rows=rows, cause="tombstoned_since",
                 new_count=sum(not row.already_shown for row in rows),
             )
+        if any(row.items_since_cause == "items_since_unavailable" for row in rows):
+            degraded = "items_since_unavailable"
+        elif any("published_occurrences" in row.close_when
+                 and row.close_when["published_occurrences"] is None for row in rows):
+            degraded = "occurrences_unavailable"
         return RetrievalResult(
             "partial" if degraded or walk.limits else "ok",
-            rows, tuple(walk.limits), degraded,
+            bounds, rows, tuple(walk.limits), degraded,
             sum(not row.already_shown for row in rows),
         )
 

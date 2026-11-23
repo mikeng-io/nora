@@ -30,6 +30,7 @@ class RetrievalScope:
     audience: frozenset[str]
     social_off: frozenset[str]
     as_of: datetime | None
+    room_keys: Mapping[str, str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,11 +110,14 @@ class RetrievedRow:
     part: ClaimPart | None = None
     pointer_kind: PointerKind | None = None
     support: RetrievedSupport | None = None
+    items_since: int | None = None
+    items_since_cause: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class RetrievalResult:
     status: RetrievalStatus
+    bounds: RetrievalBounds
     rows: tuple[RetrievedRow, ...] = ()
     limits: tuple[RetrievalLimit, ...] = ()
     cause: str | None = None
@@ -155,5 +159,5 @@ class ScopedGraph(Protocol):
 class RetrievalReader(Protocol):
     def open_retrieval(
         self, room: ReadingRoom, concerns: frozenset[str], as_of: datetime | None,
-        bounds: RetrievalBounds,
+        bounds: RetrievalBounds, now: datetime,
     ) -> AbstractAsyncContextManager[ScopedGraph]: ...
