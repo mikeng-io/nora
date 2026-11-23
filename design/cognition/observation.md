@@ -18,7 +18,8 @@ recorded.
 Every source enters through one **intake**: an adapter per source turns what
 the source pushes, or what its collector reads, into items with their planes
 and registry rows, and reports the source's health. A new source is a new
-adapter, never a new store, table family or write path.
+[adapter](../service-api/adapters.md), never a new store, table family or
+write path.
 
 - An adapter records a change of state, never a repeated read of the same one.
 - A failed read is an unhealthy source, never an empty one.
@@ -103,6 +104,8 @@ time it becomes eligible. It is not a conclusion and not an instruction.
 
 **Rules**
 
+- An online-status or play item stimulates only through the presence change
+  it computes; a change item alone wakes nothing.
 - Absence is a stimulus only when every source needed to prove it was healthy
   over the interval.
 - Nora's own acts never stimulate by themselves; what people do next does. A
