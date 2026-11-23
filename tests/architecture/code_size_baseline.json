@@ -2604,7 +2604,7 @@
   "comment_blocks": 3
  },
  "tests/integration/test_signal_bridge_routes.py": {
-  "file_lines": 1485,
+  "file_lines": 1483,
   "internal_docstrings": 2
  },
  "tests/integration/test_sigterm_releases_the_claim.py": {

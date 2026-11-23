@@ -7,6 +7,11 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 
+import { readFileSync } from 'node:fs';
+
+import {
+  OPERATION_OUTCOMES, OPERATION_STATES, REPORT_STATUSES, SCOPE_LEVELS,
+} from '../src/contract.mjs';
 import { createOutbox } from '../src/outbox.mjs';
 import { EVENT_URL as URL, createFakeClock, hubAnswer, tick } from './helpers.mjs';
 
@@ -350,6 +355,19 @@ test('reports are retried only when the hub could not take them', async () => {
       ...envelopeOf(hubAnswer('complete')), from: null, scope: null, trace: null }) },
     'complete but still started': { status: 200, json: async () => ({
       ...envelopeOf(hubAnswer('complete')), when: { state: 'started', started_at_ms: 1, settled_at_ms: null } }) },
+    'empty from and scope': { status: 200, json: async () => ({
+      ...envelopeOf(hubAnswer('complete')), from: {}, scope: {} }) },
+    'a field beyond the six parts': { status: 200, json: async () => ({
+      ...envelopeOf(hubAnswer('complete')), extra: true }) },
+    'a part with a field beyond its own': { status: 200, json: async () => ({
+      ...envelopeOf(hubAnswer('complete')), from: { target: '', platform_ref: null, extra: 1 } }) },
+    'a field of the wrong type': { status: 200, json: async () => ({
+      ...envelopeOf(hubAnswer('complete')), when: { state: 'settled', started_at_ms: '1', settled_at_ms: null } }) },
+    'an undeclared scope level': { status: 200, json: async () => ({
+      ...envelopeOf(hubAnswer('complete')), scope: { level: 'galaxy' } }) },
+    'a complete with a null payload': hubAnswer('complete', { payload: null }),
+    'a complete with a garbled status': hubAnswer('complete', { payload: { status: 'garbled' } }),
+    'a complete with a connection payload': hubAnswer('complete', { payload: { state: null } }),
   };
   for (const [label, answer] of Object.entries(retried)) {
     const { outbox, attempts } = await firstAnswerIs(answer);
@@ -409,4 +427,21 @@ test('reports are retried only when the hub could not take them', async () => {
   await tick();
   assert.equal(bounded.dropped(), 300 - 256);
   assert.equal(bounded.pendingCount(), 255);
+});
+
+test('the acknowledgement check reads the contract\'s own closed sets', () => {
+  const { schemas } = JSON.parse(readFileSync(
+    new globalThis.URL('../../../docs/service-api/openapi.json', import.meta.url), 'utf8')).components;
+  assert.deepEqual([...SCOPE_LEVELS], schemas.ScopeLevel.enum);
+  assert.deepEqual([...OPERATION_STATES], schemas.OperationState.enum);
+  assert.deepEqual([...OPERATION_OUTCOMES], schemas.OperationOutcome.enum);
+  assert.deepEqual([...REPORT_STATUSES], schemas.VoiceReportPayload.properties.status.enum);
+  assert.deepEqual(schemas.VoiceReportPayload.required, ['status']);
+  assert.equal(schemas.VoiceReportPayload.additionalProperties, false);
+  const parts = { OperationWhen: ['settled_at_ms', 'started_at_ms', 'state'],
+    OperationFrom: ['platform_ref', 'target'], Scope: ['id', 'level'] };
+  for (const [name, fields] of Object.entries(parts)) {
+    assert.deepEqual(Object.keys(schemas[name].properties).sort(), fields, name);
+    assert.equal(schemas[name].additionalProperties, false, name);
+  }
 });

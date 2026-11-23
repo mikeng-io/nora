@@ -4,7 +4,7 @@ Both ENDS are tested elsewhere — `tests/test_policy.py` pins
 `Policy.music_channel_for` and `tests/unit/test_music_notify.py` pins
 `make_notify` — and this file covers the four hops that connect them
 (`_music_channel_of` → `AdapterRegistry.from_config` →
-`DiscordAdapter` → `music_commands.register` / `resume_persisted_sessions`,
+`DiscordAdapter` → `music_commands.register` / `recover_voice_sessions`,
 and separately `DiscordMusicToolBridge`).
 
 That seam matters more than an ordinary one because of the direction it fails
@@ -62,7 +62,7 @@ def test_the_composition_resolver_falls_back_for_any_other_guild(resolver):
 
 def test_the_adapter_carries_the_resolver_to_both_music_entry_points(resolver):
     """`DiscordAdapter` holds it and passes it to BOTH `register` and
-    `resume_persisted_sessions` — the resume hop is the one a reader is most
+    `recover_voice_sessions` — the resume hop is the one a reader is most
     likely to forget, because it runs on every `on_ready` rather than once."""
     adapter = DiscordAdapter("token", resolve_music_channel=resolver)
 
@@ -85,7 +85,7 @@ def test_the_bridge_carries_the_resolver(resolver):
         (AdapterRegistry.from_config, "resolve_music_channel"),
         (DiscordAdapter.__init__, "resolve_music_channel"),
         (music_commands.register, "resolve_music_channel"),
-        (music_commands.resume_persisted_sessions, "resolve_music_channel"),
+        (music_commands.recover_voice_sessions, "resolve_music_channel"),
         (music_commands.MusicCommands.__init__, "resolve_music_channel"),
         (DiscordMusicToolBridge.__init__, "resolve_music_channel"),
     ],
@@ -106,7 +106,7 @@ def test_every_hop_accepts_the_resolver_and_defaults_to_the_fallback(func, param
     ("func", "param"),
     [
         (music_commands.register, "client_getter"),
-        (music_commands.resume_persisted_sessions, "client_getter"),
+        (music_commands.recover_voice_sessions, "client_getter"),
         (music_commands.MusicCommands.__init__, "client"),
     ],
 )

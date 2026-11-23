@@ -2,6 +2,7 @@
   "components": {
     "schemas": {
       "IntakeOperationEnvelope": {
+        "additionalProperties": false,
         "description": "The answer to an intake `record`.",
         "properties": {
           "from": {
@@ -65,6 +66,7 @@
         "type": "object"
       },
       "IntakeOperationReadEnvelope": {
+        "additionalProperties": false,
         "description": "An intake operation read back: `ok` carries the operation's own envelope.",
         "properties": {
           "from": {
@@ -131,6 +133,7 @@
         "type": "object"
       },
       "OperationFrom": {
+        "additionalProperties": false,
         "description": "The target of the effect and its platform reference when one exists.",
         "properties": {
           "platform_ref": {
@@ -157,6 +160,7 @@
         "type": "object"
       },
       "OperationWhen": {
+        "additionalProperties": false,
         "description": "Where the record is in its lifecycle, and when it got there.",
         "properties": {
           "settled_at_ms": {
@@ -200,6 +204,7 @@
         "type": "object"
       },
       "ReadFrom": {
+        "additionalProperties": false,
         "description": "The source, its health, and the sources that failed when coverage is partial.",
         "properties": {
           "failed_sources": {
@@ -220,13 +225,15 @@
           }
         },
         "required": [
-          "source",
-          "healthy"
+          "failed_sources",
+          "healthy",
+          "source"
         ],
         "title": "ReadFrom",
         "type": "object"
       },
       "ReadWhen": {
+        "additionalProperties": false,
         "description": "When the source observed the answer, by its own clock.",
         "properties": {
           "known_by": {
@@ -239,13 +246,14 @@
           }
         },
         "required": [
-          "observed_at_ms",
-          "known_by"
+          "known_by",
+          "observed_at_ms"
         ],
         "title": "ReadWhen",
         "type": "object"
       },
       "Scope": {
+        "additionalProperties": false,
         "description": "The scope a request resolved to, at its contract's level.",
         "properties": {
           "id": {

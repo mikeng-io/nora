@@ -88,10 +88,13 @@ class OfflineSubjectServices:
         async def status() -> dict[str, object]:
             return {"ok": True}
 
-        async def query(kind: str, params: object) -> QueryAnswer:
-            if kind != "groups":
+        async def query(kind: str, params: dict[str, object]) -> QueryAnswer:
+            # What the Signal bridge serves: `roster` only; `groups` is unavailable.
+            members = next((g.get("members") or [] for g in daemon.groups
+                            if g.get("id") == params.get("conversation_id")), None)
+            if kind != "roster" or members is None:
                 return QueryAnswer("unavailable")
-            return QueryAnswer("ok", daemon.groups)
+            return QueryAnswer("ok", {"members": members})
 
         class Actions:
             async def run(self, action: dict, *, links: object = None) -> ActionReply:

@@ -90,8 +90,8 @@ from .command_acts import DiscordCommandActs
 from .discord_presence import DiscordPresence
 from .listener import DiscordListener
 from .media import DEFAULT_ATTACHMENT_HOSTS
+from .music_commands import recover_voice_sessions
 from .music_commands import register as register_music_commands
-from .music_commands import resume_persisted_sessions
 from .music_manager import MusicPlayerManager
 from .music_notify import ResolveMusicChannel
 from .music_tool_bridge import DiscordMusicToolBridge
@@ -594,10 +594,10 @@ class DiscordBridge:
     async def on_gateway_ready(self) -> None:
         """The ONE graph-attach point — `DiscordListener.on_ready_extra`.
 
-        The same sequence `DiscordAdapter` ran on every `on_ready`: register
-        the slash tree on THIS client, resume persisted music sessions,
-        start the liveness watch, and adopt any voice session the controller
-        kept alive while this process was down. Idempotent by construction —
+        The same sequence `DiscordAdapter` runs on every `on_ready`: register
+        the slash tree on THIS client, recover voice sessions (each persisted
+        music guild under its player's lock, then the rest), and start the
+        liveness watch. Idempotent by construction —
         each half guards against clobbering a live one."""
         client = self._client
         user = getattr(client, "user", None) if client is not None else None
@@ -606,7 +606,8 @@ class DiscordBridge:
         self.connected_at_ms = int(time.time() * 1000)
         self._frames.clear()
         log.info("discord gateway connected as %s", self.self_id)
-        if self._manager is not None and client is not None:
+        music = self._manager is not None and client is not None
+        if music:
             await register_music_commands(
                 client, self._manager,
                 hub=self._hub, voice_guild_ids=self._voice_guild_ids,
@@ -615,15 +616,12 @@ class DiscordBridge:
                 admission=self._slash_admission,
                 command_acts=self._command_acts,
             )
-            await resume_persisted_sessions(
-                client, self._manager, hub=self._hub,
-                resolve_music_channel=self._resolve_music_channel,
-                client_getter=self.current_client,
-                command_acts=self._command_acts,
-            )
+        await recover_voice_sessions(
+            client, self._manager, hub=self._hub, voice_guild_ids=self._voice_guild_ids,
+            resolve_music_channel=self._resolve_music_channel,
+            client_getter=self.current_client, command_acts=self._command_acts)
+        if music:
             self._manager.start_liveness_watch()
-        if self._hub is not None:
-            await self._hub.adopt_boot_voice_sessions(self._voice_guild_ids)
 
     @staticmethod
     def _publisher_died(task: asyncio.Task) -> None:

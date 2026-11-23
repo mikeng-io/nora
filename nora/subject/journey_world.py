@@ -328,9 +328,10 @@ class JourneyServices:
             return {"ok": True}
 
         async def query(kind: str, params: Any) -> QueryAnswer:
-            if kind != "groups":
+            # What the Signal bridge serves: `roster` only; `groups` is unavailable.
+            if kind != "roster" or params.get("conversation_id") != "g1":
                 return QueryAnswer("unavailable")
-            return QueryAnswer("ok", [{"id": "g1", "members": [["+852111"]]}])
+            return QueryAnswer("ok", {"members": [{"number": "+852111"}]})
 
         return PlatformSurface(
             platform="signal", account=account, status=status, query=query,

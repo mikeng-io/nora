@@ -146,6 +146,57 @@ async def test_a_success_body_without_a_state_snapshot_is_unavailable(aiohttp_cl
         await vc.join(GUILD, "cortez-1", operation_id="req-1")
 
 
+async def test_a_minimal_complete_off_the_contract_is_unavailable(aiohttp_client):
+    """A 200 carrying only `outcome: complete` and a state payload is not an
+    envelope: the join is `unavailable`, never a connection."""
+    vc = await _client(aiohttp_client, _app(answer=(200, {
+        "outcome": "complete", "payload": {"state": _state()}})))
+
+    with pytest.raises(VoiceControllerUnavailable):
+        await vc.join(GUILD, "cortez-1", operation_id="req-1")
+
+
+@pytest.mark.parametrize("payload", [{"state": {}}, {"status": "ok"}])
+async def test_a_complete_without_the_connection_snapshot_is_unavailable(aiohttp_client, payload):
+    """A settled `complete` must carry the kernel's connection snapshot: an empty
+    one or a report's answer is `unavailable`, never a join."""
+    vc = await _client(aiohttp_client, _app(answer=(200, operation_envelope("complete", payload))))
+
+    with pytest.raises(VoiceControllerUnavailable):
+        await vc.join(GUILD, "cortez-1", operation_id="req-1")
+
+
+@pytest.mark.parametrize("playback_id", ["absent", None, ""])
+async def test_a_play_complete_without_its_playback_id_is_unavailable(aiohttp_client, playback_id):
+    """The track's finish event is matched on `playback_id`: a `play` confirmed
+    without one is `unavailable`, and the session keeps no playback, never a
+    play that later reads its own finish as stale."""
+    state = _state()
+    state.pop("playback_id")
+    if playback_id != "absent":
+        state["playback_id"] = playback_id
+    vc = await _client(aiohttp_client, _app(answer=(200, operation_envelope(
+        "complete", {"state": state}))))
+    session = HttpVoiceSession(vc, guild_id=GUILD, generation="gen-1")
+
+    with pytest.raises(VoiceControllerUnavailable):
+        await session.play("https://cdn.example/a")
+    assert session.playback_id is None
+
+
+async def test_an_empty_status_is_unavailable(aiohttp_client):
+    app = web.Application()
+
+    async def handler(request: web.Request) -> web.Response:
+        return web.json_response(read_envelope("ok", {}))
+
+    app.router.add_post(QUERIES, handler)
+    vc = await _client(aiohttp_client, app)
+
+    with pytest.raises(VoiceControllerUnavailable):
+        await vc.status(GUILD)
+
+
 async def test_play_records_the_playback_id_from_the_state_snapshot(aiohttp_client):
     vc = await _client(aiohttp_client, _app())
     session = HttpVoiceSession(vc, guild_id=GUILD, generation="gen-1")

@@ -46,8 +46,10 @@ CHANNEL = "100000000000000002"
 MEMBER = "100000000000000003"
 
 
-def _settled(outcome: str) -> dict:
-    return settled_body(outcome, {"state": {}}, target=GUILD, trace="", started_ms=1)
+def _settled(outcome: str, payload: dict | None = None) -> dict:
+    state = {"generation": "g1", "channel_id": CHANNEL}
+    return settled_body(outcome, {"state": state} if payload is None else payload,
+                        target=GUILD, trace="", started_ms=1)
 
 
 def _bridge_app(state: dict) -> web.Application:
@@ -92,6 +94,10 @@ def _bridge_app(state: dict) -> web.Application:
             return web.json_response({"error": "no envelope"}, status=answer)
         if answer == "inconsistent":
             return web.json_response(read_body("unavailable", None, source="discord", trace=""))
+        if answer == "malformed":
+            return web.json_response({"outcome": "ok", "payload": state["voice"]})
+        if answer == "empty":
+            return web.json_response(read_body("ok", {}, source="discord", trace=""))
         return web.json_response(read_body(answer, state["voice"], source="discord", trace=""),
                                  status=status_for(answer))
 
@@ -107,6 +113,12 @@ def _bridge_app(state: dict) -> web.Application:
             return web.json_response({"error": "no envelope"}, status=answer)
         if answer == "inconsistent":
             return web.json_response(_settled("unavailable"))
+        if answer == "malformed":
+            return web.json_response({"outcome": "complete", "payload": {"state": {}}})
+        if answer in ("empty", "report-shaped", "empty-state"):
+            payload = {"empty": {}, "report-shaped": {"status": "ok"},
+                       "empty-state": {"state": {}}}[answer]
+            return web.json_response(_settled("complete", payload))
         body = _settled(answer) if answer != "pending" else {
             **_settled("complete"), "outcome": "pending",
             "when": {"state": "started", "started_at_ms": 1, "settled_at_ms": None}}
@@ -377,15 +389,20 @@ async def test_unauthenticated_bridge_calls_fail_closed(server, bridge_state):
     ("ok", "rejected", False), ("ok", "unsupported", False), ("ok", "denied", False),
     ("ok", "unavailable", False), ("ok", 400, False),
     ("ok", "uncertain", None), ("ok", "incomplete", None), ("ok", "pending", None),
-    ("ok", "inconsistent", None),
+    ("ok", "inconsistent", None), ("ok", "malformed", None), ("ok", "empty", None),
+    ("ok", "report-shaped", None), ("ok", "empty-state", None),
     ("ok", 409, None), ("ok", 404, None), ("ok", 500, None), ("ok", "drop", None),
     ("unavailable", "complete", None), ("inconsistent", "complete", None),
-    ("drop", "complete", None), (409, "complete", None),
+    ("drop", "complete", None), (409, "complete", None), ("malformed", "complete", None),
+    ("empty", "complete", None),
 ])
 async def test_voice_reads_by_outcome(control, bridge_state, status, answer, expected):
     """`speech` is `True` only for `complete`; `False` (the reply falls back to
     text) only where a stated answer shows the audio cannot have played; `None`
-    where it may have, or where the status read could not tell."""
+    where it may have, or where the status read could not tell. A 200 off the
+    contract is never success: `malformed` (only an outcome and a payload), a
+    settled `complete` carrying no snapshot (`empty`, `empty-state`) or a
+    report's answer (`report-shaped`), and an empty status (`empty`)."""
     bridge_state["status_answer"], bridge_state["speech_answer"] = status, answer
 
     assert await control.speech(GUILD, b"pcm", "audio/wav") is expected
@@ -404,6 +421,12 @@ async def test_an_incoherent_status_read_says_nothing_and_sends_nothing(
 
     assert await control.speech(GUILD, b"pcm", "audio/wav") is None
     assert bridge_state["speech"] == []
+
+
+async def test_an_empty_status_is_no_voice_state(control, bridge_state):
+    bridge_state["status_answer"] = "empty"
+
+    assert await control.voice_state(GUILD) is None
 
 
 async def test_voice_reads_no_connection_as_false_and_sends_nothing(control, bridge_state):

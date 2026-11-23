@@ -2,6 +2,7 @@
   "components": {
     "schemas": {
       "AccountReadEnvelope": {
+        "additionalProperties": false,
         "description": "An account read: `unavailable` until the platform login has landed.",
         "properties": {
           "from": {
@@ -79,6 +80,102 @@
         "title": "ActionOwner",
         "type": "object"
       },
+      "BlobPutEnvelope": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "complete"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "rejected"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "properties": {
+                    "error": {
+                      "$ref": "#/components/schemas/OperationError"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ],
+        "description": "The answer to a blob PUT.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/OperationFrom"
+          },
+          "outcome": {
+            "enum": [
+              "complete",
+              "pending",
+              "denied",
+              "rejected",
+              "unsupported",
+              "incomplete",
+              "uncertain",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "title": "Payload"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/OperationWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "BlobPutEnvelope",
+        "type": "object"
+      },
       "BridgeStatus": {
         "description": "A bridge's own detail: whether it can serve, and why not.",
         "properties": {
@@ -117,12 +214,16 @@
           }
         },
         "required": [
+          "connected_at_ms",
+          "degraded",
+          "detail",
           "ok"
         ],
         "title": "BridgeStatus",
         "type": "object"
       },
       "ConnectionEffect": {
+        "additionalProperties": false,
         "description": "`leave`, `stop`, `pause` and `resume`: the generation the caller observed.",
         "properties": {
           "generation": {
@@ -156,6 +257,7 @@
         "type": "string"
       },
       "IntakeOperationEnvelope": {
+        "additionalProperties": false,
         "description": "The answer to an intake `record`.",
         "properties": {
           "from": {
@@ -223,6 +325,7 @@
         "type": "object"
       },
       "IntakeOperationReadEnvelope": {
+        "additionalProperties": false,
         "description": "An intake operation read back: `ok` carries the operation's own envelope.",
         "properties": {
           "from": {
@@ -270,6 +373,27 @@
         "type": "object"
       },
       "IntakeOperationRequest": {
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "record"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/UtteranceEffect"
+                }
+              }
+            }
+          }
+        ],
         "description": "An intake event recorded by operation.",
         "properties": {
           "effect": {
@@ -299,6 +423,7 @@
         }
       },
       "JoinEffect": {
+        "additionalProperties": false,
         "description": "Connect the guild's voice connection to a channel.",
         "properties": {
           "channel_id": {
@@ -318,6 +443,7 @@
         "type": "object"
       },
       "OperationEnvelope": {
+        "additionalProperties": false,
         "description": "The body of every operation response. `from_` is `from` on the wire.",
         "properties": {
           "from": {
@@ -382,6 +508,7 @@
         "type": "object"
       },
       "OperationFrom": {
+        "additionalProperties": false,
         "description": "The target of the effect and its platform reference when one exists.",
         "properties": {
           "platform_ref": {
@@ -431,6 +558,7 @@
         }
       },
       "OperationReadEnvelope": {
+        "additionalProperties": false,
         "description": "An operation read back: `ok` carries the operation's own envelope.",
         "properties": {
           "from": {
@@ -571,6 +699,7 @@
         "type": "string"
       },
       "OperationWhen": {
+        "additionalProperties": false,
         "description": "Where the record is in its lifecycle, and when it got there.",
         "properties": {
           "settled_at_ms": {
@@ -634,6 +763,7 @@
           }
         },
         "required": [
+          "aliases",
           "platform",
           "primary"
         ],
@@ -641,6 +771,7 @@
         "type": "object"
       },
       "PlatformOperationEnvelope": {
+        "additionalProperties": false,
         "description": "The answer to a delivery operation.",
         "properties": {
           "from": {
@@ -695,6 +826,7 @@
         "type": "string"
       },
       "PlatformOperationPayload": {
+        "additionalProperties": false,
         "description": "What a delivery applied, or why it did not.",
         "properties": {
           "error": {
@@ -741,6 +873,12 @@
             "type": "array"
           }
         },
+        "required": [
+          "error",
+          "message_id",
+          "platform_ms",
+          "platform_refs"
+        ],
         "title": "PlatformOperationPayload",
         "type": "object"
       },
@@ -821,6 +959,7 @@
         "type": "string"
       },
       "PlayEffect": {
+        "additionalProperties": false,
         "description": "Play a stream on the connection.",
         "properties": {
           "duration_seconds": {
@@ -881,6 +1020,7 @@
         "type": "object"
       },
       "ReadEnvelope": {
+        "additionalProperties": false,
         "description": "The body of every read response. `from_` is `from` on the wire.",
         "properties": {
           "from": {
@@ -921,6 +1061,7 @@
         "type": "object"
       },
       "ReadFrom": {
+        "additionalProperties": false,
         "description": "The source, its health, and the sources that failed when coverage is partial.",
         "properties": {
           "failed_sources": {
@@ -941,8 +1082,9 @@
           }
         },
         "required": [
-          "source",
-          "healthy"
+          "failed_sources",
+          "healthy",
+          "source"
         ],
         "title": "ReadFrom",
         "type": "object"
@@ -961,6 +1103,7 @@
         }
       },
       "ReadWhen": {
+        "additionalProperties": false,
         "description": "When the source observed the answer, by its own clock.",
         "properties": {
           "known_by": {
@@ -973,8 +1116,8 @@
           }
         },
         "required": [
-          "observed_at_ms",
-          "known_by"
+          "known_by",
+          "observed_at_ms"
         ],
         "title": "ReadWhen",
         "type": "object"
@@ -1010,6 +1153,7 @@
         "type": "object"
       },
       "Scope": {
+        "additionalProperties": false,
         "description": "The scope a request resolved to, at its contract's level.",
         "properties": {
           "id": {
@@ -1057,6 +1201,7 @@
         "type": "string"
       },
       "SetVolumeEffect": {
+        "additionalProperties": false,
         "description": "Set the player's volume, in percent of unity.",
         "properties": {
           "generation": {
@@ -1081,6 +1226,7 @@
         "type": "object"
       },
       "SpeakEffect": {
+        "additionalProperties": false,
         "description": "Speak bounded audio on the connection; its record keeps the hash, never the bytes.",
         "properties": {
           "audio_b64": {
@@ -1110,6 +1256,7 @@
         "type": "object"
       },
       "StatusReadEnvelope": {
+        "additionalProperties": false,
         "description": "The `operations` contract's status read of a bridge.",
         "properties": {
           "from": {
@@ -1157,6 +1304,7 @@
         "type": "object"
       },
       "UtteranceEffect": {
+        "additionalProperties": false,
         "description": "A woken utterance; the wake gate mints `event_id`.",
         "properties": {
           "event_id": {
@@ -1203,7 +1351,247 @@
         "title": "UtteranceEffect",
         "type": "object"
       },
+      "VoiceConnectionEnvelope": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "complete"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "properties": {
+                    "state": {
+                      "$ref": "#/components/schemas/VoiceConnectionState"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A voice operation's answer whose `complete` is VoiceConnectionState.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/OperationFrom"
+          },
+          "outcome": {
+            "enum": [
+              "complete",
+              "pending",
+              "denied",
+              "rejected",
+              "unsupported",
+              "incomplete",
+              "uncertain",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceOperationPayload"
+              },
+              {
+                "$ref": "#/components/schemas/VoiceReportPayload"
+              }
+            ],
+            "title": "Payload"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/OperationWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "VoiceConnectionEnvelope",
+        "type": "object"
+      },
+      "VoiceConnectionState": {
+        "description": "A connection snapshot: the fields every implementer writes; each adds its own.",
+        "properties": {
+          "channel_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Id"
+          },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          }
+        },
+        "required": [
+          "generation",
+          "channel_id"
+        ],
+        "title": "VoiceConnectionState",
+        "type": "object"
+      },
+      "VoiceJoinEnvelope": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "complete"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "properties": {
+                    "state": {
+                      "$ref": "#/components/schemas/VoiceJoinState"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A voice operation's answer whose `complete` is VoiceJoinState.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/OperationFrom"
+          },
+          "outcome": {
+            "enum": [
+              "complete",
+              "pending",
+              "denied",
+              "rejected",
+              "unsupported",
+              "incomplete",
+              "uncertain",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceOperationPayload"
+              },
+              {
+                "$ref": "#/components/schemas/VoiceReportPayload"
+              }
+            ],
+            "title": "Payload"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/OperationWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "VoiceJoinEnvelope",
+        "type": "object"
+      },
+      "VoiceJoinState": {
+        "description": "A `join`'s snapshot: the playback still live on the connection, or `None` idle.",
+        "properties": {
+          "channel_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Id"
+          },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          },
+          "playback_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "minLength": 1,
+            "title": "Playback Id"
+          }
+        },
+        "required": [
+          "generation",
+          "channel_id",
+          "playback_id"
+        ],
+        "title": "VoiceJoinState",
+        "type": "object"
+      },
       "VoiceOperationEnvelope": {
+        "additionalProperties": false,
         "description": "The answer to a voice operation; a taken `report` carries the hub's own answer.",
         "properties": {
           "from": {
@@ -1271,6 +1659,7 @@
         "type": "string"
       },
       "VoiceOperationPayload": {
+        "additionalProperties": false,
         "description": "The controller's connection snapshot, and on a refusal its reason.",
         "properties": {
           "error": {
@@ -1287,21 +1676,20 @@
           "state": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/VoiceConnectionState"
               },
               {
                 "type": "null"
               }
             ],
-            "default": null,
-            "title": "State"
+            "default": null
           }
         },
         "title": "VoiceOperationPayload",
         "type": "object"
       },
       "VoiceOperationReadEnvelope": {
+        "additionalProperties": false,
         "description": "A voice operation read back: `ok` carries the operation's own envelope.",
         "properties": {
           "from": {
@@ -1349,6 +1737,179 @@
         "type": "object"
       },
       "VoiceOperationRequest": {
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "join"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/JoinEffect"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "leave"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/ConnectionEffect"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "play"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/PlayEffect"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "stop"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/ConnectionEffect"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "pause"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/ConnectionEffect"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "resume"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/ConnectionEffect"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "set_volume"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/SetVolumeEffect"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "speak"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/SpeakEffect"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "report"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/ReportEffect"
+                }
+              }
+            }
+          }
+        ],
         "description": "A connection operation or a report; `effect` is the shape `VOICE_EFFECTS` names.",
         "properties": {
           "effect": {
@@ -1401,6 +1962,35 @@
         ],
         "title": "VoiceOperationRequest",
         "type": "object",
+        "x-answers": {
+          "join": {
+            "$ref": "#/components/schemas/VoiceJoinEnvelope"
+          },
+          "leave": {
+            "$ref": "#/components/schemas/VoiceConnectionEnvelope"
+          },
+          "pause": {
+            "$ref": "#/components/schemas/VoiceConnectionEnvelope"
+          },
+          "play": {
+            "$ref": "#/components/schemas/VoicePlayEnvelope"
+          },
+          "report": {
+            "$ref": "#/components/schemas/VoiceReportEnvelope"
+          },
+          "resume": {
+            "$ref": "#/components/schemas/VoiceConnectionEnvelope"
+          },
+          "set_volume": {
+            "$ref": "#/components/schemas/VoiceConnectionEnvelope"
+          },
+          "speak": {
+            "$ref": "#/components/schemas/VoiceConnectionEnvelope"
+          },
+          "stop": {
+            "$ref": "#/components/schemas/VoiceConnectionEnvelope"
+          }
+        },
         "x-effects": {
           "join": {
             "$ref": "#/components/schemas/JoinEffect"
@@ -1431,6 +2021,125 @@
           }
         }
       },
+      "VoicePlayEnvelope": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "complete"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "properties": {
+                    "state": {
+                      "$ref": "#/components/schemas/VoicePlayState"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A voice operation's answer whose `complete` is VoicePlayState.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/OperationFrom"
+          },
+          "outcome": {
+            "enum": [
+              "complete",
+              "pending",
+              "denied",
+              "rejected",
+              "unsupported",
+              "incomplete",
+              "uncertain",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceOperationPayload"
+              },
+              {
+                "$ref": "#/components/schemas/VoiceReportPayload"
+              }
+            ],
+            "title": "Payload"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/OperationWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "VoicePlayEnvelope",
+        "type": "object"
+      },
+      "VoicePlayState": {
+        "description": "A `play`'s snapshot: the playback it started, which that track's events name.",
+        "properties": {
+          "channel_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Id"
+          },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          },
+          "playback_id": {
+            "minLength": 1,
+            "title": "Playback Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "generation",
+          "channel_id",
+          "playback_id"
+        ],
+        "title": "VoicePlayState",
+        "type": "object"
+      },
       "VoiceQuery": {
         "description": "A read of a connection's status.",
         "properties": {
@@ -1454,7 +2163,80 @@
         "const": "status",
         "type": "string"
       },
+      "VoiceReportEnvelope": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "complete"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/VoiceReportPayload"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A voice operation's answer whose `complete` is VoiceReportPayload.",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/OperationFrom"
+          },
+          "outcome": {
+            "enum": [
+              "complete",
+              "pending",
+              "denied",
+              "rejected",
+              "unsupported",
+              "incomplete",
+              "uncertain",
+              "unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceOperationPayload"
+              },
+              {
+                "$ref": "#/components/schemas/VoiceReportPayload"
+              }
+            ],
+            "title": "Payload"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/Scope"
+          },
+          "trace": {
+            "title": "Trace",
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/components/schemas/OperationWhen"
+          }
+        },
+        "required": [
+          "outcome",
+          "payload",
+          "when",
+          "from",
+          "scope",
+          "trace"
+        ],
+        "title": "VoiceReportEnvelope",
+        "type": "object"
+      },
       "VoiceReportPayload": {
+        "additionalProperties": false,
         "description": "What the hub did with a reported event.",
         "properties": {
           "status": {
@@ -1488,7 +2270,26 @@
         "type": "object"
       },
       "VoiceStatusReadEnvelope": {
-        "description": "A connection's status, in the implementer's own shape; none is `nothing_found`.",
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "ok"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/VoiceConnectionState"
+                }
+              }
+            }
+          }
+        ],
+        "description": "A connection's status: the snapshot plus the implementer's own fields.",
         "properties": {
           "from": {
             "$ref": "#/components/schemas/ReadFrom"
@@ -1505,14 +2306,12 @@
           "payload": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/VoiceConnectionState"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Payload"
+            ]
           },
           "scope": {
             "$ref": "#/components/schemas/Scope"
@@ -1840,7 +2639,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OperationEnvelope"
+                  "$ref": "#/components/schemas/BlobPutEnvelope"
                 }
               }
             },
@@ -1850,7 +2649,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OperationEnvelope"
+                  "$ref": "#/components/schemas/BlobPutEnvelope"
                 }
               }
             },
@@ -1866,7 +2665,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OperationEnvelope"
+                  "$ref": "#/components/schemas/BlobPutEnvelope"
                 }
               }
             },
@@ -1882,7 +2681,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OperationEnvelope"
+                  "$ref": "#/components/schemas/BlobPutEnvelope"
                 }
               }
             },

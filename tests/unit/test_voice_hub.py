@@ -42,6 +42,7 @@ def _app(
     stream: OperationOutcome = "complete",
     leave: OperationOutcome = "complete",
     record: list | None = None,
+    join_state: dict | None = None,
 ):
     """A fake controller whose `join`, `status`, `speak` and `leave` outcomes
     are independently switchable; `rejected` carries the reason each would."""
@@ -56,7 +57,8 @@ def _app(
             record.append((names[kind], body["effect"]))
         outcome = {"join": join, "speak": stream, "leave": leave}[kind]
         state = (_state(voice="idle", generation=None, channel_id=None)
-                 if kind == "leave" else _state())
+                 if kind == "leave" else join_state if kind == "join" and join_state
+                 else _state())
         payload: dict = {"state": state}
         if outcome != "complete":
             reason = reasons.get(kind, "down")
@@ -87,6 +89,30 @@ async def _hub(aiohttp_client, app) -> VoiceControllerHub:
     # per-guild bookkeeping, not two real processes.
     client = VoiceControllerClient(str(test_client.make_url("")).rstrip("/"))
     return VoiceControllerHub({"guild-1": client, "guild-2": client})
+
+
+async def test_a_join_without_its_playback_key_is_unavailable_and_plays_nothing(aiohttp_client):
+    """Boot recovery keeps or replays the persisted track by the join's
+    `playback_id`; a join that leaves the key out cannot say which, so it is
+    `unavailable`: no session, and nothing but the join reached the controller."""
+    record: list = []
+    state = _state()
+    state.pop("playback_id")
+    hub = await _hub(aiohttp_client, _app(record=record, join_state=state))
+
+    with pytest.raises(VoiceControllerUnavailable):
+        await hub.join("guild-1", "cortez-1")
+
+    assert hub.session_for("guild-1") is None
+    assert [name for name, _ in record] == ["join"]
+
+
+async def test_an_idle_join_names_no_playback(aiohttp_client):
+    hub = await _hub(aiohttp_client, _app(join_state=_state(playback_id=None)))
+
+    session = await hub.join("guild-1", "cortez-1")
+
+    assert session.playback_id is None
 
 
 async def test_join_caches_the_session_per_guild(aiohttp_client):

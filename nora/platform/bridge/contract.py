@@ -156,12 +156,22 @@ class PlatformSurface:
     async def health(self, req: web.Request) -> web.Response:
         return web.json_response({"ok": True})
 
+    async def _readiness(self) -> dict[str, Any]:
+        """The status, `ok` only with a ledger and an account beside a live platform."""
+        status = {"detail": None, "degraded": False, "connected_at_ms": None,
+                  **await self._status()}
+        missing = ("no action service" if self._actions() is None
+                   else None if await self._account() else "no account identity")
+        if status.get("ok") and missing:
+            status.update(ok=False, detail=missing)
+        return status
+
     async def ready(self, req: web.Request) -> web.Response:
-        status = dict(await self._status())
+        status = await self._readiness()
         return web.json_response(status, status=200 if status.get("ok") else 503)
 
     async def read_status(self, req: web.Request) -> web.Response:
-        return self._read(req, "ok", dict(await self._status()))
+        return self._read(req, "ok", await self._readiness())
 
     async def submit_operation(self, req: web.Request) -> web.Response:
         try:
@@ -170,7 +180,7 @@ class PlatformSurface:
             body = None
         if not isinstance(body, dict):
             return web.json_response({"error": "body must be a JSON object"}, status=400)
-        if body.get("kind") not in OPERATION_KINDS:
+        if not isinstance(body.get("kind"), str) or body["kind"] not in OPERATION_KINDS:
             return web.json_response({"error": "unknown operation kind"}, status=422)
         actions = self._actions()
         if actions is None:
@@ -205,9 +215,9 @@ class PlatformSurface:
         if not isinstance(body, dict) or not isinstance(body.get("params") or {}, dict):
             return web.json_response({"error": "body must be a JSON object"}, status=400)
         kind, params = body.get("kind"), body.get("params") or {}
-        if kind not in QUERY_KINDS:
+        if not isinstance(kind, str) or kind not in QUERY_KINDS:
             return web.json_response({"error": "unknown query kind"}, status=422)
-        answer = await self._query(str(kind), params)
+        answer = await self._query(kind, params)
         return self._read(req, answer.outcome, answer.value, observed_ms=answer.observed_ms,
                           scope=scope_of(params.get("conversation_id")))
 

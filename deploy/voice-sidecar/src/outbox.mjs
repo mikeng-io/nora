@@ -14,13 +14,48 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { ENVELOPE_PARTS, OPERATION_OUTCOMES, STATUS } from './contract.mjs';
+import {
+  ENVELOPE_PARTS, OPERATION_OUTCOMES, OPERATION_STATES, REPORT_STATUSES, SCOPE_LEVELS, STATUS,
+} from './contract.mjs';
 
 export const realClock = {
   now: () => Date.now(),
   setTimeout: (fn, ms) => setTimeout(fn, ms),
   clearTimeout: (t) => clearTimeout(t),
 };
+
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const isInt = (v) => Number.isInteger(v);
+const nullOr = (check) => (v) => v === null || check(v);
+const isString = (v) => typeof v === 'string';
+
+// A part holds exactly its declared fields, the required ones present, each
+// of its type (the contract's OperationWhen, OperationFrom and Scope).
+function exactly(value, required, optional = {}) {
+  if (!isObject(value)) return false;
+  const fields = { ...required, ...optional };
+  return Object.keys(value).every((key) => Object.hasOwn(fields, key))
+    && Object.keys(required).every((key) => Object.hasOwn(value, key))
+    && Object.entries(value).every(([key, v]) => fields[key](v));
+}
+
+// The hub's acknowledgement as the contract's OperationEnvelope: the six parts
+// and nothing more, each part exactly its fields.
+export function isAcknowledgement(envelope) {
+  return isObject(envelope)
+    && Object.keys(envelope).length === ENVELOPE_PARTS.length
+    && ENVELOPE_PARTS.every((part) => Object.hasOwn(envelope, part))
+    && OPERATION_OUTCOMES.includes(envelope.outcome)
+    && exactly(envelope.when, { state: (v) => OPERATION_STATES.includes(v) },
+      { started_at_ms: nullOr(isInt), settled_at_ms: nullOr(isInt) })
+    && exactly(envelope.from, { target: isString }, { platform_ref: nullOr(isString) })
+    && exactly(envelope.scope, { level: (v) => SCOPE_LEVELS.includes(v) }, { id: nullOr(isString) })
+    && isString(envelope.trace);
+}
+
+// A `complete` report's payload: the contract's VoiceReportPayload, exactly.
+const isReportStatus = (payload) => isObject(payload)
+  && Object.keys(payload).length === 1 && REPORT_STATUSES.includes(payload.status);
 
 export function createOutbox({
   url,
@@ -61,7 +96,8 @@ export function createOutbox({
   // envelope with any outcome but `unavailable`), 'refused' (400, 409, 422:
   // retrying cannot help) or 'retry' (everything else: `unavailable`, 3xx,
   // 401, 404, a status that disagrees with its outcome, a read's outcome, a
-  // record not yet settled, or anything that is not a whole envelope).
+  // record not yet settled, a `complete` without the hub's report status, or
+  // anything that is not exactly an envelope).
   async function verdict(res) {
     const status = res?.status;
     if (status === 400 || status === 409 || status === 422) return 'refused';
@@ -71,14 +107,11 @@ export function createOutbox({
     } catch {
       return 'retry';
     }
-    if (!envelope || typeof envelope !== 'object' || !ENVELOPE_PARTS.every((part) => Object.hasOwn(envelope, part))) {
-      return 'retry';
-    }
-    const { outcome, when, from, scope, trace } = envelope;
-    const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-    if (!isObject(when) || !isObject(from) || !isObject(scope) || typeof trace !== 'string') return 'retry';
+    if (!isAcknowledgement(envelope)) return 'retry';
+    const { outcome, when, payload } = envelope;
     if (!OPERATION_OUTCOMES.includes(outcome) || STATUS[outcome] !== status) return 'retry';
     if (outcome === 'unavailable' || outcome === 'pending' || when.state !== 'settled') return 'retry';
+    if (outcome === 'complete' && !isReportStatus(payload)) return 'retry';
     return 'taken';
   }
 

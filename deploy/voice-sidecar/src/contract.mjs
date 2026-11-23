@@ -18,6 +18,12 @@ export const OPERATION_OUTCOMES = Object.freeze([
   'complete', 'pending', 'denied', 'rejected', 'unsupported', 'incomplete', 'uncertain', 'unavailable',
 ]);
 export const ENVELOPE_PARTS = Object.freeze(['outcome', 'payload', 'when', 'from', 'scope', 'trace']);
+/** The kernel's `VoiceReportPayload` statuses, `OperationState` and `ScopeLevel`, verbatim. */
+export const REPORT_STATUSES = Object.freeze(['ok', 'duplicate', 'stale']);
+export const OPERATION_STATES = Object.freeze(['prepared', 'started', 'settled']);
+export const SCOPE_LEVELS = Object.freeze([
+  'room', 'unit', 'agent', 'identity', 'workspace', 'installation', 'none',
+]);
 
 const TRACEPARENT_RE = /^[0-9a-f]{2}-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$/;
 

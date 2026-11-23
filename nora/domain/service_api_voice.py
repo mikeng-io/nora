@@ -118,10 +118,37 @@ class VoiceOperationRequest(OperationRequest):
 
 
 @dataclass(frozen=True)
+class VoiceConnectionState:
+    """A connection snapshot: the fields every implementer writes; each adds its own."""
+
+    generation: str | None
+    channel_id: str | None
+
+
+@dataclass(frozen=True)
+class VoicePlayState(VoiceConnectionState):
+    """A `play`'s snapshot: the playback it started, which that track's events name."""
+
+    playback_id: str
+
+
+@dataclass(frozen=True)
+class VoiceJoinState(VoiceConnectionState):
+    """A `join`'s snapshot: the playback still live on the connection, or `None` idle."""
+
+    playback_id: str | None
+
+
+#: Fields a caller later matches against an event: a non-empty string on the wire.
+MATCHED_IDS: Final[Mapping[type, tuple[str, ...]]] = {
+    VoicePlayState: ("playback_id",), VoiceJoinState: ("playback_id",)}
+
+
+@dataclass(frozen=True)
 class VoiceOperationPayload:
     """The controller's connection snapshot, and on a refusal its reason."""
 
-    state: Mapping[str, object] | None = None
+    state: VoiceConnectionState | None = None
     error: OperationError | None = None
 
 
@@ -163,9 +190,9 @@ class VoiceQuery:
 
 @dataclass(frozen=True)
 class VoiceStatusReadEnvelope(ReadEnvelope):
-    """A connection's status, in the implementer's own shape; none is `nothing_found`."""
+    """A connection's status: the snapshot plus the implementer's own fields."""
 
-    payload: Mapping[str, object] | None
+    payload: VoiceConnectionState | None
 
 
 @dataclass(frozen=True)
@@ -196,6 +223,13 @@ class IntakeOperationReadEnvelope(ReadEnvelope):
 
     payload: IntakeOperationEnvelope | None
 
+
+#: The answer each voice kind's `complete` carries: a report the hub's own, a
+#: play or a join the snapshot with its playback, any other kind the snapshot.
+VOICE_COMPLETE: Final[Mapping[VoiceOperationKind, type]] = {
+    kind: {"report": VoiceReportPayload, "play": VoicePlayState,
+           "join": VoiceJoinState}.get(kind, VoiceConnectionState)
+    for kind in VOICE_EFFECTS}
 
 #: Each operation request's kind, mapped to the effect it carries.
 EFFECTS: Final[Mapping[

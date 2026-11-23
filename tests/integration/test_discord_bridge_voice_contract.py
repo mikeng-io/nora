@@ -45,7 +45,8 @@ async def bridge(aiohttp_client):
 
 async def _op(http, kind: str, operation_id: str | None = None, **effect) -> dict:
     return await envelope(await http.post("/v1/voice/operations", headers=AUTH, json={
-        "operation_id": operation_id or str(uuid4()), "kind": kind, "effect": effect}))
+        "operation_id": operation_id or str(uuid4()), "kind": kind, "effect": effect}),
+        kind=kind)
 
 
 def _audio(size: int) -> str:
@@ -80,7 +81,7 @@ async def test_voice_outcomes_follow_the_contract(bridge):
     status = await envelope(await http.post("/v1/voice/queries", headers=AUTH, json={
         "kind": "status", "params": {"guild_id": GUILD}}))
     assert status["outcome"] == "ok" and status["when"]["known_by"] == "bridge_clock"
-    assert status["payload"] == {"connected": True, "session": True,
+    assert status["payload"] == {"connected": True, "session": True, "playback_id": None,
                                  "generation": generation, "channel_id": CHANNEL}
 
     # A speech body past aiohttp's 1 MiB default is still read.
@@ -164,7 +165,8 @@ async def test_a_conflict_from_the_controller_is_an_envelope(aiohttp_client):
         if conflict["on"]:
             return web.json_response({"error": "operation_id_reused"}, status=409)
         return web.json_response(operation_envelope("complete", {"state": {
-            "voice": "connected", "generation": "gen-1", "channel_id": CHANNEL}}))
+            "voice": "connected", "generation": "gen-1", "channel_id": CHANNEL,
+            "playback_id": None}}))
 
     stub = web.Application()
     stub.router.add_post("/v1/voice/operations", operation)
@@ -183,6 +185,38 @@ async def test_a_conflict_from_the_controller_is_an_envelope(aiohttp_client):
     joined = await _op(http, "join", guild_id=GUILD, channel_id=CHANNEL)
 
     assert [spoken["outcome"], left["outcome"], joined["outcome"]] == ["unavailable"] * 3
+
+
+@pytest.mark.parametrize(("snapshot", "kept"), [
+    ({"generation": "gen-2", "channel_id": CHANNEL}, True),
+    ({"voice": "idle", "generation": None, "channel_id": None}, False),
+])
+async def test_only_a_rejection_that_states_no_connection_drops_the_session(
+        aiohttp_client, snapshot, kept):
+    """A rejection snapshot without `voice` says nothing about the connection, so
+    the cached session stays; one that states `idle` drops it."""
+    async def operation(request: web.Request) -> web.Response:
+        if (await request.json())["kind"] == "join":
+            return web.json_response(operation_envelope("complete", {"state": {
+                "voice": "connected", "generation": "gen-1", "channel_id": CHANNEL,
+                "playback_id": None}}))
+        return web.json_response(operation_envelope("rejected", {
+            "state": snapshot, "error": {"kind": "generation_conflict", "message": "x"}}))
+
+    stub = web.Application()
+    stub.router.add_post("/v1/voice/operations", operation)
+    controller = await aiohttp_client(stub)
+    hub = VoiceControllerHub({GUILD: VoiceControllerClient(
+        str(controller.make_url("")).rstrip("/"))})
+    http = await aiohttp_client(DiscordBridge(
+        api_token=TOKEN, account_key="generated-account", client=object(), hub=hub).routes())
+    assert (await _op(http, "join", guild_id=GUILD, channel_id=CHANNEL))["outcome"] == "complete"
+
+    spoken = await _op(http, "speak", guild_id=GUILD, generation="gen-1",
+                       media_type="audio/wav", audio_b64=_audio(4))
+
+    assert spoken["payload"]["error"]["kind"] == "generation_conflict"
+    assert (hub.session_for(GUILD) is not None) is kept
 
 
 @pytest.mark.parametrize(("hub_status", "outcome"), [

@@ -918,8 +918,9 @@ const handleV1 = createV1({
   },
   health: healthV1,
   liveness,
-  // The contract needs the durable stores and a live, paired socket.
-  ready: () => Boolean(DURABLE && actionStore && attachments && healthV1().ok),
+  // Beside the stores, a live paired socket and an account identity, the
+  // contract is served only in durable mode.
+  ready: () => DURABLE,
   metrics,
 });
 

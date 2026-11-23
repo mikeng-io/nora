@@ -16,15 +16,17 @@ no other way to verify it.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import math
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Iterable
 from typing import Any
 
 import discord
 from discord import app_commands
 
+from nora.domain.music import MusicSession
 from nora.infra.voice.http_controller import (
     GenerationConflict,
     VoiceControllerError,
@@ -570,64 +572,104 @@ async def register(
     )
 
 
-async def resume_persisted_sessions(
-    client: discord.Client,
-    manager: MusicPlayerManager,
+def _recover_factory(hub: VoiceControllerHub | None, guild_id: str, channel_id: str) -> Connect:
+    """Boot recovery's connect: adopt the controller's live connection, else join."""
+    join = _connect_factory(hub, guild_id, channel_id)
+
+    async def connect() -> VoiceSession:
+        if hub is not None:
+            await hub.adopt_boot_voice_sessions((guild_id,))
+        return await join()
+
+    return connect
+
+
+async def recover_voice_sessions(
+    client: discord.Client | None,
+    manager: MusicPlayerManager | None,
     *,
     hub: VoiceControllerHub | None,
+    voice_guild_ids: Iterable[str] = (),
     resolve_music_channel: ResolveMusicChannel = no_music_channel,
     client_getter: ClientGetter | None = None,
     command_acts: DiscordCommandActs | None = None,
 ) -> None:
-    """Boot-time resume: reconnects a guild's session ONLY if its voice channel still
-    has a human in it right now -- symmetric with the "leave when a channel
-    empties of humans" rule: a deploy must not make Nora silently rejoin and
-    play into an empty room. A channel that's gone entirely, or emptied
-    while Nora was down, gets its stale row discarded instead of a reconnect
-    attempt.
+    """Boot recovery, on every `on_ready`: each persisted music guild and every
+    other voice guild's live connection, each guild on its own, concurrently.
 
-    The connect closure goes through `hub.join`, which ADOPTS the
-    controller's existing connection + generation when the controller
-    outlived a nora restart.
+    A persisted guild is recovered in ONE step under its player's guild lock
+    (`MusicPlayerManager.resume_persisted_session`): the adoption, the join
+    retry and the player construction all run inside it, so a track-finished
+    arriving meanwhile waits and then advances the built player. It is
+    reconnected ONLY if its voice channel still has a human in it right now --
+    symmetric with the "leave when a channel empties of humans" rule; a channel
+    gone or emptied while Nora was down gets its stale row discarded instead.
 
-    Safe to run on every `on_ready`, not just a genuine process boot --
-    `MusicPlayerManager.resume_persisted_session` already refuses to
-    clobber a guild that already has a live player."""
-    for session in await manager.persisted_sessions():
-        channel = client.get_channel(int(session.voice_channel_id))
-        if channel is None:
-            try:
-                channel = await client.fetch_channel(int(session.voice_channel_id))
-            except discord.HTTPException:
-                channel = None
-        if not is_voice_channel(channel) or not any(
-            not member.bot for member in channel.members
-        ):
-            log.info(
-                "not resuming music session for guild %s (channel gone or empty)",
-                session.guild_id,
-            )
-            await manager.discard_persisted_session(session.guild_id)
-            continue
+    Every other voice guild (a wake-reply-only one has no music row) adopts the
+    connection the controller kept alive, so speech replies are not dropped
+    until a human runs `/discord join`. One guild's failure is logged by its
+    type and leaves the others recovering. Idempotent: the manager never
+    clobbers a live player and `hub.join` short-circuits on its cache."""
+    persisted = (list(await manager.persisted_sessions())
+                 if manager is not None and client is not None else [])
+    steps: dict[str, Coroutine[Any, Any, None]] = {
+        session.guild_id: _recover_persisted(
+            client, manager, session, hub=hub, resolve_music_channel=resolve_music_channel,
+            client_getter=client_getter, command_acts=command_acts)
+        for session in persisted if client is not None and manager is not None}
+    if hub is not None:
+        steps.update({guild_id: hub.adopt_boot_voice_sessions((guild_id,))
+                      for guild_id in voice_guild_ids if guild_id and guild_id not in steps})
+    # Each guild on its own, under its own lock: one held join delays no other.
+    results = await asyncio.gather(*steps.values(), return_exceptions=True)
+    for result in results:
+        if isinstance(result, BaseException):
+            log.error("voice recovery failed: %s", type(result).__name__)
 
+
+async def _recover_persisted(
+    client: discord.Client,
+    manager: MusicPlayerManager,
+    session: MusicSession,
+    *,
+    hub: VoiceControllerHub | None,
+    resolve_music_channel: ResolveMusicChannel,
+    client_getter: ClientGetter | None,
+    command_acts: DiscordCommandActs | None,
+) -> None:
+    """Resume one persisted guild with a human present; else discard it and adopt."""
+    channel = client.get_channel(int(session.voice_channel_id))
+    if channel is None:
         try:
-            await manager.resume_persisted_session(
-                session,
-                connect=_connect_factory(hub, session.guild_id, session.voice_channel_id),
-                # The persisted `notify_channel_id` is the FALLBACK, not the
-                # destination: a resume re-reads `policy.toml`'s `music_channel`
-                # like every other post does, so an operator who set one while
-                # Nora was down gets it honoured on the way back up.
-                notify=make_notify(
-                    # The adapter's getter, not the `on_ready` client this
-                    # scan is running under — see `_notify_factory` for what a
-                    # captured, later-closed client costs.
-                    client=client_getter or (lambda: client),
-                    guild_id=session.guild_id,
-                    fallback_channel_id=session.notify_channel_id,
-                    command_acts=command_acts,
-                    resolve_music_channel=resolve_music_channel,
-                ),
-            )
-        except Exception:
-            log.exception("failed to resume music session for guild %s", session.guild_id)
+            channel = await client.fetch_channel(int(session.voice_channel_id))
+        except discord.HTTPException:
+            channel = None
+    if not is_voice_channel(channel) or not any(
+        not member.bot for member in channel.members
+    ):
+        log.info(
+            "not resuming music session for guild %s (channel gone or empty)",
+            session.guild_id,
+        )
+        await manager.discard_persisted_session(session.guild_id)
+        if hub is not None:
+            await hub.adopt_boot_voice_sessions((session.guild_id,))
+        return
+    await manager.resume_persisted_session(
+        session,
+        connect=_recover_factory(hub, session.guild_id, session.voice_channel_id),
+        # The persisted `notify_channel_id` is the FALLBACK, not the
+        # destination: a resume re-reads `policy.toml`'s `music_channel`
+        # like every other post does, so an operator who set one while
+        # Nora was down gets it honoured on the way back up.
+        notify=make_notify(
+            # The adapter's getter, not the `on_ready` client this
+            # scan is running under — see `_notify_factory` for what a
+            # captured, later-closed client costs.
+            client=client_getter or (lambda: client),
+            guild_id=session.guild_id,
+            fallback_channel_id=session.notify_channel_id,
+            command_acts=command_acts,
+            resolve_music_channel=resolve_music_channel,
+        ),
+    )
