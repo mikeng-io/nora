@@ -27,11 +27,8 @@ Ordered by how much confusion each has caused.
 
 ## Identity, and the things that are not one
 
-An **identity** is the subject Nora knows: a human, a bot or an agent, in one
-model where no type decides permissions
-([managed identity](design/managed-identity-access/identity.md#one-identity-many-accounts)).
-Design and the API say identity; the code still says `person`, and the two
-other things named "identity" are spelled out below so they never collide.
+An **identity** is the subject Nora knows — a human, a bot or an agent, one model, no type deciding permissions ([managed identity](design/managed-identity-access/identity.md#one-identity-many-accounts)).
+Design and the API say identity; code still says `person`. The other two "identity" things are spelled out below.
 
 | term | means | where |
 |---|---|---|
