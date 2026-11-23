@@ -22,9 +22,10 @@ honour the state wherever they are called from.
 ## Startup
 
 - Real misconfiguration still refuses to start: an unknown `mode`, an enabled
-  platform with no token resolved, a Redis URL missing for bridge mode, or a
-  Signal account that cannot be derived. These faults come from the
-  deployment, so a restart cannot cure them.
+  platform with no token resolved, bridge mode with no shared bearer or no
+  Redis URL, a bridge refusing Nora's credentials (401 or 403), or a Signal
+  account that cannot be derived. These faults come from the deployment, so
+  neither a retry nor a restart can cure them.
 - A failure to *resolve an identity* (a bridge logged out, still starting,
   unreachable, or answering a malformed identity) degrades that platform
   alone. It logs one ERROR line with the reason. A bridge still gets its
@@ -35,6 +36,8 @@ honour the state wherever they are called from.
   back with no hope of recovery. Starting keeps the process alive to promote
   platforms when they return. `/health` then answers unhealthy, because a Nora
   nobody can reach is an outage, not a warning.
+- A configuration with no platform enabled still refuses to start. Nothing
+  could ever be promoted, so that case is misconfiguration, not degradation.
 
 ## Promotion
 
