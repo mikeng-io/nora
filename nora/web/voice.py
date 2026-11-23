@@ -66,6 +66,7 @@ from nora.platform.bridge.answers import (
     OperationLedger,
     now_ms,
     operation_request,
+    pending_body,
     report_answer,
     settled_body,
     trace_of,
@@ -194,6 +195,7 @@ def register_voice(
 
     def serve(kinds: frozenset[str],
               apply: Callable[[str, dict[str, Any]], Awaitable[Answer]],
+              running: dict[str, Any],
               ) -> Callable[[web.Request], Awaitable[web.Response]]:
         async def submit(request: web.Request) -> web.Response:
             # Checked before the body is read: an unauthenticated caller gets
@@ -205,13 +207,15 @@ def register_voice(
                 return parsed
             operation_id, kind, effect = parsed
             started, trace = now_ms(), trace_of(request.headers)
+            target = str(effect.get("guild_id") or "")
 
             async def work() -> dict[str, Any]:
                 outcome, payload = await apply(kind, effect)
-                return settled_body(outcome, payload, target=str(effect.get("guild_id") or ""),
-                                    trace=trace, started_ms=started)
+                return settled_body(outcome, payload, target=target, trace=trace,
+                                    started_ms=started)
 
-            return await ledger.respond(request, operation_id, kind, effect, work)
+            return await ledger.respond(request, operation_id, kind, effect, work, pending_body(
+                running, target=target, trace=trace, started_ms=started))
 
         return submit
 
@@ -221,8 +225,8 @@ def register_voice(
         return ledger.read(request, source=SOURCE)
 
     app.router.add_post("/v1/intake/operations",
-                        serve(INTAKE_KINDS, lambda _kind, effect: record(effect)))
+                        serve(INTAKE_KINDS, lambda _kind, effect: record(effect), {}))
     app.router.add_get("/v1/intake/operations/{operation_id}", read)
     if on_voice_event is not None:
-        app.router.add_post("/v1/voice/operations", serve(VOICE_KINDS, report))
+        app.router.add_post("/v1/voice/operations", serve(VOICE_KINDS, report, {"state": None}))
         app.router.add_get("/v1/voice/operations/{operation_id}", read)

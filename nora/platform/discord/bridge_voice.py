@@ -30,6 +30,7 @@ from nora.platform.bridge.answers import (
     envelope_response,
     now_ms,
     operation_request,
+    pending_body,
     read_body,
     report_answer,
     settled_body,
@@ -94,15 +95,15 @@ class BridgeVoiceSurface:
         if isinstance(parsed, web.Response):
             return parsed
         operation_id, kind, effect = parsed
-        started = now_ms()
+        started, trace = now_ms(), trace_of(req.headers)
         target = str(effect.get("guild_id") or "")
 
         async def work() -> dict[str, Any]:
             outcome, payload = await self._apply(kind, effect)
-            return settled_body(outcome, payload, target=target,
-                                trace=trace_of(req.headers), started_ms=started)
+            return settled_body(outcome, payload, target=target, trace=trace, started_ms=started)
 
-        return await self._ledger.respond(req, operation_id, kind, effect, work)
+        return await self._ledger.respond(req, operation_id, kind, effect, work, pending_body(
+            {"state": None}, target=target, trace=trace, started_ms=started))
 
     async def read_operation(self, req: web.Request) -> web.Response:
         return self._ledger.read(req, source=SOURCE)

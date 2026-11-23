@@ -11,8 +11,8 @@ import asyncio
 import hashlib
 import json
 import time
-from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from aiohttp import web
@@ -106,11 +106,22 @@ async def operation_request(req: web.Request, kinds: frozenset[str], *,
     return operation_id, str(body["kind"]), effect
 
 
+@dataclass
+class _Entry:
+    digest: str
+    answer: asyncio.Future[dict[str, Any]]
+    pending: dict[str, Any]
+    #: `None` while the operation runs; five minutes from settlement once it has.
+    expires_at: float | None = None
+
+
 class OperationLedger:
-    """One process's answered operations by `operation_id`, each kept five minutes.
+    """One process's operations by `operation_id`, each answer kept five minutes.
 
     An entry holds a hash of the kind and effect and the answered envelope, never
-    the effect itself, so a `speak` keeps no audio.
+    the effect itself, so a `speak` keeps no audio. An id is reserved before its
+    effect runs and nothing is dropped before its time: with every slot held,
+    a new operation is refused `unavailable` before any effect.
     """
 
     def __init__(self, *, ttl_s: float = 300.0, bound: int = 4096,
@@ -118,67 +129,64 @@ class OperationLedger:
         self._ttl_s = ttl_s
         self._bound = bound
         self._clock = clock
-        #: operation_id -> (expires_at, kind-and-effect hash, answer, started_at_ms).
-        self._entries: OrderedDict[
-            str, tuple[float, str, asyncio.Future[dict[str, Any]], int]] = OrderedDict()
+        self._entries: dict[str, _Entry] = {}
 
     def _expire(self) -> None:
         now = self._clock()
-        while self._entries and next(iter(self._entries.values()))[0] <= now:
-            self._entries.popitem(last=False)
-        while len(self._entries) > self._bound:
-            self._entries.popitem(last=False)
+        for operation_id in [k for k, e in self._entries.items()
+                             if e.expires_at is not None and e.expires_at <= now]:
+            del self._entries[operation_id]
 
     async def run(self, operation_id: str, kind: str, effect: object,
-                  work: Callable[[], Awaitable[dict[str, Any]]]) -> dict[str, Any]:
+                  work: Callable[[], Awaitable[dict[str, Any]]],
+                  pending: dict[str, Any]) -> dict[str, Any]:
         """The envelope answered for this id, running `work` once per id and effect.
 
-        Raises `OperationConflictError` for the id reused with another kind or
-        effect; an exception from `work` (an `InvalidOperation`) keeps nothing.
+        `pending` is the operation's envelope while it runs. Raises
+        `OperationConflictError` for the id reused with another kind or effect;
+        an exception from `work` (an `InvalidOperation`) keeps nothing.
         """
         self._expire()
         digest = hashlib.sha256(json.dumps(
             [kind, effect], sort_keys=True, default=str).encode()).hexdigest()
         held = self._entries.get(operation_id)
         if held is not None:
-            if held[1] != digest:
+            if held.digest != digest:
                 raise OperationConflictError(operation_id)
-            return await asyncio.shield(held[2])
-        answer: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
-        self._entries[operation_id] = (self._clock() + self._ttl_s, digest, answer, now_ms())
+            return await asyncio.shield(held.answer)
+        if len(self._entries) >= self._bound:
+            return _refused(pending)
+        entry = _Entry(digest, asyncio.get_running_loop().create_future(), pending)
+        self._entries[operation_id] = entry
         try:
             envelope = await work()
-        except Exception as exc:
-            self._entries.pop(operation_id, None)
-            answer.set_exception(exc)
-            answer.exception()
+        except BaseException as exc:
+            if self._entries.get(operation_id) is entry:
+                del self._entries[operation_id]
+            if isinstance(exc, Exception):
+                entry.answer.set_exception(exc)
+                entry.answer.exception()
+            else:
+                entry.answer.cancel()
             raise
-        except BaseException:
-            self._entries.pop(operation_id, None)
-            answer.cancel()
-            raise
-        answer.set_result(envelope)
+        entry.expires_at = self._clock() + self._ttl_s
+        entry.answer.set_result(envelope)
         return envelope
 
     def get(self, operation_id: str) -> dict[str, Any] | None:
-        """The envelope kept for an id, `pending` while it runs, or `None`."""
+        """The envelope kept for an id, its `pending` one while it runs, or `None`."""
         self._expire()
         held = self._entries.get(operation_id)
         if held is None:
             return None
-        if not held[2].done():
-            return {"outcome": "pending", "payload": None,
-                    "when": {"state": "started", "started_at_ms": held[3],
-                             "settled_at_ms": None},
-                    "from": {"target": "", "platform_ref": None},
-                    "scope": dict(INSTALLATION), "trace": ""}
-        return held[2].result()
+        return held.answer.result() if held.answer.done() else held.pending
 
     async def respond(self, req: web.Request, operation_id: str, kind: str, effect: object,
-                      work: Callable[[], Awaitable[dict[str, Any]]]) -> web.Response:
+                      work: Callable[[], Awaitable[dict[str, Any]]],
+                      pending: dict[str, Any]) -> web.Response:
         """`run` on the wire: the envelope, a 409 for a reused id, or a 400."""
         try:
-            return envelope_response(await self.run(operation_id, kind, effect, work))
+            return envelope_response(await self.run(operation_id, kind, effect, work, pending))
         except OperationConflictError:
             return web.json_response({"error": "operation_id_reused"}, status=409)
         except InvalidOperation as exc:
@@ -190,6 +198,23 @@ class OperationLedger:
         return envelope_response(read_body(
             "ok" if envelope is not None else "nothing_found", envelope, source=source,
             trace=trace_of(req.headers), scope=INSTALLATION))
+
+
+def pending_body(payload: Mapping[str, Any], *, target: str, trace: str,
+                 started_ms: int) -> dict[str, Any]:
+    """An operation's envelope while it runs: `pending`, `started`, not settled."""
+    return {"outcome": "pending", "payload": dict(payload),
+            "when": {"state": "started", "started_at_ms": started_ms, "settled_at_ms": None},
+            "from": {"target": target, "platform_ref": None},
+            "scope": dict(INSTALLATION), "trace": trace}
+
+
+def _refused(pending: Mapping[str, Any]) -> dict[str, Any]:
+    """`unavailable` for an operation the full ledger could not hold; nothing ran."""
+    error = {"kind": "ledger_full", "message": "too many operations in flight"}
+    return {**pending, "outcome": "unavailable",
+            "payload": {**pending["payload"], "error": error},
+            "when": {**pending["when"], "state": "settled", "settled_at_ms": now_ms()}}
 
 
 def report_answer(status: int, answer: Mapping[str, Any]
