@@ -33,7 +33,7 @@ _STATUS: Final[Mapping[str, int]] = {
     "complete": 200, "pending": 202, "denied": 403, "rejected": 200,
     "unsupported": 200, "incomplete": 200, "uncertain": 200,
 }
-_MEMBERS: Final[Mapping[Family, frozenset[str]]] = {
+_MEMBERS: Final[Mapping[Family, frozenset[Outcome]]] = {
     "read": frozenset(get_args(ReadOutcome)),
     "operation": frozenset(get_args(OperationOutcome)),
 }
@@ -59,8 +59,9 @@ def parse_response(family: Family, status: int, body: object) -> ParsedResponse:
     """Read a response of one family; anything not self-consistent is `unavailable`."""
     if status in NO_ENVELOPE_STATUSES:
         return ParsedResponse(outcome=None, caller_fault=status)
-    outcome = body.get("outcome") if isinstance(body, Mapping) else None
-    if outcome not in _MEMBERS[family] or _STATUS[outcome] != status:
+    stated = body.get("outcome") if isinstance(body, Mapping) else None
+    outcome = next((member for member in _MEMBERS[family] if member == stated), None)
+    if outcome is None or _STATUS[outcome] != status:
         return ParsedResponse(outcome="unavailable")
     return ParsedResponse(outcome=outcome)
 
@@ -129,6 +130,10 @@ class OperationEnvelope:
     from_: OperationFrom
     scope: Scope
     trace: str
+
+    def __post_init__(self) -> None:
+        if (self.when.state == "settled") == (self.outcome == "pending"):
+            raise ValueError(f"a {self.when.state} envelope cannot be {self.outcome}")
 
 
 class OperationConflictError(Exception):

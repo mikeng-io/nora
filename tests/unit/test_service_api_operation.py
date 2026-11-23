@@ -8,9 +8,13 @@ import pytest
 
 from nora.domain.service_api import (
     OperationConflictError,
+    OperationEnvelope,
+    OperationFrom,
     OperationOutcome,
     OperationRecord,
     OperationRequest,
+    OperationWhen,
+    Scope,
     admit,
 )
 
@@ -31,6 +35,8 @@ def test_a_record_moves_prepared_started_settled():
     assert (settled.started_at_ms, settled.settled_at_ms) == (1_000, 2_000)
     with pytest.raises(ValueError, match="cannot settle"):
         prepared.settle("complete", now_ms=1_000)
+    with pytest.raises(ValueError, match="cannot start"):
+        started.start(now_ms=1_500)
 
 
 @pytest.mark.parametrize("outcome", SETTLED_OUTCOMES)
@@ -71,3 +77,19 @@ def test_the_same_id_with_another_effect_is_a_conflict():
     another_kind = OperationRequest(operation_id="op-0001", kind="react", effect=_request().effect)
     with pytest.raises(OperationConflictError):
         admit(another_kind, started)
+
+
+def _envelope(state, outcome):
+    return OperationEnvelope(
+        outcome=outcome, payload=None, when=OperationWhen(state=state),
+        from_=OperationFrom(target="placeholder"), scope=Scope(level="room"), trace="t",
+    )
+
+
+def test_an_envelope_pairs_pending_with_an_unsettled_state_only():
+    assert _envelope("started", "pending").outcome == "pending"
+    assert _envelope("settled", "complete").when.state == "settled"
+    with pytest.raises(ValueError, match="cannot be"):
+        _envelope("settled", "pending")
+    with pytest.raises(ValueError, match="cannot be"):
+        _envelope("prepared", "complete")

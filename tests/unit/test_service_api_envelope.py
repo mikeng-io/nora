@@ -51,6 +51,8 @@ def test_a_conforming_response_parses_to_its_outcome(family, outcome, status):
         ("read", 200, {"outcome": "complete"}),
         ("read", 200, {"payload": {}}),
         ("read", 200, None),
+        ("read", 200, {"outcome": ["ok"]}),
+        ("operation", 200, {"outcome": {"outcome": "complete"}}),
     ],
 )
 def test_a_status_that_disagrees_with_its_body_is_unavailable(family, status, body):
