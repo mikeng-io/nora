@@ -24,18 +24,6 @@ from . import music_messages as m
 
 log = logging.getLogger(__name__)
 
-_NOTE_ERRORS: dict[tuple[str, str], tuple[OperationOutcome, str]] = {
-    ("nothing_found", m.nothing_found_line()): ("rejected", "nothing_found"),
-    ("nothing_found", m.nothing_playing_line()): ("rejected", "nothing_playing"),
-    ("nothing_found", m.nothing_queued_at_position_line()): (
-        "rejected", "nothing_queued_at_position"),
-    ("unavailable", m.disconnected_note()): ("unavailable", "disconnected"),
-    ("unavailable", m.not_in_voice_note()): ("unavailable", "not_in_voice"),
-    ("unavailable", m.join_failed_note()): ("unavailable", "join_failed"),
-    ("unavailable", m.not_in_allowed_guild_note()): ("unavailable", "not_in_allowed_guild"),
-    ("unavailable", m.volume_out_of_range_line()): ("unavailable", "volume_out_of_range"),
-}
-
 
 def _error(kind: str) -> dict[str, str]:
     return {"kind": kind, "message": ""}
@@ -97,8 +85,8 @@ class BridgeMusicSurface:
         if kind == "music_play" and not self._admit_requester(room, effect["sender_ids"]):
             return "denied", {"error": _error("sender_not_admitted")}
         result = await self._call_tool(kind, room, effect)
-        outcome, error_kind = ("complete", None) if result.status == "ok" else _NOTE_ERRORS.get(
-            (result.status, result.note), ("unavailable", "music_failed"))
+        outcome, error_kind = ("complete", None) if result.status == "ok" else m.music_error(
+            result.status, result.note)
         error = _error(error_kind) if error_kind is not None else None
         if outcome == "unavailable":
             return outcome, {"error": error}
