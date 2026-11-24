@@ -12,7 +12,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { STATUS } from '../src/contract.mjs';
-import { createOutbox } from '../src/outbox.mjs';
+import { createOutbox, isReportAnswer } from '../src/outbox.mjs';
 import { extract, TARGET } from '../scripts/report_schema.mjs';
 import { EVENT_URL as URL, createFakeClock, hubAnswer, tick } from './helpers.mjs';
 
@@ -349,6 +349,7 @@ test('reports are retried only when the hub could not take them', async () => {
     'outcome disagrees': hubAnswer('unavailable', { status: 200 }),
     'no envelope': unparseable,
     'not settled': hubAnswer('pending'),
+    uncertain: hubAnswer('uncertain'),
     'a read outcome': hubAnswer('ok'),
     'a bare outcome': { status: 200, json: async () => ({ outcome: 'complete' }) },
     'settled but missing parts': { status: 200, json: async () => ({ outcome: 'complete', when: { state: 'settled' } }) },
@@ -407,7 +408,6 @@ test('reports are retried only when the hub could not take them', async () => {
     denied: hubAnswer('denied'),
     rejected: hubAnswer('rejected'),
     unsupported: hubAnswer('unsupported'),
-    uncertain: hubAnswer('uncertain'),
     incomplete: hubAnswer('incomplete'),
     'bad request': { status: 400, json: async () => ({ error: 'invalid_body' }) },
     conflict: { status: 409, json: async () => ({ error: 'operation_id_reused' }) },
@@ -456,6 +456,16 @@ test('the shipped report schema is the contract document\'s', () => {
   assert.equal(check.status, 0, check.stderr);
 });
 
+test('the report schema carries a status only on complete', () => {
+  const answer = (outcome, payload) => ({ outcome, payload, when: { state: 'settled' },
+    from: { target: '' }, scope: { level: 'installation' }, trace: '' });
+  assert.equal(isReportAnswer(answer('complete', { status: 'ok' })), true);
+  assert.equal(isReportAnswer(answer('uncertain', { status: 'ok' })), false, 'uncertain with a status');
+  assert.equal(isReportAnswer(answer('uncertain', {})), true, 'uncertain with nothing');
+  assert.equal(isReportAnswer(answer('rejected', {})), false, 'a refusal with no error');
+  assert.equal(isReportAnswer(answer('rejected', { error: { kind: 'k', message: 'm' } })), true);
+});
+
 // One event, one first answer, then a hub that takes it: whether the event
 // was retried, with a new operation_id and the same event.
 async function retriedAfter(first, status) {
@@ -494,23 +504,25 @@ test('every acknowledgement is retried exactly when the contract refuses it', as
   const cases = ['ok', 'duplicate', 'stale'].map((status) => [status, { ...ack, payload: { status } }, false]);
   for (const outcome of ['rejected', 'denied', 'unsupported', 'incomplete', 'uncertain']) {
     const typed = (payload) => ({ ...ack, outcome, payload });
-    cases.push([`${outcome} valid`, typed({ error, state: { channel_id: null, generation: null } }), false]);
+    // `uncertain` is retried whatever it carries: the hub cannot say whether it applied the event.
+    cases.push([`${outcome} valid`, typed({ error, state: { channel_id: null, generation: null } }), outcome === 'uncertain']);
     for (const [label, payload] of Object.entries({
       scalar: 'bad', empty: {}, 'empty error': { error: {} },
       'missing kind': { error: { message: 'bad' } }, 'missing message': { error: { kind: 'bad' } },
       'extra payload key': { error, other: 1 }, 'scalar state': { error, state: 1 },
       'array state': { error, state: [] }, 'empty state': { error, state: {} },
       'wrong nested state type': { error, state: { generation: 1, channel_id: null } },
-    })) cases.push([`${outcome} ${label}`, typed(payload), outcome !== 'uncertain' || label !== 'empty']);
+    })) cases.push([`${outcome} ${label}`, typed(payload), true]);
   }
-  cases.push(['uncertain omitted error with null state', { ...ack, outcome: 'uncertain', payload: { state: null } }, false]);
+  cases.push(['uncertain omitted error with null state', { ...ack, outcome: 'uncertain', payload: { state: null } }, true]);
+  cases.push(['uncertain with a report status', { ...ack, outcome: 'uncertain', payload: { status: 'ok' } }, true]);
   for (const payload of [1, {}, { status: 'bogus' }, { status: 'ok', extra: true }]) {
     cases.push([`complete ${JSON.stringify(payload)}`, { ...ack, payload }, true]);
   }
   // Replies recorded from the Python hubs (the bridge and the app).
   const replies = JSON.parse(readFileSync(new globalThis.URL('./report_replies.json', import.meta.url), 'utf8'));
   for (const { label, status, body, retry } of replies) cases.push([label, body, retry, status]);
-  assert.equal(cases.length, 80);
+  assert.equal(cases.length, 81);
 
   const mismatches = [];
   for (const [label, first, retry, status = STATUS[first.outcome]] of cases) {

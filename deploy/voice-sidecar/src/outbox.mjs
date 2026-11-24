@@ -33,10 +33,6 @@ const ajv = new Ajv2020({ strict: false });
 ajv.addSchema({ $id: 'report', ...REPORT_SCHEMA });
 export const isReportAnswer = ajv.getSchema('report#/components/schemas/VoiceReportEnvelope');
 
-// The refusals whose reason the hub must name. The schema leaves a payload's
-// `error` optional, because a connection answer may omit it.
-const REFUSALS = Object.freeze(['rejected', 'unsupported', 'denied', 'incomplete']);
-
 export function createOutbox({
   url,
   headers = {},
@@ -72,12 +68,12 @@ export function createOutbox({
     return event;
   }
 
-  // What the hub's answer means for this event: 'taken' (a settled operation
-  // envelope with any outcome but `unavailable`), 'refused' (400, 409, 422:
-  // retrying cannot help) or 'retry' (everything else: `unavailable`, 3xx,
-  // 401, 404, a status that disagrees with its outcome, a read's outcome, a
-  // record not yet settled, a refusal with no reason, or anything the
-  // contract's report answer schema does not accept).
+  // What the hub's answer means for this event: 'taken' (a settled answer
+  // that says whether it applied the event: any outcome but `unavailable`,
+  // `pending` and `uncertain`), 'refused' (400, 409, 422: retrying cannot
+  // help) or 'retry' (everything else: 3xx, 401, 404, a status that disagrees
+  // with its outcome, or anything the contract's report answer schema does not
+  // accept).
   async function verdict(res) {
     const status = res?.status;
     if (status === 400 || status === 409 || status === 422) return 'refused';
@@ -88,12 +84,14 @@ export function createOutbox({
       return 'retry';
     }
     if (!isReportAnswer(envelope)) return 'retry';
-    // What the schema cannot say: the status agrees with the outcome, a taken
-    // answer is settled, and a refusal names its reason.
-    const { outcome, when, payload } = envelope;
+    // What the schema cannot say: the status agrees with the outcome, and a
+    // taken answer is settled.
+    const { outcome, when } = envelope;
     if (STATUS[outcome] !== status) return 'retry';
     if (outcome === 'unavailable' || outcome === 'pending' || when.state !== 'settled') return 'retry';
-    if (REFUSALS.includes(outcome) && payload.error == null) return 'retry';
+    // `uncertain`: the hub cannot say whether the event applied. Resending it
+    // under a new operation_id is safe, because the hub dedupes by event_id.
+    if (outcome === 'uncertain') return 'retry';
     return 'taken';
   }
 
