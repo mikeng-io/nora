@@ -2,9 +2,8 @@
 
 **This is a JOIN, and each existing test covers one end of it.** The note
 index renders `title=` into a prompt; the model reads that attribute and types
-a title back; `note_handle` normalises both sides and `_resolve_updates`,
-R-55's latch, the debrief latch and the create gate all decide identity on the
-result. `test_note_render.py` asserts what the index renders,
+a title back, and `note_handle` normalises both sides for `_resolve_updates`.
+`test_note_render.py` asserts what the index renders,
 `test_note_curator.py` asserts what `note_handle` does to a string; neither
 runs the string the renderer produced through the resolver that has to accept
 it.
@@ -160,9 +159,7 @@ def test_a_title_never_forges_an_element_in_the_index(case: str):
            "`unescape`'s `&amp;amp;`-last ordering made it safe and running it "
            "showed otherwise — and names the fix as out of scope there: "
            "unescape only the MODEL's input, never the stored title, which is a "
-           "change to a function four readers share (`tools`' resolve, R-55's "
-           "latch, the debrief latch, #228's create gate) and belongs with them "
-           "in view",
+           "change shared by the note title consumers",
 )
 def test_a_title_that_spells_an_entity_resolves_too(case: str):
     """Strict, so the limitation cannot silently start OR stop being real.

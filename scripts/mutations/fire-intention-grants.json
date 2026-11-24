@@ -1,0 +1,30 @@
+[
+  {
+    "name": "compute completion grants the intention write",
+    "file": "nora/app/fire.py",
+    "old": "        kind=\"compute\",\n        commit_intentions=True,\n",
+    "new": "        kind=\"compute\",\n",
+    "target": "tests/unit/test_fire_intention_surface.py::test_fire_grants_intention_commit_at_its_occasion[compute]"
+  },
+  {
+    "name": "lost-job recovery grants the intention write",
+    "file": "nora/app/fire.py",
+    "old": "        kind=\"compute_lost\",\n        commit_intentions=True,\n",
+    "new": "        kind=\"compute_lost\",\n",
+    "target": "tests/unit/test_fire_intention_surface.py::test_fire_grants_intention_commit_at_its_occasion[compute_lost]"
+  },
+  {
+    "name": "relay grants the intention write",
+    "file": "nora/app/fire.py",
+    "old": "        kind=\"relay\",\n        commit_intentions=True,\n",
+    "new": "        kind=\"relay\",\n",
+    "target": "tests/unit/test_fire_intention_surface.py::test_fire_grants_intention_commit_at_its_occasion[relay]"
+  },
+  {
+    "name": "an unrelated fire occasion cannot commit intentions",
+    "file": "nora/domain/events.py",
+    "old": "    commit_intentions: bool = False\n",
+    "new": "    commit_intentions: bool = True\n",
+    "target": "tests/unit/test_fire_intention_surface.py::test_fire_grants_intention_commit_at_its_occasion[other]"
+  }
+]

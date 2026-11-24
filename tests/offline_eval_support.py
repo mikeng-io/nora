@@ -327,7 +327,7 @@ def build_eval_tool_registry(
     `RouteClient`/`TransitClient`, not a port — the canned doubles match the one
     method each tool calls (`place_info`/`route`, `arrivals`) but not the class.
 
-    `notes` is the harness's note store. Without one the four note tools are
+    `notes` is the harness's note store. Without one both note readers are
     registered with a `None` store, so `note_read` and `note_search` answer
     `unavailable` — and the `<notes>` block renders a title and a description
     only, never the body. A `-known` knowledge-cut twin would then differ from

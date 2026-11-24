@@ -145,7 +145,7 @@ def test_live_name_change_keeps_last_good_identity_until_restart(
 
 @pytest.mark.parametrize("name", ["AgentAlpha", "AgentBeta"])
 @pytest.mark.parametrize("builder", ["registry", "wrapper"])
-async def test_canonical_name_reaches_transcript_tools_and_note_validation(
+async def test_canonical_name_reaches_transcript_tools(
     example_config_path: Path,
     name: str,
     builder: str,
@@ -158,12 +158,11 @@ async def test_canonical_name_reaches_transcript_tools_and_note_validation(
     from nora.domain.models import DeliveryStatus, NormalizedMessage, PersonRef
     from nora.persons import Persons
     from nora.testing import FakeRecordStore
-    from nora.testing.note_store import InMemoryNoteStore
 
     path = example_config_path.parent / "nora/doctrine/core/identity.md"
     path.write_text(path.read_text().replace("display_name: Nora", f"display_name: {name}"))
     cfg = load(example_config_path, require_secrets=False)
-    record, notes = FakeRecordStore(), InMemoryNoteStore()
+    record = FakeRecordStore()
     now = datetime(2026, 10, 1, tzinfo=UTC)
     await record.append(
         message=NormalizedMessage(
@@ -204,8 +203,6 @@ async def test_canonical_name_reaches_transcript_tools_and_note_validation(
     if builder == "registry":
         registry = ToolRegistry(
             display_name=cfg.doctrine.display_name,
-            notes=notes,
-            note_unit=lambda *_: "generated-unit",
             clock=lambda: now,
         )
         tools = {t.name: t.call for t in registry.specs(**common)}
@@ -215,8 +212,6 @@ async def test_canonical_name_reaches_transcript_tools_and_note_validation(
             for t in build_tools(
                 **common,
                 display_name=cfg.doctrine.display_name,
-                notes=notes,
-                note_unit=lambda *_: "generated-unit",
                 transit_source=None,
                 clock=lambda: now,
             )
@@ -226,27 +221,3 @@ async def test_canonical_name_reaches_transcript_tools_and_note_validation(
     assert said["said_by"] == [{"who": name, "line": "I checked the venue"}]
     transcript = await tools["load_transcript"]()
     assert name in str(transcript) and "PreviousLabel" not in str(transcript)
-
-    note = await notes.create(
-        unit="generated-unit",
-        title="venue",
-        description="which venue",
-        uncertainty="the choice",
-        closing_condition="a decision",
-        established_in="generated-room",
-        body="## Decided\n## Open\n- which venue [9000]",
-        established_by="tag:generated-person",
-        now_ms=1,
-        anchor_entity_ids=("Ada",),
-    )
-    assert (await tools["note_read"](title=note.title))["status"] == "ok"
-    bad = await tools["note_revise"](
-        title=note.title,
-        body=f"## Decided\n## Open\n- which venue [9000]\n## Proposed\n- the hall ({name}) [9000]",
-    )
-    assert bad["status"] == "refused" and "misattributed" in bad["note"]
-    good = await tools["note_revise"](
-        title=note.title,
-        body="## Decided\n## Open\n- which venue [9000]\n## Proposed\n- the hall (Ada) [9000]",
-    )
-    assert good["status"] == "ok"

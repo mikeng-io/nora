@@ -216,7 +216,7 @@ UNMEASURABLE_LIVE = frozenset({"media_fetch"})
 # - LOCATION: "where am I" (`where_is`, live GPS) vs "where's my work" (`saved_places`, a
 #   remembered label) vs "what's at this place" (`place_info`) vs "how do I get there"
 #   (`transit`/`route`) — four short questions, four different tools.
-# - MEMORY: the write lane (`remember`) vs the note lane (`note_create`), told apart by
+# - MEMORY: the write lane (`remember`) vs the note lane (`intention_commit`), told apart by
 #   what the person asked for.
 SEED_INTENT_GRAPH = IntentGraph(
     [
@@ -252,7 +252,7 @@ SEED_INTENT_GRAPH = IntentGraph(
         # person facts by design. This edge is what makes a 記低 ask answered by the
         # note lane visible to NoSiblingLeakage; without it the remember tool could never
         # fail a routing eval for leaking.
-        ("remember", "note_create"),
+        ("remember", "intention_commit"),
     ]
 )
 

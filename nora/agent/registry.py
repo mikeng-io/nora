@@ -367,8 +367,6 @@ class ToolRegistry:
         # link is opened through; `None` answers the open `unavailable`. Its
         # `google_account` names who the NOT_SHARED note says to share with.
         external_files: ExternalFilesSource | None = None, google_account: str = "",
-        # The legacy dependency still selects the Profile writes.
-        # Graph reads need the Cognitive Graph reader.
         memory_search: MemorySearch | None = None,
         graph_retrieval: Any = None,
         engagement_graph_retrieval: Any = None,
@@ -735,12 +733,9 @@ class ToolRegistry:
         R-27's status axis (`output_contract == "three_state"`). Both halves are
         load-bearing.
 
-        Without `read_only` the set would swallow the write verbs, which also
-        declare `three_state` (`note_revise`, `intention_commit`, the
-        music verbs; see `NativeTool.output_contract`). A failed WRITE is a
-        different fact from an empty READ, and counting one as the other would
-        let a `note_revise` that came back `unavailable` silence a reply she
-        had every reason to send.
+        A write such as `intention_commit` also declares `three_state`.
+        Counting its failure as an empty read would silence an otherwise
+        useful reply.
 
         Without `output_contract` it would swallow `load_transcript`, the one
         read on the table that deliberately carries NO status (its empty list
@@ -1105,6 +1100,7 @@ class ToolRegistry:
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
         message: Any = None,
         engagement: bool = False,
+        commit_intentions: bool = False,
     ) -> tuple[ToolSpec, ...]:
         """Build room-bound tool specs before Strands adaptation."""
         return build_tool_specs(
@@ -1150,7 +1146,9 @@ class ToolRegistry:
             memory_retrieval=self._memory_search,
             graph_retrieval=(self._engagement_graph_retrieval if engagement
                              else self._graph_retrieval),
-            intention_admission=self._intention_admission if engagement else None,
+            intention_admission=(
+                self._intention_admission if engagement or commit_intentions else None
+            ),
             memory_intake=self._memory_intake,
             profile=self._profile,
             lineage=self._lineage,
@@ -1260,6 +1258,7 @@ class ToolRegistry:
         occasion: str | None = None,
         message: Any = None,
         engagement: bool = False,
+        commit_intentions: bool = False,
     ) -> ToolSurface:
         """Build the resident tools, deferred shelf and catalogue from one admitted set."""
         scope = ToolScope(
@@ -1282,13 +1281,13 @@ class ToolRegistry:
             supplied_unit=supplied_unit, dream_adaptor=dream_adaptor,
             subagent_job=subagent_job, checkpoint_sink=checkpoint_sink,
             grant=grant, shelf=shelf, on_rows=on_rows, message=message, engagement=engagement,
+            commit_intentions=commit_intentions,
         )
         withheld = self._withheld
-        if engagement:
-            if self._engagement_graph_retrieval is not None:
-                withheld = withheld - {"memory_search", "memory_read"}
-            if self._intention_admission is not None:
-                withheld = withheld - GRAPH_PASS_TOOLS
+        if engagement and self._engagement_graph_retrieval is not None:
+            withheld = withheld - {"memory_search", "memory_read"}
+        if (engagement or commit_intentions) and self._intention_admission is not None:
+            withheld = withheld - {"intention_commit"}
         loader = next(spec for spec in specs if spec.name == LOADER_TOOL)
         admitted = [
             spec for spec in specs

@@ -1251,14 +1251,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "is refused and the PRIOR working set is kept — never a silent "
         "truncation, no consolidate retry (unlike the body's own overflow).",
     ),
-    _CounterSpec(
-        "nora_note_revise_refused_total",
-        "note_revise calls refused, by reason: not_read (the R-55 latch — the "
-        "model had not read a note by that title this turn), title_moved (the "
-        "title resolved to a different note than the one read), or stale_head "
-        "(the compare-and-set lost; the note moved under the call).",
-        ("reason",),
-    ),
     # Bounded reads where the LIMIT actually bit, by site. The vocabulary is
     # `nora.domain.bounds.BoundSite` and is deliberately NOT restated here (as for
     # `nora_ingest_outcomes_total`).

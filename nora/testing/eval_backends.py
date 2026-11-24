@@ -38,17 +38,11 @@ from nora.domain.presence import PresenceFix, SavedPlace, WireState
 #:
 #: A journey whose required or sibling set is in `BACKED_TOOLS` has its
 #: leakage/budget checks promoted to hard.
-#:
-#: `note_create` is likewise NOT wired here (the live harness has no note
-#: store), yet it stays in the set ON PURPOSE: it is the note-lane sibling in
-#: the remember journey's confusability cluster, and a wrong-lane call — even
-#: one that answers `unavailable` — is still a leak the gate must catch. The
-#: membership is about the GATE, not about the backend.
 BACKED_TOOLS = frozenset(
     {
         "weather", "web_search", "web_fetch", "place_info", "route", "transit",
         "where_is", "saved_places",
-        "remember", "note_create",
+        "remember",
         "parking_status", "find_parking",
     }
 )

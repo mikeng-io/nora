@@ -86,22 +86,6 @@ TOOLS = {
         output_contract="three_state",
         level=1,
     ),
-    "note_create": NativeTool(
-        1,
-        side_effect_state="confirmed",
-        idempotency="non_idempotent",
-        retry="never",
-        output_contract="three_state",
-        level=2,
-    ),
-    "note_revise": NativeTool(
-        2,
-        side_effect_state="confirmed",
-        idempotency="non_idempotent",
-        retry="never",
-        output_contract="three_state",
-        level=2,
-    ),
     "remember": NativeTool(
         1,
         side_effect_state="confirmed",
