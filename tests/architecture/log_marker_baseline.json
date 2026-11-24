@@ -418,7 +418,6 @@
  "nora/persons_file.py": 2,
  "nora/platform/bridge/inspection.py": 2,
  "nora/platform/bridge/telemetry.py": 1,
- "nora/platform/discord/bridge_app.py": 1,
  "nora/platform/discord/discord_presence.py": 2,
  "nora/platform/discord/listener.py": 1,
  "nora/platform/discord/media.py": 3,
