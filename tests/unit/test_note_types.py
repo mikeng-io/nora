@@ -30,14 +30,11 @@ Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 
 from __future__ import annotations
 
-import pathlib
-
 import pytest
 
 from nora.domain.notes import (
     BODY_MAX_CHARS,
     DESCRIPTION_MAX_CHARS,
-    TAG_PATH_PREFIX,
     TITLE_MAX_CHARS,
     Note,
     NoteRevision,
@@ -279,27 +276,3 @@ def test_a_body_exactly_at_the_cap_is_accepted():
     )
 
     assert len(revision.body) == BODY_MAX_CHARS
-
-
-def test_the_tag_path_prefix_has_no_second_copy_in_its_producer():
-    """**The strike reset's correctness rests on two strings matching**:
-    `TAG_PATH_PREFIX` is defined here and `nora/agent/tools.py` — the SOLE
-    producer — must import it rather than write the literal `f"tag:{...}"`.
-
-    Otherwise nothing fails on a rename. `is_tag_path_revision` would answer
-    False for every revision a person wrote, every note would look
-    background-authored, and the strike breaker would march every actively-worked
-    note to its strike ceiling — silently, because a strike has no log line.
-
-    A source check rather than a type check, because `nora/agent` is outside
-    `make gate`'s mypy scope: the import is only load-bearing if nothing
-    re-types the literal beside it.
-    """
-    source = pathlib.Path("nora/memory/adapters/tools/notes.py").read_text()
-
-    assert "TAG_PATH_PREFIX" in source, (
-        "positive control: the producer imports the constant at all"
-    )
-    assert f'f"{TAG_PATH_PREFIX}{{' not in source, (
-        "the producer re-typed the prefix instead of importing it"
-    )

@@ -455,7 +455,7 @@
  },
  "nora/app/fire.py": {
   "comment_blocks": 60,
-  "file_lines": 2387,
+  "file_lines": 2386,
   "functions": {
    "FirePath.__init__": 232,
    "FirePath._invoke": 231,
@@ -2526,7 +2526,7 @@
   "internal_docstrings": 1
  },
  "tests/offline_eval_evaluators.py": {
-  "comment_blocks": 7
+  "comment_blocks": 6
  },
  "tests/offline_eval_harness.py": {
   "comment_blocks": 21,

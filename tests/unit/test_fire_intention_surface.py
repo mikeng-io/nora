@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from nora.agent.registry import ToolRegistry
+from nora.agent.room import Room
 from nora.app.fire import lost_job_occasion, relay_occasion
 from nora.domain.events import Event
 from nora.obs.metrics import Metrics
@@ -18,6 +19,7 @@ from tests.unit.test_fire_path import (
     _job_occasion,
     _send_turns,
 )
+from tests.unit.test_tool_registry import _deliverer, _FakePersons, _FakeStore
 
 
 @pytest.mark.parametrize("kind", ["compute", "compute_lost", "relay", "other"])
@@ -51,5 +53,18 @@ async def test_fire_grants_intention_commit_at_its_occasion(kind, doctrine_store
     (call,) = calls
     tools = {tool.tool_name for tool in call["tools"]}
     assert "send_reply" in tools
-    assert ("intention_commit" in tools) == (kind != "other")
+    assert ("intention_commit" in tools) == (kind in {"compute", "relay"})
     assert not {"note_create", "note_revise"} & tools
+
+
+def test_fire_intention_opt_in_respects_the_grant_ceiling():
+    persons = _FakePersons()
+    surface = ToolRegistry(intention_admission=object()).surface(
+        store=_FakeStore(), conversation_id="g1", conversation_type="group",
+        persons=persons, deliverer=_deliverer(), metrics=Metrics(),
+        room=Room(platform="signal", conversation_id="g1", roster_source=None, persons=persons),
+        fire_turn=True, commit_intentions=True, grant=frozenset({"send_reply"}),
+    )
+
+    assert "send_reply" in surface.admitted
+    assert "intention_commit" not in surface.admitted

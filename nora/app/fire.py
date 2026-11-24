@@ -437,7 +437,6 @@ def lost_job_occasion(job: ComputeJob) -> Event:
         body=LostJobBody(written_title(job.payload) or job.task).render(),
         header=lambda tagger, now: LostJobHeader(tagger).render(),
         kind="compute_lost",
-        commit_intentions=True,
     )
 
 

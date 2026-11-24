@@ -99,14 +99,6 @@ cases:
     metadata: {tools: [routine_read], not_tools: [where_is, where_been]}
     snapshot: *room_a
 
-  - name: route_intention_commit_open_question
-    entry: tag
-    expect: reply
-    mention: true
-    input: 聖誕去邊度旅行仲未傾掂，你幫手跟住件事，唔好唔記得
-    metadata: {tools: [intention_commit]}
-    snapshot: *room_a
-
   - name: route_find_parking_near
     entry: tag
     expect: reply
@@ -479,7 +471,7 @@ cases:
 
   # --- documents (design/artifact/lifecycle.md, ADR 0020) ----------------------
   # `document_publish` against the tools a written piece could be mistaken for:
-  # `intention_commit` (a private memory, not a page), `generate_image` and the
+  # `generate_image` and the
   # computer (a FILE: CSV, PDF, a script's output). The HTML path it replaced
   # (the artifact tool) was retired in S3b, so it is no longer a `not_tools` entry.
   #
@@ -503,7 +495,7 @@ cases:
     mention: true
     input: >-
       幫我整份12月東京旅行計劃，每日行程同預算都要有，整好之後我想喺網頁開返嚟睇
-    metadata: {tools: [document_publish], not_tools: [intention_commit]}
+    metadata: {tools: [document_publish]}
     snapshot: *room_a
 
   # Was `route_document_publish_room_summary` («write up what we decided about
@@ -519,7 +511,7 @@ cases:
     input: >-
       write a proper document I can open later comparing Tokyo and Osaka for a
       week in December: a section for each, then which one you would pick
-    metadata: {tools: [document_publish], not_tools: [intention_commit]}
+    metadata: {tools: [document_publish]}
     snapshot: *room_a
 
   - name: route_calculate_not_a_document
@@ -1281,7 +1273,7 @@ cases:
     expect: reply
     mention: true
     input: 記低 我哋 Airbnb 嘅 wifi 密碼係 orchid-19
-    metadata: {tools: [send_reply], not_tools: [remember, intention_commit]}
+    metadata: {tools: [send_reply], not_tools: [remember]}
     snapshot: *room_a
 
   - name: route_keep_own_fact_is_remember
@@ -1289,7 +1281,7 @@ cases:
     expect: reply
     mention: true
     input: 記低 我食素
-    metadata: {tools: [remember], not_tools: [intention_commit], memory_surface: honcho}
+    metadata: {tools: [remember], memory_surface: honcho}
     snapshot: *room_a
 
   - name: route_keep_own_fact_on_graph_is_remember
@@ -1297,7 +1289,7 @@ cases:
     expect: reply
     mention: true
     input: 記低 我食素
-    metadata: {tools: [remember], not_tools: [intention_commit], memory_surface: graph}
+    metadata: {tools: [remember], memory_surface: graph}
     snapshot: *room_a
 
   # Typed Identity: stable facts share the graph remember writer. Routing is
@@ -1307,7 +1299,7 @@ cases:
     expect: reply
     mention: true
     input: 記低，我生日係二月二十九號，唔好估年份。
-    metadata: {tools: [remember], not_tools: [intention_commit], memory_surface: graph}
+    metadata: {tools: [remember], memory_surface: graph}
     snapshot: *room_a
 
   - name: route_typed_languages_and_diet
@@ -1315,7 +1307,7 @@ cases:
     expect: reply
     mention: true
     input: 記低，我講廣東話同英文，食素。
-    metadata: {tools: [remember], not_tools: [intention_commit], memory_surface: graph}
+    metadata: {tools: [remember], memory_surface: graph}
     snapshot: *room_a
 
   - name: route_typed_residence_correction

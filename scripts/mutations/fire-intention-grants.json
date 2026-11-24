@@ -7,13 +7,6 @@
     "target": "tests/unit/test_fire_intention_surface.py::test_fire_grants_intention_commit_at_its_occasion[compute]"
   },
   {
-    "name": "lost-job recovery grants the intention write",
-    "file": "nora/app/fire.py",
-    "old": "        kind=\"compute_lost\",\n        commit_intentions=True,\n",
-    "new": "        kind=\"compute_lost\",\n",
-    "target": "tests/unit/test_fire_intention_surface.py::test_fire_grants_intention_commit_at_its_occasion[compute_lost]"
-  },
-  {
     "name": "relay grants the intention write",
     "file": "nora/app/fire.py",
     "old": "        kind=\"relay\",\n        commit_intentions=True,\n",
@@ -26,5 +19,12 @@
     "old": "    commit_intentions: bool = False\n",
     "new": "    commit_intentions: bool = True\n",
     "target": "tests/unit/test_fire_intention_surface.py::test_fire_grants_intention_commit_at_its_occasion[other]"
+  },
+  {
+    "name": "REV-3 intention opt-in respects the grant ceiling",
+    "file": "nora/agent/registry.py",
+    "old": "            if spec.name != LOADER_TOOL and scope.admits(spec.name)\n",
+    "new": "            if spec.name != LOADER_TOOL and (commit_intentions or scope.admits(spec.name))\n",
+    "target": "tests/unit/test_fire_intention_surface.py::test_fire_intention_opt_in_respects_the_grant_ceiling"
   }
 ]
