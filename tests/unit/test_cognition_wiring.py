@@ -574,6 +574,7 @@ async def test_the_app_stops_the_cognition_sessions_before_it_closes_the_client_
     deps = SimpleNamespace(
         cognition_shutdown=_Stop(), subagent_backend=None,
         background=_Closable("background"), discord_control=_Closable("directory"),
+        engagement_tools=None,
         computer_lifecycle=_Closable("computer"),
         bridge_runtime=_BridgeRuntime(),
         registry=SimpleNamespace(

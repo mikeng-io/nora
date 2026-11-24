@@ -28,6 +28,7 @@ Every datetime is UTC-aware.
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import re
 from collections.abc import Mapping
@@ -47,9 +48,11 @@ __all__ = [
     "TASK_STATUSES",
     "TERMINAL",
     "UNAVAILABLE",
+    "ComputerAdmissionWindow",
     "ComputerTask",
     "ComputerTaskStore",
     "SegmentOutcome",
+    "computer_admission_window",
     "current_segment",
     "ensure_utc_event",
     "normalise_task",
@@ -71,6 +74,19 @@ TASK_KINDS: frozenset[str] = frozenset(
 #: ComputerAdmission.submit`) instead of queueing behind its own parent.
 current_segment: contextvars.ContextVar[UUID | None] = contextvars.ContextVar(
     "nora_computer_segment", default=None)
+
+
+@dataclass(slots=True)
+class ComputerAdmissionWindow:
+    """A tool call's shared state while admission and hand-over can race."""
+
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    report_act_id: str | None = None
+
+
+computer_admission_window: contextvars.ContextVar[ComputerAdmissionWindow | None] = (
+    contextvars.ContextVar("computer_admission_window", default=None)
+)
 
 _SCOPE = re.compile(r"[0-9a-f]+")
 
@@ -189,6 +205,10 @@ class ComputerTaskStore(Protocol):
     async def open_scopes(self, *, limit: int) -> list[str]:
         """Every scope with a non-terminal row: the granter's breadth read,
         from the table — the record of truth — never a stream SCAN."""
+        ...
+
+    async def hand_over_delivery(self, task_id: UUID) -> bool:
+        """Set `origin.deliver` to "job" if delivery has not been elected."""
         ...
 
     async def mark_delivered(self, task_id: UUID, *, now: datetime) -> None:

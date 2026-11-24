@@ -33,6 +33,7 @@ EXECUTORS = MappingProxyType({
     "bridge.speech": Executor("delivery", "unknown"),
     "discord.music_notice": Executor("delivery", "unknown"),
     "subagent.launch": Executor("delegation", "unknown"),
+    "tool.handover": Executor("delegation", "unknown"),
     "computer.run": Executor("delegation", "unknown"),
     "computer.workspace": Executor("effect", "unknown"),
     "computer.lifecycle": Executor("effect", "unknown"),

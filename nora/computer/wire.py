@@ -276,7 +276,9 @@ async def _scoped_computer_queues(
     from nora.infra.computer.manager import ScopeBrowserManager
 
     registration = engine.get_execution_options()["item_registration"]
-    acts = ComputerTaskActs(computer_redis, memory.wire.act_envelope(engine), registration.scope)
+    acts = ComputerTaskActs(
+        computer_redis, memory.wire.act_envelope(engine), registration.scope, tasks=computer_tasks,
+    )
     _queue_audit, _browser_event = _computer_event_callbacks(
         background=background, clock=clock,
         computer_context=computer_context, computer_events=computer_events,

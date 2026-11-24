@@ -187,6 +187,14 @@ class SqlComputerTaskStore:
                 .distinct().limit(limit))).all()
         return [str(r.scope) for r in rows]
 
+    async def hand_over_delivery(self, task_id: UUID) -> bool:
+        async with self._engine.begin() as conn:
+            return await conn.scalar(
+                sa.update(T).where(T.c.id == task_id, T.c.delivered_at.is_(None))
+                .values(origin=T.c.origin.concat({"deliver": "job"}))
+                .returning(T.c.id)
+            ) is not None
+
     async def mark_delivered(self, task_id: UUID, *, now: datetime) -> None:
         now = ensure_utc_event(now, field="now")
         async with self._engine.begin() as conn:
@@ -204,14 +212,17 @@ class SqlComputerTaskStore:
         from nora.infra.sql.schema import COMPUTE_JOBS
 
         now = ensure_utc_event(now, field="now")
+        election = (
+            sa.update(T)
+            .where(T.c.id == task_id, T.c.delivered_at.is_(None),
+                   T.c.status.in_(tuple(sorted(TERMINAL))))
+            .values(delivered_at=now, updated_at=now)
+            .returning(T)
+        )
+        if job is not None:
+            election = election.where(T.c.origin["deliver"].astext.is_distinct_from("job"))
         async with self._engine.begin() as conn:
-            row = (await conn.execute(
-                sa.update(T)
-                .where(T.c.id == task_id, T.c.delivered_at.is_(None),
-                       T.c.status.in_(tuple(sorted(TERMINAL))))
-                .values(delivered_at=now, updated_at=now)
-                .returning(T)
-            )).first()
+            row = (await conn.execute(election)).first()
             if row is None:
                 return None
             if job is not None:

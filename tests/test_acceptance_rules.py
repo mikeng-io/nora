@@ -31,8 +31,7 @@ from nora.testing import (
 _R90_BYTES = b"\x89PNG r-89 pixels"
 _R90_SHA = hashlib.sha256(_R90_BYTES).hexdigest()
 _R90_PERSONS = Persons(
-    by_person={"miles": PersonRef(
-        person_id="miles", name="Miles")},
+    by_person={"miles": PersonRef(person_id="miles", name="Miles")},
     index={("signal", "+85212345678"): "miles"},
 )
 
@@ -434,6 +433,7 @@ RULE_TESTS = {
     "lesson-relearn": "test_operator_retirement_hides_graph_lesson_and_sets_evidence_floor",
     "graph-dispute": "test_another_persons_dispute_marks_the_claim_for_weighing",
     "graph-forget-self-only": "test_only_the_person_a_claim_is_about_may_ask_to_forget_it",
+    "tool-handover": "test_each_outcome_of_a_handed_over_call_gives_exactly_one_report",
 }
 
 def _collected() -> set[str]:

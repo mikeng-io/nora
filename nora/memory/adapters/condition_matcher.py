@@ -3,6 +3,7 @@
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
@@ -20,6 +21,7 @@ from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.infra.sql.history import HISTORY_TABLES
 from nora.infra.sql.item_retention import expired_between
 from nora.infra.sql.schema import (
+    COMPUTER_TASKS,
     MESSAGES,
     ROW_HISTORY,
     SOURCE_HEALTH,
@@ -106,7 +108,10 @@ class SqlIntentionBatch:
     ) -> Evaluation:
         unit = intention["unit"]
         stmt = (
-            sa.select(NORA_ACT_OUTCOME, _ACT.executor, _ACT.destination)
+            sa.select(
+                NORA_ACT_OUTCOME, _ACT.executor, _ACT.destination, _ACT.idempotency_key,
+                _ACT.graph_id.label("act_graph_id"),
+            )
             .join(NORA_ACT, sa.and_(_ACT.id == _OUTCOME.act_id, _ACT.unit == _OUTCOME.unit))
             .where(
                 _OUTCOME.unit == unit, self._sources.act_match(intention, condition),
@@ -116,16 +121,39 @@ class SqlIntentionBatch:
             .order_by(_OUTCOME.id.desc()).limit(1)
         )
         row = (await self._conn.execute(stmt)).mappings().one_or_none()
-        if row is None or row["verdict"] == "uncertain":
+        if row is None:
+            return Evaluation("unknown")
+        sources = self._sources.act_source(row)
+        if trigger and isinstance(condition, ActEvent):
+            if (row["executor"] == "computer.dispatch" and row["verdict"] == "uncertain"
+                    and await self._computer_outcome_pending(row["idempotency_key"])):
+                return Evaluation("unknown")
+            # Any recorded outcome meets the trigger; only an act with a platform source waits
+            # for that source to be healthy. The act, not its latest outcome, is the witness, so
+            # an uncertain outcome later settled to done fires the intention once.
+            if sources and not await self._sources_healthy(unit, sources):
+                return Evaluation("unknown")
+            return Evaluation("true", _witness({**row, "graph_id": row["act_graph_id"]},
+                                               row["asserted_at"]))
+        if row["verdict"] == "uncertain":
             return Evaluation("unknown")
         done = row["verdict"] == "done"
         # The recorded success is the witness for the intention's own delivery.
         recorded_delivery = done and isinstance(condition, OwnDelivery) and not trigger
-        if not recorded_delivery and not await self._sources_healthy(
-            unit, self._sources.act_source(row),
-        ):
+        if not recorded_delivery and not await self._sources_healthy(unit, sources):
             return Evaluation("unknown")
         return Evaluation("true" if done else "false", _witness(row, row["asserted_at"]))
+
+    async def _computer_outcome_pending(self, key: str) -> bool:
+        try:
+            task_id = UUID(key)
+        except (TypeError, ValueError):
+            return True
+        task = COMPUTER_TASKS.c
+        status = await self._conn.scalar(sa.select(task.status).where(task.id == task_id))
+        # A dispatch acknowledgement is uncertain. Only a lost task or an
+        # uncertain terminal state can report that verdict as the outcome.
+        return status not in (None, "unavailable", "interrupted")
 
     async def _person(
         self, intention: Mapping[str, Any], condition: PersonEvent, *, trigger: bool,

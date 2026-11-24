@@ -9,6 +9,7 @@ from nora.app.compute_poller import ComputeJobPoller
 from nora.app.compute_poller import recover as compute_poller_recover
 from nora.app.fire import FirePath, proactive_occasion
 from nora.app.fire_engagement import AmbientEngagement
+from nora.app.handover_sweep import sweep_handovers
 from nora.app.heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from nora.app.participation import ParticipationTrigger
 from nora.app.proactive_screen import ProactiveScreen
@@ -74,7 +75,7 @@ class RecoverWiring:
 
 
 async def build_recover(
-    clock: Any, compute_backends: Any, compute_jobs: Any, metrics: Any,
+    clock: Any, compute_backends: Any, compute_jobs: Any, engine: Any, metrics: Any,
     reminders: Any,
 ) -> RecoverWiring:
 
@@ -97,6 +98,8 @@ async def build_recover(
         # is wired its pending rows are polled again rather than swept as lost.
         durable_kinds=(frozenset({VIDEO_KIND}) if VIDEO_KIND in compute_backends else frozenset()),
     )
+    # A tool call handed over by a dead process was never finished and is never re-run.
+    await sweep_handovers(engine)
     # The liveness gauge is seeded HERE, not in `HeartbeatLoop.__init__` alone —
     # otherwise every deployment on the shipped default (`enabled = false`)
     # exports 0.0 forever, which reads identically to "ticked a moment ago".

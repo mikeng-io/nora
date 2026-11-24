@@ -1,4 +1,4 @@
-"""The shared tool executor (`nora.agent.factory.BoundedToolExecutor`), on the REAL Strands loop.
+"""The shared tool executor (`tool_executor.BoundedToolExecutor`), on the REAL Strands loop.
 
 Strands runs a model's parallel tool batch with no limit, and every tag, dream and sub-agent loop
 had its own. These tests pin what the bound must do across agents: at most `limit` tool calls in
@@ -19,7 +19,7 @@ from typing import Any
 
 from strands.models.model import Model
 
-from nora.agent import factory
+from nora.agent import factory, tool_executor
 from nora.agent.guards import ReplyGuard
 from nora.agent.ports import ToolSpec, adapt
 from nora.obs.metrics import Metrics
@@ -110,7 +110,7 @@ def _agent(model: Any, tools: list[Any], names: list[str], executor: Any) -> Any
 async def test_a_batch_runs_at_most_the_limit_at_once_and_keeps_its_result_order():
     names = [f"slow{i}" for i in range(5)]
     gauge = _Gauge()
-    executor = factory.BoundedToolExecutor(factory.ToolSlots(2))
+    executor = tool_executor.BoundedToolExecutor(tool_executor.ToolSlots(2))
     agent = _agent(_BatchModel(names, "b"), _tools(gauge, names, [0.02, 0.01, 0.03, 0.005, 0.0]),
                    names, executor)
     await asyncio.wait_for(agent.invoke_async("go"), timeout=5)
@@ -125,7 +125,7 @@ async def test_overlapping_turns_share_one_limit():
     gauge_a, gauge_b = _Gauge(), _Gauge()
     names_a = [f"a{i}" for i in range(3)]
     names_b = [f"c{i}" for i in range(3)]
-    executor = factory.BoundedToolExecutor(factory.ToolSlots(2))
+    executor = tool_executor.BoundedToolExecutor(tool_executor.ToolSlots(2))
     agent_a = _agent(_BatchModel(names_a, "x"), _tools(gauge_a, names_a, [0.02] * 3), names_a,
                      executor)
     agent_b = _agent(_BatchModel(names_b, "y"), _tools(gauge_b, names_b, [0.02] * 3), names_b,
@@ -141,7 +141,7 @@ async def test_cancelling_a_turn_releases_every_slot_it_held():
     same executor runs, and the executor reads idle."""
     names = ["hang0", "hang1"]
     gauge = _Gauge()
-    executor = factory.BoundedToolExecutor(factory.ToolSlots(2))
+    executor = tool_executor.BoundedToolExecutor(tool_executor.ToolSlots(2))
     agent = _agent(_BatchModel(names, "h"), _tools(gauge, names, [None, None]), names, executor)
     turn = asyncio.create_task(agent.invoke_async("go"))
     for _ in range(200):
@@ -168,9 +168,9 @@ async def test_background_work_leaves_a_slot_free_for_a_user_turn_while_eight_ru
     names_bg = [f"bg{i}" for i in range(8)]
     names_tag = ["reply"]
     gauge_bg, gauge_tag = _Gauge(), _Gauge()
-    slots = factory.ToolSlots(8, reserve=2)
-    background = factory.BoundedToolExecutor(slots, background=True)
-    interactive = factory.BoundedToolExecutor(slots)
+    slots = tool_executor.ToolSlots(8, reserve=2)
+    background = tool_executor.BoundedToolExecutor(slots, background=True)
+    interactive = tool_executor.BoundedToolExecutor(slots)
     dream = _agent(_BatchModel(names_bg, "d"), _tools(gauge_bg, names_bg, [None] * 8), names_bg,
                    background)
     tag = _agent(_BatchModel(names_tag, "t"), _tools(gauge_tag, names_tag, [0.0]), names_tag,
@@ -194,7 +194,7 @@ async def test_background_work_leaves_a_slot_free_for_a_user_turn_while_eight_ru
 
 async def test_the_slots_refuse_a_reserve_that_leaves_background_work_nothing():
     try:
-        factory.ToolSlots(2, reserve=2)
+        tool_executor.ToolSlots(2, reserve=2)
     except ValueError:
         return
     raise AssertionError("a reserve that leaves no background slot must be refused")
@@ -203,10 +203,10 @@ async def test_the_slots_refuse_a_reserve_that_leaves_background_work_nothing():
 async def test_every_production_agent_takes_the_one_shared_executor_by_default():
     """The tag takes the interactive executor; the dream and sub-agent loops take the background
     one. Both draw on the same slots, so the process holds one limit, not one per kind."""
-    shared = factory.shared_tool_executor()
-    background = factory.shared_background_executor()
-    assert shared is factory.shared_tool_executor()
-    assert background is factory.shared_background_executor()
+    shared = tool_executor.shared_tool_executor()
+    background = tool_executor.shared_background_executor()
+    assert shared is tool_executor.shared_tool_executor()
+    assert background is tool_executor.shared_background_executor()
     assert background is not shared and background.slots is shared.slots
     guard = _guard([])
     model = _BatchModel([], "n")
@@ -227,7 +227,7 @@ async def test_every_production_agent_takes_the_one_shared_executor_by_default()
 
 async def test_the_executor_refuses_a_limit_that_admits_nothing():
     try:
-        factory.ToolSlots(0)
+        tool_executor.ToolSlots(0)
     except ValueError:
         return
     raise AssertionError("a limit of 0 must be refused")
