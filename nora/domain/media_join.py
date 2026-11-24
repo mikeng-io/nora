@@ -77,10 +77,7 @@ Screen = Callable[[str], str | None]
 JoinPath = Literal[
     "tag", "fire", "debrief", "dreamer", "cognition", "wake",
     "load_transcript", "relevance_gate",
-    # The eval seam's two readers (`nora.subject`): its dream pass, and the
-    # window a judge grades a reply against. `nora.subject` is outside the
-    # gate's mypy, so an unlisted label is caught only by `_count` at runtime.
-    "dreamer_eval", "judge_source",
+    "judge_source",
     "unknown",
 ]
 JOIN_PATHS: tuple[str, ...] = get_args(JoinPath)
