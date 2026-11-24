@@ -145,7 +145,7 @@
  "nora/domain/memory_index.py": 1,
  "nora/domain/mobility.py": 7,
  "nora/domain/mobility_forecast.py": 2,
- "nora/domain/models.py": 8,
+ "nora/domain/models.py": 7,
  "nora/domain/music.py": 1,
  "nora/domain/note_body.py": 2,
  "nora/domain/notes.py": 11,
