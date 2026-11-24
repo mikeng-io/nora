@@ -16,7 +16,7 @@ from nora.domain.models import PersonRef
 from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, ENTITY, REGISTRY
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.schema import MESSAGES, SOCIAL_ITEM
+from nora.infra.sql.schema import MESSAGE_EDIT, MESSAGES, SOCIAL_ITEM
 from nora.memory.app.retrieval import RetrievalService
 from nora.memory.domain.retrieval import ReadingRoom, RetrievalAnchors, RetrievalBounds
 from nora.memory.wire import retrieval
@@ -251,13 +251,21 @@ async def test_portal_keeps_the_own_claim_but_never_shows_dm_evidence_to_a_nonme
     from nora.web.memory import build_memory_payload
 
     origin = f"signal:{DM}"
-    await scenario.item("generated-private-item", "generated private DM body",
+    await scenario.item("generated-private-item", "generated earlier private DM body",
                         room=DM, dm=True, person=OTHER, exposure="external")
     await scenario.claim("own-derived-claim", persons=[PERSON], origin_room=origin,
                          lineage=Lineage.of({ROW: (message(origin),)}).to_json())
     await scenario.claim("foreign-subject", persons=[OTHER], origin_room=origin)
     await scenario.claim("withdrawn-own", persons=[PERSON], state="hidden", origin_room=origin)
     await write_edge(scenario, "own-derived-claim", "generated-private-item", "cites")
+    async with scenario.engine.begin() as conn:
+        message_id = (await conn.execute(sa.select(MESSAGES.c.id).where(
+            MESSAGES.c.graph_id == "generated-private-item",
+        ))).scalar_one()
+        await conn.execute(sa.insert(MESSAGE_EDIT).values(
+            message_id=message_id, ts=int(AT.timestamp() * 1000) + 1,
+            body="generated private DM body",
+        ))
     common = {
         "persons": scenario.persons, "person_id": PERSON, "screen": scan_reply,
         "profile": wire.subject_claims(scenario.engine).read,

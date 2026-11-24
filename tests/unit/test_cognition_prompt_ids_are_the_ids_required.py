@@ -304,7 +304,7 @@ def test_hostile_words_names_titles_labels_and_summaries_write_no_element():
     prompt, n_items, _ = _hostile_prompt()
     top = blocks(prompt)                                     # raises if not well-formed
     assert [b.tag for b in top] == [
-        "profile", "clock", "reads", "rooms", "members", "transcript", "agenda",
+        "graph_profile", "clock", "reads", "rooms", "members", "transcript", "agenda",
         "notes", "standing", "events", "memos", "topics", "graph", "lessons",
         "held_lessons", "lesson_corrections", "lesson_episodes", "documents",
     ]

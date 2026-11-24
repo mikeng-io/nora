@@ -881,7 +881,10 @@ def _item_blocks(
 def _grounded_blocks(grounding: Grounding, now: datetime) -> list[ContextBlock]:
     """What the grounding read for the prompt: profiles, members, rooms,
     documents and lessons, each a self-describing block."""
-    blocks = list(grounding.graph_profiles)
+    blocks = [
+        ContextBlock(name="graph_profile", body=profile.body, attrs=profile.attrs)
+        for profile in grounding.graph_profiles
+    ]
     blocks.extend(render_members(view) for view in grounding.members)
     blocks.append(
         render_rooms(

@@ -95,7 +95,6 @@ from nora.obs.metrics import Metrics
 #: with no steps, or a body that escapes to nothing. `assemble` would
 #: otherwise drop them.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
-    ("profile", 10, "turn"),
     ("standing_prior", 20, "turn"),
     ("standing_working_set_prior", 30, "turn"),
     ("standing_ledger_prior", 35, "turn"),
@@ -595,8 +594,6 @@ def render_debrief_input(
     ledger_prior: tuple[LedgerEntry, ...] | None = None,
 ) -> str:
     """The whole of what the STANDING call sees — the prior plus the turn.
-
-    The room's supplied profile account precedes the standing position.
 
     `<standing_prior>` is emitted **even when there is none**, carrying an
     explicit "no position yet" rather than being omitted: an absent block and

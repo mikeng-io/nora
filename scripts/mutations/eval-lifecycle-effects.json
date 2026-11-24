@@ -9,14 +9,14 @@
   {
     "name": "append-only history excludes earlier versions",
     "file": "nora/subject/effects.py",
-    "old": "query = query.where(lower, _scope(owner, unit, rooms, profile_keys))",
-    "new": "query = query.where(_scope(owner, unit, rooms, profile_keys))",
+    "old": "query = query.where(lower, _scope(owner, unit, rooms))",
+    "new": "query = query.where(_scope(owner, unit, rooms))",
     "target": "tests/integration/subject/test_canonical_effects.py::test_versions_survive_creation_retirement_withdrawal_and_deletion"
   },
   {
     "name": "append-only effects cannot disclose a foreign unit",
     "file": "nora/subject/effects.py",
-    "old": "query = query.where(lower, _scope(owner, unit, rooms, profile_keys))",
+    "old": "query = query.where(lower, _scope(owner, unit, rooms))",
     "new": "query = query.where(lower)",
     "target": "tests/integration/subject/test_canonical_effects.py::test_versions_survive_creation_retirement_withdrawal_and_deletion"
   },

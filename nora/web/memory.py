@@ -39,10 +39,10 @@ async def build_memory_payload(
         for claim in claims:
             line = _line(claim, screen)
             lines.append(line)
-            if claim["disputed"]:
+            if (disputed_at := claim["disputed_at"]) is not None:
                 disputes.append({
                     "kind": "dispute", "claim": line["text"], "disputed_by": None,
-                    "written_at": line["written_at"],
+                    "written_at": int(disputed_at.timestamp() * 1000),
                 })
         if lines:
             accounts.append({"unit": unit, "lines": lines, "disputes": disputes})

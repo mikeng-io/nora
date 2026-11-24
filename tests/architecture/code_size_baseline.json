@@ -1487,7 +1487,7 @@
  },
  "nora/language/cognition_render.py": {
   "comment_blocks": 5,
-  "file_lines": 1002,
+  "file_lines": 1005,
   "internal_docstrings": 16
  },
  "nora/language/computer_render.py": {

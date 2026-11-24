@@ -8,9 +8,10 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.lineage import split_room
+from nora.infra.sql.audit import transcript_select
 from nora.infra.sql.cognitive_graph_schema import CLAIM, DISPUTE, EDGE
 from nora.infra.sql.cognitive_graph_store import visible_to_reads
-from nora.infra.sql.schema import MESSAGES
+from nora.infra.sql.schema import MESSAGE_DELETE, MESSAGES
 from nora.memory.adapters.graph_row_render import render_graph_content
 
 
@@ -43,14 +44,18 @@ class SqlSubjectClaims:
                 if citation["message"] is not None:
                     entry.update(kind="message", text=citation["body"], said_at=citation["ts"])
                 by_claim[citation["claim"]].append(entry)
-            open_disputes = await conn.scalars(sa.select(DISPUTE.c.claim_id).where(
+            dispute_times = dict((await conn.execute(sa.select(
+                DISPUTE.c.claim_id, sa.func.max(DISPUTE.c.asserted_at),
+            ).where(
                 DISPUTE.c.unit == unit, DISPUTE.c.claim_id.in_(ids), visible_to_reads(DISPUTE),
-            ).distinct())
-            disputed = set(open_disputes)
+            ).group_by(DISPUTE.c.claim_id))).tuples().all())
             return tuple({
                 **claim, "evidence": by_claim.get(claim["id"], []),
                 "content": _content_text(claim["content"]),
-                "disputed": claim["id"] in disputed and claim["state"] == "awaiting_weighing",
+                "disputed_at": (
+                    dispute_times.get(claim["id"])
+                    if claim["state"] == "awaiting_weighing" else None
+                ),
                 "origin_room": _origin(claim["origin_room"], claim["dm_origin"], viewer_rooms),
             } for claim in claims)
 
@@ -82,16 +87,25 @@ def _citations(
 ) -> sa.Select[Any]:
     """Resolve raw messages only in rooms the portal viewer belongs to now."""
     edge, msg = EDGE.c, MESSAGES.c
-    return sa.select(
-        edge.src_id.label("claim"), edge.dst_id.label("target"), msg.graph_id.label("message"),
-        msg.body, msg.ts,
-    ).select_from(EDGE.outerjoin(MESSAGES, sa.and_(
-        msg.graph_id == edge.dst_id, msg.unit == edge.unit,
-        # design/cognition/boundaries.md:38-43 reserves raw evidence for its room.
-        sa.tuple_(msg.platform, msg.conversation_id).in_(sorted(viewer_rooms)),
-        msg.hidden_at.is_(None), msg.exposure == "external",
-        viewer != sa.all_(msg.excluded_persons), visible_to_reads(MESSAGES),
-    ))).where(
+    cites = sa.select(
+        edge.src_id.label("claim"), edge.dst_id.label("target"),
+    ).where(
         edge.unit == unit, edge.src_id.in_(ids), edge.type == "cites", edge.state == "live",
         visible_to_reads(EDGE),
-    ).order_by(edge.dst_id)
+    ).cte("claim_citations")
+    messages = transcript_select().add_columns(msg.graph_id).where(
+        msg.unit == unit, msg.graph_id.in_(sa.select(cites.c.target)),
+        # design/cognition/boundaries.md:38-43 reserves raw evidence for its room.
+        sa.tuple_(msg.platform, msg.conversation_id).in_(sorted(viewer_rooms)),
+        msg.exposure == "external", viewer != sa.all_(msg.excluded_persons),
+        visible_to_reads(MESSAGES),
+        ~sa.exists(sa.select(MESSAGE_DELETE.c.id).where(MESSAGE_DELETE.c.message_id == msg.id)),
+    ).subquery()
+    visible = messages.c
+    body = sa.case((visible.edit_ts.is_not(None), visible.edit_body), else_=visible.body)
+    return sa.select(
+        cites.c.claim, cites.c.target, visible.graph_id.label("message"),
+        body.label("body"), visible.ts,
+    ).select_from(cites.outerjoin(
+        messages, visible.graph_id == cites.c.target,
+    )).order_by(cites.c.target)

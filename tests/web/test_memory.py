@@ -17,7 +17,7 @@ def _claim(id_, text, **fields):
         "origin_room": "private room", "state": "live",
         "asserted_at": datetime(2026, 11, 1, tzinfo=UTC),
         "prediction": None, "window_end": None, "grade": None, "evidence": [],
-        "disputed": False, **fields,
+        "disputed_at": None, **fields,
     }
 
 
@@ -72,14 +72,16 @@ async def test_subject_claims_stay_in_viewers_units_and_workspaces():
 async def test_awaiting_weighing_claim_keeps_an_inspectable_state_and_reference():
     profile = _Claims({("friends", "miles"): (_claim(
         "m1", "maybe vegetarian", state="awaiting_weighing", part="guess",
-        prediction="orders vegetables", disputed=True,
+        prediction="orders vegetables", disputed_at=datetime(2026, 11, 2, tzinfo=UTC),
     ),)})
     [account] = await _payload(profile, profile_scopes_of=lambda _: (("friends", "default"),))
     [line] = account["lines"]
     assert (line["id"], line["origin"], line["state"], line["prediction"]) == (
         "m1", "private room", "disputed", "orders vegetables",
     )
-    assert account["disputes"][0]["claim"] == "maybe vegetarian"
+    [dispute] = account["disputes"]
+    assert dispute["claim"] == "maybe vegetarian"
+    assert dispute["written_at"] > line["written_at"]
 
 
 async def test_a_viewer_without_listed_units_never_queries_claims():

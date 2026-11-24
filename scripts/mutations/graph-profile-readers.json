@@ -7,6 +7,13 @@
     "target": "tests/infra/test_retrieval_scope.py::test_portal_keeps_the_own_claim_but_never_shows_dm_evidence_to_a_nonmember"
   },
   {
+    "name": "portal citations render the current edited message body",
+    "file": "nora/memory/adapters/subject_claims.py",
+    "old": "body = sa.case((visible.edit_ts.is_not(None), visible.edit_body), else_=visible.body)",
+    "new": "body = visible.body",
+    "target": "tests/infra/test_retrieval_scope.py::test_portal_keeps_the_own_claim_but_never_shows_dm_evidence_to_a_nonmember"
+  },
+  {
     "name": "wake shared profiles pass each agenda room's audience",
     "file": "nora/memory/adapters/pass_assembly.py",
     "old": "row for row in result.rows if row.graph_id in permitted",
