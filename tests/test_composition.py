@@ -1596,7 +1596,7 @@ async def test_the_configured_model_window_reaches_the_runner_the_overflow_proof
     a configured window and fraction are what the runner proves one against."""
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     default = (await build_dependencies(override_config(cfg, _SESSION_ON))).cognition_runner
-    assert default is not None and default._runner._window_tokens is None
+    assert default is not None and default._window_tokens is None
     deps = await build_dependencies(override_config(cfg, {
         **_SESSION_ON, "cognition.model_window_tokens": 123_456,
         "cognition.overflow_window_fraction": 0.5,
