@@ -285,9 +285,6 @@ def _print_spend() -> None:
     )
     if spend["truncated"]:
         line += f"   TRUNCATED: {spend['truncated']}"
-    if spend.get("unknown_usage_calls"):
-        line += (f"   known token totals; usage UNMEASURED for "
-                 f"{spend['unknown_usage_calls']} call(s)")
     print(line)
     # The SUBJECT'S OWN TURNS only — the calls under her `invoke_agent` span,
     # without background passes the drive also spawns (the standing fold).

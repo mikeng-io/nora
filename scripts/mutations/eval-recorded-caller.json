@@ -7,25 +7,25 @@
     "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_sdk_cases_use_real_subjects_in_distinct_owned_services"
   },
   {
-    "name": "frozen SDK judging binds the recorded service routes",
+    "name": "SDK position judging binds the recorded service routes",
     "file": "evals/backbone.py",
-    "old": "            judge = spec.judge.bind_services(environment) if spec.judge is not None else None",
-    "new": "            judge = spec.judge",
-    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_frozen_sdk_judge_uses_case_recording"
+    "old": "                spec = dataclasses.replace(spec, judge=spec.judge.bind(subject.cfg))",
+    "new": "                pass",
+    "target": "tests/integration/subject/test_sdk_position_judge.py::test_sdk_position_judge_retains_recorded_responses[position]"
   },
   {
     "name": "bound judge config wins over the original file",
     "file": "evals/rebuilt/grading.py",
     "old": "        if self.config is not None:\n",
     "new": "        if False:\n",
-    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_frozen_sdk_judge_uses_case_recording"
+    "target": "tests/integration/subject/test_sdk_position_judge.py::test_sdk_position_judge_retains_recorded_responses[position]"
   },
   {
     "name": "SDK protocol outcomes cannot claim model behavior",
     "file": "evals/measurement.py",
     "old": "        if not self.behavioral:\n            return UNMEASURED\n        if error:",
     "new": "        if not self.behavioral:\n            return PASS\n        if error:",
-    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_frozen_sdk_judge_uses_case_recording"
+    "target": "tests/integration/subject/test_sdk_position_judge.py::test_sdk_position_judge_retains_recorded_responses[position]"
   },
   {
     "name": "loaded service input bytes survive source changes",

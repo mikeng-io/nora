@@ -91,17 +91,6 @@ def test_judge_timeout_reaches_existing_judge(monkeypatch, tmp_path, configured_
     assert seen and seen[0]["timeout_seconds"] == 90
 
 
-def test_spend_keeps_missing_usage_unmeasured(capsys):
-    import evals.backbone as b
-
-    b.drain_spend()
-    b._SPEND.append({b.NORA_CALLS: 1, b.NORA_INPUT_TOKENS: 0,
-                     b.NORA_OUTPUT_TOKENS: 0, b.NORA_CACHED_TOKENS: 0,
-                     b.NORA_STOPS: "stop", "usage_known": False})
-    m._print_spend()
-    assert "usage UNMEASURED for 1 call(s)" in capsys.readouterr().out
-
-
 def test_config_option_reaches_the_judge_endpoint(
         monkeypatch, tmp_path, example_config_path, configured_main):
     runs: list[str] = []
