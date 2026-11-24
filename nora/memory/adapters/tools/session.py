@@ -1,8 +1,4 @@
-"""Cognition-session verbs for the memory tier: the notebook, memos,
-the Standing head and the memory/profile writes. Reached from the session
-through `nora.memory.wire.session_verbs` (the package root — the same seam
-`nora.documents`' session tools use).
-"""
+"""Cognition session verbs for notes, memos, topics, Standing and memory proposals."""
 
 from __future__ import annotations
 

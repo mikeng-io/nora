@@ -369,10 +369,10 @@
  },
  "nora/app/cli.py": {
   "comment_blocks": 11,
-  "file_lines": 1710,
+  "file_lines": 1421,
   "functions": {
    "add_subcommands": 341,
-   "cmd_unified_backfill": 173
+   "cmd_unified_backfill": 169
   },
   "internal_docstrings": 6
  },

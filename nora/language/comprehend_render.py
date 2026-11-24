@@ -1,4 +1,4 @@
-"""Declared occasions for comprehend and shadow reshape, with item-local clocks."""
+"""Cognition orientation and act guidance, with item-local graph previews."""
 
 from __future__ import annotations
 
@@ -17,18 +17,6 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("cognition_act", 70, "global"),
 )
 _ROW = {name: (order, key) for name, order, key in _BLOCKS}
-
-
-RESHAPE = """Read this entity's committed subgraph. Propose traits and unconfirmed guesses
-for a person, culture baselines for a room or unit, or lessons for yourself from the closed
-response episode. Use the supplied per-person activity evidence
-counts and first/last asserted times; absence of activity is not proof of no interest.
-Cite Record/Rollup evidence only. Facts are rendered by code, never proposed.
-Call profile_stage once
-with proposals_in: each has part, text, relation_ids and evidence source keys. Each line
-must draw on current relations and cite their evidence. These are SHADOW would-writes;
-no live Character, culture, Lessons or entry store changes. Empty proposals means no change.
-"""
 
 
 def preview_text(preview: Preview, *, tokens: int = 1500,

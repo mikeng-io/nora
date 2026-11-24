@@ -1,4 +1,4 @@
-"""Step one's frozen Record input, retained pages and append-only shadow receipts."""
+"""Frozen Record input, retained pages and append-only Cognition receipts."""
 
 from __future__ import annotations
 
@@ -693,7 +693,6 @@ class SqlComprehendRecords:
             ))
 
     async def graph_write(self, work: WorkItem, session: int, admission: Admission) -> None:
-        # Retain changed endpoints for reshape if its model fails after admission.
         await self._receipt(
             work, session, "graph", json.loads(json.dumps(asdict(admission), default=str))
         )

@@ -21,13 +21,6 @@
     "target": "tests/unit/test_cognition_profile_handoff.py::test_write_then_later_turn_renders"
   },
   {
-    "name": "profile-ownership-requires-cognition-and-every-unit-home",
-    "file": "nora/app/composition_helpers.py",
-    "old": "    return bool(\n        profile_index and graph_comprehend and cognition_enabled\n        and units and units <= home_units\n    )",
-    "new": "    return bool(profile_index and graph_comprehend)",
-    "target": "tests/unit/test_cognition_profile_handoff.py::test_cognition_does_not_own_profile_without_cognition_or_complete_unit_coverage"
-  },
-  {
     "name": "explicit-premise-replacement-does-not-carry-old-relations",
     "file": "nora/domain/profile.py",
     "old": "if op.draws_on is None and c.startswith(\"relation:\"))",

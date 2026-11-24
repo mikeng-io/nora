@@ -2571,7 +2571,7 @@ class ProfileConfig(BaseModel):
 
 
 class ComprehendConfig(BaseModel):
-    """Shadow Cognition steps one and two; enabled only with the graph switch."""
+    """Cognition evidence processing, enabled only with the graph switch."""
     model_config = ConfigDict(extra="forbid", frozen=True)
     enabled: bool = False
     turns: int = Field(default=8, ge=1)

@@ -256,14 +256,3 @@ def _adaptor_budget(b: DreamBudgetConfig)-> AdaptorBudget:
         tool_calls=dict(b.tool_calls),
         max_tool_calls=b.max_tool_calls,
     )
-
-
-def _cognition_writes_profile(
-    profile_index: bool, graph_comprehend: bool, cognition_enabled: bool,
-    units: frozenset[str], home_units: frozenset[str],
-) -> bool:
-    """Whether Cognition owns the Profile accounts: every switch is on and each unit has a home."""
-    return bool(
-        profile_index and graph_comprehend and cognition_enabled
-        and units and units <= home_units
-    )

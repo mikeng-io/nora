@@ -226,12 +226,12 @@ def card_facts(graph: Subgraph, entity: Key, *, max_chars: int = 1600) -> str:
 
 ItemOutcome = Literal["settled", "failed"]
 Lane = Literal["live", "historical"]
-Part = Literal["write", "reading", "profile", "entity", "relation", "evidence", "correction"]
+Part = Literal["write", "reading", "entity", "relation", "evidence", "correction"]
 Lookup = Literal["web_search", "web_fetch"]
 EgressReason = Literal["private_person", "identifier", "coordinate", "lookup_cap", "bad_arguments"]
 ExtraRefusal = Literal[
     "schema", "identity_pointer", "private_web_evidence", "ungrounded",
-    "already_staged", "unshown", "endpoint_not_a_handle", "unparseable_time",
+    "unshown", "endpoint_not_a_handle", "unparseable_time",
     "invalid_relation", "unexpected_replacement", "possible_existing",
     "unavailable",
 ]
@@ -382,11 +382,6 @@ REFUSAL_REPAIR: dict[str, dict[str, str]] = {
         "field": "statement",
         "repair": "The statement established nothing code could admit; "
                   "ground every field in the cited rows or withdraw it.",
-    },
-    "already_staged": {
-        "field": "statement",
-        "repair": "That statement is already staged in this session; do not "
-                  "resend it.",
     },
     "unshown": {
         "field": "subject/object",

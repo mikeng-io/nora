@@ -1,8 +1,7 @@
-"""Profile store, render, and routing contracts independent of the session verbs."""
+"""Profile store and render contracts."""
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from nora.app.composition_helpers import _cognition_writes_profile
 from nora.domain.profile import Account, AddOp, ProfileCitable, RetireOp, ReviseOp, Said
 from nora.language.profile_render import ProfileView, render_profile
 from nora.testing.profile import InMemoryProfileStore
@@ -116,27 +115,6 @@ async def test_explicit_relation_premises_replace_instead_of_carrying():
     assert (await _write(store, revise)).status == "ok"
     [head] = await store.account_heads(key=ACCOUNT.key)
     assert head.content["statement"] == "plans early" and head.draws_on == ()
-
-
-def test_profile_writer_ownership_matrix() -> None:
-    """The Cognition session owns the Profile accounts exactly where it is wired:
-    the Profile switch and graph comprehension both on."""
-    coverage = {"cognition_enabled": True, "units": frozenset({UNIT}),
-                "home_units": frozenset({UNIT})}
-    assert _cognition_writes_profile(profile_index=True, graph_comprehend=True, **coverage)
-    for profile_index, comprehend in ((False, True), (True, False), (False, False)):
-        assert not _cognition_writes_profile(
-            profile_index=profile_index, graph_comprehend=comprehend, **coverage)
-
-
-def test_cognition_does_not_own_profile_without_cognition_or_complete_unit_coverage() -> None:
-    flags = {"profile_index": True, "graph_comprehend": True,
-             "cognition_enabled": True, "units": frozenset({"one", "two"}),
-             "home_units": frozenset({"one", "two"})}
-    assert _cognition_writes_profile(**flags)
-    assert not _cognition_writes_profile(**{**flags, "cognition_enabled": False})
-    assert not _cognition_writes_profile(**{**flags, "home_units": frozenset({"one"})})
-    assert not _cognition_writes_profile(**{**flags, "units": frozenset()})
 
 
 async def test_no_change_keeps_the_real_store_revision():

@@ -8,7 +8,7 @@ local ids, no foreign keys between lists, no persons unions).
 
 Admission is unchanged: `stage_and_admit` → `AdmissionState._admit` →
 `validate_relation`; what changed is only what the model is asked for.
-Only the graph and Record/shadow rows are written.
+Writes land in the graph, Record readings and admission receipts.
 """
 
 from __future__ import annotations

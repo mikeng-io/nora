@@ -919,10 +919,6 @@ async def cmd_unified_backfill(args: argparse.Namespace) -> int:
         "dreamer.enabled": cfg.dreamer.enabled,
         "memory.profile.write": cfg.memory.profile.write,
         "memory.profile.read": cfg.memory.profile.read,
-        "profile_lane": (
-            "owned by the session"
-            if cfg.memory.profile.write and cfg.memory.profile.read
-            else "shadow (receipts only; not persisted to profiles)"),
         "home_rooms": sorted(allowlist.home_rooms()),
         "self_ids": "not resolved in dry-run; her own reaction/delete rows "
                     "count in 'enumerated' (apply skips them)",
