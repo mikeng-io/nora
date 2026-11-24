@@ -126,7 +126,7 @@
  "nora/__main__.py": {
   "comment_blocks": 15,
   "functions": {
-   "App.run": 269
+   "App.run": 268
   },
   "internal_docstrings": 2
  },
@@ -218,12 +218,12 @@
  },
  "nora/agent/prefill.py": {
   "comment_blocks": 37,
-  "file_lines": 1210,
+  "file_lines": 1155,
   "functions": {
    "_standing_block": 142,
    "_transcript_block": 147
   },
-  "internal_docstrings": 22
+  "internal_docstrings": 19
  },
  "nora/agent/punctuation.py": {
   "internal_docstrings": 1
@@ -380,10 +380,10 @@
  },
  "nora/app/cognition_grounding.py": {
   "comment_blocks": 5,
-  "file_lines": 909,
+  "file_lines": 810,
   "functions": {
-   "build_grounder": 291,
-   "build_grounder.ground": 248
+   "build_grounder": 262,
+   "build_grounder.ground": 221
   },
   "internal_docstrings": 6
  },
@@ -413,10 +413,10 @@
   }
  },
  "nora/app/composition.py": {
-  "comment_blocks": 22,
-  "file_lines": 1476,
+  "comment_blocks": 21,
+  "file_lines": 1450,
   "functions": {
-   "_compose_dependencies": 952
+   "_compose_dependencies": 931
   },
   "internal_docstrings": 1
  },
@@ -549,7 +549,7 @@
  },
  "nora/app/unified_backfill.py": {
   "comment_blocks": 4,
-  "file_lines": 866,
+  "file_lines": 865,
   "functions": {
    "_run_units": 180
   },
@@ -599,7 +599,7 @@
   "comment_blocks": 3
  },
  "nora/domain/cognition_ground.py": {
-  "comment_blocks": 6
+  "comment_blocks": 5
  },
  "nora/domain/cognition_pace.py": {
   "comment_blocks": 1
@@ -711,7 +711,7 @@
  },
  "nora/domain/models.py": {
   "comment_blocks": 41,
-  "file_lines": 962
+  "file_lines": 914
  },
  "nora/domain/music.py": {
   "comment_blocks": 2
@@ -857,11 +857,11 @@
  },
  "nora/engagement/stages/debrief.py": {
   "comment_blocks": 19,
-  "file_lines": 1281,
+  "file_lines": 1267,
   "functions": {
    "_working_set": 124,
    "fold_unit": 168,
-   "run": 389
+   "run": 377
   },
   "internal_docstrings": 12
  },
@@ -1487,7 +1487,7 @@
  },
  "nora/language/cognition_render.py": {
   "comment_blocks": 5,
-  "file_lines": 1036,
+  "file_lines": 1002,
   "internal_docstrings": 16
  },
  "nora/language/computer_render.py": {
@@ -1517,7 +1517,6 @@
   "internal_docstrings": 2
  },
  "nora/language/profile_render.py": {
-  "comment_blocks": 2,
   "internal_docstrings": 1
  },
  "nora/language/shared_render.py": {
@@ -1898,10 +1897,6 @@
  "nora/web/gatherings.py": {
   "internal_docstrings": 1
  },
- "nora/web/memory.py": {
-  "comment_blocks": 1,
-  "internal_docstrings": 6
- },
  "nora/web/presence.py": {
   "comment_blocks": 2,
   "internal_docstrings": 2
@@ -1931,7 +1926,6 @@
   "internal_docstrings": 3
  },
  "scripts/confirm_cognition_anchors.py": {
-  "comment_blocks": 1,
   "internal_docstrings": 1
  },
  "scripts/engineering_dispatch.py": {

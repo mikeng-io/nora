@@ -10,7 +10,6 @@ import pytest
 from aiohttp import web
 
 from nora.agent.whereis import Circle
-from nora.domain.culture import character_key
 from nora.domain.identity import Identifier
 from nora.domain.managed import AccountState, ManagedAccount, ManagedPerson, PersonLifecycle
 from nora.domain.management import Scope, ScopeKind
@@ -34,7 +33,7 @@ from tests.unit.test_management_authentication import ISSUER, claims, signed
 from tests.web.test_api import NO_SKILLS_DIR, _fake_events
 from tests.web.test_documents_api import JO, KEN, MEI, _seed, _World
 from tests.web.test_management_sessions import sign_in
-from tests.web.test_memory import _line, _Profile
+from tests.web.test_memory import _claim, _Claims
 
 
 def proof(value, path, body=b"", method="GET"):
@@ -85,10 +84,10 @@ async def surface(aiohttp_client, request):
         presence=None, presence_circles=(Circle("generated-circle", frozenset({"ken", "jo"})),),
         skills_dir=NO_SKILLS_DIR, events=_fake_events(),
         doctrine_store=build_test_doctrine_store(), documents=world.store, rooms_of=world.rooms_of,
-        profile=_Profile(heads={character_key(unit, "ken"): (
-            _line("l-" + unit, "cycles to work", unit=unit,
-                  profile_key=character_key(unit, "ken")),)
-            for unit in ("generated-unit-a", "generated-unit-b")}))
+        profile=_Claims({
+            (unit, "ken"): (_claim("l-" + unit, "cycles to work"),)
+            for unit in ("generated-unit-a", "generated-unit-b")
+        }))
     verifier = AuthenticationVerifier([ISSUER])
     register_session_routes(app, sessions=AccountSessions(store, registry), verifier=verifier)
     register_managed_viewer(app, bindings=store, registry=registry,

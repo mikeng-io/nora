@@ -243,3 +243,54 @@ async def test_scope_precedes_the_lexical_candidate_bound(scenario) -> None:
     result = await scenario.service().retrieve(READ, RetrievalAnchors(query=term), bounds)
     assert result.status == "ok"
     assert {row.graph_id for row in result.rows} == set(keep)
+
+
+async def test_portal_keeps_the_own_claim_but_never_shows_dm_evidence_to_a_nonmember(scenario):
+    from nora.agent.egress import scan_reply
+    from nora.memory import wire
+    from nora.web.memory import build_memory_payload
+
+    origin = f"signal:{DM}"
+    await scenario.item("generated-private-item", "generated private DM body",
+                        room=DM, dm=True, person=OTHER, exposure="external")
+    await scenario.claim("own-derived-claim", persons=[PERSON], origin_room=origin,
+                         lineage=Lineage.of({ROW: (message(origin),)}).to_json())
+    await scenario.claim("foreign-subject", persons=[OTHER], origin_room=origin)
+    await scenario.claim("withdrawn-own", persons=[PERSON], state="hidden", origin_room=origin)
+    await write_edge(scenario, "own-derived-claim", "generated-private-item", "cites")
+    common = {
+        "persons": scenario.persons, "person_id": PERSON, "screen": scan_reply,
+        "profile": wire.subject_claims(scenario.engine).read,
+        "profile_scopes_of": lambda _: ((UNIT, "generated-workspace"),),
+    }
+    [other_room] = await build_memory_payload(
+        **common, rooms_of=lambda _: frozenset({("discord", DM), ("signal", ROOM)}),
+    )
+    [line] = other_room["lines"]
+    assert (line["id"], line["text"], line["origin"]) == (
+        "own-derived-claim", "own-derived-claim", "private room",
+    )
+    assert line["evidence"] == [{"ref": "generated-private-item", "kind": "unknown"}]
+    [same_room] = await build_memory_payload(
+        **common, rooms_of=lambda _: frozenset({("signal", DM)}),
+    )
+    assert same_room["lines"][0]["origin"] == origin
+    assert same_room["lines"][0]["evidence"][0]["text"] == "generated private DM body"
+
+
+async def test_profile_snapshot_keeps_visible_graph_heads_in_the_requested_room(scenario):
+    from nora.memory import wire
+
+    origin = f"signal:{ROOM}"
+    await scenario.claim("profile-kept", exposure="external", origin_room=origin)
+    await scenario.claim("profile-replaced", exposure="external", origin_room=origin,
+                         state="superseded")
+    await scenario.claim("profile-internal", exposure="internal", origin_room=origin)
+    await scenario.claim("profile-other-room", exposure="external",
+                         origin_room=f"signal:{OTHER_ROOM}")
+    await scenario.claim("profile-excluded", exposure="external", origin_room=origin,
+                         excluded_persons=[PERSON])
+    async with scenario.engine.connect() as conn:
+        [head] = await wire.profile_snapshot(conn, unit=UNIT, rooms=(origin,))
+        assert head["id"] == "profile-kept"
+        assert set(head) == set(wire.PROFILE_METADATA)

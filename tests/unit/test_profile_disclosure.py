@@ -13,8 +13,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-import pytest
-
 from nora.agent.lineage import LineagePolicy
 from nora.agent.room import Room
 from nora.domain.models import PersonRef
@@ -146,58 +144,3 @@ async def test_no_roster_is_read_when_no_line_names_an_exclusion() -> None:
     lines = await _unit_lines(_LISTED, reader, roster)
     assert len(lines) == 1
     assert roster.calls == []
-
-
-async def test_unit_self_reader_cannot_clear_exclusions_without_live_rosters():
-    from nora.app.cognition_grounding import unit_self_profile_reader
-    from nora.domain.culture import nora_character_key
-
-    reader = _Heads({nora_character_key("u1"): (
-        _line("surprise for Cy", exclude=("cy",)), _line("public observation"),
-    )})
-    read = unit_self_profile_reader(reader, _policy(_LISTED))
-    assert read is not None
-    pending = read("u1")
-    assert pending is not None
-    assert [line.text for line in await pending] == ["public observation"]
-
-
-@pytest.mark.parametrize("locations,allowed", [((False, False), False),
-    ((True, False), False), ((True, True), True)])
-async def test_cognition_self_location_passes_presence_in_every_target_room(locations, allowed):
-    from dataclasses import replace
-
-    from nora.agent.whereis import Circle
-    from nora.app.cognition_grounding import unit_self_profile_reader
-    from nora.domain.culture import nora_character_key
-    from nora.domain.profile import ProfileView
-    from nora.language.profile_render import render_profile
-
-    rooms = tuple(replace(_LISTED, ids=frozenset({cid}), primary_id=cid, location=location)
-                  for cid, location in zip(("g1", "g2"), locations, strict=True))
-    policy = Policy(conversations=rooms,
-        _by_id={(c.platform, c.primary_id): c for c in rooms})
-    private = replace(_line("visits Lotus Library"), location=True,
-                      strength={"location_subjects": ["ada"]})
-    unknown = replace(private, strength={})
-    public = _line("public observation")
-    reader = _Heads({nora_character_key("u1"): (private, unknown, public)})
-    roster = FakeRosterSource(groups=dict.fromkeys(("g1", "g2"), _ROSTER_CLEAN.groups["g1"]))
-    def room_for(platform, conversation_id):
-        return Room(platform=platform, conversation_id=conversation_id,
-                    roster_source=roster, persons=_PERSONS)
-    read = unit_self_profile_reader(reader, policy,
-        lineage=LineagePolicy.from_policy(policy, circles=(Circle(
-            circle_id="fictional", person_ids=frozenset({"ada", "ben"})),)),
-        room_for=room_for)
-    pending = read("u1")
-    if len(set(locations)) > 1:
-        assert pending is None
-        return
-    assert pending is not None
-    lines = await pending
-    assert lines == ((private, public) if allowed else (public,))
-    block = render_profile(ProfileView(entity="nora", of="nora", lines=lines),
-                           name_of=lambda pid: pid, now=NOW)
-    assert block is not None
-    assert ("Lotus Library" in str(block)) == allowed

@@ -470,11 +470,12 @@ async def test_memory_state_reads_the_restored_sandbox() -> None:
             captured.append(str(sql))
             if params is not None:
                 return _Rows([{"id": "n1", "body": "generated-note"}])
-            return _Rows([])  # the profile select: no lines in the sandbox
+            return _Rows([{"id": "generated-claim", "part": "fact"}])
 
-    state = await confirm.memory_state(_Conn(), "generated-unit")
-    assert set(state) == {"open_notes", "open_events", "profile_lines"}
-    assert state["profile_lines"] == []
+    state = await confirm.memory_state(_Conn(), "generated-unit", room="signal:generated")
+    assert set(state) == {"open_notes", "open_events", "profile_claims"}
+    assert state["profile_claims"] == [{"id": "generated-claim", "part": "fact"}]
+    assert any("FROM claim" in sql for sql in captured)
     assert any("FROM note" in sql for sql in captured)
 
 
@@ -485,4 +486,4 @@ async def test_memory_state_surfaces_engine_failures() -> None:
             raise OSError("generated-restoration-missing")
 
     with pytest.raises(OSError, match="generated-restoration-missing"):
-        await confirm.memory_state(_Conn(), "generated-unit")
+        await confirm.memory_state(_Conn(), "generated-unit", room="signal:generated")

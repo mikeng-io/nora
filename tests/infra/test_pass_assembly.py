@@ -319,3 +319,32 @@ async def test_fire_prefill_uses_the_room_unit_person_and_nora_graph_profiles(
     assert ("Nora observation" in prefill) is show_nora
     assert "Unrelated person observation" not in prefill
     assert "<culture" not in prefill
+
+
+async def test_wake_profile_requires_every_agenda_room_to_permit_the_claim(scenario):
+    from nora.domain.lineage import LiveRoom
+    from nora.memory import ReadingRoom
+    from tests.infra.test_retrieval_scope import OTHER_ROOM, UNIT
+
+    await pointers(scenario)
+    await scenario.claim("public-profile", exposure="external")
+    await scenario.claim("excluded-in-second-room", exposure="external",
+                         excluded_persons=[OTHER])
+    for claim in ("public-profile", "excluded-in-second-room"):
+        await write_edge(scenario, claim, "nora-pointer", "about")
+
+    subjects = {("nora", "nora"): "Nora"}
+    first = ReadingRoom("signal", ROOM, LiveRoom(frozenset({PERSON})), expected_unit=UNIT)
+    second = ReadingRoom("signal", OTHER_ROOM, LiveRoom(frozenset({OTHER})), expected_unit=UNIT)
+    reader = _assembler(scenario)
+    control = await reader.read_profiles(first, subjects, NOW)
+    assert "excluded-in-second-room" in control["nora", "nora"].block().body.text
+
+    scoped = await reader.read_profiles(first, subjects, NOW, audience_rooms=(second,))
+    assert "public-profile" in scoped["nora", "nora"].block().body.text
+    assert "excluded-in-second-room" not in scoped["nora", "nora"].block().body.text
+
+    wrong = replace(second, expected_unit="nobody's unit")
+    refused = await reader.read_profiles(first, subjects, NOW, audience_rooms=(wrong,))
+    assert refused["nora", "nora"].profile.status == "unavailable"
+    assert refused["nora", "nora"].block().body.text == ""

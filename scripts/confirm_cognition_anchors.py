@@ -25,7 +25,6 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-import sqlalchemy as sa
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -191,7 +190,7 @@ async def wake_input(sandbox_url: str, at_ms: int, view, room: str,
             engine = create_async_engine(sandbox_url)
             try:
                 async with engine.connect() as conn:
-                    memory = await memory_state(conn, view.unit)
+                    memory = await memory_state(conn, view.unit, room=f"{platform}:{room}")
             finally:
                 await engine.dispose()
             return {"at_ms": at_ms, "room": room, "platform": platform,
@@ -201,11 +200,10 @@ async def wake_input(sandbox_url: str, at_ms: int, view, room: str,
             await _close(subject)
 
 
-async def memory_state(conn, unit: str) -> dict:
+async def memory_state(conn, unit: str, *, room: str) -> dict:
     """The sandbox is already restored as of at_ms; never read today's heads."""
+    from nora import memory
     from nora.domain.gatherings import OPEN_STATUSES
-    from nora.infra.sql.profile import chain_heads, row_to_line
-    from nora.infra.sql.schema import PROFILE_LINE
 
     result = {}
     for label, query in {
@@ -218,19 +216,7 @@ async def memory_state(conn, unit: str) -> dict:
         params = {"unit": unit, "open_statuses": sorted(OPEN_STATUSES)}
         result[label] = [dict(row) for row in
                          (await conn.execute(text(query), params)).mappings()]
-    # `profile_line` is append-only: a withdrawal or replacement inserts a
-    # successor and leaves the predecessor's `state` untouched, so a state
-    # filter over raw rows still shows a line withdrawn before this wake.
-    # The account is its chain heads — the store's own reduction
-    # (`SqlProfileStore.account_heads`), applied BEFORE the state filter.
-    rows = (await conn.execute(
-        sa.select(PROFILE_LINE).where(PROFILE_LINE.c.unit == unit))).all()
-    lines = [row_to_line(row) for row in rows]
-    heads, _ = chain_heads(lines)
-    by_id = {str(row.id): row for row in rows}
-    result["profile_lines"] = [
-        dict(by_id[head.id]._mapping)
-        for head in heads if head.state in ("current", "disputed")]
+    result["profile_claims"] = await memory.wire.profile_snapshot(conn, unit=unit, rooms=(room,))
     return result
 
 

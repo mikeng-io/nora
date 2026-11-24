@@ -17,7 +17,6 @@ from .lineage import RenderRoom
 from .media import MediaBlob, MediaRef
 from .memo import Memo
 from .notes import Note
-from .profile import ProfileView
 from .self_presence import Presence
 from .shared_state import SharedView
 from .subagents_context import SubagentsView
@@ -763,8 +762,6 @@ class TagContext:
     # read fresh here, never copied onto the note.
     retained_sources: tuple[Any, ...] = ()
     retained_sources_more: int = 0
-    # Supplied profiles replace the peer summaries for this turn.
-    profiles: tuple[ProfileView, ...] = ()
     # What she has learned to do differently in this unit: the bodies of its
     # active lessons, oldest first, read under `[lessons] render` on tag and
     # fire turns where `<self>` may show.

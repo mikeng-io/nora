@@ -544,26 +544,19 @@ def build_context_reader(
     record_chars: int,
     documents_context: Any,
     screen: Callable[[str], str | None],
-    content_checks: Any,
+    access: Any,
 ) -> Any:
     """The shared-context reader the grounder calls per agenda room."""
-    import functools
-
-    from nora.agent.dream_screen import text_offence
+    from nora import memory
     from nora.app.cognition_context import CognitionContextReader
     from nora.infra.sql.lessons import SqlLessonStore
-    from nora.infra.sql.profile import SqlProfileStore
     from nora.infra.sql.record_query import SqlRecordQuery
     from nora.language.lesson_render import ActiveLessons
 
-    profiles = SqlProfileStore(
-        engine,
-        screen=functools.partial(text_offence, content_checks=content_checks),
-    )
     return CognitionContextReader(
         policy=allowlist, persons=persons, lineage=lineage,
         records=SqlRecordQuery(engine), directory=presence_reader, audit=audit,
-        profiles=profiles,
+        profiles=memory.wire.pass_assembler(engine, access, lineage, None, None),
         lessons=ActiveLessons(SqlLessonStore(engine)), media_join=media_join,
         room_for=lambda platform, cid: AgentRoom(
             platform=platform, conversation_id=cid,

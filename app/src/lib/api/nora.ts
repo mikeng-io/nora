@@ -34,7 +34,9 @@ export const ProfileEvidenceSchema = z.object({
 });
 export type ProfileEvidence = z.infer<typeof ProfileEvidenceSchema>;
 export const ProfileLineSchema = z.object({
-  part: z.enum(["facts", "traits", "guesses"]),
+  id: z.string().optional(),
+  origin: z.string().nullable().optional(),
+  part: z.enum(["facts", "traits", "guesses", "other"]),
   kind: z.string(),
   text: z.string(),
   mode: z.string(),

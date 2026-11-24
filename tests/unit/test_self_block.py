@@ -63,7 +63,7 @@ def _policy(tmp_path):
 
 
 def test_the_profile_is_the_first_row_of_the_cognition_table():
-    assert COGNITION_BLOCKS[0].name == "profile"
+    assert COGNITION_BLOCKS[0].name == "graph_profile"
     assert COGNITION_BLOCKS[0].order == min(d.order for d in COGNITION_BLOCKS)
 
 
@@ -75,26 +75,24 @@ def _cognition_prompt(grounding: Grounding | None) -> str:
 
 
 def test_a_cognition_prompt_opens_with_her_account_before_the_clock():
-    from nora.domain.profile import ProfileView
+    from nora.domain.blocks import ContextBlock
+    from nora.testing.context_blocks import compose_fixture
 
-    prompt = _cognition_prompt(
-        Grounding(
-            self_profile=ProfileView(
-                entity="nora", of="nora", authored=("she keeps it short here",)
-            )
-        )
-    )
-    assert prompt.startswith("<profile ")
-    assert prompt.index("<profile ") < prompt.index("<clock")
+    prompt = _cognition_prompt(Grounding(graph_profiles=(
+        ContextBlock("graph_profile", compose_fixture("she keeps it short here"),
+                     attrs=(("of", "nora"),)),
+    )))
+    assert prompt.startswith("<graph_profile ")
+    assert prompt.index("<graph_profile ") < prompt.index("<clock")
     assert "she keeps it short here" in prompt
     assert 'of="nora"' in prompt
-    assert COGNITION_BLOCKS[0].name == "profile"
+    assert COGNITION_BLOCKS[0].name == "graph_profile"
 
 
 def test_a_cognition_prompt_has_no_self_block_without_an_account():
     for grounding in (Grounding(), None):
         first = _cognition_prompt(grounding).splitlines()[0]
-        assert first.startswith("<profile ")
+        assert first.startswith("<graph_profile ")
         assert first.endswith("/>")
         assert 'of="' not in first
 

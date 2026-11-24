@@ -21,6 +21,7 @@ class ReadingRoom:
     conversation_id: str
     live: LiveRoom | None = None
     require_live_for_exclusions: bool = False
+    expected_unit: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

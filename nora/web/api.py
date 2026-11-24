@@ -20,6 +20,7 @@ from uuid import UUID
 
 from aiohttp import web
 
+from nora.agent.egress import scan_reply
 from nora.agent.whereis import Circle, PresenceReader
 from nora.app.gatherings import GatheringService
 from nora.doctrine.loader import DoctrineStore
@@ -42,7 +43,7 @@ from nora.web.documents import (
     change_document_state,
 )
 from nora.web.gatherings import build_gathering_payload, build_gatherings_payload
-from nora.web.memory import CitedMessages, ProfilePortal, build_memory_payload
+from nora.web.memory import SubjectClaims, build_memory_payload
 from nora.web.persons import build_person_profile_payload, build_persons_roster_payload
 from nora.web.presence import (
     build_presence_history_payload,
@@ -202,16 +203,16 @@ def register_web_routes(
     blobs: BlobStore | None = None,
     room_label: Callable[[str, str], str] | None = None,
     artifacts: ComputerExportStore | None = None,
-    profile: ProfilePortal | None = None,
+    profile: SubjectClaims | None = None,
+    profile_screen: Callable[[str], str | None] = scan_reply,
     profile_scopes_of: Callable[[str], tuple[tuple[str, str], ...]] | None = None,
-    profile_cited: CitedMessages | None = None,
 ) -> None:
     app["web_store"] = store
     app["web_artifacts"] = artifacts
     app["web_workspaces_of"] = workspaces_of
     app["web_profile"] = profile
+    app["web_profile_screen"] = profile_screen
     app["web_profile_scopes_of"] = profile_scopes_of
-    app["web_profile_cited"] = profile_cited
     app["web_documents"] = documents
     app["web_rooms_of"] = rooms_of
     app["web_room_event_shown"] = room_event_shown
@@ -241,7 +242,7 @@ def register_web_routes(
             persons=a["web_persons"], person_id=request.query.get("personId"),
             workspaces_of=a["web_workspaces_of"],
             profile=a["web_profile"], profile_scopes_of=a["web_profile_scopes_of"],
-            cited=a["web_profile_cited"], rooms_of=a["web_rooms_of"],
+            rooms_of=a["web_rooms_of"], screen=a["web_profile_screen"],
         )
         return web.json_response(body)
 

@@ -142,13 +142,11 @@ from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.self_presence import PresenceReader
 from nora.infra.computer.probe import ComputerdProbe
 from nora.infra.embedder import LlamaEmbedder, fingerprint, model_file
-from nora.infra.sql.character import SqlCharacterEvidence
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.memory_embed import MemoryEmbedWorker
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.presence import PresenceStore
-from nora.infra.sql.profile import SqlProfileStore
 from nora.infra.sql.revisions import SqlRevisionStore
 from nora.infra.sql.source_health import SqlSourceHealthLog
 from nora.infra.voice.hub import VoiceControllerHub
@@ -166,6 +164,7 @@ from nora.platform.registry import AdapterRegistry
 from nora.platform.signal.adapter import SignalAdapter
 from nora.policy import Policy
 from nora.tag import Debounce
+from nora.web.memory import SubjectClaims
 
 from .dispatch import Dispatcher
 from .fire import (
@@ -230,13 +229,9 @@ class Dependencies:
     # portal's own-memory page. A callable for `resolve_voice_room`'s reason:
     # `nora.web` never sees a `Policy`.
     workspaces_of: Callable[[str], tuple[str, ...]]
-    # The portal's Profile reads (45, the switch): the read-only store (None
-    # until `[memory.profile] read` is on — `profile_reader` above), a person_id ->
-    # the (unit, workspace) pairs their accounts live under, and the Record
-    # read that resolves a line's message/episode citations for the page.
-    profile_portal: SqlProfileStore | None
+    profile_portal: SubjectClaims
+    profile_screen: Callable[[str], str | None]
     profile_scopes_of: Callable[[str], tuple[tuple[str, str], ...]] | None
-    profile_cited: SqlCharacterEvidence | None
     # /health's `index` block: the memory index's state and queue length
     # (`SqlMemoryIndex.index_state`, no model fingerprint).
     index_state: Callable[[], Awaitable[IndexState]]
@@ -702,7 +697,6 @@ async def _compose_dependencies(
     lessons_reader = _stores_readers.lessons_reader
     profile_index = _stores_readers.profile_index
     profile_reader = _stores_readers.profile_reader
-    profile_store_reader = _stores_readers.profile_store_reader
     _people_note_maps = _people_wire.note_maps(allowlist=allowlist)
     _memory_search = _memory_wire.search(cfg=cfg, engine=engine, metrics=metrics, access=access)
     memory_index_reader = _memory_search.memory_index_reader
@@ -1333,15 +1327,9 @@ async def _compose_dependencies(
         engagement=engagement,
         resolve_voice_room=_voice_room_of(allowlist),
         workspaces_of=functools.partial(workspaces_of_person, allowlist),
-        # The portal's Profile reads (45): wired with the switch's reader, so
-        # the page shows the accounts exactly when the prompts do.
-        profile_portal=profile_store_reader,
-        profile_scopes_of=(
-            functools.partial(profile_scopes_of_person, allowlist)
-            if profile_store_reader is not None
-            else None
-        ),
-        profile_cited=(SqlCharacterEvidence(engine) if profile_store_reader is not None else None),
+        profile_portal=_memory_wire.subject_claims(engine).read,
+        profile_screen=cognition_context_screen,
+        profile_scopes_of=functools.partial(profile_scopes_of_person, allowlist),
         index_state=memory_index_reader.index_state,
         documents=documents_store,
         document_service=document_service,

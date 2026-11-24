@@ -3,7 +3,6 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 from nora.domain.profile import Account, AddOp, ProfileCitable, RetireOp, ReviseOp, Said
-from nora.language.profile_render import ProfileView, render_profile
 from nora.testing.profile import InMemoryProfileStore
 
 UNIT = "u1"
@@ -42,15 +41,7 @@ async def _write(store, *ops, relations=()):
     )
 
 
-async def _render(store):
-    heads = await store.account_heads(key=ACCOUNT.key)
-    return render_profile(
-        ProfileView(entity="person", of=PERSON, lines=heads),
-        name_of=lambda pid: pid, now=AS_OF,
-    )
-
-
-async def test_write_then_later_turn_renders():
+async def test_write_commits_the_head_with_its_resolved_premise():
     store = InMemoryProfileStore()
     refused = await _write(store, DEDUCED)
     assert [refusal.reason for refusal in refused.refusals] == ["unknown_premise"]
@@ -59,8 +50,7 @@ async def test_write_then_later_turn_renders():
     assert written.status == "ok"
     [head] = await store.account_heads(key=ACCOUNT.key)
     assert head.draws_on == (RELATION,)
-    block = await _render(store)
-    assert block is not None and "plans reliably" in block.body.text
+    assert head.content["statement"] == "plans reliably"
 
 
 async def test_correction_and_retirement_change_the_later_read():
@@ -69,15 +59,12 @@ async def test_correction_and_retirement_change_the_later_read():
     revise = ReviseOp(line="P1", text="walks at night",
                       content=_habit("walks at night", "night walks"), citations=CITATIONS)
     assert (await _write(store, revise)).status == "ok"
-    block = await _render(store)
-    assert block is not None and "walks at night" in block.body.text
-    assert "walks in the evening" not in block.body.text
+    [head] = await store.account_heads(key=ACCOUNT.key)
+    assert head.content["statement"] == "walks at night"
 
     assert (await _write(store, RetireOp(line="P1", why="no longer true"))).status == "ok"
     [head] = await store.account_heads(key=ACCOUNT.key)
     assert head.state == "retired"
-    block = await _render(store)
-    assert block is None or "walks at night" not in block.body.text
 
 
 async def test_abduced_guess_rests_on_a_current_induced_trait():

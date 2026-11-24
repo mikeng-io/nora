@@ -4,7 +4,7 @@ Every kind is read through the store's own production read path over the
 sandbox engine — `SqlNoteStore.standing`, `SqlMemoStore.kept`,
 `SqlGatheringStore.list_for_conversation`, `SqlReminderStore.in_rooms`,
 `SqlStandingStore.read_head`, `SqlStandingLedger.read`,
-`SqlLessonStore.lessons`, `SqlProfileStore.account_heads`,
+`SqlLessonStore.lessons`, the graph profile snapshot,
 `SqlMemoryGraph.aliases`, the graph's full relation set through
 `unit_relations`, and the stimulus store's `view`
 plus `pending_self_wakes` — never an eval-side SQL projection. Entries
@@ -20,6 +20,9 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora import memory
+from nora.domain.culture import split_culture_key
+from nora.domain.lineage import room_key
 from nora.infra.sql.cognition_store import SqlCognitionStore
 from nora.infra.sql.entries import SqlEntryStore
 from nora.infra.sql.gatherings import SqlGatheringStore
@@ -28,7 +31,6 @@ from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.memory_graph import SqlMemoryGraph
 from nora.infra.sql.memory_relations import unit_relations
 from nora.infra.sql.notes import SqlNoteStore
-from nora.infra.sql.profile import SqlProfileStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.standing_ledger import SqlStandingLedger
@@ -161,12 +163,14 @@ async def snapshot(
     lessons = await SqlLessonStore(engine).lessons(unit=unit)
     kinds["lesson"] = {str(lesson.id): _payload(lesson) for lesson in lessons}
 
-    profiles = SqlProfileStore(engine, screen=lambda _: None)
-    profile: dict[str, Mapping[str, Any]] = {}
-    for key in profile_keys:
-        for line in await profiles.account_heads(key=key):
-            profile[f"{key}:{line.id}"] = _payload(line)
-    kinds["profile"] = profile
+    keys = tuple(split_culture_key(key) for key in profile_keys)
+    people = tuple(person for _, owner, person in keys if owner == unit and person is not None)
+    async with engine.connect() as conn:
+        claims = await memory.wire.profile_snapshot(
+            conn, unit=unit, rooms=(room_key(platform, room) for platform, room in rooms),
+            people=people,
+        )
+    kinds["profile"] = {str(claim["id"]): claim for claim in claims}
 
     graph = SqlMemoryGraph(engine)
     kinds["graph"] = {

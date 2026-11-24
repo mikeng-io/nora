@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection, Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -74,7 +74,7 @@ class GraphProfileReader(Protocol):
     async def read_profiles(
         self, room: ReadingRoom, subjects: Mapping[tuple[PointerKind, str], str],
         now: datetime, *, timeout_seconds: float, concerns: frozenset[str] = frozenset(),
-        as_of: datetime | None = None,
+        as_of: datetime | None = None, audience_rooms: Sequence[ReadingRoom] = (),
     ) -> Mapping[tuple[PointerKind, str], ProfileReadResult]: ...
 
 

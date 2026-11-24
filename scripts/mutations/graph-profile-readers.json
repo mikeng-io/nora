@@ -1,0 +1,23 @@
+[
+  {
+    "name": "portal evidence bodies require the viewer's exact current room",
+    "file": "nora/memory/adapters/subject_claims.py",
+    "old": "sa.tuple_(msg.platform, msg.conversation_id).in_(sorted(viewer_rooms)),",
+    "new": "sa.true(),",
+    "target": "tests/infra/test_retrieval_scope.py::test_portal_keeps_the_own_claim_but_never_shows_dm_evidence_to_a_nonmember"
+  },
+  {
+    "name": "wake shared profiles pass each agenda room's audience",
+    "file": "nora/memory/adapters/pass_assembly.py",
+    "old": "row for row in result.rows if row.graph_id in permitted",
+    "new": "row for row in result.rows if permitted is not None",
+    "target": "tests/infra/test_pass_assembly.py::test_wake_profile_requires_every_agenda_room_to_permit_the_claim"
+  },
+  {
+    "name": "judge snapshots exclude superseded graph claims",
+    "file": "nora/memory/adapters/profile_snapshot.py",
+    "old": "CLAIM.c.state.in_((\"live\", \"awaiting_weighing\")),",
+    "new": "CLAIM.c.state.in_((\"live\", \"awaiting_weighing\", \"superseded\")),",
+    "target": "tests/infra/test_retrieval_scope.py::test_profile_snapshot_keeps_visible_graph_heads_in_the_requested_room"
+  }
+]

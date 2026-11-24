@@ -12,7 +12,14 @@ from typing import Any, cast
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.culture import character_key, nora_character_key, unit_culture_key
+from nora import memory
+from nora.domain.culture import (
+    character_key,
+    nora_character_key,
+    split_culture_key,
+    unit_culture_key,
+)
+from nora.domain.lineage import room_key
 from nora.infra.sql.history import APPEND_ONLY
 from nora.infra.sql.schema import (
     COGNITION_WAKE,
@@ -127,7 +134,7 @@ SOURCES = (
     Source("notebook_entry_revision", "topic", "notebook_entry", "entry_id"),
     Source("memo", "memo"), Source("memo_revision", "memo", "memo", "memo_id"),
     Source("lesson", "lesson"), Source("lesson_revision", "lesson", "lesson", "lesson_id"),
-    Source("profile_line", "profile"), Source("standing_revision", "standing"),
+    Source("standing_revision", "standing"),
     Source("standing_decision_revision", "standing"),
     Source("standing_commitment_revision", "standing"),
     Source("standing_thread_revision", "standing"),
@@ -145,7 +152,7 @@ HISTORY_KINDS = {
     "note": "note", "notebook_entry": "topic", "events": "event",
     "standing": "standing", "standing_decision": "standing",
     "standing_commitment": "standing", "standing_thread": "standing",
-    "profile": "profile", "reminders": "reminder", "messages": "record",
+    "claim": "profile", "reminders": "reminder", "messages": "record",
 }
 ROOM_SCOPED = frozenset({"events", "standing", "standing_revision", "reminders", "messages"})
 
@@ -237,10 +244,7 @@ def _room_clause(platform: Any, conversation: Any, rooms: tuple[tuple[str, str],
     return sa.tuple_(platform, conversation).in_(rooms)
 
 
-def _scope(table: sa.Table, unit: str, rooms: tuple[tuple[str, str], ...],
-           profile_keys: tuple[str, ...]) -> Any:
-    if table.name == "profile_line":
-        return sa.and_(table.c.unit == unit, table.c.profile_key.in_(profile_keys))
+def _scope(table: sa.Table, unit: str, rooms: tuple[tuple[str, str], ...]) -> Any:
     if table.name == "bridge_action":
         return _room_clause(table.c.platform, table.c.request["target"]["id"].astext, rooms)
     conditions = []
@@ -258,8 +262,17 @@ def _scope(table: sa.Table, unit: str, rooms: tuple[tuple[str, str], ...],
 def _history_scope(table: str, unit: str, rooms: tuple[tuple[str, str], ...],
                    profile_keys: tuple[str, ...]) -> Any:
     image = ROW_HISTORY.c.image
-    if table == "profile":
-        return image["key"].astext.in_(profile_keys)
+    if table == "claim":
+        keys = tuple(split_culture_key(key) for key in profile_keys)
+        people = [person for _, owner, person in keys if owner == unit and person is not None]
+        return sa.and_(
+            image["unit"].astext == unit,
+            image["origin_room"].astext.in_(tuple(room_key(p, r) for p, r in rooms)),
+            image["part"].astext.in_(memory.wire.PROFILE_PARTS),
+            image["exposure"].astext == "external",
+            image["excluded_persons"] == sa.cast(sa.literal("[]"), image.type),
+            image["persons"].contained_by(people),
+        )
     if table == "legacy_relation_evidence":
         relation = METADATA.tables["legacy_relation"]
         entity = METADATA.tables["legacy_entity"]
@@ -311,8 +324,11 @@ async def read_effects(engine: AsyncEngine | FrozenReads, *, since: EffectBounda
                 _history_scope(table_name, unit, rooms, profile_keys),
             ).order_by(ROW_HISTORY.c.id))).mappings().all()
             for row in rows:
+                payload = dict(row)
+                if table_name == "claim":
+                    payload = {key: row["image"].get(key) for key in memory.wire.PROFILE_METADATA}
                 effects.append(_effect(kind, "row_history", {"id": row["id"]},
-                    row["recorded_at"], dict(row), operation=row["op"]))
+                    row["recorded_at"], payload, operation=row["op"]))
         for source in SOURCES:
             table = METADATA.tables[source.table]
             owner = METADATA.tables[source.parent] if source.parent else table
@@ -327,7 +343,7 @@ async def read_effects(engine: AsyncEngine | FrozenReads, *, since: EffectBounda
             if source.table == "bridge_action":
                 lower = sa.or_(lower, table.c.started_at >= since.at,
                                table.c.completed_at >= since.at)
-            query = query.where(lower, _scope(owner, unit, rooms, profile_keys))
+            query = query.where(lower, _scope(owner, unit, rooms))
             rows = (await conn.execute(query)).mappings().all()
             for row in rows:
                 key = {column.name: row[column.name] for column in table.primary_key}

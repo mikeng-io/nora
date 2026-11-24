@@ -101,7 +101,6 @@ from nora.language.context_render import (
     transcript_rows,
 )
 from nora.language.lesson_render import lesson_evidence_blocks, render_lessons
-from nora.language.profile_render import render_profile, render_profile_people
 from nora.language.register_render import render_register
 from nora.language.shared_render import render_shared_state
 
@@ -117,7 +116,7 @@ from nora.language.shared_render import render_shared_state
 #: describe the same thing here, and nothing routes on `key` yet either way.
 _BLOCKS: tuple[BlockDeclaration, ...] = (
     BlockDeclaration(
-        "profile", 5, "match an existing entity or create one; correct a contradiction"
+        "graph_profile", 5, "match an existing entity or create one; correct a contradiction"
     ),
     BlockDeclaration("clock", 10, "when, and how long ago"),
     BlockDeclaration("reads", 20, "which rooms the read tools look through"),
@@ -882,40 +881,7 @@ def _item_blocks(
 def _grounded_blocks(grounding: Grounding, now: datetime) -> list[ContextBlock]:
     """What the grounding read for the prompt: profiles, members, rooms,
     documents and lessons, each a self-describing block."""
-    blocks: list[ContextBlock] = []
-    views = grounding.profiles or ((grounding.self_profile,) if grounding.self_profile else ())
-
-    def names(pid: str) -> str:
-        return grounding.profile_names.get(pid, pid)
-
-    blocks.extend(
-        render_profile_people(
-            [v for v in views if v.entity == "person"], name_of=names, now=now
-        )
-    )
-    for view in views:
-        if view.entity != "person":
-            block = render_profile(view, name_of=names, now=now)
-            if block is not None:
-                blocks.append(block)
-            else:
-                blocks.append(
-                    ContextBlock(
-                        name="profile",
-                        body=compose_body(""),
-                        attrs=(("of", view.of), ("entity", view.entity)),
-                        when_empty="self_close",
-                    )
-                )
-    for entity, subject in grounding.profile_unavailable:
-        blocks.append(
-            ContextBlock(
-                name="profile",
-                body=compose_body(""),
-                attrs=(("of", subject), ("entity", entity), ("status", "unavailable")),
-                when_empty="self_close",
-            )
-        )
+    blocks = list(grounding.graph_profiles)
     blocks.extend(render_members(view) for view in grounding.members)
     blocks.append(
         render_rooms(

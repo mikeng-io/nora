@@ -126,13 +126,6 @@
     "target": "tests/unit/test_discord_guild_entry.py::test_scope_home_rooms_map_a_discovered_channel"
   },
   {
-    "name": "self-profile targets enumerate rooms()",
-    "file": "nora/app/cognition_grounding.py",
-    "old": "        rooms = tuple(c for c in policy.rooms() if c.unit == unit and c.primary_id)",
-    "new": "        rooms = tuple(c for c in policy.conversations if c.unit == unit and c.primary_id)",
-    "target": "tests/unit/test_discord_guild_entry.py::test_the_self_profile_read_renders_discovered_rooms_as_targets"
-  },
-  {
     "name": "the absorb read fails closed when the room vanished (message path)",
     "file": "nora/ingest/pipeline.py",
     "old": "        absorbed = room is not None and room.absorbed\n        message = dataclasses.replace(message, admitted_unit=room.unit if room else \"\")",
