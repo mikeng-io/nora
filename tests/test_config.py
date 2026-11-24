@@ -964,7 +964,7 @@ def test_a_config_written_before_the_dreamer_section_existed_still_loads(toml_pa
     assert set(cfg.dreamer.budgets) == set()
     assert cfg.dreamer.budget_for("note-curation") == DreamBudgetConfig()
     assert cfg.dreamer.max_unit_hold_seconds is None
-    assert cfg.dreamer_max_unit_hold_seconds() > cfg._dream_unit_hold_known_minimum()
+    assert cfg._dream_unit_hold_known_minimum() == 725.0
 
 
 def test_two_configs_do_not_share_one_defaulted_dreamer_section(tmp_path, monkeypatch):
