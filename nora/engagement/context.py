@@ -844,7 +844,7 @@ class TranscriptInjection:
             return (), 0
         if self._lineage is not None and self._lineage.mode == "on":
             notes = derived_view(
-                notes=notes, standing=None, culture=None,
+                notes=notes, standing=None,
                 target=await self._render_room(msg)).notes
         out: list[RetainedSource] = []
         more = 0

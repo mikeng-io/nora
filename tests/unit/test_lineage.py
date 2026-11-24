@@ -369,15 +369,14 @@ def test_a_note_is_not_rendered_in_a_wider_room_and_the_rest_are():
     holds p3, who was not there); one resting on A is shown in B; one with an
     unresolved citation stays in A."""
     in_b = derived_view(notes=(NOTE_A, NOTE_B, NOTE_A_LEGACY), standing=None,
-                        culture=None, target=_in(B, live=LIVE_OK))
+                        target=_in(B, live=LIVE_OK))
     assert [n.title for n in in_b.notes] == ["raised here", "raised in the smaller room"]
     assert dict(in_b.withheld) == {"notes": 1}
     # Block assembly reads no live roster today: the note from A is withheld.
-    unread = derived_view(notes=(NOTE_A, NOTE_B), standing=None, culture=None,
+    unread = derived_view(notes=(NOTE_A, NOTE_B), standing=None,
                           target=_in(B))
     assert [n.title for n in unread.notes] == ["raised in the smaller room"]
-    in_a = derived_view(notes=(NOTE_A, NOTE_B, NOTE_A_LEGACY), standing=None,
-                        culture=None, target=_in(A))
+    in_a = derived_view(notes=(NOTE_A, NOTE_B, NOTE_A_LEGACY), standing=None, target=_in(A))
     assert [n.title for n in in_a.notes] == ["raised here", "legacy revision"]
     body = _body(_ctx(A, notes=(NOTE_A, NOTE_B), lineage_room=_in(A)))
     assert "raised here" in body
@@ -388,7 +387,7 @@ def test_a_failing_section_is_dropped_and_the_rest_of_its_row_renders():
     standing = replace(_standing("b"), lineage=Lineage.of({
         BODY: [message("discord:b")], WORKING_SET: [message("discord:b"), unresolved("c")],
     }))
-    view = derived_view(notes=(), standing=standing, culture=None, target=_in(B))
+    view = derived_view(notes=(), standing=standing, target=_in(B))
     assert (view.standing, view.standing_working_set) == (True, True)
     # In A the whole row's lineage fails — the consolidated read projects
     # nothing for that room (a `nothing_found` view renders no block).
@@ -399,7 +398,7 @@ def test_a_failing_section_is_dropped_and_the_rest_of_its_row_renders():
     split = replace(standing, lineage=Lineage.of({
         BODY: [message("discord:b")], WORKING_SET: [LineageEntry(kind="presence", subject="p1")],
     }))
-    split_view = derived_view(notes=(), standing=split, culture=None, target=_in(B))
+    split_view = derived_view(notes=(), standing=split, target=_in(B))
     assert (split_view.standing, split_view.standing_working_set) == (True, False)
     body = _body(_ctx(B, shared=_shared(_position_entry("b")),
                       lineage_room=_in(B)))

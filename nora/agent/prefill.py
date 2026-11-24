@@ -732,7 +732,7 @@ def _lineage(ctx: TagContext) -> DerivedView | None:
     if target is None or target.mode == "off":
         return None
     return derived_view(
-        notes=ctx.notes, standing=None, culture=None,
+        notes=ctx.notes, standing=None,
         target=target,
     )
 
@@ -777,13 +777,6 @@ def _enforced(ctx: TagContext) -> bool:
     """`[lineage] mode = "on"`: a failing section is not rendered. `shadow`
     computes the same answer and only reports it on the prefill span."""
     return ctx.lineage_room is not None and ctx.lineage_room.mode == "on"
-
-
-def _shown(ctx: TagContext, view: DerivedView | None, block: str) -> bool:
-    if view is None or not _enforced(ctx):
-        return True
-    return bool(getattr(view, block))
-
 
 
 def _presence_block(ctx: TagContext) -> ContextBlock:

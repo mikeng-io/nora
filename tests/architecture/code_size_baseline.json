@@ -218,7 +218,7 @@
  },
  "nora/agent/prefill.py": {
   "comment_blocks": 37,
-  "file_lines": 1303,
+  "file_lines": 1210,
   "functions": {
    "_standing_block": 142,
    "_transcript_block": 147
