@@ -298,16 +298,7 @@ async def _cognition_probe(subject: Subject, case: Case, *, now_ms: int) -> Outc
 
 
 async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
-    """One dream pass, graded on the NOTEBOOK.
-
-    The batch is what `know()` wrote — the Dreamer reads the room's rows, so a
-    case's transcript IS its input here, exactly as it is for the gate. There
-    is nothing to deliver.
-
-    `case.category` names the adaptor, because which adaptor runs is a property
-    of the CASE and not of the runner: adaptors are passes over one runtime, and branching on
-    them in the runner would grow a driver per adaptor inside one file.
-    """
+    """Replay or probe a Cognition session against the seeded subject."""
     # `build_dependencies` takes a `clock` and `SubjectSpec.now` sets it, so a
     # case that states the time is judged AT that time.
     # AN INPUT THE GRAPH CANNOT HONOUR IS AN ERROR.
@@ -329,14 +320,14 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
                 "multi-room seeding does not exist yet"
             ),
         )
-    adaptor = case.category
-    if adaptor == "cognition":
+    category = case.category
+    if category == "cognition":
         if case.metadata.get("corpus") == "cognition_session":
             return await _cognition_replay(subject, case, now_ms=now_ms)
         return await _cognition_probe(subject, case, now_ms=now_ms)
     return Outcome(
         admitted=None, source="fail_closed",
-        error=f"Dreamer cases require category 'cognition', got {adaptor!r}",
+        error=f"Dreamer cases require category 'cognition', got {category!r}",
     )
 
 
@@ -681,10 +672,7 @@ ENTRY_POINTS = {
     # true, which is the deployment's own default and the reason this is the
     # cheapest of the three to drive.
     "tag": EntryPoint(drive=tag, delivers_input=True, drives_a_turn=True),
-    # `[dreamer] enabled` ships false. The RUNTIME only: which adaptor is built is
-    # the corpus's business (the culture adaptor needs `[culture] enabled`). Putting an
-    # adaptor's flag here would make one corpus's requirement look like the
-    # entry point's.
+    # Cognition uses the Dreamer runtime. The corpus sets its session flags.
     "dreamer": EntryPoint(drive=dreamer, config={"dreamer.enabled": True}),
     # The act turn needs the FIRE PATH, which `[participation]` also builds,
     # and the note tier its row points at. NOT `[heartbeat]`: composition
