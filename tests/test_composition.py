@@ -131,14 +131,18 @@ async def test_build_dependencies_returns_the_wired_graph(cfg, tmp_path):
     assert deps.dispatcher is not None
 
 
-@pytest.mark.parametrize("read", [False, True])
-async def test_profile_portal_wiring_requires_the_read_flag(cfg, read):
+@pytest.mark.parametrize(("write", "read"), [(False, True), (True, False), (True, True)])
+async def test_profile_portal_wiring_requires_the_read_flag(cfg, write, read):
     deps = await build_dependencies(override_config(cfg, {
-        "memory.profile.write": True,
+        "memory.profile.write": write,
         "memory.profile.read": read,
     }))
-    assert callable(deps.profile_portal) is read
-    assert callable(deps.profile_scopes_of) is read
+    if write and read:
+        assert callable(deps.profile_portal)
+        assert callable(deps.profile_scopes_of)
+    else:
+        assert deps.profile_portal is None
+        assert deps.profile_scopes_of is None
 
 
 async def test_the_trigger_phrase_engages_by_default(cfg):

@@ -229,7 +229,7 @@ class Dependencies:
     # portal's own-memory page. A callable for `resolve_voice_room`'s reason:
     # `nora.web` never sees a `Policy`.
     workspaces_of: Callable[[str], tuple[str, ...]]
-    profile_portal: SubjectClaims
+    profile_portal: SubjectClaims | None
     profile_screen: Callable[[str], str | None]
     profile_scopes_of: Callable[[str], tuple[tuple[str, str], ...]] | None
     # /health's `index` block: the memory index's state and queue length
@@ -1314,7 +1314,7 @@ async def _compose_dependencies(
     )
     computer_sweeper = _computer_sweeper.computer_sweeper
     # ponytail: The Profile read switch bounds portal disclosure until 6e owns activation.
-    profile_read = cfg.memory.profile.read
+    profile_read = cfg.memory.profile.read and cfg.memory.profile.write
     return Dependencies(
         config_reload=reload_files, discord_control=discord_control,
         audit=audit,

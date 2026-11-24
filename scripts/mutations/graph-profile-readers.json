@@ -2,8 +2,15 @@
   {
     "name": "portal wiring requires the existing Profile read flag",
     "file": "nora/app/composition.py",
-    "old": "profile_read = cfg.memory.profile.read",
-    "new": "profile_read = True",
+    "old": "profile_read = cfg.memory.profile.read and cfg.memory.profile.write",
+    "new": "profile_read = cfg.memory.profile.write",
+    "target": "tests/test_composition.py::test_profile_portal_wiring_requires_the_read_flag"
+  },
+  {
+    "name": "portal wiring retains the Profile write prerequisite",
+    "file": "nora/app/composition.py",
+    "old": "profile_read = cfg.memory.profile.read and cfg.memory.profile.write",
+    "new": "profile_read = cfg.memory.profile.read",
     "target": "tests/test_composition.py::test_profile_portal_wiring_requires_the_read_flag"
   },
   {
