@@ -122,11 +122,11 @@ def _duplicate(entry, expected):
     )
 
 
-async def _act(engine, graph_id, verdict=None, *, destination=_A):
+async def _act(engine, graph_id, verdict=None, *, destination=_A, kind="delivery"):
     registration = SqlItemRegistration(RegistrationScope(_policy(), _people()), _Revisions())
     acts = SqlActStore(engine, registration)
     act = Act(
-        ActIdentity("arbitration-fixture", graph_id, 0), "delivery", destination,
+        ActIdentity("arbitration-fixture", graph_id, 0), kind, destination,
         ActAuthority(
             PASS.unit, PERSON.person_id, graph_id, destination, replace(PASS, pass_id=graph_id),
         ),
@@ -371,6 +371,21 @@ async def test_recorded_prior_outcome_of_the_same_identity_withholds(engine, ver
     await _act(engine, previous, verdict)
     result = await _recheck(engine, current)
     assert (result.status, result.reason) == ("withhold", reason)
+
+
+@pytest.mark.parametrize("verdict", [None, "uncertain", "done", "failed"])
+async def test_a_handed_over_call_of_the_same_intention_is_not_a_prior_delivery(engine, verdict):
+    """A reserved, swept or finished hand-over is a delegation, never a delivery: it neither
+    withholds the intention's own reply nor blocks a second open."""
+    tool = _tool(engine)
+    parent = await _opened(tool)
+    previous = await _opened(tool, _scheduled(parent), shown=(parent,))
+    await _drop(tool, previous)
+    current = await _opened(tool, _scheduled(parent), shown=(parent,))
+    await _act(engine, previous, verdict, kind="delegation")
+    assert (await _recheck(engine, current)).status == "deliver"
+    await _act(engine, current, verdict, kind="delegation")
+    assert (await _recheck(engine, current)).status == "deliver"
 
 
 async def test_recheck_withholds_when_room_loses_proactive_permission(engine):

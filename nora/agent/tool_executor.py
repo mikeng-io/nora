@@ -166,9 +166,7 @@ class BoundedToolExecutor(ConcurrentToolExecutor):
                 if not handed:
                     run.cancel()
                     await asyncio.gather(run, return_exceptions=True)
-            if handed:
-                self.slots.release(background=self.background)
-                held = False
+            # A handed-over call runs on without a slot: the release below gives it up now.
         finally:
             if held:
                 self.slots.release(background=self.background)

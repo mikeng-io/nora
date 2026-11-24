@@ -16,10 +16,11 @@ import sqlalchemy as sa
 from nora.app.handover_sweep import sweep_handovers
 from nora.infra.sql.cognitive_graph_schema import INTENTION, NORA_ACT, NORA_ACT_OUTCOME
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
-from nora.memory import wire
+from nora.memory import act_pass, hand_over_tool, wire
 from nora.memory.adapters.act_store import SqlActStore
 from nora.memory.adapters.proactive_claims import SqlProactiveClaims
 from nora.memory.domain.acts import Act, ActAuthority, ActIdentity, Outcome
+from tests.infra.test_act_envelope import PASS
 from tests.infra.test_condition_matcher import _health, _intention, _platform_act
 from tests.infra.test_item_registration import (
     _PERSON,
@@ -147,6 +148,21 @@ async def test_a_proactive_pass_that_hands_over_moves_its_own_intention(engine):
     await store.observe(act, Outcome("done"))
     await _tick(engine)
     assert [(s.graph_id) for s in await _due(engine)] == ["report"]
+
+
+async def test_the_hand_over_itself_reserves_the_act_without_an_outcome(engine):
+    envelope = wire.act_envelope(engine, _registration())
+    context = replace(PASS, unit=_UNIT, room=_ROOM)
+    with act_pass(ActAuthority(_UNIT, _PERSON, None, _ROOM, context), envelope):
+        handed = await hand_over_tool({"toolUseId": "t0", "name": "slow", "input": {}})
+    assert handed is not None and handed.act is not None
+    await _commit_report(engine, handed.act)
+    await _tick(engine)
+    assert await _due(engine) == []  # the launch is not an outcome
+
+    await handed.settle(Outcome("done"))
+    await _tick(engine)
+    assert len(await _due(engine)) == 1
 
 
 async def test_no_committed_intention_means_no_report(engine):

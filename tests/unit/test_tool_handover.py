@@ -220,7 +220,10 @@ async def test_the_next_message_to_the_room_starts_while_the_handed_over_work_ru
     gauge.gate.set()
 
 
-@pytest.mark.parametrize("name", sorted(tool_executor.NEVER_HANDED_OVER))
+@pytest.mark.parametrize("name", [
+    "send_reply", "reaction_send", "send_gif", "send_to", "media_send",
+    "memory_propose", "graph_propose", "intention_commit",
+])
 async def test_a_reply_a_delivery_or_a_graph_write_is_never_handed_over(name):
     gauge, store = _Gauge(), _Acts()
     agent = _agent(name, _tool(name, gauge, None, {"status": "ok"}), _executor())
