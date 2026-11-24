@@ -74,3 +74,13 @@ async def test_awaiting_weighing_claim_keeps_an_inspectable_state_and_reference(
         "m1", "private room", "disputed", "orders vegetables",
     )
     assert account["disputes"][0]["claim"] == "maybe vegetarian"
+
+
+async def test_a_viewer_without_listed_units_never_queries_claims():
+    profile = _Claims({("friends", "miles"): (_claim("m1", "cycles"),)})
+    assert await _payload(profile, profile_scopes_of=lambda _: ()) == []
+    assert profile.reads == []
+    [account] = await _payload(
+        profile, profile_scopes_of=lambda _: (("friends", "home"),),
+    )
+    assert account["lines"][0]["id"] == "m1"

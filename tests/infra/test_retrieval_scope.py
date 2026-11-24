@@ -268,7 +268,7 @@ async def test_portal_keeps_the_own_claim_but_never_shows_dm_evidence_to_a_nonme
     )
     [line] = other_room["lines"]
     assert (line["id"], line["text"], line["origin"]) == (
-        "own-derived-claim", "own-derived-claim", "private room",
+        "own-derived-claim", "own-derived-claim", "direct message",
     )
     assert line["evidence"] == [{"ref": "generated-private-item", "kind": "unknown"}]
     [same_room] = await build_memory_payload(

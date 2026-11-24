@@ -27,6 +27,7 @@ class SqlSubjectClaims:
                 CLAIM.c.id, CLAIM.c.part, CLAIM.c.content, CLAIM.c.reasoning,
                 CLAIM.c.origin_room, CLAIM.c.state, CLAIM.c.asserted_at,
                 CLAIM.c.prediction, CLAIM.c.window_end, CLAIM.c.grade,
+                _is_dm_origin().label("dm_origin"),
             ).where(
                 CLAIM.c.unit == unit, sa.any_(CLAIM.c.persons) == viewer,
                 CLAIM.c.state != "superseded", visible_to_reads(CLAIM),
@@ -48,17 +49,25 @@ class SqlSubjectClaims:
             return tuple({
                 **claim, "evidence": by_claim.get(claim["id"], []),
                 "disputed": claim["id"] in disputed and claim["state"] == "awaiting_weighing",
-                "origin_room": _origin(claim["origin_room"], viewer_rooms),
+                "origin_room": _origin(claim["origin_room"], claim["dm_origin"], viewer_rooms),
             } for claim in claims)
 
 
-def _origin(ref: str | None, viewer_rooms: Collection[tuple[str, str]]) -> str | None:
+def _is_dm_origin() -> sa.ColumnElement[bool]:
+    msg = MESSAGES.c
+    return sa.exists(sa.select(msg.graph_id).where(
+        msg.unit == CLAIM.c.unit, msg.conversation_type == "dm",
+        (msg.platform + ":" + msg.conversation_id) == CLAIM.c.origin_room,
+    ))
+
+
+def _origin(ref: str | None, is_dm: bool, rooms: Collection[tuple[str, str]]) -> str | None:
     if ref is None:
         return None
     platform, conversation = split_room(ref)
-    if platform is not None and (platform, conversation) in viewer_rooms:
+    if platform is not None and (platform, conversation) in rooms:
         return ref
-    return "private room"
+    return "direct message" if is_dm else "private room"
 
 
 def _citations(
