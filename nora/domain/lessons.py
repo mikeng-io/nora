@@ -11,7 +11,7 @@ testable without a database. The verbs that apply it are
 Reinforcing, rewording and retiring a lesson each append a revision; the head
 (the highest `seq`) is what it says now. A retirement is a revision whose
 `state` is `retired`, so an operator's rollback is one more revision that
-copies an earlier one back (the same shape as Character's chain, DEC-183, but
+copies an earlier one back (the same shape as Character's chain, but
 a lesson, unlike an account, does retire: practice that stopped being true
 must be able to stop being rendered).
 

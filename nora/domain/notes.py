@@ -149,9 +149,7 @@ def default_revisit_at(
     lead_days: int = REVISIT_LEAD_DAYS,
     dateless_horizon_days: int = DATELESS_REVISIT_HORIZON_DAYS,
 ) -> int:
-    """The `revisit_at` a note gets at CREATION: the Cognition session's
-    `note_create` calls it, so a created note's first wake is a normal scheduled
-    wake rather than a strike bootstrap.
+    """The first scheduled revisit for a new note.
 
     **Anchored**: the anchor's own day START minus `lead_days`, early enough
     to catch a note answered well before its moment (`REVISIT_LEAD_DAYS`). Once
@@ -808,10 +806,7 @@ class StaleNoteHeadError(Exception):
     note exists in a unit it may not read). Both cases have the same remedy,
     which is why they are one exception rather than two: read it again.
 
-    A plain `Exception` rather than `nora.domain.errors.NoraError`: `NoraError`
-    carries a `FailureClass`, and how a refused write is *surfaced to the room*
-    is the tool layer's decision (`note_revise` reports `unavailable`), not this
-    type's. Baking INFRASTRUCTURE in here would default the refusal to silence.
+    Callers decide how to surface the refusal.
     """
 
     def __init__(self, message: str, *, observed_head: str | None) -> None:

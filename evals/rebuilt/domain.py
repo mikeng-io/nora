@@ -192,20 +192,19 @@ class Outcome:
 
     #: Every staged candidate's `(status, body)`, in `staged`'s order, and each
     #: batch row's `(id, the sender name the model was shown)` — what the
-    #: `body_names`/`body_mentions` checks read (`nora.subject.dreaming.Pass`).
+    #: `body_names`/`body_mentions` checks read.
     bodies: tuple[tuple[str, str], ...] = ()
     speakers: tuple[tuple[int, str], ...] = ()
-    #: What `body_schema` checks a written body against, beside `speakers`
-    #: (`nora.subject.dreaming.Pass`): `(roster name, person_id)`, Nora's
+    #: What `body_schema` checks a written body against, beside `speakers`:
+    #: `(roster name, person_id)`, Nora's
     #: name, and the ids the notebook already cited before the pass.
     roster: tuple[tuple[str, str], ...] = ()
     nora_names: tuple[str, ...] = ()
     carried: tuple[int, ...] = ()
-    #: The rule of each create refused for its body before staging
-    #: (`nora.subject.dreaming.Pass.body_refused`).
+    #: The rule of each create refused for its body before staging.
     body_refused: tuple[str, ...] = ()
     #: `(kind, anchor_date, head citations)` per note the pass created or
-    #: revised (`nora.subject.dreaming.Pass.changed_dated`).
+    #: revised.
     changed_dated: tuple[tuple[str, int | None, tuple[int, ...]], ...] = ()
 
     #: Structural assertions the corpus made and the outcome did not meet.

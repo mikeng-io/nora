@@ -57,11 +57,18 @@ average of its members. Nora's profile describes how she has come across.
 
 ## Disputes, deletion and decay
 
-- Every claim about a person is visible to that person on the portal, and
-  anyone may dispute it. A dispute is an item and a stimulus.
-- A dispute or forget request from the claim's subject hides it from rendering
-  and retrieval at once; a later revision renders only if it no longer makes
-  the disputed claim. Another person's dispute marks it awaiting weighing.
+- The subject portal presents external claims about the viewer. Evidence
+  text is shown only where the viewer has access to its source room. A claim
+  may cite evidence from a room in the same unit that does not list its
+  subject. The source room gate still applies to that evidence. Where a viewer
+  is both a claim's subject and one of its [excluded persons](boundaries.md#scope),
+  subject inspection and exclusion non-disclosure meet with no defined precedence.
+- Any person may dispute a claim. A dispute is an item and a stimulus. The
+  subject's dispute hides the claim at once. Another person's dispute marks
+  it awaiting weighing.
+- The forget tool admits a request only from the claim's subject. A live
+  forget request hides the rows it targets on graph reads. The read applies
+  the unit and target overlap checks without checking request authorship.
 - A deleted source leaves the index and cannot be quoted as current. Claims
   derived from it keep their history with a deleted-source citation; there is
   no automatic withdrawal cascade.

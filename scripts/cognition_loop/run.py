@@ -537,8 +537,7 @@ async def _settle(
                 if recorded_meta and recorded_meta["had_session"] else None)
             return None, None, "empty agenda", step_error
         return None, inspection, None, None
-    # The executor's `wake_hook` — the hook the evaluator hands an
-    # admitted wake — runs the session on the Dreamer lane.
+    # Replay hands the admitted wake to the session runner and reads its outcome.
     await runner.wake_hook(unit=unit, view=view, now_ms=at_ms, wake_id=wake_id)
     outcome = await _wake_outcome(engine, wake_id)
     if outcome is None:

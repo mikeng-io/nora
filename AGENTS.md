@@ -110,8 +110,8 @@ lesson seen on three separate days becomes a standard.
 
 ## Operational constraints
 
-1. Direct builds need `docker build --network=host` (compose sets it); Honcho
-   health is `GET /health`, not `GET /v3/workspaces`.
+1. Direct builds need `docker build --network=host` (Compose sets it).
+   Nora reports dependency health at `GET /health`.
 2. signal-cli is Nora's transport, in her compose project, on Java 25;
    `--receive-mode=on-start` is load-bearing (without it every message drops).
 

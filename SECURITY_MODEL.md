@@ -26,7 +26,7 @@ Nora is a self-hosted, single-operator social AI agent. Platform adapters receiv
 | **Messaging ingress** | `nora/platform/`, `nora/ingest/`, `nora/engagement/`, `nora/persons*.py`, `nora/policy.py`, `nora/tag.py`, `deploy/signal-cli`, `deploy/whatsapp-bridge`, `deploy/instagram-bridge`, `deploy/voice-*`, `deploy/stt`, `nora/web/voice.py` | Chat-platform users (roster and non-roster) → Nora; bridges ↔ Nora with `NORA_BRIDGE_TOKEN` (`nora/infra/service_auth.py`) |
 | **Agent runtime** | `nora/agent/`, `nora/app/`, `nora/language/`, `nora/doctrine/`, `nora/instructions/`, `nora/skills/`, `nora/dreamer/`, `nora/subagent/`, `nora/subject/` | Untrusted message/web text → LLM → tool calls with side effects; egress/disclosure guards (`nora/agent/egress.py`, `security.py`, `guards.py`) |
 | **Computer sandbox** | `deploy/computer/` (computerd, sbx microVM), `nora/infra/computer/`, `nora/infra/social/` (OpenCLI bridge to host Chrome), `nora/agent/web_browse.py` | Nora → computerd at `172.17.0.1:18765` with `NORA_COMPUTER_TOKEN`; sandbox egress `**` with private ranges denied; vault fill broker for credentials (ADR 0022) |
-| **Data stores** | `nora/infra/sql/` (+ Alembic), `nora/infra/honcho/`, `nora/infra/blobs/`, `nora/infra/embedder.py`, `nora/documents/`, `nora/infra/external_files/` | Postgres (:5435 loopback), Honcho (no auth, private network only), RustFS, embedder |
+| **Data stores** | `nora/infra/sql/` (+ Alembic), `nora/infra/blobs/`, `nora/infra/embedder.py`, `nora/documents/`, `nora/infra/external_files/` | Postgres (:5435 loopback), RustFS, embedder |
 | **Presence** | `nora/presence/`, `nora/analytics/`, `nora/infra/life360/`, `nora/infra/presence_refresh.py`, `nora/agent/whereis.py` | Life360 credentials → live GPS fixes → location history; `/refresh` on :9101 (loopback) |
 | **Deployment** | `docker-compose.yml`, `Dockerfile`, `deploy/` (komodo, prometheus, alertmanager, alert-bridge, postgres, install.sh), `.github/workflows/`, `scripts/` | Host, Docker networks, CI/release pipeline, secrets in host `.env` |
 | **Public site** | `site/` (Astro + Caddy) (outside scan scope) | Internet, static content only |
@@ -42,10 +42,10 @@ Nora is a self-hosted, single-operator social AI agent. Platform adapters receiv
 
 ## Assets
 
-**Operator-named critical assets:** the `identity.toml` roster and portal access; chat records and memory (Postgres, Honcho); platform sessions and keys (Signal, WhatsApp, Instagram, Discord). The others below still matter but were not named critical.
+**Operator-named critical assets:** the `identity.toml` roster and portal access; chat records and the Cognitive Graph (PostgreSQL); platform sessions and keys (Signal, WhatsApp, Instagram, Discord). The others below still matter but were not named critical.
 
 1. Location: live Life360 fixes and derived location history (`presence`, `analytics`).
-2. Chat records, memory and derived profiles of people (Postgres record store, Honcho, documents, artifacts).
+2. Chat records, memory and derived profiles of people (PostgreSQL, documents, artifacts).
 3. Platform sessions and keys: Signal device registration (`state/signal-cli`), WhatsApp/Instagram sessions, Discord bot token: lets an attacker read and send as Nora.
 4. Secrets: model provider/OmniRoute keys, `AUTH_SECRET`, `NORA_OTP_API_TOKEN`, `NORA_BRIDGE_TOKEN`, `NORA_COMPUTER_TOKEN`, Life360, Google, Tavily tokens; vault-held browser credentials.
 5. Portal access and the `identity.toml` roster (who is allowed, which accounts map to which person).
@@ -59,13 +59,13 @@ Operator: **all five matter**; none is ruled out (including A5, the co-networked
 - **A2 Non-roster person in a room or DM:** prompt injection to make Nora disclose another person's data or location, run tools, or bypass admission/grants.
 - **A3 Signed-in roster member:** horizontal access to another person's or room's/unit's data through portal routes (`personId` handling) or through Nora (cross-unit reads).
 - **A4 Malicious web/MCP content:** indirect prompt injection; SSRF or private-range reach from the sandbox or from server-side fetchers.
-- **A5 Compromised co-networked container/bridge:** reaching unauthenticated `/app/v1` reads, signal-cli, Honcho.
+- **A5 Compromised co-networked container/bridge:** reaching unauthenticated `/app/v1` reads, and signal-cli.
 
 ## Existing controls
 
 - Portal: NextAuth JWT sessions, roster re-check on every request (`checkSession()`, `personById` with `Object.hasOwn`), dev login only in `next dev` with `NORA_DEV_LOGIN=1`, CSP and headers (`app/next.config.ts`, `site/Caddyfile`).
 - OTP: bearer token with constant-time compare, uniform 202/401 responses, purpose-bound codes (`nora/web/otp.py`, `nora/app/otp*`).
-- Network: only loopback publishes; bridges, signal-cli, Honcho, stt and voice services publish nothing; Honcho isolated on its own network.
+- Network: only loopback publishes; bridges, signal-cli, stt and voice services publish nothing.
 - Service auth: `NORA_BRIDGE_TOKEN` on bridges and voice routes; `NORA_COMPUTER_TOKEN` on computerd.
 - Agent: deny-by-default `policy.toml` (refuses to start empty), admission rules, unit read scope (DEC-231), location consent/opt-in, three-state tool results, always-on credential-pattern blocking and doctrine LeakGuard.
 - Sandbox: sbx microVM, egress deny for 10/8, 172.16/12, 192.168/16, 127/8, 100.64/10; credentials only through a vault fill broker.

@@ -23,7 +23,7 @@ bounds. Passes differ only in those.
 | **profile**, one per subject among the anchors | the claims about that entity — a person present, the room, the unit, Nora — in its [parts](claims.md) |
 | **Standing** | Nora's current position in the room: open intentions with their children, recently settled ones with their outcomes, and the situation claims about where the conversation stands |
 | **lessons** | the claims about Nora's practice in the unit |
-| **related** | what the walk reached from the anchors' seeds: items and claims, by distance |
+| **related** | evidence reached from the pass's anchors: items and claims, by distance |
 
 **Rows, not a graph dump.** Each row carries its id, kind, basis, time and
 state, and its edges as references to other rows' ids. The model reads meaning
@@ -55,24 +55,10 @@ so a pass can relate a request to where they are without being asked to
 look. A reference code cannot resolve — "that place we went last month" — is
 the model's to pull. No separate model
 chooses what is retrieved, and no pass begins with a mandatory query round.
-Context assembly's optional exposure filter may still act after retrieval,
-under its own rules; it never owns retrieval.
+The pass gathers related evidence from those starting references. Relationship aggregates are
+available on request through `rollup_read` with kind `tie`. Context assembly's
+optional exposure filter applies its own rules after retrieval.
 
 **The reading that would reopen this**: measured passes where prefetch would
 have found what the answer needed, the model did not pull it, and the answer
 was wrong.
-
-## Today's blocks
-
-| today's block | becomes |
-|---|---|
-| `self`, `peer_card`, `character`, `culture`, `unit_culture` | profile, one per subject |
-| `notes`, `memos`, `loop_decisions`, `standing` | Standing |
-| `lessons` | lessons |
-| `recalled`, `peer_history` | related |
-| `people_in_window` | profile and related for each speaker in the window: what is remembered about them, not who they are |
-| `members`, `presence`, `transcript`, `spoken_turn`, `replying_to`, `tag_message` | floor |
-| `computer`, `documents`, `subagents`, `tool_catalogue` | floor, owned by their own subjects |
-| Cognition's `members`, `agenda`, `transcript`, `rooms`, `clock`, `reads`, `documents`, `lesson_corrections`, `lesson_episodes` | floor of the wake pass |
-| Cognition's `standing`, `lessons`, `held_lessons` | Standing; lessons with their handles |
-| Cognition's `profile`, `graph`, `notes`, `memos`, `topics`, `events` | profile, related and Standing |

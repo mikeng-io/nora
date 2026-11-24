@@ -548,7 +548,7 @@ class ToolRegistry:
         # offline/eval compositions, where the tool answers `unavailable`
         # rather than a guessed empty (R-5).
         self._mobility = mobility
-        # Nora's own id, the owner of every reminder she sets: `[agent].name`.
+        # Nora's configured author id for tool calls that act as her.
         self._ai_peer = ai_peer
         # `note_unit` is a registry field because the RESOLVER is
         # process-lifetime; the unit it returns is not. It is not a plain `str`:

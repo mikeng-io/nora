@@ -244,34 +244,11 @@ def _tracked_markdown_files() -> list[str]:
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     (
-        "design/09-decision-index.md",
-        "tests/test_honcho_representation.py",
-    ): (
-        "deleted with the memory backend. DEC-38's claim still names it as the test "
-        "that reimplemented the retrieval arithmetic; the record pass (6f) rewrites "
-        "the claim and removes this pin."
-    ),
-    (
-        "design/11-recall-and-threading.md",
-        "nora/infra/honcho/client.py",
-    ): (
-        "deleted with the memory backend. The design page still cites the client; "
-        "the record pass (6f) rewrites the prose and removes this pin."
-    ),
-    (
-        "design/19-media-comprehension.md",
-        "nora/ingest/stages/memory_feed.py",
-    ): (
-        "deleted with the memory backend: its only importer was the backfill. The "
-        "design page still cites it; the record pass (6f) rewrites the prose and "
-        "removes this pin."
-    ),
-    (
         "docs/adr/0002-honcho-session-binding-deferred.md",
         "nora/ingest/stages/memory_feed.py",
     ): (
-        "deleted with the memory backend. The ADR records the earlier state and "
-        "stays historical; the record pass (6f) decides whether to remove this pin."
+        "The accepted ADR records the feed path at the revision it describes. The "
+        "reference resolves in Git history."
     ),
     (
         'docs/adr/0028-pull-requests-are-labelled-and-assigned-by-a-workflow-and-a-visible-commit-has-a-body.md',
@@ -411,48 +388,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ("design/09-decision-index.md", ".github/workflows/gates.yml"): (
         "A12 names a CI gate file; this repo deliberately runs no CI (operator decision) "
         "and the file was never added back after that decision"
-    ),
-    ("design/11-recall-and-threading.md", "nora/engagement/recall.py"): (
-        "early recall design; the module never landed at this path"
-    ),
-    ("design/11-recall-and-threading.md", "nora/infra/sql/migrations/versions/0003_quoted_ts.py"): (
-        "migration was renumbered/renamed before landing (0003_presence_places.py today), "
-        "same shape as 0017_events.py's own documented renumbering"
-    ),
-    ("design/event-abstraction/02-naming-rename.md", "nora/infra/sql/events.py"): (
-        "naming-rename plan; shipped as nora/domain/events.py instead"
-    ),
-    ("design/event-abstraction/02-naming-rename.md", "nora/testing/events.py"): (
-        "naming-rename plan; no such fake module was built"
-    ),
-    ("design/event-abstraction/02-naming-rename.md", "tests/test_events_domain.py"): (
-        "naming-rename plan's proposed test names; shipped as tests/unit/test_standing_event.py"
-    ),
-    ("design/event-abstraction/02-naming-rename.md", "tests/test_events_service.py"): (
-        "naming-rename plan's proposed test names; shipped as tests/unit/test_standing_event.py"
-    ),
-    ("design/event-abstraction/02-naming-rename.md", "tests/test_event_tools.py"): (
-        "naming-rename plan's proposed test names; shipped as tests/unit/test_standing_event.py"
-    ),
-    ("design/event-abstraction/02-naming-rename.md", "tests/test_web_events.py"): (
-        "naming-rename plan's proposed test names; shipped as tests/unit/test_standing_event.py"
-    ),
-    (
-        "design/event-abstraction/02-naming-rename.md",
-        "tests/contract/test_event_store_contract.py",
-    ): (
-        "naming-rename plan's proposed contract suite; not built under this name"
-    ),
-    ("design/event-abstraction/04-dispatch-and-batching.md", "tests/test_events.py"): (
-        "same event-abstraction planning-doc-vs-shipped-name drift as 02-naming-rename.md"
-    ),
-    ("design/event-abstraction/02-naming-rename.md", "tests/test_gathering_tools.py"): (
-        "deleted with the tag path's event tools; the record pass (6f) retires the "
-        "planning doc and removes this pin"
-    ),
-    ("design/event-abstraction/03-reminder-schema.md", "tests/test_reminder_tools.py"): (
-        "deleted with the tag path's reminder tools; the record pass (6f) retires the "
-        "planning doc and removes this pin"
     ),
     ("docs/adr/0020-documents-are-json-specs-the-portal-renders.md",
      "nora/compute/smith/page_shell.py"): (

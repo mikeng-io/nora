@@ -20,10 +20,7 @@ whether this room normally picks things up. A baseline is what turns a window
 into a DEVIATION, and a deviation is readable by a model with no reasoning
 budget, because the reasoning already happened offline.
 
-**Three decisions are load-bearing and each is stated on the thing it shapes:**
-`Culture.head_revision_id` (the chain, DEC-182), `CultureRevision.parent_revision_id`
-(nothing retires, DEC-183), and `CultureRevision.body` (prose, no sections,
-DEC-184).
+Accounts point to an ordered chain of prose revisions.
 """
 
 from __future__ import annotations
@@ -204,13 +201,8 @@ class CultureRevision:
     the first revision unwritable, or invites a `reasoning_effort = "none"`
     model to confabulate a diff to satisfy a constraint.
 
-    **`parent_revision_id` means "the same thing, earlier" (DEC-183).** Never
-    "superseded". Nothing in this tier retires: there is no `retired_at`, no
-    `closing_condition` and no TTL, because a quiet room's culture is not stale,
-    it is accurate. The old account does not become false — it becomes history,
-    and the history is part of what the new one means.
-
-    `None` is the FIRST revision of a key and nothing else.
+    `parent_revision_id` points to the prior revision of the account. The
+    first revision has no parent. Appending preserves the earlier body.
 
     **The provenance three are the RUNTIME's**, never the adaptor's. The runtime
     read the instructions, built the model provider and named the run, so
@@ -412,23 +404,7 @@ _CHARACTER_MARK = "#character:"
 
 
 def character_key(unit: str, person_id: str) -> str:
-    """The `culture` key one person's account is stored under, in `unit`: ONE account per (unit,
-    person), written by that person's own session from their messages across the unit's rooms.
-
-    The Character tier REUSES the culture store and its revision chain rather
-    than growing a parallel one: `culture.key` is free text, so a person's
-    account is one more key. It cannot collide with a room's key (a room's
-    `primary_id` carries no `#character:`), and nothing scans the table for
-    every key. Until C2b the first half was the ROOM's `primary_id` (one
-    account per person per room, DEC-278); those keys stay in the store
-    (nothing here retires, DEC-183) and nothing reads them. They are NOT
-    copied to the unit key: an account written from one room's messages (and
-    possibly a presence read there) would then render in every room of the
-    unit that lists the person, a wider disclosure than it was written for.
-    Each person's unit account is written fresh by their first session, which
-    wakes on the first tick (a key never run has an infinitely old watermark
-    and a person with an old account has posted).
-    """
+    """The stored Culture account key for a person in one unit."""
     return f"{unit}{_CHARACTER_MARK}{person_id}"
 
 

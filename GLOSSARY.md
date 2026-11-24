@@ -43,7 +43,7 @@ Character tier.
 ## Person, and the things that are not a person
 
 - **person** — a human being. Identified by **`person_id`** (`miles_novak`), which
-  is stable, operator-assigned, and is also their Honcho peer id (A2, DEC-14).
+  is stable across that person's platform accounts.
 - **`PersonRef`** — the resolved record: person_id, name, first/last, aliases.
 - **platform account** — one platform login, always spelled out this way.
   "Account" means only a platform account, never a Character entry
@@ -61,121 +61,26 @@ Character tier.
   as a **count**, never as an id, because the only thing Nora holds for them is
   a phone number or ACI. `nora_unmapped_senders_total` is the tell.
 
-## Memory — record versus interpretation
+## Memory and the Record
 
-**Memory is Honcho, and only Honcho** (`design/cognition-loop/data.md`
- «Citations, links and search»'s words table: memory means Honcho, never "any store of ours"). Postgres
-holds two windows onto the same layer, the **Record**, not memory:
+The [Cognitive Graph](design/cognition/README.md) connects recorded items,
+claims, intentions and outcomes in a unit. A pass starts from the evidence
+it is about. `memory_search` searches scoped graph context and `memory_read`
+opens a graph ID when the graph reads are enabled.
 
-| window | layer | store | holds | tool |
-|---|---|---|---|---|
-| **hot** | Record | PostgreSQL | last 40 messages, verbatim | *(injected, no tool)* |
-| **deeper** | Record | **same PostgreSQL** | everything older, verbatim | `load_transcript`, `who_said` |
-| **derived** | memory | Honcho | conclusions *about people*, and about herself | `about` (retrieve), `ask_memory` (reason — Honcho's dialectic, 14–19 s, budget 1), `remember` (write one conclusion), `search_memory` (this room), `search_memory_workspace` (every room of the unit) |
-
-`search_memory` and `search_memory_workspace` read like transcript tools but
-call `HonchoClient.search` (`nora/agent/tools.py::search_memory`), so they are
-memory, not Record.
-
-**One memory surface at a time** (DEC-316). The table above is the Honcho
-surface, what `[memory.index] read = false` offers (the default, and
-production). With it on, the memory graph's surface replaces it: one search
-verb, `memory_search` (search every room of the unit by question, person,
-dates and kinds; the index, no Honcho behind it), and none of `ask_memory`,
-`search_memory`, `search_memory_workspace`, `who_said` or `about`: the graph
-surface holds no Honcho tool. A profile question there is `memory_search`
-with `person`. `remember` is on both: a Honcho conclusion off the graph, a
-Character `told` line on it (DEC-317). `load_transcript` is on both. `who_said` is deprecated: the
-graph surface does without it, and it goes with the rest of the Honcho
-surface at step 9.
-
-Two more things she carries between turns are NOT memory in this sense and
-have their own sections below: **notes** (the unit's open questions) and
-**Standing** (her own position, per subject).
-
-**The record store is the RECORD** — the same word `design/cognition-loop/data.md` uses for the
-layer. **Honcho is memory**, its only store. The record store is authoritative
-and is what R-2/A9 guarantee; Honcho is best-effort and may be absent — which
-is why `nora/infra`'s two clients have opposite error contracts.
-
-- **`RecordStore`** (port) / **`SqlRecordStore`** (its one concrete, over
-  `postgresql+asyncpg://`) — the record store's read/write seam. This store IS
-  the record (hot + deeper above), not an audit log beside it.
-  `FakeRecordStore` (`nora.testing`) is its contract-bound double. The store
-  is one `nora` PostgreSQL database (design/cognition-loop/data.md) that presence (design/self-awareness/presence.md) will
-  share.
-
-- **`load_transcript`** — reads durable transcript rows from the record
-  store; nothing is buffered. The `nora_tool_calls_total{tool}` label carries
-  the tool's name.
-- **`about`** — fetches a person's accumulated *profile*, not individual
-  memories. Its counter is `nora_recall_total`: metric names are append-only,
-  so it keeps the tool's earlier name.
-- **representation** — Honcho's derived model of one peer AS SEEN BY another:
-  every read is keyed `(observer, observed)` (DEC-66), so `about` reads
-  `(nora → person)` — her model of them — and `(nora → nora)` is her model of
-  herself, distilled from her own replies (not injected: the `<self>` block is
-  the Character · Nora entry). It holds mostly *events* rather than *traits*,
-  so it is framed as a record she may contradict rather than a description.
-- **self block** — the `<self>` block: her Character · Nora entry for the
-  turn's unit (design/self-growth/character.md), capped in lines, first in the tag, fire
-  and Cognition prompts, directly after the doctrine. No block while the unit
-  has no entry.
-- **peer card** — a Honcho endpoint (`HonchoClient.peer_card`), Honcho's own
-  model-authored distillation of who a person is, injected as `<peer_card>`
-  on a tag when Honcho has one (`nora/agent/prefill.py::_peer_card_block`). The
-  `<peer_history>` block a tag gets is `representation`, not the card — the
-  two are deliberately not merged. Never Character evidence
-  (`design/cognition-loop/data.md` «Citations, links and search», `design/self-growth/character.md` ,
-  DEC-214): it is memory, read as a hint, unscoped within its Honcho
-  workspace, and the Character adaptor cites only the Record and the Rollup.
-- **nothing found ≠ could not ask.** `load_transcript` empty means *nothing
-  was said*. `about` empty means *nothing was concluded* — weaker. Hence
-  `Recollection.reachable`. Collapsing the two hides a dead endpoint.
+`load_transcript` retrieves older messages from the Record. `who_said` looks
+for attribution in the transcript window already in view. `RecordStore` is
+the Record's read/write port and `SqlRecordStore` is its PostgreSQL implementation.
 
 ## The Dreamer, notes, Standing, and the proactive half
 
 The most-used words in this repo.
 
-- **The Dreamer** — the subconscious execution runtime in the target architecture
-  ([execution and time](design/cognition-loop/execution.md)), never
-  a data tier or the name of every background task. Today `dream_loop` runs
-  registered adaptors through `DreamerRuntime`; Cognition has a separate
-  wake/session runner sharing the agent factory, guards, budget types, tool
-  source and instructions. Routing Cognition through Dreamer is remaining
-  implementation work. Its inward self-wakes stay subconscious; its outward
-  reminders become conscious fire turns. The later Cognition work flow owns
-  which reflection work is consolidated, rather than a fixed adaptor roster.
-
-- **culture** — her entry about what a room has BECOME: how they talk, how
-  things get decided, what they call themselves (design/self-growth/,
-  DEC-207). The `culture` adaptor reads the room's own messages when it has
-  said enough (DEC-288: `[culture] wake_batch` new human messages, or any new
-  one once `stale_seconds` have passed; a silent room never fires) and appends
-  ONE short entry to a chain (`culture`/`culture_revision`, keyed on the
-  room's `primary_id`). It writes through `character_revise`, citing the
-  messages it rests on, and reads no presence and no Standing: its entry is
-  evidence for entries that render in other rooms.
-  [47](design/unified-memory/profiles.md)
-  admits supported named-place Character lines in phase 4; the code-set line
-  flag only keeps the per-room location setting on reads. Reading no presence
-  describes this prose adaptor, not a storage ban. Every
-  occasion in a room reads it as `<culture>` except the Relevance Gate; the
-  public summons reads no room and no culture. It is a
-  baseline, not a rule: a window read against it becomes a deviation. Not
-  `<room>`, which is the operator's statement of what a room is FOR.
-
-  **Culture IS the Character tier's room case** (DEC-290,
-  `design/cognition-loop/data.md` «Citations, links and search»): a room's entry keeps its
-  `primary_id` key, and the person, unit and Nora cases hang off the unit
-  (**Character**, below). Her own standing in a room is Standing's question,
-  not Character's; the room fold does not read it.
-
-  **The deterministic check comes first.** Every adaptor's `inputs()` is a
-  store read that returns `""` when there is nothing to reason about — no new
-  messages for a watermark-bearing adaptor, nothing changed in a quiet unit —
-  and the runtime makes no model
-  call on a blank prompt. An unchanged hour costs one query and zero tokens.
+- **The Dreamer** — the runtime for background reflection and its session
+  budgets, model calls and outcomes. See the
+  [execution design](design/cognition/execution.md).
+- **culture** — what Nora understands about how a room works. The room's
+  graph profile presents that understanding as claims when the scope permits.
 
 - **note** — one tracked uncertainty shared by a unit's people: «dinner on
   the 12th, venue open», with a **title**, a **description**, a **body** (the arrangement as
@@ -200,32 +105,8 @@ The most-used words in this repo.
   several rooms per platform; labels must be unique after case and spacing
   are folded (DEC-105, DEC-214).
 
-  The hierarchy is **workspace > unit > room** (DEC-214): every unit belongs
-  to one **workspace**, and — once `policy.toml` declares `[units]` — inside
-  that workspace's **Honcho workspace** each unit is a Honcho *named scope* — its rooms' Honcho sessions are the scope's
-  members (bare "session" means a Cognition session, never a Honcho session,
-  `design/cognition-loop/data.md` «Citations, links and search»), and every memory read made for the unit passes the scope, so what
-  Nora recalls for a unit comes from that unit's rooms. The memory port takes
-  a unit, never a Honcho workspace id.
-
-- **workspace** — a group of UNITS, and the boundary of a person's model
-  (DEC-214). Units in one workspace share its Honcho workspace, so a person is
-  ONE Honcho peer across all of them; different workspaces are separate person
-  models entirely. Declared in `policy.toml` (`[units.friends] workspace =
-  "67"`). With no `[units]` table every unit is in one implicit workspace
-  (`default`). Not a Honcho workspace — see the next entry. When Honcho is
-  removed (`design/unified-memory/profiles.md` row 6), the unit becomes the
-  only boundary; this entry describes the current code.
-
-- **Honcho workspace** — Honcho's tenant: where one workspace's peers,
-  sessions and conclusions live. Each workspace is bound to exactly one, in
-  `identity.toml` (`[workspaces.67] honcho_workspace = "nora"`); unbound, it
-  uses the workspace's own name; the implicit workspace uses `config.toml`'s
-  `honcho.workspace_id`. The phrase is always «Honcho workspace» — a bare
-  «workspace» in this codebase means the grouping of units above. Honcho
-  workspaces are shared by every application on the server, so a bound one
-  must be Nora's: marked `nora_owner` in its metadata, or absent or empty
-  (then claimed); anything else refuses startup.
+- **workspace** — a configured group of units. The unit remains the graph's
+  read boundary.
 
 - **Standing** — Nora's held position toward a subject, distinct from a
   transcript, status or queue. Room Standing is built: the debrief and Cognition
@@ -257,32 +138,17 @@ The most-used words in this repo.
   strikes all apply.
 
 - **home room** — a unit's designated room (`home_room = true` in
-  `policy.toml`, 39 D2): its roster is what
-  `where_is`, `about`, `ask_memory` and `group_members` resolve through, its
-  `location` flag applies, and the rows she writes fire into it. A unit
-  has no conversation of its own, so a room-scoped read needs one room, and
-  that room is a disclosure decision the operator makes — exactly once per
-  unit.
+  `policy.toml`). The home room supplies a destination and disclosure
+  scope for unit work that needs a room.
 
 - **decision log** — Nora's own reminder rows (`requester = "nora"`) over
   the last days, with outcomes: `sent`, `silent`, `cancelled_note_moved`,
   `pending`, so she does not repeat herself.
 
-## The layers and the Notebook's tiers
+## Graph records and presentations
 
-**`design/cognition-loop/data.md` is canonical for the topology and
-the vocabulary** (DEC-249): five **layers** in one flow, each defined by who
-writes it, **Authored** (humans) → **Record** (ingestion) → **Rollup**
-(code) → **Notebook** (the subconscious, one writer per tier) → **Views** (assembled at read
-time through one path, never stored), with **Memory** (Honcho) beside the
-flow; and the hierarchy **Layer › Tier › Kind › Entry**. A **tier** is a
-subdivision inside the Notebook only (Register, Character, Standing,
-Lessons); the shared entry store beside them holds the **topic account**
-below; the Record and the Rollup are layers, not tiers.
-**`design/cognition-loop/data.md` is canonical for the Record and Rollup layers and the four
-tiers below and every word they use**; this section only resolves what
-collides with words already in use elsewhere in this file, and adds what had
-no entry.
+The [graph design](design/cognition/graph.md) defines the kinds and their
+evidence, scope and lifecycle.
 
 - **Record** — the observed layer: messages (hers included) with their edits,
   deletes and reactions; her loop decisions and reminder results; presence
@@ -299,73 +165,13 @@ no entry.
   pure function of the Record. Never a model's summary, and never Standing's
   fold of folds: `nora/analytics/rollup.py` keeps its own name for the
   presence part of this layer.
-- **Character dimension** — a closed trait `kind` answering one generic question
-  about a person, room, unit or Nora, with named slots whose contents remain
-  prose. Proposed in [47](design/unified-memory/profiles.md):
-  topic, habit, skill, preference, disposition, style, value, social and goal.
-  Applicability and evidence govern admission; no entry must fill all dimensions.
-  A supporting occasion there means an underlying evidence act/interaction,
-  never the fire-turn occasion below.
-- **Register** — the unit's affairs: **note** (unchanged, DEC-213), **memo**
-  (a settled thing the unit wants kept, that does not close — distinct from
-  `remember`, which is about the speaker alone), **event** (a dated thing
-  people attend; the code name stays `Gathering`). "Event" here never means
-  the fire-turn *occasion* — that is code `Event` (`nora.domain.events.Event`,
-  DEC-139, see *occasion* below), a different thing with the same English
-  word. Written by the Cognition adaptor and the tag path until the cut-over, then by the Cognition adaptor alone (DEC-249).
-- **Profile** — what Nora has written about one **person**, **room**, **unit**
-  or Nora herself. Its parts are **facts**, **traits** and **guesses**, and the model
-  reads the last as `guesses (unconfirmed)`. Every profile block names its
-  subject and author by id: `<profile of="ada" written_by="nora" source="what
-  people said in chat">`. Nora's id is `nora`, and `you`/`self` are never an
-  identity in a tag
-  ([ADR 0029](docs/adr/0029-a-prompt-block-names-its-subject-and-author-by-id.md),
-  measured by a blind reader test). This replaces **Character**, **entry**,
-  **profile / traits / hypotheses** and **Persona** below; the typed shadow
-  uses these names, the live prose blocks theirs until the switch.
-- **Character** — *(the code name; the vocabulary is **Profile**, ADR 0029)* the Notebook tier for a **person**, a **room** (culture's
-  home, above), the **unit** or **Nora**. One row is an **entry**, a judgement
-  with **profile** (who they are), **traits** (what they are like) and
-  **hypotheses** (why), using **told / deduced / induced / abduced** modes.
-  Store what evidence supports without
-  category, medium or sensitivity bans; named-place location claims include
-  residence. Code-set line `location` keeps the existing room location setting /
-  DisclosureGuard working on reads; it adds no new disclosure policy. Sensitive
-  categories have no special handling. Dedicated profile keys may be deduced;
-  fallback attributes remain told-only; gender/sex/birthday keep the existing
-  contract. The rules are in [47](design/unified-memory/profiles.md).
-  Today `culture` (the room
-  adaptor) and `character-*` write live prose through `character_revise`,
-  while `profile-*` writes shadow typed lines through `profile_write`, with
-  `profile-verdict` judging guesses.
-  The target is **one `profile-*` adaptor family** (person, room, unit,
-  nora, verdict) writing typed facts/traits/guesses lines; the prose
-  adaptors retire at the switch. The live prose implementation below is
-  DEC-290 (design/self-growth/character.md): one Dreamer session per
-  (unit, entity), stored in the `culture` chain under four key shapes:
-  a room's `primary_id`, `{unit}#character:{person_id}`, `{unit}#unit` and
-  `{unit}#nora`.
-  - **person session** (`character-person`) — one person's entry in one
-    unit, woken by `[memory.profile.person] update_every_messages` (100) of their messages across
-    the unit's rooms or the stale rule. Handed their newest messages, the
-    unit's CITED room cultures and its previous entry; memory is a tool
-    (`ask_memory`, `search_memory`), never a pre-fetch and never a citation.
-    Renders as `<character>` in the rooms of the unit that list the person.
-  - **unit session** (`character-unit`) — what the unit is across its rooms,
-    woken by `memory.profile.unit.update_every_room_profile_changes` (5) new room revisions; reads only cited room
-    cultures and holds no read tool. Renders as **`<unit_culture>`** after
-    `<culture>` on tag and fire turns in the unit's rooms.
-  - **Nora session** (`character-nora`) — what she is like in the unit, woken
-    by `memory.profile.nora.update_every_replies` (100) closed response episodes that are evidence
-    (`Episode.is_evidence`), citing at least three of them; the echo rule
-    refuses a revision resting on her own sends. Renders as **`<self>`**, first
-    in the tag, fire and Cognition prompts.
-  - **`character_revise(entity, body, citations)`** — the one write verb. Code
-    checks the body (non-empty, within the cap, the R-18/R-28 screen) and that
-    every citation is a Record row id the session was shown or a
-    `response:<id>` episode it was shown; a refusal names its reason. **`character_no_change`**
-    closes an entity with its entry unchanged. A session that settles
-    neither holds its batch and is given up on the third try.
+- **Register** — a unit's notes, memos and gatherings. A gathering is a
+  recorded event people attend. An `Event` in the fire path is an occasion
+  for an unprompted turn.
+- **Profile** — a presentation of claims about a person, room, unit or Nora.
+  The [claims design](design/cognition/claims.md) defines its parts and
+  evidence.
+
 - **Lessons** — what Nora has learned about how to act in a unit: short
   prescriptive lines, each with the outcomes that taught it. Written only by
   the Cognition session, through `lesson_write`/`lesson_retire`, citing the
@@ -434,7 +240,7 @@ claiming `kind: capability` **fails to load** as an unknown kind. The files sit 
   The tag path answers when she is called; the ambient loop is how she is
   present when she is not. One observe–orient–decide–act loop, closed through
   a human: **Observe** is the ingest path, **Orient** is the memory layer
-  (notes, Standing, Honcho), **Decide** is two deciders — **participation**
+  (graph context, notes and Standing), **Decide** is two deciders — **participation**
   (this window closed: is it hers?) and the Cognition session (across the
   unit: anything worth raising, and when?) — and **Act** is the fire path. The
   loop is the system's, not any one decider's; the components are its
@@ -658,17 +464,9 @@ number from memory or from chat: re-read the index at merge time
 
 ### Memory configuration
 
-`[honcho]` configures the Honcho client. `[memory.index] read` selects the index read surface;
-`refresh_seconds` controls projection refreshes. `[memory.profile] write` and
-`read` control Profile writers and prompt reads; `update_every_seconds` is their
-shared age threshold, separate from `[culture] stale_seconds` for the room fold.
-The `[memory.profile.person] update_every_messages`,
-`[memory.profile.unit] update_every_room_profile_changes` and
-`[memory.profile.nora] update_every_replies` keys name each evidence
-threshold. The names are neutral, chosen by a blind-reader test. Old sections
-and keys are refused at load with their new home;
-there are no aliases. This vocabulary holds unless a new names-only reading
-shows a concrete wrong meaning.
+`[memory.index] read` enables indexed memory reads. `refresh_seconds`
+controls the index worker cadence. `[memory.profile] read` gates the
+subject portal's claim display.
 
 ## Older words
 

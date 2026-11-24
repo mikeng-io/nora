@@ -233,7 +233,7 @@ async def test_addressed_messages_quote_her_or_name_her_in_the_rooms_asked(addre
 
 
 
-async def test_last_run_is_the_watermark_the_dream_loop_writes(_db):
+async def test_last_run_reads_the_consolidation_watermark_timestamp(_db):
     """The correction fast path's lower bound is the `updated_at` that
     `advance_watermark` sets on every run that is not `unavailable`; if the read
     drifted to another column, a correction would wake the unit every tick."""

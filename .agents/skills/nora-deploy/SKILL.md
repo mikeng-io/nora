@@ -50,14 +50,8 @@ runtime root, following [the procedure](../../../deploy/komodo/README.md). Check
 [change selection](reference.md#checkout-mode-change-selection). Recheck mode after
 acquiring the checkout lock, before mutating files or services.
 
-In checkout mode only, ensure the external memory network exists under that lock:
-
-```bash
-docker network inspect honcho_memory >/dev/null 2>&1 || docker network create --internal honcho_memory
-```
-
-Then follow the legacy reference's `up -d --force-recreate` procedure. This
-bootstrap prerequisite does not authorize checkout deployment in Komodo mode.
+Follow the checkout reference's `up -d --force-recreate` procedure. Use the
+Compose file at the chosen revision to identify any external networks.
 
 ## 1. Release and deployment
 

@@ -441,13 +441,9 @@ else Nora does — sequencing ingest stages, writing a row, resolving an identit
 counting a refusal — is plumbing, and plumbing's questions are Prometheus'.
 That is R-76; `docs/maintainers/conventions-rationale.md` has the argument and the numbers.
 
-Metric names are append-only. The six retired `nora_message_reading_*` counters
-stay declared at zero so saved queries remain valid; the later `nora_extraction_*`
-family left with the per-message extraction worker it measured
-(design/unified-memory/graph.md), and `honcho_feed_*` with `nora_adoption_failures_total`
-left with the Honcho feed they measured, `nora_recall_total` and `nora_peer_card_empty_total`
-with the Honcho reads they measured. Reading statements now persist through Cognition
-step one; its own trace and budget instruments measure that path.
+Metric names are append-only. The six `nora_message_reading_*` counters
+stay declared at zero so saved queries remain valid. Cognition's trace and
+budget instruments measure the work that persists reading statements.
 
 **Three states on every instrument, never two** — `ok` / `nothing_found` /
 `unavailable`. A wiring gap is `unavailable` ("I could not check"), never
@@ -546,11 +542,6 @@ call) against 4-16 generations.
   OTel's own definition of a conversation is the thread, not a day.
   An id Langfuse would drop (over 200 characters, or non-ASCII) is left
   unstamped, never truncated.
-  A Dreamer unit has no room. `dream_loop` opens each (adaptor, key) unit as
-  its own `dream:<adaptor>` root carrying adaptor, key and `nora.outcome`, and
-  its `nora.dreamer.pass_id` is the session, so one tick's units group as one
-  session. Before 2026-10-09 a tick was one `dream.pass` trace that named no
-  adaptor.
 * **User is not stamped.** A Langfuse trace has one `user.id` and a group
   room has many senders, and it would name a person on a trace whose
   attributes are provenance only (`trace_attributes`). Whether a person's id

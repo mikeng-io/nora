@@ -472,12 +472,8 @@ JUDGED_CORPORA = frozenset({
 JUDGE_REQUIRED = frozenset({"standing", "standing_unit", "conversational_recall"})
 
 
-#: `metadata.memory_surface` (DEC-316): a case whose expected route exists on
-#: ONE memory surface. `graph` (`memory_search`) runs only under
-#: `--memory-index`; `honcho` (`ask_memory`, `search_memory`,
-#: `search_memory_workspace`, `who_said`) only without it. A case that states
-#: none runs on both. The other arm skips it rather than FAIL it by
-#: construction: a verb that is not offered cannot be routed to.
+#: Route tags select index-enabled (`graph`) or index-disabled (`honcho`)
+#: subjects. Untagged cases run with either setting.
 MEMORY_SURFACES = frozenset({"graph", "honcho"})
 
 #: An explicit memory-surface experiment; dependency origins remain deployment-owned.

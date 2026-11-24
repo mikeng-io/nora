@@ -1087,11 +1087,8 @@ class Spec:
     deployment_config: str | None = None
     #: Full SQL restoration or snapshot seeding, retaining the same functional config.
     full_restore: bool = False
-    #: The memory surface this run's cases were selected for (DEC-316,
-    #: `evals.scenarios.MEMORY_SURFACES`): `graph` or `honcho`, or None for a
-    #: caller that selected none. A subject composed on the OTHER surface is
-    #: refused per case, never graded: the case filter and the config would
-    #: be measuring two different Noras.
+    #: The case selector's index setting. A subject with a different setting
+    #: is refused before grading.
     memory_surface: str | None = None
     #: The measurement claim bound before dispatch — stamped on every draw.
     measurement: Measurement = PROTOCOL

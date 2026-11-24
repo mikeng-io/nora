@@ -43,19 +43,10 @@
 #     after the note was written, the `-unknown` instant is before it. That is
 #     the exact counterfactual the twins were designed to state — the same
 #     window, with and without the note — and a real room produced it.
-#   * one pair straddles the room's first use of its running name for her: the
-#     `-unknown` instant is just before the first member said it, the `-known`
-#     instant is after the room had said it and she had answered to it. The
-#     grounding for the `-known` half is the TRANSCRIPT, not a peer card; that
-#     pair was written to be cut on Honcho, but the room itself carries the
-#     cut, and a peer card (once the sandbox replays Honcho) can only add to
-#     it.
-#   * two `-known` halves have NO real moment and are parked P-A with the
-#     condition that unparks them: one needs a standing that records a
-#     commitment SHE made, and no room's standing history holds one
-#     (`standing_revision` begins 2026-09-20, one room, every revision saying
-#     she committed to nothing); one needs a peer card and only a peer card,
-#     and the sandbox does not replay Honcho yet.
+#   * one pair straddles the room's first use of its running name for Nora.
+#     The known half is grounded in the room's transcript.
+#   * The commitment case waits for a Standing revision that records a
+#     commitment Nora has made.
 #
 # Referred to structurally, never by room label, member name or message body:
 # the `conversation_id` inside each `snapshot:` is the only identifying value
@@ -239,10 +230,6 @@
 # before the FIRST use — the same line, untagged, at a moment when nothing in
 # the room had yet tied that name to her.
 #
-# Written to be cut on Honcho (issue #210). The room's own transcript carries
-# the cut; a replayed peer card would add a second reading of the same fact,
-# not a different one.
-
 - name: admin-joke-known
   entry: participation
   expect: speak
@@ -289,33 +276,9 @@
 
 # --- S12: who is actually asking ---------------------------------------------
 #
-# The `-known` half is grounded on a peer card and NOTHING else — that she had
-# told this member a date last week, off the room's transcript. The sandbox
-# reconstructs no Honcho state (`design/evaluation/subject.md` «Input and causal scope» is the replay
-# that would), so there is no instant at which that grounding exists. Parked.
+# A real line in a thread between members asking about an event date.
+# The room answers from its own conversation.
 #
-# The `-unknown` half is a real line: a member asking the room whether an
-# event is on this Saturday, in a thread two members were having between
-# themselves, which the other member then answered. She had nothing that
-# grounds an answer; the room answered itself.
-
-- name: asked-before-known
-  entry: participation
-  expect: speak
-  sample: 5
-  input: 有冇人記得個 deadline 幾時
-  parked:
-    reason: P-A
-    why: |
-      Grounded only on a peer card (what she told this member a week earlier,
-      outside the room). The sandbox holds no Honcho state, so no instant
-      reconstructs the grounding; the room's transcript does not carry it.
-    returns_when: |
-      The sandbox replays Honcho into its own workspace
-      (design/evaluation/subject.md) and a real room holds
-      a moment where a member asks about something she had earlier told them
-      off-transcript.
-
 - name: asked-before-unknown
   entry: participation
   expect: silence

@@ -692,12 +692,7 @@ PRESENCE_CORRIDOR_SPEED = sa.Table(
     ),
 )
 
-# Packs TWO watermarks per row deliberately — `last_fix_id` (segmentation) and
-# `last_cluster_id` (the dirty-set marker) are read together every
-# cycle to decide whether clustering is dirty, so one row avoids two indexed
-# reads for no benefit. `deriver_name` is the constant `"mobility"`, kept only
-# so a second deriver could join this table later without a migration — the
-# same shape `consolidation_watermark` uses for `consolidator_name`.
+# Restore-only through `snapshot_at`. Holds the paired fix and cluster cursors.
 ANALYTICS_WATERMARK = sa.Table(
     "analytics_watermark",
     METADATA,
@@ -1444,7 +1439,7 @@ CONSOLIDATION_WATERMARK = sa.Table(
     sa.Column("source_read_revision", sa.Text),
 )
 
-# Stored timestamps are Unix epoch milliseconds.
+# Restore-only through `snapshot_at`. Timestamps are Unix epoch milliseconds.
 DREAM_SCHEDULE_STATE = sa.Table(
     "dream_schedule_state",
     METADATA,
@@ -2501,24 +2496,15 @@ NOTE_ENTITY = sa.Table(
               primary_key=True),
 )
 
+# Restore-only through `snapshot_at`. Holds both miss and create candidates.
 NOTE_CANDIDATE = sa.Table(
     "note_candidate",
     METADATA,
     sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
               server_default=sa.text("gen_random_uuid()")),
     sa.Column("unit", sa.Text, nullable=False),
-    # Two row shapes share this table and its id space (migration `0049`).
-    # `miss` is the negative cache below; `create` is a full note proposal the
-    # `note-candidates` adaptor staged for the deterministic gate to decide
-    # (DEC-277: the adaptor is gone; the table is kept as data, nothing writes
-    # it). `miss` is the column default.
+    # A miss has a probe. A create candidate has a proposed note body.
     sa.Column("kind", sa.Text, nullable=False, server_default=sa.text("'miss'")),
-    # The miss cache, `fact_candidate`'s shape and for its reason: the SECOND
-    # miss on the same ground is evidence rather than a guess, and without the
-    # row the same gap is rediscovered forever with nothing accumulating.
-    # NULLABLE: a `kind='create'` row has no probe in the
-    # miss-cache sense — it is not a question that came back empty, it is a
-    # note proposed outright.
     sa.Column("probe", sa.Text),
     # Reused for `kind='create'` rows as THAT candidate's own sighting
     # window (first/last time this occasion was proposed).
@@ -3199,7 +3185,7 @@ CULTURE = sa.Table(
 #: is the precedent: free text, with the provenance AROUND the prose rather
 #: than decomposing it.
 #:
-#: **Nothing here retires (DEC-183).** No `retired_at`, no
+#: **Nothing here retires.** No `retired_at`, no
 #: `closing_condition`, no TTL, no staleness column of any kind.
 #: `parent_revision_id` reads «the same thing, earlier» and NEVER
 #: «superseded»: a quiet room's culture is not stale, it is accurate, and the
@@ -5291,6 +5277,7 @@ EXTRACTION_CLAIM = sa.Table(
     sa.UniqueConstraint("extraction_id", "ordinal", name="uq_extraction_claim"),
 )
 
+# Restore-only through `snapshot_at`. Holds the extraction's attempt history.
 EXTRACTION_ATTEMPT = sa.Table(
     "extraction_attempt", METADATA,
     sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),

@@ -6,8 +6,8 @@ responsibilities are the model/agent wiring, not MCP.
 
 Deliberately takes plain dataclasses, never `nora.config` types: import-linter's
 "only app and __main__ read config" contract forbids `nora.agent` from importing
-`nora.config` (`pyproject.toml`). `nora.app.composition` is the conversion point,
-the same shape `ReminderCaps` already uses (see `nora.agent.registry`).
+`nora.config` (`pyproject.toml`). The composition root converts configuration
+into discovery settings.
 """
 
 from __future__ import annotations

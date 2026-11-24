@@ -671,33 +671,8 @@ cases:
     snapshot: *room_a
 
   # --- the Record over an interval (design/cognition-loop/README.md) ------
-  # `record_query` (2026-09-29) reads what was said over a stretch of time, by
-  # author or by words, under lineage. Each case names the neighbour it could
-  # lose to: `load_transcript` pages back from now in this room with no filter;
-  # `who_said` checks only the lines already in view; `search_memory` is what
-  # memory concluded, not what was said. Authored inputs, no member named. In
-  # the sandbox the tool answers from the clone's messages only if the
-  # subject's policy holds room A; an honest `unavailable` is still a
-  # correctly routed call (this file's header).
-  - name: route_record_query_a_past_day
-    entry: tag
-    expect: reply
-    mention: true
-    input: 上個禮拜六大家喺度講過啲咩？
-    metadata: {tools: [record_query], not_tools: [load_transcript, search_memory]}
-    snapshot: *room_a
-
-  - name: route_record_query_who_mentioned
-    entry: tag
-    expect: reply
-    mention: true
-    input: 之前有冇人提過想去露營？邊個講㗎？
-    metadata: {tools: [record_query], not_tools: [who_said, search_memory], memory_surface: honcho}
-    snapshot: *room_a
-
-  # The same question on the graph surface (DEC-316). `memory_search` there
-  # finds what was said and who said it, so either read answers it; neither
-  # Honcho neighbour exists on this surface to be named in `not_tools`.
+  # `record_query` filters the room's record by author, words and time.
+  # `memory_search` can recover a discussion and its speakers from the graph.
   - name: route_record_query_who_mentioned_on_graph
     entry: tag
     expect: reply
@@ -1263,10 +1238,6 @@ cases:
   # the speaker it is `remember`'s. The group case expects a reply and forbids
   # `remember`.
   # NOT RUN when written: the eval owner runs them on master and the branch.
-  # `remember` is on both memory surfaces, a different write on each: a Honcho
-  # conclusion off the graph, a Profile `told` line on it (operator ruling
-  # 2026-10-17, design/unified-memory/profiles.md). So the own-fact case runs on both,
-  # and on each a note is not where a settled fact goes (DEC-316).
   - name: route_keep_group_fact_is_not_remember
     entry: tag
     expect: reply
@@ -1275,13 +1246,6 @@ cases:
     metadata: {tools: [send_reply], not_tools: [remember]}
     snapshot: *room_a
 
-  - name: route_keep_own_fact_is_remember
-    entry: tag
-    expect: reply
-    mention: true
-    input: 記低 我食素
-    metadata: {tools: [remember], memory_surface: honcho}
-    snapshot: *room_a
 
   - name: route_keep_own_fact_on_graph_is_remember
     entry: tag
@@ -1317,26 +1281,11 @@ cases:
     metadata: {tools: [remember], not_tools: [where_is], memory_surface: graph}
     snapshot: *room_a
 
-  # --- memory_search (DEC-316, operator ruling 2026-10-16) ----------------------
-  # `[memory.index] read` selects ONE memory surface: the graph's
-  # (`memory_search`) or Honcho's (`ask_memory`, `search_memory`,
-  # `search_memory_workspace`, `who_said`, `about`), never both.
-  # `load_transcript` and `remember` are on both. These cases measure
-  # `memory_search`'s routing against the neighbours on its own surface it
-  # could take from, or lose to: `where_been` (where someone's phone has
-  # been), `media_search` (pictures by what they show) and `lookup_person` (who
-  # a name in this chat is). `about` is a Honcho tool and is not on the graph
-  # surface at all (operator ruling 2026-10-17), so no graph case names it: a
-  # profile question there is `memory_search` with `person`. The time and kind cases also check the narrowing reaches the
-  # call (`args_include`).
-  #
-  # `memory_surface: graph` runs only under `python -m evals --memory-index`;
-  # `memory_surface: honcho` only without it (`evals.scenarios.MEMORY_SURFACES`).
-  # On a master checkout, which predates the key, the graph cases run and FAIL
-  # by construction (no `memory_search` there). Synthetic inputs; `Miles` is
-  # the corpus's one member name.
-  # `memory_read` has no case here: its id comes from a `memory_search` result
-  # in the same turn, which a one-message tag case cannot put in front of it.
+  # --- memory_search ---------------------------------------------------------
+  # Search discovery and routing near mobility, media and person lookup.
+  # The time and kind cases also check arguments. A graph-only case requires
+  # an index-enabled subject. `memory_read` needs a graph ID from an earlier
+  # result, which a single-message case does not supply.
   - name: route_memory_search_discovery_not_node_read
     entry: tag
     expect: reply
@@ -1447,24 +1396,13 @@ cases:
         memory_search: [kinds, notes]
     snapshot: *room_a
 
-  - name: route_about_profile_not_memory_search
-    entry: tag
-    expect: reply
-    mention: true
-    input: Miles平時鍾意食咩？
-    # Honcho surface only: `about` is a Honcho tool, and the graph surface
-    # holds none (ruling 2026-10-17). The graph's route for the same question
-    # is the next case.
-    metadata: {tools: [about], memory_surface: honcho}
-    snapshot: *room_a
 
   - name: route_memory_search_profile_on_graph
     entry: tag
     expect: reply
     mention: true
     input: Miles平時鍾意食咩？
-    # The same profile question on the graph surface, which has no `about`:
-    # what is known about someone is `memory_search` narrowed to them.
+    # A profile search names the person in its arguments.
     metadata:
       tools: [memory_search]
       memory_surface: graph
@@ -1477,8 +1415,7 @@ cases:
     expect: reply
     mention: true
     input: 頭先邊個話要book枱？
-    # The Honcho surface's boundary: lines already in view are `who_said`'s,
-    # and `who_said` is not on the graph surface (deprecated, DEC-316).
+    # `who_said` reads attribution in the visible transcript window.
     metadata: {tools: [who_said], not_tools: [memory_search], memory_surface: honcho}
     snapshot: *room_a
 
@@ -1553,17 +1490,6 @@ cases:
       not_tools: [group_members, room_list, record_query]
     snapshot: *room_a
 
-  - name: route_message_words_not_poll
-    entry: tag
-    expect: reply
-    mention: true
-    input: 噚日邊個提過食拉麵？
-    # Yesterday can be outside the visible window. Accept the configured
-    # memory surface or a deeper transcript read; record_query is default-off.
-    metadata:
-      tools: [who_said, record_query, load_transcript, search_memory, memory_search]
-      not_tools: [poll_list, poll_read, room_state_read]
-    snapshot: *room_a
 
   - name: route_reaction_only
     entry: tag

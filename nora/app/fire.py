@@ -1,61 +1,8 @@
-"""`FirePath` — one OCCASION to speak unprompted becomes one actual message.
+"""Build and deliver an unprompted turn from a typed occasion.
 
-WHAT THIS MODULE IS RESPONSIBLE FOR
------------------------------------
-The TURN. `nora.app.heartbeat` owns *when* a due row fires, *whether* policy
-still allows it and *what the row then says*; this owns everything between the
-two — the synthetic `TagContext`, the prompt, the model call, the delivery, and
-the outcome string it answers with.
-
-THERE ARE SEVERAL OCCASIONS, AND THE TURN IS THE SAME TURN
-----------------------------------------------------------
-The occasions are compute results, relays (DEC-105), proactive acts and
-participation. Participation is the one
-that triggers on a real room going quiet rather than on a stored row, and the
-one where silence is a HEALTHY outcome rather than a failure (`SILENT` below).
-Everything between "something made this turn happen" and "the group heard it"
-is identical — the doctrine
-audience, the guards, the audit-first write, the Langfuse
-trace — and R-1b (`tests/architecture/test_only_two_paths_can_send.py`) makes
-that structural rather than optional: `deliver.build` has exactly TWO callers,
-the tag pipeline and this module, so a second unprompted path cannot be built
-beside this one. It has to be built THROUGH it.
-
-So what differs is factored into `Event`: where she speaks, on whose
-authority, the words put to her, and the header that says why this turn is
-happening. `speak(occasion)` is the turn; `run(rows)` is the heartbeat's
-row-shaped adapter onto it (see both docstrings).
-
-It reuses the tag pipeline's stages where they fit and refuses them where they
-do not, and the refusals are the design:
-
-* **no `admission.run`** — R-9's debounce would reject a fire turn within five
-  seconds of a tag AND consume the tag's window; R-30 sheds the NEWEST arrival,
-  which is always the reminder that has waited hours; R-12 tests a synthetic
-  sender against Nora's own aliases. The conversation slot is taken by the tick
-  instead, through the same `ConversationSlots` the tag path holds.
-* **no `audit_stage`** — it would write a message
-  the requester never sent, under the requester's peer, at the wrong time.
-* **no `indicate`** — `indicate.begin` reacts to `(author, timestamp)` and
-  returns `None` when either is falsy, which the synthetic message's blank
-  `sender_id`/`timestamp` make true BY CONSTRUCTION. Fabricating them means a
-  failed `sendReaction` every tick, or 👀 then ⚠️ on an unrelated old message.
-* **no `ContextAssembler.assemble`** — see `build_context`. This is the trap.
-* **no `invoke.run` and no `deliver.check_outcome`** — see `run`.
-
-WHAT IT DOES REUSE, AND WHY EACH ONE MATTERS
---------------------------------------------
-`MentionRenderer.rehydrate` (or every @-mention in the transcript reaches the
-model as U+FFFC), `build_prefill`/`build_tag_message` (or R-13/R-13b escaping
-of group-authored text stops being pinned by its two named acceptance tests),
-`deliver.build` + `Deliverer` (the ONLY caller of `adapter.send`, so R-2, R-4,
-R-6 and R-18 all still apply).
-
-Doctrine is read at `applies_to="heartbeat"` — `"participation"` for that
-occasion — because at `"tag"` it would carry the silence rules that
-are false here, and an audience that resolved to nothing would deliver with no
-profile, no constraints, and a `LeakGuard` corpus carrying nothing but the
-authored sections.
+The occasion supplies the destination, authority and prompt header. The turn
+assembles context, applies the room's guards and records its delivery outcome.
+All composing and deterministic delivery paths share the delivery guard.
 """
 
 from __future__ import annotations

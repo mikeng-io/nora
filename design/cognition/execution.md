@@ -42,6 +42,7 @@ is no separate self-wake.
 
 ## Replaying history
 
+Historical recovery reports its boundary, progress and completeness per unit.
 A wake pass over history runs in source-time order with the instant of
 its evidence as its clock. It reads only what existed then, proposes
 understanding only, and never creates present-day intentions, lessons or

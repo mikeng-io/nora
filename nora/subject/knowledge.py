@@ -261,28 +261,8 @@ class Knowledge:
     #: `pending_for` exactly as production does.
     reminders: tuple[ReminderSeed, ...] = field(default_factory=tuple)
 
-    #: The room's CULTURE ACCOUNT — how this room TALKS, as one revision body.
-    #:
-    #: ONE BODY, NOT A CHAIN. The tier's genuine contribution is the ORDER of
-    #: its revisions (DEC-183, `nora/infra/sql/schema.py`'s `CULTURE_REVISION`
-    #: note), but nothing READS the chain on a turn — `CultureAdaptor.inputs`
-    #: renders `head.body` and nothing else — so a case stating a chain would
-    #: be stating input no entry point can observe.
-    #: A seed is one account, written through `SqlCultureStore.append`, which
-    #: is production's own write lane and moves the head in the same
-    #: transaction.
-    #:
-    #: **Keyed on the ROOM'S `primary_id`, which for a subject IS its
-    #: `conversation_id`** — not on `(platform, conversation_id)`, which is the
-    #: mistake `nora.domain.culture.Culture` names in as many words. It is safe
-    #: to key it here rather than require it the way `snapshot()` does, because
-    #: `build_config` (obtain.py) RESOLVES the policy it writes through the real
-    #: parser and refuses unless `Conversation.primary_id == spec.room[1]`; a
-    #: substring check would only prove the room's id appears SOMEWHERE in the
-    #: file, possibly on a different entry's conversation. A key that matched
-    #: nothing, or matched the wrong room, would read exactly like a room that
-    #: had never been folded, or silently key under a real other room, which is
-    #: why this is pinned to a resolved refusal rather than to a convention.
+    #: A room Culture fixture, keyed by the resolved room's primary id.
+    #: The seed stores one revision and its head together.
     culture: str | None = None
 
     #: The UNIT's own account (`unit_culture_key`), what `<unit_culture>`

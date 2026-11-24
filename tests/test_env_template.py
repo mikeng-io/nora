@@ -387,12 +387,8 @@ def test_both_config_files_agree_on_the_dreamer_runtime_shape(tmp_path, monkeypa
     under a different ceiling in the deployment than the template documents.
     Comparing the model-level maps names the adaptor instead.
 
-    Also the bound: EVERY declared budget, in either file, must be a real
-    ceiling on all four axes. `timeout_seconds` above all — a hung Dreamer call
-    is quiet (`dream_loop` marks the scope `running` and skips it every
-    subsequent tick without ever raising, so the exponential backoff never
-    engages), so an unbounded one is a subsystem that stops working with no
-    error anywhere.
+    Each declared budget in either file must set a positive ceiling on all
+    four axes, including elapsed time.
     """
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     if not (ROOT / "config.toml").is_file():

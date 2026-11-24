@@ -103,7 +103,7 @@ async def test_the_citations_a_revision_rests_on_are_kept(store, engine):
 
 
 async def test_a_second_account_names_the_first_as_its_parent(store, engine):
-    """DEC-183: the old account becomes history, it is not overwritten."""
+    """An append retains the previous account in the revision history."""
     first = await _append(store, "first account")
     second = await _append(store, "second account", at=NOW + 1)
     assert (await _observed_revision(engine, second)).parent_revision_id == first.id

@@ -128,8 +128,6 @@ async def test_note_read_resolves_the_title_the_index_shows_and_returns_the_body
     assert out["status"] == "ok"
     assert out["body"] == "Nobody has booked yet."
     assert out["title"] == "Dinner, 9 Sept"
-    # The head revision id rides back so the compare-and-swap has something
-    # to compare, even though the model never has to hand it to `note_revise`.
     assert out["revision_id"] == note.head_revision_id
 
 

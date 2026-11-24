@@ -410,25 +410,6 @@ cases:
       returns_when: |
         Never at this anchor.
 
-  - name: residue-options-memory-found-and-the-reply-left-out
-    entry: standing
-    expect: fold
-    metadata:
-      tag_id: 76b2b0c2f6a6412e9744ae86908cbccf
-      kind: residue
-    expected_output: |
-      The memory answer held more than the reply sent. The new position must
-      carry at least one item from it the reply did not send.
-    parked:
-      reason: P-A
-      why: |
-        Issue #445: the «unsent findings» came from `ask_memory`, which
-        recalls what this group already said — the room's own history, not a
-        new finding the turn produced. Nothing in the answer is new to the
-        room, so there is no residue to carry; the fold does carry the open
-        plan those items bear on.
-      returns_when: |
-        Never at this anchor.
 
   # --- OPEN PLANS DROPPED BY A FOLD (design/group-situation/10-standing-drops-plans.md, #555) -------
   # Five real folds that dropped an open plan still ahead of them, with

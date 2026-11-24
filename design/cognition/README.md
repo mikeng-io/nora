@@ -16,10 +16,6 @@ The goal is **emergence**: recommendation, personalisation, follow-through and
 learning arise from the generic loops working the graph, never from a
 capability's own code, store, prompt or loop.
 
-**Status:** designed
-
-[Open issues](https://github.com/mikeng-io/nora/issues?q=is%3Aopen+%22design%2Fcognition%2F%22)
-
 ## What Nora is
 
 | part | is | defined in |
@@ -67,15 +63,9 @@ part is [emergence](emergence.md).
 
 ## Scope
 
-This bundle is the design of Nora's cognition. The [Cognition
-session](../cognition-loop/session.md), the [memory
-graph](../unified-memory/graph.md), the Notebook and Register, the Standing
-fold, live threads, lessons and [personalisation](../personalisation/README.md)
-are expressions of its kinds, loops and presentations. Those bundles describe
-the code that runs today; nothing new is built to them, and they leave with
-that code when this design is implemented. [Context
-assembly](../context-assembly/README.md) and [evaluation](../evaluation/README.md)
-stay their own subjects and follow this one.
+This bundle owns cognition. [Context assembly](../context-assembly/README.md)
+defines how a pass's input is assembled, and [evaluation](../evaluation/README.md)
+defines how the system is measured.
 
 ## Where it lives in the code
 
@@ -83,7 +73,7 @@ Areas follow [ADR 0037](../../docs/adr/0037-code-is-grouped-by-area-and-depends-
 
 | part | owner |
 |---|---|
-| the graph: registry, entities, claims, intentions, edges, admission, retrieval, presentations | `memory/`, which absorbs the Notebook, Standing, profiles, lessons and the account of herself |
+| the graph: registry, entities, claims, intentions, edges, admission, retrieval, presentations | `memory/`, which owns Standing, profiles, lessons and the account of herself |
 | items | the area of their source: `conversation/`, `location/`, `media/`, `social/`, `computer/`, `voice/` |
 | aggregates | `analytics/` for rollups; each area for its own current heads |
 | people, rooms, units, the primary unit | `people/` |
