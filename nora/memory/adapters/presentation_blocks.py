@@ -1,6 +1,7 @@
 """Render graph presentation selections as registered context blocks."""
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 
 from nora.domain.blocks import ContextBlock
@@ -11,12 +12,12 @@ from nora.memory.adapters.graph_row_render import (
     render_open_intention,
     render_related_rows,
 )
-from nora.memory.domain.presentations import EntityAnchor, OpenIntention, profile, standing
+from nora.memory.domain.presentations import EntityAnchor, OpenIntention, Profile, profile, standing
 from nora.memory.domain.retrieval import RetrievalResult, RetrievedRow
 
 
 def _graph_block(
-    result: RetrievalResult, body: str, *, name: str,
+    result: RetrievalResult | Profile, body: str, *, name: str,
     attrs: tuple[tuple[str, str], ...] = (),
 ) -> ContextBlock:
     if result.status == "unavailable":
@@ -61,13 +62,19 @@ class GraphPresentationBlocks:
         self, result: RetrievalResult, subject: EntityAnchor, names: Mapping[str, str],
     ) -> tuple[ContextBlock, tuple[str, ...]]:
         selected = profile(result, subject, names)
+        return self.render_profile(subject, selected)
+
+    def render_profile(
+        self, subject: EntityAnchor, selected: Profile,
+    ) -> tuple[ContextBlock, tuple[str, ...]]:
         subject_id = subject.graph_id or subject.pointer_ref or ""
         attrs: tuple[tuple[str, str], ...] = (("of", subject_id),)
         if selected.name is not None:
             attrs += (("name", selected.name),)
-        sections = [(part, rows) for part, rows in selected.parts if rows]
+        sections = [(part, rows) for part, rows in selected.parts
+                    if rows and selected.status != "unavailable"]
         body = "\n".join(f"{part}:\n{self.graph_rows(rows)}" for part, rows in sections)
-        block = _graph_block(result, body, name="graph_profile", attrs=attrs)
+        block = _graph_block(selected, body, name="graph_profile", attrs=attrs)
         return block, tuple(row.graph_id for _, rows in sections for row in rows)
 
     def standing_block(
@@ -110,3 +117,13 @@ class GraphPresentationBlocks:
                 rows, now=self._now, reading_room=self._room, dm_rooms=self._dm_rooms,
             ), name="related",
         )
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileRead:
+    subject: EntityAnchor
+    profile: Profile
+    renderer: GraphPresentationBlocks
+
+    def block(self) -> ContextBlock:
+        return self.renderer.render_profile(self.subject, self.profile)[0]

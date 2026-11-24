@@ -20,6 +20,7 @@ class ReadingRoom:
     platform: str
     conversation_id: str
     live: LiveRoom | None = None
+    require_live_for_exclusions: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +32,7 @@ class RetrievalScope:
     social_off: frozenset[str]
     as_of: datetime | None
     room_keys: Mapping[str, str]
+    audience_complete: bool = True
 
 
 @dataclass(frozen=True, slots=True)

@@ -306,9 +306,6 @@ class ReadersWiring:
 
 def readers(cfg: Any, content_checks: Any, engine: Any)-> ReadersWiring:
 
-    # THE CULTURE TIER'S READ HALF (DEC-207): ONE read-only reader, handed to the tag path's
-    # assembler, the fire path and every Dreamer adaptor whose prompt carries `<culture>`.
-    # `None` while `[culture] enabled = false`, the shipped default, so no occasion renders…
     culture_reader: CultureReader | None = SqlCultureStore(engine) if cfg.culture.enabled else None
     # `<lessons>` on tag and fire turns: read-only,
     # bodies of active lessons. `None` while `[lessons] render` is off.

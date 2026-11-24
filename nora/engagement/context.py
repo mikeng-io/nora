@@ -43,11 +43,6 @@ from nora.agent.standing_ledger import ledger_permits, ledger_target
 from nora.domain.blocks import row_speaker
 from nora.domain.comprehend import ComprehendItem, Preview, preview_seeds
 from nora.domain.computer_context import ComputerView
-from nora.domain.culture import (
-    CultureRevision,
-    nora_character_key,
-    unit_culture_key,
-)
 from nora.domain.documents_context import DocumentsView
 from nora.domain.external_files import render_file_links
 from nora.domain.lineage import (
@@ -82,7 +77,6 @@ from nora.domain.observations import (
     target_context,
 )
 from nora.domain.ports import (
-    CultureReader,
     EngagementRequest,
     RecordStore,
     RosterSource,
@@ -95,14 +89,12 @@ from nora.domain.standing import Standing
 from nora.domain.standing_ledger import LedgerEntry
 from nora.domain.subagents_context import SubagentsView
 from nora.domain.turn_record import DisclosureRequirement
-from nora.engagement.character_who import tag_character_people
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.self_presence import PresenceReader
 from nora.engagement.subagents_context import SubagentsContextReader
 from nora.language.comprehend_render import preview_text
 from nora.language.computer_render import estimate_tokens
-from nora.language.culture_render import read_character, read_culture
 from nora.language.lesson_render import ActiveLessons, read_lessons
 from nora.obs.tracing import traced_read
 from nora.persons import Persons
@@ -188,7 +180,6 @@ class TranscriptInjection:
 
         media_join: MediaJoin | None = None,
         presence: PresenceReader | None = None,
-        culture: CultureReader | None = None,
         lessons: ActiveLessons | None = None,
         lineage: LineagePolicy | None = None,
         computer: ComputerContextReader | None = None,
@@ -273,11 +264,6 @@ class TranscriptInjection:
         # state, her handles. `None` is a harness with no reader, and the
         # prefill then renders the network alone.
         self._presence_reader = presence
-        # THE ROOM'S OWN ACCOUNT (DEC-207). `None` while `[culture] enabled =
-        # false`. Read-only by TYPE: a `CultureReader` has `head` and nothing
-        # else, so no tag turn can write a culture row. Keyed on the room's
-        # `primary_id`, resolved through `policy` — see `_culture`.
-        self._culture_reader = culture
         # `<lessons>`: `None` while `[lessons] render` is off.
         self._lessons_reader = lessons
         # WHO THIS ROOM IS, for lineage. A pure value built at the composition
@@ -440,37 +426,6 @@ class TranscriptInjection:
             return ()
         return await self._access.room_refs(msg.platform, msg.conversation_id)
 
-    async def _culture(self, msg: NormalizedMessage) -> CultureRevision | None:
-        """This room's account, or `None` (DEC-207).
-
-        Keyed on the room's `primary_id`, NEVER `msg.conversation_id`: the fold
-        is a Dreamer adaptor handed `scopes()`, so that is what it wrote under,
-        and a read by the arriving thread's id matches zero rows on a room
-        holding two ids — rendering as «no account yet», a real state nothing
-        would report (DEC-181). A room outside the policy has no
-        key and reads nothing.
-
-        Bounded, fail-soft and counted (`stage="tag_culture"`) by
-        `read_culture`, so it is safe inside the `gather`.
-        """
-        if self._culture_reader is None or self._policy is None:
-            return None
-        convo = self._policy.conversation(msg.platform, msg.conversation_id)
-        if convo is None or not convo.primary_id:
-            return None
-        # `traced_read` wraps the coroutine `read_culture` itself awaits
-        # (under `asyncio.wait_for`, hence this class rather than
-        # `nora.language.culture_render` — that timeout must stay outside the
-        # span, not inside it): a cancellation from the bound propagates
-        # through `span`'s own `BaseException` handler before `wait_for`
-        # converts it to the `TimeoutError` `read_culture` catches, so the
-        # span still ends ERROR on a read that timed out.
-        found = await read_culture(
-            traced_read("culture", "head", self._culture_reader.head(key=convo.primary_id)),
-            stage="tag_culture", platform=msg.platform, metrics=self._metrics,
-        )
-        return found
-
     def _obs_actor_name(
         self, platform: str, actor: str | None, *, known: bool = True
     ) -> str | None:
@@ -510,65 +465,6 @@ class TranscriptInjection:
             if parent is not None:
                 start = min(start, parent)
         return rows[start:]
-
-    async def _character(
-        self, msg: NormalizedMessage, ref: PersonRef | None,
-        transcript: Sequence[TranscriptRow],
-    ) -> tuple[tuple[str, CultureRevision], ...]:
-        """The accounts of the listed persons who are IN this turn (the
-        tagger, the mentioned, the replied-to, the window's speakers:
-        `tag_character_people`), keyed by this room's UNIT (one per
-        (unit, person)). Bounded,
-        fail-soft and counted (`stage="tag_character"`) by `read_character`."""
-        if self._culture_reader is None or self._policy is None:
-            return ()
-        convo = self._policy.conversation(msg.platform, msg.conversation_id)
-        if convo is None or not convo.unit:
-            return ()
-        return await read_character(
-            self._culture_reader, unit=convo.unit,
-            members=await tag_character_people(
-                await self._room_members(msg), access=self._access,
-                message=msg, tagger=ref, transcript=transcript,
-            ),
-            stage="tag_character", platform=msg.platform, metrics=self._metrics,
-        )
-
-    async def _unit_culture(self, msg: NormalizedMessage) -> CultureRevision | None:
-        """What this room's UNIT is like, keyed
-        `unit_culture_key(unit)`, so it is read only in that unit's rooms.
-        Bounded, fail-soft and counted (`stage="tag_unit_culture"`) by
-        `read_culture`, like `_culture`."""
-        if self._culture_reader is None or self._policy is None:
-            return None
-        convo = self._policy.conversation(msg.platform, msg.conversation_id)
-        if convo is None or not convo.unit:
-            return None
-        return await read_culture(
-            traced_read("culture", "head", self._culture_reader.head(
-                key=unit_culture_key(convo.unit))),
-            stage="tag_unit_culture", platform=msg.platform, metrics=self._metrics,
-        )
-
-    async def _self_account(self, msg: NormalizedMessage) -> CultureRevision | None:
-        """Her own account in this room's UNIT, keyed
-        `nora_character_key(unit)`. Bounded, fail-soft and counted
-        (`stage="tag_self"`) by `read_culture`, like `_unit_culture`; `None`
-        when the unit has no account or the room may not show it
-        (`Policy.shows_self_in`), so no `<self>` block renders."""
-        if self._culture_reader is None or self._policy is None:
-            return None
-        convo = self._policy.conversation(msg.platform, msg.conversation_id)
-        if convo is None or not convo.unit:
-            return None
-        # R-31: unit-wide, written from location rooms' sends too.
-        if not self._policy.shows_self_in(msg.platform, msg.conversation_id):
-            return None
-        return await read_culture(
-            traced_read("culture", "head", self._culture_reader.head(
-                key=nora_character_key(convo.unit))),
-            stage="tag_self", platform=msg.platform, metrics=self._metrics,
-        )
 
     async def _lessons(self, msg: NormalizedMessage) -> tuple[str, ...]:
         """Her active lessons in this room's UNIT,

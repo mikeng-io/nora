@@ -464,8 +464,7 @@
   "functions": {
    "FirePath.__init__": 232,
    "FirePath._invoke": 231,
-   "FirePath._turn": 388,
-   "FirePath.build_context": 135
+   "FirePath._turn": 388
   },
   "internal_docstrings": 25
  },
@@ -834,7 +833,6 @@
   "comment_blocks": 19,
   "file_lines": 1304,
   "functions": {
-   "TranscriptInjection.__init__": 133,
    "TranscriptInjection._observation_reads": 147
   },
   "internal_docstrings": 21
@@ -3000,10 +2998,6 @@
  },
  "tests/unit/test_culture_adaptor.py": {
   "file_lines": 821
- },
- "tests/unit/test_culture_render.py": {
-  "comment_blocks": 1,
-  "internal_docstrings": 2
  },
  "tests/unit/test_debrief.py": {
   "comment_blocks": 7,

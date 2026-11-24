@@ -57,6 +57,7 @@ from nora.agent.toolkit.ports import (
 )
 from nora.agent.tools import build_tool_specs
 from nora.domain.standing_ledger import StandingLedger
+from nora.memory import GraphProfileReader
 
 from ..domain.computer import ComputerToolSettings
 from ..domain.computer_events import ComputerEventStore
@@ -69,7 +70,6 @@ from ..domain.models import TranscriptRow
 from ..domain.ports import (
     BlobStore,
     BrowserRunner,
-    CultureReader,
     DiscordPresenceSource,
     ExternalFilesSource,
     GifSource,
@@ -352,8 +352,8 @@ class ToolRegistry:
         rollup: RollupReadSource | None = None,
         standing_head: StandingHeadSource | None = None,
         ledger: StandingLedger | None = None,
-        # The culture store (`[culture] enabled`) `room_list` shows each room's account from.
-        culture: CultureReader | None = None,
+        # Scoped graph profiles for room_list.
+        graph_profiles: GraphProfileReader | None = None,
         # `social_read`'s read of the social stream's Record: `None` withholds it.
         social_items: SocialItemsSource | None = None,
         # `[subagent] enabled` (ships off): the desk the four `subagent_*` tools
@@ -403,7 +403,7 @@ class ToolRegistry:
         self._rollup = rollup
         self._standing_head = standing_head
         self._ledger = ledger
-        self._culture = culture
+        self._graph_profiles = graph_profiles
         self._social_items = social_items
         # Tools with missing dependencies are omitted from every surface
         # and from the gate's digest, so a turn cannot route to them.
@@ -1159,7 +1159,7 @@ class ToolRegistry:
             lineage=self._lineage,
             rollup=self._rollup,
             standing_head=self._standing_head, ledger=self._ledger,
-            culture=self._culture,
+            graph_profiles=self._graph_profiles,
             social_items=self._social_items,
             versions=self._versions, releases=self._releases,
             giphy_source=self._giphy,

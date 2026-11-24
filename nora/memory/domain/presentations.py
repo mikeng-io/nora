@@ -5,11 +5,14 @@ from __future__ import annotations
 from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Protocol
 
+from nora.domain.blocks import ContextBlock
 from nora.domain.lineage import split_room
 from nora.domain.ticks import due_tick_of_at
-from nora.memory.domain.graph import ClaimPart
+from nora.memory.domain.graph import ClaimPart, PointerKind
 from nora.memory.domain.retrieval import (
+    ReadingRoom,
     RetrievalLimit,
     RetrievalResult,
     RetrievalStatus,
@@ -54,6 +57,25 @@ class Profile:
     status: RetrievalStatus
     limits: tuple[RetrievalLimit, ...]
     cause: str | None
+
+
+class ProfileReadResult(Protocol):
+    """A scoped profile and its prompt presentation."""
+
+    @property
+    def profile(self) -> Profile: ...
+
+    def block(self) -> ContextBlock: ...
+
+
+class GraphProfileReader(Protocol):
+    """Read the requested subjects' graph profiles within a turn's scope."""
+
+    async def read_profiles(
+        self, room: ReadingRoom, subjects: Mapping[tuple[PointerKind, str], str],
+        now: datetime, *, timeout_seconds: float, concerns: frozenset[str] = frozenset(),
+        as_of: datetime | None = None,
+    ) -> Mapping[tuple[PointerKind, str], ProfileReadResult]: ...
 
 
 @dataclass(frozen=True, slots=True)

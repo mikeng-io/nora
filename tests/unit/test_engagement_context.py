@@ -475,10 +475,7 @@ async def test_a_called_floor_reads_no_legacy_store_even_when_wired(exported_spa
         audit=store, persons=_MILES, context_window=10, metrics=Metrics(),
         ai_peer="nora", policy=_policy(),
     )
-    for method in (
-        "_prefetch", "_notes", "_memos", "_shared",
-        "_culture", "_unit_culture", "_self_account", "_lessons", "_character",
-    ):
+    for method in ("_prefetch", "_notes", "_memos", "_shared", "_lessons"):
         monkeypatch.setattr(assembler, method, legacy)
 
     ctx = await assembler.assemble(request=_request())

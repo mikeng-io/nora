@@ -13,6 +13,7 @@ from nora.memory.app.act_scope import record_interrupted_pass_tools as record_in
 from nora.memory.app.act_scope import record_pass_expression as record_pass_expression
 from nora.memory.app.act_scope import record_pass_silence as record_pass_silence
 from nora.memory.app.act_scope import record_pass_tool as record_pass_tool
+from nora.memory.app.act_scope import remember_internal as remember_internal
 from nora.memory.app.act_scope import seed_pass_shown as seed_pass_shown
 from nora.memory.app.acts import ActEnvelope as ActEnvelope
 from nora.memory.app.acts import ActInvocation as ActInvocation
@@ -39,6 +40,7 @@ from nora.memory.domain.admission_proposals import Scope as Scope
 from nora.memory.domain.authored_output import without_reasoning as without_reasoning
 from nora.memory.domain.debrief import DebriefObligation as DebriefObligation
 from nora.memory.domain.debrief import ProposalId as ProposalId
+from nora.memory.domain.graph import PointerKind as PointerKind
 from nora.memory.domain.intention_operations import IntentionProposal as IntentionProposal
 from nora.memory.domain.intention_operations import limit_to_delivery as limit_to_delivery
 from nora.memory.domain.intention_operations import (
@@ -77,6 +79,7 @@ from nora.memory.domain.pass_inputs import (
 from nora.memory.domain.pass_inputs import (
     WakeInput as WakeInput,
 )
+from nora.memory.domain.presentations import GraphProfileReader as GraphProfileReader
 from nora.memory.domain.proactive import RECHECK_UNAVAILABLE as RECHECK_UNAVAILABLE
 from nora.memory.domain.proactive import DueIntention as DueIntention
 from nora.memory.domain.proactive import ProactiveClaim as ProactiveClaim

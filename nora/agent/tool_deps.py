@@ -84,7 +84,6 @@ from nora.domain.models import (
 )
 from nora.domain.ports import (
     BrowserRunner,
-    CultureReader,
     DiscordPresenceSource,
     ExternalFilesSource,
     GifSource,
@@ -109,7 +108,7 @@ from nora.infra.vision.preprocess import (
     VIDEO_CHUNK_SECONDS,
     VIDEO_MAX_CHUNKS,
 )
-from nora.memory import PassScope
+from nora.memory import GraphProfileReader, PassScope
 
 log = logging.getLogger("nora.tools")
 
@@ -206,7 +205,7 @@ class ToolDeps:
     rollup: RollupReadSource | None = None
     standing_head: StandingHeadSource | None = None
     ledger: StandingLedger | None = None
-    culture: CultureReader | None = None
+    graph_profiles: GraphProfileReader | None = None
     social_items: SocialItemsSource | None = None
     subagent: SubagentDesk | None = None
     video: VideoDesk | None = None

@@ -510,10 +510,10 @@ def historical_grounder(engine: AsyncEngine, *, cfg: Any, deps: Any,
         own_send_lookback_seconds=cfg.cognition.own_send_lookback_seconds,
         own_sends_max=cfg.cognition.own_sends_max,
         tz=ZoneInfo(cfg.cognition.timezone),
-        # Presence, culture and profile heads, and the SharedView are
+        # Presence and profile heads, and the SharedView are
         # current-state too — withheld by the same rule.
         stay_context=None, place_release=None,
-        self_account=None, self_profile=None,
+        self_profile=None,
         metrics=deps.metrics,
         observations=_AsOfObservations(deps.cognition_runner.observations),
     )

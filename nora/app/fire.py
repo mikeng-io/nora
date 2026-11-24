@@ -77,7 +77,6 @@ from nora.agent.guards import ReplyGuard
 from nora.agent.lineage import (
     LineagePolicy,
     excluded,
-    profile_lines_for,
     section_permits,
     visible_sections,
 )
@@ -92,16 +91,10 @@ from nora.agent.standing_ledger import ledger_permits, ledger_target
 from nora.app.fire_engagement import AmbientEngagement
 from nora.doctrine.loader import DoctrineStore
 from nora.domain import audience as audience_names
-from nora.domain.blocks import RowStyle, render_rows
+from nora.domain.blocks import ContextBlock, RowStyle, render_rows
 from nora.domain.cognition_remind import INTENTS
 from nora.domain.compute import ComputeJob, DocumentReadBack
 from nora.domain.computer_context import ComputerView
-from nora.domain.culture import (
-    CultureRevision,
-    character_key,
-    nora_character_key,
-    unit_culture_key,
-)
 from nora.domain.decision_log import (
     PARTICIPATION_DECISION_WRITERS,
     PROACTIVE_ACT_DECISION_WRITERS,
@@ -127,6 +120,7 @@ from nora.domain.lineage import (
     HOLD_OPEN,
     I_OWE,
     WORKING_SET,
+    LiveRoom,
     room_key,
 )
 from nora.domain.managed import room_scope_id
@@ -143,7 +137,6 @@ from nora.domain.models import (
 )
 from nora.domain.notes import Note
 from nora.domain.ports import (
-    CultureReader,
     JobResult,
     JobStatus,
     LinkPreviewSource,
@@ -152,11 +145,10 @@ from nora.domain.ports import (
     RecordStore,
     RosterSource,
 )
-from nora.domain.profile import ProfileView
 from nora.domain.prompt import one_line
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.reminders import Reminder
-from nora.domain.self_presence import Presence, platform_name
+from nora.domain.self_presence import Presence
 from nora.domain.shared_state import SharedView
 from nora.domain.standing import (
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
@@ -181,10 +173,14 @@ from nora.engagement.self_presence import PresenceReader
 from nora.engagement.stages import deliver
 from nora.engagement.stages.invoke import AgentRunner
 from nora.ingest.relevance_gate import SCORE_ABSENT
-from nora.language.culture_render import read_character, read_culture
 from nora.language.lesson_render import ActiveLessons, read_lessons
-from nora.language.profile_render import ProfileHeads, authored_identity, read_profile
-from nora.memory import active_act_authority, record_pass_silence
+from nora.memory import (
+    GraphProfileReader,
+    PointerKind,
+    ReadingRoom,
+    active_act_authority,
+    record_pass_silence,
+)
 from nora.obs.determination import (
     WINDOW_BODY_CHARS,
     Determination,
@@ -554,7 +550,7 @@ class FirePath:
         tool_call_log_store: ToolCallLogStore | None = None,
         reasoning_strip_store: Any = None,
         event_registry: Mapping[str, EventFactory] | None = None,
-        culture: CultureReader | None = None,
+        graph_profiles: GraphProfileReader | None = None,
         lessons: ActiveLessons | None = None,
         standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
         ambient: AmbientEngagement | None = None,
@@ -578,11 +574,6 @@ class FirePath:
         # `<memos>` (DEC-306): the SAME store the tag path's assembler reads,
         # keyed on the unit like `notes`. `None` renders no block.
         memos: MemoStore | None = None,
-        # THE SWITCH (45 §5): the Profile accounts' reader, wired only when
-        # `[memory.profile] read` is on. Not `None` means a fire turn renders
-        # `<profile>` blocks and none of the reads they replace — the
-        # culture/unit/self heads and the character heads — is made at all.
-        profile: ProfileHeads | None = None,
         tag_trace_store: Any = None,
         # The unit's shared cognitive state reader (design/notebook-memory-
         # types/20-standing.md): bound at the composition root
@@ -593,34 +584,11 @@ class FirePath:
         shared: Callable[..., Awaitable[SharedView]] | None = None,
         access: Any = None,  # `nora.access.IdentityAccess`; `None` → file `Persons` reads
     ) -> None:
-        # `<standing>` renders on the fire path too. `build_prefill` is shared
-        # and parameterised only by `header=`, so SUPPRESSING the block here
-        # would be the special case needing justification.
-        #
-        # It matters most on exactly this path: a fire turn speaks into a room
-        # UNPROMPTED, so «where had this conversation got to» is the context she
-        # is least likely to have any other way — there is no tagging message to
-        # infer it from. `None` when `[standing] enabled = false`, the shipped
-        # default, which renders no block at all.
-        #
-        # This path READS the position and never writes one: `speak` discards
-        # the `TagTrace` that `AgentRunner.invoke` hands back, so there is
-        # nothing to fold.
         self._tag_trace_store = tag_trace_store
         self._shared_reader = shared
-        # THE CULTURE HEAD, read on EVERY fire occasion (DEC-207) — see
-        # `_read_culture`.
-        #
-        # Read-only by TYPE — a `CultureReader` has `head` and nothing else — so
-        # no fire-path turn can write a culture row. That matters more here than
-        # anywhere: the tier's whole claim is that the account is written by a
-        # background pass reading a whole batch, never by a turn reacting to one
-        # window.
-        #
-        # `None` while `[culture] enabled = false`, the shipped default.
         self._computer = computer
         self._documents = documents
-        self._culture = culture
+        self._graph_profiles = graph_profiles
         # `<lessons>` (L5): `None` while `[lessons] render` is off.
         self._lessons = lessons
         # BOUNDED, for the reason the debrief stage's own store calls are:
@@ -641,9 +609,6 @@ class FirePath:
         # idea of a room's unit would render another social unit's notes
         # into this one. `None` keeps the tier inert.
         self._notes, self._memos, self._policy = notes, memos, policy
-        # THE SWITCH (45 §5): `None` until `[memory.profile] read` is on — see the
-        # parameter. The reads it replaces check it and are not made.
-        self._profile_reader = profile
         # Lineage: the SAME value the
         # tag path's assembler holds (`nora.app.assembler.lineage_policy`), so
         # a fire turn's derived blocks are filtered for its room exactly as a
@@ -828,10 +793,6 @@ class FirePath:
                 or self._memos is not None or self._shared_reader is not None):
             unit = self._unit_for(occasion)
 
-        # THE SWITCH (45 §5): the turn's Profile accounts, keyed like the
-        # culture reads they replace. Empty with `[memory.profile] read` off.
-        profiles = await self._read_profiles(occasion, ref, transcript)
-
         # CONCURRENT, for `TranscriptInjection.assemble`'s reason: these are
         # independent reads, and awaited one after another their latencies
         # stack on the front of every fire turn (`<presence>` alone is a
@@ -842,25 +803,18 @@ class FirePath:
         # Nested: `asyncio.gather` types at most six awaitables, and a seventh makes every
         # result a union (the tag path's assembler nests its reads for the same reason).
         (
-            (culture, notes, decisions, presence, computer),
+            (notes, decisions, presence, computer),
             documents,
-            character,
-            unit_culture,
-            self_account,
             (lessons, memos, shared),
         ) = await asyncio.gather(
             asyncio.gather(
 
-                self._read_culture(occasion),
                 self._read_notes(occasion, unit),
                 self._read_decisions(occasion, unit),
                 self._read_presence(occasion),
                 self._read_computer(occasion),
             ),
             self._read_documents(occasion),
-            self._read_character(occasion, ref, transcript),
-            self._read_unit_culture(occasion),
-            self._read_self_account(occasion),
             asyncio.gather(self._read_lessons(occasion), self._read_memos(occasion, unit),
 
                            self._read_shared(occasion, ref)),
@@ -872,13 +826,8 @@ class FirePath:
             transcript=transcript,
             peer_card=(),
             started_at=time.perf_counter(),
-            profiles=profiles,
 
             shared=shared,
-            culture=culture,
-            character=character,
-            unit_culture=unit_culture,
-            self_account=self_account,
             lessons=lessons,
             notes=notes,
             memos=memos,
@@ -1119,86 +1068,9 @@ class FirePath:
             )
             return ()
 
-    async def _read_culture(self, occasion: Event) -> CultureRevision | None:
-        """This room's current account, or `None`.
-
-        **Every fire occasion reads it** (DEC-207): a compute result, a relay and
-        a proactive act turn all read the account of the room they are about
-        to speak into. A proactive act turn is keyed on a unit for its
-        DECISION, but by the time it reaches this path it has chosen one
-        room, and `occasion.conversation_id` is that room.
-
-        **Resolved through the policy to a `primary_id`**, not read with the
-        occasion's `conversation_id`. A Dreamer adaptor is handed `scopes()`, so
-        that is the key it wrote under; reading with the arriving thread's id
-        matches zero rows on any conversation carrying more than one, and
-        renders as «this room has no account yet» — a REAL state, so nothing
-        anywhere would report the miss. Every live conversation holds exactly
-        one id, so the two keys are equal by accident of data, not by
-        construction.
-
-        Bounded, fail-soft and counted under `stage="fire_culture"` by
-        `read_culture`, the one read every occasion shares.
-        """
-        if self._profile_reader is not None:
-            # The switch (45 §5): the room's `<profile>` replaced this block.
-            return None
-        if self._culture is None or self._policy is None:
-            return None
-        convo = self._policy.conversation(
-            occasion.platform, occasion.conversation_id)
-        if convo is None or not convo.primary_id:
-            return None
-        found = await read_culture(
-            self._culture.head(key=convo.primary_id), stage="fire_culture",
-            platform=occasion.platform, metrics=self._metrics,
-            timeout_seconds=self._standing_store_timeout_seconds,
-        )
-        return found
-
-    async def _read_unit_culture(self, occasion: Event) -> CultureRevision | None:
-        """What this room's UNIT is like, keyed
-        `unit_culture_key(unit)`: `_read_culture`'s bounds. `None` when the
-        tier is off or the unit has no account."""
-        if self._profile_reader is not None:
-            return None  # the switch (45 §5): the unit's `<profile>` replaced it
-        if self._culture is None or self._policy is None:
-            return None
-        convo = self._policy.conversation(occasion.platform, occasion.conversation_id)
-        if convo is None or not convo.unit:
-            return None
-        return await read_culture(
-            self._culture.head(key=unit_culture_key(convo.unit)),
-            stage="fire_unit_culture", platform=occasion.platform,
-            metrics=self._metrics,
-            timeout_seconds=self._standing_store_timeout_seconds,
-        )
-
-    async def _read_self_account(self, occasion: Event) -> CultureRevision | None:
-        """Her own account in this room's UNIT, keyed
-        `nora_character_key(unit)`: `_read_unit_culture`'s bounds. `None` when
-        the tier is off, the unit has no account or the room may not show it
-        (`Policy.shows_self_in`), so no `<self>` block renders."""
-        if self._profile_reader is not None:
-            return None  # the switch (45 §5): her `<profile of="nora">` replaced it
-        if self._culture is None or self._policy is None:
-            return None
-        convo = self._policy.conversation(occasion.platform, occasion.conversation_id)
-        if convo is None or not convo.unit:
-            return None
-        # R-31: unit-wide, written from location rooms' sends too.
-        if not self._policy.shows_self_in(occasion.platform, occasion.conversation_id):
-            return None
-        return await read_culture(
-            self._culture.head(key=nora_character_key(convo.unit)),
-            stage="fire_self", platform=occasion.platform,
-            metrics=self._metrics,
-            timeout_seconds=self._standing_store_timeout_seconds,
-        )
-
     async def _read_lessons(self, occasion: Event) -> tuple[str, ...]:
         """Her active lessons in this room's UNIT:
-        `_read_self_account`'s gates and bounds. `()` while `[lessons] render`
+        A bounded read. `()` while `[lessons] render`
         is off, with no unit, or where `<self>` may not show (R-31)."""
         if self._lessons is None or self._policy is None:
             return ()
@@ -1213,122 +1085,40 @@ class FirePath:
             timeout_seconds=self._standing_store_timeout_seconds,
         )
 
-    async def _read_character(
-        self, occasion: Event, ref: PersonRef | None,
-        transcript: Sequence[TranscriptRow],
-    ) -> tuple[tuple[str, CultureRevision], ...]:
-        """The accounts of the listed persons who are IN this fire (the
-        window's speakers and the occasion's own person:
-        `fire_character_people`), keyed by this room's UNIT (one per
-        (unit, person)):
-        `_read_culture`'s bounds, one head per person. `()` when the tier is
-        off."""
-        if self._profile_reader is not None:
-            return ()  # the switch (45 §5): their `<profile>` blocks replaced it
-        if self._culture is None or self._policy is None:
+    async def _read_graph_profiles(
+        self, ctx: TagContext, room: Room, now: datetime,
+    ) -> tuple[ContextBlock, ...]:
+        if self._graph_profiles is None or self._policy is None:
             return ()
-        convo = self._policy.conversation(
-            occasion.platform, occasion.conversation_id)
+        conversation_id = ctx.message.conversation_id
+        convo = self._policy.conversation(room.platform, conversation_id)
         if convo is None or not convo.unit:
             return ()
-        return await read_character(
-            self._culture, unit=convo.unit,
-            members=await fire_character_people(
-                await self._room_members(occasion), access=self._access,
-                platform=occasion.platform, person=ref, transcript=transcript),
-            stage="fire_character", platform=occasion.platform,
-            metrics=self._metrics,
+        view = await room.scope()
+        reading = ReadingRoom(
+            room.platform, conversation_id,
+            LiveRoom(frozenset(p.person_id for p in view.people), view.unnamed,
+                     view.available, view.degraded),
+        )
+        people = await fire_character_people(
+            ctx.room_members, access=self._access, platform=room.platform,
+            person=ctx.tagger, transcript=ctx.transcript,
+        )
+        subjects: dict[tuple[PointerKind, str], str] = {}
+        if self._policy.shows_self_in(room.platform, conversation_id):
+            subjects["nora", "nora"] = self._display_name
+        subjects["room", room_key(room.platform, conversation_id)] = convo.label or ""
+        subjects["unit", convo.unit] = convo.unit
+        subjects.update({("person", person.person_id): person.name for person in people})
+        profiles = await self._graph_profiles.read_profiles(
+            reading, subjects, now, concerns=frozenset(person.person_id for person in people),
             timeout_seconds=self._standing_store_timeout_seconds,
         )
-
-    async def _read_profiles(
-        self, occasion: Event, ref: PersonRef | None,
-        transcript: Sequence[TranscriptRow],
-    ) -> tuple[ProfileView, ...]:
-        """The fire turn's Profile accounts (45 §5): hers, the room's, the
-        unit's, then one per person the occasion is about
-        (`fire_character_people`'s set — the window's speakers and the
-        occasion's own person, the same set `<character>` rendered).
-
-        `TranscriptInjection._profiles`' shape and rules, with the fire path's
-        own timeout: `read_profile` bounds and counts each read
-        (`stage="fire_profile_*"`), a failed read drops that account's view
-        and is counted (R-27), and a line whose `exclude_persons` names a
-        member of this room is dropped before the view is built. `()` with no
-        reader wired (`[memory.profile] read` off) or a room outside the policy."""
-        if self._profile_reader is None or self._policy is None:
-            return ()
-        convo = self._policy.conversation(
-            occasion.platform, occasion.conversation_id)
-        if convo is None or not convo.unit:
-            return ()
-        reader = self._profile_reader
-        members = await self._room_members(occasion)
-        target = await self._render_room(occasion)
-        room = Room(
-            platform=occasion.platform, conversation_id=occasion.conversation_id,
-            roster_source=self._rosters.get(occasion.platform), access=self._access,
-            tagger=ref, self_ids=self._profile_self_ids,
-        )
-
-        async def one(
-            key: str, *, entity: str, of: str, stage: str,
-            authored: tuple[str, ...] = (),
-        ) -> ProfileView | None:
-            lines = await read_profile(
-                reader.account_heads(key=key), stage=stage,
-                platform=occasion.platform, metrics=self._metrics,
-                timeout_seconds=self._standing_store_timeout_seconds,
+        if any(read.profile.status == "unavailable" for read in profiles.values()):
+            self._metrics.inc(
+                "nora_errors_total", stage="fire_graph_profiles", platform=room.platform,
             )
-            if lines is None:
-                return None
-            kept = await profile_lines_for(lines, target, room)
-            return ProfileView(entity=entity, of=of, lines=kept, authored=authored)
-
-        views: list[ProfileView] = []
-        # HERS, gated like `_read_self_account` (R-31).
-        if self._policy.shows_self_in(occasion.platform, occasion.conversation_id):
-            view = await one(
-                nora_character_key(convo.unit),
-                entity="nora", of="nora", stage="fire_profile_self",
-            )
-            if view is not None:
-                views.append(view)
-        # THE ROOM's, keyed its `primary_id` like `_read_culture`.
-        # The stored subject id is shared with Cognition and the read tools.
-        if convo.primary_id and convo.label:
-            view = await one(
-                convo.primary_id,
-                entity="room", of=convo.primary_id,
-                stage="fire_profile_room",
-            )
-            if view is not None:
-                views.append(view)
-        # THE UNIT's, keyed like `_read_unit_culture`.
-        view = await one(
-            unit_culture_key(convo.unit),
-            entity="unit", of=convo.unit, stage="fire_profile_unit",
-        )
-        if view is not None:
-            views.append(view)
-        # THEIRS, with their authored identity lines (45 §3).
-        for person in await fire_character_people(
-            members, access=self._access,
-            platform=occasion.platform, person=ref, transcript=transcript):
-            view = await one(
-                character_key(convo.unit, person.person_id),
-                entity="person", of=person.person_id, stage="fire_profile_person",
-                authored=authored_identity(
-                    name=person.name, aliases=person.aliases,
-                    platforms=tuple(sorted({
-                        platform_name(a.platform)
-                        for a in await self._access.accounts_for(person.person_id)
-                    })),
-                ),
-            )
-            if view is not None:
-                views.append(view)
-        return tuple(views)
+        return tuple(profile.block() for profile in profiles.values())
 
     async def _read_shared(
         self, occasion: Event, ref: PersonRef | None,
@@ -1815,6 +1605,7 @@ class FirePath:
                 pre_fill = build_prefill(
                     ctx, display_name=self._display_name, context_window=self._context_window,
                     now=now, header=header, catalogue=surface.prompt_catalogue,
+                    graph_profiles=await self._read_graph_profiles(ctx, room, now),
                 )
                 tag_message = build_tag_message(
                     ctx, tagger_name=speaker, display_name=self._display_name,

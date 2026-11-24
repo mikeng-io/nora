@@ -51,6 +51,7 @@ RULE_TESTS = {
     "debrief-pass-items": "test_debrief_writes_only_commit_operations_citing_its_pass_items",
     "cognition-profile-accounts": "test_cognition_offers_no_profile_account_tools",
     "cognition-event-surface": "test_cognition_offers_reminders_and_wakes_without_event_writes",
+    "DEC-207": "test_room_list_reads_each_rooms_graph_profile_in_the_turn_audience",
     "DEC-97": "test_running_identity_is_independent_of_the_latest_release",
     "DEC-324": "test_a_server_entry_admits_a_discovered_channel_by_guild_id",
     "DEC-323": "test_policy_reload_admits_the_next_message_from_a_new_room",

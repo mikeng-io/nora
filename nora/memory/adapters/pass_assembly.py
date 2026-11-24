@@ -1,16 +1,19 @@
 """Build a pass's context from its floor and one scoped graph retrieval."""
 
-from collections.abc import Sequence
+import asyncio
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime
 
 from nora.domain.blocks import ContextBlock
+from nora.domain.lineage import RoomFacts
 from nora.memory.adapters.pass_anchors import AnchorRead, SqlPassAnchors
-from nora.memory.adapters.presentation_blocks import GraphPresentationBlocks
+from nora.memory.adapters.presentation_blocks import GraphPresentationBlocks, ProfileRead
 from nora.memory.adapters.review_blocks import review_block
 from nora.memory.adapters.wake_blocks import wake_blocks
 from nora.memory.app.act_scope import active_act_authority
 from nora.memory.app.retrieval import RetrievalService
+from nora.memory.domain.graph import PointerKind
 from nora.memory.domain.pass_declarations import PassDeclaration, PassName, declaration
 from nora.memory.domain.pass_inputs import (
     AssembledPass,
@@ -21,14 +24,63 @@ from nora.memory.domain.pass_inputs import (
     ReviewInput,
     WakeInput,
 )
-from nora.memory.domain.presentations import lessons, related
-from nora.memory.domain.retrieval import RetrievalResult
+from nora.memory.domain.presentations import EntityAnchor, lessons, profile, related
+from nora.memory.domain.retrieval import (
+    ReadingRoom,
+    RetrievalAnchors,
+    RetrievalResult,
+    RetrievalUnavailableError,
+)
 
 
 class PassAssembler:
     def __init__(self, anchors: SqlPassAnchors, retrieval: RetrievalService) -> None:
         self._anchors = anchors
         self._retrieval = retrieval
+
+    async def read_profiles(
+        self, room: ReadingRoom, subjects: Mapping[tuple[PointerKind, str], str],
+        now: datetime, *, concerns: frozenset[str] = frozenset(),
+        as_of: datetime | None = None, timeout_seconds: float = 12,
+    ) -> dict[tuple[PointerKind, str], ProfileRead]:
+        """Read bounded profiles for explicit subjects from the turn's room."""
+        room = replace(room, require_live_for_exclusions=True)
+        authority = active_act_authority()
+        context = authority.pass_context if authority is not None else None
+        clock = context.clock if context is not None else None
+        if clock is not None:
+            as_of = None
+        bounds = declaration("called").bounds(as_of or now, clock=clock)
+        facts = RoomFacts(room.platform, frozenset(), "", None)
+        dm_rooms: frozenset[str] = frozenset()
+        anchors = {key: EntityAnchor("", key[1]) for key in subjects}
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                facts, dm_rooms, anchors = await self._anchors.profile_subjects(
+                    room, tuple(subjects), concerns=concerns, as_of=as_of, ceiling=clock,
+                )
+                if context is not None and (
+                    facts.unit != context.unit
+                    or (context.room is not None and not facts.is_room(context.room))
+                ):
+                    raise RetrievalUnavailableError("reading_room_unavailable")
+                ids = tuple(a.graph_id for a in anchors.values() if a.graph_id)
+                result = await self._retrieval.retrieve(
+                    room, RetrievalAnchors(graph_ids=ids), bounds,
+                    concerns=concerns, as_of=as_of, now=clock or now,
+                )
+        except (RetrievalUnavailableError, TimeoutError) as exc:
+            cause = "graph_read_timeout" if isinstance(exc, TimeoutError) else str(exc)
+            result = RetrievalResult("unavailable", bounds, cause=cause)
+        if authority is None:
+            result = replace(result, rows=tuple(r for r in result.rows if r.exposure != "internal"))
+        renderer = GraphPresentationBlocks(clock or as_of or now, facts, dm_rooms)
+        return {
+            key: ProfileRead(anchor, profile(
+                result, anchor, {anchor.pointer_ref: subjects[key]} if anchor.pointer_ref else {},
+            ), renderer)
+            for key, anchor in anchors.items()
+        }
 
     async def assemble(
         self, pass_name: PassName, data: PassInput, floor: Sequence[ContextBlock],

@@ -13,8 +13,10 @@ from nora.agent.lineage import LineagePolicy
 from nora.domain.lineage import RoomFacts, split_room
 from nora.domain.managed import room_scope_id
 from nora.domain.management import Scope, ScopeKind
+from nora.memory.adapters.retrieval_rows import graph_rows
 from nora.memory.adapters.retrieval_scope import RetrievalAccess, scoped_rows
 from nora.memory.adapters.review_anchors import review_anchors
+from nora.memory.domain.graph import PointerKind
 from nora.memory.domain.pass_declarations import PassDeclaration
 from nora.memory.domain.pass_inputs import (
     AmbientInput,
@@ -28,7 +30,12 @@ from nora.memory.domain.pass_inputs import (
     WakeInput,
 )
 from nora.memory.domain.presentations import EntityAnchor
-from nora.memory.domain.retrieval import RetrievalAnchors, RetrievalScope, RetrievalUnavailableError
+from nora.memory.domain.retrieval import (
+    ReadingRoom,
+    RetrievalAnchors,
+    RetrievalScope,
+    RetrievalUnavailableError,
+)
 
 _TIME = sa.DateTime(timezone=True)
 
@@ -67,6 +74,35 @@ class SqlPassAnchors:
     def __init__(self, engine: AsyncEngine, access: IdentityAccess, lineage: LineagePolicy) -> None:
         self._engine = engine
         self._authority = RetrievalAccess(access, lineage)
+
+    async def profile_subjects(
+        self, reading: ReadingRoom, subjects: tuple[tuple[PointerKind, str], ...],
+        *, concerns: frozenset[str], as_of: datetime | None, ceiling: datetime | None,
+    ) -> tuple[RoomFacts, frozenset[str], dict[tuple[PointerKind, str], EntityAnchor]]:
+        target, authority, dm_rooms = await self._authority.authority(reading, concerns, as_of)
+        if target.room is None:
+            raise RetrievalUnavailableError("reading_room_unavailable")
+        rooms = tuple(
+            ref for kind, ref in subjects if kind == "room" and ref in authority.room_keys
+        )
+        people = tuple(ref for kind, ref in subjects if kind == "person")
+        try:
+            async with self._engine.connect() as raw:
+                conn = await raw.execution_options(isolation_level="REPEATABLE READ")
+                entities = graph_rows(authority.unit, as_of, sources=("entity",))
+                rows = await scoped_rows(
+                    conn, authority, target, dm_rooms, rows=entities, ceiling=ceiling,
+                )
+                pointers = await _AnchorQueries(conn, rows, authority).pointers(
+                    tuple(dict.fromkeys(authority.room_keys[ref] for ref in rooms)), people,
+                )
+        except sa.exc.SQLAlchemyError as exc:
+            raise RetrievalUnavailableError("anchor_read_failed") from exc
+        anchors = {}
+        for kind, ref in subjects:
+            canonical = authority.room_keys.get(ref, "") if kind == "room" else ref
+            anchors[kind, ref] = EntityAnchor(pointers.get((kind, canonical), ""), canonical)
+        return target.room, dm_rooms, anchors
 
     async def build(
         self, declaration: PassDeclaration, data: PassInput, scope: PassScope, now: datetime,
