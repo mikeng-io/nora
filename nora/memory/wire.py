@@ -42,9 +42,13 @@ from nora.memory.adapters.message_graph_ids import SqlMessageGraphIds
 from nora.memory.adapters.pass_anchors import SqlPassAnchors
 from nora.memory.adapters.pass_assembly import PassAssembler
 from nora.memory.adapters.proactive_claims import SqlProactiveClaims
+from nora.memory.adapters.profile_snapshot import PROFILE_METADATA as PROFILE_METADATA
+from nora.memory.adapters.profile_snapshot import PROFILE_PARTS as PROFILE_PARTS
+from nora.memory.adapters.profile_snapshot import profile_snapshot as profile_snapshot
 from nora.memory.adapters.replay_receipts import SqlReplayReceipts
 from nora.memory.adapters.retrieval_store import SqlRetrieval
 from nora.memory.adapters.review_anchors import SqlReviewTargets as SqlReviewTargets
+from nora.memory.adapters.subject_claims import SqlSubjectClaims
 from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
 from nora.memory.adapters.tools.search import GraphReadTools
@@ -72,6 +76,10 @@ from nora.persons import Persons
 from nora.policy import Policy
 
 """Compose this area's tool adapters from shared dependencies."""
+
+
+def subject_claims(engine: AsyncEngine) -> SqlSubjectClaims:
+    return SqlSubjectClaims(engine)
 
 
 def tool_specs(deps):

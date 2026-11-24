@@ -7,21 +7,21 @@ import re
 from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any
 
-from nora.agent.lineage import profile_lines_for, section_permits
+from nora.agent.lineage import section_permits
 from nora.agent.standing_ledger import ledger_target
+from nora.domain.blocks import ContextBlock
 from nora.domain.cognition_ground import Grounding
 from nora.domain.cognition_session import AgendaItem
 from nora.domain.context_data import MembersView, RoomLine, TranscriptLine
-from nora.domain.culture import character_key, nora_character_key, unit_culture_key
 from nora.domain.documents import DocumentAuthority
-from nora.domain.lineage import message
+from nora.domain.lineage import LiveRoom, message, room_key
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
-from nora.domain.profile import ProfileView
 from nora.domain.record_query import RecordQuery
-from nora.language.profile_render import authored_identity
+from nora.memory import GraphProfileReader, PointerKind, ReadingRoom
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class CognitionContextReader:
         records: Any,
         directory: Any,
         audit: Any,
-        profiles: Any,
+        profiles: GraphProfileReader,
         lessons: Any,
         media_join: MediaJoin | None,
         room_for: Callable[..., Any],
@@ -119,8 +119,8 @@ class CognitionContextReader:
                     )
                 )
         related = self._related(members, agenda_rows)
-        profiles, profile_failed = await self._profiles_read(
-            unit, agenda, related, targets, bindings, now_ms=now_ms
+        profiles, profile_ids = await self._profiles_read(
+            unit, agenda, related, targets, now_ms=now_ms
         )
         room_lines, transcript, more, read_failed = await self._rooms_and_transcript(
             unit, items, agenda, agenda_rows, related, visible, withheld, now_ms=now_ms
@@ -152,8 +152,8 @@ class CognitionContextReader:
             room_lines = []
         return replace(
             grounding,
-            profiles=tuple(profiles),
-            profile_unavailable=tuple(profile_failed),
+            graph_profiles=profiles,
+            graph_profile_ids=profile_ids,
             members=tuple(members),
             rooms=tuple(room_lines),
             transcript=tuple(sorted(transcript, key=lambda x: (x.row.ts, x.room, x.row.id))),
@@ -167,7 +167,6 @@ class CognitionContextReader:
                 **grounding.room_labels,
                 **{f"{x.room.platform}:{x.room.conversation_id}": x.room.label for x in room_lines},
             },
-            profile_names={pid: f"{p.name} ({pid})" for pid, p in self._persons.by_person.items()},
         )
 
 
@@ -203,54 +202,46 @@ class CognitionContextReader:
 
 
     async def _profiles_read(
-        self,
-        unit: str,
-        agenda: Sequence[Any],
-        related: Sequence[str],
-        targets: Sequence[Any],
-        bindings: Sequence[Any],
-        *,
-        now_ms: int,
-    ) -> tuple[list[ProfileView], list[tuple[str, str]]]:
-        """The profile blocks the agenda names, each fail-closed."""
-        profiles: list[ProfileView] = []
-        profile_failed: list[tuple[str, str]] = []
-        subjects: list[tuple[str, str, str, tuple[str, ...]]] = [
-            ("nora", "nora", nora_character_key(unit), ())
-        ]
-        subjects += [("unit", unit, unit_culture_key(unit), ())]
-        for r in agenda:
-            c = self._policy.conversation(r.platform, r.conversation_id)
-            if c is not None:
-                subjects.append(("room", c.primary_id, c.primary_id, ()))
-        for pid in related:
-            p = self._persons.by_person.get(pid)
-            if p is not None:
-                subjects.append(
-                    (
-                        "person",
-                        pid,
-                        character_key(unit, pid),
-                        authored_identity(name=p.name, aliases=p.aliases),
-                    )
+        self, unit: str, agenda: Sequence[Any], related: Sequence[str],
+        targets: Sequence[Any], *, now_ms: int,
+    ) -> tuple[tuple[ContextBlock, ...], tuple[str, ...]]:
+        # design/cognition/context.md:23,45,78 selects one profile per subject.
+        if not agenda:
+            return (), ()
+        subjects: dict[tuple[PointerKind, str], str] = {}
+        if self._policy.shows_self_to_unit(unit):
+            subjects["nora", "nora"] = "Nora"
+        subjects["unit", unit] = unit
+        for room in agenda:
+            policy_room = self._policy.conversation(room.platform, room.conversation_id)
+            if policy_room is not None:
+                subjects["room", room_key(room.platform, room.conversation_id)] = (
+                    policy_room.label or ""
                 )
-        for entity, of, key, authored in subjects:
-            try:
-                if entity == "nora" and not self._policy.shows_self_to_unit(unit):
-                    profile_failed.append((entity, of))
-                    continue
-                if self._profiles is None:
-                    raise RuntimeError("profile source unavailable")
-                lines = await self._profiles.account_heads(key=key, as_of_ms=now_ms)
-                for target, binding in zip(targets, bindings, strict=True):
-                    lines = await profile_lines_for(lines, target, binding)
-                lines = tuple(x for x in lines if not self._screen(x.text))
-                profiles.append(ProfileView(entity=entity, of=of, lines=lines, authored=authored))
-            except Exception:
-                log.exception("cognition context source read failed")
-                profile_failed.append((entity, of))
-        return profiles, profile_failed
-
+        for pid in related:
+            if (person := self._persons.by_person.get(pid)) is not None:
+                subjects["person", pid] = person.name
+        reading, *others = (
+            ReadingRoom(room.platform, room.conversation_id, target.live or LiveRoom(
+                frozenset(), available=False,
+            ), expected_unit=unit)
+            for room, target in zip(agenda, targets, strict=True)
+        )
+        instant = datetime.fromtimestamp(now_ms / 1000, UTC)
+        views = await self._profiles.read_profiles(
+            reading, subjects, instant, as_of=instant, concerns=frozenset(related),
+            timeout_seconds=5, audience_rooms=others,
+        )
+        blocks: list[ContextBlock] = []
+        ids: list[str] = []
+        for view in views.values():
+            block = view.block()
+            if block.body and self._screen(str(block.body)):
+                continue
+            blocks.append(block)
+            if view.profile.status != "unavailable":
+                ids.extend(row.graph_id for _, rows in view.profile.parts for row in rows)
+        return tuple(blocks), tuple(dict.fromkeys(ids))
 
     async def _rooms_and_transcript(
         self,

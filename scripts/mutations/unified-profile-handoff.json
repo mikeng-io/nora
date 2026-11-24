@@ -18,7 +18,7 @@
     "file": "nora/domain/profile.py",
     "old": "            if handle.startswith(\"relation:\"):\n                relation_id = handle[len(\"relation:\"):]\n                if relation_id not in citable.relations:\n                    return ProfileRefusal(\n                        \"unknown_premise\", f\"{handle!r} is not a relation you \"\n                        \"were shown and admitted\", i)\n                rels.append(relation_id)\n                continue",
     "new": "",
-    "target": "tests/unit/test_cognition_profile_handoff.py::test_write_then_later_turn_renders"
+    "target": "tests/unit/test_cognition_profile_handoff.py::test_write_commits_the_head_with_its_resolved_premise"
   },
   {
     "name": "explicit-premise-replacement-does-not-carry-old-relations",

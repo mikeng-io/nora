@@ -253,7 +253,7 @@ def new_facts(text: str) -> Facts:
                 ]
                 facts.events_not_listed += int(group.attrib.get("not_listed", 0))
         elif block.tag in {
-            "profile",
+            "graph_profile",
             "rooms",
             "members",
             "transcript",

@@ -32,6 +32,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Literal
 
+from nora.domain.blocks import ContextBlock
 from nora.domain.cognition_session import Room
 from nora.domain.context_data import MembersView, RoomLine, TranscriptLine
 from nora.domain.culture import CultureRevision
@@ -42,7 +43,6 @@ from nora.domain.memo import Memo
 from nora.domain.models import RowReactions
 from nora.domain.notes import RetainedSource
 from nora.domain.observations import SourceEvent
-from nora.domain.profile import ProfileView
 from nora.domain.stimuli import Stimulus
 
 #: The tables a message stimulus's `ref` names a row of (`nora.ingest.stages.
@@ -344,18 +344,10 @@ class Grounding:
     #: as the `self` block; `None` when the unit has no account or the read
     #: failed.
     self_account: CultureRevision | None = None
-    #: THE SWITCH (45 §5): her Profile account for the unit, rendered as
-    #: `<profile of="nora">` INSTEAD of `self_account` when `[memory.profile] read`
-    #: is on. `profile_names` resolves a line's `told_by` to the
-    #: identity-canonical name (never an id, R-18), built by the grounder,
-    #: which holds `Persons`; the renderer does not.
-    self_profile: ProfileView | None = None
-    profile_names: Mapping[str, str] = field(default_factory=dict)
-
     documents: tuple[DocumentsView, ...] = ()
     document_rooms: frozenset[tuple[str,str]] = frozenset()
-    profiles: tuple[ProfileView, ...] = ()
-    profile_unavailable: tuple[tuple[str, str], ...] = ()
+    graph_profiles: tuple[ContextBlock, ...] = ()
+    graph_profile_ids: tuple[str, ...] = ()
     members: tuple[MembersView, ...] = ()
     rooms: tuple[RoomLine, ...] = ()
     transcript: tuple[TranscriptLine, ...] = ()
@@ -387,11 +379,7 @@ class Grounding:
             "topics": [{"id": t.id, "revision": t.head.id} for t in self.topics],
             # By revision id, never the words: the account is hers to rewrite.
             "self_revision_id": None if self.self_account is None else self.self_account.id,
-            # The Profile switch's self account, by line id, never the words.
-            "self_profile_line_ids": (
-                None if self.self_profile is None
-                else [line.id for line in self.self_profile.lines]
-            ),
+            "graph_profile_ids": list(self.graph_profile_ids),
             "events": [e.id for e in self.events],
             # By reference, and no name: a person id, the kind, the interval.
             "rollups": [

@@ -54,7 +54,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime, tzinfo
 from typing import Any
@@ -69,12 +69,10 @@ from nora.domain.blocks import (
 )
 from nora.domain.composed import compose_body
 from nora.domain.models import TranscriptRow
-from nora.domain.profile import ProfileView
 from nora.domain.prompt import age, escape
 from nora.domain.standing import Standing, WorkingSetItem
 from nora.domain.standing_ledger import LedgerEntry
 from nora.domain.tag_trace import TagTrace
-from nora.language.profile_render import render_profile
 from nora.obs.metrics import Metrics
 
 #: What this renderer carries, declared as data.
@@ -97,7 +95,6 @@ from nora.obs.metrics import Metrics
 #: with no steps, or a body that escapes to nothing. `assemble` would
 #: otherwise drop them.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
-    ("profile", 10, "turn"),
     ("standing_prior", 20, "turn"),
     ("standing_working_set_prior", 30, "turn"),
     ("standing_ledger_prior", 35, "turn"),
@@ -594,13 +591,9 @@ def render_debrief_input(
     metrics: Metrics,
     since_rows: Sequence[TranscriptRow] = (),
     tz: tzinfo | None = None,
-    profile_room: ProfileView | None = None,
-    profile_name_of: Callable[[str], str] | None = None,
     ledger_prior: tuple[LedgerEntry, ...] | None = None,
 ) -> str:
     """The whole of what the STANDING call sees — the prior plus the turn.
-
-    The room's supplied profile account precedes the standing position.
 
     `<standing_prior>` is emitted **even when there is none**, carrying an
     explicit "no position yet" rather than being omitted: an absent block and
@@ -627,8 +620,6 @@ def render_debrief_input(
     )
     return assemble(
         [
-            *_profile_blocks(profile_room, name_of=profile_name_of,
-                             now_ms=trace.created_at),
             prior_block, working_set_prior_block,
             # The unit fold's scoped prior rides the same declared walk —
             # `None` means this caller has no ledger prior to re-judge.
@@ -638,18 +629,6 @@ def render_debrief_input(
         ],
         sep=_SEP,
     )
-
-
-def _profile_blocks(
-    view: ProfileView | None, *, name_of: Callable[[str], str] | None,
-    now_ms: int,
-) -> list[ContextBlock]:
-    """The room profile, when the caller supplies a view."""
-    if view is None or name_of is None:
-        return []
-    block = render_profile(
-        view, name_of=name_of, now=datetime.fromtimestamp(now_ms / 1000, tz=UTC))
-    return [] if block is None else [_stamp(block)]
 
 
 #: The blank line the f-strings put between this input's top-level blocks.

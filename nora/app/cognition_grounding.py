@@ -57,13 +57,10 @@ from typing import Any, Protocol
 from nora.agent.lineage import (
     LineagePolicy,
     derived_view,
-    excluded,
     memo_permits,
-    profile_lines_for,
     topic_permits,
     visible_sections,
 )
-from nora.agent.room import Room as AgentRoom
 from nora.agent.room import RoomView
 from nora.agent.whereis import Circle, presence_audience
 from nora.domain.blocks import speaker_name
@@ -82,7 +79,6 @@ from nora.domain.cognition_ground import (
     record_ref,
 )
 from nora.domain.cognition_session import AgendaItem, Room
-from nora.domain.culture import nora_character_key
 from nora.domain.gatherings import Gathering
 from nora.domain.memo import Memo
 from nora.domain.mobility_forecast import detect_stay_anomalies, place_words
@@ -97,12 +93,10 @@ from nora.domain.observations import (
     observation_summary,
     revision_label,
 )
-from nora.domain.profile import ProfileLine, ProfileView
 from nora.domain.record_query import RecordHit, RecordRefHit
 from nora.domain.reminders import Reminder
 from nora.domain.rollup import room_key
 from nora.domain.stimuli import Stimulus
-from nora.language.profile_render import ProfileHeads, read_profile
 
 log = logging.getLogger("nora.app.cognition_grounding")
 
@@ -378,47 +372,6 @@ async def _own_sends(
     return out
 
 
-def unit_self_profile_reader(
-    profile: ProfileHeads | None, policy: Any, *,
-    lineage: LineagePolicy | None = None,
-    room_for: Callable[[str, str], AgentRoom] | None = None,
-) -> Callable[[str], Awaitable[tuple[ProfileLine, ...]] | None] | None:
-    """Her unit Profile account, with exclusions and location checked in every room."""
-    if profile is None:
-        return None
-
-    async def read(unit: str) -> tuple[ProfileLine, ...]:
-        boundary = lineage or LineagePolicy.from_policy(policy)
-        rooms = tuple(c for c in policy.rooms() if c.unit == unit and c.primary_id)
-        targets = tuple(boundary.render_room(platform=c.platform, conversation_id=c.primary_id)
-                        for c in rooms)
-        lines = await profile.account_heads(key=nora_character_key(unit))
-        if any(line.exclude_persons or line.location for line in lines):
-            targets = tuple([await boundary.read_room(
-                platform=c.platform, conversation_id=c.primary_id,
-            ) for c in rooms])
-        lines = tuple(line for line in lines if not line.exclude_persons or (
-            targets and all(not excluded(line.exclude_persons, target) for target in targets)
-        ))
-        if any(line.location for line in lines):
-            if not targets or room_for is None:
-                return tuple(line for line in lines if not line.location)
-            # Every possible send room must pass the turn path's presence rule.
-            for target in targets:
-                if target.room is None:
-                    return tuple(line for line in lines if not line.location)
-                lines = await profile_lines_for(lines, target, room_for(
-                    target.room.platform, target.room.primary_id))
-        return lines
-
-    def gated(unit: str) -> Awaitable[tuple[ProfileLine, ...]] | None:
-        if not policy.shows_self_to_unit(unit):
-            return None
-        return read(unit)
-
-    return gated
-
-
 async def _observation_lines(
     pending: Sequence[Stimulus], claimed: set[int],
     observations: Any | None, allowed: set[tuple[str, str]], persons: Any,
@@ -606,7 +559,6 @@ def build_grounder(
     tz: tzinfo = UTC,
     stay_context: Callable[[str, int], Awaitable[StayContext | None]] | None = None,
     place_release: Callable[[str, str], Awaitable[bool]] | None = None,
-    self_profile: Callable[[str], Awaitable[tuple[ProfileLine, ...]] | None] | None = None,
     metrics: Any = None,
     memo_index: Callable[[str], Awaitable[Sequence[Memo]]] | None = None,
     topic_index: Callable[[str], Awaitable[Sequence[Any]]] | None = None,
@@ -828,21 +780,6 @@ def build_grounder(
                 "cognition grounding lineage shadow (unit=%s): would withhold %d note(s) "
                 "and %d event(s); shown", unit, withheld["notes"], withheld["events"],
             )
-        profile_view: ProfileView | None = None
-        profile_names: dict[str, str] = {}
-        if self_profile is not None and context is None:
-            lines = await read_profile(
-                self_profile(unit),
-                stage="cognition_self_profile", platform="cognition",
-                metrics=metrics,
-            )
-            if lines is not None:
-                profile_view = ProfileView(entity="nora", of="nora", lines=lines)
-                profile_names = {
-                    line.told_by: ref.name
-                    for line in lines if line.told_by is not None
-                    if (ref := persons.by_person.get(line.told_by)) is not None
-                }
         source_objects, source_objects_more, retained_objects, retained_more = (
             await _source_objects(
                 agenda_rooms, allowed, observations, persons,
@@ -856,7 +793,6 @@ def build_grounder(
               retained_objects=retained_objects,
               retained_objects_more=retained_more,
               own_sends=own_sends, room_labels=labels,
-              self_profile=profile_view, profile_names=profile_names,
           )
 
         if context is not None:

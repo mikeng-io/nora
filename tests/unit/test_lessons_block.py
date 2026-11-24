@@ -63,18 +63,18 @@ def test_no_lesson_renders_no_block_and_a_lesson_is_escaped():
 
 
 def test_lessons_follow_self_in_the_tag_table():
-    from dataclasses import replace
-
     from nora.agent.prefill import build_prefill
-    from nora.domain.profile import ProfileView
+    from nora.domain.blocks import ContextBlock
+    from nora.testing.context_blocks import compose_fixture
     from tests.test_prefill import _ctx
 
-    ctx = replace(
-        _ctx(lessons=("one place, not five",)),
-        profiles=(ProfileView(entity="nora", of="nora", authored=("she is brief",)),),
-    )
-    body = build_prefill(ctx, display_name="Nora", context_window=40)[1]["content"][0]["text"]
-    assert body.index("<profile ") < body.index("<lessons ")
+    ctx = _ctx(lessons=("one place, not five",))
+    profile = ContextBlock("graph_profile", compose_fixture("she is brief"),
+                           attrs=(("of", "nora"),), order=1, key="unit")
+    body = build_prefill(
+        ctx, display_name="Nora", context_window=40, graph_profiles=(profile,),
+    )[1]["content"][0]["text"]
+    assert body.index("<graph_profile ") < body.index("<lessons ")
 
 
 

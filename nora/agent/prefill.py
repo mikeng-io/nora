@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
@@ -39,7 +39,6 @@ from ..domain.framing import (
 )
 from ..domain.models import TagContext, TranscriptRow
 from ..domain.observations import SourceEvent, parse_handle
-from ..domain.profile import ProfileView
 from ..domain.prompt import age, escape
 from ..domain.quote_window import first_by_ts
 from ..domain.self_presence import Presence
@@ -50,7 +49,6 @@ from ..language.lesson_render import render_lessons
 from ..language.memo_render import render_memos
 from ..language.note_render import render_notes
 from ..language.presence_render import render_presence
-from ..language.profile_render import render_profile, render_profile_people
 from ..language.shared_render import render_shared_state
 from ..language.subagents_render import render_subagents
 from ..obs.tracing import annotate, span
@@ -652,59 +650,6 @@ def _people_in_window_block(ctx: TagContext) -> ContextBlock | None:
     )
 
 
-def _profile_name_of(ctx: TagContext) -> Callable[[str], str]:
-    """The `told by <name>` resolver for this turn's profile blocks.
-
-    Built from the room's listed persons and the tagger — the names already in
-    this prompt, so a told line's teller joins to them by literal match. An
-    id with no name in this turn renders as "someone" to keep this attribution
-    readable. Operator-written person_id slugs may appear in prompts; R-18
-    forbids reply egress of E.164 numbers, UUIDs and key-shaped strings.
-    """
-    names = {ref.person_id: ref.name for ref in ctx.room_members}
-    if ctx.tagger is not None:
-        names.setdefault(ctx.tagger.person_id, ctx.tagger.name)
-
-    def name_of(person_id: str) -> str:
-        return names.get(person_id, "someone")
-
-    return name_of
-
-
-def _profile_blocks(ctx: TagContext, *, now: datetime) -> list[ContextBlock]:
-    """The switch's blocks (45 §5): one `<profile>` per entity of the turn,
-    stamped into the rows of the blocks they replace.
-
-    Nora's own account comes first, followed by the room's and the unit's.
-    Persons share the peer card's row and one rendering budget.
-    """
-    if not ctx.profiles:
-        return []
-    name_of = _profile_name_of(ctx)
-    blocks: list[ContextBlock] = []
-    people: list[ProfileView] = []
-    collective_rows: dict[str, tuple[int, BlockKey]] = {
-        "nora": (1, "unit"), "room": (54, "room"), "unit": (55, "room"),
-    }
-    for view in ctx.profiles:
-        if view.entity == "person":
-            people.append(view)
-            continue
-        slot = collective_rows.get(view.entity)
-        if slot is None:
-            continue
-        block = render_profile(view, name_of=name_of, now=now)
-        if block is not None:
-            order, key = slot
-            blocks.append(replace(block, order=order, key=key))
-    order, key = _ROW["peer_card"]
-    blocks.extend(
-        replace(b, order=order, key=key)
-        for b in render_profile_people(people, name_of=name_of, now=now)
-    )
-    return blocks
-
-
 def _recalled_block(ctx: TagContext) -> ContextBlock | None:
     """`<recalled>`: the pre-fetch's items, one JSON object a line, exactly
     as `memory_search` answers with them (`render_packet` built and cut them
@@ -1044,7 +989,7 @@ def build_prefill(
         # reach her comes from `_BLOCKS`, so a block cannot be served without
         # an entry, and an entry cannot survive a block that stopped rendering.
         # Profile blocks take the place of their legacy context blocks.
-        switched = bool(ctx.profiles or graph_profiles)
+        switched = bool(graph_profiles)
         declared = _declared([
             # `ToolSurface.prompt_catalogue`: the SAME admitted set the turn's
             # tools were built from, so it cannot name a tool this turn cannot
@@ -1074,7 +1019,7 @@ def build_prefill(
         if switched:
             declared = [
                 b for b in declared if b.name not in _PROFILE_REPLACES
-            ] + (list(graph_profiles) if graph_profiles else _profile_blocks(ctx, now=clock))
+            ] + list(graph_profiles)
         # Report the blocks selected by `assemble`, including empty blocks
         # that opt into self-closing. Size counts body characters only.
         rendered = [b for b in declared if b.body or b.when_empty != "drop"]

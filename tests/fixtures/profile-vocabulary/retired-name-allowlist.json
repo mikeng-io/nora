@@ -259,7 +259,7 @@
    "persona": 3
   }
  },
- "tests/unit/test_profile_render.py": {
+ "tests/unit/test_config_cli.py": {
   "reason": "Negative control proves the retired configuration section is rejected.",
   "matches": {
    "persona": 2

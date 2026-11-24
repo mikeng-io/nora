@@ -168,6 +168,9 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "`profile_dispute` writes the graph's dispute verb instead. The method leaves "
         "with `SqlProfileStore` in 6c-2c, together with the store tests that still call it.",
     ),
+    ("profile.py", "open_disputes"): _Pin(
+        "scheduled_removal", "The portal reads graph disputes. Remove with the legacy store.",
+    ),
     **{
         ("profile.py", name): _Pin("scheduled_removal", _PROFILE_SESSION_READ)
         for name in ("room_context", "pending_told", "pending_disputes",
@@ -188,6 +191,9 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
                      "person_count", "person_since", "revision_count",
                      "revisions_after", "social_cursor")
     },
+    ("character.py", "rows_by_id"): _Pin(
+        "scheduled_removal", "The portal resolves graph citations. Remove with Character evidence.",
+    ),
     **{
         ("social_stream.py", name): _Pin(
             "scheduled_removal", "The person Character adaptor was the only caller. "

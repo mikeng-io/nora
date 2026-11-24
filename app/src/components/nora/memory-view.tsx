@@ -70,13 +70,13 @@ function ProfileAccountPanel({ account }: { account: ProfileAccount }) {
         <h3 className="text-label text-ink-muted">{title}</h3>
         <ul className="grid gap-3">
           {lines.map((line, i) => (
-            <li key={i} className="grid gap-1">
+            <li key={line.id ?? i} className="grid gap-1">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-body text-ink">{line.text}</p>
                 {stateLabel(line.state)}
               </div>
               <p className="text-meta text-ink-muted">
-                {fmt(line.written_at)}
+                {fmt(line.written_at)}{line.origin ? ` · ${line.origin}` : ""}{line.id ? ` · ${line.id}` : ""}
               </p>
               {line.part === "guesses" && line.prediction ? (
                 <p className="text-meta text-ink-soft">
@@ -115,6 +115,7 @@ function ProfileAccountPanel({ account }: { account: ProfileAccount }) {
         {section(t("profileIdentity"), account.lines.filter((l) => l.part === "facts"))}
         {section(t("profileCharacter"), account.lines.filter((l) => l.part === "traits"))}
         {section(t("profileQuestions"), account.lines.filter((l) => l.part === "guesses"))}
+        {section(t("profileTitle"), account.lines.filter((l) => l.part === "other"))}
         {account.disputes.length ? (
           <section className="grid gap-2 px-4 py-3 sm:px-5">
             <h3 className="text-label text-ink-muted">{t("profileDisputes")}</h3>

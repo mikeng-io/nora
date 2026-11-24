@@ -16,7 +16,6 @@ from nora.app.cognition_grounding import (
     build_grounder,
     place_release,
     stay_context_reader,
-    unit_self_profile_reader,
 )
 from nora.app.cognition_wiring import (
     COGNITION_ADAPTOR_NAME,
@@ -284,7 +283,7 @@ def _session_grounder(
         record_chars=cfg.cognition.record_chars,
         documents_context=documents_context,
         screen=cognition_context_screen,
-        content_checks=content_checks,
+        access=access,
     )
     grounder = build_grounder(
         # NOT `tool_registry`'s `record`, which is None unless `[record_query]
@@ -337,21 +336,6 @@ def _session_grounder(
             ).members(),
             circles=presence_circles, access=access,
             content_checks=content_checks,
-        ),
-        # THE SWITCH (45 §5): when `[memory.profile] read` is on, her
-        # Profile account replaces the prose one; the SAME reader the
-        # tag and fire paths hold.
-        self_profile=unit_self_profile_reader(
-            profile_reader,
-            allowlist,
-            lineage=lineage,
-            room_for=lambda platform, conversation_id: Room(
-                platform=platform,
-                conversation_id=conversation_id,
-                roster_source=rosters.get(platform),
-                persons=persons,
-                self_ids=registry.self_aliases(),
-            ),
         ),
         metrics=metrics,
         # The agenda's observation stimuli and the Standing block's

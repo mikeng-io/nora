@@ -32,7 +32,8 @@ def _without_coordinates(value: object) -> object:
     return value
 
 
-def _content(value: object) -> str:
+def render_graph_content(value: object) -> str:
+    """Render a graph value with structured coordinates masked."""
     if value is None or value == {}:
         return ""
     if isinstance(value, str):
@@ -41,7 +42,7 @@ def _content(value: object) -> str:
 
 
 def _item(row: RetrievedRow, _now: datetime) -> tuple[str, ...]:
-    return (f"source={row.source}", _content(row.content))
+    return (f"source={row.source}", render_graph_content(row.content))
 
 
 def _claim(row: RetrievedRow, now: datetime) -> tuple[str, ...]:
@@ -63,24 +64,24 @@ def _claim(row: RetrievedRow, now: datetime) -> tuple[str, ...]:
     grade = f"grade={row.grade}" if (
         row.part == "grade" or (row.part == "guess" and row.grade in ("refuted", "expired"))
     ) else ""
-    return (f"part={row.part}", evidence, staleness, grade, _content(row.content))
+    return (f"part={row.part}", evidence, staleness, grade, render_graph_content(row.content))
 
 
 def _intention(row: RetrievedRow, _now: datetime) -> tuple[str, ...]:
     conditions = {key: value for key, value in row.close_when.items() if value is not None}
     if isinstance(row.content, dict) and row.content.get("holds_while") is not None:
         conditions["holds_while"] = row.content["holds_while"]
-    return (f"close when={_content(conditions) or 'unknown'}",)
+    return (f"close when={render_graph_content(conditions) or 'unknown'}",)
 
 
 def _entity(row: RetrievedRow, _now: datetime) -> tuple[str, ...]:
     if row.pointer_kind is not None:
         return (f"pointer={row.pointer_kind}",)
-    return (_content(row.content),)
+    return (render_graph_content(row.content),)
 
 
 def _aggregate(row: RetrievedRow, _now: datetime) -> tuple[str, ...]:
-    return (_content(row.content),)
+    return (render_graph_content(row.content),)
 
 
 def _edge(row: RetrievedRow, _now: datetime) -> tuple[str, ...]:
@@ -119,7 +120,7 @@ def _line(
     dm_origin = row.origin_room in dm_rooms and not room.is_room(row.origin_room)
     details = _DETAILS[row.kind](row, now)
     if row.exposure == "internal":
-        for text in (*text_fragments(row.content), _content(row.content), *details):
+        for text in (*text_fragments(row.content), render_graph_content(row.content), *details):
             remember_internal(mask_coordinates(text))
     return mask_coordinates(" | ".join(field for field in (
         row.graph_id,

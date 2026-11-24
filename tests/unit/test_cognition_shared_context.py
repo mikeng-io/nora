@@ -67,9 +67,17 @@ class Sources:
             hits += (RecordHit("signal", "alpha-alias", row(4, body="Alias source row")),)
         return hits, False, frozenset()
 
-    async def account_heads(self, *, key, as_of_ms):
-        assert as_of_ms == NOW
-        return ()
+    async def read_profiles(self, room, subjects, now, *, as_of, **kwargs):
+        from nora.memory.adapters.presentation_blocks import GraphPresentationBlocks, ProfileRead
+        from nora.memory.domain.presentations import EntityAnchor, Profile
+        assert as_of == now == datetime.fromtimestamp(NOW / 1000, UTC)
+        renderer = GraphPresentationBlocks(now, RoomFacts("signal", frozenset(), "u", None),
+                                           frozenset())
+        return {
+            key: ProfileRead(EntityAnchor(key[1]), Profile(name, (), "nothing_found", (), None),
+                             renderer)
+            for key, name in subjects.items()
+        }
 
     async def bodies(self, *, unit, as_of_ms):
         assert unit == "u"
@@ -180,10 +188,15 @@ async def build(
     return result, source
 
 
+def _subjects(grounding, names):
+    return {dict(block.attrs)["of"] for block in grounding.graph_profiles
+            if dict(block.attrs).get("name") in names}
+
+
 async def test_reader_scope_related_profiles_and_real_assembly():
     grounding, source = await build()
-    assert {v.of for v in grounding.profiles if v.entity == "person"} == {"p1"}
-    assert {v.of for v in grounding.profiles if v.entity == "room"} == {"alpha"}
+    assert _subjects(grounding, {"Ada", "Ben"}) == {"p1"}
+    assert _subjects(grounding, {"Alpha"}) == {"signal:alpha"}
     assert {x.room.label for x in grounding.rooms} == {"Alpha", "Beta"}
     assert {x.row.id for x in grounding.transcript} == {1, 2}
     assert len(source.calls) == 2
@@ -310,7 +323,7 @@ async def test_wired_session_hands_the_shared_candidate_input_to_its_runner():
     candidate = ET.fromstring("<root>" + agent.prompts[0] + "</root>")  # noqa: S314
     assert {b.tag for b in candidate} == {d.name for d in _BLOCKS}
     assert candidate.find("./transcript/m").attrib["source_id"] == "1"
-    assert candidate.find('./profile[@entity="person"][@of="p1"]') is not None
+    assert candidate.find('./graph_profile[@of="p1"]') is not None
     # Every tool is resident, so there is no catalogue block naming a loader.
     assert candidate.find("tool_catalogue") is None
     assert candidate.find("graph").attrib["status"] == "unavailable"
@@ -318,7 +331,7 @@ async def test_wired_session_hands_the_shared_candidate_input_to_its_runner():
 
 async def test_foreign_agenda_fails_before_related_subject_or_member_reads():
     grounding, _ = await build()
-    assert grounding.members and grounding.profiles  # positive scoped path
+    assert grounding.members and grounding.graph_profiles  # positive scoped path
     with pytest.raises(ValueError, match="outside the unit"):
         await build(foreign_agenda=True)
 
@@ -424,7 +437,7 @@ async def test_document_evidence_refuses_clipped_qualifiers_but_accepts_complete
 
 async def test_related_alias_next_to_cjk_text_resolves_to_its_stable_person():
     grounding, _ = await build(agenda_body="Ben今晚有空嗎？")
-    assert {v.of for v in grounding.profiles if v.entity == "person"} == {"p1", "p2"}
+    assert _subjects(grounding, {"Ada", "Ben"}) == {"p1", "p2"}
 
 
 async def test_canonical_empty_mentions_do_not_reinterpret_an_older_raw_envelope():
@@ -444,4 +457,4 @@ async def test_canonical_empty_mentions_do_not_reinterpret_an_older_raw_envelope
 
     assert _row_mentions(replace(row(2), raw_json=stale)) == frozenset({"p2"})
     grounding, _ = await build(stale_raw=stale)
-    assert {v.of for v in grounding.profiles if v.entity == "person"} == {"p1"}
+    assert _subjects(grounding, {"Ada", "Ben"}) == {"p1"}

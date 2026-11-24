@@ -575,27 +575,27 @@ def test_an_empty_block_is_dropped_unless_it_opts_in():
 
 
 def test_a_self_closing_block_survives_assemble_and_is_its_opening_tag_alone():
-    """An empty profile can declare its type with just its opening tag."""
+    """An empty graph profile can declare its type with just its opening tag."""
     profile = ContextBlock(
-        name="profile", attrs=(("entity", "room"),), body=compose_fixture(""), order=1,
+        name="graph_profile", attrs=(("of", "room"),), body=compose_fixture(""), order=1,
         when_empty="self_close",
     )
     kept = ContextBlock(name="today", body=compose_fixture("2026-10-01 Thu"), order=2)
     rendered = profile.render()
-    assert rendered.startswith('<profile entity="room" description="')
+    assert rendered.startswith('<graph_profile of="room" description="')
     assert rendered.endswith('"/>')
-    assert "\n" not in rendered and "</profile>" not in rendered
+    assert "\n" not in rendered and "</graph_profile>" not in rendered
     assert assemble([kept, profile], sep="\n\n") == rendered + "\n\n" + kept.render()
     # The same block WITH a body is an ordinary block: the flag is about empty.
     full = replace(profile, body=compose_fixture("the reading room"))
-    assert full.render().endswith("\nthe reading room\n</profile>")
+    assert full.render().endswith("\nthe reading room\n</graph_profile>")
 
 
 def test_a_render_block_is_kept_empty_and_written_like_any_other():
-    block = ContextBlock(name="profile", attrs=(("entity", "room"),),
+    block = ContextBlock(name="graph_profile", attrs=(("of", "room"),),
         body=compose_fixture(""), when_empty="render")
     assert assemble([block], sep="\n\n") == block.render()
-    assert block.render().endswith('">\n\n</profile>')
+    assert block.render().endswith('">\n\n</graph_profile>')
 
 
 def test_a_nothing_block_keeps_its_slot_and_its_separators_and_writes_no_bytes():

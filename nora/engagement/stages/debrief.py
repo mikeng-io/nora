@@ -108,7 +108,7 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import tzinfo
 from typing import Any, Protocol
@@ -121,7 +121,6 @@ from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.note_body import Shown
 from nora.domain.ports import RecordStore, StandingStore
-from nora.domain.profile import ProfileView
 from nora.domain.standing import (
     DEFAULT_STANDING_MAX_CHARS,
     DEFAULT_WORKING_SET_MAX_CHARS,
@@ -844,8 +843,6 @@ async def run(
     now_ms: int,
     media_join: MediaJoin | None = None,
     tz: tzinfo | None = None,
-    profile_room: ProfileView | None = None,
-    profile_name_of: Callable[[str], str] | None = None,
     working_set_max_items: int = DEFAULT_WORKING_SET_MAX_ITEMS,
     working_set_max_chars: int = DEFAULT_WORKING_SET_MAX_CHARS,
     content_checks: bool = True,
@@ -948,8 +945,6 @@ async def run(
         rendered = render_debrief_input(
             trace=trace, prior=prior,
             display_name=display_name, metrics=metrics, since_rows=batch, tz=tz,
-            profile_room=profile_room,
-            profile_name_of=profile_name_of,
         )
         # ONE `wait_for` around the whole fold, the consolidate retry
         # included: the budget the slot can afford is a total, and a retry

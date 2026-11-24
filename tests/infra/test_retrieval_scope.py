@@ -13,10 +13,10 @@ from nora.access import IdentityAccess
 from nora.agent.lineage import LineagePolicy
 from nora.domain.lineage import ROW, Lineage, LineageEntry, LiveRoom, message
 from nora.domain.models import PersonRef
-from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, ENTITY, REGISTRY
+from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, ENTITY, FORGET_REQUEST, REGISTRY
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.schema import MESSAGES, SOCIAL_ITEM
+from nora.infra.sql.schema import MESSAGE_DELETE, MESSAGE_EDIT, MESSAGES, SOCIAL_ITEM
 from nora.memory.app.retrieval import RetrievalService
 from nora.memory.domain.retrieval import ReadingRoom, RetrievalAnchors, RetrievalBounds
 from nora.memory.wire import retrieval
@@ -243,3 +243,133 @@ async def test_scope_precedes_the_lexical_candidate_bound(scenario) -> None:
     result = await scenario.service().retrieve(READ, RetrievalAnchors(query=term), bounds)
     assert result.status == "ok"
     assert {row.graph_id for row in result.rows} == set(keep)
+
+
+async def test_portal_keeps_the_own_claim_but_never_shows_dm_evidence_to_a_nonmember(scenario):
+    from nora.agent.egress import scan_reply
+    from nora.memory import wire
+    from nora.web.memory import build_memory_payload
+
+    origin = f"signal:{DM}"
+    private = "generated-private-item"
+    deleted = "generated-deleted-item"
+    forgotten = "generated-forgotten-item"
+    await scenario.item(private, "generated earlier private DM body", room=DM, dm=True,
+                        person=OTHER, exposure="external")
+    restricted = {
+        "generated-internal-item": {"exposure": "internal"},
+        "generated-excluded-item": {"exposure": "external", "excluded_persons": [PERSON]},
+        deleted: {"exposure": "external"},
+        forgotten: {"exposure": "external"},
+    }
+    for ref, options in restricted.items():
+        await scenario.item(ref, f"body of {ref}", room=DM, dm=True, person=OTHER, **options)
+    await scenario.claim("own-derived-claim", persons=[PERSON], origin_room=origin,
+                         exposure="external",
+                         lineage=Lineage.of({ROW: (message(origin),)}).to_json())
+    await scenario.claim("foreign-subject", persons=[OTHER], origin_room=origin,
+                         exposure="external")
+    await scenario.claim("withdrawn-own", persons=[PERSON], state="hidden", origin_room=origin,
+                         exposure="external")
+    await scenario.claim("own-claim-in-another-unit", unit="another-unit", persons=[PERSON],
+                         origin_room=origin, exposure="external")
+    for ref in (private, *restricted):
+        await write_edge(scenario, "own-derived-claim", ref, "cites")
+    async with scenario.engine.begin() as conn:
+        message_ids = dict((await conn.execute(sa.select(MESSAGES.c.graph_id, MESSAGES.c.id).where(
+            MESSAGES.c.graph_id.in_((private, deleted)),
+        ))).all())
+        changed_at = int(AT.timestamp() * 1000) + 1
+        await conn.execute(sa.insert(MESSAGE_EDIT).values(
+            message_id=message_ids[private], ts=changed_at, body="generated private DM body",
+        ))
+        await conn.execute(sa.insert(MESSAGE_DELETE).values(
+            message_id=message_ids[deleted], ts=changed_at, sender_id="generated-sender",
+        ))
+        await conn.execute(sa.insert(REGISTRY).values(
+            id="generated-forget", unit=UNIT, kind="item",
+        ))
+        await conn.execute(sa.insert(FORGET_REQUEST).values(
+            graph_id="generated-forget", unit=UNIT, author=OTHER, targets=[forgotten],
+            delete_now=False, asserted_at=AT,
+        ))
+    common = {
+        "persons": scenario.persons, "person_id": PERSON, "screen": scan_reply,
+        "profile": wire.subject_claims(scenario.engine).read,
+        "profile_scopes_of": lambda _: ((UNIT, "generated-workspace"),),
+    }
+    [other_room] = await build_memory_payload(
+        **common, rooms_of=lambda _: frozenset({("discord", DM), ("signal", ROOM)}),
+    )
+    assert [line["id"] for line in other_room["lines"]] == ["own-derived-claim"]
+    [line] = other_room["lines"]
+    assert (line["id"], line["text"], line["origin"]) == (
+        "own-derived-claim", "own-derived-claim", "direct message",
+    )
+    bare = {ref: {"ref": ref, "kind": "unknown"} for ref in (private, *restricted)}
+    assert {entry["ref"]: entry for entry in line["evidence"]} == bare
+    [same_room] = await build_memory_payload(
+        **common, rooms_of=lambda _: frozenset({("signal", DM)}),
+    )
+    assert same_room["lines"][0]["origin"] == origin
+    by_ref = {entry["ref"]: entry for entry in same_room["lines"][0]["evidence"]}
+    evidence = by_ref.pop(private)
+    del bare[private]
+    assert by_ref == bare
+    assert evidence["text"] == "generated private DM body"
+    assert evidence["by"] == scenario.persons.by_person[OTHER].name
+
+
+async def test_portal_subject_page_withholds_internal_and_operator_claims(scenario):
+    from nora.agent.egress import scan_reply
+    from nora.memory import wire
+    from nora.web.memory import build_memory_payload
+
+    for exposure in ("external", "internal", "operator"):
+        await scenario.claim(f"{exposure}-claim", persons=[PERSON], exposure=exposure)
+    [account] = await build_memory_payload(
+        persons=scenario.persons, person_id=PERSON, screen=scan_reply,
+        profile=wire.subject_claims(scenario.engine).read,
+        profile_scopes_of=lambda _: ((UNIT, "generated-workspace"),),
+        rooms_of=lambda _: frozenset({("signal", ROOM)}),
+    )
+    assert [line["id"] for line in account["lines"]] == ["external-claim"]
+
+
+async def test_portal_guess_verdict_uses_only_a_visible_grade_for_the_same_subject(scenario):
+    from nora.memory import wire
+
+    for guess in ("own-graded-guess", "other-graded-guess"):
+        await scenario.claim(guess, part="guess", persons=[PERSON], prediction="Observed later",
+                             window_end=AT, exposure="external")
+    await scenario.claim("own-grade", part="grade", persons=[PERSON], grade="confirmed",
+                         exposure="external")
+    await scenario.claim("other-grade", part="grade", persons=[OTHER], grade="refuted",
+                         exposure="external")
+    await write_edge(scenario, "own-grade", "own-graded-guess", "grades")
+    await write_edge(scenario, "other-grade", "other-graded-guess", "grades")
+
+    claims = await wire.subject_claims(scenario.engine).read(
+        unit=UNIT, viewer=PERSON, viewer_rooms=frozenset({("signal", ROOM)}),
+    )
+    assert {claim["id"]: claim["grade"] for claim in claims} == {
+        "own-graded-guess": "confirmed", "other-graded-guess": None, "own-grade": "confirmed",
+    }
+
+
+async def test_profile_snapshot_keeps_visible_graph_heads_in_the_requested_room(scenario):
+    from nora.memory import wire
+
+    origin = f"signal:{ROOM}"
+    await scenario.claim("profile-kept", exposure="external", origin_room=origin)
+    await scenario.claim("profile-replaced", exposure="external", origin_room=origin,
+                         state="superseded")
+    await scenario.claim("profile-internal", exposure="internal", origin_room=origin)
+    await scenario.claim("profile-other-room", exposure="external",
+                         origin_room=f"signal:{OTHER_ROOM}")
+    await scenario.claim("profile-excluded", exposure="external", origin_room=origin,
+                         excluded_persons=[PERSON])
+    async with scenario.engine.connect() as conn:
+        [head] = await wire.profile_snapshot(conn, unit=UNIT, rooms=(origin,))
+        assert head["id"] == "profile-kept"
+        assert set(head) == set(wire.PROFILE_METADATA)

@@ -42,6 +42,7 @@ class PassAssembler:
         self, room: ReadingRoom, subjects: Mapping[tuple[PointerKind, str], str],
         now: datetime, *, concerns: frozenset[str] = frozenset(),
         as_of: datetime | None = None, timeout_seconds: float = 12,
+        audience_rooms: Sequence[ReadingRoom] = (),
     ) -> dict[tuple[PointerKind, str], ProfileRead]:
         """Read bounded profiles for explicit subjects from the turn's room."""
         room = replace(room, require_live_for_exclusions=True)
@@ -69,6 +70,23 @@ class PassAssembler:
                     room, RetrievalAnchors(graph_ids=ids), bounds,
                     concerns=concerns, as_of=as_of, now=clock or now,
                 )
+                for other in audience_rooms:
+                    check = await self._retrieval.retrieve(
+                        replace(other, require_live_for_exclusions=True),
+                        RetrievalAnchors(graph_ids=ids), bounds,
+                        concerns=concerns, as_of=as_of, now=clock or now,
+                    )
+                    if check.status == "unavailable":
+                        raise RetrievalUnavailableError(check.cause or "reading_room_unavailable")
+                    permitted = {row.graph_id for row in check.rows}
+                    result = replace(result, rows=tuple(
+                        row for row in result.rows if row.graph_id in permitted
+                    ))
+                    if result.status != "unavailable" and check.status == "partial":
+                        result = replace(
+                            result, status="partial",
+                            limits=tuple(dict.fromkeys((*result.limits, *check.limits))),
+                        )
         except (RetrievalUnavailableError, TimeoutError) as exc:
             cause = "graph_read_timeout" if isinstance(exc, TimeoutError) else str(exc)
             result = RetrievalResult("unavailable", bounds, cause=cause)

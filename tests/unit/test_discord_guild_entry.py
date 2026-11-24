@@ -355,7 +355,6 @@ async def test_an_ambient_channel_is_stimulated(tmp_path, monkeypatch):
 # ── `rooms()` is the enumeration every room consumer reads ─────────────
 
 import dataclasses  # noqa: E402
-from types import SimpleNamespace  # noqa: E402
 
 import nora.ingest.stages.scope as scope_stage  # noqa: E402
 from nora.app.composition_readers import scope_home_rooms, social_unit_rooms  # noqa: E402
@@ -400,30 +399,6 @@ def test_social_unit_rooms_include_discovered_channels(tmp_path):
 def test_scope_home_rooms_map_a_discovered_channel(tmp_path):
     policy = _policy(tmp_path, 'default = "deny"\n' + _friends_entry(), DISCOVERED)
     assert scope_home_rooms(policy)[f"{GUILD}/{CHANNEL_A}"].platform == "discord"
-
-
-async def test_the_self_profile_read_renders_discovered_rooms_as_targets(tmp_path):
-    """The grounder's self-profile read builds its lineage targets from
-    `rooms()`, so a discovered channel is one of the rooms an excluded or
-    located line is checked against."""
-    from nora.app.cognition_grounding import unit_self_profile_reader
-
-    policy = _policy(tmp_path, 'default = "deny"\n' + _friends_entry(), DISCOVERED)
-    seen = []
-    boundary = SimpleNamespace(
-        render_room=lambda platform, conversation_id: seen.append(
-            (platform, conversation_id)
-        ),
-    )
-
-    class _Heads:
-        async def account_heads(self, *, key):
-            return ()
-
-    gated = unit_self_profile_reader(_Heads(), policy, lineage=boundary)
-    assert gated is not None
-    await gated("friends")
-    assert ("discord", f"{GUILD}/{CHANNEL_A}") in seen
 
 
 # ── the absorb read fails closed on the hot-reload race ─────────────────

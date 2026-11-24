@@ -9,7 +9,7 @@ it:
 | Decision | What grounds it | Block |
 |---|---|---|
 | who a row is from, who a statement is about | the agenda rooms' members, by id and every name they are called | `members` |
-| match an existing entity or create one; correct a contradiction | what is already known about the related people, rooms, unit and Nora | `profile` (one per related subject) |
+| match an existing entity or create one; correct a contradiction | what is already known about the related people, rooms, unit and Nora | `graph_profile` (one per related subject) |
 | | the graph around the agenda's entities | `graph` |
 | what an item states | the item's rows, by id, author id and send time | `agenda` |
 | what the rows mean in their conversation, and whether something said in one room links to another | the unit's conversation around the items, every row tagged with its room | `transcript` |
@@ -44,7 +44,7 @@ rather than rendering several accounts of the same subject.
 **Read but not injected**: blocks that serve one reply turn (presence,
 computer, subagents, the spoken or replied-to turn) have no Cognition decision
 that reads them, and the older peer, culture and character accounts are
-replaced by `profile`. Either is added only when a decision reads it.
+replaced by `graph_profile`. Either is added only when a decision reads it.
 
 ## Related selection
 
@@ -76,17 +76,10 @@ transcript visibility does not widen what any destination may later be told.
 ## Naming and empty states
 
 Stores keep one block type across occasions. A field needed only by Cognition
-is a field of that type, not a parallel block name. Profile subjects are
-attributes; per-room variants are not new type names. An entity reference
-keeps the canonical source or tool id under `of` and carries the kind
-separately under `entity`; a room profile uses its stored id and no kind
-prefix is added to a person id.
+is a field of that type, not a parallel block name. Each [graph profile](../cognition/context.md#presentation-blocks)
+identifies its subject by graph handle and may carry the authored display name.
 
 Every declared block renders with content, empty or unavailable. An empty store
 and a failed read therefore remain distinguishable, while an undeclared block
 needs no placeholder. Block types explain themselves and every field the
 renderer emits.
-
-The reply surface's external-memory switch is independent. Cognition reads the
-typed profiles it maintains; whether an older speaking-turn surface should
-switch is a separate acceptance decision.

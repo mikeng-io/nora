@@ -44,8 +44,10 @@ class RetrievalAccess:
                 platform=room.platform, conversation_id=room.conversation_id, live=room.live,
             )
             here = rendered.room
-            if here is None or not here.unit or (
-                here.persons is None and (rendered.live is None or not rendered.live.available)
+            if (
+                here is None or not here.unit
+                or (room.expected_unit is not None and room.expected_unit != here.unit)
+                or (here.persons is None and (rendered.live is None or not rendered.live.available))
             ):
                 raise RetrievalUnavailableError("reading_room_unavailable")
             rooms = tuple(r for r in rendered.rooms if r.unit == here.unit)

@@ -140,13 +140,6 @@
     "target": "tests/contract/test_reminder_store_contract.py::test_history_honours_since_and_limit[fake]"
   },
   {
-    "name": "D3 the grant reaches the runtime",
-    "file": "nora/app/composition_dreamer.py",
-    "old": "        grants=dream_grants,\n        # The per-CALL-SITE allowance for `inputs`/`commit`,",
-    "new": "        grants={},\n        # The per-CALL-SITE allowance for `inputs`/`commit`,",
-    "target": "tests/test_composition.py -k the_culture_adaptor_is_wired_with_its_grant_and_its_OWN_room"
-  },
-  {
     "name": "audit: an unreachable note is a wiring gap, not a retirement",
     "file": "nora/app/proactive_screen.py",
     "old": "                row.id, note_id, convo.unit,\n            )\n            return ReminderState.FAILED, FAILED_ERROR",

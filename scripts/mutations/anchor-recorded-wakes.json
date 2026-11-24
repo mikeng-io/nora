@@ -7,13 +7,6 @@
     "target": "tests/unit/test_cognition_session_runner.py::test_an_inspection_records_no_session_outcome_or_carry"
   },
   {
-    "name": "a state filter over raw profile rows shows a line withdrawn before the wake",
-    "file": "scripts/confirm_cognition_anchors.py",
-    "old": "for head in heads if head.state in (\"current\", \"disputed\")]",
-    "new": "for head in lines if head.state in (\"current\", \"disputed\")]",
-    "target": "tests/unit/test_cognition_anchor_confirmation.py::test_memory_state_reduces_profile_lines_to_chain_heads_before_state"
-  },
-  {
     "name": "a bare post to chat/completions is a model door the net does not know",
     "file": "tests/architecture/test_every_model_call_is_a_declared_occasion.py",
     "old": "        # A bare HTTP `post` to a chat-completions endpoint: matched on the\n        # `chat/completions` literal inside the call, so the door is found\n        # however the caller spells its url (the host-only confirmation\n        # judge's door — a plain POST, no SDK).\n        if tail == \"post\" and any(\n            isinstance(n, ast.Constant) and isinstance(n.value, str)\n            and \"chat/completions\" in n.value\n            for n in ast.walk(node)\n        ):\n            return True\n",
