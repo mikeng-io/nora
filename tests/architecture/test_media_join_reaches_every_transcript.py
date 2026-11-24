@@ -151,7 +151,7 @@ _UNJOINED_BY_OWN_SQL = {
 #: exact failure this file exists to catch, one AST shape further down.
 _NOT_A_RAW_READER = {
     "nora/memory/adapters/subject_claims.py": (
-        "the subject portal renders individually authorized text citations without a model transcript"
+        "the subject portal reads individually authorized citations for a browser display"
     ),
     "nora/infra/sql/unified_backfill.py": (
         "enumerates historical event identities; the existing Grounder resolves "
