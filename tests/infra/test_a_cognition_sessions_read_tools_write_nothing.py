@@ -240,7 +240,7 @@ class World:
         self.source = RegistryToolSource(
             registry=registry, store=SqlRecordStore(engine), persons=self.persons,
             metrics=self.metrics, ai_peer="nora",
-            home_rooms={"u1": rooms["ROOM-A"]}, scope_rooms=rooms,
+            scope_rooms=rooms,
             rosters={
                 "signal": FakeRosterSource(groups={"ROOM-A": members}),
                 "discord": FakeRosterSource(groups={"ROOM-B": members}),

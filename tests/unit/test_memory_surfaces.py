@@ -110,7 +110,7 @@ def _dream_source(registry: ToolRegistry, persons: Any) -> RegistryToolSource:
     return RegistryToolSource(
         registry=registry, store=_NullStore(), persons=persons,
         metrics=Metrics(),
-        scope_rooms={GROUP: here}, home_rooms={"u1": here},
+        scope_rooms={GROUP: here},
         rosters={"signal": FakeRosterSource(groups={GROUP: (MILES, TYLER, NORA)})},
         self_ids=NORA,
     )
