@@ -996,8 +996,8 @@ async def _compose_dependencies(
     engagement = _pipelines_engagement.engagement
     _fire_recover = await build_recover(
         clock=clock,
-        compute_backends=compute_backends,
-        compute_jobs=compute_jobs,
+        compute_backends=compute_backends, compute_jobs=compute_jobs,
+        engine=engine,
         metrics=metrics,
         reminders=reminders,
     )

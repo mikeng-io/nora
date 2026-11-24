@@ -11,7 +11,12 @@ from typing import Any
 
 from nora.memory.app.acts import ActEnvelope
 from nora.memory.domain.act_executors import EXECUTORS
-from nora.memory.domain.acts import Act, ActAuthority, ActIdentity
+from nora.memory.domain.acts import Act, ActAuthority, ActIdentity, Outcome
+
+#: Occasions whose passes never declare an act; they also never hand a tool call over.
+_NON_ENGAGEMENT = frozenset({"debrief", "wake", "wake_history", "review"})
+#: An executor whose own act already stands for the work of the call that declared it.
+_OWN_DELEGATION = frozenset({"computer.dispatch"})
 
 
 @dataclass(slots=True)
@@ -24,9 +29,11 @@ class ActPass:
     shown: set[str] = field(default_factory=set)
     internal: set[str] = field(default_factory=set)
     running_tools: dict[str, dict[str, Any]] = field(default_factory=dict)
+    call_acts: dict[str, list[Act]] = field(default_factory=dict)
 
 
 _active_pass: ContextVar[ActPass | None] = ContextVar("act_pass", default=None)
+_current_call: ContextVar[str | None] = ContextVar("act_call", default=None)
 
 
 class ActRefused(RuntimeError):  # noqa: N818
@@ -79,8 +86,10 @@ def seed_pass_shown(ids: frozenset[str]) -> None:
 
 
 def begin_pass_tool(tool_use: dict[str, Any]) -> None:
+    """Note a tool call starting; acts declared later in this task belong to it."""
     active = _active_pass.get()
     if active is not None and active.envelope is not None:
+        _current_call.set(tool_use["toolUseId"])
         active.running_tools[tool_use["toolUseId"]] = tool_use
 
 
@@ -130,9 +139,7 @@ def declare_act(
     if active is not None:
         authority = active.authority
         context = authority.pass_context
-        if context is not None and context.occasion in {
-            "debrief", "wake", "wake_history", "review",
-        }:
+        if context is not None and context.occasion in _NON_ENGAGEMENT:
             raise ActRefused("non_engagement_pass")
         event = active.trigger_id
         request = (executor, request_id) if request_id else None
@@ -143,5 +150,48 @@ def declare_act(
             active.ordinals[executor] += 1
             if request is not None:
                 active.requests[request] = ordinal
-    return Act(ActIdentity(executor, event, ordinal), spec.kind, destination, authority,
-               spec.guarantee, key)
+    act = Act(ActIdentity(executor, event, ordinal), spec.kind, destination, authority,
+              spec.guarantee, key)
+    call = _current_call.get()
+    if active is not None and call is not None:
+        active.call_acts.setdefault(call, []).append(act)
+    return act
+
+
+@dataclass(frozen=True, slots=True)
+class HandedOver:
+    """The act that stands for a tool call that outlived its pass's wait window."""
+
+    act_id: str
+    act: Act | None
+    envelope: ActEnvelope
+
+    async def settle(self, outcome: Outcome) -> None:
+        """Record how the call ended; a call whose own act stands for it records nothing."""
+        if self.act is not None:
+            await self.envelope.record_act_outcome(self.act, outcome)
+
+
+async def hand_over_tool(tool_use: dict[str, Any]) -> HandedOver | None:
+    """Declare the delegation for a tool call still running at its wait window.
+
+    None when the pass cannot hand a call over (no envelope, a reflection occasion, the act
+    already declared or the pass's claim lost): the caller keeps waiting for the call.
+    """
+    active = _active_pass.get()
+    context = active.authority.pass_context if active is not None else None
+    if active is None or active.envelope is None or context is None:
+        return None
+    if context.occasion in _NON_ENGAGEMENT:
+        return None
+    call = tool_use["toolUseId"]
+    for own in active.call_acts.get(call, ()):
+        if own.identity.executor in _OWN_DELEGATION:
+            return HandedOver(own.identity.id, None, active.envelope)
+    act = declare_act(
+        "tool.handover", f"tool-call:{active.trigger_id}:{call}",
+        event=active.trigger_id, authority=active.authority, request_id=call,
+    )
+    if not await active.envelope.reserve(act):
+        return None
+    return HandedOver(act.identity.id, act, active.envelope)

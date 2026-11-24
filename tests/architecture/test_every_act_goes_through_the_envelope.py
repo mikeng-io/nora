@@ -474,6 +474,7 @@ ENVELOPE_ENTRYPOINTS = {
     "signal.private_link": ("platform/signal/consent.py", "SignalLinkDelivery.deliver",
                             "self._envelope.perform"),
     "subagent.launch": ("app/subagent_backend.py", "SubagentBackend.launch", "self._acts.invoke"),
+    "tool.handover": ("memory/app/act_scope.py", "hand_over_tool", "active.envelope.reserve"),
     "voice.control": ("infra/voice/http_controller.py", "VoiceControllerClient._control",
                       "self._effects.invoke"),
     "voice.speech": ("infra/voice/http_controller.py", "VoiceControllerClient._control",

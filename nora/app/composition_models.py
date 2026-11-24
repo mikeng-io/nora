@@ -5,7 +5,7 @@ from typing import Any, cast
 
 from openai import AsyncOpenAI
 
-from nora.agent import factory, tool_choice
+from nora.agent import factory, tool_choice, tool_executor
 from nora.app.agent_runner import LiveAgentRunner
 from nora.app.composition_helpers import _reasoning_effort
 
@@ -77,6 +77,13 @@ def source(client: Any, route_model: Any, tier: Any)-> SourceWiring:
     return SourceWiring(models=models)
 
 
+def engagement_executor(cfg: Any) -> tool_executor.BoundedToolExecutor:
+    """The executor of every engagement pass: the shared slots, a wait window per call."""
+    return tool_executor.BoundedToolExecutor(
+        tool_executor.shared_tool_slots(), wait_seconds=cfg.engagement.tool_wait_seconds,
+    )
+
+
 @dataclass(frozen=True)
 class RunnerWiring:
     runner: Any
@@ -84,6 +91,7 @@ class RunnerWiring:
 
 def build_runner(cfg: Any, metrics: Any, models: Any, tier: Any)-> RunnerWiring:
 
+    executor = engagement_executor(cfg)
     runner = LiveAgentRunner(
         models=models,
         # Derived from the same `timeout_seconds` the invoke stage enforces, so
@@ -98,6 +106,7 @@ def build_runner(cfg: Any, metrics: Any, models: Any, tier: Any)-> RunnerWiring:
         # The process-wide registry, not a private one — `nora_tagtrace_
         # truncations_total` has to land where `/metrics` reads it.
         metrics=metrics,
+        tool_executor=executor,
     )
     return RunnerWiring(runner=runner)
 
@@ -115,6 +124,7 @@ def runners(
     summons_wired: Any, tier: Any,
 ) -> RunnersWiring:
 
+    executor = engagement_executor(cfg)
 
     def _auto_runner(
         effort: str, source: str, max_tokens: int | None = None,
@@ -134,6 +144,7 @@ def runners(
             skills_dir=cfg.doctrine.dir.parent / "skills",
             agent_name=cfg.agent.name,
             metrics=metrics,
+            tool_executor=executor,
         )
 
     # `[participation]`'s own effort, never the tag lane's — see the field's
@@ -173,6 +184,7 @@ def runners(
             skills_dir=None,
             agent_name=cfg.agent.name,
             metrics=metrics,
+            tool_executor=executor,
         )
     # `output_tokens` comes from `[llm.limits]`, NOT from `tier.max_tokens`: the two are
     # separate values, and tying them would make the whole loop's output budget equal to one

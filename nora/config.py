@@ -376,6 +376,8 @@ class EngagementConfig(BaseModel):
     trigger: TriggerConfig
     reactions: ReactionsConfig = ReactionsConfig()
     queue: QueueConfig = QueueConfig()
+    # How long an engagement pass waits for one tool call before the call is handed over.
+    tool_wait_seconds: float = Field(default=5.0, gt=0, allow_inf_nan=False)
 
 
 class ProactiveConfig(BaseModel):

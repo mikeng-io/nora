@@ -7,6 +7,7 @@ from nora.memory.app.act_scope import act_pass as act_pass
 from nora.memory.app.act_scope import active_act_authority as active_act_authority
 from nora.memory.app.act_scope import begin_pass_tool as begin_pass_tool
 from nora.memory.app.act_scope import declare_act as declare_act
+from nora.memory.app.act_scope import hand_over_tool as hand_over_tool
 from nora.memory.app.act_scope import internal_corpus as internal_corpus
 from nora.memory.app.act_scope import pass_shown as pass_shown
 from nora.memory.app.act_scope import record_interrupted_pass_tools as record_interrupted_pass_tools

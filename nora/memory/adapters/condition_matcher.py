@@ -106,7 +106,10 @@ class SqlIntentionBatch:
     ) -> Evaluation:
         unit = intention["unit"]
         stmt = (
-            sa.select(NORA_ACT_OUTCOME, _ACT.executor, _ACT.destination)
+            sa.select(
+                NORA_ACT_OUTCOME, _ACT.executor, _ACT.destination,
+                _ACT.graph_id.label("act_graph_id"),
+            )
             .join(NORA_ACT, sa.and_(_ACT.id == _OUTCOME.act_id, _ACT.unit == _OUTCOME.unit))
             .where(
                 _OUTCOME.unit == unit, self._sources.act_match(intention, condition),
@@ -116,14 +119,23 @@ class SqlIntentionBatch:
             .order_by(_OUTCOME.id.desc()).limit(1)
         )
         row = (await self._conn.execute(stmt)).mappings().one_or_none()
-        if row is None or row["verdict"] == "uncertain":
+        if row is None:
+            return Evaluation("unknown")
+        sources = self._sources.act_source(row)
+        if trigger and isinstance(condition, ActEvent):
+            # Any recorded outcome meets the trigger; only an act with a platform source waits
+            # for that source to be healthy. The act, not its latest outcome, is the witness, so
+            # an uncertain outcome later settled to done fires the intention once.
+            if sources and not await self._sources_healthy(unit, sources):
+                return Evaluation("unknown")
+            return Evaluation("true", _witness({**row, "graph_id": row["act_graph_id"]},
+                                               row["asserted_at"]))
+        if row["verdict"] == "uncertain":
             return Evaluation("unknown")
         done = row["verdict"] == "done"
         # The recorded success is the witness for the intention's own delivery.
         recorded_delivery = done and isinstance(condition, OwnDelivery) and not trigger
-        if not recorded_delivery and not await self._sources_healthy(
-            unit, self._sources.act_source(row),
-        ):
+        if not recorded_delivery and not await self._sources_healthy(unit, sources):
             return Evaluation("unknown")
         return Evaluation("true" if done else "false", _witness(row, row["asserted_at"]))
 

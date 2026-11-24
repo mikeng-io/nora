@@ -166,8 +166,11 @@ class LiveAgentRunner:
         max_trace_chars: int = DEFAULT_MAX_TRACE_CHARS,
         metrics: Metrics | None = None,
         draft_timeout_seconds: float = DEFAULT_DRAFT_TIMEOUT_SECONDS,
+        tool_executor: Any = None,
     ) -> None:
         self._models = models
+        # Every tag's agent runs its tools under this executor; None is the process default.
+        self._tool_executor = tool_executor
         # The agent's machine name (cfg.agent.name) — its Strands agent_id and
         # Langfuse trace span. Held per-runner so a cloned agent traces under its
         # own name.
@@ -272,8 +275,8 @@ class LiveAgentRunner:
             tool_hooks=(*tool_hooks, recording),
             trace_attributes=trace_attributes,
             retry=self._retry,
-            skills_dir=self._skills_dir,
-            agent_name=self._agent_name,
+            skills_dir=self._skills_dir, agent_name=self._agent_name,
+            tool_executor=self._tool_executor,
         )
         baseline = len(agent.messages)
         try:

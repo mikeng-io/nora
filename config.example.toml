@@ -84,6 +84,9 @@ output_tokens = 12000
 
 [engagement]
 policy = "trigger_text"
+# Seconds a pass waits for one tool call; a call still running then is handed over and
+# the pass goes on without it.
+tool_wait_seconds = 5
 
 [engagement.reactions]
 enabled = true

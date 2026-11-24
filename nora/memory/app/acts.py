@@ -62,6 +62,10 @@ class ActEnvelope:
     async def by_destination(self, executor: str, destination: str) -> Act | None:
         return await self._store.by_destination(executor, destination)
 
+    async def reserve(self, act: Act) -> bool:
+        """Declare an act with no outcome yet; False when it already exists."""
+        return await self._store.reserve(act)
+
     async def record_act_outcome(self, act: Act, outcome: Outcome) -> None:
         await self._store.observe(act, outcome)
 
