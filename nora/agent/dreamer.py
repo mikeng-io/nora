@@ -53,12 +53,7 @@ class AdaptorBudget:
 
 @dataclass(frozen=True)
 class AgentRunResult:
-    """What one bounded agent loop returned to a session-shaped adaptor
-    (`run_agent`): Strands' `stop_reason` (None when never produced), the
-    loop's total tokens (None when unread, never a zero) and the
-    trace/requirements extracted for provenance. `None` total tokens is
-    `unavailable`, not `nothing_found` — R-27, the same three states
-    `DreamOutcome` carries, at the call grain."""
+    """Model stop reason, reported usage and trace evidence from one invocation."""
 
     stop_reason: str | None = None
     total_tokens: int | None = None

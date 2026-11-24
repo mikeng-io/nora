@@ -2939,61 +2939,11 @@ class DreamBudgetConfig(BaseModel):
     total_tokens: int = Field(default=40_000, ge=1)
     output_tokens: int = Field(default=4_000, ge=1)
     timeout_seconds: float = Field(default=120.0, gt=0)
-    #: **The per-PASS memory ceiling**: how many reads a single run may make across
-    #: `nora.agent.dreamer.MEMORY_TOOLS` TOGETHER — `lookup_person`, `memory_search`,
-    #: `memory_read`. The per-tool budgets above it
-    #: (`[llm.budgets]`, `NativeTool.budget`) bound each verb on its own, which a pass
-    #: spends by asking several verbs the same question.
-    #:
-    #: This is CODE and not instruction, and it fails closed: the (N+1)th read is
-    #: answered `unavailable` with a reason, never an error and never a silent empty.
-    #: Stating the cap in words does not work: a model told it has a hard cap declines
-    #: the work rather than spending less.
-    #:
-    #: **`ge=1`, and 0 is refused rather than read as "off".** The proactive objective
-    #: requires one memory read before any `remind`, so a ceiling of 0 is a
-    #: configuration under which the adaptor can never legitimately do its job — a
-    #: boot failure is the honest answer to it, the same posture `output_tokens = 0`
-    #: gets by being `ge=1` above.
-    #:
-    #: **The `cognition` adaptor takes none of this** (DEC-247): a session has no call
-    #: ceiling, and the config refuses a cognition block that sets this,
-    #: `max_tool_calls` or `tool_calls`.
+    # Legacy call ceilings remain readable. Cognition rejects all three.
     max_memory_calls: int = Field(default=2, ge=1)
 
-    #: **The per-adaptor delta over the per-tool call ceilings** — a tool name to how
-    #: many times ONE pass may call it, overriding `NativeTool.budget` and
-    #: `[llm.budgets]` for this adaptor alone.
-    #:
-    #: It exists because `NativeTool.budget` is a TAG TURN's number and the Dreamer
-    #: would otherwise inherit it. `note_read = 3` is sized for a reply that reads a
-    #: note or two before answering; a pass asked for one decision per open note needs
-    #: a ceiling sized to the OPEN-NOTE COUNT, not a constant. A ceiling below that
-    #: count does not fail: the pass grounds the first notes in a body and the rest in
-    #: the index line alone and still returns `ok` — a judgement whose input cannot
-    #: ground it answers anyway, wrong, at a rate nothing reports.
-    #:
-    #: **Not `[llm.budgets]`, which is the deployment-wide delta**: raising
-    #: `note_read` there raises it for every reply Nora writes too, and this is a
-    #: background batch pass nobody waits on. Same blast-radius argument `[dreamer]
-    #: max_tokens` makes against raising `[llm] max_tokens`.
-    #:
-    #: **A key naming a tool this adaptor does not declare is a BOOT FAILURE**, not a
-    #: silent no-op (`nora.agent.dreamer.tool_call_faults`, raised through
-    #: `verify_tool_subsets`): a typo'd tool key would leave the ceiling the operator
-    #: raised at the table's value, and the pass starved with the config file saying
-    #: otherwise. Nothing measures that, so it refuses to start.
-    #:
-    #: `ge=1` per entry: 0 would be a tool the adaptor holds and can never call, which
-    #: is `output_tokens = 0`'s shape — expressible only by removing it from the
-    #: subset, where it is visible.
     tool_calls: dict[str, int] = Field(default_factory=dict)
 
-    #: One pass's tool calls over EVERY verb together -> `AdaptorBudget.max_tool_calls`.
-    #: Unset is no pass-wide ceiling.
-    #:
-    #: **The `cognition` adaptor takes none of this** (DEC-247), see
-    #: `max_memory_calls` above.
     max_tool_calls: int | None = Field(default=None, ge=1)
 
     @field_validator("tool_calls")
@@ -3049,21 +2999,6 @@ class DreamerConfig(BaseModel):
     #       ONE completion. Binds -> `MaxTokensReachedException` ->
     #       `PartialReplyError` (`nora/agent/factory.py`).
     #
-    # `[llm] max_tokens` is sized for a TAG TURN. A batch pass is a different unit
-    # of work whose output scales with the batch (one verdict per message plus a
-    # candidate array). A run that overruns the per-call ceiling returns
-    # `unavailable`, `_dream_adaptor_once` holds the watermark, and the same batch
-    # is re-read and re-truncated on every fire, paced only by
-    # `_DREAM_BACKOFF_MAX_SECONDS`, which reads exactly like a healthy hourly
-    # adaptor.
-    #
-    # Raising `[llm] max_tokens` instead would be the wrong blast radius: that
-    # number governs every one of Nora's own replies, and this is a background
-    # batch pass nobody waits on.
-    #
-    # `0` is the default, so an unset field leaves the Dreamer on `[llm]`, the same
-    # posture `model = ""` takes. `ge=0` and not `ge=1`: 0 is the sentinel, and a
-    # real 0 would be a subsystem that silently never produces anything.
     max_tokens: int = Field(default=0, ge=0)
     # The Dreamer's OWN reasoning effort, `""` meaning «inherit `[llm]`» — the
     # shape `StandingConfig.reasoning_effort` uses, and TYPED for its reason: a
@@ -3089,67 +3024,7 @@ class DreamerConfig(BaseModel):
         "", "none", "minimal", "low", "medium", "high", "xhigh", "max"
     ] = ""
     budgets: dict[str, DreamBudgetConfig] = Field(default_factory=dict)
-    # The WHOLE hold one (adaptor, key) unit may add to `running`, asserted at
-    # startup rather than reasoned about in prose (`[standing]
-    # max_slot_hold_seconds`' own shape, `Config.
-    # _the_dream_unit_hold_exceeds_its_components` below).
-    #
-    # `_run_adaptor` (`nora/app/runtime.py`) wraps its WHOLE call to
-    # `_dream_adaptor_once` in ONE `asyncio.timeout` at this number — the model
-    # budget, both bounded store phases (`inputs`, `commit`), AND every cursor read
-    # around them: `clock.last_fired`/`record_fire`, `language.watermark_for`/
-    # `watermark_is_behind_the_record`/`lag`/`seconds_since_last_message`/
-    # `watermark_age_seconds`/`advance_watermark`, `record.since`,
-    # `media_join.enrich`. Without the wall clock, any ONE of those hanging would
-    # leave `dream_loop` holding `<adaptor>:<key>` in `running` forever, and the only
-    # symptom would be `nora_dream_skipped_total{reason="in_flight_adaptor"}`, which
-    # cannot tell a long run from a wedge (`nora_dream_unit_timeout_total` is the
-    # series that can).
-    #
-    # One wall clock around the whole unit covers a call nobody has written yet too,
-    # where a per-call bound would need a new `wait_for` for every future cursor
-    # read. The cost is that it cannot say WHICH call wedged:
-    # `nora_dream_unit_timeout_total{adaptor}` answers "which adaptor", not "which
-    # await".
-    #
-    # **The number must provably exceed every bounded piece it wraps, or the
-    # wall clock would fire before a legitimate run finishes** — the same
-    # argument `max_slot_hold_seconds` makes, checked the same way (a startup
-    # `model_validator`, not a comment doing arithmetic by hand). The pieces:
-    #
-    #   samples x timeout_seconds                        the model budget —
-    #                                                      one sample x this
-    #                                                      adaptor's own
-    #                                                      `DreamBudgetConfig.
-    #                                                      timeout_seconds`.
-    #   store_calls_per_tick x store_timeout_seconds      `inputs`'s bound.
-    #   store_calls_per_tick x store_timeout_seconds      `commit`'s bound,
-    #                                                      the SAME multiplier
-    #                                                      again — the two
-    #                                                      phases are bounded
-    #                                                      separately.
-    #
-    # Every adaptor's schedule fixes `samples` at 1 in code. `store_calls_per_tick`
-    # has no config equivalent at all — it is a class attribute in
-    # `nora.language`, four layers above `nora.config` — so the check uses
-    # `DREAM_MAX_STORE_CALLS_PER_TICK` (`nora.domain.ports`), a documented
-    # ceiling with headroom over every shipped adaptor, pinned by
-    # `tests/architecture/test_dream_store_calls_are_declared.py`.
-    #
-    # **`None` DERIVES the value at load time — it does NOT default to a fixed
-    # literal.** A fixed literal goes stale the moment an operator raises ANY
-    # `[dreamer.budgets.*] timeout_seconds`: either a refused boot (too low) or a
-    # silently under-bounded wedge (an old literal that still validates but no
-    # longer carries real headroom). `Config.dreamer_max_unit_hold_seconds()` is the
-    # resolver: this field explicit -> that value, checked at startup against
-    # `Config._dream_unit_hold_known_minimum()`; unset -> that minimum plus a flat
-    # margin, ALWAYS above it by construction. See both for the exact arithmetic;
-    # restating it here would be two homes for one number.
-    #
-    # Set this explicitly only to require MORE headroom than the derivation
-    # gives, or to pin one number for a reading. An explicit value AT OR
-    # BELOW the known minimum still refuses to start — derivation removes the
-    # need to update a literal by hand, not the proof itself.
+    # Legacy hold value validated when explicitly configured.
     max_unit_hold_seconds: float | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")

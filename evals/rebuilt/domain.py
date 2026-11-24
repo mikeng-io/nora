@@ -21,22 +21,10 @@ from typing import Any, Literal
 #: exist on purpose: the corpora say `reply`, and a corpus label is data, not
 #: something to rewrite. An edited label is a new case wearing the old name.
 #:
-#: `remind` is the proactive DECIDE pass's, and it is graded on
-#: `DreamOutcome.written` — a reminder ROW. That adaptor does not speak and does
-#: not touch the notebook, so grading it on `said` or `changed` would score
-#: every case identically. Mapping it onto `speak` would lose the only thing it
-#: means.
-#:
 #: `either` means BOTH answers are acceptable. It exists because the proactive
 #: corpus has cases where the design deliberately declines to say — and mapping
 #: it onto one side would harden a permissive label into a strict one, which is
 #: a corpus rewrite wearing a type signature.
-#:
-#: `create`/`update`/`none` are the Dreamer's, and they are graded on the
-#: NOTEBOOK — what the pass wrote — never on `DreamOutcome.status`, which says
-#: only whether the loop completed. A pass can return `ok` having written
-#: nothing, and a corpus expecting `none` would then pass for a reason it is not
-#: about.
 #:
 #: `fold` is the standing fold's: a position was written AND a judge found
 #: the case's one property held in it. It has no structural half worth

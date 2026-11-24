@@ -120,7 +120,7 @@ def test_an_act_verb_is_never_wired_even_when_the_catalogue_names_it():
 
 def test_the_session_budget_carries_every_field_the_dreamer_budget_gives_it():
     """A field added to one side and not the other would be dropped in silence
-    (`_adaptor_budget`'s own reason). The two per-pass call ceilings are the
+    for the runtime. The two legacy per-pass call ceilings are the
     exception on purpose (DEC-247): the session carries none, so the Dreamer
     budget's values for them never reach it. Historical call reservation is
     selected by the session, not deployment config; its default stays off."""

@@ -19,11 +19,7 @@ def test_every_shipped_objective_is_read_by_something():
     directory is the population and the code is checked against it, not the
     other way round.
 
-    The floor is deliberately weak — the objective's NAME appears somewhere in `nora/` — because
-    a reader can declare its objective in more than one shape (a `DreamAdaptor` class attribute,
-    or a module constant). A strong check would need to know which, which is the hand-copied
-    vocabulary this file exists to outlaw. A weak check over the whole population still fails on
-    the case that matters: an objective loaded by nobody.
+    The floor is a quoted reference to the objective name in the Python source.
     """
     source = "\n".join(
         path.read_text(encoding="utf-8")
