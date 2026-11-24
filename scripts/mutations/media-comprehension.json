@@ -79,9 +79,9 @@
  {
   "name": "K9e build_tools forwards everything it accepts",
   "file": "nora/agent/tools.py",
-  "old": "describe_max_bytes=describe_max_bytes,\n        video_chunk_seconds=video_chunk_seconds,\n        ",
-  "new": "        # `tests/architecture/test_tool_builders_forward_everything.py` compares\n        # this call's keywords against `build_tools`' own parameters, so a\n        # dropped one is red.\n        video_chunk_seconds=video_chunk_seconds,\n",
-  "target": "tests/architecture/test_tool_builders_forward_everything.py"
+  "old": "        describe_max_bytes=describe_max_bytes, video_chunk_seconds=video_chunk_seconds,",
+  "new": "        video_chunk_seconds=video_chunk_seconds,",
+  "target": "tests/architecture/test_tool_builders_forward_everything.py::test_build_tools_forwards_every_parameter_it_accepts"
  },
  {
   "name": "K10 the discovery walk finds a new builder",
