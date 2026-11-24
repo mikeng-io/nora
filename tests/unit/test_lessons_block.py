@@ -17,9 +17,10 @@ from types import SimpleNamespace
 
 from nora.agent.prefill import _BLOCKS as PREFILL_BLOCKS
 from nora.app.fire import FirePath
+from nora.domain.events import Event
 from nora.language.lesson_render import read_lessons, render_lessons
 from nora.obs.metrics import Metrics
-from tests.unit.test_self_block import _participation, _policy
+from tests.unit.test_self_block import _policy
 
 
 class _Lessons:
@@ -42,6 +43,14 @@ def _fire(lessons, policy, metrics=None) -> FirePath:
     path._metrics = metrics or Metrics()
     path._standing_store_timeout_seconds = 5.0
     return path
+
+
+def _participation(platform: str = "signal", conversation_id: str = "g1") -> Event:
+    return Event(
+        kind="participation", platform=platform, conversation_id=conversation_id,
+        conversation_type="group", person_id=None, body="",
+        header=lambda ref, now: "",
+    )
 
 
 def test_no_lesson_renders_no_block_and_a_lesson_is_escaped():
