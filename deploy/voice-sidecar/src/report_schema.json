@@ -208,6 +208,150 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "pending"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/VoiceOperationPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "denied"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/VoiceOperationPayload",
+                  "properties": {
+                    "error": {
+                      "$ref": "#/components/schemas/OperationError"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "rejected"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/VoiceOperationPayload",
+                  "properties": {
+                    "error": {
+                      "$ref": "#/components/schemas/OperationError"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "unsupported"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/VoiceOperationPayload",
+                  "properties": {
+                    "error": {
+                      "$ref": "#/components/schemas/OperationError"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "incomplete"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/VoiceOperationPayload",
+                  "properties": {
+                    "error": {
+                      "$ref": "#/components/schemas/OperationError"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "uncertain"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/VoiceOperationPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "unavailable"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/VoiceOperationPayload"
+                }
+              }
+            }
           }
         ],
         "description": "A voice operation's answer whose `complete` is VoiceReportPayload.",

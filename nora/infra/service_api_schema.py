@@ -100,13 +100,26 @@ def _bind_answers(schemas: dict[str, Any]) -> None:
     for component, tp in VOICE_ANSWER_TYPES.items():
         payload = (_ref(tp) if tp is voice.VoiceReportPayload else
                    {"type": "object", "required": ["state"], "properties": {"state": _ref(tp)}})
+        rules = [_when("complete", payload)]
+        if tp is voice.VoiceReportPayload:
+            rules += _report_outcomes()
         schemas[component] = {
-            **base, "title": component, "allOf": [_when("complete", payload)],
+            **base, "title": component, "allOf": rules,
             "description": f"A voice operation's answer whose `complete` is {tp.__name__}."}
     schemas["VoiceOperationRequest"]["x-answers"] = {
         kind: {"$ref": REF.format(model=VOICE_ANSWERS[kind])} for kind in voice.VOICE_COMPLETE}
     schemas["VoiceStatusReadEnvelope"]["allOf"] = [
         _when("ok", _ref(voice.VoiceConnectionState))]
+
+
+def _report_outcomes() -> list[dict[str, Any]]:
+    """A report's answer by outcome: only `complete` carries the hub's status; a
+    refusal names its error; every other outcome carries an error or nothing."""
+    connection = _ref(voice.VoiceOperationPayload)
+    refused = {**connection, "required": ["error"],
+               "properties": {"error": {"$ref": REF.format(model="OperationError")}}}
+    return [_when(outcome, refused if outcome in _REFUSALS else connection)
+            for outcome in get_args(api.OperationOutcome) if outcome != "complete"]
 
 
 def _bind_effects(schemas: dict[str, Any]) -> None:
@@ -132,6 +145,8 @@ def _ref(tp: type) -> dict[str, str]:
 _CLOSED_PARTS: Final = ("ReadWhen", "ReadFrom", "OperationWhen", "OperationFrom", "Scope",
                         "PlatformOperationPayload", "VoiceOperationPayload",
                         "VoiceReportPayload")
+#: The outcomes that refuse an operation; their answer says why.
+_REFUSALS: Final = ("rejected", "unsupported", "denied", "incomplete")
 #: The blob `PUT` answer: an operation envelope whose `complete` names a key and
 #: whose `rejected` says why.
 BLOB_PUT: Final = "BlobPutEnvelope"

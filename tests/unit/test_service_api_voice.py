@@ -149,6 +149,23 @@ def test_each_kind_complete_carries_what_the_kind_returns():
     assert report.is_valid(_settled({"status": "stale"}))
 
 
+def test_a_report_answer_carries_a_status_only_on_complete():
+    """Only `complete` says what the hub did; a refusal names its error, and
+    every other outcome carries an error or nothing, never a status."""
+    report = validator(VOICE_ANSWERS["report"])
+    error = {"error": {"kind": "denied", "message": "unknown guild"}}
+
+    for outcome in ("rejected", "unsupported", "denied", "incomplete"):
+        assert report.is_valid({**_settled(error), "outcome": outcome}), outcome
+        for payload in ({}, {"state": None}, {"status": "ok"}):
+            answer = {**_settled(payload), "outcome": outcome}
+            assert not report.is_valid(answer), (outcome, payload)
+    for outcome in ("uncertain", "unavailable", "pending"):
+        assert report.is_valid({**_settled(error), "outcome": outcome}), outcome
+        assert report.is_valid({**_settled({}), "outcome": outcome}), outcome
+        assert not report.is_valid({**_settled({"status": "ok"}), "outcome": outcome}), outcome
+
+
 def test_a_play_complete_names_its_playback():
     play = validator(VOICE_ANSWERS["play"])
     snapshot = {"generation": "gen-1", "channel_id": "c1", "voice": "connected"}
