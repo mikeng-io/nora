@@ -113,8 +113,7 @@ def _bind_answers(schemas: dict[str, Any]) -> None:
 
 
 def _report_outcomes() -> list[dict[str, Any]]:
-    """A report's answer by outcome: only `complete` carries the hub's status; a
-    refusal names its error; every other outcome carries an error or nothing."""
+    """Only `complete` carries the hub's status; a refusal names its error."""
     connection = _ref(voice.VoiceOperationPayload)
     refused = {**connection, "required": ["error"],
                "properties": {"error": {"$ref": REF.format(model="OperationError")}}}
