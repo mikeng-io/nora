@@ -18,7 +18,7 @@ no model call, no database, no test is executed. It checks, per entry:
 * `new` differs from `old` (an identical pair mutates nothing, and the sweep
   would report the entry as a survivor for a reason that is not the test's);
 * the test file named by `target` exists (or the Go module directory, for a
-  `go:` target).
+  `go:` target), and pytest targets use selectors accepted by the gate.
 
 What it does NOT check, stated because the omission is the whole risk: that the
 named test still goes RED on the mutant. That needs the test run, which is what
@@ -94,6 +94,11 @@ def anchor_problems(entries: object, *, root: Path) -> list[str]:
                 )
         if entry["old"] == entry["new"]:
             problems.append(f"{label}: `new` equals `old`, so the mutation changes nothing")
+        if not entry["target"].startswith("go:") and any(
+            arg.startswith("-") for arg in entry["target"].split()
+        ):
+            problems.append(f"{label}: use pytest node IDs, not options")
+            continue
         path, is_go = _target_path(entry["target"])
         target = root / path
         if not (target.is_dir() if is_go else target.is_file()):
@@ -128,7 +133,7 @@ def test_the_checker_reports_every_way_an_entry_goes_stale(tmp_path: Path) -> No
     def entry(**changes: str) -> dict[str, str]:
         base = {
             "name": "n", "file": "src/mod.py", "old": "a = 1", "new": "a = 0",
-            "target": "tests/test_mod.py::test_x -k x",
+            "target": "tests/test_mod.py::test_x",
         }
         return {**base, **changes}
 
@@ -141,7 +146,8 @@ def test_the_checker_reports_every_way_an_entry_goes_stale(tmp_path: Path) -> No
         "empty old": entry(old=""),
         "file missing": entry(file="src/gone.py"),
         "new equals old": entry(new="a = 1"),
-        "pytest target missing": entry(target="tests/test_gone.py -k x"),
+        "pytest target missing": entry(target="tests/test_gone.py::test_x"),
+        "pytest option rejected": entry(target="tests/test_mod.py -k x"),
         "go module missing": entry(target="go:no-such-dir ./..."),
         "extra field": {**entry(), "why": "x"},
         "missing field": {k: v for k, v in entry().items() if k != "new"},

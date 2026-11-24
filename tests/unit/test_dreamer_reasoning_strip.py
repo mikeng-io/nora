@@ -11,7 +11,7 @@ from nora.agent import factory
 from nora.agent.dreamer import AdaptorBudget, DreamerRuntime
 from nora.obs.metrics import Metrics
 from tests.fakes import FixedModelSource
-from tests.unit.test_dream_memory_budget import ENVELOPE, _Tools
+from tests.fixtures.dreamer_calls import ENVELOPE, _Tools
 
 BUDGET = AdaptorBudget(turns=8, total_tokens=100_000, output_tokens=4_000, timeout_seconds=10.0)
 

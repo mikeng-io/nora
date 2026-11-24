@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -19,10 +18,7 @@ def _ROOMS(person_id: str) -> frozenset[tuple[str, str]]:
 
 
 def _service(store: FakeGatheringStore) -> GatheringService:
-    return GatheringService(
-        store=store,
-        now=lambda: datetime(2026, 8, 19, tzinfo=UTC),
-    )
+    return GatheringService(store=store)
 
 
 async def test_build_gatherings_payload_lists_events_for_person():

@@ -104,7 +104,7 @@ _FILE_AND_SELECTOR = re.compile(r"^(tests/[A-Za-z0-9_/]+\.py)(::[A-Za-z0-9_]+)?"
 #: the last one named in this row".
 _BARE_SELECTOR = re.compile(r"^(::[A-Za-z0-9_]+)")
 
-_ROW_ID = re.compile(r"\|\s*((?:DEC|R|D|A)-?[0-9]+[a-z]?)\s*\|")
+_ROW_ID = re.compile(r"\|\s*((?:DEC|R|D|A)-?[0-9]+[a-z]?|Pending allocation)\s*\|")
 
 #: Rows whose stale selector needs a product judgement call this gate cannot
 #: make from the code history alone — repointing or marking would be a guess
@@ -371,6 +371,30 @@ def test_every_row_naming_an_enforcing_test_either_has_it_or_says_it_does_not() 
         "mark it DEPRECATED/REVERSED/NOT ENFORCED if the guarantee is genuinely "
         "gone:\n  " + "\n  ".join(unmarked)
     )
+
+
+def _rows_without_enforcement(rows: list[tuple[str, int, str]]) -> list[str]:
+    missing = []
+    for identifier, number, line in rows:
+        if identifier == "?":
+            continue
+        _, _, statement, *cells = re.split(r"(?<!\\)\|", line.removesuffix("|"))
+        if re.match(r"\s*(?:\*\*)?(?:DEPRECATED(?! IN PART)|REVERSED)\b", statement):
+            continue
+        enforcement = cells[-1].strip() if cells else ""
+        app_tests = re.findall(r"`(app/[\w./-]+\.(?:spec|test)\.ts)`", enforcement)
+        if any((ROOT / path).is_file() for path in app_tests):
+            continue
+        if not _TEST_PATH.search(enforcement) and not re.match(
+            r"(?:\*\*)?NOT ENFORCED\b", enforcement,
+        ):
+            missing.append(f"{identifier} (line {number})")
+    return missing
+
+
+def test_each_live_decision_names_a_test_or_explicitly_says_not_enforced() -> None:
+    missing = _rows_without_enforcement(_rows())
+    assert not missing, "Missing enforcement column in: " + ", ".join(missing)
 
 
 def test_the_index_still_cites_tests_at_all() -> None:

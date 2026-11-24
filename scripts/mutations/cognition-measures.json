@@ -4,14 +4,14 @@
     "file": "nora/app/cognition_session.py",
     "old": "                        self._inc(\"nora_self_wake_total\", outcome=\"fired\")",
     "new": "                        pass",
-    "target": "tests/unit/test_cognition_session_lifecycle.py -k moved_self_wake_fires_once"
+    "target": "tests/unit/test_cognition_session_lifecycle.py::test_a_moved_self_wake_fires_once_at_the_new_time_and_never_at_the_old"
   },
   {
     "name": "5: the live runner reads no usage",
     "file": "nora/agent/dreamer.py",
     "old": "            total = (\n                reservation.spent if reservation is not None\n                else _total_tokens(result) if result is not None\n                else _usage(_agent_usage(agent)) if agent is not None\n                else None\n            )",
     "new": "            total = None",
-    "target": "tests/unit/test_cognition_agent_runner.py -k tokens_the_loop_spent"
+    "target": "tests/unit/test_cognition_agent_runner.py::test_a_run_hands_up_the_tokens_the_loop_spent"
   },
   {
     "name": "5: a metric the code records is not declared",
@@ -25,62 +25,62 @@
     "file": "nora/agent/dreamer.py",
     "old": "ok = isinstance(total, int) and not isinstance(total, bool) and total > 0",
     "new": "ok = isinstance(total, int) and not isinstance(total, bool) and total >= 0",
-    "target": "tests/unit/test_cognition_agent_runner.py -k no_readable_usage_is_none"
+    "target": "tests/unit/test_cognition_agent_runner.py::test_a_result_with_no_readable_usage_is_none_never_zero"
   },
   {
     "name": "E2: a failed loop leaves no spend",
     "file": "nora/agent/dreamer.py",
     "old": "            _fill_spend(\n                spend, total,\n                () if trace is None else tuple(trace.messages), requirements,\n            )",
     "new": "            _fill_spend(\n                None, total,\n                () if trace is None else tuple(trace.messages), requirements,\n            )",
-    "target": "tests/unit/test_cognition_agent_runner.py -k failed_timed_out_or_was_cut_off"
+    "target": "tests/unit/test_cognition_agent_runner.py::test_a_loop_that_failed_timed_out_or_was_cut_off_leaves_what_it_spent"
   },
   {
     "name": "R3-1: a move records its ledger row once only",
     "file": "nora/agent/cognition_pace.py",
     "old": "    return await _record_after_effect(\n        ledger, session_id=session_id, unit=unit, verb=\"wake_move\"",
     "new": "    return await _record(\n        ledger, session_id=session_id, unit=unit, verb=\"wake_move\"",
-    "target": "tests/unit/test_cognition_session_failures.py -k ledger_write_fails_once"
+    "target": "tests/unit/test_cognition_session_failures.py::test_a_wake_move_whose_ledger_write_fails_once_is_recorded_by_the_second_try tests/unit/test_cognition_session_failures.py::test_a_wake_cancel_whose_ledger_write_fails_once_is_recorded_by_the_second_try"
   },
   {
     "name": "R3-1: a cancel records its ledger row once only",
     "file": "nora/agent/cognition_pace.py",
     "old": "    record = _record if refusal is not None else _record_after_effect",
     "new": "    record = _record",
-    "target": "tests/unit/test_cognition_session_failures.py -k wake_cancel_whose_ledger_write_fails_once"
+    "target": "tests/unit/test_cognition_session_failures.py::test_a_wake_cancel_whose_ledger_write_fails_once_is_recorded_by_the_second_try"
   },
   {
     "name": "R3-1: a failed supersede retract is an error",
     "file": "nora/agent/cognition_pace.py",
     "old": "        except Exception:\n            log.exception(\n                \"could not retract superseded self-wake %s; it may fire beside %s\",",
     "new": "        except ZeroDivisionError:\n            log.exception(\n                \"could not retract superseded self-wake %s; it may fire beside %s\",",
-    "target": "tests/unit/test_cognition_session_failures.py -k superseding_wake_at_whose_retract_fails"
+    "target": "tests/unit/test_cognition_session_failures.py::test_a_superseding_wake_at_whose_retract_fails_is_still_ok_and_one_row_not_two_attempts"
   },
   {
     "name": "R3-1: a counter that fails turns a write into an error",
     "file": "nora/app/cognition_session.py",
     "old": "        except Exception:\n            log.exception(\"could not count %s\", name)",
     "new": "        except ZeroDivisionError:\n            log.exception(\"could not count %s\", name)",
-    "target": "tests/unit/test_cognition_session_failures.py -k counter_that_raises_after_a_write"
+    "target": "tests/unit/test_cognition_session_failures.py::test_a_counter_failure_does_not_turn_a_committed_wake_into_a_refusal"
   },
   {
     "name": "R3-2: standing_revise reads the overlay outside the lock",
     "file": "nora/memory/adapters/tools/session.py",
     "old": "        async with self._lock(unit):\n            head = await self._prior_standing(platform, conversation_id)",
-    "new": "            if True:\n                head = await self._prior_standing(platform, conversation_id)",
-    "target": "tests/unit/test_cognition_session_failures.py -k two_standing_revisions"
+    "new": "        if True:\n            head = await self._prior_standing(platform, conversation_id)",
+    "target": "tests/unit/test_cognition_live_writes.py::test_standing_revisions_read_the_head_one_at_a_time"
   },
   {
     "name": "R3-4: note_revise's description omits unavailable",
     "file": "nora/memory/adapters/tools/session.py",
     "old": "        revision is kept.\n\n        Returns `status`: ok, refused or unavailable, with a `reason` and\n        `detail` when it is not ok.",
     "new": "            revision is kept.\n\n            Returns `status`: ok or refused, with a `reason` when refused.",
-    "target": "tests/unit/test_cognition_session_tool_specs.py -k says_it_can_come_back_unavailable"
+    "target": "tests/unit/test_cognition_session_tool_specs.py::test_every_verb_says_it_can_come_back_unavailable"
   },
   {
     "name": "R3-5: the token holder is left set",
     "file": "nora/app/cognition_session.py",
     "old": "            SESSION_TOKENS.reset(token)",
     "new": "            pass",
-    "target": "tests/unit/test_cognition_session_failures.py -k token_holder_is_unset"
+    "target": "tests/unit/test_cognition_session_failures.py::test_the_token_holder_is_unset_after_a_session_that_returned tests/unit/test_cognition_session_failures.py::test_the_token_holder_is_unset_after_a_session_that_failed tests/unit/test_cognition_session_failures.py::test_the_token_holder_is_unset_after_a_session_that_timed_out"
   }
 ]

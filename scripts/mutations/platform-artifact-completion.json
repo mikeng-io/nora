@@ -32,21 +32,21 @@
     "file": "nora/infra/sql/audit.py",
     "old": "                MESSAGES.c.platform_message_ids_json.contains(\n                    sa.func.jsonb_build_array(target.message_id)))",
     "new": "                MESSAGES.c.platform_message_ids_json.contains(\n                    target.message_id))",
-    "target": "tests/contract/test_audit_store_contract.py::test_set_delivery_outcome_lands_every_native_id_of_a_multi_post_send -k sql"
+    "target": "tests/contract/test_audit_store_contract.py::test_set_delivery_outcome_lands_every_native_id_of_a_multi_post_send[sql]"
   },
   {
     "name": "multi-post ids are json-dumped into a jsonb column as a string",
     "file": "nora/infra/sql/audit.py",
     "old": "            values[\"platform_message_ids_json\"] = list(dict.fromkeys(\n                str(i) for i in platform_message_ids if i))",
     "new": "            values[\"platform_message_ids_json\"] = json.dumps(list(dict.fromkeys(\n                str(i) for i in platform_message_ids if i)))",
-    "target": "tests/contract/test_audit_store_contract.py::test_a_multi_post_id_list_is_stored_as_json_not_a_json_string -k sql"
+    "target": "tests/contract/test_audit_store_contract.py::test_a_multi_post_id_list_is_stored_as_json_not_a_json_string[sql]"
   },
   {
     "name": "target resolution reads the list with a bare-string containment",
     "file": "nora/infra/sql/observations.py",
     "old": "             MESSAGES.c.platform_message_ids_json.contains(\n                 sa.func.jsonb_build_array(target.message_id)))",
     "new": "             MESSAGES.c.platform_message_ids_json.contains(\n                 target.message_id))",
-    "target": "tests/contract/test_observation_store_contract.py::test_a_multi_post_native_id_resolves_through_its_alias -k sql"
+    "target": "tests/contract/test_observation_store_contract.py::test_a_multi_post_native_id_resolves_through_its_alias[sql]"
   },
   {
     "name": "discord scheduled events drop the interested count",

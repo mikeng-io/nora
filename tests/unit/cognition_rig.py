@@ -17,7 +17,6 @@ from nora.app.cognition_session import (
     CognitionRunResult,
     CognitionSessionRunner,
 )
-from nora.app.gatherings import GatheringService
 from nora.domain.cognition_ground import Grounding, RecordItem
 from nora.domain.cognition_session import Room
 from nora.domain.standing import StandingHead
@@ -112,12 +111,6 @@ class Stores:
     standing: InMemoryStandingStore = field(default_factory=InMemoryStandingStore)
     memos: InMemoryMemoStore = field(default_factory=InMemoryMemoStore)
 
-    def events(self) -> GatheringService:
-        return GatheringService(
-            store=self.gatherings,
-            now=lambda: datetime.fromtimestamp(NOW / 1000, UTC),
-        )
-
 
 async def session(
     behave: Callable[[dict[str, Any], list[Any]], Awaitable[None]], *,
@@ -155,7 +148,7 @@ async def session(
         "budget": BUDGET, "cooldown_seconds": 300.0, "max_items": 12,
         "clock": lambda: NOW / 1000, "roster_of": _const(ROSTER),
         "nora_names": frozenset({"Nora"}), "metrics": metrics,
-        "notes": stores.notes, "events": stores.events(), "standing": stores.standing,
+        "notes": stores.notes, "standing": stores.standing,
         "reminders": stores.reminders, "ai_peer": "nora", "memos": stores.memos,
         "room_proactive": lambda platform, conversation_id: True,
         "max_pending_per_requester": 20, "remind_min_lead_seconds": 120,

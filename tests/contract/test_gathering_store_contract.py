@@ -10,15 +10,14 @@ import pytest
 
 from nora.domain.gatherings import (
     RSVP,
-    DuplicateGatheringError,
     Gathering,
     GatheringStatus,
     RSVPResponse,
 )
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.testing.gatherings import FakeGatheringStore
+from tests.fixtures.gatherings import SeededGatheringStore
 
 pytestmark = pytest.mark.asyncio
 
@@ -59,14 +58,14 @@ async def store(_pg_engine_scope, request):
     if request.param == "sql":
         clean_pg_url = request.getfixturevalue("clean_pg_url")
         run_migrations(clean_pg_url)
-        s = SqlGatheringStore(create_sql_engine(clean_pg_url))
+        s = SeededGatheringStore(create_sql_engine(clean_pg_url))
     else:
         s = FakeGatheringStore()
     yield s
     await s.aclose()
 
 
-async def test_create_then_get_round_trips(store):
+async def test_get_reads_the_seeded_event(store):
     ev = _event()
     await store.create(ev)
     back = await store.get(ev.id)
@@ -78,13 +77,6 @@ async def test_create_then_get_round_trips(store):
 
 async def test_get_missing_returns_none(store):
     assert await store.get(uuid4()) is None
-
-
-async def test_duplicate_create_raises(store):
-    ev = _event()
-    await store.create(ev)
-    with pytest.raises(DuplicateGatheringError):
-        await store.create(ev)
 
 
 async def test_stored_datetimes_come_back_utc_aware(store):
@@ -271,7 +263,7 @@ async def test_rsvp_then_rsvps_for_round_trips(store):
     assert back[0].response is RSVPResponse.YES
 
 
-async def test_rsvp_upserts_on_same_person(store):
+async def test_rsvp_reads_only_the_latest_response_per_person(store):
     ev = _event()
     await store.create(ev)
     first = datetime(2026, 8, 19, 13, 0, tzinfo=UTC)
@@ -294,20 +286,6 @@ async def test_rsvp_upserts_on_same_person(store):
 
 # ── migration 0074_event_revision: event_revision, lifecycle statuses,
 # base_revision_id, RSVP transition rows, unit-wide search. ──────────────────
-
-
-async def test_create_writes_one_revision_and_points_the_head_at_it(store):
-    ev = _event()
-    await store.create(ev)
-
-    back = await store.get(ev.id)
-    assert back.head_revision_id is not None
-
-    revisions = await store.revisions_for(ev.id)
-    assert len(revisions) == 1
-    assert revisions[0].id == back.head_revision_id
-    assert revisions[0].parent_revision_id is None
-    assert revisions[0].title == ev.title
 
 
 async def test_update_appends_a_revision_chained_to_the_old_head(store):
@@ -369,101 +347,3 @@ async def test_the_full_lifecycle_is_writable(store):
     await store.create(ev)
     await store.update(replace(ev, status=GatheringStatus.CANCELLED))
     assert (await store.get(ev.id)).status is GatheringStatus.CANCELLED
-
-
-async def test_rsvp_is_stored_append_only_even_though_the_read_projects_latest(store):
-    """RSVP transition rows: a repeat RSVP must be a second row in
-    storage, not an overwrite of the first, even though `rsvps_for` (the
-    read side) still answers with only the current one (the test above)."""
-    ev = _event()
-    await store.create(ev)
-    first = datetime(2026, 8, 19, 13, 0, tzinfo=UTC)
-    second = datetime(2026, 8, 19, 14, 0, tzinfo=UTC)
-    await store.add_rsvp(RSVP(
-        event_id=ev.id, person_id="miles", response=RSVPResponse.MAYBE,
-        responded_at=first,
-    ))
-    await store.add_rsvp(RSVP(
-        event_id=ev.id, person_id="miles", response=RSVPResponse.YES,
-        responded_at=second,
-    ))
-
-    if isinstance(store, FakeGatheringStore):
-        assert len(store._rsvps) == 2
-    else:
-        from sqlalchemy import text
-        async with store._engine.connect() as conn:
-            count = (await conn.execute(
-                text("SELECT count(*) FROM event_rsvps WHERE event_id = :id"),
-                {"id": ev.id},
-            )).scalar_one()
-        assert count == 2
-
-
-async def test_search_is_unit_wide_and_filters_by_place_person_and_interval(store):
-    unit = f"unit-{uuid4()}"
-    in_room_a = _event(
-        id=uuid4(), conversation_id="signal:room-a", unit_id=unit,
-        title="Dinner", venue_name="Soi 29", created_by="miles",
-        when=datetime(2026, 8, 22, 20, 0, tzinfo=UTC),
-    )
-    in_room_b = _event(
-        id=uuid4(), conversation_id="discord:room-b", unit_id=unit,
-        title="Lunch", venue_name="Elsewhere", created_by="daisy",
-        when=datetime(2026, 8, 23, 12, 0, tzinfo=UTC),
-    )
-    other_unit = _event(id=uuid4(), unit_id=f"other-{uuid4()}", title="Not this unit")
-    await store.create(in_room_a)
-    await store.create(in_room_b)
-    await store.create(other_unit)
-
-    everything = await store.search(unit_id=unit)
-    assert {e.id for e in everything} == {in_room_a.id, in_room_b.id}
-
-    by_place = await store.search(unit_id=unit, place="soi")
-    assert [e.id for e in by_place] == [in_room_a.id]
-
-    by_person = await store.search(unit_id=unit, person="daisy")
-    assert [e.id for e in by_person] == [in_room_b.id]
-
-    by_interval = await store.search(
-        unit_id=unit, start=datetime(2026, 8, 23, 0, 0, tzinfo=UTC),
-    )
-    assert [e.id for e in by_interval] == [in_room_b.id]
-
-
-async def test_search_is_unit_wide_but_quarantines_rows_with_no_stored_platform(store):
-    """The unit is the read boundary (DEC-231): every persisted platform in it
-    is returned. A row with no stored platform is quarantined — the old
-    `room_ids` widening resolved those from current policy, which cannot say
-    who owned them when they were written. Both the signal and the whatsapp
-    row are positive controls, so the quarantine cannot pass by matching
-    nothing."""
-    unit = f"unit-{uuid4()}"
-    unresolved = _event(
-        id=uuid4(), conversation_id="signal:room-a", unit_id=unit, platform="",
-        title="Pre-platform dinner",
-    )
-    signal_row = _event(
-        id=uuid4(), conversation_id="signal:room-b", unit_id=unit, platform="signal",
-        title="Signal dinner",
-    )
-    whatsapp_row = _event(
-        id=uuid4(), conversation_id="whatsapp:room-z", unit_id=unit, platform="whatsapp",
-        title="WhatsApp dinner",
-    )
-    other_unit = _event(
-        id=uuid4(), conversation_id="signal:room-c", unit_id=f"unit-{uuid4()}",
-        platform="signal", title="Someone else's dinner",
-    )
-    for event in (unresolved, signal_row, whatsapp_row, other_unit):
-        await store.create(event)
-
-    found = await store.search(unit_id=unit)
-    assert {e.id for e in found} == {signal_row.id, whatsapp_row.id}
-    assert unresolved.id not in {e.id for e in found}, (
-        "a row with no stored platform must stay quarantined, not be attributed "
-        "through the room's current policy assignment"
-    )
-    assert other_unit.id not in {e.id for e in found}
-

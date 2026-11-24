@@ -11,8 +11,8 @@ from nora.domain.stimuli import UnitView
 from nora.obs.metrics import Metrics
 from nora.testing.comprehend import ScriptedCognitionRunner
 from tests.fakes import dreamer_runtime_for
+from tests.fixtures.dreamer_calls import _ScriptedModel
 from tests.unit.test_cognition_session_runner import NOW, _pending, _runner, proposal, wake_memory
-from tests.unit.test_dream_memory_budget import _ScriptedModel
 
 
 @pytest.mark.parametrize("implementation", ["scripted", "strands"])

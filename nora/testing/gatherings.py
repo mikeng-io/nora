@@ -160,30 +160,5 @@ class FakeGatheringStore:
     async def revisions_for(self, event_id: UUID) -> Sequence[EventRevision]:
         return list(self._revisions.get(event_id, ()))
 
-    async def search(
-        self, *, unit_id: str, place: str | None = None, person: str | None = None,
-        start=None, end=None,
-    ) -> Sequence[Gathering]:
-        rsvpd_ids = (
-            {r.event_id for r in self._rsvps if r.person_id == person}
-            if person else set()
-        )
-        out = []
-        for e in self._events.values():
-            if e.unit_id != unit_id or not e.platform:
-                continue
-            if place and place.lower() not in (
-                (e.venue_name or "") + (e.venue_text or "")
-            ).lower():
-                continue
-            if person and e.created_by != person and e.id not in rsvpd_ids:
-                continue
-            if start is not None and e.when is not None and e.when < start:
-                continue
-            if end is not None and e.when is not None and e.when > end:
-                continue
-            out.append(e)
-        return sorted(out, key=lambda e: e.created_at)
-
     async def aclose(self) -> None:
         pass

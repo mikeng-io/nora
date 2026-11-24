@@ -4,7 +4,7 @@
     "file": "nora/people/app/authentication.py",
     "old": "        if authentication.binding is not None and authentication.binding != binding:\n            return AuthenticationResult(Verdict.DENIED)",
     "new": "        if authentication.binding is not None and False:\n            return AuthenticationResult(Verdict.DENIED)",
-    "target": "tests/web/test_management_sessions.py -k revalidate_live_facts"
+    "target": "tests/web/test_management_sessions.py::test_retained_sessions_revalidate_live_facts"
   },
   {
     "name": "the browser journey's Signal and WhatsApp portal sessions survive the exact unlinks — an absent binding must deny, not degrade",
@@ -18,69 +18,69 @@
     "file": "nora/people/app/authentication.py",
     "old": "        account = await self._bindings.record_for(account=authentication.account)\n        if account is None:\n            return AuthenticationResult(Verdict.DENIED)",
     "new": "        account = await self._bindings.record_for(account=authentication.account)\n        if account is None:\n            return AuthenticationResult(Verdict.UNAVAILABLE)",
-    "target": "tests/integration/test_managed_portal_browser.py -k discord_sign_in_scopes"
+    "target": "tests/integration/test_managed_portal_browser.py::test_managed_portal_discord_sign_in_scopes_and_revokes"
   },
   {
     "name": "each link side reads only its own consent challenge",
     "file": "nora/people/app/holder_link.py",
     "old": "        try:\n            nonce = await self._links.challenge(link.request_id, side=side)\n        except Exception:  # noqa: BLE001 — an unreadable store is unavailable",
     "new": "        try:\n            nonce = await self._links.challenge(link.request_id, side=LinkSide.INITIATING)\n        except Exception:  # noqa: BLE001 — an unreadable store is unavailable",
-    "target": "tests/web/test_holder_links.py -k per_side_views"
+    "target": "tests/web/test_holder_links.py::test_create_and_per_side_views_expose_only_the_callers_challenge"
   },
   {
     "name": "the Web App decoder pins the actor to the session's verified person",
     "file": "nora/web/management_request.py",
     "old": "            actor = Actor(ActorKind.OPERATOR, person_id=operator_person, scope=scope)",
     "new": "            actor = Actor(ActorKind.OPERATOR, person_id=\"forged-person\", scope=scope)",
-    "target": "tests/web/test_management_operator.py -k share_one_typed_actor"
+    "target": "tests/web/test_management_operator.py::test_in_room_and_web_app_share_one_typed_actor_and_scope"
   },
   {
     "name": "the in-room entry pins the actor to the transport-verified sender's person",
     "file": "nora/people/app/room_invocation.py",
     "old": "        actor = Actor(ActorKind.OPERATOR, person_id=person_id, scope=scope)",
     "new": "        actor = Actor(ActorKind.OPERATOR, person_id=\"forged-person\", scope=scope)",
-    "target": "tests/web/test_management_operator.py -k share_one_typed_actor"
+    "target": "tests/web/test_management_operator.py::test_in_room_and_web_app_share_one_typed_actor_and_scope"
   },
   {
     "name": "several resolved candidates ask instead of the first being picked",
     "file": "nora/people/app/room_invocation.py",
     "old": "        if len(people) > 1:\n            return Clarify(\n                \"that refers to more than one person — one at a time, please\"\n            )",
     "new": "        if len(people) > 99:\n            return Clarify(\n                \"that refers to more than one person — one at a time, please\"\n            )",
-    "target": "tests/unit/test_room_management.py -k ambiguous_mention"
+    "target": "tests/unit/test_room_management.py::test_an_ambiguous_mention_asks_instead_of_choosing"
   },
   {
     "name": "a consequential command with no resolvable target asks instead of guessing a member",
     "file": "nora/people/app/room_invocation.py",
     "old": "        if not people:\n            return Clarify(\n                \"I couldn't find every account you named — @-mention \"\n                \"them or give their exact platform id (if the account \"\n                \"is new here, register it first)\",\n                status=\"nothing_found\",\n            )",
     "new": "        if not people:\n            named = await services.access.room_refs(\n                message.platform, message.conversation_id\n            )\n            people.add(named[0].person_id)",
-    "target": "tests/unit/test_room_management.py -k consequential_command"
+    "target": "tests/unit/test_room_management.py::test_a_consequential_command_without_a_target_asks_instead_of_guessing"
   },
   {
     "name": "only a fresh message's own body can invoke — edits and touches never mutate",
     "file": "nora/people/app/room_invocation.py",
     "old": "        if message.edit_of is not None or message.touch is not None:\n            return denied(\"not-a-fresh-message\")",
     "new": "        if False:\n            return denied(\"not-a-fresh-message\")",
-    "target": "tests/unit/test_room_management.py -k quoted_or_forged"
+    "target": "tests/unit/test_room_management.py::test_a_quoted_or_forged_instruction_reaches_the_invocation_and_writes_nothing"
   },
   {
     "name": "the standing checked is the transport-verified sender's — a forged sender cannot borrow the operator's",
     "file": "nora/people/app/room_invocation.py",
     "old": "        person_id = verified.principal.binding.person_id",
     "new": "        person_id = \"person_op\"",
-    "target": "tests/unit/test_room_management.py -k quoted_or_forged"
+    "target": "tests/unit/test_room_management.py::test_a_quoted_or_forged_instruction_reaches_the_invocation_and_writes_nothing"
   },
   {
     "name": "an unmatched bearer is no actor — a direct API call cannot adopt a credential",
     "file": "nora/web/management_api.py",
     "old": "        return next((\n            c for c in self._credentials\n            if hmac.compare_digest(authorization, f\"Bearer {c.token}\".encode())\n        ), None)",
     "new": "        return next((\n            c for c in self._credentials\n            if hmac.compare_digest(authorization, f\"Bearer {c.token}\".encode())\n        ), self._credentials[0])",
-    "target": "tests/web/test_management_api.py -k valid_effect_without_credentials"
+    "target": "tests/web/test_management_api.py::test_a_valid_effect_without_credentials_cannot_reach_the_use_case"
   },
   {
     "name": "file mode is an authoritative denial before any service call — never a pretend apply",
     "file": "nora/people/app/room_invocation.py",
     "old": "        if (\n            services is None\n            or self._human is None\n            or services.access.is_file_backend\n        ):",
     "new": "        if (\n            services is None\n            or self._human is None\n        ):",
-    "target": "tests/unit/test_room_management.py -k file_mode_never_writes"
+    "target": "tests/unit/test_room_management.py::test_file_mode_never_writes_the_toml_files"
   }
 ]

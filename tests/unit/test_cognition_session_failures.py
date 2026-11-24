@@ -99,6 +99,17 @@ def _true_text(answer: dict[str, Any]) -> None:
 # wake_at
 # ---------------------------------------------------------------------------
 
+async def test_a_counter_failure_does_not_turn_a_committed_wake_into_a_refusal():
+    answers = []
+
+    async def behave(by, tools):
+        answers.append(await by["wake_at"](subject_rows=["event:1"], at=AT, why="look"))
+
+    _, stimuli = await _run(behave, metrics=_Counting(broken=True))
+    assert answers[0]["status"] == "ok"
+    assert len(await _live(stimuli)) == 1
+
+
 async def test_a_wake_at_whose_ledger_write_fails_leaves_none_standing_and_a_retry_makes_one():
     answers: list[Any] = []
     ledger = _Ledger()

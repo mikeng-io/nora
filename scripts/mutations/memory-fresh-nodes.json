@@ -18,7 +18,7 @@
     "file": "nora/infra/sql/memory_read.py",
     "old": "                n.c.kind.in_(EMBEDDED_KINDS),\n                sa.or_(n.c.embedding.is_(None),",
     "new": "                n.c.kind.in_(EMBEDDED_KINDS),\n                n.c.embed_attempts >= 8,\n                sa.or_(n.c.embedding.is_(None),",
-    "target": "tests/integration/test_memory_scope.py -k fresh"
+    "target": "tests/integration/test_memory_scope.py::test_a_another_unit_two_hops_away_is_unreachable[fresh] tests/integration/test_memory_scope.py::test_b_a_same_unit_path_through_another_unit_is_cut[fresh] tests/integration/test_memory_scope.py::test_c_an_in_unit_target_is_reached_with_its_path[fresh] tests/integration/test_memory_scope.py::test_c_a_note_is_reached_from_a_message_it_cites[fresh] tests/integration/test_memory_scope.py::test_d_two_messages_by_kit_do_not_reach_each_other_through_kit[fresh] tests/integration/test_memory_scope.py::test_e_talk_about_kit_where_kit_is_not_listed_is_not_followed_to_kit[fresh] tests/integration/test_memory_scope.py::test_f_a_hidden_message_is_never_a_hit[fresh] tests/integration/test_memory_scope.py::test_g_a_stay_only_where_its_person_is_listed_and_presence_passes[fresh] tests/integration/test_memory_scope.py::test_h_a_person_account_is_absent_where_the_person_is_not_listed[fresh] tests/integration/test_memory_scope.py::test_i_an_unscoped_place_hub_never_seeds[fresh] tests/integration/test_memory_scope.py::test_m_near_a_named_district_reaches_only_what_in_scope_lies_in_it[fresh] tests/integration/test_memory_scope.py::test_j_exclude_persons_is_respected[fresh] tests/integration/test_memory_scope.py::test_a_named_person_seeds_only_where_this_room_lists_them[fresh] tests/integration/test_memory_scope.py::test_l_a_tagged_place_matches_and_renders_where_presence_passes[fresh] tests/integration/test_memory_scope.py::test_l_a_tagged_place_neither_matches_nor_renders_where_presence_fails[fresh] tests/integration/test_memory_scope.py::test_k_partial_while_the_index_is_incomplete_or_queued[fresh] tests/integration/test_memory_scope.py::test_k_unavailable_on_a_database_error[fresh]"
   },
   {
     "name": "the walk runs the seed over waiting nodes, not only when some are given up",
@@ -88,7 +88,7 @@
     "file": "nora/memory/wire.py",
     "old": "            drain_seconds=cfg.memory.index.refresh_seconds,",
     "new": "",
-    "target": "tests/test_composition.py::test_memory_search_holds_a_fresh_line_for_the_configured_worker_tick"
+    "target": "tests/test_composition.py::test_legacy_prefetch_index_uses_the_configured_worker_tick"
   },
   {
     "name": "review 1: an attachment with no text is never fresh (store)",

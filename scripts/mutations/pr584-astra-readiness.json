@@ -12,7 +12,7 @@
     "file": "nora/app/computer_dispatch.py",
     "old": "        if current_scope != task.scope:",
     "new": "        if False:",
-    "target": "tests/unit/test_pr584_astra_readiness.py -k scope_moved",
+    "target": "tests/unit/test_pr584_astra_readiness.py::test_deferred_task_refused_when_scope_moved",
     "comment": "F1: without the scope equality check a moved unit/DM row runs against the wrong computer."
   },
   {
@@ -20,7 +20,7 @@
     "file": "nora/app/computer_queue.py",
     "old": "                and self.executors.executor(parent.id) is not None)",
     "new": "                and True)",
-    "target": "tests/unit/test_pr584_astra_readiness.py -k unowned_segment_cannot_authorize",
+    "target": "tests/unit/test_pr584_astra_readiness.py::test_a_running_but_unowned_segment_cannot_authorize_nested_work",
     "comment": "F2: an unowned/terminal segment id authorizing new work is the contextvar-only authority the audit found."
   },
   {
@@ -28,7 +28,7 @@
     "file": "nora/app/computer_queue.py",
     "old": "    if reply.get(\"no_guest_effect\") or await _guest_quiet(",
     "new": "    if True or await _guest_quiet(",
-    "target": "tests/unit/test_pr584_astra_readiness.py -k guest_is_busy",
+    "target": "tests/unit/test_pr584_astra_readiness.py::test_answered_native_work_must_hold_scope_while_guest_is_busy",
     "comment": "F2: skipping the quiet gate terminalizes a busy guest's row and releases the scope while work survives."
   },
   {
@@ -36,7 +36,7 @@
     "file": "nora/app/computer_queue.py",
     "old": "        await tasks.elect_delivery(row.id, now=clock(), job=job)",
     "new": "        await jobs.create(job)\n        await tasks.mark_delivered(row.id, now=clock())",
-    "target": "tests/integration/test_scoped_browser_recovery.py -k retry_retains_consumed",
+    "target": "tests/integration/test_scoped_browser_recovery.py::test_retry_retains_consumed_marker_until_delivery_stamp_persists",
     "comment": "F3: the pre-fix shape \u2014 a filed job surviving a refused stamp is exactly the double-disposition the election removes."
   },
   {
@@ -44,7 +44,7 @@
     "file": "nora/infra/computer/manager.py",
     "old": "            opener = str(orphan.get(\"openerId\") or \"\")",
     "new": "            opener = str(orphan.get(\"targetId\") or \"\")",
-    "target": "tests/unit/test_pr584_astra_readiness.py -k popup",
+    "target": "tests/unit/test_pr584_astra_readiness.py::test_retained_tab_popup_is_not_adopted_by_another_active_task tests/unit/test_pr584_astra_readiness.py::test_unbound_popup_is_closed_not_attributed",
     "comment": "F5: attribution by any field but the real opener can never adopt \u2014 the audit's task-activity attribution defect's mirror."
   },
   {
@@ -52,7 +52,7 @@
     "file": "nora/infra/computer/browser.py",
     "old": "        if not png:\n            # A decodable-but-empty frame is a failed capture, not a picture.\n            raise BrowserError(\"the screenshot was empty\")",
     "new": "        pass  # a decodable frame is trusted",
-    "target": "tests/unit/test_pr584_astra_readiness.py -k empty_capture",
+    "target": "tests/unit/test_pr584_astra_readiness.py::test_empty_capture_is_unavailable_not_successful_png tests/unit/test_pr584_astra_readiness.py::test_malformed_nonempty_capture_is_refused",
     "comment": "F5: without the empty-frame refusal a zero-byte capture is stamped and exported as a successful picture."
   },
   {
@@ -60,7 +60,7 @@
     "file": "nora/app/computer_queue.py",
     "old": "            if \"BUSYGROUP\" not in str(exc):",
     "new": "            if \"BUSYGROUP\" in str(exc):",
-    "target": "tests/unit/test_pr584_astra_readiness.py -k stream_group_retries",
+    "target": "tests/unit/test_pr584_astra_readiness.py::test_stream_group_retries_transient_errors",
     "comment": "F4: a transient group-create failure cached as ready starves the stream for the process lifetime."
   },
   {
@@ -68,7 +68,7 @@
     "file": "nora/agent/run_budget_transport.py",
     "old": "                        and budget.max_input_tokens is None",
     "new": "                        and False",
-    "target": "tests/unit/test_pr584_astra_readiness.py -k accepts_vision",
+    "target": "tests/unit/test_pr584_astra_readiness.py::test_budget_accepts_vision_when_input_is_measured_not_capped",
     "comment": "F6: reverting to always-refuse breaks the browser journey's screenshot admission \u2014 the audit's multimodal rejection."
   }
 ]

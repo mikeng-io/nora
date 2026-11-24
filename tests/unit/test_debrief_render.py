@@ -12,7 +12,8 @@ import dataclasses
 import json
 import re
 from datetime import UTC
-from urllib.parse import quote
+from html import unescape
+from urllib.parse import quote, unquote
 
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.standing import Standing
@@ -296,10 +297,9 @@ def test_the_compact_result_keeps_the_decision_marker():
             {"toolResult": {"content": [{"text": payload}]}},
         ]},
     )))
-    body = _steps_body(out)
-    assert marker in body
-    # The compact form dedupes the repeated url — the render is shorter than
-    # the raw repr without dropping the marker.
+    body = unescape(_steps_body(out))
+    assert marker in body and '{"results":[{' in body
+    assert body.count(unquote(url)) == 1 and url not in body
     assert len(body) < len(str([{"text": payload}]))
 
 

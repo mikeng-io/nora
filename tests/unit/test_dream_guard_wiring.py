@@ -4,7 +4,7 @@ from nora.agent import factory
 from nora.agent.dreamer import AdaptorBudget, DreamerRuntime
 from nora.obs.metrics import Metrics
 from tests.fakes import FixedModelSource
-from tests.unit.test_dream_memory_budget import _ScriptedModel, _Tools
+from tests.fixtures.dreamer_calls import _ScriptedModel, _Tools
 
 
 async def test_a_dreamer_pass_refuses_an_unknown_argument_and_never_runs_the_tool():

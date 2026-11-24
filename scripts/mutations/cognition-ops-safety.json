@@ -74,7 +74,7 @@
     "file": "nora/app/wake.py",
     "old": "        eligible = [s.pending_since_ms for s in view.pending if can_wake(s, view)]",
     "new": "        eligible = [s.pending_since_ms for s in view.pending if not s.waits]",
-    "target": "tests/unit/test_wake_evaluator.py -k backlog_gauge"
+    "target": "tests/unit/test_wake_evaluator.py::test_an_inert_time_stimulus_does_not_age_the_backlog_gauge tests/unit/test_wake_evaluator.py::test_the_backlog_gauge_still_counts_a_time_stimulus_once_its_kind_is_ready tests/unit/test_wake_evaluator.py::test_the_backlog_gauge_skips_the_inert_kind_and_keeps_the_next_oldest"
   },
   {
     "name": "inert kinds are never inert (the shared rule returns an empty set)",

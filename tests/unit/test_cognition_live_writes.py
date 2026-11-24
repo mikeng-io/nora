@@ -5,6 +5,7 @@ over in-memory stores, with a scripted agent (`tests/unit/cognition_rig.py`)."""
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -140,6 +141,45 @@ async def test_a_standing_revise_against_a_stale_base_is_refused():
 
     await session(behave, head=head)
     assert answers[0]["status"] == "refused" and answers[0]["reason"] == "stale_base"
+
+
+async def test_standing_revisions_read_the_head_one_at_a_time():
+    stores = Stores()
+    first_read = asyncio.Event()
+    second_call = asyncio.Event()
+    release = asyncio.Event()
+    read_count = 0
+    observations = []
+
+    async def read_head(platform, conversation_id):
+        nonlocal read_count
+        read_count += 1
+        first_read.set()
+        await release.wait()
+        prior = await stores.standing.read(platform=platform, conversation_id=conversation_id)
+        return None if prior is None else StandingHead(prior, "fixture-prior")
+
+    async def behave(by, tools):
+        revise = by["standing_revise"]
+
+        async def second():
+            second_call.set()
+            return await revise(where_it_stands="second position")
+
+        async with asyncio.TaskGroup() as group:
+            first = group.create_task(revise(where_it_stands="first position"))
+            await first_read.wait()
+            following = group.create_task(second())
+            await second_call.wait()
+            count_while_first_was_reading = read_count
+            release.set()
+        observations.append((count_while_first_was_reading,
+                             first.result()["status"], following.result()["status"]))
+
+    await session(behave, stores=stores, runner_kwargs={"prior_standing": read_head})
+    assert observations == [(1, "ok", "ok")]
+    head = await stores.standing.read(platform=A.platform, conversation_id=A.conversation_id)
+    assert head is not None and head.body == "second position"
 
 
 async def test_remind_writes_the_proactive_row_the_fire_path_fires_and_can_move_and_cancel_it():

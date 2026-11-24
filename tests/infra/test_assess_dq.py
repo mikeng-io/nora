@@ -32,9 +32,9 @@ from nora.domain.models import NormalizedMessage
 from nora.infra.sql.assess import SqlAssessReportStore
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.schema import ROLLUP_BUILD, ROLLUP_OUTING
+from tests.fixtures.gatherings import SeededGatheringStore
 from tests.infra.rollup_fixtures import insert_rollup_row
 
 pytestmark = pytest.mark.asyncio
@@ -111,7 +111,7 @@ def _event(
 
 
 async def test_cross_room_duplicate_events_ok_for_distinct_venues(engine):
-    gatherings = SqlGatheringStore(engine)
+    gatherings = SeededGatheringStore(engine)
     when = datetime(2026, 9, 29, 19, 0, tzinfo=UTC)
     await gatherings.create(_event(
         conversation_id="g1", unit_id="u", status=GatheringStatus.CONFIRMED,
@@ -127,7 +127,7 @@ async def test_cross_room_duplicate_events_ok_for_distinct_venues(engine):
 
 
 async def test_cross_room_duplicate_events_fails_on_overlap_same_venue(engine):
-    gatherings = SqlGatheringStore(engine)
+    gatherings = SeededGatheringStore(engine)
     when = datetime(2026, 9, 29, 19, 0, tzinfo=UTC)
     end = datetime(2026, 9, 29, 21, 0, tzinfo=UTC)
     a = await gatherings.create(_event(
@@ -147,7 +147,7 @@ async def test_cross_room_duplicate_events_fails_on_overlap_same_venue(engine):
 
 
 async def test_empty_lineage_rows_fails_before_any_writer_states_one(engine):
-    gatherings = SqlGatheringStore(engine)
+    gatherings = SeededGatheringStore(engine)
     when = datetime(2026, 9, 29, 14, 10, tzinfo=UTC)
     event = await gatherings.create(_event(
         conversation_id="g1", unit_id="u", status=GatheringStatus.PROPOSED,
@@ -160,7 +160,7 @@ async def test_empty_lineage_rows_fails_before_any_writer_states_one(engine):
 
 
 async def test_happened_place_mismatch_fails_when_place_disagrees_with_the_outing(engine):
-    gatherings = SqlGatheringStore(engine)
+    gatherings = SeededGatheringStore(engine)
     when = datetime(2026, 9, 29, 20, 0, tzinfo=UTC)
     end = datetime(2026, 9, 29, 22, 0, tzinfo=UTC)
     event = await gatherings.create(_event(

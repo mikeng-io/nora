@@ -1185,7 +1185,6 @@ async def _compose_dependencies(
         dreamer_instructions=dreamer_instructions,
         engine=engine, entry_store=entry_store,
         event_store=event_store,
-        events=events,
         ledger_store=ledger_store,
         lineage=lineage,
         media_join=media_join,

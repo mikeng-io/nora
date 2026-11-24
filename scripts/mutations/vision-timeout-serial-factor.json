@@ -4,41 +4,41 @@
     "file": "nora/infra/vision/client.py",
     "old": "    per_call = loop_timeout_seconds * VISION_LOOP_SHARE / max(1, waves)",
     "new": "    per_call = loop_timeout_seconds * VISION_LOOP_SHARE / max(1, 4)",
-    "target": "tests/test_vision.py -k instagram_window_count"
+    "target": "tests/test_vision.py::test_the_derived_timeout_honours_the_configured_value_at_the_instagram_window_count"
   },
   {
     "name": "`budget` stays out of the derivation's signature",
     "file": "nora/infra/vision/client.py",
     "old": "    *, loop_timeout_seconds: float, configured: float, waves: int\n) -> float:",
     "new": "    *, loop_timeout_seconds: float, configured: float, waves: int, budget: int = 4\n) -> float:",
-    "target": "tests/test_vision.py -k not_an_input_to_the_derivation"
+    "target": "tests/test_vision.py::test_the_media_fetch_budget_is_not_an_input_to_the_derivation"
   },
   {
     "name": "the window count reaches the describer (total, not 1 and not the index)",
     "file": "nora/infra/vision/comprehend.py",
     "old": "                ask(cut.windows[index].data, len(cut.windows)), timeout=remaining)",
     "new": "                ask(cut.windows[index].data, 1), timeout=remaining)",
-    "target": "tests/unit/test_media_comprehender.py -k whole_read_adds_no_caveat"
+    "target": "tests/unit/test_media_comprehender.py::test_a_whole_read_adds_no_caveat"
   },
   {
     "name": "a long clip still tightens the per-call ceiling",
     "file": "nora/infra/vision/client.py",
     "old": "            waves=vision_waves(windows=1 if windows is None else windows),",
     "new": "            waves=vision_waves(windows=1),",
-    "target": "tests/test_vision.py -k derives_one_ceiling"
+    "target": "tests/test_vision.py::test_the_client_derives_one_ceiling_per_wave_count"
   },
   {
     "name": "the configured ceiling actually binds (min(configured, per_call))",
     "file": "nora/infra/vision/client.py",
     "old": "    return min(configured, per_call) if configured > 0 else per_call",
     "new": "    return per_call",
-    "target": "tests/test_vision.py -k waves_of_one_read_together"
+    "target": "tests/test_vision.py::test_the_waves_of_one_read_together_stay_under_the_loop"
   },
   {
     "name": "the fan-out guard refuses a serial loop with a concurrent divisor",
     "file": "nora/infra/vision/comprehend.py",
     "old": "            results = await asyncio.gather(*(one(i) for i in batch), return_exceptions=True)",
     "new": "            results = []\n            for i in batch:\n                results.append(await one(i))",
-    "target": "tests/test_vision.py -k cannot_drift_apart"
+    "target": "tests/test_vision.py::test_the_window_fan_out_and_the_wave_divisor_cannot_drift_apart"
   }
 ]

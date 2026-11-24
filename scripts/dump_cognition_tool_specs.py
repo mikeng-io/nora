@@ -93,11 +93,8 @@ def _wake_memory() -> Any:
 
 
 async def _tools() -> list[Any]:
-    from datetime import UTC, datetime
 
-    from nora.app.gatherings import GatheringService
     from nora.obs.metrics import Metrics
-    from nora.testing.gatherings import FakeGatheringStore
     from nora.testing.memo_store import InMemoryMemoStore
     from nora.testing.note_store import InMemoryNoteStore
     from nora.testing.reminders import FakeReminderStore
@@ -122,9 +119,6 @@ async def _tools() -> list[Any]:
         max_items=12, clock=lambda: NOW / 1000,
         memory=_wake_memory(),
         notes=InMemoryNoteStore(),
-        events=GatheringService(
-            store=FakeGatheringStore(),
-            now=lambda: datetime.fromtimestamp(NOW / 1000, UTC)),
         standing=InMemoryStandingStore(),
         reminders=FakeReminderStore(),
         memos=InMemoryMemoStore(),

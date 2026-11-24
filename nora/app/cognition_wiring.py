@@ -533,7 +533,7 @@ def build_cognition_runner(
     store: CognitionStore,
     stimulus_store: StimulusStore,
     note_titles: Callable[[str], Awaitable[Sequence[str]]],
-    notes: Any, events: Any,
+    notes: Any,
     standing: Any,
     reminders: Any,
     ai_peer: str,
@@ -613,7 +613,7 @@ def build_cognition_runner(
     runner = CognitionSessionRunner(
         tag_trace_store=tag_trace_store, memory=memory,
         store=store, stimulus_store=stimulus_store,
-        notes=notes, events=events, standing=standing, reminders=reminders,
+        notes=notes, standing=standing, reminders=reminders,
         ledger=ledger, shared=shared,
         ai_peer=ai_peer, memos=memos, entries=entries,
         agent_runner=agent_runner, home_rooms=home_rooms,

@@ -97,6 +97,7 @@ async def build(
     alias_transcript=False,
     agenda_body=None,
     stale_raw=None,
+    show_self=True,
 ):
     p1 = PersonRef("p1", "Ada", aliases=("Ace",))
     p2 = PersonRef("p2", "Ben")
@@ -127,7 +128,7 @@ async def build(
         conversation=lambda p, c: next(
             (r for r in rooms if (r.platform, r.primary_id) == (p, c)), None
         ),
-        shows_self_to_unit=lambda u: True,
+        shows_self_to_unit=lambda u: show_self,
     )
     lineage = LineagePolicy(
         rooms=facts,
@@ -213,6 +214,18 @@ async def test_reader_scope_related_profiles_and_real_assembly():
     assert root.find("./lessons/lesson") is not None
     assert prompt.count("generated picture") == 1
     assert "foreign secret" not in prompt and 'of="p2"' not in prompt
+
+
+async def test_a_wake_with_mixed_disclosure_withholds_nora_profiles_and_lessons():
+    allowed, _ = await build()
+    restricted, _ = await build(show_self=False)
+
+    assert _subjects(allowed, {"Nora"}) == {"nora"}
+    assert allowed.lessons == ("Check the source before correcting a person.",)
+    assert _subjects(restricted, {"Alpha"}) == {"signal:alpha"}
+    assert _subjects(restricted, {"Nora"}) == set()
+    assert restricted.lessons == ()
+    assert "lessons" not in restricted.unavailable
 
 
 async def test_disclosure_negative_has_an_allowed_positive_control():

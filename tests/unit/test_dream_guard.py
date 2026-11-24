@@ -21,7 +21,7 @@ from strands.hooks import (
     HookProvider,
 )
 
-from nora.agent.dream_guard import DreamGuard
+from nora.agent.dream_guard import GUARD_RULES, DreamGuard
 from nora.obs.metrics import Metrics
 
 #: One tool with room for a batch, one with a single call — enough to tell a
@@ -109,7 +109,8 @@ def test_the_unknown_tool_message_names_the_tools_that_do_exist():
 
 
 def test_a_tool_at_its_ceiling_is_vetoed():
-    g = _guard()
+    metrics = Metrics()
+    g = _guard(metrics)
     for _ in range(BUDGETS["place_info"]):
         assert g.evaluate("place_info", {"name": "x"}) is None
         g._ledger.record("place_info")
@@ -117,6 +118,8 @@ def test_a_tool_at_its_ceiling_is_vetoed():
     assert message is not None
     assert "already called place_info" in message
     assert f"{BUDGETS['place_info']} time(s)" in message
+    assert metrics.get("nora_dream_guard_vetoes_total", rule="tool-budget") == 1
+    assert {"R-7", "tool-budget", "R-99"} == GUARD_RULES
 
 
 def test_a_tool_below_its_ceiling_is_admitted():
@@ -227,38 +230,6 @@ def test_the_second_of_two_reservations_sees_the_ceiling():
     assert "1 time(s)" in message
 
 
-def test_a_parallel_batch_larger_than_the_pass_ceiling_admits_only_the_ceiling():
-    """The pass-wide ceiling (`max_tool_calls`) must hold WITHIN one parallel
-    batch, not only between model turns.
-
-    Five calls, spread over two tools, with distinct `toolUseId`s, are all
-    admitted by `_before_tool` before any `_after_tool` fires (Strands runs a
-    batch's before-hooks ahead of its completions). With a pass budget of 2 only
-    the first two may be admitted; the other three must be cancelled. The pass
-    counter is advanced only in `_after_tool`, so without a reservation in
-    `_before_tool` every call sees the pre-batch count and all five run.
-    """
-    g = DreamGuard(
-        adaptor="room_language", budgets=BUDGETS, metrics=Metrics(), pass_budget=2,
-    )
-    calls = [("place_info", "b1"), ("now", "b2"), ("place_info", "b3"),
-             ("place_info", "b4"), ("now", "b5")]
-    events = []
-    for name, ref in calls:
-        event = _BeforeToolCall(name)
-        event.tool_use["toolUseId"] = ref
-        g._before_tool(event)
-        events.append(event)
-
-    admitted = [e.tool_use["toolUseId"] for e in events if e.cancel_tool is None]
-    assert admitted == ["b1", "b2"], (
-        f"a parallel batch admitted {admitted} against a pass ceiling of 2"
-    )
-
-
-# ---- the metric --------------------------------------------------------
-
-
 def test_vetoes_are_counted_with_the_adaptor_label():
     """`nora_dream_guard_vetoes_total{adaptor, rule}`. The adaptor label is the
     point: a veto means an objective asked for a tool its own subset never
@@ -313,21 +284,6 @@ def test_the_guard_has_no_terminal_verb_and_nothing_that_could_end_a_turn():
     signature deliberately: it shapes a tool RESULT, not a turn — it cannot
     cancel, relax, or end anything, so the negative below stays intact.
 
-    `memory_tools`/`memory_budget` (R-91) join it on the same
-    terms, and the list is spelled out rather than loosened so that the next
-    parameter has to be argued for here too. A ceiling on how many MEMORY
-    reads one pass may make refuses a call and rewrites its result; it holds
-    no terminal verb, subscribes to no model-call hook, and a pass whose
-    ration is spent still runs until the model stops asking for tools —
-    `tests/unit/test_dream_memory_budget.py` asserts exactly that, because «a
-    budget that ends the turn» is the failure mode this negative is about.
-
-    `pass_budget` is the same ceiling over
-    every verb rather than the memory cluster, argued on the same terms: it
-    refuses a call and rewrites its result, and the pass runs on until the
-    model stops asking (`test_the_configured_pass_ceiling_binds_through_the_
-    real_loop` finishes `ok` past the cap).
-
     `per_tool_ceilings` (DEC-247) is the opposite direction and is argued the
     same way: it only SWITCHES OFF one veto (a per-tool count), for the
     Cognition session alone. It adds no terminal verb and no model-call hook
@@ -338,7 +294,7 @@ def test_the_guard_has_no_terminal_verb_and_nothing_that_could_end_a_turn():
     params = inspect.signature(DreamGuard.__init__).parameters
     assert set(params) == {
         "self", "adaptor", "budgets", "metrics", "result_caps",
-        "memory_tools", "memory_budget", "param_names", "pass_budget", "per_tool_ceilings",
+        "param_names", "per_tool_ceilings",
     }
     assert all(
         p.kind is inspect.Parameter.KEYWORD_ONLY

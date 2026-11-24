@@ -18,49 +18,49 @@
   "file": "tests/integration/test_managed_circle_cost.py",
   "old": "                        (\"first-scoped-read\", \"SELECT\", 2433),",
   "new": "                        (\"first-scoped-read\", \"SELECT\", 0),",
-  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+  "target": "tests/integration/test_managed_circle_cost.py::test_current_reads_measure_real_requests_and_recheck_remote_lifecycle[128]"
  },
  {
   "name": "scoped refs Kratos GET budget compares the real count",
   "file": "tests/integration/test_managed_circle_cost.py",
   "old": "                        (\"first-scoped-read\", \"kratos:GET\", 128),",
   "new": "                        (\"first-scoped-read\", \"kratos:GET\", 0),",
-  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+  "target": "tests/integration/test_managed_circle_cost.py::test_current_reads_measure_real_requests_and_recheck_remote_lifecycle[128]"
  },
  {
   "name": "lineage SELECT budget compares the real count",
   "file": "tests/integration/test_managed_circle_cost.py",
   "old": "                        (\"lineage\", \"SELECT\", 2051),",
   "new": "                        (\"lineage\", \"SELECT\", 0),",
-  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+  "target": "tests/integration/test_managed_circle_cost.py::test_current_reads_measure_real_requests_and_recheck_remote_lifecycle[128]"
  },
  {
   "name": "lineage Kratos GET budget compares the real count",
   "file": "tests/integration/test_managed_circle_cost.py",
   "old": "                        (\"lineage\", \"kratos:GET\", 128),",
   "new": "                        (\"lineage\", \"kratos:GET\", 0),",
-  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+  "target": "tests/integration/test_managed_circle_cost.py::test_current_reads_measure_real_requests_and_recheck_remote_lifecycle[128]"
  },
  {
   "name": "lineage Keto GET budget compares the real count",
   "file": "tests/integration/test_managed_circle_cost.py",
   "old": "                        (\"lineage\", \"keto:GET\", 128),",
   "new": "                        (\"lineage\", \"keto:GET\", 0),",
-  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+  "target": "tests/integration/test_managed_circle_cost.py::test_current_reads_measure_real_requests_and_recheck_remote_lifecycle[128]"
  },
  {
   "name": "where_is SELECT budget compares the real count",
   "file": "tests/integration/test_managed_circle_cost.py",
   "old": "                        (\"where-is-tool\", \"SELECT\", 6678),",
   "new": "                        (\"where-is-tool\", \"SELECT\", 0),",
-  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+  "target": "tests/integration/test_managed_circle_cost.py::test_current_reads_measure_real_requests_and_recheck_remote_lifecycle[128]"
  },
  {
   "name": "where_is Kratos GET budget compares the real count",
   "file": "tests/integration/test_managed_circle_cost.py",
   "old": "                        (\"where-is-tool\", \"kratos:GET\", 512)):",
   "new": "                        (\"where-is-tool\", \"kratos:GET\", 0)):",
-  "target": "tests/integration/test_managed_circle_cost.py -k 128"
+  "target": "tests/integration/test_managed_circle_cost.py::test_current_reads_measure_real_requests_and_recheck_remote_lifecycle[128]"
  },
  {
   "name": "analytics stays Ory-selected",

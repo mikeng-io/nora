@@ -8,8 +8,8 @@ the rows that still name no area, so a re-run asks only what is left:
   lookup per distinct place id (`GoogleGeocoder.area_of_place`, by Google's
   own id, no coordinate out), screened like a live resolution
   (`nora.app.gatherings.screened_area`, R-28), written through
-  `GatheringStore.update`, the path `update_event` writes through: a normal
-  revision, projected into the memory index in the same transaction.
+  `GatheringStore.update` as a revision, projected into the memory index in
+  the same transaction.
 - **Cached geocodes** (`SqlGeocodeCacheStore.without_area`): the cached
   coordinate asked again of the configured reverse geocoder
   (`area_for`), the areas screened (R-28) and written beside the

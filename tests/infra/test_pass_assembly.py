@@ -354,3 +354,29 @@ async def test_wake_profile_requires_every_agenda_room_to_permit_the_claim(scena
     refused = await reader.read_profiles(first, subjects, NOW, audience_rooms=(wrong,))
     assert refused["nora", "nora"].profile.status == "unavailable"
     assert refused["nora", "nora"].block().body.text == ""
+
+
+async def test_wake_profile_needs_live_roster_evidence_for_audience_exclusions(scenario):
+    from nora.domain.lineage import LiveRoom
+    from nora.memory import ReadingRoom
+    from tests.infra.test_retrieval_scope import OTHER_ROOM, UNIT
+
+    await pointers(scenario)
+    await scenario.claim("public-profile", exposure="external")
+    await scenario.claim("exclusion-sensitive-profile", exposure="external",
+                         excluded_persons=["fixture-unlisted-person"])
+    for claim in ("public-profile", "exclusion-sensitive-profile"):
+        await write_edge(scenario, claim, "nora-pointer", "about")
+
+    subjects = {("nora", "nora"): "Nora"}
+    first = ReadingRoom("signal", ROOM, LiveRoom(frozenset({PERSON})), expected_unit=UNIT)
+    second = ReadingRoom("signal", OTHER_ROOM, LiveRoom(frozenset({OTHER})), expected_unit=UNIT)
+    assembler = _assembler(scenario)
+    allowed = await assembler.read_profiles(first, subjects, NOW, audience_rooms=(second,))
+    assert "exclusion-sensitive-profile" in allowed["nora", "nora"].block().body.text
+
+    unverified = replace(second, live=LiveRoom(frozenset(), available=False))
+    restricted = await assembler.read_profiles(first, subjects, NOW, audience_rooms=(unverified,))
+    profile = restricted["nora", "nora"].block().body.text
+    assert "public-profile" in profile
+    assert "exclusion-sensitive-profile" not in profile

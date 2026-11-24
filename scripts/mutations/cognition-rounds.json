@@ -14,13 +14,6 @@
     "target": "tests/unit/test_cognition_no_call_ceilings.py::test_fifty_calls_of_one_tool_are_not_vetoed"
   },
   {
-    "name": "the session's guard is given a pass-wide and memory ceiling again",
-    "file": "nora/app/cognition_agent_runner.py",
-    "old": "            per_tool_ceilings=False,\n        )",
-    "new": "            per_tool_ceilings=False, pass_budget=10, memory_budget=10,\n            memory_tools=frozenset({\"about\"}),\n        )",
-    "target": "tests/unit/test_cognition_no_call_ceilings.py::test_fifty_calls_of_one_tool_are_not_vetoed"
-  },
-  {
     "name": "the session's guard drops R-99 (no accepted argument names)",
     "file": "nora/app/cognition_agent_runner.py",
     "old": "            param_names=param_names,\n            per_tool_ceilings=False,",

@@ -4,209 +4,209 @@
         "file": "nora/app/composition_stores.py",
         "old": "    if cfg.identity.backend == \"file\":\n        return ManagedIdentityWiring(",
         "new": "    if cfg.identity.backend == \"file\" and False:\n        return ManagedIdentityWiring(",
-        "target": "tests/web/test_management_bootstrap.py -k file_selection"
+        "target": "tests/web/test_management_bootstrap.py::test_file_selection_reads_and_refuses_mutation_without_ory_or_a_database"
     },
     {
         "name": "the file link-request store refuses to record consent",
         "file": "nora/people/adapters/file_backend.py",
         "old": "    async def create(\n        self, link: PendingLink, *, nonces: Mapping[LinkSide, str]\n    ) -> PendingLink:\n        raise LinkStateError(_OPERATOR_MAINTAINED)",
         "new": "    async def create(\n        self, link: PendingLink, *, nonces: Mapping[LinkSide, str]\n    ) -> PendingLink:\n        return link",
-        "target": "tests/unit/test_holder_link.py -k file_backend_refuses"
+        "target": "tests/unit/test_holder_link.py::test_file_backend_refuses_managed_mutations_honestly"
     },
     {
         "name": "the file binding store refuses a scoped-name write",
         "file": "nora/people/adapters/file_backend.py",
         "old": "        # No TOML write and no silent managed fallback \u2014 file mode has no\n        # scoped-name store, so the write is the standard honest refusal.\n        return denied(_OPERATOR_MAINTAINED)",
         "new": "        # No TOML write and no silent managed fallback \u2014 file mode has no\n        # scoped-name store, so the write is the standard honest refusal.\n        return complete()",
-        "target": "tests/unit/test_scoped_profile.py -k file_backend_refuses"
+        "target": "tests/unit/test_scoped_profile.py::test_the_file_backend_refuses_the_write_and_reads_absent"
     },
     {
         "name": "a decision proof authenticates its own side's nonce",
         "file": "nora/domain/account_linking.py",
         "old": "                or not self.created_at <= proof.authenticated_at <= now\n                or not hmac.compare_digest(_digest(proof.nonce), self.nonce_hashes[payload.side])):",
         "new": "                or not self.created_at <= proof.authenticated_at <= now):",
-        "target": "tests/unit/test_holder_link.py tests/unit/test_account_linking_state.py -k forwarded"
+        "target": "tests/unit/test_holder_link.py::test_a_wrong_nonce_or_forwarded_challenge_is_refused_without_side_effects tests/unit/test_holder_link.py::test_a_forwarded_proof_never_survives_commit_revalidation tests/unit/test_account_linking_state.py::test_forwarded_code_does_not_authenticate_the_receiving_holder"
     },
     {
         "name": "a decision must name this request's exact effect",
         "file": "nora/domain/account_linking.py",
         "old": "        if (payload.request_id != self.request_id or payload.pair != self.pair\n                or (isinstance(payload, LinkApproval)\n                    and payload.surviving_person != self.surviving_person)):",
         "new": "        if False:",
-        "target": "tests/unit/test_account_linking_state.py -k approval_cannot_substitute"
+        "target": "tests/unit/test_account_linking_state.py::test_approval_cannot_substitute_another_request_or_surviving_person"
     },
     {
         "name": "only a PENDING request is commit-ready",
         "file": "nora/domain/account_linking.py",
         "old": "        return self.state is LinkState.PENDING and self.approved == frozenset(LinkSide)",
         "new": "        return self.approved == frozenset(LinkSide)",
-        "target": "tests/unit/test_link_publication.py tests/unit/test_account_linking_state.py -k expir"
+        "target": "tests/unit/test_link_publication.py::test_expired_request_is_refused_not_committed tests/unit/test_account_linking_state.py::test_expiry_and_a_consumed_approval_cannot_be_replayed"
     },
     {
         "name": "commit revalidates both holders' live ownership and lifecycle",
         "file": "nora/domain/account_linking.py",
         "old": "        if any(owners.get(self.pair.account(side)) != self.owners[side]\n               or self.owners[side] not in active_people for side in LinkSide):",
         "new": "        if False and any(owners.get(self.pair.account(side)) != self.owners[side]\n               or self.owners[side] not in active_people for side in LinkSide):",
-        "target": "tests/unit/test_link_publication.py -k competing"
+        "target": "tests/unit/test_link_publication.py::test_a_competing_link_request_is_refused_by_commit_revalidation tests/unit/test_link_publication.py::test_concurrent_competing_link_commits_resolve_to_one_winner"
     },
     {
         "name": "commit revalidates the approved authority revisions",
         "file": "nora/domain/account_linking.py",
         "old": "        if any(revisions.get(key) != value for key, value in self.revisions.items()):",
         "new": "        if False and any(revisions.get(key) != value for key, value in self.revisions.items()):",
-        "target": "tests/unit/test_link_publication.py -k between_approval_and_commit"
+        "target": "tests/unit/test_link_publication.py::test_moved_ownership_between_approval_and_commit_denies tests/unit/test_link_publication.py::test_changed_authority_between_approval_and_commit_denies"
     },
     {
         "name": "a decided request can never re-enter the commit path",
         "file": "nora/people/app/link_publication.py",
         "old": "        if link.state is not LinkState.PENDING:\n            if record is not None and record.state is not OperationJournalState.COMPLETE:",
         "new": "        if False:\n            if record is not None and record.state is not OperationJournalState.COMPLETE:",
-        "target": "tests/unit/test_holder_link.py -k refusal_and_cancellation"
+        "target": "tests/unit/test_holder_link.py::test_refusal_and_cancellation_leave_the_accounts_unlinked"
     },
     {
         "name": "a retried commit refuses a changed recorded effect",
         "file": "nora/people/app/link_publication.py",
         "old": "        elif dict(record.snapshot) != self._snapshot(link, plan):",
         "new": "        elif dict(record.snapshot) == self._snapshot(link, plan):",
-        "target": "tests/unit/test_link_publication.py -k retried_commit"
+        "target": "tests/unit/test_link_publication.py::test_a_retried_commit_whose_recorded_effect_changed_is_refused"
     },
     {
         "name": "consolidation drops the loser's relations in every scope",
         "file": "nora/people/app/link_publication.py",
         "old": "                outcome = await self._backend.drop_relation(\n                    scope=scope, relation=relation, person_id=loser)",
         "new": "                outcome = complete()",
-        "target": "tests/unit/test_link_publication.py -k commit_publishes"
+        "target": "tests/unit/test_link_publication.py::test_commit_publishes_alias_consolidation_and_normalized_authority"
     },
     {
         "name": "an unconfirmed remove-side effect raises a durable authority block",
         "file": "nora/people/app/managed_authority.py",
         "old": "            if person_id is not None:\n                await self._bindings.block_authority(\n                    AuthorityBlock(",
         "new": "            if False:\n                await self._bindings.block_authority(\n                    AuthorityBlock(",
-        "target": "tests/unit/test_managed_authority.py -k failed_revoke_blocks"
+        "target": "tests/unit/test_managed_authority.py::test_a_failed_revoke_blocks_the_affected_person_until_confirmed"
     },
     {
         "name": "grant_access cannot carry management permits",
         "file": "nora/domain/management.py",
         "old": "        unknown = typed - ACCESS_PERMITS",
         "new": "        unknown = frozenset()",
-        "target": "tests/domain/test_management.py -k access_change_rejects"
+        "target": "tests/domain/test_management.py::test_access_change_rejects_management_permits"
     },
     {
         "name": "delegation cannot carry access permits",
         "file": "nora/domain/management.py",
         "old": "        unknown = typed - MANAGEMENT_PERMITS",
         "new": "        unknown = frozenset()",
-        "target": "tests/domain/test_management.py -k delegation_rejects"
+        "target": "tests/domain/test_management.py::test_delegation_rejects_access_permits"
     },
     {
         "name": "the management request schema refuses a caller-supplied actor",
         "file": "nora/web/management_request.py",
         "old": "    model_config = ConfigDict(extra=\"forbid\", strict=True, frozen=True)",
         "new": "    model_config = ConfigDict(extra=\"ignore\", strict=True, frozen=True)",
-        "target": "tests/web/test_management_api.py -k nominate_an_actor_at_any_level"
+        "target": "tests/web/test_management_api.py::test_request_cannot_nominate_an_actor_at_any_level"
     },
     {
         "name": "the portal snapshot excludes scopes the viewer may not read",
         "file": "nora/people/app/portal_access.py",
         "old": "            result = await self._authority.check(scope=scope, person_id=viewer, permit=\"view\")\n            if result.verdict not in {Verdict.ALLOWED, Verdict.DENIED}:\n                raise ValueError(\"scope authority is unavailable\")\n            if not result.allowed:\n                continue",
         "new": "            result = await self._authority.check(scope=scope, person_id=viewer, permit=\"view\")\n            if result.verdict not in {Verdict.ALLOWED, Verdict.DENIED}:\n                raise ValueError(\"scope authority is unavailable\")\n            if result.allowed:\n                pass",
-        "target": "tests/unit/test_managed_authority.py -k open_room_admission"
+        "target": "tests/unit/test_managed_authority.py::test_open_room_admission_grants_no_portal_principal_and_no_sibling_read"
     },
     {
         "name": "a roster departs a member only when sync was its sole support",
         "file": "nora/people/app/managed_authority.py",
         "old": "                    if m.sources <= {effect.sync_source}:\n                        departed.add(m.person_id)",
         "new": "                    if m.sources <= {effect.sync_source}:\n                        retracted.discard(m.person_id)\n                        departed.add(m.person_id)",
-        "target": "tests/unit/test_roster_observation.py -k complete_retraction"
+        "target": "tests/unit/test_roster_observation.py::test_a_complete_retraction_leaves_restrictions_and_other_support_in_place"
     },
     {
         "name": "a denied sender verdict gates the ingest decision before any turn",
         "file": "nora/ingest/pipeline.py",
         "old": "        if verdict is not None and not verdict.allowed:",
         "new": "        if verdict is not None and verdict.allowed:",
-        "target": "tests/integration/test_managed_ingest_authority.py -k sibling_unit"
+        "target": "tests/integration/test_managed_ingest_authority.py::test_a_member_only_of_a_sibling_unit_is_refused_at_the_same_entry"
     },
     {
         "name": "the Kratos boot probe refuses a half-wired managed backend",
         "file": "nora/app/composition_stores.py",
         "old": "    if kratos.verdict is Verdict.UNAVAILABLE:",
         "new": "    if kratos.verdict is not Verdict.UNAVAILABLE:",
-        "target": "tests/web/test_management_bootstrap.py -k refuses_unavailable_ory"
+        "target": "tests/web/test_management_bootstrap.py::test_selected_backend_refuses_unavailable_ory_instead_of_borrowing_file_authority"
     },
     {
         "name": "the Keto boot probe refuses a half-wired managed backend",
         "file": "nora/app/composition_stores.py",
         "old": "    if not isinstance(keto, frozenset):",
         "new": "    if isinstance(keto, frozenset):",
-        "target": "tests/web/test_management_bootstrap.py -k refuses_unavailable_ory"
+        "target": "tests/web/test_management_bootstrap.py::test_selected_backend_refuses_unavailable_ory_instead_of_borrowing_file_authority"
     },
     {
         "name": "only a BOUND account resolves through an identifier",
         "file": "nora/infra/sql/managed_identity.py",
         "old": "            MANAGED_IDENTIFIER.c.platform == platform,\n            MANAGED_IDENTIFIER.c.value == value,\n            MANAGED_ACCOUNT.c.state == AccountState.BOUND.value,",
         "new": "            MANAGED_IDENTIFIER.c.platform == platform,\n            MANAGED_IDENTIFIER.c.value == value,",
-        "target": "tests/integration/test_managed_identity_restore.py -k coordinated_backup"
+        "target": "tests/integration/test_managed_identity_restore.py::test_coordinated_backup_restores_linked_identity_and_revocation"
     },
     {
         "name": "the registration ownership check guards the binding path the PK alone cannot",
         "file": "nora/infra/sql/managed_registration.py",
         "old": "        if owner.person_id != person.person_id:",
         "new": "        if False:",
-        "target": "tests/contract/test_binding_store_contract.py -k never_rebind_elsewhere"
+        "target": "tests/contract/test_binding_store_contract.py::test_revoked_bindings_stop_resolving_and_never_rebind_elsewhere"
     },
     {
         "name": "a revoked binding keeps its identifiers reserved to that account",
         "file": "nora/infra/sql/managed_registration.py",
         "old": "        if any(\n            owner is not None and str(owner.account_id) != account_id\n            for owner in owners.values()\n        ):",
         "new": "        if any(\n            owner is not None and owner.state == AccountState.BOUND.value\n            and str(owner.account_id) != account_id\n            for owner in owners.values()\n        ):",
-        "target": "tests/contract/test_binding_store_contract.py -k keeps_revoked_ownership_reserved"
+        "target": "tests/contract/test_binding_store_contract.py::test_bind_identifiers_keeps_revoked_ownership_reserved"
     },
     {
         "name": "person publication is idempotent across replayed registration",
         "file": "nora/infra/sql/managed_registration.py",
         "old": "        .on_conflict_do_nothing(index_elements=[\"person_id\"])\n    )",
         "new": "\n    )",
-        "target": "tests/contract/test_binding_store_contract.py -k replaying_the_same_registration"
+        "target": "tests/contract/test_binding_store_contract.py::test_replaying_the_same_registration_is_a_no_op"
     },
     {
         "name": "unlink drops the holder's derived sessions before completing",
         "file": "nora/people/app/managed.py",
         "old": "        if outcome.status is OutcomeStatus.COMPLETE:\n            outcome = await self._run_binding(\n                record, \"sessions\",\n                lambda: self._registry.drop_sessions(external_id=bound.person_id),\n            )",
         "new": "        if outcome.status is OutcomeStatus.COMPLETE and False:\n            outcome = await self._run_binding(\n                record, \"sessions\",\n                lambda: self._registry.drop_sessions(external_id=bound.person_id),\n            )",
-        "target": "tests/unit/test_link_publication.py -k unlink_is_holder_exact"
+        "target": "tests/unit/test_link_publication.py::test_unlink_is_holder_exact_and_drops_derived_sessions"
     },
     {
         "name": "a side's private approval is consumed exactly once",
         "file": "nora/domain/account_linking.py",
         "old": "            if payload.side in self.approved:",
         "new": "            if False and payload.side in self.approved:",
-        "target": "tests/unit/test_link_publication.py tests/unit/test_account_linking_state.py -k replay"
+        "target": "tests/unit/test_link_publication.py::test_a_replayed_approval_or_proof_never_authorizes_a_commit tests/unit/test_account_linking_state.py::test_expiry_and_a_consumed_approval_cannot_be_replayed"
     },
     {
         "name": "unlink binds the actor's person to the account's live owner",
         "file": "nora/people/app/managed.py",
         "old": "        if (bound is None or bound.person_id != payload.expected_person\n                or bound.person_id != op.actor.person_id):\n            return denied(\"binding-mismatch\")",
         "new": "        if (bound is None or bound.person_id != payload.expected_person):\n            return denied(\"binding-mismatch\")",
-        "target": "tests/unit/test_link_publication.py -k registered_non_holder"
+        "target": "tests/unit/test_link_publication.py::test_unlink_refuses_a_registered_non_holder_speaking_for_the_holders_account"
     },
     {
         "name": "suspension writes the lifecycle hold it claims",
         "file": "nora/people/app/managed.py",
         "old": "            lambda: self._bindings.set_lifecycle(\n                person_id=person.person_id, lifecycle=to\n            ),",
         "new": "            lambda: self._bindings.set_lifecycle(\n                person_id=person.person_id, lifecycle=person.lifecycle\n            ),",
-        "target": "tests/unit/test_link_publication.py -k suspending_the_survivor"
+        "target": "tests/unit/test_link_publication.py::test_suspending_the_survivor_restores_no_loser_grants"
     },
     {
         "name": "revoke_access drops each permit's relation rather than keeping it",
         "file": "nora/people/app/managed_authority.py",
         "old": "                if kind == \"grant_access\"\n                else self._backend.drop_relation(",
         "new": "                if kind == \"grant_access\"\n                else self._backend.put_relation(",
-        "target": "tests/unit/test_link_publication.py -k revoking_the_survivors"
+        "target": "tests/unit/test_link_publication.py::test_revoking_the_survivors_grant_restores_no_loser_grants"
     },
     {
         "name": "the whole registration ownership refuse block is the guard the identifier PK seconds",
         "file": "nora/infra/sql/managed_registration.py",
         "old": "    for ident, owner in owners.items():\n        if owner is None:\n            continue\n        if owner.person_id != person.person_id:\n            raise IdentifierConflictError(\n                f\"identifier {ident.platform}:{ident.kind} is owned \"\n                \"by another person\"\n            )\n        if (\n            owner.state == AccountState.BOUND.value\n            and str(owner.account_id) != account.account_id\n        ):\n            raise IdentifierConflictError(\n                f\"identifier {ident.platform}:{ident.kind} is held \"\n                \"by a different bound account\"\n            )",
         "new": "    for _ident, owner in owners.items():\n        if owner is None:\n            continue",
-        "target": "tests/contract/test_binding_store_contract.py -k never_a_merge"
+        "target": "tests/contract/test_binding_store_contract.py::test_an_identifier_owned_by_another_person_is_a_conflict_never_a_merge"
     }
 ]

@@ -43,7 +43,6 @@ from nora.infra.sql import memory_index
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.graph_projection import ProjectionContext
 from nora.infra.sql.memory_graph import SqlMemoryGraph
 from nora.infra.sql.migrations_runner import run_migrations
@@ -56,6 +55,7 @@ from nora.infra.sql.schema import (
     PRESENCE_STAYS,
     ROLLUP_BUILD,
 )
+from tests.fixtures.gatherings import SeededGatheringStore
 
 pytestmark = pytest.mark.asyncio
 
@@ -220,7 +220,7 @@ async def test_a_character_is_reachable_from_its_subject(engine):
 
 async def test_an_event_is_reachable_from_its_people(engine):
     mid = await _said(engine, person="member-a", room="ga")
-    event = await SqlGatheringStore(engine).create(
+    event = await SeededGatheringStore(engine).create(
         _event(people=("member-a",)),
         evidence=EventEvidence(
             parts=frozenset({"what"}),
@@ -243,7 +243,7 @@ async def test_an_event_is_reachable_from_its_people(engine):
 async def test_citations_that_resolve_to_nothing_project_nothing(engine):
     mid = await _said(engine)
     await _line(engine, cite="424242424242")
-    await SqlGatheringStore(engine).create(_event(people=("member-a",)))
+    await SeededGatheringStore(engine).create(_event(people=("member-a",)))
     assert mid  # the row was written; it is just not cited
     assert await _abouts(engine) == []
 
@@ -305,7 +305,7 @@ async def test_a_revision_replaces_and_a_retire_retires(engine):
 
 async def test_an_event_revision_replaces_and_cancellation_retires(engine):
     first = await _said(engine, person="member-a", room="ga")
-    store = SqlGatheringStore(engine)
+    store = SeededGatheringStore(engine)
     event = await store.create(
         _event(people=("member-a",)),
         evidence=EventEvidence(
@@ -490,7 +490,7 @@ async def test_event_citations_live_on_the_revision_and_survive_a_rebuild(engine
     rebuilding re-derives them; a write with no citations stores none and
     projects none."""
     mid = await _said(engine, person="member-a", room="ga")
-    store = SqlGatheringStore(engine)
+    store = SeededGatheringStore(engine)
     event = await store.create(
         _event(people=("member-a",)),
         evidence=EventEvidence(

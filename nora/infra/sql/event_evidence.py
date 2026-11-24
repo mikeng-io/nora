@@ -1,11 +1,11 @@
 """What an event write rests on, resolved against the database in the write's
 own transaction (migration `0086_event_citations`).
 
-`nora.infra.sql.gatherings.SqlGatheringStore.create`/`update` call
-`apply_evidence` with the `EventEvidence` a verb handed them. It does the
+`nora.infra.sql.gatherings.SqlGatheringStore.update` passes its
+`EventEvidence` to `apply_evidence`. It does the
 lookups the pure `nora.domain.gatherings.event_lineage` needs (the room each
 cited message was said in, the lineage each cited Rollup row carries, the
-event's own room key). Both ride the caller's connection, so the row, its
+event's own room key). The reads use the caller's connection, so the row, its
 revision and its lineage are one fact.
 
 A hidden message (`hidden_at`) is treated as gone: a citation of it resolves
