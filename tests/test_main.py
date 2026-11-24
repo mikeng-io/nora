@@ -333,6 +333,13 @@ async def test_the_memory_index_drain_is_spawned_at_the_configured_interval(env,
     assert calls == [{"interval_seconds": 7.5, "embed": None}]
 
 
+@pytest.mark.parametrize(
+    ("provider", "expected_class", "expected_key"),
+    [
+        ("tavily", "TavilySearchProvider", "tavily-key"),
+        ("exa", "ExaSearchProvider", "exa-key"),
+    ],
+)
 async def test_build_app_builds_the_search_backend_the_config_names(
     env, monkeypatch, provider, expected_class, expected_key,
 ):
