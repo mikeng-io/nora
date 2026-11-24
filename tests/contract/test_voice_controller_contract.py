@@ -241,16 +241,27 @@ async def test_a_volume_out_of_range_is_rejected(controller):
 async def test_a_stream_url_ffmpeg_could_not_take_is_rejected(controller):
     """The controller refuses a URL that is not http(s), or that carries
     whitespace or a control character, before it applies anything."""
-    fake, client, _ = controller
+    fake, client, test_client = controller
     generation = await _join(client)
 
     for url in ("https://cdn.example/a\x00b", "https://cdn.example/a\nb", "file:///etc/passwd",
                 "ftp://cdn.example/a", "not a url", " https://cdn.example/a",
-                "https://cdn.example/a ", "https://cdn.example/a\u00a0b"):
+                "https://cdn.example/a ", "https://cdn.example/a\u00a0b", "https://[::1/a",
+                "https://cdn.example:abc/a", "https://user@/a", "https:cdn.example",
+                "https:/cdn.example", "https://cdn.example:99999/a"):
         with pytest.raises(VoiceControllerRejected) as excinfo:
             await client.play(generation, url, guild_id=GUILD, operation_id=str(uuid4()))
         assert excinfo.value.reason == "invalid_body", url
     assert fake.playback_id is None, "nothing was applied"
+
+    # A refused URL leaves no record behind: its id reads back nothing and a
+    # retry under it runs again.
+    with pytest.raises(VoiceControllerRejected):
+        await client.play(generation, "https://[::1/a", guild_id=GUILD, operation_id="op-v6")
+    read = await (await test_client.get(f"{OPERATIONS}/op-v6")).json()
+    assert read["outcome"] == "nothing_found"
+    await client.play(generation, "https://cdn.example/a", guild_id=GUILD, operation_id="op-v6")
+    assert fake.playback_id is not None
 
 
 async def test_resume_during_speech_is_a_409(controller):

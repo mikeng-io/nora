@@ -402,7 +402,8 @@ test('a play is refused a stream_url ffmpeg could not take, and never completes 
   const { generation } = await h.join();
   for (const url of ['https://cdn.test/a\u0000b', 'https://cdn.test/a\nb', 'file:///etc/passwd', 'ftp://cdn.test/a', 'not a url',
     ' https://cdn.test/a', 'https://cdn.test/a ', 'https://cdn.test/a b', 'https://cdn.test/a\tb', 'https://cdn.test/a\u00a0b',
-    'https://cdn.test/a\u0085b']) {
+    'https://cdn.test/a\u0085b', 'https://[::1/a', 'https://cdn.test:abc/a', 'https://user@/a', 'https:cdn.test',
+    'https:/cdn.test', 'https://cdn.test:99999/a']) {
     const res = await h.op('play', { guild_id: GUILD, generation, stream_url: url }, { operationId: 'op-bad-url' });
     assert.equal(res.status, 400, JSON.stringify(url));
     assert.deepEqual(res.body, { error: 'invalid_body' }, JSON.stringify(url));

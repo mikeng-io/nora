@@ -102,13 +102,18 @@ function closeUnread(req, res, status, error) {
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-// What ffmpeg may be handed: an http(s) URL with no whitespace (leading and
-// trailing included, which URL parsing would trim) and no control characters.
+// What ffmpeg may be handed: `http://` or `https://` and an authority, a
+// non-empty host and, if any, a numeric port in range; no whitespace anywhere
+// (URL parsing would trim it) and no control character. The `https:host`
+// shorthand URL parsing accepts is refused. nora/testing/voice.py holds the
+// same rule.
 const UNSAFE_CHARS = /[\s\u0000-\u001f\u007f-\u009f]/u;
+const AUTHORITY_FORM = /^https?:\/\//i;
 function isStreamUrl(value) {
-  if (typeof value !== 'string' || !value || UNSAFE_CHARS.test(value)) return false;
+  if (typeof value !== 'string' || UNSAFE_CHARS.test(value) || !AUTHORITY_FORM.test(value)) return false;
   try {
-    return ['http:', 'https:'].includes(new URL(value).protocol);
+    // The parser throws on a malformed host or port.
+    return new URL(value).hostname !== '';
   } catch {
     return false;
   }
