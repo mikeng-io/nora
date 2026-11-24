@@ -22,6 +22,7 @@ class ActPass:
     ordinals: Counter[str] = field(default_factory=Counter)
     requests: dict[tuple[str, str], int] = field(default_factory=dict)
     shown: set[str] = field(default_factory=set)
+    created_intentions: set[str] = field(default_factory=set)
     internal: set[str] = field(default_factory=set)
     running_tools: dict[str, dict[str, Any]] = field(default_factory=dict)
 
@@ -70,6 +71,12 @@ def pass_shown() -> set[str] | None:
     """Return the graph IDs the active pass has seen."""
     active = _active_pass.get()
     return active.shown if active is not None else None
+
+
+def pass_created_intentions() -> set[str] | None:
+    """Return the intention IDs confirmed as written by the active pass."""
+    active = _active_pass.get()
+    return active.created_intentions if active is not None else None
 
 
 def seed_pass_shown(ids: frozenset[str]) -> None:

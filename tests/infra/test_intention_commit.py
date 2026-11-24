@@ -113,6 +113,23 @@ async def test_a_citation_outside_the_pass_shown_set_is_refused(engine):
     assert await _rows(engine, INTENTION) == {}
 
 
+async def test_a_proactive_pass_can_persist_and_revise_its_own_passive_intention(engine):
+    tool = _tool(engine)
+    context = replace(_CONTEXT, occasion="proactive")
+    with act_pass(ActAuthority(context.unit, pass_context=context), shown=frozenset({"item-1"})):
+        opened = await tool([_open()])
+        assert opened["status"] == "ok"
+        base = opened["operations"][0]["id"]
+        revised = await tool([_open(op="revise", base=base)])
+        assert revised["status"] == "ok"
+
+    rows = await _rows(engine, INTENTION)
+    head = rows[revised["operations"][0]["id"]]
+    assert head["state"] == "open"
+    assert head["delivery_mode"] == "when_it_comes_up"
+    assert (head["replaces"], rows[base]["state"]) == (base, "superseded")
+
+
 async def test_a_malformed_operation_leaves_its_valid_sibling_admitted(engine):
     tool = adapt(_spec("intention_commit", _tool(engine)))
     with _pass("item-1"):

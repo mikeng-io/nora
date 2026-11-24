@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
+from nora.agent.toolkit.spec import _spec
 from nora.app.fire import lost_job_occasion, relay_occasion
 from nora.domain.events import Event
+from nora.memory.adapters.tools.intentions import _make_intention_commit
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import Conversation, Policy
@@ -66,5 +70,31 @@ def test_fire_intention_opt_in_respects_the_grant_ceiling():
         fire_turn=True, commit_intentions=True, grant=frozenset({"send_reply"}),
     )
 
+    assert "send_reply" in surface.admitted
+    assert "intention_commit" not in surface.admitted
+
+
+class _RegistryWithPrebuiltIntention(ToolRegistry):
+    """Exercise the registry ceiling even if a spec reaches it unwired."""
+
+    def specs(self, **bindings):
+        prebuilt = _spec("intention_commit", _make_intention_commit(
+            SimpleNamespace(intention_admission=None, metrics=bindings["metrics"]),
+        ))
+        return (*super().specs(**bindings), prebuilt)
+
+
+@pytest.mark.parametrize(
+    "registry_type", [ToolRegistry, _RegistryWithPrebuiltIntention], ids=["normal", "prebuilt"],
+)
+def test_fire_intention_opt_in_requires_admission(registry_type):
+    persons = _FakePersons()
+    registry = registry_type(intention_admission=None)
+    surface = registry.surface(
+        store=_FakeStore(), conversation_id="g1", conversation_type="group",
+        persons=persons, deliverer=_deliverer(), metrics=Metrics(),
+        room=Room(platform="signal", conversation_id="g1", roster_source=None, persons=persons),
+        fire_turn=True, commit_intentions=True,
+    )
     assert "send_reply" in surface.admitted
     assert "intention_commit" not in surface.admitted

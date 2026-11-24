@@ -1,0 +1,44 @@
+[
+  {
+    "name": "an unbound proactive commit cannot target another room",
+    "file": "nora/memory/adapters/tools/intentions.py",
+    "old": "    if intention.rooms:\n        return Refusal(\"passive_commit_only\", \"rooms\")\n",
+    "new": "    if intention.rooms:\n        return None\n",
+    "target": "tests/unit/test_passive_intention_commit.py::test_unbound_proactive_pass_refuses_non_passive_writes[target-another-room]"
+  },
+  {
+    "name": "an unbound proactive commit cannot schedule a recurring delivery",
+    "file": "nora/memory/adapters/tools/intentions.py",
+    "old": "    if intention.delivery_mode != \"when_it_comes_up\":\n        return Refusal(\"passive_commit_only\", \"delivery\")\n",
+    "new": "",
+    "target": "tests/unit/test_passive_intention_commit.py::test_unbound_proactive_pass_refuses_non_passive_writes[recurring-delivery]"
+  },
+  {
+    "name": "an unbound proactive commit cannot drop an intention",
+    "file": "nora/memory/adapters/tools/intentions.py",
+    "old": "    if isinstance(entry, (Retire, CloseIntention)):\n        return Refusal(\"passive_commit_only\", \"op\")\n",
+    "new": "    if isinstance(entry, Retire):\n        return None\n    if isinstance(entry, CloseIntention):\n        return Refusal(\"passive_commit_only\", \"op\")\n",
+    "target": "tests/unit/test_passive_intention_commit.py::test_unbound_proactive_pass_refuses_non_passive_writes[drop-unrelated]"
+  },
+  {
+    "name": "an unbound proactive commit cannot close an intention",
+    "file": "nora/memory/adapters/tools/intentions.py",
+    "old": "    if isinstance(entry, (Retire, CloseIntention)):\n        return Refusal(\"passive_commit_only\", \"op\")\n",
+    "new": "    if isinstance(entry, CloseIntention):\n        return None\n    if isinstance(entry, Retire):\n        return Refusal(\"passive_commit_only\", \"op\")\n",
+    "target": "tests/unit/test_passive_intention_commit.py::test_unbound_proactive_pass_refuses_non_passive_writes[close-unrelated]"
+  },
+  {
+    "name": "an unbound proactive commit cannot revise a merely shown intention",
+    "file": "nora/memory/adapters/tools/intentions.py",
+    "old": "    if isinstance(entry, Revise) and entry.base not in created:\n        return Refusal(\"passive_commit_only\", \"base\")\n",
+    "new": "",
+    "target": "tests/unit/test_passive_intention_commit.py::test_unbound_proactive_pass_refuses_non_passive_writes[revise-unrelated]"
+  },
+  {
+    "name": "confirmed intention IDs allow a same-pass revision",
+    "file": "nora/memory/adapters/tools/intentions.py",
+    "old": "            created.add(outcome.id)\n",
+    "new": "            pass\n",
+    "target": "tests/unit/test_passive_intention_commit.py::test_only_the_creating_pass_can_revise_its_passive_intention"
+  }
+]
