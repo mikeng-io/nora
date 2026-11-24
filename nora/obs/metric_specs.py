@@ -1064,81 +1064,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "platform and status (ok / error / timeout / unsupported / empty).",
         ("platform", "status"),
     ),
-    # `nora_dream_batch_shrunk_total`: `unavailable` holds the watermark on purpose,
-    # so the next fire re-reads the IDENTICAL range, and for a failure caused BY that
-    # range the retry fails the same way, forever, paced only by the backoff cap.
-    # `nora_dream_run_total{status="unavailable"}` cannot separate that from a
-    # provider outage. This series says «something about THIS range does not fit»,
-    # and a unit healing itself still shows up on it.
-    _CounterSpec(
-        "nora_dream_batch_shrunk_total",
-        "Dream cycles that read FEWER rows than their configured batch "
-        "because the previous attempt on this (adaptor, key) reported "
-        "unavailable. Rising means a unit is retrying with a smaller batch "
-        "rather than re-sending the range that just failed; sustained rising "
-        "on one adaptor means its batch or its per-call ceiling is mis-sized, "
-        "not that the provider is down.",
-        ("adaptor",),
-    ),
-    # `nora_dream_skipped_total` `reason="in_flight"`: dream_loop's per-scope
-    # lock. A slow extraction still running when the next tick comes round is
-    # SKIPPED, never re-entered, because re-entering would read the same un-advanced
-    # watermark and append the same evidence twice, and the rendered "12x, 3 people"
-    # would be a fabricated number.
-    _CounterSpec(
-        "nora_dream_skipped_total",
-        "Dream-loop ticks skipped, by reason. reason=\"in_flight\": the "
-        "previous cycle for this SCOPE had not finished yet. "
-        "reason=\"in_flight_adaptor\": the previous cycle for this "
-        "(adaptor, key) had not — kept apart because one adaptor wedged and "
-        "one scope wedged are different diagnoses on the one series that "
-        "answers «is the Dreamer stuck?». reason=\"schedule\": this "
-        "(adaptor, key) already fired in the current slot of its own "
-        "AdaptorSchedule — the ORDINARY outcome for a daily adaptor on a "
-        "5-minute tick, and the only series that distinguishes a schedule "
-        "holding correctly from one that has stopped firing at all.",
-        ("reason",),
-    ),
-    # `SqlLanguageStore.watermark_is_behind_the_record`'s tell, read by
-    # `dream_loop`: a watermark below the oldest SURVIVING message means rows were
-    # pruned before this consolidator ever read them. R-27's `unavailable` ("I could
-    # not see those"), never `nothing_found` ("nothing happened"). Labelled by scope
-    # so a specific room's loss is findable; structurally zero while
-    # `store.prune_enabled` is false.
-    _CounterSpec(
-        "nora_dream_evidence_lost_total",
-        "Dream-loop scopes where messages were pruned before this "
-        "consolidator ever read them, by scope.",
-        ("scope",),
-    ),
-    # The Dreamer runtime. R-27's three states, at the run. A run that FAILED is
-    # `unavailable` and is counted, never silently absent: the Dreamer has nobody
-    # waiting on it, and an absent metric and a healthy-but-idle loop look identical
-    # from outside.
-    _CounterSpec(
-        "nora_dream_run_total",
-        "Dreamer adaptor runs by outcome: ok (wrote something), "
-        "nothing_found (looked, found nothing), unavailable (could not "
-        "check — an ERROR is never a PASS).",
-        ("adaptor", "status"),
-    ),
-    # Per-fire sampling (AdaptorSchedule.samples): one run is N model calls
-    # unioned, and a run's `unavailable` means «no sample was readable». This is the
-    # per-sample reading, so an operator can tell «one of five samples timed out»
-    # from «the run failed».
-    _CounterSpec(
-        "nora_dream_sample_total",
-        "Model calls a Dreamer run made, by adaptor and by whether the "
-        "sample's envelope was readable: ok, or unavailable (timeout, "
-        "exception, or no envelope). A run unions its readable samples and "
-        "is unavailable only when this counts none as ok for it.",
-        ("adaptor", "status"),
-    ),
-    _CounterSpec(
-        "nora_dream_written_total",
-        "Rows written through an adaptor's sink, by adaptor.",
-        ("adaptor",),
-    ),
     # The fail-closed branch in `DreamerToolSource.build`: the adaptor's grant
     # names a home room, the unit declares none in policy.toml, and the acts are
     # withheld along with the room. This is a CONFIG state, true on every pass until
@@ -1152,24 +1077,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "config gap, counted every pass; the log says it once.",
         ("adaptor", "unit"),
     ),
-    # `CultureAdaptor` calls an injected `resolve_names`
-    # (`Persons.name_transcript`) before rendering a sender's name, and a raising
-    # resolver must not take the whole occasion down with it: the occasion still
-    # renders, on the `speaker_name` floor (the profile name, or "unknown"), rather
-    # than being marked `unavailable` and skipped. This is how that degraded read is
-    # observed. It should be structurally zero, since `Persons.name_transcript` does
-    # dict lookups only; a non-zero reading means the injected resolver itself is
-    # failing.
-    _CounterSpec(
-        "nora_dream_name_resolution_failed_total",
-        "Batches or evidence rows a Dreamer adaptor rendered on the "
-        "pre-resolution speaker_name floor because the injected "
-        "resolve_names call raised, by adaptor. Structurally zero; a "
-        "non-zero reading is the resolver itself breaking, not a room with "
-        "no mapped senders (which costs nothing here — resolution is only "
-        "attempted, never required).",
-        ("adaptor",),
-    ),
     # Screening is the second path into the prompt, and it must never be silent:
     # a proposal dropped for carrying a phone number or a coordinate is a real event
     # about a model reading attacker-influenceable pages, and a drop nobody counts is
@@ -1181,42 +1088,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(the per-run item ceiling — a silent cap reads as 'we wrote "
         "everything it found').",
         ("adaptor", "reason"),
-    ),
-    # An adaptor whose objective asks the model to echo a row id back has EVERY
-    # item dropped by `dream_screen` (`_UUID` matches any hyphenated uuid): the tick
-    # spends a model call, writes nothing, and reports `ok`. The CI half of this
-    # check is `tests/contract/test_dream_adaptor_contract.py`.
-    # `nora_dream_screened_total` counts the drops per item and cannot answer «was
-    # that all of them», because a run's item count is not on that series; this
-    # series can. Structurally zero while every adaptor keeps identifiers out of its
-    # envelope, which is what makes a non-zero reading worth an alert.
-    _CounterSpec(
-        "nora_dream_empty_after_screen_total",
-        "Dreamer runs where the model returned items and the R-18/R-28 "
-        "screen kept none, by adaptor: a model call spent, nothing written, "
-        "and the run still `ok` (R-27 — «there was nothing» is a claim a run "
-        "whose model DID answer may not make). Non-zero means an adaptor is "
-        "putting an identifier or a coordinate in its envelope.",
-        ("adaptor",),
-    ),
-    # A store call inside `adaptor.inputs` or `adaptor.commit` that never returns
-    # would leave `dream_loop` holding `<adaptor>:<key>` in `running` forever; the
-    # timeout releases the unit and lands HERE. That is a different diagnosis from
-    # the `unavailable` a 429 or a prose reply produces, and from
-    # `nora_dream_skipped_total{reason="in_flight_adaptor"}`, which cannot separate a
-    # long run from a wedged one.
-    _CounterSpec(
-        "nora_dream_store_timeout_total",
-        "Adaptor store phases cut off by the runtime's OWN wall clock, by "
-        "adaptor and phase: inputs (the render's reads) or commit (the "
-        "tier's writes). The run is `unavailable` and the unit is released "
-        "as soon as the phase can be cancelled — a collaborator that "
-        "swallows CancelledError, or a synchronous blocking call, can still "
-        "outlive it. A collaborator's OWN timeout (an asyncpg "
-        "command_timeout, an aiohttp read) is NOT counted here: it is the "
-        "same TimeoutError class and would put a false reading on the one "
-        "series that says a store wedged.",
-        ("adaptor", "phase"),
     ),
     # Strands raises nothing and logs nothing when a budget cap binds; the
     # `AgentResult.stop_reason` string is the only channel, so a runaway loop
@@ -1599,27 +1470,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "not have produced and is deliberately NOT `failed`, which a database "
         "blip also produces.",
         ("outcome",),
-    ),
-    # `[dreamer] max_unit_hold_seconds` fired: `_run_adaptor`'s own wall clock
-    # around the WHOLE call to `_dream_adaptor_once`, covering the model budget, the
-    # two bounded store phases AND the cursor reads around them
-    # (`clock.last_fired`/`record_fire`, every `language.*` watermark call,
-    # `record.since`, `media_join.enrich`). A DISTINCT series from
-    # `nora_dream_skipped_total{reason="in_flight_adaptor"}`: that one counts a tick
-    # that found the unit still running and cannot say whether the run in progress is
-    # long or wedged; this one fires only when the wall clock cuts a unit off. Also
-    # distinct from `nora_dream_store_timeout_total`, the timeout on one store phase:
-    # this fires only when the OUTER clock expires, which for a store-phase hang
-    # means the inner one did not (a collaborator swallowing `CancelledError`, or a
-    # synchronous blocking call).
-    _CounterSpec(
-        "nora_dream_unit_timeout_total",
-        "Dreamer (adaptor, key) units released by [dreamer] "
-        "max_unit_hold_seconds rather than by the run finishing — the unit "
-        "is a WEDGE, distinct from an ordinary long run that "
-        "nora_dream_skipped_total{reason=\"in_flight_adaptor\"} alone cannot "
-        "tell apart from one wedged since Tuesday.",
-        ("adaptor",),
     ),
     # The public Instagram summons (`nora.app.summons`). Both label vocabularies
     # are DERIVED from `nora.domain.summons`, which is what the increments pass.
@@ -2342,12 +2192,6 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
         "nora_messages_per_tag",
         "Messages actually delivered to the group per admitted tag.",
         (0, 1, 2, 3, 4, 5, 10),
-    ),
-    _HistogramSpec(
-        "nora_dream_run_seconds",
-        "Wall-clock duration of one Dreamer adaptor run, by adaptor.",
-        (1, 5, 15, 30, 60, 120, 300),
-        ("adaptor",),
     ),
     # Time the speech formatter adds before she is heard
     # (`nora_speech_format_seconds`), on every path that called the model (a short or

@@ -96,9 +96,6 @@ class DreamerAgentRunner:
         reservation = (
             TokenReservation(budget.total_tokens) if budget.reserve_tokens else None
         )
-        # ONE root span per session (AGENTS.md, instruments): the name and
-        # attributes are the ones `DreamerRuntime.run` declares for every
-        # adaptor, because the session's model call is the Dreamer's work.
         with span(
             "dream:cognition",
             **{TRACE_KIND: "generation", "nora.dreamer.adaptor": "cognition",

@@ -802,7 +802,7 @@ class ToolRegistry:
         setting, so it is DERIVED here and hand-listed nowhere.
 
         **This is a ceiling, not a grant.** Each Dreamer adaptor declares its
-        own, narrower subset by tool name (`DreamAdaptor.tools`), and the
+        own, narrower subset by tool name, and the
         runtime refuses any name outside this set. So a tool being read-only
         never by itself puts it in front of a model; it only makes it
         *grantable*.

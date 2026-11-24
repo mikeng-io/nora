@@ -171,7 +171,7 @@ def _offence(item: Mapping[str, object], *, content_checks: bool = True) -> tupl
 
 def offence(item: Mapping[str, object], *, content_checks: bool = True) -> tuple[str, str] | None:
     """`_offence` under a public name, for the runtime's screen on an
-    adaptor's own write verbs (`DreamerRuntime._screened`): one predicate for
+    lesson and session write verbs: one predicate for
     an envelope item and a verb's arguments, never a second copy."""
     return _offence(item, content_checks=content_checks)
 

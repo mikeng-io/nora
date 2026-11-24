@@ -75,7 +75,7 @@
   "comment_blocks": 17
  },
  "evals/rebuilt/entry.py": {
-  "comment_blocks": 17,
+  "comment_blocks": 16,
   "functions": {
    "standing": 134
   },
@@ -124,9 +124,9 @@
   "comment_blocks": 1
  },
  "nora/__main__.py": {
-  "comment_blocks": 15,
+  "comment_blocks": 9,
   "functions": {
-   "App.run": 268
+   "App.run": 193
   },
   "internal_docstrings": 2
  },
@@ -150,12 +150,8 @@
   "internal_docstrings": 2
  },
  "nora/agent/dreamer.py": {
-  "comment_blocks": 57,
-  "file_lines": 2170,
-  "functions": {
-   "DreamerRuntime._run_body": 310
-  },
-  "internal_docstrings": 16
+  "comment_blocks": 3,
+  "internal_docstrings": 7
  },
  "nora/agent/egress.py": {
   "comment_blocks": 6,
@@ -239,10 +235,10 @@
   "internal_docstrings": 4
  },
  "nora/agent/registry.py": {
-  "comment_blocks": 33,
-  "file_lines": 1333,
+  "comment_blocks": 32,
+  "file_lines": 1325,
   "functions": {
-   "ToolRegistry.__init__": 435
+   "ToolRegistry.__init__": 428
   },
   "internal_docstrings": 5
  },
@@ -397,26 +393,26 @@
  },
  "nora/app/cognition_session.py": {
   "comment_blocks": 25,
-  "file_lines": 2033,
+  "file_lines": 2020,
   "functions": {
    "CognitionSessionRunner.__init__": 124,
-   "CognitionSessionRunner._build_tools": 330,
+   "CognitionSessionRunner._build_tools": 328,
    "CognitionSessionRunner._run_session": 160,
    "CognitionSessionRunner.on_wake": 168
   },
   "internal_docstrings": 18
  },
  "nora/app/cognition_wiring.py": {
-  "comment_blocks": 10,
+  "comment_blocks": 6,
   "functions": {
-   "build_cognition_runner": 139
+   "build_cognition_runner": 129
   }
  },
  "nora/app/composition.py": {
-  "comment_blocks": 21,
-  "file_lines": 1454,
+  "comment_blocks": 15,
+  "file_lines": 1389,
   "functions": {
-   "_compose_dependencies": 935
+   "_compose_dependencies": 913
   },
   "internal_docstrings": 1
  },
@@ -509,15 +505,6 @@
  "nora/app/revisions.py": {
   "internal_docstrings": 1
  },
- "nora/app/runtime.py": {
-  "comment_blocks": 30,
-  "file_lines": 1524,
-  "functions": {
-   "_dream_adaptor_once": 245,
-   "dream_loop": 358
-  },
-  "internal_docstrings": 9
- },
  "nora/app/social_expiry.py": {
   "internal_docstrings": 1
  },
@@ -535,9 +522,6 @@
  },
  "nora/app/subagent_runner.py": {
   "internal_docstrings": 2
- },
- "nora/app/subconscious.py": {
-  "comment_blocks": 2
  },
  "nora/app/summons.py": {
   "comment_blocks": 15,
@@ -563,9 +547,9 @@
   "internal_docstrings": 4
  },
  "nora/config.py": {
-  "comment_blocks": 100,
-  "file_lines": 4646,
-  "internal_docstrings": 22
+  "comment_blocks": 94,
+  "file_lines": 4409,
+  "internal_docstrings": 20
  },
  "nora/doctrine/loader.py": {
   "comment_blocks": 11,
@@ -744,8 +728,8 @@
   "comment_blocks": 1
  },
  "nora/domain/ports.py": {
-  "comment_blocks": 11,
-  "file_lines": 3152
+  "comment_blocks": 9,
+  "file_lines": 2884
  },
  "nora/domain/profile.py": {
   "comment_blocks": 4,
@@ -1326,8 +1310,8 @@
   "internal_docstrings": 1
  },
  "nora/infra/sql/schema.py": {
-  "comment_blocks": 190,
-  "file_lines": 5917,
+  "comment_blocks": 189,
+  "file_lines": 5900,
   "internal_docstrings": 4
  },
  "nora/infra/sql/snapshot.py": {
@@ -1542,8 +1526,8 @@
   "internal_docstrings": 4
  },
  "nora/obs/metric_specs.py": {
-  "comment_blocks": 90,
-  "file_lines": 2500
+  "comment_blocks": 80,
+  "file_lines": 2308
  },
  "nora/obs/metrics.py": {
   "internal_docstrings": 1
@@ -1785,10 +1769,6 @@
  },
  "nora/subject/context_selector_render.py": {
   "comment_blocks": 1
- },
- "nora/subject/dreaming.py": {
-  "comment_blocks": 5,
-  "internal_docstrings": 1
  },
  "nora/subject/environment.py": {
   "comment_blocks": 2,
@@ -2035,13 +2015,6 @@
  "tests/architecture/test_doctrine_scope_folders.py": {
   "comment_blocks": 2
  },
- "tests/architecture/test_dream_store_calls_are_declared.py": {
-  "comment_blocks": 6,
-  "internal_docstrings": 9
- },
- "tests/architecture/test_dream_unit_is_wall_clocked.py": {
-  "internal_docstrings": 1
- },
  "tests/architecture/test_escaping_is_for_prompts_only.py": {
   "comment_blocks": 1,
   "internal_docstrings": 1
@@ -2129,7 +2102,7 @@
   "internal_docstrings": 1
  },
  "tests/architecture/test_port_fakes_live_in_nora_testing.py": {
-  "comment_blocks": 3
+  "comment_blocks": 2
  },
  "tests/architecture/test_portal_locales_make_the_same_claims.py": {
   "comment_blocks": 1
@@ -2209,13 +2182,6 @@
  },
  "tests/contract/test_document_store_contract.py": {
   "file_lines": 859,
-  "internal_docstrings": 1
- },
- "tests/contract/test_dream_adaptor_contract.py": {
-  "comment_blocks": 4,
-  "internal_docstrings": 2
- },
- "tests/contract/test_dream_schedule_clock_contract.py": {
   "internal_docstrings": 1
  },
  "tests/contract/test_geocoder_contract.py": {
@@ -2592,8 +2558,8 @@
   }
  },
  "tests/test_acceptance_rules.py": {
-  "comment_blocks": 46,
-  "file_lines": 1045,
+  "comment_blocks": 43,
+  "file_lines": 1020,
   "internal_docstrings": 1
  },
  "tests/test_affected_tests.py": {
@@ -2614,8 +2580,8 @@
   "internal_docstrings": 1
  },
  "tests/test_composition.py": {
-  "comment_blocks": 9,
-  "file_lines": 2114,
+  "comment_blocks": 8,
+  "file_lines": 1951,
   "internal_docstrings": 2
  },
  "tests/test_config.py": {
@@ -2700,8 +2666,8 @@
   "comment_blocks": 1
  },
  "tests/test_main.py": {
-  "comment_blocks": 3,
-  "internal_docstrings": 2
+  "comment_blocks": 2,
+  "internal_docstrings": 1
  },
  "tests/test_media_describers.py": {
   "comment_blocks": 1
@@ -2931,8 +2897,8 @@
   "comment_blocks": 1
  },
  "tests/unit/test_cognition_session_lifecycle.py": {
-  "comment_blocks": 3,
-  "file_lines": 1502,
+  "comment_blocks": 1,
+  "file_lines": 1352,
   "internal_docstrings": 4
  },
  "tests/unit/test_cognition_session_runner.py": {
@@ -2992,21 +2958,13 @@
   "comment_blocks": 1
  },
  "tests/unit/test_dream_memory_budget.py": {
-  "comment_blocks": 3
+  "comment_blocks": 1
  },
  "tests/unit/test_dream_screen.py": {
   "comment_blocks": 2
  },
  "tests/unit/test_dreamer_instructions.py": {
   "comment_blocks": 2
- },
- "tests/unit/test_dreamer_runtime.py": {
-  "comment_blocks": 17,
-  "file_lines": 2368,
-  "functions": {
-   "test_every_read_only_tool_is_classified_unit_safe_or_room_scoped": 152
-  },
-  "internal_docstrings": 2
  },
  "tests/unit/test_egress_predicates.py": {
   "comment_blocks": 2,
@@ -3185,10 +3143,6 @@
  "tests/unit/test_note_render.py": {
   "internal_docstrings": 1
  },
- "tests/unit/test_objective_parser_parity.py": {
-  "comment_blocks": 2,
-  "internal_docstrings": 7
- },
  "tests/unit/test_offline_pipeline_assembler.py": {
   "internal_docstrings": 1
  },
@@ -3282,9 +3236,7 @@
   "internal_docstrings": 3
  },
  "tests/unit/test_runtime.py": {
-  "comment_blocks": 13,
-  "file_lines": 2568,
-  "internal_docstrings": 2
+  "comment_blocks": 2
  },
  "tests/unit/test_sandbox_shared_database_guard.py": {
   "comment_blocks": 3,
@@ -3320,10 +3272,6 @@
   "comment_blocks": 1
  },
  "tests/unit/test_strands_reasoning_transport_contract.py": {
-  "comment_blocks": 1,
-  "internal_docstrings": 1
- },
- "tests/unit/test_subconscious_executor.py": {
   "comment_blocks": 1,
   "internal_docstrings": 1
  },

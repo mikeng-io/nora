@@ -93,12 +93,7 @@ async def test_a_broken_doctrine_refuses_to_start(env, tmp_path, broken):
 
 
 async def test_a_broken_dreamer_objective_refuses_to_start(env, tmp_path):
-    """The Dreamer's corpus is validated at STARTUP, not lazily on the first
-    tick, and the difference is the whole point: `dream_loop` runs every 300s in
-    a background task whose failures are per-scope and logged, so a malformed
-    objective discovered there is a Dreamer that quietly stops writing rows
-    hours after the deploy that broke it. Refused here instead, with the
-    filename in the message."""
+    """Composition refuses an invalid objective and names its file."""
     dreamer_dir = tmp_path / "dreamer"
     shutil.copytree(ROOT / "nora" / "dreamer", dreamer_dir)
     (dreamer_dir / "objectives" / "broken.md").write_text("no frontmatter")
@@ -338,111 +333,6 @@ async def test_the_memory_index_drain_is_spawned_at_the_configured_interval(env,
     assert calls == [{"interval_seconds": 7.5, "embed": None}]
 
 
-async def _run_briefly_and_record_dream_wiring(env, monkeypatch) -> list[dict]:
-    """The `dream_loop` sibling of `_run_briefly_and_record_prune_wiring`
-    above — same shape, same reasoning: a spy proves the WIRING (does
-    `App.run` spawn the loop at all), independent of whether `dream_loop`
-    itself works (that is `tests/unit/test_runtime.py`'s job)."""
-    import asyncio
-    import contextlib
-
-    import nora.__main__ as main_module
-
-    calls: list[dict] = []
-
-    async def _never() -> None:
-        await asyncio.sleep(3600)
-
-    def _spy(*args: object, **kwargs: object) -> object:
-        calls.append(dict(kwargs))
-        return _never()
-
-    monkeypatch.setattr(main_module.runtime, "dream_loop", _spy)
-    app = await build_app(env)
-    try:
-        task = asyncio.create_task(app.run())
-        for _ in range(50):
-            await asyncio.sleep(0.02)
-            if calls:
-                break
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-    finally:
-        await app.shutdown()
-    return calls
-
-
-async def test_the_dream_loop_is_not_spawned_when_the_dreamer_is_off(env, monkeypatch):
-    """A new subsystem does not switch itself on.
-
-    The clock belongs to the runtime; a tier flag never selects whether it
-    runs. The condition is one flag and the assertion names one: asserting a
-    tier flag too would make the coupling look intended, and let `[dreamer]
-    enabled = true` ship inert with a green suite behind it."""
-    import tomllib
-
-    cfg = tomllib.loads(env.read_text())
-    assert cfg.get("dreamer", {}).get("enabled", False) is False, (
-        "this test's point is the DEFAULT; the fixture must not enable it"
-    )
-
-    assert await _run_briefly_and_record_dream_wiring(env, monkeypatch) == [], (
-        "with [dreamer] off, nothing may spawn the clock"
-    )
-
-
-async def test_the_dream_loop_is_spawned_by_the_dreamer_flag_alone(
-    env, monkeypatch,
-):
-    """**The dreamer flag alone spawns the clock.**
-
-    `[dreamer] enabled = true` is the live production configuration and must
-    spawn the clock: the runtime, its adaptors, budgets and instructions are
-    built, and the clock is not gated on a TIER's flag, which would leave one
-    ERROR line in `nora.log` as the only evidence.
-
-    The clock's own numbers live in `[dreamer]`, so this also asserts they reach
-    the spawn — a flag that starts a loop on numbers from nowhere is the same
-    defect one level down."""
-    import tomllib
-
-    import tomli_w
-
-    cfg = tomllib.loads(env.read_text())
-    cfg.setdefault("dreamer", {})["enabled"] = True
-    env.write_text(tomli_w.dumps(cfg))
-
-    calls = await _run_briefly_and_record_dream_wiring(env, monkeypatch)
-    assert calls, (
-        "[dreamer] enabled = true must spawn the clock on its own — this "
-        "asserting nothing is what let an inert runtime ship as 'on'"
-    )
-    # The config values actually reached the spawn, not just the flag.
-    assert calls[0]["tick_seconds"] == 300.0
-    assert calls[0]["safety_lag"] == 300
-    assert calls[0]["batch_limit"] == 400
-
-
-# ---- which search backend gets built (DEC-157) ------------------------------
-#
-# `[search] provider` is the whole user-facing feature, and "the config field
-# exists and is readable on `cfg`" is not evidence that it selects anything.
-# These assert the CONSTRUCTED object and the key it resolved, because picking
-# the right class while reading the wrong env var is a silent way to answer
-# `unavailable` forever.
-#
-# They observe the client where it lands: the `ToolRegistry` the reply path
-# builds `web_search` from.
-
-
-@pytest.mark.parametrize(
-    ("provider", "expected_class", "expected_key"),
-    [
-        ("tavily", "TavilySearchProvider", "tavily-key"),
-        ("exa", "ExaSearchProvider", "exa-key"),
-    ],
-)
 async def test_build_app_builds_the_search_backend_the_config_names(
     env, monkeypatch, provider, expected_class, expected_key,
 ):

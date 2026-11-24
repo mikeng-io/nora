@@ -505,7 +505,7 @@ async def test_the_positive_control_a_live_write_moves_the_snapshot(engine, worl
 
 async def test_a_cognition_miss_records_nothing_and_still_answers_nothing_found(engine, world):
     (tool,) = world.source.build(
-        key="ROOM-A", names=frozenset({"note_search"}), unit=None,
+        key="ROOM-A", names=frozenset({"note_search"}),
         adaptor=COGNITION_ADAPTOR_NAME, grant=cognition_grant(),
     )
     before = (await _counts(engine))["note_candidate"]

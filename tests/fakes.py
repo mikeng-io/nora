@@ -155,13 +155,7 @@ def dreamer_runtime_for(
     tests patched out (`factory.create_dream_agent`/`invoke`) or drove with a
     stub model before the sibling `LiveCognitionAgentRunner` was removed
     (node 30)."""
-    from nora.agent.dreamer import AdaptorBudget, DreamerRuntime
-
-    class _Instructions:
-        def for_objective(self, name: str) -> Any:
-            from types import SimpleNamespace
-
-            return SimpleNamespace(text="", sha256="", versions={})
+    from nora.agent.dreamer import DreamerRuntime
 
     class _Tools:
         def read_only(self) -> frozenset[str]:
@@ -171,12 +165,7 @@ def dreamer_runtime_for(
             return {}
 
     return DreamerRuntime(
-        models=models, instructions=_Instructions(), tools=_Tools(),
-        budgets={}, default_budget=AdaptorBudget(
-            turns=10, total_tokens=1_000_000, output_tokens=100_000,
-            timeout_seconds=30.0,
-        ),
-        retry=retry, metrics=metrics, model_name="test",
+        models=models, tools=_Tools(), retry=retry, metrics=metrics,
     )
 
 

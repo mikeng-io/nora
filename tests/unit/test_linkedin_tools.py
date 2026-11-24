@@ -17,7 +17,6 @@ from typing import Any
 import pytest
 
 from nora.agent.catalog.entries import NATIVE_TOOLS
-from nora.agent.dreamer import UNIT_SAFE_TOOLS
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.domain.models import PersonRef
@@ -194,9 +193,6 @@ async def test_a_turn_nobody_asked_for_is_refused_before_anything_is_sent(
     assert social.calls == []
 
 
-def test_neither_linkedin_tool_is_unit_safe():
-    assert "linkedin_read" not in UNIT_SAFE_TOOLS
-    assert "linkedin_search" not in UNIT_SAFE_TOOLS
 
 
 # ---- linkedin_search ---------------------------------------------------------

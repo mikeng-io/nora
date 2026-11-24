@@ -116,7 +116,7 @@ class WakeEvaluator:
 
         `on_wake`: the session hook, typed by ONE Protocol, `nora.domain.stimuli.
         WakeHook` (keyword-only: `unit`, `view`, `wake_id`, `now_ms`), which
-        `nora.app.cognition_session.CognitionSessionRunner.wake_hook` also
+        `nora.app.cognition_session.CognitionSessionRunner.on_wake` also
         returns, so the two sides cannot drift apart. Called right
         after a wake is recorded, awaited in a background task, and
         never imported by name, so this module's own `nora` imports stay

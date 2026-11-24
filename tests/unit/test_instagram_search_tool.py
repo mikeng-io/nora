@@ -27,7 +27,6 @@ from aiohttp.test_utils import TestServer
 
 from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.catalog.groups import HOT_TOOLS
-from nora.agent.dreamer import UNIT_SAFE_TOOLS
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.infra.social.instagram_client import SEARCH_MAX_ACCOUNTS, InstagramSocialClient
@@ -477,7 +476,7 @@ def test_the_catalogue_lines_separate_the_two_instagram_tools_and_x():
     assert "story" not in lines["instagram_search"]
 
 
-def test_the_native_tool_row_is_complete_read_only_unit_safe_and_not_hot():
+def test_the_native_tool_row_is_complete_read_only_and_not_hot():
     row = NATIVE_TOOLS["instagram_search"]
     assert row.read_only is True
     assert row.output_contract == "three_state"
@@ -485,7 +484,6 @@ def test_the_native_tool_row_is_complete_read_only_unit_safe_and_not_hot():
     assert row.level == 3
     assert (row.side_effect_state, row.idempotency, row.retry) == ("none", "idempotent", "safe")
     assert "instagram_search" not in HOT_TOOLS
-    assert "instagram_search" in UNIT_SAFE_TOOLS
 
 
 def test_the_vocabulary_is_one_row_and_the_bridges():

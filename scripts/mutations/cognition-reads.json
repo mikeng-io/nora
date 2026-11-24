@@ -175,13 +175,6 @@
     "target": "tests/unit/test_cognition_wiring.py::test_every_tool_in_the_catalogue_has_an_audited_side_effect_line"
   },
   {
-    "name": "dreamer: an adaptor may declare the Cognition-only reads (M1, class closure)",
-    "file": "nora/agent/dreamer.py",
-    "old": "    loop_only = declared & DREAMER_LOOP_TOOLS\n",
-    "new": "    loop_only = frozenset()\n",
-    "target": "tests/unit/test_dreamer_runtime.py::test_no_adaptor_may_hold_reads_reserved_for_cognition"
-  },
-  {
     "name": "rollup_read tool: everyone in a room with nobody resolved reads every row (M2, tool layer)",
     "file": "nora/memory/adapters/tools/standing.py",
     "old": "if not c.people:",

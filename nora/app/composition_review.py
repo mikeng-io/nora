@@ -7,7 +7,7 @@ from openai import AsyncOpenAI
 from nora.agent import factory, tool_choice
 from nora.agent.dreamer import TOOL_RESULT_CAPS, DreamerRuntime, DreamToolSource
 from nora.app.cognition_agent_runner import DreamerAgentRunner
-from nora.app.composition_helpers import _adaptor_budget, _reasoning_effort
+from nora.app.composition_helpers import _reasoning_effort
 from nora.app.composition_lesson_check import independent_judge_model
 from nora.app.startup import StartupError
 from nora.config import Config
@@ -18,7 +18,7 @@ from nora.obs.metrics import Metrics
 
 def build_review_runner(
     cfg: Config, instructions: DreamerInstructions, tools: DreamToolSource,
-    model_client_for: Callable[[str], AsyncOpenAI], metrics: Metrics, *, content_checks: bool,
+    model_client_for: Callable[[str], AsyncOpenAI], metrics: Metrics,
 ) -> tuple[DreamerAgentRunner, str] | None:
     if not cfg.cognition.enabled:
         return None
@@ -39,10 +39,9 @@ def build_review_runner(
         ),
     )
     runtime = DreamerRuntime(
-        models=models, instructions=instructions, tools=tools, budgets={},
-        default_budget=_adaptor_budget(cfg.dreamer.budget_for("cognition")),
+        models=models, tools=tools,
         retry=factory.build_retry_policy(timeout_seconds=cfg.llm.timeout_seconds),
-        metrics=metrics, model_name=model, content_checks=content_checks,
+        metrics=metrics,
     )
     return DreamerAgentRunner(
         runtime=runtime, metrics=metrics, agent_name="review", result_caps=TOOL_RESULT_CAPS,

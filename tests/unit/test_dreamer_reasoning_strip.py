@@ -1,22 +1,4 @@
-"""The Dreamer half of the reasoning-strip instrument, through the REAL loop.
-
-`tests/unit/test_reasoning_strip_probe.py` proves the detector on the tag path. This
-file proves it on the Dreamer path, and the difference is not symmetry for its own sake:
-
-* with `[llm]` reasoning off the tag path emits nothing for the transport to
-  drop, while a Dreamer adaptor whose `[dreamer] reasoning_effort` is above
-  `none` can;
-* a tool-using Dreamer run with reasoning on is exactly the multi-turn shape
-  that gets stripped;
-* a Dreamer run produces one row a day rather than a reply somebody reads, so
-  a discarded reasoning there is both closer to being the verdict and much
-  harder to notice.
-
-The doubles are `test_dream_memory_budget.py`'s, imported rather than copied —
-`tests/architecture/test_port_fakes_live_in_nora_testing.py` pins one inline
-`DreamAdaptor` stand-in per suite and its list only shrinks. Only the MODEL is
-new here, because emitting `reasoningContent` is the whole point.
-"""
+"""Reasoning-strip observations through the session model invocation."""
 
 from __future__ import annotations
 
@@ -26,25 +8,12 @@ from typing import Any
 from strands.models.model import Model
 
 from nora.agent import factory
-from nora.agent.dreamer import AdaptorBudget, AdaptorGrant, DreamerRuntime
+from nora.agent.dreamer import AdaptorBudget, DreamerRuntime
 from nora.obs.metrics import Metrics
-from tests.unit.test_dream_memory_budget import (
-    ENVELOPE,
-    _Adaptor,
-    _Instructions,
-    _Models,
-    _Tools,
-)
+from tests.fakes import FixedModelSource
+from tests.unit.test_dream_memory_budget import ENVELOPE, _Tools
 
-
-def _REMIND_GRANT() -> AdaptorGrant:
-    """An adaptor that may hold `remind` past the read-only ceiling, in a real room."""
-    return AdaptorGrant(home_room=True)
-
-BUDGET = AdaptorBudget(
-    turns=8, total_tokens=100_000, output_tokens=4_000, timeout_seconds=10.0,
-    max_memory_calls=4,
-)
+BUDGET = AdaptorBudget(turns=8, total_tokens=100_000, output_tokens=4_000, timeout_seconds=10.0)
 
 
 class _ReasoningModel(Model):
@@ -115,20 +84,16 @@ async def _run(*, reasons: bool) -> tuple[_RecordingStore, Metrics]:
     store = _RecordingStore()
     metrics = Metrics()
     runtime = DreamerRuntime(
-        models=_Models(model),
-        instructions=_Instructions(),
+        models=FixedModelSource(model),
         tools=tools,
-        budgets={"proactive": BUDGET},
-        default_budget=BUDGET,
         retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
         metrics=metrics,
-        model_name="scripted",
-        grants={"proactive": _REMIND_GRANT()},
-        store_timeout_seconds=10.0,
         reasoning_strip_store=store,
     )
-    await runtime.run(
-        adaptor=_Adaptor(frozenset(tools.read_only())), key="friends", batch=(),
+    await runtime.run_agent(
+        system_prompt="Use the scoped read tool.", prompt="Read this room.",
+        tools=tools.build(key="friends", names=frozenset({"lookup_person"})),
+        budget=BUDGET, agent_name="cognition",
     )
     return store, metrics
 
@@ -147,7 +112,7 @@ async def test_a_tool_using_dreamer_run_that_reasons_is_recorded_by_adaptor():
     store, metrics = await _run(reasons=True)
 
     (row,) = store.rows
-    assert row.path == "dreamer:proactive"
+    assert row.path == "dreamer:cognition"
     assert row.tag_id is None, "a Dreamer run has no tag; the absence is the answer"
     assert row.continuation_calls == 1, "the denominator is wrong"
     assert row.strip_calls == 1, (
@@ -157,7 +122,7 @@ async def test_a_tool_using_dreamer_run_that_reasons_is_recorded_by_adaptor():
     )
     assert (row.model, row.reasoning_effort) == ("nora-dream", "low")
     assert metrics.get(
-        "nora_reasoning_strip_total", path="dreamer:proactive", outcome="stripped"
+        "nora_reasoning_strip_total", path="dreamer:cognition", outcome="stripped"
     ) == 1
 
 
@@ -172,5 +137,5 @@ async def test_the_same_dreamer_run_with_no_reasoning_is_recorded_as_clean():
     assert row.strip_calls == 0
     assert row.reasoning_effort == "none"
     assert metrics.get(
-        "nora_reasoning_strip_total", path="dreamer:proactive", outcome="clean"
+        "nora_reasoning_strip_total", path="dreamer:cognition", outcome="clean"
     ) == 1

@@ -119,7 +119,7 @@
     "file": "nora/agent/dreamer.py",
     "old": "        await watch.flush()\n        return agent, baseline, result",
     "new": "        return agent, baseline, result",
-    "target": "tests/unit/test_dreamer_reasoning_strip.py -k test_a_tool_using_dreamer_run_that_reasons_is_recorded_by_adaptor"
+    "target": "tests/unit/test_dreamer_reasoning_strip.py::test_a_tool_using_dreamer_run_that_reasons_is_recorded_by_adaptor"
   },
   {
     "name": "the Dreamer's rows name the ADAPTOR",
@@ -127,7 +127,7 @@
     "file": "nora/agent/dreamer.py",
     "old": "            path=dreamer_path(agent_name), store=self._reasoning_strip_store,",
     "new": "            path=\"dreamer\", store=self._reasoning_strip_store,",
-    "target": "tests/unit/test_dreamer_reasoning_strip.py -k test_a_tool_using_dreamer_run_that_reasons_is_recorded_by_adaptor"
+    "target": "tests/unit/test_dreamer_reasoning_strip.py::test_a_tool_using_dreamer_run_that_reasons_is_recorded_by_adaptor"
   },
   {
     "name": "the database refuses a row with no opportunity",

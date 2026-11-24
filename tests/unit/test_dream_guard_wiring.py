@@ -1,74 +1,30 @@
-"""R-99's PRODUCTION WIRING on a Dreamer pass — the Dreamer-side analogue of
-`tests/unit/test_tool_unknown_arguments_wiring.py`'s tag/participation proof.
-
-WHY THIS FILE EXISTS, BESIDE `test_dream_guard.py`
----------------------------------------------------
-Every `DreamGuard` in that file is built BY HAND, `param_names=` passed
-directly to the constructor — which proves the RULE (shared with `ReplyGuard`
-through `nora.agent.guards.unknown_arguments_veto`), but proves nothing about
-`DreamerRuntime._sample` (`nora.agent.dreamer`), the one production call site
-that has to thread `self._tools.tool_param_names()` into the guard it builds
-for each sample.
-
-This drives the REAL `DreamerRuntime.run()` through the real Strands loop
-(`_ScriptedModel`, `_Tools`, `_Adaptor`, `_runtime` — all from `tests.unit.
-test_dream_memory_budget`, which already builds this exact rig for the
-memory-ration property) with a scripted model that calls `place_info` naming
-`bogus=`, a key `place_info` has never declared. `place_info` rather than a
-memory verb (`lookup_person`/`memory_search`/`memory_read`) on purpose: the
-per-pass memory ceiling is a SEPARATE mechanism, and mixing it in here would
-leave it unclear which one refused the call.
-"""
-
-from __future__ import annotations
+"""The model loop enforces the registry accepted tool argument names."""
 
 from nora.agent import factory
-from nora.agent.dreamer import AdaptorGrant, DreamerRuntime
+from nora.agent.dreamer import AdaptorBudget, DreamerRuntime
 from nora.obs.metrics import Metrics
-from tests.unit.test_dream_memory_budget import (
-    BUDGET,
-    _Adaptor,
-    _Instructions,
-    _Models,
-    _ScriptedModel,
-    _Tools,
-)
-
-
-def _REMIND_GRANT() -> AdaptorGrant:
-    """An adaptor that may hold `remind` past the read-only ceiling, in a real room."""
-    return AdaptorGrant(home_room=True)
-
-
-def _runtime(model, tools) -> tuple[DreamerRuntime, Metrics]:
-    metrics = Metrics()
-    return DreamerRuntime(
-        models=_Models(model),
-        instructions=_Instructions(),
-        tools=tools,
-        budgets={"proactive": BUDGET},
-        default_budget=BUDGET,
-        retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
-        metrics=metrics,
-        model_name="scripted",
-        grants={"proactive": _REMIND_GRANT()},
-        store_timeout_seconds=10.0,
-    ), metrics
+from tests.fakes import FixedModelSource
+from tests.unit.test_dream_memory_budget import _ScriptedModel, _Tools
 
 
 async def test_a_dreamer_pass_refuses_an_unknown_argument_and_never_runs_the_tool():
-    """Guards the `param_names=self._tools.tool_param_names(),` line in
-    `DreamerRuntime._sample` (`nora.agent.dreamer`); the mutant is recorded in
-    `scripts/mutations/tool-unknown-arguments.json`.
-    """
     model = _ScriptedModel(["place_info", None], inputs=['{"bogus": "x"}'])
     tools = _Tools(["place_info"])
-    runtime, metrics = _runtime(model, tools)
-    adaptor = _Adaptor(frozenset(tools.read_only()))
+    metrics = Metrics()
+    runtime = DreamerRuntime(
+        models=FixedModelSource(model), tools=tools, metrics=metrics,
+        retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
+    )
 
-    await runtime.run(adaptor=adaptor, key="friends", batch=())
+    await runtime.run_agent(
+        system_prompt="Use the scoped read tool.", prompt="Read this room.",
+        tools=tools.build(key="friends", names=frozenset({"place_info"})),
+        budget=AdaptorBudget(turns=4, total_tokens=10_000, output_tokens=1_000, timeout_seconds=5),
+        agent_name="cognition",
+    )
 
-    assert tools.ran == [], "the tool body must never run"
+    assert model.turn == 2
+    assert tools.ran == []
     assert metrics.get(
-        "nora_dream_guard_vetoes_total", adaptor="proactive", rule="R-99",
+        "nora_dream_guard_vetoes_total", adaptor="cognition", rule="R-99",
     ) == 1

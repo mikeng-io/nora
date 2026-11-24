@@ -3,8 +3,7 @@
 force-recreate empties (migration 0056).
 
 **THREE VERBS, because the read happens once and the write happens per tag.**
-The rule is `nora/infra/sql/dream_schedule.py`'s: a combined read-and-write
-would put a write on the path that only wanted to know. Here the split is
+A combined read and write would add a write to the startup read. The split is
 sharper still — `Debounce.allow` is SYNCHRONOUS (see that module: an await
 between the admission verdict and the enqueue would let two concurrent tags
 both read the same queue depth), so the read cannot happen there at all. It

@@ -1501,18 +1501,9 @@ async def test_cognition_on_builds_one_runner_for_backfill_alongside_graph_wake(
 ):
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, _SESSION_ON))
-    # `deps.cognition_runner` is the `SubconsciousExecutor`: the Dreamer
-    # lane owns admission and cancellation, the session runner it holds
-    # (`._runner`) owns everything the session itself was composed with.
-    executor = deps.cognition_runner
-    assert executor is not None and deps.wake_poller is not None
-    runner = executor._runner
+    runner = deps.cognition_runner
+    assert runner is not None and deps.wake_poller is not None
     assert deps.cognition_shutdown is not None and not deps.cognition_shutdown.done
-    # A stopping process lets a running session finish for this long before it cancels it
-    # (the PR-7 grace; `docker-compose.yml`'s `stop_grace_period` is sized above it).
-    from nora.app.cognition_wiring import SESSION_SHUTDOWN_GRACE_SECONDS
-
-    assert deps.cognition_shutdown._grace == SESSION_SHUTDOWN_GRACE_SECONDS > 0
     # The Dreamer's own budget entry, converted: rounds, tokens and the clock,
     # and no call ceiling (DEC-247); the clock ends before the wake's.
     assert (runner._budget.turns, runner._budget.timeout_seconds) == (200, 3600.0)

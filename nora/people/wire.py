@@ -118,19 +118,6 @@ def unit_scopes(allowlist) -> UnitScopesWiring:
 
 
 @dataclass(frozen=True)
-class HomesWiring:
-    proactive_homes: Any
-
-
-def homes(allowlist) -> HomesWiring:
-    # The participation occasion's runner — a SECOND `ModelSource`, the shape the Dreamer
-    # below uses, and for the same reason: `tool_choice` lives on `ModelSpec`. The
-    # determination must be able to end in SILENCE, and the tag runner's `FIRST_CALL`…
-    proactive_homes = LiveMapping(lambda: allowlist.home_rooms())
-    return HomesWiring(proactive_homes=proactive_homes)
-
-
-@dataclass(frozen=True)
 class SteamWiring:
     steam_client: Any
 

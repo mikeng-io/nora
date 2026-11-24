@@ -27,7 +27,6 @@ holds in line.
 
 from __future__ import annotations
 
-from .dreaming import Pass, adaptor_names, dream
 from .journey_state import SNAPSHOT_KEYS, JourneyState, journey_initial_state
 from .knowledge import (
     AccountSeed,
@@ -105,7 +104,6 @@ __all__ = [
     "Message",
     "ModelGateway",
     "NoteSeed",
-    "Pass",
     "ReminderSeed",
     "RoomSeed",
     "SandboxIndex",
@@ -118,7 +116,6 @@ __all__ = [
     "SubjectSpec",
     "Written",
     "act",
-    "adaptor_names",
     "arrive",
     "as_knowledge",
     "assert_shared_databases_unchanged",
@@ -127,7 +124,6 @@ __all__ = [
     "config_default",
     "config_member_of_runtime_map",
     "deliver",
-    "dream",
     "heard",
     "index_sandbox",
     "journey_initial_state",

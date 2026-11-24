@@ -76,9 +76,10 @@ class _App:
     """What `nora.__main__.App` is to `run_until_stopped`: `run()` serves, `shutdown()`
     stops the sessions first and then closes the store, in `App.shutdown`'s order."""
 
-    def __init__(self, evaluator: WakeEvaluator, shutdown: CognitionShutdown,
+    def __init__(self, evaluator: WakeEvaluator, shutdown: CognitionShutdown, grace: float,
                  model: _Model, engine: Any, metrics: Metrics) -> None:
         self._evaluator, self._cognition_shutdown = evaluator, shutdown
+        self._grace = grace
         self._model, self._engine, self._metrics = model, engine, metrics
 
     async def run(self) -> None:
@@ -93,6 +94,8 @@ class _App:
             pulse.cancel()
 
     async def shutdown(self) -> None:
+        await self._evaluator.wait_in_flight(self._grace)
+        await self._evaluator.cancel_in_flight()
         await self._cognition_shutdown()
         await self._engine.dispose()
         print("STOPPED", flush=True)
@@ -117,7 +120,7 @@ async def main() -> None:
     )
     evaluator = WakeEvaluator(
         store=stimuli, units=lambda: (UNIT,), policy=POLICY, metrics=metrics, settle_seconds=0,
-        on_wake=runner.wake_hook,
+        on_wake=runner.on_wake,
     )
     now = int(time.time() * 1000)
     await stimuli.append(stimulus=NewStimulus(
@@ -125,7 +128,7 @@ async def main() -> None:
         platform="signal", conversation_id="home",
     ), recorded_at_ms=now - 60_000)
     app = _App(
-        evaluator, CognitionShutdown(evaluator=evaluator, runner=runner, grace_seconds=grace),
+        evaluator, CognitionShutdown(runner=runner), grace,
         model, engine, metrics,
     )
     if os.environ.get("PROBE_LEGACY") == "1":

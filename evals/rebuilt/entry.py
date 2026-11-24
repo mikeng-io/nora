@@ -33,7 +33,6 @@ from nora.subject import (
     act,
     arrive,
     deliver,
-    dream,
     heard,
     last_row_id,
     owe,
@@ -335,52 +334,9 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
         if case.metadata.get("corpus") == "cognition_session":
             return await _cognition_replay(subject, case, now_ms=now_ms)
         return await _cognition_probe(subject, case, now_ms=now_ms)
-    try:
-        after = case.metadata.get("batch_after_ms")
-        result = await dream(
-            subject, adaptor=adaptor,
-            after_ms=int(after) if after is not None else None,
-        )
-    except LookupError as exc:
-        return Outcome(admitted=None, source="fail_closed", error=str(exc))
-
-    # THE FAIL-CLOSED RULE, and `status` alone cannot carry it.
-    #
-    # `unavailable` is one half: the adaptor could not run, and an un-run pass
-    # produces an empty notebook diff byte-identically to a pass that correctly
-    # found nothing.
-    #
-    # The other half is `nothing_found` after a model call that failed: with no
-    # provider reachable a pass comes back `nothing_found` with NO error, and a
-    # case expecting silence would PASS.
-    #
-    # `samples_failed` is production's own per-sample counter
-    # (`nora_dream_sample_total{status="unavailable"}`), which is the only
-    # thing that separates "asked the model and could not reach it" from "never
-    # needed to ask, because nothing was due". The second is a real verdict a
-    # corpus expects; the first is not a verdict at all.
-    # `samples_failed and not samples_ok`, NOT `or samples_failed`: the
-    # runtime's own rule is that a pass is `unavailable` only when NONE was
-    # readable, because one good read is a read. Erroring on one bad sample of
-    # three would make this layer stricter than the thing it measures.
-    if result.status == "unavailable" or (
-        result.samples_failed and not result.samples_ok
-    ):
-        return Outcome(
-            admitted=None,
-            source="fail_closed",
-            error=(
-                f"the pass did not complete: status={result.status}, "
-                f"{result.samples_failed} sample(s) unreachable, "
-                f"stop_reason={result.stop_reason}"
-            ),
-            outcome_token=result.status,
-        )
     return Outcome(
-        admitted=None,
-        changed=result.changed,
-        written=result.written,
-        outcome_token=result.status,
+        admitted=None, source="fail_closed",
+        error=f"Dreamer cases require category 'cognition', got {adaptor!r}",
     )
 
 

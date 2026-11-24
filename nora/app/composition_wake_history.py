@@ -15,7 +15,6 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.app.cli import _database_url, _persons, _policy
 from nora.app.composition_dreamer import dreamer_model_source
-from nora.app.composition_helpers import _adaptor_budget
 from nora.app.composition_stores import build_doctrine, instructions, managed_identity
 from nora.app.composition_wake import build_wake_runner
 from nora.app.startup import StartupError
@@ -91,14 +90,12 @@ async def replay_dependencies(
         doctrine = build_doctrine(cfg, content_checks, metrics).doctrine
         runtime = DreamerRuntime(
             models=dreamer_model_source(cfg, cfg.llm, model, client),
-            instructions=corpus, metrics=metrics, model_name=model,
+            metrics=metrics,
             tools=RegistryToolSource(
                 registry=ToolRegistry(content_checks=content_checks),
                 store=None, persons=persons, metrics=metrics, access=access,
             ),
-            budgets={}, default_budget=_adaptor_budget(cfg.dreamer.budget_for("cognition")),
             retry=factory.build_retry_policy(timeout_seconds=cfg.llm.timeout_seconds),
-            content_checks=content_checks, tool_budget_overrides=cfg.llm.budgets,
         )
         slots = ConversationSlots(maxlen=1, spawn=asyncio.create_task, policy=policy)
         admission = memory.wire.admission(

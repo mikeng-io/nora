@@ -540,7 +540,7 @@ async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus
     ev = WakeEvaluator(
         store=stimuli, units=lambda: ("u1",), policy=policy, metrics=Metrics(),
         tz=HK, clock=lambda: clock_ms[0] / 1000, settle_seconds=0,
-        on_wake=runner.wake_hook)
+        on_wake=runner.on_wake)
 
     for name, kind in (("close", "poll"), ("pin", "pin"),
                        ("share", "artifact"), ("join", "membership"),

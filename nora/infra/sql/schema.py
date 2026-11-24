@@ -1481,24 +1481,7 @@ CONSOLIDATION_WATERMARK = sa.Table(
     sa.Column("source_read_revision", sa.Text),
 )
 
-# A WATERMARK-FREE scheduled adaptor's own clock. It is in Postgres so it
-# survives a process restart: an in-process `time.monotonic()` clock resets on
-# every restart and the first tick after one always fires, which turns "daily"
-# into "once per deploy" — invisible from outside, because a restarted clock and
-# a correctly-elapsed one produce the identical metric.
-#
-# NOT `consolidation_watermark`, and the difference is the point. That table
-# carries a `last_message_id` and `watermark_is_behind_the_record` reads it as
-# evidence-loss when it falls under the record's oldest row. An adaptor with
-# no message cursor squatting there would either write a fake 0 — which that
-# check reports as `nora_dream_evidence_lost_total` forever — or need the
-# check taught about a row shape it was not built for. A second table with its
-# own invariant is cheaper than one table with two.
-#
-# `last_fired_at` is epoch MILLISECONDS on the WALL clock, not `monotonic()`
-# and not a `DateTime`: the fire condition is a daily SLOT (see
-# `AdaptorSchedule.phase_offset_seconds`), which is arithmetic over an absolute
-# instant, and every other bigint timestamp this schema carries is epoch-ms.
+# Stored timestamps are Unix epoch milliseconds.
 DREAM_SCHEDULE_STATE = sa.Table(
     "dream_schedule_state",
     METADATA,

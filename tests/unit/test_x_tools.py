@@ -16,7 +16,6 @@ from typing import Any
 import pytest
 
 from nora.agent.catalog.entries import NATIVE_TOOLS
-from nora.agent.dreamer import UNIT_SAFE_TOOLS
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.domain.models import PersonRef
@@ -222,7 +221,6 @@ def test_the_native_tool_row(name):
     assert row.output_contract == "three_state"
     assert row.source_tier == "web"
     assert row.level == 3
-    assert name in UNIT_SAFE_TOOLS
 
 
 @pytest.mark.parametrize("name", ["x_read", "x_search"])
@@ -255,7 +253,6 @@ def test_x_read_s_schema_has_what_as_an_enum_and_nothing_required():
 def test_social_fetch_is_gone():
     assert "social_fetch" not in NATIVE_TOOLS
     assert "social_fetch" not in {s.name for s in _specs(None)}
-    assert "social_fetch" not in UNIT_SAFE_TOOLS
 
 
 # ---- `url` is `link` ----------

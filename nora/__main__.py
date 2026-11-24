@@ -237,80 +237,6 @@ class App:
             # `[memory.index] embed`; None while off.
             embed=deps.memory_embed,
         ))
-        # The Dreamer's clock, the SAME conditional shape as the retention
-        # sweep above: `[dreamer] enabled = false` (the shipped default) means
-        # composition built no cursor store, so there is nothing this loop could
-        # tick even if spawned.
-        #
-        # `deps.language_store is not None` is the SECOND condition, not a
-        # restatement of the first: it remembers where each adaptor got to
-        # (`consolidation_watermark`, reached through `nora.infra.sql.language`).
-        # So this reads "the clock is wanted, and the cursor exists".
-        if self.cfg.dreamer.enabled and deps.language_store is not None:
-            # BEFORE the loop starts, and awaited rather than spawned. An
-            # adaptor with a new name has no watermark row, `watermark_for`
-            # returns 0 for an unknown pair, and it would re-read every room
-            # from the beginning — `batch_limit` rows at a time, a model call
-            # per batch, re-deriving evidence that already exists. Safe (the
-            # natural key makes the append idempotent), slow, expensive, and it
-            # looks exactly like a bug. Racing the loop against its own seeding
-            # would leave which one won up to the scheduler.
-            await runtime.seed_watermarks(
-                deps.language_store, deps.dream_adaptors,
-                # The schedules, so an adaptor can ask to seed at the RECORD
-                # HEAD when there is nothing to inherit — see
-                # `AdaptorSchedule.seed_at_head`. Without them the fallback is
-                # unreachable and a scope the source never covered stays at 0.
-                schedules=deps.dream_schedules,
-                keys=lambda a: (
-                    deps.unit_scopes() if a.key_kind == "unit"
-                    else deps.language_scopes()
-                ),
-            )
-            deps.background.spawn(runtime.dream_loop(
-                deps.audit, deps.language_store,
-                deps.metrics,
-                scopes=deps.language_scopes,
-                # The shared media join: every scope-keyed dream adaptor reads one
-                # batch, so joining it once here covers all of them and none has to
-                # hold a media store.
-                media_join=deps.media_join,
-                tick_seconds=self.cfg.dreamer.tick_seconds,
-                safety_lag=self.cfg.dreamer.safety_lag,
-                quiet_seconds=self.cfg.dreamer.quiet_seconds,
-                max_age_seconds=self.cfg.dreamer.max_age_seconds,
-                batch_limit=self.cfg.dreamer.batch_limit,
-                instructions=deps.dreamer_instructions,
-                adaptors=deps.dream_adaptors,
-                runtime=deps.dreamer_runtime,
-                units=deps.unit_scopes,
-                # Per-adaptor clocks: a cron-shaped adaptor's own interval and batch
-                # live here, not in `[dreamer]`'s shared numbers.
-                schedules=deps.dream_schedules,
-                # Where a watermark-free scheduled adaptor's last fire is kept. In
-                # Postgres rather than in `dream_loop`'s frame because the frame is
-                # rebuilt on every restart, which would turn a daily schedule into a
-                # per-deploy one.
-                schedule_clock=deps.dream_schedule_clock,
-                # The ONE wall clock around a whole (adaptor, key) unit: it covers
-                # everything the loop awaits per unit, beyond the two store phases
-                # bounded inside it. The RESOLVER, not the raw field: `[dreamer]
-                # max_unit_hold_seconds` ships unset, and `Config.
-                # dreamer_max_unit_hold_seconds` derives a number from this config's own
-                # budgets rather than a literal that goes stale when one is raised.
-                max_unit_hold_seconds=self.cfg.dreamer_max_unit_hold_seconds(),
-            ))
-        elif self.cfg.dreamer.enabled:
-            # The Dreamer is ON and its cursor store could not be built —
-            # a database wiring fault, not a flag. Loud, and NOT
-            # `pragma: no cover`d: the only symptom otherwise is silence.
-            log.error(
-                "dreamer.enabled = true but no watermark store was built, so "
-                "the Dreamer's clock cannot start and no adaptor will ever "
-                "run. Check the database wiring."
-            )
-        else:
-            log.info("dream loop disabled (dreamer.enabled = false)")
         # Eval subjects compose the graph without starting its wake poller.
         if deps.wake_poller is not None:
             await deps.wake_poller.recover()
@@ -362,8 +288,7 @@ class App:
             ttl_seconds=DEBOUNCE_SWEEP_TTL_SECONDS))
         # The participation occasion's clock: `deps.participation_trigger` is
         # None unless `[participation] enabled` AND composition built a fire
-        # path. The flag alone gates nothing, matching the dream clock's "the
-        # flag is what decides, not a widened interval" shape.
+        # path.
         if deps.participation_trigger is not None:
             deps.background.spawn(runtime.participation_loop(
                 deps.participation_trigger, deps.metrics,
@@ -514,7 +439,7 @@ async def run_until_stopped(
 
     Without a SIGTERM handler the process dies on the signal without
     unwinding: `finally` never runs, so `App.shutdown` (and with it
-    `CognitionShutdown`, which cancels the sessions and records their wakes)
+    `CognitionShutdown`, which waits for remaining session outcome writes)
     would be reachable only by SIGINT. `docker stop` sends SIGTERM, so a
     restart would kill sessions mid-flight and leave their wakes open to hold
     their units for the rest of the session timeout. (`uv run`, the image's

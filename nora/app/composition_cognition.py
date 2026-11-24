@@ -419,9 +419,6 @@ def _session_runner(
             budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),
             result_caps=TOOL_RESULT_CAPS,
             observations=observation_store,
-            # Cognition hosted as a Dreamer adaptor (node 30): every admitted wake is dis…
-            # onto this runtime's lane — the same instance `dream_loop` runs the other ad…
-            # through.
             runtime=dreamer_runtime,
             lessons=cognition_lessons,
         )

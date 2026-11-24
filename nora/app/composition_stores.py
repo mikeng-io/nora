@@ -3,7 +3,6 @@ from __future__ import annotations
 import functools
 import importlib
 import logging
-from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -28,7 +27,6 @@ from nora.infra.sql.item_registration import (
     RuntimeRevisions,
     SqlItemRegistration,
 )
-from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.observations import SqlObservationStore
 from nora.infra.sql.otp import SqlOtpStore
@@ -226,22 +224,6 @@ def build_decision_log(allowlist: Any, clock: Any, engine: Any, metrics: Any)-> 
 
 
 @dataclass(frozen=True)
-class LanguageStoreWiring:
-    language_store: Any
-
-
-def build_language_store(cfg: Any, engine: Any, metrics: Any)-> LanguageStoreWiring:
-
-    # The Dreamer's CURSOR, REUSING `engine` for the same reason
-    # `reminders`/`compute_jobs`/`tool_call_log_store` do above. UNLIKE those, this one IS
-    # gated on the feature flag: `SqlLanguageStore` owns `consolidation_watermark` —…
-    language_store: SqlLanguageStore | None = (
-        SqlLanguageStore(engine, metrics=metrics) if cfg.dreamer.enabled else None
-    )
-    return LanguageStoreWiring(language_store=language_store)
-
-
-@dataclass(frozen=True)
 class DoctrineWiring:
     doctrine: Any
     doctrine_store: Any
@@ -335,23 +317,6 @@ def readers(cfg: Any, content_checks: Any, engine: Any)-> ReadersWiring:
         profile_reader=profile_reader,
         profile_store_reader=profile_store_reader,
     )
-
-
-@dataclass(frozen=True)
-class LanguageScopesWiring:
-    language_scopes: Any
-
-
-def build_language_scopes(allowlist: Any)-> LanguageScopesWiring:
-
-
-    # `dream_loop`'s `scopes` callable — the policy.toml conversations, re-evaluated fresh
-    # each tick through the live policy holder. No platform filter: this loop only READS
-    # `RecordStore.since`, which needs no adapter for the platform.
-    language_scopes: Callable[[], Sequence[str]] = lambda: tuple(  # noqa: E731
-        conv.primary_id for conv in allowlist.rooms() if conv.primary_id and conv.absorbed
-    )
-    return LanguageScopesWiring(language_scopes=language_scopes)
 
 
 @dataclass(frozen=True)

@@ -106,7 +106,7 @@ def _cognition_tool(policy, persons) -> Any:
         scope_rooms={ROOM: HomeRoom(unit="u1", platform="signal", conversation_id=ROOM)},
     )
     built = source.build(
-        key=ROOM, names=frozenset({"record_query"}), unit=None,
+        key=ROOM, names=frozenset({"record_query"}),
         adaptor="cognition", grant=cognition_grant(),
     )
     return {t.tool_name: t for t in built}["record_query"]
