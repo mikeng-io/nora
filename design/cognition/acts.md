@@ -59,24 +59,24 @@ committing an intention a proactive pass later carries out.
 
 ## Delegated work
 
-Delegated work — a sub-agent job, a computer task, a long browser session —
-runs outside both loops under its own executor. It starts in one of two ways,
-both delegation acts:
+Delegated work — a sub-agent job, a computer task, a long browser session, a
+handed-over tool call — runs outside both loops under its own executor.
 
-| start | the work | its report |
-|---|---|---|
-| a **delegation tool** the model calls | an achieve intention naming its executor and the job's identity | a child intention, delivered by a proactive pass |
-| a **hand-over**: a tool call still running when its wait window ended ([execution](execution.md#tool-calls)) | the call itself, under its original identity and authority | the hand-over's report-pending obligation, settled by a proactive pass |
-
-- Delegated work is done when its outcome item reports success. A failed or
-  cancelled job closes nothing; where it serves an intention, decide retries or
-  drops that intention, citing the outcome.
+- Starting it is a delegation act: a delegation tool the model calls, or a
+  tool call handed over when its wait window ended
+  ([execution](execution.md#tool-calls)), which keeps its original identity
+  and authority.
+- The work is an achieve intention naming its executor and the job's
+  identity; it is done when the job's outcome item reports success. A failed
+  or cancelled job closes nothing: decide retries or drops the intention,
+  citing that outcome.
 - The executor's own job state is authoritative for the job. Its events and
   results enter through observe as items.
-- Finishing the work and telling the room are two outcomes, each with its own
-  verdict.
+- Reporting the result is a separate child intention, delivered by a proactive
+  pass: finishing the work and telling the room are two outcomes, each with its
+  own verdict.
 - Work an executor lost track of across a restart is unknown, never failed and
-  never assumed done; its report says so.
+  never assumed done.
 
 ## What is never an act
 

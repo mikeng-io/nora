@@ -15,7 +15,7 @@ settles.
 | **tag pipeline** | the engagement loop's called pass for one room, followed by its debrief |
 | **fire path** | the engagement loop's ambient and proactive passes for one room, each followed by its debrief |
 | **bridge work runner** | durable intake from transport bridges: owns each event before acknowledging it, and launches the pass |
-| **job executors** | delegated work: sub-agent jobs, computer and browser tasks ([acts](acts.md)) |
+| **job executors** | delegated work: sub-agent jobs, computer and browser tasks, handed-over tool calls ([acts](acts.md)) |
 | **verifier** | study's verify and report |
 | **judge** | study's grade, on a model independent of the writer |
 
@@ -36,25 +36,31 @@ never a pass.
   how long the pass waits for it. A call that settles within its window
   returns its result to the step.
 - A call still running when its window ends is **handed over**: it keeps
-  running as [delegated work](acts.md#delegated-work), and the step receives
-  **queued** with the work's identity in place of a result. The pass continues
-  and ends as usual, holding the room's slot no longer than its own steps.
+  running as [delegated work](acts.md#delegated-work), gives up any slot of
+  the engagement reserve, and the step receives **queued** with the work's
+  identity in place of a result. The pass continues and ends as usual,
+  holding the room's slot no longer than its own steps.
 - A step continues once each of its calls has settled or been handed over.
 - `send_reply`, deliveries and writes to the graph are never handed over: they
   mean something only inside their pass.
-- A hand-over leaves a durable **report-pending** obligation for the room that
-  asked. The work's outcome settles it through a proactive pass in that room,
-  retried until delivered; outcomes that settle for one room before its report
-  pass starts are reported together.
-- Reflection passes and delegated work have no wait window; their calls are
-  bounded by the pass's own limits.
+- The handed-over work and its report are intentions like those of any
+  delegated work: the pass commits them when its reply promises the result,
+  and the debrief commits what the pass left. A proactive pass delivers the
+  report once the work's outcome is recorded and may stay silent. A proactive
+  pass that hands over a call moves its own intention to that outcome rather
+  than creating another.
+- Reflection passes have no wait window; their calls, like a handed-over
+  call's, are bounded by the pass's or the job's own limits.
 
 The window is what keeps a room answered: however long the work runs, the
 room hears from Nora within it, and the next messages are not queued behind
 work that no longer needs the slot. The clock decides, not a declaration made
 in advance per tool, because a tool's duration varies with its input. Waiting
 for a background call to rejoin the same pass was rejected: it keeps the
-slot held for the whole run and needs a second, interim kind of reply.
+slot held for the whole run and needs a second, interim kind of reply. A
+separate timeout result was rejected too: work still running at the window is
+queued, and work stopped at a bound is unavailable with its reason, or
+uncertain when an effect may have happened ([acts](acts.md)).
 
 ## Waking
 
