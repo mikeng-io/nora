@@ -17,7 +17,6 @@ class InMemoryComprehendRecords:
         self.pages: list[dict[str, Any]] = []
         self.graphs: list[tuple[WorkItem, int, Admission]] = []
         self.claims: dict[tuple[str, str], list[dict[str, Any]]] = {}
-        self.shadows: list[dict[str, Any]] = []
         self.receipts: list[dict[str, Any]] = []
         self.fail_on: set[str] = set()
         #: Sources whose own row withholds them (gone, hidden), as the SQL store reads.
@@ -105,26 +104,6 @@ class InMemoryComprehendRecords:
                 if (w.id, w.input_hash) == (work.id, work.input_hash)
                 for r in a.relations
                 for k in (r.src, r.dst)
-            }
-        )
-
-    async def shadow(
-        self,
-        work: WorkItem,
-        session: int,
-        entity: Key,
-        proposals: list[dict[str, Any]],
-        parent: int,
-    ) -> None:
-        if "shadow" in self.fail_on:
-            raise RuntimeError("shadow unavailable")
-        self.shadows.append(
-            {
-                "work": work,
-                "session": session,
-                "entity": entity,
-                "would_writes": proposals,
-                "parent": parent,
             }
         )
 

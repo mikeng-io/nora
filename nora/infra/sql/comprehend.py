@@ -699,22 +699,6 @@ class SqlComprehendRecords:
         )
 
 
-    async def shadow(
-        self,
-        work: WorkItem,
-        session: int,
-        entity: Key,
-        proposals: list[dict[str, Any]],
-        parent: int,
-    ) -> None:
-        await self._receipt(
-            work,
-            session,
-            "reshape",
-            {"entity": list(entity), "would_writes": proposals, "parent_session": parent},
-        )
-
-
 async def _social_withheld(conn: Any, ref: str) -> bool:
     """Whether the social item's own row withholds it: a recorded `gone`/`hidden` state.
 

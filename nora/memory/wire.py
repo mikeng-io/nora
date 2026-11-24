@@ -1,4 +1,3 @@
-import functools
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -7,13 +6,11 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.access import IdentityAccess
-from nora.agent.dream_screen import text_offence
 from nora.agent.egress import LeakGuard
 from nora.agent.lineage import LineagePolicy
 from nora.agent.memory_search import MemorySearch
 from nora.agent.room import Room
 from nora.app.cognition_grounding import place_release
-from nora.app.composition_helpers import _cognition_writes_profile
 from nora.domain.live import LiveMapping
 from nora.domain.memory_index import QueryEmbedder
 from nora.domain.ports import SearchProvider
@@ -28,7 +25,6 @@ from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.memory_graph import SqlMemoryGraph
 from nora.infra.sql.memory_read import SqlMemoryIndex
 from nora.infra.sql.notes import SqlNoteStore
-from nora.infra.sql.profile import SqlProfileStore
 from nora.infra.sql.rollups import SqlRollupStore
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.standing_ledger import SqlStandingLedger
@@ -227,7 +223,6 @@ def graph(
     metrics,
     persons,
     presence_circles,
-    profile_index,
     registry,
     rosters,
     route_model,
@@ -284,42 +279,11 @@ def graph(
                 content_checks=content_checks,
             ),
         )
-        # THE PROMOTED PROFILE WRITER (27 §9, 31 §5): the same `[memory.profile] write && read`
-        # switch (`profile_index`) as the read surface and index projection; `None` under every
-        # other flag combination, where `profile_revise` keeps recording shadow receipts and…
-        wake_profile_store = (
-            SqlProfileStore(
-                engine,
-                screen=functools.partial(text_offence, content_checks=content_checks),
-                index=profile_index,
-            )
-            if _cognition_writes_profile(
-                profile_index=profile_index,
-                graph_comprehend=True,
-                cognition_enabled=cfg.cognition.enabled,
-                units=frozenset(unit_scopes()),
-                home_units=frozenset(allowlist.home_rooms()),
-            )
-            else None
-        )
-        wake_listed_rooms = LiveMapping(
-            lambda: {
-                (u, p): tuple(
-                    c.primary_id
-                    for c in allowlist.rooms()
-                    if c.unit == u and c.primary_id and c.persons and p in c.persons
-                )
-                for u in unit_scopes()
-                for p in {x for c in allowlist.rooms() if c.unit == u for x in (c.persons or ())}
-            }
-        )
         cognition_memory = WakeMemory(
             graph=memory_graph,
             records=graph_records,
             metrics=metrics,
             content_checks=content_checks,
-            profile=wake_profile_store,
-            listed_rooms=(lambda u, p: wake_listed_rooms.get((u, p))),
             private_names=_private_names(persons, access),
         )
     return GraphWiring(cognition_memory=cognition_memory)

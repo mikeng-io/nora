@@ -90,7 +90,7 @@ async def test_retained_page_is_exact_read_text_with_hash_and_tool_call(store):
     assert page["content_hash"] == hashlib.sha256(text.encode()).hexdigest()
 
 
-async def test_graph_receipt_is_retained_and_shadow_is_a_would_write(store):
+async def test_graph_receipt_retains_the_relation_and_its_evidence(store):
     records, engine = store
     relation = Relation(
         "generated-relation",
@@ -105,19 +105,15 @@ async def test_graph_receipt_is_retained_and_shadow_is_a_would_write(store):
         relations=(relation,), evidence=(Evidence(SOURCE.key, relation_id=relation.id),)
     )
     await records.graph_write(WORK, 1, admission)
-    await records.shadow(WORK, 2, PERSON.key, [{"part": "trait", "text": "Generated trait"}], 1)
     if engine:
         async with engine.connect() as conn:
-            row = (
-                await conn.execute(
-                    sa.select(COMPREHEND_RESULT.c.payload).where(
-                        COMPREHEND_RESULT.c.part == "reshape"
-                    )
-                )
-            ).scalar_one()
+            row = (await conn.execute(sa.select(COMPREHEND_RESULT.c.payload).where(
+                COMPREHEND_RESULT.c.part == "graph",
+            ))).scalar_one()
+        assert row["relations"][0]["id"] == relation.id
+        assert row["evidence"][0]["relation_id"] == relation.id
     else:
-        row = records.shadows[0]
-    assert row["would_writes"][0]["text"] == "Generated trait"
+        assert records.graphs == [(WORK, 1, admission)]
 
 
 async def test_reading_writer_is_idempotent_per_work_hash(store):

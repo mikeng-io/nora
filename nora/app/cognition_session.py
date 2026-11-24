@@ -165,7 +165,7 @@ SESSION_VERB_NAMES: frozenset[str] = frozenset({
     "memo_create", "memo_revise", "memo_set_status", "standing_revise", "topic_create",
     "topic_revise", "topic_set_status",
     "wake_at", "wake_move", "wake_cancel", "remind", "remind_move", "remind_cancel",
-    "memory_propose", "profile_read", "profile_revise",
+    "memory_propose",
     "lesson_write", "lesson_retire",
 })
 
@@ -412,10 +412,6 @@ class _RunState:
     graph_fetched: Any = field(default_factory=GraphFetched)
     admitted_relations: dict[str, Any] = field(default_factory=dict)
     admitted_evidence: list[Any] = field(default_factory=list)
-    #: account key -> the heads, handles, revision and disputes `profile_read`
-    #: showed this session: the ONLY account state `profile_revise` may write
-    #: against (a conflict drops the entry, so a stale view is never kept).
-    profile_accounts: dict[str, Any] = field(default_factory=dict)
     #: Graph node keys this session was actually shown (the wake preview and
     #: every proposal's connected subgraph, plus admitted relation endpoints):
     #: the only targets a Register `associations` argument may name.
@@ -1879,10 +1875,8 @@ class CognitionSessionRunner:
         if self._memory is not None:
             verbs = (*memory_v, *verbs)
         if state.historical:
-            # Profile and topic verbs are withheld, not shadowed: the stores
-            # see only CURRENT heads (no as-of view), so a session at T would
-            # read — or revise — the future. History offers memory writes.
-            verbs = memory_v[:1]
+            # History admits memory without running live write verbs.
+            verbs = memory_v
         verbs = (*verbs, *lesson_verbs(
             self._lessons, unit=unit, state=state, established_by=established_by,
             doctrine_sha256=doctrine_sha256, model=self._model_id))

@@ -138,6 +138,7 @@ _RENAMED_SINCE: frozenset[str] = frozenset({
     "event_propose", "event_revise", "event_rsvp", "event_search", "event_set_status",
     # Retired: the graph's `graph_profile` presentation carries the accounts it read.
     "character_read",
+    "profile_read", "profile_revise",
 })
 
 _PREDATES_THE_RULE = _SNAPSHOT_2026_09_24 - _RENAMED_SINCE
@@ -218,7 +219,7 @@ _SESSION_CONTROLS = frozenset({
 
 
 async def _session_names() -> set[str]:
-    """Build the real closures, including WakeMemory's proposal/profile surface."""
+    """Build the real closures with and without WakeMemory."""
     from nora.domain.stimuli import UnitView
     from tests.unit.test_cognition_session_runner import NOW, _pending, _runner, wake_memory
 
@@ -228,7 +229,7 @@ async def _session_names() -> set[str]:
         await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
             last_activity_ms=None, last_wake=None), now_ms=NOW)
         names.update(spy.last_tool_names)
-    assert {"memory_propose", "profile_revise", "note_revise", "memo_create"} <= names
+    assert {"memory_propose", "note_revise", "memo_create"} <= names
     return names
 
 
@@ -238,6 +239,12 @@ def _check_session_names(names: set[str]) -> None:
     bad = sorted(n for n in names if not _CHARSET.fullmatch(n)
                  or (n not in _SESSION_CONTROLS and not _shape().fullmatch(n)))
     assert not bad, f"misnamed session tools: {bad}"
+
+
+async def test_cognition_offers_no_profile_account_tools() -> None:
+    from nora.app.cognition_session import SESSION_VERB_NAMES
+
+    assert not {"profile_read", "profile_revise"} & (await _session_names() | SESSION_VERB_NAMES)
 
 
 async def test_session_built_tools_use_domain_then_verb() -> None:

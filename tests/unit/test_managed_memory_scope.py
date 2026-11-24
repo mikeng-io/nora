@@ -255,7 +255,7 @@ def _graph_composition(persons, access, cfg):
     return wire_graph(
         allowlist=allowlist, cfg=cfg, content_checks=False, engine=object(),
         media_join=SimpleNamespace(), metrics=Metrics(), persons=persons,
-        presence_circles=(), profile_index=False,
+        presence_circles=(),
         registry=SimpleNamespace(self_aliases=lambda: frozenset()),
         rosters={}, route_model=lambda occasion, model: "generated-model",
         tier=SimpleNamespace(model="generated-model"),

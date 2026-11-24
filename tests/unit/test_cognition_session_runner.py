@@ -289,7 +289,6 @@ async def test_cognition_09_backfill_withholds_act_tools():
     await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
         last_activity_ms=None, last_wake=None), now_ms=NOW, historical=True)
     assert {"memory_propose"} <= set(fake.last_tool_names)
-    assert not {"profile_read", "profile_revise"} & set(fake.last_tool_names)
     forbidden = ("note_", "memo_", "event_", "lesson_", "topic_", "decision_",
                  "commitment_", "standing_", "wake_", "remind", "send_")
     assert not any(n.startswith(forbidden) for n in fake.last_tool_names)

@@ -14,7 +14,7 @@ whether the model takes the right path.
 | 2 | a lone "k" | an explicit empty proposal; no act | any link or note | eval |
 | 3 | "k" just after "dinner at 7?" | a reading that the dinner is agreed; the plan linked | treating the "k" as nothing | eval |
 | 4 | "Saturday's off, sorry" | a correction closes the Saturday plan; the open note updated | a new plan; deleting the old one | eval; no-delete is a test |
-| 5 | an unannounced visit, the third time | `profile_revise` citing the three visits | a profile change after the first | eval |
+| 5 | an unannounced visit, the third time | a graph claim citing the three visits | a profile change after the first | eval |
 | 6 | a concert ticket post, nothing after | `plans` → the concert | `attended` | eval (a ticket is not attendance: a judgement); the evidence's structural validation (present, shown, quoted span) is a test |
 | 7 | talk about a person not in this room | the reading kept in this room's scope | a link exposing them beyond it | test (scope inside the walk) |
 | 8 | a proposal with a wrong relation | the refusal read; re-proposed correctly or dropped | acting on the refused link | eval; the answer's refusal list is a test |

@@ -150,9 +150,6 @@ _ORIENT_GUIDANCE = (
      "Examples (synthetic): Ada says in row 5201, 'I love Lantern Game': propose Ada "
      "likes Lantern Game, citing 5201. Row 5230 says 'lol nice' with a bare link: "
      "nothing to keep."),
-    (frozenset({"profile_read", "profile_revise"}),
-     "Use {tools} for profiles: read the account before revising it, and change a "
-     "line only when new evidence bears on it; a single instance is a guess, not a trait."),
     (frozenset({"standing_revise"}),
      "Use {tools} only to correct your Standing when it is wrong or missing something: "
      "i_owe is what you took on; hold_open is what you are keeping open and what would "

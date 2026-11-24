@@ -61,7 +61,7 @@ def session_verbs(d: SessionDeps) -> tuple[tuple[Any, ...], ...]:
         (_make_memo_create(d), _make_memo_revise(d), _make_memo_set_status(d),),
         topic_verbs(d),
         (_make_standing_revise(d),),
-        (_make_memory_propose(d), _make_profile_read(d), _make_profile_revise(d),),
+        (_make_memory_propose(d),),
     )
 
 
@@ -736,55 +736,3 @@ def _make_memory_propose(d: SessionDeps) -> Any:
             return {"status": "unavailable", "note": "Memory admission is unavailable."}
         return dict(await self._memory.propose(state, statements=statements))
     return memory_propose
-
-
-def _make_profile_read(d: SessionDeps) -> Any:
-    self, state = d.runner, d.state
-    async def profile_read(
-        entity: list[str],
-    ) -> dict[str, Any]:
-        """Read one profile account's lines, open disputes and revision before revising it.
-
-        Returns `status`: ok with handled lines, disputes and revision, refused or unavailable.
-
-        Args:
-            entity: The profile subject kind and id: person, room, unit or nora.
-        """
-        if self._memory is None:
-            return {"status": "unavailable",
-                    "note": "Profile reads are unavailable in this session."}
-        result: dict[str, Any] = await self._memory.account_view(state, entity)
-        return result
-    return profile_read
-
-
-def _make_profile_revise(d: SessionDeps) -> Any:
-    self, state = d.runner, d.state
-    async def profile_revise(
-        entity: list[str], ops: list[dict[str, Any]],
-    ) -> dict[str, Any]:
-        """Change a profile account you read this session. Call this on new admitted evidence.
-
-        Returns `status`: ok, refused with `refusals`, conflict or unavailable.
-
-        Args:
-            entity: The profile subject kind and id: person, room, unit or nora.
-            ops: The changes, each an object with `op`: add (part, kind,
-                text, mode, citations, and draws_on, told_by, prediction,
-                prediction_observable, prediction_window_end or
-                conflicts_with where they apply), keep (line, citations),
-                revise (line, citations, text, mode, draws_on,
-                conflicts_with) or retire (line, why). A held line is
-                named by its `handle` from profile_read; a relation the
-                line generalises is `relation:<id>` in draws_on; a shown
-                source is cited as `<kind>:<id>`.
-        """
-        if self._memory is None:
-            return {"status": "unavailable",
-                    "note": "Profile writes are unavailable in this session."}
-        key = await self._memory.act_key(state, "profile_revise",
-                                         {"entity": entity, "ops": ops})
-        result: dict[str, Any] = await self._memory.profile(
-            state, entity, ops, act_key=key)
-        return result
-    return profile_revise
