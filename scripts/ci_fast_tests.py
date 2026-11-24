@@ -28,7 +28,6 @@ ON_DEMAND = (
     "test_nora_computer_script.py",
     "test_pii_scan.py",
     "test_pr584_astra_readiness.py",
-    "test_profile_coverage.py",
     "test_release_deployment.py",
     "test_rollup_determinism.py",
     "test_room_list_and_read.py",

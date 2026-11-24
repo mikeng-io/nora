@@ -50,10 +50,10 @@
  },
  "evals/__main__.py": {
   "comment_blocks": 10,
-  "file_lines": 918,
+  "file_lines": 848,
   "functions": {
-   "_execute": 179,
-   "_main": 160
+   "_execute": 174,
+   "_main": 130
   },
   "internal_docstrings": 6
  },
@@ -67,11 +67,6 @@
  },
  "evals/corpora_assess.py": {
   "comment_blocks": 1
- },
- "evals/profile_coverage_input.py": {
-  "functions": {
-   "export_input": 191
-  }
  },
  "evals/pseudonyms.py": {
   "internal_docstrings": 2
@@ -95,11 +90,6 @@
  "evals/rebuilt/judge.py": {
   "comment_blocks": 1,
   "internal_docstrings": 2
- },
- "evals/rebuilt/profile_coverage.py": {
-  "functions": {
-   "measure": 152
-  }
  },
  "evals/rebuilt/rubric.py": {
   "comment_blocks": 10

@@ -98,13 +98,6 @@
     "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_frozen_sdk_judge_uses_case_recording[coverage]"
   },
   {
-    "name": "coverage binds the declared deployment config",
-    "file": "evals/__main__.py",
-    "old": "config_path=Path(args.config or args.deployment_config), contract=contract,",
-    "new": "config_path=args.config, contract=contract,",
-    "target": "tests/unit/test_profile_coverage.py::test_real_cli_roundtrip_calibrates_before_measurement[2-0]"
-  },
-  {
     "name": "cognition judges refuse incomplete lifecycle histories",
     "file": "scripts/cognition_loop/judges.py",
     "old": "        return [\"trajectory_unavailable\"]\n    if not observed_effects(trajectory.get(\"effects\")):\n        causes.append(\"effects_unobserved\")\n",

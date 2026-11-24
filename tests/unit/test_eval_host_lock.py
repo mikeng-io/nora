@@ -98,7 +98,6 @@ def test_the_lock_is_held_through_the_run_and_released_when_it_ends(
 
 
 def test_builtin_lock_does_not_self_deadlock_with_documented_outer_flock() -> None:
-    # PROFILE_COVERAGE.md already takes this outer lock around python -m evals.
     outer = _holder(sandbox.EVAL_HOST_LOCK.parent / "nora-eval.lock")
     try:
         with sandbox.eval_host_lock():
