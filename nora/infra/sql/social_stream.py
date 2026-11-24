@@ -235,7 +235,7 @@ class Relist:
 
 
 class SqlSocialStreamStore(SocialItemWrites):
-    """The stream's six tables, as twenty-nine verbs."""
+    """Record and read the social stream."""
 
     def _readable(self) -> list[Any]:
         """One readable copy of each logical item, respecting opt-outs and hiding."""

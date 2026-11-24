@@ -1,4 +1,7 @@
-"""Closed response episodes and addressed messages for Cognition Lessons."""
+"""Closed response episodes and addressed messages for Cognition Lessons.
+
+Evidence bodies include stored attachment handles such as `[image a3f2c1]`.
+"""
 
 from __future__ import annotations
 
