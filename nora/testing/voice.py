@@ -104,8 +104,7 @@ _AUTHORITY_FORM = re.compile(r"https?://", re.IGNORECASE)
 
 
 def _is_stream_url(value: object) -> bool:
-    """The controller's rule: `http://` or `https://`, a non-empty host, a
-    numeric port in range if any, no whitespace or control character."""
+    """The controller's checks: `http(s)://`, a host, an in-range port, no unsafe char."""
     if (not isinstance(value, str) or _UNSAFE_URL_CHARS.search(value)
             or not _AUTHORITY_FORM.match(value)):
         return False

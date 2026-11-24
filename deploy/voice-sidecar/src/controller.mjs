@@ -105,8 +105,8 @@ const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 // What ffmpeg may be handed: `http://` or `https://` and an authority, a
 // non-empty host and, if any, a numeric port in range; no whitespace anywhere
 // (URL parsing would trim it) and no control character. The `https:host`
-// shorthand URL parsing accepts is refused. nora/testing/voice.py holds the
-// same rule.
+// shorthand URL parsing accepts is refused. nora/testing/voice.py checks the
+// same shapes; host syntax beyond that is the URL parser's, so they can differ.
 const UNSAFE_CHARS = /[\s\u0000-\u001f\u007f-\u009f]/u;
 const AUTHORITY_FORM = /^https?:\/\//i;
 function isStreamUrl(value) {
