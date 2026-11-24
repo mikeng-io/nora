@@ -69,6 +69,7 @@ PKG = ROOT / "nora"
 #: EXEMPT entry — because a door left unscanned is the failure this file
 #: exists to end. It is a list of what IS held to the rule, never of what
 #: may ignore it.
+#: Each addition also lets that file's renderers justify block-type declarations.
 EXTRA_MODEL_DOORS = (
     ROOT / "scripts" / "confirm_cognition_anchors.py",
     ROOT / "scripts" / "memory_graph_spike.py",
