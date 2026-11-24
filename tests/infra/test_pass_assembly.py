@@ -15,6 +15,7 @@ from nora.domain.blocks import ContextBlock
 from nora.domain.events import Event
 from nora.engagement.self_presence import PresenceReader
 from nora.infra.sql.culture import SqlCultureStore
+from nora.infra.sql.schema import CULTURE_REVISION
 from nora.memory import AnchorItem, CalledInput, DebriefInput, ReviewInput, wire
 from nora.memory.adapters.pass_assembly import PassAssembler
 from nora.memory.adapters.retrieval_store import SqlRetrieval
@@ -237,9 +238,14 @@ async def test_room_list_reads_each_rooms_graph_profile_in_the_turn_audience(sce
 
 async def test_room_list_reports_nothing_found_on_an_empty_graph(scenario) -> None:
     legacy = SqlCultureStore(scenario.engine)
-    await legacy.append(key=ROOM, body="A legacy account.", written_at=int(NOW.timestamp() * 1000),
-                        established_by="fixture", citations=("fixture-citation",))
-    assert (await legacy.head(key=ROOM)).body == "A legacy account."
+    revision = await legacy.append(
+        key=ROOM, body="A legacy account.", written_at=int(NOW.timestamp() * 1000),
+        established_by="fixture", citations=("fixture-citation",),
+    )
+    async with scenario.engine.connect() as conn:
+        body = await conn.scalar(sa.select(CULTURE_REVISION.c.body).where(
+            CULTURE_REVISION.c.id == revision.id))
+    assert body == "A legacy account."
     room_list = _room_list(scenario)
     result = await room_list()
     assert result["status"] == "ok" and result["rooms"]

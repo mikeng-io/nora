@@ -47,10 +47,8 @@ port (`ComputeJobStore`) rather than one of
 is the body ceiling, and it inherits it structurally by holding `Standing`
 objects rather than dicts.
 
-`InMemoryCultureStore` is the same rule for the culture tier (DEC-207), bound
-to `nora.infra.sql.culture.SqlCultureStore` by
-`tests/contract/test_culture_store_contract.py`. Its chain is parent links,
-never insertion order, and it records every key `head` was asked for.
+`InMemoryCultureStore` shares the append contract with
+`SqlCultureStore` in `tests/contract/test_culture_store_contract.py`.
 
 `InMemorySummonsLedger` is the same rule for the public summons ledger,
 bound to

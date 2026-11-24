@@ -95,7 +95,7 @@ class _Episodes(Protocol):
     async def last_run_ms(self, *, adaptor: str, key: str) -> int | None: ...
 
     async def episodes(
-        self, *, unit: str, after: int, limit: int, evidence_only: bool = ...,
+        self, *, unit: str, after: int, limit: int,
     ) -> tuple[list[Episode], int]: ...
 
 
@@ -194,7 +194,7 @@ class LessonEvidence:
         session is then handed none: `decay` still runs, and the episodes
         wait whole for the next one."""
         found, cursor = await self._store.episodes(
-            unit=self._keys[key].unit, after=after, limit=limit, evidence_only=False,
+            unit=self._keys[key].unit, after=after, limit=limit,
         )
         corrections = await self.corrections(key)
         if corrections:

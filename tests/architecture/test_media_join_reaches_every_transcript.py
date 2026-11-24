@@ -124,12 +124,8 @@ _UNJOINED_BY_OWN_SQL = {
         "descriptions are absent unless the pass recorded them in a tool result."
     ),
     "nora/infra/sql/character.py": (
-        "a person's Character session (design/self-growth/character.md) reads that "
-        "person's own lines across their unit's rooms by its own SQL; a photo "
-        "or file they posted renders as its stored body (the bare handle), not "
-        "as what it showed. The session is writing what the person is like from "
-        "what they SAY; joining media is the upgrade if an account is seen to "
-        "miss what someone only ever shows."
+        "Cognition Lessons reads closed response episodes and addressed messages "
+        "with its own SQL. The stored bodies carry bare attachment handles."
     ),
     "nora/infra/sql/snapshot.py": (
         "the point-in-time reconstruction reads `messages` directly and returns "

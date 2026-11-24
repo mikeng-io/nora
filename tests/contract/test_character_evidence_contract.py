@@ -1,27 +1,16 @@
-"""`SqlCharacterEvidence` and `InMemoryCharacterEvidence` answer the same
-counts and reads over the same Record.
-
-What a Character session is woken by and handed, so each filter here is one a
-wrong answer would cost silently: another person's line in someone's account,
-Nora's own words counted as theirs, a hidden message read back, a room of
-another unit, or a backlog walked from its start instead of read for what was
-said lately.
-"""
+"""Shared contract for SQL and in-memory Cognition Lessons evidence."""
 
 from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any
 from uuid import uuid4
 
 import psycopg
 import pytest
 import sqlalchemy as sa
 
-from nora.domain.culture import RoomMessage
-from nora.domain.social_stream import to_us
 from nora.infra.sql.character import SqlCharacterEvidence
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
@@ -30,19 +19,6 @@ from nora.testing import InMemoryCharacterEvidence
 from tests.infra.rollup_fixtures import insert_rollup_row
 
 ROOMS = [("signal", "room-a"), ("discord", "room-b")]
-
-
-class _Evidence(Protocol):
-    async def person_count(self, *, rooms: Any, person_id: str, after: int) -> int: ...
-    async def person_since(
-        self, *, rooms: Any, person_id: str, after: int, limit: int,
-    ) -> tuple[list[RoomMessage], int]: ...
-    async def mentions_since(
-        self, *, rooms: Any, person_id: str, after: int, limit: int,
-    ) -> tuple[list[RoomMessage], int]: ...
-    async def windowed(
-        self, *, rooms: Any, since_ms: int, until_ms: int, limit: int,
-    ) -> list[RoomMessage]: ...
 
 
 @pytest.fixture(scope="module")
@@ -64,228 +40,6 @@ def _db(pg_admin: Any) -> Iterator[str]:
                 "WHERE datname = %s AND pid <> pg_backend_pid()", (dbname,),
             )
             conn.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
-
-
-#: (platform, room, person, body, is_nora, hidden), inserted in this order so
-#: the Record's ids ascend with the index.
-_ROWS = [
-    ("signal", "room-a", "ada", "a1", False, False),
-    ("signal", "room-a", "bo", "b1", False, False),
-    ("discord", "room-b", "ada", "a2", False, False),
-    ("signal", "room-a", None, "nora", True, False),
-    ("signal", "room-a", "ada", "a3 hidden", False, True),
-    ("signal", "room-c", "ada", "a4 other unit", False, False),
-    ("discord", "room-b", "ada", "a5", False, False),
-]
-
-
-@pytest.fixture(params=["memory", "sql"])
-async def seeded(request: Any) -> AsyncIterator[tuple[_Evidence, list[int]]]:
-    if request.param == "memory":
-        fake = InMemoryCharacterEvidence()
-        for i, (platform, room, person, body, nora, hidden) in enumerate(_ROWS, 1):
-            fake.add_message(id=i, platform=platform, room=room, person_id=person,
-                             body=body, ts=1000 + i, is_nora=nora, hidden=hidden)
-        yield fake, list(range(1, len(_ROWS) + 1))
-        return
-    engine = create_sql_engine(request.getfixturevalue("_db"))
-    ids: list[int] = []
-    try:
-        async with engine.begin() as conn:
-            for i, (platform, room, person, body, nora, hidden) in enumerate(_ROWS, 1):
-                ids.append(int((await conn.execute(sa.insert(MESSAGES).values(
-                    platform=platform, conversation_id=room, conversation_type="group",
-                    sender_id="+85200000000", sender_name="x", ts=1000 + i, body=body,
-                    is_nora=int(nora), person_id=person,
-                    hidden_at=2_000 if hidden else None,
-                ).returning(MESSAGES.c.id))).scalar_one()))
-        yield SqlCharacterEvidence(engine), ids
-    finally:
-        async with engine.begin() as conn:
-            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
-            await conn.execute(sa.text("truncate messages cascade"))
-        await engine.dispose()
-
-
-async def test_a_person_counts_only_their_own_visible_lines_in_the_units_rooms(seeded):
-    store, ids = seeded
-    assert await store.person_count(rooms=ROOMS, person_id="ada", after=0) == 3
-    assert await store.person_count(rooms=ROOMS, person_id="ada", after=ids[2]) == 1
-    assert await store.person_count(rooms=ROOMS, person_id="bo", after=0) == 1
-    assert await store.person_count(rooms=[], person_id="ada", after=0) == 0
-
-
-async def test_the_head_is_the_newest_message_id_whoever_wrote_it(seeded):
-    store, ids = seeded
-    assert await store.message_head() == max(ids)
-
-
-async def test_the_read_is_the_newest_lines_oldest_first_and_the_cursor_is_the_newest(seeded):
-    store, ids = seeded
-    got, cursor = await store.person_since(rooms=ROOMS, person_id="ada", after=0, limit=2)
-    assert [(m.room, m.row.body) for m in got] == [("room-b", "a2"), ("room-b", "a5")]
-    assert [m.row.id for m in got] == [ids[2], ids[6]]
-    assert cursor == ids[6]
-    nothing, unmoved = await store.person_since(
-        rooms=ROOMS, person_id="ada", after=ids[6], limit=5,
-    )
-    assert nothing == [] and unmoved == ids[6]
-
-
-async def test_a_rooms_evidence_is_every_visible_line_but_hers(seeded):
-    """A collective's room read (35 §1's room account): every visible line in
-    the rooms, whoever wrote it, EXCEPT hers — her own words can never support
-    a claim (the echo rule), so the session is never handed them."""
-    store, ids = seeded
-    assert await store.room_count(rooms=ROOMS, after=0) == 4
-    assert await store.room_count(rooms=ROOMS, after=ids[2]) == 1
-    assert await store.room_count(rooms=[], after=0) == 0
-    got, cursor = await store.room_since(rooms=ROOMS, after=0, limit=3)
-    assert [(m.room, m.row.body) for m in got] == [
-        ("room-a", "b1"), ("room-b", "a2"), ("room-b", "a5")]
-    assert cursor == ids[6]
-    nothing, unmoved = await store.room_since(rooms=ROOMS, after=ids[6], limit=5)
-    assert nothing == [] and unmoved == ids[6]
-
-
-async def test_windowed_is_every_visible_line_in_the_rooms_over_the_interval(seeded):
-    """The verdict judge's window read (45 §3): every visible message in the
-    rooms with `ts` in `(since, until]` — hers included, a hidden one never —
-    oldest first, capped at the newest `limit`."""
-    store, ids = seeded
-    got = await store.windowed(rooms=ROOMS, since_ms=1001, until_ms=1005, limit=10)
-    assert [(m.row.id, m.row.body) for m in got] == [
-        (ids[1], "b1"), (ids[2], "a2"), (ids[3], "nora")]
-    newest = await store.windowed(rooms=ROOMS, since_ms=1001, until_ms=1005, limit=2)
-    assert [m.row.id for m in newest] == [ids[2], ids[3]]
-    assert await store.windowed(rooms=[], since_ms=0, until_ms=10_000, limit=10) == []
-    assert await store.windowed(rooms=ROOMS, since_ms=1005, until_ms=1001, limit=10) == []
-
-
-async def test_rows_by_id_are_the_visible_rows_named_with_their_room(seeded):
-    """What a Profile session checks an older account's citation against: the
-    rows asked for, ascending, each with its room; a hidden one is gone and an
-    id nothing holds is skipped."""
-    store, ids = seeded
-    got = await store.rows_by_id(ids=[ids[6], ids[0], ids[4], 9_999_999])
-    assert [(m.row.id, m.room, m.row.person_id) for m in got] == [
-        (ids[0], "room-a", "ada"), (ids[6], "room-b", "ada")]
-    assert await store.rows_by_id(ids=[]) == []
-
-
-#: (platform, room, author, body, is_nora, hidden, mention persons), inserted
-#: in this order. Bo is the subject: ada mentions them twice (a1 in a listed
-#: room, a5 hidden), Nora's own mention never counts, ada mentioning herself
-#: never counts, and room-c is not a listed room.
-_MENTION_ROWS = [
-    ("signal", "room-a", "ada", "morning bo", False, False, frozenset({"bo"})),
-    ("signal", "room-a", "bo", "about cy", False, False, frozenset({"cy"})),
-    ("discord", "room-b", "ada", "bo again", False, False, frozenset({"bo", "cy"})),
-    ("signal", "room-a", None, "bo, ping", True, False, frozenset({"bo"})),
-    ("signal", "room-a", "ada", "hidden bo", False, True, frozenset({"bo"})),
-    ("signal", "room-c", "ada", "bo elsewhere", False, False, frozenset({"bo"})),
-    ("signal", "room-a", "ada", "about me", False, False, frozenset({"ada"})),
-]
-
-
-@pytest.fixture(params=["memory", "sql"])
-async def mentioned(request: Any) -> AsyncIterator[tuple[_Evidence, list[int]]]:
-    if request.param == "memory":
-        fake = InMemoryCharacterEvidence()
-        for i, (platform, room, person, body, nora, hidden, mp) in enumerate(
-                _MENTION_ROWS, 1):
-            fake.add_message(id=i, platform=platform, room=room, person_id=person,
-                             body=body, ts=2000 + i, is_nora=nora, hidden=hidden,
-                             mention_persons=mp)
-        yield fake, list(range(1, len(_MENTION_ROWS) + 1))
-        return
-    from nora.infra.sql.schema import MEMORY_EDGE
-
-    engine = create_sql_engine(request.getfixturevalue("_db"))
-    ids: list[int] = []
-    try:
-        async with engine.begin() as conn:
-            for i, (platform, room, person, body, nora, hidden, mp) in enumerate(
-                    _MENTION_ROWS, 1):
-                mid = int((await conn.execute(sa.insert(MESSAGES).values(
-                    platform=platform, conversation_id=room, conversation_type="group",
-                    sender_id="+85200000000", sender_name="x", ts=2000 + i, body=body,
-                    is_nora=int(nora), person_id=person,
-                    hidden_at=2_000 if hidden else None,
-                ).returning(MESSAGES.c.id))).scalar_one())
-                ids.append(mid)
-                for pid in sorted(mp):
-                    await conn.execute(sa.insert(MEMORY_EDGE).values(
-                        src_kind="message", src_id=str(mid), rel="mentions",
-                        dst_kind="person", dst_id=pid,
-                        provenance="messages.mention_persons_json",
-                    ))
-        yield SqlCharacterEvidence(engine), ids
-    finally:
-        async with engine.begin() as conn:
-            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
-            await conn.execute(sa.text("truncate messages, memory_edge cascade"))
-        await engine.dispose()
-
-
-async def test_a_persons_mentions_are_the_index_edges_over_visible_lines_in_the_rooms(mentioned):
-    store, ids = mentioned
-    got, cursor = await store.mentions_since(
-        rooms=ROOMS, person_id="bo", after=0, limit=5)
-    assert [(m.row.id, m.room, m.row.body) for m in got] == [
-        (ids[0], "room-a", "morning bo"), (ids[2], "room-b", "bo again")]
-    assert cursor == ids[2]
-    rest, cursor = await store.mentions_since(
-        rooms=ROOMS, person_id="bo", after=ids[0], limit=5)
-    assert [m.row.id for m in rest] == [ids[2]] and cursor == ids[2]
-    cy, _ = await store.mentions_since(rooms=ROOMS, person_id="cy", after=0, limit=5)
-    assert [m.row.id for m in cy] == [ids[1], ids[2]]
-    own, _ = await store.mentions_since(rooms=ROOMS, person_id="ada", after=0, limit=5)
-    assert own == []  # a self-mention is not a mention: the author never counts
-    none, _ = await store.mentions_since(rooms=[], person_id="bo", after=0, limit=5)
-    assert none == []
-    newest, cursor = await store.mentions_since(
-        rooms=ROOMS, person_id="bo", after=0, limit=1)
-    assert [m.row.id for m in newest] == [ids[2]] and cursor == ids[2]
-    nothing, unmoved = await store.mentions_since(
-        rooms=ROOMS, person_id="bo", after=ids[2], limit=5)
-    assert nothing == [] and unmoved == ids[2]
-
-
-@pytest.fixture(params=["memory", "sql"])
-async def revisions(request: Any) -> AsyncIterator[Any]:
-    rows = [("room-a", 1), ("room-b", 2), ("room-c", 3), ("room-a", 4)]
-    if request.param == "memory":
-        fake = InMemoryCharacterEvidence()
-        for key, at in rows:
-            fake.add_revision(key=key, written_at=at)
-        yield fake
-        return
-    from nora.infra.sql.culture import SqlCultureStore
-
-    engine = create_sql_engine(request.getfixturevalue("_db"))
-    try:
-        culture = SqlCultureStore(engine)
-        for key, at in rows:
-            await culture.append(key=key, body=f"{key} {at}", written_at=at,
-                                 established_by="test")
-        yield SqlCharacterEvidence(engine)
-    finally:
-        async with engine.begin() as conn:
-            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
-            await conn.execute(sa.text("truncate culture, culture_revision cascade"))
-        await engine.dispose()
-
-
-async def test_a_units_evidence_is_its_rooms_revisions_counted_in_write_order(revisions):
-    keys = ["room-a", "room-b"]
-    assert await revisions.revision_count(keys=keys) == 3
-    assert await revisions.revision_count(keys=[]) == 0
-    got, cursor = await revisions.revisions_after(keys=keys, after=1, limit=5)
-    assert got == ["room-b", "room-a"] and cursor == 3
-    newest, cursor = await revisions.revisions_after(keys=keys, after=0, limit=1)
-    assert newest == ["room-a"] and cursor == 3
-    assert await revisions.revisions_after(keys=keys, after=3, limit=5) == ([], 3)
 
 
 @pytest.fixture(params=["memory", "sql"])
@@ -376,41 +130,7 @@ async def episodes(request: Any) -> AsyncIterator[tuple[Any, dict[str, int]]]:
         await engine.dispose()
 
 
-async def test_nora_counts_and_reads_evidence_episodes_only(episodes):
-    """DEC-290 (4): her wake counts closed episodes that are EVIDENCE
-    (`Episode.is_evidence`): `responded`, `silent`, or with a reply, reaction or
-    edit. An `unanswered` one (none was expected), an `unknown` one (an outage,
-    R-27) and an `open` one are neither counted, read, nor the cursor."""
-    store, ids = episodes
-    assert await store.episode_count(unit="friends", after=0) == 3
-    assert await store.episode_count(unit="friends", after=ids["dinner"]) == 2
-    assert await store.episode_count(unit="friends", after=ids["ask"]) == 1
-    assert await store.episode_count(unit="friends", after=ids["fmix"]) == 0
-    got, cursor = await store.episodes(unit="friends", after=0, limit=5)
-    assert [(e.send_id, e.text, e.outcome) for e in got] == [
-        (ids["dinner"], "dinner?", "responded"),
-        (ids["ask"], "who is free?", "silent"),
-        (ids["fmix"], "follow and reaction", "responded"),
-    ]
-    assert cursor == ids["fmix"]
-    if isinstance(store, SqlCharacterEvidence):
-        assert [r.body for r in got[0].replies] == ["yes"]
-        assert got[1].replies == ()
-    newest, _ = await store.episodes(unit="friends", after=0, limit=1)
-    assert [e.send_id for e in newest] == [ids["fmix"]]
-
-
-async def test_an_episode_answered_only_by_follows_is_not_evidence_in_either_store(episodes):
-    """The session is not shown the follow messages, so `follows` alone is not
-    counted, not read and does not move the cursor; beside a reaction it is."""
-    store, ids = episodes
-    got, _ = await store.episodes(unit="friends", after=0, limit=10)
-    assert ids["fonly"] not in [e.send_id for e in got]
-    only, cursor = await store.episodes(unit="friends", after=ids["ask"], limit=10)
-    assert [e.send_id for e in only] == [ids["fmix"]] and cursor == ids["fmix"]
-
-
-async def test_lessons_count_and_read_every_closed_episode(episodes):
+async def test_lessons_reads_every_closed_episode(episodes):
     """Lessons reads every CLOSED episode of the current build:
     `unanswered` and follow-only ones too, since the session judges from her
     send's text whether an unanswered one asked something. Still never `open`
@@ -418,18 +138,19 @@ async def test_lessons_count_and_read_every_closed_episode(episodes):
     superseded build's."""
     store, ids = episodes
     closed = ["dinner", "list", "ask", "fonly", "fmix"]
-    assert await store.episode_count(unit="friends", after=0, evidence_only=False) == 5
-    assert await store.episode_count(
-        unit="friends", after=ids["ask"], evidence_only=False) == 2
     got, cursor = await store.episodes(
-        unit="friends", after=0, limit=10, evidence_only=False)
+        unit="friends", after=0, limit=10)
     assert [e.send_id for e in got] == [ids[n] for n in closed]
     assert [e.outcome for e in got] == [
         "responded", "unanswered", "silent", "responded", "responded"]
     assert got[1].text == "a list" and got[3].follows == 2
     assert cursor == ids["fmix"]
-    newest, _ = await store.episodes(unit="friends", after=0, limit=2, evidence_only=False)
+    if isinstance(store, SqlCharacterEvidence):
+        assert [r.body for r in got[0].replies] == ["yes"]
+        assert got[1].replies == ()
+    newest, cursor = await store.episodes(unit="friends", after=0, limit=2)
     assert [e.send_id for e in newest] == [ids["fonly"], ids["fmix"]]
+    assert await store.episodes(unit="friends", after=cursor, limit=2) == ([], cursor)
 
 
 @pytest.fixture(params=["memory", "sql"])
@@ -530,98 +251,3 @@ async def test_last_run_is_the_watermark_the_dream_loop_writes(_db):
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(sa.text("truncate consolidation_watermark"))
         await engine.dispose()
-
-
-async def test_the_social_cursor_starts_at_zero_moves_forward_only_and_is_its_own_row(_db):
-    """A person session's social cursor and its read's time: `(0, 0)` before
-    any read settled, moved by `advance_social_cursor`, neither ever back (a
-    late settle of an older read must not re-hand what a newer one moved
-    past, nor re-count what it counted), and on a row of its own, so the
-    key's message watermark is untouched."""
-    from nora.infra.sql.language import SqlLanguageStore
-
-    engine = create_sql_engine(_db)
-    try:
-        for store in (SqlCharacterEvidence(engine), InMemoryCharacterEvidence()):
-            assert await store.social_cursor(adaptor="character-person", key="k") == (0, 0)
-            # Real values: a `recorded_at` in microseconds, past INTEGER.
-            live = to_us(datetime(2026, 10, 17, 9, 30, 15, 123456, tzinfo=UTC))
-            read = live + 5_000_000
-            assert live > 2**31
-            await store.advance_social_cursor(
-                adaptor="character-person", key="k", cursor=live, read_at=read)
-            await store.advance_social_cursor(
-                adaptor="character-person", key="k", cursor=live - 1, read_at=read - 1)
-            assert await store.social_cursor(
-                adaptor="character-person", key="k") == (live, read)
-            assert await store.social_cursor(adaptor="character-person", key="j") == (0, 0)
-        assert await SqlLanguageStore(engine).watermark_for(
-            consolidator_name="character-person", scope_id="k") == 0
-    finally:
-        async with engine.begin() as conn:
-            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
-            await conn.execute(sa.text("truncate consolidation_watermark"))
-        await engine.dispose()
-
-
-#: (build current?, unit, a, b, replies_ab, replies_ba, mentions_ab,
-#: mentions_ba, reactions_ab, reactions_ba); `a < b`, as the Rollup stores a pair.
-_TIES = [
-    (True, "friends", "ada", "bo", 3, 1, 1, 0, 2, 0),
-    (True, "friends", "ada", "bo", 0, 2, 4, 0, 1, 0),
-    (True, "friends", "ada", "cy", 0, 0, 0, 0, 5, 5),
-    (True, "wedding", "ada", "bo", 50, 50, 0, 0, 0, 0),
-    (False, "friends", "ada", "bo", 90, 90, 0, 0, 0, 0),
-    (True, "friends", "bo", "cy", 7, 7, 0, 0, 0, 0),
-]
-
-
-@pytest.fixture(params=["memory", "sql"])
-async def ties(request: Any) -> AsyncIterator[Any]:
-    if request.param == "memory":
-        fake = InMemoryCharacterEvidence()
-        for current, unit, a, b, *counts in _TIES:
-            fake.add_tie(unit=unit, person_a=a, person_b=b, counts=tuple(counts),
-                         current=current)
-        yield fake
-        return
-    from nora.infra.sql.schema import ROLLUP_BUILD, ROLLUP_TIE
-
-    engine = create_sql_engine(request.getfixturevalue("_db"))
-    try:
-        async with engine.begin() as conn:
-            builds = {}
-            for current in (False, True):
-                builds[current] = (await conn.execute(sa.insert(ROLLUP_BUILD).values(
-                    code_version="v", params_sha256="p",
-                    status="current" if current else "superseded",
-                ).returning(ROLLUP_BUILD.c.id))).scalar_one()
-            for week, (current, unit, a, b, ra, rb, ma, mb, xa, xb) in enumerate(_TIES):
-                await insert_rollup_row(conn, ROLLUP_TIE,
-                    build_id=builds[current], unit=unit, build_lineage=[], valid_from_ms=0,
-                    valid_to_ms=1, as_of_ms=1, person_a=a, person_b=b,
-                    iso_week=f"2026-W{week:02d}", replies_ab=ra, replies_ba=rb,
-                    mentions_ab=ma, mentions_ba=mb, reactions_ab=xa, reactions_ba=xb,
-                    colocation_ms=123_456,
-                )
-        yield SqlCharacterEvidence(engine)
-    finally:
-        async with engine.begin() as conn:
-            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
-            await conn.execute(sa.text("truncate rollup_tie, rollup_build cascade"))
-        await engine.dispose()
-
-
-async def test_a_persons_ties_are_summed_from_their_side_in_the_current_build(ties):
-    """Every week of a pair folds into one tie, read from the person's side
-    whichever of the pair they are; another unit, a superseded build and a
-    pair without them are not theirs; most replies first."""
-    assert await ties.tie_totals(unit="friends", person_id="ada") == [
-        ("bo", 3, 3, 5, 0, 3, 0),
-        ("cy", 0, 0, 0, 0, 5, 5),
-    ]
-    assert await ties.tie_totals(unit="friends", person_id="bo") == [
-        ("cy", 7, 7, 0, 0, 0, 0),
-        ("ada", 3, 3, 0, 5, 0, 3),
-    ]
-    assert await ties.tie_totals(unit="friends", person_id="dee") == []

@@ -12,8 +12,7 @@ from nora.domain.profile import (
     ReviseOp,
     identity_text,
 )
-from nora.infra.sql.character import SqlCharacterEvidence
-from nora.infra.sql.schema import MESSAGES, PROFILE_LINE
+from nora.infra.sql.schema import PROFILE_LINE
 from nora.language.profile_render import account_text
 from tests.infra.test_profile_store import ACCOUNT, CITABLE, KIT, NOW, _write
 from tests.infra.test_profile_store import env as env
@@ -174,64 +173,6 @@ async def test_legacy_prose_is_retained_but_not_promoted(env):
         )
         is None
     )
-
-
-async def _message(engine, n, *, person="kit", mentions=None, hidden=False, room="room-a"):
-    import json
-
-    async with engine.begin() as conn:
-        await conn.execute(
-            sa.insert(MESSAGES).values(
-                id=n,
-                platform="signal",
-                conversation_id=room,
-                conversation_type="group",
-                sender_id="sender",
-                person_id=person,
-                ts=1000 * n,
-                body=f"evidence {n}",
-                is_nora=0,
-                mention_persons_json=json.dumps(mentions) if mentions is not None else None,
-                hidden_at=99 if hidden else None,
-            )
-        )
-
-
-async def test_historical_union_freezes_boundary_and_resumes_without_consuming_unread(env):
-    for n in range(1, 9):
-        await _message(
-            env.engine, n, person="kit" if n % 2 else "other", mentions=["kit"] if not n % 2 else []
-        )
-    reads = SqlCharacterEvidence(env.engine)
-    assert await reads.history_state(key=ACCOUNT.key) == (8, 0)
-    page = await reads.historical_page(
-        rooms=[("signal", "room-a")], person_id="kit", after=0, through=8, limit=3
-    )
-    assert [m.row.id for m in page] == [1, 2, 3]
-    # Failure/conflict has not advanced progress. A fresh reader is a restart.
-    assert await SqlCharacterEvidence(env.engine).history_state(key=ACCOUNT.key) == (8, 0)
-    await _message(env.engine, 9)
-    await reads.advance_history(key=ACCOUNT.key, cursor=3)
-    reads = SqlCharacterEvidence(env.engine)
-    boundary, cursor = await reads.history_state(key=ACCOUNT.key)
-    seen = [1, 2, 3]
-    while cursor < boundary:
-        page = await reads.historical_page(
-            rooms=[("signal", "room-a")], person_id="kit", after=cursor, through=boundary, limit=3
-        )
-        seen.extend(m.row.id for m in page)
-        cursor = page[-1].row.id if page else boundary
-        await reads.advance_history(key=ACCOUNT.key, cursor=cursor)
-    assert seen == list(range(1, 9))
-    assert await reads.history_state(key=ACCOUNT.key) == (8, 8)
-    assert [
-        m.row.id
-        for m in (
-            await reads.person_since(
-                rooms=[("signal", "room-a")], person_id="kit", after=8, limit=3
-            )
-        )[0]
-    ] == [9]
 
 
 async def test_a_current_singleton_requires_explicit_correction_and_old_claims_stay_history(env):

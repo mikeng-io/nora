@@ -1,13 +1,7 @@
-"""`sandbox_from_snapshot()` — a real room's moment, read out of a SOURCE and
-written into a sandbox database of the case's own, end to end against
-Postgres.
+"""Read a room's state as of an instant into a separate Postgres sandbox.
 
-**Everything here is seeded through the stores production writes with** —
-`know()` for the moment itself, then `SqlRecordStore`, `SqlStandingStore`,
-`SqlCultureStore`, `SqlNoteStore` for the LATER state every tier carries — and
-read back through them too: a copy checked against rows a test wrote its own
-way measures the test's idea of the schema.
-
+The source is seeded through `know()` and the production stores. The
+assertions read the copied state and the source back independently.
 **Three claims, and none is provable from the others:**
 
 1. the sandbox holds a FAITHFUL copy AT THE MOMENT'S OWN CLOCK — every row at
@@ -41,7 +35,7 @@ from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.reminders import SqlReminderStore
-from nora.infra.sql.schema import MESSAGES
+from nora.infra.sql.schema import CULTURE, CULTURE_REVISION, MESSAGES
 from nora.infra.sql.standing import SqlStandingStore
 from nora.subject import (
     Knowledge,
@@ -311,16 +305,22 @@ async def test_the_sandbox_holds_the_position_she_held_then(sandbox, source) -> 
     assert standing.updated_at == BEFORE_MS - 3 * HOUR
 
 
+def _culture_head(key: str) -> sa.Select[tuple[str]]:
+    return sa.select(CULTURE_REVISION.c.body).join(
+        CULTURE, CULTURE.c.head_revision_id == CULTURE_REVISION.c.id,
+    ).where(CULTURE.c.key == key)
+
+
 async def test_the_sandbox_holds_the_culture_account_current_then(sandbox, source) -> None:
     """Under the subject's OWN culture key — resolved from the policy entry the
     room composes with, which for this room is its id."""
     await _seed(sandbox, source)
     eng = create_sql_engine(sandbox.database_url)
     try:
-        head = await SqlCultureStore(eng).head(key=sandbox.culture_key)
+        async with eng.connect() as conn:
+            head = (await conn.execute(_culture_head(sandbox.culture_key))).one()
     finally:
         await eng.dispose()
-    assert head is not None
     assert head.body == "they confirm plans late and nobody minds"
 
 
@@ -413,15 +413,15 @@ async def test_the_source_is_not_written_to(sandbox, source, engine) -> None:
                 sa.select(MESSAGES.c.body).where(MESSAGES.c.conversation_id == ROOM[1])
                 .order_by(MESSAGES.c.ts.asc(), MESSAGES.c.id.asc())
             )).scalars().all())
+            head = (await conn.execute(_culture_head(ROOM[1]))).one()
         standing = await SqlStandingStore(engine).read(platform=ROOM[0], conversation_id=ROOM[1])
-        head = await SqlCultureStore(engine).head(key=ROOM[1])
         notes = await SqlNoteStore(engine).standing(unit="nora")
         # Reminders too: `_reminders` is the newest read and the only one
         # whose rows the reconstruction also WRITES elsewhere, so a stray
         # `mark`/`cancel` leaking back here is exactly what this catches.
         reminders = await SqlReminderStore(engine).all_pending(limit=50)
         return (
-            bodies, standing.body if standing else None, head.body if head else None,
+            bodies, standing.body if standing else None, head.body,
             tuple(sorted((n.title, n.head_revision_id) for n in notes)),
             tuple(sorted((r.text, r.state.value) for r in reminders)),
         )

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta, tzinfo
+from datetime import datetime, timedelta, tzinfo
 from enum import StrEnum
 from typing import Literal, get_args
 
@@ -612,9 +612,6 @@ class RecordedItem:
     counts: RecordedCounts | None = None
 
 
-# -- what Character reads (§6) ---------------------------------------------------
-
-
 @dataclass(frozen=True)
 class Reading:
     """What perception made of one medium of an item: the three comprehension
@@ -627,10 +624,7 @@ class Reading:
 
 @dataclass(frozen=True)
 class PersonSocialItem:
-    """One of a person's readable social items as their Character session is
-    handed it (`SqlSocialStreamStore.person_items`): what it is, when it was
-    posted, their caption and what perception made of its media. Never its
-    `location`, `alt_text`, tagged or mentioned handles."""
+    """A recorded social item with its caption and media readings."""
 
     network: str
     item_id: str
@@ -640,20 +634,5 @@ class PersonSocialItem:
     origin: Origin
     caption: str | None
     readings: tuple[Reading, ...] = ()
-    #: When it was recorded, in microseconds since the epoch: the position a
-    #: person session's social cursor advances to once it is handed.
+    #: When it was recorded, in microseconds since the epoch.
     recorded_us: int = 0
-
-
-_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
-
-
-def to_us(moment: datetime) -> int:
-    """`moment` in whole microseconds since the epoch, exactly (a float
-    timestamp loses the last digit)."""
-    return (moment - _EPOCH) // timedelta(microseconds=1)
-
-
-def from_us(us: int) -> datetime:
-    """The inverse of `to_us`."""
-    return _EPOCH + timedelta(microseconds=us)

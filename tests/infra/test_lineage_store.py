@@ -22,6 +22,7 @@ from nora.domain.lineage import (
     ROW,
     UNRESOLVED,
     WORKING_SET,
+    Lineage,
     LineageEntry,
     message,
     unresolved,
@@ -31,6 +32,7 @@ from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import alembic_config, run_migrations, sync_url_for
 from nora.infra.sql.notes import SqlNoteStore
+from nora.infra.sql.schema import CULTURE_REVISION
 from nora.infra.sql.standing import SqlStandingStore
 
 ROOM_A = "room-a"
@@ -240,16 +242,12 @@ async def test_standing_and_culture_writes_rest_on_their_own_room(engine):
     assert rows[0].lineage == rows[1].lineage
 
     culture = SqlCultureStore(engine)
-    await culture.append(key=ROOM_A, body="an account", written_at=9_000,
-                         established_by="dreamer:culture")
-    head = await culture.head(key=ROOM_A)
-    assert head is not None
-    assert set(head.lineage.section(BODY)) == own
+    account = await culture.append(key=ROOM_A, body="an account", written_at=9_000,
+                                   established_by="dreamer:culture")
+    assert set((await _culture_lineage(engine, account.id, ROOM_A)).section(BODY)) == own
 
 
 def test_lineage_json_round_trips_and_a_malformed_entry_reads_as_unresolved():
-    from nora.domain.lineage import Lineage
-
     good = Lineage.of({ROW: [message(KEY_B), message(KEY_A)]})
     assert good.to_json() == [["message", None, KEY_A], ["message", None, KEY_B]]
     assert Lineage.from_json(json.loads(json.dumps(good.to_json()))) == good
@@ -272,7 +270,15 @@ async def test_a_room_with_nothing_on_record_gets_only_unresolved(engine):
     head, _ = await store.read(unit="unit-1", note_id=note.id)  # type: ignore[misc]
     assert set(head.lineage.section(ROW)) == {unresolved("room-silent")}
     culture = SqlCultureStore(engine)
-    await culture.append(key="room-silent", body="an account", written_at=9_000,
-                         established_by="dreamer:culture")
-    acc = await culture.head(key="room-silent")
-    assert acc is not None and set(acc.lineage.section(BODY)) == {unresolved("room-silent")}
+    account = await culture.append(key="room-silent", body="an account", written_at=9_000,
+                                   established_by="dreamer:culture")
+    persisted = await _culture_lineage(engine, account.id, "room-silent")
+    assert set(persisted.section(BODY)) == {unresolved("room-silent")}
+
+
+async def _culture_lineage(engine, revision_id: str, origin: str) -> Lineage:
+    async with engine.connect() as conn:
+        lineage = (await conn.execute(
+            sa.select(CULTURE_REVISION.c.lineage).where(CULTURE_REVISION.c.id == revision_id)
+        )).scalar_one()
+    return Lineage.from_json(lineage, origin=origin)
