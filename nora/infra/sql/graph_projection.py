@@ -32,12 +32,12 @@ from nora.domain.memory_graph import (
 from nora.domain.rollup import episode_key
 from nora.infra.sql.memory_graph import enqueue, relation_values, upsert_entity
 from nora.infra.sql.schema import (
+    LEGACY_RELATION,
     MEMORY_EDGE,
     MEMORY_NODE,
     MESSAGE_REACTION,
     MESSAGES,
     PRESENCE_STAYS,
-    RELATION,
     ROLLUP_BUILD,
     ROLLUP_COLOCATION,
     ROLLUP_RESPONSE,
@@ -143,10 +143,10 @@ async def write_relation(
     )
     if validate_relation(r, (), {}) is not None:
         return None
-    stmt = insert(RELATION).values(**relation_values(r))
+    stmt = insert(LEGACY_RELATION).values(**relation_values(r))
     await conn.execute(
         stmt.on_conflict_do_update(
-            index_elements=[RELATION.c.id],
+            index_elements=[LEGACY_RELATION.c.id],
             set_={
                 "status": "current",
                 "persons": stmt.excluded.persons,
@@ -214,8 +214,8 @@ async def project_source(conn: AsyncConnection, kind: str, sid: str) -> None:
     owner = f"project:{kind}:{sid}"
     # Retain previous statements as retired when their source changes or hides.
     await conn.execute(
-        sa.update(RELATION)
-        .where(RELATION.c.written_by == owner, RELATION.c.status == "current")
+        sa.update(LEGACY_RELATION)
+        .where(LEGACY_RELATION.c.written_by == owner, LEGACY_RELATION.c.status == "current")
         .values(status="retired")
     )
     root = (
@@ -452,8 +452,8 @@ async def project_rollups(conn: AsyncConnection) -> None:
         return
     owner = "project:rollups"
     await conn.execute(
-        sa.update(RELATION)
-        .where(RELATION.c.written_by == owner, RELATION.c.status == "current")
+        sa.update(LEGACY_RELATION)
+        .where(LEGACY_RELATION.c.written_by == owner, LEGACY_RELATION.c.status == "current")
         .values(status="retired")
     )
     # No coordinates or private saved-place names are placed on an entity.
@@ -575,7 +575,7 @@ async def project_rollups(conn: AsyncConnection) -> None:
 
 
 async def message_arrival(conn: AsyncConnection, sid: str, unit: str, room: str) -> None:
-    from nora.infra.sql.schema import MEMORY_GRAPH_ARRIVAL, MESSAGE_EDIT
+    from nora.infra.sql.schema import LEGACY_MEMORY_GRAPH_ARRIVAL, MESSAGE_EDIT
 
     cfg = context(conn)
     if cfg is None or not cfg.produce:
@@ -596,17 +596,17 @@ async def message_arrival(conn: AsyncConnection, sid: str, unit: str, room: str)
     # A not-yet-batched older revision is replaced, never rendered twice in
     # one batch. Already produced work remains retained with its original hash.
     await conn.execute(
-        sa.update(MEMORY_GRAPH_ARRIVAL)
+        sa.update(LEGACY_MEMORY_GRAPH_ARRIVAL)
         .where(
-            MEMORY_GRAPH_ARRIVAL.c.unit == unit,
-            MEMORY_GRAPH_ARRIVAL.c.message_id == int(sid),
-            MEMORY_GRAPH_ARRIVAL.c.revision != revision,
-            MEMORY_GRAPH_ARRIVAL.c.batched.is_(False),
+            LEGACY_MEMORY_GRAPH_ARRIVAL.c.unit == unit,
+            LEGACY_MEMORY_GRAPH_ARRIVAL.c.message_id == int(sid),
+            LEGACY_MEMORY_GRAPH_ARRIVAL.c.revision != revision,
+            LEGACY_MEMORY_GRAPH_ARRIVAL.c.batched.is_(False),
         )
         .values(batched=True)
     )
     await conn.execute(
-        insert(MEMORY_GRAPH_ARRIVAL)
+        insert(LEGACY_MEMORY_GRAPH_ARRIVAL)
         .values(
             unit=unit,
             message_id=int(sid),
@@ -624,7 +624,7 @@ async def form_batch(conn: AsyncConnection, *, now: datetime) -> int:
     """
     from datetime import timedelta
 
-    from nora.infra.sql.schema import MEMORY_GRAPH_ARRIVAL as ARRIVAL
+    from nora.infra.sql.schema import LEGACY_MEMORY_GRAPH_ARRIVAL as ARRIVAL
 
     await conn.execute(sa.text("SELECT pg_advisory_xact_lock(1290082)"))
     await conn.execute(

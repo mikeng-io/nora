@@ -54,6 +54,10 @@ _VARIABLE_TARGETS: dict[str, frozenset[str]] = {
         "standing_decision", "standing_commitment", "standing_thread",
     }),
     "nora/infra/sql/mobility.py": frozenset({"presence_occupancy", "presence_place_rhythm"}),
+    # The Cognitive Graph store writes the table its caller names.
+    "nora/memory/adapters/graph_store.py": frozenset({
+        "registry", "entity", "claim", "intention", "edge",
+    }),
     # The unit rollups' diffed write (`_diff_apply`), one table at a time.
     "nora/infra/sql/rollups.py": frozenset({
         "rollup_colocation", "rollup_outing", "rollup_daybook", "rollup_tie",

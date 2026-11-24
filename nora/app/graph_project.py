@@ -17,9 +17,9 @@ from nora.infra.sql.schema import (
     LEDGER_COMMITMENT,
     LEDGER_DECISION,
     LEDGER_THREAD,
+    LEGACY_RELATION,
     MEMORY_EDGE,
     MEMORY_PROJECTION_QUEUE,
-    RELATION,
     REMINDERS,
 )
 from nora.obs.metrics import Metrics
@@ -129,9 +129,10 @@ async def graph_project(
             for r in (
                 (
                     await conn.execute(
-                        sa.select(RELATION.c.rel, sa.func.count())
-                        .where(RELATION.c.rel.in_(verified), RELATION.c.status == "current")
-                        .group_by(RELATION.c.rel)
+                        sa.select(LEGACY_RELATION.c.rel, sa.func.count())
+                        .where(LEGACY_RELATION.c.rel.in_(verified),
+                               LEGACY_RELATION.c.status == "current")
+                        .group_by(LEGACY_RELATION.c.rel)
                     )
                 ).all()
             )
