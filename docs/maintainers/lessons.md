@@ -68,3 +68,18 @@ removed tool sat outside every unit's write set, and one clause of an item had n
 check.
 
 **Seen:** 2026-11-19.
+
+### A design names a tool-result status only after reading its declaration
+
+Before a design, brief or note names a tool-result status, read its entry in
+`nora/agent/ports.py`'s declared vocabulary. Use the status whose declared
+meaning matches the case, or declare a new extension. Matching a status's
+spelling to one tool's existing use is not enough: a status carrying two
+senses has made the model misread results before.
+
+**Evidence:** #920's design returned `queued` for a call handed over at its
+wait window. `ports.py` declares `queued` as waiting behind a running task
+and excludes running work by name. The hand-over is `started`. The phase 6
+owner caught it before the build, and PR #922 fixed the wording.
+
+**Seen:** 2026-11-25.
