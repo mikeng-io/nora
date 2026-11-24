@@ -148,7 +148,7 @@ def test_one_room_gets_the_registrys_tools_untouched_and_several_get_routed_ones
     # each agenda room was built through the registry's own source, scope-keyed by ITS id
     assert [c["key"] for c in source.calls] == ["room-a", "room-a", "room-b"]
     assert {c["adaptor"] for c in source.calls} == {"cognition"}
-    assert all(c["unit"] is None for c in source.calls)
+    assert all("unit" not in c and c["grant"].home_room for c in source.calls)
 
 
 async def test_the_routed_reads_of_the_wiring_reach_the_room_they_name_and_not_the_home_room():

@@ -4,7 +4,7 @@
     "file": "nora/agent/dreamer.py",
     "old": "    return AdaptorGrant(home_room=True)",
     "new": "    return AdaptorGrant(home_room=False)",
-    "target": "tests/unit/test_dreamer_runtime.py::test_a_SCOPE_keyed_grant_resolves_the_adaptors_OWN_room"
+    "target": "tests/unit/test_cognition_room_reads.py::test_one_room_gets_the_registrys_tools_untouched_and_several_get_routed_ones tests/unit/test_dreamer_runtime.py::test_a_SCOPE_keyed_grant_resolves_the_adaptors_OWN_room"
   },
   {
     "name": "Wake and Review pass their assembled input to the model",
