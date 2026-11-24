@@ -260,9 +260,8 @@ class InstructionsWiring:
 def instructions(cfg: Any, metrics: Any)-> InstructionsWiring:
 
 
-    # The Dreamer's own instruction corpus — its doctrine plus one objective per adaptor.
-    # Bind-mounted read-only the way `nora/doctrine` is, so an operator edit is live on the
-    # next Dreamer tick with no rebuild. Built unconditionally rather than under…
+    # The bind-mounted Dreamer corpus is validated at startup. Reloaded
+    # objectives take effect on their next invocation.
     dreamer_instructions = DreamerInstructions(
         cfg.dreamer.dir,
         reload=cfg.dreamer.reload,

@@ -18,7 +18,7 @@
  "nora/agent/catalog/surface.py": 1,
  "nora/agent/cognition_pace.py": 1,
  "nora/agent/dream_guard.py": 23,
- "nora/agent/dream_screen.py": 3,
+ "nora/agent/dream_screen.py": 1,
  "nora/agent/dreamer.py": 4,
  "nora/agent/egress.py": 9,
  "nora/agent/factory.py": 22,

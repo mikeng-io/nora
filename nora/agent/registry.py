@@ -801,11 +801,8 @@ class ToolRegistry:
         than one that can only read. That is a property of the runtime, not a
         setting, so it is DERIVED here and hand-listed nowhere.
 
-        **This is a ceiling, not a grant.** Each Dreamer adaptor declares its
-        own, narrower subset by tool name, and the
-        runtime refuses any name outside this set. So a tool being read-only
-        never by itself puts it in front of a model; it only makes it
-        *grantable*.
+        The session supplies its narrower set by tool name. Its tool source
+        only builds names that also appear in this read-only set.
 
         A `frozenset`, the same shape `terminal_tools()` and `cacheable_tools()`
         return and for the same reason: membership is the whole question.

@@ -1064,17 +1064,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "platform and status (ok / error / timeout / unsupported / empty).",
         ("platform", "status"),
     ),
-    # The fail-closed branch in `DreamerToolSource.build`: the adaptor's grant
-    # names a home room, the unit declares none in policy.toml, and the acts are
-    # withheld along with the room. This is a CONFIG state, true on every pass until
-    # a file is edited, so the log line beside it is emitted once per (adaptor,
-    # unit); this counter carries the signal that deduplicating the log removes,
-    # «an adaptor has been inert in this unit for a week».
+    # The scoped grant failed to resolve a policy room. Count each build even
+    # after the log has reported that session and room combination once.
     _CounterSpec(
         "nora_dream_home_room_missing_total",
-        "Dreamer builds that wanted a home room and found none declared for "
-        "the unit: the adaptor ran with no acts and no room. A standing "
-        "config gap, counted every pass; the log says it once.",
+        "Dreamer tool builds whose scoped grant could not resolve a policy room.",
         ("adaptor", "unit"),
     ),
     # Screening is the second path into the prompt, and it must never be silent:
@@ -1083,10 +1077,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # indistinguishable from a model that never produced one.
     _CounterSpec(
         "nora_dream_screened_total",
-        "Envelope items dropped before reaching a sink, by adaptor and "
-        "reason: identifier or coordinate (the R-18/R-28 screen), or cap "
-        "(the per-run item ceiling — a silent cap reads as 'we wrote "
-        "everything it found').",
+        "Items dropped by the persistence screen, by source and reason "
+        "(identifier or coordinate).",
         ("adaptor", "reason"),
     ),
     # Strands raises nothing and logs nothing when a budget cap binds; the

@@ -117,7 +117,7 @@ WriteOutcome = Literal["ok", "failed", "impossible"]
 WRITE_OUTCOMES: tuple[str, ...] = get_args(WriteOutcome)
 
 #: `reasoning_strip_log.path` is this, joined: every audience that runs a model
-#: loop (`nora.domain.audience`), plus one value per Dreamer adaptor prefixed
+#: loop (`nora.domain.audience`), plus one value per Dreamer agent prefixed
 #: below. DERIVED rather than written out, so the vocabulary cannot drift from
 #: what `fire.py` sends (`heartbeat`, `proactive`, ...).
 DREAMER_PATH_PREFIX = "dreamer:"
@@ -128,7 +128,7 @@ PATHS_HELP = (
 
 
 def dreamer_path(adaptor: str) -> str:
-    """The `path` value for one Dreamer adaptor's run.
+    """The `path` value for one Dreamer agent's run.
 
     A function rather than an f-string at the call site so the prefix has one
     spelling: `nora.agent.dreamer` writes the row and
@@ -158,18 +158,7 @@ class ReasoningStripObservation:
 
     `path` is which loop ran: one of `nora.domain.audience.SPEAKING_AUDIENCES`
     (`tag`, `heartbeat`, `participation`, `proactive`) or
-    `dreamer:<adaptor>`. It is a free `str` rather than a `Literal` because
-    the Dreamer half of the vocabulary is the ADAPTOR REGISTRY — a closed set
-    here would have to be edited every time an adaptor lands, and would be
-    wrong in the interval, which is the failure mode a `Literal` is supposed to
-    prevent. The other half IS closed and is `SPEAKING_AUDIENCES`, imported
-    rather than restated.
-
-    **`proactive` and `dreamer:proactive` are two different loops sharing a
-    word.** The first is a `kind="proactive"` reminder coming due — a turn that
-    may speak into a room. The second is the Dreamer's proactive ADAPTOR, a
-    background research pass that holds no act verb at all. Filtering one and
-    reading it as the other is the mistake this note exists to prevent.
+    `dreamer:<agent name>`, where the invoker supplies the name.
 
     `strip_calls <= continuation_calls <= model_calls` holds by construction in
     `nora.agent.reasoning_strip.ReasoningStripWatch`; it is asserted rather

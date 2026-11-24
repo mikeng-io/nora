@@ -15,11 +15,6 @@ restore must be able to write it); `due_at`/`due_ms` stay as the requested
 instant and audit fields. The same rule is spelled here in Python
 so the in-memory stores and every reader compute it identically.
 
-**Slots, not only ticks.** `_slot` (`nora.app.runtime`) already computed
-`floor((t - offset) / interval)` for a scheduled Dreamer adaptor — the same
-arithmetic a tick is, with the base minute as interval and no offset.
-`slot_index` is that function generalised, and `_slot` calls it, so there is
-one floor-division on one time base rather than two.
 """
 
 from __future__ import annotations
@@ -68,20 +63,6 @@ def tick_start_ms(tick: int) -> int:
     """The first millisecond of `tick` — the earliest instant at which a
     deadline with `due_tick == tick` is eligible."""
     return tick * TICK_MS
-
-
-def slot_index(at_ms: int, *, quantum_ms: int, phase_ms: int = 0) -> int:
-    """`floor((at_ms - phase_ms) / quantum_ms)`: which slot of a periodic
-    schedule `at_ms` falls in. Two instants in the same slot are the same
-    scheduled occasion, so a schedule fires at most once per slot — what
-    makes "daily at 06:00 UTC" expressible and lets two adaptors sharing an
-    interval be given different PHASES.
-
-    `nora.app.runtime._slot` delegates to this; a due tick is
-    `slot_index(..., quantum_ms=TICK_MS)` on a `ceil` boundary — the same
-    arithmetic, not a parallel one.
-    """
-    return (at_ms - phase_ms) // quantum_ms
 
 
 def seconds_to_boundary(interval_seconds: float, *, at: float | None = None) -> float:

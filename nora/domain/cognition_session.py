@@ -44,7 +44,7 @@ from dataclasses import dataclass
 
 from nora.domain.stimuli import Stimulus
 
-#: The Dreamer adaptor name a Cognition session's tools are built under
+#: The Dreamer source name a Cognition session's tools are built under
 #: (`RegistryToolSource.build(adaptor=...)` stamps it as `dream_adaptor`). A
 #: read tool that would WRITE something a live reader consumes checks it and
 #: does not (`nora.agent.tools.note_search`): the session's ceiling is «may

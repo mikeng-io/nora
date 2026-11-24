@@ -31,10 +31,6 @@ HEARTBEAT = "heartbeat"
 #: The ambient participation occasion.
 PARTICIPATION = "participation"
 #: A `kind="proactive"` reminder Nora wrote herself (DEC-162).
-#: NOT the same loop as the Dreamer's `proactive` ADAPTOR, which reaches
-#: `reasoning_strip_log` as `dreamer:proactive`: this one is a turn that may
-#: speak into a room, that one is a background research pass that cannot.
-#: The word is shared and the loops are not.
 PROACTIVE = "proactive"
 #: A public summons: tagged under an Instagram post, answered in the comments
 #: (`nora.app.summons`). It runs a model loop, so
