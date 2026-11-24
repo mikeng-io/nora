@@ -3,11 +3,15 @@
 // synchronously so no test needs a token, a network, or a real ffmpeg.
 
 import { EventEmitter } from 'node:events';
+import net from 'node:net';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after } from 'node:test';
 
+import { randomUUID } from 'node:crypto';
+
+import { STATUS } from '../src/contract.mjs';
 import { createCore, createFrontDoor } from '../src/controller.mjs';
 import { createStateStore } from '../src/state_store.mjs';
 
@@ -20,6 +24,32 @@ export const GUILD = '111111111111111111';
 export const TOKEN = 'test-bridge-token';
 export const AUTH = { authorization: `Bearer ${TOKEN}` };
 export const CHANNEL = 'c1';
+export const EVENT_URL = 'http://nora.test/v1/voice/operations';
+
+// The hub's answer to a `report`: an envelope with `outcome`, at the
+// kernel's status for it unless `status` overrides it.
+// The payload the contract gives each outcome of a report's answer.
+function defaultHubPayload(outcome) {
+  if (outcome === 'complete') return { status: 'ok' };
+  if (['rejected', 'unsupported', 'denied', 'incomplete', 'uncertain'].includes(outcome)) {
+    return { state: null, error: { kind: outcome, message: outcome } };
+  }
+  return {};
+}
+
+export function hubAnswer(outcome, {
+  status = STATUS[outcome], payload = defaultHubPayload(outcome),
+} = {}) {
+  const envelope = {
+    outcome,
+    payload,
+    when: { state: outcome === 'pending' ? 'started' : 'settled', started_at_ms: null, settled_at_ms: null },
+    from: { target: '', platform_ref: null },
+    scope: { level: 'installation' },
+    trace: '',
+  };
+  return { status, envelope, json: async () => envelope };
+}
 
 export function createFakeClock(start = 1_000_000) {
   let now = start;
@@ -163,8 +193,11 @@ export function createFakeResource(stream) {
 export const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 // Poll a condition across ticks (loopback HTTP + real fs need more than one).
-export async function until(cond, tries = 200) {
-  for (let i = 0; i < tries; i += 1) {
+// Waits at least `tries` ticks and at least `minMs` of wall time: a real file
+// write under a loaded host can outlast any tick count.
+export async function until(cond, tries = 200, minMs = 2000) {
+  const started = Date.now();
+  for (let i = 0; i < tries || Date.now() - started < minMs; i += 1) {
     if (cond()) return true;
     await tick();
   }
@@ -180,20 +213,21 @@ export async function makeHarness(options = {}) {
 
   const procs = [];
   const spawn = (args) => {
+    if (options.spawnError) throw options.spawnError;
     const p = createFakeProc();
     p.args = args;
     procs.push(p);
     return p;
   };
 
-  const delivered = []; // events the outbox successfully POSTed
-  const eventAttempts = []; // every delivery attempt body
-  let fetchBehavior = options.fetchBehavior ?? (async () => ({ status: 200 }));
+  const delivered = []; // events (report effects) the hub took
+  const eventAttempts = []; // every delivery attempt's operation body
+  let fetchBehavior = options.fetchBehavior ?? (async () => hubAnswer('complete'));
   const fetchImpl = async (url, opts) => {
     const body = JSON.parse(opts.body);
     eventAttempts.push(body);
     const res = await fetchBehavior(url, opts);
-    if (res && res.status >= 200 && res.status < 300) delivered.push(body);
+    if (res && res.status >= 200 && res.status < 300) delivered.push(body.effect);
     return res;
   };
 
@@ -242,29 +276,30 @@ export async function makeHarness(options = {}) {
     createMusicResource: (stream) => createFakeResource(stream),
     createSpeechResource: (audio, mediaType) => ({ audio, mediaType, playbackDuration: 0 }),
     fetchImpl,
-    eventUrl: 'http://nora.test/app/v1/voice/event',
+    eventUrl: EVENT_URL,
     clock,
     getWakeStats: () => ({ u1: { frames: 1, bytes: 3840 } }),
     pumpInfo: () => ({ host: '127.0.0.1', port: 4599, drops: pump.stats() }),
     log: () => {},
     arbiterOptions: options.arbiterOptions ?? {},
     outboxOptions: options.outboxOptions ?? {},
-    controllerOptions: options.controllerOptions ?? {},
   });
 
-  // The socket belongs to the FRONT DOOR since 2026-09-17, not to a core: one
-  // process serves N guilds behind one port. The harness wires a single-guild
-  // front door, so every test below still drives the real request path —
-  // body limits, the 413/400 split, dedupe — through the code production
-  // uses.
+  // The socket and the operation ledger belong to the FRONT DOOR, not to a
+  // core: one process serves N guilds behind one port. The harness wires a
+  // single-guild front door, so every test below drives the real request
+  // path — body limits, the 413/400 split, the ledger — through the code
+  // production uses.
+  let ready = options.ready ?? true;
   const server = createFrontDoor({
     authToken: TOKEN,
-    // NO `any` branch: route knowledge is static (CONTROL_ROUTES) since
-    // 2026-09-17. The harness used to answer `any` unconditionally, which made
-    // the empty-cores branch unreachable from the whole suite — and that
-    // branch was a cold-boot deadlock in production.
     controllerFor: (guildId) => (guildId === GUILD ? core.controller : null),
     health: () => ({ status: 'ok', guilds: [GUILD] }),
+    ready: () => ready,
+    ...(options.authorizeGuild ? { authorizeGuild: options.authorizeGuild } : {}),
+    clock,
+    ledgerOptions: options.ledgerOptions ?? {},
+    ...(options.bodyTimeoutMs ? { bodyTimeoutMs: options.bodyTimeoutMs } : {}),
     log: () => {},
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -276,10 +311,10 @@ export async function makeHarness(options = {}) {
   // Runs even when an assertion throws before a test's explicit close().
   after(close);
   const base = `http://127.0.0.1:${server.address().port}`;
-  const post = async (p, body) => {
+  const post = async (p, body, headers = {}) => {
     const res = await fetch(base + p, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...AUTH },
+      headers: { 'content-type': 'application/json', ...AUTH, ...headers },
       body: JSON.stringify(body ?? {}),
     });
     return { status: res.status, body: await res.json() };
@@ -288,11 +323,27 @@ export async function makeHarness(options = {}) {
     const res = await fetch(base + p, { headers: AUTH });
     return { status: res.status, body: await res.json() };
   };
+  // One `voice` operation; a fresh operation_id unless one is given. The
+  // answer is flattened for the assertions most tests make.
+  const op = async (kind, effect, { operationId = randomUUID(), headers } = {}) => {
+    const res = await post('/v1/voice/operations', { operation_id: operationId, kind, effect }, headers);
+    return {
+      ...res,
+      outcome: res.body.outcome,
+      state: res.body.payload?.state ?? null,
+      error: res.body.payload?.error?.kind ?? res.body.error ?? null,
+    };
+  };
+  // The status query for a guild; `payload` is the status body on `ok`.
+  const status = async (guildId = GUILD) => {
+    const res = await post('/v1/voice/queries', { kind: 'status', params: { guild_id: guildId } });
+    return { ...res, outcome: res.body.outcome, payload: res.body.payload };
+  };
 
   // Join the default channel and return the minted generation.
   const join = async (channelId = CHANNEL) => {
-    const res = await post('/voice/join', { guild_id: GUILD, channel_id: channelId });
-    return { res, generation: res.body.state.generation };
+    const res = await op('join', { guild_id: GUILD, channel_id: channelId });
+    return { res, generation: res.state.generation };
   };
 
   return {
@@ -310,7 +361,13 @@ export async function makeHarness(options = {}) {
     eventAttempts,
     post,
     get,
+    op,
+    status,
     join,
+    ledger: server.ledger,
+    setReady: (value) => {
+      ready = value;
+    },
     joinCalls,
     entersStateCalls,
     statePath,
@@ -323,17 +380,66 @@ export async function makeHarness(options = {}) {
   };
 }
 
-// Drive a /music/play all the way to PLAYING: POST, then first ffmpeg bytes.
-export async function playTrack(h, { generation, url = 'https://cdn.test/a', title = 'A', requestId } = {}) {
-  const res = await h.post('/music/play', {
-    guild_id: GUILD,
-    generation,
-    stream_url: url,
-    title,
-    ...(requestId ? { request_id: requestId } : {}),
-  });
+// Drive a `play` all the way to PLAYING: the operation, then first ffmpeg bytes.
+export async function playTrack(h, { generation, url = 'https://cdn.test/a', title = 'A', operationId } = {}) {
+  const res = await h.op('play', { guild_id: GUILD, generation, stream_url: url, title },
+    operationId ? { operationId } : {});
   const proc = h.procs[h.procs.length - 1];
   proc.data();
   await tick();
-  return { res, proc, playbackId: res.body.state.playback_id };
+  return { res, proc, playbackId: res.state.playback_id };
 }
+
+// Raw HTTP over a socket, for what fetch will not send: a body that stops
+// short. Resolves with the status and the parsed body.
+export function rawRequest(port, head, body, { end = false } = {}) {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect({ host: '127.0.0.1', port }, () => {
+      socket.write(head + body);
+      if (end) socket.end();
+    });
+    let data = '';
+    socket.on('data', (chunk) => { data += chunk.toString(); });
+    socket.on('close', () => {
+      const status = Number(/^HTTP\/1\.1 (\d{3}) /.exec(data)?.[1]);
+      // The body may be chunked: the JSON is the one object in it.
+      resolve({ status, body: JSON.parse(data.slice(data.indexOf('{'), data.lastIndexOf('}') + 1)) });
+    });
+    socket.on('error', reject);
+  });
+}
+// Streams `body` in pieces over a raw socket, stopping once an answer
+// arrives, so a refusal mid-upload is read rather than lost to a reset.
+// Resolves with the status, the parsed body and the elapsed milliseconds.
+export function rawStream(port, body, { contentLength = Buffer.byteLength(body), path = '/v1/voice/operations' } = {}) {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    let data = '';
+    const socket = net.connect({ host: '127.0.0.1', port }, () => {
+      socket.write([`POST ${path} HTTP/1.1`, 'host: x', `authorization: Bearer ${TOKEN}`,
+        'content-type: application/json', `content-length: ${contentLength}`, 'connection: close', '', ''].join('\r\n'));
+      // One piece at a time, paced, so the answer is read before the server
+      // closes on what it did not read.
+      let at = 0;
+      const pump = () => {
+        if (at >= body.length || data || socket.destroyed) return;
+        const piece = body.slice(at, at + 16 * 1024);
+        at += piece.length;
+        socket.write(piece, () => setTimeout(pump, 1));
+      };
+      pump();
+    });
+    socket.on('data', (chunk) => { data += chunk.toString(); });
+    socket.on('close', () => resolve({
+      status: Number(/^HTTP\/1\.1 (\d{3}) /.exec(data)?.[1]),
+      body: data.includes('{') ? JSON.parse(data.slice(data.indexOf('{'), data.lastIndexOf('}') + 1)) : null,
+      ms: Date.now() - started,
+    }));
+    socket.on('error', (err) => { if (!['ECONNRESET', 'EPIPE'].includes(err.code)) reject(err); });
+  });
+}
+export const operationBody = (request) => JSON.stringify(request);
+export const partialHead = (port) => [
+  'POST /v1/voice/operations HTTP/1.1', 'host: x', `authorization: Bearer ${TOKEN}`,
+  'content-type: application/json', 'content-length: 100', 'connection: close', '', '',
+].join('\r\n');

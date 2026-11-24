@@ -419,7 +419,7 @@ class MusicPlayerManager:
 
         When the transition leaves the session
         DEAD (R-65), `_after_transition` only DETACHES the player here —
-        its `leave()` (another controller HTTP round-trip, `/voice/exit`)
+        its `leave()` (another controller HTTP round-trip, `leave`)
         runs below with the lock already released, same reason as the
         play POST above."""
         ok = True
@@ -505,7 +505,7 @@ class MusicPlayerManager:
         # or double-teardown.
         #
         # `player.stop()` itself (below, lock released) makes a controller HTTP
-        # round-trip (`/music/stop`) — holding the lock across it would block
+        # round-trip (`stop`) — holding the lock across it would block
         # this guild's OWN next `/music play`/`/discord exit` on a hung
         # controller. Only the
         # dict/timer detach needs the lock; once popped, no other lock
@@ -521,7 +521,7 @@ class MusicPlayerManager:
         connection), with no announcement: the command replies itself."""
         # Same per-guild lock as `play()`/`stop()`; same lock-release reasoning
         # as `stop()` above — `player.leave()` is TWO controller
-        # HTTP round-trips (`/music/stop` then `/voice/exit`).
+        # HTTP round-trips (`stop` then `leave`).
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
         async with lock:
             player, _ = self._detach_for_leave(guild_id)

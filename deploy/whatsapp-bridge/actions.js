@@ -13,7 +13,7 @@
  * blindly. Those stored states become outcomes only at the edge.
  */
 import { ACTION_OPS, OWNER_KINDS, actionResponse } from './store.js';
-import { isValidTargetJid, isGroupJid, isLidJid, jidUserDigits, buildMediaPayload, timestampMs } from './bridge_helpers.js';
+import { isValidTargetJid, isGroupJid, isLidJid, jidUserDigits, normalizeJid, buildMediaPayload, timestampMs } from './bridge_helpers.js';
 import { lidForm, phoneForm } from './wa_jid.js';
 import { validAttachmentKey } from './media.js';
 import { readBody, readBoundedBody, sendJson } from './http_util.js';
@@ -174,8 +174,33 @@ export const executors = {
 
 /** The closed query kinds of the platform contract; this bridge implements `roster`. */
 export const QUERY_KINDS = new Set([
-  'roster', 'members', 'channels', 'channel', 'member_presence', 'voice_presence', 'groups',
+  'roster', 'members', 'channels', 'channel', 'member_presence', 'voice_presence', 'groups', 'music_status',
 ]);
+
+export function selfForms(user) {
+  const jid = normalizeJid(user?.id);
+  const lidJid = normalizeJid(user?.lid);
+  return {
+    phone: jid ? jidUserDigits(jid) || null : null,
+    lid: lidJid ? jidUserDigits(lidJid) || null : null,
+  };
+}
+
+export function buildAccount(user) {
+  const { phone, lid } = selfForms(user);
+  const aliases = [phone && phoneForm(phone), lid && lidForm(lid)].filter(Boolean);
+  if (!aliases.length) return null;
+  return {
+    platform: 'whatsapp',
+    primary: aliases[0],
+    aliases,
+    capabilities: [],
+    phone,
+    lid,
+    jid: normalizeJid(user?.id) || null,
+    lid_jid: normalizeJid(user?.lid) || null,
+  };
+}
 
 /**
  * The action pipeline shared by `POST /v1/platform/operations` and the
@@ -269,19 +294,13 @@ async function jsonBody(req) {
   return JSON.parse((await readBody(req)).toString('utf8') || '{}');
 }
 
-/** The operation request's refusal reason, or null when it is well formed. */
-function operationFault(body) {
-  const { operation_id: id, owner, effect } = body || {};
-  if (typeof id !== 'string' || !id) return [400, 'operation_id required'];
+function deliveryOwnerFault(owner) {
   if (!isObject(owner) || !OWNER_KINDS.has(owner.kind) || typeof owner.id !== 'string' || !owner.id) {
-    return [400, 'owner.kind must be work|event_receipt|otp_challenge|live_invocation with an id'];
+    return 'owner.kind must be work|event_receipt|otp_challenge|live_invocation with an id';
   }
   if (owner.kind === 'work' && !Number.isInteger(owner.generation)) {
-    return [400, 'work owner requires integer generation'];
+    return 'work owner requires integer generation';
   }
-  // A kind outside the closed set never reserves a row.
-  if (typeof body.kind !== 'string' || !ACTION_OPS.has(body.kind)) return [422, 'unknown operation kind'];
-  if (!isObject(effect)) return [400, 'effect must be an object'];
   return null;
 }
 
@@ -306,9 +325,22 @@ function routeTable(deps) {
 
   async function submitOperation(req, res, trace) {
     const body = await jsonBody(req);
-    const fault = operationFault(body);
-    if (fault) return sendRefusal(res, fault[0], fault[1]);
-    const { operation_id: actionId, owner, kind: op, effect } = body;
+    const { operation_id: actionId, owner, kind: op, effect } = body || {};
+    if (typeof actionId !== 'string' || !actionId) return sendRefusal(res, 400, 'operation_id required');
+    if (typeof op !== 'string' || !ACTION_OPS.has(op)) return sendRefusal(res, 422, 'unknown operation kind');
+    const music = op.startsWith('music_');
+    if (!music) {
+      const fault = deliveryOwnerFault(owner);
+      if (fault) return sendRefusal(res, 400, fault);
+    }
+    if (!isObject(effect)) return sendRefusal(res, 400, 'effect must be an object');
+    if (music) {
+      const target = typeof effect.conversation_id === 'string' ? effect.conversation_id : '';
+      return sendOperation(res, settledOperation(trace, {
+        outcome: 'unsupported', target, scope: scopeOf(target),
+        payload: { error: { kind: 'unsupported', message: 'music is not supported' } },
+      }));
+    }
     const target = typeof effect.target?.id === 'string' ? effect.target.id : '';
     const out = await runAction({ store: deps.store, ctx: deps.ctx,
       actionId, owner: { kind: owner.kind, id: owner.id, generation: owner.generation ?? null },
@@ -365,7 +397,7 @@ function routeTable(deps) {
       { outcome, payload, healthy: healthy() }));
     if (id !== 'self') return read('nothing_found');
     const me = deps.self();
-    return me ? read('ok', me) : read('unavailable');
+    return me ? read('ok', { ...me, capabilities: me.capabilities ?? [] }) : read('unavailable');
   }
 
   async function putBlob(req, res, trace, [key]) {

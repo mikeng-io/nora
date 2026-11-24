@@ -16,9 +16,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -100,9 +102,10 @@ func (f *fakeSocial) Mentions(context.Context) ([]domain.CommentMention, map[int
 // fakeActionStore mimics bridge_action's semantics in memory: hash-bound
 // reservation, replay/conflict, prepared→started CAS, work generation fence.
 type fakeActionStore struct {
-	mu   sync.Mutex
-	rows map[string]*bridge.ActionRow
-	gens map[string]int
+	mu           sync.Mutex
+	rows         map[string]*bridge.ActionRow
+	gens         map[string]int
+	reserveCalls atomic.Int64
 	// down makes every call fail, as an unreachable ledger does.
 	down error
 	// failFinish fails the terminal write; failGet fails every read.
@@ -114,6 +117,7 @@ func newFakeActionStore() *fakeActionStore {
 }
 
 func (f *fakeActionStore) Reserve(_ context.Context, id, ok, oid string, og *int, op string, req json.RawMessage, hash string) (bridge.ReserveOutcome, *bridge.ActionRow, error) {
+	f.reserveCalls.Add(1)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.down != nil {
@@ -317,7 +321,12 @@ type contractDoc struct {
 	Paths      map[string]map[string]json.RawMessage `json:"paths"`
 	Components struct {
 		Schemas map[string]struct {
-			Status map[string]int `json:"x-http-status"`
+			Status   map[string]int `json:"x-http-status"`
+			Required []string       `json:"required"`
+			AllOf    []struct {
+				If   map[string]any `json:"if"`
+				Then map[string]any `json:"then"`
+			} `json:"allOf"`
 		} `json:"schemas"`
 	} `json:"components"`
 }
@@ -333,6 +342,16 @@ func readContract(t *testing.T) contractDoc {
 		t.Fatal(err)
 	}
 	return doc
+}
+
+func (doc contractDoc) outcomePayload(component, outcome string) map[string]any {
+	for _, branch := range doc.Components.Schemas[component].AllOf {
+		if part(branch.If, "properties", "outcome", "const") == outcome {
+			payload, _ := part(branch.Then, "properties", "payload").(map[string]any)
+			return payload
+		}
+	}
+	return nil
 }
 
 // contractStatus is the kernel's status for every outcome, as the document
@@ -390,6 +409,53 @@ func assertNoEnvelope(t *testing.T, code int, out map[string]any, want int) {
 	}
 }
 
+func TestMusicOperationsSettleBeforeDeliveryValidation(t *testing.T) {
+	store := newFakeActionStore()
+	ts := v1Server(t, store, &fakeMessaging{}, nil)
+	status := contractStatus(t)
+	doc := readContract(t)
+	payload := doc.outcomePayload("MusicOperationEnvelope", "unsupported")
+	if payload["additionalProperties"] != false || !reflect.DeepEqual(payload["required"], []any{"error"}) ||
+		part(payload, "properties", "error", "$ref") != "#/components/schemas/OperationError" ||
+		!reflect.DeepEqual(doc.Components.Schemas["OperationError"].Required, []string{"kind", "message"}) {
+		t.Fatalf("unsupported payload and error requirements = %v and %v",
+			payload, doc.Components.Schemas["OperationError"].Required)
+	}
+	const room = "music-room"
+	traceID := strings.Repeat("11", 16)
+	for kind, effect := range map[string]map[string]any{
+		"music_play":       {"sender_ids": []string{"sender-1"}, "query_or_url": "a track"},
+		"music_skip":       {},
+		"music_top":        {"position": 2},
+		"music_stop":       {},
+		"music_set_volume": {"percent": 40},
+	} {
+		t.Run(kind, func(t *testing.T) {
+			effect["conversation_id"] = room
+			code, out := callJSON(t, ts, http.MethodPost, "/v1/platform/operations",
+				map[string]any{"operation_id": "op-" + kind, "kind": kind, "effect": effect},
+				"traceparent", "00-"+traceID+"-00f067aa0ba902b7-01")
+			if calls := store.reserveCalls.Load(); calls != 0 {
+				t.Fatalf("music reserved %d delivery rows", calls)
+			}
+			assertEnvelope(t, status, code, out, "unsupported")
+			for key, want := range map[string]any{
+				"payload": map[string]any{"error": map[string]any{
+					"kind": "unsupported", "message": "music is not supported",
+				}},
+				"when":  map[string]any{"state": "settled", "started_at_ms": nil, "settled_at_ms": nil},
+				"from":  map[string]any{"target": room, "platform_ref": nil},
+				"scope": map[string]any{"level": "room", "id": room},
+				"trace": traceID,
+			} {
+				if !reflect.DeepEqual(out[key], want) {
+					t.Errorf("%s = %v, want %v", key, out[key], want)
+				}
+			}
+		})
+	}
+}
+
 // --- item 2: the routes ---------------------------------------------------------
 
 // oldRoutes are the retired wire's collections under /v1/, spelled in parts
@@ -401,6 +467,9 @@ func TestRoutesMatchThePlatformContract(t *testing.T) {
 	doc := readContract(t)
 	documented := map[string]bool{}
 	for path, ops := range doc.Paths {
+		if !strings.HasPrefix(path, "/v1/platform/") && !strings.HasPrefix(path, "/v1/operations/") {
+			continue // another contract's route
+		}
 		for method := range ops {
 			documented[strings.ToUpper(method)+" "+path] = true
 		}
@@ -523,12 +592,15 @@ func TestOperationOutcomesFollowTheContract(t *testing.T) {
 	}
 
 	t.Run("complete", func(t *testing.T) {
-		_, ts := fresh(&fakeMessaging{})
+		store, ts := fresh(&fakeMessaging{})
 		raw, _ := json.Marshal(sendOp("w-1:send:0", &gen))
 		code, body := call(t, ts, http.MethodPost, "/v1/platform/operations", bytes.NewReader(raw), "traceparent", tp)
 		var out map[string]any
 		_ = json.Unmarshal(body, &out)
 		assertEnvelope(t, status, code, out, "complete")
+		if calls := store.reserveCalls.Load(); calls != 1 {
+			t.Fatalf("send reserved %d times, want one", calls)
+		}
 		if part(out, "from", "platform_ref") != "mid-1" || part(out, "from", "target") != "100000000000042" {
 			t.Fatalf("from = %v", out["from"])
 		}
@@ -638,11 +710,24 @@ func TestOperationOutcomesFollowTheContract(t *testing.T) {
 	t.Run("a kind outside the closed set is 422 and reserves nothing", func(t *testing.T) {
 		store, ts := fresh(&fakeMessaging{})
 		body := sendOp("w-1:poke:0", &gen)
-		body["kind"] = "poke"
-		code, out := postOp(t, ts, body)
-		assertNoEnvelope(t, code, out, http.StatusUnprocessableEntity)
-		if len(store.rows) != 0 {
+		delete(body, "owner")
+		for _, kind := range []any{"music_unknown", nil, []any{}} {
+			body["kind"] = kind
+			code, out := postOp(t, ts, body)
+			assertNoEnvelope(t, code, out, http.StatusUnprocessableEntity)
+		}
+		if store.reserveCalls.Load() != 0 {
 			t.Fatal("an unknown kind reserves no row")
+		}
+	})
+	t.Run("send requires an owner", func(t *testing.T) {
+		store, ts := fresh(&fakeMessaging{})
+		body := sendOp("send-no-owner", &gen)
+		delete(body, "owner")
+		code, out := postOp(t, ts, body)
+		assertNoEnvelope(t, code, out, http.StatusBadRequest)
+		if part(out, "error", "message") != "owner.kind and owner.id are required" || store.reserveCalls.Load() != 0 {
+			t.Fatalf("send without owner = %v, reserve calls = %d", out, store.reserveCalls.Load())
 		}
 	})
 	t.Run("an operation_id reused for another effect is 409", func(t *testing.T) {
@@ -671,12 +756,35 @@ func TestOperationOutcomesFollowTheContract(t *testing.T) {
 			map[string]any{"kind": "weather", "params": map[string]any{}})
 		assertNoEnvelope(t, code, out, http.StatusUnprocessableEntity)
 	})
+	t.Run("music_status", func(t *testing.T) {
+		_, ts := fresh(&fakeMessaging{})
+		code, out := callJSON(t, ts, http.MethodPost, "/v1/platform/queries",
+			map[string]any{"kind": "music_status", "params": map[string]any{"conversation_id": "music-room"}},
+			"traceparent", tp)
+		assertEnvelope(t, status, code, out, "unavailable")
+		payload := readContract(t).outcomePayload("MusicStatusReadEnvelope", "unavailable")
+		if payload["type"] != "null" {
+			t.Fatalf("unavailable music status payload schema = %v", payload)
+		}
+		if out["payload"] != nil || part(out, "scope", "level") != "room" ||
+			part(out, "scope", "id") != "music-room" || out["trace"] != strings.Split(tp, "-")[1] {
+			t.Fatalf("music_status answer = %v", out)
+		}
+	})
 	t.Run("account", func(t *testing.T) {
 		_, ts := fresh(&fakeMessaging{})
 		code, out := callJSON(t, ts, http.MethodGet, "/v1/platform/accounts/self", nil)
 		assertEnvelope(t, status, code, out, "ok")
-		if part(out, "payload", "platform") != "instagram" || part(out, "payload", "primary") != "fb-self" {
-			t.Fatalf("account payload = %v", out["payload"])
+		want := map[string]any{
+			"platform": "instagram", "primary": "fb-self", "aliases": []any{"fb-self", "ig-self"}, "capabilities": []any{},
+		}
+		if !reflect.DeepEqual(out["payload"], want) {
+			t.Fatalf("account payload = %v, want %v", out["payload"], want)
+		}
+		for _, field := range readContract(t).Components.Schemas["PlatformAccount"].Required {
+			if _, ok := want[field]; !ok {
+				t.Errorf("PlatformAccount requires %q, absent from the account payload", field)
+			}
 		}
 		code, out = callJSON(t, ts, http.MethodGet, "/v1/platform/accounts/someone-else", nil)
 		assertEnvelope(t, status, code, out, "nothing_found")

@@ -1,4 +1,5 @@
-"""POST /app/v1/voice/utterance — the shape contract, with the sink faked.
+"""The app's `intake` `record` of an utterance and its `voice` `report` route —
+the shape contract, with the sink faked.
 
 The reactive half (that the emitted `NormalizedMessage` really drives ingest
 to an audit row) is the integration test's job
@@ -6,12 +7,15 @@ to an audit row) is the integration test's job
 and the assertions are on what the route BUILDS and what it refuses.
 """
 
+import json
 import time
+from itertools import count
 
 import pytest
 from aiohttp import web
 
 from nora.web.voice import register_voice
+from tests.integration.platform_contract import DOCUMENT
 
 GUILD = "111111111111111111"
 # The guild's TEXT room — where its speech is recorded, deliberately NOT the
@@ -20,12 +24,20 @@ CONV = f"{GUILD}/222222222222222222"
 VOICE_CHANNEL = "999999999999999999"
 USER = "333333333333333333"
 BODY = {
-    "user_id": USER, "text": "喂 Nora 而家幾點",
-    "guild_id": GUILD, "voice_channel_id": VOICE_CHANNEL,
+    "event_id": "evt-utterance-1", "kind": "utterance", "user_id": USER,
+    "text": "喂 Nora 而家幾點", "guild_id": GUILD, "voice_channel_id": VOICE_CHANNEL,
 }
-# The wake gate's bearer: the utterance route refuses everything without it.
+INTAKE = "/v1/intake/operations"
+VOICE = "/v1/voice/operations"
+# The wake gate's bearer: the intake route refuses everything without it.
 TOKEN = "test-bridge-token"  # noqa: S105 - a fake
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
+_IDS = count()
+
+
+def _op(effect: dict, kind: str = "record") -> dict:
+    """An operation request with a fresh `operation_id`."""
+    return {"operation_id": f"op-{next(_IDS)}", "kind": kind, "effect": effect}
 
 
 @pytest.fixture(autouse=True)
@@ -54,9 +66,9 @@ async def client(aiohttp_client):
 
 async def test_a_voice_utterance_becomes_a_typed_shaped_message(client):
     before = int(time.time() * 1000)
-    resp = await client.post("/app/v1/voice/utterance", headers=AUTH, json=BODY)
-    assert resp.status == 202
-    assert (await resp.json())["status"] == "accepted"
+    resp = await client.post(INTAKE, headers=AUTH, json=_op(BODY))
+    assert resp.status == 200
+    assert (await resp.json())["outcome"] == "complete"
 
     (message,) = client.received
     assert message.platform == "discord"
@@ -79,9 +91,9 @@ async def test_a_voice_utterance_becomes_a_typed_shaped_message(client):
 
 
 async def test_missing_fields_are_refused_with_400(client):
-    for field in ("user_id", "text", "guild_id"):
+    for field in ("event_id", "user_id", "text", "guild_id", "kind"):
         body = {k: v for k, v in BODY.items() if k != field}
-        resp = await client.post("/app/v1/voice/utterance", headers=AUTH, json=body)
+        resp = await client.post(INTAKE, headers=AUTH, json=_op(body))
         assert resp.status == 400, field
     assert client.received == []
 
@@ -91,10 +103,10 @@ async def test_an_unmarked_guild_is_refused_and_ingests_nothing(client):
     `voice = true` has nowhere its speech belongs, and falling back to the
     voice channel's own id would write a spoken sentence into a room nobody
     chose — the per-channel rooms this reversal exists to stop."""
-    resp = await client.post(
-        "/app/v1/voice/utterance", headers=AUTH, json={**BODY, "guild_id": "444444444444444444"},
-    )
-    assert resp.status == 400
+    resp = await client.post(INTAKE, headers=AUTH,
+                             json=_op({**BODY, "guild_id": "444444444444444444"}))
+    assert resp.status == 200
+    assert (await resp.json())["outcome"] == "rejected"
     assert client.received == []
 
 
@@ -103,27 +115,23 @@ async def test_the_voice_channel_id_is_optional_provenance(client):
     could not read it must still be able to forward the words. Absent is
     honest; a stale configured id in a trace would not be."""
     body = {k: v for k, v in BODY.items() if k != "voice_channel_id"}
-    resp = await client.post("/app/v1/voice/utterance", headers=AUTH, json=body)
+    resp = await client.post(INTAKE, headers=AUTH, json=_op(body))
 
-    assert resp.status == 202
+    assert (await resp.json())["outcome"] == "complete"
     (message,) = client.received
     assert message.conversation_id == CONV
     assert message.raw["voice_channel_id"] is None
 
 
 async def test_an_empty_transcript_is_refused(client):
-    resp = await client.post(
-        "/app/v1/voice/utterance", headers=AUTH, json={**BODY, "text": "   "}
-    )
+    resp = await client.post(INTAKE, headers=AUTH, json=_op({**BODY, "text": "   "}))
     assert resp.status == 400
     assert client.received == []
 
 
 async def test_a_non_json_body_is_refused(client):
     resp = await client.post(
-        "/app/v1/voice/utterance",
-        data=b"not json",
-        headers={"Content-Type": "application/json", **AUTH},
+        INTAKE, data=b"not json", headers={"Content-Type": "application/json", **AUTH},
     )
     assert resp.status == 400
     assert client.received == []
@@ -156,53 +164,79 @@ async def event_client(aiohttp_client):
     return client
 
 
-async def test_the_event_route_exists_only_when_a_consumer_is_wired(client):
+def _served(client) -> set[tuple[str, str]]:
+    return {(r.method, r.resource.canonical) for r in client.server.app.router.routes()
+            if r.resource is not None and r.method != "HEAD"}
+
+
+async def test_the_app_serves_the_voice_and_intake_routes(client, event_client):
+    """The two `intake` routes always; the `voice` report route and its read-back
+    only where a consumer is wired; each in the document, and no old route."""
+    paths = json.loads(DOCUMENT.read_text())["paths"]
+    documented = {(m.upper(), p) for p, item in paths.items() for m in item}
+    intake = {("POST", INTAKE), ("GET", f"{INTAKE}/{{operation_id}}")}
+    voice = {("POST", VOICE), ("GET", f"{VOICE}/{{operation_id}}")}
+
+    assert _served(client) == intake
+    assert _served(event_client) == intake | voice
+    assert intake | voice <= documented
+    old = "/".join(("", "app", "v1", "voice"))
+    for path in (f"{old}/utterance", f"{old}/event"):
+        assert (await event_client.post(path, headers=AUTH, json=BODY)).status == 404
+
+
+async def test_the_report_route_exists_only_when_a_consumer_is_wired(client):
     """Without `on_voice_event` there is no endpoint to poke at all."""
-    resp = await client.post("/app/v1/voice/event", headers=AUTH, json=EVENT)
+    resp = await client.post(VOICE, headers=AUTH, json=_op(EVENT, "report"))
     assert resp.status == 404
 
 
-async def test_an_event_reaches_the_consumer_and_the_verdict_passes_through(event_client):
-    resp = await event_client.post("/app/v1/voice/event", headers=AUTH, json=EVENT)
-    assert resp.status == 200
-    assert (await resp.json())["status"] == "ok"
+async def test_a_report_reaches_the_consumer_and_the_verdict_passes_through(event_client):
+    resp = await event_client.post(VOICE, headers=AUTH, json=_op(EVENT, "report"))
+    body = await resp.json()
+    assert (resp.status, body["outcome"], body["payload"]) == (200, "complete", {"status": "ok"})
     assert event_client.seen == [EVENT]
 
 
-async def test_an_event_with_invalid_json_is_refused_with_400(event_client):
+async def test_every_other_voice_kind_is_unsupported_on_the_app(event_client):
+    resp = await event_client.post(VOICE, headers=AUTH, json=_op(
+        {"guild_id": GUILD, "channel_id": VOICE_CHANNEL}, "join"))
+    assert (await resp.json())["outcome"] == "unsupported"
+    assert event_client.seen == []
+
+
+async def test_a_report_with_invalid_json_is_refused_with_400(event_client):
     resp = await event_client.post(
-        "/app/v1/voice/event",
-        data=b"not json",
-        headers={"Content-Type": "application/json", **AUTH},
+        VOICE, data=b"not json", headers={"Content-Type": "application/json", **AUTH},
     )
     assert resp.status == 400
     assert event_client.seen == []
 
 
-async def test_an_event_without_the_bearer_never_reaches_the_consumer(event_client):
+async def test_a_report_without_the_bearer_never_reaches_the_consumer(event_client):
     """A co-networked caller must not be able to detach a live guild session."""
-    resp = await event_client.post("/app/v1/voice/event", json=EVENT)
+    resp = await event_client.post(VOICE, json=_op(EVENT, "report"))
     assert resp.status == 401
     assert event_client.seen == []
 
 
-async def test_an_event_with_a_wrong_bearer_never_reaches_the_consumer(event_client):
+async def test_a_report_with_a_wrong_bearer_never_reaches_the_consumer(event_client):
     resp = await event_client.post(
-        "/app/v1/voice/event", json=EVENT, headers={"Authorization": "Bearer not-it"},
+        VOICE, json=_op(EVENT, "report"), headers={"Authorization": "Bearer not-it"},
     )
     assert resp.status == 401
     assert event_client.seen == []
 
 
 async def test_an_utterance_without_the_bearer_is_refused_and_nothing_is_ingested(client):
-    resp = await client.post("/app/v1/voice/utterance", json=BODY)
+    resp = await client.post(INTAKE, json=_op(BODY))
     assert resp.status == 401
     assert client.received == []
 
 
 async def test_a_wrong_bearer_is_refused_and_nothing_is_ingested(client):
     resp = await client.post(
-        "/app/v1/voice/utterance", json=BODY, headers={"Authorization": "Bearer not-it"},
+        INTAKE, json=_op(BODY), headers={"Authorization": "Bearer not-it"},
     )
     assert resp.status == 401
     assert client.received == []
@@ -210,6 +244,25 @@ async def test_a_wrong_bearer_is_refused_and_nothing_is_ingested(client):
 
 async def test_an_unset_token_refuses_every_utterance(client, monkeypatch):
     monkeypatch.delenv("NORA_BRIDGE_TOKEN")
-    resp = await client.post("/app/v1/voice/utterance", headers=AUTH, json=BODY)
+    resp = await client.post(INTAKE, headers=AUTH, json=_op(BODY))
     assert resp.status == 401
     assert client.received == []
+
+
+async def test_a_failed_ingest_through_the_route_is_retried_by_the_next_operation(
+        aiohttp_client):
+    failures = [RuntimeError("ingest failed")]
+    received = []
+
+    async def _ingest(message):
+        if failures:
+            raise failures.pop()
+        received.append(message)
+
+    app = web.Application()
+    register_voice(app, ingest=_ingest, resolve_voice_room=lambda _g: CONV)
+    client = await aiohttp_client(app)
+
+    assert (await client.post(INTAKE, headers=AUTH, json=_op(BODY))).status == 500
+    retried = await client.post(INTAKE, headers=AUTH, json=_op(BODY))
+    assert (await retried.json())["outcome"] == "complete" and len(received) == 1

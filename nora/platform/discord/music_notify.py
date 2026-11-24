@@ -3,7 +3,7 @@
 Three surfaces announce music: `/music play`
 (`music_commands._notify_factory`, off `interaction.channel`), the agent tool
 bridge (`DiscordMusicToolBridge._notify`, off the `conversation_id`'s channel
-half) and boot resume (`music_commands.resume_persisted_sessions`, off the
+half) and boot resume (`music_commands.recover_voice_sessions`, off the
 persisted row). Left to themselves they would each answer "which channel" a
 different way and agree only by accident. `music_messages.py` does this for
 the WORDING of a music message; this module does it for the DESTINATION, and

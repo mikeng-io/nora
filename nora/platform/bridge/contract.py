@@ -1,15 +1,14 @@
 """The Python bridges' edge onto the `platform` contract
 (`nora.domain.service_api_platform`, `docs/service-api/openapi.json`).
 
-One rendering of a stored action row into an operation envelope, one read
-envelope, and the routes Signal and Discord both serve. Storage keeps its own
+One rendering of a stored action row into an operation envelope (the read
+envelope is `answers.py`'s), and the routes Signal and Discord both serve. Storage keeps its own
 words (`confirmed`, `started`, ...); they become contract outcomes only here.
 """
 
 from __future__ import annotations
 
 import json
-import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from os.path import realpath
@@ -18,49 +17,30 @@ from typing import Any, Protocol, get_args
 
 from aiohttp import web
 
-from nora.domain.service_api import OperationOutcome, ReadOutcome, status_for
+from nora.domain.service_api import OperationOutcome, ReadOutcome
 from nora.domain.service_api_platform import (
+    MUSIC_EFFECTS,
     SELF_ACCOUNT_ID,
     PlatformOperationKind,
     PlatformQueryKind,
 )
+from nora.infra.service_api_schema import validator
 from nora.platform.bridge import telemetry as bt
+from nora.platform.bridge.answers import (
+    envelope_response,
+    now_ms,
+    read_body,
+    scope_of,
+    settled_body,
+    trace_of,
+)
 from nora.platform.bridge.service import ActionReply, reply_from_row
 from nora.platform.bridge.wire import attachment_key_ok
 
 OPERATION_KINDS = frozenset(get_args(PlatformOperationKind))
 QUERY_KINDS = frozenset(get_args(PlatformQueryKind))
-#: How a read's `observed_at_ms` was known: the bridge's own clock.
-KNOWN_BY = "bridge_clock"
-
-
-def trace_of(headers: Mapping[str, str]) -> str:
-    """The trace id a request's W3C `traceparent` carries, or ``""``."""
-    parts = (headers.get("traceparent") or "").split("-")
-    trace = parts[1] if len(parts) == 4 else ""
-    valid = len(trace) == 32 and trace.strip("0") and all(
-        c in "0123456789abcdef" for c in trace)
-    return trace if valid else ""
-
-
-def scope_of(conversation_id: object) -> dict[str, Any]:
-    """`room` when the request names one conversation, else `installation`."""
-    if isinstance(conversation_id, str) and conversation_id:
-        return {"level": "room", "id": conversation_id}
-    return {"level": "installation", "id": None}
-
-
-def read_body(outcome: ReadOutcome, payload: object, *, source: str, trace: str,
-              observed_ms: int | None = None,
-              scope: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    """A read envelope; `payload` is null unless the outcome is `ok`."""
-    return {
-        "outcome": outcome, "payload": payload if outcome == "ok" else None,
-        "when": {"observed_at_ms": observed_ms or int(time.time() * 1000),
-                 "known_by": KNOWN_BY},
-        "from": {"source": source, "healthy": outcome != "unavailable",
-                 "failed_sources": []},
-        "scope": dict(scope or scope_of(None)), "trace": trace}
+_PLATFORM_OPERATION = validator("PlatformOperationRequest")
+_PLATFORM_QUERY = validator("PlatformQuery")
 
 
 def _operation_outcome(reply: ActionReply) -> OperationOutcome | None:
@@ -104,11 +84,6 @@ def operation_body(reply: ActionReply, *, target: str, trace: str
         "scope": scope_of(target), "trace": trace}
 
 
-def envelope_response(body: Mapping[str, Any]) -> web.Response:
-    """An envelope under the status its outcome owns — never another."""
-    return web.json_response(dict(body), status=status_for(body["outcome"]))
-
-
 def operation_response(reply: ActionReply, *, target: str, trace: str) -> web.Response:
     """A reply on the wire: its envelope, or 409/400 with no envelope."""
     body = operation_body(reply, target=target, trace=trace)
@@ -148,6 +123,17 @@ class ActionService(Protocol):
     async def get(self, action_id: str) -> dict[str, Any] | None: ...
 
 
+class MusicSurface(Protocol):
+    """The queue owned by a music-capable bridge and its operation receipts."""
+
+    async def submit(self, req: web.Request, operation_id: str, kind: str,
+                     effect: dict[str, Any]) -> web.Response: ...
+
+    def receipt(self, operation_id: str) -> dict[str, Any] | None: ...
+
+    async def status(self, conversation_id: str) -> QueryAnswer: ...
+
+
 class PlatformSurface:
     """The platform contract's routes and the root probes, over one bridge's parts.
 
@@ -164,6 +150,7 @@ class PlatformSurface:
         query: Callable[[str, Mapping[str, Any]], Awaitable[QueryAnswer]],
         custody_dir: Callable[[], Path | None],
         max_blob_bytes: Callable[[], int],
+        music: MusicSurface | None = None,
     ) -> None:
         self._platform = platform
         self._actions = actions
@@ -172,6 +159,7 @@ class PlatformSurface:
         self._query = query
         self._custody_dir = custody_dir
         self._max_blob_bytes = max_blob_bytes
+        self._music = music
 
     def add_routes(self, app: web.Application) -> None:
         app.router.add_get("/health", self.health)
@@ -218,6 +206,8 @@ class PlatformSurface:
             return web.json_response({"error": "body must be a JSON object"}, status=400)
         if not isinstance(body.get("kind"), str) or body["kind"] not in OPERATION_KINDS:
             return web.json_response({"error": "unknown operation kind"}, status=422)
+        if body["kind"] in MUSIC_EFFECTS:
+            return await self._submit_music(req, body)
         actions = self._actions()
         if actions is None:
             reply = ActionReply("unavailable", kind="unavailable", message="no action service")
@@ -228,12 +218,26 @@ class PlatformSurface:
         return operation_response(
             reply, target=effect_target(body.get("effect")), trace=trace_of(req.headers))
 
+    async def _submit_music(self, req: web.Request, body: dict[str, Any]) -> web.Response:
+        if not body.get("operation_id") or not _PLATFORM_OPERATION.is_valid(body):
+            return web.json_response({"error": "invalid music operation"}, status=400)
+        effect = body["effect"]
+        if self._music is not None:
+            return await self._music.submit(req, body["operation_id"], body["kind"], effect)
+        room = effect["conversation_id"]
+        return envelope_response(settled_body(
+            "unsupported", {"error": {"kind": "unsupported", "message": ""}},
+            target=room, trace=trace_of(req.headers), started_ms=now_ms(), scope=scope_of(room)))
+
     async def read_operation(self, req: web.Request) -> web.Response:
+        operation_id = req.match_info["operation_id"]
+        if self._music is not None and (receipt := self._music.receipt(operation_id)) is not None:
+            return self._read(req, "ok", receipt, scope=receipt["scope"])
         actions = self._actions()
         if actions is None:
             return self._read(req, "unavailable")
         try:
-            row = await actions.get(req.match_info["operation_id"])
+            row = await actions.get(operation_id)
         except Exception:  # noqa: BLE001 — an unreadable ledger is unavailable, not absent
             return self._read(req, "unavailable")
         if row is None:
@@ -253,7 +257,13 @@ class PlatformSurface:
         kind, params = body.get("kind"), body.get("params") or {}
         if not isinstance(kind, str) or kind not in QUERY_KINDS:
             return web.json_response({"error": "unknown query kind"}, status=422)
-        answer = await self._query(kind, params)
+        if kind == "music_status":
+            if not _PLATFORM_QUERY.is_valid(body):
+                return web.json_response({"error": "invalid music query"}, status=400)
+            answer = (await self._music.status(params["conversation_id"])
+                      if self._music is not None else QueryAnswer("unavailable"))
+        else:
+            answer = await self._query(kind, params)
         return self._read(req, answer.outcome, answer.value, observed_ms=answer.observed_ms,
                           scope=scope_of(params.get("conversation_id")))
 
@@ -261,7 +271,8 @@ class PlatformSurface:
         if req.match_info["account_id"] != SELF_ACCOUNT_ID:
             return self._read(req, "nothing_found")
         account = await self._account()
-        return self._read(req, "ok", dict(account)) if account else self._read(req, "unavailable")
+        return (self._read(req, "ok", {"capabilities": [], **account})
+                if account else self._read(req, "unavailable"))
 
     def _blob_path(self, key: str) -> Path | None:
         """The key's file in custody, `None` with custody off; a stray key is a 400."""

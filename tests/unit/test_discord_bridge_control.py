@@ -10,8 +10,10 @@ non-200s, unknown kinds).
 
 from __future__ import annotations
 
+import base64
 import time
 from unittest.mock import AsyncMock, Mock
+from uuid import UUID
 
 import pytest
 from aiohttp import web
@@ -25,9 +27,11 @@ from nora.domain.ports import (
     VoiceChannelRef,
 )
 from nora.domain.service_api import status_for
+from nora.platform.bridge.answers import pending_body, scope_of, settled_body
 from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint
 from nora.platform.bridge.contract import operation_body, read_body
 from nora.platform.bridge.service import ActionReply
+from nora.platform.discord import music_messages as m
 from nora.platform.discord.bridge_control import (
     BridgeChannelDirectory,
     BridgeControlClient,
@@ -42,6 +46,27 @@ TOKEN = "test-bearer"  # noqa: S105 — a synthetic fixture token, not a secret
 GUILD = "100000000000000001"
 CHANNEL = "100000000000000002"
 MEMBER = "100000000000000003"
+ROOM = f"{GUILD}/{CHANNEL}"
+
+
+def _music_operation(outcome="complete", *, error=None, **fields):
+    metadata = {"target": ROOM, "scope": scope_of(ROOM), "trace": "", "started_ms": 1}
+    if outcome == "pending":
+        return pending_body({}, **metadata)
+    payload = {"error": {"kind": error, "message": "ignored wire prose"} if error else None}
+    if outcome in ("complete", "rejected"):
+        payload.update({"title": None, "url": None, "queued": False, "percent": None, **fields})
+    return settled_body(outcome, payload, **metadata)
+
+
+def _music_read(outcome, payload=None):
+    return read_body(outcome, payload, source="discord", trace="", scope=scope_of(ROOM))
+
+
+def _settled(outcome: str, payload: dict | None = None) -> dict:
+    state = {"generation": "g1", "channel_id": CHANNEL}
+    return settled_body(outcome, {"state": state} if payload is None else payload,
+                        target=GUILD, trace="", started_ms=1)
 
 
 def _bridge_app(state: dict) -> web.Application:
@@ -54,16 +79,20 @@ def _bridge_app(state: dict) -> web.Application:
             return web.json_response({"error": "unauthorized"}, status=401)
         return await handler(req)
 
-    async def music(req: web.Request) -> web.Response:
-        state["music"].append((req.match_info["op"], await req.json()))
-        outcome = state["music_outcome"]
-        if outcome is None:
-            return web.json_response({"error": "down"}, status=503)
-        return web.json_response({"outcome": outcome})
+    async def music_receipt(req: web.Request) -> web.Response:
+        operation_id = req.match_info["operation_id"]
+        state["music_receipts"].append(operation_id)
+        if operation_id not in {op["operation_id"] for op in state["music"]}:
+            return web.json_response(_music_read("nothing_found"))
+        status, answer = state["music_receipt"]
+        return web.json_response(answer, status=status)
 
     async def reads(req: web.Request) -> web.Response:
         body = await req.json()
         state["reads"].append(body)
+        if body.get("kind") == "music_status":
+            status, answer = state["music_status"]
+            return web.json_response(answer, status=status)
         # Per-guild answers when the test needs them: a guild the bridge
         # cannot enumerate answers `available: false`, never an empty map.
         answer = state["reads_by_guild"].get(
@@ -77,17 +106,56 @@ def _bridge_app(state: dict) -> web.Application:
             status=status_for(outcome))
 
     async def voice_state(req: web.Request) -> web.Response:
-        state["voice_state"].append(req.match_info["guild_id"])
-        return web.json_response(state["voice"])
+        state["voice_state"].append((await req.json())["params"]["guild_id"])
+        answer = state["status_answer"]
+        if answer == "drop":
+            assert req.transport is not None
+            req.transport.close()
+        if isinstance(answer, int):
+            return web.json_response({"error": "no envelope"}, status=answer)
+        if answer == "inconsistent":
+            return web.json_response(read_body("unavailable", None, source="discord", trace=""))
+        if answer == "malformed":
+            return web.json_response({"outcome": "ok", "payload": state["voice"]})
+        if answer == "empty":
+            return web.json_response(read_body("ok", {}, source="discord", trace=""))
+        return web.json_response(read_body(answer, state["voice"], source="discord", trace=""),
+                                 status=status_for(answer))
 
     async def speech(req: web.Request) -> web.Response:
-        data = await req.read()
-        state["speech"].append((req.match_info["guild_id"], data,
-                                req.headers.get("X-Speech-Media-Type")))
-        return web.Response(status=state["speech_status"])
+        effect = (await req.json())["effect"]
+        state["speech"].append((effect["guild_id"], base64.b64decode(effect["audio_b64"]),
+                                effect["media_type"], effect["generation"]))
+        answer = state["speech_answer"]
+        if answer == "drop":
+            assert req.transport is not None
+            req.transport.close()
+        if isinstance(answer, int):
+            return web.json_response({"error": "no envelope"}, status=answer)
+        if answer == "inconsistent":
+            return web.json_response(_settled("unavailable"))
+        if answer == "malformed":
+            return web.json_response({"outcome": "complete", "payload": {"state": {}}})
+        if answer in ("empty", "report-shaped", "empty-state"):
+            payload = {"empty": {}, "report-shaped": {"status": "ok"},
+                       "empty-state": {"state": {}}}[answer]
+            return web.json_response(_settled("complete", payload))
+        body = _settled(answer) if answer != "pending" else {
+            **_settled("complete"), "outcome": "pending",
+            "when": {"state": "started", "started_at_ms": 1, "settled_at_ms": None}}
+        return web.json_response(body, status=status_for(body["outcome"]))
 
     async def actions(req: web.Request) -> web.Response:
         body = await req.json()
+        if body.get("kind", "").startswith("music_"):
+            state["music"].append(body)
+            response = state["music_answer"]
+            if response is None:
+                assert req.transport is not None
+                req.transport.close()
+                return web.Response()
+            status, answer = response
+            return web.json_response(answer, status=status)
         state["actions"].append(body)
         return web.json_response(operation_body(
             ActionReply("confirmed", platform_ms=1), target="t", trace=""))
@@ -102,11 +170,11 @@ def _bridge_app(state: dict) -> web.Application:
             "handle": "nora"}, source="discord", trace=""))
 
     app = web.Application(middlewares=[auth])
-    app.router.add_post("/v1/music/{op}", music)
     app.router.add_post("/v1/platform/queries", reads)
-    app.router.add_get("/v1/voice/{guild_id}", voice_state)
-    app.router.add_post("/v1/voice/{guild_id}/speech", speech)
+    app.router.add_post("/v1/voice/queries", voice_state)
+    app.router.add_post("/v1/voice/operations", speech)
     app.router.add_post("/v1/platform/operations", actions)
+    app.router.add_get("/v1/platform/operations/{operation_id}", music_receipt)
     app.router.add_get("/v1/operations/status", health)
     app.router.add_get("/v1/platform/accounts/self", self_id)
     return app
@@ -115,13 +183,15 @@ def _bridge_app(state: dict) -> web.Application:
 @pytest.fixture
 def bridge_state() -> dict:
     return {
-        "music": [], "reads": [], "voice_state": [], "speech": [], "actions": [],
-        "music_outcome": {"status": "ok", "title": "t", "url": "u",
-                          "queued": False, "note": ""},
+        "music": [], "music_receipts": [], "reads": [],
+        "voice_state": [], "speech": [], "actions": [],
+        "music_answer": (200, _music_operation(title="t", url="u", queued=True)),
+        "music_status": (200, _music_read("nothing_found")),
+        "music_receipt": (200, _music_read("nothing_found")),
         "reads_ops": {}, "reads_by_guild": {},
         "voice": {"connected": True, "session": True, "generation": "g1",
                   "channel_id": CHANNEL},
-        "speech_status": 204,
+        "speech_answer": "complete", "status_answer": "ok",
     }
 
 
@@ -134,30 +204,139 @@ async def server(bridge_state):
 
 
 @pytest.fixture
-def control(server) -> BridgeControlClient:
-    return BridgeControlClient(
+async def control(server):
+    control = BridgeControlClient(
         BridgeEndpoint(base_url=str(server.make_url("")).rstrip("/"), token=TOKEN))
+    try:
+        yield control
+    finally:
+        await control.close()
 
 
 async def test_music_tool_forwards_and_maps(control, bridge_state):
     tool = BridgeMusicTool(control=control)
     outcome = await tool.play(
-        conversation_id=f"{GUILD}/{CHANNEL}",
-        sender_ids=frozenset({MEMBER}), query_or_url="song",
+        conversation_id=ROOM, sender_ids=frozenset({MEMBER}), query_or_url="song",
     )
-    assert outcome.status == "ok" and outcome.title == "t"
-    op, body = bridge_state["music"][-1]
-    assert op == "play"
-    assert body["conversation_id"] == f"{GUILD}/{CHANNEL}"
-    assert body["sender_ids"] == [MEMBER]
-    assert body["query_or_url"] == "song"
+    assert outcome == MusicToolOutcome(status="ok", title="t", url="u", queued=True)
+    request, = bridge_state["music"]
+    operation_id = request["operation_id"]
+    assert UUID(operation_id).version == 4
+    assert request == {"kind": "music_play", "operation_id": operation_id, "effect": {
+        "conversation_id": ROOM, "sender_ids": [MEMBER], "query_or_url": "song"}}
+    assert bridge_state["music_receipts"] == []
+    assert await tool.play(conversation_id=ROOM, sender_ids=frozenset({MEMBER}),
+                           query_or_url="song") == outcome
+    assert bridge_state["music"][1]["operation_id"] != operation_id
 
 
-async def test_music_tool_transport_failure_is_unavailable(control, bridge_state):
-    bridge_state["music_outcome"] = None  # bridge answers 503
-    outcome = await BridgeMusicTool(control=control).skip(
-        conversation_id=f"{GUILD}/{CHANNEL}")
+async def test_music_volume_renders_the_local_note(control, bridge_state):
+    bridge_state["music_answer"] = (200, _music_operation(percent=72))
+    outcome = await BridgeMusicTool(control=control).set_volume(conversation_id=ROOM, percent=72)
+    assert outcome == MusicToolOutcome(status="ok", note=m.volume_line(72))
+    request, = bridge_state["music"]
+    assert request["kind"] == "music_set_volume"
+    assert request["effect"] == {"conversation_id": ROOM, "percent": 72}
+
+
+@pytest.mark.parametrize(("wire_outcome", "kind", "status", "note"), [
+    ("rejected", "nothing_found", "nothing_found", m.nothing_found_line()),
+    ("rejected", "nothing_playing", "nothing_found", m.nothing_playing_line()),
+    ("rejected", "nothing_queued_at_position", "nothing_found",
+     m.nothing_queued_at_position_line()),
+    ("unavailable", "disconnected", "unavailable", m.disconnected_note()),
+    ("unavailable", "not_in_voice", "unavailable", m.not_in_voice_note()),
+    ("unavailable", "join_failed", "unavailable", m.join_failed_note()),
+    ("unavailable", "not_in_allowed_guild", "unavailable", m.not_in_allowed_guild_note()),
+    ("unavailable", "volume_out_of_range", "unavailable", m.volume_out_of_range_line()),
+    ("unavailable", "music_failed", "unavailable", ""),
+    ("unavailable", "ledger_full", "unavailable", ""),
+    ("denied", "room_not_admitted", "unavailable", ""),
+    ("unsupported", "unsupported", "unavailable", ""),
+    ("pending", None, "unavailable", ""),
+])
+async def test_music_tool_maps_stated_outcomes_and_local_notes(
+    control, bridge_state, wire_outcome, kind, status, note,
+):
+    answer = _music_operation(wire_outcome, error=kind)
+    bridge_state["music_answer"] = (status_for(wire_outcome), answer)
+    outcome = await BridgeMusicTool(control=control).skip(conversation_id=ROOM)
+    assert outcome == MusicToolOutcome(status=status, note=note)
+    assert bridge_state["music"][0]["kind"] == "music_skip"
+    assert bridge_state["music_receipts"] == []
+
+
+def test_music_error_notes_round_trip():
+    for (status, note), (outcome, kind) in m._NOTE_ERRORS.items():
+        decoded = m.music_error_note(kind)
+        assert decoded == note
+        assert m.music_error(status, decoded) == (outcome, kind)
+
+
+@pytest.mark.parametrize("fault", ["transport", "empty", "extra", "status", "unsettled"])
+async def test_music_tool_fails_closed_without_a_usable_receipt(control, bridge_state, fault):
+    answer = _music_operation(title="t", url="u")
+    if fault == "empty":
+        answer["payload"] = {}
+    elif fault == "extra":
+        answer["extra"] = True
+    elif fault == "unsettled":
+        answer["when"] = _music_operation("pending")["when"]
+    bridge_state["music_answer"] = None if fault == "transport" else (
+        503 if fault == "status" else 200, answer)
+    outcome = await BridgeMusicTool(control=control).stop(conversation_id=ROOM)
     assert outcome == MusicToolOutcome(status="unavailable")
+    request, = bridge_state["music"]
+    assert request["kind"] == "music_stop"
+    assert bridge_state["music_receipts"] == [request["operation_id"]]
+
+
+@pytest.mark.parametrize("record", [
+    "complete", "rejected", "pending", "nothing_found", "invalid", "unsettled",
+])
+async def test_music_tool_reads_the_same_operation_once_after_a_lost_answer(
+    control, bridge_state, record,
+):
+    bridge_state["music_answer"] = None
+    payload = _music_operation(title="next", url="u")
+    expected = MusicToolOutcome(status="unavailable")
+    if record == "complete":
+        expected = MusicToolOutcome(status="ok", title="next", url="u")
+    elif record == "rejected":
+        payload = _music_operation("rejected", error="nothing_queued_at_position")
+        expected = MusicToolOutcome(
+            status="nothing_found", note=m.nothing_queued_at_position_line())
+    elif record == "pending":
+        payload = _music_operation("pending")
+    elif record == "unsettled":
+        payload["when"] = _music_operation("pending")["when"]
+    elif record == "invalid":
+        payload["extra"] = True
+    receipt = (_music_read("nothing_found") if record == "nothing_found"
+               else _music_read("ok", payload))
+    bridge_state["music_receipt"] = (200, receipt)
+    assert await BridgeMusicTool(control=control).top(conversation_id=ROOM, position=2) == expected
+    request, = bridge_state["music"]
+    assert request["kind"] == "music_top"
+    assert request["effect"] == {"conversation_id": ROOM, "position": 2}
+    assert bridge_state["music_receipts"] == [request["operation_id"]]
+
+
+@pytest.mark.parametrize(("status", "body", "expected"), [
+    (200, _music_read("ok", {"title": "t", "url": "u"}),
+     MusicToolOutcome(status="ok", title="t", url="u")),
+    (200, _music_read("nothing_found"),
+     MusicToolOutcome(status="nothing_found", note=m.nothing_playing_line())),
+    (503, _music_read("unavailable"), MusicToolOutcome(status="unavailable")),
+    (200, _music_read("ok", {"title": "t"}), MusicToolOutcome(status="unavailable")),
+])
+async def test_music_status_reads_the_stated_query_outcome(
+    control, bridge_state, status, body, expected,
+):
+    bridge_state["music_status"] = (status, body)
+    assert await BridgeMusicTool(control=control).status(conversation_id=ROOM) == expected
+    assert bridge_state["reads"] == [{"kind": "music_status", "params": {"conversation_id": ROOM}}]
+    assert bridge_state["music"] == bridge_state["music_receipts"] == []
 
 
 async def test_voice_presence_maps_members(control, bridge_state):
@@ -289,8 +468,9 @@ async def test_voice_send_forwards_speech_to_session(control, server, bridge_sta
     result = await adapter.send(target=target, text="hello there")
     assert result.ok is True
     # Bounded bytes reached the bridge's speech route for the right guild.
-    guild, data, media_type = bridge_state["speech"][-1]
+    guild, data, media_type, generation = bridge_state["speech"][-1]
     assert guild == GUILD and data == b"pcm" and media_type == "audio/wav"
+    assert generation == "g1", "the speak names the generation the status query read"
     assert bridge_state["actions"] == []  # no text send
 
 
@@ -343,3 +523,57 @@ async def test_unauthenticated_bridge_calls_fail_closed(server, bridge_state):
     out = await BridgeVoicePresence(control=control).in_voice(
         member_ids=frozenset({MEMBER}))
     assert out is None
+
+
+@pytest.mark.parametrize(("status", "answer", "expected"), [
+    ("ok", "complete", True),
+    ("ok", "rejected", False), ("ok", "unsupported", False), ("ok", "denied", False),
+    ("ok", "unavailable", False), ("ok", 400, False),
+    ("ok", "uncertain", None), ("ok", "incomplete", None), ("ok", "pending", None),
+    ("ok", "inconsistent", None), ("ok", "malformed", None), ("ok", "empty", None),
+    ("ok", "report-shaped", None), ("ok", "empty-state", None),
+    ("ok", 409, None), ("ok", 404, None), ("ok", 500, None), ("ok", "drop", None),
+    ("unavailable", "complete", None), ("inconsistent", "complete", None),
+    ("drop", "complete", None), (409, "complete", None), ("malformed", "complete", None),
+    ("empty", "complete", None),
+])
+async def test_voice_reads_by_outcome(control, bridge_state, status, answer, expected):
+    """`speech` is `True` only for `complete`; `False` (the reply falls back to
+    text) only where a stated answer shows the audio cannot have played; `None`
+    where it may have, or where the status read could not tell. A 200 off the
+    contract is never success: `malformed` (only an outcome and a payload), a
+    settled `complete` carrying no snapshot (`empty`, `empty-state`) or a
+    report's answer (`report-shaped`), and an empty status (`empty`)."""
+    bridge_state["status_answer"], bridge_state["speech_answer"] = status, answer
+
+    assert await control.speech(GUILD, b"pcm", "audio/wav") is expected
+    assert len(bridge_state["speech"]) == (1 if status == "ok" else 0)
+
+
+@pytest.mark.parametrize("voice", [
+    None,
+    {"connected": True, "session": True, "generation": None, "channel_id": CHANNEL},
+    {"connected": False, "session": False, "generation": "g1", "channel_id": None},
+    {"session": True, "generation": "g1", "channel_id": CHANNEL},
+])
+async def test_an_incoherent_status_read_says_nothing_and_sends_nothing(
+        control, bridge_state, voice):
+    bridge_state["voice"] = voice
+
+    assert await control.speech(GUILD, b"pcm", "audio/wav") is None
+    assert bridge_state["speech"] == []
+
+
+async def test_an_empty_status_is_no_voice_state(control, bridge_state):
+    bridge_state["status_answer"] = "empty"
+
+    assert await control.voice_state(GUILD) is None
+
+
+async def test_voice_reads_no_connection_as_false_and_sends_nothing(control, bridge_state):
+    bridge_state["voice"] = {"connected": False, "session": False,
+                             "generation": None, "channel_id": None}
+
+    assert await control.speech(GUILD, b"pcm", "audio/wav") is False
+    assert bridge_state["voice_state"] == [GUILD] and bridge_state["speech"] == []
+    assert await control.voice_state(GUILD) == bridge_state["voice"]

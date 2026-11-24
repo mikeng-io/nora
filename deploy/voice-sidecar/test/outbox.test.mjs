@@ -1,14 +1,20 @@
-// Outbox tests (design/voice-channel/audio.md «Connection lifecycle»): bounded at 256 with oldest-drop counting, backoff
-// retry that delivers after the receiver comes back, unique event_ids,
-// strictly increasing event_seq.
+// Outbox tests (design/voice-channel/audio.md «Connection lifecycle»; the
+// `voice` contract's `report`): bounded at 256 with oldest-drop counting,
+// backoff retry that delivers after the hub comes back, a retry only when the
+// hub could not take the report, unique event_ids, strictly increasing
+// event_seq.
 
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 
-import { createOutbox } from '../src/outbox.mjs';
-import { createFakeClock, tick } from './helpers.mjs';
+import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const URL = 'http://nora.test/app/v1/voice/event';
+import { STATUS } from '../src/contract.mjs';
+import { createOutbox, isReportAnswer } from '../src/outbox.mjs';
+import { extract, TARGET } from '../scripts/report_schema.mjs';
+import { EVENT_URL as URL, createFakeClock, hubAnswer, tick } from './helpers.mjs';
 
 function makeOutbox({ fetchBehavior, clock = createFakeClock(), ...options } = {}) {
   const attempts = [];
@@ -17,9 +23,9 @@ function makeOutbox({ fetchBehavior, clock = createFakeClock(), ...options } = {
     url: URL,
     fetchImpl: async (url, opts) => {
       const body = JSON.parse(opts.body);
-      attempts.push(body);
+      attempts.push({ ...body, redirect: opts.redirect });
       const res = await fetchBehavior(url, opts);
-      if (res && res.status >= 200 && res.status < 300) delivered.push(body);
+      if (res && res.status >= 200 && res.status < 300) delivered.push(body.effect);
       return res;
     },
     clock,
@@ -34,7 +40,7 @@ test('failed delivery is retried with exponential backoff until 2xx', async () =
   const { outbox, attempts, delivered } = makeOutbox({
     clock,
     baseDelayMs: 1000,
-    fetchBehavior: async () => (failures-- > 0 ? { status: 503 } : { status: 200 }),
+    fetchBehavior: async () => (failures-- > 0 ? { status: 503 } : hubAnswer('complete')),
   });
   outbox.push('track-finished', { playback_id: 'p1' });
   await tick();
@@ -111,7 +117,7 @@ test('a failed delivery reinserted into a full queue never exceeds the bound', a
     clock,
     maxEvents: 3,
     baseDelayMs: 1000,
-    fetchBehavior: async () => (fail ? { status: 503 } : { status: 200 }),
+    fetchBehavior: async () => (fail ? { status: 503 } : hubAnswer('complete')),
   });
   outbox.push('e1', { n: 1 }); // attempted, fails, reinserted
   await tick();
@@ -134,7 +140,7 @@ test('a new push does not bypass a scheduled backoff retry', async () => {
   const { outbox, attempts, delivered } = makeOutbox({
     clock,
     baseDelayMs: 1000,
-    fetchBehavior: async () => (failures-- > 0 ? { status: 503 } : { status: 200 }),
+    fetchBehavior: async () => (failures-- > 0 ? { status: 503 } : hubAnswer('complete')),
   });
   outbox.push('e1', { n: 1 });
   await tick();
@@ -156,7 +162,7 @@ test('a new push does not bypass a scheduled backoff retry', async () => {
 });
 
 test('event_ids are unique and event_seq is strictly increasing', async () => {
-  const { outbox, delivered } = makeOutbox({ fetchBehavior: async () => ({ status: 200 }) });
+  const { outbox, delivered } = makeOutbox({ fetchBehavior: async () => (hubAnswer('complete')) });
   outbox.push('a', {});
   outbox.push('b', {});
   outbox.push('c', {});
@@ -176,7 +182,7 @@ test('events land once the receiver comes back (redelivery-on-reconnect)', async
   let up = false;
   const { outbox, delivered } = makeOutbox({
     clock,
-    fetchBehavior: async () => (up ? { status: 200 } : { status: 503 }),
+    fetchBehavior: async () => (up ? hubAnswer('complete') : { status: 503 }),
   });
   outbox.push('track-finished', { playback_id: 'p1' });
   await tick();
@@ -196,7 +202,7 @@ test('a transport error (fetch rejects) is retained and retried, not lost', asyn
     clock,
     fetchBehavior: async () => {
       if (down) throw new Error('connection refused');
-      return { status: 200 };
+      return hubAnswer('complete');
     },
   });
   outbox.push('channel-emptied', { channel_id: 'c1' });
@@ -226,7 +232,7 @@ test('a fetch that never answers is aborted after the attempt timeout and retrie
           opts.signal.addEventListener('abort', () => reject(new Error('The operation was aborted')));
         });
       }
-      return Promise.resolve({ status: 200 });
+      return Promise.resolve(hubAnswer('complete'));
     },
   });
   outbox.push('track-finished', { playback_id: 'p1' });
@@ -262,7 +268,7 @@ test('a voice-death pushed while a delivery is in flight is serialized behind it
   const { outbox, attempts, delivered } = makeOutbox({
     fetchBehavior: async () => {
       if (hanging) await gate;
-      return { status: 200 };
+      return hubAnswer('complete');
     },
   });
   outbox.push('track-finished', { playback_id: 'p1' }); // popped, hangs in flight
@@ -290,7 +296,7 @@ test('configured headers (the shared bearer) are sent on every event POST', asyn
     headers: { authorization: 'Bearer test-token' },
     fetchBehavior: async (url, opts) => {
       seen.push(opts.headers);
-      return { status: 200 };
+      return hubAnswer('complete');
     },
   });
   outbox.push('track-finished', { playback_id: 'p1' });
@@ -298,4 +304,229 @@ test('configured headers (the shared bearer) are sent on every event POST', asyn
   assert.equal(seen.length, 1);
   assert.equal(seen[0].authorization, 'Bearer test-token');
   assert.equal(seen[0]['content-type'], 'application/json');
+});
+
+test('reports are retried only when the hub could not take them', async () => {
+  // One event, one first answer, then a hub that takes it. A retried report
+  // is a new operation carrying the same event.
+  async function firstAnswerIs(answer) {
+    const clock = createFakeClock();
+    let calls = 0;
+    const { outbox, attempts } = makeOutbox({
+      clock,
+      baseDelayMs: 1000,
+      fetchTimeoutMs: 5000,
+      fetchBehavior: async (url, opts) => {
+        calls += 1;
+        if (calls > 1) return hubAnswer('complete');
+        if (answer === 'transport') throw new Error('connection refused');
+        if (answer === 'timeout') {
+          return new Promise((_, reject) => opts.signal.addEventListener('abort', () => reject(new Error('aborted'))));
+        }
+        return answer;
+      },
+    });
+    outbox.push('track-finished', { playback_id: 'p1' });
+    await tick();
+    clock.advance(5000); // the attempt timeout, for the one answer that needs it
+    await tick();
+    await tick();
+    clock.advance(60_000); // any backoff
+    await tick();
+    await tick();
+    return { outbox, attempts };
+  }
+  const envelopeOf = (answer) => answer.envelope;
+  const unparseable = { status: 200, json: async () => { throw new SyntaxError('not json'); } };
+  const retried = {
+    unavailable: hubAnswer('unavailable'),
+    transport: 'transport',
+    timeout: 'timeout',
+    redirect: { status: 302, json: async () => ({}) },
+    unauthorized: { status: 401, json: async () => ({ error: 'unauthorized' }) },
+    'no route': { status: 404, json: async () => ({ error: 'not_found' }) },
+    'status disagrees': hubAnswer('complete', { status: 503 }),
+    'outcome disagrees': hubAnswer('unavailable', { status: 200 }),
+    'no envelope': unparseable,
+    'not settled': hubAnswer('pending'),
+    uncertain: hubAnswer('uncertain'),
+    'a read outcome': hubAnswer('ok'),
+    'a bare outcome': { status: 200, json: async () => ({ outcome: 'complete' }) },
+    'settled but missing parts': { status: 200, json: async () => ({ outcome: 'complete', when: { state: 'settled' } }) },
+    'parts of the wrong shape': { status: 200, json: async () => ({
+      ...envelopeOf(hubAnswer('complete')), from: null, scope: null, trace: null }) },
+    'complete but still started': { status: 200, json: async () => ({
+      ...envelopeOf(hubAnswer('complete')), when: { state: 'started', started_at_ms: 1, settled_at_ms: null } }) },
+    'empty from and scope': { status: 200, json: async () => ({
+      ...envelopeOf(hubAnswer('complete')), from: {}, scope: {} }) },
+    'a field beyond the six parts': { status: 200, json: async () => ({
+      ...envelopeOf(hubAnswer('complete')), extra: true }) },
+    'a part with a field beyond its own': { status: 200, json: async () => ({
+      ...envelopeOf(hubAnswer('complete')), from: { target: '', platform_ref: null, extra: 1 } }) },
+    'a field of the wrong type': { status: 200, json: async () => ({
+      ...envelopeOf(hubAnswer('complete')), when: { state: 'settled', started_at_ms: '1', settled_at_ms: null } }) },
+    'an undeclared scope level': { status: 200, json: async () => ({
+      ...envelopeOf(hubAnswer('complete')), scope: { level: 'galaxy' } }) },
+    'a complete with a null payload': hubAnswer('complete', { payload: null }),
+    'a complete with a garbled status': hubAnswer('complete', { payload: { status: 'garbled' } }),
+    'a complete with a connection payload': hubAnswer('complete', { payload: { state: null } }),
+  };
+  for (const [label, answer] of Object.entries(retried)) {
+    const { outbox, attempts } = await firstAnswerIs(answer);
+    assert.equal(attempts.length, 2, label);
+    assert.equal(outbox.pendingCount(), 0, label);
+    const [a, b] = attempts;
+    for (const attempt of attempts) {
+      assert.equal(attempt.kind, 'report', label);
+      assert.equal(attempt.redirect, 'manual', label);
+      assert.equal(typeof attempt.operation_id, 'string', label);
+    }
+    assert.notEqual(a.operation_id, b.operation_id, `${label}: a new operation_id`);
+    assert.equal(a.effect.event_id, b.effect.event_id, `${label}: the same event_id`);
+    assert.equal(a.effect.event_seq, b.effect.event_seq, `${label}: the same event_seq`);
+    assert.deepEqual(a.effect, b.effect, `${label}: the event unchanged`);
+  }
+  // A settled refusal must carry its typed error, or it is retried.
+  const malformedRefusals = {
+    'rejected with a scalar payload': hubAnswer('rejected', { payload: 'no' }),
+    'rejected with an empty error': hubAnswer('rejected', { payload: { error: {} } }),
+    'denied with no error': hubAnswer('denied', { payload: { state: null } }),
+    'unsupported with a numeric kind': hubAnswer('unsupported', { payload: { error: { kind: 1, message: 'm' } } }),
+    'incomplete with an extra field': hubAnswer('incomplete', {
+      payload: { error: { kind: 'k', message: 'm' }, status: 'ok' } }),
+    'uncertain with a scalar payload': hubAnswer('uncertain', { payload: 7 }),
+  };
+  for (const [label, answer] of Object.entries(malformedRefusals)) {
+    const { outbox, attempts } = await firstAnswerIs(answer);
+    assert.equal(attempts.length, 2, `${label}: retried`);
+    assert.equal(outbox.pendingCount(), 0, label);
+    assert.notEqual(attempts[0].operation_id, attempts[1].operation_id, `${label}: a new operation_id`);
+    assert.deepEqual(attempts[0].effect, attempts[1].effect, `${label}: the same event`);
+  }
+  const ended = {
+    complete: hubAnswer('complete'),
+    denied: hubAnswer('denied'),
+    rejected: hubAnswer('rejected'),
+    unsupported: hubAnswer('unsupported'),
+    incomplete: hubAnswer('incomplete'),
+    'bad request': { status: 400, json: async () => ({ error: 'invalid_body' }) },
+    conflict: { status: 409, json: async () => ({ error: 'operation_id_reused' }) },
+    'unknown kind': { status: 422, json: async () => ({ error: 'unknown_kind' }) },
+  };
+  for (const [label, answer] of Object.entries(ended)) {
+    const { outbox, attempts } = await firstAnswerIs(answer);
+    assert.equal(attempts.length, 1, `${label}: not retried`);
+    assert.equal(outbox.pendingCount(), 0, label);
+    assert.equal(attempts[0].effect.type, 'track-finished', label);
+    assert.equal(attempts[0].effect.playback_id, 'p1', label);
+  }
+
+  // Order holds across a refusal and a retry: e1 refused, e2 retried, e3 after it.
+  const clock = createFakeClock();
+  const answers = [{ status: 400, json: async () => ({}) }, hubAnswer('unavailable')];
+  const { outbox, attempts, delivered } = makeOutbox({
+    clock,
+    fetchBehavior: async () => answers.shift() ?? hubAnswer('complete'),
+  });
+  outbox.push('e1', {});
+  outbox.push('e2', {});
+  outbox.push('e3', {});
+  await tick();
+  await tick();
+  clock.advance(1000);
+  await tick();
+  await tick();
+  assert.deepEqual(attempts.map((a) => a.effect.type), ['e1', 'e2', 'e2', 'e3']);
+  assert.deepEqual(delivered.map((e) => e.event_seq), [2, 3]);
+
+  // The default bound is 256, in-flight included.
+  const bounded = makeOutbox({ fetchBehavior: () => new Promise(() => {}) }).outbox;
+  for (let i = 0; i < 300; i += 1) bounded.push('e', { n: i });
+  await tick();
+  assert.equal(bounded.dropped(), 300 - 256);
+  assert.equal(bounded.pendingCount(), 255);
+});
+
+test('the shipped report schema is the contract document\'s', () => {
+  const document = JSON.parse(readFileSync(
+    new globalThis.URL('../../../docs/service-api/openapi.json', import.meta.url), 'utf8'));
+  assert.equal(readFileSync(TARGET, 'utf8'), extract(document));
+  const check = spawnSync(process.execPath,
+    [fileURLToPath(new globalThis.URL('../scripts/report_schema.mjs', import.meta.url)), '--check'], { encoding: 'utf8' });
+  assert.equal(check.status, 0, check.stderr);
+});
+
+test('the report schema carries a status only on complete', () => {
+  const answer = (outcome, payload) => ({ outcome, payload, when: { state: 'settled' },
+    from: { target: '' }, scope: { level: 'installation' }, trace: '' });
+  assert.equal(isReportAnswer(answer('complete', { status: 'ok' })), true);
+  assert.equal(isReportAnswer(answer('uncertain', { status: 'ok' })), false, 'uncertain with a status');
+  assert.equal(isReportAnswer(answer('uncertain', {})), true, 'uncertain with nothing');
+  assert.equal(isReportAnswer(answer('rejected', {})), false, 'a refusal with no error');
+  assert.equal(isReportAnswer(answer('rejected', { error: { kind: 'k', message: 'm' } })), true);
+});
+
+// One event, one first answer, then a hub that takes it: whether the event
+// was retried, with a new operation_id and the same event.
+async function retriedAfter(first, status) {
+  const clock = createFakeClock();
+  let calls = 0;
+  const { outbox, attempts } = makeOutbox({
+    clock,
+    baseDelayMs: 1000,
+    fetchBehavior: async () => {
+      calls += 1;
+      if (calls > 1) return hubAnswer('complete');
+      return { status, json: async () => structuredClone(first) };
+    },
+  });
+  outbox.push('speech-finished', { guild_id: '111111111111111111' });
+  await tick();
+  await tick();
+  clock.advance(1000);
+  await tick();
+  await tick();
+  assert.equal(outbox.pendingCount(), 0);
+  if (attempts.length === 2) {
+    assert.notEqual(attempts[0].operation_id, attempts[1].operation_id);
+    assert.deepEqual(attempts[0].effect, attempts[1].effect);
+  }
+  return attempts.length === 2;
+}
+
+test('every acknowledgement is retried exactly when the contract refuses it', async () => {
+  const ack = {
+    outcome: 'complete', payload: { status: 'ok' }, when: { state: 'settled' },
+    from: { target: '111111111111111111' }, scope: { level: 'installation' }, trace: '',
+  };
+  const error = { kind: 'test', message: 'synthetic' };
+  // [label, first answer, retried?, status]
+  const cases = ['ok', 'duplicate', 'stale'].map((status) => [status, { ...ack, payload: { status } }, false]);
+  for (const outcome of ['rejected', 'denied', 'unsupported', 'incomplete', 'uncertain']) {
+    const typed = (payload) => ({ ...ack, outcome, payload });
+    // `uncertain` is retried whatever it carries: the hub cannot say whether it applied the event.
+    cases.push([`${outcome} valid`, typed({ error, state: { channel_id: null, generation: null } }), outcome === 'uncertain']);
+    for (const [label, payload] of Object.entries({
+      scalar: 'bad', empty: {}, 'empty error': { error: {} },
+      'missing kind': { error: { message: 'bad' } }, 'missing message': { error: { kind: 'bad' } },
+      'extra payload key': { error, other: 1 }, 'scalar state': { error, state: 1 },
+      'array state': { error, state: [] }, 'empty state': { error, state: {} },
+      'wrong nested state type': { error, state: { generation: 1, channel_id: null } },
+    })) cases.push([`${outcome} ${label}`, typed(payload), true]);
+  }
+  cases.push(['uncertain omitted error with null state', { ...ack, outcome: 'uncertain', payload: { state: null } }, true]);
+  cases.push(['uncertain with a report status', { ...ack, outcome: 'uncertain', payload: { status: 'ok' } }, true]);
+  for (const payload of [1, {}, { status: 'bogus' }, { status: 'ok', extra: true }]) {
+    cases.push([`complete ${JSON.stringify(payload)}`, { ...ack, payload }, true]);
+  }
+  // Replies recorded from the Python hubs (the bridge and the app).
+  const replies = JSON.parse(readFileSync(new globalThis.URL('./report_replies.json', import.meta.url), 'utf8'));
+  for (const { label, status, body, retry } of replies) cases.push([label, body, retry, status]);
+  assert.equal(cases.length, 81);
+
+  const mismatches = [];
+  for (const [label, first, retry, status = STATUS[first.outcome]] of cases) {
+    if (await retriedAfter(first, status) !== retry) mismatches.push(label);
+  }
+  assert.deepEqual(mismatches, []);
 });

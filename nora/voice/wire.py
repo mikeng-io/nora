@@ -168,14 +168,14 @@ def rooms(_discord_bridge, allowlist, music_manager, voice_hub) -> RoomsWiring:
     # The join allow-list IS the set of guilds a controller exists for — one
     # source of truth, so the gate and the client map can never disagree.
     voice_guild_ids = voice_hub.guild_ids if voice_hub is not None else frozenset()
-    # The controller → nora callback consumer (`POST /app/v1/voice/event`) — only when BOTH
+    # The consumer of the controller's `report` operations — only when BOTH
     # halves it glues exist: the hub (whose event-id dedupe and expected-playback
     # bookkeeping it reads) and the music manager (whose per-guild-locked methods it…
     voice_event_consumer = (
         VoiceEventConsumer(music_manager, voice_hub)
         if music_manager is not None and voice_hub is not None
-        # Bridge mode: the controller posts to the bridge's
-        # `/v1/voice/event`, whose sink is the bridge's own consumer —
+        # Bridge mode: the controller reports to the bridge's
+        # `/v1/voice/operations`, whose sink is the bridge's own consumer —
         # there is no app-side session for an event to reconcile.
         else None
     )
@@ -231,9 +231,7 @@ def platforms(
     # `None` under `cfg.music.enabled = false` (its own construction above), and `"discord"…
     music_bridge: DiscordMusicToolBridge | BridgeMusicTool | None = None
     if _discord_bridge and "discord" in registry:
-        # Bridge mode: the app holds NO manager — the deterministic music
-        # surface forwards to the bridge's `/v1/music/{op}`, which executes
-        # against the bridge's own manager and voice cache.
+        # The bridge's platform music routes use its own manager and voice cache.
         if cfg.music.enabled and discord_control is not None:
             music_bridge = BridgeMusicTool(control=discord_control)
     elif music_manager is not None and "discord" in registry:

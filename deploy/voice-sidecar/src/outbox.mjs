@@ -1,23 +1,37 @@
-// Event outbox (design/voice-channel/audio.md):
-// every controller -> nora event is POSTed to NORA_EVENT_URL. A failed
-// delivery (non-2xx or transport error) parks the event in a bounded queue
-// (<=256; on overflow the OLDEST is dropped and counted) and the queue is
-// retried oldest-first with exponential backoff (1s -> 2s -> ... cap 60s)
-// until 2xx. Every attempt carries a per-attempt abort timeout (10s) so a
-// receiver that accepts and never answers is a retryable delivery failure,
-// not a stalled pipeline. This retry loop is also the redelivery-on-reconnect mechanism:
-// if nora is down when a track ends, the event lands once nora is back.
+// Event outbox (design/voice-channel/audio.md; the `voice` contract's
+// `report`): every controller -> hub event is POSTed to NORA_EVENT_URL, the
+// hub's `/v1/voice/operations`, as `{operation_id, kind: "report", effect}`
+// with the event unchanged as the effect and a new `operation_id` for every
+// attempt. An event the hub could not take parks in a bounded queue (<=256; on
+// overflow the OLDEST is dropped and counted) and the queue is retried
+// oldest-first with exponential backoff (1s -> 2s -> ... cap 60s). Every
+// attempt carries a per-attempt abort timeout (10s). This retry loop is also
+// the redelivery-on-reconnect mechanism: if the hub is down when a track ends,
+// the event lands once it is back.
 //
 // event_seq is assigned at push time and is strictly increasing for the
-// life of the process; /voice/status exposes it as last_event_seq.
+// life of the process; the status query exposes it as last_event_seq.
 
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+
+import Ajv2020 from 'ajv/dist/2020.js';
+
+import { STATUS } from './contract.mjs';
 
 export const realClock = {
   now: () => Date.now(),
   setTimeout: (fn, ms) => setTimeout(fn, ms),
   clearTimeout: (t) => clearTimeout(t),
 };
+
+// The hub's answer to a report, as the contract's VoiceReportEnvelope:
+// src/report_schema.json is generated from docs/service-api/openapi.json
+// (scripts/report_schema.mjs) and checked against it by a test.
+const REPORT_SCHEMA = JSON.parse(readFileSync(new URL('./report_schema.json', import.meta.url), 'utf8'));
+const ajv = new Ajv2020({ strict: false });
+ajv.addSchema({ $id: 'report', ...REPORT_SCHEMA });
+export const isReportAnswer = ajv.getSchema('report#/components/schemas/VoiceReportEnvelope');
 
 export function createOutbox({
   url,
@@ -54,25 +68,53 @@ export function createOutbox({
     return event;
   }
 
+  // What the hub's answer means for this event: 'taken' (a settled answer
+  // that says whether it applied the event: any outcome but `unavailable`,
+  // `pending` and `uncertain`), 'refused' (400, 409, 422: retrying cannot
+  // help) or 'retry' (everything else: 3xx, 401, 404, a status that disagrees
+  // with its outcome, or anything the contract's report answer schema does not
+  // accept).
+  async function verdict(res) {
+    const status = res?.status;
+    if (status === 400 || status === 409 || status === 422) return 'refused';
+    let envelope = null;
+    try {
+      envelope = await res.json();
+    } catch {
+      return 'retry';
+    }
+    if (!isReportAnswer(envelope)) return 'retry';
+    // What the schema cannot say: the status agrees with the outcome, and a
+    // taken answer is settled.
+    const { outcome, when } = envelope;
+    if (STATUS[outcome] !== status) return 'retry';
+    if (outcome === 'unavailable' || outcome === 'pending' || when.state !== 'settled') return 'retry';
+    // `uncertain`: the hub cannot say whether the event applied. Resending it
+    // under a new operation_id is safe, because the hub dedupes by event_id.
+    if (outcome === 'uncertain') return 'retry';
+    return 'taken';
+  }
+
   async function deliver(event) {
     // Per-attempt timeout: a server that accepts the POST and never answers
     // must not stall the whole pipeline — the abort rejects like any
     // transport error and the backoff retry owns the redelivery.
     const aborter = new AbortController();
     const timeout = clock.setTimeout(() => aborter.abort(), fetchTimeoutMs);
-    let res;
     try {
-      res = await fetchImpl(url, {
+      const res = await fetchImpl(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...headers },
-        body: JSON.stringify(event),
+        body: JSON.stringify({ operation_id: randomUUID(), kind: 'report', effect: event }),
+        // A redirect is never followed: it is retried like a transport failure.
+        redirect: 'manual',
         signal: aborter.signal,
       });
+      const result = await verdict(res);
+      if (result === 'retry') throw new Error(`hub answered ${res?.status ?? 'nothing'}`);
+      return result;
     } finally {
       clock.clearTimeout(timeout);
-    }
-    if (!res || res.status < 200 || res.status >= 300) {
-      throw new Error(`event endpoint answered ${res?.status ?? 'nothing'}`);
     }
   }
 
@@ -90,7 +132,9 @@ export function createOutbox({
         const event = pending.shift();
         inFlight += 1;
         try {
-          await deliver(event);
+          if (await deliver(event) === 'refused') {
+            log('event_delivery_refused', { event_type: event.type, event_seq: event.event_seq });
+          }
           delay = baseDelayMs;
         } catch (err) {
           pending.unshift(event); // stays oldest-first for the retry

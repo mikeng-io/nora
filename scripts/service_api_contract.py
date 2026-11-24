@@ -1,4 +1,4 @@
-"""Generate the service API's OpenAPI 3.1 document from `nora.domain.service_api*`.
+"""Render the service API's OpenAPI 3.1 document from `nora.infra.service_api_schema`.
 
 usage: python -m scripts.service_api_contract           # rewrite the document
        python -m scripts.service_api_contract --check   # exit 1 with the diff when stale
@@ -15,7 +15,7 @@ from typing import Any, get_args
 
 from nora.domain import service_api as api
 from nora.domain import service_api_platform as platform
-from nora.platform.bridge.schema import ANSWERS, component_schemas
+from nora.infra.service_api_schema import ANSWERS, ROUTES, component_schemas
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCUMENT = ROOT / "docs" / "service-api" / "openapi.json"
@@ -47,7 +47,7 @@ def _responses(route: platform.Route) -> dict[str, Any]:
 
 def _paths() -> dict[str, Any]:
     paths: dict[str, Any] = {}
-    for route in platform.PLATFORM_ROUTES:
+    for route in ROUTES:
         operation: dict[str, Any] = {
             "operationId": route.name,
             "x-family": route.family,

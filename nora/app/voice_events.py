@@ -1,8 +1,9 @@
 """`VoiceEventConsumer` — the nora half of the controller → nora callback
 contract.
 
-The audio-controller POSTs lifecycle events to `/app/v1/voice/event`
-(registered in `nora/web/voice.py`): music advancement (`track-finished`,
+The audio-controller reports lifecycle events as the `voice` contract's
+`report` operation, to whichever process holds the hub (`nora/web/voice.py`
+on the app, `bridge_voice.py` on the Discord bridge): music advancement (`track-finished`,
 `stream-failed`), connection death (`voice-death`), the empty-channel
 observation (`channel-emptied`), and the speech acknowledgement
 (`speech-finished`). Every decision stays here — the controller never
@@ -10,10 +11,11 @@ advances nora's queue itself.
 
 The guards that make a replayed, failed or stale event harmless:
 
-- `event_id` dedupe via the hub (exactly-once, bounded window) — committed
-  ONLY after the event's transition succeeded: a failed delivery
-  answers 500 and stays retryable, so the controller's retry is PROCESSED,
-  never acknowledged as a duplicate while the work is still undone;
+- `event_id` applied once (`EventOnce`): the id is reserved before the
+  transition runs, so the outbox's retry of an event still being applied
+  waits for it and answers `duplicate` without running it again. A failed
+  transition keeps nothing and answers 500 (`unavailable`) to every waiter,
+  so the next retry is PROCESSED, never acknowledged while the work is undone;
 - `playback_id` must match the guild's CURRENT expected playback before a
   music event may advance the queue — a `track-finished` for a track that
   was already skipped/superseded is answered `stale` and never advances.
@@ -37,9 +39,15 @@ from typing import Any
 
 from nora.infra.voice.hub import VoiceControllerHub
 from nora.memory import ActAuthority, act_event
+from nora.platform.bridge.answers import EventOnce, EventWindowFull
 from nora.platform.discord.music_manager import MusicPlayerManager
 
 log = logging.getLogger("nora.app.voice_events")
+
+#: Settled event ids kept, PER GUILD: each controller's outbox holds at most 256
+#: events, so 1024 covers several full replays. Ids are a `randomUUID()` per
+#: controller, so one window serves every guild; its bound scales with them.
+_EVENT_ID_BOUND_PER_GUILD = 1024
 
 _KNOWN_TYPES = frozenset({
     "track-finished", "stream-failed", "speech-finished",
@@ -56,14 +64,16 @@ class VoiceEventConsumer:
     def __init__(self, manager: MusicPlayerManager, hub: VoiceControllerHub) -> None:
         self._manager = manager
         self._hub = hub
+        self._applied = EventOnce(bound=_EVENT_ID_BOUND_PER_GUILD * max(len(hub.guild_ids), 1))
 
     async def consume(self, body: object) -> tuple[int, dict[str, Any]]:
-        """One callback → (http_status, payload). NEVER raises: the
-        controller retries on non-2xx, so a well-formed event whose work
-        FAILED answers 500 WITHOUT consuming the `event_id` (the retry
-        will be processed), a well-formed-but-inapplicable one answers
-        200 with a `status` naming why nothing happened, and only a
-        malformed body earns a 400."""
+        """One report → (http_status, payload), read by `report_outcome`. NEVER
+        raises: the controller retries after `unavailable`, so a well-formed
+        event whose work FAILED answers 500 WITHOUT keeping the `event_id`
+        (the retry will be processed), a repeat of one applied or being
+        applied answers `duplicate`, a well-formed-but-inapplicable one
+        answers 200 with a `status` naming why nothing happened, an unknown
+        guild 403 (`denied`), and only a malformed body earns a 400."""
         if not isinstance(body, dict):
             return 400, {"error": "body must be an object"}
         event_type = body.get("type")
@@ -78,6 +88,9 @@ class VoiceEventConsumer:
         guild_id = body.get("guild_id")
         if not isinstance(guild_id, str) or not guild_id:
             return 400, {"error": "guild_id is required"}
+        event_seq = body.get("event_seq")
+        if not isinstance(event_seq, int) or isinstance(event_seq, bool):
+            return 400, {"error": "event_seq must be an integer"}
         # A guild nora has no controller for cannot have emitted this. The
         # route has no auth by design (its only caller is a controller on the
         # private compose network), so without this check every distinct
@@ -91,39 +104,42 @@ class VoiceEventConsumer:
                 "audio-controller ([speech.tts] sidecars) — refused",
                 event_id, event_type, guild_id,
             )
-            return 400, {"error": "unknown guild"}
-        if self._hub.seen_event(event_id):
-            return 200, {"status": "duplicate"}
-        event_seq = body.get("event_seq")
-        if isinstance(event_seq, int) and not isinstance(event_seq, bool):
-            last = self._hub.last_event_seq(guild_id)
-            if last is not None and event_seq > last + 1:
-                log.warning(
-                    "voice event seq gap for guild %s: last consumed %d, arrived "
-                    "%d — %d event(s) may have been lost while nora was down",
-                    guild_id, last, event_seq, event_seq - last - 1,
-                )
-
+            return 403, {"error": "unknown guild"}
         try:
-            with act_event(event_id, ActAuthority(None)):
-                status, payload = await self._process(event_type, guild_id, body)
+            applied, answer = await self._applied.once(
+                event_id, lambda: self._apply(event_type, guild_id, event_seq, body))
+        except EventWindowFull:
+            log.warning("voice event %s (%s) for guild %s refused: every event-id slot "
+                        "is still being applied", event_id, event_type, guild_id)
+            return 500, {"error": "too many events in flight; nothing applied"}
         except Exception:
-            # The transition RAISED (a dead-generation play climbing
-            # out of the advance, a store failure) — nothing was consumed,
-            # so the controller's outbox retry gets a genuine second
-            # attempt instead of a `duplicate` acknowledgement of work
-            # that never happened.
+            # The transition RAISED (a dead-generation play climbing out of the
+            # advance, a store failure), here or in the delivery this one waited
+            # on: nothing was kept, so the outbox's retry is a genuine attempt.
             log.exception(
                 "voice event %s (%s) for guild %s failed — left unconsumed for retry",
                 event_id, event_type, guild_id,
             )
             return 500, {"error": "event processing failed; left unconsumed for retry"}
-        # Commit the dedupe ONLY on success — and only now bookmark the
-        # seq, so a failed delivery never moves the gap baseline forward.
-        self._hub.consume_event_id(event_id)
-        if isinstance(event_seq, int) and not isinstance(event_seq, bool):
-            self._hub.note_event_seq(guild_id, event_seq)
-        return status, payload
+        if not applied or answer is None:
+            return 200, {"status": "duplicate"}
+        return answer
+
+    async def _apply(
+        self, event_type: str, guild_id: str, event_seq: int, body: dict[str, Any],
+    ) -> tuple[int, dict[str, Any]]:
+        last = self._hub.last_event_seq(guild_id)
+        if last is not None and event_seq > last + 1:
+            log.warning(
+                "voice event seq gap for guild %s: last consumed %d, arrived "
+                "%d — %d event(s) may have been lost while nora was down",
+                guild_id, last, event_seq, event_seq - last - 1,
+            )
+        with act_event(body["event_id"], ActAuthority(None)):
+            answer = await self._process(event_type, guild_id, body)
+        # Bookmarked only on success: a failed delivery never moves the gap baseline.
+        self._hub.note_event_seq(guild_id, event_seq)
+        return answer
 
     async def _process(
         self, event_type: str, guild_id: str, body: dict[str, Any],

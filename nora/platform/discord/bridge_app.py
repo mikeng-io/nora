@@ -13,25 +13,25 @@ ONE OF EACH, no shadow path:
   bookkeeping and raw-event dispatch keep identical semantics.
 - ONE `MusicPlayerManager` over the existing SQL queue/session stores —
   `/music` + `/discord` slash commands AND the app's forwarded tool calls
-  (`POST /v1/music/{op}`) mutate through the same per-guild locks. The
+  (platform operations) mutate through the same per-guild locks. The
   forwarded surface IS `DiscordMusicToolBridge`, not a copy of it.
 - ONE `VoiceControllerHub` — join/adoption/reconciliation against the
   external audio-controllers, which keep the voice connection AND the
   playout. The bridge holds NO discord.py voice client and never opens a
   voice connection itself: voice membership is the controller's job,
   driven only through the hub.
-- ONE controller-event sink — `POST /v1/voice/event` runs the SAME
-  `VoiceEventConsumer` the app's `/app/v1/voice/event` ran (injected; it
-  lives in `nora.app` which this package may not import).
+- the `voice` contract (`bridge_voice.py`) — `join`, `leave` and `speak`
+  relayed to the hub, and the controller's `report`s into the injected
+  `VoiceEventConsumer` (it lives in `nora.app`, which this package may not
+  import). A `speak` is bounded speech bytes to the SAME hub session, the
+  bridge half of the app's forwarded `send(target.voice)`.
 - `POST /v1/platform/queries` — the platform contract's query kinds over
   the REAL implementations (`ClientChannelDirectory`, `DiscordVoicePresence`,
   `DiscordPresence`, `DiscordRoster`) on the live client cache, fail-closed:
   an unreadable cache answers `unavailable`, never a fabricated empty state.
-- `POST /v1/voice/{guild}/speech` — bounded speech bytes to the SAME hub
-  session, the bridge half of the app's forwarded `send(target.voice)`.
 
-Deliberately NOT here: the wake→`/app/v1/voice/utterance` non-queued route
-stays app-owned, and the durable queue/action core
+Deliberately NOT here: the wake gate's utterance `intake` route stays
+app-owned, and the durable queue/action core
 (envelope/journal/`StreamProducer`, the platform operations) is the core
 worker's — this module consumes it unchanged.
 """
@@ -60,11 +60,9 @@ from nora.domain.models import ConversationTarget
 from nora.domain.observations import Operation
 from nora.domain.ports import (
     Mention,
-    MusicToolOutcome,
     OutboundAttachment,
     OutboundQuote,
 )
-from nora.infra.voice.http_controller import VoiceControllerError
 from nora.infra.voice.hub import VoiceControllerHub
 from nora.obs.metrics import Metrics
 from nora.platform.bridge import telemetry as bt
@@ -85,13 +83,15 @@ from nora.platform.bridge.service import (
 
 from . import music_messages as m
 from .adapter import DiscordAdapter
+from .bridge_music import BridgeMusicSurface
+from .bridge_voice import BridgeVoiceSurface, VoiceEventSink
 from .channels import ClientChannelDirectory
 from .command_acts import DiscordCommandActs
 from .discord_presence import DiscordPresence
 from .listener import DiscordListener
 from .media import DEFAULT_ATTACHMENT_HOSTS
+from .music_commands import recover_voice_sessions
 from .music_commands import register as register_music_commands
-from .music_commands import resume_persisted_sessions
 from .music_manager import MusicPlayerManager
 from .music_notify import ResolveMusicChannel
 from .music_tool_bridge import DiscordMusicToolBridge
@@ -296,14 +296,6 @@ def _admission_rev(proj: Mapping[str, Any]) -> int:
     return max(0, min(rev, _MAX_ADMISSION_REV))
 
 
-class _VoiceEventSink(Protocol):
-    """`VoiceEventConsumer`'s shape, declared locally: it lives in
-    `nora.app.voice_events`, and `nora.platform` may not import `nora.app`
-    (pyproject import-linter layers), so the composition entry injects it."""
-
-    async def consume(self, body: object) -> tuple[int, dict[str, Any]]: ...
-
-
 class CaptureSink(Protocol):
     """The injected durable-handoff for one admitted inbound event —
     the shared `JournalCaptureSink`: receipt-intent freeze → journal
@@ -353,7 +345,7 @@ class DiscordBridge:
         voice_guild_ids: frozenset[str] = frozenset(),
         resolve_music_channel: ResolveMusicChannel | None = None,
         roster: DiscordRoster | None = None,
-        voice_event_sink: _VoiceEventSink | None = None,
+        voice_event_sink: VoiceEventSink | None = None,
         max_speech_bytes: int = MAX_SPEECH_BYTES,
         actions: ActionService | None = None,
         capture: CaptureSink | None = None,
@@ -433,16 +425,14 @@ class DiscordBridge:
         shim = cast(DiscordAdapter, self._holder)
         self._voice_presence = DiscordVoicePresence(adapter=shim)
         self._presence = DiscordPresence(adapter=shim)
-        self._tool: DiscordMusicToolBridge | None = (
-            DiscordMusicToolBridge(
+        self._music = (BridgeMusicSurface(
+            tool=DiscordMusicToolBridge(
                 adapter=shim, manager=manager, hub=hub,
                 voice_guild_ids=self._voice_guild_ids,
                 resolve_music_channel=self._resolve_music_channel,
                 command_acts=self._command_acts,
-            )
-            if manager is not None
-            else None
-        )
+            ), admit_room=self._admit_room, admit_requester=self._admit_requester,
+        ) if manager is not None else None)
 
     def attach(
         self, *, actions: ActionService | None = None,
@@ -602,10 +592,10 @@ class DiscordBridge:
     async def on_gateway_ready(self) -> None:
         """The ONE graph-attach point — `DiscordListener.on_ready_extra`.
 
-        The same sequence `DiscordAdapter` ran on every `on_ready`: register
-        the slash tree on THIS client, resume persisted music sessions,
-        start the liveness watch, and adopt any voice session the controller
-        kept alive while this process was down. Idempotent by construction —
+        The same sequence `DiscordAdapter` runs on every `on_ready`: register
+        the slash tree on THIS client, recover voice sessions (each persisted
+        music guild under its player's lock, then the rest), and start the
+        liveness watch. Idempotent by construction —
         each half guards against clobbering a live one."""
         client = self._client
         user = getattr(client, "user", None) if client is not None else None
@@ -614,7 +604,8 @@ class DiscordBridge:
         self.connected_at_ms = int(time.time() * 1000)
         self._frames.clear()
         log.info("discord gateway connected as %s", self.self_id)
-        if self._manager is not None and client is not None:
+        music = self._manager is not None and client is not None
+        if music:
             await register_music_commands(
                 client, self._manager,
                 hub=self._hub, voice_guild_ids=self._voice_guild_ids,
@@ -623,15 +614,12 @@ class DiscordBridge:
                 admission=self._slash_admission,
                 command_acts=self._command_acts,
             )
-            await resume_persisted_sessions(
-                client, self._manager, hub=self._hub,
-                resolve_music_channel=self._resolve_music_channel,
-                client_getter=self.current_client,
-                command_acts=self._command_acts,
-            )
+        await recover_voice_sessions(
+            client, self._manager, hub=self._hub, voice_guild_ids=self._voice_guild_ids,
+            resolve_music_channel=self._resolve_music_channel,
+            client_getter=self.current_client, command_acts=self._command_acts)
+        if music:
             self._manager.start_liveness_watch()
-        if self._hub is not None:
-            await self._hub.adopt_boot_voice_sessions(self._voice_guild_ids)
 
     @staticmethod
     def _publisher_died(task: asyncio.Task) -> None:
@@ -1387,16 +1375,12 @@ class DiscordBridge:
             platform=PLATFORM, actions=lambda: self._actions, account=self.account,
             status=self.status, query=self.query,
             custody_dir=lambda: self._custody_dir,
-            max_blob_bytes=lambda: MAX_ATTACHMENT_BYTES).add_routes(app)
-        # Deterministic control — the app's forwarded music tool calls.
-        app.router.add_post("/v1/music/{op}", self.post_music_op)
+            max_blob_bytes=lambda: MAX_ATTACHMENT_BYTES, music=self._music).add_routes(app)
         # Voice — through the hub only; the controller owns the connection.
-        app.router.add_post("/v1/voice/{guild_id}/join", self.post_voice_join)
-        app.router.add_post("/v1/voice/{guild_id}/leave", self.post_voice_leave)
-        app.router.add_post("/v1/voice/{guild_id}/speech", self.post_voice_speech)
-        app.router.add_get("/v1/voice/{guild_id}", self.get_voice_state)
-        # Controller → nora lifecycle events (was /app/v1/voice/event).
-        app.router.add_post("/v1/voice/event", self.post_voice_event)
+        BridgeVoiceSurface(
+            hub=lambda: self._hub, manager=lambda: self._manager,
+            sink=lambda: self._voice_event_sink,
+            max_speech_bytes=lambda: self._max_speech_bytes).add_routes(app)
         return app
 
     async def get_metrics(self, request: web.Request) -> web.Response:
@@ -1432,6 +1416,7 @@ class DiscordBridge:
         user = getattr(self._client, "user", None) if self._client else None
         return {
             "platform": PLATFORM, "primary": self.self_id, "aliases": [self.self_id],
+            "capabilities": ["music"] if self._music is not None else [],
             "handle": render_handle(
                 getattr(user, "name", None), getattr(user, "discriminator", None))}
 
@@ -1526,136 +1511,6 @@ class DiscordBridge:
                             str(getattr(ch, "type", ""))),
         }
 
-    # ---- forwarded deterministic music control -------------------------------
-
-    async def post_music_op(self, req: web.Request) -> web.Response:
-        """`POST /v1/music/{op}` — the app's forwarded `MusicToolBridge` call,
-        executed against THIS bridge's manager + live voice cache. The
-        outcome shape is `MusicToolOutcome`'s (`status` is the R-27 word;
-        `unavailable` means the wiring/cache could not answer, never that
-        nothing was playing)."""
-        if self._tool is None:
-            return web.json_response({"error": "music disabled"}, status=404)
-        try:
-            body = await req.json()
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return web.json_response({"error": "body must be JSON"}, status=400)
-        op = req.match_info["op"]
-        conversation_id = str(body.get("conversation_id") or "")
-        # Deny-closed BEFORE any effect: a disabled/absent projection, a
-        # missing conversation_id, and a room the projection does not name
-        # all refuse — the same gate `_journal_and_enqueue` holds capture
-        # to. An enabled projection with the room admitted is not enough
-        # for a mutation that carries a requester: `play`'s sender_ids
-        # must intersect `room_receipt_senders` (or `*`) — voice-cache
-        # membership is the tool's own second check, not the grant.
-        if not self._admit_room(conversation_id):
-            return web.json_response({"error": "room_not_admitted"}, status=403)
-        try:
-            if op == "play":
-                sender_ids = frozenset(
-                    str(s) for s in body.get("sender_ids") or ())
-                if not self._admit_requester(conversation_id, sender_ids):
-                    return web.json_response(
-                        {"error": "sender_not_admitted"}, status=403)
-                outcome = await self._tool.play(
-                    conversation_id=conversation_id,
-                    sender_ids=sender_ids,
-                    query_or_url=str(body.get("query_or_url") or ""),
-                )
-            elif op == "skip":
-                outcome = await self._tool.skip(conversation_id=conversation_id)
-            elif op == "top":
-                outcome = await self._tool.top(
-                    conversation_id=conversation_id,
-                    position=int(body.get("position") or 0))
-            elif op == "stop":
-                outcome = await self._tool.stop(conversation_id=conversation_id)
-            elif op == "status":
-                outcome = await self._tool.status(conversation_id=conversation_id)
-            elif op == "set_volume":
-                outcome = await self._tool.set_volume(
-                    conversation_id=conversation_id,
-                    percent=int(body.get("percent") or 0))
-            else:
-                return web.json_response({"error": "unknown op"}, status=400)
-        except Exception as exc:  # noqa: BLE001 — music boundary; logged by type
-            log.error("music op %s failed: %s", op, type(exc).__name__)
-            outcome = MusicToolOutcome(status="unavailable")
-        return web.json_response({"outcome": dataclasses.asdict(outcome)})
-
-    # ---- voice: join/leave/state/speech/events, all through the hub ----------
-
-    async def post_voice_join(self, req: web.Request) -> web.Response:
-        if self._hub is None:
-            return web.json_response({"error": "voice disabled"}, status=404)
-        body = await req.json()
-        guild_id = req.match_info["guild_id"]
-        channel_id = str(body.get("channel_id") or "")
-        if not channel_id:
-            return web.json_response({"error": "channel_id required"}, status=400)
-        try:
-            await self._hub.join(guild_id, channel_id)
-        except VoiceControllerError as exc:
-            log.error("voice join failed: %s", type(exc).__name__)
-            return web.json_response({"error": "controller_unavailable"}, status=503)
-        return web.json_response({"ok": True, "channel_id": channel_id})
-
-    async def post_voice_leave(self, req: web.Request) -> web.Response:
-        guild_id = req.match_info["guild_id"]
-        try:
-            if self._manager is not None:
-                await self._manager.leave_voice(guild_id)
-            left = await self._hub.exit(guild_id) if self._hub is not None else False
-        except VoiceControllerError as exc:
-            log.error("voice leave failed: %s", type(exc).__name__)
-            return web.json_response({"error": "controller_unavailable"}, status=503)
-        return web.json_response({"ok": True, "left": bool(left)})
-
-    async def get_voice_state(self, req: web.Request) -> web.Response:
-        guild_id = req.match_info["guild_id"]
-        session = self._hub.session_for(guild_id) if self._hub is not None else None
-        return web.json_response({
-            "connected": session is not None,
-            "session": session is not None,
-            "generation": session.generation if session is not None else None,
-            "channel_id": (
-                self._hub.channel_for(guild_id) if self._hub is not None else None),
-        })
-
-    async def post_voice_speech(self, req: web.Request) -> web.Response:
-        """Bounded speech bytes → the SAME controller generation the hub
-        holds. `409 no_connection` when the guild has no live session —
-        the app already checked, this is the authoritative second check."""
-        if self._hub is None:
-            return web.json_response({"error": "voice disabled"}, status=404)
-        guild_id = req.match_info["guild_id"]
-        data = await req.read()
-        if not data:
-            return web.json_response({"error": "empty body"}, status=400)
-        if len(data) > self._max_speech_bytes:
-            return web.json_response({"error": "speech too large"}, status=413)
-        media_type = req.headers.get("X-Speech-Media-Type") or "audio/wav"
-        session = self._hub.session_for(guild_id)
-        if session is None:
-            return web.json_response({"error": "no_connection"}, status=409)
-        ok = await self._hub.stream_speech(guild_id, data, media_type)
-        if not ok:
-            return web.json_response({"error": "stream_failed"}, status=503)
-        return web.Response(status=204)
-
-    async def post_voice_event(self, req: web.Request) -> web.Response:
-        """The controller → nora lifecycle callback — the SAME consumer the
-        app's `/app/v1/voice/event` ran: event-id dedupe, seq bookmarking,
-        generation-checked teardown, playback-checked advance."""
-        if self._voice_event_sink is None:
-            return web.json_response({"error": "voice events disabled"}, status=404)
-        try:
-            body = await req.json()
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            body = None
-        status, payload = await self._voice_event_sink.consume(body)
-        return web.json_response(payload, status=status)
 
 class DiscordRestActionService:
     """The REAL outbound execution the bridge used to run inline —

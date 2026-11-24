@@ -225,7 +225,7 @@ async def test_play_returns_nothing_found_when_the_source_cannot_resolve() -> No
 
 async def test_skip_advances_to_the_next_queued_track_without_an_explicit_stop() -> None:
     """`voice.play()` for the next track (inside `_advance()`) is what
-    replaces the skipped one — the controller's `/music/play` is
+    replaces the skipped one — the controller's `play` is
     replace-not-enqueue. No separate `voice.
     stop()` call is needed (or made) when there IS a next track."""
     player, voice, _session = _player({"track a": _TRACK_A, "track b": _TRACK_B})

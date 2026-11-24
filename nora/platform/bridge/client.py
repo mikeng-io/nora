@@ -44,7 +44,7 @@ from nora.domain.service_api import (
     parse_response,
 )
 from nora.domain.service_api_platform import SELF_ACCOUNT_ID
-from nora.platform.bridge.schema import BLOB_PUT, validator
+from nora.infra.service_api_schema import BLOB_PUT, validator
 
 log = logging.getLogger("nora.platform.bridge.client")
 

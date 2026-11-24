@@ -6,10 +6,9 @@ PostgreSQL queue/session stores, the real slash-tree registration and the
 real `DiscordSender`/`DiscordReactor`/`DiscordRoster` REST implementations)
 talks to two fakes that speak the REAL wire protocols:
 
-- a fake audio-controller answering the actual `/voice/*`, `/music/*` and
-  `/stream` endpoints `VoiceControllerClient` calls — including the
-  wrong-call shapes the real server makes (`connected_elsewhere`,
-  `generation_conflict`, `unknown_guild`); and
+- a fake audio-controller answering the `voice` contract
+  `VoiceControllerClient` calls — including the refusals the real server
+  makes (`connected_elsewhere`, `generation_conflict`, no connection); and
 - a fake Discord REST base answering the actual `DiscordSender`/
   `DiscordReactor`/`DiscordRoster` endpoints.
 
@@ -34,6 +33,7 @@ import time
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import discord
 import pytest
@@ -71,12 +71,14 @@ from nora.platform.discord.bridge_control import (
 )
 from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.discord.roster import DiscordRoster
+from nora.testing.voice import operation_envelope, read_envelope
 from tests.integration.platform_contract import (
     Bridge,
     assert_ready_needs,
     assert_serves_the_contract,
     drive_outcomes,
     envelope,
+    music_operation,
     swapped,
 )
 
@@ -211,15 +213,14 @@ class FakeDiscordClient:
         return self.get_channel(channel_id)
 
 
-# ---- the fake audio-controller: the real /voice, /music, /stream protocol ---
+# ---- the fake audio-controller: the real `voice` contract ------------------
 
 
 def _controller_app(state: dict) -> web.Application:
-    """The endpoints `VoiceControllerClient` actually calls, with the real
-    server's wrong-call shapes: a join onto a different live channel is a
-    409 `connected_elsewhere`, a verb on a dead generation is a 409
-    `generation_conflict`, a status for an unconnected guild is a 404
-    `unknown_guild`."""
+    """The `voice` contract `VoiceControllerClient` calls, with the real
+    server's refusals: a join onto a different live channel is `rejected`
+    `connected_elsewhere`, a kind on a dead generation `rejected`
+    `generation_conflict`, a status for an unconnected guild `nothing_found`."""
 
     def snap() -> dict:
         return {
@@ -235,60 +236,48 @@ def _controller_app(state: dict) -> web.Application:
             "last_error": None,
         }
 
-    async def join(req: web.Request) -> web.Response:
-        body = await req.json()
-        state["join_calls"].append(body)
-        if state["connected"] and body.get("channel_id") != state["channel_id"]:
-            return web.json_response({"error": "connected_elsewhere"}, status=409)
-        if not state["connected"]:
-            state["connected"] = True
-            state["channel_id"] = body["channel_id"]
-            state["generation"] = state["generation"] or GEN
-        return web.json_response({"state": snap()})
+    def answer(reason: str | None = None) -> web.Response:
+        error = {"error": {"kind": reason, "message": reason}} if reason else {}
+        return web.json_response(operation_envelope(
+            "rejected" if reason else "complete", {"state": snap(), **error}))
 
-    async def exit_(req: web.Request) -> web.Response:
+    async def operation(req: web.Request) -> web.Response:
         body = await req.json()
-        state["exit_calls"].append(body)
-        if body.get("generation") != state["generation"]:
-            return web.json_response({"error": "generation_conflict"}, status=409)
-        state["connected"] = False
-        state["channel_id"] = None
-        return web.json_response({"state": snap()})
-
-    async def status(req: web.Request) -> web.Response:
-        guild_id = req.query.get("guild_id")
-        state["status_calls"].append(guild_id)
-        if guild_id != GUILD or not state["connected"]:
-            return web.json_response({"error": "unknown_guild"}, status=404)
-        return web.json_response(snap())
-
-    async def music(req: web.Request) -> web.Response:
-        body = await req.json()
-        state["music_calls"].append((req.path, body))
-        if body.get("generation") != state["generation"]:
-            return web.json_response({"error": "generation_conflict"}, status=409)
-        if req.path == "/music/play":
+        kind, effect = body["kind"], body["effect"]
+        if kind == "join":
+            state["join_calls"].append(effect)
+            if state["connected"] and effect.get("channel_id") != state["channel_id"]:
+                return answer("connected_elsewhere")
+            if not state["connected"]:
+                state["connected"] = True
+                state["channel_id"] = effect["channel_id"]
+                state["generation"] = state["generation"] or GEN
+            return answer()
+        calls = {"leave": "exit_calls", "speak": "stream_calls"}.get(kind)
+        state[calls].append(effect) if calls else state["music_calls"].append((kind, effect))
+        if effect.get("generation") != state["generation"]:
+            return answer("generation_conflict")
+        if kind == "leave":
+            state["connected"] = False
+            state["channel_id"] = None
+        if kind == "play":
             state["playback_id"] = f"pb-{len(state['music_calls'])}"
             state["player"] = "playing"
-        if req.path == "/music/stop":
+        if kind == "stop":
             state["player"] = "idle"
             state["playback_id"] = None
-        return web.json_response({"state": snap()})
+        return answer()
 
-    async def stream(req: web.Request) -> web.Response:
-        body = await req.json()
-        state["stream_calls"].append(body)
-        if body.get("generation") != state["generation"]:
-            return web.json_response({"error": "generation_conflict"}, status=409)
-        return web.json_response({"state": snap()})
+    async def status(req: web.Request) -> web.Response:
+        guild_id = (await req.json())["params"]["guild_id"]
+        state["status_calls"].append(guild_id)
+        if guild_id != GUILD or not state["connected"]:
+            return web.json_response(read_envelope("nothing_found", None))
+        return web.json_response(read_envelope("ok", snap()))
 
     app = web.Application()
-    app.router.add_post("/voice/join", join)
-    app.router.add_post("/voice/exit", exit_)
-    app.router.add_get("/voice/status", status)
-    for op in ("play", "stop", "pause", "resume", "volume"):
-        app.router.add_post(f"/music/{op}", music)
-    app.router.add_post("/stream", stream)
+    app.router.add_post("/v1/voice/operations", operation)
+    app.router.add_post("/v1/voice/queries", status)
     return app
 
 
@@ -507,6 +496,15 @@ async def _query(http, kind: str, params: dict) -> dict:
         "/v1/platform/queries", json={"kind": kind, "params": params}, headers=AUTH))
 
 
+async def _voice(http, kind: str, **effect) -> dict:
+    """A `voice` operation on the bridge, or its `status` query for `kind="status"`."""
+    if kind == "status":
+        return await envelope(await http.post("/v1/voice/queries", headers=AUTH, json={
+            "kind": "status", "params": effect}))
+    return await envelope(await http.post("/v1/voice/operations", headers=AUTH, json={
+        "operation_id": str(uuid4()), "kind": kind, "effect": effect}), kind=kind)
+
+
 def _app_side(world) -> tuple[BridgeControlClient, BridgeDiscordAdapter]:
     """One 'app' — the real forwarding layer. Constructed, stopped and
     constructed again mid-test: recreation must leave the bridge's graph
@@ -562,37 +560,34 @@ async def test_the_bridge_owns_the_whole_graph_while_the_app_proxies(bridge):
     # The bridge alone executes it: requester-in-voice check against the
     # live cache, allow-list admission, join, resolve, play — the same
     # `DiscordMusicToolBridge` the slash command drives.
-    resp = await http.post("/v1/music/play", json={
+    resp = await music_operation(http, AUTH, "music_play", {
         "conversation_id": CONV, "sender_ids": [MEMBER],
-        "query_or_url": "song-a"}, headers=AUTH)
-    outcome = (await resp.json())["outcome"]
-    assert outcome["status"] == "ok" and outcome["title"] == "Track A"
+        "query_or_url": "song-a"})
+    assert resp["outcome"] == "complete" and resp["payload"]["title"] == "Track A"
     assert len(controller["join_calls"]) == 1
-    path, play_body = controller["music_calls"][-1]
-    assert path == "/music/play"
+    kind, play_body = controller["music_calls"][-1]
+    assert kind == "play"
     assert play_body["generation"] == GEN
     assert play_body["stream_url"] == TRACK.stream_url
 
-    # ONE session, ONE generation — the state route says what the app sees.
-    resp = await http.get(f"/v1/voice/{GUILD}", headers=AUTH)
-    state = await resp.json()
-    assert state == {"connected": True, "session": True,
+    # ONE session, ONE generation — the status query says what the app sees.
+    state = (await _voice(http, "status", guild_id=GUILD))["payload"]
+    assert state == {"connected": True, "session": True, "playback_id": "pb-1",
                      "generation": GEN, "channel_id": VOICE_CHANNEL}
 
     # A second track queues behind the first, through the same session.
-    resp = await http.post("/v1/music/play", json={
+    resp = await music_operation(http, AUTH, "music_play", {
         "conversation_id": CONV, "sender_ids": [MEMBER],
-        "query_or_url": "song-b"}, headers=AUTH)
-    assert (await resp.json())["outcome"]["queued"] is True
+        "query_or_url": "song-b"})
+    assert resp["payload"]["queued"] is True
     assert len(controller["join_calls"]) == 1  # still ONE join, ONE generation
 
     # --- the REAL consumer: track-finished advances the persisted queue --
-    resp = await http.post("/v1/voice/event", json={
+    body = await _voice(http, "report", **{
         "type": "track-finished", "event_id": "ev-1", "event_seq": 1,
-        "guild_id": GUILD, "generation": GEN,
-        "playback_id": controller["playback_id"]}, headers=AUTH)
-    assert resp.status == 200
-    plays = [b for p, b in controller["music_calls"] if p == "/music/play"]
+        "guild_id": GUILD, "generation": GEN, "playback_id": controller["playback_id"]})
+    assert body["outcome"] == "complete"
+    plays = [b for k, b in controller["music_calls"] if k == "play"]
     assert plays[-1]["stream_url"] == TRACK_B.stream_url  # advanced
     assert plays[-1]["generation"] == GEN                 # same generation
 
@@ -644,10 +639,10 @@ async def test_the_bridge_owns_the_whole_graph_while_the_app_proxies(bridge):
     # it can never be mistaken for an empty guild.
     assert body["outcome"] == "unavailable" and body["payload"] is None
     assert isinstance(body["when"]["observed_at_ms"], int)
-    resp = await http.post("/v1/music/play", json={
+    resp = await music_operation(http, AUTH, "music_play", {
         "conversation_id": CONV, "sender_ids": [MEMBER],
-        "query_or_url": "song-a"}, headers=AUTH)
-    assert (await resp.json())["outcome"]["status"] == "unavailable"
+        "query_or_url": "song-a"})
+    assert resp["outcome"] == "unavailable"
     await control.close()
 
 
@@ -657,39 +652,34 @@ async def test_voice_death_reconciles_then_a_new_generation_serves(bridge):
     http = world["http"]
 
     await world["bridge"].start()
-    await http.post("/v1/music/play", json={
+    await music_operation(http, AUTH, "music_play", {
         "conversation_id": CONV, "sender_ids": [MEMBER],
-        "query_or_url": "song-a"}, headers=AUTH)
+        "query_or_url": "song-a"})
     assert world["hub"].generation_for(GUILD) == GEN
 
     # The controller's own death event reconciles the session — the REAL
     # VoiceEventConsumer path: event-id dedupe, generation check, teardown.
-    resp = await http.post("/v1/voice/event", json={
-        "type": "voice-death", "event_id": "ev-death", "event_seq": 1,
-        "guild_id": GUILD, "generation": GEN}, headers=AUTH)
-    assert resp.status == 200
+    death = {"type": "voice-death", "event_id": "ev-death", "event_seq": 1,
+             "guild_id": GUILD, "generation": GEN}
+    assert (await _voice(http, "report", **death))["outcome"] == "complete"
     assert world["hub"].session_for(GUILD) is None
     # A replayed delivery is a duplicate, not a second teardown.
-    resp = await http.post("/v1/voice/event", json={
-        "type": "voice-death", "event_id": "ev-death", "event_seq": 1,
-        "guild_id": GUILD, "generation": GEN}, headers=AUTH)
-    assert (await resp.json())["status"] == "duplicate"
+    assert (await _voice(http, "report", **death))["payload"] == {"status": "duplicate"}
 
-    # Speech with no session is refused — 409, never a silent drop.
-    resp = await http.post(
-        f"/v1/voice/{GUILD}/speech", data=b"pcm", headers=AUTH)
-    assert resp.status == 409
+    # Speech with no session is refused — `no_connection`, never a silent drop.
+    body = await _voice(http, "speak", guild_id=GUILD, generation=GEN, media_type="audio/wav",
+                        audio_b64=base64.b64encode(b"pcm").decode())
+    assert body["payload"]["error"]["kind"] == "no_connection"
 
     # A fresh join mints a NEW generation; speech lands on it, not gen-1.
     controller["generation"] = "gen-2"
     controller["connected"] = False
-    resp = await http.post(f"/v1/voice/{GUILD}/join", json={
-        "channel_id": VOICE_CHANNEL}, headers=AUTH)
-    assert resp.status == 200
+    body = await _voice(http, "join", guild_id=GUILD, channel_id=VOICE_CHANNEL)
+    assert body["outcome"] == "complete"
     assert world["hub"].generation_for(GUILD) == "gen-2"
-    resp = await http.post(
-        f"/v1/voice/{GUILD}/speech", data=b"pcm-2", headers=AUTH)
-    assert resp.status == 204
+    body = await _voice(http, "speak", guild_id=GUILD, generation="gen-2",
+                        media_type="audio/wav", audio_b64=base64.b64encode(b"pcm-2").decode())
+    assert body["outcome"] == "complete"
     assert controller["stream_calls"][-1]["generation"] == "gen-2"
     assert base64.b64decode(
         controller["stream_calls"][-1]["audio_b64"]) == b"pcm-2"
@@ -709,15 +699,17 @@ async def test_speech_is_bounded_and_actions_use_the_real_sender(bridge, mime, f
     http = world["http"]
 
     await world["bridge"].start()
-    await http.post("/v1/music/play", json={
+    await music_operation(http, AUTH, "music_play", {
         "conversation_id": CONV, "sender_ids": [MEMBER],
-        "query_or_url": "song-a"}, headers=AUTH)
+        "query_or_url": "song-a"})
 
-    # Over the bound → 413, and nothing reached the controller.
-    too_big = world["bridge"]._max_speech_bytes + 1
-    resp = await http.post(
-        f"/v1/voice/{GUILD}/speech", data=b"x" * too_big, headers=AUTH)
-    assert resp.status == 413
+    # Over the bound → 400, and nothing reached the controller.
+    too_big = base64.b64encode(b"x" * (world["bridge"]._max_speech_bytes + 1)).decode()
+    resp = await http.post("/v1/voice/operations", headers=AUTH, json={
+        "operation_id": "big", "kind": "speak", "effect": {
+            "guild_id": GUILD, "generation": GEN, "media_type": "audio/wav",
+            "audio_b64": too_big}})
+    assert resp.status == 400
     assert controller["stream_calls"] == []
 
     # A real send: through custody, through the action route, through the
@@ -787,45 +779,44 @@ def _interaction(
 
 
 async def test_forwarded_music_ops_are_deny_closed(bridge):
-    """`/v1/music/{op}` refuses BEFORE any effect: disabled projection,
-    missing conversation_id, an unadmitted room, and a requester without
+    """Music operations refuse before any effect: disabled projection,
+    empty conversation_id, an unadmitted room, and a requester without
     the room's sender grant are all 403s — and the controller never sees
     a join. `dm_allowed_senders` is a DM grant, never the group allowlist."""
     world = bridge
     http = world["http"]
     await world["bridge"].start()
 
-    async def play(conv: str = CONV, senders=(MEMBER,)) -> web.Response:
-        return await http.post("/v1/music/play", json={
+    async def play(conv: str = CONV, senders=(MEMBER,)) -> dict:
+        return await music_operation(http, AUTH, "music_play", {
             "conversation_id": conv, "sender_ids": list(senders),
-            "query_or_url": "song-a"}, headers=AUTH)
+            "query_or_url": "song-a"})
 
     # Disabled projection — denied before ANY effect.
     world["projection"]["enabled"] = False
     resp = await play()
-    assert resp.status == 403
-    assert (await resp.json())["error"] == "room_not_admitted"
+    assert resp["outcome"] == "denied"
+    assert resp["payload"]["error"]["kind"] == "room_not_admitted"
     world["projection"]["enabled"] = True
 
-    # Missing conversation_id — denied.
-    resp = await http.post("/v1/music/play", json={
-        "sender_ids": [MEMBER], "query_or_url": "song-a"}, headers=AUTH)
-    assert resp.status == 403
+    # Empty conversation_id — denied.
+    resp = await play(conv="")
+    assert resp["outcome"] == "denied"
 
     # A room the projection does not name — denied.
     resp = await play(conv=f"{GUILD}/100000000000000099")
-    assert resp.status == 403
+    assert resp["outcome"] == "denied"
 
     # Room admitted, sender NOT in `room_receipt_senders` — denied.
     world["projection"]["room_receipt_senders"][CONV] = ["100000000000000005"]
     resp = await play()
-    assert resp.status == 403
-    assert (await resp.json())["error"] == "sender_not_admitted"
+    assert resp["outcome"] == "denied"
+    assert resp["payload"]["error"]["kind"] == "sender_not_admitted"
 
     # A DM grant alone does not authorize the group mutation.
     world["projection"]["dm_allowed_senders"] = [MEMBER]
     resp = await play()
-    assert resp.status == 403
+    assert resp["outcome"] == "denied"
     world["projection"]["dm_allowed_senders"] = []
 
     # So far ZERO controller joins — nothing reached playout.
@@ -835,20 +826,20 @@ async def test_forwarded_music_ops_are_deny_closed(bridge):
     # DM grant.
     world["projection"]["room_receipt_senders"][CONV] = ["*"]
     resp = await play()
-    assert (await resp.json())["outcome"]["status"] == "ok"
+    assert resp["outcome"] == "complete"
     world["projection"]["room_receipt_senders"][CONV] = [MEMBER]
     resp = await play()
-    assert (await resp.json())["outcome"]["status"] == "ok"
+    assert resp["outcome"] == "complete"
 
     # The same gate binds skip/stop/volume (the mutations that carry no
     # requester on the wire): unknown room → refused before any effect.
-    resp = await http.post("/v1/music/stop", json={
-        "conversation_id": f"{GUILD}/100000000000000099"}, headers=AUTH)
-    assert resp.status == 403
-    resp = await http.post("/v1/music/set_volume", json={
-        "conversation_id": CONV, "percent": 50}, headers=AUTH)
+    resp = await music_operation(http, AUTH, "music_stop", {
+        "conversation_id": f"{GUILD}/100000000000000099"})
+    assert resp["outcome"] == "denied"
+    resp = await music_operation(http, AUTH, "music_set_volume", {
+        "conversation_id": CONV, "percent": 50})
     # Gate passed → a real outcome, whatever the session's state.
-    assert resp.status == 200 and "outcome" in await resp.json()
+    assert resp["outcome"] in ("complete", "rejected")
 
 
 async def test_slash_commands_answer_to_the_projection_not_the_allowlist(bridge):
@@ -907,18 +898,18 @@ async def test_music_channel_routing_follows_the_current_projection(bridge):
     await world["bridge"].start()
 
     async def play(query: str) -> None:
-        resp = await http.post("/v1/music/play", json={
+        resp = await music_operation(http, AUTH, "music_play", {
             "conversation_id": CONV, "sender_ids": [MEMBER],
-            "query_or_url": query}, headers=AUTH)
-        assert (await resp.json())["outcome"]["status"] in ("ok",)
+            "query_or_url": query})
+        assert resp["outcome"] == "complete"
 
     # Queue A + B; the skip's "now playing" announcement routes to the
     # PROJECTION's channel, not the room it was summoned from.
     await play("song-a")
     await play("song-b")
-    resp = await http.post("/v1/music/skip", json={
-        "conversation_id": CONV}, headers=AUTH)
-    assert (await resp.json())["outcome"]["status"] == "ok"
+    resp = await music_operation(http, AUTH, "music_skip", {
+        "conversation_id": CONV})
+    assert resp["outcome"] == "complete"
     world["announce"].send.assert_called()
     assert "Track B" in world["announce"].send.call_args.args[0]
     world["text"].send.assert_not_called()
@@ -929,8 +920,8 @@ async def test_music_channel_routing_follows_the_current_projection(bridge):
     world["projection"]["music_channels"][GUILD] = ANNOUNCE_2
     world["announce"].send.reset_mock()
     await play("song-a")
-    resp = await http.post("/v1/music/skip", json={
-        "conversation_id": CONV}, headers=AUTH)
+    resp = await music_operation(http, AUTH, "music_skip", {
+        "conversation_id": CONV})
     world["announce_2"].send.assert_called()
     assert "Track A" in world["announce_2"].send.call_args.args[0]
     world["announce"].send.assert_not_called()
@@ -941,8 +932,8 @@ async def test_music_channel_routing_follows_the_current_projection(bridge):
     world["text"].send.reset_mock()
     world["announce_2"].send.reset_mock()
     await play("song-b")
-    resp = await http.post("/v1/music/skip", json={
-        "conversation_id": CONV}, headers=AUTH)
+    resp = await music_operation(http, AUTH, "music_skip", {
+        "conversation_id": CONV})
     world["text"].send.assert_called()
     assert "Track B" in world["text"].send.call_args.args[0]
     world["announce_2"].send.assert_not_called()

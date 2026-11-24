@@ -12,27 +12,37 @@ import json
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
+from uuid import uuid4
 
 import sqlalchemy as sa
 from aiohttp import web
 
-from nora.domain.service_api import status_for
+from nora.domain.service_api import OperationOutcome, status_for
+from nora.infra.service_api_schema import (
+    BLOB_PUT,
+    MUSIC_ANSWERS,
+    MUSIC_READ_ANSWERS,
+    VOICE_ANSWERS,
+    validator,
+)
 from nora.infra.sql.schema import MESSAGES
-from nora.platform.bridge.schema import BLOB_PUT, validator
 
 DOCUMENT = Path(__file__).resolve().parents[2] / "docs/service-api/openapi.json"
 OPERATIONS = "/v1/platform/operations"
 BLOBS = "/v1/platform/blobs"
+#: The document's routes this contract owns; it lists other contracts' too.
+CONTRACT_PREFIXES = ("/v1/platform/", "/v1/operations/")
 PARTS = {"outcome", "payload", "when", "from", "scope", "trace"}
 #: The collections the old wire served; none may be registered.
 OLD_COLLECTIONS = ("actions", "self", "reads", "attachments", "health",
-                   "groups", "guilds", "channels", "presence")
+                   "groups", "guilds", "channels", "presence", "music")
 
 
 def documented_routes() -> set[tuple[str, str]]:
     paths = json.loads(DOCUMENT.read_text())["paths"]
-    return {(method.upper(), path) for path, item in paths.items() for method in item}
+    return {(method.upper(), path) for path, item in paths.items() for method in item
+            if path.startswith(CONTRACT_PREFIXES)}
 
 
 def assert_serves_the_contract(app: web.Application) -> None:
@@ -40,7 +50,7 @@ def assert_serves_the_contract(app: web.Application) -> None:
     served = {(route.method, route.resource.canonical)
               for route in app.router.routes() if route.resource is not None}
     contract = {(m, p) for m, p in served
-                if p.startswith(("/v1/platform/", "/v1/operations/")) and m != "HEAD"}
+                if p.startswith(CONTRACT_PREFIXES) and m != "HEAD"}
     assert contract == documented_routes()
     assert {("GET", "/health"), ("GET", "/ready")} <= served
     old = tuple(f"/v1/{name}" for name in OLD_COLLECTIONS)
@@ -56,19 +66,38 @@ _SCHEMAS = {
     ("POST", "/v1/platform/queries"): validator("ReadEnvelope"),
     ("GET", "/v1/platform/accounts"): validator("AccountReadEnvelope"),
     ("GET", "/v1/operations/status"): validator("StatusReadEnvelope"),
+    ("POST", "/v1/voice/operations"): validator("VoiceOperationEnvelope"),
+    ("GET", "/v1/voice/operations"): validator("VoiceOperationReadEnvelope"),
+    ("POST", "/v1/voice/queries"): validator("VoiceStatusReadEnvelope"),
+    ("POST", "/v1/intake/operations"): validator("IntakeOperationEnvelope"),
+    ("GET", "/v1/intake/operations"): validator("IntakeOperationReadEnvelope"),
 }
 
 
-async def envelope(resp: Any) -> dict[str, Any]:
+async def envelope(resp: Any, *, kind: str | None = None) -> dict[str, Any]:
     """An answer's body, held to the six parts, its route's documented schema (the
-    one the app's client validates by) and its outcome's status."""
+    one the app's client validates by; a voice or music `kind`'s own when given) and its
+    outcome's status."""
     body = await resp.json()
     assert set(body) == PARTS, body
     assert resp.status == status_for(body["outcome"]), (resp.status, body)
     route = (resp.method, "/".join(resp.url.path.split("/")[:4]))
-    errors = [e.message for e in _SCHEMAS[route].iter_errors(body)]
+    if kind is None:
+        schema = _SCHEMAS[route]
+    else:
+        answers = MUSIC_READ_ANSWERS if resp.method == "GET" else MUSIC_ANSWERS
+        schema = validator(answers[kind] if kind in answers else VOICE_ANSWERS[kind])
+    errors = [e.message for e in schema.iter_errors(body)]
     assert not errors, (route, errors, body)
     return body
+
+
+async def music_operation(http: Any, auth: dict[str, str], kind: str,
+                          effect: dict[str, Any], *,
+                          operation_id: str | None = None) -> dict[str, Any]:
+    return await envelope(await http.post(OPERATIONS, headers=auth, json={
+        "operation_id": operation_id or str(uuid4()), "kind": kind, "effect": effect}),
+        kind=kind)
 
 
 async def pending_row(engine: Any, *, platform: str, conversation_id: str) -> int:
@@ -224,6 +253,20 @@ async def _drive_blobs(bridge: Bridge) -> None:
     assert got.status == 200 and await got.read() == b"one"
     absent = await envelope(await http.get(f"{BLOBS}/k2", headers=auth))
     assert absent["outcome"] == "nothing_found"
+
+
+def assert_settled_operation(status: int, body: Any) -> None:
+    """A settled operation envelope as a controller's outbox counts it delivered:
+    the six parts, each well formed, an operation outcome under its own status."""
+    assert isinstance(body, dict) and set(body) == PARTS, body
+    assert body["outcome"] in get_args(OperationOutcome) and body["outcome"] != "pending"
+    assert status == status_for(body["outcome"]), (status, body)
+    when, source, scope = body["when"], body["from"], body["scope"]
+    assert when["state"] == "settled"
+    assert all(isinstance(when[k], int) for k in ("started_at_ms", "settled_at_ms")), when
+    assert isinstance(source["target"], str) and source["platform_ref"] is None, source
+    assert scope["level"] == "installation" and isinstance(body["trace"], str), body
+    assert body["trace"] == "" or len(body["trace"]) == 32, body
 
 
 async def replay_after_its_audit_row_settled(bridge: Bridge) -> dict[str, Any]:

@@ -19,6 +19,9 @@ dependencies = [
     # Explicit although openwakeword/scipy both pull it: the PCM conditioning
     # (wakegate/audio.py) is numpy-shaped end to end.
     "numpy>=1.26",
+    # Nora's intake answers are validated against the contract's generated
+    # schema (wakegate/intake_schema.json), never by hand.
+    "jsonschema>=4.26.0",
 ]
 
 [build-system]

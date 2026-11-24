@@ -1,4 +1,4 @@
-"""The `platform` contract: the bridges' delivery operations, reads and blob custody.
+"""The `platform` contract: bridge operations, reads and blob custody.
 
 Its routes, closed kinds and payload shapes build on `nora.domain.service_api`;
 the OpenAPI document in `docs/service-api/openapi.json` is generated from them.
@@ -18,10 +18,14 @@ from nora.domain.service_api import (
     ReadEnvelope,
 )
 
-PlatformOperationKind = Literal["send", "react", "edit", "typing"]
+DeliveryOperationKind = Literal["send", "react", "edit", "typing"]
+MusicOperationKind = Literal[
+    "music_play", "music_skip", "music_top", "music_stop", "music_set_volume",
+]
+PlatformOperationKind = Literal[DeliveryOperationKind, MusicOperationKind]
 PlatformQueryKind = Literal[
     "roster", "members", "channels", "channel",
-    "member_presence", "voice_presence", "groups",
+    "member_presence", "voice_presence", "groups", "music_status",
 ]
 #: The account id a bridge answers for its own logged-in account.
 SELF_ACCOUNT_ID: Final = "self"
@@ -29,11 +33,11 @@ SELF_ACCOUNT_ID: Final = "self"
 
 @dataclass(frozen=True)
 class PlatformOperationRequest(OperationRequest):
-    """A delivery operation; `owner` is who may run it, `effect` its kind's content."""
+    """A platform operation; an owner authorizes delivery effects."""
 
     kind: PlatformOperationKind
-    owner: ActionOwner
     effect: Mapping[str, object]
+    owner: ActionOwner | None = None
 
 
 @dataclass(frozen=True)
@@ -69,6 +73,84 @@ class OperationReadEnvelope(ReadEnvelope):
 
 
 @dataclass(frozen=True)
+class MusicRoom:
+    """The room whose queue a music request addresses."""
+
+    conversation_id: str
+
+
+@dataclass(frozen=True)
+class MusicPlayEffect(MusicRoom):
+    """The requesters and track to play or enqueue."""
+
+    sender_ids: tuple[str, ...]
+    query_or_url: str
+
+
+@dataclass(frozen=True)
+class MusicTopEffect(MusicRoom):
+    """The queue position to move to the top."""
+
+    position: int
+
+
+@dataclass(frozen=True)
+class MusicSetVolumeEffect(MusicRoom):
+    """The volume to set, in percent of unity."""
+
+    percent: int
+
+
+MUSIC_EFFECTS: Final[Mapping[MusicOperationKind, type]] = {
+    "music_play": MusicPlayEffect,
+    "music_skip": MusicRoom,
+    "music_top": MusicTopEffect,
+    "music_stop": MusicRoom,
+    "music_set_volume": MusicSetVolumeEffect,
+}
+
+
+@dataclass(frozen=True)
+class MusicOperationPayload:
+    """A completed or rejected music operation's result."""
+
+    title: str | None
+    url: str | None
+    queued: bool
+    percent: int | None
+    error: OperationError | None
+
+
+@dataclass(frozen=True)
+class MusicOperationEnvelope(OperationEnvelope):
+    """A music operation answer whose payload shape follows its outcome."""
+
+    payload: Mapping[str, object]
+
+
+@dataclass(frozen=True)
+class MusicOperationReadEnvelope(ReadEnvelope):
+    """A read of a music operation's recorded answer."""
+
+    payload: MusicOperationEnvelope | None
+
+
+@dataclass(frozen=True)
+class MusicStatus:
+    """The track playing in the room."""
+
+    title: str
+    url: str
+
+
+@dataclass(frozen=True)
+class MusicStatusReadEnvelope(ReadEnvelope):
+    """A read of the room's current track."""
+
+    payload: MusicStatus | None
+
+
+@dataclass(frozen=True)
 class PlatformQuery:
     """A read whose filter names platform identifiers."""
 
@@ -83,6 +165,7 @@ class PlatformAccount:
     platform: str
     primary: str
     aliases: tuple[str, ...] = ()
+    capabilities: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -2888,7 +2888,7 @@ class MusicConfig(BaseModel):
     `crossfade_seconds` — accepted but EFFECTIVE ZERO under the audio-owner
     controller: there is no local playback to blend, and advancement happens on
     ACTUAL track completion (the controller's `track-finished` event). The
-    controller surfaces the value in its `/voice/status` as `crossfade_seconds: 0`.
+    controller surfaces the value in its `status` query answer as `crossfade_seconds: 0`.
 
     `autoplay_enabled` — False (default): the queue empties, nothing next, leave
     after `idle_timeout_seconds`. True has `MusicPlayer._advance` seed one

@@ -1,18 +1,18 @@
 """`VoiceControllerClient` / `HttpVoiceSession` — nora's HTTP half of the
-audio-controller contract.
+audio-controller's `voice` contract (`nora.domain.service_api_voice`).
 
 The audio-controller owns the Discord voice connections; nora keeps every
-decision and never touches the voice socket. Every verb here is one POST
-against the controller's control plane (`GET` for `/voice/status`), and every
-failure maps onto exactly one of the three exception types below — the R-27
-discipline applied to a network port: a wiring gap is `unavailable`, never a
-silent wrong answer. NOTHING else raises out of this module into callers.
+decision and never touches the voice socket. Every verb here is one operation
+on `POST /v1/voice/operations` (the `status` read is a query on
+`POST /v1/voice/queries`), read by its outcome through `parse_response`, and
+every failure maps onto exactly one of the exception types below — a wiring
+gap is `unavailable`, never a silent wrong answer. The one other exception is
+the kernel's `OperationConflictError`: an `operation_id` reused for another
+effect, which nothing retries.
 
-Response-shape contract (controller-side, pinned): a success body is
-`{"ok": true, "request_id": ..., "state": {...}}`; an error body is
-`{"error": "<reason>", "request_id": ..., "state": ...}`. The control verbs
-return the parsed `state` snapshot dict; `status()` returns the whole GET
-body (the same snapshot plus `last_event_seq`, `streaming`, `last_error`,
+A connection operation's `complete` payload carries the controller's `state`
+snapshot, which the control verbs return; `status()` returns the query's `ok`
+payload (the same snapshot plus `last_event_seq`, `streaming`, `last_error`,
 `wake`, `pump`).
 """
 
@@ -20,17 +20,43 @@ from __future__ import annotations
 
 import base64
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
 import aiohttp
 
 from nora.domain.playback_liveness import PlaybackReading
-from nora.infra.service_auth import service_auth_headers
+from nora.domain.service_api import (
+    Family,
+    OperationConflictError,
+    parse_response,
+)
+from nora.domain.service_api import (
+    Outcome as ContractOutcome,
+)
+from nora.infra.service_api_schema import VOICE_ANSWERS, validator
+from nora.infra.trace_propagation import propagation_headers
 from nora.memory import ActAuthority, EffectRecorder, Outcome
 
 log = logging.getLogger("nora.infra.voice")
+
+OPERATIONS_PATH = "/v1/voice/operations"
+QUERIES_PATH = "/v1/voice/queries"
+
+
+#: The answer schema for each operation kind and for the status query, as the
+#: contract generates them.
+_ANSWERS = {kind: validator(component) for kind, component in VOICE_ANSWERS.items()}
+_STATUS_ANSWER = validator("VoiceStatusReadEnvelope")
+
+
+@dataclass(frozen=True)
+class _Answer:
+    outcome: ContractOutcome
+    payload: Any
 
 
 class VoiceControllerError(Exception):
@@ -40,26 +66,28 @@ class VoiceControllerError(Exception):
 
 class VoiceControllerUnavailable(VoiceControllerError):  # noqa: N818 — pinned contract name
     """The controller could not be reached or could not answer: transport
-    errors, timeouts, 5xx, and success answers whose body does not parse or
-    lacks the pinned shape. Fail-closed — the caller reports «I couldn't
-    check», never guesses a state."""
+    errors, timeouts, a redirect, `unavailable`, `uncertain`, `denied`, and
+    answers whose body does not parse or lacks the pinned shape. Fail-closed —
+    the caller reports «I couldn't check», never guesses a state."""
 
 
 class GenerationConflict(VoiceControllerError):  # noqa: N818 — pinned contract name
-    """HTTP 409 — the command's `generation` is not the controller's current
-    one (the connection was exited, replaced, or never joined), or an
-    arbiter-state rejection such as `pause_during_speech`. Carries the
-    controller's own `error` reason string: `generation_conflict` is
-    recoverable (reconcile via `/voice/status` and retry), an arbiter
-    rejection is NOT — the two must never be conflated."""
+    """`rejected` — the operation's `generation` is not the controller's current
+    one (the connection was exited, replaced, or never joined), it is
+    `connected_elsewhere`, or an arbiter-state rejection such as
+    `pause_during_speech`. Carries the controller's `error.kind`:
+    `generation_conflict` is recoverable (reconcile via the `status` query and
+    retry), an arbiter rejection is NOT — the two must never be conflated."""
 
-    def __init__(self, reason: str) -> None:
+    def __init__(self, reason: str, state: dict[str, Any] | None = None) -> None:
         super().__init__(reason)
         self.reason = reason
+        #: The controller's snapshot the rejection carried, `None` when it carried none.
+        self.state = state
 
 
 class VoiceControllerRejected(VoiceControllerError):  # noqa: N818 — pinned contract name
-    """HTTP 400 — the controller understood the request and refused it
+    """HTTP 400 — the controller refused the request as malformed
     (`wrong_guild`, `percent_out_of_range`). Carries the controller's own
     `error` reason string."""
 
@@ -69,9 +97,10 @@ class VoiceControllerRejected(VoiceControllerError):  # noqa: N818 — pinned co
 
 
 class VoiceControllerNoConnection(VoiceControllerUnavailable):
-    """HTTP 404 `unknown_guild` — the controller holds NO connection for this
-    guild. Since one process serves several guilds this is
-    an ordinary answer, not an outage: on a cold boot every guild answers it.
+    """`rejected` `unknown_guild`, or a `status` query that is `nothing_found`
+    — the controller holds NO connection for this guild. Since one process
+    serves several guilds this is an ordinary answer, not an outage: on a
+    cold boot every guild answers it.
 
     Subclasses `VoiceControllerUnavailable` ON PURPOSE, so every existing
     handler keeps its fail-closed behaviour unchanged and only the callers
@@ -81,6 +110,19 @@ class VoiceControllerNoConnection(VoiceControllerUnavailable):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+
+@contextmanager
+def conflicts_fail() -> Iterator[None]:
+    """A 409 (an `operation_id` reused for another effect) as a failed call.
+
+    The session and the hub answer every caller through `VoiceControllerError`;
+    the conflict is `VoiceControllerUnavailable`, so nothing reconciles or retries it.
+    """
+    try:
+        yield
+    except OperationConflictError as exc:
+        raise VoiceControllerUnavailable(f"operation_id reused: {exc}") from exc
 
 
 class VoiceControllerClient:
@@ -107,20 +149,18 @@ class VoiceControllerClient:
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
 
     async def join(
-        self, guild_id: str, channel_id: str, *, request_id: str,
+        self, guild_id: str, channel_id: str, *, operation_id: str,
     ) -> dict[str, Any]:
-        """`POST /voice/join` — idempotent when already in that channel; 409
+        """`join` — idempotent when already in that channel; `rejected`
         `connected_elsewhere` when it is not."""
         return await self._control(
-            "/voice/join",
-            {"guild_id": guild_id, "channel_id": channel_id, "request_id": request_id},
+            "join", {"guild_id": guild_id, "channel_id": channel_id}, operation_id,
         )
 
-    async def exit(self, generation: str, *, guild_id: str, request_id: str) -> dict[str, Any]:
-        """`POST /voice/exit` — stop everything and destroy the connection."""
+    async def exit(self, generation: str, *, guild_id: str, operation_id: str) -> dict[str, Any]:
+        """`leave` — stop everything and destroy the connection."""
         return await self._control(
-            "/voice/exit",
-            {"guild_id": guild_id, "generation": generation, "request_id": request_id},
+            "leave", {"guild_id": guild_id, "generation": generation}, operation_id,
         )
 
     async def play(
@@ -132,62 +172,56 @@ class VoiceControllerClient:
         title: str | None = None,
         duration_seconds: float | None = None,
         resumable: bool | None = None,
-        request_id: str,
+        operation_id: str,
     ) -> dict[str, Any]:
-        """`POST /music/play` — REPLACE semantics: the controller has no
+        """`play` — REPLACE semantics: the controller has no
         upcoming queue; this supersedes whatever the music slot holds.
         `resumable=False` marks a live/non-seekable source (§5 position
         policy: speech preemption ENDS it instead of reviving from 0);
         `None` (every caller today) leaves the controller's default."""
-        body: dict[str, Any] = {
-            "guild_id": guild_id, "generation": generation,
-            "stream_url": stream_url, "request_id": request_id,
+        effect: dict[str, Any] = {
+            "guild_id": guild_id, "generation": generation, "stream_url": stream_url,
         }
         if title is not None:
-            body["title"] = title
+            effect["title"] = title
         if duration_seconds is not None:
-            body["duration_seconds"] = duration_seconds
+            effect["duration_seconds"] = duration_seconds
         if resumable is not None:
-            body["resumable"] = resumable
-        return await self._control("/music/play", body)
+            effect["resumable"] = resumable
+        return await self._control("play", effect, operation_id)
 
     async def stop_music(
-        self, generation: str, *, guild_id: str, request_id: str,
+        self, generation: str, *, guild_id: str, operation_id: str,
     ) -> dict[str, Any]:
-        """`POST /music/stop` — stop the music slot, STAY connected. A no-op
-        (200) when idle."""
+        """`stop` — stop the music slot, STAY connected. `complete` when idle."""
         return await self._control(
-            "/music/stop",
-            {"guild_id": guild_id, "generation": generation, "request_id": request_id},
+            "stop", {"guild_id": guild_id, "generation": generation}, operation_id,
         )
 
     async def pause(
-        self, generation: str, *, guild_id: str, request_id: str,
+        self, generation: str, *, guild_id: str, operation_id: str,
     ) -> dict[str, Any]:
-        """`POST /music/pause` — 409 `pause_during_speech` when speech holds
+        """`pause` — `rejected` `pause_during_speech` when speech holds
         the pipeline (surfaces as `GenerationConflict`)."""
         return await self._control(
-            "/music/pause",
-            {"guild_id": guild_id, "generation": generation, "request_id": request_id},
+            "pause", {"guild_id": guild_id, "generation": generation}, operation_id,
         )
 
     async def resume(
-        self, generation: str, *, guild_id: str, request_id: str,
+        self, generation: str, *, guild_id: str, operation_id: str,
     ) -> dict[str, Any]:
         return await self._control(
-            "/music/resume",
-            {"guild_id": guild_id, "generation": generation, "request_id": request_id},
+            "resume", {"guild_id": guild_id, "generation": generation}, operation_id,
         )
 
     async def set_volume(
-        self, generation: str, percent: int, *, guild_id: str, request_id: str,
+        self, generation: str, percent: int, *, guild_id: str, operation_id: str,
     ) -> dict[str, Any]:
-        """`POST /music/volume` — `percent` is 0-200 (400
-        `percent_out_of_range` otherwise)."""
+        """`set_volume` — `percent` is 0-200 (400 `percent_out_of_range` otherwise)."""
         return await self._control(
-            "/music/volume",
-            {"guild_id": guild_id, "generation": generation,
-             "percent": percent, "request_id": request_id},
+            "set_volume",
+            {"guild_id": guild_id, "generation": generation, "percent": percent},
+            operation_id,
         )
 
     async def stream(
@@ -196,106 +230,111 @@ class VoiceControllerClient:
         audio: bytes,
         *,
         media_type: str,
-        guild_id: str | None = None,
-        request_id: str,
+        guild_id: str,
+        operation_id: str,
     ) -> dict[str, Any]:
-        """`POST /stream` — the ONLY speech path: synthesized audio (≤2 MB)
-        base64'd into the body; the controller hard-cuts it over music.
-        409 for a dead generation, 503 `speech_queue_full` when its bounded
-        speech queue is full (surfaces as `VoiceControllerUnavailable`)."""
-        body: dict[str, Any] = {
-            "generation": generation,
+        """`speak` — the ONLY speech path: synthesized audio (≤2 MB)
+        base64'd into the effect; the controller hard-cuts it over music.
+        `rejected` for a dead generation, `unavailable` `speech_queue_full`
+        when its bounded speech queue is full (`VoiceControllerUnavailable`)."""
+        return await self._control("speak", {
+            "guild_id": guild_id, "generation": generation,
             "audio_b64": base64.b64encode(audio).decode("ascii"),
             "media_type": media_type,
-            "request_id": request_id,
-        }
-        if guild_id is not None:
-            body["guild_id"] = guild_id
-        return await self._control("/stream", body)
+        }, operation_id)
 
     async def status(self, guild_id: str) -> dict[str, Any]:
-        """`GET /voice/status` — the full snapshot (voice state, generation,
+        """The `status` query — the full snapshot (voice state, generation,
         channel, playback id, player, speech queue depth, `last_event_seq`,
         `streaming`, `last_error`, `wake`, `pump`) for ONE guild.
+        `nothing_found` (no connection for the guild) is `VoiceControllerNoConnection`."""
+        answer = await self._request(
+            QUERIES_PATH, {"kind": "status", "params": {"guild_id": guild_id}}, "read",
+        )
+        if answer.outcome == "nothing_found":
+            raise VoiceControllerNoConnection("unknown_guild")
+        if answer.outcome != "ok" or not isinstance(answer.payload, dict):
+            raise VoiceControllerUnavailable(f"status answered {answer.outcome}")
+        return answer.payload
 
-        The guild rides the query string because a GET carries no body;
-        one controller process serves several, so an unqualified status could
-        only answer for whichever it picked."""
-        return await self._request("GET", f"/voice/status?guild_id={guild_id}", None)
-
-    async def _control(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        """A control POST's return is the `state` snapshot out of the
-        success envelope. A 2xx WITHOUT it is a contract violation, reported
-        as `unavailable` — never as success."""
+    async def _control(self, kind: str, effect: dict[str, Any],
+                       operation_id: str) -> dict[str, Any]:
+        """A connection operation's return is the `state` snapshot out of its
+        `complete` envelope. A `complete` WITHOUT it is a contract violation,
+        reported as `unavailable` — never as success."""
         if self._effects is None:
-            return await self._control_request(path, body)
+            return await self._operation(kind, effect, operation_id)
 
         async def call() -> dict[str, Any]:
-            return await self._control_request(path, body)
+            return await self._operation(kind, effect, operation_id)
 
         return await self._effects.invoke(
-            "voice.speech" if path == "/stream" else "voice.control",
-            f"voice-controller:{body.get('guild_id', '')}", str(body.get("request_id") or ""),
+            "voice.speech" if kind == "speak" else "voice.control",
+            f"voice-controller:{effect.get('guild_id', '')}", operation_id,
             ActAuthority(None), call, judge=lambda _result: Outcome("done"),
         )
 
-    async def _control_request(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        payload = await self._request("POST", path, body)
+    async def _operation(self, kind: str, effect: dict[str, Any],
+                         operation_id: str) -> dict[str, Any]:
+        answer = await self._request(OPERATIONS_PATH, {
+            "operation_id": operation_id, "kind": kind, "effect": effect}, "operation")
+        payload = answer.payload if isinstance(answer.payload, dict) else {}
+        error = payload.get("error")
+        reason = error.get("kind") if isinstance(error, dict) else None
+        reason = reason if isinstance(reason, str) and reason else answer.outcome
+        if answer.outcome == "rejected":
+            if reason == "unknown_guild":
+                raise VoiceControllerNoConnection(reason)
+            state = payload.get("state")
+            raise GenerationConflict(reason, state if isinstance(state, dict) else None)
+        if answer.outcome != "complete":
+            raise VoiceControllerUnavailable(f"{kind} answered {answer.outcome} ({reason})")
         state = payload.get("state")
         if not isinstance(state, dict):
             raise VoiceControllerUnavailable(
-                f"{path} answered {payload!r} — no state snapshot in the success body"
+                f"{kind} answered {payload!r} — no state snapshot in the complete envelope"
             )
         return state
 
-    async def _request(
-        self, method: str, path: str, body: dict[str, Any] | None,
-    ) -> dict[str, Any]:
+    async def _request(self, path: str, body: dict[str, Any], family: Family) -> _Answer:
         if self._session is not None:
-            return await self._call(self._session, method, path, body)
+            return await self._call(self._session, path, body, family)
         async with aiohttp.ClientSession(timeout=self._timeout) as session:
-            return await self._call(session, method, path, body)
+            return await self._call(session, path, body, family)
 
     async def _call(
-        self,
-        session: aiohttp.ClientSession,
-        method: str,
-        path: str,
-        body: dict[str, Any] | None,
-    ) -> dict[str, Any]:
+        self, session: aiohttp.ClientSession, path: str, body: dict[str, Any], family: Family,
+    ) -> _Answer:
+        """One POST read through `parse_response`; a redirect is never followed."""
         try:
             async with session.request(
-                method, f"{self._base_url}{path}", json=body,
-                headers=service_auth_headers(),
+                "POST", f"{self._base_url}{path}", json=body, allow_redirects=False,
+                headers=propagation_headers(),
             ) as resp:
                 try:
                     payload: Any = await resp.json(content_type=None)
                 except Exception:  # noqa: BLE001 — any parse failure maps below
                     payload = None
-                if 200 <= resp.status < 300:
-                    if not isinstance(payload, dict):
-                        raise VoiceControllerUnavailable(
-                            f"{path} answered HTTP {resp.status} with an unparseable body"
-                        )
-                    return payload
-                reason = payload.get("error") if isinstance(payload, dict) else None
-                if not isinstance(reason, str) or not reason:
-                    reason = f"http_{resp.status}"
-                if resp.status == 409:
-                    raise GenerationConflict(reason)
-                if resp.status == 400:
-                    raise VoiceControllerRejected(reason)
-                if resp.status == 404 and reason == "unknown_guild":
-                    raise VoiceControllerNoConnection(reason)
-                raise VoiceControllerUnavailable(
-                    f"{path} answered HTTP {resp.status} ({reason})"
-                )
-        except VoiceControllerError:
-            raise
+                status = resp.status
         except (aiohttp.ClientError, TimeoutError) as exc:
             raise VoiceControllerUnavailable(
                 f"{path}: {exc or type(exc).__name__}"
             ) from exc
+        parsed = parse_response(family, status, payload)
+        if parsed.caller_fault == 409:
+            raise OperationConflictError(str(body.get("operation_id") or ""))
+        if parsed.caller_fault == 400:
+            reason = payload.get("error") if isinstance(payload, dict) else None
+            raise VoiceControllerRejected(reason if isinstance(reason, str) and reason
+                                          else "http_400")
+        if parsed.outcome is None:
+            raise VoiceControllerUnavailable(f"{path} answered HTTP {status}")
+        schema = _STATUS_ANSWER if path == QUERIES_PATH else _ANSWERS[str(body["kind"])]
+        if not schema.is_valid(payload) or (
+                family == "operation"
+                and (payload["when"]["state"] == "settled") == (parsed.outcome == "pending")):
+            raise VoiceControllerUnavailable(f"{path} answered {parsed.outcome} off the contract")
+        return _Answer(parsed.outcome, payload["payload"])
 
 
 class HttpVoiceSession:
@@ -307,16 +346,16 @@ class HttpVoiceSession:
     `nora.platform` in the layers contract, so the conformance is
     structural (the protocol's methods, awaited, same names).
 
-    Every call mints a fresh `request_id` (the controller dedupes
-    retries on it); `playback_id` is recorded from each play's state
+    Every call mints a fresh `operation_id` (the controller answers a
+    repeat of it once); `playback_id` is recorded from each play's state
     snapshot so the hub can recognise the controller's `track-finished` /
     `stream-failed` callbacks as current or stale.
 
     The generation can go STALE under a cached session (a controller
     restart re-joins under a new one). The hub and the manager's
     player hold THIS SAME object, so adopting the live generation here
-    reconciles both at once: a verb that 409s `generation_conflict` reads
-    `/voice/status`, adopts, and retries ONCE."""
+    reconciles both at once: a verb `rejected` with `generation_conflict`
+    reads the `status` query, adopts, and retries ONCE."""
 
     def __init__(
         self, client: VoiceControllerClient, *, guild_id: str, generation: str,
@@ -331,7 +370,7 @@ class HttpVoiceSession:
         return self._generation
 
     async def read_playback(self) -> PlaybackReading:
-        """One `/voice/status` sample, reduced to the liveness fields.
+        """One `status` sample, reduced to the liveness fields.
 
         `playback_id is not None` is true in five arbiter states and audible
         in at most one, so liveness is read from these fields instead.
@@ -341,7 +380,8 @@ class HttpVoiceSession:
         "I could not check" must not reach a caller looking like "not
         playing"."""
         try:
-            status = await self._client.status(self._guild_id)
+            with conflicts_fail():
+                status = await self._client.status(self._guild_id)
         except VoiceControllerError:
             return PlaybackReading.unreachable()
         if not isinstance(status, dict):
@@ -372,21 +412,25 @@ class HttpVoiceSession:
     def guild_id(self) -> str:
         return self._guild_id
 
-    async def _reconcile_generation(self) -> bool:
-        """Adopt the controller's CURRENT generation after a 409
+    async def reconcile_generation(self) -> bool:
+        """Adopt the controller's CURRENT generation after a
         `generation_conflict` (a restart or a replaced connection).
         `False` — and the original conflict climbs — when the controller
         has no live connection to adopt: an exited connection is not a
         stale generation, it is a gone one, and retrying against it would
         resurrect audio nora already tore down."""
         try:
-            status = await self._client.status(self._guild_id)
+            with conflicts_fail():
+                status = await self._client.status(self._guild_id)
         except VoiceControllerError:
             return False
-        if status.get("voice") != "connected":
-            return False
-        generation = status.get("generation")
-        if not isinstance(generation, str) or not generation:
+        return self.adopt(status)
+
+    def adopt(self, state: dict[str, Any]) -> bool:
+        """Take the generation of a controller snapshot that shows a live
+        connection; `False`, changing nothing, for any other snapshot."""
+        generation = state.get("generation")
+        if state.get("voice") != "connected" or not isinstance(generation, str) or not generation:
             return False
         log.info(
             "voice session for guild %s: adopting generation %s after a "
@@ -394,7 +438,7 @@ class HttpVoiceSession:
             self._guild_id, generation,
         )
         self._generation = generation
-        playback_id = status.get("playback_id")
+        playback_id = state.get("playback_id")
         self.playback_id = playback_id if isinstance(playback_id, str) else None
         return True
 
@@ -402,27 +446,28 @@ class HttpVoiceSession:
         self, verb: Callable[[str], Awaitable[dict[str, Any]]],
     ) -> dict[str, Any]:
         """Run a generation-scoped verb; on a `generation_conflict` 409
-        reconcile and retry ONCE (a fresh `request_id` — the controller
-        memoized the rejection under the first one). Arbiter rejections
+        reconcile and retry ONCE (a fresh `operation_id` — the controller
+        keeps the rejection under the first one). Arbiter rejections
         (`pause_during_speech`) are not staleness and propagate as-is."""
-        try:
-            return await verb(self._request_id())
-        except GenerationConflict as exc:
-            if exc.reason != "generation_conflict":
-                raise
-            if not await self._reconcile_generation():
-                raise
-            return await verb(self._request_id())
+        with conflicts_fail():
+            try:
+                return await verb(self._operation_id())
+            except GenerationConflict as exc:
+                if exc.reason != "generation_conflict":
+                    raise
+                if not await self.reconcile_generation():
+                    raise
+                return await verb(self._operation_id())
 
     async def play(
         self, stream_url: str, *,
         duration_seconds: float | None = None, resumable: bool | None = None,
     ) -> None:
         state = await self._with_reconcile(
-            lambda request_id: self._client.play(
+            lambda operation_id: self._client.play(
                 self._generation, stream_url, guild_id=self._guild_id,
                 duration_seconds=duration_seconds, resumable=resumable,
-                request_id=request_id,
+                operation_id=operation_id,
             )
         )
         playback_id = state.get("playback_id")
@@ -430,29 +475,30 @@ class HttpVoiceSession:
 
     async def pause(self) -> None:
         await self._with_reconcile(
-            lambda request_id: self._client.pause(
-                self._generation, guild_id=self._guild_id, request_id=request_id,
+            lambda operation_id: self._client.pause(
+                self._generation, guild_id=self._guild_id, operation_id=operation_id,
             )
         )
 
     async def resume(self) -> None:
         await self._with_reconcile(
-            lambda request_id: self._client.resume(
-                self._generation, guild_id=self._guild_id, request_id=request_id,
+            lambda operation_id: self._client.resume(
+                self._generation, guild_id=self._guild_id, operation_id=operation_id,
             )
         )
 
     async def stop(self) -> None:
-        """`/music/stop`. TOLERATES a 409 `generation_conflict` WITHOUT a
+        """`stop`. TOLERATES a `generation_conflict` WITHOUT a
         reconcile-retry: a generation the controller no longer recognises
         has no music slot to stop — the end state this call asks for
         already holds. That tolerance is what lets a dead-connection
         teardown complete locally instead of
         dying on a controller that is already gone."""
         try:
-            await self._client.stop_music(
-                self._generation, guild_id=self._guild_id, request_id=self._request_id(),
-            )
+            with conflicts_fail():
+                await self._client.stop_music(
+                    self._generation, guild_id=self._guild_id, operation_id=self._operation_id(),
+                )
         except GenerationConflict as exc:
             if exc.reason != "generation_conflict":
                 raise
@@ -468,21 +514,22 @@ class HttpVoiceSession:
         0-200 percent."""
         percent = max(0, min(200, round(volume * 100)))
         await self._with_reconcile(
-            lambda request_id: self._client.set_volume(
+            lambda operation_id: self._client.set_volume(
                 self._generation, percent, guild_id=self._guild_id,
-                request_id=request_id,
+                operation_id=operation_id,
             )
         )
 
     async def disconnect(self) -> None:
-        """`/voice/exit`. TOLERATES `GenerationConflict`: the connection
+        """`leave`. TOLERATES `GenerationConflict`: the connection
         being already gone controller-side (a voice-death the controller
         saw first, an exit someone else issued) is exactly the end state
         this call asks for."""
         try:
-            await self._client.exit(
-                self._generation, guild_id=self._guild_id, request_id=self._request_id(),
-            )
+            with conflicts_fail():
+                await self._client.exit(
+                    self._generation, guild_id=self._guild_id, operation_id=self._operation_id(),
+                )
         except GenerationConflict:
             log.info(
                 "voice exit for guild %s: generation already invalid — treated as done",
@@ -490,5 +537,5 @@ class HttpVoiceSession:
             )
 
     @staticmethod
-    def _request_id() -> str:
+    def _operation_id() -> str:
         return str(uuid4())

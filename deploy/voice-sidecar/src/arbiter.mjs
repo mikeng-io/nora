@@ -1,7 +1,7 @@
 // Arbiter (design/voice-channel/audio.md): ONE audio
 // pipeline arbitrating exactly ONE current music slot and ONE bounded
 // speech queue. The upcoming music queue lives in nora; this module owns no
-// enqueue semantics — /music/play REPLACES the current slot.
+// enqueue semantics — `play` REPLACES the current slot.
 //
 // States (player.status in the snapshot): stopped(idle) | starting |
 // playing | paused | suspended | resuming.
@@ -21,7 +21,7 @@
 //     natural end (design/voice-channel/audio.md «Speech and music arbitration»).
 //   - a late ffmpeg start whose slot/generation is no longer current is
 //     ignored and the process killed (speech can never be cut by music).
-//   - /music/stop during speech invalidates the suspended slot and does NOT
+//   - `stop` during speech invalidates the suspended slot and does NOT
 //     touch speech; nothing can resurrect music after stop.
 //   - pause intent survives startup and suspension: a pause issued while
 //     'starting'/'resuming' is recorded on the slot and applied the moment
@@ -793,7 +793,7 @@ export function createArbiter({
       had = true;
     }
     // Speech owns the player: while it is still speaking the pipeline is
-    // NOT idle — keep 'suspended' so /voice/status tells the truth
+    // NOT idle — keep 'suspended' so the status query tells the truth
     // (2026-09-16 audit C-4). When speech drains with no suspended slot,
     // advanceSpeech settles the state to 'stopped'.
     if (!speechBusy() && state !== 'stopped') state = 'stopped';

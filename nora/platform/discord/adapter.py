@@ -35,8 +35,8 @@ from ...infra.voice.hub import VoiceControllerHub
 from .channels import ClientChannelDirectory
 from .command_acts import DiscordCommandActs
 from .listener import DiscordListener
+from .music_commands import recover_voice_sessions
 from .music_commands import register as register_music_commands
-from .music_commands import resume_persisted_sessions as resume_persisted_music_sessions
 from .music_manager import MusicPlayerManager
 from .music_notify import ResolveMusicChannel, no_music_channel
 from .parser import (
@@ -95,7 +95,7 @@ class DiscordAdapter:
         # The voice path: the MiniMax speaker and the audio-controller hub.
         # BOTH None on every deployment that hasn't wired the voice path — the
         # text-only posture stays byte-identical. A SPOKEN turn routes through
-        # speak → the controller's `/stream` endpoint instead of REST text (see
+        # speak → the controller's `speak` operation instead of REST text (see
         # `send`). `voice_guild_ids` is not part of that decision: it is the
         # join allow-list, naming the guilds whose voice channels Nora may be
         # pulled into at all.
@@ -187,29 +187,21 @@ class DiscordAdapter:
                     client_getter=self.current_client,
                     command_acts=self._command_acts,
                 )
-                # Safe to run on every on_ready, not just a genuine boot
-                # (resume_persisted_sessions's own guard against clobbering
-                # an already-live player).
-                await resume_persisted_music_sessions(
-                    client, self._music_manager, hub=self._voice_hub,
-                    resolve_music_channel=self._resolve_music_channel,
-                    client_getter=self.current_client,
-                    command_acts=self._command_acts,
-                )
+            # Every on_ready: each persisted music guild is recovered under its
+            # player's lock, then every other voice guild adopts its connection.
+            await recover_voice_sessions(
+                client, self._music_manager, hub=self._voice_hub,
+                voice_guild_ids=self._voice_guild_ids,
+                resolve_music_channel=self._resolve_music_channel,
+                client_getter=self.current_client,
+                command_acts=self._command_acts,
+            )
+            if self._music_manager is not None:
                 # Idempotent, so every on_ready is safe: the watch asks the
                 # controller whether sound is actually moving, because
                 # otherwise nora would only learn that music stopped from
                 # an event a wedged controller does not send.
                 self._music_manager.start_liveness_watch()
-            # A guild with no persisted MUSIC row
-            # never calls `hub.join` above, so a wake-reply-only boot would
-            # leave the controller's boot-joined connection un-adopted and
-            # every speech reply silently dropped until a human ran
-            # `/discord join`. Independent of `_music_manager` and safe to
-            # run every `on_ready` — `hub.join`/`adopt_boot_voice_sessions`
-            # are both idempotent against an already-cached session.
-            if self._voice_hub is not None:
-                await self._voice_hub.adopt_boot_voice_sessions(self._voice_guild_ids)
 
         self._listener = DiscordListener(
             client, self._token, on_ready_extra=_register_music_commands,
@@ -331,7 +323,7 @@ class DiscordAdapter:
         quote: OutboundQuote | None = None,
     ) -> SendResult:
         # Voice playout: answer a SPOKEN turn aloud, through the speaker →
-        # the audio-controller's `/stream` seam. Fail-closed: without a
+        # the audio-controller's `speak` operation. Fail-closed: without a
         # speaker or a hub the reply is SILENT (ok=False, text-only fallback
         # is the caller's business).
         #
@@ -395,7 +387,7 @@ class DiscordAdapter:
             log.warning("voice-channel send failed: tts unavailable (reason=%s)", result.reason)
             return SendResult(ok=False)
         # The ONLY speech path: the
-        # controller's `/stream` endpoint, generation-scoped via the hub.
+        # controller's `speak` operation, generation-scoped via the hub.
         # `False` covers every failure (stale generation, controller down) —
         # the hub already logged which. The no-session case was refused above,
         # before the synthesis was paid for.

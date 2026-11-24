@@ -48,7 +48,7 @@ class PlaybackVerdict(StrEnum):
 
 @dataclass(frozen=True)
 class PlaybackReading:
-    """One `/voice/status` sample, reduced to what the verdict needs.
+    """One `status` query sample, reduced to what the verdict needs.
 
     `reachable=False` is the whole point of the flag: an exception, a
     timeout, or a body nora could not parse must arrive here as a reading,

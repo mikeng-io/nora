@@ -1,0 +1,361 @@
+[
+  {
+    "label": "Python bridge ok",
+    "status": 200,
+    "body": {
+      "outcome": "complete",
+      "payload": {
+        "status": "ok"
+      },
+      "when": {
+        "state": "settled",
+        "started_at_ms": 1795474855425,
+        "settled_at_ms": 1795474855425
+      },
+      "from": {
+        "target": "111111111111111111",
+        "platform_ref": null
+      },
+      "scope": {
+        "level": "installation"
+      },
+      "trace": ""
+    },
+    "retry": false
+  },
+  {
+    "label": "Python bridge duplicate",
+    "status": 200,
+    "body": {
+      "outcome": "complete",
+      "payload": {
+        "status": "duplicate"
+      },
+      "when": {
+        "state": "settled",
+        "started_at_ms": 1795474855425,
+        "settled_at_ms": 1795474855425
+      },
+      "from": {
+        "target": "111111111111111111",
+        "platform_ref": null
+      },
+      "scope": {
+        "level": "installation"
+      },
+      "trace": ""
+    },
+    "retry": false
+  },
+  {
+    "label": "Python bridge stale",
+    "status": 200,
+    "body": {
+      "outcome": "complete",
+      "payload": {
+        "status": "stale"
+      },
+      "when": {
+        "state": "settled",
+        "started_at_ms": 1795474855426,
+        "settled_at_ms": 1795474855426
+      },
+      "from": {
+        "target": "111111111111111111",
+        "platform_ref": null
+      },
+      "scope": {
+        "level": "installation"
+      },
+      "trace": ""
+    },
+    "retry": false
+  },
+  {
+    "label": "Python bridge denied",
+    "status": 403,
+    "body": {
+      "outcome": "denied",
+      "payload": {
+        "error": {
+          "kind": "denied",
+          "message": "unknown guild"
+        }
+      },
+      "when": {
+        "state": "settled",
+        "started_at_ms": 1795474855426,
+        "settled_at_ms": 1795474855426
+      },
+      "from": {
+        "target": "other",
+        "platform_ref": null
+      },
+      "scope": {
+        "level": "installation"
+      },
+      "trace": ""
+    },
+    "retry": false
+  },
+  {
+    "label": "Python bridge unavailable",
+    "status": 503,
+    "body": {
+      "outcome": "unavailable",
+      "payload": {
+        "error": {
+          "kind": "unavailable",
+          "message": "event processing failed; left unconsumed for retry"
+        }
+      },
+      "when": {
+        "state": "settled",
+        "started_at_ms": 1795474855427,
+        "settled_at_ms": 1795474855428
+      },
+      "from": {
+        "target": "111111111111111111",
+        "platform_ref": null
+      },
+      "scope": {
+        "level": "installation"
+      },
+      "trace": ""
+    },
+    "retry": true
+  },
+  {
+    "label": "Python bridge recovered",
+    "status": 200,
+    "body": {
+      "outcome": "complete",
+      "payload": {
+        "status": "ok"
+      },
+      "when": {
+        "state": "settled",
+        "started_at_ms": 1795474855428,
+        "settled_at_ms": 1795474855428
+      },
+      "from": {
+        "target": "111111111111111111",
+        "platform_ref": null
+      },
+      "scope": {
+        "level": "installation"
+      },
+      "trace": ""
+    },
+    "retry": false
+  },
+  {
+    "label": "Python bridge invalid",
+    "status": 400,
+    "body": {
+      "error": "the report carries no usable event"
+    },
+    "retry": false
+  },
+  {
+    "label": "Python bridge id conflict",
+    "status": 409,
+    "body": {
+      "error": "operation_id_reused"
+    },
+    "retry": false
+  },
+  {
+    "label": "Python app ok",
+    "status": 200,
+    "body": {
+      "outcome": "complete",
+      "payload": {
+        "status": "ok"
+      },
+      "when": {
+        "state": "settled",
+        "started_at_ms": 1795474855430,
+        "settled_at_ms": 1795474855430
+      },
+      "from": {
+        "target": "111111111111111111",
+        "platform_ref": null
+      },
+      "scope": {
+        "level": "installation"
+      },
+      "trace": ""
+    },
+    "retry": false
+  },
+  {
+    "label": "Python app duplicate",
+    "status": 200,
+    "body": {
+      "outcome": "complete",
+      "payload": {
+        "status": "duplicate"
+      },
+      "when": {
+        "state": "settled",
+        "started_at_ms": 1795474855431,
+        "settled_at_ms": 1795474855431
+      },
+      "from": {
+        "target": "111111111111111111",
+        "platform_ref": null
+      },
+      "scope": {
+        "level": "installation"
+      },
+      "trace": ""
+    },
+    "retry": false
+  },
+  {
+    "label": "Python app stale",
+    "status": 200,
+    "body": {
+      "outcome": "complete",
+      "payload": {
+        "status": "stale"
+      },
+      "when": {
+        "state": "settled",
+        "started_at_ms": 1795474855431,
+        "settled_at_ms": 1795474855431
+      },
+      "from": {
+        "target": "111111111111111111",
+        "platform_ref": null
+      },
+      "scope": {
+        "level": "installation"
+      },
+      "trace": ""
+    },
+    "retry": false
+  },
+  {
+    "label": "Python app denied",
+    "status": 403,
+    "body": {
+      "outcome": "denied",
+      "payload": {
+        "error": {
+          "kind": "denied",
+          "message": "unknown guild"
+        }
+      },
+      "when": {
+        "state": "settled",
+        "started_at_ms": 1795474855431,
+        "settled_at_ms": 1795474855431
+      },
+      "from": {
+        "target": "other",
+        "platform_ref": null
+      },
+      "scope": {
+        "level": "installation"
+      },
+      "trace": ""
+    },
+    "retry": false
+  },
+  {
+    "label": "Python app unavailable",
+    "status": 503,
+    "body": {
+      "outcome": "unavailable",
+      "payload": {
+        "error": {
+          "kind": "unavailable",
+          "message": "event processing failed; left unconsumed for retry"
+        }
+      },
+      "when": {
+        "state": "settled",
+        "started_at_ms": 1795474855432,
+        "settled_at_ms": 1795474855432
+      },
+      "from": {
+        "target": "111111111111111111",
+        "platform_ref": null
+      },
+      "scope": {
+        "level": "installation"
+      },
+      "trace": ""
+    },
+    "retry": true
+  },
+  {
+    "label": "Python app recovered",
+    "status": 200,
+    "body": {
+      "outcome": "complete",
+      "payload": {
+        "status": "ok"
+      },
+      "when": {
+        "state": "settled",
+        "started_at_ms": 1795474855433,
+        "settled_at_ms": 1795474855433
+      },
+      "from": {
+        "target": "111111111111111111",
+        "platform_ref": null
+      },
+      "scope": {
+        "level": "installation"
+      },
+      "trace": ""
+    },
+    "retry": false
+  },
+  {
+    "label": "Python app invalid",
+    "status": 400,
+    "body": {
+      "error": "the report carries no usable event"
+    },
+    "retry": false
+  },
+  {
+    "label": "Python app id conflict",
+    "status": 409,
+    "body": {
+      "error": "operation_id_reused"
+    },
+    "retry": false
+  },
+  {
+    "label": "Python bridge report sink disabled",
+    "status": 200,
+    "body": {
+      "outcome": "unsupported",
+      "payload": {
+        "error": {
+          "kind": "unsupported",
+          "message": "reports are not enabled"
+        }
+      },
+      "when": {
+        "state": "settled",
+        "started_at_ms": 1795474855435,
+        "settled_at_ms": 1795474855435
+      },
+      "from": {
+        "target": "111111111111111111",
+        "platform_ref": null
+      },
+      "scope": {
+        "level": "installation"
+      },
+      "trace": ""
+    },
+    "retry": false
+  }
+]

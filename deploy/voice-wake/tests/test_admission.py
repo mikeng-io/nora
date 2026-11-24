@@ -221,7 +221,13 @@ async def test_an_idle_seam_is_not_cut_by_the_read_deadline():
 
 
 class _Response:
-    status = 202
+    status = 200
+
+    async def json(self, content_type=None):
+        return {
+            "outcome": "complete", "payload": {}, "when": {"state": "settled"},
+            "from": {"target": "intake"}, "scope": {"level": "installation"}, "trace": "",
+        }
 
     async def __aenter__(self):
         return self
@@ -231,10 +237,12 @@ class _Response:
 
 
 class _Session:
+    timeout = SimpleNamespace(total=None)
+
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
 
-    def post(self, url, **kwargs):
+    def request(self, method, url, **kwargs):
         self.calls.append((url, kwargs))
         return _Response()
 
@@ -249,8 +257,8 @@ async def test_the_utterance_forward_carries_the_service_bearer():
 
     assert ok is True
     url, kwargs = session.calls[0]
-    assert url == "http://nora:9100/app/v1/voice/utterance"
-    assert kwargs["headers"] == {"Authorization": f"Bearer {TOKEN}"}
+    assert url == "http://nora:9100/v1/intake/operations"
+    assert kwargs["headers"]["Authorization"] == f"Bearer {TOKEN}"
 
 
 async def test_slow_drip_cannot_extend_a_frame_deadline():

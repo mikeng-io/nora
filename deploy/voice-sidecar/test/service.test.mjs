@@ -146,14 +146,13 @@ test('configured guild admission refuses an unconfigured bot member before dispa
     async () => { checks++; return { ok: member, body: { cancel: async () => {} } }; });
   let dispatched = 0;
   const front = createFrontDoor({ authToken: TOKEN, authorizeGuild, health: () => ({}),
-    controllerFor: () => { dispatched++; return { handleParsedPost: res => {
-      res.writeHead(200); res.end('{}');
-    } }; },
+    controllerFor: () => { dispatched++; return { execute: async () => ({ outcome: 'complete', state: null }) }; },
   });
   await new Promise(r => front.listen(0, '127.0.0.1', r));
-  const post = guild_id => fetch(`http://127.0.0.1:${front.address().port}/voice/join`, {
+  let n = 0;
+  const post = guild_id => fetch(`http://127.0.0.1:${front.address().port}/v1/voice/operations`, {
     method: 'POST', headers: { ...AUTH, 'content-type': 'application/json' },
-    body: JSON.stringify({ guild_id }),
+    body: JSON.stringify({ operation_id: `op-${n++}`, kind: 'join', effect: { guild_id, channel_id: 'c1' } }),
   });
   try {
     const unconfigured = '200000000000000203';

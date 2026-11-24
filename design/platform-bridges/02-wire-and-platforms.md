@@ -34,10 +34,10 @@ Shared client implements PlatformAdapter unchanged at its call surface; durable 
 
 | Route | Request / response |
 |---|---|
-| POST /v1/platform/operations | `operation_id`, typed durable owner (work/event-receipt/OTP-challenge/live-invocation) and generation for work-bound owners, closed `kind` (send/react/edit/typing), `effect` (platform-qualified target, text/decorations, quote/reaction reference, blob keys); an operation envelope |
-| GET /v1/platform/operations/{operation_id} | A read envelope: `ok` carrying the operation's own envelope, `nothing_found` when no record exists, `unavailable` when the ledger cannot be read |
-| POST /v1/platform/queries | closed `kind` (roster/members/channels/channel/member_presence/voice_presence/groups) and `params`; a read envelope with the bridge's observation time |
-| GET /v1/platform/accounts/{account_id} | `self`: the real identity and aliases, `unavailable` until the platform login lands; any other id `nothing_found` |
+| POST /v1/platform/operations | A closed kind and its effect, identified by `operation_id`. Delivery (send/react/edit/typing) requires a typed durable owner (work/event-receipt/OTP-challenge/live-invocation), with a generation for work-bound owners. Music commands address a room and return a room-scoped envelope. Bridges without music return `unsupported`. |
+| GET /v1/platform/operations/{operation_id} | A read envelope carrying the recorded operation's own envelope. The bridge checks its in-memory music receipts before the durable delivery store. An absent record is `nothing_found` and an unreadable store is `unavailable`. |
+| POST /v1/platform/queries | A closed kind (roster/members/channels/channel/member_presence/voice_presence/groups/music_status) and its params. Music status addresses a room. The read envelope includes the bridge's observation time. |
+| GET /v1/platform/accounts/{account_id} | `self` declares the bridge's identity, aliases and capabilities. It is `unavailable` until the platform login lands. Any other id is `nothing_found`. |
 | PUT /v1/platform/blobs/{key} | Bounded bytes; a settled operation envelope: `complete` for new or identical bytes, `rejected` for other bytes under the key or bytes over the bound |
 | GET /v1/platform/blobs/{key} | Authenticated bounded bytes, or a read envelope `nothing_found`; never arbitrary filesystem or URL access |
 | GET /v1/operations/status | The bridge's own detail: whether it can serve, and why not |

@@ -18,46 +18,82 @@ POST body — nothing is stored.
 
 ## Control plane (HTTP)
 
-Every POST answers `{ ok, request_id, state }` or
-`{ error, request_id, state }`; `state` is the pinned snapshot
-`{voice, generation, channel_id, playback_id, player, speech_queue,
-crossfade_seconds}`. All state-changing commands except `/voice/join` are
-generation-scoped (stale generation → `409 generation_conflict`); any body
-`guild_id` ≠ the configured guild → `400 wrong_guild` (single-guild
-hard-bound). `request_id` is deduped for 5 minutes, in a bounded map
-(256 entries / 512 KiB, in-flight entries never evicted; a full map of
-in-flight requests answers `503 dedupe_full`). A `request_id` is 1–64 characters
-of `[A-Za-z0-9._:-]`, else `400 invalid_request_id`.
+The controller serves the `voice` contract (`design/service-api/contracts.md`
+«Voice», the routes in `docs/service-api/openapi.json`):
+
+| route | semantics |
+|---|---|
+| `POST /v1/voice/operations` | a connection operation: `{operation_id, kind, effect}` |
+| `GET /v1/voice/operations/{operation_id}` | an operation read back: `ok` with its envelope, `nothing_found` for an id the ledger does not hold |
+| `POST /v1/voice/queries` | `{kind: "status", params: {guild_id}}`: `ok` with the snapshot plus `last_event_seq`, `outbox_dropped`, `streaming`, `last_error`, `state_write_ok`, `wake`, `pump`; `nothing_found` for a guild id with no connection, well-formed or not; 400 for a missing one |
+| `GET /health` | process liveness (see below) |
+| `GET /ready` | 200 once a bot token is set and boot's scan of the stored state has finished, else 503; a restored connection may still be rejoining Discord |
+
+| kind | effect | semantics |
+|---|---|---|
+| `join` | `{guild_id, channel_id}` | join (idempotent on the same channel; another channel is `rejected` `connected_elsewhere`) |
+| `leave` | `{guild_id, generation}` | stop music + speech + wake pump, destroy the connection, persist `idle` |
+| `play` | `+ stream_url`, optional `title`, `duration_seconds`, `resumable` | REPLACE the current music slot (ffmpeg pulls `stream_url`, an http(s) URL with no control characters, else `400`); `complete` names the `playback_id` it minted, and a start that fails at once is `unavailable` `stream_failed` |
+| `stop` | `{guild_id, generation}` | stop music only — stays connected, keeps the wake pump |
+| `pause` / `resume` | `{guild_id, generation}` | current-track state (`rejected` `pause_during_speech` while speech is active) |
+| `set_volume` | `+ percent` | 0–200 %, applied now and remembered for the next track |
+| `speak` | `+ audio_b64`, `media_type` | high-priority TTS; ≤1 active + ≤4 queued, ≤2 MB decoded |
+| `report` | — | `unsupported`: the controller sends reports, it takes none |
+
+Every answer on the three voice routes is an envelope of six parts (`outcome`,
+`payload`, `when`, `from`, `scope`, `trace`) with the HTTP status the
+outcome names. An operation's payload is `{state}`, the pinned snapshot
+`{voice, generation, channel_id, playback_id, player, autopaused,
+subscribers, playable, pending_reaps, speech_queue, crossfade_seconds}`,
+plus `error: {kind, message}` on a refusal. Every kind but `join` is
+generation-scoped: a stale generation is `rejected` `generation_conflict`
+with the current generation in `state`. An arbiter or lifecycle refusal and
+a guild with no connection (`unknown_guild`) are `rejected`; a guild outside
+admission is `denied`; a full speech queue, a failed join and a full ledger
+are `unavailable`; a handler that fails unexpectedly is `uncertain`. A
+malformed request (a `guild_id` that is not a snowflake, a bad effect, an
+`operation_id` outside 1–64 characters of `[A-Za-z0-9._:-]`, invalid JSON)
+is `400` and an unknown kind `422`, each with no envelope; `resumable: null`
+is read as absent.
+
+The process keeps one operation ledger, keyed by `operation_id`. It holds a
+hash of the kind and effect and the answered envelope, never audio, and every
+receipt stays for its full 5 minutes: nothing unexpired is evicted. Entries
+are counted at their actual size. A new `operation_id` is `unavailable`
+before it runs once 256 entries (in flight and settled together) or 512 KiB
+are held, and that refusal removes nothing. An admitted operation's answer is
+always kept, so one that ran always reads back, even when that takes the
+ledger past 512 KiB. The ceiling is 256 entries × the largest answer (about
+132 KiB: a snapshot echoing two control bodies' strings, the connection's
+`channel_id` and the current track), about 33 MiB. The same id with the same kind and effect is
+answered from it without running again (a concurrent duplicate awaits the
+first); the same id with another kind or effect is `409` with no envelope.
 
 **Every route requires `Authorization: Bearer $NORA_BRIDGE_TOKEN`**, the shared
 service bearer that nora and the bridges already hold. A missing or wrong
 bearer is `401 unauthorized` before the body is read. The process refuses to
-start without the token. A body over the limit is `413` and a body still
-arriving after 15 s is `408`; both close the connection without reading the
-rest. The listener accepts at most 64 connections.
-
-| route | semantics |
-|---|---|
-| `POST /voice/join` | join (idempotent on the same channel; `409 connected_elsewhere`) |
-| `POST /voice/exit` | stop music + speech + wake pump, destroy the connection, persist `idle` |
-| `POST /music/play` | REPLACE the current music slot (ffmpeg pulls `stream_url`); mints a `playback_id` |
-| `POST /music/stop` | stop music only — stays connected, keeps the wake pump |
-| `POST /music/pause` / `resume` | current-track state (`409 pause_during_speech` while speech is active) |
-| `POST /music/volume` | 0–200 %, applied now and remembered for the next track |
-| `POST /stream` | high-priority TTS (replaces the old `/play`); ≤1 active + ≤4 queued, ≤2 MB decoded |
-| `GET /voice/status` | snapshot + `last_event_seq`, `outbox_dropped`, `streaming`, `last_error`, `wake`, `pump` |
-| `GET /health` | process liveness (see below) |
+start without the token. A query body over 64 KiB, and an operation body over
+the 4 MiB speech cap, is `413` the moment it crosses the limit and closes
+unread; a body still arriving after 15 s is `408`. Once parsed, every
+operation but `speak` keeps the 64 KiB control bound: over it is `413`
+before any effect runs. The listener accepts at most 64
+connections.
 
 Events (`track-finished`, `stream-failed`, `speech-finished`,
-`voice-death`, `channel-emptied`) are POSTed to `NORA_EVENT_URL` with
-`event_id` + strictly increasing `event_seq`; failed deliveries are kept
-in a bounded outbox (≤256, oldest dropped + counted) and retried with
-exponential backoff until 2xx.
+`voice-death`, `channel-emptied`) carry `event_id` + strictly increasing
+`event_seq` and are sent to the hub's `/v1/voice/operations` at
+`NORA_EVENT_URL` as `{operation_id, kind: "report", effect: <event>}`,
+with a new `operation_id` for every attempt and no redirect followed. A
+report is retried with exponential backoff after `unavailable`, a transport
+failure, a timeout, a 3xx, a 401, a 404, or an answer whose status and
+outcome disagree or that is no envelope; any other settled outcome, and a
+400, 409 or 422, ends that event's delivery. Undelivered events wait in a
+bounded outbox (≤256, oldest dropped + counted), in order.
 
 Speech preempts music with a hard cut (no ducking): the music ffmpeg is
 killed, the slot remembered as suspended, and the track revives at the
 cut position when speech drains (ffmpeg `-ss`; `position_policy` is
-`approximate_seek` — the consumed-frames count, not sample-exact). Durable desired-state (`STATE_DIR`, one `<guild_id>.json` per guild): `/voice/exit` writes
+`approximate_seek` — the consumed-frames count, not sample-exact). Durable desired-state (`STATE_DIR`, one `<guild_id>.json` per guild): `leave` writes
 `idle`, a successful join writes `connected`; boot joins only when the
 file says `connected`. There is no env fallback channel: a process serving several guilds has no single one to return to, so it boots idle until a join.
 
@@ -66,14 +102,16 @@ file says `connected`. There is no env fallback channel: a process serving sever
 - `src/service.mjs` — **production entry** (the container's ENTRYPOINT).
   Thin: env reading, real seams (discord.js join, AudioPlayer, ffmpeg
   spawn, fetch, timers), boot decision, wiring.
-- `src/controller.mjs` — HTTP routes, response shapes, request dedupe,
-  `createCore` (wires the seams).
+- `src/controller.mjs` — the front door's route table, the per-guild
+  controller's operations, `createCore` (wires the seams).
+- `src/contract.mjs` — the envelope writer and the kernel's status table.
+- `src/ledger.mjs` — the process's bounded operation ledger.
 - `src/lifecycle.mjs` — serialized connection lifecycle + generation
   tokens + desired-state + voice-death / channel-emptied observation.
 - `src/arbiter.mjs` — music/speech arbitration state machine, ffmpeg
   ownership (spawn → SIGTERM → SIGKILL escalation, 30 s stall watch),
   bounded speech queue.
-- `src/outbox.mjs` — event queue with backoff retry.
+- `src/outbox.mjs` — event queue, delivered as `report` operations with backoff retry.
 - `src/state_store.mjs` — atomic desired-state file.
 - `src/recv.js` — `join(guildId, channelId, token)` → PCM event bus;
   `createPump()` → `pump(pcm, userId)` TCP forwarder with a per-user
@@ -94,12 +132,12 @@ file says `connected`. There is no env fallback channel: a process serving sever
 | var | default | meaning |
 |---|---|---|
 | `DISCORD_BOT_TOKEN` | — | bot token; from the operator's `.env`, never committed |
-| ~~`GUILD_ID`~~ / ~~`CHANNEL_ID`~~ | — | **GONE 2026-09-17.** The process has no guild identity: a connection is created on `POST /voice/join` and restored at boot from `STATE_DIR`. Setting these is a silent no-op. Which guilds exist is nora's `[speech.tts] sidecars`. |
+| ~~`GUILD_ID`~~ / ~~`CHANNEL_ID`~~ | — | **GONE 2026-09-17.** The process has no guild identity: a connection is created by a `join` operation and restored at boot from `STATE_DIR`. Setting these is a silent no-op. Which guilds exist is nora's `[speech.tts] sidecars`. |
 | `PUMP_HOST` | `127.0.0.1` | where the wake gate (stage 3) will listen |
 | `PUMP_PORT` | `4599` | wake-gate seam port (frame format: `TRANSPORT.md`) |
 | `HOST` | `127.0.0.1` | HTTP bind |
 | `PORT` | `4600` | HTTP port |
-| `NORA_EVENT_URL` | `http://discord-bridge:18093/v1/voice/event` | where controller events are POSTed — in bridge mode the bridge owns the `VoiceEventConsumer`; bearer-authed like every `/v1` route there |
+| `NORA_EVENT_URL` | `http://discord-bridge:18093/v1/voice/operations` | the hub's `report` route — in bridge mode the bridge holds the hub; bearer-authed like every `/v1` route there |
 | `STATE_DIR` | `/var/lib/audio-controller` | durable desired-state DIRECTORY, one `<guild_id>.json` per guild (atomic writes). A file whose name is not a guild snowflake is skipped at boot. |
 
 The token is read from the environment only — it is never logged, never
