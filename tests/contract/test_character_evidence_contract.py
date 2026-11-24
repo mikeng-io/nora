@@ -148,8 +148,9 @@ async def test_lessons_reads_every_closed_episode(episodes):
     if isinstance(store, SqlCharacterEvidence):
         assert [r.body for r in got[0].replies] == ["yes"]
         assert got[1].replies == ()
-    newest, _ = await store.episodes(unit="friends", after=ids["ask"], limit=2)
+    newest, cursor = await store.episodes(unit="friends", after=0, limit=2)
     assert [e.send_id for e in newest] == [ids["fonly"], ids["fmix"]]
+    assert await store.episodes(unit="friends", after=cursor, limit=2) == ([], cursor)
 
 
 @pytest.fixture(params=["memory", "sql"])
