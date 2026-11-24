@@ -37,7 +37,7 @@ never a pass.
   returns its result to the step.
 - A call still running when its window ends is **handed over**: it keeps
   running as [delegated work](acts.md#delegated-work), gives up any slot of
-  the engagement reserve, and the step receives **queued** with the work's
+  the engagement reserve, and the step receives **started** with the work's
   identity in place of a result. The pass continues and ends as usual,
   holding the room's slot no longer than its own steps.
 - A step continues once each of its calls has settled or been handed over.
@@ -59,7 +59,7 @@ in advance per tool, because a tool's duration varies with its input. Waiting
 for a background call to rejoin the same pass was rejected: it keeps the
 slot held for the whole run and needs a second, interim kind of reply. A
 separate timeout result was rejected too: work still running at the window is
-queued, and work stopped at a bound is unavailable with its reason, or
+started, and work stopped at a bound is unavailable with its reason, or
 uncertain when an effect may have happened ([acts](acts.md)).
 
 ## Waking
