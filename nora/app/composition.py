@@ -1313,6 +1313,8 @@ async def _compose_dependencies(
         metrics=metrics,
     )
     computer_sweeper = _computer_sweeper.computer_sweeper
+    # ponytail: The Profile read switch bounds portal disclosure until 6e owns activation.
+    profile_read = cfg.memory.profile.read
     return Dependencies(
         config_reload=reload_files, discord_control=discord_control,
         audit=audit,
@@ -1327,9 +1329,11 @@ async def _compose_dependencies(
         engagement=engagement,
         resolve_voice_room=_voice_room_of(allowlist),
         workspaces_of=functools.partial(workspaces_of_person, allowlist),
-        profile_portal=_memory_wire.subject_claims(engine).read,
+        profile_portal=_memory_wire.subject_claims(engine).read if profile_read else None,
         profile_screen=cognition_context_screen,
-        profile_scopes_of=functools.partial(profile_scopes_of_person, allowlist),
+        profile_scopes_of=(
+            functools.partial(profile_scopes_of_person, allowlist) if profile_read else None
+        ),
         index_state=memory_index_reader.index_state,
         documents=documents_store,
         document_service=document_service,

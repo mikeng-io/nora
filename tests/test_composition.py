@@ -131,6 +131,16 @@ async def test_build_dependencies_returns_the_wired_graph(cfg, tmp_path):
     assert deps.dispatcher is not None
 
 
+@pytest.mark.parametrize("read", [False, True])
+async def test_profile_portal_wiring_requires_the_read_flag(cfg, read):
+    deps = await build_dependencies(override_config(cfg, {
+        "memory.profile.write": True,
+        "memory.profile.read": read,
+    }))
+    assert callable(deps.profile_portal) is read
+    assert callable(deps.profile_scopes_of) is read
+
+
 async def test_the_trigger_phrase_engages_by_default(cfg):
     """`[engagement.trigger].enabled` defaults to True: the trigger phrase engages her on
     every deployment, so the wired `CompositePolicy` must include `TriggerTextPolicy` when

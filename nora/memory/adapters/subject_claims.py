@@ -32,6 +32,7 @@ class SqlSubjectClaims:
                 _is_dm_origin().label("dm_origin"),
             ).where(
                 CLAIM.c.unit == unit, sa.any_(CLAIM.c.persons) == viewer,
+                CLAIM.c.exposure == "external",  # design/cognition/boundaries.md:36-37
                 CLAIM.c.state != "superseded", visible_to_reads(CLAIM),
             ).order_by(CLAIM.c.asserted_at, CLAIM.c.id))).mappings().all()
             if not claims:
@@ -117,7 +118,8 @@ def _citations(
         msg.unit == unit, msg.graph_id.in_(sa.select(cites.c.target)),
         # design/cognition/boundaries.md:38-43 reserves raw evidence for its room.
         sa.tuple_(msg.platform, msg.conversation_id).in_(sorted(viewer_rooms)),
-        msg.exposure == "external", viewer != sa.all_(msg.excluded_persons),
+        msg.exposure == "external",
+        viewer != sa.all_(msg.excluded_persons),
         visible_to_reads(MESSAGES),
         ~sa.exists(sa.select(MESSAGE_DELETE.c.id).where(MESSAGE_DELETE.c.message_id == msg.id)),
     ).subquery()

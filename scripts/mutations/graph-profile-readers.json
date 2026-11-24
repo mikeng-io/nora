@@ -1,8 +1,57 @@
 [
   {
+    "name": "portal wiring requires the existing Profile read flag",
+    "file": "nora/app/composition.py",
+    "old": "profile_read = cfg.memory.profile.read",
+    "new": "profile_read = True",
+    "target": "tests/test_composition.py::test_profile_portal_wiring_requires_the_read_flag"
+  },
+  {
+    "name": "portal claims stay within the requested unit",
+    "file": "nora/memory/adapters/subject_claims.py",
+    "old": "CLAIM.c.unit == unit, sa.any_(CLAIM.c.persons) == viewer,",
+    "new": "sa.any_(CLAIM.c.persons) == viewer,",
+    "target": "tests/infra/test_retrieval_scope.py::test_portal_keeps_the_own_claim_but_never_shows_dm_evidence_to_a_nonmember"
+  },
+  {
+    "name": "portal claims require external exposure",
+    "file": "nora/memory/adapters/subject_claims.py",
+    "old": "CLAIM.c.exposure == \"external\",  # design/cognition/boundaries.md:36-37",
+    "new": "sa.true(),",
+    "target": "tests/infra/test_retrieval_scope.py::test_portal_subject_page_withholds_internal_and_operator_claims"
+  },
+  {
     "name": "portal evidence bodies require the viewer's exact current room",
     "file": "nora/memory/adapters/subject_claims.py",
     "old": "sa.tuple_(msg.platform, msg.conversation_id).in_(sorted(viewer_rooms)),",
+    "new": "sa.true(),",
+    "target": "tests/infra/test_retrieval_scope.py::test_portal_keeps_the_own_claim_but_never_shows_dm_evidence_to_a_nonmember"
+  },
+  {
+    "name": "portal evidence bodies require external exposure",
+    "file": "nora/memory/adapters/subject_claims.py",
+    "old": "msg.exposure == \"external\",",
+    "new": "sa.true(),",
+    "target": "tests/infra/test_retrieval_scope.py::test_portal_keeps_the_own_claim_but_never_shows_dm_evidence_to_a_nonmember"
+  },
+  {
+    "name": "portal evidence bodies respect source exclusions",
+    "file": "nora/memory/adapters/subject_claims.py",
+    "old": "viewer != sa.all_(msg.excluded_persons),",
+    "new": "sa.true(),",
+    "target": "tests/infra/test_retrieval_scope.py::test_portal_keeps_the_own_claim_but_never_shows_dm_evidence_to_a_nonmember"
+  },
+  {
+    "name": "portal evidence bodies require graph visibility",
+    "file": "nora/memory/adapters/subject_claims.py",
+    "old": "visible_to_reads(MESSAGES),",
+    "new": "sa.true(),",
+    "target": "tests/infra/test_retrieval_scope.py::test_portal_keeps_the_own_claim_but_never_shows_dm_evidence_to_a_nonmember"
+  },
+  {
+    "name": "portal evidence bodies are withheld after source deletion",
+    "file": "nora/memory/adapters/subject_claims.py",
+    "old": "~sa.exists(sa.select(MESSAGE_DELETE.c.id).where(MESSAGE_DELETE.c.message_id == msg.id)),",
     "new": "sa.true(),",
     "target": "tests/infra/test_retrieval_scope.py::test_portal_keeps_the_own_claim_but_never_shows_dm_evidence_to_a_nonmember"
   },
