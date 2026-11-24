@@ -13,10 +13,11 @@
 // life of the process; the status query exposes it as last_event_seq.
 
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
-import {
-  ENVELOPE_PARTS, OPERATION_OUTCOMES, OPERATION_STATES, REPORT_STATUSES, SCOPE_LEVELS, STATUS,
-} from './contract.mjs';
+import Ajv2020 from 'ajv/dist/2020.js';
+
+import { STATUS } from './contract.mjs';
 
 export const realClock = {
   now: () => Date.now(),
@@ -24,38 +25,13 @@ export const realClock = {
   clearTimeout: (t) => clearTimeout(t),
 };
 
-const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-const isInt = (v) => Number.isInteger(v);
-const nullOr = (check) => (v) => v === null || check(v);
-const isString = (v) => typeof v === 'string';
-
-// A part holds exactly its declared fields, the required ones present, each
-// of its type (the contract's OperationWhen, OperationFrom and Scope).
-function exactly(value, required, optional = {}) {
-  if (!isObject(value)) return false;
-  const fields = { ...required, ...optional };
-  return Object.keys(value).every((key) => Object.hasOwn(fields, key))
-    && Object.keys(required).every((key) => Object.hasOwn(value, key))
-    && Object.entries(value).every(([key, v]) => fields[key](v));
-}
-
-// The hub's acknowledgement as the contract's OperationEnvelope: the six parts
-// and nothing more, each part exactly its fields.
-export function isAcknowledgement(envelope) {
-  return isObject(envelope)
-    && Object.keys(envelope).length === ENVELOPE_PARTS.length
-    && ENVELOPE_PARTS.every((part) => Object.hasOwn(envelope, part))
-    && OPERATION_OUTCOMES.includes(envelope.outcome)
-    && exactly(envelope.when, { state: (v) => OPERATION_STATES.includes(v) },
-      { started_at_ms: nullOr(isInt), settled_at_ms: nullOr(isInt) })
-    && exactly(envelope.from, { target: isString }, { platform_ref: nullOr(isString) })
-    && exactly(envelope.scope, { level: (v) => SCOPE_LEVELS.includes(v) }, { id: nullOr(isString) })
-    && isString(envelope.trace);
-}
-
-// A `complete` report's payload: the contract's VoiceReportPayload, exactly.
-const isReportStatus = (payload) => isObject(payload)
-  && Object.keys(payload).length === 1 && REPORT_STATUSES.includes(payload.status);
+// The hub's answer to a report, as the contract's VoiceReportEnvelope:
+// src/report_schema.json is generated from docs/service-api/openapi.json
+// (scripts/report_schema.mjs) and checked against it by a test.
+const REPORT_SCHEMA = JSON.parse(readFileSync(new URL('./report_schema.json', import.meta.url), 'utf8'));
+const ajv = new Ajv2020({ strict: false });
+ajv.addSchema({ $id: 'report', ...REPORT_SCHEMA });
+export const isReportAnswer = ajv.getSchema('report#/components/schemas/VoiceReportEnvelope');
 
 export function createOutbox({
   url,
@@ -92,12 +68,12 @@ export function createOutbox({
     return event;
   }
 
-  // What the hub's answer means for this event: 'taken' (a settled operation
-  // envelope with any outcome but `unavailable`), 'refused' (400, 409, 422:
-  // retrying cannot help) or 'retry' (everything else: `unavailable`, 3xx,
-  // 401, 404, a status that disagrees with its outcome, a read's outcome, a
-  // record not yet settled, a `complete` without the hub's report status, or
-  // anything that is not exactly an envelope).
+  // What the hub's answer means for this event: 'taken' (a settled answer
+  // that says whether it applied the event: any outcome but `unavailable`,
+  // `pending` and `uncertain`), 'refused' (400, 409, 422: retrying cannot
+  // help) or 'retry' (everything else: 3xx, 401, 404, a status that disagrees
+  // with its outcome, or anything the contract's report answer schema does not
+  // accept).
   async function verdict(res) {
     const status = res?.status;
     if (status === 400 || status === 409 || status === 422) return 'refused';
@@ -107,11 +83,15 @@ export function createOutbox({
     } catch {
       return 'retry';
     }
-    if (!isAcknowledgement(envelope)) return 'retry';
-    const { outcome, when, payload } = envelope;
-    if (!OPERATION_OUTCOMES.includes(outcome) || STATUS[outcome] !== status) return 'retry';
+    if (!isReportAnswer(envelope)) return 'retry';
+    // What the schema cannot say: the status agrees with the outcome, and a
+    // taken answer is settled.
+    const { outcome, when } = envelope;
+    if (STATUS[outcome] !== status) return 'retry';
     if (outcome === 'unavailable' || outcome === 'pending' || when.state !== 'settled') return 'retry';
-    if (outcome === 'complete' && !isReportStatus(payload)) return 'retry';
+    // `uncertain`: the hub cannot say whether the event applied. Resending it
+    // under a new operation_id is safe, because the hub dedupes by event_id.
+    if (outcome === 'uncertain') return 'retry';
     return 'taken';
   }
 

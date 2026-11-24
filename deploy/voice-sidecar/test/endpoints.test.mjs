@@ -397,6 +397,36 @@ test('replace-play: old playback emits no track-finished, new playback_id is min
   await h.close();
 });
 
+test('a play is refused a stream_url ffmpeg could not take, and never completes without its playback', async () => {
+  const h = await makeHarness();
+  const { generation } = await h.join();
+  for (const url of ['https://cdn.test/a\u0000b', 'https://cdn.test/a\nb', 'file:///etc/passwd', 'ftp://cdn.test/a', 'not a url',
+    ' https://cdn.test/a', 'https://cdn.test/a ', 'https://cdn.test/a b', 'https://cdn.test/a\tb', 'https://cdn.test/a\u00a0b',
+    'https://cdn.test/a\u0085b', 'https://[::1/a', 'https://cdn.test:abc/a', 'https://user@/a', 'https:cdn.test',
+    'https:/cdn.test', 'https://cdn.test:99999/a']) {
+    const res = await h.op('play', { guild_id: GUILD, generation, stream_url: url }, { operationId: 'op-bad-url' });
+    assert.equal(res.status, 400, JSON.stringify(url));
+    assert.deepEqual(res.body, { error: 'invalid_body' }, JSON.stringify(url));
+  }
+  assert.equal(h.procs.length, 0, 'nothing spawned');
+  // A media URL of the shape the music producer emits still plays.
+  const media = 'https://rr5---sn-abc123.googlevideo.com/videoplayback?expire=1732480000&ei=abc_DEF-ghi'
+    + '&itag=251&source=youtube&mime=audio%2Fwebm&dur=210.001&sparams=expire%2Cei&sig=AJfQdSs-x_y%3D';
+  assert.equal((await h.op('play', { guild_id: GUILD, generation, stream_url: media })).outcome, 'complete');
+  await h.close();
+
+  // A start that fails at once, for any reason, is an error outcome.
+  const failing = await makeHarness({ spawnError: new Error('spawn failed') });
+  const gen = (await failing.join()).generation;
+  const res = await failing.op('play', { guild_id: GUILD, generation: gen, stream_url: 'https://cdn.test/a' });
+  assert.notEqual(res.outcome, 'complete');
+  assert.equal(res.outcome, 'unavailable');
+  assert.deepEqual(res.body.payload.error, { kind: 'stream_failed', message: 'stream_failed' });
+  assert.equal(res.state.playback_id, null);
+  assert.ok(await until(() => failing.delivered.some((e) => e.type === 'stream-failed')), 'the failure is still reported');
+  await failing.close();
+});
+
 test('a play with a long stream_url and title, under the control bound, completes and echoes both', async () => {
   const h = await makeHarness();
   const { generation } = await h.join();

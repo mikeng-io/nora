@@ -31,6 +31,9 @@ The wire (`docs/service-api/openapi.json`, «Outcomes on the controller»):
   boolean or absent (null reads as absent);
 - every generation-scoped kind is `rejected` `generation_conflict` on a stale
   generation, with the current one in the payload's `state`;
+- `play`'s `stream_url` is `http://` or `https://` with a non-empty host and,
+  if any, a numeric port in range, with no whitespace anywhere and no control
+  character, else 400 `invalid_body` before anything is applied;
 - `play` REPLACES the music slot (a fresh `playback_id` each time); `stop`
   STAYS connected and is `complete` when idle; `pause`/`resume` during speech
   are `rejected` `pause_during_speech`; `set_volume` outside 0-200 is 400;
@@ -60,6 +63,7 @@ import re
 import time
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlsplit
 
 from aiohttp import web
 
@@ -89,6 +93,28 @@ def _respond(answered: dict[str, Any] | str) -> web.Response:
     if isinstance(answered, str):
         return web.json_response({"error": answered}, status=400)
     return web.json_response(answered, status=status_for(answered["outcome"]))
+
+
+# The controller's rule: whitespace (JavaScript's `\s`, which adds U+FEFF to
+# Python's) or a C0 or C1 control character anywhere refuses the URL.
+_UNSAFE_URL_CHARS = re.compile(r"[\s\x00-\x1f\x7f-\x9f\ufeff]")
+
+
+_AUTHORITY_FORM = re.compile(r"https?://", re.IGNORECASE)
+
+
+def _is_stream_url(value: object) -> bool:
+    """The controller's rule: `http://` or `https://`, a non-empty host, a
+    numeric port in range if any, no whitespace or control character."""
+    if (not isinstance(value, str) or _UNSAFE_URL_CHARS.search(value)
+            or not _AUTHORITY_FORM.match(value)):
+        return False
+    try:
+        parts = urlsplit(value)
+        parts.port  # noqa: B018 - raises on a non-numeric or out-of-range port
+    except ValueError:  # a malformed IPv6 literal, or the port above
+        return False
+    return bool(parts.hostname)
 
 
 class _BadRequestError(Exception):
@@ -366,8 +392,7 @@ class FakeVoiceController:
         return self._answer("complete")
 
     async def _play(self, effect: dict[str, Any]) -> tuple[OperationOutcome, dict[str, Any]]:
-        stream_url = effect.get("stream_url")
-        if not isinstance(stream_url, str) or not stream_url:
+        if not _is_stream_url(effect.get("stream_url")):
             raise _BadRequestError("invalid_body")
         if effect.get("resumable") is not None and not isinstance(effect["resumable"], bool):
             raise _BadRequestError("invalid_body")

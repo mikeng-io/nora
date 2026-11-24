@@ -28,8 +28,17 @@ export const EVENT_URL = 'http://nora.test/v1/voice/operations';
 
 // The hub's answer to a `report`: an envelope with `outcome`, at the
 // kernel's status for it unless `status` overrides it.
+// The payload the contract gives each outcome of a report's answer.
+function defaultHubPayload(outcome) {
+  if (outcome === 'complete') return { status: 'ok' };
+  if (['rejected', 'unsupported', 'denied', 'incomplete', 'uncertain'].includes(outcome)) {
+    return { state: null, error: { kind: outcome, message: outcome } };
+  }
+  return {};
+}
+
 export function hubAnswer(outcome, {
-  status = STATUS[outcome], payload = outcome === 'complete' ? { status: 'ok' } : {},
+  status = STATUS[outcome], payload = defaultHubPayload(outcome),
 } = {}) {
   const envelope = {
     outcome,
@@ -184,8 +193,11 @@ export function createFakeResource(stream) {
 export const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 // Poll a condition across ticks (loopback HTTP + real fs need more than one).
-export async function until(cond, tries = 200) {
-  for (let i = 0; i < tries; i += 1) {
+// Waits at least `tries` ticks and at least `minMs` of wall time: a real file
+// write under a loaded host can outlast any tick count.
+export async function until(cond, tries = 200, minMs = 2000) {
+  const started = Date.now();
+  for (let i = 0; i < tries || Date.now() - started < minMs; i += 1) {
     if (cond()) return true;
     await tick();
   }
@@ -201,6 +213,7 @@ export async function makeHarness(options = {}) {
 
   const procs = [];
   const spawn = (args) => {
+    if (options.spawnError) throw options.spawnError;
     const p = createFakeProc();
     p.args = args;
     procs.push(p);
