@@ -1975,8 +1975,6 @@ async def test_a_post_published_during_custody_remains_fresh_news(world):
         async def fetch(self, *, ref):
             nonlocal published
             if published is None:
-                # Span whole source seconds on both sides of publication so
-                # a completion timestamp cannot stand in for a pre-fetch one.
                 await asyncio.sleep(1.05)
                 async with world.engine.connect() as conn:
                     published = (await conn.execute(
@@ -1992,8 +1990,7 @@ async def test_a_post_published_during_custody_remains_fresh_news(world):
                 await asyncio.sleep(1.05)
             return await original_media.fetch(ref=ref)
 
-    world.media = PublishDuringCustody()
-    world.media.blobs = original_media.blobs
+    world.media = PublishDuringCustody(blobs=original_media.blobs)
     await world.poller(backfill_max_items=5).tick()
     assert published is not None
     assert "during-custody" not in await world.items(), "the fetched page predates publication"
@@ -2008,7 +2005,10 @@ async def test_a_post_published_during_custody_remains_fresh_news(world):
     assert "during-custody" not in await world.items()
     world.clock.at(hours=6.1)
     await full.tick()
-    assert await world.store.polled_count(persons=["ada"], after_us=0) == 1
+    async with world.engine.connect() as conn:
+        origin = await conn.scalar(sa.select(SOCIAL_ITEM.c.origin).where(
+            SOCIAL_ITEM.c.item_id == "during-custody"))
+    assert origin == "poll"
 
 
 async def test_full_history_requires_a_grounded_first_page_boundary(world):

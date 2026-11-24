@@ -293,10 +293,7 @@ async def test_culture_is_the_account_current_at_the_instant(
     engine: Any
 ) -> None:
     """Two accounts, and the moment between them gets the first. Read by
-    `written_at` rather than by walking back from `culture.head_revision_id`:
-    the head is TODAY's, and walking from it lands on the right row only when
-    the chain happens to be ordered by time, which `SqlCultureStore.chain`'s own
-    docstring says must not be assumed."""
+    `written_at` because revision parents reflect append order."""
     await _culture(engine, "they talk in fragments", at=T0)
     await _culture(engine, "they talk in fragments, and in Cantonese",
                    at=T0 + 5 * MINUTE)

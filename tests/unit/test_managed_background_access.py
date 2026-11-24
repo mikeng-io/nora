@@ -1,6 +1,5 @@
 """Background tool construction reads the selected identity scope and fails closed."""
 
-from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -8,7 +7,6 @@ import pytest
 from nora.agent.dreamer import AdaptorGrant
 from nora.agent.room import Room
 from nora.app.composition_dream import _dream_tool_source
-from nora.domain.social_stream import PersonSocialItem, RecordedCounts
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.testing import FakeRosterSource
@@ -59,35 +57,6 @@ async def test_a_room_without_identity_wiring_returns_unavailable():
     result = await room.members()
     assert not result.available
     assert result.people == ()
-
-
-_NOW = datetime.fromtimestamp((1_760_000_000_000 + 3_600_000) / 1000, tz=UTC)
-
-
-class _SocialFake:
-    def __init__(self, items: list[PersonSocialItem], *, polled: int = 0) -> None:
-        self._items = items
-        self._polled = polled
-        self.counts_asked: list[tuple[str, str]] = []
-
-    async def polled_count(self, *, persons, after_us) -> int:
-        return self._polled
-
-    async def now(self) -> datetime:
-        return _NOW
-
-    async def person_items(self, *, persons, after_us, limit):
-        return [i for i in self._items if i.recorded_us > after_us][:limit]
-
-    async def current_counts(self, *, items):
-        self.counts_asked = list(items)
-        return {
-            item: RecordedCounts(likes=12, comments=3, reposts=None,
-                                 likes_hidden=False, read_at=_NOW)
-            for item in items
-        }
-
-
 
 
 async def _background_identity_case():

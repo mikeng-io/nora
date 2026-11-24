@@ -445,13 +445,8 @@ async def _culture(
 ) -> CultureRevision | None:
     """The account current at `before_ms`, or `None` if none had been written.
 
-    **Read by `written_at`, NOT by walking back from `culture.head_revision_id`.**
-    `SqlCultureStore.head`/`chain` walk the parent links, and they are right to:
-    a chain read is asking what the sequence IS, and parent links are the
-    sequence. This is asking a different question — which account was current at
-    an instant — and the head is today's. Walking back from it would land on the
-    same row only when the chain happens to be ordered by time, which is exactly
-    what `chain`'s own docstring says must not be assumed.
+    Use `written_at` for the as-of read. Parent links reflect write order,
+    and a revision can be appended with an earlier timestamp.
 
     `written_at DESC, id DESC` matches `idx_culture_revision_key_written`, so
     the tie between two accounts sharing a millisecond breaks the same way on

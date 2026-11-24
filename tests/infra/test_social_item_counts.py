@@ -2,8 +2,8 @@
 design/cognition-loop/observation.md): `record_counts` appends a row
 only where one read's counts differ from the item's latest, never writes an
 unknown as 0, writes nothing for a read that carried nothing, and keeps
-`likes` NULL while the author hides them; `current_counts` and `items_of`
-read the latest row under the readable rule.
+`likes` NULL while the author hides them. `items_of` serves the latest
+counts for readable items.
 
 Database scoped to the MODULE and truncated between tests (docs/code-standards.md).
 """
@@ -126,8 +126,7 @@ async def test_a_count_that_falls_back_to_unknown_writes_no_row_on_its_own(engin
     await recorded(store, "1")
     await write(store, item("1", ItemCounts(31, 4, 2, False)))
     assert await write(store, item("1", ItemCounts(31, None, None, False))) == 0
-    (latest,) = (await store.current_counts(items=[(NET, "1")])).values()
-    assert (latest.likes, latest.comments, latest.reposts) == (31, 4, 2)
+    assert await count_rows(engine, "1") == [(31, 4, 2, False)]
 
 
 async def test_hidden_likes_are_null_and_the_switch_is_a_row(engine) -> None:
@@ -155,13 +154,16 @@ async def test_an_item_not_recorded_gets_no_row(engine) -> None:
     assert await count_rows(engine, "past-the-limit") == []
 
 
-async def test_current_counts_reads_the_latest_row_of_readable_items_only(engine) -> None:
+async def test_items_of_reads_the_latest_counts_of_readable_items_only(engine) -> None:
     """Gone or hidden, or of a person who opted out (under a retired id too),
     an item has no counts; one never counted has none either."""
     plain = SqlSocialStreamStore(engine)
     for item_id, person in (("1", "ada"), ("gone", "ada"), ("hidden", "ada"),
                             ("cy", "cy"), ("cy-old", "cy_old"), ("never", "ada")):
-        await recorded(plain, item_id, person)
+        await plain.insert_item(
+            dataclasses.replace(item(item_id), caption=item_id),
+            person=person, origin="poll", seen_at=T0,
+        )
     await write(plain, *(
         item(i, ItemCounts(3, 1)) for i in ("1", "gone", "hidden", "cy", "cy-old")
     ))
@@ -170,15 +172,17 @@ async def test_current_counts_reads_the_latest_row_of_readable_items_only(engine
     await plain.record_state(network=NET, item_id="hidden", state="hidden")
     readable = SqlSocialStreamStore(engine, opted_out=frozenset({"cy", "cy_old"}))
 
-    got = await readable.current_counts(
-        items=[(NET, i) for i in ("1", "gone", "hidden", "cy", "cy-old", "never")],
-    )
-    assert set(got) == {(NET, "1")}
-    assert (got[(NET, "1")].likes, got[(NET, "1")].comments) == (5, 1), "the latest row"
-    # Positive control: the same rows, read without the opt-out, are there.
-    assert set(await plain.current_counts(items=[(NET, "cy"), (NET, "cy-old")])) == {
-        (NET, "cy"), (NET, "cy-old"),
+    window = {"start": T0, "end": T0 + timedelta(days=1), "limit": 10}
+    got = {
+        row.caption: row.counts
+        for row in await readable.items_of(persons=["ada", "cy", "cy_old"], **window)
     }
+    assert set(got) == {"1", "never"}
+    assert got["never"] is None
+    latest = got["1"]
+    assert latest is not None and (latest.likes, latest.comments) == (5, 1)
+    before_opt_out = await plain.items_of(persons=["cy", "cy_old"], **window)
+    assert {row.caption for row in before_opt_out if row.counts is not None} == {"cy", "cy-old"}
 
 
 async def test_items_of_carries_each_items_latest_counts(engine) -> None:

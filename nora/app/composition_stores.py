@@ -16,11 +16,9 @@ from nora.config_reload import ReloadFiles
 from nora.doctrine.loader import DoctrineError, DoctrineStore
 from nora.domain.compute import ComputeJobStore
 from nora.domain.decision_log import DecisionLogRecorder
-from nora.domain.ports import CultureReader
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
-from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.decision_log import SqlDecisionLogStore
 from nora.infra.sql.item_registration import (
     RegistrationScope,
@@ -278,7 +276,6 @@ def instructions(cfg: Any, metrics: Any)-> InstructionsWiring:
 
 @dataclass(frozen=True)
 class ReadersWiring:
-    culture_reader: Any
     lessons_reader: Any
     profile_index: Any
     profile_reader: Any
@@ -287,7 +284,6 @@ class ReadersWiring:
 
 def readers(cfg: Any, content_checks: Any, engine: Any)-> ReadersWiring:
 
-    culture_reader: CultureReader | None = SqlCultureStore(engine) if cfg.culture.enabled else None
     # `<lessons>` on tag and fire turns: read-only,
     # bodies of active lessons. `None` while `[lessons] render` is off.
     lessons_reader: ActiveLessons | None = (
@@ -310,7 +306,6 @@ def readers(cfg: Any, content_checks: Any, engine: Any)-> ReadersWiring:
     # transaction (45 §1, 25 §7); off is the shadow, and the shadow's lines join at the…
     profile_index = cfg.memory.profile.write and cfg.memory.profile.read
     return ReadersWiring(
-        culture_reader=culture_reader,
         lessons_reader=lessons_reader,
         profile_index=profile_index,
         profile_reader=profile_reader,

@@ -28,6 +28,7 @@ from nora.infra.sql import create_sql_engine
 from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, ENTITY
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.culture import SqlCultureStore
+from nora.infra.sql.schema import CULTURE, CULTURE_REVISION
 from nora.subject import (
     Knowledge,
     Message,
@@ -260,11 +261,14 @@ async def test_only_the_listed_persons_accounts_of_this_unit_are_copied(
     await sandbox_from_snapshot(sandbox, source_url=source.url, before_ms=BEFORE_MS)
     engine = create_sql_engine(sandbox.database_url)
     try:
-        store = SqlCultureStore(engine)
-        miles = await store.head(key=character_key(UNIT, "miles_novak"))
-        assert miles is not None and miles.body == "Miles plans, then waits"
-        assert miles.written_at == BEFORE_MS - 2 * HOUR
-        assert await store.head(key=character_key(UNIT, "bo")) is None
-        assert await store.head(key=character_key("elsewhere", "miles_novak")) is None
+        wanted = character_key(UNIT, "miles_novak")
+        keys = (wanted, character_key(UNIT, "bo"), character_key("elsewhere", "miles_novak"))
+        async with engine.connect() as conn:
+            heads = (await conn.execute(
+                sa.select(CULTURE.c.key, CULTURE_REVISION.c.body, CULTURE_REVISION.c.written_at)
+                .join(CULTURE_REVISION, CULTURE.c.head_revision_id == CULTURE_REVISION.c.id)
+                .where(CULTURE.c.key.in_(keys))
+            )).all()
+        assert heads == [(wanted, "Miles plans, then waits", BEFORE_MS - 2 * HOUR)]
     finally:
         await engine.dispose()

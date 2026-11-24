@@ -20,8 +20,7 @@ read carries each item's likes, comments and reposts, and `record_counts`
 appends a row only for a recorded item whose counts differ from its latest
 row (`counts_changed`). A read that carries nothing writes nothing, and a
 count it does not carry is never compared, so a shape change upstream cannot
-write unknowns over real counts. `current_counts` is the latest row, read
-under the same rule as every other reader.
+write unknowns over real counts.
 
 **The dedupe is Postgres's.** `insert_item` is `ON CONFLICT (network, item_id)
 DO NOTHING` and answers whether the row was new, so two pollers recording the
@@ -77,14 +76,9 @@ from nora.domain.social_stream import (
     ItemState,
     Origin,
     PerceptionOutcome,
-    PersonSocialItem,
     PollStage,
-    Reading,
-    RecordedCounts,
     RecordedItem,
     cursor_is_bad,
-    from_us,
-    to_us,
 )
 from nora.infra.sql import memory_index
 from nora.infra.sql.blob_refs import held_elsewhere
@@ -273,25 +267,6 @@ class SqlSocialStreamStore(SocialItemWrites):
                 .where(i.c.network == network, i.c.item_id.in_(item_ids))
             )).all()
         return {r.item_id: r.place for r in rows}
-
-    async def current_counts(
-        self, *, items: Sequence[tuple[str, str]],
-    ) -> dict[tuple[str, str], RecordedCounts]:
-        """Each readable item among `items` (`(network, item_id)`) → its
-        latest counts. Readable is `_readable`'s: an item gone or hidden, or
-        of a person who opted out under any id, has none; nor has one never
-        counted."""
-        if not items:
-            return {}
-        i = SOCIAL_ITEM
-        async with self._engine.connect() as conn:
-            readable = (await conn.execute(
-                sa.select(i.c.network, i.c.item_id).where(
-                    *self._readable(),
-                    sa.tuple_(i.c.network, i.c.item_id).in_(sorted(set(items))),
-                ),
-            )).tuples().all()
-            return await latest_counts(conn, list(readable))
 
     async def read_marker(self, *, network: str, person: str) -> int | None:
         """The probe value that led to this person's last completed story read,
@@ -824,86 +799,6 @@ class SqlSocialStreamStore(SocialItemWrites):
                     readings[sha] for sha in _media(r.media_ref) if readings.get(sha)
                 ),
                 counts=counts.get((r.network, r.item_id)),
-            )
-            for r in rows
-        ]
-
-    # -- the reader: a person's Character session (§6) -------------------------
-    #
-    # Positioned by `recorded_at`, which follows commit order here: the poller
-    # is the one writer and records items one transaction at a time.
-    # ponytail: a second concurrent writer could commit an earlier
-    # `recorded_at` after a later one was read; a serial column if one appears.
-
-    async def polled_count(self, *, persons: Sequence[str], after_us: int) -> int:
-        """How many readable items of one person (recorded under any of
-        `persons`: their id and every retired one) a poll recorded after
-        `after_us` (microseconds since the epoch, `to_us`): their wake
-        pressure on Character. A back-filled item never counts: a back-fill
-        of 50 items is history, not 50 items of news (§6)."""
-        i = SOCIAL_ITEM
-        stmt = sa.select(sa.func.count()).select_from(i).where(
-            *self._readable(), i.c.person.in_(list(persons)), i.c.origin == "poll",
-            i.c.recorded_at > from_us(after_us),
-        )
-        async with self._engine.connect() as conn:
-            return int((await conn.execute(stmt)).scalar_one())
-
-    async def person_items(
-        self, *, persons: Sequence[str], after_us: int, limit: int,
-    ) -> list[PersonSocialItem]:
-        """The OLDEST `limit` readable items of one person (recorded under any
-        of `persons`: their id and every retired one) recorded after
-        `after_us`, polled and back-filled alike, in the order recorded, each
-        with what perception made of its media in `media_ref`'s order (a
-        medium nothing has read yet has an empty reading). The read ends
-        before a microsecond it would split, so a cursor advanced to its last
-        item skips none. Handed in that order and resumed from the
-        last one handed, every item is handed once, however many arrive at
-        once (a back-fill records 50)."""
-        if limit <= 0:
-            return []
-        i = SOCIAL_ITEM
-        cols = (
-            i.c.id, i.c.network, i.c.item_id, i.c.source_kind, i.c.collab, i.c.taken_at,
-            i.c.origin, i.c.caption, i.c.media_ref, i.c.recorded_at,
-        )
-        mine = [*self._readable(), i.c.person.in_(list(persons))]
-        m = MEDIA_OBJECTS
-        async with self._engine.connect() as conn:
-            rows = list((await conn.execute(
-                sa.select(*cols)
-                .where(*mine, i.c.recorded_at > from_us(after_us))
-                .order_by(i.c.recorded_at, i.c.id)
-                .limit(limit + 1)
-            )).all())
-            if len(rows) > limit:
-                # A cursor at the last one handed must skip nothing recorded in
-                # the same microsecond: when the next row shares it, stop short
-                # of that microsecond, or, when every row is in it, take all of it.
-                last = rows[limit - 1].recorded_at
-                if rows[limit].recorded_at != last:
-                    rows = rows[:limit]
-                else:
-                    rows = [r for r in rows if r.recorded_at < last] or list(
-                        (await conn.execute(
-                            sa.select(*cols).where(*mine, i.c.recorded_at == last)
-                            .order_by(i.c.id)
-                        )).all())
-            shas = sorted({sha for r in rows for sha in _media(r.media_ref)})
-            read = {
-                r.sha256: Reading(r.title, r.description, r.content)
-                for r in (await conn.execute(
-                    sa.select(m.c.sha256, m.c.title, m.c.description, m.c.content)
-                    .where(m.c.sha256.in_(shas))
-                )).all()
-            } if shas else {}
-        return [
-            PersonSocialItem(
-                network=r.network, item_id=r.item_id, kind=r.source_kind, collab=r.collab,
-                taken_at=r.taken_at, origin=r.origin, caption=r.caption,
-                readings=tuple(read.get(sha, Reading()) for sha in _media(r.media_ref)),
-                recorded_us=to_us(r.recorded_at),
             )
             for r in rows
         ]

@@ -729,7 +729,7 @@
  },
  "nora/domain/ports.py": {
   "comment_blocks": 9,
-  "file_lines": 2884
+  "file_lines": 2848
  },
  "nora/domain/profile.py": {
   "comment_blocks": 4,
@@ -1064,8 +1064,7 @@
   "comment_blocks": 4
  },
  "nora/infra/sql/character.py": {
-  "comment_blocks": 1,
-  "internal_docstrings": 3
+  "internal_docstrings": 1
  },
  "nora/infra/sql/cognition_replay.py": {
   "comment_blocks": 1
@@ -1323,8 +1322,7 @@
   "internal_docstrings": 6
  },
  "nora/infra/sql/social_stream.py": {
-  "comment_blocks": 1,
-  "file_lines": 1008,
+  "file_lines": 903,
   "internal_docstrings": 1
  },
  "nora/infra/sql/standing.py": {
@@ -1815,9 +1813,6 @@
  "nora/tag.py": {
   "internal_docstrings": 2
  },
- "nora/testing/character_evidence.py": {
-  "internal_docstrings": 2
- },
  "nora/testing/decision_log.py": {
   "comment_blocks": 3
  },
@@ -2170,9 +2165,6 @@
  },
  "tests/contract/test_blob_store_contract.py": {
   "comment_blocks": 2
- },
- "tests/contract/test_character_evidence_contract.py": {
-  "comment_blocks": 1
  },
  "tests/contract/test_computer_task_store_contract.py": {
   "comment_blocks": 1

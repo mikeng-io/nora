@@ -147,11 +147,6 @@ _PROFILE_SESSION_READ = (
     "The Profile sessions were its only callers and left in 6c-2b-ii. The method leaves "
     "with `SqlProfileStore` in 6c-2c."
 )
-_PROFILE_SESSION_EVIDENCE = (
-    "The Profile sessions' evidence reads were its only callers and left in 6c-2b-ii. The "
-    "method leaves with `SqlCharacterEvidence` in 6c-2d."
-)
-
 # Public store methods with NO production caller, by (module, method).
 #
 # Every row carries the shape and the reason, because a bare list is exactly
@@ -176,53 +171,6 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         for name in ("room_context", "pending_told", "pending_disputes",
                      "due_guesses", "record_verdict")
     },
-    **{
-        ("character.py", name): _Pin("scheduled_removal", _PROFILE_SESSION_EVIDENCE)
-        for name in ("advance_history", "history_state", "mentions_since",
-                     "profile_revision_count", "profile_revisions_after", "room_count",
-                     "room_since", "tie_totals", "windowed")
-    },
-    **{
-        ("character.py", name): _Pin(
-            "scheduled_removal", "Only the Dreamer personality sessions called it. "
-            "The Character evidence cleanup owns its removal.",
-        )
-        for name in ("advance_social_cursor", "episode_count", "message_head",
-                     "person_count", "person_since", "revision_count",
-                     "revisions_after", "social_cursor")
-    },
-    ("character.py", "rows_by_id"): _Pin(
-        "scheduled_removal", "The portal resolves graph citations. Remove with Character evidence.",
-    ),
-    **{
-        ("social_stream.py", name): _Pin(
-            "scheduled_removal", "The person Character adaptor was the only caller. "
-            "The Character evidence cleanup owns its removal.",
-        )
-        for name in ("person_items", "polled_count")
-    },
-    ("culture.py", "head"): _Pin(
-        "scheduled_removal",
-        "The legacy account readers are gone. The Culture store cleanup owns this read.",
-    ),
-    ("social_stream.py", "current_counts"): _Pin(
-        "scheduled_removal",
-        "The Profile person session was its only caller and left in 6c-2b-ii; the Character "
-        "person session reads items without counts. It leaves with the social store's session "
-        "reads in 6c-2d, which removes the Character sessions.",
-    ),
-    ("character.py", "historical_page"): _Pin(
-        "scheduled_removal",
-        "The retired Profile coverage export was its only production caller. The method "
-        "leaves with `SqlCharacterEvidence` in 6c-2d, together with the historical paging "
-        "assertions in `test_typed_identity.py`.",
-    ),
-    ("character.py", "historical_counts"): _Pin(
-        "scheduled_removal",
-        "`nora memory profile-history` was its only caller and left with the Profile session "
-        "drivers; no test calls it. The method leaves with the Character evidence reads "
-        "in 6c-2d, not with `SqlProfileInputs`.",
-    ),
     ("cognitive_graph_store.py", "revise"): _Pin(
         "deferred_consumer",
         "Revises a graph kind row through the phase one store. Admission owns "
@@ -243,19 +191,6 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "Phase 1 implements the fixed graph port; Phase 2 owns the Cognition consumer. "
         "Code projection uses connection-scoped helpers in the source transaction. "
         "No prompt reads the graph in this PR.",
-    ),
-    ("culture.py", "chain"): _Pin(
-        "deferred_consumer",
-        "The revision chain, newest first, walked through parent links. The "
-        "tier's ONE genuine contribution is that the chain exists — a single "
-        "account is a snapshot, because the model that wrote it had no memory "
-        "of the one before — so this verb is the point of the store rather "
-        "than an extra. It has no caller because `02-measurement §5` sequences "
-        "the culture tier as WRITING-ONLY (step 4): the chain must accumulate "
-        "real revisions before any prompt reads it, since a tier judged on its "
-        "first snapshot is judged on the one thing it does not contribute. "
-        "Step 5 is the consumer, and it is gated on a measured improvement "
-        "rather than assumed.",
     ),
     # `assess.py`'s `recent` needs no pin: `recent` is already ambiguous
     # (audit.py/decision_log.py/tag_traces.py/tool_call_log.py all define one),
