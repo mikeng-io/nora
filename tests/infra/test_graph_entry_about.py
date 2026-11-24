@@ -429,7 +429,7 @@ async def _stay(engine: Any, *, person: str) -> str:
                 subject_id=person, person_id=person, circle_id="c",
                 started_ts=_STAY_START_MS, ended_ts=_STAY_START_MS + 3_600_000,
                 lat=0.0, lng=0.0, radius_m=50.0, fix_count=3,
-                build_id=build, lineage=[],
+                build_id=build, build_lineage=[],
             )
         )
         key = episode_key(person, _STAY_START_MS, _STAY_START_MS + 3_600_000)

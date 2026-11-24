@@ -33,6 +33,7 @@ from nora.language.profile_verdict import (
 )
 from nora.obs.metrics import Metrics
 from nora.testing import InMemoryCharacterEvidence
+from tests.infra.rollup_fixtures import insert_rollup_row
 
 DAY = 86_400_000
 T0 = 1_790_000_000_000
@@ -133,13 +134,13 @@ async def test_a_countable_observable_is_judged_by_code_never_the_model(env):
                 code_version="v", params_sha256="p", status="current",
             ).returning(ROLLUP_BUILD.c.id))).scalar_one())
             if with_tie:
-                await conn.execute(sa.insert(ROLLUP_TIE).values(
-                    build_id=build, unit=UNIT, lineage=[], valid_from_ms=T0,
+                await insert_rollup_row(conn, ROLLUP_TIE,
+                    build_id=build, unit=UNIT, build_lineage=[], valid_from_ms=T0,
                     valid_to_ms=T0 + 7 * DAY, as_of_ms=T0 + 7 * DAY,
                     person_a="ada", person_b="bo", iso_week="2026-W01",
                     replies_ab=1, replies_ba=0, mentions_ab=0, mentions_ba=0,
                     reactions_ab=0, reactions_ba=0, colocation_ms=0,
-                ))
+                )
         return build
     # A fresh docket entry (the last was judged): same observable, tie absent.
     await _guess(env, observable="rollup:tie:friends|ada,bo",
@@ -153,13 +154,13 @@ async def test_a_countable_observable_is_judged_by_code_never_the_model(env):
     await _guess(env, observable="rollup:tie:friends|ada,bo",
                       window_end=T0 + 30 * DAY)
     async with env.engine.begin() as conn:
-        await conn.execute(sa.insert(ROLLUP_TIE).values(
-            build_id=build, unit=UNIT, lineage=[], valid_from_ms=T0,
+        await insert_rollup_row(conn, ROLLUP_TIE,
+            build_id=build, unit=UNIT, build_lineage=[], valid_from_ms=T0,
             valid_to_ms=T0 + 7 * DAY, as_of_ms=T0 + 7 * DAY,
             person_a="ada", person_b="bo", iso_week="2026-W02",
             replies_ab=2, replies_ba=1, mentions_ab=0, mentions_ba=0,
             reactions_ab=0, reactions_ba=0, colocation_ms=0,
-        ))
+        )
     assert await _adaptor(env).commit(key=UNIT, proposals=(), now_ms=T0 + 40 * DAY) == 1
     heads = [h for h in await env.store.account_heads(key=KEY)
              if h.part == "guesses"]

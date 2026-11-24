@@ -76,56 +76,57 @@ async def test_presence_labels_corridors_and_rhythm_reach_writer_never_coordinat
                 ROLLUP_BUILD.c.id))).scalar_one()
         place = (await conn.execute(sa.insert(PRESENCE_DERIVED_PLACES).values(
             subject_id=PERSON, circle_id="invented-circle", lat=latitude, lng=longitude,
-            radius_m=50, kind="work", confidence=1, label="Lotus Library",
+            radius_m=50, source_kind="work", place_confidence=1, label="Lotus Library",
             first_seen_ts=T0, last_seen_ts=T0 + 3 * DAY_MS, build_id=build,
-            lineage=[["presence", PERSON, None]]).returning(
+            build_lineage=[["presence", PERSON, None]]).returning(
                 PRESENCE_DERIVED_PLACES.c.id))).scalar_one()
         for n in range(3):
             await conn.execute(sa.insert(PRESENCE_STAYS).values(subject_id=PERSON,
                 person_id=PERSON, circle_id="invented-circle", started_ts=T0 + n * DAY_MS,
                 ended_ts=T0 + n * DAY_MS + HOUR_MS, lat=latitude, lng=longitude,
                 radius_m=50, fix_count=4, place_id=place, build_id=build,
-                lineage=[["presence", PERSON, None]]))
+                build_lineage=[["presence", PERSON, None]]))
         corridor = (await conn.execute(sa.insert(PRESENCE_CORRIDORS).values(subject_id=PERSON,
             sequence=["Lotus Library", "Garden Stop"], sample_count=3,
             first_seen_ts=T0, last_seen_ts=T0 + 3 * DAY_MS, build_id=build,
-            lineage=[["presence", PERSON, None]]).returning(PRESENCE_CORRIDORS.c.id))).scalar_one()
+            build_lineage=[["presence", PERSON, None]],
+        ).returning(PRESENCE_CORRIDORS.c.id))).scalar_one()
         for n in range(3):
             await conn.execute(sa.insert(PRESENCE_TRIPS).values(subject_id=PERSON,
                 person_id=PERSON, circle_id="invented-circle", started_ts=T0 + n * DAY_MS,
                 ended_ts=T0 + n * DAY_MS + HOUR_MS, distance_m=1000,
                 avg_speed_kmh=10, fix_count=4, corridor_id=corridor, build_id=build,
-                lineage=[["presence", PERSON, None]]))
+                build_lineage=[["presence", PERSON, None]]))
     until = T0 + 3 * DAY_MS
     async with env.begin() as conn:
         for first_seen, last_seen in ((T0, until + 1), (until + 1, until + 2)):
             await conn.execute(sa.insert(PRESENCE_DERIVED_PLACES).values(
                 subject_id=PERSON, circle_id="invented-circle", lat=latitude, lng=longitude,
-                radius_m=50, kind="work", confidence=1, label="Future Venue",
+                radius_m=50, source_kind="work", place_confidence=1, label="Future Venue",
                 first_seen_ts=first_seen, last_seen_ts=last_seen, build_id=build,
-                lineage=[["presence", PERSON, None]]))
+                build_lineage=[["presence", PERSON, None]]))
             await conn.execute(sa.insert(PRESENCE_CORRIDORS).values(subject_id=PERSON,
                 sequence=["Future Venue"], sample_count=99,
                 first_seen_ts=first_seen, last_seen_ts=last_seen, build_id=build,
-                lineage=[["presence", PERSON, None]]))
+                build_lineage=[["presence", PERSON, None]]))
         for started, ended in ((until - 185 * DAY_MS, until - 184 * DAY_MS - 1),
                                (until - 180 * DAY_MS - HOUR_MS,
                                 until - 180 * DAY_MS + HOUR_MS)):
             await conn.execute(sa.insert(PRESENCE_STAYS).values(subject_id=PERSON,
                 person_id=PERSON, circle_id="invented-circle", started_ts=started,
                 ended_ts=ended, lat=latitude, lng=longitude, radius_m=50, fix_count=4,
-                build_id=build, lineage=[["presence", PERSON, None]]))
+                build_id=build, build_lineage=[["presence", PERSON, None]]))
         await conn.execute(sa.insert(PRESENCE_TRIPS).values(subject_id=PERSON,
             person_id=PERSON, circle_id="invented-circle", started_ts=until + 1,
             ended_ts=until + (HOUR_MS + 1), distance_m=1000, avg_speed_kmh=10, fix_count=4,
-            corridor_id=corridor, build_id=build, lineage=[["presence", PERSON, None]]))
+            corridor_id=corridor, build_id=build, build_lineage=[["presence", PERSON, None]]))
         # A future stay at an otherwise eligible place must not inflate its
         # aggregate count or the trailing rhythm.
         await conn.execute(sa.insert(PRESENCE_STAYS).values(subject_id=PERSON,
             person_id=PERSON, circle_id="invented-circle", started_ts=until + 1,
             ended_ts=until + (HOUR_MS + 1), lat=latitude, lng=longitude,
             radius_m=50, fix_count=4, place_id=place, build_id=build,
-            lineage=[["presence", PERSON, None]]))
+            build_lineage=[["presence", PERSON, None]]))
     source = source_inputs(env)
     first = await source.presence_revisions(key=SOURCE_KEY, unit="friends", person=PERSON,
                                              limit=2, since_ms=T0, until_ms=until)
@@ -258,7 +259,7 @@ async def test_acknowledged_routine_does_not_wake_writer_until_revision_changes(
         await conn.execute(sa.insert(PRESENCE_STAYS).values(subject_id=PERSON,
             person_id=PERSON, circle_id="invented-circle", started_ts=T0,
             ended_ts=T0 + HOUR_MS, lat=0, lng=0, radius_m=50, fix_count=4,
-            build_id=build, lineage=[["presence", PERSON, None]]))
+            build_id=build, build_lineage=[["presence", PERSON, None]]))
     reads, _, source, evidence, adaptor = wired(env)
     boundary, _ = await reads.history_state(key=SOURCE_KEY)
     await reads.advance_history(key=SOURCE_KEY, cursor=boundary)

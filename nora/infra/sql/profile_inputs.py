@@ -399,7 +399,6 @@ class SqlProfileInputs:
                 "pending_cached": int(row[1]), "unattempted_cached": int(row[2]),
                 "missing_cache": int(row[3]), "hidden_or_deleted": int(row[4]),
                 "complete": boundary is not None and row[1] == 0}
-
     async def social(
         self, *, key: str, persons: Sequence[str], limit: int, citations: Sequence[str] = (),
         since_ms: int | None = None, until_ms: int | None = None,
@@ -425,7 +424,8 @@ class SqlProfileInputs:
             latest.c.reposts, latest.c.likes_hidden, latest.c.recorded_at,
         )
         stmt = sa.select(
-            i.network, i.item_id, i.kind, i.collab, i.taken_at, i.origin, i.recorded_at, i.person,
+            i.network, i.item_id, i.source_kind, i.collab, i.taken_at,
+            i.origin, i.recorded_at, i.person,
             sa.case((denied, None), else_=i.caption).label('caption'),
             sa.case((denied, None), else_=i.media_ref).label('media_ref'),
             denied.label('denied'), perception.c.outcome.label('perception_outcome'),
@@ -453,7 +453,7 @@ class SqlProfileInputs:
             domain='social', source=r.source, revision=r.revision, subject=r.person,
             state='withheld' if r.denied else 'readable', recorded_at=_stamp(r.recorded_at),
             social=None if r.denied else PersonSocialItem(
-                network=r.network, item_id=r.item_id, kind=r.kind, collab=r.collab,
+                network=r.network, item_id=r.item_id, kind=r.source_kind, collab=r.collab,
                 taken_at=r.taken_at, origin=r.origin, caption=r.caption,
                 readings=tuple(readings.get(sha, Reading()) for sha in
                                (r.media_ref or '').split(',') if sha),

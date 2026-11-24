@@ -235,7 +235,7 @@ async def fabricated_social_stimuli(
     stmt = (
         sa.select(
             SOCIAL_ITEM.c.read_id, SOCIAL_ITEM.c.person,
-            sa.func.array_agg(SOCIAL_ITEM.c.kind).label("kinds"),
+            sa.func.array_agg(SOCIAL_ITEM.c.source_kind).label("kinds"),
             sa.func.array_agg(SOCIAL_ITEM.c.collab).label("collabs"),
             sa.func.max(SOCIAL_ITEM.c.taken_at).label("taken_at"),
         )
@@ -279,7 +279,7 @@ async def fabricated_observation_stimuli(
     t = PLATFORM_OBSERVATION
     at = sa.func.coalesce(t.c.occurred_ms, t.c.received_ms)
     stmt = sa.select(
-        t.c.id, t.c.kind, t.c.platform, t.c.conversation_id,
+        t.c.id, t.c.source_kind, t.c.platform, t.c.conversation_id,
         at.label("at_ms"),
     ).order_by(at, t.c.id)
     if from_ms is not None:
@@ -296,7 +296,7 @@ async def fabricated_observation_stimuli(
         if unit is None:
             continue
         out.append(_fabricate(
-            unit, kind="observation", item=str(r.kind),
+            unit, kind="observation", item=str(r.source_kind),
             ref=f"platform_observation:{r.id}", at_ms=int(r.at_ms),
             platform=platform, conversation_id=cid, person_id=None,
         ))

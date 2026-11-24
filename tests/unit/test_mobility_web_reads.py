@@ -87,13 +87,13 @@ async def test_places_and_routes_reads_are_select_only_and_capped():
     engine = _Engine([
         _Result([
             SimpleNamespace(
-                id=1, kind="home", label=None, lat=22.3, lng=114.2,
-                radius_m=120.0, confidence=0.5, first_seen_ts=1, last_seen_ts=2,
+                id=1, source_kind="home", label=None, lat=22.3, lng=114.2,
+                radius_m=120.0, place_confidence=0.5, first_seen_ts=1, last_seen_ts=2,
                 saved_place_id=None,
             ),
             SimpleNamespace(
-                id=2, kind="unlabeled", label="Gym", lat=22.4, lng=114.2,
-                radius_m=100.0, confidence=0.0, first_seen_ts=3, last_seen_ts=4,
+                id=2, source_kind="unlabeled", label="Gym", lat=22.4, lng=114.2,
+                radius_m=100.0, place_confidence=0.0, first_seen_ts=3, last_seen_ts=4,
                 saved_place_id="l360-gym",
             ),
         ]),

@@ -11,16 +11,22 @@ vocabulary change lands in both places or fails.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
 
 from nora.infra.sql.schema import METADATA
 
 
-def _planes(basis_check: str, state_check: str, kind: str) -> list[sa.schema.SchemaItem]:
+def _planes(
+    basis_check: str, state_check: str, kind: str, *,
+    table: str | None = None, row_id: str = "id",
+) -> list[sa.schema.SchemaItem]:
     """The columns and rules every row and edge carries under one shape."""
+    table = f"{table}_graph" if table else kind
     return [
-        sa.Column("id", sa.Text, nullable=False),
+        sa.Column(row_id, sa.Text, nullable=False),
         sa.Column("kind", sa.Text, nullable=False),
         sa.Column("basis", sa.Text, nullable=False),
         sa.Column("reasoning", sa.Text),
@@ -50,35 +56,35 @@ def _planes(basis_check: str, state_check: str, kind: str) -> list[sa.schema.Sch
         sa.Column("valid_to", sa.DateTime(timezone=True)),
         sa.Column("replaces", sa.Text),
         sa.Column("state", sa.Text, nullable=False),
-        sa.CheckConstraint(f"kind = '{kind}'", name=f"ck_{kind}_kind"),
-        sa.CheckConstraint(basis_check, name=f"ck_{kind}_basis"),
-        sa.CheckConstraint(state_check, name=f"ck_{kind}_state"),
+        sa.CheckConstraint(f"kind = '{kind}'", name=f"ck_{table}_kind"),
+        sa.CheckConstraint(basis_check, name=f"ck_{table}_basis"),
+        sa.CheckConstraint(state_check, name=f"ck_{table}_state"),
         sa.CheckConstraint(
-            "exposure IN ('external', 'internal', 'operator')", name=f"ck_{kind}_exposure"
+            "exposure IN ('external', 'internal', 'operator')", name=f"ck_{table}_exposure"
         ),
         sa.CheckConstraint(
             "reasoning IS NULL OR reasoning IN ('told', 'deduced', 'induced', 'abduced')",
-            name=f"ck_{kind}_reasoning",
+            name=f"ck_{table}_reasoning",
         ),
         sa.CheckConstraint(
             "confidence IS NULL OR confidence IN ('low', 'medium', 'high')",
-            name=f"ck_{kind}_confidence",
+            name=f"ck_{table}_confidence",
         ),
         sa.CheckConstraint(
             "(basis = 'inferred') = (reasoning IS NOT NULL AND confidence IS NOT NULL)",
-            name=f"ck_{kind}_inferred_detail",
+            name=f"ck_{table}_inferred_detail",
         ),
         sa.ForeignKeyConstraint(
-            ["id", "unit", "kind"],
+            [row_id, "unit", "kind"],
             ["registry.id", "registry.unit", "registry.kind"],
-            name=f"fk_{kind}_registry",
+            name=f"fk_{table}_registry",
         ),
         sa.ForeignKeyConstraint(
             ["replaces", "unit", "kind"],
             ["registry.id", "registry.unit", "registry.kind"],
-            name=f"fk_{kind}_replaces",
+            name=f"fk_{table}_replaces",
         ),
-        sa.UniqueConstraint("replaces", name=f"uq_{kind}_replaces"),
+        sa.UniqueConstraint("replaces", name=f"uq_{table}_replaces"),
     ]
 
 
@@ -291,3 +297,173 @@ EDGE = sa.Table(
 )
 sa.Index("idx_edge_src", EDGE.c.src_id, EDGE.c.type)
 sa.Index("idx_edge_dst", EDGE.c.dst_id, EDGE.c.type)
+
+
+_ITEM_WRITERS = {
+    "messages": ("SqlRecordStore", "external"),
+    "message_edit": ("SqlRecordStore", "external"),
+    "message_reaction": ("SqlRecordStore", "external"),
+    "message_delete": ("SqlRecordStore", "external"),
+    "presence_fixes": ("PresenceStore", "internal"),
+    "fetched_pages": ("SqlFetchedPageStore", "external"),
+    "social_item": ("SqlSocialStreamStore", "external"),
+    "social_item_count": ("SqlSocialStreamStore", "external"),
+    "social_item_state": ("SqlSocialStreamStore", "external"),
+    "social_poll": ("SqlSocialStreamStore", "external"),
+    "platform_observation": ("SqlObservationStore", "external"),
+    "source_health": ("SqlSourceHealthLog", "internal"),
+}
+
+_AGGREGATE_WRITERS = {
+    "presence_stays": ("SqlMobilityStore", "internal"),
+    "presence_trips": ("SqlMobilityStore", "internal"),
+    "presence_derived_places": ("SqlMobilityStore", "internal"),
+    "presence_occupancy": ("SqlMobilityStore", "internal"),
+    "presence_place_rhythm": ("SqlMobilityStore", "internal"),
+    "presence_corridors": ("SqlMobilityStore", "internal"),
+    "rollup_colocation": ("SqlRollupStore", "internal"),
+    "rollup_outing": ("SqlRollupStore", "internal"),
+    "rollup_response": ("SqlRollupStore", "external"),
+    "rollup_tie": ("SqlRollupStore", "internal"),
+    "rollup_daybook": ("SqlRollupStore", "internal"),
+    "presence_places": ("PresenceStore", "internal"),
+    "platform_object_state": ("SqlObservationStore", "external"),
+}
+
+
+def _observed_tables() -> Iterator[tuple[str, str, str, str, str]]:
+    for kind, basis, writers in (
+        ("item", "observed", _ITEM_WRITERS),
+        ("aggregate", "computed", _AGGREGATE_WRITERS),
+    ):
+        for name, (writer, exposure) in writers.items():
+            yield name, kind, basis, writer, exposure
+
+
+def _registration_planes(
+    table: str, kind: str, basis: str, writer: str, exposure: str,
+) -> Iterator[sa.schema.SchemaItem]:
+    for field in _planes(
+        f"basis = '{basis}'", "state IN ('live', 'tombstoned')", kind,
+        table=table, row_id="graph_id",
+    ):
+        if isinstance(field, sa.Column):
+            if field.name == "unit" and table.startswith("rollup_"):
+                continue
+            if field.name == "persons" and table in {"rollup_colocation", "rollup_outing"}:
+                continue
+            if field.name in {"unit", "graph_id"}:
+                field.nullable = True
+            defaults = {
+                "kind": kind, "basis": basis, "writer": writer,
+                "exposure": exposure, "state": "live",
+            }
+            if field.name in defaults:
+                field.server_default = sa.DefaultClause(defaults[field.name])
+        yield field
+    yield sa.CheckConstraint(
+        "(unit IS NULL) = (graph_id IS NULL)",
+        name=f"ck_{table}_graph_pair", postgresql_not_valid=True,
+    )
+
+
+def _attach_registration_planes() -> None:
+    for name, kind, basis, writer, exposure in _observed_tables():
+        table = METADATA.tables[name]
+        for field in _registration_planes(name, kind, basis, writer, exposure):
+            if isinstance(field, sa.Column):
+                table.append_column(field)
+            elif isinstance(field, sa.Constraint):
+                table.append_constraint(field)
+
+
+_attach_registration_planes()
+
+sa.Index(
+    "uq_social_item_key", METADATA.tables["social_item"].c.network,
+    METADATA.tables["social_item"].c.item_id, METADATA.tables["social_item"].c.unit,
+    unique=True, postgresql_nulls_not_distinct=True,
+)
+
+
+METADATA.tables["presence_places"].append_constraint(
+    sa.UniqueConstraint(
+        "circle_id",
+        "place_id",
+        "unit",
+        name="uq_presence_places_unit",
+        postgresql_nulls_not_distinct=True,
+    )
+)
+
+
+METADATA.tables["platform_object_state"].append_constraint(
+    sa.UniqueConstraint(
+        "platform", "account_key", "conversation_id", "thread", "source_kind", "object_ref",
+        "unit", name="uq_platform_object_state_object", postgresql_nulls_not_distinct=True,
+    )
+)
+
+
+_TOMBSTONE_NULLABLE = {
+    "presence_places": ("name", "lat", "lng"),
+    "fetched_pages": ("blob_key", "provenance"),
+    "platform_object_state": ("source_state", "coverage"),
+    "platform_observation": ("payload", "coverage"),
+    "presence_corridors": ("sequence", "sample_count"),
+    "presence_derived_places": ("lat", "lng", "radius_m", "place_confidence"),
+    "presence_fixes": ("lat", "lng"),
+    "presence_occupancy": ("dwell_ms",),
+    "presence_place_rhythm": ("sample_count",),
+    "presence_stays": ("lat", "lng", "radius_m", "fix_count"),
+    "presence_trips": ("distance_m", "avg_speed_kmh", "fix_count"),
+    "rollup_colocation": ("lat", "lng", "radius_m", "at_home_of", "homes_unknown", "stay_count"),
+    "rollup_daybook": (
+        "stays",
+        "stay_ms",
+        "home_ms",
+        "colocation_ms",
+        "with_persons",
+        "outings",
+        "rooms",
+        "messages",
+        "reactions",
+    ),
+    "rollup_outing": ("lat", "lng"),
+    "rollup_response": (
+        "replies",
+        "reactions",
+        "edits",
+        "follows",
+        "responders",
+        "named_persons",
+        "outcome",
+    ),
+    "rollup_tie": (
+        "replies_ab",
+        "replies_ba",
+        "mentions_ab",
+        "mentions_ba",
+        "reactions_ab",
+        "reactions_ba",
+        "colocation_ms",
+    ),
+    "source_health": ("detail",),
+}
+
+
+def _live_content_check(columns: tuple[str, ...]) -> str:
+    expr = " AND ".join(f"{column} IS NOT NULL" for column in columns)
+    return f"state = 'tombstoned' OR ({expr})"
+
+
+for _table, _columns in _TOMBSTONE_NULLABLE.items():
+    _target = METADATA.tables[_table]
+    for _column in _columns:
+        _target.c[_column].nullable = True
+    _target.append_constraint(
+        sa.CheckConstraint(
+            _live_content_check(_columns),
+            name=f"ck_{_table}_tombstone_content",
+        )
+    )

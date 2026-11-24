@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.fetched_page import FetchedPage
 from nora.infra.sql.blob_refs import held_elsewhere
+from nora.infra.sql.item_registration import SqlItemRegistration
 from nora.infra.sql.schema import FETCHED_PAGES
 
 log = logging.getLogger("nora.infra.sql.fetched_pages")
@@ -36,8 +37,11 @@ def _row_to_page(r: Row[Any]) -> FetchedPage:
 class SqlFetchedPageStore:
     """Satisfies `nora.domain.fetched_page.FetchedPageStore`."""
 
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(
+        self, engine: AsyncEngine, *, registration: SqlItemRegistration | None = None,
+    ) -> None:
         self._engine = engine
+        self._registration = registration or engine.get_execution_options().get("item_registration")
 
     async def get(
         self, *, conversation_id: str, url: str, now: datetime
@@ -57,7 +61,21 @@ class SqlFetchedPageStore:
 
     async def put(self, *, page: FetchedPage) -> None:
         try:
-            stmt = pg_insert(FETCHED_PAGES).values(
+            async with self._engine.begin() as conn:
+                reg = self._registration
+                values = await reg.planes(
+                    conn, FETCHED_PAGES, unit=reg.scope.unqualified_room_unit(page.conversation_id),
+                    room=page.conversation_id, occurred_at=page.fetched_at,
+                    key=(page.conversation_id, page.url),
+                ) if reg else {}
+                await conn.execute(self._put_statement(page, values))
+        except Exception:
+            log.exception("fetched_pages put failed")
+
+    @staticmethod
+    def _put_statement(page: FetchedPage, planes: dict[str, Any]) -> Any:
+        return pg_insert(FETCHED_PAGES).values(
+                **planes,
                 conversation_id=page.conversation_id, url=page.url,
                 blob_key=page.blob_key, fetched_at=page.fetched_at,
                 expires_at=page.expires_at, provenance=page.provenance,
@@ -69,12 +87,9 @@ class SqlFetchedPageStore:
                     "fetched_at": page.fetched_at,
                     "expires_at": page.expires_at,
                     "provenance": page.provenance,
+                    **planes,
                 },
             )
-            async with self._engine.begin() as conn:
-                await conn.execute(stmt)
-        except Exception:
-            log.exception("fetched_pages put failed")
 
     async def purge_expired(self, *, now: datetime, limit: int = 20) -> list[str]:
         try:
