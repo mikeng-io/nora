@@ -116,7 +116,6 @@ from typing import Any, Protocol
 from opentelemetry.util.types import AttributeValue
 
 from nora.agent.dream_screen import screen
-from nora.domain.culture import CultureRevision
 from nora.domain.lineage import RenderRoom
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
@@ -845,10 +844,6 @@ async def run(
     now_ms: int,
     media_join: MediaJoin | None = None,
     tz: tzinfo | None = None,
-    culture: CultureRevision | None = None,
-    # The switch (45 §5): the room's Profile account as the TURN read it,
-    # handed through for `culture`'s own reason (the fold reads the SAME
-    # account the reply did). Set, it replaces `culture` in the fold's input.
     profile_room: ProfileView | None = None,
     profile_name_of: Callable[[str], str] | None = None,
     working_set_max_items: int = DEFAULT_WORKING_SET_MAX_ITEMS,
@@ -953,10 +948,6 @@ async def run(
         rendered = render_debrief_input(
             trace=trace, prior=prior,
             display_name=display_name, metrics=metrics, since_rows=batch, tz=tz,
-            # The room's account (DEC-207) — the one the turn itself read at
-            # its start, handed through rather than read a second time. Under
-            # the switch (45 §5) that account is the Profile view.
-            culture=culture,
             profile_room=profile_room,
             profile_name_of=profile_name_of,
         )

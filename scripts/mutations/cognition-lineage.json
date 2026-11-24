@@ -42,13 +42,6 @@
   "target": "tests/unit/test_lineage.py::test_a_note_is_not_rendered_in_a_wider_room_and_the_rest_are"
  },
  {
-  "name": "a failing Standing or culture section is not rendered",
-  "file": "nora/agent/prefill.py",
-  "old": "    return bool(getattr(view, block))",
-  "new": "    return True",
-  "target": "tests/unit/test_lineage.py::test_a_failing_section_is_dropped_and_the_rest_of_its_row_renders"
- },
- {
   "name": "the backfill marks a later revision citing nothing unresolved",
   "file": "nora/infra/sql/migrations/versions/0073_lineage.py",
   "old": "                || CASE WHEN p.missing OR (NOT p.cites AND NOT p.first)",

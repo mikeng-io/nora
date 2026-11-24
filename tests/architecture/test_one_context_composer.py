@@ -32,13 +32,7 @@ _INITIAL_LEGACY = frozenset(
         "nora.agent.prefill:build_tag_message",
         "nora.agent.speech_format:render_input",
         "nora.ingest.relevance_gate:render_context",
-        "nora.language.character:CharacterNoraAdaptor.inputs",
-        "nora.language.character:CharacterPersonAdaptor.inputs",
-        "nora.language.character:CharacterUnitAdaptor.inputs",
-        "nora.language.character:_social_block",
-        "nora.language.character:room_cultures_block",
         "nora.language.confirmation_render:confirmation_prompts",
-        "nora.language.culture:CultureAdaptor.inputs",
         "nora.subject.context_selector_render:selector_prompt",
     }
 )

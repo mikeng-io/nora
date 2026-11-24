@@ -22,7 +22,6 @@ from nora.agent.dreamer import (
     HomeRoom,
     RegistryToolSource,
     cognition_grant,
-    culture_grant,
 )
 from nora.agent.memory_search import MemorySearch
 from nora.agent.registry import ToolRegistry
@@ -31,8 +30,6 @@ from nora.agent.subagent_tools import SubagentToolSource
 from nora.agent.tools import build_tool_specs
 from nora.app.cognition_wiring import read_surface, read_tools_for
 from nora.domain.cognition_session import Room as AgendaRoom
-from nora.language.character import CHARACTER_PERSON_ADAPTOR_NAME, CHARACTER_PERSON_TOOLS
-from nora.language.culture import CULTURE_ADAPTOR_NAME, CULTURE_TOOLS
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import FakeRosterSource
@@ -72,14 +69,6 @@ EXPECTED: dict[str, dict[bool, frozenset[str]]] = {
     "cognition": {
         False: frozenset({"who_said", "load_transcript"}),
         True: frozenset({"memory_search", "memory_read", "load_transcript"}),
-    },
-    CULTURE_ADAPTOR_NAME: {
-        False: frozenset(),
-        True: frozenset({"memory_search"}),
-    },
-    CHARACTER_PERSON_ADAPTOR_NAME: {
-        False: frozenset(),
-        True: frozenset({"memory_search"}),
     },
     "subagent": {
         False: frozenset({"who_said", "load_transcript"}),
@@ -147,19 +136,6 @@ async def _built(where: str, graph: bool, persons: Any) -> set[str]:
         ).wired
         build = read_tools_for(source, names=wired, grant=cognition_grant())
         return _names(build("u1", [AgendaRoom("signal", GROUP)]))
-    if where == CULTURE_ADAPTOR_NAME:
-        return _names(_dream_source(registry, persons).build(
-            key=GROUP, names=CULTURE_TOOLS, unit=None, adaptor=where,
-            grant=culture_grant(),
-        ))
-    if where == CHARACTER_PERSON_ADAPTOR_NAME:
-        # As production builds it (`DreamerRuntime`, composition's grants):
-        # the key is the person's home room (`tool_room`), no unit supplied
-        # (`key_kind` is `entity`), and the culture grant (a real room).
-        return _names(_dream_source(registry, persons).build(
-            key=GROUP, names=CHARACTER_PERSON_TOOLS, unit=None, adaptor=where,
-            grant=culture_grant(),
-        ))
     assert where == "subagent"
     return _names(await SubagentToolSource(
         registry=registry, store=_NullStore(), persons=persons,

@@ -62,240 +62,36 @@ async def test_a_room_without_identity_wiring_returns_unavailable():
     assert result.people == ()
 
 
-async def test_composed_culture_fold_uses_current_room_names_and_stops_on_outage(
-    example_config, monkeypatch,
-):
-    from nora.app import composition_dream
-    from nora.domain.models import DeliveryStatus, TranscriptRow
-    from nora.testing import InMemoryCultureStore
-    from tests.unit.test_scoped_engagement_names import _M_SIBLING
-
-    bindings, access = _managed()
-    await _managed_person(bindings)
-    await bindings.set_scoped_name(person_id=_M_PERSON, scope=_M_ROOM,
-        nickname="Generated Culture Name", operation_id="generated-culture-name")
-    await bindings.set_scoped_name(person_id=_M_PERSON, scope=_M_SIBLING,
-        nickname="Generated Private Sibling", operation_id="generated-sibling-name")
-    culture = InMemoryCultureStore()
-    monkeypatch.setattr(composition_dream, "SqlCultureStore", lambda _engine: culture)
-    policy = SimpleNamespace(rooms=lambda: (SimpleNamespace(
-        primary_id="g1", platform="signal", unit=_M_UNIT.id,
-        label="Generated Room", description="Generated purpose"),))
-    wired = composition_dream._character_adaptors(
-        allowlist=policy, cfg=example_config, content_checks=False,
-        engine=None, metrics=Metrics(), note_store=None,
-        persons=access.persons_view(), access=access)
-    adaptor = next(a for a in wired.adaptors if a.name == "culture")
-    batch = (TranscriptRow(id=1, ts=1_757_000_000_000, sender_id="+852111",
-        sender_name="Generated Spoofed Sender", is_nora=False,
-        delivery_status=DeliveryStatus.SENT, raw_json="{}",
-        body="Generated message about a planned meeting"),)
-    first = await adaptor.inputs(key="g1", batch=batch)
-    assert "Generated Culture Name" in first
-    assert "Generated Global" not in first
-    assert "Generated Private Sibling" not in first
-    assert "Generated Spoofed Sender" not in first
-    await bindings.set_scoped_name(person_id=_M_PERSON, scope=_M_ROOM,
-        nickname="Generated New Culture Name", operation_id="generated-culture-rename")
-    second = await adaptor.inputs(key="g1", batch=batch)
-    assert "Generated New Culture Name" in second
-    bindings.down = True
-    with pytest.raises(RuntimeError):
-        await adaptor.inputs(key="g1", batch=batch)
-    assert await culture.head(key="g1") is None
-    bindings.down = False
-    assert "Generated New Culture Name" in await adaptor.inputs(key="g1", batch=batch)
+_NOW = datetime.fromtimestamp((1_760_000_000_000 + 3_600_000) / 1000, tz=UTC)
 
 
-@pytest.mark.parametrize("platform", ["signal", None])
-async def test_culture_selected_file_backend_keeps_its_canonical_name(tmp_path, platform):
-    from dataclasses import replace
+class _SocialFake:
+    def __init__(self, items: list[PersonSocialItem], *, polled: int = 0) -> None:
+        self._items = items
+        self._polled = polled
+        self.counts_asked: list[tuple[str, str]] = []
 
-    from nora.language.culture import CultureAdaptor
-    from nora.people.wire import file_services
-    from nora.persons import load_persons
-    from nora.testing import InMemoryCultureStore
-    from tests.unit.test_culture_adaptor import _row
+    async def polled_count(self, *, persons, after_us) -> int:
+        return self._polled
 
-    path = tmp_path / "identity.toml"
-    path.write_text('[persons.generated]\nname = "Generated File Name"\n'
-                    '[[persons.generated.signal]]\nphone = "+852111"\n')
-    access = file_services(load_persons(path), permissive_policy()).access
-    adaptor = CultureAdaptor(
-        culture=InMemoryCultureStore(), access=access,
-        platform_for=lambda _key: platform, unit_for=lambda _key: "generated-unit",
-        label_for=lambda _key: "Generated Room", description_for=lambda _key: None)
-    batch = (replace(_row("Generated file message", name="Generated Spoofed Sender"),
-                     sender_id="+852111", person_name=None),)
-    if platform is None:
-        with pytest.raises(RuntimeError, match="platform is unavailable"):
-            await adaptor.inputs(key="g1", batch=batch)
-        return
-    body = await adaptor.inputs(key="g1", batch=batch)
-    assert "Generated File Name" in body
-    assert "Generated Spoofed Sender" not in body
+    async def now(self) -> datetime:
+        return _NOW
+
+    async def person_items(self, *, persons, after_us, limit):
+        return [i for i in self._items if i.recorded_us > after_us][:limit]
+
+    async def current_counts(self, *, items):
+        self.counts_asked = list(items)
+        return {
+            item: RecordedCounts(likes=12, comments=3, reposts=None,
+                                 likes_hidden=False, read_at=_NOW)
+            for item in items
+        }
 
 
-def _population_rooms():
-    return SimpleNamespace(rooms=lambda: (
-        SimpleNamespace(primary_id="g1", platform="signal", unit=_M_UNIT.id,
-                        label="Generated A", description=None, persons=frozenset()),
-        SimpleNamespace(primary_id="g2", platform="signal", unit=_M_UNIT.id,
-                        label="Generated B", description=None, persons=frozenset()),
-    ))
-
-
-async def _population_keys(adaptor):
-    import inspect
-
-    keys = adaptor.keys()
-    return await keys if inspect.isawaitable(keys) else keys
-
-
-async def test_character_composition_enumerates_the_selected_managed_population(
-    example_config,
-):
-    from nora.app.composition_dream import _character_adaptors
-    from nora.domain.culture import character_key
-
-    bindings, access = _managed()
-    await _managed_person(bindings)
-    await bindings.set_scoped_name(person_id=_M_PERSON, scope=_M_UNIT,
-        nickname="Generated Unit Person", operation_id="generated-unit-person-name")
-    await bindings.set_scoped_name(person_id=_M_PERSON, scope=_M_ROOM,
-        nickname="Generated Room Only", operation_id="generated-room-person-name")
-    persons = access.persons_view()
-    assert not persons.by_person  # File-shaped absence must not empty the managed population.
-    character = _character_adaptors(
-        allowlist=_population_rooms(), cfg=example_config, content_checks=None,
-        engine=None, metrics=Metrics(), note_store=None, persons=persons, access=access)
-    person = next(a for a in character.adaptors if a.name == "character-person")
-    expected = character_key(_M_UNIT.id, _M_PERSON)
-    assert await _population_keys(person) == (expected,)
-    pk = character.person_keys[expected]
-    assert (pk.person.person_id, pk.person.name, pk.home, pk.listed) == (
-        _M_PERSON, "Generated Unit Person", "g1", ("g1",))
-    assert tuple(r.key for r in pk.rooms) == ("g1", "g2")
-
-    await bindings.set_scoped_name(person_id=_M_PERSON, scope=_M_UNIT,
-        nickname="Generated Renamed Unit Person", operation_id="generated-unit-person-rename")
-    assert await _population_keys(person) == (expected,)
-    assert character.person_keys[expected].person.name == "Generated Renamed Unit Person"
-    bindings.down = True
-    with pytest.raises(RuntimeError):
-        await _population_keys(person)
-    with pytest.raises(RuntimeError, match="population is unavailable"):
-        character.person_keys[expected]
-    bindings.down = False
-    assert await _population_keys(person) == (expected,)
-
-
-async def test_selected_person_population_keeps_units_separate_and_observes_departure():
-    from nora.app.composition_helpers import selected_character_person_keys
-    from nora.domain.culture import character_key
-    from nora.domain.managed import room_scope_id
-    from nora.domain.management import Scope, ScopeKind
-
-    bindings, access = _managed()
-    await _managed_person(bindings)
-    other = Scope(ScopeKind.UNIT, "generated-other-unit")
-    other_room = Scope(ScopeKind.ROOM, room_scope_id("signal", "g3"))
-    from nora.people.app.managed import ManagedServices
-    from nora.testing.managed import (
-        FakeAuthorityBackend,
-        FakeIdentityRegistry,
-        FakeLinkRequests,
-        FakeTopologySource,
-    )
-
-    access = ManagedServices(bindings, FakeAuthorityBackend(), FakeTopologySource(
-        rooms={_M_ROOM.id: (_M_UNIT.id, False),
-               _M_SIBLING.id: (_M_UNIT.id, False), other_room.id: (other.id, False)},
-        units={_M_UNIT.id: "generated-workspace", other.id: "generated-workspace"},
-        workspaces={"generated-workspace"}), FakeIdentityRegistry(), FakeLinkRequests()).access
-    await bindings.set_membership(person_id=_M_PERSON, scope=other_room,
-        member=True, source="generated")
-    await bindings.set_scoped_name(person_id=_M_PERSON, scope=_M_UNIT,
-        nickname="Generated Unit One", operation_id="generated-name-one")
-    await bindings.set_scoped_name(person_id=_M_PERSON, scope=other,
-        nickname="Generated Unit Two", operation_id="generated-name-two")
-    rooms = (*_population_rooms().rooms(), SimpleNamespace(
-        primary_id="g3", platform="signal", unit=other.id, label="Generated C"))
-    source = SimpleNamespace(rooms=lambda: rooms)
-    keys = await selected_character_person_keys(source, access)
-    first, second = character_key(_M_UNIT.id, _M_PERSON), character_key(other.id, _M_PERSON)
-    assert set(keys) == {first, second}
-    assert keys[first].person.name == "Generated Unit One"
-    assert keys[second].person.name == "Generated Unit Two"
-    assert tuple(r.key for r in keys[second].rooms) == ("g3",)
-    await bindings.set_membership(person_id=_M_PERSON, scope=_M_ROOM,
-        member=False, source="generated")
-    keys = await selected_character_person_keys(source, access)
-    assert set(keys) == {second}
-
-
-@pytest.mark.parametrize("outage_first", [False, True])
-async def test_dream_loop_awaits_the_selected_population_before_dispatch(outage_first):
-    import asyncio
-
-    from nora.agent.dreamer import AdaptorSchedule
-    from nora.app.composition_helpers import selected_character_person_keys
-    from nora.app.runtime import dream_loop
-    from nora.domain.culture import character_key
-    from nora.domain.live import AsyncLiveMapping
-    from tests.unit.test_runtime import (
-        _EntityAdaptor,
-        _Evidence,
-        _FakeRecord,
-        _KeyedLanguage,
-        _RecordingRunner,
-    )
-
-    bindings, access = _managed()
-    await _managed_person(bindings)
-    reads = 0
-
-    async def read_population():
-        nonlocal reads
-        reads += 1
-        if outage_first and reads == 1:
-            raise RuntimeError("generated population outage")
-        return await selected_character_person_keys(_population_rooms(), access)
-
-    population = AsyncLiveMapping(read_population)
-    dispatched = asyncio.Event()
-
-    class PopulationAdaptor(_EntityAdaptor):
-        def keys(self):
-            return population.refresh()
-
-    class RecordingRunner(_RecordingRunner):
-        async def run(self, **kwargs):
-            result = await super().run(**kwargs)
-            dispatched.set()
-            return result
-
-    runner = RecordingRunner()
-    task = asyncio.create_task(dream_loop(
-        _FakeRecord({}), _KeyedLanguage(age=1000), Metrics(), scopes=lambda: (),
-        tick_seconds=0.01, safety_lag=0, quiet_seconds=0,
-        max_age_seconds=1e9, batch_limit=1,
-        adaptors=[PopulationAdaptor("character-person", _Evidence([1]))], runtime=runner,
-        schedules={"character-person": AdaptorSchedule(
-                min_interval_seconds=0, batch_limit=1, wake_batch=1)}))
-    waiter = asyncio.create_task(dispatched.wait())
-    try:
-        await asyncio.wait({waiter, task}, timeout=3, return_when=asyncio.FIRST_COMPLETED)
-        assert dispatched.is_set(), "selected population was not dispatched"
-    finally:
-        task.cancel()
-        waiter.cancel()
-        await asyncio.gather(task, waiter, return_exceptions=True)
-    assert runner.calls[0][:2] == ("character-person", character_key(_M_UNIT.id, _M_PERSON))
 
 
 async def _background_identity_case():
-    from nora.app.composition_helpers import selected_character_person_keys
     from nora.domain.identity import Identifier
     from nora.domain.managed import (
         AccountState,
@@ -341,199 +137,17 @@ async def _background_identity_case():
         workspaces={"generated-workspace"})
     access = ManagedServices(bindings, FakeAuthorityBackend(), topology,
                              registry, FakeLinkRequests()).access
-    rooms = (*_population_rooms().rooms(), SimpleNamespace(
-        primary_id="g3", platform="signal", unit=other_unit.id, label="Generated Other"))
-    keys = await selected_character_person_keys(SimpleNamespace(rooms=lambda: rooms), access)
     return SimpleNamespace(bindings=bindings, registry=registry, access=access,
-                           keys=keys, people=people, topology=topology)
+                           people=people, topology=topology)
 
 
-def _background_message(person, rid=1):
-    from dataclasses import replace
-
-    from tests.unit.test_character_person import _msg
-
-    message = _msg(rid, "g1", f"Generated message {rid}")
-    return replace(message, row=replace(message.row, person_id=person))
-
-
-_NOW = datetime.fromtimestamp((1_760_000_000_000 + 3_600_000) / 1000, tz=UTC)
-
-
-def _social_item(item_id: str, *, us: int) -> PersonSocialItem:
-    return PersonSocialItem(
-        network="instagram", item_id=item_id, kind="post", collab=False,
-        taken_at=datetime.fromtimestamp(us / 1_000_000, tz=UTC), origin="poll",
-        caption="lunch", recorded_us=us,
-    )
-
-
-class _SocialFake:
-    def __init__(self, items: list[PersonSocialItem], *, polled: int = 0) -> None:
-        self._items = items
-        self._polled = polled
-        self.counts_asked: list[tuple[str, str]] = []
-
-    async def polled_count(self, *, persons, after_us) -> int:
-        return self._polled
-
-    async def now(self) -> datetime:
-        return _NOW
-
-    async def person_items(self, *, persons, after_us, limit):
-        return [i for i in self._items if i.recorded_us > after_us][:limit]
-
-    async def current_counts(self, *, items):
-        self.counts_asked = list(items)
-        return {
-            item: RecordedCounts(likes=12, comments=3, reposts=None,
-                                 likes_hidden=False, read_at=_NOW)
-            for item in items
-        }
-
-
-def _person_background_adaptor(case, *, culture=None):
-    from dataclasses import replace
-
-    from nora.domain.culture import character_key
-    from nora.language.background_identity import BackgroundIdentity
-    from nora.language.character import CharacterPersonAdaptor, PersonEvidence
-    from nora.testing import InMemoryCharacterEvidence, InMemoryCultureStore
-
-    person = case.people[0]
-    key = character_key(_M_UNIT.id, person)
-    item = replace(_social_item("generated-private-social", us=10),
-                   caption="Generated Private Social Token")
-    social = _SocialFake([item], polled=1)
-    evidence = PersonEvidence(store=InMemoryCharacterEvidence(), keys=case.keys,
-        social=social, access=case.access)
-    adaptor = CharacterPersonAdaptor(culture=culture or InMemoryCultureStore(),
-        evidence=evidence, keys=case.keys, screen=lambda _text: None,
-        render_chars=1000, identity=BackgroundIdentity(case.access), clock=lambda: _NOW)
-    return key, adaptor, social, item
-
-
-@pytest.mark.parametrize("retired", [False, True])
-async def test_background_social_obeys_current_managed_preference_even_for_a_held_batch(
-    retired,
-):
-    from nora.access import SocialPreferenceUnavailableError
-    from nora.domain.social_stream import PersonSocialItem
-
-    case = await _background_identity_case()
-    person = case.people[0]
-    owner = person
-    if retired:
-        from nora.domain.managed import ManagedPerson, PersonLifecycle
-
-        owner = "generated-retired-profile-identity"
-        case.bindings.people[owner] = ManagedPerson(owner, PersonLifecycle.ACTIVE)
-        case.bindings.aliases[owner] = person
-        await case.registry.ensure_identity(external_id=owner, traits={"social": True})
-        await case.registry.set_state(external_id=owner, active=False)
-    key, adaptor, social, _ = _person_background_adaptor(case)
-    assert await adaptor.evidence.count(key=key, after=0) == 1
-    batch, _ = await adaptor.evidence.newest(key=key, after=0, limit=10)
-    assert any(isinstance(item, PersonSocialItem) for item in batch)
-    case.registry.identities[owner]["traits"]["social"] = False
-    assert await adaptor.evidence.count(key=key, after=0) == 0
-    fresh, _ = await adaptor.evidence.newest(key=key, after=0, limit=10)
-    assert not any(isinstance(item, PersonSocialItem) for item in fresh)
-    text = await adaptor.inputs(key=key, batch=[_background_message(person), *batch])
-    assert "Generated message 1" in text
-    assert "Generated Private Social Token" not in text
-    assert "social:instagram:generated-private-social" not in text
-    assert not social.counts_asked
-    case.registry.identities[owner]["traits"]["social"] = True
-    text = await adaptor.inputs(key=key, batch=[_background_message(person), *batch])
-    assert "Generated Private Social Token" in text
-    case.registry.down = True
-    with pytest.raises(SocialPreferenceUnavailableError):
-        await adaptor.inputs(key=key, batch=batch)
-    case.registry.down = False
-    assert "Generated Private Social Token" in await adaptor.inputs(key=key, batch=batch)
-
-
-async def test_background_rechecks_social_consent_after_assembly_reads():
-    from nora.testing import InMemoryCultureStore
-
-    case = await _background_identity_case()
-    person = case.people[0]
-
-    class RevokeCulture(InMemoryCultureStore):
-        async def head(self, **kwargs):
-            case.registry.identities[person]["traits"]["social"] = False
-            return await super().head(**kwargs)
-
-    key, adaptor, _, item = _person_background_adaptor(case, culture=RevokeCulture())
-    with pytest.raises(RuntimeError, match="social preference changed"):
-        await adaptor.inputs(key=key, batch=[_background_message(person), item])
-
-
-async def test_social_batch_excludes_disallowed_items_and_source_revisions_but_keeps_chat():
-    from nora.domain.profile_inputs import PersonSourceRevision
-    from nora.language.background_identity import BackgroundIdentity
-
-    case = await _background_identity_case()
-    person = case.people[0]
-    _, _, _, item = _person_background_adaptor(case)
-    message = _background_message(person)
-    source = PersonSourceRevision(domain="social", source="generated-social-source",
-        revision="one", state="readable", recorded_at="2026-10-05T09:00:00+00:00", social=item)
-    batch = [message, item, source]
-    assert await BackgroundIdentity(case.access).social_batch(person, batch) == batch
-    case.registry.identities[person]["traits"]["social"] = False
-    assert await BackgroundIdentity(case.access).social_batch(person, batch) == [message]
-
-
-async def test_the_selected_population_carries_no_key_for_a_sibling_unit_member():
-    """A member only of a sibling unit is enumerated under their own unit
-    and denied everywhere this unit reads its members: no population key,
-    no `<room_members>` ref, no `members_of` row for this room."""
-    from nora.domain.culture import character_key
+async def test_room_membership_excludes_a_sibling_units_members():
     from nora.domain.managed import room_scope_id
     from nora.domain.management import Scope, ScopeKind
 
     case = await _background_identity_case()
     person, peer, outsider = case.people
-    other_unit = Scope(ScopeKind.UNIT, "generated-profile-other")
     other_room = Scope(ScopeKind.ROOM, room_scope_id("signal", "g3"))
-    # The outsider's membership is real — on the sibling unit's room only.
+
     assert [m.person_id for m in await case.access.members_of(other_room)] == [outsider]
-    # This unit's population holds one key per own member — never theirs.
-    assert set(case.keys) == {
-        character_key(_M_UNIT.id, person), character_key(_M_UNIT.id, peer),
-        character_key(other_unit.id, outsider)}
-    # This room's member view — the one `<room_members>` renders — admits
-    # only this room's members.
     assert [r.person_id for r in await case.access.room_refs("signal", "g1")] == [person, peer]
-
-
-async def test_collective_batch_refuses_held_social_for_a_sibling_unit_member():
-    """The collective-social gate is this unit's room membership: the
-    member only of the sibling unit's room is not a member here, so
-    their held social evidence never reaches the assembled batch — the
-    in-unit member's does."""
-    from nora.domain.managed import room_scope_id
-    from nora.domain.management import Scope, ScopeKind
-    from nora.domain.profile_inputs import PersonSourceRevision
-    from nora.language.background_identity import BackgroundIdentity
-
-    case = await _background_identity_case()
-    person, _, outsider = case.people
-    identity = BackgroundIdentity(case.access)
-    # The outsider's membership is real — in the sibling unit's room only.
-    other_room = Scope(ScopeKind.ROOM, room_scope_id("signal", "g3"))
-    assert [m.person_id for m in await case.access.members_of(other_room)] == [outsider]
-
-    def held(subject):
-        return PersonSourceRevision(
-            domain="social", source="generated-held-social", revision="one",
-            state="readable", recorded_at="2026-10-05T09:00:00+00:00",
-            subject=subject)
-
-    message = _background_message(person)
-    member_item, outsider_item = held(person), held(outsider)
-    out = await identity.collective_batch(
-        [("signal", "g1")], [message, member_item, outsider_item])
-    assert out == [message, member_item]

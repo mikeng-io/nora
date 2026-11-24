@@ -750,7 +750,7 @@ def build_grounder(
         for n in indexed:
             # LINEAGE: shown only where it passes for every room the session reads.
             if applies and not all(derived_view(
-                notes=(n,), standing=None, culture=None, target=t,
+                notes=(n,), standing=None, target=t,
             ).notes for t in targets):
                 withheld["notes"] += 1
                 if enforced:

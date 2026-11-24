@@ -1243,96 +1243,6 @@ async def test_a_valid_inherited_effort_still_starts(cfg):
 
 
 
-async def test_the_culture_adaptor_is_wired_with_its_grant_and_its_OWN_room(
-    cfg, tmp_path,
-):
-    """**The grant is not inert.** Three things have to line up or the grant is inert and
-    nothing says so: the runtime must hold a grant under the adaptor's OWN name (a second
-    spelling is a grant that silently does not apply), the tool source must hold this
-    key's room in `scope_rooms`, and the room must carry the platform. Without it there is
-    no roster source, `view.available` is `False`, and every room-scoped verb answers
-    `unavailable` forever while every counter stays green.
-
-    `home_rooms` is asserted NOT to be the resolution path: culture is scope-keyed and
-    `DreamerRuntime.run` supplies `unit=None` for it, so a resolution through `home_rooms`
-    would look up `""` and find nothing."""
-    from nora.agent.dreamer import culture_grant
-
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True, "culture.enabled": True,
-    }))
-
-    assert "culture" in [a.name for a in deps.dream_adaptors]
-    assert deps.dreamer_runtime is not None
-    assert deps.dreamer_runtime.grant_for("culture") == culture_grant()
-    source = deps.dreamer_runtime._tools
-    # Every policy conversation, by every id form it answers to — the second
-    # room too, which has no `home_room = true` and needs none.
-    assert set(source._scope_rooms) == {"g1", "g2"}
-    room = source._scope_rooms["g1"]
-    assert (room.platform, room.conversation_id) == ("signal", "g1")
-    assert room.location_trusted is True and room.unit == "friends"
-    assert "g1" not in source._home_rooms
-
-
-async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_path):
-    """The property the grant exists for, measured at the seam rather than inferred from it:
-    `RegistryToolSource.build` with the culture adaptor's own name, key and grant returns
-    the room-scoped verbs (`group_members`, `lookup_person`) over a room with a real platform
-    rather than the empty one.
-
-    Without the scope-keyed resolution this returns the same NAMES built against
-    `Room(platform="", roster_source=None)`, which is why the room is asserted too: a
-    green name list is exactly what the defect looks like."""
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True, "culture.enabled": True,
-    }))
-
-    assert deps.dreamer_runtime is not None
-    source = deps.dreamer_runtime._tools
-    culture = next(a for a in deps.dream_adaptors if a.name == "culture")
-    # THE ROOM, captured off the one call that receives it. Asserting the
-    # returned NAMES alone does not measure this property and a mutation
-    # proved it: with the grant reverted to `AdaptorGrant()` all nine verbs
-    # still build — they are read-only, so the ceiling admits them — over
-    # `Room(platform="", roster_source=None)`, where every one of them answers
-    # `unavailable` forever. A green name list IS the defect.
-    captured: dict[str, object] = {}
-    real_surface = source._registry.surface
-
-    def _spy(**kw: object) -> object:
-        captured.update(kw)
-        return real_surface(**kw)
-
-    source._registry.surface = _spy
-    try:
-        built = source.build(
-            key="g1", names=frozenset(culture.tools), unit=None,
-            adaptor="culture", grant=deps.dreamer_runtime.grant_for("culture"),
-        )
-    finally:
-        del source._registry.surface
-
-    names = {
-        getattr(t, "tool_name", None) or getattr(t, "__name__", "") for t in built
-    }
-    # `[memory.index]` is off here, so the graph's `memory_search` is granted and
-    # not built (DEC-316).
-    expected = set(culture.tools) - GRAPH_MEMORY_TOOLS
-    assert names == expected, sorted(expected - names)
-    assert "group_members" in names and "lookup_person" in names
-    room = captured["room"]
-    assert room.platform == "signal", "the verbs were built over the EMPTY room"
-    assert room._roster_source is not None, "no roster: every verb is unavailable"
-    assert captured["conversation_id"] == "g1"
-    assert captured["location_trusted"] is True
-    assert captured["supplied_unit"] is None
-
-
-
-
 async def test_the_heartbeat_screens_proactive_rows_and_the_fire_path_can_stay_silent(
     cfg, tmp_path,
 ):
@@ -1867,70 +1777,6 @@ def test_a_sendable_public_url_or_none_starts(origin) -> None:
     nora.documents.wire._require_a_sendable_public_url(origin)
 
 
-async def test_no_wired_adaptor_holds_an_act_verb(cfg, tmp_path):
-    """`verify_tool_subsets` runs at startup, so reaching this line is half the
-    assertion; the other half names it: with every tier on, every Dreamer
-    adaptor stays inside the read-only ceiling (the Cognition session writes
-    through its own verbs, not registry tools)."""
-    from nora.agent.registry import ToolRegistry
-
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True, "notes.enabled": True, "culture.enabled": True,
-    }))
-
-    ceiling = ToolRegistry().read_only_tools()
-    assert deps.dreamer_runtime is not None
-    assert [a.name for a in deps.dream_adaptors] == [
-        "culture", "character-person", "character-nora", "character-unit",
-    ]
-    assert deps.dream_schedules["character-nora"].wake_batch == 100
-    assert deps.dream_schedules["character-unit"].wake_batch == 5
-    # A person session wakes on its own count, on the room fold's stale clock,
-    # and runs on the room fold's budget when the deployment set one.
-    person = deps.dream_schedules["character-person"]
-    assert person.wake_batch == 100
-    assert person.min_interval_seconds == deps.dream_schedules["culture"].min_interval_seconds
-    for adaptor in deps.dream_adaptors:
-        assert adaptor.tools <= ceiling, adaptor.name
-
-
-async def test_a_person_session_reads_its_wake_batch_not_a_rooms_batch_limit(cfg, tmp_path):
-    """Cost: a person session read `[culture] batch_limit` (300, sized for a
-    whole room's corpus) messages. It reads its own person message wake threshold,
-    as Nora's session reads its own wake batch."""
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True, "notes.enabled": True, "culture.enabled": True,
-        "memory.profile.person.update_every_messages": 40, "culture.batch_limit": 300,
-    }))
-    assert deps.dream_schedules["character-person"].batch_limit == 40
-    assert deps.dream_schedules["character-nora"].batch_limit == 100
-    assert deps.dream_schedules["culture"].batch_limit == 300
-
-
-async def test_culture_resolves_a_mapped_senders_canonical_name(cfg):
-    """`CultureAdaptor` names its `<room_messages>` through `Persons.name_transcript`
-    (`identity.toml`'s `[persons.miles]` maps signal `+852111` to `Miles`, the `cfg`
-    fixture's own shape)."""
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True, "culture.enabled": True,
-    }))
-    culture = next(a for a in deps.dream_adaptors if a.name == "culture")
-    batch = (
-        TranscriptRow(
-            id=1, sender_id="+852111", sender_name="not-miles", ts=1_000,
-            body="dinner Saturday?", is_nora=False,
-            delivery_status=DeliveryStatus.SENT, raw_json=None,
-        ),
-    )
-
-    text = await culture.inputs(key="g1", batch=batch)
-
-    assert 'from="Miles"' in text
-    assert "not-miles" not in text
-
-
 async def test_an_eval_subject_with_the_subagent_on_builds_the_tools_and_a_recorder(
     cfg, no_build_stamp,
 ):
@@ -2052,7 +1898,7 @@ async def test_cognition_holds_the_memory_surface_the_flag_selects(cfg, tmp_path
     the session's memory verbs exactly as it picks every other occasion's.
     The session's `wired` set (its guard's read-only set) and what it BUILDS
     agree, and neither holds the other surface."""
-    from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, OFF_GRAPH_ONLY_TOOLS
+    from nora.agent.catalog.groups import OFF_GRAPH_ONLY_TOOLS
 
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(
@@ -2069,24 +1915,10 @@ async def test_cognition_holds_the_memory_surface_the_flag_selects(cfg, tmp_path
     assert built & on and runner._read_only_tools & on
 
 
-@pytest.mark.parametrize("render", [False, True])
-async def test_profile_render_switch_retires_the_culture_and_character_writers(cfg, render):
-    configured = override_config(cfg, {
-        "dreamer.enabled": True, "culture.enabled": True,
-        "memory.profile.write": True, "memory.profile.read": render,
-    })
-    deps = await build_dependencies(configured)
-    names = {a.name for a in deps.dream_adaptors}
-    assert not {n for n in names if n.startswith("profile-")}
-    legacy = {"culture", "character-person", "character-unit", "character-nora"}
-    assert (names & legacy) == (set() if render else legacy)
-
-
 async def test_markdown_identity_reaches_live_tools_and_cognition_writers(cfg, tmp_path):
     import shutil
 
     from nora.agent.room import Room
-    from nora.domain.models import TranscriptRow
 
     directory = tmp_path / "renamed-doctrine"
     shutil.copytree(cfg.doctrine.dir, directory)

@@ -24,7 +24,6 @@ from nora.domain.comprehend import (
 )
 from nora.domain.config_reload import RELOAD_OUTCOMES
 from nora.domain.cues import CUES
-from nora.domain.culture import CHARACTER_KINDS, CHARACTER_OUTCOMES, CULTURE_OUTCOMES
 from nora.domain.doctrine_check import CHECK_OUTCOMES
 from nora.domain.lessons import LESSONS_OUTCOMES
 from nora.domain.media import MEDIA_FETCH_CALLERS
@@ -1533,36 +1532,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         # this series under-counts refusals by the outage rate. The two series stay
         # SEPARATE (R-23); giving both the same join key does not weaken that.
         ("kind", "platform", "conversation_id"),
-    ),
-    # The culture tier's only counter. The vocabulary is
-    # `nora.language.culture.CULTURE_OUTCOMES` and is deliberately not restated here.
-    #
-    # `unchanged` is the one worth reading and the one that looks like a failure: the
-    # adaptor declines to append an account byte-identical to the head, because each
-    # link in the chain must differ from the one before. A sustained run of it is a
-    # room that has stopped changing, a real reading and not an error.
-    #
-    # The outcomes are about what a session did with its room: `refused` counts one
-    # refused `character_revise` call, `unsettled` a session that ended with the room
-    # neither revised nor kept (its batch is held), `kept` a «no change» close.
-    _CounterSpec(
-        "nora_culture_fold_total",
-        "Culture folds by what the session did with the room's account, by "
-        "outcome (" + " / ".join(sorted(CULTURE_OUTCOMES))
-        + "). refused: one write was refused with a reason the model read. "
-        "unsettled: the session ended with the room neither revised nor kept, "
-        "and its batch is held. abandoned: the same batch was unsettled three "
-        "times in a row and the fold advanced past it.",
-        ("outcome",),
-    ),
-    # The Character sessions that are not a room: one per (unit, entity) key, by
-    # entity kind and by the same outcomes.
-    _CounterSpec(
-        "nora_character_session_total",
-        "Character sessions (person, unit, Nora) by kind ("
-        + " / ".join(sorted(CHARACTER_KINDS)) + ") and outcome ("
-        + " / ".join(sorted(CHARACTER_OUTCOMES)) + ").",
-        ("kind", "outcome"),
     ),
     # The Lessons session: one per unit, by what it did; `decayed` is code
     # retiring a lesson at its horizon.

@@ -179,6 +179,26 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
                      "profile_revision_count", "profile_revisions_after", "room_count",
                      "room_since", "tie_totals", "windowed")
     },
+    **{
+        ("character.py", name): _Pin(
+            "scheduled_removal", "Only the Dreamer personality sessions called it. "
+            "The Character evidence cleanup owns its removal.",
+        )
+        for name in ("advance_social_cursor", "episode_count", "message_head",
+                     "person_count", "person_since", "revision_count",
+                     "revisions_after", "social_cursor")
+    },
+    **{
+        ("social_stream.py", name): _Pin(
+            "scheduled_removal", "The person Character adaptor was the only caller. "
+            "The Character evidence cleanup owns its removal.",
+        )
+        for name in ("person_items", "polled_count")
+    },
+    ("culture.py", "head"): _Pin(
+        "scheduled_removal",
+        "The legacy account readers are gone. The Culture store cleanup owns this read.",
+    ),
     ("social_stream.py", "current_counts"): _Pin(
         "scheduled_removal",
         "The Profile person session was its only caller and left in 6c-2b-ii; the Character "

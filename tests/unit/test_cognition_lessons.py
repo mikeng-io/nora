@@ -21,9 +21,8 @@ import pytest
 from nora.agent.dream_screen import offence
 from nora.domain.cognition_ground import Grounding
 from nora.domain.culture import Episode
-from nora.domain.lessons import Lesson, LessonConflictError, LessonRevision
+from nora.domain.lessons import CharacterRoom, Lesson, LessonConflictError, LessonRevision
 from nora.domain.models import DeliveryStatus, TranscriptRow
-from nora.language.character import CharacterRoom
 from nora.language.cognition_render import render_agenda
 from nora.language.lesson_book import LessonBook
 from nora.language.lessons import (
@@ -348,6 +347,33 @@ async def test_a_refusal_names_a_held_lesson_by_handle_never_by_id(env):
     thin = await v["lesson_write"](body="a different practice about timing",
                                    citations=["response:100"])
     assert thin["reason"] == "thin_evidence" and "responded" not in str(thin["detail"])
+
+
+def test_lesson_room_keys_keep_only_absorbed_rooms_in_policy_order(tmp_path):
+    from nora.app.composition_helpers import character_unit_keys
+    from nora.domain.culture import unit_culture_key
+    from nora.policy import load_policy
+
+    path = tmp_path / "policy.toml"
+    first, last = ("signal", "z-room"), ("signal", "a-room")
+    path.write_text(
+        'default = "deny"\n'
+        '[[conversations]]\nplatform = "signal"\nid = "z-room"\n'
+        'label = "First"\nunit = "friends"\npersons = "*"\n'
+        '[[conversations]]\nplatform = "signal"\nid = "a-room"\n'
+        'label = "Last"\nunit = "friends"\npersons = "*"\n'
+    )
+    policy = load_policy(path)
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    absorbed_first, absorbed_last = policy.rooms()
+    unabsorbed = replace(absorbed_first, ids=frozenset({"m-room"}),
+                         discovered=True, relevance_gate=False)
+    allowlist = SimpleNamespace(rooms=lambda: (absorbed_first, unabsorbed, absorbed_last))
+    unit = character_unit_keys(allowlist)[unit_culture_key("friends")]
+
+    assert [(room.platform, room.key) for room in unit.rooms] == [first, last]
 
 
 def test_no_lessons_adaptor_survives_in_composition():

@@ -10,17 +10,10 @@ from nora.agent.dreamer import AdaptorBudget
 from nora.agent.room import Room
 from nora.app.startup import StartupError
 from nora.config import Config, DreamBudgetConfig
-from nora.domain.culture import character_key, unit_culture_key
+from nora.domain.culture import unit_culture_key
+from nora.domain.lessons import CharacterRoom, UnitKey
 from nora.domain.ports import RosterSource
 from nora.engagement.self_presence import PresenceReader
-from nora.language.character import (
-    CHARACTER_NORA_ADAPTOR_NAME,
-    CHARACTER_PERSON_ADAPTOR_NAME,
-    CHARACTER_UNIT_ADAPTOR_NAME,
-    CharacterRoom,
-    PersonKey,
-    UnitKey,
-)
 from nora.persons import Persons
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.bridge_control import BridgeDiscordAdapter
@@ -128,55 +121,6 @@ def character_unit_keys(allowlist: Any)-> dict[str, UnitKey]:
     }
 
 
-def character_person_keys(allowlist: Any, persons: Any) -> dict[str, PersonKey]:
-    """File-declared person populations, grouped by unit."""
-    return _person_keys([
-        (conv, persons.room_members(conv.persons))
-        for conv in allowlist.rooms() if conv.primary_id and conv.unit
-    ])
-
-
-async def selected_character_person_keys(allowlist: Any, access: Any) -> dict[str, PersonKey]:
-    """Current selected room memberships, named in their own unit."""
-    from nora.domain.management import Scope, ScopeKind
-
-    rows = []
-    refs = {}
-    for conv in allowlist.rooms():
-        if not conv.primary_id or not conv.unit:
-            continue
-        members = []
-        for member in await access.room_refs(conv.platform, conv.primary_id):
-            key = (conv.unit, member.person_id)
-            if key not in refs:
-                refs[key] = await access.person_ref(
-                    member.person_id, scope=Scope(ScopeKind.UNIT, conv.unit))
-            if refs[key] is not None:
-                members.append(refs[key])
-        rows.append((conv, members))
-    return _person_keys(rows)
-
-
-def _person_keys(rows: Any) -> dict[str, PersonKey]:
-    """A unit's evidence spans its rooms; its home is a room listing the identity."""
-    rooms_of: dict[str, list[CharacterRoom]] = {}
-    listing: dict[tuple[str, str], list[str]] = {}
-    refs: dict[tuple[str, str], Any] = {}
-    for conv, members in rows:
-        rooms_of.setdefault(conv.unit, []).append(CharacterRoom(
-            key=conv.primary_id, platform=conv.platform, label=conv.label))
-        for ref in members:
-            key = (conv.unit, ref.person_id)
-            refs[key] = ref
-            listing.setdefault(key, []).append(conv.primary_id)
-    return {
-        character_key(unit, person_id): PersonKey(
-            unit=unit, person=refs[(unit, person_id)],
-            rooms=tuple(rooms_of[unit]), home=homes[0], listed=tuple(homes))
-        for (unit, person_id), homes in listing.items()
-    }
-
-
 def _roster_names_of(
     rosters: Mapping[str, RosterSource], persons: Persons, self_ids: frozenset[str],
 ) -> Callable[[str, str], Awaitable[Mapping[str, str] | None]]:
@@ -231,14 +175,6 @@ def _music_channel_of(policy: Policy)-> Callable[[str], str | None]:
         return policy.music_channel_for("discord", guild_id)
 
     return _resolve
-
-
-CHARACTER_ADAPTOR_NAMES: tuple[str, ...] = (
-    CHARACTER_PERSON_ADAPTOR_NAME,
-    CHARACTER_UNIT_ADAPTOR_NAME,
-    CHARACTER_NORA_ADAPTOR_NAME,
-)
-
 
 
 def _adaptor_budget(b: DreamBudgetConfig)-> AdaptorBudget:

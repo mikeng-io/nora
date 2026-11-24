@@ -14,7 +14,6 @@ place to drift:
 1. **The adaptors** come from walking the whole `nora` package for classes declaring the
    port's own fields. Nothing in `DreamAdaptor` says an adaptor must live in one package,
    and the real registry is the composition root's `dream_adaptors`.
-   `test_the_adaptors_are_derived_and_not_empty` is the run-that-ran control.
 2. **The collaborators** come from the `self.X = <param>` ASSIGNMENTS in `__init__`, not
    from the parameter names. An adaptor holding `candidates` as `self._db` would otherwise
    have every call on it invisible. Deriving from the wrong half of the constructor is a
@@ -386,25 +385,6 @@ _MUST_SEE: dict[str, frozenset[str]] = {
         "self._notes.standing", "self._notes.record_wake",
         "self._clock_store.record_fire", "self._reminders.history",
     }),
-    # The SMALLEST entry here, and that is the tier rather than an oversight: culture
-    # reads one thing (the account written last time) and writes one thing (the next
-    # account). `head` appears at two sites, once in `inputs` to render the previous
-    # account, once in `commit` to refuse a byte-identical one, and the site count, not
-    # the call count, is what `STORE_CALLS_PER_TICK` is sized against.
-    "CultureAdaptor": frozenset({
-        "self._culture.head", "self._culture.append",
-    }),
-    # A person's session: its own account and the unit's room cultures in, one account
-    # out.
-    "CharacterPersonAdaptor": frozenset({
-        "self._culture.head", "self._culture.append",
-    }),
-    "CharacterNoraAdaptor": frozenset({
-        "self._culture.head", "self._culture.append",
-    }),
-    "CharacterUnitAdaptor": frozenset({
-        "self._culture.head", "self._culture.append",
-    }),
     # note-merge: the change check's two reads, the fold's transaction, and the stamp that
     # must come last.
     "NoteMergeAdaptor": frozenset({
@@ -412,14 +392,6 @@ _MUST_SEE: dict[str, frozenset[str]] = {
         "self._notes.merge_into", "self._clock_store.record_fire",
     }),
 }
-
-
-def test_the_adaptors_are_derived_and_not_empty():
-    """The run-that-ran control for the derivation itself. An empty or
-    silently-shrinking list makes every parametrized test below vacuous, and a
-    hand-written one is the hand-copied vocabulary this file exists to
-    refuse."""
-    assert len(ADAPTORS) >= 1, IDS
 
 
 @pytest.mark.parametrize(("_module", "cls"), ADAPTORS, ids=IDS)

@@ -40,7 +40,7 @@ CAUSAL_TIMING = {
 #: room fold (`{"standing": ...}` contract).
 _UNIT_SCOPE_MARKER = "Scope of this call: UNIT"
 
-BackgroundAnswer = Literal["session_close", "culture"]
+BackgroundAnswer = Literal["session_close"]
 
 #: Total background calls the finite world answers. A workload bound, not a
 #: threshold production raised: past it the request is a named `exhausted`
@@ -154,7 +154,7 @@ class CausalProtocol:
             for purpose in ("tag", "participation", "proactive")
         }
         #: The served-request census by occasion: `scenario`, `fold_unit`,
-        #: `fold_room`, `debrief`, `culture`, `character-*`. Served, not inferred —
+        #: `wake`, `wake-history`, `review`. Served, not inferred —
         #: unmatched requests are in `errors`, never here.
         self.occasions: dict[str, int] = {}
 
@@ -304,17 +304,8 @@ class CausalProtocol:
 
     def _background(self, request, objective):
         """Answer the declared adaptor objective; an unsettled close holds its watermark."""
-        why = "Generated protocol retains the previous account."
+        why = "Generated background pass completed."
         answer = self.background_answers.get(objective)
-        if answer == "culture":
-            messages = request["messages"]
-            tool_results = [row.get("content") for row in messages if row.get("role") == "tool"]
-            if tool_results:
-                assert any(row.get("status") == "ok" for row in objects(tool_results[-1]))
-                return completion(request["model"], "Generated pass settled.", stream=True)[
-                    "response"
-                ]
-            return self.tool(request, "character_no_change", {"entity": "room", "why": why})
         if answer == "session_close":
             return completion(request["model"], why, stream=True)["response"]
         raise UnmatchedError("unsupported_objective", objective)

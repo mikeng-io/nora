@@ -729,3 +729,25 @@ def test_controlled_circle_cases_keep_their_declared_entry_and_overlay():
     public = cases['circle_public_private_boundary']
     assert public.metadata['circle_overlay'] == {'memory': 'partial'}
     assert len([c for c in cases.values() if c.metadata.get('circle_overlay')]) == 8
+
+
+async def test_a_dreamer_restore_does_not_default_to_the_retired_culture_adaptor(monkeypatch):
+    from types import SimpleNamespace
+
+    from evals.rebuilt import entry
+    from evals.rebuilt.domain import Case
+
+    attempts = []
+
+    async def missing_adaptor(subject, *, adaptor, after_ms):
+        attempts.append(adaptor)
+        raise LookupError("no matching Dreamer adaptor")
+
+    monkeypatch.setattr(entry, "dream", missing_adaptor)
+    outcome = await entry.dreamer(
+        SimpleNamespace(), Case(name="generated-adaptor", entry="dreamer", expect="either"),
+        now_ms=1_790_000_000_000,
+    )
+
+    assert attempts == [""]
+    assert outcome.error == "no matching Dreamer adaptor"

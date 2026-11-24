@@ -2,12 +2,10 @@
 shared transcript type text; original messages, order and framing stay pinned.
 """
 import json
-from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 from nora.agent.prefill import build_prefill
-from nora.domain.culture import CultureRevision
 from nora.domain.models import NormalizedMessage, PersonRef, TagContext, TranscriptRow
 
 NOW = datetime(2026, 10, 25, tzinfo=UTC)
@@ -21,10 +19,6 @@ def render_default_prefill():
         sender_id="synthetic-sender", sender_name="Ada", timestamp=TS,
         body="Nora, what do you know?", raw={},
     )
-    def prose(body):
-        return CultureRevision(id="synthetic-revision", culture_key="synthetic-room",
-                               body=body, written_at=TS - 3600000,
-                               established_by="synthetic")
     ctx = TagContext(
         tag_id="synthetic-tag", message=message, tagger=person,
         transcript=(TranscriptRow(id=1, ts=TS - 300000, sender_id="synthetic-sender",
@@ -33,10 +27,6 @@ def render_default_prefill():
                                   delivery_status="sent", raw_json={}),),
         peer_card=("Ada likes books.",), started_at=0, room_members=(person,),
     )
-    ctx = replace(ctx, culture=prose("A quiet reading room."),
-                  unit_culture=prose("A group of readers."),
-                  character=(("Ada", prose("Ada plans the reading list.")),),
-                  self_account=prose("She answers briefly."))
     return build_prefill(ctx, display_name="Nora", context_window=10, now=NOW)
 
 

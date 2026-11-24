@@ -45,8 +45,8 @@ def profile_scopes_of_person(policy: Policy, person_id: str) -> tuple[tuple[str,
     `workspaces_of_person`'s membership rule one level down — a `persons =
     "*"` room lists nobody, and a unit no workspace binds is dropped rather
     than guessed — with one difference: without `[units]` it does NOT answer
-    for everybody. A Profile account exists only for a person a room lists
-    (`character_person_keys`), so an unlisted person has no scope here, where
+    for everybody. A Profile account exists only for a person a room lists,
+    so an unlisted person has no scope here, where
     `workspaces_of_person` above still answers the one implicit workspace. Sorted by
     unit, so a page renders them in one order."""
     # ponytail: same file-fact rule as `workspaces_of_person` — the guild

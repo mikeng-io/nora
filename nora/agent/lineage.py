@@ -54,7 +54,6 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol, TypeVar
 
-from ..domain.culture import CultureRevision
 from ..domain.entries import Entry
 from ..domain.lineage import (
     BODY,
@@ -343,20 +342,18 @@ class LineagePolicy:
 @dataclass(frozen=True)
 class DerivedView:
     """What the derived blocks of one prompt may show in room B: the notes
-    whose row passes, and whether each Standing and culture section does.
+    whose row passes, and whether each Standing section does.
     `withheld` counts, per block, what did not pass (0s omitted), for the
     prefill span whatever the mode."""
 
     notes: tuple[Note, ...]
     standing: bool
     standing_working_set: bool
-    culture: bool
     withheld: tuple[tuple[str, int], ...] = ()
 
 
 def derived_view(
-    *, notes: Iterable[Note], standing: Standing | None,
-    culture: CultureRevision | None, target: RenderRoom,
+    *, notes: Iterable[Note], standing: Standing | None, target: RenderRoom,
 ) -> DerivedView:
     """Apply lineage to the derived rows a prompt carries: each row, field or
     section is rendered only where its lineage passes for the room. A section
@@ -377,13 +374,6 @@ def derived_view(
         )
         if standing is not None else {BODY: True, WORKING_SET: True}
     )
-    culture_ok = (
-        visible_sections(
-            culture.lineage, (BODY,), target, origin=culture.culture_key,
-            exclude_persons=culture.exclude_persons,
-        )[BODY]
-        if culture is not None else True
-    )
     counts = (
         ("notes", len(held) - len(shown)),
         ("standing", int(not stand[BODY])),
@@ -391,11 +381,10 @@ def derived_view(
             standing is not None and bool(standing.working_set)
             and not stand[WORKING_SET]
         )),
-        ("culture", int(not culture_ok)),
     )
     return DerivedView(
         notes=shown, standing=stand[BODY],
-        standing_working_set=stand[WORKING_SET], culture=culture_ok,
+        standing_working_set=stand[WORKING_SET],
         withheld=tuple((name, n) for name, n in counts if n),
     )
 

@@ -10,7 +10,6 @@ from enum import Enum
 from typing import Any, Literal
 
 from .computer_context import ComputerView
-from .culture import CultureRevision
 from .decision_log import DecisionRow
 from .documents_context import DocumentsView
 from .external_files import ExternalFileRef
@@ -764,24 +763,7 @@ class TagContext:
     # read fresh here, never copied onto the note.
     retained_sources: tuple[Any, ...] = ()
     retained_sources_more: int = 0
-    # A supplied room culture revision describes what the room is like and
-    # how it came to be that way.
-    culture: CultureRevision | None = None
-    # Display name and supplied character revision for each represented person.
-    character: tuple[tuple[str, CultureRevision], ...] = ()
-    # A supplied culture revision describing the unit across its rooms.
-    unit_culture: CultureRevision | None = None
-    # Nora's supplied character revision for the room's unit, where permitted.
-    self_account: CultureRevision | None = None
-    # THE SWITCH (design/unified-memory/profiles.md, `[memory.profile] read`): each entity
-    # of this turn's Profile account — self, room, unit, then the persons — read
-    # through `read_profile` and rendered as `<profile>` blocks INSTEAD of
-    # `self_account`, `culture`, `unit_culture`, `character`, `peer_card`,
-    # `tagger_card` and `people_in_window` (all of which the assembler leaves
-    # unset when it fills this). Empty with `[memory.profile] read` off and in every
-    # harness that wires no profile reader. Lines whose `exclude_persons` name
-    # a member of the rendering room are dropped by the assembler before the
-    # view is built (`ProfileView`'s docstring).
+    # Supplied profiles replace the peer summaries for this turn.
     profiles: tuple[ProfileView, ...] = ()
     # What she has learned to do differently in this unit: the bodies of its
     # active lessons, oldest first, read under `[lessons] render` on tag and

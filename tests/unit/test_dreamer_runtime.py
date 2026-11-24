@@ -554,12 +554,7 @@ async def test_an_accept_that_RAISES_is_unavailable_and_never_reaches_commit(
     having: `unavailable` is the one status `_dream_once` holds the watermark
     on, so an adaptor that read its model's result and refused to record it
     does not also spend the messages it read.
-
-    `nora.language.culture.CultureAdaptor` is the shipped user — an account
-    past `BODY_MAX_CHARS` is thrown away, and returning `()` for it would give
-    status `ok` and advance the cursor, losing the account AND the batch with
-    nothing durable saying so. This is the runtime half of that pin: the unit
-    test says the adaptor raises, this says what the raise buys."""
+"""
     sink = _Sink()
     runtime, _ = _runtime(monkeypatch, raw='{"observations": [{"term": "a"}]}')
 

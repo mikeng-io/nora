@@ -9,19 +9,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from nora.access import IdentityAccess
-from nora.domain.culture import CultureRevision, character_key
 from nora.domain.models import NormalizedMessage, PersonRef, Quote, TranscriptRow
 from nora.engagement.character_who import fire_character_people, tag_character_people
-from nora.language.culture_render import (
-    CHARACTER_BLOCK_MAX_CHARS,
-    PERSON_ACCOUNT_MAX_CHARS,
-    read_character,
-    render_character,
-)
-from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import permissive_policy
-from nora.testing import InMemoryCultureStore
 
 NOW = datetime(2026, 10, 7, tzinfo=UTC)
 IDS = {"ada": "+85200000001", "bo": "+85200000002", "cy": "+85200000003",
@@ -106,71 +97,6 @@ async def test_a_fire_renders_its_window_speakers_and_its_own_person_only():
         ROSTER, access=ACCESS, platform="signal", person=None, transcript=[],
     )
     assert quiet == ()
-
-
-async def test_only_the_people_in_the_turn_are_read_from_the_store():
-    store = InMemoryCultureStore()
-    for p in IDS:
-        await store.append(key=character_key("friends", p), body=f"{p} account",
-                           written_at=1, established_by="x")
-    msg = _msg("ada")
-    got = await read_character(
-        store, unit="friends",
-        members=await tag_character_people(
-            ROSTER, access=ACCESS, message=msg, tagger=REFS["ada"],
-            transcript=[_row("bo", 1)],
-        ),
-        stage="tag_character", platform="signal", metrics=Metrics(),
-    )
-    assert [n for n, _ in got] == ["Ada", "Bo"]
-    assert store.reads == [character_key("friends", "ada"), character_key("friends", "bo")]
-
-
-def _rev(body: str) -> CultureRevision:
-    return CultureRevision(
-        id="r", culture_key="k", body=body, written_at=0, established_by="x")
-
-
-def test_one_account_is_capped_and_says_how_much_it_dropped():
-    long = "a" * (PERSON_ACCOUNT_MAX_CHARS + 123)
-    out = render_character([("Ada", _rev(long))], now=NOW).render()  # type: ignore[union-attr]
-    assert "[123 more characters not shown]" in out
-    assert "a" * (PERSON_ACCOUNT_MAX_CHARS + 1) not in out
-
-
-def test_an_account_under_the_cap_is_untouched():
-    out = render_character([("Ada", _rev("b" * 1_739))], now=NOW).render()  # type: ignore[union-attr]
-    assert "more characters" not in out and "b" * 1_739 in out
-
-
-def test_the_block_is_capped_and_an_account_that_no_longer_fits_is_counted():
-    """The cap bounds the RENDERED block: wrappers, ages, markers included. The
-    first account the budget cannot hold is cut; later ones are left out whole
-    and counted in one closing marker, which is inside the cap."""
-    accounts = [(f"P{i}", _rev("c" * PERSON_ACCOUNT_MAX_CHARS)) for i in range(6)]
-    out = render_character(accounts, now=NOW).render()  # type: ignore[union-attr]
-    assert len(out) <= CHARACTER_BLOCK_MAX_CHARS
-    assert out.count("<person_account") == 5  # four whole, the fifth cut
-    assert out.count("more characters not shown]") == 2  # the cut one and the closing line
-    assert "P5" not in out  # the sixth is left out whole
-    closing = f"[{PERSON_ACCOUNT_MAX_CHARS} more characters not shown]\n</character>"
-    assert out.rstrip().endswith(closing)
-
-
-def test_an_escape_heavy_block_is_still_bounded_as_rendered():
-    """`escape()` multiplies `<`, so a cap on raw characters would not bound it."""
-    accounts = [(f"P{i}", _rev("<" * PERSON_ACCOUNT_MAX_CHARS)) for i in range(6)]
-    out = render_character(accounts, now=NOW).render()  # type: ignore[union-attr]
-    assert len(out) <= CHARACTER_BLOCK_MAX_CHARS
-    assert "<<<" not in out
-    assert "more characters not shown]" in out
-
-
-def test_the_whole_live_friends_roster_is_not_cut():
-    sizes = (1739, 1241, 994, 1116, 1088, 1717, 1170)  # sizes of real account heads
-    accounts = [(f"P{i}", _rev("d" * n)) for i, n in enumerate(sizes)]
-    out = render_character(accounts, now=NOW).render()  # type: ignore[union-attr]
-    assert "more characters" not in out and len(out) <= CHARACTER_BLOCK_MAX_CHARS
 
 
 async def test_an_unmapped_tagger_does_not_fall_back_to_the_whole_roster():

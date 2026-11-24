@@ -5,309 +5,33 @@ from __future__ import annotations
 
 import functools
 import logging
-from dataclasses import dataclass
 from typing import Any
 
 from nora.agent.dream_screen import offence as dream_offence
 from nora.agent.dreamer import (
-    AdaptorGrant,
-    AdaptorSchedule,
     HomeRoom,
     RegistryToolSource,
-    culture_grant,
 )
-from nora.agent.egress import scan_identifiers
 from nora.app.composition_helpers import (
-    CHARACTER_ADAPTOR_NAMES,
     _adaptor_budget,
     _now_ms,
     _reasoning_effort,
-    character_person_keys,
     character_unit_keys,
-    selected_character_person_keys,
 )
 from nora.app.composition_readers import scope_home_rooms
 from nora.app.raw_clients import _RelevanceGateModelClient
 from nora.app.startup import StartupError
-from nora.domain.culture import nora_character_key
-from nora.domain.live import AsyncLiveMapping, LiveMapping
+from nora.domain.live import LiveMapping
 from nora.infra.sql.character import SqlCharacterEvidence
-from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.lessons import SqlLessonStore
-from nora.infra.sql.social_stream import readable_social_store
 from nora.infra.sql.tension import SqlTensionStore
-from nora.language.background_identity import BackgroundIdentity
-from nora.language.character import (
-    CHARACTER_NORA_ADAPTOR_NAME,
-    CHARACTER_PERSON_ADAPTOR_NAME,
-    CHARACTER_UNIT_ADAPTOR_NAME,
-    CharacterNoraAdaptor,
-    CharacterPersonAdaptor,
-    CharacterUnitAdaptor,
-    NoraEvidence,
-    NoraKey,
-    PersonEvidence,
-    UnitEvidence,
-)
-from nora.language.culture import CULTURE_ADAPTOR_NAME, CultureAdaptor
 from nora.language.doctrine_check import CHECK_OBJECTIVE, DoctrineCheck
 from nora.language.lesson_book import LessonBook
 from nora.language.lessons import CognitionLessons, LessonEvidence, LessonsKey
 
 log = logging.getLogger("nora.app.composition")
 
-
-@dataclass(frozen=True)
-class CharacterAdaptorWiring:
-    adaptors: Any
-    culture_store: Any
-    nora_keys: Any
-    person_keys: Any
-    schedules: Any
-    unit_keys: Any
-
-
-def _character_adaptors(
-    allowlist: Any, cfg: Any, content_checks: Any, engine: Any,
-    metrics: Any, note_store: Any, persons: Any, access: Any = None,
-) -> CharacterAdaptorWiring:
-    """Culture's room fold and the Character sessions (person, unit, Nora)."""
-    schedules, adaptors = _culture_adaptor(
-        allowlist=allowlist, cfg=cfg, engine=engine,
-        metrics=metrics, note_store=note_store, persons=persons, access=access,
-    )
-    person_keys = (AsyncLiveMapping(lambda: selected_character_person_keys(allowlist, access))
-        if access is not None and not access.is_file_backend
-        else LiveMapping(lambda: character_person_keys(allowlist, persons)))
-    culture_store = SqlCultureStore(engine)
-    p_sched, p_ad = _character_person_adaptor(
-        cfg=cfg, content_checks=content_checks, culture_store=culture_store,
-        engine=engine, metrics=metrics, person_keys=person_keys, persons=persons,
-        access=access,
-    )
-    c_sched, c_ad, unit_keys, nora_keys = _character_collective_adaptors(
-        allowlist=allowlist, cfg=cfg, culture_store=culture_store, engine=engine,
-        metrics=metrics, persons=persons, access=access,
-    )
-    return CharacterAdaptorWiring(
-        adaptors=(*adaptors, *p_ad, *c_ad),
-        culture_store=culture_store,
-        nora_keys=nora_keys,
-        person_keys=person_keys,
-        schedules={**schedules, **p_sched, **c_sched},
-        unit_keys=unit_keys,
-    )
-
-
-def _culture_adaptor(
-    allowlist: Any, cfg: Any, engine: Any, metrics: Any,
-    note_store: Any, persons: Any, access: Any = None,
-) -> Any:
-
-    # THE CULTURE TIER (DEC-182..185) is the first schedule registered.
-    schedules = {
-        "culture": AdaptorSchedule(
-            # DEC-288: fire on `wake_batch` new human messages, or on any new one once th…
-            # is `stale_seconds` old. A SILENT ROOM STILL NEVER FIRES, which is correct r…
-            # a defect: nothing in this tier retires, so a quiet room's account is accura…
-            min_interval_seconds=cfg.culture.stale_seconds,
-            wake_batch=cfg.culture.wake_batch,
-            # THE BATCH IS THE CORPUS — see `CultureConfig.batch_limit`.
-            # This is how much of the room the model gets to see, not a
-            # throttle.
-            batch_limit=cfg.culture.batch_limit,
-            # START FROM WHAT THE ROOM HAS BEEN SAYING LATELY, not from its origin story.
-            # `seed_watermarks` inherits from the `language` cursor, and that tier is DEL…
-            # room it never covered would seed at 0 and spend days walking a backlog, ins…
-            seed_at_head=True,
-        ),
-    }
-    adaptors = (
-        CultureAdaptor(
-            access=access, culture=SqlCultureStore(engine),
-            # THE NOTE INDEX: an account of how a room works that cannot see what the roo…
-            # is inferring a thing the note index already states. `None` for the tier bei…
-            # real configuration and renders no block, not an empty one. NOT `standing`:…
-            notes=note_store if cfg.notes.enabled else None,
-            # The THREE policy resolutions, every one of them the same `.get` over the al…
-            # keyed on `conv.primary_id` — which is this adaptor's own key, because a Dre…
-            # adaptor is handed `scopes()` (GLOSSARY.md). Built here, in one place, so th…
-            unit_for=LiveMapping(
-                lambda: {
-                    conv.primary_id: conv.unit
-                    for conv in allowlist.rooms()
-                    if conv.primary_id and conv.unit
-                }
-            ).get,
-            # What the room is CALLED and what the operator says it IS (`Conversation.lab…
-            # `.description`), for the `<room>` block. A room with neither is simply abse…
-            # map and the block falls back without ever rendering an id.
-            label_for=LiveMapping(
-                lambda: {
-                    conv.primary_id: conv.label
-                    for conv in allowlist.rooms()
-                    if conv.primary_id and conv.label
-                }
-            ).get,
-            description_for=LiveMapping(
-                lambda: {
-                    conv.primary_id: conv.description
-                    for conv in allowlist.rooms()
-                    if conv.primary_id and conv.description
-                }
-            ).get,
-            metrics=metrics,
-            # THE ROOM'S PLATFORM and A NAME RESOLVER, off the SAME allowlist read
-            # `label_for`/`description_for` already are, plus `persons` — the one instanc…
-            # other write path in this file already holds. This is what lets `inputs()` f…
-            platform_for=LiveMapping(
-                lambda: {
-                    conv.primary_id: conv.platform
-                    for conv in allowlist.rooms()
-                    if conv.primary_id
-                }
-            ).get,
-            resolve_names=(
-                lambda rows, platform: persons.name_transcript(rows, platform=platform)
-            ),
-        ),
-    )
-    return schedules, adaptors
-
-
-def _character_person_adaptor(
-    cfg: Any, content_checks: Any, culture_store: Any, engine: Any,
-    metrics: Any, person_keys: Any, persons: Any, access: Any = None,
-) -> Any:
-    schedules = {
-        CHARACTER_PERSON_ADAPTOR_NAME: AdaptorSchedule(
-            min_interval_seconds=cfg.culture.stale_seconds,
-            wake_batch=cfg.memory.profile.person.update_every_messages,
-            # THE WAKE BATCH, as Nora's session reads its own: a person's session reads i…
-            # message wake threshold messages, not a room's `batch_limit`, which sizes a…
-            # whole corpus.
-            batch_limit=cfg.memory.profile.person.update_every_messages,
-        ),
-    }
-    adaptors = (
-        CharacterPersonAdaptor(
-            culture=culture_store,
-            evidence=PersonEvidence(
-                store=SqlCharacterEvidence(engine,
-                    identity_ids=access.identity_ids if access is not None else None),
-                keys=person_keys,
-                social=readable_social_store(engine, persons),
-                access=access,
-                former_ids=access.former_ids_for if access is not None
-                    else persons.former_ids_for,
-            ),
-            keys=person_keys, identity=BackgroundIdentity(access),
-            metrics=metrics,
-            screen=functools.partial(scan_identifiers, content_checks=content_checks),
-            render_chars=cfg.media.comprehension_render_chars,
-            # A caption keeps only the author's own @handle.
-            handle_owners=persons.instagram_username_owners,
-        ),
-    )
-    return schedules, adaptors
-
-
-def _character_collective_adaptors(
-    allowlist: Any, cfg: Any, culture_store: Any, engine: Any,
-    metrics: Any, persons: Any, access: Any = None,
-) -> Any:
-
-
-    # CHARACTER · UNIT: one session per unit, woken by new
-    # revisions of its rooms' cultures.
-    unit_keys = LiveMapping(lambda: character_unit_keys(allowlist))
-    schedules = {
-        CHARACTER_UNIT_ADAPTOR_NAME: AdaptorSchedule(
-            min_interval_seconds=cfg.culture.stale_seconds,
-            wake_batch=cfg.memory.profile.unit.update_every_room_profile_changes,
-            batch_limit=cfg.culture.batch_limit,
-        ),
-    }
-    # CHARACTER · NORA: her own account per unit, from closed
-    # response episodes; read back as the `self` block.
-    nora_keys = LiveMapping(
-        lambda: {
-            nora_character_key(uk.unit): NoraKey(unit=uk.unit, rooms=uk.rooms)
-            for uk in unit_keys.values()
-        }
-    )
-    schedules = {
-        **schedules,
-        CHARACTER_NORA_ADAPTOR_NAME: AdaptorSchedule(
-            min_interval_seconds=cfg.culture.stale_seconds,
-            wake_batch=cfg.memory.profile.nora.update_every_replies,
-            batch_limit=cfg.memory.profile.nora.update_every_replies,
-        ),
-    }
-    adaptors: tuple[Any, ...] = (
-        CharacterNoraAdaptor(
-            culture=culture_store, identity=BackgroundIdentity(access),
-            evidence=NoraEvidence(
-                store=SqlCharacterEvidence(engine),
-                keys=nora_keys,
-            ),
-            keys=nora_keys,
-            metrics=metrics,
-            name_of=lambda pid: (
-                ref.name
-                if pid and (ref := persons.by_person.get(pid)) is not None
-                else "someone"
-            ),
-        ),
-    )
-    adaptors = (
-        *adaptors,
-        CharacterUnitAdaptor(
-            culture=culture_store,
-            evidence=UnitEvidence(
-                store=SqlCharacterEvidence(engine),
-                keys=unit_keys,
-            ),
-            keys=unit_keys,
-            metrics=metrics,
-        ),
-    )
-    return schedules, adaptors, unit_keys, nora_keys
-
-
-@dataclass(frozen=True)
-class DreamObjectivesWiring:
-    adaptors: Any
-    schedules: Any
-
-
-def _dream_objectives(
-    allowlist: Any, cfg: Any, content_checks: Any, engine: Any,
-    metrics: Any, note_store: Any, persons: Any, profile_index: Any,
-    access: Any = None,
-) -> DreamObjectivesWiring:
-    """Every objective session and its wake schedule, minus the retired."""
-    adaptors: tuple[Any, ...] = ()
-    schedules: dict[str, Any] = {}
-    if cfg.culture.enabled or cfg.memory.profile.write:
-        character = _character_adaptors(
-            allowlist=allowlist, cfg=cfg, content_checks=content_checks,
-            engine=engine, metrics=metrics, note_store=note_store,
-            persons=persons, access=access,
-        )
-        adaptors = (*adaptors, *character.adaptors)
-        schedules = {**schedules, **character.schedules}
-    if profile_index or not cfg.culture.enabled:
-        retired = {
-            CULTURE_ADAPTOR_NAME,
-            CHARACTER_PERSON_ADAPTOR_NAME,
-            CHARACTER_UNIT_ADAPTOR_NAME,
-            CHARACTER_NORA_ADAPTOR_NAME,
-        }
-        adaptors = tuple(a for a in adaptors if a.name not in retired)
-        schedules = {k: v for k, v in schedules.items() if k not in retired}
-    return DreamObjectivesWiring(adaptors=adaptors, schedules=schedules)
 
 def _lessons_evidence(
     allowlist: Any, cfg: Any, content_checks: Any, doctrine_store: Any,
@@ -428,21 +152,8 @@ def _dream_tool_source(
 def _dream_grants_and_budgets(cfg: Any) -> Any:
 
     """Adaptor grants and the per-objective budget table."""
-    dream_grants: dict[str, AdaptorGrant] = {
-        # The culture adaptor's own room, and no act verb (`culture_grant`). SCOPE-keyed, so
-        # this resolves through `scope_rooms` above rather than through `home_rooms`: its key
-        # already names the conversation, so the grant is an identity and there is nothing for…
-        CULTURE_ADAPTOR_NAME: culture_grant(),
-        # A person session's read tools stand in the first of its unit's
-        # rooms that lists the person (`CharacterPersonAdaptor.tool_room`),
-        # resolved through `scope_rooms` exactly as the room fold's are.
-        CHARACTER_PERSON_ADAPTOR_NAME: culture_grant(),
-    }
     dream_budgets = {name: _adaptor_budget(b) for name, b in cfg.dreamer.budgets.items()}
-    if "culture" in dream_budgets:
-        for name in CHARACTER_ADAPTOR_NAMES:
-            dream_budgets.setdefault(name, dream_budgets["culture"])
     fallback = cfg.dreamer.budget_for("")
-    return dream_grants, dream_budgets, fallback
+    return {}, dream_budgets, fallback
 
 

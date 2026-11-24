@@ -1,6 +1,7 @@
 """Generated SQL verifies selected analytics identities, historical circles and unit isolation."""
 
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -13,23 +14,54 @@ from nora.config_identity import IdentityBackendConfig, ManagedOryConfig
 from nora.domain.managed import OutcomeStatus
 from nora.domain.presence import PresenceFix, WireState
 from nora.domain.rollup import NEVER
+from nora.domain.social_stream import MediaItem, SocialItem
+from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.managed_identity import SqlBindingStore
+from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.rollups import RecordMark
 from nora.infra.sql.schema import PRESENCE_FIXES
+from nora.infra.sql.social_stream import SqlSocialStreamStore
 from nora.people.app.managed import ManagedServices
 from nora.policy import load_policy
 from nora.testing.managed import FakeAuthorityBackend, FakeLinkRequests
 from tests.integration.managed_ory import ory as _ory
-from tests.integration.test_character_social import T0 as SOCIAL_T0
-from tests.integration.test_character_social import _record
-from tests.integration.test_character_social import social as _sql_social
 from tests.unit.test_managed_background_access import _background_identity_case
 
-social = _sql_social
 ory = _ory
 pytestmark = pytest.mark.asyncio
+SOCIAL_T0 = datetime(2026, 10, 5, 9, 0, tzinfo=UTC)
 T0 = int(SOCIAL_T0.timestamp() * 1000)
+
+
+@pytest.fixture
+async def social(clean_pg_url):
+    run_migrations(clean_pg_url)
+    engine = create_sql_engine(clean_pg_url)
+    try:
+        # `cy` has `social = false`.
+        yield SqlSocialStreamStore(engine, opted_out=frozenset({"cy"})), engine
+    finally:
+        await engine.dispose()
+
+
+async def _record(
+    store: SqlSocialStreamStore, item_id: str, *, person: str = "ada",
+    origin: str = "poll", caption: str = "dawn swim again", kind: str = "post",
+    media: str | None = None, taken_at: datetime = SOCIAL_T0,
+) -> None:
+    assert await store.insert_item(
+        SocialItem(
+            network="instagram", item_id=item_id, account="10000001", kind=kind,  # type: ignore[arg-type]
+            taken_at=taken_at,
+            expires_at=taken_at + timedelta(days=1) if kind == "story_frame" else None,
+            caption=caption, alt_text="alt text naming a place",
+            media=(MediaItem("image", "https://x"),),
+        ),
+        person=person, origin=origin, seen_at=SOCIAL_T0, media_ref=media,  # type: ignore[arg-type]
+        location="Placeholder Square", tagged=("tagged.friend",),
+        mentioned=("mentioned.friend",),
+    )
 
 
 async def _case(engine, config, tmp_path, database_url):

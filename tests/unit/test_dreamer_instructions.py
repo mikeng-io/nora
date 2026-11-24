@@ -468,16 +468,8 @@ NATIVELY_AUTHORED = {
     "wake",
     "wake-history",
     "standing-debrief",
-    # The culture tier's only pass (DEC-182).
-    "culture",
     # The Cognition session's instruction (DEC-244); it lists no tool and no limit.
     "cognition",
-    # A person's Character session (DEC-278).
-    "character-person",
-    # The unit's Character session.
-    "character-unit",
-    # Her own Character session.
-    "character-nora",
     # The doctrine check: an instrument's instruction, read through
     # `objective_body`, never with the Dreamer doctrine.
     "doctrine-check",

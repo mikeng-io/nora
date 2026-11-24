@@ -2479,19 +2479,7 @@ class CultureConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    #: Whether the culture adaptor runs at all.
-    #:
-    #: Default **False**, unconditionally: a new capability must not change what any
-    #: deployed `config.toml` does on restart. Turning it on is a deliberate change
-    #: (DEC-277).
-    #:
-    #: **What turning it on does: TWO things, under this one flag.** A background pass
-    #: writes one short account of each room per wake into its own store, AND every
-    #: runtime reads the room's current account as `<culture>`: the tag turn, every
-    #: fire occasion and the character sessions (DEC-207). The relevance gate never
-    #: does.
-    #:
-    #: There is no separate read switch.
+    #: Enable the legacy culture store while its readers are retired.
     enabled: bool = False
 
     #: New human messages in a room that wake its fold at once (DEC-288). **200**: the
@@ -2554,13 +2542,7 @@ class ProfileConfig(BaseModel):
 
     write: bool = False
 
-    #: THE SWITCH. On, prompts read the Profile
-    #: accounts through `read_profile` and render `<profile>` blocks INSTEAD of
-    #: `<peer_card>`, `<peer_history>`, `<people_in_window>`, `<culture>`,
-    #: `<unit_culture>`, `<character>` and `<self>`. Off — the default — is the
-    #: shadow: the sessions keep writing and every prompt renders the peer and
-    #: prose-culture blocks it always has, so the flag is the whole rollback.
-    #: Ignored unless `write` is also on (no store is wired without it).
+    #: Enable legacy Profile reads when writes are configured.
     read: bool = False
 
     # Separate from the room culture fold's stale_seconds; same seven-day default.
@@ -3538,7 +3520,7 @@ class AssessConfig(BaseModel):
 
 class LineageConfig(BaseModel):
     """Lineage at assembly: whether the pushed blocks that render derived rows
-    (`<notes>`, `<standing>`, `<culture>`) show each row or
+    (`<notes>`, `<standing>`) show each row or
     section only in the rooms its lineage passes for.
 
     **Ships OFF.** `off`: blocks render as they always have and nothing is

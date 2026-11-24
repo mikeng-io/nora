@@ -7,13 +7,6 @@
     "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
   },
   {
-    "name": "6: culture's fold prompt is joined by hand again",
-    "file": "nora/language/culture.py",
-    "old": "return assemble(parts, sep=\"\\n\\n\")",
-    "new": "return \"\\n\\n\".join(b.render() for b in parts)",
-    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
-  },
-  {
     "name": "6: the rule stops asking for a `_BLOCKS` table",
     "file": "tests/architecture/test_every_model_call_is_a_declared_occasion.py",
     "old": "        if not declares_blocks(tree):",

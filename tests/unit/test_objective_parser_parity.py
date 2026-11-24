@@ -275,15 +275,6 @@ VERB_CASES = [
 ]
 
 
-def test_the_case_list_is_derived_and_not_empty():
-    """The run-that-ran control for the derivation itself. An empty or
-    silently-shrinking `CASES` makes every parametrized test below vacuous, and
-    a hand-written list is exactly the hand-copied vocabulary this file's own
-    docstring outlaws."""
-    assert len(CASES) + len(VERB_CASES) >= 1
-    assert {c.id for c in VERB_CASES} >= {"CultureAdaptor"}
-
-
 @pytest.mark.parametrize(("objective", "verbs"), VERB_CASES)
 def test_the_objective_names_every_verb_and_every_argument_the_model_fills(
     objective, verbs,

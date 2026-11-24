@@ -4,22 +4,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from nora.agent.prefill import _BLOCKS as PREFILL_BLOCKS
 from nora.domain.cognition_ground import Grounding
-from nora.domain.culture import CultureRevision, nora_character_key
 from nora.language.cognition_render import _BLOCKS as COGNITION_BLOCKS
 from nora.language.cognition_render import render_agenda
-from nora.language.culture_render import render_self
 
 NOW = datetime(2026, 10, 7, 12, 0, tzinfo=UTC)
 UNIT = "friends"
-
-
-def _rev(body: str) -> CultureRevision:
-    return CultureRevision(
-        id="r-nora", culture_key=nora_character_key(UNIT), body=body,
-        written_at=int(NOW.timestamp() * 1000), established_by="character-nora",
-    )
 
 
 _POLICY_TOML = """
@@ -72,21 +62,9 @@ def _policy(tmp_path):
     return load_policy(f)
 
 
-def test_no_account_renders_no_block_not_an_empty_one():
-    assert render_self(None) is None
-    assert render_self(_rev("  \n ")) is None
-
-
-def test_the_self_block_is_the_first_row_of_the_tag_and_cognition_tables():
+def test_the_profile_is_the_first_row_of_the_cognition_table():
     assert COGNITION_BLOCKS[0].name == "profile"
     assert COGNITION_BLOCKS[0].order == min(d.order for d in COGNITION_BLOCKS)
-    for table in (PREFILL_BLOCKS,):
-        order = {name: o for name, o, _key in table}
-        assert order["self"] == min(order.values()), table
-        # The switch (45 §5): `<profile of="nora">` replaces `<self>` at the SAME
-        # row, and the grounder fills one or the other, never both.
-        first = {name for name, o in order.items() if o == order["self"]}
-        assert first <= {"self", "profile"}, table
 
 
 def _cognition_prompt(grounding: Grounding | None) -> str:
@@ -114,8 +92,11 @@ def test_a_cognition_prompt_opens_with_her_account_before_the_clock():
 
 
 def test_a_cognition_prompt_has_no_self_block_without_an_account():
-    assert "<self" not in _cognition_prompt(Grounding())
-    assert "<self" not in _cognition_prompt(None)
+    for grounding in (Grounding(), None):
+        first = _cognition_prompt(grounding).splitlines()[0]
+        assert first.startswith("<profile ")
+        assert first.endswith("/>")
+        assert 'of="' not in first
 
 
 # ---- R-31: the account is unit-wide, so a room shows it only where it may -----
