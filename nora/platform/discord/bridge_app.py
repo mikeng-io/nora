@@ -13,7 +13,7 @@ ONE OF EACH, no shadow path:
   bookkeeping and raw-event dispatch keep identical semantics.
 - ONE `MusicPlayerManager` over the existing SQL queue/session stores —
   `/music` + `/discord` slash commands AND the app's forwarded tool calls
-  (`POST /v1/music/{op}`) mutate through the same per-guild locks. The
+  (platform operations) mutate through the same per-guild locks. The
   forwarded surface IS `DiscordMusicToolBridge`, not a copy of it.
 - ONE `VoiceControllerHub` — join/adoption/reconciliation against the
   external audio-controllers, which keep the voice connection AND the
@@ -60,7 +60,6 @@ from nora.domain.models import ConversationTarget
 from nora.domain.observations import Operation
 from nora.domain.ports import (
     Mention,
-    MusicToolOutcome,
     OutboundAttachment,
     OutboundQuote,
 )
@@ -84,6 +83,7 @@ from nora.platform.bridge.service import (
 
 from . import music_messages as m
 from .adapter import DiscordAdapter
+from .bridge_music import BridgeMusicSurface
 from .bridge_voice import BridgeVoiceSurface, VoiceEventSink
 from .channels import ClientChannelDirectory
 from .command_acts import DiscordCommandActs
@@ -425,16 +425,14 @@ class DiscordBridge:
         shim = cast(DiscordAdapter, self._holder)
         self._voice_presence = DiscordVoicePresence(adapter=shim)
         self._presence = DiscordPresence(adapter=shim)
-        self._tool: DiscordMusicToolBridge | None = (
-            DiscordMusicToolBridge(
+        self._music = (BridgeMusicSurface(
+            tool=DiscordMusicToolBridge(
                 adapter=shim, manager=manager, hub=hub,
                 voice_guild_ids=self._voice_guild_ids,
                 resolve_music_channel=self._resolve_music_channel,
                 command_acts=self._command_acts,
-            )
-            if manager is not None
-            else None
-        )
+            ), admit_room=self._admit_room, admit_requester=self._admit_requester,
+        ) if manager is not None else None)
 
     def attach(
         self, *, actions: ActionService | None = None,
@@ -1377,9 +1375,7 @@ class DiscordBridge:
             platform=PLATFORM, actions=lambda: self._actions, account=self.account,
             status=self.status, query=self.query,
             custody_dir=lambda: self._custody_dir,
-            max_blob_bytes=lambda: MAX_ATTACHMENT_BYTES).add_routes(app)
-        # Deterministic control — the app's forwarded music tool calls.
-        app.router.add_post("/v1/music/{op}", self.post_music_op)
+            max_blob_bytes=lambda: MAX_ATTACHMENT_BYTES, music=self._music).add_routes(app)
         # Voice — through the hub only; the controller owns the connection.
         BridgeVoiceSurface(
             hub=lambda: self._hub, manager=lambda: self._manager,
@@ -1420,6 +1416,7 @@ class DiscordBridge:
         user = getattr(self._client, "user", None) if self._client else None
         return {
             "platform": PLATFORM, "primary": self.self_id, "aliases": [self.self_id],
+            "capabilities": ["music"] if self._music is not None else [],
             "handle": render_handle(
                 getattr(user, "name", None), getattr(user, "discriminator", None))}
 
@@ -1513,64 +1510,6 @@ class DiscordBridge:
             "type": getattr(getattr(ch, "type", None), "name",
                             str(getattr(ch, "type", ""))),
         }
-
-    # ---- forwarded deterministic music control -------------------------------
-
-    async def post_music_op(self, req: web.Request) -> web.Response:
-        """`POST /v1/music/{op}` — the app's forwarded `MusicToolBridge` call,
-        executed against THIS bridge's manager + live voice cache. The
-        outcome shape is `MusicToolOutcome`'s (`status` is the R-27 word;
-        `unavailable` means the wiring/cache could not answer, never that
-        nothing was playing)."""
-        if self._tool is None:
-            return web.json_response({"error": "music disabled"}, status=404)
-        try:
-            body = await req.json()
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return web.json_response({"error": "body must be JSON"}, status=400)
-        op = req.match_info["op"]
-        conversation_id = str(body.get("conversation_id") or "")
-        # Deny-closed BEFORE any effect: a disabled/absent projection, a
-        # missing conversation_id, and a room the projection does not name
-        # all refuse — the same gate `_journal_and_enqueue` holds capture
-        # to. An enabled projection with the room admitted is not enough
-        # for a mutation that carries a requester: `play`'s sender_ids
-        # must intersect `room_receipt_senders` (or `*`) — voice-cache
-        # membership is the tool's own second check, not the grant.
-        if not self._admit_room(conversation_id):
-            return web.json_response({"error": "room_not_admitted"}, status=403)
-        try:
-            if op == "play":
-                sender_ids = frozenset(
-                    str(s) for s in body.get("sender_ids") or ())
-                if not self._admit_requester(conversation_id, sender_ids):
-                    return web.json_response(
-                        {"error": "sender_not_admitted"}, status=403)
-                outcome = await self._tool.play(
-                    conversation_id=conversation_id,
-                    sender_ids=sender_ids,
-                    query_or_url=str(body.get("query_or_url") or ""),
-                )
-            elif op == "skip":
-                outcome = await self._tool.skip(conversation_id=conversation_id)
-            elif op == "top":
-                outcome = await self._tool.top(
-                    conversation_id=conversation_id,
-                    position=int(body.get("position") or 0))
-            elif op == "stop":
-                outcome = await self._tool.stop(conversation_id=conversation_id)
-            elif op == "status":
-                outcome = await self._tool.status(conversation_id=conversation_id)
-            elif op == "set_volume":
-                outcome = await self._tool.set_volume(
-                    conversation_id=conversation_id,
-                    percent=int(body.get("percent") or 0))
-            else:
-                return web.json_response({"error": "unknown op"}, status=400)
-        except Exception as exc:  # noqa: BLE001 — music boundary; logged by type
-            log.error("music op %s failed: %s", op, type(exc).__name__)
-            outcome = MusicToolOutcome(status="unavailable")
-        return web.json_response({"outcome": dataclasses.asdict(outcome)})
 
 
 class DiscordRestActionService:

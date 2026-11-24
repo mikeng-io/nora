@@ -78,6 +78,7 @@ from tests.integration.platform_contract import (
     assert_serves_the_contract,
     drive_outcomes,
     envelope,
+    music_operation,
     swapped,
 )
 
@@ -559,11 +560,10 @@ async def test_the_bridge_owns_the_whole_graph_while_the_app_proxies(bridge):
     # The bridge alone executes it: requester-in-voice check against the
     # live cache, allow-list admission, join, resolve, play — the same
     # `DiscordMusicToolBridge` the slash command drives.
-    resp = await http.post("/v1/music/play", json={
+    resp = await music_operation(http, AUTH, "music_play", {
         "conversation_id": CONV, "sender_ids": [MEMBER],
-        "query_or_url": "song-a"}, headers=AUTH)
-    outcome = (await resp.json())["outcome"]
-    assert outcome["status"] == "ok" and outcome["title"] == "Track A"
+        "query_or_url": "song-a"})
+    assert resp["outcome"] == "complete" and resp["payload"]["title"] == "Track A"
     assert len(controller["join_calls"]) == 1
     kind, play_body = controller["music_calls"][-1]
     assert kind == "play"
@@ -576,10 +576,10 @@ async def test_the_bridge_owns_the_whole_graph_while_the_app_proxies(bridge):
                      "generation": GEN, "channel_id": VOICE_CHANNEL}
 
     # A second track queues behind the first, through the same session.
-    resp = await http.post("/v1/music/play", json={
+    resp = await music_operation(http, AUTH, "music_play", {
         "conversation_id": CONV, "sender_ids": [MEMBER],
-        "query_or_url": "song-b"}, headers=AUTH)
-    assert (await resp.json())["outcome"]["queued"] is True
+        "query_or_url": "song-b"})
+    assert resp["payload"]["queued"] is True
     assert len(controller["join_calls"]) == 1  # still ONE join, ONE generation
 
     # --- the REAL consumer: track-finished advances the persisted queue --
@@ -639,10 +639,10 @@ async def test_the_bridge_owns_the_whole_graph_while_the_app_proxies(bridge):
     # it can never be mistaken for an empty guild.
     assert body["outcome"] == "unavailable" and body["payload"] is None
     assert isinstance(body["when"]["observed_at_ms"], int)
-    resp = await http.post("/v1/music/play", json={
+    resp = await music_operation(http, AUTH, "music_play", {
         "conversation_id": CONV, "sender_ids": [MEMBER],
-        "query_or_url": "song-a"}, headers=AUTH)
-    assert (await resp.json())["outcome"]["status"] == "unavailable"
+        "query_or_url": "song-a"})
+    assert resp["outcome"] == "unavailable"
     await control.close()
 
 
@@ -652,9 +652,9 @@ async def test_voice_death_reconciles_then_a_new_generation_serves(bridge):
     http = world["http"]
 
     await world["bridge"].start()
-    await http.post("/v1/music/play", json={
+    await music_operation(http, AUTH, "music_play", {
         "conversation_id": CONV, "sender_ids": [MEMBER],
-        "query_or_url": "song-a"}, headers=AUTH)
+        "query_or_url": "song-a"})
     assert world["hub"].generation_for(GUILD) == GEN
 
     # The controller's own death event reconciles the session — the REAL
@@ -699,9 +699,9 @@ async def test_speech_is_bounded_and_actions_use_the_real_sender(bridge, mime, f
     http = world["http"]
 
     await world["bridge"].start()
-    await http.post("/v1/music/play", json={
+    await music_operation(http, AUTH, "music_play", {
         "conversation_id": CONV, "sender_ids": [MEMBER],
-        "query_or_url": "song-a"}, headers=AUTH)
+        "query_or_url": "song-a"})
 
     # Over the bound → 400, and nothing reached the controller.
     too_big = base64.b64encode(b"x" * (world["bridge"]._max_speech_bytes + 1)).decode()
@@ -779,45 +779,44 @@ def _interaction(
 
 
 async def test_forwarded_music_ops_are_deny_closed(bridge):
-    """`/v1/music/{op}` refuses BEFORE any effect: disabled projection,
-    missing conversation_id, an unadmitted room, and a requester without
+    """Music operations refuse before any effect: disabled projection,
+    empty conversation_id, an unadmitted room, and a requester without
     the room's sender grant are all 403s — and the controller never sees
     a join. `dm_allowed_senders` is a DM grant, never the group allowlist."""
     world = bridge
     http = world["http"]
     await world["bridge"].start()
 
-    async def play(conv: str = CONV, senders=(MEMBER,)) -> web.Response:
-        return await http.post("/v1/music/play", json={
+    async def play(conv: str = CONV, senders=(MEMBER,)) -> dict:
+        return await music_operation(http, AUTH, "music_play", {
             "conversation_id": conv, "sender_ids": list(senders),
-            "query_or_url": "song-a"}, headers=AUTH)
+            "query_or_url": "song-a"})
 
     # Disabled projection — denied before ANY effect.
     world["projection"]["enabled"] = False
     resp = await play()
-    assert resp.status == 403
-    assert (await resp.json())["error"] == "room_not_admitted"
+    assert resp["outcome"] == "denied"
+    assert resp["payload"]["error"]["kind"] == "room_not_admitted"
     world["projection"]["enabled"] = True
 
-    # Missing conversation_id — denied.
-    resp = await http.post("/v1/music/play", json={
-        "sender_ids": [MEMBER], "query_or_url": "song-a"}, headers=AUTH)
-    assert resp.status == 403
+    # Empty conversation_id — denied.
+    resp = await play(conv="")
+    assert resp["outcome"] == "denied"
 
     # A room the projection does not name — denied.
     resp = await play(conv=f"{GUILD}/100000000000000099")
-    assert resp.status == 403
+    assert resp["outcome"] == "denied"
 
     # Room admitted, sender NOT in `room_receipt_senders` — denied.
     world["projection"]["room_receipt_senders"][CONV] = ["100000000000000005"]
     resp = await play()
-    assert resp.status == 403
-    assert (await resp.json())["error"] == "sender_not_admitted"
+    assert resp["outcome"] == "denied"
+    assert resp["payload"]["error"]["kind"] == "sender_not_admitted"
 
     # A DM grant alone does not authorize the group mutation.
     world["projection"]["dm_allowed_senders"] = [MEMBER]
     resp = await play()
-    assert resp.status == 403
+    assert resp["outcome"] == "denied"
     world["projection"]["dm_allowed_senders"] = []
 
     # So far ZERO controller joins — nothing reached playout.
@@ -827,20 +826,20 @@ async def test_forwarded_music_ops_are_deny_closed(bridge):
     # DM grant.
     world["projection"]["room_receipt_senders"][CONV] = ["*"]
     resp = await play()
-    assert (await resp.json())["outcome"]["status"] == "ok"
+    assert resp["outcome"] == "complete"
     world["projection"]["room_receipt_senders"][CONV] = [MEMBER]
     resp = await play()
-    assert (await resp.json())["outcome"]["status"] == "ok"
+    assert resp["outcome"] == "complete"
 
     # The same gate binds skip/stop/volume (the mutations that carry no
     # requester on the wire): unknown room → refused before any effect.
-    resp = await http.post("/v1/music/stop", json={
-        "conversation_id": f"{GUILD}/100000000000000099"}, headers=AUTH)
-    assert resp.status == 403
-    resp = await http.post("/v1/music/set_volume", json={
-        "conversation_id": CONV, "percent": 50}, headers=AUTH)
+    resp = await music_operation(http, AUTH, "music_stop", {
+        "conversation_id": f"{GUILD}/100000000000000099"})
+    assert resp["outcome"] == "denied"
+    resp = await music_operation(http, AUTH, "music_set_volume", {
+        "conversation_id": CONV, "percent": 50})
     # Gate passed → a real outcome, whatever the session's state.
-    assert resp.status == 200 and "outcome" in await resp.json()
+    assert resp["outcome"] in ("complete", "rejected")
 
 
 async def test_slash_commands_answer_to_the_projection_not_the_allowlist(bridge):
@@ -899,18 +898,18 @@ async def test_music_channel_routing_follows_the_current_projection(bridge):
     await world["bridge"].start()
 
     async def play(query: str) -> None:
-        resp = await http.post("/v1/music/play", json={
+        resp = await music_operation(http, AUTH, "music_play", {
             "conversation_id": CONV, "sender_ids": [MEMBER],
-            "query_or_url": query}, headers=AUTH)
-        assert (await resp.json())["outcome"]["status"] in ("ok",)
+            "query_or_url": query})
+        assert resp["outcome"] == "complete"
 
     # Queue A + B; the skip's "now playing" announcement routes to the
     # PROJECTION's channel, not the room it was summoned from.
     await play("song-a")
     await play("song-b")
-    resp = await http.post("/v1/music/skip", json={
-        "conversation_id": CONV}, headers=AUTH)
-    assert (await resp.json())["outcome"]["status"] == "ok"
+    resp = await music_operation(http, AUTH, "music_skip", {
+        "conversation_id": CONV})
+    assert resp["outcome"] == "complete"
     world["announce"].send.assert_called()
     assert "Track B" in world["announce"].send.call_args.args[0]
     world["text"].send.assert_not_called()
@@ -921,8 +920,8 @@ async def test_music_channel_routing_follows_the_current_projection(bridge):
     world["projection"]["music_channels"][GUILD] = ANNOUNCE_2
     world["announce"].send.reset_mock()
     await play("song-a")
-    resp = await http.post("/v1/music/skip", json={
-        "conversation_id": CONV}, headers=AUTH)
+    resp = await music_operation(http, AUTH, "music_skip", {
+        "conversation_id": CONV})
     world["announce_2"].send.assert_called()
     assert "Track A" in world["announce_2"].send.call_args.args[0]
     world["announce"].send.assert_not_called()
@@ -933,8 +932,8 @@ async def test_music_channel_routing_follows_the_current_projection(bridge):
     world["text"].send.reset_mock()
     world["announce_2"].send.reset_mock()
     await play("song-b")
-    resp = await http.post("/v1/music/skip", json={
-        "conversation_id": CONV}, headers=AUTH)
+    resp = await music_operation(http, AUTH, "music_skip", {
+        "conversation_id": CONV})
     world["text"].send.assert_called()
     assert "Track B" in world["text"].send.call_args.args[0]
     world["announce_2"].send.assert_not_called()

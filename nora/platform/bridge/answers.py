@@ -79,13 +79,13 @@ def now_ms() -> int:
 
 
 def settled_body(outcome: OperationOutcome, payload: object, *, target: str, trace: str,
-                 started_ms: int) -> dict[str, Any]:
-    """A settled operation envelope at installation scope."""
+                 started_ms: int, scope: Mapping[str, Any] = INSTALLATION) -> dict[str, Any]:
+    """A settled operation envelope."""
     return {"outcome": outcome, "payload": payload,
             "when": {"state": "settled", "started_at_ms": started_ms,
                      "settled_at_ms": now_ms()},
             "from": {"target": target, "platform_ref": None},
-            "scope": dict(INSTALLATION), "trace": trace}
+            "scope": dict(scope), "trace": trace}
 
 
 async def operation_request(req: web.Request, kinds: frozenset[str], *,
@@ -129,10 +129,12 @@ class OperationLedger:
     """
 
     def __init__(self, *, ttl_s: float = 300.0, bound: int = 4096,
-                 clock: Callable[[], float] = time.monotonic) -> None:
+                 clock: Callable[[], float] = time.monotonic,
+                 full_message: str = "too many operations in flight") -> None:
         self._ttl_s = ttl_s
         self._bound = bound
         self._clock = clock
+        self._full_message = full_message
         self._entries: dict[str, _Entry] = {}
 
     def _expire(self) -> None:
@@ -159,7 +161,7 @@ class OperationLedger:
                 raise OperationConflictError(operation_id)
             return await asyncio.shield(held.answer)
         if len(self._entries) >= self._bound:
-            return _refused(pending)
+            return _refused(pending, self._full_message)
         entry = _Entry(digest, asyncio.get_running_loop().create_future(), pending)
         self._entries[operation_id] = entry
         try:
@@ -271,17 +273,17 @@ class EventOnce:
 
 
 def pending_body(payload: Mapping[str, Any], *, target: str, trace: str,
-                 started_ms: int) -> dict[str, Any]:
+                 started_ms: int, scope: Mapping[str, Any] = INSTALLATION) -> dict[str, Any]:
     """An operation's envelope while it runs: `pending`, `started`, not settled."""
     return {"outcome": "pending", "payload": dict(payload),
             "when": {"state": "started", "started_at_ms": started_ms, "settled_at_ms": None},
             "from": {"target": target, "platform_ref": None},
-            "scope": dict(INSTALLATION), "trace": trace}
+            "scope": dict(scope), "trace": trace}
 
 
-def _refused(pending: Mapping[str, Any]) -> dict[str, Any]:
+def _refused(pending: Mapping[str, Any], message: str) -> dict[str, Any]:
     """`unavailable` for an operation the full ledger could not hold; nothing ran."""
-    error = {"kind": "ledger_full", "message": "too many operations in flight"}
+    error = {"kind": "ledger_full", "message": message}
     return {**pending, "outcome": "unavailable",
             "payload": {**pending["payload"], "error": error},
             "when": {**pending["when"], "state": "settled", "settled_at_ms": now_ms()}}
