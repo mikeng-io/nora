@@ -2,33 +2,17 @@
 
 from __future__ import annotations
 
-import logging
-
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.infra.sql.schema import CONSOLIDATION_WATERMARK
 
-log = logging.getLogger(__name__)
-
-
-
 
 class SqlLanguageStore:
-    """The Dreamer's consolidation cursor — `nora.app.runtime
-    ._ConsolidationCursor`'s six verbs, and nothing else. Every scheduled
-    adaptor reads and advances it, so this store is TIER-NEUTRAL despite the
-    module's inherited name (see the module docstring)."""
+    """Read and advance the existing consolidation cursor used by Lessons."""
 
     def __init__(self, engine: AsyncEngine) -> None:
-        """`metrics` is INJECTED, never imported — the same discipline
-        `SqlRecordStore.__init__` documents: `nora.infra` sits BELOW
-        `nora.obs` in import-linter's layers contract, so importing
-        `nora.obs.metrics` here (even lazily, inside a method) breaks that
-        contract. `Any` rather than `Metrics` for the same reason; `None`
-        (the default) means this store simply does not count, which is
-        correct for every unit test that does not care."""
         self._engine = engine
 
     async def watermark_for(self, *, consolidator_name: str, scope_id: str) -> int:

@@ -111,6 +111,7 @@ async def test_a_tool_using_dreamer_run_that_reasons_is_recorded_by_adaptor():
     """
     store, metrics = await _run(reasons=True)
 
+    assert len(store.rows) == 1
     (row,) = store.rows
     assert row.path == "dreamer:cognition"
     assert row.tag_id is None, "a Dreamer run has no tag; the absence is the answer"
