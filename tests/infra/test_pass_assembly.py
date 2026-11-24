@@ -1,6 +1,7 @@
 """Assemble a pass using real scoped anchor and retrieval readers."""
 
 from dataclasses import replace
+from unittest.mock import patch
 from xml.etree import ElementTree
 
 import pytest
@@ -173,7 +174,7 @@ async def test_as_of_passes_through_to_the_real_retrieval(scenario) -> None:
     assert "later-quote" not in body
 
 
-def _room_list(scenario: Scenario):
+def _room_list(scenario: Scenario, *, assembler: PassAssembler | None = None):
     persons, policy = scenario.persons, scenario.policy
     directory = PresenceReader(
         policy=policy, adapters={"signal": FakeAdapter(account="fixture")}, rosters={},
@@ -183,7 +184,8 @@ def _room_list(scenario: Scenario):
         conversation_type="group", deliverer=SinkSender(), metrics=Metrics(),
         room=Room(platform="signal", conversation_id=ROOM, roster_source=None, persons=persons),
         transit_source=_UNREACHABLE_TRANSIT, rooms=directory,
-        graph_profiles=_assembler(scenario), clock=lambda: NOW,
+        graph_profiles=assembler if assembler is not None else _assembler(scenario),
+        clock=lambda: NOW,
     )
     return next(t._tool_func for t in tools if t.tool_name == "room_list")
 
@@ -191,6 +193,18 @@ def _room_list(scenario: Scenario):
 async def _trait(scenario: Scenario, key: str, subject: str, body: str, **fields) -> None:
     await scenario.claim(key, part="trait", exposure="external", content={"text": body}, **fields)
     await write_edge(scenario, key, subject, "about")
+
+
+async def test_room_list_bounds_the_graph_profile_read_to_five_seconds(scenario) -> None:
+    assembler = _assembler(scenario)
+    room_list = _room_list(scenario, assembler=assembler)
+
+    with patch.object(assembler, "read_profiles", wraps=assembler.read_profiles) as read:
+        result = await room_list()
+
+    assert result["status"] == "ok"
+    read.assert_awaited_once()
+    assert read.await_args.kwargs.get("timeout_seconds") == 5.0
 
 
 async def test_room_list_reads_each_rooms_graph_profile_in_the_turn_audience(scenario) -> None:

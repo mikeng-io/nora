@@ -1159,13 +1159,8 @@ def build_prefill(
             declared = [
                 b for b in declared if b.name not in _PROFILE_REPLACES
             ] + (list(graph_profiles) if graph_profiles else _profile_blocks(ctx, now=clock))
-        # WHICH blocks were actually built (non-empty body, `assemble`'s own
-        # test; see `_declared`'s docstring for why a block with nothing to
-        # say is still DECLARED), and AT WHAT SIZE: each block's name already
-        # names its read (`peer_card` is the peer-card store, `notes` is the
-        # note tier, …), so the block name doubles as provenance for where the
-        # bytes came from. Sizes are the rendered body only; the wrapping tag
-        # is the assembler's cost, not the read's.
+        # Report the blocks selected by `assemble`, including empty blocks
+        # that opt into self-closing. Size counts body characters only.
         rendered = [b for b in declared if b.body or b.when_empty != "drop"]
         # LINEAGE, on every mode but `off`: what the four derived blocks
         # withheld from this room, or would have in `shadow`. The shadow

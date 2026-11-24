@@ -110,7 +110,7 @@ from nora.infra.vision.preprocess import (
     VIDEO_CHUNK_SECONDS,
     VIDEO_MAX_CHUNKS,
 )
-from nora.memory import PassScope
+from nora.memory import GraphProfileReader, PassScope
 
 _AREAS = (
     "nora.location",
@@ -387,7 +387,7 @@ def build_tool_specs(
     rollup: RollupReadSource | None = None,
     standing_head: StandingHeadSource | None = None,
     ledger: StandingLedger | None = None,
-    graph_profiles: Any = None,
+    graph_profiles: GraphProfileReader | None = None,
     # `social_read`'s read of the social stream's Record. `None` answers
     # `unavailable`; the registry withholds the tool before that matters.
     social_items: SocialItemsSource | None = None,
@@ -670,7 +670,7 @@ def build_tools(
     rollup: RollupReadSource | None = None,
     standing_head: StandingHeadSource | None = None,
     ledger: StandingLedger | None = None,
-    graph_profiles: Any = None,
+    graph_profiles: GraphProfileReader | None = None,
     # The typed platform-observation Record: `record_query`'s `kind` branch,
     # `poll_list`/`poll_read`/`room_state_read` and the source events a
     # transcript read carries. `None` answers those `unavailable`.

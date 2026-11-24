@@ -174,7 +174,13 @@ from nora.engagement.stages import deliver
 from nora.engagement.stages.invoke import AgentRunner
 from nora.ingest.relevance_gate import SCORE_ABSENT
 from nora.language.lesson_render import ActiveLessons, read_lessons
-from nora.memory import PointerKind, ReadingRoom, active_act_authority, record_pass_silence
+from nora.memory import (
+    GraphProfileReader,
+    PointerKind,
+    ReadingRoom,
+    active_act_authority,
+    record_pass_silence,
+)
 from nora.obs.determination import (
     WINDOW_BODY_CHARS,
     Determination,
@@ -544,7 +550,7 @@ class FirePath:
         tool_call_log_store: ToolCallLogStore | None = None,
         reasoning_strip_store: Any = None,
         event_registry: Mapping[str, EventFactory] | None = None,
-        graph_profiles: Any = None,
+        graph_profiles: GraphProfileReader | None = None,
         lessons: ActiveLessons | None = None,
         standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
         ambient: AmbientEngagement | None = None,

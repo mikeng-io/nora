@@ -57,6 +57,7 @@ from nora.agent.toolkit.ports import (
 )
 from nora.agent.tools import build_tool_specs
 from nora.domain.standing_ledger import StandingLedger
+from nora.memory import GraphProfileReader
 
 from ..domain.computer import ComputerToolSettings
 from ..domain.computer_events import ComputerEventStore
@@ -352,7 +353,7 @@ class ToolRegistry:
         standing_head: StandingHeadSource | None = None,
         ledger: StandingLedger | None = None,
         # Scoped graph profiles for room_list.
-        graph_profiles: Any = None,
+        graph_profiles: GraphProfileReader | None = None,
         # `social_read`'s read of the social stream's Record: `None` withholds it.
         social_items: SocialItemsSource | None = None,
         # `[subagent] enabled` (ships off): the desk the four `subagent_*` tools

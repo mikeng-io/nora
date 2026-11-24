@@ -764,30 +764,14 @@ class TagContext:
     # read fresh here, never copied onto the note.
     retained_sources: tuple[Any, ...] = ()
     retained_sources_more: int = 0
-    # The room's CULTURE head — an account of what this room is and why it
-    # became so. Beside `standing` because both are
-    # room-scoped and both are her own output, and apart from it on the one
-    # axis that matters: `standing` is where she had got to in this
-    # CONVERSATION and is rewritten every turn; this is what the ROOM is like
-    # and nothing in it ever retires.
-    #
-    # It is `None` on every turn but ONE: with `[culture] enabled = false` it is
-    # unset, and even switched on the only path that fills this field is the
-    # PARTICIPATION occasion (`FirePath._read_culture`) — the tag path
-    # deliberately leaves it unset. `None` is also the ordinary state for a while
-    # after the tier is switched on: a fold needs new messages and a day.
+    # A supplied room culture revision describes what the room is like and
+    # how it came to be that way.
     culture: CultureRevision | None = None
-    # What each person in this room is like, `(name, account)` per person who
-    # has one (the Character tier, DEC-278), read through `read_character` on
-    # the same occasions and under the same `[culture] enabled` as `culture`.
+    # Display name and supplied character revision for each represented person.
     character: tuple[tuple[str, CultureRevision], ...] = ()
-    # What this room's UNIT is like across its rooms, read through
-    # `read_culture` on the same occasions as `culture`,
-    # keyed `unit_culture_key(unit)`. `None` until the unit has an account.
+    # A supplied culture revision describing the unit across its rooms.
     unit_culture: CultureRevision | None = None
-    # Her own account in this room's unit: Character · Nora, read through
-    # `read_culture` keyed `nora_character_key(unit)` on the tag and fire turns.
-    # `None` until the unit has one.
+    # Nora's supplied character revision for the room's unit, where permitted.
     self_account: CultureRevision | None = None
     # THE SWITCH (design/unified-memory/profiles.md, `[memory.profile] read`): each entity
     # of this turn's Profile account — self, room, unit, then the persons — read
