@@ -17,6 +17,7 @@ from pydantic.json_schema import JsonSchemaMode
 from nora.domain import service_api as api
 from nora.domain import service_api_platform as platform
 from nora.domain import service_api_voice as voice
+from nora.domain.actions import ActionOwner
 
 ROUTES: Final = platform.PLATFORM_ROUTES + voice.VOICE_ROUTES
 REF: Final = "#/components/schemas/{model}"
@@ -37,6 +38,10 @@ _COMPONENTS: Final[dict[str, Any]] = {
     "IntakeOperationKind": voice.IntakeOperationKind,
     "VoicePlayState": voice.VoicePlayState,
     "VoiceJoinState": voice.VoiceJoinState,
+    "MusicOperationPayload": platform.MusicOperationPayload,
+    "MusicOperationReadEnvelope": platform.MusicOperationReadEnvelope,
+    "MusicStatusReadEnvelope": platform.MusicStatusReadEnvelope,
+    **{tp.__name__: tp for tp in platform.MUSIC_EFFECTS.values()},
     **{
         tp.__name__: tp
         for route in ROUTES
@@ -82,6 +87,8 @@ def component_schemas() -> dict[str, Any]:
         wired[name]["additionalProperties"] = False
     _bind_effects(wired)
     _bind_answers(wired)
+    _bind_music_requests(wired)
+    _bind_music_answers(wired)
     wired[BLOB_PUT] = _blob_put(wired["OperationEnvelope"])
     return wired
 
@@ -127,11 +134,73 @@ def _bind_effects(schemas: dict[str, Any]) -> None:
         schema = schemas[request.__name__]
         schema["x-effects"] = {kind: _ref(tp) for kind, tp in table.items()}
         schema["allOf"] = [
-            {"if": {"required": ["kind"], "properties": {"kind": {"const": kind}}},
-             "then": {"properties": {"effect": _ref(tp)}}}
+            _kind_rule(kind, {"properties": {"effect": _ref(tp)}})
             for kind, tp in table.items()]
         for effect in set(table.values()):
             schemas[effect.__name__]["additionalProperties"] = effect in voice.OPEN_EFFECTS
+
+
+def _kind_rule(kind: str, rule: dict[str, Any]) -> dict[str, Any]:
+    return {"if": {"required": ["kind"], "properties": {"kind": {"const": kind}}},
+            "then": rule}
+
+
+def _bind_music_requests(schemas: dict[str, Any]) -> None:
+    request = schemas["PlatformOperationRequest"]
+    effects = platform.MUSIC_EFFECTS
+    delivery_owner = {"required": ["owner"], "properties": {"owner": _ref(ActionOwner)}}
+    request["x-effects"] = {kind: _ref(tp) for kind, tp in effects.items()}
+    request["allOf"] = [
+        *(_kind_rule(kind, delivery_owner) for kind in get_args(platform.DeliveryOperationKind)),
+        *(_kind_rule(kind, {"properties": {"effect": _ref(tp)}, "not": {"required": ["owner"]}})
+          for kind, tp in effects.items()),
+    ]
+    for tp in effects.values():
+        schemas[tp.__name__]["additionalProperties"] = False
+    schemas["PlatformQuery"]["allOf"] = [
+        _kind_rule("music_status", {"properties": {"params": _ref(platform.MusicRoom)}}),
+    ]
+
+
+def _bind_music_answers(schemas: dict[str, Any]) -> None:
+    error = _ref(platform.OperationError)
+    rejected = {**error, "properties": {"kind": {"enum": [
+        "nothing_found", "nothing_playing", "nothing_queued_at_position",
+    ]}}}
+    unavailable = {**error, "properties": {"kind": {"enum": [
+        "disconnected", "not_in_voice", "join_failed", "not_in_allowed_guild",
+        "volume_out_of_range", "music_failed", "ledger_full",
+    ]}}}
+    full = _ref(platform.MusicOperationPayload)
+    refusal = {"type": "object", "properties": {"error": error},
+               "required": ["error"], "additionalProperties": False}
+    payloads: dict[str, dict[str, Any]] = {
+        "complete": {**full, "properties": {"error": {"type": "null"}}},
+        "rejected": {**full, "properties": {"error": rejected}},
+        "denied": refusal,
+        "unsupported": refusal,
+        "unavailable": {**refusal, "properties": {"error": unavailable}},
+        "pending": {"type": "object", "additionalProperties": False},
+    }
+    envelope = schemas["MusicOperationEnvelope"]
+    envelope["properties"]["outcome"]["enum"] = list(payloads)
+    envelope["allOf"] = [_when(outcome, payload) for outcome, payload in payloads.items()]
+    for component, found in (
+        ("MusicOperationReadEnvelope", platform.MusicOperationEnvelope),
+        ("MusicStatusReadEnvelope", platform.MusicStatus),
+    ):
+        schemas[component]["allOf"] = [
+            _when("ok", _ref(found)),
+            _when("nothing_found", {"type": "null"}),
+            _when("unavailable", {"type": "null"}),
+        ]
+    request = schemas["PlatformOperationRequest"]
+    request["x-answers"] = {
+        kind: {"$ref": REF.format(model=MUSIC_ANSWERS[kind])} for kind in platform.MUSIC_EFFECTS}
+    request["x-read-answers"] = {
+        kind: {"$ref": REF.format(model=name)} for kind, name in MUSIC_READ_ANSWERS.items()}
+    schemas["PlatformQuery"]["x-answers"] = {
+        "music_status": {"$ref": REF.format(model=MUSIC_ANSWERS["music_status"])}}
 
 
 def _ref(tp: type) -> dict[str, str]:
@@ -143,7 +212,7 @@ def _ref(tp: type) -> dict[str, str]:
 #: payload a platform may extend (the account, the status) stays open.
 _CLOSED_PARTS: Final = ("ReadWhen", "ReadFrom", "OperationWhen", "OperationFrom", "Scope",
                         "PlatformOperationPayload", "VoiceOperationPayload",
-                        "VoiceReportPayload")
+                        "VoiceReportPayload", "MusicOperationPayload", "MusicStatus")
 #: The outcomes that refuse an operation; their answer says why.
 _REFUSALS: Final = ("rejected", "unsupported", "denied", "incomplete")
 #: The blob `PUT` answer: an operation envelope whose `complete` names a key and
@@ -159,6 +228,12 @@ VOICE_ANSWER_TYPES: Final[dict[str, type]] = {
 VOICE_ANSWERS: Final[dict[str, str]] = {
     kind: next(name for name, tp in VOICE_ANSWER_TYPES.items() if tp is done)
     for kind, done in voice.VOICE_COMPLETE.items()}
+MUSIC_ANSWERS: Final[dict[str, str]] = {
+    **dict.fromkeys(platform.MUSIC_EFFECTS, "MusicOperationEnvelope"),
+    "music_status": "MusicStatusReadEnvelope",
+}
+MUSIC_READ_ANSWERS: Final[dict[str, str]] = dict.fromkeys(
+    platform.MUSIC_EFFECTS, "MusicOperationReadEnvelope")
 #: The component each route answers with, by route name.
 ANSWERS: Final[dict[str, str]] = {
     route.name: BLOB_PUT if route.name == "put_blob" else route.response.__name__
