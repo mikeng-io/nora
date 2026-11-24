@@ -11,7 +11,6 @@ from nora.app.composition_dream import _dream_tool_source
 from nora.domain.social_stream import PersonSocialItem, RecordedCounts
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
-from nora.policy import permissive_policy
 from nora.testing import FakeRosterSource
 from tests.unit.test_dreamer_runtime import _RecordingRegistry
 from tests.unit.test_scoped_engagement_names import (
@@ -31,14 +30,14 @@ async def test_dreamer_tools_use_live_scoped_identity_and_refuse_a_lookup_outage
         nickname="Generated Background Nick", operation_id="generated-background-name")
     registry = _RecordingRegistry()
     source = _dream_tool_source(
-        allowlist=permissive_policy(), audit=None, cfg=example_config,
+        allowlist=SimpleNamespace(rooms=lambda: [SimpleNamespace(
+            platform="signal", primary_id="g1", ids=("g1",), location=False, unit=_M_UNIT.id,
+        )]), audit=None, cfg=example_config,
         metrics=Metrics(), persons=Persons(by_person={}, index={}),
-        proactive_homes={_M_UNIT.id: SimpleNamespace(
-            platform="signal", primary_id="g1", location=False)},
         registry=SimpleNamespace(self_aliases=lambda: frozenset()),
         rosters={"signal": FakeRosterSource(groups={"g1": (frozenset({"+852111"}),)})},
         tool_registry=registry, access=access)
-    source.build(key=_M_UNIT.id, unit=_M_UNIT.id, names=frozenset({"now"}),
+    source.build(key="g1", names=frozenset({"now"}),
                  grant=AdaptorGrant(home_room=True))
     room = registry.calls[-1]["room"]
     first = await room.members()

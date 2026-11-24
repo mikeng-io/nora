@@ -152,12 +152,5 @@
     "old": "    if supersedes is not None:\n        # A new self-wake sharing a subject row SUPERSEDES the pending one, so",
     "new": "    if False:\n        # A new self-wake sharing a subject row SUPERSEDES the pending one, so",
     "target": "tests/unit/test_cognition_pace.py::test_wake_move_retracts_the_old_stimulus_and_supersede_retracts_the_displaced"
-  },
-  {
-    "name": "the Dreamer builds every adaptor's guard without per-tool ceilings",
-    "file": "nora/agent/dreamer.py",
-    "old": "            param_names=self._tools.tool_param_names(),\n        )\n        try:",
-    "new": "            param_names=self._tools.tool_param_names(),\n            per_tool_ceilings=False,\n        )\n        try:",
-    "target": "tests/unit/test_cognition_no_call_ceilings.py::test_a_dreamer_adaptors_guard_built_by_the_dreamer_still_vetoes_per_tool"
   }
 ]

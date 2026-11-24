@@ -1,0 +1,23 @@
+[
+  {
+    "name": "Cognition grant binds the actual agenda room",
+    "file": "nora/agent/dreamer.py",
+    "old": "    return AdaptorGrant(home_room=True)",
+    "new": "    return AdaptorGrant(home_room=False)",
+    "target": "tests/unit/test_cognition_room_reads.py::test_one_room_gets_the_registrys_tools_untouched_and_several_get_routed_ones tests/unit/test_dreamer_runtime.py::test_a_SCOPE_keyed_grant_resolves_the_adaptors_OWN_room"
+  },
+  {
+    "name": "Wake and Review pass their assembled input to the model",
+    "file": "nora/agent/dreamer.py",
+    "old": "                        agent, prompt, invocation_state={},",
+    "new": "                        agent, prompt.replace(\"claimed-row\", \"other-row\").replace(\"Generated prediction\", \"Other prediction\"), invocation_state={},",
+    "target": "tests/infra/test_wake_runner.py::test_claimed_items_and_touched_open_intentions_are_in_the_wake_agenda tests/infra/test_review_pass.py::test_review_grades_due_guess_once_and_removes_it_from_anchors"
+  },
+  {
+    "name": "the shipped objective census refuses an empty collection",
+    "file": "tests/unit/test_objective_parser_parity.py",
+    "old": "    shipped = sorted(OBJECTIVES.glob(\"*.md\"))",
+    "new": "    shipped = []",
+    "target": "tests/unit/test_objective_parser_parity.py::test_every_shipped_objective_is_read_by_something"
+  }
+]

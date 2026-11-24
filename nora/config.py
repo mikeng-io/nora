@@ -2931,46 +2931,7 @@ COGNITION_TIMEOUT_SECONDS = 3600.0
 
 
 class DreamBudgetConfig(BaseModel):
-    """One adaptor's ceiling on a single Dreamer run: its caps and a clock.
-
-    Mirrors `AdaptorBudget`, the value `nora.agent.dreamer`'s runtime actually
-    receives — import-linter forbids `nora.agent` from importing `nora.config`
-    at all, so the config type cannot cross that boundary. The
-    `RemindersConfig`/`nora.domain.reminders.ReminderCaps` pair is the same
-    shape and the same rule: the composition root builds the domain value from
-    this one, and the DEFAULTS on both are the same numbers on purpose.
-
-    `max_memory_calls` is the only cap that is not a token number; see its own
-    comment for why a ceiling on READS could not be a per-tool budget.
-
-    `turns`/`total_tokens`/`output_tokens` are `LimitsConfig`'s three caps —
-    R-8's, applied to a Dreamer run instead of a tag turn — and are three
-    fields for `LimitsConfig`'s own reason: Strands' `_reached_own_limit` SKIPS a
-    cap it cannot find, so a missing one means "unbounded" rather than
-    "default".
-
-    **PER ADAPTOR, not one global ceiling.** Proving a fact is worth more calls
-    than glossing a word; a single number would starve the first or overpay for
-    the second.
-
-    **The numbers are UNMEASURED starting points, not measurements** — the same
-    honesty `[analytics]`'s `stay_radius_m`/`stay_min_dwell_seconds` carry.
-    `turns = 6` and `output_tokens = 4000` are `[llm.limits]`'s shipped
-    20/12000 scaled down for a background job nobody waits on;
-    `total_tokens = 40000` is `[llm.limits].total_tokens / 3`. Which model the
-    Dreamer runs is decided by measurement; these are what a run is bounded by,
-    not what a run was observed to need.
-
-    **`timeout_seconds` is not optional, and the reason is specific to this
-    subsystem.** Unlike a tag turn's timeout, a hung Dreamer call is QUIET:
-    `dream_loop` marks the scope `running` and skips it every subsequent tick
-    (`nora_dream_skipped_total{reason="in_flight"}`) without ever raising, so
-    the exponential backoff — which only triggers on an EXCEPTION — never
-    engages, and a hung provider is skipped FOREVER rather than backed off
-    (`nora/app/composition.py`'s `_LanguageModelClient`). 120 s matches `[llm].timeout_seconds`
-    and `[language].timeout_seconds` rather than inventing a third number with
-    no basis; it wraps the WHOLE run, not one call.
-    """
+    """Configuration defaults for the Dreamer model budget."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -2978,61 +2939,11 @@ class DreamBudgetConfig(BaseModel):
     total_tokens: int = Field(default=40_000, ge=1)
     output_tokens: int = Field(default=4_000, ge=1)
     timeout_seconds: float = Field(default=120.0, gt=0)
-    #: **The per-PASS memory ceiling**: how many reads a single run may make across
-    #: `nora.agent.dreamer.MEMORY_TOOLS` TOGETHER — `lookup_person`, `memory_search`,
-    #: `memory_read`. The per-tool budgets above it
-    #: (`[llm.budgets]`, `NativeTool.budget`) bound each verb on its own, which a pass
-    #: spends by asking several verbs the same question.
-    #:
-    #: This is CODE and not instruction, and it fails closed: the (N+1)th read is
-    #: answered `unavailable` with a reason, never an error and never a silent empty.
-    #: Stating the cap in words does not work: a model told it has a hard cap declines
-    #: the work rather than spending less.
-    #:
-    #: **`ge=1`, and 0 is refused rather than read as "off".** The proactive objective
-    #: requires one memory read before any `remind`, so a ceiling of 0 is a
-    #: configuration under which the adaptor can never legitimately do its job — a
-    #: boot failure is the honest answer to it, the same posture `output_tokens = 0`
-    #: gets by being `ge=1` above.
-    #:
-    #: **The `cognition` adaptor takes none of this** (DEC-247): a session has no call
-    #: ceiling, and the config refuses a cognition block that sets this,
-    #: `max_tool_calls` or `tool_calls`.
+    # Legacy call ceilings remain readable. Cognition rejects all three.
     max_memory_calls: int = Field(default=2, ge=1)
 
-    #: **The per-adaptor delta over the per-tool call ceilings** — a tool name to how
-    #: many times ONE pass may call it, overriding `NativeTool.budget` and
-    #: `[llm.budgets]` for this adaptor alone.
-    #:
-    #: It exists because `NativeTool.budget` is a TAG TURN's number and the Dreamer
-    #: would otherwise inherit it. `note_read = 3` is sized for a reply that reads a
-    #: note or two before answering; a pass asked for one decision per open note needs
-    #: a ceiling sized to the OPEN-NOTE COUNT, not a constant. A ceiling below that
-    #: count does not fail: the pass grounds the first notes in a body and the rest in
-    #: the index line alone and still returns `ok` — a judgement whose input cannot
-    #: ground it answers anyway, wrong, at a rate nothing reports.
-    #:
-    #: **Not `[llm.budgets]`, which is the deployment-wide delta**: raising
-    #: `note_read` there raises it for every reply Nora writes too, and this is a
-    #: background batch pass nobody waits on. Same blast-radius argument `[dreamer]
-    #: max_tokens` makes against raising `[llm] max_tokens`.
-    #:
-    #: **A key naming a tool this adaptor does not declare is a BOOT FAILURE**, not a
-    #: silent no-op (`nora.agent.dreamer.tool_call_faults`, raised through
-    #: `verify_tool_subsets`): a typo'd tool key would leave the ceiling the operator
-    #: raised at the table's value, and the pass starved with the config file saying
-    #: otherwise. Nothing measures that, so it refuses to start.
-    #:
-    #: `ge=1` per entry: 0 would be a tool the adaptor holds and can never call, which
-    #: is `output_tokens = 0`'s shape — expressible only by removing it from the
-    #: subset, where it is visible.
     tool_calls: dict[str, int] = Field(default_factory=dict)
 
-    #: One pass's tool calls over EVERY verb together -> `AdaptorBudget.max_tool_calls`.
-    #: Unset is no pass-wide ceiling.
-    #:
-    #: **The `cognition` adaptor takes none of this** (DEC-247), see
-    #: `max_memory_calls` above.
     max_tool_calls: int | None = Field(default=None, ge=1)
 
     @field_validator("tool_calls")
@@ -3058,74 +2969,7 @@ _DREAM_UNIT_HOLD_MARGIN_SECONDS = 300.0
 
 
 class DreamerConfig(BaseModel):
-    """Where the Dreamer's instruction corpus lives and how it reloads.
-
-    Modelled field-for-field on `DoctrineConfig` above, minus the fields that are
-    about NORA's prompt rather than about reading a directory (`canary`,
-    `display_name`, `language_hint` are runtime context she is told; nothing in
-    `nora/dreamer/` is rendered into a `<runtime_context>` block).
-
-    **Whole section optional, every field defaulted**, the `[route]`/`[presence]`/
-    `[language]` shape: a deployment that never touches it gets the bind-mounted
-    tree and mtime reload.
-
-    `enabled` turns the section from a description of a CORPUS into the switch for
-    a SUBSYSTEM (DEC-128), and it is **False**: a new subsystem does not switch
-    itself on, the `[presence]`/`[search]`/`[compute]`/`[analytics]` shape. Off,
-    nothing constructs a `DreamerRuntime` and no adaptor ticks.
-
-    `model = ""` means **fall back to `[llm].model`**, resolved by
-    `Config.dreamer_model()` and nowhere else, the `MediaConfig.describer_for`
-    shape, so exactly one place knows the fallback exists. Which model the
-    Dreamer runs is answered by measurement (the DEC-58 method), not by a value
-    picked here.
-
-    `budgets` maps an ADAPTOR NAME to its `DreamBudgetConfig`. An adaptor with
-    no block of its own gets `DreamBudgetConfig`'s own field defaults through
-    `budget_for` — never a `KeyError` at tick time, and never an unbounded run.
-    Collective Profile defaults are materialized in this map before composition
-    and timeout derivation; explicit blocks still win.
-    A PARTIAL block fills its missing fields from those same defaults rather
-    than zeroing them, which matters because `output_tokens = 0` is not "no
-    limit", it is a subsystem that silently never produces anything.
-
-    `dir` is resolved relative to the config file, not the working directory,
-    by `Config._resolve_paths` — NOT by a validator here, because a defaulted
-    sub-model is constructed once at class-definition time with no validation
-    context to resolve against.
-
-    **THE CLOCK'S OWN FIVE NUMBERS** — `tick_seconds`, `safety_lag`,
-    `quiet_seconds`, `max_age_seconds`, `batch_limit` — bound
-    `nora.app.runtime.dream_loop`, which ticks EVERY scheduled adaptor, so they
-    belong to `[dreamer]` and not to any one tier's section: a tier flag owning
-    the runtime's clock would make `[dreamer] enabled = true` inert.
-
-    - `tick_seconds` — how often the loop wakes.
-    - `safety_lag` — unread messages above which a scope fires regardless of
-      how quiet or how stale it is.
-    - `quiet_seconds` — how long a scope with SOME lag must be silent before
-      it fires (never interrupt a live conversation to read it).
-    - `max_age_seconds` — how old an adaptor's watermark row may get before it
-      fires at zero lag. This is the one that fires on a quiet room.
-    - `batch_limit` — the most messages one cycle reads. A per-adaptor
-      `AdaptorSchedule` entry overrides it; this is the shared default.
-
-    **`store_timeout_seconds` is the per-CALL-SITE allowance the runtime
-    multiplies by an adaptor's own `store_calls_per_tick`** to bound `inputs`
-    and `commit`. Without that bound, a wedged store call would leave
-    `dream_loop` holding `<adaptor>:<key>` in its `running` set forever, that
-    unit never ticking again, with the skip counted under
-    `reason="in_flight_adaptor"` — a label that cannot separate «a long run»
-    from «wedged since Tuesday».
-
-    **It is NOT `[standing] store_timeout_seconds`' number.** That value bounds
-    ONE call; this one multiplies SITES, and a site inside a per-note loop runs
-    once per note, so a single-call allowance would bound a legitimate degraded
-    case too tightly, turning a slow tick into a counted store timeout and, for
-    a daily-slotted adaptor, a lost day. `DEFAULT_DREAM_STORE_TIMEOUT_SECONDS`
-    in `nora.domain.ports` carries that arithmetic and is the single definition
-    this section and `nora.agent.dreamer` both read.
-    """
+    """Dreamer model, instruction corpus and backward-compatible configuration fields."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -3155,21 +2999,6 @@ class DreamerConfig(BaseModel):
     #       ONE completion. Binds -> `MaxTokensReachedException` ->
     #       `PartialReplyError` (`nora/agent/factory.py`).
     #
-    # `[llm] max_tokens` is sized for a TAG TURN. A batch pass is a different unit
-    # of work whose output scales with the batch (one verdict per message plus a
-    # candidate array). A run that overruns the per-call ceiling returns
-    # `unavailable`, `_dream_adaptor_once` holds the watermark, and the same batch
-    # is re-read and re-truncated on every fire, paced only by
-    # `_DREAM_BACKOFF_MAX_SECONDS`, which reads exactly like a healthy hourly
-    # adaptor.
-    #
-    # Raising `[llm] max_tokens` instead would be the wrong blast radius: that
-    # number governs every one of Nora's own replies, and this is a background
-    # batch pass nobody waits on.
-    #
-    # `0` is the default, so an unset field leaves the Dreamer on `[llm]`, the same
-    # posture `model = ""` takes. `ge=0` and not `ge=1`: 0 is the sentinel, and a
-    # real 0 would be a subsystem that silently never produces anything.
     max_tokens: int = Field(default=0, ge=0)
     # The Dreamer's OWN reasoning effort, `""` meaning «inherit `[llm]`» — the
     # shape `StandingConfig.reasoning_effort` uses, and TYPED for its reason: a
@@ -3195,68 +3024,7 @@ class DreamerConfig(BaseModel):
         "", "none", "minimal", "low", "medium", "high", "xhigh", "max"
     ] = ""
     budgets: dict[str, DreamBudgetConfig] = Field(default_factory=dict)
-    # The WHOLE hold one (adaptor, key) unit may add to `running`, asserted at
-    # startup rather than reasoned about in prose (`[standing]
-    # max_slot_hold_seconds`' own shape, `Config.
-    # _the_dream_unit_hold_exceeds_its_components` below).
-    #
-    # `_run_adaptor` (`nora/app/runtime.py`) wraps its WHOLE call to
-    # `_dream_adaptor_once` in ONE `asyncio.timeout` at this number — the model
-    # budget, both bounded store phases (`inputs`, `commit`), AND every cursor read
-    # around them: `clock.last_fired`/`record_fire`, `language.watermark_for`/
-    # `watermark_is_behind_the_record`/`lag`/`seconds_since_last_message`/
-    # `watermark_age_seconds`/`advance_watermark`, `record.since`,
-    # `media_join.enrich`. Without the wall clock, any ONE of those hanging would
-    # leave `dream_loop` holding `<adaptor>:<key>` in `running` forever, and the only
-    # symptom would be `nora_dream_skipped_total{reason="in_flight_adaptor"}`, which
-    # cannot tell a long run from a wedge (`nora_dream_unit_timeout_total` is the
-    # series that can).
-    #
-    # One wall clock around the whole unit covers a call nobody has written yet too,
-    # where a per-call bound would need a new `wait_for` for every future cursor
-    # read. The cost is that it cannot say WHICH call wedged:
-    # `nora_dream_unit_timeout_total{adaptor}` answers "which adaptor", not "which
-    # await".
-    #
-    # **The number must provably exceed every bounded piece it wraps, or the
-    # wall clock would fire before a legitimate run finishes** — the same
-    # argument `max_slot_hold_seconds` makes, checked the same way (a startup
-    # `model_validator`, not a comment doing arithmetic by hand). The pieces:
-    #
-    #   samples x timeout_seconds                        the model budget —
-    #                                                      `AdaptorSchedule.
-    #                                                      samples` x this
-    #                                                      adaptor's own
-    #                                                      `DreamBudgetConfig.
-    #                                                      timeout_seconds`.
-    #   store_calls_per_tick x store_timeout_seconds      `inputs`'s bound.
-    #   store_calls_per_tick x store_timeout_seconds      `commit`'s bound,
-    #                                                      the SAME multiplier
-    #                                                      again — the two
-    #                                                      phases are bounded
-    #                                                      separately.
-    #
-    # Every adaptor's schedule fixes `samples` at 1 in code. `store_calls_per_tick`
-    # has no config equivalent at all — it is a class attribute in
-    # `nora.language`, four layers above `nora.config` — so the check uses
-    # `DREAM_MAX_STORE_CALLS_PER_TICK` (`nora.domain.ports`), a documented
-    # ceiling with headroom over every shipped adaptor, pinned by
-    # `tests/architecture/test_dream_store_calls_are_declared.py`.
-    #
-    # **`None` DERIVES the value at load time — it does NOT default to a fixed
-    # literal.** A fixed literal goes stale the moment an operator raises ANY
-    # `[dreamer.budgets.*] timeout_seconds`: either a refused boot (too low) or a
-    # silently under-bounded wedge (an old literal that still validates but no
-    # longer carries real headroom). `Config.dreamer_max_unit_hold_seconds()` is the
-    # resolver: this field explicit -> that value, checked at startup against
-    # `Config._dream_unit_hold_known_minimum()`; unset -> that minimum plus a flat
-    # margin, ALWAYS above it by construction. See both for the exact arithmetic;
-    # restating it here would be two homes for one number.
-    #
-    # Set this explicitly only to require MORE headroom than the derivation
-    # gives, or to pin one number for a reading. An explicit value AT OR
-    # BELOW the known minimum still refuses to start — derivation removes the
-    # need to update a literal by hand, not the proof itself.
+    # Legacy hold value validated when explicitly configured.
     max_unit_hold_seconds: float | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
@@ -4191,40 +3959,7 @@ class Config(BaseModel):
         return self.dreamer.max_tokens or self.llm.max_tokens
 
     def _dream_unit_hold_known_minimum(self) -> float:
-        """The provably-bounded portion of one Dreamer (adaptor, key) unit's
-        cycle, shared by `dreamer_max_unit_hold_seconds`'s derivation and by
-        `_the_dream_unit_hold_exceeds_its_components`'s startup gate, so the
-        two can never disagree about what "the minimum" means.
-
-        Three terms, each a CONSERVATIVE MAX rather than a per-adaptor figure;
-        `_the_dream_unit_hold_exceeds_its_components`'s own docstring has the
-        proof that a max-of-maxes bounds any real adaptor's actual sum:
-
-        - `max_samples x (max_timeout + WATCH_FLUSH)`: the model budget, PLUS the
-          reasoning-strip watch's own write bound. `_sample` calls `watch.flush()`
-          on EVERY exit (`nora.agent.dreamer` `_sample`'s own docstring), OUTSIDE
-          `budget.timeout_seconds`'s own `wait_for`.
-        - `2 x DREAM_MAX_STORE_CALLS_PER_TICK x store_timeout_seconds`: the two
-          store bounds (`inputs`, `commit`).
-        - `media.join_timeout_seconds`: `media_join.enrich`'s own internal bound
-          (`MediaJoin._lookup`'s `wait_for`), PER QUERY, not per unit cycle.
-          `enrich` chunks the batch's distinct media shas into groups of
-          `DEFAULT_QUERY_BLOBS` and calls `_lookup` once per chunk
-          (`nora.domain.media_join._enrich`), so a batch whose rows reference more
-          distinct blobs than that makes MORE than one query. Counted ONCE here on
-          purpose: there is no declared ceiling on media blobs per row to multiply
-          this by, and inventing one would be a number nobody chose wearing the
-          shape of a bound. `dreamer_max_unit_hold_seconds`'s flat margin absorbs
-          EXTRA queries the same way it absorbs the cursor reads below: each
-          additional chunk costs at most another `join_timeout_seconds`.
-
-        **What this does NOT cover, stated rather than implied.** The cursor
-        reads the unit wall clock exists for (`clock.last_fired`/`record_fire`,
-        every `language.*` watermark call, `record.since` itself) carry no bound of
-        their own, so there is no declared number to sum here.
-        `dreamer_max_unit_hold_seconds`'s flat margin, not this method, is where
-        their NORMAL (non-hung) running time is given room.
-        """
+        """Minimum accepted by the legacy Dreamer hold validator."""
         from nora.agent.reasoning_strip import DEFAULT_WRITE_TIMEOUT_SECONDS
 
         max_timeout = max([
@@ -4241,34 +3976,7 @@ class Config(BaseModel):
         return model_budget + store_budget + media_budget
 
     def dreamer_max_unit_hold_seconds(self) -> float:
-        """`[dreamer] max_unit_hold_seconds`, DERIVED when unset.
-
-        `None` (the shipped default) means "the known minimum
-        (`_dream_unit_hold_known_minimum`) plus a flat margin", computed fresh from
-        THIS config's own numbers rather than a literal that goes stale the moment an
-        operator raises a budget timeout or a sample count.
-
-        **`_DREAM_UNIT_HOLD_MARGIN_SECONDS = 300.0`, flat rather than a
-        multiplier.** A multiplier would scale with the model budget even though
-        nothing about a SLOWER MODEL CALL makes a single-row Postgres read slower.
-        What the margin has to cover is everything
-        `_dream_unit_hold_known_minimum` counts once but that can genuinely run more
-        than once (see its own docstring): `clock.last_fired`/`record_fire` and every
-        `language.*` watermark call (roughly eight single-row primary-key reads or
-        upserts against a LOCAL database with no cross-network hop) PLUS any
-        `media_join.enrich` query beyond the first, at up to `join_timeout_seconds`
-        each, for a batch whose rows reference more than `DEFAULT_QUERY_BLOBS`
-        distinct media blobs. 300s is several dozen times what any one cursor read
-        takes even badly degraded and leaves room for roughly a hundred extra
-        media-join chunks. It does not balloon on a deployment that raises a model
-        budget for reasons unrelated to either.
-
-        Explicit (non-`None`) is passed through UNCHANGED: an operator who set a
-        number made a deliberate judgement, and
-        `_the_dream_unit_hold_exceeds_its_components` still refuses a value at or
-        below the known minimum; the margin is a DEFAULT convenience, not a floor
-        this method imposes on every value.
-        """
+        """Resolve the legacy hold value or add the default margin."""
         if self.dreamer.max_unit_hold_seconds is not None:
             return self.dreamer.max_unit_hold_seconds
         return (
@@ -4519,24 +4227,7 @@ class Config(BaseModel):
 
     @model_validator(mode="after")
     def _the_dream_unit_hold_exceeds_its_components(self) -> Config:
-        """`[dreamer] max_unit_hold_seconds`, EXPLICITLY SET, must PROVABLY
-        exceed the known-bounded pieces the wall clock in `_run_adaptor`
-        (`nora/app/runtime.py`) wraps, or the wall clock could fire before a
-        legitimate run finishes: `_the_standing_slot_hold_fits_its_budget`'s
-        own argument, one tier over.
-
-        **Only checked when the operator SET a value.** `None`, the shipped
-        default, is `Config.dreamer_max_unit_hold_seconds`'s job: it derives
-        a number that is ALWAYS above `_dream_unit_hold_known_minimum` by
-        construction (that minimum plus a positive margin), so re-checking a
-        derived value here would be redundant at best and, worse, a second
-        place the two arithmetics could drift apart.
-
-        See `Config._dream_unit_hold_known_minimum` for what the minimum
-        covers and what it deliberately does not (the unbounded cursor reads,
-        which `dreamer_max_unit_hold_seconds`'s margin, not this check, gives
-        room to run their NORMAL, non-hung length in).
-        """
+        """Validate explicit legacy holds against the configuration minimum."""
         explicit = self.dreamer.max_unit_hold_seconds
         if explicit is None:
             return self

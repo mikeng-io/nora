@@ -3,8 +3,8 @@ watermarks, in `participation_window_state` instead of in a dict a
 force-recreate empties (`nora.app.participation`).
 
 **The read is once and the writes are rare, so they are separate verbs.**
-`nora/infra/sql/dream_schedule.py` states the rule: a combined `upsert_and_read`
-would write on every read, and a table that changes only when a window closes
+A combined `upsert_and_read` would write on every read, and a table that changes only
+when a window closes
 must not be written by a tick that only wants to know where the room was. The
 trigger holds the live cursors in memory (`note_message` moves one per message,
 synchronously, and must not await), so the read happens once per process, at
@@ -43,8 +43,7 @@ from .schema import MESSAGES, PARTICIPATION_WINDOW_STATE
 
 class SqlParticipationStateStore:
     """`__init__(self, engine)` and nothing else, matching `SqlStandingStore`
-    and `SqlDreamScheduleClock`: no config, clock or metrics, so a fixture can
-    build it from a bare `AsyncEngine`."""
+    so a fixture can build it from a bare `AsyncEngine`."""
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine

@@ -99,7 +99,6 @@ from nora.testing.decision_log import (
     DuplicateDecisionError,
     InMemoryDecisionLogStore,
 )
-from nora.testing.dream_schedule import InMemoryDreamScheduleClock
 from nora.testing.eval_backends import (
     BACKED_TOOLS,
     EVAL_CIRCLE_ID,
@@ -212,7 +211,6 @@ __all__ = [
     "InMemoryCharacterEvidence",
     "InMemoryCultureStore",
     "InMemoryDecisionLogStore",
-    "InMemoryDreamScheduleClock",
     "InMemoryNoteStore",
     "InMemoryStandingStore",
     "InMemorySummonsLedger",

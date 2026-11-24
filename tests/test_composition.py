@@ -934,7 +934,6 @@ async def test_the_dreamer_runtime_is_not_built_when_it_is_off(cfg):
     deps = await build_dependencies(cfg)
 
     assert deps.dreamer_runtime is None
-    assert deps.dream_adaptors == ()
 
 
 async def test_the_dreamer_runtime_is_built_when_it_is_on(cfg):
@@ -969,32 +968,23 @@ async def test_the_dreamer_runs_on_a_model_that_can_stop(cfg):
 
 
 
-async def test_unit_scopes_are_the_allowlists_units_deduplicated(cfg):
-    """Two rooms of one unit are ONE unit of work, not two — which is the
-    whole reason a unit-keyed adaptor could not ride the per-scope
-    schedule, and the reason this closure exists beside `language_scopes`.
+def test_unit_scopes_are_the_allowlists_units_deduplicated(tmp_path):
+    from nora.people.wire import unit_scopes
+    from nora.policy import load_policy
 
-    Sorted, so the tick order is stable between runs of the same build; a set
-    would make «did adaptor X run for unit Y this tick» unanswerable from
-    a log.
+    policy_file = tmp_path / "policy.toml"
+    policy_file.write_text(
+        'default = "deny"\n'
+        '[[conversations]]\nplatform = "signal"\nid = "room-1"\nlabel = "One"\n'
+        'persons = "*"\nunit = "beta"\n'
+        '[[conversations]]\nplatform = "signal"\nid = "room-2"\nlabel = "Two"\n'
+        'persons = "*"\nunit = "alpha"\n'
+        '[[conversations]]\nplatform = "signal"\nid = "room-3"\nlabel = "Three"\n'
+        'persons = "*"\nunit = "beta"\n'
+    )
+    units = unit_scopes(load_policy(policy_file)).unit_scopes()
+    assert units == ("alpha", "beta")
 
-    Asserted against the loaded allowlist rather than a hand-built one, so it
-    fails if `Conversation.unit`'s default ever stops being honoured."""
-    deps = await build_dependencies(cfg)
-
-    units = deps.unit_scopes()
-
-    assert units == tuple(sorted(set(units)))
-    assert units, "a deployment with allowed conversations has a unit"
-    # NARROWER than the per-scope population, or the distinction this closure
-    # exists for would be untestable here: DEC-105 defaults every conversation
-    # to one unit, so several rooms collapse to one key.
-    assert len(units) <= len(deps.language_scopes())
-
-
-
-
-# --- Standing / the debrief stage ---------------------------------------
 
 async def test_standing_disabled_still_wires_graph_debrief_without_legacy_fold(cfg):
     """Disabling the room fold leaves canonical action facts readable, without
@@ -1320,7 +1310,6 @@ async def test_a_home_room_keeps_the_proactive_runner_even_with_the_dreamer_off(
         "participation.enabled": False,
     }))
     try:
-        assert "proactive" not in [a.name for a in deps.dream_adaptors]
         (loop,) = _spawned(deps, "HeartbeatLoop.run")
         path = loop._fire.__self__
         assert path._proactive_runner is not None
@@ -1501,18 +1490,9 @@ async def test_cognition_on_builds_one_runner_for_backfill_alongside_graph_wake(
 ):
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, _SESSION_ON))
-    # `deps.cognition_runner` is the `SubconsciousExecutor`: the Dreamer
-    # lane owns admission and cancellation, the session runner it holds
-    # (`._runner`) owns everything the session itself was composed with.
-    executor = deps.cognition_runner
-    assert executor is not None and deps.wake_poller is not None
-    runner = executor._runner
+    runner = deps.cognition_runner
+    assert runner is not None and deps.wake_poller is not None
     assert deps.cognition_shutdown is not None and not deps.cognition_shutdown.done
-    # A stopping process lets a running session finish for this long before it cancels it
-    # (the PR-7 grace; `docker-compose.yml`'s `stop_grace_period` is sized above it).
-    from nora.app.cognition_wiring import SESSION_SHUTDOWN_GRACE_SECONDS
-
-    assert deps.cognition_shutdown._grace == SESSION_SHUTDOWN_GRACE_SECONDS > 0
     # The Dreamer's own budget entry, converted: rounds, tokens and the clock,
     # and no call ceiling (DEC-247); the clock ends before the wake's.
     assert (runner._budget.turns, runner._budget.timeout_seconds) == (200, 3600.0)
@@ -1595,17 +1575,17 @@ async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withho
     on = await build_dependencies(override_config(
         cfg, {**_SESSION_ON, "record_query.enabled": True},
     ))
-    assert "record_query" not in off.cognition_runner._runner._read_only_tools
-    assert "record_query" in on.cognition_runner._runner._read_only_tools
-    wired = off.cognition_runner._runner._read_only_tools
+    assert "record_query" not in off.cognition_runner._read_only_tools
+    assert "record_query" in on.cognition_runner._read_only_tools
+    wired = off.cognition_runner._read_only_tools
     assert {"note_read", "where_been"} <= wired
     assert {"rollup_read", "standing_read"} <= wired                    # DEC-246
     assert "memo_read" in wired                                         # DEC-306
     assert "social_read" in wired       # a SELECT, so no flag
     # Built for a real room they are real, read-only tools, and only wired ones.
-    built = on.cognition_runner._runner._read_tools_for("friends", [Room("signal", "g1")])
+    built = on.cognition_runner._read_tools_for("friends", [Room("signal", "g1")])
     names = {t.tool_name for t in built}
-    assert names and names <= on.cognition_runner._runner._read_only_tools
+    assert names and names <= on.cognition_runner._read_only_tools
     assert {"note_read", "record_query"} <= names
 
 
@@ -1616,14 +1596,14 @@ async def test_the_configured_model_window_reaches_the_runner_the_overflow_proof
     a configured window and fraction are what the runner proves one against."""
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     default = (await build_dependencies(override_config(cfg, _SESSION_ON))).cognition_runner
-    assert default is not None and default._runner._window_tokens is None
+    assert default is not None and default._window_tokens is None
     deps = await build_dependencies(override_config(cfg, {
         **_SESSION_ON, "cognition.model_window_tokens": 123_456,
         "cognition.overflow_window_fraction": 0.5,
     }))
     assert deps.cognition_runner is not None
-    assert (deps.cognition_runner._runner._window_tokens,
-            deps.cognition_runner._runner._window_fraction) == (123_456, 0.5)
+    assert (deps.cognition_runner._window_tokens,
+            deps.cognition_runner._window_fraction) == (123_456, 0.5)
 
 
 async def test_cognition_on_that_built_no_runner_refuses_to_boot(
@@ -1651,7 +1631,7 @@ async def test_the_session_is_grounded_from_the_record_with_record_query_off(
 
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, _SESSION_ON))
-    assert "record_query" not in deps.cognition_runner._runner._read_only_tools  # the tool is OFF
+    assert "record_query" not in deps.cognition_runner._read_only_tools  # the tool is OFF
     engine = create_sql_engine(clean_pg_url)
     now = 1_790_000_000_000
     try:
@@ -1681,11 +1661,11 @@ async def test_the_session_is_grounded_from_the_record_with_record_query_off(
         last_session_ms=None,
     )
     with pytest.raises(ValueError, match="outside the unit"):
-        await deps.cognition_runner._runner._grounder(
+        await deps.cognition_runner._grounder(
             "friends", situation.agenda.items, pending)
     valid = build_situation(unit="friends", pending=pending[:2], home_room=Room("signal", "g1"),
                             now_ms=now, last_session_ms=None)
-    grounding = await deps.cognition_runner._runner._grounder(
+    grounding = await deps.cognition_runner._grounder(
         "friends", valid.agenda.items, pending[:2])
     said = {r.message_id: r for r in grounding.records.values()}
     assert set(said) == {ids[0]}                    # the hidden one and the OTHER UNIT's are absent
@@ -1918,7 +1898,7 @@ async def test_cognition_holds_the_memory_surface_the_flag_selects(cfg, tmp_path
     deps = await build_dependencies(override_config(
         cfg, {**_SESSION_ON, "memory.index.read": graph},
     ))
-    runner = deps.cognition_runner._runner
+    runner = deps.cognition_runner
     assert runner is not None
     unit, home = next(iter(runner._home_rooms.items()))
     built = {t.tool_name for t in runner._read_tools_for(unit, [home])}
@@ -1944,7 +1924,7 @@ async def test_markdown_identity_reaches_live_tools_and_cognition_writers(cfg, t
     renamed = override_config(cfg, {**_SESSION_ON, "doctrine.dir": directory})
     deps = await build_dependencies(renamed)
     assert deps.cognition_runner is not None
-    assert deps.cognition_runner._runner._nora_names == frozenset({"AgentAlpha"})
+    assert deps.cognition_runner._nora_names == frozenset({"AgentAlpha"})
     registry = deps.engagement._tool_registry
     own = TranscriptRow(id=1, sender_id="self", sender_name="PreviousLabel", ts=1,
                         body="I checked the venue", is_nora=True,

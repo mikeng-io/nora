@@ -1,7 +1,6 @@
 """`DreamerAgentRunner` — the production `nora.app.cognition_session.
 CognitionAgentRunner`, and a DELEGATE: the session's one model call goes
-through `DreamerRuntime.run_agent`, the same `create_dream_agent` /
-`factory.invoke` route every Dreamer adaptor's `_sample` takes (node 30).
+through `DreamerRuntime.run_agent`, which creates and invokes the agent.
 What this class still owns is only what is genuinely session-shaped: the
 `CognitionAgentRunner` signature, the guard's vocabulary (R-99's declared
 argument names and the result-size caps — the session holds no per-tool call
@@ -96,9 +95,6 @@ class DreamerAgentRunner:
         reservation = (
             TokenReservation(budget.total_tokens) if budget.reserve_tokens else None
         )
-        # ONE root span per session (AGENTS.md, instruments): the name and
-        # attributes are the ones `DreamerRuntime.run` declares for every
-        # adaptor, because the session's model call is the Dreamer's work.
         with span(
             "dream:cognition",
             **{TRACE_KIND: "generation", "nora.dreamer.adaptor": "cognition",

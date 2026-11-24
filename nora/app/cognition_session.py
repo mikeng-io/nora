@@ -1142,14 +1142,7 @@ class CognitionSessionRunner:
         )
 
     async def shutdown(self) -> None:
-        """Wait for the finishing outcome writes to land. The tasks
-        themselves are not this runner's to cancel: a live session's task is
-        admitted on the Dreamer lane (`SubconsciousExecutor` →
-        `DreamerRuntime.dispatch`), and `CognitionShutdown` cancels it there
-        before calling this — the boundary that created the task cancels it
-        (node 18). What remains here is the settlement half: a session must
-        not vanish with its wake still reading «in flight» when it could
-        have said `cancelled`."""
+        """Wait for pending outcome writes before closing the store."""
         if self._finishing:
             await asyncio.gather(*tuple(self._finishing), return_exceptions=True)
 

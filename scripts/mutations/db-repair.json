@@ -1,30 +1,9 @@
 [
   {
-    "name": "normal population admits at most two store phases",
-    "file": "nora/app/runtime.py",
-    "old": "    store_slots = asyncio.Semaphore(2)",
-    "new": "    store_slots = asyncio.Semaphore(72)",
-    "target": "tests/unit/test_runtime.py::test_normal_dream_population_admits_two_reads_and_releases_for_models"
-  },
-  {
-    "name": "store admission is released during model execution",
-    "file": "nora/agent/dream_store.py",
-    "old": "    if lease is not None:\n        lease.release()\n    try:",
-    "new": "    if lease is not None:\n        pass\n    try:",
-    "target": "tests/unit/test_dream_store_admission.py::test_store_admission_cancellation_failure_and_model_release"
-  },
-  {
     "name": "runtime Postgres does not own orphaned probe children",
     "file": "docker-compose.yml",
     "old": "    image: pgvector/pgvector:pg18@sha256:38681dc6eaf55308e2a4c6de392d131652dcfac70e1263e35cd9b5ea3fe39782\n    init: true",
     "new": "    image: pgvector/pgvector:pg18@sha256:38681dc6eaf55308e2a4c6de392d131652dcfac70e1263e35cd9b5ea3fe39782\n    init: false",
     "target": "tests/architecture/test_postgres_process_ownership.py::test_postgres_services_have_init"
-  },
-  {
-    "name": "admission queue does not consume operation deadline",
-    "file": "nora/agent/dream_store.py",
-    "old": "            deadline.reschedule(None)",
-    "new": "            pass",
-    "target": "tests/unit/test_dream_store_admission.py::test_admission_wait_does_not_consume_the_unit_deadline"
   }
 ]

@@ -66,14 +66,11 @@ _SESSION_ID_MAX = 200
 #: never start with it: Strands opens a span and sets `trace_attributes` after,
 #: past `on_start`, so they take their session from the parent instead (see the
 #: installed `strands/telemetry/tracer.py`).
-#: A Dreamer unit has no room; its session is the tick that dispatched it
-#: (`nora.app.runtime.dream_loop`), so one pass's units read as one session.
 #: A Cognition session has no room either: `nora.cognition.session_id` is its
 #: own natural identity (one session's agent calls group as one conversation —
 #: a multi-room background session is not forced into one room).
 _CONVERSATION_KEYS = (
     "nora.conversation_id",
-    "nora.dreamer.pass_id",
     "nora.cognition.session_id",
 )
 

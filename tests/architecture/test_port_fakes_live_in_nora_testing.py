@@ -59,16 +59,8 @@ PORTS = ROOT / "nora" / "domain" / "ports.py"
 SHARED_FAKES = ROOT / "nora" / "testing" / "fakes.py"
 
 # `tests/<path>::<ClassName>` -> why it is still inline. Burn down, never grow.
-# Three kinds of reason appear, and only these:
-#   NO_SHARED_FAKE — the port has no fake in nora/testing yet; this is the
-#     candidate to promote, together with a contract suite against the
-#     production implementation.
-#   DRIVES_THE_LOOP — the class steers a scheduler/supervisor (slow, failing,
-#     counting); the port's own semantics are not what the test measures.
-#   FAULT_SWITCH_OVER_SHARED — composes the shared fake to add a failure mode
-#     the shared fake does not offer; promote the switch into the fake.
+# Promote a missing shared fake with a contract suite against the production port.
 _NO_SHARED_FAKE = "NO_SHARED_FAKE: no nora/testing fake for this port yet"
-_DRIVES_THE_LOOP = "DRIVES_THE_LOOP: steers dream_loop's supervision, not the port's semantics"
 _ALLOWED: dict[str, str] = {
     # SearchProvider / GifSource / SocialProvider — the web tier. The search
     # contract suite is envelope-driven (each vendor's real wire shape) and has
@@ -89,10 +81,6 @@ _ALLOWED: dict[str, str] = {
     "tests/unit/test_music_player.py::_StubSource": _NO_SHARED_FAKE,
     "tests/unit/test_music_player_manager.py::_StubSource": _NO_SHARED_FAKE,
     "tests/unit/test_music_agent_tools.py::_FakeBridge": _NO_SHARED_FAKE,
-    # DreamAdaptor / DreamSink — the contract suites carry their own in-suite
-    # implementations (`_FakeAdaptor`, `_FakeDreamSink`); nothing is exported.
-    "tests/unit/test_dreamer_runtime.py::_Adaptor": _NO_SHARED_FAKE,
-    "tests/unit/test_runtime.py::_StubAdaptor": _NO_SHARED_FAKE,
     # Speaker (voice playout seam) — the only real implementation is the
     # Discord adapter; no in-memory Speaker exists in nora/testing yet, and
     # there is no voice-playout contract suite.

@@ -1,38 +1,24 @@
 [
   {
-    "name": "D2 axis 2 exempts a home-room grant",
-    "file": "nora/agent/dreamer.py",
-    "old": "    if adaptor.key_kind == \"unit\" and not allowance.home_room:",
-    "new": "    if adaptor.key_kind == \"unit\":",
-    "target": "tests/unit/test_dreamer_runtime.py -k a_unit_keyed_adaptor_is_refused_a_room_scoped_tool"
-  },
-  {
-    "name": "D3 the per-run re-check reads the same grant",
-    "file": "nora/agent/dreamer.py",
-    "old": "                adaptor, ceiling=self._tools.read_only(), grant=grant,",
-    "new": "                adaptor, ceiling=self._tools.read_only(),",
-    "target": "tests/unit/test_dreamer_runtime.py -k the_per_run_check_honours_a_home_room_grant"
-  },
-  {
     "name": "D2 location_trusted is threaded from the home room",
     "file": "nora/agent/dreamer.py",
     "old": "            location_trusted=home.location_trusted if home is not None else False,",
     "new": "            location_trusted=False,",
-    "target": "tests/unit/test_dreamer_runtime.py -k a_home_room_grant_builds_the_room_the_operator_named"
+    "target": "tests/unit/test_dreamer_runtime.py::test_a_SCOPE_keyed_grant_resolves_the_adaptors_OWN_room"
   },
   {
     "name": "D2 self_ids reach the home room's Room",
     "file": "nora/agent/dreamer.py",
     "old": "                self_ids=self._self_ids,\n            )\n        else:",
     "new": "            )\n        else:",
-    "target": "tests/unit/test_dreamer_runtime.py -k a_home_room_grant_builds_the_room_the_operator_named"
+    "target": "tests/unit/test_dreamer_runtime.py::test_a_SCOPE_keyed_grant_resolves_the_adaptors_OWN_room"
   },
   {
     "name": "D3 the destination is the home room, not the unit name",
     "file": "nora/agent/dreamer.py",
     "old": "            conversation_id=home.conversation_id if home is not None else key,",
     "new": "            conversation_id=key,",
-    "target": "tests/unit/test_dreamer_runtime.py -k a_home_room_grant_builds_the_room_the_operator_named"
+    "target": "tests/unit/test_dreamer_runtime.py::test_a_SCOPE_keyed_grant_resolves_the_adaptors_OWN_room"
   },
   {
     "name": "D12 silent is DONE",
@@ -128,8 +114,8 @@
   {
     "name": "D7 the log honours since (sql)",
     "file": "nora/infra/sql/reminders.py",
-    "old": "    async def history(\n        self, *, requester_person_id: str, since: datetime, limit: int,\n    ) -> Sequence[Reminder]:\n        \"\"\"One requester's rows since `since`, every state, oldest first \u2014\n        the decision log. Same per-row\n        decode discipline as `due()`: one undecodable row is skipped and\n        named, never a dead read.\"\"\"\n        stmt = (\n            sa.select(REMINDERS)\n            .where(\n                REMINDERS.c.requester_person_id == requester_person_id,\n                REMINDERS.c.created_at >= ensure_utc(since, field=\"since\"),\n            )\n            .order_by(REMINDERS.c.created_at.asc(), REMINDERS.c.id.asc())\n            .limit(check_limit(limit))\n        )\n        async with self._engine.connect() as conn:\n            rows = (await conn.execute(stmt)).all()\n        return self._decode_due(rows)\n",
-    "new": "    async def history(\n        self, *, requester_person_id: str, since: datetime, limit: int,\n    ) -> Sequence[Reminder]:\n        \"\"\"One requester's rows since `since`, every state, oldest first \u2014\n        the decision log. Same per-row\n        decode discipline as `due()`: one undecodable row is skipped and\n        named, never a dead read.\"\"\"\n        stmt = (\n            sa.select(REMINDERS)\n            .where(\n                REMINDERS.c.requester_person_id == requester_person_id,\n                REMINDERS.c.created_at >= REMINDERS.c.created_at,\n            )\n            .order_by(REMINDERS.c.created_at.asc(), REMINDERS.c.id.asc())\n            .limit(check_limit(limit))\n        )\n        async with self._engine.connect() as conn:\n            rows = (await conn.execute(stmt)).all()\n        return self._decode_due(rows)\n",
+    "old": "    async def history(\n        self, *, requester_person_id: str, since: datetime, limit: int,\n    ) -> Sequence[Reminder]:\n        \"\"\"One requester's rows since `since`, every state, oldest first —\n        the decision log. Same per-row\n        decode discipline as `due()`: one undecodable row is skipped and\n        named, never a dead read.\"\"\"\n        stmt = (\n            sa.select(REMINDERS)\n            .where(\n                REMINDERS.c.requester_person_id == requester_person_id,\n                REMINDERS.c.created_at >= ensure_utc(since, field=\"since\"),\n            )\n            .order_by(REMINDERS.c.created_at.asc(), REMINDERS.c.id.asc())\n            .limit(check_limit(limit))\n        )\n        async with self._engine.connect() as conn:\n            rows = (await conn.execute(stmt)).all()\n        return self._decode_due(rows)\n",
+    "new": "    async def history(\n        self, *, requester_person_id: str, since: datetime, limit: int,\n    ) -> Sequence[Reminder]:\n        \"\"\"One requester's rows since `since`, every state, oldest first —\n        the decision log. Same per-row\n        decode discipline as `due()`: one undecodable row is skipped and\n        named, never a dead read.\"\"\"\n        stmt = (\n            sa.select(REMINDERS)\n            .where(\n                REMINDERS.c.requester_person_id == requester_person_id,\n                REMINDERS.c.created_at >= REMINDERS.c.created_at,\n            )\n            .order_by(REMINDERS.c.created_at.asc(), REMINDERS.c.id.asc())\n            .limit(check_limit(limit))\n        )\n        async with self._engine.connect() as conn:\n            rows = (await conn.execute(stmt)).all()\n        return self._decode_due(rows)\n",
     "target": "tests/contract/test_reminder_store_contract.py::test_history_honours_since_and_limit[sql]"
   },
   {

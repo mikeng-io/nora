@@ -18,7 +18,7 @@ from __future__ import annotations
 import functools
 import importlib
 import logging
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -28,7 +28,6 @@ from openai import AsyncOpenAI
 
 from nora.access import IdentityAccess
 from nora.agent.dreamer import (
-    AdaptorSchedule,
     DreamerRuntime,
 )
 from nora.agent.whereis import Circle
@@ -52,7 +51,6 @@ from nora.app.composition_dreamer import (
     enabled,
     guidance,
     legacy_cognition_shutdown,
-    preamble,
 )
 from nora.app.composition_fire import (
     build_gate,
@@ -87,8 +85,6 @@ from nora.app.composition_stores import (
     build_audit,
     build_decision_log,
     build_doctrine,
-    build_language_scopes,
-    build_language_store,
     build_otp,
     identity,
     identity_backend,
@@ -131,7 +127,6 @@ from nora.domain.memory_index import IndexState
 from nora.domain.ports import (
     BlobStore,
     ContextAssembler,
-    DreamAdaptor,
     EngagePolicy,
     RecordStore,
     Speaker,
@@ -142,8 +137,6 @@ from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.self_presence import PresenceReader
 from nora.infra.computer.probe import ComputerdProbe
 from nora.infra.embedder import LlamaEmbedder, fingerprint, model_file
-from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
-from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.memory_embed import MemoryEmbedWorker
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.presence import PresenceStore
@@ -213,7 +206,7 @@ class Dependencies:
     managed_services: Any
     managed_session: Any  # the managed backend's owned Ory session, closed at shutdown
     # The ONE media join, so `__main__` can hand the same
-    # instance to the dream loop and to lazy adoption — the two transcript
+    # instance to lazy adoption and the session readers — the transcript
     # builders this module does not construct itself.
     media_join: MediaJoin
     metrics: Metrics
@@ -344,49 +337,13 @@ class Dependencies:
     # is built per-tag inside `factory.create_agent` and holds no
     # web-reachable listing method).
     skills_dir: Path
-    # The Dreamer's consolidation cursor and the scopes it ticks over.
-    # `language_store` is the CONCRETE `SqlLanguageStore`, which is
-    # the cursor and nothing else (see
-    # `nora.infra.sql.language`'s own docstring). `None` when `[dreamer]
-    # enabled = false`; `nora.__main__.App.run` reads these to spawn (or log
-    # skipping) `runtime.dream_loop`.
-    language_store: SqlLanguageStore | None
-    language_scopes: Callable[[], Sequence[str]]
-    # The Dreamer's instruction corpus. Built unconditionally (see its
-    # construction below), so unlike its neighbours here it is never None —
-    # `dream_loop` reads it for the per-tick `instruction_versions=` line, and
-    # both observers hold it as their objective source.
     dreamer_instructions: DreamerInstructions
-    # The Dreamer RUNTIME and what it schedules — `None`/empty under
-    # `[dreamer] enabled = false`, the shipped default.
     dreamer_runtime: DreamerRuntime | None
-    dream_adaptors: tuple[DreamAdaptor, ...]
-    # Per-adaptor clocks for the dream clock,
-    # keyed by adaptor name and EMPTY under `[dreamer] enabled = false`.
-    # An adaptor with no entry keeps the shared lag/quiet/age shape; an entry
-    # is what moves one onto its own interval, batch and envelope cap.
-    dream_schedules: Mapping[str, AdaptorSchedule]
-    # Where a watermark-free scheduled adaptor's last fire is remembered.
-    # ALWAYS built, even under `[dreamer] enabled = false`: it is one small
-    # store over an engine that already exists, and making it conditional
-    # would put a `None` on the one path whose whole purpose is to survive
-    # process boundaries. `dream_loop` ignores it when `schedules` is empty.
-    dream_schedule_clock: SqlDreamScheduleClock
     # What instructions, config and code were in force when. The store only:
     # the daemon's `App.run` builds the recorder that writes through it, so
     # an eval subject composed from this graph records no loads of its own.
     revisions: SqlRevisionStore
-    # `language_scopes`' unit-keyed sibling. `Conversation.unit`
-    # (DEC-105) — several rooms of one unit are ONE unit of work here, not
-    # several, which is the whole reason a unit-keyed adaptor could not
-    # ride the per-scope schedule.
-    unit_scopes: Callable[[], Sequence[str]]
-    # The SAME `GatheringService` built above alongside `event_store` and
-    # already threaded to `ToolRegistry(events=events)` —
-    # exposed here too so `nora.web.api.register_web_routes`'s read-only
-    # `/app/v1/events(/{id})` pair serves from the identical instance the
-    # agent's event tools use, rather than a second `GatheringService` over the
-    # same store.
+
     events: GatheringService
     # `[speech.tts]`'s speaker, annotated with the
     # port like `audit`/`memory` above. `None` unless `enabled` AND a provider
@@ -624,8 +581,6 @@ async def _compose_dependencies(
         allowlist=allowlist, clock=clock, engine=engine, metrics=metrics
     )
     decision_log = _stores_decision_log.decision_log
-    _stores_language_store = build_language_store(cfg=cfg, engine=engine, metrics=metrics)
-    language_store = _stores_language_store.language_store
     _memory_notes = _memory_wire.notes(cfg=cfg, engine=engine)
     memo_store = _memory_notes.memo_store
     note_store, entry_store = _memory_notes.note_store, _memory_notes.entry_store
@@ -747,7 +702,6 @@ async def _compose_dependencies(
     model_client_for = _models_lane.model_client_for
     route_model = _models_lane.route_model
     tier = _models_lane.tier
-    language_scopes = build_language_scopes(allowlist=allowlist).language_scopes
     _people_unit_scopes = _people_wire.unit_scopes(allowlist=allowlist)
     unit_scopes = _people_unit_scopes.unit_scopes
     _models_source = source(client=client, route_model=route_model, tier=tier)
@@ -762,8 +716,6 @@ async def _compose_dependencies(
     browser = _browse_wiring.browser
     _models_runner = build_runner(cfg=cfg, metrics=metrics, models=models, tier=tier)
     runner = _models_runner.runner
-    _people_homes = _people_wire.homes(allowlist=allowlist)
-    proactive_homes = _people_homes.proactive_homes
     _models_runners = runners(
         cfg=cfg, metrics=metrics, model_client_for=model_client_for,
         route_model=route_model, summons_wired=summons_wired, tier=tier,
@@ -1199,11 +1151,6 @@ async def _compose_dependencies(
         room_command=room_commands.is_command,
     )
     bridge_runtime = _bridge_runtime.bridge_runtime
-    _dreamer_preamble = preamble(engine=engine)
-    dream_adaptors = _dreamer_preamble.dream_adaptors
-    dream_schedule_clock = _dreamer_preamble.dream_schedule_clock
-    dream_schedules = _dreamer_preamble.dream_schedules
-    dreamer_runtime = _dreamer_preamble.dreamer_runtime
     _dreamer_guidance = guidance(dreamer_instructions=dreamer_instructions)
     cognition_lessons = _dreamer_guidance.cognition_lessons
     cognition_memory = _dreamer_guidance.cognition_memory
@@ -1238,10 +1185,7 @@ async def _compose_dependencies(
         doctrine_store=doctrine_store,
         document_service=document_service,
         documents_context=documents_context,
-        dream_adaptors=dream_adaptors,
-        dream_schedules=dream_schedules,
         dreamer_instructions=dreamer_instructions,
-        dreamer_runtime=dreamer_runtime,
         engine=engine, entry_store=entry_store,
         event_store=event_store,
         events=events,
@@ -1259,7 +1203,6 @@ async def _compose_dependencies(
         persons=persons_view,
         presence_circles=presence_circles,
         presence_reader=presence_reader,
-        proactive_homes=proactive_homes,
         profile_index=profile_index,
         profile_reader=profile_reader,
         reasoning_strip_store=reasoning_strip_store,
@@ -1281,8 +1224,6 @@ async def _compose_dependencies(
         access=access,
     )
     cognition_runner = _dreamer_enabled.cognition_runner
-    dream_adaptors = _dreamer_enabled.dream_adaptors
-    dream_schedules = _dreamer_enabled.dream_schedules
     dreamer_runtime = _dreamer_enabled.dreamer_runtime
     wake_poller = build_wake(
         cfg, dreamer_runtime, dreamer_instructions, engine, access, lineage, allowlist,
@@ -1366,15 +1307,9 @@ async def _compose_dependencies(
         presence_circles=presence_circles,
         mobility=mobility,
         skills_dir=cfg.doctrine.dir.parent / "skills",
-        language_store=language_store,
-        language_scopes=language_scopes,
         dreamer_instructions=dreamer_instructions,
         dreamer_runtime=dreamer_runtime,
-        dream_adaptors=dream_adaptors,
-        dream_schedules=dream_schedules,
-        dream_schedule_clock=dream_schedule_clock,
         revisions=SqlRevisionStore(engine),
-        unit_scopes=unit_scopes,
         events=events,
         speaker=speaker,
         voice_hub=voice_hub,

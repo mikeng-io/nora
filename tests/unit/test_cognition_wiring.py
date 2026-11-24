@@ -120,7 +120,7 @@ def test_an_act_verb_is_never_wired_even_when_the_catalogue_names_it():
 
 def test_the_session_budget_carries_every_field_the_dreamer_budget_gives_it():
     """A field added to one side and not the other would be dropped in silence
-    (`_adaptor_budget`'s own reason). The two per-pass call ceilings are the
+    for the runtime. The two legacy per-pass call ceilings are the
     exception on purpose (DEC-247): the session carries none, so the Dreamer
     budget's values for them never reach it. Historical call reservation is
     selected by the session, not deployment config; its default stays off."""
@@ -189,7 +189,7 @@ def test_read_tools_are_built_for_the_agenda_room_under_the_cognition_grant():
     tools = build("friends", [Room("signal", "g1")])
     assert sorted(t.__name__ for t in tools) == ["lookup_person", "note_read"]
     (call,) = source.calls
-    assert call["key"] == "g1" and call["unit"] is None       # scope-resolved: the room's own
+    assert call["key"] == "g1"
     assert call["adaptor"] == "cognition"
     assert call["grant"] == cognition_grant() == AdaptorGrant(home_room=True)
 
@@ -497,22 +497,14 @@ async def test_the_guard_holds_the_safety_checks_and_no_call_ceiling(monkeypatch
 async def test_shutdown_cancels_the_evaluators_sessions_then_the_runners_and_only_once():
     order: list[str] = []
 
-    class Evaluator:
-        async def wait_in_flight(self, timeout_seconds: float) -> None:
-            order.append(f"grace {timeout_seconds:g}")
-
-        async def cancel_in_flight(self) -> None:
-            order.append("evaluator")
-
     class Runner:
         async def shutdown(self) -> None:
             order.append("runner")
 
-    stop = CognitionShutdown(evaluator=Evaluator(), runner=Runner(), grace_seconds=30.0)
+    stop = CognitionShutdown(runner=Runner())
     await stop()
     await stop()                                   # a second shutdown is a no-op
-    # The grace comes FIRST: sessions already running may finish before they are cancelled.
-    assert order == ["grace 30", "evaluator", "runner"] and stop.done
+    assert order == ["runner"] and stop.done
 
 
 def test_units_without_a_home_room_are_named_not_woken():

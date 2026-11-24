@@ -355,5 +355,5 @@ def test_review_fails_startup_when_the_resolved_judge_is_the_writer(example_conf
     instructions = DreamerInstructions(Path("nora/dreamer"), metrics=metrics)
     with pytest.raises(StartupError, match="independent model"):
         build_review_runner(
-            cfg, instructions, None, lambda _purpose: object(), metrics, content_checks=False,
+            cfg, instructions, None, lambda _purpose: object(), metrics,
         )

@@ -6,10 +6,9 @@ from typing import Any, cast
 
 from openai.types.shared.reasoning_effort import ReasoningEffort
 
-from nora.agent.dreamer import AdaptorBudget
 from nora.agent.room import Room
 from nora.app.startup import StartupError
-from nora.config import Config, DreamBudgetConfig
+from nora.config import Config
 from nora.domain.culture import unit_culture_key
 from nora.domain.lessons import CharacterRoom, UnitKey
 from nora.domain.ports import RosterSource
@@ -175,20 +174,3 @@ def _music_channel_of(policy: Policy)-> Callable[[str], str | None]:
         return policy.music_channel_for("discord", guild_id)
 
     return _resolve
-
-
-def _adaptor_budget(b: DreamBudgetConfig)-> AdaptorBudget:
-
-    """`DreamBudgetConfig` -> `AdaptorBudget`: the one place the two shapes meet."""
-    return AdaptorBudget(
-        turns=b.turns,
-        total_tokens=b.total_tokens,
-        output_tokens=b.output_tokens,
-        timeout_seconds=b.timeout_seconds,
-        max_memory_calls=b.max_memory_calls,
-        # Copied, not aliased: `DreamBudgetConfig` is frozen but its `dict`
-        # field is not, and an `AdaptorBudget` handed the same object would
-        # share it with the config tree for the process's life.
-        tool_calls=dict(b.tool_calls),
-        max_tool_calls=b.max_tool_calls,
-    )

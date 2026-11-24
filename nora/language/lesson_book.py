@@ -135,7 +135,7 @@ class LessonBook:
         `handles` maps the short name a session was shown (`L1`) to the lesson's
         id, and is extended with every lesson the session writes. A session
         never sees an id: the Dreamer's screen refuses any argument carrying a
-        UUID (`DreamerRuntime._screened`), so a verb taking one could never be
+        UUID through the lesson screen, so a verb taking one could never be
         called. `None` passes ids through (the tests' and the CLI's shape).
         `on_ok` is told the verb's name after each call that was not refused."""
 

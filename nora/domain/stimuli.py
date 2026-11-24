@@ -615,7 +615,7 @@ class UnitView:
 class WakeHook(Protocol):
     """The ONE typed shape of the evaluator's `on_wake` extension point
     (`nora.app.wake.WakeEvaluator`) and of what fills it
-    (`nora.app.cognition_session.CognitionSessionRunner.wake_hook`). Keyword
+    (`nora.app.cognition_session.CognitionSessionRunner.on_wake`). Keyword
     only, so neither side can drift into a positional order the other does
     not share. `now_ms` is the tick's clock, the same instant the wake row
     was decided at."""

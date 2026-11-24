@@ -1,19 +1,5 @@
 [
   {
-    "name": "dreamer run: a session-shaped adaptor is no longer dispatched",
-    "file": "nora/agent/dreamer.py",
-    "old": "            if isinstance(adaptor, SessionAdaptor):",
-    "new": "            if False:",
-    "target": "tests/unit/test_subconscious_executor.py"
-  },
-  {
-    "name": "subconscious executor: the session task is wrapper-only, not lane-owned",
-    "file": "nora/app/subconscious.py",
-    "old": "        task = self._runtime.dispatch(adaptor=adaptor, key=unit)",
-    "new": "        task = self._runtime.run(adaptor=adaptor, key=unit, batch=())",
-    "target": "tests/unit/test_subconscious_executor.py"
-  },
-  {
     "name": "decide: the watermark retreats below rows an earlier wake passed over",
     "file": "nora/domain/stimuli.py",
     "old": "    through = max(view.watermark.through_stimulus_id, max(s.id for s in claimed))",
@@ -63,17 +49,10 @@
     "target": "tests/infra/test_due_tick_generated.py::test_the_stimulus_due_tick_is_the_signed_ceiling_or_refused"
   },
   {
-    "name": "schedule: a backward clock move reopens a consumed slot",
-    "file": "nora/app/runtime.py",
-    "old": "        if fired_at is not None and _slot(now, sched) <= _slot(fired_at, sched):",
-    "new": "        if fired_at is not None and _slot(now, sched) == _slot(fired_at, sched):",
-    "target": "tests/unit/test_runtime.py::test_a_backward_clock_move_does_not_reopen_a_consumed_slot"
-  },
-  {
     "name": "drivers: the wait is a fixed interval after the pass, not to a boundary",
     "file": "nora/domain/ticks.py",
     "old": "    now = time.time() if at is None else at\n    delay = math.ceil(now / interval_seconds) * interval_seconds - now\n    return delay if delay > 0 else interval_seconds",
     "new": "    return interval_seconds",
-    "target": "tests/unit/test_subconscious_executor.py::test_the_drivers_wait_to_a_cadence_boundary_not_a_fixed_interval"
+    "target": "tests/unit/test_ticks.py::test_the_drivers_wait_to_a_cadence_boundary_not_a_fixed_interval"
   }
 ]

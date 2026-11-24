@@ -1,63 +1,9 @@
-"""The Dreamer's egress screen: nothing reaches a sink carrying an identifier
+"""Screen model-authored values before they enter a persisted result or tool write.
 
-Runtime composition defaults `[content_checks] enabled` to false. The original
-phone/UUID/coordinate, place/person-name and location-audience predicates remain
-available in enabled mode. Credentials and LeakGuard are independent of this
-switch; admission, unit scope, location opt-in and availability still apply.
-
-or a raw coordinate.
-
-**Dreamer output reaches the model.** Whatever an adaptor persists is rendered
-back into a later turn's prefill — `note` into `<notes>` today, and whatever
-the next tier writes into whatever block it renders. Nora's own identifier and
-coordinate screens (R-18 in `nora.agent.egress`, R-28 in `nora.agent.security`)
-sit on **her egress** — the reply she sends and the arguments she hands a third
-party. An adaptor writing to its sink is a **second path into the prompt** that
-passes neither of them: whatever the Dreamer persists is read back into every
-later turn without ever having been screened on the way in.
-
-With `web_fetch` in the Dreamer's tool set that matters more, not less. The
-Dreamer reads attacker-influenceable pages and writes distillations of them
-into a durable store. A page that says «her number is +85290000101» becomes a
-lexeme sense, and the sense renders into the prompt on every subsequent turn,
-long after the run that wrote it is forgotten. It is an unbounded
-model-authored persistence channel, guarded only by a truncation and a
-plausibility reject, settled once here rather than re-argued per adaptor.
-
-**Where it sits.** The screen reads the model's **raw envelope items** —
-every string reachable in every item — before any tier type exists, not the
-*parsed proposals* an adaptor's `accept` returns. Three reasons:
-
-* Screening a parsed `object` would require every adaptor to expose its own
-  text for inspection — one more surface a tier can forget something on, and
-  the fourth adaptor is the one that forgets. An item is a `Mapping`; it needs
-  no cooperation from the tier at all.
-* An item still carries the fields the typed parse **drops**. A parse that
-  ignores an unknown key is exactly the parse that would hide the key an
-  injection wrote into — and unknown keys are what a model under injection
-  produces.
-* It still drops at **item granularity**, so one poisoned item never costs its
-  siblings the run. That is the property the per-batch alternative loses.
-
-A screened-out item is dropped, counted (`nora_dream_screened_total`), and
-logged — never silently discarded, and never fatal: the run's other items still
-land, as a malformed item is dropped rather than raised on the `_parse_item`
-path.
-
-**`scan_identifiers`, never `scan_reply`.** The two functions check the same
-identifier set today, but the screen calls the FLOOR predicate by name: an
-identifier is unsafe at every exit, while a word like 「haiku」 — a poem, a
-lexeme *about* which this room coins language — must survive into a store. The
-test suite pins the choice so it cannot be flipped by accident.
-
-**A known boundary, stated rather than implied.** The screen reads STRINGS.
-Numbers cannot hide any of the four patterns on their own — `_E164` requires a
-leading `+`, `_UUID` requires hyphens, `_KEYLIKE` requires a prefix and a
-separator, and `_COORD_RE` requires a comma-joined *pair* — so a scalar `float`
-is not an unscreened channel. A coordinate deliberately split across two
-numeric fields whose renderer later joins them would be, and the answer to that
-is that no tier renders numeric fields into prose; if one ever does, the screen
-is not the place that gets patched, the renderer is.
+Debrief screens each item independently. Lessons and session write verbs use
+its predicate directly. Nested text and map keys are screened because either
+can reappear in a later prompt. Content checks are configurable. Credential
+protection and the tool's scope and admission checks apply independently.
 """
 
 from __future__ import annotations
@@ -78,7 +24,7 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class Rejection:
-    """One dropped envelope item: WHICH one, WHY, and WHERE in it.
+    """The index, reason and field path of one dropped item.
 
     `index` is the item's position in the batch the model returned, `reason` is
     the metric label (`"identifier"` or `"coordinate"`), and `path` names the
@@ -100,11 +46,8 @@ class Rejection:
 def _strings(value: object, path: str) -> Iterator[tuple[str, str]]:
     """Every string reachable from `value`, with the path it was reached by.
 
-    Recursive on purpose. An item's values may be strings, numbers, lists of
-    strings, or — because the model writes the envelope and nothing constrains
-    its depth — nested mappings and lists of those. A screen that only reads
-    top-level `str` values is a screen an adaptor bypasses the first time it
-    accepts a structured field, and it bypasses it *silently*.
+    The model can write nested mappings and lists, so screening recurses into
+    structured fields.
 
     Mapping KEYS are walked too. A field name never trips any of the four
     patterns, so this costs nothing on well-formed output; it closes the case
@@ -170,9 +113,7 @@ def _offence(item: Mapping[str, object], *, content_checks: bool = True) -> tupl
 
 
 def offence(item: Mapping[str, object], *, content_checks: bool = True) -> tuple[str, str] | None:
-    """`_offence` under a public name, for the runtime's screen on an
-    adaptor's own write verbs (`DreamerRuntime._screened`): one predicate for
-    an envelope item and a verb's arguments, never a second copy."""
+    """The first offence in the values passed to a persisted write."""
     return _offence(item, content_checks=content_checks)
 
 
@@ -187,14 +128,7 @@ def screen(
     *, adaptor: str, items: Sequence[Mapping[str, object]], metrics: Metrics,
     content_checks: bool = True,
 ) -> tuple[tuple[Mapping[str, object], ...], tuple[Rejection, ...]]:
-    """Split a Dreamer envelope's items into (kept, rejected).
-
-    Applied by the runtime to the model's raw items, before the adaptor's typed
-    parse and therefore before anything can reach a sink. Returns the items
-    safe to hand on and a `Rejection` per drop; raises nothing, and an empty
-    batch is two empty tuples — an adaptor that found nothing is an ordinary
-    outcome (R-27's `nothing_found`), not an error condition.
-    """
+    """Return the clean items and one `Rejection` for each dropped item."""
     kept: list[Mapping[str, object]] = []
     rejected: list[Rejection] = []
     for index, item in enumerate(items):

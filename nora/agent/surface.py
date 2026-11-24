@@ -1,11 +1,7 @@
 """The per-turn tool surface — what ONE occasion's agent may see, and how.
 
-Every loop that hands tools to a model — a tag (`nora.engagement.pipeline`),
-a fire turn (`nora.app.fire`: participation, proactive act, reminders) and
-every Dreamer adaptor (`nora.agent.dreamer.RegistryToolSource`) — gets its
-tools from `ToolRegistry.surface()`, and from nowhere else: one answer to
-«which tools does this occasion see», so no occasion is advertised a tool it
-cannot call.
+Tag, fire and Cognition callers build their registry tool sets through
+`ToolRegistry.surface()`. Each caller advertises only the tools it can call.
 
 Two value objects and one per-turn holder:
 
@@ -47,7 +43,7 @@ DISCORD_ONLY_TOOLS: frozenset[str] = frozenset({
     "set_music_volume",
 })
 
-#: Admitted only when a Dreamer adaptor built the set.
+#: Tools used by the Cognition session.
 #:
 #: `rollup_read` is also a tag-path tool (`TAG_READABLE_LOOP_TOOLS`, below).
 #: `standing_read` is an ordinary read: ledger budgets point every occasion to it.
@@ -61,9 +57,7 @@ DREAMER_LOOP_TOOLS: frozenset[str] = frozenset({"rollup_read", "social_read"})
 #: Cognition-loop tools a person's TAG turn may also call. `rollup_read` joins
 #: the tag path because «where have we been together lately» has no other way to
 #: reach the outing rows. The read is the same SELECT under the same lineage for
-#: the room the tool is bound to; nothing here widens what a row may show. Not a fire
-#: turn's and not an adaptor's (`dreamer.py` still refuses every
-#: `DREAMER_LOOP_TOOLS` name an adaptor declares).
+#: the room the tool is bound to; nothing here widens what a row may show.
 TAG_READABLE_LOOP_TOOLS: frozenset[str] = frozenset({"rollup_read"})
 
 DREAMER_ONLY_TOOLS: frozenset[str] = frozenset(
@@ -106,15 +100,13 @@ class ToolScope:
     portal's catalog) rather than «what does this room see», which admits
     everything.
 
-    `dreamer` is True when a Dreamer adaptor built this set (`dream_adaptor`
-    is non-empty). `DREAMER_ONLY_TOOLS` are admitted only then.
+    `dreamer` marks the Dreamer source (`dream_adaptor` is non-empty).
+    `DREAMER_ONLY_TOOLS` are admitted only then.
 
-    `grant` is a ceiling by name, or `None` for no ceiling. The Dreamer passes
-    its adaptor's granted tools intersected with what it may hold
-    (read-only, plus the acts a home-room grant allows).
+    `grant` is a ceiling by name, or `None` for no ceiling. Cognition passes the
+    session's requested tools intersected with the registry's read-only set.
 
-    `tag_turn` is False for every occasion that is not a person's tag: a fire turn, a Dreamer
-    adaptor, and the sub-agent worker. `TAG_ONLY_TOOLS` are refused there. `worker` is True
+    `tag_turn` admits `TAG_ONLY_TOOLS` for a person's tag. `worker` is True
     only for the sub-agent worker, the one occasion `WORKER_ONLY_TOOLS` are admitted to.
 
     `relay` is True for a fire turn that is a relayed message (`RELAY_REFUSED_TOOLS` are refused

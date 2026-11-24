@@ -1,16 +1,16 @@
 [
   {
-    "name": "part 1: a scope-keyed grant resolves through home_rooms again (the defect)",
+    "name": "the scoped grant does not resolve the policy room",
     "file": "nora/agent/dreamer.py",
-    "old": "        elif unit is None:\n            home = self._scope_rooms.get(key)",
-    "new": "        elif unit is None:\n            home = self._home_rooms.get(\"\")",
+    "old": "        home = self._scope_rooms.get(key) if allowance.home_room else None",
+    "new": "        home = None",
     "target": "tests/unit/test_dreamer_runtime.py::test_a_SCOPE_keyed_grant_resolves_the_adaptors_OWN_room"
   },
   {
     "name": "part 1: every broken scope collapses onto one log line",
     "file": "nora/agent/dreamer.py",
-    "old": "            seen = (adaptor, unit if unit is not None else key)",
-    "new": "            seen = (adaptor, unit or \"\")",
+    "old": "            seen = (adaptor, key)",
+    "new": "            seen = (adaptor, \"\")",
     "target": "tests/unit/test_dreamer_runtime.py::test_two_broken_scopes_are_logged_SEPARATELY_not_collapsed_onto_one"
   },
   {
@@ -21,17 +21,10 @@
     "target": "tests/test_config.py::test_the_template_pins_the_budget_blocks_it_declares"
   },
   {
-    "name": "F1: the runtime treats an accept that raises as an ordinary empty run",
-    "file": "nora/agent/dreamer.py",
-    "old": "            payloads = await adaptor.accept(key=key, items=kept)",
-    "new": "            try:\n                payloads = await adaptor.accept(key=key, items=kept)\n            except Exception:\n                payloads = ()",
-    "target": "tests/unit/test_dreamer_runtime.py::test_an_accept_that_RAISES_is_unavailable_and_never_reaches_commit"
-  },
-  {
     "name": "F5: the no-grant branch reads the scope room anyway (the safety bound)",
     "file": "nora/agent/dreamer.py",
-    "old": "        if not allowance.home_room:\n            home = None",
-    "new": "        if not allowance.home_room:\n            home = self._scope_rooms.get(key)",
+    "old": "        home = self._scope_rooms.get(key) if allowance.home_room else None",
+    "new": "        home = self._scope_rooms.get(key)",
     "target": "tests/unit/test_dreamer_runtime.py::test_without_a_grant_a_SCOPE_keyed_build_is_the_closed_empty_room"
   }
 ]

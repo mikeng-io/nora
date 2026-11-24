@@ -1,5 +1,4 @@
-"""The Dreamer's per-objective adaptors and its runtime — the `if cfg.dreamer.enabled`
-body of `composition_dreamer.enabled`, split by objective."""
+"""Build lesson evidence and room-scoped tools."""
 
 from __future__ import annotations
 
@@ -9,11 +8,9 @@ from typing import Any
 
 from nora.agent.dream_screen import offence as dream_offence
 from nora.agent.dreamer import (
-    HomeRoom,
     RegistryToolSource,
 )
 from nora.app.composition_helpers import (
-    _adaptor_budget,
     _now_ms,
     _reasoning_effort,
     character_unit_keys,
@@ -112,7 +109,7 @@ def _lessons_evidence(
 
 def _dream_tool_source(
     allowlist: Any, audit: Any, cfg: Any,
-    metrics: Any, persons: Any, proactive_homes: Any, registry: Any,
+    metrics: Any, persons: Any, registry: Any,
     rosters: Any, tool_registry: Any, access: Any,
 ) -> Any:
     """The registry-backed tool source every Dreamer session speaks through."""
@@ -122,24 +119,6 @@ def _dream_tool_source(
         persons=persons,
         metrics=metrics,
         ai_peer=cfg.agent.name,
-        # The home rooms, from the SAME allowlist read the adaptor's room map came from, with
-        # each room's `location` flag threaded as DEC-74 threads it on a tag. Passed whether or
-        # not the proactive adaptor is wired: the map is inert for an adaptor with no home-room…
-        home_rooms=LiveMapping(
-            lambda: {
-                ws: HomeRoom(
-                    unit=ws,
-                    platform=conv.platform,
-                    conversation_id=conv.primary_id,
-                    conversation_type="group",
-                    location_trusted=conv.location,
-                )
-                for ws, conv in proactive_homes.items()
-            }
-        ),
-        # EVERY policy conversation, keyed by every id form it answers to — the SCOPE-keyed half
-        # of a home-room grant (`AdaptorGrant.home_room`). A scope-keyed adaptor's key already
-        # IS a conversation, so there is no room to choose and no `home_room = true` to read:…
         scope_rooms=LiveMapping(lambda: scope_home_rooms(allowlist)),
         rosters=rosters,
         # EVERY platform's aliases, for `_presence_preflight`'s reason: a home room's roster
@@ -147,13 +126,3 @@ def _dream_tool_source(
         # alone makes `where_is` refuse in a location-trusted room.
         self_ids=registry.self_aliases(),
     )
-
-
-def _dream_grants_and_budgets(cfg: Any) -> Any:
-
-    """Adaptor grants and the per-objective budget table."""
-    dream_budgets = {name: _adaptor_budget(b) for name, b in cfg.dreamer.budgets.items()}
-    fallback = cfg.dreamer.budget_for("")
-    return {}, dream_budgets, fallback
-
-

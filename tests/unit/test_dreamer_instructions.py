@@ -283,7 +283,6 @@ def test_a_skill_leaves_every_objectives_text_alone_when_unused(tree):
     write_skill(tree)
     after = _store(tree)
     assert {n: after.for_objective(n) for n in before} == before
-    assert after.versions()["plans"] == 1
 
 
 def test_an_unknown_kind_is_refused(tree):

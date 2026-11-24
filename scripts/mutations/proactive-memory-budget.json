@@ -1,33 +1,5 @@
 [
   {
-    "name": "#160 the pass ceiling is wired into the guard at all",
-    "file": "nora/agent/dreamer.py",
-    "old": "            memory_tools=MEMORY_TOOLS,\n            memory_budget=budget.max_memory_calls,\n            pass_budget=budget.max_tool_calls,\n            # R-99: the same table `deliver.build`'s callers thread into\n            # `ReplyGuard`, read off the SAME `DreamToolSource` this method already\n            # holds, never a second `ToolRegistry` instance.\n            param_names=self._tools.tool_param_names(),\n        )",
-    "new": "        )",
-    "target": "tests/unit/test_dream_memory_budget.py -k third_memory_read_is_answered_unavailable"
-  },
-  {
-    "name": "#160 the (N+1)th memory read is refused rather than admitted",
-    "file": "nora/agent/dream_guard.py",
-    "old": "            refusal = self.pass_refusal(name) or self.memory_refusal(name)",
-    "new": "            refusal = self.pass_refusal(name)",
-    "target": "tests/unit/test_dream_memory_budget.py -k third_memory_read_is_answered_unavailable"
-  },
-  {
-    "name": "#160 a completed memory read charges the pass ration",
-    "file": "nora/agent/dream_guard.py",
-    "old": "            if self._memory is not None and name in self._memory_tools:\n                self._memory.record(_PASS_MEMORY)",
-    "new": "            pass",
-    "target": "tests/unit/test_dream_memory_budget.py -k third_memory_read_is_answered_unavailable"
-  },
-  {
-    "name": "#160 the ration is spent by any memory verb, not by one of them",
-    "file": "nora/agent/dreamer.py",
-    "old": "MEMORY_TOOLS: frozenset[str] = frozenset({\n    \"lookup_person\", \"memory_search\", \"memory_read\",\n})",
-    "new": "MEMORY_TOOLS: frozenset[str] = frozenset({\"lookup_person\"})",
-    "target": "tests/unit/test_dream_memory_budget.py -k ceiling_counts_across_verbs"
-  },
-  {
     "name": "#160 an admitted memory read holds the ration while it runs",
     "file": "nora/agent/dream_guard.py",
     "old": "            if self._memory is not None and name in self._memory_tools:\n                # The pass ledger holds its reservation on the SAME id, in its",
@@ -56,13 +28,6 @@
     "target": "tests/unit/test_dream_memory_budget.py -k memory_read_that_failed_does_not_consume"
   },
   {
-    "name": "#160 the configured ration is the one that binds",
-    "file": "nora/app/composition_helpers.py",
-    "old": "        max_memory_calls=b.max_memory_calls,\n        # Copied, not aliased:",
-    "new": "        # Copied, not aliased:",
-    "target": "tests/unit/test_dream_memory_budget.py -k configured_memory_ceiling_reaches_the_runtime"
-  },
-  {
     "name": "#160 an id-less call cannot hand back a memory reservation",
     "file": "nora/agent/dream_guard.py",
     "old": "            if self._memory is not None and ref:",
@@ -75,12 +40,5 @@
     "old": "                if ref:\n                    self._budget_refusals[ref] = body",
     "new": "                self._budget_refusals[ref] = body",
     "target": "tests/unit/test_dream_memory_budget.py -k id_less_refusal_never_answers"
-  },
-  {
-    "name": "#160 the ration is rebuilt per pass, not held on the runtime",
-    "file": "nora/agent/dreamer.py",
-    "old": "        guard = DreamGuard(\n            adaptor=adaptor.name,\n            budgets=dict(tool_budgets),\n            metrics=self._metrics,\n            result_caps=_TOOL_RESULT_CAPS,\n            memory_tools=MEMORY_TOOLS,\n            memory_budget=budget.max_memory_calls,\n            pass_budget=budget.max_tool_calls,\n            # R-99: the same table `deliver.build`'s callers thread into\n            # `ReplyGuard`, read off the SAME `DreamToolSource` this method already\n            # holds, never a second `ToolRegistry` instance.\n            param_names=self._tools.tool_param_names(),\n        )",
-    "new": "        guard = getattr(self, \"_leaky_guard\", None)\n        if guard is None:\n            guard = DreamGuard(\n                adaptor=adaptor.name,\n                budgets=dict(tool_budgets),\n                metrics=self._metrics,\n                result_caps=_TOOL_RESULT_CAPS,\n                memory_tools=MEMORY_TOOLS,\n                memory_budget=budget.max_memory_calls,\n                pass_budget=budget.max_tool_calls,\n                param_names=self._tools.tool_param_names(),\n            )\n            self._leaky_guard = guard",
-    "target": "tests/unit/test_dream_memory_budget.py -k ration_resets_for_the_next_pass"
   }
 ]

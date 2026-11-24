@@ -3,13 +3,7 @@ Everything the runner needs that is not itself the runner: which read tools it
 holds, what it is told, its budget, and how it is stopped.
 
 `[cognition] enabled = false` (the shipped default) builds NOTHING here:
-`build_cognition_runner` is not called, the model source is not touched and
-`nora.app.cognition_agent_runner` is not imported (it is imported inside the
-function, so importing this module costs nothing). `true` builds exactly one
-`SubconsciousExecutor` — the `CognitionSessionRunner` hosted as a Dreamer
-adaptor, whose hook the wake evaluator is handed and which runs every
-admitted wake through `DreamerRuntime.run` (node 30) — and
-`require_session_hook` refuses to boot if that did not happen.
+`build_cognition_runner` is not called, the model source is not touched.
 
 **What she reads**: the tools of the read catalogue that EXIST and are
 read-only, less what a flag withholds. `COGNITION_READ_CATALOGUE` is spelled out
@@ -22,7 +16,7 @@ ARE in it: they fetch public content, never the unit's own speech, so the tag
 path's having them first is no reason the session stays blind to them.
 
 **Who they read through.** The read tools are built by the SAME
-`RegistryToolSource` every other Dreamer adaptor reads through, under
+`RegistryToolSource` under
 `cognition_grant()` (a real room, no act verb), so lineage, the roster
 disclosure guard and the record read's own room rules are the ones the tag
 path already runs; this module builds no read of its own.
@@ -287,7 +281,7 @@ def read_tools_for(
                else {}),
         }
         return source.build(
-            key=room.conversation_id, names=names, unit=None,
+            key=room.conversation_id, names=names,
             adaptor=COGNITION_ADAPTOR_NAME, grant=allowance, **extra,
         )
 
@@ -348,34 +342,11 @@ def session_guidance(instructions: Any) -> SessionGuidance:
     return SessionGuidance(resolve=instructions.skill)
 
 
-#: How long a stopping process lets a session that is already running finish
-#: before it cancels it. A session is a model loop of minutes to an hour, so the
-#: grace is for one in its last moments, not for waiting out one that is not:
-#: whatever is still running at the deadline is cancelled, records its wake
-#: `cancelled` (a restart) and releases its unit. `docker-compose.yml`'s
-#: `stop_grace_period` for the `nora` service must exceed this by the time the
-#: rest of shutdown needs (adapters, the cancel's own database write, closing
-#: the client and the store): `tests/architecture/test_the_stop_grace_covers_the_shutdown.py`
-#: holds the margin.
-SESSION_SHUTDOWN_GRACE_SECONDS = 30.0
-
-
 class CognitionShutdown:
-    """Stops the sessions at shutdown, once. The session tasks live on the
-    Dreamer lane (`SubconsciousExecutor` → `DreamerRuntime.dispatch`), so
-    the wait and the cancel go through the executor to their owner; the
-    runner's `shutdown` then waits for the cancelled sessions' outcome
-    writes. The second call of the whole thing is a no-op, so a process
-    that reaches shutdown twice does not cancel twice.
+    """Stop session work once and wait for pending outcome writes."""
 
-    The wake loop is already stopped by the time this runs (`App.run` cancels
-    every background task before `App.shutdown`), so no NEW wake starts while
-    the sessions already running are given `grace_seconds` to finish."""
-
-    def __init__(self, *, evaluator: Any, runner: Any, grace_seconds: float = 0.0) -> None:
-        self._evaluator = evaluator
+    def __init__(self, *, runner: Any) -> None:
         self._runner = runner
-        self._grace = grace_seconds
         self._done = False
 
     @property
@@ -386,20 +357,6 @@ class CognitionShutdown:
         if self._done:
             return
         self._done = True
-        # The lane owns the session tasks: wait and cancel there when the
-        # runner exposes it (the executor delegates to `DreamerRuntime`),
-        # falling back to the evaluator's own hook-task bookkeeping for a
-        # wiring that never went through dispatch.
-        wait = getattr(self._runner, "wait_in_flight", None)
-        if wait is not None:
-            await wait(self._grace)
-        else:
-            await self._evaluator.wait_in_flight(self._grace)
-        cancel = getattr(self._runner, "cancel_in_flight", None)
-        if cancel is not None:
-            await cancel()
-        else:
-            await self._evaluator.cancel_in_flight()
         await self._runner.shutdown()
 
 
@@ -608,20 +565,14 @@ def build_cognition_runner(
     # `CognitionLessons`; None ([lessons] disabled) offers no lesson verbs.
     lessons: Any = None,
 ) -> Any:
-    """The session executor: a `SubconsciousExecutor` whose hook the wake
-    evaluator is handed, running each admitted wake through
-    `DreamerRuntime.run`. Imported lazily: `DreamerAgentRunner` (and with it
-    Strands) is loaded only when a session will actually run. `runtime` is
-    the composition's one `DreamerRuntime`; `models`/`retry` are kept for
-    callers that build the runner shape directly in tests."""
+    """Build a Cognition runner using the configured model runtime."""
     from nora.app.cognition_agent_runner import DreamerAgentRunner
     from nora.app.cognition_session import CognitionSessionRunner
-    from nora.app.subconscious import SubconsciousExecutor
 
     if runtime is None:
         raise ValueError(
             "build_cognition_runner requires the composition's DreamerRuntime: "
-            "a session executes through runtime.run, not a sibling runner",
+            "a session executes through runtime.run_agent",
         )
     agent_runner = DreamerAgentRunner(
         runtime=runtime, metrics=metrics,
@@ -699,11 +650,7 @@ def build_cognition_runner(
         observations=observations,
         lessons=lessons,
     )
-    # Cognition hosted as a Dreamer adaptor (node 30): the evaluator's hook
-    # is the executor's, and every admitted wake executes inside
-    # `runtime.run(adaptor=…)` — admission, cancellation and the model call
-    # have the one owner every other subconscious adaptor has.
-    return SubconsciousExecutor(runtime=runtime, runner=runner)
+    return runner
 
 
 __all__ = [

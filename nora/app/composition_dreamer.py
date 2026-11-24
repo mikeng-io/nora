@@ -1,33 +1,27 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from nora.agent import factory, tool_choice
 from nora.agent.dreamer import (
-    AdaptorSchedule,
     DreamerRuntime,
-    verify_tool_subsets,
 )
 from nora.app.cognition_session import CognitionSessionRunner
 from nora.app.cognition_wiring import (
-    SESSION_SHUTDOWN_GRACE_SECONDS,
     CognitionShutdown,
 )
 from nora.app.cognition_wiring import session_guidance as cognition_session_guidance
 from nora.app.composition_cognition import cognition_session
 from nora.app.composition_dream import (
-    _dream_grants_and_budgets,
     _dream_tool_source,
     _lessons_evidence,
 )
-from nora.app.composition_helpers import _adaptor_budget, _reasoning_effort
+from nora.app.composition_helpers import _reasoning_effort
 from nora.app.composition_review import build_review_runner
 from nora.app.startup import StartupError
-from nora.domain.ports import DreamAdaptor
-from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
 from nora.language.lessons import CognitionLessons
 
 """Dreamer and Cognition wiring steps."""
@@ -36,35 +30,6 @@ from nora.language.lessons import CognitionLessons
 log = logging.getLogger("nora.app.composition")
 
 
-
-
-@dataclass(frozen=True)
-class PreambleWiring:
-    dream_adaptors: Any
-    dream_schedule_clock: Any
-    dream_schedules: Any
-    dreamer_runtime: Any
-
-
-def preamble(engine: Any)-> PreambleWiring:
-
-
-    # ---- the Dreamer runtime -------------------- Constructed only when `[dreamer]
-    # enabled` is true, the shape every gated subsystem in this file uses: a subsystem that
-    # is off builds NOTHING, so a wiring mistake in it cannot cost a deployment that never…
-    dream_adaptors: tuple[DreamAdaptor, ...] = ()
-    dreamer_runtime: DreamerRuntime | None = None
-    dream_schedules: Mapping[str, AdaptorSchedule] = {}
-    # ONE schedule-state store, shared by the loop's slots and
-    # any other schedule clock: two instances would be two
-    # engines over one table for no reason.
-    dream_schedule_clock = SqlDreamScheduleClock(engine)
-    return PreambleWiring(
-        dream_adaptors=dream_adaptors,
-        dream_schedule_clock=dream_schedule_clock,
-        dream_schedules=dream_schedules,
-        dreamer_runtime=dreamer_runtime,
-    )
 
 
 @dataclass(frozen=True)
@@ -115,8 +80,6 @@ class EnabledWiring:
     cognition_runner: Any
     cognition_session_units: Any
     cognition_upcoming: Any
-    dream_adaptors: Any
-    dream_schedules: Any
     dreamer_runtime: Any
     review: Any = None
 
@@ -125,23 +88,21 @@ async def enabled(
     allowlist: Any, audit: Any, cfg: Any, clock: Any,
     cognition_context_screen: Any, cognition_lessons: Any, cognition_memory: Any,
     content_checks: Any, doctrine_store: Any, document_service: Any,
-    documents_context: Any, dream_adaptors: Any, dream_schedules: Any,
-    dreamer_instructions: Any, dreamer_runtime: Any, engine: Any, entry_store: Any,
+    documents_context: Any,
+    dreamer_instructions: Any, engine: Any, entry_store: Any,
     event_store: Any,
     events: Any, ledger_store: Any, lineage: Any, media_join: Any,
     memo_store: Any, metrics: Any, mobility: Any,
     model_client_for: Any, note_store: Any, observation_store: Any, persons: Any,
-    presence_circles: Any, presence_reader: Any, proactive_homes: Any, profile_index: Any,
+    presence_circles: Any, presence_reader: Any, profile_index: Any,
     profile_reader: Any, reasoning_strip_store: Any, registry: Any, reminder_caps: Any,
     reminders: Any, rosters: Any, route_model: Any, session_guidance: Any,
     shared: Any, standing_fold: Any, standing_store: Any, stimulus_store: Any,
     tag_trace_store: Any, tier: Any, tool_registry: Any, unit_rooms: Any,
     unit_scopes: Any, access: Any = None,
 ) -> EnabledWiring:
-    dream_adaptors = ()
     dreamer_runtime = None
     review = None
-    dream_schedules = {}
     cognition_runner = None
     cognition_session_units = None
     cognition_upcoming = None
@@ -155,11 +116,8 @@ async def enabled(
         )
         rt = _dreamer_runtime(
             allowlist=allowlist, audit=audit, cfg=cfg,
-            content_checks=content_checks, dream_adaptors=dream_adaptors,
-            dream_schedules=dream_schedules,
-            dreamer_instructions=dreamer_instructions,
             metrics=metrics, model_client_for=model_client_for,
-            persons=persons, proactive_homes=proactive_homes, access=access,
+            persons=persons, access=access,
             reasoning_strip_store=reasoning_strip_store, registry=registry,
             rosters=rosters, route_model=route_model, tier=tier,
             tool_registry=tool_registry,
@@ -167,7 +125,6 @@ async def enabled(
         dreamer_runtime = rt.dreamer_runtime
         review = build_review_runner(
             cfg, dreamer_instructions, rt.dream_tools, model_client_for, metrics,
-            content_checks=content_checks,
         )
         if cfg.cognition.enabled and stimulus_store is not None:
             cog = await cognition_session(
@@ -207,8 +164,6 @@ async def enabled(
         cognition_runner=cognition_runner,
         cognition_session_units=cognition_session_units,
         cognition_upcoming=cognition_upcoming,
-        dream_adaptors=dream_adaptors,
-        dream_schedules=dream_schedules,
         dreamer_runtime=dreamer_runtime,
         review=review,
     )
@@ -219,9 +174,7 @@ def legacy_cognition_shutdown(cfg: Any, runner: Any) -> CognitionShutdown | None
         if cfg.cognition.enabled:
             raise StartupError("[cognition] enabled but no session runner was built")
         return None
-    return CognitionShutdown(
-        evaluator=None, runner=runner, grace_seconds=SESSION_SHUTDOWN_GRACE_SECONDS,
-    )
+    return CognitionShutdown(runner=runner)
 
 
 @dataclass(frozen=True)
@@ -257,55 +210,30 @@ def dreamer_model_source(cfg: Any, tier: Any, dream_model: str, client: Any) -> 
 
 
 def _dreamer_runtime(
-    allowlist: Any, audit: Any, cfg: Any, content_checks: Any,
-    dream_adaptors: Any, dream_schedules: Any, dreamer_instructions: Any,
-    metrics: Any, model_client_for: Any, persons: Any, proactive_homes: Any,
+    allowlist: Any, audit: Any, cfg: Any,
+    metrics: Any, model_client_for: Any, persons: Any,
     reasoning_strip_store: Any, registry: Any, rosters: Any, route_model: Any,
     tier: Any, tool_registry: Any, access: Any,
 ) -> DreamerRuntimeWiring:
-    """The DreamerRuntime the loop hosts every adaptor on."""
+    """The model runtime and scoped tool source for Cognition."""
     dream_model = route_model("dreamer", cfg.dreamer_model())
     dream_models = dreamer_model_source(cfg, tier, dream_model, model_client_for("dreamer"))
     dream_tools = _dream_tool_source(
         allowlist=allowlist, audit=audit, cfg=cfg,
-        metrics=metrics, persons=persons, proactive_homes=proactive_homes,
+        metrics=metrics, persons=persons,
         registry=registry, rosters=rosters, tool_registry=tool_registry, access=access,
     )
-    dream_grants, dream_budgets, fallback = _dream_grants_and_budgets(cfg)
     dreamer_runtime = DreamerRuntime(
         models=dream_models,
-        instructions=dreamer_instructions,
         tools=dream_tools,
-        budgets=dream_budgets,
-        default_budget=_adaptor_budget(fallback),
         # The SAME derivation the tag path uses, so a throttle can never be
         # misreported as a timeout (`factory.build_retry_policy`).
         retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
         metrics=metrics,
-        model_name=dream_model,
-        schedules=dream_schedules,
-        # The SAME `[llm.budgets]` the tag path applies through
-        # `ToolRegistry(budget_overrides=...)`, so one number in
-        # `config.toml` is one ceiling whichever loop asks.
-        tool_budget_overrides=cfg.llm.budgets,
-        grants=dream_grants,
-        # The per-CALL-SITE allowance for `inputs`/`commit`,
-        # multiplied by each adaptor's own declared `store_calls_per_tick`.
-        store_timeout_seconds=cfg.dreamer.store_timeout_seconds,
         # The Dreamer's reasoning-strip store: a tool-using run at `[dreamer] reasoning_effort =
         # low` is the multi-turn shape the transport strips. Low-traffic and judgement-forming,
         # so a discarded reasoning there is both closer to being the verdict and harder to…
         reasoning_strip_store=reasoning_strip_store,
-        content_checks=content_checks,
-    )
-    verify_tool_subsets(
-        dream_adaptors,
-        tools=dream_tools,
-        grants=dream_grants,
-        # The per-adaptor per-tool ceilings, read off the SAME budgets the runtime got above —
-        # so «this ceiling names a tool the adaptor does not hold» is a boot failure rather than
-        # a raise the operator made that quietly does nothing.
-        tool_calls={name: b.tool_calls for name, b in cfg.dreamer.budgets.items()},
     )
     return DreamerRuntimeWiring(
         dream_model=dream_model,

@@ -275,7 +275,7 @@ def build_tool_specs(
     # refused here as well as left off the surface (8765_44837).
     relay_turn: bool = False,
     dream_adaptor: str = "",
-    # The Dreamer adaptor's tool ceiling (`surface(grant=...)`), kept here
+    # The caller's tool ceiling (`surface(grant=...)`), kept here
     # only so a queued computer segment's durable origin can record what it
     # was admitted under; the deferred dispatch re-applies it through
     # `ToolScope`. Never read by the live path — `surface` enforces it.
@@ -361,7 +361,7 @@ def build_tool_specs(
     # with the rows `load_transcript` and `room_read` return, so the pass's
     # grounding (`Shown`) can admit a citation of a row the model read through
     # a tool, not only one rendered in its prompt. Set only by
-    # `RegistryToolSource.build` for an adaptor that asks for it, and then the
+    # `RegistryToolSource.build` for a session that asks for it, and then the
     # two tools also carry each row's id (`n`), the number a batch line
     # carries, so a loaded row can be cited at all. `None` — every tag turn —
     # is the unchanged result: no ids, nothing recorded.
@@ -430,8 +430,7 @@ def build_tool_specs(
     """Build native specs closed over one turn's collaborators.
 
     fire_turn marks fire-path provenance.
-    dream_adaptor identifies the Dreamer source, whose screened proactive writes use
-    the AI peer, home room and referenced note rather than model-supplied authority.
+    dream_adaptor identifies the Dreamer source so tools can enforce occasion scope.
     clock belongs to the registry; a missing clock uses utc_now.
     versions is the immutable build/release snapshot shared by both version tools.
     Missing recall logs, mobility or other read sources report unavailable, never
@@ -444,8 +443,8 @@ def build_tool_specs(
     read can also produce an empty tuple.
     Music reads require Discord. online_now reports which Steam/Discord/voice arms
     were wired; Discord presence and voice membership remain distinct observations.
-    supplied_unit is the explicit key of a unit-bound Dreamer adaptor. When present
-    it overrides room resolution; ordinary tag callers derive their unit from the
+    supplied_unit is an explicit unit key. When present it overrides room
+    resolution; ordinary tag callers derive their unit from the
     actual room. Management remains unavailable without its verified message."""
     deps = ToolDeps(
         store=store,

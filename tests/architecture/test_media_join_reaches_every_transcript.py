@@ -279,7 +279,6 @@ PATHS = {
     "nora/engagement/context.py": "tag",
     "nora/app/fire.py": "fire",
     "nora/engagement/stages/debrief.py": "debrief",
-    "nora/app/runtime.py": "dreamer",
     "nora/app/cognition_context.py": "cognition",
     "nora/app/wake_floor.py": "wake",
     # The conversation tools' record_query hit render (`query.py`); record.py/
@@ -287,12 +286,6 @@ PATHS = {
     # `_transcript_messages` store read (in `_NOT_A_BUILDER` above).
     "nora/conversation/adapters/tools/query.py": "load_transcript",
     "nora/ingest/relevance_gate.py": "relevance_gate",
-    # The eval seam's dream pass. Its OWN label: this
-    # test's control refuses a reused one, and it is right to — nothing here is
-    # scraped alongside the loop's read (a `Subject` carries its own `Metrics()`,
-    # built per case), so the distinct label costs nothing and says something
-    # true about where the read came from.
-    "nora/subject/dreaming.py": "dreamer_eval",
     # The eval seam's JUDGE source: the seeded window, rendered as she
     # was shown it, for a model that grades her reply against it.
     "nora/subject/sandbox.py": "judge_source",
@@ -609,6 +602,7 @@ def test_each_builder_labels_its_own_path(rel: str, path: str) -> None:
 def test_the_labels_are_distinct() -> None:
     """The control for the parametrized test above: it would pass just as
     happily if `PATHS` named the same string for every site."""
+    assert PATHS, "transcript path checks must have builders to verify"
     assert len(set(PATHS.values())) == len(PATHS)
     assert set(PATHS) == set(BUILDERS)
 
