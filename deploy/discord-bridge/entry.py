@@ -8,7 +8,7 @@ AND the `VoiceControllerHub` that adopts and reconciles the external
 audio-controllers' voice generations, plus the controller → nora event
 consumer. An app-only release leaves all of it running: slash commands keep
 working while the app is down, and the app's music/voice sends are forwarded
-here (`POST /v1/music/{op}`, and a `speak` on `POST /v1/voice/operations`)
+here (platform music operations and queries, and a `speak` on `POST /v1/voice/operations`)
 to the SAME manager and the SAME controller generation.
 
 The bridge owns NO discord.py `VoiceClient`: join/leave go through the hub,
