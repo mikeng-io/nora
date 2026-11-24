@@ -147,11 +147,8 @@ class NoteCollaborator(Protocol):
     can only name the SHAPE. There is no port in `nora.domain.ports` to import
     instead; the two implementations share
     `tests/contract/test_note_store_contract.py`, which is what actually holds
-    them to one behaviour. This declares the verbs the tool layer calls and no
-    more: `standing` (title resolution), `read`, `search`, `create`,
-    `append_revision`, `merged_successor_by_title` (a merged note's title
-    forwards), and `revision_chain`/`successor` (`remind`'s one-open-row
-    check).
+    them to one behaviour. A read by title resolves through Standing and
+    follows a merged title to its successor.
     """
 
     async def standing(self, *, unit: str) -> tuple[Note, ...]: ...

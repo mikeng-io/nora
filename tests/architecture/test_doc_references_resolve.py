@@ -244,29 +244,6 @@ def _tracked_markdown_files() -> list[str]:
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     (
-        "design/09-decision-index.md",
-        "tests/test_honcho_representation.py",
-    ): (
-        "deleted with the memory backend. DEC-38's claim still names it as the test "
-        "that reimplemented the retrieval arithmetic; the record pass (6f) rewrites "
-        "the claim and removes this pin."
-    ),
-    (
-        "design/11-recall-and-threading.md",
-        "nora/infra/honcho/client.py",
-    ): (
-        "deleted with the memory backend. The design page still cites the client; "
-        "the record pass (6f) rewrites the prose and removes this pin."
-    ),
-    (
-        "design/19-media-comprehension.md",
-        "nora/ingest/stages/memory_feed.py",
-    ): (
-        "deleted with the memory backend: its only importer was the backfill. The "
-        "design page still cites it; the record pass (6f) rewrites the prose and "
-        "removes this pin."
-    ),
-    (
         "docs/adr/0002-honcho-session-binding-deferred.md",
         "nora/ingest/stages/memory_feed.py",
     ): (
@@ -411,13 +388,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ("design/09-decision-index.md", ".github/workflows/gates.yml"): (
         "A12 names a CI gate file; this repo deliberately runs no CI (operator decision) "
         "and the file was never added back after that decision"
-    ),
-    ("design/11-recall-and-threading.md", "nora/engagement/recall.py"): (
-        "early recall design; the module never landed at this path"
-    ),
-    ("design/11-recall-and-threading.md", "nora/infra/sql/migrations/versions/0003_quoted_ts.py"): (
-        "migration was renumbered/renamed before landing (0003_presence_places.py today), "
-        "same shape as 0017_events.py's own documented renumbering"
     ),
     ("design/event-abstraction/02-naming-rename.md", "nora/infra/sql/events.py"): (
         "naming-rename plan; shipped as nora/domain/events.py instead"

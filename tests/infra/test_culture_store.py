@@ -115,8 +115,7 @@ async def test_append_uses_the_current_head_even_with_an_earlier_timestamp(
 async def test_a_revision_never_disappears_when_the_head_moves(
     store: SqlCultureStore, engine: AsyncEngine,
 ) -> None:
-    """DEC-183. The old account does not become false, it becomes history —
-    so an append is an APPEND, never an update in place."""
+    """An append retains the previous account in the revision history."""
     first = await _append(store, "the old name", T0)
     await _append(store, "the new name", T0 + 1)
     async with engine.connect() as conn:

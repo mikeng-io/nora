@@ -122,8 +122,8 @@ _PRINTS_INPUT = frozenset({"standing", "standing_unit"})
 #: MEASURED on one corpus only: the mean draw of `tool_selection
 #: --memory-index --sample 3` on the deploy host (n=259 draws, 46 s, of which
 #: a mean 15.7 s was the sandbox's index build, which a repeat draw reuses,
-#: `nora.subject.sandbox_index.IndexCache`). Every other corpus and the Honcho
-#: surface are unmeasured and take the same figure. Judged is ~211 s a draw
+#: `nora.subject.sandbox_index.IndexCache`). Other corpora and configs
+#: use the same estimate. Judged is ~211 s a draw
 #: at the default judge samples (`.agents/skills/nora-eval`); the judge's
 #: share of it, 211 - 46, is split evenly per judge sample, so
 #: `--judge-samples` scales it.
@@ -492,7 +492,7 @@ def memory_surface_line(deployed: bool, flag: bool) -> str:
     if deployed:
         return "graph ([memory.index] read = true in the deployment's config)"
     if flag:
-        return "graph (--memory-index; the deployment runs the honcho surface)"
+        return "graph (--memory-index overrides the deployment's index setting)"
     return "honcho ([memory.index] read = false in the deployment's config)"
 
 
@@ -729,14 +729,8 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
             print(f"subject config rebuilt from {args.deployment_config} -> {generated}")
             measurement = getattr(args, "bound_measurement", None) or PROTOCOL
             print(f"run {RUN_ID}: {measurement.phrase} with case-owned external services")
-            # THE MEMORY SURFACE, RESOLVED, not assumed (DEC-316): the
-            # generated config's own flag, or `--memory-index`. Cases are
-            # selected for it and every subject is checked against it, so a
-            # deployment that turned the index on is never measured with the
-            # Honcho surface's case filter.
-            # `materialise` has just written it; the per-case check
-            # (`refuse_a_memory_surface_mismatch`) is the fail-closed backstop
-            # should this ever read the wrong file.
+            # Match case selection to the generated subject or its explicit
+            # index override. Each case independently checks its subject.
             deployed = Path(generated).exists() and memory_index_enabled(
                 Path(generated).read_text(encoding="utf-8"))
             graph = deployed or args.memory_index

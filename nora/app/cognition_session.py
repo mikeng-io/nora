@@ -151,11 +151,8 @@ from nora.obs.tracing import eval_capture_enabled, record_eval_event
 
 log = logging.getLogger("nora.app.cognition_session")
 
-#: `established_by`'s prefix for every write cognition makes (a note revision,
-#: an event's `created_by`, a reminder's payload) — code-stamped provenance,
-#: never taken from a model argument
-#: (the same reason `nora.agent.tools.TAG_PATH_PREFIX` exists for the tag
-#: path: "who wrote it" is not something the writer gets to assert).
+#: Prefix for Cognition's code-stamped writer identity, used on note revisions
+#: and reminder requests.
 COGNITION_PATH_PREFIX = "cognition:"
 
 #: The verbs a session holds itself. A read tool may not share one of these

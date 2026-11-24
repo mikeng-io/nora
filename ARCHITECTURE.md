@@ -30,9 +30,7 @@ The connected paths run at different timescales:
 
 The prefill brings the relevant state back into subsequent turns. Shared
 continuity does not grant shared access: the existing admission, read and
-disclosure boundaries still apply. These are implemented paths, not claims
-about which features a deployment has enabled. The memory migration's remaining
-Honcho dependency is described below.
+disclosure boundaries still apply. Deployment settings govern feature availability.
 
 ## Runtime
 
@@ -41,7 +39,7 @@ The composition root in `nora/app/composition.py` wires dependencies;
 `nora/app/dispatch.py` connects ingestion, engagement and background work.
 
 ```text
-Platform events → ingestion → PostgreSQL record / media custody / memory feed
+Platform events → ingestion → PostgreSQL record / media custody / graph projection
                        ↓
                  admission + room policy
                        ↓
@@ -124,12 +122,9 @@ LeakGuard always run; authentication, room/unit scope, location opt-in/collectio
 consent, freshness and unavailable/error handling remain independent. See
 [the decision](docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
 
-PostgreSQL is the record store, with Alembic migrations applied at startup.
-Honcho is interpreted, non-authoritative memory; media custody uses configured storage (RustFS in Compose).
-The SQL memory index and embedding server support graph/vector retrieval.
-Honcho is still wired while the unified-memory migration proceeds; its planned
-retirement is not a completed cutover. Records and derived context
-are scoped by people, rooms and social units rather than a global shared chat.
+PostgreSQL holds the Record and the [Cognitive Graph](design/cognition/README.md).
+The graph supports scoped retrieval over records, claims and intentions. Media
+custody uses configured storage (RustFS in Compose).
 
 Three untracked files have distinct lifetimes: `config.toml` configures the
 runtime, `identity.toml` maps accounts to people, and `policy.toml` grants access.
@@ -148,9 +143,8 @@ the image revision when reconstructing running behaviour.
 - `nora`, `presence` and `analytics` share the `nora:latest` image today.
 - Messaging bridges, portal/site, speech/voice services, PostgreSQL, RustFS,
   embedding and monitoring services have their own lifecycle and state.
-- Nora uses the `nora` bridge plus the external internal `honcho_memory`
-  network and the internal embedding network. It reaches co-located host
-  services through `host.docker.internal` where configured. Host-network
+- Nora uses the `nora` bridge and the internal embedding network. It reaches
+  co-located host services through `host.docker.internal` where configured. Host-network
   **builds** do not mean host-network **containers**.
 - Nora publishes health and metrics on host loopback port 9100. Health combines
   dependency and platform status; inspect degraded-platform detail as well as

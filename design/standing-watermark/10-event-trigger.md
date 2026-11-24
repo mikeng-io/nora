@@ -13,22 +13,9 @@ edges:
 
 ## The shape
 
-No background loop. The ingest path already sees every message — tagged or
-not — so the standing check rides there:
-
-```
-IngestPipeline.run
-  └─ audit write (the row exists)
-  └─ spawn(standing_check)   ← off the listener path, like memory_feed
-       └─ read watermark for this conversation
-       └─ if new rows since watermark:
-            run fold (same fold as the tag path)
-```
-
-`spawn` is the same injection `memory_feed` uses
-(`nora/ingest/stages/memory_feed.py:1-8`): the check is scheduled off the
-listener's await path and returns immediately, so a slow fold never stalls
-the socket read for every conversation on the adapter.
+The fold's input is the recorded conversation and its Standing watermark.
+Ingest records the message before any pass can use it. The pass reads ahead
+from the watermark and settles its own fold.
 
 ## Why event-driven beats a loop
 

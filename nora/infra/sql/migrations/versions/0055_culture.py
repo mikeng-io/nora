@@ -1,5 +1,5 @@
 """culture / culture_revision -- an account of how a room works and why, kept
-over time (design/self-growth/character.md, DEC-182..185).
+over time (design/self-growth/character.md).
 
 WHY A STORE EXISTS AT ALL. A model asked to describe a room's culture reasons
 from scratch and has no memory of its last answer, so any single account is a
@@ -7,7 +7,7 @@ snapshot. The chain of accounts is the evolution a single call cannot express,
 and keeping snapshots IN ORDER is this tier's one genuine contribution. Without
 the chain there is nothing here a prompt could not re-derive per turn.
 
-NOTHING RETIRES (DEC-183). No `retired_at`, no `closing_condition`, no TTL, no
+NOTHING RETIRES. No `retired_at`, no `closing_condition`, no TTL, no
 staleness column of any kind -- and their absence is a decision, not an
 omission. A quiet room's culture is not stale, it is ACCURATE, so there is
 nothing for a clock to invalidate. `parent_revision_id` reads "the same thing,

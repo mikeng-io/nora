@@ -10,14 +10,14 @@
  "GLOSSARY.md": {
   "reason": "Retired-term note and historical decision references.",
   "matches": {
-   "Persona": 2,
+   "Persona": 1,
    "persona": 3
   }
  },
  "design/09-decision-index.md": {
   "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
   "matches": {
-   "Persona": 11,
+   "Persona": 7,
    "PersonaStore": 1,
    "SqlPersonaStore": 1,
    "_persona": 1,

@@ -114,10 +114,8 @@ The old Signal-only bootstrap commands named the retired standalone service
 and are removed rather than presented as a working installation path.
 
 Prepare private `config.toml`, `identity.toml`, `policy.toml` and credential
-sources from their examples. Provision an OpenAI-compatible model endpoint,
-external Honcho and the selected platform accounts; the `honcho_memory` network
-must exist. Configure bridge endpoints for bridge mode, not the old
-`signal-cli:18080` direct endpoint. Preserve platform session directories and
+sources from their examples. Provision an OpenAI-compatible model endpoint
+and the selected platform accounts. Configure endpoints for bridge mode. Preserve platform session directories and
 use generated credentials, never example identities or production data in Git.
 Disabling an integration in config does not remove its Compose interpolation
 requirements or dependencies. A selected-platform bootstrap must account for

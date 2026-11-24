@@ -223,16 +223,15 @@ To tell "quiet" from "broken":
      that entry's `persons` list. The message **is** audited, so it is visible in
      `messages`; it just was not answered.
 
-4. Check whether she is answering but **remembering nothing**:
+4. Check whether she can **resolve the sender**:
 
    ```bash
    curl -s http://127.0.0.1:9100/metrics | grep nora_unmapped_senders_total
    ```
 
-   A rising count means senders are resolving to no person in `identity.toml`. This one
-   is deceptive: Nora still replies and still addresses them by their Signal profile
-   name, so she looks completely normal while writing nothing to Honcho. If you have
-   edited `identity.toml`, check `nora_config_reloads_total{file="identity.toml"}`.
+   A rising count means senders are resolving to no configured person.
+   Nora can still reply using the sender's display name. If you have edited
+   `identity.toml`, check `nora_config_reloads_total{file="identity.toml"}`.
    A valid edit applies within three seconds; `refused` keeps the last good version.
 
 5. Check whether she still knows **who she is**. This one does not make her silent — it
@@ -618,24 +617,10 @@ cause, detail per wake), `cognition_session`, and `stimulus` for what waits. The
 Use `/app/.venv/bin/python`, not `uv run`, in the container: `uv run` installs the dev
 extras over the live venv.
 
-**What a restart does to a session (since the cut-over's PR-7).** Before it, nora had
-no SIGTERM handler: `docker stop` killed the process on the spot, `App.shutdown` never
-ran, and a session in flight left its wake open, holding its unit for the rest of
-`[cognition] session_timeout_seconds` (3,900 s) and then counting as a failed session.
-Now `nora.__main__.run_until_stopped` handles SIGTERM and SIGINT: the adapters and
-loops stop (no new wake starts), a session already running gets 30 s
-(`SESSION_SHUTDOWN_GRACE_SECONDS`) to finish, then it is cancelled and records its
-wake `cancelled` with a `restart` detail, which frees its unit and returns its stimuli
-to pending; the model client and the store close. Compose gives the `nora` service
-`stop_grace_period: 75s` for that. A **second** signal ends the process at once. If
-the process was killed anyway (SIGKILL after the grace, the host rebooting), the next
-process **reclaims at boot**: every wake with no outcome that was recorded before it
-started is recorded `cancelled` / `restart` (`nora_cognition_wake_reclaimed_total`).
-A `cancelled` outcome neither counts toward the failure backoff nor strikes a
-stimulus, so a restart never penalises a unit. Read the cause in
-`cognition_wake_outcome`: `outcome = 'cancelled' AND detail LIKE 'restart%'`. **Not
-covered:** a tag turn or a Dreamer pass in flight at the stop ends with the process, as
-before; the stop does not wait out a 360 s turn.
+**Process shutdown.** The first SIGTERM or SIGINT stops the serving
+tasks and runs shutdown. The Cognition session runner waits for pending outcome
+writes before dependencies close. A second signal ends the process immediately.
+Compose allows 75 seconds before a forced stop.
 
 Monitoring reload remains outside the Komodo application release path.
 
@@ -976,125 +961,6 @@ uv run nora persons pending     # senders Nora could not map, with paste-ready s
 (`nora` is a console script declared in `pyproject.toml`; `uv run` is what puts
 it on PATH from a bare shell. `uv run python -m nora …` is identical.)
 
-**`nora memory backfill --unit <unit>`** (DEC-214) replays one unit's recorded
-human messages into that unit's own Honcho workspace — for a unit that has just
-moved to a Nora workspace of its own, whose Honcho workspace starts empty. It is
-a DRY RUN unless `--apply`; it refuses a session that already holds messages
-unless `--resume` (which skips what it holds), refuses a policy with no
-`[units]`, and refuses the unit's workspace when that is `honcho.workspace_id`
-(the history is already there), and refuses a Honcho workspace another
-application uses. It reads the record store read-only, writes only Honcho,
-and deletes nothing. It replays PEOPLE's messages only — Nora's own replies are
-skipped, as live ingestion skips them — so in the new workspace a message that
-answered her arrives without what she said. `nora.app.memory_backfill` has the
-rest.
-
-**`nora memory carry-conclusions --workspace <workspace> --before <cutover>`**
-(DEC-214) copies the facts Nora was told before unit scopes existed
-(`remember`, note discharge — Nora's conclusions with no session, created
-before the cutover) into every unit scope of that workspace, where the units'
-reads now look — only facts about someone who belongs to that workspace alone;
-the rest are listed by id for you. One-time, a dry run unless `--apply`, and
-idempotent. `nora.app.memory_carry` has the rest.
-
-**`nora memory detach-unit`** (DEC-214) takes a moved unit's rooms out of the
-Honcho workspace it left, in two steps. `--unit <u> --from-honcho-workspace
-<id> --peers-file <path> --apply` deletes the unit's sessions — and, through
-Honcho's delete queue, everything stored under them — after recording the
-sessions and their peers in `<path>` (merged across runs; after the delete
-Honcho can no longer name them). `--refresh-cards --peers-file <path>` then
-waits until Honcho reports no conclusion left under each deleted session and
-rebuilds those peers' cards; it refuses rather than refresh early, and can be
-run again. Irreversible; step 1 is refused until a backfill dry run for the
-unit would feed nothing. `nora.app.memory_detach` has the rest.
-
-**Historical, one-time DEC-214 migration notes — not the current release path.**
-
-**The DEC-214 cutover, in this order.** On `master`'s image, `policy.toml` and
-`identity.toml` are `extra = "forbid"`, so writing `[units]`/`[workspaces]`
-into the LIVE files before the new image runs crash-loops the old one on its
-next restart. Never edit them first. Every file this writes lives under the
-checkout's `state/` — gitignored, and bind-mounted into the `nora` container at
-`/app/state` — never loose in the deploy checkout, because two of them are
-copies of `identity.toml`. Every command is on the deploy host, in
-`~/workspace/nora`, under `nora-deploy`'s lock:
-
-```bash
-D=state/dec214; mkdir -p "$D"
-
-# 1. Build the new image. Do NOT recreate yet (legacy nora-deploy reference step 3, build line only).
-docker compose build nora > /tmp/nora-build.log 2>&1; echo "BUILD_RC=$?"
-
-# 2. Write the new config under $D, and a config that points at it. A config's
-#    relative paths resolve against ITS OWN directory, so the three that are not
-#    in $D are made absolute (container paths).
-cp policy.toml "$D/policy.toml.next" && cp identity.toml "$D/identity.toml.next"
-#    ...append the [units] block to $D/policy.toml.next and the [workspaces]
-#    block to $D/identity.toml.next...
-sed -e 's|^identity_file = .*|identity_file = "identity.toml.next"|' \
-    -e 's|^policy_file = .*|policy_file = "policy.toml.next"|' \
-    -e 's|^data_dir = "data"|data_dir = "/app/data"|' \
-    -e 's|^dir = "nora/doctrine"|dir = "/app/nora/doctrine"|' \
-    -e 's|^dir = "nora/dreamer"|dir = "/app/nora/dreamer"|' \
-    config.toml > "$D/config.next.toml"
-grep -cE '\.next"|"/app/' "$D/config.next.toml"      # must print 5
-
-# 3. Dry-run both commands on the NEW image; $D is already inside the container
-#    through the ./state mount. `--name` is explicit because the service sets
-#    `container_name: nora`: Compose v2 is understood not to apply it to `run`
-#    containers, but a name clash would be the first thing this dry run shows.
-NEXT="docker compose run --rm --no-deps --name nora-dec214-dryrun \
-  --entrypoint /app/.venv/bin/nora nora --config $D/config.next.toml"
-$NEXT memory backfill --unit ridgeline
-$NEXT memory carry-conclusions --workspace 67 --before "$(date -Iseconds)"
-
-# 4. Swap the files IN PLACE (cp keeps the bind-mounted inode) and recreate, in one command.
-date -Iseconds > "$D/cutover.txt"
-cp policy.toml "$D/policy.toml.pre-dec214" && cp identity.toml "$D/identity.toml.pre-dec214" \
-  && cp "$D/policy.toml.next" policy.toml && cp "$D/identity.toml.next" identity.toml \
-  && docker compose up -d --force-recreate nora presence analytics; echo "UP_RC=$?"
-
-# 5. Replay ridgeline's history (live traffic since step 4 is already in its
-#    sessions). Run it again until it reports "would feed 0" without --apply.
-docker compose exec -T nora /app/.venv/bin/nora --config config.toml \
-  memory backfill --unit ridgeline --resume --apply </dev/null
-
-# 6. Put the pre-cutover facts back into 67's unit scopes (dry run first, then --apply).
-docker compose exec -T nora /app/.venv/bin/nora --config config.toml \
-  memory carry-conclusions --workspace 67 --before "$(cat "$D/cutover.txt")" --apply </dev/null
-
-# 7. Wait for Honcho's scope backfill: every entry's "state" must read "completed".
-for ws_scope in nora/friends nora/wedding nora-ridgeline/ridgeline; do
-  docker compose exec -T nora curl -fsS \
-    "http://honcho:8000/v3/workspaces/${ws_scope%%/*}/scopes/${ws_scope#*/}/status" </dev/null; echo
-done
-
-# 8. ONLY with the operator's approval (irreversible): dry run, then --apply,
-#    then — once Honcho's delete queue has run — the cards.
-DETACH="docker compose exec -T nora /app/.venv/bin/nora --config config.toml memory detach-unit"
-$DETACH --unit ridgeline --from-honcho-workspace nora --peers-file $D/detach-ridgeline.json </dev/null
-$DETACH --unit ridgeline --from-honcho-workspace nora --peers-file $D/detach-ridgeline.json --apply </dev/null
-$DETACH --refresh-cards --peers-file $D/detach-ridgeline.json </dev/null
-```
-
-Rollback before step 5: `cp state/dec214/policy.toml.pre-dec214 policy.toml && cp
-state/dec214/identity.toml.pre-dec214 identity.toml`, then nora-deploy's rollback
-(retag the previous image, recreate). After step 8's `--apply` nothing
-restores the detached sessions.
-
-One ordering effect to expect: a Honcho document's own `created_at` is when it
-was INSERTED, not when its message was said, so the documents live ridgeline
-traffic produced after step 4 rank OLDER than those the step-5 replay derives
-from months-old history, in the "recent" channel of `representation`. It
-evens out as new traffic arrives; the replayed MESSAGES themselves carry their
-real dates.
-
-**Nora refuses to start on a Honcho workspace that is not hers**: a bound
-`honcho_workspace` that holds sessions and lacks her `nora_owner` metadata
-marker belongs to another application on the same Honcho. Bind the workspace
-to another id in identity.toml. `honcho.workspace_id` is exempt (it predates
-the marker).
-
 **`nora groups`** answers "I cannot tell which group id is which". It prints
 each group's name beside the base64 `conversation_id` you need for
 `policy.toml`, marks it ALLOWED or DENIED, and emits a paste-ready
@@ -1109,11 +975,9 @@ group rosters as well as `listContacts`, which matters more than it sounds: on
 this deployment only **3 of 83** contacts carry both a number and a uuid, while
 every group member does.
 
-**Adopting somebody is just editing the file.** Paste the stanza into
-`identity.toml`; new messages resolve after hot reload. Historical lazy adoption
-(DEC-16) still runs at the next startup and backfills everything
-they said *before* you mapped them into their Honcho peer — Nora never writes
-`identity.toml` herself (D6).
+**Adopting somebody by file.** Add the person's stanza to `identity.toml`.
+New messages resolve after a valid hot reload. Startup lazy adoption links
+recorded sender accounts to the configured person.
 
 ```bash
 $ uv run nora groups
@@ -1205,7 +1069,7 @@ One tree. If it is not under `~/workspace/nora/`, Nora does not own it.
   identity.toml             WHO PEOPLE ARE. gitignored. One
                             [[persons.<id>.<platform>]] block per ACCOUNT — a
                             person may hold several on one platform, and they
-                            all resolve to one person_id (= their Honcho peer).
+                            all resolve to one person_id.
   policy.toml               WHO MAY TALK TO HER, AND WHERE. gitignored, deny by
                             default. She REFUSES TO START if it is missing or
                             allows nothing — running mute would be
@@ -1228,8 +1092,7 @@ validates with its startup loaders and cross-checks, then swaps one holder. Inva
 missing or allow-nothing policy edits keep the last good version and log WARNING.
 `nora_config_reloads_total{file,outcome}` distinguishes `applied`, `refused` and
 `restart_required`; `/health` reports a file stale while disk differs from the
-last applied content. Changes to policy unit/workspace declarations or identity
-Honcho workspace bindings refuse the whole reload and require recreation.
+last applied content. Policy unit and workspace declaration changes require recreation.
 Always validate a candidate copy, then copy it in place to preserve the mounted
 inode. See [the publication contract and restart-only boundary](../design/policy-reload/README.md).
 
@@ -1495,161 +1358,14 @@ read-only probes confirmed Instagram and X as `logged_in=true` after the Chrome
 migration. Threads is not checkable at all: OpenCLI 1.8.7 has no native Threads
 adapter, so Threads support is unimplemented, not broken.
 
-## 11. "Honcho answers anyone" — closing it without authentication (#633, DEC-259)
+## Cognitive Graph historical recovery
 
-Honcho has no authentication, and the operator ruled (2026-10-01) that it
-will not get any: the fix is **where it listens**. Measured 2026-09-30 on nora-host:
-`honcho-api-1` published `0.0.0.0:8000`, so any container that could name the
-host (`host.docker.internal`) and anything on the LAN read and wrote Nora's
-memory with one unauthenticated `POST /v3/workspaces/list`.
-
-**Honcho is not in this repository.** Its compose project is
-`~/workspace/honcho/docker-compose.yml` on nora-host, and nothing here edits it.
-What this repo holds is nora's half (the `honcho` network in
-`docker-compose.yml`, the host-side rewrite in `nora/subject/obtain.py`) and the
-probe, `deploy/honcho-closed-probe.sh`. Who reaches Honcho, read on nora-host
-2026-10-01:
-
-| caller | route today | after |
-|---|---|---|
-| nora (the tag path, the Dreamer, `nora memory ...` in the container) | `host.docker.internal:8000` | `honcho:8000` on `honcho_memory` |
-| the eval suite, host-side scripts, a host `curl` | `127.0.0.1:8000` | unchanged (loopback still published) |
-| another machine on the tailnet (the Mac's Honcho plugin) | `tailscale serve` forwards `:18000` to `localhost:8000` | unchanged |
-| presence, analytics, voice, the portal | none: no environment or config names Honcho | none |
-
-The tailnet forward is deliberate and stays unauthenticated, as it was; that is
-the operator's tailnet, not the LAN. A caller found later that is not in this
-table is reading Honcho through the open port and will break at step 4: the
-access log's source class before and after (below) is how to find one first.
-
-### The order, and why it is this order
-
-Each step leaves every caller working; the door closes last. **Run from
-`~/workspace/nora` and `~/workspace/honcho` on nora-host. Nothing here is done by
-the PR merging.**
-
-```bash
-# 0. BEFORE the nora deploy of this change. The network is owned by neither
-#    stack (both mark it external), so `down` on either never removes it. If it
-#    is missing, EVERY `docker compose up` that names nora fails at once and
-#    names it (the running container is not touched), so nora-deploy runs this
-#    line first, idempotently:
-docker network inspect honcho_memory >/dev/null 2>&1 || docker network create --internal honcho_memory
-#    --internal is not optional. A container's default route goes through the
-#    first-sorting non-internal network it joins, so joining an ordinary
-#    network that sorts before `nora_nora` would move nora's route to the
-#    internet onto it. An internal network has no gateway: nora's route stays
-#    on its compose network, and container-to-container traffic on it (nora to
-#    `honcho:8000`) works. Measured on a throwaway local docker 2026-10-01:
-#    two containers on an --internal network resolved and reached each other
-#    by name, the one also on an ordinary network kept its default route and
-#    its egress there, and the other's loopback publish still answered.
-
-# 1. Deploy nora from this branch (nora-deploy). It now also joins honcho_memory.
-#    Nothing has changed for it yet: its config still says host.docker.internal.
-
-# 2. Honcho's compose: add the network and an alias, KEEP the old publish for now.
-#    In ~/workspace/honcho/docker-compose.yml, service `api`:
-#
-#        networks:
-#          default: {}
-#          memory:
-#            aliases: [honcho]
-#
-#    and at the bottom of the file:
-#
-#        networks:
-#          memory:
-#            external: true
-#            name: honcho_memory
-#
-cd ~/workspace/honcho && docker compose up -d api </dev/null
-docker exec nora curl -fsS -m 5 http://honcho:8000/health </dev/null   # {"status":"ok"}
-
-# 3. nora's live config: [honcho] base_url = "http://honcho:8000". This is a
-#    config-only edit: follow the validated-copy procedure under the lock in
-#    nora-deploy step 3 (linked below), then release the lock before running
-#    native DeployStack on nora-releases. Read it back from the container:
-docker exec nora /app/.venv/bin/python -c \
-  'from pathlib import Path; from nora.config import load; print(load(Path("config.toml"), require_secrets=False).honcho.base_url)' </dev/null
-
-# 4. Only now close the door. In the honcho compose, service `api`:
-#        ports: ["127.0.0.1:8000:8000"]        # was "8000:8000"
-cd ~/workspace/honcho && docker compose up -d api </dev/null
-```
-
-For step 3, follow [nora-deploy’s config-only procedure](../.agents/skills/nora-deploy/SKILL.md#3-config-only-change).
-
-Doing step 4 before step 3 shuts nora out of memory: every peer write fails,
-and the failure reads as Honcho being down.
-
-### Read-back
-
-```bash
-cd ~/workspace/nora && deploy/honcho-closed-probe.sh; echo "PROBE_RC=$?"
-```
-
-`PROBE_RC=0` is every check passing: a throwaway container on the default bridge
-is REFUSED on port 8000 at every IPv4 address the host owns (only curl's exit 7,
-connection refused, counts: a timeout or a reset is an ERROR, as is an empty
-result, and each address gets its own control on a port that is open), every
-listening socket on `:8000` is loopback in BOTH families (this is what covers
-IPv6, which the default bridge often cannot route to), a loopback check proves
-Honcho is alive and not merely unreachable, nora reaches it by name, the tailnet
-forward still answers, and the Docker Engine is 28 or newer. `1` is an open door
-or a shut-out caller; `2` is a probe that cannot tell; `3` is a WARN only: on an
-engine older than 28 a loopback-published port can be reached from the LAN, which
-a probe run on the host cannot see, so from a machine on the LAN
-`curl -m 4 http://<deployment-host-lan-address>:8000/health` must fail. The same probe by hand:
-
-```bash
-docker run --rm --network bridge --entrypoint curl nora:latest \
-  -s -m 4 -o /dev/null -w '%{http_code}\n' http://172.17.0.1:8000/health </dev/null   # 000 = refused
-```
-
-A second reading, from Honcho's own access log: nora's calls arrived from the
-compose gateway (`172.21.x.x`, the userland proxy) before step 4 and arrive from
-the `honcho_memory` subnet after it. Counts only, never paths:
-
-```bash
-docker logs --since 1h honcho-api-1 </dev/null 2>&1 \
-  | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+ - "(GET|POST|PUT|DELETE)' \
-  | awk '{split($1,a,"."); print a[1]"."a[2]".x.x"}' | sort | uniq -c | sort -rn
-```
-
-**Rollback**, in this order (the order is the whole point):
-
-1. Put `[honcho] base_url` back to `"http://host.docker.internal:8000"` in nora's
-   live `config.toml` (the config-only edit, `nora-deploy` step 3) and recreate
-   nora on it. Do this FIRST.
-2. Only then publish `8000:8000` again in the honcho compose and `up -d api`.
-3. Only after that recreate nora from an OLD compose file if you must.
-
-Each step leaves every caller working. Out of order it does not: nora on an old
-compose has no `honcho` network, so a config still saying `http://honcho:8000`
-resolves nothing and every memory call fails (peer writes, the self card, recall)
-until the config is put back; and reopening the port before nora has moved back
-is fine, but moving nora back before the port is open shuts it out. Nora on the
-name keeps working while the door is open, so reopening the door alone (step 2)
-is the minimal rollback if the problem is a caller of the old port.
-
-
-## Typed Profile historical recovery
-
-Keep `[memory.profile] read = false` until the operator accepts the
-[bounded cutover evidence](../design/unified-memory/understanding.md)
-and authorizes the concrete switch. The earlier fixed coverage/reply gates are
-historical, superseded by that acceptance owner. The typed migration is nullable and retains every legacy row; a
-successful old shadow session is not historical coverage. The person adaptor
-now walks bounded oldest-first pages through a frozen Record boundary using
-its existing schedule and budget, independently of recent-message updates.
-
-Historical pages that fail, conflict or stay unsettled retain the page; a crash
-after claim commit but before cursor settlement repeats evidence. Runtime traces
-and watermark row history retain per-page provenance. Render-on retires legacy
-model writers and reads Profile room accounts for person/unit context;
-render-off restores the old configured writer/read surface. No legacy tables or
-Honcho client are removed.
+`nora memory unified-backfill` reports the historical boundary, progress and
+completeness per unit in a read-only census. Select units with `--unit` and
+bound the evidence window with `--from-ms` and `--until-ms` in epoch
+milliseconds. `--apply` runs historical Cognition sessions and requires
+explicit batch, token and elapsed-time limits. A unit's census describes
+historical work coverage. It does not certify individual Profile fields.
 
 ### Memory graph code projection
 

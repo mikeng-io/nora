@@ -1,19 +1,7 @@
-"""The Event abstraction — WHY an unprompted turn is happening (DEC-139).
+"""Typed inputs to an unprompted turn.
 
-A first-class domain type. The factories that BUILD events are app-layer code in
-`nora/app/fire.py` (they close over the rows and jobs a turn is about). What a
-header SAYS is not there: each kind's situation paragraph is a typed builder in
-`nora.domain.framing` (`FIRE_HEADERS`), and a factory only names its inputs.
-
-`Event` answers *what happens* (via `kind`); `nora.domain.reminders`
-answers *when* (the scheduler). A fire turn's shape is one Event, and the
-registry in `nora/app/fire.py` maps a reminder row's `kind` to the factory
-that renders it.
-
-`EventFactory` is the kind -> factory protocol. The registry itself is a
-plain `dict[str, EventFactory]` wired at the composition root — matching
-the codebase's existing idiom (plain functions over a strategy-object
-hierarchy for five cases), and keeping the domain type free of app wiring.
+An event binds its destination and authority to the input and situation
+header the turn will assemble. Header builders live in the domain.
 """
 
 from __future__ import annotations
@@ -47,8 +35,7 @@ class Event:
     values only the turn knows: the resolved `PersonRef` (or `None`) and
     the instant the turn ran.
 
-    `kind` names the event in log lines; the factories in `nora/app/fire.py`
-    use it to select header prose and payload reading.
+    `kind` names the event in log lines and identifies its occasion.
     """
 
     kind: str

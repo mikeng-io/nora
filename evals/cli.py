@@ -177,13 +177,9 @@ def eval_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument(
         "--memory-index", action="store_true",
-        help="compose every subject with [memory.index] read = true: the "
-             "memory graph's tool surface (memory_search, no Honcho memory "
-             "verb; DEC-316). The after arm of a memory routing run while the "
-             "deployment runs the Honcho surface. A subject override, so the "
-             "drift gate is unchanged. Needs the embedder's loopback publish "
-             "and a source holding the model's vectors (make eval-source); "
-             "each sandbox's index is built and gets the source's vectors",
+        help="enable [memory.index] read in the eval subject and select the "
+             "index-enabled routing cases. Requires the loopback embedder "
+             "and a source with its model's vectors (make eval-source).",
     )
     ap.add_argument(
         "--allow-long", action="store_true",

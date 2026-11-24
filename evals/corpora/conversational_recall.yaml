@@ -53,25 +53,9 @@
 #   the collector is not. The R-31 guard is production's and needs the room's
 #   live roster, which the sandbox cannot read, so `where_is`, `where_been` and
 #   `routine_read` answer `unavailable` here where production would read.
-# - MEMORY (Honcho). Not restored (`nora/infra/sql/snapshot_at.py:22`: live and
-#   mutable, no chain to read backwards), and every draw starts on an EMPTY
-#   Honcho workspace of its own (#462). So no peer card, representation or
-#   memory search answers here, and a recall production could make from Honcho
-#   is invisible: she cannot make it, and because an honest «I can't tell»
-#   PASSES `recall_grounded`, its absence reads as a pass, not as the miss it
-#   would be against production. These cases are anchored on records the
-#   restore holds (messages, readings, notes, outings); none of them measures
-#   recall that only Honcho holds, and none can until memory is replayed
-#   (design/evaluation/subject.md).
-# - OUTINGS. A tag turn cannot read the Rollup at all: `rollup_read` is
-#   Dreamer-only (`nora/agent/surface.py`, DREAMER_LOOP_TOOLS). J4 is EXPECTED
-#   TO FAIL TODAY, and this corpus is the before arm for the change that gives
-#   a tag turn its outings; this PR does not change the tool surface. Read the
-#   verdicts with the criterion's own rule: an honest «I can't see that»
-#   PASSES `recall_grounded`, so the J4 before/after is read on what she says
-#   and which tools she called (`nora.judged_why`, `nora.tools_called`), not on
-#   the verdict alone. A J4 FAIL today is an invented or wrong place, or a
-#   «we went nowhere» she could not have checked.
+# - RECALL. The cases test claims against the Record and evidence available
+#   at each snapshot. Judge the reply and its tools together: an honest lack
+#   of access can pass grounding without showing that an outing was recalled.
 
 cases:
   # J1 positive: the newest picture in the room, posted minutes before a real
