@@ -2471,42 +2471,13 @@ class StandingConfig(BaseModel):
 
 
 class CultureConfig(BaseModel):
-    """The culture tier's gate.
-
-    `NotesConfig`'s shape below: the whole section is optional and every field
-    defaults.
-    """
+    """Compatibility settings for the retired Culture fold."""
 
     model_config = ConfigDict(extra="forbid")
 
-    #: Enable the legacy culture store while its readers are retired.
     enabled: bool = False
-
-    #: New human messages in a room that wake its fold at once (DEC-288). **200**: the
-    #: busiest rooms reach it every few days, and every quieter room is woken by
-    #: `stale_seconds` instead. A room is revised when it has said enough to revise
-    #: from, not because a day passed (replacing DEC-185's daily clock).
-    #: Keep it at or below `batch_limit`: then one fold drains what woke it. Above it,
-    #: a backlog is walked in `batch_limit` slices that each fire, one account per
-    #: slice, until `lag` drops under this.
     wake_batch: int = Field(default=200, ge=1)
-
-    #: Seconds after a room's last fold at which ANY new human message wakes
-    #: it, so a quiet room is still revised weekly. **604800** (7 days). A
-    #: room with nothing new never fires (DEC-183: a quiet room's culture is
-    #: accurate, not stale).
     stale_seconds: int = Field(default=604_800, ge=3600)
-
-    #: Messages read per fold. **THE BATCH IS THE CORPUS** (the account is written
-    #: from it), so this is not a throttle, it is how much of the room the model gets
-    #: to see; a limit of 1 would starve the fold (DEC-182): one message a day is not
-    #: a room's culture.
-    #:
-    #: 300 is a day of a busy room with headroom, against an input budget that
-    #: comfortably holds it. `batch_limit` also caps how far one run advances the
-    #: watermark (see `runtime.py`), and a NEW adaptor starts at 0, so at one batch
-    #: per day a limit this size would take days to walk a long backlog. That is why
-    #: the watermark is seeded at the record head on first run rather than at 0.
     batch_limit: int = Field(default=300, ge=1)
 
 
@@ -2974,13 +2945,8 @@ class DreamerConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     dir: Path = Path("nora/dreamer")
-    tick_seconds: float = Field(default=300.0, gt=0)
     store_timeout_seconds: float = Field(
         default=DEFAULT_DREAM_STORE_TIMEOUT_SECONDS, gt=0)
-    safety_lag: int = Field(default=300, ge=1)
-    quiet_seconds: float = Field(default=1800.0, ge=0)
-    max_age_seconds: float = Field(default=86_400.0, gt=0)
-    batch_limit: int = Field(default=400, ge=1)
     reload: Literal["mtime", "startup"] = "mtime"
     strict: bool = True
     enabled: bool = False
@@ -3027,15 +2993,6 @@ class DreamerConfig(BaseModel):
     # Legacy hold value validated when explicitly configured.
     max_unit_hold_seconds: float | None = Field(default=None, gt=0)
 
-    @model_validator(mode="after")
-    def _collective_profile_defaults(self) -> DreamerConfig:
-        # Composition passes this map to the runtime before Culture inheritance;
-        # the outer unit timeout also reads it. Materialize the code defaults so
-        # neither consumer silently falls back to the generic 40k/120s budget.
-        for name in ("profile-unit", "profile-room", "profile-nora"):
-            self.budgets.setdefault(name, self.budget_for(name))
-        return self
-
     def budget_for(self, adaptor: str) -> DreamBudgetConfig:
         """The budget one adaptor runs under, ALWAYS bounded.
 
@@ -3070,20 +3027,6 @@ class DreamerConfig(BaseModel):
                 output_tokens=COGNITION_OUTPUT_TOKENS,
                 timeout_seconds=COGNITION_TIMEOUT_SECONDS,
             )
-        if (adaptor in ("profile-unit", "profile-room", "profile-nora")
-                and adaptor not in self.budgets):
-            # ponytail: allow 60k source tokens for the 60k-char ceiling, plus
-            # 25k non-source tokens (instructions, room-culture heads read every
-            # unit session, held profile lines, first-session prose backfill).
-            # Two 85k-input calls + 8k repair history + 16k output = 194k,
-            # below 240k; revisit if the source ceiling or outside context grows.
-            # Six turns leave room to finish after repair; 360s allows two
-            # 120s calls plus tool time.
-            # Starting allowances, not measured provider latency/token ratios.
-            return DreamBudgetConfig(
-                turns=6, total_tokens=240_000, output_tokens=16_000,
-                timeout_seconds=360.0,
-            )
         return self.budgets.get(adaptor, DreamBudgetConfig())
 
 
@@ -3098,11 +3041,8 @@ class CognitionConfig(BaseModel):
     evaluator ticks every `tick_seconds` and starts a session on each wake.
     Undo is this flag and a restart.
 
-    The wake numbers are starting values. `quiet_seconds` and `max_age_seconds`
-    reuse `[dreamer]`'s key NAMES, not their values. `floor_grace_seconds` is
-    how late a daily floor may still be raised after its instant (a restart at
-    07:02 raises the 07:00 floor; a deploy at 15:00 does not raise that
-    morning's).
+    `floor_grace_seconds` bounds how late a daily floor can be raised. A restart
+    at 07:02 raises the 07:00 floor, while a restart at 15:00 skips it.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -3833,9 +3773,6 @@ class Config(BaseModel):
     # writes notes (`note_create`/`note_revise`/`note_set_status`/`note_merge`), so it
     # is empty until it has.
     notes: NotesConfig = NotesConfig()
-    # Optional and defaulted — see `CultureConfig`. Ships INERT
-    # (`enabled = false`): off, composition builds no adaptor, no schedule
-    # entry and no store, so the tier is absent rather than idle.
     culture: CultureConfig = CultureConfig()
     lessons: LessonsConfig = LessonsConfig()
     # Ships INERT (`enabled = false`): off, composition builds no adaptor.

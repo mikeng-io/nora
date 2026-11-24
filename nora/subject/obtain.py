@@ -163,9 +163,8 @@ def config_default(key: str) -> object:
 def config_member_of_runtime_map(key: str) -> bool:
     """Whether a dotted key names a member of a `dict[...]`-typed field.
 
-    `dreamer.budgets.culture.turns` is keyed at runtime: production holds no
-    `culture` member it never stated, so omitting the example's member IS
-    the parity — unlike a required leaf, whose omission cannot load.
+    For a runtime map such as `dreamer.budgets`, the generated config omits
+    example member keys the deployment leaves unset.
     """
     from nora.config import Config
 
