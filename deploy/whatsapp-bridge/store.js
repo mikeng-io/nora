@@ -39,7 +39,10 @@ import { canonicalJson } from './canon.js';
 import { eventId } from './envelope.js';
 
 export const OWNER_KINDS = new Set(['work', 'event_receipt', 'otp_challenge', 'live_invocation']);
-export const ACTION_OPS = new Set(['send', 'react', 'edit', 'typing']);
+export const ACTION_OPS = new Set([
+  'send', 'react', 'edit', 'typing',
+  'music_play', 'music_skip', 'music_top', 'music_stop', 'music_set_volume',
+]);
 const TERMINAL = new Set(['confirmed', 'rejected', 'uncertain']);
 const OTP_REDACTED = '[redacted]';
 const UUID_SHAPE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;

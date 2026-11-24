@@ -20,7 +20,7 @@ import { sendJson } from './http_util.js';
 
 import { AttachmentStore, validAttachmentKey } from './media.js';
 import { ActionStore, actionResponse, requestHash } from './store.js';
-import { ActionRejected, SERVED_ROUTES, createV1, executors, recipientToJid, runAction } from './actions.js';
+import { ActionRejected, SERVED_ROUTES, buildAccount, createV1, executors, recipientToJid, runAction } from './actions.js';
 import { createPipeline } from './pipeline.js';
 import { Projection } from './projection.js';
 import { Journal } from './journal.js';
@@ -1435,9 +1435,10 @@ const KERNEL_STATUS = {
 };
 const ENVELOPE_PARTS = ['from', 'outcome', 'payload', 'scope', 'trace', 'when'];
 
-async function call(v1, method, pathname, body = null) {
+async function call(v1, method, pathname, body = null, headers = {}) {
   const res = fakeRes();
-  const handled = await v1(fakeReq(method, pathname, body), res, new URL(`http://b${pathname}`));
+  const req = Object.assign(fakeReq(method, pathname, body), { headers });
+  const handled = await v1(req, res, new URL(`http://b${pathname}`));
   return Object.assign(res, { handled });
 }
 
@@ -1447,9 +1448,17 @@ function assertEnvelope(res, outcome, label) {
   assert.equal(res.status, KERNEL_STATUS[outcome], label);
 }
 
-test('routes match the platform contract', async () => {
-  const doc = JSON.parse(readFileSync(
+function readPlatformContract() {
+  return JSON.parse(readFileSync(
     new URL('../../docs/service-api/openapi.json', import.meta.url), 'utf8'));
+}
+
+function outcomePayload(schema, outcome) {
+  return schema.allOf.find((branch) => branch.if.properties.outcome.const === outcome).then.properties.payload;
+}
+
+test('routes match the platform contract', async () => {
+  const doc = readPlatformContract();
   const documented = Object.entries(doc.paths)
     .filter(([p]) => p.startsWith('/v1/platform/') || p.startsWith('/v1/operations/'))
     .flatMap(([p, ops]) => Object.keys(ops).map((m) => `${m.toUpperCase()} ${p}`)).sort();
@@ -1488,6 +1497,86 @@ test('routes match the platform contract', async () => {
   assert.equal(authorizedBridgeRequest('GET', '/ready', undefined, 't0k'), true);
   assert.equal(authorizedBridgeRequest('GET', '/health', undefined, 't0k'), true);
   assert.equal(authorizedBridgeRequest('GET', '/v1/operations/status', undefined, 't0k'), false);
+});
+
+const MUSIC_ROOM = '152099000000000000@g.us';
+const MUSIC_TRACE = '11'.repeat(16);
+const MUSIC_HEADERS = { traceparent: `00-${MUSIC_TRACE}-00f067aa0ba902b7-01` };
+
+test('music operations settle unsupported before owner validation or store access', async () => {
+  const schemas = readPlatformContract().components.schemas;
+  const payload = outcomePayload(schemas.MusicOperationEnvelope, 'unsupported');
+  assert.equal(payload.additionalProperties, false);
+  assert.equal(payload.properties.error.$ref, '#/components/schemas/OperationError');
+  let storeAccesses = 0;
+  const v1 = createV1({ get store() { storeAccesses += 1; return null; } });
+  const submit = (kind, effect) => call(v1, 'POST', '/v1/platform/operations',
+    { operation_id: `op-${kind}`, kind, effect }, MUSIC_HEADERS);
+  for (const [kind, params] of Object.entries({
+    music_play: { sender_ids: ['sender-1'], query_or_url: 'a track' },
+    music_skip: {},
+    music_top: { position: 2 },
+    music_stop: {},
+    music_set_volume: { percent: 40 },
+  })) {
+    const result = await submit(kind, { ...params, conversation_id: MUSIC_ROOM });
+    assert.equal(storeAccesses, 0, kind);
+    assertEnvelope(result, 'unsupported', kind);
+    assert.deepEqual(Object.keys(result.json.payload), payload.required, kind);
+    assert.deepEqual(Object.keys(result.json.payload.error).sort(), [...schemas.OperationError.required].sort(), kind);
+    assert.deepEqual(result.json.payload, { error: { kind: 'unsupported', message: 'music is not supported' } }, kind);
+    assert.deepEqual(result.json.when, { state: 'settled', started_at_ms: null, settled_at_ms: null }, kind);
+    assert.deepEqual(result.json.from, { target: MUSIC_ROOM, platform_ref: null }, kind);
+    assert.deepEqual(result.json.scope, { level: 'room', id: MUSIC_ROOM }, kind);
+    assert.equal(result.json.trace, MUSIC_TRACE, kind);
+  }
+  const unknown = await submit('music_unknown', { conversation_id: MUSIC_ROOM });
+  assert.equal(unknown.status, 422);
+  assert.deepEqual(unknown.json, { error: 'unknown operation kind' });
+  const ownerlessSend = await submit('send', REQ);
+  assert.equal(ownerlessSend.status, 400);
+  assert.deepEqual(ownerlessSend.json,
+    { error: 'owner.kind must be work|event_receipt|otp_challenge|live_invocation with an id' });
+  assert.equal(storeAccesses, 0);
+  const send = await call(v1, 'POST', '/v1/platform/operations', {
+    operation_id: 'op-send', kind: 'send', effect: REQ, owner: { kind: 'event_receipt', id: 'e1' },
+  });
+  assertEnvelope(send, 'unavailable', 'send with an owner and no store');
+  assert.equal(storeAccesses, 1);
+});
+
+test('music_status is an unavailable room read', async () => {
+  const v1 = createV1({ health: () => ({ ok: true }) });
+  const status = await call(v1, 'POST', '/v1/platform/queries',
+    { kind: 'music_status', params: { conversation_id: MUSIC_ROOM } }, MUSIC_HEADERS);
+  assertEnvelope(status, 'unavailable', 'music_status');
+  const schema = readPlatformContract().components.schemas.MusicStatusReadEnvelope;
+  assert.equal(outcomePayload(schema, 'unavailable').type, 'null');
+  assert.equal(status.json.payload, null);
+  assert.deepEqual(status.json.scope, { level: 'room', id: MUSIC_ROOM });
+  assert.equal(status.json.trace, MUSIC_TRACE);
+});
+
+test('self advertises empty capabilities', async () => {
+  const user = { id: '85290000100:2@s.whatsapp.net', lid: '60000000000001:2@lid' };
+  const account = buildAccount(user);
+  const expected = {
+    platform: 'whatsapp', primary: '+85290000100', aliases: ['+85290000100', '60000000000001'],
+    capabilities: [], phone: '85290000100', lid: '60000000000001',
+    jid: '85290000100@s.whatsapp.net', lid_jid: '60000000000001@lid',
+  };
+  assert.deepEqual(account, expected);
+  const schemas = readPlatformContract().components.schemas;
+  const { capabilities, ...injected } = account;
+  for (const me of [account, injected]) {
+    const v1 = createV1({ self: () => me, health: () => ({ ok: true }) });
+    const result = await call(v1, 'GET', '/v1/platform/accounts/self');
+    assertEnvelope(result, 'ok', 'self');
+    assert.deepEqual(result.json.payload, expected);
+    for (const field of schemas.PlatformAccount.required) {
+      assert.ok(Object.hasOwn(result.json.payload, field), field);
+    }
+  }
 });
 
 test('operation outcomes follow the contract', async () => {
@@ -1600,7 +1689,7 @@ test('operation outcomes follow the contract', async () => {
     me = { platform: 'whatsapp', primary: '+85290000100', aliases: ['+85290000100'], phone: '85290000100' };
     const account = await call(v1, 'GET', '/v1/platform/accounts/self');
     assertEnvelope(account, 'ok', 'account');
-    assert.deepEqual(account.json.payload, me);
+    assert.deepEqual(account.json.payload, { ...me, capabilities: [] });
     assertEnvelope(await call(v1, 'GET', '/v1/platform/accounts/85290000100'), 'nothing_found', 'other account');
 
     // the status read

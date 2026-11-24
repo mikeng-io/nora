@@ -22,6 +22,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"instagram-bridge/internal/app"
@@ -59,10 +60,14 @@ type V1 struct {
 // operationKinds and queryKinds are the contract's closed sets; a kind
 // outside them is 422.
 var (
-	operationKinds = map[string]bool{"send": true, "react": true, "edit": true, "typing": true}
-	queryKinds     = map[string]bool{
+	operationKinds = map[string]bool{
+		"send": true, "react": true, "edit": true, "typing": true,
+		"music_play": true, "music_skip": true, "music_top": true,
+		"music_stop": true, "music_set_volume": true,
+	}
+	queryKinds = map[string]bool{
 		"roster": true, "members": true, "channels": true, "channel": true,
-		"member_presence": true, "voice_presence": true, "groups": true,
+		"member_presence": true, "voice_presence": true, "groups": true, "music_status": true,
 	}
 )
 
@@ -70,7 +75,7 @@ var (
 // kind's content, and the request hash covers it alone.
 type OperationRequest struct {
 	OperationID string          `json:"operation_id"`
-	Owner       ActionOwner     `json:"owner"`
+	Owner       json.RawMessage `json:"owner"`
 	Kind        string          `json:"kind"`
 	Effect      json.RawMessage `json:"effect"`
 }
@@ -207,8 +212,8 @@ func decodeKinded(w http.ResponseWriter, raw []byte, into any, unknownKind strin
 	var probe struct {
 		Kind json.RawMessage `json:"kind"`
 	}
-	var kind string
-	if json.Unmarshal(raw, &probe) == nil && len(probe.Kind) > 0 && json.Unmarshal(probe.Kind, &kind) != nil {
+	var kind *string
+	if json.Unmarshal(raw, &probe) == nil && len(probe.Kind) > 0 && (json.Unmarshal(probe.Kind, &kind) != nil || kind == nil) {
 		writeErrorEnvelope(w, http.StatusUnprocessableEntity, "unknown_kind", unknownKind)
 		return false
 	}
@@ -242,7 +247,7 @@ func (v *V1) handleOperation(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, settledEnvelope(r, "unavailable",
 			errorPayload("unavailable", "too many request bodies are being read; retry"), "", installationScope()))
 	})
-	if !ok || !decodeKinded(w, raw, &req, "kind must be one of send|react|edit|typing") {
+	if !ok || !decodeKinded(w, raw, &req, "unknown operation kind") {
 		return
 	}
 	if len(req.Kind) <= 64 {
@@ -252,21 +257,40 @@ func (v *V1) handleOperation(w http.ResponseWriter, r *http.Request) {
 		invalidRequest(w, "operation_id, kind and effect are required")
 		return
 	}
-	if req.Owner.Kind == "" || req.Owner.ID == "" {
+	if !operationKinds[req.Kind] {
+		writeErrorEnvelope(w, http.StatusUnprocessableEntity, "unknown_kind", "unknown operation kind")
+		return
+	}
+	if strings.HasPrefix(req.Kind, "music_") {
+		var effect struct {
+			ConversationID string `json:"conversation_id"`
+		}
+		_ = json.Unmarshal(req.Effect, &effect)
+		target := effect.ConversationID
+		payload := map[string]any{"error": map[string]string{"kind": "unsupported", "message": "music is not supported"}}
+		writeEnvelope(w, settledEnvelope(r, "unsupported", payload, target, roomScope(target)))
+		return
+	}
+	v.handleDeliveryOperation(w, r, req)
+}
+
+func (v *V1) handleDeliveryOperation(w http.ResponseWriter, r *http.Request, req OperationRequest) {
+	var owner ActionOwner
+	if len(req.Owner) > 0 && json.Unmarshal(req.Owner, &owner) != nil {
+		invalidRequest(w, "invalid json body")
+		return
+	}
+	if owner.Kind == "" || owner.ID == "" {
 		invalidRequest(w, "owner.kind and owner.id are required")
 		return
 	}
-	if req.Owner.Kind == bridge.OwnerWork && req.Owner.Generation == nil {
+	if owner.Kind == bridge.OwnerWork && owner.Generation == nil {
 		invalidRequest(w, "owner.generation is required for kind=work")
 		return
 	}
 	var effect any
 	if err := json.Unmarshal(req.Effect, &effect); err != nil {
 		invalidRequest(w, "effect must be JSON")
-		return
-	}
-	if !operationKinds[req.Kind] {
-		writeErrorEnvelope(w, http.StatusUnprocessableEntity, "unknown_kind", "kind must be one of send|react|edit|typing")
 		return
 	}
 	target := effectTarget(req.Effect)
@@ -279,7 +303,7 @@ func (v *V1) handleOperation(w http.ResponseWriter, r *http.Request) {
 		settled("unavailable", errorPayload("unavailable", "action store is not configured"))
 		return
 	}
-	if !bridge.ValidOwnerKind(req.Owner.Kind) {
+	if !bridge.ValidOwnerKind(owner.Kind) {
 		settled("denied", errorPayload("fenced", "unknown owner kind"))
 		return
 	}
@@ -289,7 +313,7 @@ func (v *V1) handleOperation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	outcome, row, err := v.Store.Reserve(r.Context(), req.OperationID,
-		req.Owner.Kind, req.Owner.ID, req.Owner.Generation, req.Kind, canon, hash)
+		owner.Kind, owner.ID, owner.Generation, req.Kind, canon, hash)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return
@@ -312,7 +336,7 @@ func (v *V1) handleOperation(w http.ResponseWriter, r *http.Request) {
 	// conversation (work generation+claim, journaled receipt intent, real
 	// challenge/pending-outbound rows). A stale or foreign owner never
 	// reaches a platform call.
-	verdict, err := v.Store.ValidateOwner(r.Context(), req.Owner.Kind, req.Owner.ID, req.Owner.Generation, target)
+	verdict, err := v.Store.ValidateOwner(r.Context(), owner.Kind, owner.ID, owner.Generation, target)
 	if err != nil {
 		ledgerDown()
 		return
@@ -599,7 +623,7 @@ func (v *V1) handleAccount(w http.ResponseWriter, r *http.Request) {
 		aliases = append(aliases, snap.Self.IGID)
 	}
 	writeEnvelope(w, readEnvelope(r, "ok", map[string]any{
-		"platform": "instagram", "primary": primary, "aliases": aliases,
+		"platform": "instagram", "primary": primary, "aliases": aliases, "capabilities": []string{},
 	}, true, installationScope()))
 }
 
