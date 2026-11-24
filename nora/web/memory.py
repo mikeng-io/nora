@@ -37,7 +37,7 @@ async def build_memory_payload(
         claims = await profile(unit=unit, viewer=viewer.person_id, viewer_rooms=viewer_rooms)
         lines, disputes = [], []
         for claim in claims:
-            line = _line(claim, screen)
+            line = _line(claim, persons, screen)
             lines.append(line)
             if (disputed_at := claim["disputed_at"]) is not None:
                 disputes.append({
@@ -50,16 +50,12 @@ async def build_memory_payload(
 
 
 def _line(
-    claim: dict[str, Any], screen: Callable[[str], str | None],
+    claim: dict[str, Any], persons: Persons, screen: Callable[[str], str | None],
 ) -> dict[str, Any]:
     text = claim["content"]
     if screen(text):
         text = "[Claim text withheld]"
-    evidence = [
-        {"ref": entry["ref"], "kind": entry["kind"]}
-        if entry.get("text") and screen(entry["text"]) else entry
-        for entry in claim["evidence"]
-    ]
+    evidence = [_evidence(entry, persons, screen) for entry in claim["evidence"]]
     prediction = claim["prediction"]
     return {
         "id": claim["id"], "origin": claim["origin_room"], "text": text,
@@ -73,3 +69,15 @@ def _line(
         ),
         "verdict": claim["grade"], "evidence": evidence,
     }
+
+
+def _evidence(
+    entry: dict[str, Any], persons: Persons, screen: Callable[[str], str | None],
+) -> dict[str, Any]:
+    evidence = {"ref": entry["ref"], "kind": entry["kind"]}
+    if (text := entry.get("text")) is None or screen(text):
+        return evidence
+    evidence.update(text=text, said_at=entry.get("said_at"))
+    if (sender := persons.by_person.get(entry.get("person_id", ""))) and not screen(sender.name):
+        evidence["by"] = sender.name
+    return evidence

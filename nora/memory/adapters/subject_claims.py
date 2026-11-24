@@ -5,7 +5,7 @@ from collections.abc import Collection, Sequence
 from typing import Any
 
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.lineage import split_room
 from nora.infra.sql.audit import transcript_select
@@ -42,16 +42,19 @@ class SqlSubjectClaims:
             for citation in citations:
                 entry = {"ref": citation["target"], "kind": "unknown"}
                 if citation["message"] is not None:
-                    entry.update(kind="message", text=citation["body"], said_at=citation["ts"])
+                    entry.update(kind="message", text=citation["body"], said_at=citation["ts"],
+                                 person_id=citation["person_id"])
                 by_claim[citation["claim"]].append(entry)
             dispute_times = dict((await conn.execute(sa.select(
                 DISPUTE.c.claim_id, sa.func.max(DISPUTE.c.asserted_at),
             ).where(
                 DISPUTE.c.unit == unit, DISPUTE.c.claim_id.in_(ids), visible_to_reads(DISPUTE),
             ).group_by(DISPUTE.c.claim_id))).tuples().all())
+            grades = await _guess_grades(conn, unit, claims)
             return tuple({
                 **claim, "evidence": by_claim.get(claim["id"], []),
                 "content": _content_text(claim["content"]),
+                "grade": grades.get(claim["id"], claim["grade"]),
                 "disputed_at": (
                     dispute_times.get(claim["id"])
                     if claim["state"] == "awaiting_weighing" else None
@@ -82,6 +85,23 @@ def _origin(ref: str | None, is_dm: bool, rooms: Collection[tuple[str, str]]) ->
     return "direct message" if is_dm else "private room"
 
 
+async def _guess_grades(
+    conn: AsyncConnection, unit: str, claims: Sequence[sa.RowMapping],
+) -> dict[str, str]:
+    # design/cognition/claims.md:18-23 puts the assessment on a separate claim.
+    grades = {row["id"]: row["grade"] for row in claims
+              if row["part"] == "grade" and row["state"] == "live"}
+    guesses = tuple(row["id"] for row in claims if row["part"] == "guess")
+    if not grades or not guesses:
+        return {}
+    edge = EDGE.c
+    links = await conn.execute(sa.select(edge.dst_id, edge.src_id).where(
+        edge.unit == unit, edge.type == "grades", edge.state == "live",
+        edge.dst_id.in_(guesses), edge.src_id.in_(tuple(grades)), visible_to_reads(EDGE),
+    ).order_by(edge.asserted_at, edge.id))
+    return {guess: grades[grade] for guess, grade in links}
+
+
 def _citations(
     unit: str, ids: Sequence[str], viewer: str, viewer_rooms: Collection[tuple[str, str]],
 ) -> sa.Select[Any]:
@@ -105,7 +125,7 @@ def _citations(
     body = sa.case((visible.edit_ts.is_not(None), visible.edit_body), else_=visible.body)
     return sa.select(
         cites.c.claim, cites.c.target, visible.graph_id.label("message"),
-        body.label("body"), visible.ts,
+        body.label("body"), visible.ts, visible.person_id,
     ).select_from(cites.outerjoin(
         messages, visible.graph_id == cites.c.target,
     )).order_by(cites.c.target)

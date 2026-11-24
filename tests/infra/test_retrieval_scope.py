@@ -283,7 +283,28 @@ async def test_portal_keeps_the_own_claim_but_never_shows_dm_evidence_to_a_nonme
         **common, rooms_of=lambda _: frozenset({("signal", DM)}),
     )
     assert same_room["lines"][0]["origin"] == origin
-    assert same_room["lines"][0]["evidence"][0]["text"] == "generated private DM body"
+    [evidence] = same_room["lines"][0]["evidence"]
+    assert evidence["text"] == "generated private DM body"
+    assert evidence["by"] == scenario.persons.by_person[OTHER].name
+
+
+async def test_portal_guess_verdict_uses_only_a_visible_grade_for_the_same_subject(scenario):
+    from nora.memory import wire
+
+    for guess in ("own-graded-guess", "other-graded-guess"):
+        await scenario.claim(guess, part="guess", persons=[PERSON], prediction="Observed later",
+                             window_end=AT)
+    await scenario.claim("own-grade", part="grade", persons=[PERSON], grade="confirmed")
+    await scenario.claim("other-grade", part="grade", persons=[OTHER], grade="refuted")
+    await write_edge(scenario, "own-grade", "own-graded-guess", "grades")
+    await write_edge(scenario, "other-grade", "other-graded-guess", "grades")
+
+    claims = await wire.subject_claims(scenario.engine).read(
+        unit=UNIT, viewer=PERSON, viewer_rooms=frozenset({("signal", ROOM)}),
+    )
+    assert {claim["id"]: claim["grade"] for claim in claims} == {
+        "own-graded-guess": "confirmed", "other-graded-guess": None, "own-grade": "confirmed",
+    }
 
 
 async def test_profile_snapshot_keeps_visible_graph_heads_in_the_requested_room(scenario):
