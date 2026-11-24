@@ -235,10 +235,10 @@
   "internal_docstrings": 4
  },
  "nora/agent/registry.py": {
-  "comment_blocks": 32,
-  "file_lines": 1321,
+  "comment_blocks": 29,
+  "file_lines": 1290,
   "functions": {
-   "ToolRegistry.__init__": 426
+   "ToolRegistry.__init__": 398
   },
   "internal_docstrings": 5
  },
@@ -301,7 +301,7 @@
  "nora/agent/tools.py": {
   "comment_blocks": 14,
   "functions": {
-   "build_tool_specs": 367,
+   "build_tool_specs": 359,
    "build_tools": 131
   }
  },
@@ -410,9 +410,9 @@
  },
  "nora/app/composition.py": {
   "comment_blocks": 15,
-  "file_lines": 1389,
+  "file_lines": 1386,
   "functions": {
-   "_compose_dependencies": 913
+   "_compose_dependencies": 910
   },
   "internal_docstrings": 1
  },
@@ -1309,8 +1309,8 @@
   "internal_docstrings": 1
  },
  "nora/infra/sql/schema.py": {
-  "comment_blocks": 189,
-  "file_lines": 5900,
+  "comment_blocks": 186,
+  "file_lines": 5851,
   "internal_docstrings": 4
  },
  "nora/infra/sql/snapshot.py": {
@@ -2537,7 +2537,7 @@
  },
  "tests/offline_eval_support.py": {
   "comment_blocks": 17,
-  "file_lines": 1079,
+  "file_lines": 1072,
   "internal_docstrings": 2
  },
  "tests/offline_pipeline.py": {

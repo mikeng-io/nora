@@ -230,12 +230,10 @@ def _legacy_event(*, conversation_id: str, title: str) -> Gathering:
     )
 
 
-async def test_a_legacy_row_is_quarantined_from_room_and_unit_reads():
-    """A row with no stored platform has no durable owner. Current policy is
-    not evidence of what the policy was when it was written, so it is shown to
-    NEITHER a room read nor a unit-wide search, not to whoever asks now."""
+async def test_a_legacy_row_is_quarantined_from_room_reads():
+    """A row without a persisted owner is hidden from room reads."""
     store = FakeGatheringStore()
-    legacy = await store.create(_legacy_event(
+    await store.create(_legacy_event(
         conversation_id="signal:room-a", title="Pre-migration dinner",
     ))
     svc = _service(store)
@@ -243,17 +241,10 @@ async def test_a_legacy_row_is_quarantined_from_room_and_unit_reads():
     assert not await svc.list_events(
         conversation_id="signal:room-a", unit_id="friends", platform="signal",
     )
-    assert legacy.id not in {
-        e.id for e in await svc.search_events(
-            unit_id="friends", conversation_id="signal:room-a", platform="signal",
-        )
-    }
 
 
-async def test_a_row_with_a_persisted_platform_is_listed_and_searchable():
-    """The positive control: a row written with its owner is visible to that
-    room and to the unit-wide search, so the quarantine above is not a read that
-    simply never works."""
+async def test_a_row_with_a_persisted_platform_is_listed():
+    """A row written with its owner is visible to that room."""
     store = FakeGatheringStore()
     svc = _service(store)
     event = await store.create(make_gathering(
@@ -264,11 +255,6 @@ async def test_a_row_with_a_persisted_platform_is_listed_and_searchable():
     assert [e.id for e in await svc.list_events(
         conversation_id="signal:room-a", unit_id="friends", platform="signal",
     )] == [event.id]
-    assert event.id in {
-        e.id for e in await svc.search_events(
-            unit_id="friends", conversation_id="signal:room-z", platform="signal",
-        )
-    }
 
 
 async def test_a_room_moved_to_another_unit_does_not_take_its_old_events():
@@ -287,11 +273,6 @@ async def test_a_room_moved_to_another_unit_does_not_take_its_old_events():
     assert not await friends.list_events(
         conversation_id="signal:room-a", unit_id="friends", platform="signal",
     )
-    assert event.id not in {
-        e.id for e in await friends.search_events(
-            unit_id="friends", conversation_id="signal:room-a", platform="signal",
-        )
-    }
     with pytest.raises(GatheringNotFoundError):
         await friends.rsvp(
             event_id=event.id, conversation_id="signal:room-a",

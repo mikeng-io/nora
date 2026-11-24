@@ -195,8 +195,8 @@ class World:
             vision=self.vision, blobs=self.blobs, video_readings=self.videos,
             descriptions=self.descriptions, media_store=self.media_objects,
             describe_models={"image": "test/image-model", "video": "test/video-model"},
-            notes=_Explode("note store"), reminders=_Explode("reminder store"),
-            events=_Explode("events store"), rooms=_Explode("room directory"),
+            notes=_Explode("note store"),
+            rooms=_Explode("room directory"),
             relay=_Explode("relay"), mobility=_Explode("mobility store"),
             tool_call_log_store=_Explode("tool-call log"),
         )

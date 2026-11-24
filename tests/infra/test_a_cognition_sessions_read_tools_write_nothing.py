@@ -46,7 +46,6 @@ from nora.app.cognition_wiring import (
     read_surface,
     read_tools_for,
 )
-from nora.app.gatherings import GatheringService
 from nora.domain.cognition_session import Room
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import EditTarget
@@ -60,7 +59,6 @@ from nora.domain.observations import (
 from nora.domain.social_stream import MediaItem, SocialItem
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.memory_graph import SqlMemoryGraph
@@ -185,7 +183,6 @@ class World:
         media_join = MediaJoin(
             store=SqlMediaObjectStore(engine), screen=lambda text: None, metrics=self.metrics,
         )
-        events = GatheringService(store=SqlGatheringStore(engine))
         circle = Circle(
             circle_id="c1", person_ids=frozenset({"p1", "p2"}),
             people=tuple(self.persons.by_person[p] for p in ("p1", "p2")),
@@ -223,7 +220,7 @@ class World:
                 if graph else None
             ),
             note_unit=lambda platform, cid: "u1", unit_for=lambda platform, cid: "u1",
-            events=events, mobility=SqlMobilityStore(engine), circles=(circle,),
+            mobility=SqlMobilityStore(engine), circles=(circle,),
             media_join=media_join,
             # Wired on purpose: the recall log is a table, and a read tool that
             # logged its own call to it would be a write this test must see.

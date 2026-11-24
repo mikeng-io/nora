@@ -96,8 +96,8 @@ def _card(**kw: Any) -> SummonsCard:
 def _registry(*, content_checks: bool = True) -> ToolRegistry:
     return ToolRegistry(
         content_checks=content_checks,
-        notes=_Explode("note store"), reminders=_Explode("reminder store"),
-        events=_Explode("events store"), rooms=_Explode("room directory"),
+        notes=_Explode("note store"),
+        rooms=_Explode("room directory"),
         relay=_Explode("relay"), mobility=_Explode("mobility store"),
         tool_call_log_store=_Explode("tool-call log"),
     )

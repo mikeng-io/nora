@@ -74,7 +74,7 @@ def test_build_tools_forwards_every_parameter_it_accepts() -> None:
 _SPECS_ONLY = frozenset({
     # `clock` is not here: `room_list` reports how long ago a room last
     # spoke, and its tests freeze time through `build_tools`.
-    "events", "fire_turn",
+    "fire_turn",
     # DEC-316: both memory surfaces at once, for `ToolRegistry`'s
     # introspection build (the catalog and R-99's argument table) alone.
     "all_memory_surfaces",
@@ -88,7 +88,7 @@ _SPECS_ONLY = frozenset({
     # The worker's progress record, where `checkpoint_update` writes;
     # threaded the same way as `subagent_job`.
     "checkpoint_sink",
-    "music", "reminder_caps", "reminders", "tool_call_log_store",
+    "music", "tool_call_log_store",
     # Release readers are wired by ToolRegistry; neither test-facing wrapper owns them.
     "versions", "releases",
     # `load_tools`' per-turn shelf. Created and
@@ -98,7 +98,7 @@ _SPECS_ONLY = frozenset({
     "shelf",
     # Nora's computer (DEC-243): the runtime, its
     # audit store and its bounds, threaded from the composition root through
-    # `ToolRegistry.build` like `reminders`. Its tests build the specs
+    # `ToolRegistry.build`. Its tests build the specs
     # directly (tests/unit/test_computer_tools.py).
     "computer", "computer_events", "computer_settings",
     # Its sessions and the process's one lease table,

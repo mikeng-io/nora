@@ -5,12 +5,6 @@ from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
 
-from nora.domain.gatherings import (
-    RSVP,
-    Gathering,
-    GatheringStatus,
-    RSVPResponse,
-)
 from nora.domain.notes import (
     Note,
     NoteRevision,
@@ -143,57 +137,11 @@ class StandingHeadSource(Protocol):
     ) -> StandingHead | None: ...
 
 
-class EventsCollaborator(Protocol):
-    """Structural type for `nora.app.gatherings.GatheringService` — a local Protocol
-    rather than an import of the concrete class, because `nora.agent` sits
-    BELOW `nora.app` in the "layered architecture" import-linter contract
-    (`pyproject.toml`) and may not import it, even for a bare type
-    annotation: grimp's `exclude_type_checking_imports` defaults to False and
-    this repo does not set it, so a `TYPE_CHECKING` guard would not rescue
-    it either. `nora.app.composition` builds the real `GatheringService` and
-    injects it here (and into `ToolRegistry`); this module only needs its
-    shape. `GatheringNotFoundError`/`AmbiguousOpenGatheringsError` live in
-    `nora.domain.gatherings` for the identical reason — an exception TYPE has to
-    be importable from every layer that catches it."""
-
-    async def rsvp(
-        self,
-        *,
-        event_id: UUID,
-        conversation_id: str,
-        person_id: str,
-        response: RSVPResponse,
-        platform: str = "",
-        unit_id: str = "",
-    ) -> RSVP: ...
-
-    async def list_events(
-        self,
-        *,
-        conversation_id: str,
-        status: GatheringStatus | None = None,
-        unit_id: str = "",
-        platform: str = "",
-    ) -> Sequence[Gathering]: ...
-
-    async def search_events(
-        self,
-        *,
-        unit_id: str,
-        conversation_id: str,
-        place: str | None = None,
-        person: str | None = None,
-        start: datetime | None = None,
-        end: datetime | None = None,
-        platform: str = "",
-    ) -> Sequence[Gathering]: ...
-
-
 class NoteCollaborator(Protocol):
     """Structural type for the note store — `nora.infra.sql.notes.SqlNoteStore`
     in production, `nora.testing.note_store.InMemoryNoteStore` in tests.
 
-    A local Protocol for `EventsCollaborator`'s reason, one layer further out:
+    A local Protocol keeps the layered import boundary:
     `nora.agent` may not import `nora.infra` under the layered import contract,
     and `nora.testing` is not a production dependency either — so this module
     can only name the SHAPE. There is no port in `nora.domain.ports` to import
@@ -204,10 +152,6 @@ class NoteCollaborator(Protocol):
     `append_revision`, `merged_successor_by_title` (a merged note's title
     forwards), and `revision_chain`/`successor` (`remind`'s one-open-row
     check).
-
-    `StaleNoteHeadError` lives in `nora.domain.notes` for the identical reason
-    `GatheringNotFoundError` lives in `nora.domain.gatherings` — an exception TYPE has
-    to be importable from every layer that catches it.
     """
 
     async def standing(self, *, unit: str) -> tuple[Note, ...]: ...
