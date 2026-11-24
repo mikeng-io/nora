@@ -2251,7 +2251,7 @@ IDX_FACT_PREMISE_PREMISE_FACT_ID = sa.Index(
 )
 
 
-# RETIRED (DEC-129): the table and its rows stay in place.
+# RETIRED (DEC-129 / DEC-111): the table and its rows stay in place.
 RENDERED_CLAIM = sa.Table(
     "rendered_claim",
     METADATA,
