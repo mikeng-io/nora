@@ -141,15 +141,13 @@ def eval_parser() -> argparse.ArgumentParser:
             "Optional value overrides the judge model"
         ),
     )
-    ap.add_argument("--coverage-timeout", type=float, default=90.0,
-                    help="coverage wall-clock seconds per batch; plan must fit 55 minutes")
     ap.add_argument("--judge-base-url", default="http://127.0.0.1:20128/v1")
     ap.add_argument("--grading-contract", type=Path)
     ap.add_argument("--grading-contract-sha256")
     ap.add_argument("--config", type=Path,
                     help="config.toml selecting the eval_judge provider and credentials")
     ap.add_argument("--judge-timeout", type=judge_timeout, default=300.0,
-                    help="wall-clock seconds per non-coverage judge draw (>0 and <=300)")
+                    help="wall-clock seconds per judge draw (>0 and <=300)")
     ap.add_argument(
         "--judge-samples", type=int, default=DEFAULT_SAMPLES,
         help=(
@@ -201,17 +199,7 @@ def eval_parser() -> argparse.ArgumentParser:
 
 
 def _run_args(ap: argparse.ArgumentParser) -> None:
-    """The frozen-coverage, subject-override and run-budget flags."""
-    ap.add_argument("--coverage-export", type=Path, metavar="PRIVATE_OUTPUT",
-                    help="no-call frozen input export using readonly stores; refuses overwriting")
-    ap.add_argument("--coverage-inventory", type=Path)
-    ap.add_argument("--coverage-semantic", type=Path)
-    ap.add_argument("--coverage-recovery", type=Path)
-    ap.add_argument("--coverage-identity", type=Path)
-    ap.add_argument("--coverage-freeze-input", type=Path,
-                    help="no-call pin of ORIGINAL export reconciled to original source files")
-    ap.add_argument("--coverage-manifest", type=Path,
-                    help="exclusive private manifest destination; never derived from input name")
+    """The subject-override and run-budget flags."""
     ap.add_argument(
         "--subject-overrides", type=Path, metavar="FILE",
         help="a JSON object of dotted `SubjectSpec.overrides` keys applied to "

@@ -46,7 +46,6 @@ from nora.subject.standing_fold import fold, read_fold_turn
 from .autonomous_journey import autonomous_journey
 from .domain import Case, Outcome, WorkingSetFinding
 from .fold_evidence import render_evidence, render_shown
-from .profile_coverage import profile_coverage
 
 
 async def public_summons(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
@@ -721,7 +720,6 @@ _PARTICIPATION_SUBSYSTEM = {
 #: existing entry point adds NOTHING here; a test pins that.
 ENTRY_POINTS = {
     "public_summons": EntryPoint(drive=public_summons, public_audience=True),
-    "profile_coverage": EntryPoint(drive=profile_coverage, frozen_input=True),
     "gate": EntryPoint(drive=gate, config=_PARTICIPATION_SUBSYSTEM),
     "participation": EntryPoint(
         drive=participation, config=_PARTICIPATION_SUBSYSTEM, delivers_input=True,

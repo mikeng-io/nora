@@ -36,7 +36,7 @@ def _unique_fields(items: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
-def parse_json_response(raw: str, *, object_sequence: bool = False):
+def parse_json_response(raw: str):
     """One complete JSON payload, optionally inside one complete JSON fence.
 
     Reuse the judge's fence convention, but never search past surrounding prose.
@@ -49,21 +49,6 @@ def parse_json_response(raw: str, *, object_sequence: bool = False):
         and text.splitlines()[-1] == "```"
     ):
         text = match.group(1)
-    if object_sequence and text.startswith("{"):
-        # Coverage previously requested one object per line. Accept only complete
-        # whitespace-separated objects; consume every byte before schema checks.
-        decoder = json.JSONDecoder(object_pairs_hook=_unique_fields)
-        objects = []
-        while text:
-            item, end = decoder.raw_decode(text)
-            if not isinstance(item, dict):
-                raise ValueError("object sequence requires objects only")
-            objects.append(item)
-            tail = text[end:]
-            if tail and not tail[0].isspace():
-                raise ValueError("objects must be separated by whitespace")
-            text = tail.lstrip()
-        return objects
     return json.loads(text, object_pairs_hook=_unique_fields)
 
 

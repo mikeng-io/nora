@@ -54,7 +54,7 @@ Expectation = Literal[
 #: this design draws rather than hides.
 Entry = Literal[
     "gate", "participation", "tag", "dreamer", "proactive_act", "standing",
-    "profile_coverage", "standing_unit", "public_summons",
+    "standing_unit", "public_summons",
     "autonomous_journey",
 ]
 

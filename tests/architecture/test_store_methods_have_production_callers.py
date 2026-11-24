@@ -180,6 +180,12 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "person session reads items without counts. It leaves with the social store's session "
         "reads in 6c-2d, which removes the Character sessions.",
     ),
+    ("character.py", "historical_page"): _Pin(
+        "scheduled_removal",
+        "The retired Profile coverage export was its only production caller. The method "
+        "leaves with `SqlCharacterEvidence` in 6c-2d, together with the historical paging "
+        "assertions in `test_typed_identity.py`.",
+    ),
     ("character.py", "historical_counts"): _Pin(
         "scheduled_removal",
         "`nora memory profile-history` was its only caller and left with the Profile session "

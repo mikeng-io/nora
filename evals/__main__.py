@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
-import os
 import signal
 import sys
 import tomllib
@@ -113,12 +111,11 @@ CORPUS_CLASS: dict[str, str] = {
     # cases are S5-shaped (time misread) — approximate, as this map says.
     "standing": "S6",
     "standing_unit": "S6",
-    "profile_coverage": "S6",
 }
 
 #: The entry points that honour `metadata.print_input` — render the model
 #: call's input, record it as `shown`, and call no model.
-_PRINTS_INPUT = frozenset({"standing", "standing_unit", "profile_coverage"})
+_PRINTS_INPUT = frozenset({"standing", "standing_unit"})
 
 
 #: What one draw costs, in seconds, for the run budget below. Unjudged is
@@ -517,40 +514,10 @@ def main() -> int:
 def _main(*, lock_fd: int = -1) -> int:
     ap = eval_parser()
     args = ap.parse_args()
-    if (args.list or args.print_input or args.coverage_freeze_input or args.coverage_export) and (
-            args.grading_contract or args.grading_contract_sha256):
+    if (args.list or args.print_input) and (
+        args.grading_contract or args.grading_contract_sha256
+    ):
         ap.error("this zero-dispatch operation does not consume a grading contract")
-    if args.coverage_freeze_input:
-        from evals.profile_coverage_input import freeze_manifest
-        try:
-            if not args.coverage_manifest:
-                raise ValueError("freeze requires --coverage-manifest")
-            print(json.dumps(freeze_manifest(
-                json.loads(args.coverage_freeze_input.read_text()), args.coverage_manifest)))
-            return 0
-        except (ValueError, KeyError, OSError) as exc:
-            print(f"coverage freeze ERROR: {exc}", file=sys.stderr)
-            return 2
-    if args.coverage_export:
-        from evals.profile_coverage_input import export_input
-        try:
-            if not all((args.coverage_inventory, args.coverage_semantic, args.coverage_recovery,
-                        args.coverage_manifest)):
-                raise ValueError(
-                    "export requires --coverage-inventory/semantic/recovery "
-                    "and --coverage-manifest paths"
-                )
-            exported = asyncio.run(export_input(
-                inventory=args.coverage_inventory, semantic=args.coverage_semantic,
-                recovery=args.coverage_recovery, identity=args.coverage_identity,
-                database_url=os.environ["DATABASE_URL"], output=args.coverage_export,
-                manifest=args.coverage_manifest))
-            print(json.dumps(exported, sort_keys=True))
-            return 0
-        except (ValueError, KeyError, OSError) as exc:
-            print(f"coverage export ERROR: {exc}", file=sys.stderr)
-            return 2
-
     if args.list:
         _list_corpora()
         return 0
@@ -676,37 +643,6 @@ def _main(*, lock_fd: int = -1) -> int:
             active_run_budget.reset(token)
 
 
-
-def _coverage_execute(args: argparse.Namespace, names: list[str],
-                      only: frozenset[str] | None) -> int:
-    """Frozen read-only census: same task, graders and reports, no subject/sandbox."""
-    if names != ["profile_coverage"] or args.sample != 1:
-        print("coverage requires one corpus, one frozen census draw", file=sys.stderr)
-        return 2
-    from evals.rebuilt.profile_coverage import load_input, plan
-    try:
-        doc = load_input(gold=not bool(args.print_input))
-        print("coverage plan:", json.dumps(plan(doc), sort_keys=True))
-        if args.print_input:
-            return _print_input(names[0], args.print_input, source_url="",
-                                services=(args.service_inputs.corpora.get(names[0])
-                                          if args.service_inputs else None))
-        if not args.judge:
-            raise ValueError("coverage requires --judge")
-        contract = getattr(args, "bound_contract", None)
-        judge = Judge(base_url=args.judge_base_url, model=args.judge,
-                      config_path=Path(args.config or args.deployment_config), contract=contract,
-                      samples=1, timeout_seconds=args.coverage_timeout)
-        ok = _run_one(names[0], source_url="", judge=judge, sample=1,
-                      only=only, all_reasons=args.reasons, positions=args.positions,
-                      contract=contract, services=(args.service_inputs.corpora.get(names[0])
-                                          if args.service_inputs else None))
-        return 0 if ok else 1
-    except (ValueError, KeyError, OSError) as exc:
-        print(f"coverage ERROR: {exc}", file=sys.stderr)
-        return 2
-
-
 def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | None,
              *, subject_overrides: dict[str, Any] | None = None) -> int:
     from nora.subject.eval_evidence import current
@@ -714,11 +650,6 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
     args.service_inputs = getattr(args, "service_inputs", None)
     if args.service_inputs and (evidence := current()):
         args.service_inputs.record(evidence)
-    if "profile_coverage" in names:
-        if contract := getattr(args, "bound_contract", None):
-            contract.verify_cases({f"{n}:{c.name}": c for n in names
-                                   for c in selected_cases(n, only=only)})
-        return _coverage_execute(args, names, only)
     try:
         source_url = source_url_for(args.source_url, Path(args.deployment_config).parent)
     except ValueError as exc:
