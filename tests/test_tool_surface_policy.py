@@ -110,7 +110,7 @@ def test_known_spec_tools_are_covered() -> None:
     docs = dict(_model_facing_docstrings())
     # A representative set must be present so a `_spec` rename or a docstring
     # that drops below the extraction floor turns this file red loudly.
-    assert {"send_reply", "weather", "note_create", "media_fetch",
+    assert {"send_reply", "weather", "intention_commit", "media_fetch",
             "version_list", "version_read"} <= set(docs)
 
 

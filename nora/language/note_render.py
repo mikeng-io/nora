@@ -22,23 +22,7 @@ retirement (`note_set_status`), which makes the index track live uncertainty rat
 than history. `test_the_index_is_uncapped_and_every_standing_note_appears` is
 the guard, because "just show the top ten" is a decision, not a tweak.
 
-**Why the closing condition is NOT on the line**, though it is the field that
-says what would settle the uncertainty:
-
-1. The index carries title and description only, and the read-before-write
-   latch is built ON that scarcity: the index tells her a note EXISTS,
-   `note_read` tells her what it says. Widening the line erodes the latch's own
-   justification.
-2. `Note.closing_condition` carries **no length cap** — `__post_init__` requires
-   it non-empty and stops there. Putting it here would mean either unbounded
-   model-authored text per note per turn, or a truncation in this module, and
-   that truncation is precisely the silent loss `nora.domain.notes` moved into
-   the constructor to be rid of. If this line should ever carry it, the cap goes
-   on the domain type first.
-
-A retired note never renders, so an entry's mere presence already says the
-question is still open; the closing condition would say what would CLOSE it, a
-revise-time question, and a `note_read` is required before any revision anyway.
+The closing condition is omitted because it has no length cap.
 
 **This tier is LIVE.** `TagContext.notes` defaults to `()` — an unwired caller
 renders nothing rather than raising — but `nora.engagement.context` populates it
@@ -136,9 +120,7 @@ def render_note_rows(
     by construction: `escape_attr` closes the attribute quote, which content
     cannot write, and the description becomes CONTENT, where a newline is just a
     newline — the same move, and the same argument, as `<m>` (R-13c). The
-    title's boundary matters beyond legibility: `domain.notes.note_handle` and
-    `ReplyGuard`'s R-55 latch key on the same string, so an unclear boundary is a
-    mis-resolution.
+    title's boundary matters for lookup by `domain.notes.note_handle`.
 
     **NO FILTER AND NO ENVELOPE.** The caller filters `is_standing` once and
     hands the result here, so the numbering has a single source: `proactive`

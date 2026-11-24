@@ -1,18 +1,26 @@
 """Model surface for committing intentions through admission."""
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from typing import Annotated, Any
 
 from pydantic import PlainSerializer, WrapValidator
 
 from nora.agent.toolkit.results import _record
-from nora.memory.app.act_scope import active_act_authority, pass_shown
+from nora.memory.app.act_scope import active_act_authority, pass_created_intentions, pass_shown
 from nora.memory.app.admission import AdmissionService, Unavailable
 from nora.memory.domain.admission import Refusal
 from nora.memory.domain.admission_ports import Stored
-from nora.memory.domain.admission_proposals import PassContext, Proposal
+from nora.memory.domain.admission_proposals import (
+    CloseIntention,
+    CreateIntention,
+    PassContext,
+    Proposal,
+    Retire,
+    Revise,
+)
 from nora.memory.domain.intention_operations import (
     IntentionOperation,
+    IntentionProposal,
     limit_to_delivery,
     parse_intention_operation,
 )
@@ -28,6 +36,8 @@ _ENTRY_NOTES = {
 _REFUSALS = {
     "room_busy": "This room is in an engagement pass. Leave the change for a later wake.",
     "not_this_delivery": "Only change the intention this pass delivers.",
+    "passive_commit_only": "This pass can open an intention without scheduling a delivery, "
+        "or revise one it opened in this pass.",
     "invalid_field": "Fix the named field and submit that operation again.",
     "invalid_trigger": "Use a time or an act_event, person_event or predicate condition.",
     "citation_not_shown": "Use a citation from this pass's context or graph reads.",
@@ -65,6 +75,8 @@ def _make_intention_commit(deps):
         when a commitment needs to be opened, revised, dropped or closed.
 
         On a call or an offered floor, commit only what your reply promises.
+        A proactive pass without a delivered intention can open passive
+        intentions and revise them during the same pass.
         For choose_moment, use a time trigger or a condition trigger with the
         act_event, person_event or predicate form.
         Returns `status`: ok, refused or unavailable, with a `note`.
@@ -84,10 +96,33 @@ def _parse_commit(operations: list, context: PassContext) -> list[Proposal | Ref
     authority = active_act_authority()
     delivery = authority.intention if authority is not None else None
     parsed = [parse_intention_operation(raw, context) for raw in operations]
-    return [
-        entry if isinstance(entry, Refusal)
-        else limit_to_delivery(entry, delivery) or entry for entry in parsed
-    ] if delivery is not None else list(parsed)
+    if delivery is not None:
+        return [
+            entry if isinstance(entry, Refusal) else limit_to_delivery(entry, delivery) or entry
+            for entry in parsed
+        ]
+    if context.occasion == "proactive":
+        created = pass_created_intentions() or ()
+        return [
+            entry if isinstance(entry, Refusal) else _limit_passive_commit(entry, created) or entry
+            for entry in parsed
+        ]
+    return list(parsed)
+
+
+def _limit_passive_commit(entry: IntentionProposal, created: Collection[str]) -> Refusal | None:
+    if isinstance(entry, (Retire, CloseIntention)):
+        return Refusal("passive_commit_only", "op")
+    if isinstance(entry, Revise) and entry.base not in created:
+        return Refusal("passive_commit_only", "base")
+    intention = entry.replacement if isinstance(entry, Revise) else entry
+    if not isinstance(intention, CreateIntention):
+        return Refusal("invalid_field", "op")
+    if intention.rooms:
+        return Refusal("passive_commit_only", "rooms")
+    if intention.delivery_mode != "when_it_comes_up":
+        return Refusal("passive_commit_only", "delivery")
+    return None
 
 
 async def submit_operations(
@@ -99,7 +134,7 @@ async def submit_operations(
     authority = active_act_authority()
     context = authority.pass_context if authority is not None else None
     shown = pass_shown()
-    if admission is None or context is None or shown is None:
+    if admission is None or authority is None or context is None or shown is None:
         _record(metrics, name, "unavailable")
         return {
             "status": "unavailable",
@@ -125,9 +160,18 @@ async def submit_operations(
             for key in (outcome.id, *outcome.other_deliveries)
         )
     stored = iter(admission_outcomes)
+    created = (
+        pass_created_intentions()
+        if name == "intention_commit"
+        and context.occasion == "proactive" and authority.intention is None
+        else None
+    )
     outcomes = []
     for entry in parsed:
         outcome = entry if isinstance(entry, Refusal) else next(stored)
+        if (created is not None and isinstance(outcome, Stored)
+                and isinstance(entry, (CreateIntention, Revise))):
+            created.add(outcome.id)
         result = _entry(outcome)
         if isinstance(outcome, Stored) and rediscover is not None:
             result["neighbourhood"] = await rediscover(outcome.id)

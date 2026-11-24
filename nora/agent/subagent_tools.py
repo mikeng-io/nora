@@ -72,7 +72,6 @@ NOT_LOOKUPS: frozenset[str] = frozenset({
 NEVER: frozenset[str] = frozenset({
     "send_reply", "reaction_send", "send_to", "send_gif", "media_send",
     "generate_image", "video_create",
-    "note_create", "note_revise",
     "remember", "document_set_status",
     "play_music", "skip_music", "stop_music", "top_music", "set_music_volume",
     # no recursion: a worker never starts, reads or stops a worker

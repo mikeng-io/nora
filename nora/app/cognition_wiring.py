@@ -577,7 +577,7 @@ def build_cognition_runner(
     agent_runner = DreamerAgentRunner(
         runtime=runtime, metrics=metrics,
         # The READ tools' argument names only. The registry's table also holds
-        # the tag path's `note_create`, `note_revise` and `remind`, whose
+        # the engagement registry, whose
         # arguments differ from the session's own verbs of the same names
         # (`room`, `at`, ...), and R-99 would veto every call to them.
         # Plus `agenda_room` and `room`: the routed tools of an agenda spanning

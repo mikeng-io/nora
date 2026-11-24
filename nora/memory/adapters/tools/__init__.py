@@ -34,12 +34,6 @@ def build(deps):
     from nora.memory.adapters.tools.memos import _make_memo_read
 
     memo_read = _make_memo_read(deps)
-    from nora.memory.adapters.tools.notes import _make_note_create
-
-    note_create = _make_note_create(deps)
-    from nora.memory.adapters.tools.notes import _make_note_revise
-
-    note_revise = _make_note_revise(deps)
     from nora.memory.adapters.tools.profile import _make_profile_dispute
 
     profile_dispute = _make_profile_dispute(deps)
@@ -62,8 +56,6 @@ def build(deps):
         _spec("note_read", note_read),
         _spec("note_search", note_search),
         _spec("memo_read", memo_read),
-        _spec("note_create", note_create),
-        _spec("note_revise", note_revise),
         _spec("remember", remember_told),
         _spec("profile_dispute", profile_dispute),
         _spec("version_list", version_list),

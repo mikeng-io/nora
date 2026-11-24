@@ -255,16 +255,6 @@ RULE_TESTS = {
     # ANY attachment there by naming it right, even one `label_for` still
     # displays as `[file]`.
     "R-58": "test_a_matching_filename_on_a_non_audio_attachment_is_not_a_voice_note",
-    # R-55: a note revision is VETOED unless `note_read` succeeded for that note
-    # in the same turn. The injected index carries title + description only —
-    # enough to know a note exists, nowhere near enough to revise one — and
-    # `note_revise` replaces the note's rendered body, so a revision written
-    # blind destroys the arrangement the tier exists to hold. The named test
-    # asserts through `ReplyGuard.evaluate`'s refusal rather than by reading the
-    # latch set: the set is invisible to the model, the veto is where a miss
-    # costs something, and a test that reads the set goes green against a latch
-    # that never vetoes anything.
-    "R-55": "test_r55_a_revision_is_vetoed_when_this_turn_never_read_the_note",
     # R-59: starting a NEW music session for a guild requires the requester to
     # be in a voice channel; an existing session is never gated this way (only
     # STARTING one names a destination channel).

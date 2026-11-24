@@ -68,10 +68,13 @@ async def _observed_revision(
     if engine is None:
         return written
     async with engine.connect() as conn:
-        return (await conn.execute(
+        row = (await conn.execute(
             sa.select(CULTURE_REVISION.c.parent_revision_id, CULTURE_REVISION.c.citations)
             .where(CULTURE_REVISION.c.id == written.id)
         )).one()
+    assert row.parent_revision_id == written.parent_revision_id
+    assert tuple(row.citations) == written.citations
+    return row
 
 
 async def _append(store: _CultureStore, body: str, *, key: str = KEY,

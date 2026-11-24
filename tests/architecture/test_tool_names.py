@@ -118,8 +118,8 @@ _SNAPSHOT_SHA256 = (
 _RENAMED_SINCE: frozenset[str] = frozenset({
     # Replaced by the public release list/read pair.
     "version",
-    # One vocabulary: the tag and session paths both append revisions.
-    "note_update",
+    # The session still has its own note vocabulary.
+    "note_update", "note_create", "note_revise",
     # DEC-201: retired into `x_read` and `x_search`, which meet the pattern.
     "social_fetch",
     # DEC-237: renamed to the event verbs and `event_search`.

@@ -37,7 +37,6 @@ from ..domain.models import (
     Touch,
     TranscriptRow,
 )
-from ..domain.notes import note_handle
 from ..domain.ports import OutboundAttachment, OutboundQuote, SendResult, Styled
 from ..memory import ActRefused
 from ..obs.metrics import Metrics
@@ -949,21 +948,6 @@ class ReplyGuard(HookProvider):
         # a cancelled call, indistinguishable from a real answer at that event
         # alone.
         self._model_call_in_flight = False
-        # R-55, the read-before-write latch: the notes a `note_read` SUCCEEDED on
-        # this turn. Per-tag by construction; a latch that outlived the turn would
-        # let a read in one tag license a revision in the next, against a body
-        # that has moved.
-        #
-        # Keyed on the note's TITLE, normalised by `nora.agent.tools.note_handle`,
-        # not on an id: the injected index carries title + description and no id,
-        # so the title is the only handle the model can name and the only one that
-        # reaches this guard. `evaluate` sees the raw tool_use the model emitted;
-        # `note_revise`'s own tool closure holds the id->head map the
-        # compare-and-swap needs, and refuses separately when the title resolved
-        # to a note this turn never read. Two keys for one fact: this one is what
-        # the model is told, that one is what the write is bound to, and they
-        # disagree exactly when a title changed hands mid-turn, which must fail.
-        self._notes_read: set[str] = set()
         # R-99: each tool's accepted parameter names, keyed by tool name, derived
         # from the callable's own signature (`ToolRegistry.tool_param_names()`),
         # like `terminal`/`budgets`. `None` means the rule is OFF (as for
@@ -1163,7 +1147,7 @@ class ReplyGuard(HookProvider):
             # something, and what she does with it is hers.
             #
             # Costs no budget (DEC-33: `_after_tool` never `record`s a cancelled
-            # call), and is not one-shot, for R-55's reason: the remedy is a
+            # call), and is not one-shot: the remedy is a
             # different call. A lookup that finds something lifts the refusal for
             # the rest of the turn; a model that re-fires `send_reply` against an
             # unchanged state is refused again.
@@ -1178,42 +1162,6 @@ class ReplyGuard(HookProvider):
                     "can use. Either look somewhere that would actually have "
                     "it, or say nothing and end your turn: silence is the "
                     "complete answer here.",
-                )
-
-        # R-55: the read-before-write latch. A refusal, not a nudge. It sits here
-        # beside R-2's latch rather than in the budget check because it is the same
-        # kind of rule: a per-turn fact about what has already happened. The
-        # budget check answers "may she call this again"; this answers "was she
-        # ever entitled to call it at all".
-        #
-        # It is a veto and not advice because the injected index carries title and
-        # description only, nowhere near enough to revise a note. `note_revise`
-        # REPLACES the note's rendered body, so a revision written without the body
-        # in front of her destroys the arrangement that is the value of the tier,
-        # silently: the prior revision survives in the table, but nothing in the
-        # room learns the note stopped saying what it said.
-        #
-        # Not one-shot: the remedy is a different call (`note_read`, its own
-        # budget), the veto names it, and a model that ignores the veto and
-        # re-fires must be refused again; a one-shot latch would let the second
-        # attempt through unread.
-        #
-        # Costs no budget: `_after_tool` never `record`s a cancelled call (DEC-33),
-        # so read-then-revise is still two calls against a budget of two.
-        if tool_name == "note_revise":
-            title = (tool_input or {}).get("title") or ""
-            if note_handle(title) not in self._notes_read:
-                # Beside `_veto`'s own `nora_guard_vetoes_total{rule="R-55"}`, not
-                # instead of it: that series answers "which rule fired" across every
-                # guard; this one answers "why did a note_revise not land", whose
-                # other two reasons are in the TOOL and never reach a veto.
-                self._metrics.inc(
-                    "nora_note_revise_refused_total", reason="not_read")
-                return self._veto(
-                    "R-55",
-                    f"You have not read {title!r} this turn. Call note_read on it "
-                    "first, then revise it — a note's value is how it is "
-                    "arranged, and you cannot rewrite a body you have not seen.",
                 )
 
         return None
@@ -1473,7 +1421,7 @@ class ReplyGuard(HookProvider):
             if getattr(event, "cancel_message", None) is not None:
                 return
             self.record(name)
-            # R-97's two counters, below both early returns for R-55's reason: they
+            # R-97's two counters, below both early returns: they
             # mean "this lookup RAN", true on one path only. A call that raised, or
             # that this guard cancelled, went looking nowhere. Accumulated over the
             # turn: a turn whose first lookup found the answer and whose second came
@@ -1482,29 +1430,6 @@ class ReplyGuard(HookProvider):
                 self._lookups_made += 1
                 if _unwrap_tool_status(getattr(event, "result", None)) == "ok":
                     self._lookups_found += 1
-            # R-55's latch. This is below BOTH early returns on purpose, and that
-            # placement is the rule. `release()` above means "this call FINISHED",
-            # true on every path; the latch means "this call SUCCEEDED", true on one
-            # path only, so the two take opposite positions in the same method.
-            #
-            # Three ways a read can fail to license a revision, all a call that
-            # produced no body:
-            #   - it RAISED (the first early return);
-            #   - the guard CANCELLED it (the second);
-            #   - it ran and answered `nothing_found` or `refused`: the note is not
-            #     there, or the title matched two and the tool refused to guess.
-            #     Strands calls both a successful tool call, so only
-            #     `_unwrap_tool_status` can tell them from a real read, and a read
-            #     of a note that isn't there must not license a revision.
-            if (
-                name == "note_read"
-                and _unwrap_tool_status(getattr(event, "result", None)) == "ok"
-            ):
-                title = (
-                    (getattr(event, "tool_use", None) or {}).get("input") or {}
-                ).get("title") or ""
-                if title:
-                    self._notes_read.add(note_handle(title))
             if name in self._terminal and self._landed(getattr(event, "result", None)):
                 self._heads_up_owed = name == "send_reply" and _flag(
                     tool_use.get("input") or {}, "heads_up")

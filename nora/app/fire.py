@@ -369,6 +369,7 @@ def compute_occasion(
         ).render(),
         header=lambda tagger, now: ComputeHeader(tagger).render(),
         kind="compute",
+        commit_intentions=True,
         document_urls=tuple(d.url for d in readback.found if d.url),
         # A finished job's own result link rides with the message, attached by code, only when
         # its bytes are not attached instead (a video clip that could not be fetched): the body
@@ -409,6 +410,7 @@ def relay_occasion(
         speaker=requester.name,
         header=lambda tagger, now: RelayHeader(requester, from_platform).render(),
         kind="relay",
+        commit_intentions=True,
     )
 
 
@@ -1538,16 +1540,8 @@ class FirePath:
                 # the honest state (R-21), not a degraded one.
                 tagger=tagger, self_ids=self_ids,
             )
-            # DEC-74, sourced as the tag path sources it
-            # (`EngagementPipeline`): the room's own `location` flag. Left at
-            # the surface's `False` default, `where_is` would hold every fire
-            # turn to the strict gate (the subset AND the unnamed-account
-            # refusals DEC-79 waives), refusing a proactive turn in a
-            # `location = true` room where a tag in the same room answers. The
-            # flag also relaxes `route`, `saved_places` and parking, as on a
-            # tag. No policy, an unlisted room, or a shadow-held participation
-            # turn stays strict: a held turn's text is posted to the review
-            # channel, another room than the one the check reads.
+            # Shadow-held participation stays strict because the draft goes
+            # to the review channel, outside the room the location check reads.
             fire_convo = (
                 self._policy.conversation(occasion.platform, occasion.conversation_id)
                 if self._policy is not None
@@ -1559,6 +1553,7 @@ class FirePath:
                 defer=self._defer_tools,
                 occasion=turn_occasion(voice=ctx.message.voice),
                 engagement=participation,
+                commit_intentions=occasion.commit_intentions,
                 store=self._records, conversation_id=occasion.conversation_id,
                 conversation_type=occasion.conversation_type, persons=self._persons,
                 deliverer=handle.deliverer, room=room,

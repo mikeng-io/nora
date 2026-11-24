@@ -165,11 +165,11 @@
   "internal_docstrings": 1
  },
  "nora/agent/guards.py": {
-  "comment_blocks": 42,
-  "file_lines": 1529,
+  "comment_blocks": 38,
+  "file_lines": 1452,
   "functions": {
    "Deliverer.deliver": 275,
-   "ReplyGuard.evaluate": 223
+   "ReplyGuard.evaluate": 187
   },
   "internal_docstrings": 10
  },
@@ -236,9 +236,9 @@
  },
  "nora/agent/registry.py": {
   "comment_blocks": 32,
-  "file_lines": 1325,
+  "file_lines": 1321,
   "functions": {
-   "ToolRegistry.__init__": 428
+   "ToolRegistry.__init__": 426
   },
   "internal_docstrings": 5
  },
@@ -454,12 +454,12 @@
   "internal_docstrings": 6
  },
  "nora/app/fire.py": {
-  "comment_blocks": 65,
-  "file_lines": 2630,
+  "comment_blocks": 60,
+  "file_lines": 2386,
   "functions": {
    "FirePath.__init__": 232,
    "FirePath._invoke": 231,
-   "FirePath._turn": 388
+   "FirePath._turn": 379
   },
   "internal_docstrings": 25
  },
@@ -709,7 +709,7 @@
  },
  "nora/domain/notes.py": {
   "comment_blocks": 18,
-  "file_lines": 851,
+  "file_lines": 841,
   "internal_docstrings": 1
  },
  "nora/domain/observations.py": {
@@ -1525,7 +1525,7 @@
  },
  "nora/obs/metric_specs.py": {
   "comment_blocks": 80,
-  "file_lines": 2308
+  "file_lines": 2292
  },
  "nora/obs/metrics.py": {
   "internal_docstrings": 1
@@ -2526,7 +2526,7 @@
   "internal_docstrings": 1
  },
  "tests/offline_eval_evaluators.py": {
-  "comment_blocks": 7
+  "comment_blocks": 6
  },
  "tests/offline_eval_harness.py": {
   "comment_blocks": 21,
@@ -2547,8 +2547,8 @@
   }
  },
  "tests/test_acceptance_rules.py": {
-  "comment_blocks": 43,
-  "file_lines": 1020,
+  "comment_blocks": 42,
+  "file_lines": 1010,
   "internal_docstrings": 1
  },
  "tests/test_affected_tests.py": {
@@ -2674,8 +2674,7 @@
   "internal_docstrings": 1
  },
  "tests/test_note_tools.py": {
-  "comment_blocks": 3,
-  "file_lines": 859
+  "comment_blocks": 3
  },
  "tests/test_output_contracts.py": {
   "comment_blocks": 2,
@@ -2772,7 +2771,7 @@
  },
  "tests/test_tools.py": {
   "comment_blocks": 10,
-  "file_lines": 1855,
+  "file_lines": 1840,
   "internal_docstrings": 1
  },
  "tests/test_tracing.py": {
@@ -3285,10 +3284,10 @@
   "internal_docstrings": 1
  },
  "tests/unit/test_tool_registry.py": {
-  "comment_blocks": 20,
-  "file_lines": 1102,
+  "comment_blocks": 17,
+  "file_lines": 1060,
   "functions": {
-   "test_budgets_match_todays_table": 214
+   "test_budgets_match_todays_table": 185
   },
   "internal_docstrings": 1
  },

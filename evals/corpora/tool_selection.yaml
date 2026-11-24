@@ -99,16 +99,6 @@ cases:
     metadata: {tools: [routine_read], not_tools: [where_is, where_been]}
     snapshot: *room_a
 
-  # note_create's opening lost a clause restating its first sentence (the
-  # catalogue ceiling, design/group-situation/20-context-awareness-target-shape.md); its routing had no case until now.
-  - name: route_note_create_open_question
-    entry: tag
-    expect: reply
-    mention: true
-    input: 聖誕去邊度旅行仲未傾掂，你幫手跟住件事，唔好唔記得
-    metadata: {tools: [note_create]}
-    snapshot: *room_a
-
   - name: route_find_parking_near
     entry: tag
     expect: reply
@@ -481,7 +471,7 @@ cases:
 
   # --- documents (design/artifact/lifecycle.md, ADR 0020) ----------------------
   # `document_publish` against the tools a written piece could be mistaken for:
-  # `note_create` (a private memory, not a page), `generate_image` and the
+  # `generate_image` and the
   # computer (a FILE: CSV, PDF, a script's output). The HTML path it replaced
   # (the artifact tool) was retired in S3b, so it is no longer a `not_tools` entry.
   #
@@ -505,7 +495,7 @@ cases:
     mention: true
     input: >-
       幫我整份12月東京旅行計劃，每日行程同預算都要有，整好之後我想喺網頁開返嚟睇
-    metadata: {tools: [document_publish], not_tools: [note_create]}
+    metadata: {tools: [document_publish]}
     snapshot: *room_a
 
   # Was `route_document_publish_room_summary` («write up what we decided about
@@ -521,7 +511,7 @@ cases:
     input: >-
       write a proper document I can open later comparing Tokyo and Osaka for a
       week in December: a section for each, then which one you would pick
-    metadata: {tools: [document_publish], not_tools: [note_create]}
+    metadata: {tools: [document_publish]}
     snapshot: *room_a
 
   - name: route_calculate_not_a_document
@@ -1270,9 +1260,8 @@ cases:
 
   # --- «記低» routing (DEC-306): about the group it is kept by her notebook ---
   # (Cognition writes the memo after the turn, woken by the `keep` cue), about
-  # the speaker it is `remember`'s. ToolRouteGrader needs a tool to expect, so
-  # the group case expects the reply and forbids the two writes the turn must
-  # not make; "she wrote nothing at all" is not expressible as a criterion.
+  # the speaker it is `remember`'s. The group case expects a reply and forbids
+  # `remember`.
   # NOT RUN when written: the eval owner runs them on master and the branch.
   # `remember` is on both memory surfaces, a different write on each: a Honcho
   # conclusion off the graph, a Profile `told` line on it (operator ruling
@@ -1283,7 +1272,7 @@ cases:
     expect: reply
     mention: true
     input: 記低 我哋 Airbnb 嘅 wifi 密碼係 orchid-19
-    metadata: {tools: [send_reply], not_tools: [remember, note_create, note_revise]}
+    metadata: {tools: [send_reply], not_tools: [remember]}
     snapshot: *room_a
 
   - name: route_keep_own_fact_is_remember
@@ -1291,7 +1280,7 @@ cases:
     expect: reply
     mention: true
     input: 記低 我食素
-    metadata: {tools: [remember], not_tools: [note_create], memory_surface: honcho}
+    metadata: {tools: [remember], memory_surface: honcho}
     snapshot: *room_a
 
   - name: route_keep_own_fact_on_graph_is_remember
@@ -1299,7 +1288,7 @@ cases:
     expect: reply
     mention: true
     input: 記低 我食素
-    metadata: {tools: [remember], not_tools: [note_create, note_revise], memory_surface: graph}
+    metadata: {tools: [remember], memory_surface: graph}
     snapshot: *room_a
 
   # Typed Identity: stable facts share the graph remember writer. Routing is
@@ -1309,7 +1298,7 @@ cases:
     expect: reply
     mention: true
     input: 記低，我生日係二月二十九號，唔好估年份。
-    metadata: {tools: [remember], not_tools: [note_create], memory_surface: graph}
+    metadata: {tools: [remember], memory_surface: graph}
     snapshot: *room_a
 
   - name: route_typed_languages_and_diet
@@ -1317,7 +1306,7 @@ cases:
     expect: reply
     mention: true
     input: 記低，我講廣東話同英文，食素。
-    metadata: {tools: [remember], not_tools: [note_create], memory_surface: graph}
+    metadata: {tools: [remember], memory_surface: graph}
     snapshot: *room_a
 
   - name: route_typed_residence_correction

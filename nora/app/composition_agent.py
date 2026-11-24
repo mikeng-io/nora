@@ -434,9 +434,6 @@ def _note_tool_args(
         # its six refusals, and a registry clock that disagreed with the tick's would let a row
         # be accepted as "two minutes out" and then be found already due.
         "clock": clock,
-        # The note tier's four tools. `None` while `[notes] enabled = false`, so all four answer
-        # `unavailable` (R-5) rather than a guessed empty result — the same optional-
-        # collaborator shape `events` and `reminders` above use. `note_unit` resolves a room to…
         "notes": note_store,
         # RESOLVER, not a constant — see `build_tools`' own note. This deployment has two units
         # (`ridgeline`, `friends`) that `policy.toml` says are never paired, so a fixed string

@@ -180,8 +180,7 @@ The most-used words in this repo.
 - **note** — one tracked uncertainty shared by a unit's people: «dinner on
   the 12th, venue open», with a **title**, a **description**, a **body** (the arrangement as
   it stands), an **anchor** (the date it is about) and a **closing
-  condition**. Scoped to a **unit**, not a room. Written by people on
-  the tag path (`note_create`/`note_revise`) and by the Cognition session; read
+  condition**. Scoped to a **unit**. Written by the Cognition session; read
   everywhere as the `<notes>` index plus `note_read`. A note has a
   `revisit_at` and **strikes** — how many times it was raised with nobody
   answering — and the Cognition session retires it (`note_set_status`) when the

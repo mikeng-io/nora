@@ -11,13 +11,11 @@ from __future__ import annotations
 from nora.agent.registry import ToolRegistry
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.obs.metrics import Metrics
-from nora.testing.note_store import InMemoryNoteStore
 from tests.fakes import SinkSender
 from tests.test_note_tools import (
     GROUP,
     MILES,
     NOW,
-    UNIT,
     _FakePersons,
     _NullStore,
     _room,
@@ -49,8 +47,8 @@ class _Deliverer(SinkSender):
         return True
 
 
-def _tools(deliverer=None, notes=None) -> dict:
-    registry = ToolRegistry(notes=notes, note_unit=lambda _p, _c: UNIT)
+def _tools(deliverer=None) -> dict:
+    registry = ToolRegistry()
     specs = registry.specs(
         store=_NullStore(), conversation_id=GROUP, conversation_type="group",
         persons=_FakePersons(MILES),
@@ -71,19 +69,6 @@ async def test_reply_to_beyond_the_shown_rows_is_sent_unthreaded():
     deliverer = _Deliverer()
     await _tools(deliverer)["send_reply"](text="ok", reply_to=len(SHOWN) + 1)
     assert deliverer.quotes == [None]
-
-
-async def test_a_note_citation_maps_to_the_nth_shown_rows_id():
-    store = InMemoryNoteStore()
-    out = await _tools(notes=store)["note_create"](
-        title="Dinner", description="d", uncertainty="u", closing_condition="c",
-        body="## Decided\n## Open\n- where [#2]", anchor_date=20261011,
-    )
-    assert out["status"] == "ok", out
-    assert len(await store.standing(unit=UNIT)) == 1
-    bodies = [r.body for r in store.revisions.values()]
-    assert any(f"[{SHOWN[1].id}]" in b for b in bodies), bodies
-    assert not any(f"[{READ[1].id}]" in b for b in bodies)
 
 
 async def test_who_said_still_searches_the_whole_read():

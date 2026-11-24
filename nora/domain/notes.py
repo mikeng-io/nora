@@ -182,14 +182,6 @@ def note_handle(title: str) -> str:
     label for the same reason: «an id is not something a person says in a
     chat»). This function is what makes that handle comparable.
 
-    **It lives in the DOMAIN because several readers must agree exactly**:
-    `nora.agent.tools`' `note_read`/`note_revise` resolve a title against the
-    standing set, `ReplyGuard`'s R-55 latch keys on the very same string, and
-    the debrief's note-read latch reads it back. `nora.language` sits BELOW
-    `nora.agent` in the layered import contract, so the only alternative to
-    living down here is a second copy, and two copies of a `casefold()` is how a
-    latch silently stops matching the tool it guards.
-
     `casefold`, not `lower`, and `strip` before it: the database's own
     uniqueness is `(unit, lower(title)) WHERE retired_at IS NULL`, so case
     is already not part of a note's identity, and a model that types the index
@@ -249,8 +241,7 @@ def likely_duplicates(notes: Sequence[Note]) -> dict[str, str]:
 
 def has_duplicate_open_title(title: str, open_titles: Sequence[str]) -> bool:
     """An open title refuses a second note under the same handle. Shared by the
-    tag path's `note_create` and the Cognition session's, so both refuse
-    identically. `open_titles` is READ-ONLY input the caller already fetched
+    Cognition session's note verbs. `open_titles` is input the caller already fetched
     (`book.standing(unit=...)`'s titles); this function makes no store call."""
     wanted = note_handle(title)
     return any(note_handle(t) == wanted for t in open_titles)
@@ -265,7 +256,7 @@ def has_duplicate_open_title(title: str, open_titles: Sequence[str]) -> bool:
 #: the title» normalises to a quote on the stored side and to the entity text on
 #: the rendered side, and stops resolving. Fixing it means unescaping only the
 #: MODEL's input and never the stored title, a change to a function several
-#: readers share (`tools`' resolve, R-55's latch, the debrief latch). It needs a
+#: note consumers share. It needs a
 #: title containing the literal text of an XML entity.
 _ATTR_ENTITIES = {"&quot;": '"'}
 

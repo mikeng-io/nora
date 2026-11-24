@@ -224,8 +224,7 @@ async def test_the_worker_holds_none_of_the_never_list(tmp_path):
             "computer_import", "computer_export", "document_publish", "document_read",
             "web_search", "web_fetch", "media_fetch"} <= held
     assert held & NEVER == set()
-    for name in ("send_reply", "send_to", "send_gif", "media_send", "remind", "note_create",
-                 "note_revise", "remember"):
+    for name in ("send_reply", "send_to", "send_gif", "media_send", "remind", "remember"):
         assert name not in held
 
 

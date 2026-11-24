@@ -75,6 +75,8 @@ class Event:
     # one; None otherwise. The Deliverer records it on every message the turn sends, so the
     # Rollup knows whether the send expected an answer.
     intent: str | None = None
+    # The occasion grants the graph's intention write.
+    commit_intentions: bool = False
 
 
 EventFactory: TypeAlias = Callable[[Sequence[Reminder]], Event]
