@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -30,6 +30,7 @@ class ActPass:
     internal: set[str] = field(default_factory=set)
     running_tools: dict[str, dict[str, Any]] = field(default_factory=dict)
     call_acts: dict[str, list[Act]] = field(default_factory=dict)
+    handover_actions: dict[str, Callable[[], Awaitable[bool]]] = field(default_factory=dict)
 
 
 _active_pass: ContextVar[ActPass | None] = ContextVar("act_pass", default=None)
@@ -133,6 +134,7 @@ def declare_act(
     executor: str, destination: str, *,
     event: str, authority: ActAuthority, ordinal: int = 0, key: str | None = None,
     from_pass: bool = True, request_id: str | None = None,
+    on_handover: Callable[[], Awaitable[bool]] | None = None,
 ) -> Act:
     spec = EXECUTORS[executor]
     active = _active_pass.get() if from_pass else None
@@ -155,6 +157,8 @@ def declare_act(
     call = _current_call.get()
     if active is not None and call is not None:
         active.call_acts.setdefault(call, []).append(act)
+        if on_handover is not None:
+            active.handover_actions[act.identity.id] = on_handover
     return act
 
 
@@ -187,6 +191,9 @@ async def hand_over_tool(tool_use: dict[str, Any]) -> HandedOver | None:
     call = tool_use["toolUseId"]
     for own in active.call_acts.get(call, ()):
         if own.identity.executor in _OWN_DELEGATION:
+            action = active.handover_actions.get(own.identity.id)
+            if action is not None and not await action():
+                return None
             return HandedOver(own.identity.id, None, active.envelope)
     act = declare_act(
         "tool.handover", f"tool-call:{active.trigger_id}:{call}",

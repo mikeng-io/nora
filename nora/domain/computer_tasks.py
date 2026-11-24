@@ -191,6 +191,10 @@ class ComputerTaskStore(Protocol):
         from the table — the record of truth — never a stream SCAN."""
         ...
 
+    async def hand_over_delivery(self, task_id: UUID) -> bool:
+        """Set `origin.deliver` to "job" if delivery has not been elected."""
+        ...
+
     async def mark_delivered(self, task_id: UUID, *, now: datetime) -> None:
         """The terminal result reached its room (or the caller consumed it):
         `delivered_at`, bookkeeping only — the result row already stands."""

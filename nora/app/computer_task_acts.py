@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from functools import partial
 from typing import Any
+from uuid import UUID
 
-from nora.domain.computer_tasks import ComputerTask
+from nora.domain.computer_tasks import ComputerTask, ComputerTaskStore
 from nora.infra.sql.item_registration import RegistrationScope
 from nora.memory import Act, ActAuthority, ActEnvelope, ActInvocation, Outcome, declare_act
 
@@ -18,11 +20,23 @@ _EXECUTOR = "computer.dispatch"
 class ComputerTaskActs:
     def __init__(
         self, redis: Any, envelope: ActEnvelope | None = None,
-        scope: RegistrationScope | None = None,
+        scope: RegistrationScope | None = None, *, tasks: ComputerTaskStore | None = None,
     ) -> None:
         self._redis = redis
         self._envelope = envelope
         self._scope = scope
+        self._tasks = tasks
+
+    async def _hand_over(self, task_id: UUID) -> bool:
+        if self._tasks is None or self._envelope is None:
+            return False
+        try:
+            if await self._envelope.by_key(_EXECUTOR, str(task_id)) is None:
+                return False
+            return await self._tasks.hand_over_delivery(task_id)
+        except Exception:
+            log.exception("computer delivery hand-over could not be recorded (job=%s)", task_id)
+            return False
 
     def _declare(self, task: ComputerTask, *, from_pass: bool) -> Act:
         room = task.origin.get("conversation_id")
@@ -32,6 +46,7 @@ class ComputerTaskActs:
             _EXECUTOR, f"computer-job:{task.id}", event=str(task.id), key=str(task.id),
             authority=ActAuthority(unit, task.origin.get("requester_person_id"), room=room),
             from_pass=from_pass,
+            on_handover=partial(self._hand_over, task.id) if self._tasks is not None else None,
         )
 
     async def _publish(self, stream: str, job_id: str) -> ActInvocation[None]:

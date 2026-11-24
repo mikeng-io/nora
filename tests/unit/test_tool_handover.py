@@ -11,18 +11,34 @@ import contextlib
 import json
 import math
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from nora.agent import factory, tool_executor
+from nora.agent.delivery_acts import DeliveryActs
+from nora.agent.mcp import McpToolGroup
 from nora.agent.ports import ToolSpec, adapt
+from nora.agent.registry import ToolRegistry
+from nora.app.agent_runner import LiveAgentRunner
 from nora.engagement.slots import ConversationSlots
+from nora.infra.sql.item_registration import RegistrationScope
 from nora.memory import act_pass
 from nora.memory.app.acts import ActEnvelope
 from nora.memory.domain.acts import Act, ActAuthority, Outcome
 from nora.memory.domain.admission_proposals import PassContext
+from nora.policy import Conversation, Policy
+from nora.testing import FakeRecordStore
+from tests.unit.test_engagement_pipeline import (
+    PERSONS,
+    _build_pipeline,
+    _drain,
+    _FakeAdapter,
+    _msg,
+    _request,
+)
 from tests.unit.test_tool_concurrency import RETRY, _BatchModel, _Gauge, _guard
 
 WINDOW = 0.05
@@ -218,6 +234,55 @@ async def test_the_next_message_to_the_room_starts_while_the_handed_over_work_ru
     assert gauge.running == 1
     assert room.try_acquire(key) is True
     gauge.gate.set()
+
+
+async def test_a_second_tag_runs_through_the_pipeline_while_the_first_tags_tool_is_pending():
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def slow(text: str = "") -> str:
+        entered.set()
+        await release.wait()
+        return "Generated result"
+
+    tool = adapt(ToolSpec(name="slow", description="", schema={}, call=slow, budget=3))
+    store, adapter = _Acts(), _FakeAdapter()
+    envelope = ActEnvelope(store)
+    registry = ToolRegistry(
+        mcp_tools={"fixture": McpToolGroup(3, (tool,))}, mcp_act_envelope=envelope,
+    )
+    room = Conversation("signal", frozenset({"g1"}), None, unit="unit-1",
+                        tools=frozenset({"fixture"}))
+    policy = Policy((room,), _by_id={("signal", "g1"): room})
+    audit = FakeRecordStore()
+    audit.delivery_acts = DeliveryActs(envelope, RegistrationScope(policy, PERSONS), dict)
+    models = iter([_Model(["slow", "send_reply"], "first"), _Model(["send_reply"], "second")])
+    executor = _executor()
+    runner = LiveAgentRunner(
+        models=SimpleNamespace(model_id="fixture", create=models.__next__),
+        retry=RETRY, tool_executor=executor,
+    )
+    pipeline, _, _, background = _build_pipeline(
+        runner=runner, tool_registry=registry, policy=policy, audit=audit,
+        adapter=adapter, reactions=False,
+    )
+
+    first = asyncio.create_task(pipeline.run(_request(tag_id="first")))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        await pipeline.run(_request(replace(_msg(), timestamp=2), tag_id="second"))
+        done, _ = await asyncio.wait({first}, timeout=2)
+        assert first in done, "the first tag should finish without waiting for the slow tool"
+        first.result()
+        await _drain(background)
+        assert [trace.tag_id for trace in pipeline._tag_trace_store.saved] == ["first", "second"]
+        [pending] = executor.handed_over
+        assert not pending.done() and not release.is_set()
+        assert adapter.texts == ["hello", "hello"]
+    finally:
+        release.set()
+        await first
+        await _drain(background)
+        await asyncio.gather(*executor.handed_over)
 
 
 @pytest.mark.parametrize("name", [

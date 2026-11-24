@@ -2550,13 +2550,7 @@ class FakeScopeEndpoints:
 
 
 class FakeComputerTaskStore:
-    """In-memory `ComputerTaskStore` with the same compare-and-set semantics:
-    `claim` only moves a row still `queued`; `request_cancel` takes queued to
-    cancelled and flags running; `finish` only writes a running row.
-
-    `outbox` is the `FakeComputeJobStore` `elect_delivery` files a deferred
-    job into — the fake's image of "same database, one transaction": the
-    stamp and the filing land together or not at all."""
+    """In-memory task store with the same atomic delivery election and outbox."""
 
     def __init__(self, *, clock: Callable[[], datetime] | None = None,
                  outbox: Any = None) -> None:
@@ -2588,9 +2582,7 @@ class FakeComputerTaskStore:
         task = self.rows.get(task_id)
         if task is None:
             return None
-        # The same serialization the SQL store takes on the scope's
-        # advisory lock: two claims of one scope never interleave their
-        # check and write.
+        # The scope lock serializes the check and write, like the SQL store.
         async with self._scope_locks.setdefault(task.scope, asyncio.Lock()):
             task = self.rows.get(task_id)
             if task is None or task.status != "queued":
@@ -2650,6 +2642,14 @@ class FakeComputerTaskStore:
         return sorted({t.scope for t in self.rows.values()
                        if t.status in ("queued", "running")})[:limit]
 
+    async def hand_over_delivery(self, task_id: UUID) -> bool:
+        async with self._delivery_lock:
+            task = self.rows.get(task_id)
+            if task is None or task.delivered_at is not None:
+                return False
+            self._save(replace(task, origin={**task.origin, "deliver": "job"}))
+            return True
+
     async def mark_delivered(self, task_id: UUID, *, now: datetime) -> None:
         task = self.rows.get(task_id)
         if task is not None:
@@ -2659,8 +2659,8 @@ class FakeComputerTaskStore:
                              job: Any = None) -> ComputerTask | None:
         async with self._delivery_lock:
             task = self.rows.get(task_id)
-            if task is None or task.delivered_at is not None \
-                    or task.status not in TERMINAL:
+            if (task is None or task.delivered_at is not None or task.status not in TERMINAL
+                    or (job is not None and task.origin.get("deliver") == "job")):
                 return None
             if job is not None and self._outbox is not None:
                 previous = self._outbox._jobs.get(job.id)

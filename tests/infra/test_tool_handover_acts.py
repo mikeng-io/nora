@@ -5,16 +5,20 @@
 import asyncio
 import contextlib
 import json
+from datetime import UTC, datetime
 from typing import Any
 
 from nora.agent import factory, tool_executor
 from nora.agent.guards import ToolCallLog
+from nora.app.composition_fire import build_recover
 from nora.app.handover_sweep import sweep_handovers
 from nora.infra.sql.cognitive_graph_schema import NORA_ACT, NORA_ACT_OUTCOME
 from nora.memory import act_pass, declare_act, hand_over_tool
 from nora.memory.app.acts import ActInvocation
 from nora.memory.domain.acts import ActAuthority, Outcome
 from nora.obs.metrics import Metrics
+from nora.testing import FakeComputeJobStore
+from nora.testing.reminders import FakeReminderStore
 from tests.infra.test_act_envelope import PASS, _rows, acts  # noqa: F401
 from tests.unit.test_tool_concurrency import RETRY, _Gauge, _guard
 from tests.unit.test_tool_handover import _Model, _result, _tool
@@ -137,3 +141,18 @@ async def test_a_computer_call_that_declared_its_dispatch_gets_no_second_act(act
     gate.set()
     await _finish(executor)
     assert len(await _rows(engine, NORA_ACT)) == 1
+
+
+async def test_startup_recovery_records_the_outcome_of_a_lost_handover(acts):
+    envelope, engine = acts
+    with act_pass(ActAuthority("unit-1", "person-1", None, "room-1", PASS), envelope):
+        left = await hand_over_tool({"toolUseId": "t0", "name": "slow", "input": {}})
+    assert left is not None and await _rows(engine, NORA_ACT_OUTCOME) == []
+
+    await build_recover(
+        clock=lambda: datetime.now(UTC), compute_backends={}, compute_jobs=FakeComputeJobStore(),
+        engine=engine, metrics=Metrics(), reminders=FakeReminderStore(),
+    )
+
+    outcomes = await _rows(engine, NORA_ACT_OUTCOME)
+    assert [(row["act_id"], row["verdict"]) for row in outcomes] == [(left.act_id, "uncertain")]

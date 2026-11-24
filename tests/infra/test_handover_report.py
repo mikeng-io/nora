@@ -7,20 +7,38 @@ proactive pass would be given: one due occurrence, claimed once.
 
 # ruff: noqa: F811 - pytest resolves imported fixture names.
 
+import asyncio
+import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+from uuid import UUID
 
 import pytest
 import sqlalchemy as sa
 
+from nora.agent.guards import ToolCallLog
+from nora.agent.ports import ToolSpec, adapt
+from nora.agent.tool_executor import BoundedToolExecutor, ToolSlots
+from nora.app.compute_poller import ComputeJobPoller
+from nora.app.computer_queue import SegmentRegistry
+from nora.app.fire import SENT
 from nora.app.handover_sweep import sweep_handovers
+from nora.computer.wire import _scoped_computer_queues
+from nora.engagement.slots import ConversationSlots
 from nora.infra.sql.cognitive_graph_schema import INTENTION, NORA_ACT, NORA_ACT_OUTCOME
+from nora.infra.sql.compute_jobs import SqlComputeJobStore
+from nora.infra.sql.computer_tasks import SqlComputerTaskStore
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
+from nora.infra.sql.item_registration import RegistrationScope, SqlItemRegistration
 from nora.memory import act_pass, hand_over_tool, wire
 from nora.memory.adapters.act_store import SqlActStore
 from nora.memory.adapters.proactive_claims import SqlProactiveClaims
 from nora.memory.domain.acts import Act, ActAuthority, ActIdentity, Outcome
-from tests.infra.test_act_envelope import PASS
+from nora.obs.metrics import Metrics
+from nora.testing import FakeStreamRedis
+from tests.infra.test_act_envelope import PASS, _Revisions
+from tests.infra.test_act_envelope import _rows as _act_rows
 from tests.infra.test_condition_matcher import _health, _intention, _platform_act
 from tests.infra.test_item_registration import (
     _PERSON,
@@ -29,6 +47,10 @@ from tests.infra.test_item_registration import (
     _registration,
     engine,  # noqa: F401
 )
+from tests.infra.test_proactive_pass import ScriptedRunner, setup
+from tests.infra.test_retrieval_scope import PERSON, ROOM, UNIT, scenario  # noqa: F401
+from tests.infra.test_tool_handover_acts import _agent, _finish
+from tests.unit.test_tool_handover import _result
 
 LATER = datetime.now(UTC) + timedelta(days=1)
 
@@ -190,3 +212,107 @@ async def test_an_act_event_on_a_platform_delivery_still_waits_for_a_healthy_sou
     await _health(engine, "signal", "up", at=datetime.now(UTC) - timedelta(seconds=1))
     await _tick(engine)
     assert len(await _due(engine)) == 1
+
+
+@pytest.mark.parametrize("handed_over", [True, False], ids=["past-window", "inside-window"])
+async def test_a_computer_call_has_one_delivery_through_the_route_its_window_selects(
+    scenario, handed_over,
+):
+    engine = scenario.engine
+    scope = RegistrationScope(scenario.policy, scenario.persons)
+    engine.update_execution_options(item_registration=SqlItemRegistration(scope, _Revisions()))
+    tasks, jobs = SqlComputerTaskStore(engine), SqlComputeJobStore(engine)
+    def clock():
+        return datetime.now(UTC)
+
+    metrics = Metrics()
+    queues = await _scoped_computer_queues(
+        allowlist=scenario.policy, background=None, clock=clock, compute_jobs=jobs,
+        computer=None, computer_context=None, computer_events=None,
+        computer_redis=FakeStreamRedis(),
+        computer_segments=SegmentRegistry(), computer_tasks=tasks, computer_token="",
+        lifecycle=None, metrics=metrics, op_clock=clock, tabs=None, engine=engine,
+        scoped_cfg=SimpleNamespace(browser_idle_seconds=600),
+    )
+    admission = queues.computer_admission
+    head = await admission.submit(scope="abcd", kind="native", payload={}, origin={})
+    assert head.granted
+    release = asyncio.Event()
+    if not handed_over:
+        release.set()
+
+    async def computer_run(text: str = "") -> dict:
+        submitted = await admission.submit(
+            scope="abcd", kind="native", payload={"tool": "computer_run"},
+            origin={"platform": "signal", "conversation_id": ROOM, "requester_person_id": PERSON},
+        )
+        assert not submitted.granted
+        await release.wait()
+        return {"status": "started", "task": str(submitted.task.id)}
+
+    tool = adapt(ToolSpec(name="computer_run", description="", schema={}, call=computer_run,
+                          budget=10))
+    executor = BoundedToolExecutor(ToolSlots(4, reserve=1), wait_seconds=0.6)
+    log = ToolCallLog(conversation_id=ROOM, conversation_type="group", tag_id=PASS.pass_id,
+                      cacheable=frozenset(), store=None, metrics=metrics)
+    agent = _agent("computer_run", tool, executor, tool_call_log=log)
+    context = replace(PASS, unit=UNIT, room=ROOM)
+    envelope = wire.act_envelope(engine)
+    report = "Generated computer task report"
+    proactive, sender, _ = setup(
+        scenario, ScriptedRunner((("send_reply", {"text": report}),)), [], now=LATER,
+    )
+    compute = []
+
+    async def speak(event):
+        compute.append(event)
+        return SENT
+
+    poller = ComputeJobPoller(
+        store=jobs, backends={"computer": queues.computer_task_backend}, speak=speak,
+        slots=ConversationSlots(maxlen=4, spawn=asyncio.create_task), metrics=metrics,
+        tick_seconds=1, clock=lambda: LATER,
+        policy=scenario.policy, persons=scenario.persons,
+    )
+    try:
+        with act_pass(ActAuthority(UNIT, PERSON, None, ROOM, context), envelope):
+            await asyncio.wait_for(agent.invoke_async("go"), timeout=5)
+        result = json.loads(_result(agent)["content"][0]["text"])
+        [row] = [r for r in await _act_rows(engine, NORA_ACT) if r["pass"] == context.pass_id]
+        task_id = UUID(row["idempotency_key"])
+        task = await tasks.get(task_id)
+        assert task is not None and task.status == "queued" and task.delivered_at is None
+        if handed_over:
+            assert result["act"] == row["id"]
+            act = await envelope.by_key("computer.dispatch", str(task_id))
+            assert act is not None
+            await _commit_report(
+                engine, act, unit=UNIT, origin_room=f"signal:{ROOM}", owed_to=PERSON,
+            )
+        else:
+            assert result == {"status": "started", "task": str(task_id)}
+        await _tick(engine)
+        await proactive.poll()
+        assert sender.texts == []
+    finally:
+        release.set()
+        await _finish(executor)
+
+    await admission.finish(head.task.id, status="done", result={"no_guest_effect": True})
+    assert await tasks.try_claim_head(task_id, now=clock()) is not None
+    await admission.finish(
+        task_id, status="done",
+        result={"status": "ok", "note": "Generated", "no_guest_effect": True},
+    )
+    for _ in range(2):
+        await queues.computer_queue_runner._deliver_pending()
+        await poller.tick()
+        await _tick(engine)
+        await proactive.poll()
+
+    assert sender.texts == ([report] if handed_over else [])
+    assert len(compute) == (0 if handed_over else 1)
+    assert len(sender.texts) + len(compute) == 1
+    result_row = await tasks.get(task_id)
+    assert result_row is not None and result_row.delivered_at is not None
+    assert result_row.origin.get("deliver") == ("job" if handed_over else None)

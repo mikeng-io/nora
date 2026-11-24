@@ -235,6 +235,26 @@ async def test_outbox_failure_rolls_back_election_and_allows_retry(delivery_stor
     assert await jobs.get(retry.id) == retry
 
 
+async def test_handover_blocks_a_stale_outbox_election_without_claiming_live_delivery(
+    delivery_stores,
+):
+    from tests.contract.test_compute_job_store_contract import _job
+
+    tasks, jobs = delivery_stores
+    running = await tasks.enqueue(_task(status="running"))
+    job = replace(_job(kind="computer"), backend_job_id=str(running.id))
+
+    assert await tasks.hand_over_delivery(running.id)
+    row = await tasks.get(running.id)
+    assert row.origin == {**running.origin, "deliver": "job"}
+    assert row.delivered_at is None
+    await tasks.finish(running.id, status="done", result={"status": "ok"}, now=T0)
+    assert await tasks.elect_delivery(running.id, now=T0, job=job) is None
+    assert await jobs.get(job.id) is None
+    assert await tasks.elect_delivery(running.id, now=T0) is not None
+    assert not await tasks.hand_over_delivery(running.id)
+
+
 async def test_cancel_and_interrupt_close_the_row(tasks: Any) -> None:
     queued = _task()
     running = _task(status="running", started_at=T0)
