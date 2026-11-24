@@ -17,7 +17,6 @@ from nora.app.cognition_grounding import (
     place_release,
     stay_context_reader,
     unit_self_profile_reader,
-    unit_self_reader,
 )
 from nora.app.cognition_wiring import (
     COGNITION_ADAPTOR_NAME,
@@ -67,7 +66,7 @@ class SessionReadersWiring:
 async def cognition_session(
     allowlist: Any, audit: Any, cfg: Any, clock: Any,
     cognition_context_screen: Any, cognition_lessons: Any, cognition_memory: Any,
-    content_checks: Any, culture_reader: Any, document_service: Any, documents_context: Any,
+    content_checks: Any, document_service: Any, documents_context: Any,
     dream_model: Any, dream_models: Any, dream_tools: Any, dreamer_instructions: Any,
     dreamer_runtime: Any, engine: Any, entry_store: Any, event_store: Any, events: Any,
     ledger_store: Any, lineage: Any, media_join: Any, memo_store: Any,
@@ -111,7 +110,7 @@ async def cognition_session(
     grounder = _session_grounder(
         allowlist=allowlist, audit=audit, cfg=cfg, clock=clock,
         cognition_context_screen=cognition_context_screen,
-        content_checks=content_checks, culture_reader=culture_reader,
+        content_checks=content_checks,
         documents_context=documents_context, engine=engine, entry_store=entry_store,
         lineage=lineage,
         media_join=media_join, memo_store=memo_store, metrics=metrics,
@@ -264,7 +263,7 @@ def _session_readers(
 
 def _session_grounder(
     allowlist: Any, audit: Any, cfg: Any, clock: Any,
-    cognition_context_screen: Any, content_checks: Any, culture_reader: Any,
+    cognition_context_screen: Any, content_checks: Any,
     documents_context: Any, engine: Any, entry_store: Any, lineage: Any, media_join: Any,
     memo_store: Any, metrics: Any, mobility: Any, observation_store: Any,
     persons: Any, presence_circles: Any, presence_reader: Any, profile_reader: Any,
@@ -339,10 +338,6 @@ def _session_grounder(
             circles=presence_circles, access=access,
             content_checks=content_checks,
         ),
-        # Her own account in the unit, under `[culture] enabled` like every Character rea…
-        # own account in the unit, shown only where every room of the unit agrees on `loc…
-        # (R-31; `unit_self_reader`).
-        self_account=unit_self_reader(culture_reader, allowlist),
         # THE SWITCH (45 §5): when `[memory.profile] read` is on, her
         # Profile account replaces the prose one; the SAME reader the
         # tag and fire paths hold.

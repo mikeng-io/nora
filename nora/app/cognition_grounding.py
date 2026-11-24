@@ -82,7 +82,7 @@ from nora.domain.cognition_ground import (
     record_ref,
 )
 from nora.domain.cognition_session import AgendaItem, Room
-from nora.domain.culture import CultureRevision, nora_character_key
+from nora.domain.culture import nora_character_key
 from nora.domain.gatherings import Gathering
 from nora.domain.memo import Memo
 from nora.domain.mobility_forecast import detect_stay_anomalies, place_words
@@ -102,7 +102,6 @@ from nora.domain.record_query import RecordHit, RecordRefHit
 from nora.domain.reminders import Reminder
 from nora.domain.rollup import room_key
 from nora.domain.stimuli import Stimulus
-from nora.language.culture_render import read_culture
 from nora.language.profile_render import ProfileHeads, read_profile
 
 log = logging.getLogger("nora.app.cognition_grounding")
@@ -379,28 +378,6 @@ async def _own_sends(
     return out
 
 
-def unit_self_reader(
-    culture: Any | None, policy: Any,
-) -> Callable[[str], Awaitable[CultureRevision | None] | None] | None:
-    """`build_grounder`'s `self_account`: her account of the unit, or none.
-
-    A Cognition session is unit-scoped and what it sends can reach any room of
-    the unit, so the account (written from location rooms' sends too, R-31) is
-    read only when every room of the unit agrees on `location`
-    (`Policy.shows_self_to_unit`): never into a prompt whose audience could be
-    a location-off room. `None` while `[culture]` is off."""
-    if culture is None:
-        return None
-
-    def read(unit: str) -> Awaitable[CultureRevision | None] | None:
-        if not policy.shows_self_to_unit(unit):
-            return None
-        head: Awaitable[CultureRevision | None] = culture.head(key=nora_character_key(unit))
-        return head
-
-    return read
-
-
 def unit_self_profile_reader(
     profile: ProfileHeads | None, policy: Any, *,
     lineage: LineagePolicy | None = None,
@@ -629,7 +606,6 @@ def build_grounder(
     tz: tzinfo = UTC,
     stay_context: Callable[[str, int], Awaitable[StayContext | None]] | None = None,
     place_release: Callable[[str, str], Awaitable[bool]] | None = None,
-    self_account: Callable[[str], Awaitable[CultureRevision | None] | None] | None = None,
     self_profile: Callable[[str], Awaitable[tuple[ProfileLine, ...]] | None] | None = None,
     metrics: Any = None,
     memo_index: Callable[[str], Awaitable[Sequence[Memo]]] | None = None,
@@ -852,12 +828,6 @@ def build_grounder(
                 "cognition grounding lineage shadow (unit=%s): would withhold %d note(s) "
                 "and %d event(s); shown", unit, withheld["notes"], withheld["events"],
             )
-        # Her own account: background, never the ground for a claim, so a
-        # failed read costs the `self` block and not the session. With the
-        # profile reader wired (45 §5) her Profile account is read instead
-        # and renders `<profile of="nora">`; a failed read is counted, never
-        # a fall back to the prose account.
-        account: CultureRevision | None = None
         profile_view: ProfileView | None = None
         profile_names: dict[str, str] = {}
         if self_profile is not None and context is None:
@@ -873,11 +843,6 @@ def build_grounder(
                     for line in lines if line.told_by is not None
                     if (ref := persons.by_person.get(line.told_by)) is not None
                 }
-        elif context is None:
-            account = await read_culture(
-                None if self_account is None else self_account(unit),
-                stage="cognition_self", platform="cognition", metrics=metrics,
-            )
         source_objects, source_objects_more, retained_objects, retained_more = (
             await _source_objects(
                 agenda_rooms, allowed, observations, persons,
@@ -890,7 +855,7 @@ def build_grounder(
               source_objects_more=source_objects_more,
               retained_objects=retained_objects,
               retained_objects_more=retained_more,
-              own_sends=own_sends, room_labels=labels, self_account=account,
+              own_sends=own_sends, room_labels=labels,
               self_profile=profile_view, profile_names=profile_names,
           )
 

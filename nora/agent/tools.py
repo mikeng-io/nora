@@ -87,7 +87,6 @@ from nora.domain.models import (
 )
 from nora.domain.ports import (
     BrowserRunner,
-    CultureReader,
     DiscordPresenceSource,
     ExternalFilesSource,
     GifSource,
@@ -388,7 +387,7 @@ def build_tool_specs(
     rollup: RollupReadSource | None = None,
     standing_head: StandingHeadSource | None = None,
     ledger: StandingLedger | None = None,
-    culture: CultureReader | None = None,
+    graph_profiles: Any = None,
     # `social_read`'s read of the social stream's Record. `None` answers
     # `unavailable`; the registry withholds the tool before that matters.
     social_items: SocialItemsSource | None = None,
@@ -539,7 +538,7 @@ def build_tool_specs(
         rollup=rollup,
         standing_head=standing_head,
         ledger=ledger,
-        culture=culture,
+        graph_profiles=graph_profiles,
         social_items=social_items,
         subagent=subagent,
         video=video,
@@ -671,7 +670,7 @@ def build_tools(
     rollup: RollupReadSource | None = None,
     standing_head: StandingHeadSource | None = None,
     ledger: StandingLedger | None = None,
-    culture: CultureReader | None = None,
+    graph_profiles: Any = None,
     # The typed platform-observation Record: `record_query`'s `kind` branch,
     # `poll_list`/`poll_read`/`room_state_read` and the source events a
     # transcript read carries. `None` answers those `unavailable`.
@@ -717,9 +716,9 @@ def build_tools(
         describe_max_bytes=describe_max_bytes, video_chunk_seconds=video_chunk_seconds,
         video_max_chunks=video_max_chunks, media_join=media_join, rooms=rooms, clock=clock,
         record=record, lineage=lineage, rollup=rollup, standing_head=standing_head, ledger=ledger,
-        culture=culture, observations=observations, social_items=social_items, subagent=subagent,
-        video=video, video_ref_kinds=video_ref_kinds, memory_retrieval=memory_retrieval,
-        graph_retrieval=graph_retrieval, pass_scope=pass_scope,
+        graph_profiles=graph_profiles, observations=observations, social_items=social_items,
+        subagent=subagent, video=video, video_ref_kinds=video_ref_kinds,
+        memory_retrieval=memory_retrieval, graph_retrieval=graph_retrieval, pass_scope=pass_scope,
         intention_admission=intention_admission, memory_intake=memory_intake,
         profile=profile, relay=relay, relay_turn=relay_turn,
         room_management=room_management, message=message,

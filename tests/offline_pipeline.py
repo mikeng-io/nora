@@ -152,13 +152,9 @@ def build_offline_pipeline(
         presence=presence_reader,
         # `<memos>` (DEC-306) — `None`: no memo store here, so no block.
         memos=None,
-        # `<culture>` (DEC-207) — `None` here for the fire path's reason
-        # below: the eval subject (`nora.subject`) reconstructs a room's real
-        # account at a real instant, and this harness has no store to hold one.
-        culture=None,
         rosters={adapter.platform: roster_source} if roster_source else {},
         self_ids=frozenset(),
-        # `<lessons>` (L5) — `None`, as `culture`: no store here, and the
+        # `<lessons>` (L5) — no store here, and the
         # eval subject seeds lessons through its own sandbox.
         lessons=None,
         # `<computer>` — `None`: this harness has no computer, and an eval's VM workspace
@@ -322,19 +318,7 @@ def build_offline_pipeline(
             # FirePath read emptier tiers than its tag path would grade the
             # knowledge-cut cases against a prompt production never builds.
             notes=notes,
-            # The culture head, named here because `test_assembler_parity` pins this
-            # call's keyword NAMES to the composition root's: a collaborator production
-            # passes and the harness does not means every participation eval measures a
-            # prompt production never builds.
-            #
-            # `None` is the right value here rather than a gap: the rebuilt eval subject
-            # (`nora.subject`) reconstructs a room's real culture at a real instant
-            # (`evals/corpora/participation.yaml`), so this seam does not supply one,
-            # and a case with no account should see no block.
-            culture=None,
-            # THE SWITCH (45 §5): the same `None` as `culture` — this harness
-            # has no Profile store, so the fire path reads the pre-switch tiers.
-            profile=None,
+            graph_profiles=None,
             lessons=None,
             policy=room_allowlist(),
             participation_runner=participation_runner,

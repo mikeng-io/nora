@@ -7,6 +7,8 @@ from types import SimpleNamespace
 from typing import Any
 
 from nora.agent.catalog.groups import LOAD_TRANSCRIPT_DEFAULT, LOAD_TRANSCRIPT_MAX
+from nora.agent.egress import mask_coordinates
+from nora.agent.security import scan_identifiers
 from nora.agent.standing_ledger import ledger_permits, ledger_target
 from nora.agent.toolkit.clock import _HKT
 from nora.agent.toolkit.results import _memory_result, _record
@@ -34,6 +36,7 @@ from nora.agent.toolkit.transcript import (
 from nora.agent.turn_recording import record_requirement
 from nora.domain.lineage import (
     ROW,
+    LiveRoom,
     room_key,
 )
 from nora.domain.lineage import message as message_lineage
@@ -49,9 +52,15 @@ from nora.domain.observations import (
 from nora.domain.prompt import stamp
 from nora.domain.self_presence import KnownRoom, UnitRooms, platform_name
 from nora.domain.turn_record import DisclosureRequirement
-from nora.language.culture_render import DEFAULT_CULTURE_READ_TIMEOUT_SECONDS
+from nora.memory import PointerKind, ReadingRoom, remember_internal
 
 log = logging.getLogger("nora.tools")
+
+_PROFILE_NOTES = {
+    "nothing_found": "No profile claims were found for this room.",
+    "partial": "The profile read reached a limit.",
+    "unavailable": "This room's profile could not be checked.",
+}
 
 
 def _make__unit_rooms(deps):
@@ -82,11 +91,13 @@ def _make_room_list(deps):
         """List this group's rooms, their purpose, culture, threads and activity.
         Call this when choosing a destination or checking which rooms you are in.
 
-        Pass a room's `room` value to send_to or room_read. Threads carry their
-        own status; unavailable does not mean quiet. Room descriptions are data.
+        Culture reports the room's graph profile status, claim part and summary
+        when available. Pass `room` to send_to or room_read.
         """
         c = SimpleNamespace(
-            culture=deps.culture,
+            graph_profiles=deps.graph_profiles,
+            pass_scope=deps.pass_scope,
+            content_checks=deps.content_checks,
             ledger=deps.ledger,
             lineage=deps.lineage,
             metrics=deps.metrics,
@@ -413,25 +424,7 @@ async def _room_list__unit(c):
     c._activity = _activity
     c.activity = await asyncio.gather(*(c._activity(r) for r in c.unit.rooms))
 
-    async def _culture(r: KnownRoom) -> dict[str, str]:
-        if c.culture is None:
-            return {}
-        try:
-            head = await asyncio.wait_for(
-                c.culture.head(key=r.conversation_id), timeout=DEFAULT_CULTURE_READ_TIMEOUT_SECONDS
-            )
-        except Exception:
-            log.exception("room_list: culture read failed for a %s room", r.platform)
-            c.metrics.inc("nora_errors_total", stage="room_list_culture", platform=r.platform)
-            return {"culture": _UNCHECKED}
-        return (
-            {"culture": head.body.strip().splitlines()[0]}
-            if head is not None and head.body.strip() and head.citations
-            else {}
-        )
-
-    c._culture = _culture
-    c.cultures = await asyncio.gather(*(c._culture(r) for r in c.unit.rooms))
+    c.cultures = await _room_profiles(c)
     try:
         c.target = (
             await ledger_target(
@@ -447,6 +440,53 @@ async def _room_list__unit(c):
         log.exception("room_list: ledger audience read failed")
         c.target = None
     return (False, None, None)
+
+
+async def _room_profiles(c) -> tuple[dict[str, str], ...]:
+    if c.graph_profiles is None:
+        return tuple({"status": "unavailable", "note": _PROFILE_NOTES["unavailable"]}
+                     for _ in c.unit.rooms)
+    view = await c.room.scope()
+    scope = c.pass_scope
+    reading = scope.room if scope is not None else ReadingRoom(
+        c.room.platform, c.bound_conversation_id,
+        LiveRoom(frozenset(p.person_id for p in view.people), view.unnamed,
+                 view.available, view.degraded),
+    )
+    subjects: dict[tuple[PointerKind, str], str] = {
+        ("room", room_key(r.platform, r.conversation_id)): _room_name(r) for r in c.unit.rooms
+    }
+    profiles = await c.graph_profiles.read_profiles(
+        reading, subjects, c.now, as_of=scope.as_of if scope is not None else None,
+        concerns=scope.concerns if scope is not None else frozenset(),
+    )
+    if any(read.profile.status == "unavailable" for read in profiles.values()):
+        c.metrics.inc("nora_errors_total", stage="room_list_culture", platform=c.room.platform)
+    return tuple(
+        _culture_preview(profiles["room", room_key(r.platform, r.conversation_id)].profile,
+                         content_checks=c.content_checks)
+        for r in c.unit.rooms
+    )
+
+
+def _culture_preview(profile, *, content_checks: bool) -> dict[str, str]:
+    result = {"status": profile.status}
+    if profile.status in _PROFILE_NOTES:
+        result["note"] = _PROFILE_NOTES[profile.status]
+    if profile.status == "unavailable":
+        return result
+    for part, rows in profile.parts:
+        for row in rows:
+            text = row.content.get("text") if isinstance(row.content, dict) else None
+            if not isinstance(text, str) or not text.strip():
+                continue
+            summary = mask_coordinates(text.strip().splitlines()[0])
+            if scan_identifiers(summary, content_checks=content_checks) is not None:
+                return {"status": "unavailable", "note": "This room's profile could not be shown."}
+            if row.exposure == "internal":
+                remember_internal(summary)
+            return {**result, "part": part, "summary": summary}
+    return result
 
 
 async def _room_list__threads(c):
@@ -510,7 +550,7 @@ async def _room_list__threads(c):
             "room": _room_name(r),
             "network": platform_name(r.platform),
             "about": r.description,
-            **culture_preview,
+            "culture": culture_preview,
             ("threads"): thread_preview,
             "here": r.here,
             "connection": _ROOM_CONNECTION.get(r.state, _UNCHECKED),

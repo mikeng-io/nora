@@ -111,12 +111,12 @@ class PathWiring:
 
 def path(
     access: Any, allowlist: Any, audit: Any, background: Any, cfg: Any,
-    clock: Any, computer_context: Any, culture_reader: Any, decision_log: Any,
+    clock: Any, computer_context: Any, graph_profiles: Any, decision_log: Any,
     doctrine_store: Any, documents_context: Any, lessons_reader: Any, limits: Any,
     lineage: Any, llm_state: Any, lost_jobs: Any, media_join: Any,
     memo_store: Any, metrics: Any, note_store: Any,
     participation_runner: Any, persons: Any, presence_reader: Any, preview_source: Any,
-    proactive_runner: Any, profile_reader: Any, quote_window: Any,
+    proactive_runner: Any, quote_window: Any,
     reasoning_strip_store: Any, registry: Any, rosters: Any, runner: Any,
     shared: Any, slots: Any, tag_trace_store: Any, tool_call_log_store: Any,
     tool_registry: Any, ambient: AmbientEngagement | None = None,
@@ -133,7 +133,6 @@ def path(
         presence_reader,
         audit,
         lessons_reader,
-        profile_reader,
         computer_context,
         registry,
         limits,
@@ -155,7 +154,7 @@ def path(
         runner,
         persons,
         proactive_runner,
-        culture_reader,
+        graph_profiles,
         tool_call_log_store, ambient=ambient,
     )
     _path_lost_jobs(
@@ -165,13 +164,13 @@ def path(
 
 def _fire_turn_args(
     metrics: Any, quote_window: Any, reasoning_strip_store: Any, llm_state: Any,
-    presence_reader: Any, audit: Any, lessons_reader: Any, profile_reader: Any,
+    presence_reader: Any, audit: Any, lessons_reader: Any,
     computer_context: Any, registry: Any, limits: Any, lineage: Any,
     memo_store: Any, rosters: Any, documents_context: Any, note_store: Any,
     doctrine_store: Any, participation_runner: Any, tag_trace_store: Any, cfg: Any,
     media_join: Any, decision_log: Any, clock: Any, tool_registry: Any,
     preview_source: Any, shared: Any, runner: Any, persons: Any,
-    proactive_runner: Any, culture_reader: Any, tool_call_log_store: Any,
+    proactive_runner: Any, tool_call_log_store: Any,
     access: Any = None,
 ) -> Any:
     """The collaborators a fire turn shares with the tag path — one of each."""
@@ -216,8 +215,8 @@ def _fire_turn_args(
 
 def _fire_grounding_args(
     allowlist: Any, cfg: Any, clock: Any, computer_context: Any,
-    culture_reader: Any, decision_log: Any, documents_context: Any, lessons_reader: Any,
-    memo_store: Any, note_store: Any, presence_reader: Any, profile_reader: Any,
+    graph_profiles: Any, decision_log: Any, documents_context: Any, lessons_reader: Any,
+    memo_store: Any, note_store: Any, presence_reader: Any,
 ) -> Any:
     """The read-side grounding a fire determination grounds on."""
     return {
@@ -230,13 +229,7 @@ def _fire_grounding_args(
             # writer was once wired, and an unregistered kind fails the row `failed_error` wi…
             "proactive": proactive_occasion,
         },
-        # `<standing>` renders on the fire path too. A fire turn speaks into a room UNPROMPTED,
-        # so «where had this conversation got to» is the context she is least likely to have any
-        # other way: there is no tagging message to infer it from. Reads only; the fire path…
-        "culture": culture_reader,
-        # THE SWITCH (45 §5): the SAME profile reader the tag assembler
-        # holds; `None` until `[memory.profile] read` is on.
-        "profile": profile_reader,
+        "graph_profiles": graph_profiles,
         "lessons": lessons_reader,
         "standing_store_timeout_seconds": cfg.standing.store_timeout_seconds,
         # The shared decision log, written from `_determined` — the one method all four
@@ -294,12 +287,12 @@ def _fire_occasion_args(cfg: Any, participation_runner: Any, proactive_runner: A
 def _wire_fire_path(
     metrics: Any, quote_window: Any, reasoning_strip_store: Any, llm_state: Any,
     access: Any, allowlist: Any, presence_reader: Any, audit: Any, lessons_reader: Any,
-    profile_reader: Any, computer_context: Any, registry: Any, limits: Any,
+    computer_context: Any, registry: Any, limits: Any,
     lineage: Any, memo_store: Any, rosters: Any, documents_context: Any,
     note_store: Any, doctrine_store: Any, participation_runner: Any, tag_trace_store: Any,
     cfg: Any, media_join: Any, decision_log: Any, clock: Any,
     tool_registry: Any, preview_source: Any, shared: Any, runner: Any,
-    persons: Any, proactive_runner: Any, culture_reader: Any,
+    persons: Any, proactive_runner: Any, graph_profiles: Any,
     tool_call_log_store: Any, ambient: AmbientEngagement | None = None,
 ) -> Any:
     """The real fire turn, built only when some occasion can fire one."""
@@ -315,7 +308,6 @@ def _wire_fire_path(
         "presence_reader": presence_reader,
         "audit": audit,
         "lessons_reader": lessons_reader,
-        "profile_reader": profile_reader,
         "computer_context": computer_context,
         "registry": registry,
         "limits": limits,
@@ -337,7 +329,6 @@ def _wire_fire_path(
         "runner": runner,
         "persons": persons,
         "proactive_runner": proactive_runner,
-        "culture_reader": culture_reader,
         "tool_call_log_store": tool_call_log_store,
         "access": access,
     }
@@ -349,14 +340,13 @@ def _wire_fire_path(
             cfg=cfg,
             clock=clock,
             computer_context=computer_context,
-            culture_reader=culture_reader,
+            graph_profiles=graph_profiles,
             decision_log=decision_log,
             documents_context=documents_context,
             lessons_reader=lessons_reader,
             memo_store=memo_store,
             note_store=note_store,
             presence_reader=presence_reader,
-            profile_reader=profile_reader,
         ),
         **_fire_occasion_args(
             cfg=cfg,

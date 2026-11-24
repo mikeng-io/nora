@@ -77,8 +77,8 @@ _RECORD = object()
 #: The same for the two Dreamer-only reads (`rollup_read`, `standing_read`).
 _ROLLUP = object()
 _STANDING = object()
-#: `room_list`'s culture store, never called.
-_CULTURE = object()
+#: `room_list`'s profile reader, never called.
+_GRAPH_PROFILES = object()
 #: `social_read`'s social stream read, never called.
 _SOCIAL_ITEMS = object()
 _MEMOS = object()
@@ -177,7 +177,7 @@ def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") ->
 
 def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry(
-        record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING, culture=_CULTURE,
+        record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING, graph_profiles=_GRAPH_PROFILES,
         social_items=_SOCIAL_ITEMS,
         memos=_MEMOS,
         computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(), documents=_DOCUMENTS,
@@ -533,7 +533,7 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
         model="deepseek-v4-flash", max_tokens=400, temperature=0.7, client=client,
     )
     tools = _built_tools(ToolRegistry(
-        record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING, culture=_CULTURE,
+        record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING, graph_profiles=_GRAPH_PROFILES,
         social_items=_SOCIAL_ITEMS,
         memos=_MEMOS,
         computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(), documents=_DOCUMENTS,

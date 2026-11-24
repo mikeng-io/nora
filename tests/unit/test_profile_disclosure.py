@@ -1,6 +1,5 @@
 """A Profile line's `exclude_persons` is a disclosure boundary, held by
-`nora.agent.lineage.excluded` on the fire path's Profile read
-(`FirePath._read_profiles`).
+`nora.agent.lineage.profile_lines_for` for typed Profile readers.
 
 `excluded` denies MORE than a listed-members intersection: a `*` room lists
 nobody and still denies, a person present only in the live roster (an
@@ -18,14 +17,11 @@ import pytest
 
 from nora.agent.lineage import LineagePolicy
 from nora.agent.room import Room
-from nora.app.fire import FirePath
-from nora.domain.events import Event
 from nora.domain.models import PersonRef
 from nora.domain.profile import ProfileLine
-from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import Conversation, Policy
-from nora.testing import FakeRecordStore, FakeRosterSource
+from nora.testing import FakeRosterSource
 
 NOW = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
 
@@ -87,29 +83,34 @@ class _Heads:
         return self._by_key.get(key, ())
 
 
-async def _unit_view(path: FirePath):
-    views = await path._read_profiles(_occasion(), None, [])
-    return next((v for v in views if v.entity == "unit"), None)
+async def _unit_lines(convo, reader, roster):
+    from nora.agent.lineage import profile_lines_for
+
+    room = Room(platform="signal", conversation_id="g1", roster_source=roster, persons=_PERSONS)
+    target = await LineagePolicy.from_policy(_policy(convo)).read_room(
+        platform="signal", conversation_id="g1",
+    )
+    return await profile_lines_for(await reader.account_heads(key="u1#unit"), target, room)
 
 
 async def test_a_wildcard_room_is_never_shown_an_excluded_line() -> None:
     """The reviewer's repro: a `*` room lists nobody, so a listed-members
     intersection is empty and the excluded line leaks. `excluded` denies."""
     reader = _Heads({"u1#unit": (_line("surprise for Cy", exclude=("cy",)),)})
-    view = await _unit_view(_fire_path(_WILDCARD, reader, _ROSTER_CLEAN))
-    assert view is not None and view.lines == ()
+    lines = await _unit_lines(_WILDCARD, reader, _ROSTER_CLEAN)
+    assert lines == ()
 
 
 async def test_a_member_present_only_in_the_live_roster_still_excludes() -> None:
     reader = _Heads({"u1#unit": (_line("surprise for Cy", exclude=("cy",)),)})
-    view = await _unit_view(_fire_path(_LISTED, reader, _ROSTER_WITH_CY))
-    assert view is not None and view.lines == ()
+    lines = await _unit_lines(_LISTED, reader, _ROSTER_WITH_CY)
+    assert lines == ()
 
 
 async def test_an_unreadable_roster_withholds_every_excluded_line() -> None:
     reader = _Heads({"u1#unit": (_line("surprise for Cy", exclude=("cy",)),)})
-    view = await _unit_view(_fire_path(_LISTED, reader, _ROSTER_DOWN))
-    assert view is not None and view.lines == ()
+    lines = await _unit_lines(_LISTED, reader, _ROSTER_DOWN)
+    assert lines == ()
 
 
 async def test_a_clean_roster_shows_a_line_excluding_someone_absent() -> None:
@@ -119,9 +120,8 @@ async def test_a_clean_roster_shows_a_line_excluding_someone_absent() -> None:
         _line("surprise for Cy", exclude=("cy",)),
         _line("the group decides late"),
     )})
-    view = await _unit_view(_fire_path(_LISTED, reader, _ROSTER_CLEAN))
-    assert view is not None
-    assert [line.text for line in view.lines] == [
+    lines = await _unit_lines(_LISTED, reader, _ROSTER_CLEAN)
+    assert [line.text for line in lines] == [
         "surprise for Cy", "the group decides late",
     ]
 
@@ -132,9 +132,8 @@ async def test_a_listed_member_named_by_a_line_still_excludes_it() -> None:
         _line("surprise for Ada", exclude=("ada",)),
         _line("the group decides late"),
     )})
-    view = await _unit_view(_fire_path(_LISTED, reader, _ROSTER_CLEAN))
-    assert view is not None
-    assert [line.text for line in view.lines] == ["the group decides late"]
+    lines = await _unit_lines(_LISTED, reader, _ROSTER_CLEAN)
+    assert [line.text for line in lines] == ["the group decides late"]
 
 
 async def test_no_roster_is_read_when_no_line_names_an_exclusion() -> None:
@@ -144,56 +143,9 @@ async def test_no_roster_is_read_when_no_line_names_an_exclusion() -> None:
         groups={"g1": (frozenset({"+85200000001"}), frozenset({"+85200000002"}))},
     )
     reader = _Heads({"u1#unit": (_line("the group decides late"),)})
-    view = await _unit_view(_fire_path(_LISTED, reader, roster))
-    assert view is not None and len(view.lines) == 1
+    lines = await _unit_lines(_LISTED, reader, roster)
+    assert len(lines) == 1
     assert roster.calls == []
-
-
-def _fire_path(convo: Conversation, reader: _Heads, roster: FakeRosterSource) -> FirePath:
-    return FirePath(
-        persons=_PERSONS, records=FakeRecordStore(),
-        doctrine_store=None, metrics=Metrics(),  # type: ignore[arg-type]
-        runner=None, adapters={}, registry=None,  # type: ignore[arg-type]
-        canary="test-canary", display_name="Nora",
-        ai_peer="nora", context_window=40, limits={},
-        timeout_seconds=120.0, clock=lambda: NOW,
-        policy=_policy(convo), profile=reader, rosters={"signal": roster},
-        lineage=LineagePolicy.from_policy(_policy(convo)),
-    )
-
-
-def _occasion() -> Event:
-    return Event(
-        kind="proactive", platform="signal", conversation_id="g1",
-        conversation_type="group", person_id=None, body="",
-        header=lambda _ref, _now: "",
-    )
-
-
-async def test_the_fire_path_holds_the_same_boundary() -> None:
-    """Wildcard room: the fire path's reader leaks identically without the
-    predicate, and `excluded` denies identically with it."""
-    reader = _Heads({"u1#unit": (_line("surprise for Cy", exclude=("cy",)),)})
-    path = _fire_path(_WILDCARD, reader, _ROSTER_CLEAN)
-    views = await path._read_profiles(_occasion(), None, [])
-    unit = next((v for v in views if v.entity == "unit"), None)
-    assert unit is not None and unit.lines == ()
-
-
-@pytest.mark.parametrize("case", ["wildcard", "live-only", "unavailable", "unmapped", "clean"])
-async def test_each_profile_surface_checks_the_actual_room(case):
-    convo = _WILDCARD if case == "wildcard" else _LISTED
-    roster = {
-        "wildcard": _ROSTER_CLEAN, "live-only": _ROSTER_WITH_CY,
-        "unavailable": _ROSTER_DOWN, "clean": _ROSTER_CLEAN,
-        "unmapped": FakeRosterSource(groups={"g1": (frozenset({"unknown"}),)}),
-    }[case]
-    lines = (_line("surprise for Cy", exclude=("cy",)), _line("public observation"))
-    reader = _Heads({"g1": lines, "u1#unit": lines})
-    views = await _fire_path(convo, reader, roster)._read_profiles(_occasion(), None, [])
-    text = " ".join(line.text for v in views if v.entity == "unit" for line in v.lines)
-    assert "public observation" in text
-    assert ("surprise for Cy" in text) == (case == "clean")
 
 
 async def test_unit_self_reader_cannot_clear_exclusions_without_live_rosters():
@@ -249,15 +201,3 @@ async def test_cognition_self_location_passes_presence_in_every_target_room(loca
                            name_of=lambda pid: pid, now=NOW)
     assert block is not None
     assert ("Lotus Library" in str(block)) == allowed
-
-
-async def test_a_room_profile_keeps_its_canonical_subject_id():
-    """Shared profiles carry the canonical subject id accepted by profile tools.
-    The room label remains presentation, separate from this store identity."""
-    reader = _Heads({"g1": (_line("plans late"),)})
-    views = await _fire_path(_LISTED, reader, _ROSTER_CLEAN)._read_profiles(
-        _occasion(), None, [])
-    room = next(v for v in views if v.entity == "room")
-    assert room.of == "g1"
-    assert room.entity == "room"
-    assert room.of == _LISTED.primary_id

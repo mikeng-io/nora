@@ -25,7 +25,6 @@ from nora.domain.live import LiveSequence
 from nora.domain.media_join import MediaJoin
 from nora.domain.memo import MemoStore
 from nora.domain.ports import (
-    CultureReader,
     RecordStore,
     RosterSource,
 )
@@ -67,7 +66,6 @@ def build_assembler(
     media_join: MediaJoin | None = None,
     quote_window: QuoteWindow | None = None,
     presence: PresenceReader | None = None,
-    culture: CultureReader | None = None,
     lessons: ActiveLessons | None = None,
     computer: ComputerContextReader | None = None,
     documents: DocumentsContextReader | None = None,
@@ -110,11 +108,6 @@ def build_assembler(
         # turn hold, built once at the composition root over `policy.toml` and
         # the live adapter map. `None` renders the network alone.
         presence=presence,
-        # `<culture>` (DEC-207). The SAME reader the fire
-        # path and every Dreamer adaptor that reads an account hold. `None`
-        # while `[culture] enabled = false`, and in every harness that wires
-        # no store, which renders no block.
-        culture=culture,
         # `<lessons>`: `None` while `[lessons]
         # render` is off, and in every harness that does not wire it.
         lessons=lessons,

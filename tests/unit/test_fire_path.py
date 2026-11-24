@@ -361,7 +361,7 @@ def _fire_path(
     standing_store_timeout_seconds: float = 5.0,
     decisions=None,
     policy=None,
-    defer_tools: bool = False, ambient=None,
+    defer_tools: bool = False, ambient=None, graph_profiles=None, clock=lambda: T0,
 ) -> FirePath:
     extra = {"shared": shared,
              "standing_store_timeout_seconds": standing_store_timeout_seconds,
@@ -381,8 +381,8 @@ def _fire_path(
         rosters=rosters,
         canary="test-canary", display_name="Nora",
         ai_peer="nora", context_window=40,
-        limits=LIMITS, timeout_seconds=timeout_seconds, clock=lambda: T0,
-        defer_tools=defer_tools, ambient=ambient,
+        limits=LIMITS, timeout_seconds=timeout_seconds, clock=clock,
+        defer_tools=defer_tools, ambient=ambient, graph_profiles=graph_profiles,
         participation_runner=participation_runner,
         shadow_channel=shadow_channel, shadow_platform=shadow_platform,
         gate_shadow_channel=gate_shadow_channel,
@@ -987,7 +987,7 @@ async def test_a_hanging_standing_read_cannot_wedge_a_fire_turn(
 
 async def _fire_path_with_tiers(
     persons, record_store, doctrine_store, metrics, *,
-    notes=None, policy="permissive", culture=None, shared=None, memos=None,
+    notes=None, policy="permissive", shared=None, memos=None,
 ) -> FirePath:
     """`fire_path`'s own builder plus the tier collaborators — same
     model-side-collaborators-are-None shape, for the same reason: these tests
@@ -1000,7 +1000,7 @@ async def _fire_path_with_tiers(
         canary="test-canary", display_name="Nora",
         ai_peer="nora", context_window=40, limits={},
         timeout_seconds=120.0, clock=lambda: T0,
-        notes=notes, culture=culture, shared=shared, memos=memos,
+        notes=notes, shared=shared, memos=memos,
         policy=permissive_policy() if policy == "permissive" else None,
     )
 
@@ -1050,14 +1050,11 @@ async def test_the_fire_path_reads_the_note_index(
     assert [n.title for n in ctx.notes] == ["Raft roadmap"]
 
 
-async def test_a_standing_and_culture_head_render_in_a_fire_turn(
+async def test_a_standing_head_reaches_the_fire_context(
     persons, record_store, doctrine_store, metrics,
 ) -> None:
-    """A room holding a Standing head AND a culture head renders both in a
-    fire turn."""
     from nora.domain.standing import Standing
     from nora.testing import InMemoryStandingStore
-    from nora.testing.culture_store import InMemoryCultureStore
 
     occasion = _job_occasion()
     standing = InMemoryStandingStore()
@@ -1065,19 +1062,13 @@ async def test_a_standing_and_culture_head_render_in_a_fire_turn(
         platform=occasion.platform, conversation_id=occasion.conversation_id,
         body="a position", fold_count=1, updated_at=1,
     ))
-    culture = InMemoryCultureStore()
-    await culture.append(
-        key=occasion.conversation_id, body="an account", written_at=1,
-        established_by="fold",
-    )
     fire = await _fire_path_with_tiers(
         persons, record_store, doctrine_store, metrics,
-        culture=culture, shared=_shared_reader(standing, rooms=[("signal", "conv-1")]),
+        shared=_shared_reader(standing, rooms=[("signal", "conv-1")]),
     )
     ctx = await fire.build_context(occasion)
     pos = next((e for e in ctx.shared.entries if e.kind == "standing"), None)
     assert pos is not None and pos.subject == "a position"
-    assert ctx.culture is not None and ctx.culture.body == "an account"
 
 
 async def test_a_failed_note_read_is_counted_not_silent(

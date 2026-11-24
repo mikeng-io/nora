@@ -84,7 +84,6 @@ from nora.domain.models import (
 )
 from nora.domain.ports import (
     BrowserRunner,
-    CultureReader,
     DiscordPresenceSource,
     ExternalFilesSource,
     GifSource,
@@ -206,7 +205,7 @@ class ToolDeps:
     rollup: RollupReadSource | None = None
     standing_head: StandingHeadSource | None = None
     ledger: StandingLedger | None = None
-    culture: CultureReader | None = None
+    graph_profiles: Any = None
     social_items: SocialItemsSource | None = None
     subagent: SubagentDesk | None = None
     video: VideoDesk | None = None

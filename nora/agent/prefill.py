@@ -1017,9 +1017,7 @@ def _culture_block(
     got to. This one answers «what is this place, and why is it like that»; a
     chronicle of dynasties and their dates is not a culture.
 
-    Filled on the tag path (`TranscriptInjection._culture`) and on every fire
-    occasion (`FirePath._read_culture`) (DEC-207). This renderer is blind to
-    who filled it and renders whatever the context carries.
+    Renders the culture revision carried by the context.
 
     `None` until the room has been folded at least once, which is the ordinary
     state for a while after the tier is enabled (a fold needs new messages and
@@ -1079,6 +1077,7 @@ def build_prefill(
     ctx: TagContext, *, display_name: str, context_window: int,
     now: datetime | None = None, header: str = TAG_HEADER,
     catalogue: str = "",
+    graph_profiles: tuple[ContextBlock, ...] = (),
 ) -> list[dict]:
     """The three prefill messages. **There is deliberately no roster block.**
 
@@ -1124,10 +1123,8 @@ def build_prefill(
         # RENDER first, DECLARE second, ASSEMBLE third. The order the blocks
         # reach her comes from `_BLOCKS`, so a block cannot be served without
         # an entry, and an entry cannot survive a block that stopped rendering.
-        # THE SWITCH (45 §5): with `ctx.profiles` filled, the seven blocks it
-        # replaces are not rendered and their stubs leave the declared list —
-        # the profile blocks take their rows (`_profile_blocks`).
-        switched = bool(ctx.profiles)
+        # Profile blocks take the place of their legacy context blocks.
+        switched = bool(ctx.profiles or graph_profiles)
         declared = _declared([
             # `ToolSurface.prompt_catalogue`: the SAME admitted set the turn's
             # tools were built from, so it cannot name a tool this turn cannot
@@ -1161,7 +1158,7 @@ def build_prefill(
         if switched:
             declared = [
                 b for b in declared if b.name not in _PROFILE_REPLACES
-            ] + _profile_blocks(ctx, now=clock)
+            ] + (list(graph_profiles) if graph_profiles else _profile_blocks(ctx, now=clock))
         # WHICH blocks were actually built (non-empty body, `assemble`'s own
         # test; see `_declared`'s docstring for why a block with nothing to
         # say is still DECLARED), and AT WHAT SIZE: each block's name already
@@ -1169,7 +1166,7 @@ def build_prefill(
         # note tier, …), so the block name doubles as provenance for where the
         # bytes came from. Sizes are the rendered body only; the wrapping tag
         # is the assembler's cost, not the read's.
-        rendered = [b for b in declared if b.body]
+        rendered = [b for b in declared if b.body or b.when_empty != "drop"]
         # LINEAGE, on every mode but `off`: what the four derived blocks
         # withheld from this room, or would have in `shadow`. The shadow
         # reading that gates `on` is read from these two attributes.

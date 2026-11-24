@@ -699,7 +699,6 @@ async def _compose_dependencies(
         cfg=cfg, managed_services=_stores_managed.services,
         discord_control=discord_control, discord_token=discord_token).onboarding
     _stores_readers = readers(cfg=cfg, content_checks=content_checks, engine=engine)
-    culture_reader = _stores_readers.culture_reader
     lessons_reader = _stores_readers.lessons_reader
     profile_index = _stores_readers.profile_index
     profile_reader = _stores_readers.profile_reader
@@ -718,7 +717,6 @@ async def _compose_dependencies(
         cfg=cfg,
         clock=clock,
         computer_context=computer_context,
-        culture_reader=culture_reader,
         documents_context=documents_context,
         engine=engine,
         ledger_store=ledger_store,
@@ -902,9 +900,9 @@ async def _compose_dependencies(
         _memory_wire, dreamer_instructions, cfg, engine, access, lineage, persons_view,
         allowlist, doctrine_store, content_checks, clock, metrics, slots, model_client_for,
     )
+    graph_profiles = _memory_wire.pass_assembler(engine, access, lineage, None, None)
     engagement_graph = EngagementGraph(
-        access, _memory_wire.message_graph_ids(engine),
-        _memory_wire.pass_assembler(engine, access, lineage, None, None),
+        access, _memory_wire.message_graph_ids(engine), graph_profiles,
     )
     graph_reads = _memory_wire.configured_graph_reads(cfg, engine, access, lineage)
     _agent_registry = build_registry(
@@ -917,7 +915,7 @@ async def _compose_dependencies(
         computer_exports=computer_exports, computer_leases=computer_leases,
         computer_sessions=computer_sessions, computer_settings=computer_settings,
         content_checks=content_checks,
-        culture_reader=culture_reader, discord_presence=discord_presence,
+        discord_presence=discord_presence, graph_profiles=graph_profiles,
         document_service=document_service, engine=engine,
         events=events,
         fetch_client=fetch_client, geocoder=geocoder,
@@ -1061,13 +1059,13 @@ async def _compose_dependencies(
     _fire_path = path(
         access=access,
         ambient=AmbientEngagement(engagement_graph, graph_debrief, subagents_context),
+        graph_profiles=graph_profiles,
         allowlist=allowlist,
         audit=audit,
         background=background,
         cfg=cfg,
         clock=clock,
         computer_context=computer_context,
-        culture_reader=culture_reader,
         decision_log=decision_log,
         doctrine_store=doctrine_store,
         documents_context=documents_context,
@@ -1085,7 +1083,6 @@ async def _compose_dependencies(
         presence_reader=presence_reader,
         preview_source=preview_source,
         proactive_runner=proactive_runner,
-        profile_reader=profile_reader,
         quote_window=quote_window,
         reasoning_strip_store=reasoning_strip_store,
         registry=registry,
@@ -1244,7 +1241,6 @@ async def _compose_dependencies(
         cognition_lessons=cognition_lessons,
         cognition_memory=cognition_memory,
         content_checks=content_checks,
-        culture_reader=culture_reader,
         doctrine_store=doctrine_store,
         document_service=document_service,
         documents_context=documents_context,

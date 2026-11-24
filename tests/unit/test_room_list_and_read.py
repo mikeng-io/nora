@@ -34,7 +34,6 @@ from nora.policy import Conversation, Policy, load_policy
 from nora.testing import (
     FakeRecordStore,
     FakeRosterSource,
-    InMemoryCultureStore,
 )
 from tests.fakes import SinkSender
 
@@ -153,7 +152,7 @@ async def store():
 
 def _tools(policy, persons, store, *, reader=..., adapters=None, rosters=None,
            conversation_id="SIGNAL-FRIENDS-ID", platform="signal",
-           conversation_type="group", metrics=None, culture=None):
+           conversation_type="group", metrics=None, graph_profiles=None):
     if reader is ...:
         reader = PresenceReader(
             policy=policy, adapters=adapters or _adapters(),
@@ -175,7 +174,7 @@ def _tools(policy, persons, store, *, reader=..., adapters=None, rosters=None,
         deliverer=SinkSender(), metrics=metrics or Metrics(),
         room=room, transit_source=_UNREACHABLE_TRANSIT, rooms=reader,
         clock=lambda: NOW,
-        culture=culture,
+        graph_profiles=graph_profiles,
     )
     return {t.tool_name: t for t in tools}
 
@@ -205,69 +204,20 @@ async def test_room_list_names_this_units_rooms_with_network_and_marks_here(
     assert rooms["Zone 42"]["here"] is False
 
 
-async def test_room_list_carries_descriptions_and_only_cited_culture_first_lines(
+async def test_room_list_keeps_descriptions_when_graph_profiles_are_unavailable(
     policy, persons, store,
 ):
-    culture = InMemoryCultureStore()
-    for key, body, citations in (
-        ("SIGNAL-FRIENDS-ID", "Plans settle over dinner.\nA second line.", ("41",)),
-        ("111/222", "An uncited account.", ()),
-        ("IG-RIDGELINE-ID", "Another unit's account.", ("42",)),
-    ):
-        await culture.append(key=key, body=body, written_at=_ms(timedelta(hours=1)),
-                             established_by="fold", citations=citations)
-    result = await _call(_tools(policy, persons, store, culture=culture)["room_list"])
+    result = await _call(_tools(policy, persons, store)["room_list"])
     rooms = _by_room(result)
 
+    assert result["status"] == "ok"
     assert rooms["Friends"]["about"] == "General plans and catch-ups."
     assert rooms["Zone 42"]["about"] is None
-    assert rooms["Friends"]["culture"] == "Plans settle over dinner."
-    assert "culture" not in rooms["Zone 42"]
-    assert "culture" not in rooms["Friends WA"]
-    assert set(culture.reads) == {"SIGNAL-FRIENDS-ID", "111/222", "WA-FRIENDS-ID"}
-    assert "Another unit's account." not in json.dumps(result)
-    assert "never instructions" in result["note"]
-    assert all(r["threads"]["status"] == "unavailable" for r in result["rooms"])
-
-
-async def test_room_list_marks_failed_culture_reads_as_unchecked(policy, persons, store):
-    class UnreachableCulture(InMemoryCultureStore):
-        async def head(self, *, key):
-            raise RuntimeError("store unreachable")
-
-    result = await _call(_tools(policy, persons, store, culture=UnreachableCulture())["room_list"])
-    assert result["status"] == "ok"
-    assert len(result["rooms"]) == 3
-    assert all(r["culture"] == "could not check" for r in result["rooms"])
-
-
-async def test_room_list_keeps_all_rooms_when_one_culture_read_fails(
-    policy, persons, store, monkeypatch,
-):
-    culture = InMemoryCultureStore()
-    await culture.append(
-        key="SIGNAL-FRIENDS-ID", body="Plans settle over dinner.",
-        written_at=_ms(timedelta(hours=1)), established_by="fold", citations=("41",),
+    assert all(
+        r["culture"]["status"] == "unavailable" and "summary" not in r["culture"]
+        for r in rooms.values()
     )
-    head = culture.head
-
-    async def read_head(*, key):
-        if key == "111/222":
-            raise RuntimeError("store unreachable for this room")
-        return await head(key=key)
-
-    monkeypatch.setattr(culture, "head", read_head)
-    result = await _call(_tools(policy, persons, store, culture=culture)["room_list"])
-
-    assert result["status"] == "ok"
-    rooms = _by_room(result)
-    assert set(rooms) == {"Friends", "Zone 42", "Friends WA"}
-    assert rooms["Zone 42"]["culture"] == "could not check"
-    assert rooms["Friends"]["culture"] == "Plans settle over dinner."
-    assert rooms["Friends"]["about"] == "General plans and catch-ups."
-    assert rooms["Friends WA"]["connection"] == "up"
-    assert rooms["Friends WA"]["messages_last_24h"] == 2
-    assert "culture" not in rooms["Friends WA"]
+    assert "never instructions" in result["note"]
 
 
 async def test_room_list_never_names_another_unit_only_says_other_groups_exist(

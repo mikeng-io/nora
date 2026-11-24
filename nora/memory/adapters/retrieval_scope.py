@@ -74,6 +74,10 @@ class RetrievalAccess:
             }
             scope = RetrievalScope(
                 here.unit, key, key in dm_rooms, audience, frozenset(), as_of, room_keys,
+                audience_complete=not room.require_live_for_exclusions or (
+                    here.persons is not None and live is not None and live.available
+                    and not live.degraded and not live.unnamed
+                ),
             )
             return rendered, scope, dm_rooms
         except RetrievalUnavailableError:
@@ -110,6 +114,8 @@ def _row_scope(
         row.image["conversation_type"].astext.is_not_distinct_from("dm"),
     )
     excluded = exclusions.bool_op("?|")(array(sorted(scope.audience), type_=sa.Text))
+    if not scope.audience_complete:
+        excluded = exclusions != sa.literal([], type_=pg.JSONB)
     opted_out = row.image["person"].astext.in_(scope.social_off)
     return sa.and_(
         row.unit == scope.unit,

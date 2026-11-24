@@ -104,7 +104,7 @@ def build_registry(
     cfg: Any, clock: Any, computer: Any, computer_admission: Any,
     computer_context: Any, computer_dm_scope_for: Any, computer_events: Any,
     computer_exports: Any, computer_leases: Any, computer_sessions: Any,
-    computer_settings: Any, content_checks: Any, culture_reader: Any, discord_presence: Any,
+    computer_settings: Any, content_checks: Any, graph_profiles: Any, discord_presence: Any,
     document_service: Any, engine: Any, events: Any, fetch_client: Any,
     geocoder: Any, giphy_client: Any, image_generator: Any, image_refs_allowed: Any,
     ledger_store: Any, lineage: Any, mcp_tool_groups: Any, media_descriptions: Any,
@@ -128,7 +128,7 @@ def build_registry(
         computer_events=computer_events, computer_exports=computer_exports,
         computer_leases=computer_leases, computer_sessions=computer_sessions,
         computer_settings=computer_settings, content_checks=content_checks,
-        culture_reader=culture_reader, discord_presence=discord_presence,
+        graph_profiles=graph_profiles, discord_presence=discord_presence,
         document_service=document_service, engine=engine, events=events,
         fetch_client=fetch_client, geocoder=geocoder, giphy_client=giphy_client,
         image_generator=image_generator, image_refs_allowed=image_refs_allowed,
@@ -160,7 +160,7 @@ def _build_tool_registry(
     computer_admission: Any, computer_sessions: Any, video_desk: Any, fetch_client: Any,
     persons: Any, computer_leases: Any, media_descriptions: Any, media_join: Any,
     geocoder: Any, metrics: Any, note_store: Any, media_objects: Any,
-    computer_dm_scope_for: Any, content_checks: Any, culture_reader: Any,
+    computer_dm_scope_for: Any, content_checks: Any, graph_profiles: Any,
     subagent_desk: Any, giphy_client: Any, discord_presence: Any, computer: Any,
     presence_store: Any, mcp_tool_groups: Any, image_generator: Any, ledger_store: Any,
     memo_store: Any, memory_search: Any, observation_store: Any,
@@ -201,7 +201,7 @@ def _build_tool_registry(
         budget_overrides=cfg.llm.budgets,
         content_checks=content_checks,
         **_memory_tool_args(
-            cfg=cfg, content_checks=content_checks, culture_reader=culture_reader,
+            cfg=cfg, content_checks=content_checks, graph_profiles=graph_profiles,
             engine=engine, ledger_store=ledger_store, lineage=lineage,
             memo_store=memo_store, memory_search=memory_search, graph_retrieval=graph_retrieval,
             profile_index=profile_index,
@@ -248,7 +248,7 @@ def _build_tool_registry(
 
 
 def _memory_tool_args(
-    cfg: Any, content_checks: Any, culture_reader: Any, engine: Any,
+    cfg: Any, content_checks: Any, graph_profiles: Any, engine: Any,
     ledger_store: Any, lineage: Any, memo_store: Any, memory_search: Any,
     profile_index: Any, standing_store: Any, graph_retrieval: Any,
 ) -> Any:
@@ -281,8 +281,8 @@ def _memory_tool_args(
         "rollup": SqlRollupRead(engine),
         "standing_head": standing_store,
         "ledger": ledger_store,
-        # `room_list`'s room accounts: `None` while `[culture]` is off.
-        "culture": culture_reader,
+        # Room profiles are read through the turn's graph scope.
+        "graph_profiles": graph_profiles,
         # `memo_read` (DEC-306): the memo store, unit-resolved like the note reads.
         "memos": memo_store,
     }
