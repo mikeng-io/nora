@@ -13,7 +13,7 @@ ADA = PersonRef(person_id="ada", name="Ada")
 
 def _claim(id_, text, **fields):
     return {
-        "id": id_, "content": {"text": text}, "part": "fact", "reasoning": "told",
+        "id": id_, "content": text, "part": "fact", "reasoning": "told",
         "origin_room": "private room", "state": "live",
         "asserted_at": datetime(2026, 11, 1, tzinfo=UTC),
         "prediction": None, "window_end": None, "grade": None, "evidence": [],
@@ -61,6 +61,12 @@ async def test_subject_claims_stay_in_viewers_units_and_workspaces():
     assert account["unit"] == "friends"
     assert [(line["id"], line["text"]) for line in account["lines"]] == [("m1", "cycles to work")]
     assert profile.reads == [("friends", "miles", frozenset())]
+
+    both = await _payload(
+        profile, workspaces_of=lambda _: ("home", "ridgeline"), profile_scopes_of=scopes,
+    )
+    assert [account["unit"] for account in both] == ["climbers", "friends"]
+    assert {line["id"] for account in both for line in account["lines"]} == {"m1", "m2"}
 
 
 async def test_awaiting_weighing_claim_keeps_an_inspectable_state_and_reference():

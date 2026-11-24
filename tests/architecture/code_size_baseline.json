@@ -586,8 +586,8 @@
   "comment_blocks": 3
  },
  "nora/domain/block_types.py": {
-  "comment_blocks": 17,
-  "file_lines": 1086,
+  "comment_blocks": 16,
+  "file_lines": 939,
   "internal_docstrings": 1
  },
  "nora/domain/blocks.py": {

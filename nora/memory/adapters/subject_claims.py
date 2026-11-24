@@ -11,6 +11,7 @@ from nora.domain.lineage import split_room
 from nora.infra.sql.cognitive_graph_schema import CLAIM, DISPUTE, EDGE
 from nora.infra.sql.cognitive_graph_store import visible_to_reads
 from nora.infra.sql.schema import MESSAGES
+from nora.memory.adapters.graph_row_render import render_graph_content
 
 
 class SqlSubjectClaims:
@@ -48,9 +49,15 @@ class SqlSubjectClaims:
             disputed = set(open_disputes)
             return tuple({
                 **claim, "evidence": by_claim.get(claim["id"], []),
+                "content": _content_text(claim["content"]),
                 "disputed": claim["id"] in disputed and claim["state"] == "awaiting_weighing",
                 "origin_room": _origin(claim["origin_room"], claim["dm_origin"], viewer_rooms),
             } for claim in claims)
+
+
+def _content_text(value: object) -> str:
+    text = value.get("text") if isinstance(value, dict) else value
+    return text if isinstance(text, str) else render_graph_content(value)
 
 
 def _is_dm_origin() -> sa.ColumnElement[bool]:

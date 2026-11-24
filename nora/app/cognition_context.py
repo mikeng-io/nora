@@ -208,9 +208,10 @@ class CognitionContextReader:
         # design/cognition/context.md:23,45,78 selects one profile per subject.
         if not agenda:
             return (), ()
-        subjects: dict[tuple[PointerKind, str], str] = {("unit", unit): unit}
+        subjects: dict[tuple[PointerKind, str], str] = {}
         if self._policy.shows_self_to_unit(unit):
             subjects["nora", "nora"] = "Nora"
+        subjects["unit", unit] = unit
         for room in agenda:
             policy_room = self._policy.conversation(room.platform, room.conversation_id)
             if policy_room is not None:

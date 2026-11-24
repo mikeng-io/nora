@@ -1,6 +1,5 @@
 """GET /app/v1/memory — graph claims about the signed-in viewer."""
 
-import json
 from collections.abc import Awaitable, Callable, Collection
 from typing import Any, Protocol
 
@@ -53,10 +52,7 @@ async def build_memory_payload(
 def _line(
     claim: dict[str, Any], screen: Callable[[str], str | None],
 ) -> dict[str, Any]:
-    content = claim["content"]
-    text = content.get("text") if isinstance(content, dict) else content
-    if not isinstance(text, str):
-        text = json.dumps(content, ensure_ascii=False)
+    text = claim["content"]
     if screen(text):
         text = "[Claim text withheld]"
     evidence = [
