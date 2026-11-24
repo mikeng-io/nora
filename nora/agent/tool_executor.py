@@ -10,12 +10,14 @@ import asyncio
 import functools
 import json
 import logging
+from contextvars import copy_context
 from typing import Any
 
 from strands.tools.executors import ConcurrentToolExecutor
 from strands.types._events import ToolResultEvent
 from strands.types.tools import ToolResult
 
+from ..domain.computer_tasks import ComputerAdmissionWindow, computer_admission_window
 from ..memory import Outcome, hand_over_tool, record_pass_tool
 from .guards import _unwrap_tool_status
 
@@ -153,14 +155,17 @@ class BoundedToolExecutor(ConcurrentToolExecutor):
             events: asyncio.Queue = asyncio.Queue()
             resume, done = asyncio.Event(), object()
             results: list[ToolResult] = []
+            window = ComputerAdmissionWindow()
+            context = copy_context()
+            context.run(computer_admission_window.set, window)
             run = asyncio.create_task(super()._task(
                 agent, tool_use, results, *rest, task_id, events, resume, done, *tail,
-            ))
+            ), context=context)
             handed = False
             try:
                 handed = await self._relay(
                     run, tool_use, tool_results, results, events, resume, done,
-                    task_id, task_queue, task_event, stop_event,
+                    task_id, task_queue, task_event, stop_event, window,
                 )
             finally:
                 if not handed:
@@ -175,6 +180,7 @@ class BoundedToolExecutor(ConcurrentToolExecutor):
         self, run: asyncio.Task, tool_use: Any, tool_results: list, results: list,
         events: asyncio.Queue, resume: asyncio.Event, done: object, task_id: int,
         task_queue: asyncio.Queue, task_event: asyncio.Event, stop_event: object,
+        window: ComputerAdmissionWindow,
     ) -> bool:
         """Pass the call's events on; True once handed over (the step has `started`), else False."""
         loop = asyncio.get_running_loop()
@@ -184,7 +190,10 @@ class BoundedToolExecutor(ConcurrentToolExecutor):
                 timeout = None if deadline is None else max(0.0, deadline - loop.time())
                 _, event = await asyncio.wait_for(events.get(), timeout)
             except TimeoutError:
-                handover = await hand_over_tool(tool_use)
+                async with window.lock:
+                    handover = await hand_over_tool(tool_use)
+                    if handover is not None and handover.act is not None:
+                        window.report_act_id = handover.act_id
                 if handover is None:
                     deadline = None
                     continue

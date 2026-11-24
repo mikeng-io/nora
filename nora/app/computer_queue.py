@@ -489,10 +489,8 @@ class ComputerAdmission:
             payload=dict(payload), origin=dict(origin),
             created_at=now, updated_at=now, deadline_at=deadline_at,
         )
-        task = await self._tasks.enqueue(task)
-        claimed = await self._acts.start(
-            task, _stream(scope), lambda: self._tasks.try_claim_head(task.id, now=self._clock()),
-        )
+        task, claimed = await self._acts.admit(
+            task, _stream(scope), tasks=self._tasks, clock=self._clock)
         if claimed is not None:
             return SubmittedTask(task=claimed, granted=True)
         # Once the runner owns dispatch, the caller may only observe its terminal result.

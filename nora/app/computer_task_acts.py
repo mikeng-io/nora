@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from contextlib import nullcontext
+from dataclasses import replace
+from datetime import datetime
 from functools import partial
 from typing import Any
 from uuid import UUID
 
-from nora.domain.computer_tasks import ComputerTask, ComputerTaskStore
+from nora.domain.computer_tasks import ComputerTask, ComputerTaskStore, computer_admission_window
 from nora.infra.sql.item_registration import RegistrationScope
 from nora.memory import Act, ActAuthority, ActEnvelope, ActInvocation, Outcome, declare_act
 
@@ -53,6 +56,21 @@ class ComputerTaskActs:
         await self._redis.xadd(stream, {"task": job_id})
         # The SQL worker owns the verdict. A stream acknowledgement is only a wakeup.
         return ActInvocation(None, Outcome("uncertain"))
+
+    async def admit(
+        self, task: ComputerTask, stream: str, *,
+        tasks: ComputerTaskStore, clock: Callable[[], datetime],
+    ) -> tuple[ComputerTask, ComputerTask | None]:
+        window = computer_admission_window.get()
+        # Decide the report route before the queue runner can see the row.
+        async with window.lock if window is not None else nullcontext():
+            if window is not None and window.report_act_id is not None:
+                task = replace(task, origin={**task.origin, "deliver": "job"})
+            task = await tasks.enqueue(task)
+            claimed = await self.start(
+                task, stream, lambda: tasks.try_claim_head(task.id, now=clock()),
+            )
+        return task, claimed
 
     async def start(
         self, task: ComputerTask, stream: str, claim: Callable[[], Awaitable[ComputerTask | None]],

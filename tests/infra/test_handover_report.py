@@ -218,6 +218,14 @@ async def test_an_act_event_on_a_platform_delivery_still_waits_for_a_healthy_sou
 async def test_a_computer_call_has_one_delivery_through_the_route_its_window_selects(
     scenario, handed_over,
 ):
+    await _assert_computer_delivery_route(scenario, handed_over=handed_over)
+
+
+async def test_a_computer_call_dispatched_after_handover_gives_exactly_one_report(scenario):
+    await _assert_computer_delivery_route(scenario, handed_over=True, late_dispatch=True)
+
+
+async def _assert_computer_delivery_route(scenario, *, handed_over, late_dispatch=False):
     engine = scenario.engine
     scope = RegistrationScope(scenario.policy, scenario.persons)
     engine.update_execution_options(item_registration=SqlItemRegistration(scope, _Revisions()))
@@ -226,28 +234,39 @@ async def test_a_computer_call_has_one_delivery_through_the_route_its_window_sel
         return datetime.now(UTC)
 
     metrics = Metrics()
+    segments = SegmentRegistry()
     queues = await _scoped_computer_queues(
         allowlist=scenario.policy, background=None, clock=clock, compute_jobs=jobs,
         computer=None, computer_context=None, computer_events=None,
         computer_redis=FakeStreamRedis(),
-        computer_segments=SegmentRegistry(), computer_tasks=tasks, computer_token="",
+        computer_segments=segments, computer_tasks=tasks, computer_token="",
         lifecycle=None, metrics=metrics, op_clock=clock, tabs=None, engine=engine,
         scoped_cfg=SimpleNamespace(browser_idle_seconds=600),
     )
     admission = queues.computer_admission
     head = await admission.submit(scope="abcd", kind="native", payload={}, origin={})
     assert head.granted
+    admit = asyncio.Event()
     release = asyncio.Event()
+    admitted = asyncio.get_running_loop().create_future()
+    if not late_dispatch:
+        admit.set()
     if not handed_over:
         release.set()
 
     async def computer_run(text: str = "") -> dict:
+        await admit.wait()
         submitted = await admission.submit(
             scope="abcd", kind="native", payload={"tool": "computer_run"},
             origin={"platform": "signal", "conversation_id": ROOM, "requester_person_id": PERSON},
         )
         assert not submitted.granted
+        admitted.set_result(submitted.task.id)
         await release.wait()
+        if late_dispatch:
+            finished = await tasks.get(submitted.task.id)
+            assert finished is not None and finished.status == "done"
+            return dict(finished.result)
         return {"status": "started", "task": str(submitted.task.id)}
 
     tool = adapt(ToolSpec(name="computer_run", description="", schema={}, call=computer_run,
@@ -279,33 +298,36 @@ async def test_a_computer_call_has_one_delivery_through_the_route_its_window_sel
             await asyncio.wait_for(agent.invoke_async("go"), timeout=5)
         result = json.loads(_result(agent)["content"][0]["text"])
         [row] = [r for r in await _act_rows(engine, NORA_ACT) if r["pass"] == context.pass_id]
-        task_id = UUID(row["idempotency_key"])
-        task = await tasks.get(task_id)
-        assert task is not None and task.status == "queued" and task.delivered_at is None
+        if late_dispatch:
+            assert row["executor"] == "tool.handover"
+            assert not admitted.done()
+        else:
+            assert row["executor"] == "computer.dispatch"
+            assert admitted.result() == UUID(row["idempotency_key"])
         if handed_over:
             assert result["act"] == row["id"]
-            act = await envelope.by_key("computer.dispatch", str(task_id))
+            act = await envelope.by_destination(row["executor"], row["destination"])
             assert act is not None
             await _commit_report(
                 engine, act, unit=UNIT, origin_room=f"signal:{ROOM}", owed_to=PERSON,
             )
         else:
-            assert result == {"status": "started", "task": str(task_id)}
+            assert result == {"status": "started", "task": str(admitted.result())}
+        admit.set()
+        task_id = await asyncio.wait_for(admitted, timeout=5)
+        task = await tasks.get(task_id)
+        assert task is not None and task.status == "queued" and task.delivered_at is None
         await _tick(engine)
         await proactive.poll()
         assert sender.texts == []
+        await _finish_queued_task(queues, segments, head.task.id, task_id)
     finally:
+        admit.set()
         release.set()
         await _finish(executor)
 
-    await admission.finish(head.task.id, status="done", result={"no_guest_effect": True})
-    assert await tasks.try_claim_head(task_id, now=clock()) is not None
-    await admission.finish(
-        task_id, status="done",
-        result={"status": "ok", "note": "Generated", "no_guest_effect": True},
-    )
     for _ in range(2):
-        await queues.computer_queue_runner._deliver_pending()
+        await queues.computer_queue_runner.tick()
         await poller.tick()
         await _tick(engine)
         await proactive.poll()
@@ -314,5 +336,30 @@ async def test_a_computer_call_has_one_delivery_through_the_route_its_window_sel
     assert len(compute) == (0 if handed_over else 1)
     assert len(sender.texts) + len(compute) == 1
     result_row = await tasks.get(task_id)
-    assert result_row is not None and result_row.delivered_at is not None
+    assert result_row is not None and result_row.status == "done"
+    assert result_row.result["note"] == "Generated"
+    assert result_row.delivered_at is not None
     assert result_row.origin.get("deliver") == ("job" if handed_over else None)
+
+
+async def _finish_queued_task(queues, segments, head_id, task_id):
+    runner = queues.computer_queue_runner
+    release_work = asyncio.Event()
+
+    async def execute(task):
+        assert task.id == task_id and task.payload == {"tool": "computer_run"}
+        await release_work.wait()
+        return {"status": "ok", "note": "Generated", "no_guest_effect": True}
+
+    runner.set_dispatch("native", execute)
+    await queues.computer_admission.finish(
+        head_id, status="done", result={"no_guest_effect": True},
+    )
+    try:
+        assert await runner.tick() == 1
+        worker = segments.executor(task_id)
+        assert worker is not None
+        release_work.set()
+        await asyncio.wait_for(worker, timeout=5)
+    finally:
+        release_work.set()
