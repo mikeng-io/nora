@@ -17,6 +17,7 @@ from uuid import UUID
 import pytest
 import sqlalchemy as sa
 
+from nora.agent.computer_ctx import _cctx__computer_queued
 from nora.agent.guards import ToolCallLog
 from nora.agent.ports import ToolSpec, adapt
 from nora.agent.tool_executor import BoundedToolExecutor, ToolSlots
@@ -25,6 +26,7 @@ from nora.app.computer_queue import SegmentRegistry
 from nora.app.fire import SENT
 from nora.app.handover_sweep import sweep_handovers
 from nora.computer.wire import _scoped_computer_queues
+from nora.domain.computer_tasks import TERMINAL, computer_admission_window
 from nora.engagement.slots import ConversationSlots
 from nora.infra.sql.cognitive_graph_schema import INTENTION, NORA_ACT, NORA_ACT_OUTCOME
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
@@ -225,11 +227,66 @@ async def test_a_computer_call_dispatched_after_handover_gives_exactly_one_repor
     await _assert_computer_delivery_route(scenario, handed_over=True, late_dispatch=True)
 
 
+class _ObservedComputerTasks(SqlComputerTaskStore):
+    def __init__(self, engine):
+        super().__init__(engine)
+        self.admitted: asyncio.Future[UUID] = asyncio.get_running_loop().create_future()
+        self.stamped = asyncio.Event()
+
+    async def try_claim_head(self, task_id, *, now):
+        claimed = await super().try_claim_head(task_id, now=now)
+        if claimed is None and not self.admitted.done():
+            self.admitted.set_result(task_id)
+        return claimed
+
+    async def get(self, task_id):
+        row = await super().get(task_id)
+        window = computer_admission_window.get()
+        if (window is not None and window.report_act_id is not None
+                and row is not None and row.status in TERMINAL):
+            await self.stamped.wait()
+            return await super().get(task_id)
+        return row
+
+
+def _native_queue_wrapper(admission):
+    ctx = SimpleNamespace(
+        computer_admission=admission, bound_computer_scope="abcd",
+        computer_platform="signal", bound_conversation_id=ROOM, conversation_type="group",
+        computer_actor="fixture", _computer_requester=lambda: PERSON,
+        grant=None, fire_turn=False, relay_turn=False, subagent_job=None,
+        _segment_deadline={"native": 10},
+    )
+    # The production wrapper with a zero live wait, so the test controls queue progress.
+    return _cctx__computer_queued(ctx, "native", 0, dirty=False)
+
+
+def _computer_tool(admission, admit, release, *, late_dispatch):
+    async def computer_run(text: str = "") -> dict:
+        raise AssertionError("a queued call runs in the queue runner")
+
+    queued = _native_queue_wrapper(admission)(computer_run)
+
+    async def call(text: str = "") -> dict:
+        await admit.wait()
+        if late_dispatch:
+            return await queued(text=text)
+        submitted = await admission.submit(
+            scope="abcd", kind="native", payload={"tool": "computer_run"},
+            origin={"platform": "signal", "conversation_id": ROOM, "requester_person_id": PERSON},
+        )
+        assert not submitted.granted
+        await release.wait()
+        return {"status": "started", "task": str(submitted.task.id)}
+
+    return adapt(ToolSpec(name="computer_run", description="", schema={}, call=call, budget=10))
+
+
 async def _assert_computer_delivery_route(scenario, *, handed_over, late_dispatch=False):
     engine = scenario.engine
     scope = RegistrationScope(scenario.policy, scenario.persons)
     engine.update_execution_options(item_registration=SqlItemRegistration(scope, _Revisions()))
-    tasks, jobs = SqlComputerTaskStore(engine), SqlComputeJobStore(engine)
+    tasks, jobs = _ObservedComputerTasks(engine), SqlComputeJobStore(engine)
     def clock():
         return datetime.now(UTC)
 
@@ -248,29 +305,13 @@ async def _assert_computer_delivery_route(scenario, *, handed_over, late_dispatc
     assert head.granted
     admit = asyncio.Event()
     release = asyncio.Event()
-    admitted = asyncio.get_running_loop().create_future()
+    admitted = tasks.admitted
     if not late_dispatch:
         admit.set()
     if not handed_over:
         release.set()
 
-    async def computer_run(text: str = "") -> dict:
-        await admit.wait()
-        submitted = await admission.submit(
-            scope="abcd", kind="native", payload={"tool": "computer_run"},
-            origin={"platform": "signal", "conversation_id": ROOM, "requester_person_id": PERSON},
-        )
-        assert not submitted.granted
-        admitted.set_result(submitted.task.id)
-        await release.wait()
-        if late_dispatch:
-            finished = await tasks.get(submitted.task.id)
-            assert finished is not None and finished.status == "done"
-            return dict(finished.result)
-        return {"status": "started", "task": str(submitted.task.id)}
-
-    tool = adapt(ToolSpec(name="computer_run", description="", schema={}, call=computer_run,
-                          budget=10))
+    tool = _computer_tool(admission, admit, release, late_dispatch=late_dispatch)
     executor = BoundedToolExecutor(ToolSlots(4, reserve=1), wait_seconds=0.6)
     log = ToolCallLog(conversation_id=ROOM, conversation_type="group", tag_id=PASS.pass_id,
                       cacheable=frozenset(), store=None, metrics=metrics)
@@ -320,10 +361,16 @@ async def _assert_computer_delivery_route(scenario, *, handed_over, late_dispatc
         await _tick(engine)
         await proactive.poll()
         assert sender.texts == []
-        await _finish_queued_task(queues, segments, head.task.id, task_id)
+        payload = {"tool": "computer_run", "args": {"text": "hello"}} if late_dispatch else {
+            "tool": "computer_run",
+        }
+        await _finish_queued_task(queues, segments, head.task.id, task_id, payload)
+        finished = await tasks.get(task_id)
+        assert finished is not None and finished.delivered_at is not None
     finally:
         admit.set()
         release.set()
+        tasks.stamped.set()
         await _finish(executor)
 
     for _ in range(2):
@@ -340,14 +387,19 @@ async def _assert_computer_delivery_route(scenario, *, handed_over, late_dispatc
     assert result_row.result["note"] == "Generated"
     assert result_row.delivered_at is not None
     assert result_row.origin.get("deliver") == ("job" if handed_over else None)
+    if late_dispatch:
+        [outcome] = [r for r in await _act_rows(engine, NORA_ACT_OUTCOME)
+                     if r["act_id"] == row["id"]]
+        assert outcome["verdict"] == "done"
+        assert json.loads(outcome["result"][0]["text"]) == result_row.result
 
 
-async def _finish_queued_task(queues, segments, head_id, task_id):
+async def _finish_queued_task(queues, segments, head_id, task_id, payload):
     runner = queues.computer_queue_runner
     release_work = asyncio.Event()
 
     async def execute(task):
-        assert task.id == task_id and task.payload == {"tool": "computer_run"}
+        assert task.id == task_id and task.payload == payload
         await release_work.wait()
         return {"status": "ok", "note": "Generated", "no_guest_effect": True}
 

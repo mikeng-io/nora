@@ -172,8 +172,11 @@ async def test_a_call_still_running_at_the_window_returns_started_with_its_act_i
 @pytest.mark.parametrize(("result", "verdict"), [
     ({"status": "ok"}, "done"), ({"status": "nothing_found"}, "done"),
     ({"status": "unavailable", "reason": "down"}, "failed"),
+    ({"status": "failed"}, "failed"), ({"status": "cancelled"}, "failed"),
+    ({"status": "queued"}, "uncertain"), ({"status": "started"}, "uncertain"),
+    ({"status": "interrupted"}, "uncertain"),
 ])
-async def test_a_handed_over_call_records_done_or_failed_from_its_own_status(result, verdict):
+async def test_a_handed_over_call_records_a_verdict_from_its_own_status(result, verdict):
     gauge, store = _Gauge(), _Acts()
     agent = _agent("slow", _tool("slow", gauge, None, result), _executor())
     await _pass(agent, store)
@@ -193,6 +196,32 @@ async def test_a_handed_over_call_that_is_cancelled_is_recorded_uncertain_and_no
         await pending
     assert [o.verdict for _, o in store.outcomes] == ["uncertain"]
     assert gauge.running == 0 and gauge.peak == 1
+
+
+async def test_cancellation_during_the_started_write_records_one_uncertain_outcome():
+    writing_started = asyncio.Event()
+
+    class BlockStartedWrite(_Acts):
+        async def append_pass(self, authority, kind, content, **kwargs):
+            if kind == "tool_call" and content and json.loads(content[0])["status"] == "started":
+                writing_started.set()
+                await asyncio.Event().wait()
+            await super().append_pass(authority, kind, content, **kwargs)
+
+    gauge, store = _Gauge(), BlockStartedWrite()
+    executor = _executor()
+    agent = _agent("slow", _tool("slow", gauge, None), executor)
+    turn = asyncio.create_task(_pass(agent, store))
+    try:
+        await asyncio.wait_for(writing_started.wait(), timeout=5)
+        [reserved] = store.reserved
+        assert gauge.running == 1 and store.outcomes == []
+    finally:
+        turn.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await turn
+    assert store.outcomes == [(reserved, Outcome("uncertain"))]
+    assert gauge.running == 0
 
 
 async def test_the_pass_slot_and_the_reserve_slot_are_given_back_at_the_hand_over():

@@ -36,11 +36,14 @@ from nora.config import load
 from nora.config_reload import ReloadFiles
 from nora.infra.computer.manager import ScopeBrowserManager
 from nora.infra.sql.audit import SqlRecordStore
+from nora.memory.domain.acts import Outcome
 from nora.obs.metrics import Metrics
 from nora.platform.bridge.client import BridgeAdapter
 from nora.platform.registry import AdapterRegistry, AdapterRegistryError
 from nora.tag import Debounce
 from tests.builders import override_config
+from tests.unit.test_tool_concurrency import _Gauge
+from tests.unit.test_tool_handover import _Acts, _agent, _pass, _tool
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -521,6 +524,45 @@ async def test_a_successful_build_transfers_each_resource_once(
     assert len(unwind_spies.closed_redis) == len(unwind_spies.created_redis)
     assert len(unwind_spies.audit) == 1
     assert unwind_spies.reload_cancelled is not None
+
+
+async def test_shutdown_records_handovers_from_both_runner_factories_before_closing_sql(
+    cfg, unwind_spies,
+):
+    deps = await composition.build_dependencies(
+        override_config(cfg, {
+            "engagement.tool_wait_seconds": 0.05, "participation.enabled": True,
+        }),
+    )
+
+    class ObserveBeforeClose(_Acts):
+        async def observe(self, act, outcome):
+            assert not unwind_spies.audit
+            await super().observe(act, outcome)
+
+    assert deps.fire_path is not None
+    runners = (deps.engagement._runner, deps.fire_path._proactive_runner)
+    executors = [runner._tool_executor for runner in runners]
+    gauges, stores = ([_Gauge(), _Gauge()], [ObserveBeforeClose(), ObserveBeforeClose()])
+    try:
+        for executor, gauge, store in zip(executors, gauges, stores, strict=True):
+            await _pass(_agent("slow", _tool("slow", gauge, None), executor), store)
+        assert all(gauge.running == 1 for gauge in gauges)
+        assert all(store.reserved and not store.outcomes for store in stores)
+    finally:
+        await close_dependencies(deps)
+        for gauge in gauges:
+            gauge.gate.set()
+        await asyncio.gather(
+            *(task for executor in executors for task in executor.handed_over),
+            return_exceptions=True,
+        )
+
+    assert unwind_spies.audit == [deps.audit]
+    assert [store.outcomes for store in stores] == [
+        [(store.reserved[0], Outcome("uncertain"))] for store in stores
+    ]
+    assert all(gauge.running == 0 for gauge in gauges)
 
 
 async def test_a_scoped_computer_acquisition_unwinds_redis_and_journal(

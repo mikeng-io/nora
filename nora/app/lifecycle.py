@@ -2,15 +2,25 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Iterable
 from contextlib import AsyncExitStack
 from typing import Any, TypeVar
 
+from nora.agent.tool_executor import BoundedToolExecutor
+
 log = logging.getLogger(__name__)
 
 CloseFn = Callable[[], Awaitable[None]]
 _T = TypeVar("_T")
+
+
+async def _drain_handovers(executor: BoundedToolExecutor) -> None:
+    tasks = executor.handed_over
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def _push_close_order(
@@ -27,6 +37,7 @@ def _push_close_order(
     bridge_redis: Any = None,
     bridge_stop: Callable[[], None] | None = None,
     health_runner: Any = None,
+    engagement_tools: BoundedToolExecutor | None = None,
     background: Any = None,
     subagent_backend: Any = None,
     cognition_shutdown: CloseFn | None = None,
@@ -55,6 +66,8 @@ def _push_close_order(
         stack.callback(bridge_stop)
     if health_runner is not None:
         stack.push_async_callback(health_runner.cleanup)
+    if engagement_tools is not None:
+        stack.push_async_callback(_drain_handovers, engagement_tools)
     if background is not None:
         stack.push_async_callback(background.cancel_all)
     if subagent_backend is not None:
@@ -91,6 +104,7 @@ async def close_dependencies(deps: Any, *, health_runner: Any = None) -> None:
                 deps.bridge_runtime.stop if deps.bridge_runtime is not None else None
             ),
             health_runner=health_runner,
+            engagement_tools=deps.engagement_tools,
             background=deps.background,
             subagent_backend=deps.subagent_backend,
             cognition_shutdown=deps.cognition_shutdown,

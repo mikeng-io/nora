@@ -89,9 +89,9 @@ class RunnerWiring:
     runner: Any
 
 
-def build_runner(cfg: Any, metrics: Any, models: Any, tier: Any)-> RunnerWiring:
-
-    executor = engagement_executor(cfg)
+def build_runner(
+    cfg: Any, metrics: Any, models: Any, tier: Any, *, executor: tool_executor.BoundedToolExecutor,
+) -> RunnerWiring:
     runner = LiveAgentRunner(
         models=models,
         # Derived from the same `timeout_seconds` the invoke stage enforces, so
@@ -121,10 +121,8 @@ class RunnersWiring:
 
 def runners(
     cfg: Any, metrics: Any, model_client_for: Any, route_model: Any,
-    summons_wired: Any, tier: Any,
+    summons_wired: Any, tier: Any, *, executor: tool_executor.BoundedToolExecutor,
 ) -> RunnersWiring:
-
-    executor = engagement_executor(cfg)
 
     def _auto_runner(
         effort: str, source: str, max_tokens: int | None = None,

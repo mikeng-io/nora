@@ -62,6 +62,7 @@ from nora.domain.computer_tasks import (
     UNAVAILABLE,
     ComputerTask,
     ComputerTaskStore,
+    computer_admission_window,
     current_segment,
 )
 
@@ -493,16 +494,20 @@ class ComputerAdmission:
             task, _stream(scope), tasks=self._tasks, clock=self._clock)
         if claimed is not None:
             return SubmittedTask(task=claimed, granted=True)
-        # Once the runner owns dispatch, the caller may only observe its terminal result.
-        deadline = asyncio.get_running_loop().time() + wait_seconds
-        while asyncio.get_running_loop().time() < deadline:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + wait_seconds
+        window = computer_admission_window.get()
+        while True:
             row = await self._tasks.get(task.id)
             if row is None or row.status in TERMINAL:
                 return SubmittedTask(task=task, result=row)
+            if window is not None and window.report_act_id is not None:
+                if row.deadline_at is not None and row.deadline_at <= self._clock():
+                    break
+            elif loop.time() >= deadline:
+                break
             await asyncio.sleep(self._poll)
-        row = await self._tasks.get(task.id)
-        return SubmittedTask(
-            task=task, result=row if row is not None and row.status in TERMINAL else None)
+        return SubmittedTask(task=task)
 
     async def wait_for_grant(self, task_id: UUID, *, until: datetime) -> ComputerTask | None:
         """A WORKER submitter's wait for its own claim: `try_claim_head`
@@ -699,25 +704,22 @@ class ComputerAdmission:
             return True  # nothing owed: no row, no disposition to settle
         if row.status not in TERMINAL:
             return False  # not durable evidence — a live row's mark is not
-        # The journal records the OUTCOME (`consumed` stays False). The
-        # delivery intent is operation-local and goes straight to the SQL
-        # authority — never into the serialized map, where an unrelated
-        # scope's checkpoint would flush an unconfirmed `consumed` claim to
-        # disk and a restart would stamp a never-delivered result.
+        # Journal the outcome only; the delivery election stays in SQL.
         self.executors.retain(task_id, row.status, row.result)
         try:
-            # The election IS the durable disposition: a deferred outbox
-            # filing that beats this stamp means the room is being told
-            # through the job — the caller must NOT also get the result.
             won = await self._tasks.elect_delivery(task_id, now=self._clock())
         except Exception:  # noqa: BLE001 - the stamp store is the boundary; it must answer
             log.error("computer task %s delivery stamp could not be "
                       "committed; the original result stays "
                       "deferred-eligible", task_id)
             return False
-        if won is None:
-            # Another disposition landed first (the deferred outbox elected
-            # itself): the result is owned elsewhere, not by this caller.
+        window = computer_admission_window.get()
+        # For a late hand-over, the runner can stamp completion without filing an outbox job.
+        report_owns_delivery = (
+            window is not None and window.report_act_id is not None
+            and row.origin.get("deliver") == "job"
+        )
+        if won is None and not report_owns_delivery:
             log.info("computer task %s live delivery lost the election; the "
                      "deferred outbox owns it", task_id)
             return False

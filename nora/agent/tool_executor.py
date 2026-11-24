@@ -86,7 +86,7 @@ NEVER_HANDED_OVER = frozenset({
 })
 
 #: Tool statuses that end a handed-over call as failed rather than done.
-_FAILED_STATUSES = frozenset({"unavailable", "refused"})
+_FAILED_STATUSES = frozenset({"unavailable", "refused", "failed", "cancelled"})
 
 
 class BoundedToolExecutor(ConcurrentToolExecutor):
@@ -198,14 +198,20 @@ class BoundedToolExecutor(ConcurrentToolExecutor):
                     deadline = None
                     continue
                 result = self._started(tool_use, handover.act_id)
-                await self._record_started(tool_use, result)
-                settle = asyncio.create_task(self._settle(run, events, resume, done, results,
-                                                          handover))
+                settle = asyncio.create_task(self._settle(
+                    run, events, resume, done, results, handover,
+                ))
                 self._handed.add(settle)
                 settle.add_done_callback(self._handed.discard)
-                tool_results.append(result)
-                task_queue.put_nowait((task_id, ToolResultEvent(result)))
-                await task_event.wait()
+                try:
+                    await self._record_started(tool_use, result)
+                    tool_results.append(result)
+                    task_queue.put_nowait((task_id, ToolResultEvent(result)))
+                    await task_event.wait()
+                except asyncio.CancelledError:
+                    run.cancel()
+                    await asyncio.gather(settle, return_exceptions=True)
+                    raise
                 task_event.clear()
                 task_queue.put_nowait((task_id, stop_event))
                 return True
@@ -251,12 +257,15 @@ class BoundedToolExecutor(ConcurrentToolExecutor):
                 if isinstance(event, Exception):
                     failure = event
                 resume.set()
+            outcome = (
+                Outcome("uncertain") if run.cancelled() else _handover_outcome(results, failure)
+            )
+            await self._record(handover, outcome)
         except asyncio.CancelledError:
             run.cancel()
             await asyncio.gather(run, return_exceptions=True)
             await self._record(handover, Outcome("uncertain"))
             raise
-        await self._record(handover, _handover_outcome(results, failure))
 
     @staticmethod
     async def _record(handover: Any, outcome: Outcome) -> None:
@@ -274,6 +283,8 @@ def _handover_outcome(results: list[ToolResult], failure: Exception | None) -> O
     status = _unwrap_tool_status(result)
     if result["status"] == "error" or status in _FAILED_STATUSES:
         return Outcome("failed", list(result["content"]))
+    if status in ("queued", "started", "interrupted"):
+        return Outcome("uncertain")
     return Outcome("done", list(result["content"]))
 
 

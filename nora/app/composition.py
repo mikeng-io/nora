@@ -30,6 +30,7 @@ from nora.access import IdentityAccess
 from nora.agent.dreamer import (
     DreamerRuntime,
 )
+from nora.agent.tool_executor import BoundedToolExecutor
 from nora.agent.whereis import Circle
 from nora.app.bridge_queue import BridgeRuntime
 from nora.app.cognition_session import CognitionSessionRunner
@@ -60,7 +61,7 @@ from nora.app.composition_fire import (
     path,
     trigger,
 )
-from nora.app.composition_models import build_runner, lane, runners, source
+from nora.app.composition_models import build_runner, engagement_executor, lane, runners, source
 from nora.app.composition_onboarding import onboarding
 from nora.app.composition_pipelines import (
     build_dispatcher,
@@ -195,8 +196,7 @@ class Dependencies:
     `engagement`, `dispatcher` stay concrete too: none has a port at all.
 
     `client` (DEC-13): the process-wide `AsyncOpenAI` instance, constructed
-    exactly once by `build_dependencies` below. It is an ordinary collaborator,
-    and `nora.__main__.App.shutdown` closes it directly.
+    exactly once by `build_dependencies` and owned by dependency shutdown.
     """
 
     audit: RecordStore
@@ -253,6 +253,7 @@ class Dependencies:
     assembler: ContextAssembler
     ingest: IngestPipeline
     engagement: EngagementPipeline
+    engagement_tools: BoundedToolExecutor
     dispatcher: Dispatcher
     #: The elected stream readers + work runner when any platform runs
     #: `mode = "bridge"`; `nora/__main__.py` spawns it like every other loop.
@@ -704,8 +705,7 @@ async def _compose_dependencies(
     tier = _models_lane.tier
     _people_unit_scopes = _people_wire.unit_scopes(allowlist=allowlist)
     unit_scopes = _people_unit_scopes.unit_scopes
-    _models_source = source(client=client, route_model=route_model, tier=tier)
-    models = _models_source.models
+    models = source(client=client, route_model=route_model, tier=tier).models
     _browse_wiring = _computer_wire.browse(
         browser_manager=browser_manager,
         cfg=cfg,
@@ -714,11 +714,11 @@ async def _compose_dependencies(
         route_model=route_model,
     )
     browser = _browse_wiring.browser
-    _models_runner = build_runner(cfg=cfg, metrics=metrics, models=models, tier=tier)
-    runner = _models_runner.runner
+    engagement_tools = engagement_executor(cfg)
+    runner = build_runner(cfg, metrics, models, tier, executor=engagement_tools).runner
     _models_runners = runners(
         cfg=cfg, metrics=metrics, model_client_for=model_client_for,
-        route_model=route_model, summons_wired=summons_wired, tier=tier,
+        route_model=route_model, summons_wired=summons_wired, tier=tier, executor=engagement_tools,
     )
     limits = _models_runners.limits
     participation_runner = _models_runners.participation_runner
@@ -1267,7 +1267,7 @@ async def _compose_dependencies(
         policy=policy,
         assembler=assembler,
         ingest=ingest,
-        engagement=engagement,
+        engagement=engagement, engagement_tools=engagement_tools,
         resolve_voice_room=_voice_room_of(allowlist),
         workspaces_of=functools.partial(workspaces_of_person, allowlist),
         profile_portal=_memory_wire.subject_claims(engine).read if profile_read else None,
