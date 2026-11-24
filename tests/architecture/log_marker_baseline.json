@@ -368,7 +368,6 @@
  "nora/infra/vision/client.py": 11,
  "nora/infra/vision/comprehend.py": 5,
  "nora/infra/vision/preprocess.py": 13,
- "nora/infra/voice/http_controller.py": 1,
  "nora/infra/weather/hko.py": 2,
  "nora/ingest/__init__.py": 1,
  "nora/ingest/comprehension.py": 10,
