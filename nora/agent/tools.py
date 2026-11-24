@@ -63,7 +63,6 @@ from nora.agent.surface import ToolShelf
 from nora.agent.tool_deps import ToolDeps
 from nora.agent.toolkit.ports import (
     DocumentPublisher,
-    EventsCollaborator,
     NoteCollaborator,
     RecordQuerySource,
     RollupReadSource,
@@ -99,10 +98,6 @@ from nora.domain.ports import (
 )
 from nora.domain.profile import (
     ProfileWriter,
-)
-from nora.domain.reminders import (
-    ReminderCaps,
-    ReminderStore,
 )
 from nora.domain.standing_ledger import StandingLedger
 from nora.domain.tool_call_log import ToolCallLogStore
@@ -288,8 +283,6 @@ def build_tool_specs(
     # The running worker's progress record: where `checkpoint_update`
     # writes. `None` for every occasion that is not a worker, where the tool is not offered.
     checkpoint_sink: SubagentProgress | None = None,
-    reminders: ReminderStore | None = None,
-    reminder_caps: ReminderCaps | None = None,
     clock: Callable[[], datetime] | None = None,
     links: LinkCarry | None = None,
     versions=None,
@@ -338,7 +331,6 @@ def build_tool_specs(
     # link `unavailable`.
     artifact_link_base: str = "",
     relay: Relay | None = None,
-    events: EventsCollaborator | None = None,
     notes: NoteCollaborator | None = None,
     note_unit: Callable[[str, str], str | None] | None = None,
     memos: MemoStore | None = None,
@@ -490,8 +482,6 @@ def build_tool_specs(
         grant=grant,
         subagent_job=subagent_job,
         checkpoint_sink=checkpoint_sink,
-        reminders=reminders,
-        reminder_caps=reminder_caps,
         clock=clock,
         links=links,
         versions=versions,
@@ -512,7 +502,6 @@ def build_tool_specs(
         computer_context_invalidate=computer_context_invalidate,
         artifact_link_base=artifact_link_base,
         relay=relay,
-        events=events,
         notes=notes,
         note_unit=note_unit,
         memos=memos,

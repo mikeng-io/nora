@@ -30,7 +30,6 @@ from nora.agent.toolkit.files import (
 )
 from nora.agent.toolkit.ports import (
     DocumentPublisher,
-    EventsCollaborator,
     NoteCollaborator,
     RecordQuerySource,
     RollupReadSource,
@@ -97,10 +96,6 @@ from nora.domain.ports import (
 from nora.domain.profile import (
     ProfileWriter,
 )
-from nora.domain.reminders import (
-    ReminderCaps,
-    ReminderStore,
-)
 from nora.domain.standing_ledger import StandingLedger
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.infra.social.readings import READ_CONCURRENCY as _INSTAGRAM_READ_CONCURRENCY
@@ -160,8 +155,6 @@ class ToolDeps:
     grant: frozenset[str] | None = None
     subagent_job: str = ""
     checkpoint_sink: SubagentProgress | None = None
-    reminders: ReminderStore | None = None
-    reminder_caps: ReminderCaps | None = None
     clock: Callable[[], datetime] | None = None
     links: LinkCarry | None = None
     versions: Any = None
@@ -182,7 +175,6 @@ class ToolDeps:
     computer_context_invalidate: Callable[[str], None] | None = None
     artifact_link_base: str = ""
     relay: Relay | None = None
-    events: EventsCollaborator | None = None
     notes: NoteCollaborator | None = None
     note_unit: Callable[[str, str], str | None] | None = None
     memos: MemoStore | None = None
@@ -226,7 +218,6 @@ class ToolDeps:
     all_memory_surfaces: bool = False
     profile: ProfileWriter | None = None
     content_checks: bool = True
-    caps: Any = field(init=False, default=None)
     now_fn: Any = field(init=False, default=None)
     link_carry: Any = field(init=False, default=None)
     bound_conversation_id: Any = field(init=False, default=None)
@@ -276,8 +267,6 @@ class ToolDeps:
     computer_ctx: Any = field(init=False, default=None)
 
     def __post_init__(self) -> None:
-        caps = self.reminder_caps or ReminderCaps()
-        object.__setattr__(self, "caps", caps)
         now_fn = self.clock or utc_now
         object.__setattr__(self, "now_fn", now_fn)
         link_carry = self.links if self.links is not None else LinkCarry()

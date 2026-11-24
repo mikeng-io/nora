@@ -47,7 +47,6 @@ from nora.agent.catalog.groups import (
 from nora.agent.toolkit.clock import utc_now
 from nora.agent.toolkit.ports import (
     DocumentPublisher,
-    EventsCollaborator,
     NoteCollaborator,
     RecordQuerySource,
     RollupReadSource,
@@ -88,7 +87,6 @@ from ..domain.ports import (
     WeatherProvider,
 )
 from ..domain.profile import ProfileWriter
-from ..domain.reminders import ReminderCaps, ReminderStore
 from ..domain.tool_call_log import ToolCallLogStore
 from ..infra.parking import ParkingClient, StreetParkingClient
 from ..infra.releases import GithubReleases
@@ -280,9 +278,6 @@ class ToolRegistry:
         # `DisclosureGuard` seam.
         mobility: Any = None,
         ai_peer: str = "nora",
-        reminders: ReminderStore | None = None,
-        reminder_caps: ReminderCaps | None = None,
-        events: EventsCollaborator | None = None,
         notes: NoteCollaborator | None = None,
         note_unit: Callable[[str, str], str | None] | None = None,
         # `memo_read`'s memo store (DEC-306): `None` withholds it.
@@ -555,22 +550,6 @@ class ToolRegistry:
         self._mobility = mobility
         # Nora's own id, the owner of every reminder she sets: `[agent].name`.
         self._ai_peer = ai_peer
-        # The reminders store: a per-process collaborator like `transit` and
-        # `search`, NOT default-constructed for the reason `route` is not: there
-        # is no storeless default. `nora.app.composition` passes the same
-        # `SqlReminderStore` the heartbeat's tick reads from; two would be two queues.
-        self._reminders = reminders
-        # `GatheringService`'s own collaborator, wired the identical honest way
-        # `reminders` is: NOT default-constructed (there is no serviceless
-        # default), so every composition that has not wired Events (offline,
-        # eval, and any test that does not care) leaves this None and the six
-        # event tools answer `unavailable` (R-5).
-        self._events = events
-        # The note tier's pair, wired the identical honest way `events` is: no
-        # store, no unit, or neither, and the four note verbs answer
-        # `unavailable` (R-5) rather than crash or report an unconsulted
-        # notebook as an empty one.
-        #
         # `note_unit` is a registry field because the RESOLVER is
         # process-lifetime; the unit it returns is not. It is not a plain `str`:
         # a deployment can have two units (`ridgeline` and `friends`,
@@ -603,15 +582,6 @@ class ToolRegistry:
         self._computer_exports = computer_exports
         self._browser = browser
         self._artifact_link_base = artifact_link_base
-        # The three anti-runaway caps, as the DOMAIN value, never
-        # `nora.config.RemindersConfig`. Import-linter's "only app and __main__
-        # read config" contract names `nora.agent` as a source module and
-        # `nora.config` as forbidden, so the config type here fails
-        # `uv run lint-imports` (and a TYPE_CHECKING guard does not rescue it:
-        # grimp's `exclude_type_checking_imports` defaults to False and this
-        # repo does not set it). `| None` rather than a default instance
-        # because ruff's B008 rejects a call in an argument default.
-        self._caps = reminder_caps or ReminderCaps()
         self._clock = clock
         # Budget, specification and execution all use the caller's same MCP allowlist.
         self._mcp_tools = dict(mcp_tools) if mcp_tools is not None else {}
@@ -1133,8 +1103,7 @@ class ToolRegistry:
             dream_adaptor=dream_adaptor,
             subagent_job=subagent_job, checkpoint_sink=checkpoint_sink,
             grant=grant,
-            reminders=self._reminders, reminder_caps=self._caps, clock=self._clock,
-            events=self._events,
+            clock=self._clock,
             notes=self._notes, note_unit=self._note_unit, memos=self._memos,
             unit_for=self._unit_for,
             supplied_unit=supplied_unit,

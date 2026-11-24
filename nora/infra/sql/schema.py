@@ -675,13 +675,7 @@ IDX_PRESENCE_CORRIDORS_BUILD_SUBJECT = sa.Index(
     PRESENCE_CORRIDORS.c.build_id, PRESENCE_CORRIDORS.c.subject_id,
 )
 
-# Recomputed WHOLESALE from `presence_trips` every time (never
-# incremental — percentiles are not mergeable the way a sum is), for one
-# `(subject_id, corridor_id, hour_of_week)` slot. `hour_of_week` is the
-# SAME 0..167 Monday-00:00-=-0 bucketing `presence_occupancy` already
-# uses, keyed on the TRIP's `started_ts`, not split across hours
-# the way a stay's dwell is — a trip is a single event, not a span to
-# divide.
+# RETIRED (DEC-122): the table and its rows stay in place.
 PRESENCE_CORRIDOR_SPEED = sa.Table(
     "presence_corridor_speed",
     METADATA,
@@ -1170,39 +1164,8 @@ UQ_REMINDERS_PROACTIVE_OPEN_SUBJECT = sa.Index(
 )
 
 
-# RETIRED (DEC-314): nothing reads or writes `version_announcements`. The table
-# and its rows stay in place, unread, until someone chooses the irreversible
-# delete — the `artifacts` precedent below.
-#
-# `version_announcements` — the ledger that made "announce a version once, ever"
-# true across a restart or a crash-loop (DEC-97, R-42).
-#
-# THE PRIMARY KEY IS THE MECHANISM, not bookkeeping. The claim is
-# `INSERT … ON CONFLICT DO NOTHING`, so taking a version-in-a-room is a
-# compare-and-set in ONE statement, exactly as `reminders.claim` puts its state
-# predicate in the WHERE clause (R-37). A row EXISTING — in any state — is what
-# bars a second announcement, so a process that died mid-turn never re-announces
-# on the next boot. That is the same at-most-once decision R-37b made and for the
-# same reason: nothing links a row to a message that may already have been
-# delivered, so a retry double-posts anything that crashed after egress, and an
-# upgrade note posted twice is worse than one never posted.
-#
-# Keyed by `(version, platform, conversation_id)` and not by `version` alone: she
-# lives in more than one room, each room is a separate turn that can separately
-# fail, and one room's failure must not consume another room's announcement.
-#
-# `announced_at` is stamped when the row is CLAIMED, not when it is resolved: it
-# records when this version was taken, which is the fact boot recovery needs to
-# read afterwards. `state`/`outcome` carry what happened — the fire path's own
-# outcome string, so an operator asking "why did V3 never appear in that
-# group" reads the answer rather than inferring it from silence (R-5 keeps the
-# failure out of the room, so this row is its only trace).
-#
-# `state` is TEXT with a CHECK, like `reminders.state`, and for the same reason:
-# a CHECK is edited by an ordinary migration where an ENUM needs `ALTER TYPE` —
-# and it is exactly what `alembic check` is blind to, which is why
-# `0006_version_announcements` is hand-written and the parity gate reads it back
-# out of `pg_constraint`.
+# RETIRED announcement feature (DEC-314): snapshot restore still copies
+# the retained `version_announcements` history into sandbox databases.
 VERSION_ANNOUNCEMENTS = sa.Table(
     "version_announcements",
     METADATA,
@@ -1501,6 +1464,7 @@ DREAM_SCHEDULE_STATE = sa.Table(
 # The UNIQUE key is natural, not synthetic, and it is load-bearing: without it a
 # retried or concurrent cycle appends the same observation twice and the rendered
 # «12x, 3 people» becomes a fabricated number.
+# RETIRED (DEC-111): the table and its rows stay in place.
 LANGUAGE_OBSERVATION = sa.Table(
     "language_observation",
     METADATA,
@@ -1526,7 +1490,7 @@ LANGUAGE_OBSERVATION = sa.Table(
     # recorded cannot be backfilled, and a server default would stamp them with
     # a digest they were not written under — a fabricated attribution, strictly
     # worse than an honest absent one. NULL reads as «I could not check», never
-    # «there was nothing» (R-27).
+    # «there was nothing».
     sa.Column("instruction_sha256", sa.Text),
     # PROVENANCE, second half — WHICH MODEL read that instruction text. The
     # same text run against a different model produces a different `sense`, so
@@ -1535,7 +1499,7 @@ LANGUAGE_OBSERVATION = sa.Table(
     # recorded rather than assumed. Nullable/no-default/no-backfill for the
     # same reason as the digest above: stamping old rows with the currently
     # configured model would be a fabricated attribution. NULL is «I could not
-    # check» (R-27).
+    # check».
     sa.Column("model", sa.Text),
     sa.UniqueConstraint("message_id", "canonical_form", "sense"),
     # The digest is 64 lowercase hex chars or it is nothing — a CHECK, not a
@@ -1553,7 +1517,7 @@ LANGUAGE_OBSERVATION = sa.Table(
     # ONE thing that is provable and that matters: a stamp is either a real
     # name or honestly absent, never a value that LOOKS recorded and names
     # nothing. Without it `''` (or `'   '`) reads as non-NULL to every query
-    # that asks "which rows are attributable", turning R-27's `unavailable`
+    # that asks "which rows are attributable", turning `unavailable`
     # into a false `ok` — the same failure `instruction_sha256()` refuses by
     # raising on an empty part list. Anything else about the name is the
     # config's business, not the database's; over-constraining it would
@@ -1582,6 +1546,7 @@ IDX_LANGUAGE_OBSERVATION_SCOPE = sa.Index(
 # `state` is CHECK-constrained like every other enumerated TEXT column here.
 # `alembic check` is blind to CHECK constraints; the parity test's full-dump
 # diff is what catches a drift.
+# RETIRED (DEC-111): the table and its rows stay in place.
 ROOM_LEXEME = sa.Table(
     "room_lexeme",
     METADATA,
@@ -1657,6 +1622,7 @@ _EXCHANGE_ACTS = (
 )
 EXCHANGE_ACTS = _EXCHANGE_ACTS
 
+# RETIRED (DEC-120): the table and its rows stay in place.
 EXCHANGE_OBSERVATION = sa.Table(
     "exchange_observation",
     METADATA,
@@ -1704,6 +1670,7 @@ IDX_EXCHANGE_OBSERVATION_SCOPE = sa.Index(
 # same pair always keys the same row regardless of extraction order) — a pair
 # trading a SECOND act gets a second row, exactly `room_lexeme`'s own
 # `(scope_id, canonical_form, sense)` argument for why `sense` is in ITS key.
+# RETIRED (DEC-120): the table and its rows stay in place.
 ROOM_EXCHANGE = sa.Table(
     "room_exchange",
     METADATA,
@@ -1746,6 +1713,7 @@ ROOM_EXCHANGE = sa.Table(
 # `lexeme_basis`/`exchange_basis` store `canonical_form`/`act` only — the same
 # non-identifying vocabulary those tables use — kept purely for operator audit
 # of what a narrative was built from, never rendered to her.
+# RETIRED (DEC-121): the table and its rows stay in place.
 ROOM_PORTRAIT = sa.Table(
     "room_portrait",
     METADATA,
@@ -1976,9 +1944,10 @@ IDX_EVENT_RSVPS_EVENT_PERSON = sa.Index(
 
 # The fact tier. Keyed on UNIT, not
 # scope_id: a room's words are that room's, the world is not. `unit` is
-# `nora.policy.Conversation.unit` (DEC-105) — the same key R-49 refuses to
+# `nora.policy.Conversation.unit` — the same key the egress guard refuses to
 # relay across, which is what makes a fact rendering into a sibling room
 # something other than a leak.
+# RETIRED (DEC-129): the table and its rows stay in place.
 FACT_ENTITY = sa.Table(
     "fact_entity",
     METADATA,
@@ -1993,6 +1962,7 @@ FACT_ENTITY = sa.Table(
                         name="fact_entity_unit_name_key"),
 )
 
+# RETIRED (DEC-129): the table and its rows stay in place.
 FACT_CANDIDATE = sa.Table(
     "fact_candidate",
     METADATA,
@@ -2012,7 +1982,7 @@ FACT_CANDIDATE = sa.Table(
     sa.Column("last_adjudicated_at", sa.BigInteger),
     sa.Column("attempts", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("established_by", sa.Text, nullable=False),
-    # The DEC-125/DEC-126 provenance pair (migration 0027). NOT NULL like
+    # The instruction and model provenance are NOT NULL like
     # `fact`'s, because every `Proposal` reaching `propose` carries both. A
     # re-sighting does not move them: they belong to the run that ESTABLISHED
     # the row, alongside `established_by` and `first_seen_at`.
@@ -2055,6 +2025,7 @@ FACT_CANDIDATE = sa.Table(
                         name="fact_candidate_triple_key"),
 )
 
+# RETIRED (DEC-129): the table and its rows stay in place.
 FACT = sa.Table(
     "fact",
     METADATA,
@@ -2112,7 +2083,7 @@ FACT = sa.Table(
     # a float — a numeric confidence invites false precision nobody in this
     # tier can calibrate. Server default 'tentative', not 'proven': a
     # default is what a row gets when nobody thought about it, and in a
-    # fail-closed codebase (R-27, R-5) that value must underclaim, never
+    # fail-closed code that value must underclaim, never
     # overclaim. 'tentative' is also where an abduced claim's epistemic
     # status lands — the default, not an opt-in.
     sa.Column("fidelity", sa.Text, nullable=False,
@@ -2152,7 +2123,7 @@ FACT = sa.Table(
     # has none — no width, no alphabet, no registry this process can consult —
     # so a pattern would be a guess about naming conventions and would reject a
     # real provider rename. But '' and '   ' are non-NULL to every query asking
-    # "which rows are attributable", turning R-27's `unavailable` into a false
+    # "which rows are attributable", turning `unavailable` into a false
     # `ok`, so this asserts only what is provable. No NULL branch: `fact` has no
     # rows without a model.
     sa.CheckConstraint(
@@ -2240,6 +2211,7 @@ IDX_FACT_STANDING = sa.Index(
 # "warrant_kind = 'premises' ⇒ at least one premise" is a cross-table invariant
 # Postgres CHECK constraints cannot express, and this table does not fake it
 # with a trigger; nothing in the database enforces it.
+# RETIRED (DEC-129): the table and its rows stay in place.
 FACT_PREMISE = sa.Table(
     "fact_premise",
     METADATA,
@@ -2279,30 +2251,7 @@ IDX_FACT_PREMISE_PREMISE_FACT_ID = sa.Index(
 )
 
 
-# WHAT SHE RENDERED (migration 0042): the correction loop needs "a claim Nora
-# just RENDERED".
-#
-# `TagTrace` keeps the turn's messages and transcript; it does not keep which
-# rows went into the prefill. Recovering them by parsing the `<facts>` block
-# back out of a stored prefill would be INTERPRETING TWICE, the way two copies
-# drift. So the render site records it, because that is the one place the row
-# ids are already in hand.
-#
-# **This table is also the measurement.** Without it, "Nora rendered it" is an
-# assumption; with it, it is a read.
-#
-# **UPSERT, one row per rendered claim per conversation.** Keyed on the tag too,
-# it would write a fresh row for the same claim on every consecutive tag — forty
-# rows for one fact in an active conversation, read back with `DISTINCT ON` —
-# for provenance `tag_trace` already carries. `last_tag_id` says which turn last
-# put the row in scope and is deliberately NOT part of the key.
-#
-# **`row_key` is TEXT, not uuid.** A fact's is its uuid; a lexeme's is its
-# composite key, because `room_lexeme`'s primary key is three TEXT columns and
-# it has no surrogate id. A `uuid` column here could not hold half the rows.
-#
-# **A WORKING SET, not an audit trail.** Pruned on the recognition window; the
-# audit trail is the Langfuse trace and the `tag_trace` row.
+# RETIRED (DEC-129 / DEC-111): the table and its rows stay in place.
 RENDERED_CLAIM = sa.Table(
     "rendered_claim",
     METADATA,
@@ -2360,6 +2309,7 @@ IDX_RENDERED_CLAIM_WINDOW = sa.Index(
 # a thing is a fixed historical fact; the message is the evidence, and losing
 # the evidence does not unmake the assertion. A dangling id reads as "said in a
 # message no longer retained", which is the correct answer.
+# RETIRED (DEC-129): the table and its rows stay in place.
 FACT_ASSERTER = sa.Table(
     "fact_asserter",
     METADATA,
@@ -2367,7 +2317,7 @@ FACT_ASSERTER = sa.Table(
               sa.ForeignKey("fact.id", name="fact_asserter_fact_id_fkey",
                             ondelete="CASCADE"),
               primary_key=True),
-    # The person_id (A2/DEC-14), never a platform account: one human with two
+    # The person_id, independent of platform account: one human with two
     # accounts is one asserter, and a per-account grain would read as two
     # people corroborating each other.
     sa.Column("person_id", sa.Text, primary_key=True),
@@ -2389,9 +2339,9 @@ FACT_ASSERTER = sa.Table(
 
 # ---------------------------------------------------------------------------
 # The note tier. A note is TRACKED UNCERTAINTY —
-# unit-keyed like `fact`, and for the same DEC-105/R-49 reason: rooms
+# unit-keyed because rooms
 # sharing a unit are one social unit, so a note established in one room
-# rendering into another crosses no boundary R-31 guards.
+# rendering into another stays inside that unit.
 #
 # Every CHECK below is required BY THE MIGRATION, not by this file alone —
 # `alembic check` is blind to CHECK constraints. A CHECK declared only here is
@@ -2539,6 +2489,7 @@ NOTE_REVISION = sa.Table(
     *_derived("note_revision", per_row=True),
 )
 
+# RETIRED (R-75): the table and its rows stay in place.
 NOTE_ENTITY = sa.Table(
     "note_entity",
     METADATA,

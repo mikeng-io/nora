@@ -44,7 +44,7 @@ from nora.config import load as load_config
 from nora.doctrine.loader import Doctrine, DoctrineStore
 from nora.domain.models import DeliveryStatus, NormalizedMessage, PersonRef, TranscriptRow
 from nora.domain.notes import Note, NoteRevision
-from nora.domain.reminders import Reminder, ReminderCaps, ReminderState
+from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
 from nora.engagement.stages.deliver import BUDGET_STOP_REASONS as _BUDGET_STOP_REASONS
 from nora.infra.sql.engine import create_sql_engine
@@ -312,7 +312,7 @@ def build_live_participation_runner(
 
 def build_eval_tool_registry(
     *, notes: Any | None = None, note_unit: str = _EVAL_UNIT,
-    reminders: Any | None = None, clock: Any | None = None,
+    clock: Any | None = None,
     observations: Any | None = None,
 ) -> ToolRegistry:
     """A `ToolRegistry` wired with the canned eval backends (F4): `weather`,
@@ -338,11 +338,6 @@ def build_eval_tool_registry(
     row lands in the eval unit by construction (`seed_from_dict`), and a
     row keyed anywhere else silently never renders.
 
-    `reminders`/`clock` are the proactive suites' pair: without a store `remind`
-    answers `unavailable` and every decide case is ERROR, and the clock must be
-    the CASE's `now`, not the wall clock, or `remind`'s past/too-soon checks
-    measure the day the suite happened to run. `None` leaves every other caller
-    unchanged.
     """
     extra: dict[str, Any] = {}
     if clock is not None:
@@ -364,8 +359,6 @@ def build_eval_tool_registry(
         # routing is measured against the same wired surface, `nothing_found`
         # over an empty room rather than `unavailable` for a missing seam.
         observations=observations,
-        reminders=reminders,
-        reminder_caps=ReminderCaps() if reminders is not None else None,
         **extra,
     )
 

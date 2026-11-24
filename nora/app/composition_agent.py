@@ -105,14 +105,14 @@ def build_registry(
     computer_context: Any, computer_dm_scope_for: Any, computer_events: Any,
     computer_exports: Any, computer_leases: Any, computer_sessions: Any,
     computer_settings: Any, content_checks: Any, graph_profiles: Any, discord_presence: Any,
-    document_service: Any, engine: Any, events: Any, fetch_client: Any,
+    document_service: Any, engine: Any, fetch_client: Any,
     geocoder: Any, giphy_client: Any, image_generator: Any, image_refs_allowed: Any,
     ledger_store: Any, lineage: Any, mcp_tool_groups: Any, media_descriptions: Any,
     media_join: Any, media_objects: Any, memo_store: Any, memory_search: Any,
     metrics: Any, mobility: Any, music_bridge: Any, note_store: Any,
     observation_store: Any, persons: Any, presence_circles: Any, presence_reader: Any,
     presence_store: Any, profile_index: Any, reaction_picker: Any,
-    refresher: Any, relay: Any, reminder_caps: Any, reminders: Any,
+    refresher: Any, relay: Any,
     route_client: Any, room_management: Any, search_client: Any, social_client: Any,
     standing_store: Any, graph_retrieval: Any,
     engagement_graph_retrieval: Any, intention_admission: Any,
@@ -129,7 +129,7 @@ def build_registry(
         computer_leases=computer_leases, computer_sessions=computer_sessions,
         computer_settings=computer_settings, content_checks=content_checks,
         graph_profiles=graph_profiles, discord_presence=discord_presence,
-        document_service=document_service, engine=engine, events=events,
+        document_service=document_service, engine=engine,
         fetch_client=fetch_client, geocoder=geocoder, giphy_client=giphy_client,
         image_generator=image_generator, image_refs_allowed=image_refs_allowed,
         ledger_store=ledger_store, lineage=lineage, mcp_tool_groups=mcp_tool_groups,
@@ -143,7 +143,7 @@ def build_registry(
         presence_circles=presence_circles, presence_reader=presence_reader,
         presence_store=presence_store, profile_index=profile_index,
         reaction_picker=reaction_picker,
-        refresher=refresher, relay=relay, reminder_caps=reminder_caps, reminders=reminders,
+        refresher=refresher, relay=relay,
         route_client=route_client, search_client=search_client,
         social_client=social_client, standing_store=standing_store,
         steam_client=steam_client, subagent_desk=subagent_desk,
@@ -166,11 +166,11 @@ def _build_tool_registry(
     memo_store: Any, memory_search: Any, observation_store: Any,
     graph_retrieval: Any, engagement_graph_retrieval: Any, intention_admission: Any,
     browser: Any, computer_context: Any, computer_settings: Any, presence_reader: Any,
-    search_client: Any, engine: Any, events: Any, version_manifest: Any,
+    search_client: Any, engine: Any, version_manifest: Any,
     allowlist: Any, voice_presence: Any, relay: Any, weather_client: Any,
     vision_client: Any, refresher: Any, image_refs_allowed: Any, clock: Any,
     document_service: Any, lineage: Any, blobs: Any, standing_store: Any,
-    reminders: Any, reminder_caps: Any, tool_call_log_store: Any, social_client: Any,
+    tool_call_log_store: Any, social_client: Any,
     computer_exports: Any, mobility: Any, computer_events: Any, room_management: Any = None,
 ) -> Any:
     """The native tool surface's collaborator registry."""
@@ -194,10 +194,7 @@ def _build_tool_registry(
         # The document tools: ships OFF, and off the
         # registry withholds all three from every turn.
         documents=document_service if cfg.documents.enabled else None,
-        events=events,
-        # `[llm.budgets]`, the per-deployment delta over the table. Threaded here for the same
-        # reason `reminder_caps` is: `nora.agent` may not import `nora.config`, so the
-        # composition root is the conversion point. Names are validated at config load, so…
+        # Budget names are validated at configuration load.
         budget_overrides=cfg.llm.budgets,
         content_checks=content_checks,
         **_memory_tool_args(
@@ -235,7 +232,6 @@ def _build_tool_registry(
         ),
         **_note_tool_args(
             allowlist=allowlist, clock=clock, note_store=note_store,
-            reminder_caps=reminder_caps, reminders=reminders,
         ),
         **_lookup_tool_args(
             cfg=cfg, fetch_client=fetch_client, giphy_client=giphy_client,
@@ -415,24 +411,8 @@ def _room_tool_args(
     }
 
 
-def _note_tool_args(
-    allowlist: Any, clock: Any, note_store: Any, reminder_caps: Any,
-    reminders: Any,
-) -> Any:
-
-    """The note tier's tools plus the `remind` store and caps."""
+def _note_tool_args(allowlist: Any, clock: Any, note_store: Any) -> Any:
     return {
-        # The SAME store the tick reads from — two would be two queues, and the
-        # rows `remind` wrote would sit in one while the heartbeat watched the
-        # other.
-        "reminders": reminders,
-        # The reminder caps as the DOMAIN value, the SAME `reminder_caps` instance the Cognition
-        # session is built with — see that variable's own comment for why they must not be two
-        # separately constructed copies. `nora.agent` may not import `nora.config` (import-…
-        "reminder_caps": reminder_caps,
-        # The same wall clock the tick runs on. `remind` compares `when` against it for three of
-        # its six refusals, and a registry clock that disagreed with the tick's would let a row
-        # be accepted as "two minutes out" and then be found already due.
         "clock": clock,
         "notes": note_store,
         # RESOLVER, not a constant — see `build_tools`' own note. This deployment has two units

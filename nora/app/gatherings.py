@@ -108,39 +108,6 @@ class GatheringService:
             )
         ]
 
-    async def search_events(
-        self, *, unit_id: str, conversation_id: str, place: str | None = None,
-        person: str | None = None, start: datetime | None = None,
-        end: datetime | None = None,
-        platform: str = "",
-    ) -> Sequence[Gathering]:
-        """`event_search`'s store side: unit-wide when
-        `unit_id` names one (`list_events` is per room, filtered by status
-        only); otherwise this room's own events, so a room with no unit
-        resolved can still search its own events. A bare `event_search()` with
-        none of `place`/`person`/`start`/`end` reads exactly as `list_events()`.
-
-        The unit is the read boundary (DEC-231), so every persisted platform in
-        it is in scope. A row with no stored platform is quarantined; the old
-        "room ids policy assigns to this unit" widening inferred historical
-        ownership and is gone."""
-        if not unit_id:
-            return await self.list_events(
-                conversation_id=conversation_id, platform=platform,
-            )
-        found = await self._store.search(
-            unit_id=unit_id, place=place, person=person, start=start, end=end,
-        )
-        return [
-            e
-            for e in found
-            if event_in_scope(
-                e,
-                unit_id=unit_id,
-                conversation_id=e.conversation_id,
-            )
-        ]
-
     async def get_event(self, *, event_id: UUID) -> Gathering | None:
         """A reader: an id that does not exist reads as absent."""
         return await self._store.get(event_id)
