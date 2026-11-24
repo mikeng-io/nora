@@ -60,9 +60,9 @@ average of its members. Nora's profile describes how she has come across.
 - The subject portal presents external claims about the viewer. Evidence
   text is shown only where the viewer has access to its source room. A claim
   may cite evidence from a room in the same unit that does not list its
-  subject. The source room gate still applies to that evidence. An open
-  boundary is whether the portal shows a claim to a viewer who is both its
-  subject and an [excluded person](boundaries.md#scope).
+  subject. The source room gate still applies to that evidence. Where a viewer
+  is both a claim's subject and one of its [excluded persons](boundaries.md#scope),
+  subject inspection and exclusion non-disclosure meet with no defined precedence.
 - Any person may dispute a claim. A dispute is an item and a stimulus. The
   subject's dispute hides the claim at once. Another person's dispute marks
   it awaiting weighing.

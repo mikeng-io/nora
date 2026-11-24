@@ -692,7 +692,7 @@ PRESENCE_CORRIDOR_SPEED = sa.Table(
     ),
 )
 
-# Snapshot restore retains the paired fix and cluster cursors.
+# Restore-only through `snapshot_at`. Holds the paired fix and cluster cursors.
 ANALYTICS_WATERMARK = sa.Table(
     "analytics_watermark",
     METADATA,
@@ -1439,7 +1439,7 @@ CONSOLIDATION_WATERMARK = sa.Table(
     sa.Column("source_read_revision", sa.Text),
 )
 
-# Snapshot schedule state stores Unix epoch milliseconds.
+# Restore-only through `snapshot_at`. Timestamps are Unix epoch milliseconds.
 DREAM_SCHEDULE_STATE = sa.Table(
     "dream_schedule_state",
     METADATA,
@@ -2496,7 +2496,7 @@ NOTE_ENTITY = sa.Table(
               primary_key=True),
 )
 
-# Snapshot restore retains both miss and create candidates.
+# Restore-only through `snapshot_at`. Holds both miss and create candidates.
 NOTE_CANDIDATE = sa.Table(
     "note_candidate",
     METADATA,
@@ -5277,7 +5277,7 @@ EXTRACTION_CLAIM = sa.Table(
     sa.UniqueConstraint("extraction_id", "ordinal", name="uq_extraction_claim"),
 )
 
-# Snapshot restore retains the extraction's attempt history.
+# Restore-only through `snapshot_at`. Holds the extraction's attempt history.
 EXTRACTION_ATTEMPT = sa.Table(
     "extraction_attempt", METADATA,
     sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),

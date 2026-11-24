@@ -17,17 +17,13 @@
  "design/09-decision-index.md": {
   "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
   "matches": {
-   "Persona": 7,
+   "Persona": 2,
    "PersonaStore": 1,
-   "SqlPersonaStore": 1,
-   "_persona": 1,
    "nora_persona_reload_failures_total": 1,
-   "persona": 4,
+   "persona": 2,
    "persona_leak": 1,
-   "persona_line": 2,
    "persona_sha256": 1,
-   "persona_span": 1,
-   "persona_write": 1
+   "persona_span": 1
   }
  },
  "design/13-trace-content-and-redaction.md": {

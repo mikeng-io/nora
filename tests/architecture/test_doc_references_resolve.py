@@ -247,8 +247,8 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "docs/adr/0002-honcho-session-binding-deferred.md",
         "nora/ingest/stages/memory_feed.py",
     ): (
-        "deleted with the memory backend. The ADR records the earlier state and "
-        "stays historical; the record pass (6f) decides whether to remove this pin."
+        "The accepted ADR records the feed path at the revision it describes. The "
+        "reference resolves in Git history."
     ),
     (
         'docs/adr/0028-pull-requests-are-labelled-and-assigned-by-a-workflow-and-a-visible-commit-has-a-body.md',
@@ -388,41 +388,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ("design/09-decision-index.md", ".github/workflows/gates.yml"): (
         "A12 names a CI gate file; this repo deliberately runs no CI (operator decision) "
         "and the file was never added back after that decision"
-    ),
-    ("design/event-abstraction/02-naming-rename.md", "nora/infra/sql/events.py"): (
-        "naming-rename plan; shipped as nora/domain/events.py instead"
-    ),
-    ("design/event-abstraction/02-naming-rename.md", "nora/testing/events.py"): (
-        "naming-rename plan; no such fake module was built"
-    ),
-    ("design/event-abstraction/02-naming-rename.md", "tests/test_events_domain.py"): (
-        "naming-rename plan's proposed test names; shipped as tests/unit/test_standing_event.py"
-    ),
-    ("design/event-abstraction/02-naming-rename.md", "tests/test_events_service.py"): (
-        "naming-rename plan's proposed test names; shipped as tests/unit/test_standing_event.py"
-    ),
-    ("design/event-abstraction/02-naming-rename.md", "tests/test_event_tools.py"): (
-        "naming-rename plan's proposed test names; shipped as tests/unit/test_standing_event.py"
-    ),
-    ("design/event-abstraction/02-naming-rename.md", "tests/test_web_events.py"): (
-        "naming-rename plan's proposed test names; shipped as tests/unit/test_standing_event.py"
-    ),
-    (
-        "design/event-abstraction/02-naming-rename.md",
-        "tests/contract/test_event_store_contract.py",
-    ): (
-        "naming-rename plan's proposed contract suite; not built under this name"
-    ),
-    ("design/event-abstraction/04-dispatch-and-batching.md", "tests/test_events.py"): (
-        "same event-abstraction planning-doc-vs-shipped-name drift as 02-naming-rename.md"
-    ),
-    ("design/event-abstraction/02-naming-rename.md", "tests/test_gathering_tools.py"): (
-        "deleted with the tag path's event tools; the record pass (6f) retires the "
-        "planning doc and removes this pin"
-    ),
-    ("design/event-abstraction/03-reminder-schema.md", "tests/test_reminder_tools.py"): (
-        "deleted with the tag path's reminder tools; the record pass (6f) retires the "
-        "planning doc and removes this pin"
     ),
     ("docs/adr/0020-documents-are-json-specs-the-portal-renders.md",
      "nora/compute/smith/page_shell.py"): (

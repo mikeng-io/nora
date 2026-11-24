@@ -199,35 +199,6 @@
   "not-a-design-file",
   "date"
  ],
- "design/event-abstraction/00-overview.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/event-abstraction/01-shape-decision.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "design/event-abstraction/02-naming-rename.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/event-abstraction/03-reminder-schema.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/event-abstraction/04-dispatch-and-batching.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/event-abstraction/05-gathering-fold-in.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/event-abstraction/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "design/external-files/00-design.md": [
   "numbered-or-dated-name",
   "date",
