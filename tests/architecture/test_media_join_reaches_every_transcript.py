@@ -150,6 +150,9 @@ _UNJOINED_BY_OWN_SQL = {
 #: reader added later and never listed here passes both gates silently — the
 #: exact failure this file exists to catch, one AST shape further down.
 _NOT_A_RAW_READER = {
+    "nora/memory/adapters/subject_claims.py": (
+        "the subject portal renders individually authorized text citations without a model transcript"
+    ),
     "nora/infra/sql/unified_backfill.py": (
         "enumerates historical event identities; the existing Grounder resolves "
         "their transcript/media content through MediaJoin before rendering"
