@@ -81,7 +81,6 @@ LEGACY_COMPOSERS = frozenset(
         "nora.agent.prefill:_replying_to_block",
         "nora.agent.prefill:_standing_block",
         "nora.agent.speech_format:render_input",
-        "nora.app.profile_spike:event_judge",
         "nora.ingest.relevance_gate:render_context",
         "nora.language.character:CharacterNoraAdaptor.inputs",
         "nora.language.character:CharacterPersonAdaptor.inputs",

@@ -63,20 +63,6 @@
     "target": "tests/infra/test_character_card.py::test_new_content_roundtrips_and_supersedes_without_rewriting_history"
   },
   {
-    "name": "card output is explicit",
-    "file": "nora/app/profile_spike.py",
-    "old": "    if card:\n        out[\"card\"]",
-    "new": "    if True:\n        out[\"card\"]",
-    "target": "tests/infra/test_character_card.py::test_window_dry_read_is_oldest_first_day_by_day_and_report_counts_only"
-  },
-  {
-    "name": "window respects its last date",
-    "file": "nora/app/profile_spike.py",
-    "old": "m.ts < min(day + 86400000, until),",
-    "new": "sa.true(),",
-    "target": "tests/infra/test_character_card.py::test_window_dry_read_is_oldest_first_day_by_day_and_report_counts_only"
-  },
-  {
     "name": "dimension and evidence range render canonically",
     "file": "nora/domain/character_card.py",
     "old": "f\"{day(item.strength.get('last'))}; {item.mode}]: {text}\")",

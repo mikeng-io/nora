@@ -241,7 +241,6 @@ def test_generated_subject_answers_every_production_declaration(tmp_path, evalua
     }
     # These declarations are reached by an offline diagnostic or an eval arm.
     offline = {
-        "nora/app/profile_spike.py",
         "nora/language/confirmation_render.py",
         "nora/subject/context_selector_render.py",
         "scripts/memory_graph_spike.py",

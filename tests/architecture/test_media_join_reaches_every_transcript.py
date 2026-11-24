@@ -157,10 +157,6 @@ _NOT_A_RAW_READER = {
     "nora/infra/sql/standing_ledger.py": (
         "a store span read; load_transcript and room_read join the returned rows through MediaJoin"
     ),
-    "nora/app/profile_spike.py": (
-        "operator window pages feed ProfilePersonAdaptor's existing MediaJoin; "
-        "the read-only report resolves cached attachment fields as cited evidence, not a transcript"
-    ),
     # `nora/infra/sql/audit.py` DEFINES `recent`/`since`/`since_including_nora`/
     # `unattributed` — it is the thing `_discovered_readers` finds callers of,
     # not a caller bypassing them. Its own `MESSAGES.c.body` selects are the

@@ -28,8 +28,15 @@ import re
 from pathlib import Path
 
 from nora.domain.block_types import BLOCK_TYPES
+from tests.architecture.test_every_model_call_is_a_declared_occasion import EXTRA_MODEL_DOORS
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _renderer_paths() -> tuple[Path, ...]:
+    # The model-occasion scope includes the evidence renderer used by the rebuilt eval judge.
+    return (*sorted((ROOT / "nora").rglob("*.py")), *EXTRA_MODEL_DOORS)
+
 
 def _table_names() -> set[str]:
     """The block names in `prefill._BLOCKS` and `_TAG_MESSAGE_BLOCKS` — the
@@ -59,7 +66,7 @@ def _wrapper_names() -> set[str]:
     convention.
     """
     names: set[str] = set()
-    for path in (ROOT / "nora").rglob("*.py"):
+    for path in _renderer_paths():
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -115,7 +122,7 @@ def _rendered_names() -> set[str]:
     descriptions of blocks that ship on every tag turn.
     """
     found: set[str] = set(_table_names()) | _wrapper_names()
-    for path in sorted((ROOT / "nora").rglob("*.py")):
+    for path in _renderer_paths():
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError:                                # pragma: no cover

@@ -69,7 +69,7 @@ PKG = ROOT / "nora"
 #: EXEMPT entry — because a door left unscanned is the failure this file
 #: exists to end. It is a list of what IS held to the rule, never of what
 #: may ignore it.
-_EXTRA_DOORS = (
+EXTRA_MODEL_DOORS = (
     ROOT / "scripts" / "confirm_cognition_anchors.py",
     ROOT / "scripts" / "memory_graph_spike.py",
 )
@@ -184,7 +184,7 @@ def _parse(path: Path) -> ast.Module:
 
 def _modules() -> dict[str, ast.Module]:
     modules = {_rel(p): _parse(p) for p in sorted(PKG.rglob("*.py"))}
-    modules.update({_rel(p): _parse(p) for p in _EXTRA_DOORS})
+    modules.update({_rel(p): _parse(p) for p in EXTRA_MODEL_DOORS})
     return modules
 
 
