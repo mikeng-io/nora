@@ -2107,9 +2107,7 @@ def _as_nora_case(case: Case, spec: Spec, *, trigger: str) -> Any:
         snapshot=dict(md.get("snapshot") or {}),
         person=str(md.get("person") or pseudonyms.resolve("miles_novak")),
         mention=bool(md.get("mention", False)),
-        # `evals/rebuilt/entry.py`'s `dreamer` reads `case.category or
-        # "note-candidates"` to pick WHICH adaptor a `dreamer` pass runs (only
-        # `culture` is left; the default names a deleted adaptor, DEC-277).
+        # Dreamer cases name the adaptor in their category.
         category=str(md.get("category") or ""),
         # `NoraCase.metadata`'s own docstring is "whatever else the corpus
         # recorded, carried verbatim" — `proactive_act` reads its `row` off

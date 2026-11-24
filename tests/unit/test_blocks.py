@@ -575,29 +575,27 @@ def test_an_empty_block_is_dropped_unless_it_opts_in():
 
 
 def test_a_self_closing_block_survives_assemble_and_is_its_opening_tag_alone():
-    """Culture's and note-candidates' `<room label="..."/>`: the operator wrote
-    nothing, so the block is its opening tag with no body, no closing tag and
-    no blank line, and `assemble` keeps it where it would drop an empty one."""
-    room = ContextBlock(
-        name="room", attrs=(("label", "Zone 42"),), body=compose_fixture(""), order=1,
+    """An empty profile can declare its type with just its opening tag."""
+    profile = ContextBlock(
+        name="profile", attrs=(("entity", "room"),), body=compose_fixture(""), order=1,
         when_empty="self_close",
     )
     kept = ContextBlock(name="today", body=compose_fixture("2026-10-01 Thu"), order=2)
-    rendered = room.render()
-    assert rendered.startswith('<room label="Zone 42" description="')
+    rendered = profile.render()
+    assert rendered.startswith('<profile entity="room" description="')
     assert rendered.endswith('"/>')
-    assert "\n" not in rendered and "</room>" not in rendered
-    assert assemble([kept, room], sep="\n\n") == rendered + "\n\n" + kept.render()
+    assert "\n" not in rendered and "</profile>" not in rendered
+    assert assemble([kept, profile], sep="\n\n") == rendered + "\n\n" + kept.render()
     # The same block WITH a body is an ordinary block: the flag is about empty.
-    full = replace(room, body=compose_fixture("the games channel"))
-    assert full.render().endswith("\nthe games channel\n</room>")
+    full = replace(profile, body=compose_fixture("the reading room"))
+    assert full.render().endswith("\nthe reading room\n</profile>")
 
 
 def test_a_render_block_is_kept_empty_and_written_like_any_other():
-    block = ContextBlock(name="room", attrs=(("label", "X"),),
+    block = ContextBlock(name="profile", attrs=(("entity", "room"),),
         body=compose_fixture(""), when_empty="render")
     assert assemble([block], sep="\n\n") == block.render()
-    assert block.render().endswith('">\n\n</room>')
+    assert block.render().endswith('">\n\n</profile>')
 
 
 def test_a_nothing_block_keeps_its_slot_and_its_separators_and_writes_no_bytes():

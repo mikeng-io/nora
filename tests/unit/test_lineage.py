@@ -25,7 +25,6 @@ from nora.agent.lineage import (
     visible_sections,
 )
 from nora.agent.prefill import build_prefill
-from nora.domain.culture import CultureRevision
 from nora.domain.lineage import (
     BODY,
     ROW,
@@ -290,21 +289,13 @@ def _finding_entry(room: str) -> SharedEntry:
     )
 
 
-def _culture(room: str) -> CultureRevision:
-    return CultureRevision(
-        id="0191f2c4-0000-7000-8000-0000000000cc", culture_key=room,
-        body="how this room talks", written_at=1, established_by="culture",
-        lineage=own_room_lineage(room, (BODY,)),
-    )
-
-
-def _ctx(room: RoomFacts, *, notes=(), shared=None, culture=None,
+def _ctx(room: RoomFacts, *, notes=(), shared=None,
          lineage_room: RenderRoom | None = None) -> TagContext:
     cid = sorted(room.ids)[0]
     msg = NormalizedMessage(room.platform, cid, "group", "s1", "someone", 1, "hi", {})
     return TagContext(
         "tag-1", msg, None, (), (), 0.0, notes=tuple(notes), shared=shared,
-        culture=culture, lineage_room=lineage_room,
+        lineage_room=lineage_room,
     )
 
 
@@ -362,14 +353,13 @@ def test_a_same_room_read_renders_exactly_what_it_rendered_without_lineage():
     """Every block a backfilled room's OWN rows produce is byte-identical with
     lineage on and with it absent."""
     rows = {"notes": (NOTE_A, NOTE_A_LEGACY),
-            "shared": _shared(_position_entry("a"), _finding_entry("a")),
-            "culture": _culture("a")}
+            "shared": _shared(_position_entry("a"), _finding_entry("a"))}
     policy = LineagePolicy(rooms=ROOMS, circles=(CIRCLE,), mode="on",
                            _by_id={("signal", "a"): A})
     on = _ctx(A, **rows, lineage_room=policy.render_room(platform="signal", conversation_id="a"))
     off = _ctx(A, **rows)
     assert _body(on) == _body(off)
-    for tag in ("<notes", "<standing", "<culture"):
+    for tag in ("<notes", "<standing"):
         assert tag in _body(on)
     assert "an option" in _body(on)  # the finding rides the one standing block
 

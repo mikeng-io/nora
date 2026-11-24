@@ -330,7 +330,7 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
                 "multi-room seeding does not exist yet"
             ),
         )
-    adaptor = case.category or "culture"
+    adaptor = case.category
     if adaptor == "cognition":
         if case.metadata.get("corpus") == "cognition_session":
             return await _cognition_replay(subject, case, now_ms=now_ms)

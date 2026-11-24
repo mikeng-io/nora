@@ -355,7 +355,7 @@ async def test_a_body_cannot_hold_a_character_xml_cannot_represent(
 #: whose whole job is attribution. Reachable without an attacker — all three
 #: parsers write the sender's own profile string to `sender_name` unsanitised.
 _GUARDS_THE_COLLAPSED_NAME = (
-    "relevance_gate", "culture",
+    "relevance_gate",
 )
 
 #: Builders that spell `person_name or sender_name or …` by hand test the RAW
