@@ -633,7 +633,7 @@ class Bridge:
         except Exception:  # noqa: BLE001 — an unanswered daemon is not logged in yet
             return None
         return {"platform": PLATFORM, "primary": self.cfg.signal_account,
-                "aliases": [self.cfg.signal_account]}
+                "aliases": [self.cfg.signal_account], "capabilities": []}
 
     async def status(self) -> dict[str, Any]:
         try:

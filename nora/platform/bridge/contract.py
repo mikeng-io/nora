@@ -19,17 +19,28 @@ from aiohttp import web
 
 from nora.domain.service_api import OperationOutcome, ReadOutcome
 from nora.domain.service_api_platform import (
+    MUSIC_EFFECTS,
     SELF_ACCOUNT_ID,
     PlatformOperationKind,
     PlatformQueryKind,
 )
+from nora.infra.service_api_schema import validator
 from nora.platform.bridge import telemetry as bt
-from nora.platform.bridge.answers import envelope_response, read_body, scope_of, trace_of
+from nora.platform.bridge.answers import (
+    envelope_response,
+    now_ms,
+    read_body,
+    scope_of,
+    settled_body,
+    trace_of,
+)
 from nora.platform.bridge.service import ActionReply, reply_from_row
 from nora.platform.bridge.wire import attachment_key_ok
 
 OPERATION_KINDS = frozenset(get_args(PlatformOperationKind))
 QUERY_KINDS = frozenset(get_args(PlatformQueryKind))
+_PLATFORM_OPERATION = validator("PlatformOperationRequest")
+_PLATFORM_QUERY = validator("PlatformQuery")
 
 
 def _operation_outcome(reply: ActionReply) -> OperationOutcome | None:
@@ -112,6 +123,17 @@ class ActionService(Protocol):
     async def get(self, action_id: str) -> dict[str, Any] | None: ...
 
 
+class MusicSurface(Protocol):
+    """The queue owned by a music-capable bridge and its operation receipts."""
+
+    async def submit(self, req: web.Request, operation_id: str, kind: str,
+                     effect: dict[str, Any]) -> web.Response: ...
+
+    def receipt(self, operation_id: str) -> dict[str, Any] | None: ...
+
+    async def status(self, conversation_id: str) -> QueryAnswer: ...
+
+
 class PlatformSurface:
     """The platform contract's routes and the root probes, over one bridge's parts.
 
@@ -128,6 +150,7 @@ class PlatformSurface:
         query: Callable[[str, Mapping[str, Any]], Awaitable[QueryAnswer]],
         custody_dir: Callable[[], Path | None],
         max_blob_bytes: Callable[[], int],
+        music: MusicSurface | None = None,
     ) -> None:
         self._platform = platform
         self._actions = actions
@@ -136,6 +159,7 @@ class PlatformSurface:
         self._query = query
         self._custody_dir = custody_dir
         self._max_blob_bytes = max_blob_bytes
+        self._music = music
 
     def add_routes(self, app: web.Application) -> None:
         app.router.add_get("/health", self.health)
@@ -182,6 +206,8 @@ class PlatformSurface:
             return web.json_response({"error": "body must be a JSON object"}, status=400)
         if not isinstance(body.get("kind"), str) or body["kind"] not in OPERATION_KINDS:
             return web.json_response({"error": "unknown operation kind"}, status=422)
+        if body["kind"] in MUSIC_EFFECTS:
+            return await self._submit_music(req, body)
         actions = self._actions()
         if actions is None:
             reply = ActionReply("unavailable", kind="unavailable", message="no action service")
@@ -192,12 +218,26 @@ class PlatformSurface:
         return operation_response(
             reply, target=effect_target(body.get("effect")), trace=trace_of(req.headers))
 
+    async def _submit_music(self, req: web.Request, body: dict[str, Any]) -> web.Response:
+        if not body.get("operation_id") or not _PLATFORM_OPERATION.is_valid(body):
+            return web.json_response({"error": "invalid music operation"}, status=400)
+        effect = body["effect"]
+        if self._music is not None:
+            return await self._music.submit(req, body["operation_id"], body["kind"], effect)
+        room = effect["conversation_id"]
+        return envelope_response(settled_body(
+            "unsupported", {"error": {"kind": "unsupported", "message": ""}},
+            target=room, trace=trace_of(req.headers), started_ms=now_ms(), scope=scope_of(room)))
+
     async def read_operation(self, req: web.Request) -> web.Response:
+        operation_id = req.match_info["operation_id"]
+        if self._music is not None and (receipt := self._music.receipt(operation_id)) is not None:
+            return self._read(req, "ok", receipt, scope=receipt["scope"])
         actions = self._actions()
         if actions is None:
             return self._read(req, "unavailable")
         try:
-            row = await actions.get(req.match_info["operation_id"])
+            row = await actions.get(operation_id)
         except Exception:  # noqa: BLE001 — an unreadable ledger is unavailable, not absent
             return self._read(req, "unavailable")
         if row is None:
@@ -217,7 +257,13 @@ class PlatformSurface:
         kind, params = body.get("kind"), body.get("params") or {}
         if not isinstance(kind, str) or kind not in QUERY_KINDS:
             return web.json_response({"error": "unknown query kind"}, status=422)
-        answer = await self._query(kind, params)
+        if kind == "music_status":
+            if not _PLATFORM_QUERY.is_valid(body):
+                return web.json_response({"error": "invalid music query"}, status=400)
+            answer = (await self._music.status(params["conversation_id"])
+                      if self._music is not None else QueryAnswer("unavailable"))
+        else:
+            answer = await self._query(kind, params)
         return self._read(req, answer.outcome, answer.value, observed_ms=answer.observed_ms,
                           scope=scope_of(params.get("conversation_id")))
 
@@ -225,7 +271,8 @@ class PlatformSurface:
         if req.match_info["account_id"] != SELF_ACCOUNT_ID:
             return self._read(req, "nothing_found")
         account = await self._account()
-        return self._read(req, "ok", dict(account)) if account else self._read(req, "unavailable")
+        return (self._read(req, "ok", {"capabilities": [], **account})
+                if account else self._read(req, "unavailable"))
 
     def _blob_path(self, key: str) -> Path | None:
         """The key's file in custody, `None` with custody off; a stray key is a 400."""
