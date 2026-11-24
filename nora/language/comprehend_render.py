@@ -1,4 +1,4 @@
-"""Declared occasions for comprehend and shadow reshape, with item-local clocks."""
+"""Cognition orientation and act guidance, with item-local graph previews."""
 
 from __future__ import annotations
 
@@ -17,18 +17,6 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("cognition_act", 70, "global"),
 )
 _ROW = {name: (order, key) for name, order, key in _BLOCKS}
-
-
-RESHAPE = """Read this entity's committed subgraph. Propose traits and unconfirmed guesses
-for a person, culture baselines for a room or unit, or lessons for yourself from the closed
-response episode. Use the supplied per-person activity evidence
-counts and first/last asserted times; absence of activity is not proof of no interest.
-Cite Record/Rollup evidence only. Facts are rendered by code, never proposed.
-Call profile_stage once
-with proposals_in: each has part, text, relation_ids and evidence source keys. Each line
-must draw on current relations and cite their evidence. These are SHADOW would-writes;
-no live Character, culture, Lessons or entry store changes. Empty proposals means no change.
-"""
 
 
 def preview_text(preview: Preview, *, tokens: int = 1500,
@@ -150,9 +138,6 @@ _ORIENT_GUIDANCE = (
      "Examples (synthetic): Ada says in row 5201, 'I love Lantern Game': propose Ada "
      "likes Lantern Game, citing 5201. Row 5230 says 'lol nice' with a bare link: "
      "nothing to keep."),
-    (frozenset({"profile_read", "profile_revise"}),
-     "Use {tools} for profiles: read the account before revising it, and change a "
-     "line only when new evidence bears on it; a single instance is a guess, not a trait."),
     (frozenset({"standing_revise"}),
      "Use {tools} only to correct your Standing when it is wrong or missing something: "
      "i_owe is what you took on; hold_open is what you are keeping open and what would "

@@ -4,8 +4,9 @@
 
 Cognition receives structural anchors, resolution candidates, related profiles,
 open affairs and source bodies before the model runs. It can pull further
-scoped reads. The [Cognition session](../cognition-loop/session.md) owns the
-wake, agenda and outcome; unified memory owns what understanding it may write.
+scoped reads. The Cognitive Graph wake reads held claims through
+`graph_profile` and proposes claim revisions through `graph_propose`. The [Cognition session](../cognition-loop/session.md) owns
+the wake, agenda and outcome. Unified memory owns what it may write.
 
 The session asks what changed, what it connects to, whether existing
 understanding should move and whether anything deserves an act or a later look.
@@ -42,8 +43,8 @@ unknown. A later build never turns an old intention into a current fact.
 
 ## Historical understanding
 
-Backfill uses the same session in source-time order with act verbs and
-current-profile access withheld — evidence reads and memory proposals only.
+Backfill uses the same session in source-time order with evidence reads
+and memory proposals.
 Reads and relative-time resolution use the evidence instant, excluding later
 knowledge that was not available then. History creates understanding, not
 present-day reminders, sends or obligations. A later catch-up considers only

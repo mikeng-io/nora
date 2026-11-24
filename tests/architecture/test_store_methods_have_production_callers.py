@@ -158,6 +158,11 @@ _PROFILE_SESSION_EVIDENCE = (
 # the artifact that gets re-derived from scratch by the next session that
 # notices one of them.
 _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
+    ("memory_graph.py", "topic_activity"): _Pin(
+        "scheduled_removal",
+        "The Cognition Profile shadow response was its only production caller. "
+        "Remove the unused read and its contract with the Profile cleanup in 6c-2c-ii.",
+    ),
     ("profile.py", "record_dispute"): _Pin(
         "scheduled_removal",
         "`profile_dispute` writes the graph's dispute verb instead. The method leaves "

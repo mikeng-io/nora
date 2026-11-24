@@ -1227,7 +1227,6 @@ async def _compose_dependencies(
         metrics=metrics,
         persons=persons_view,
         presence_circles=presence_circles,
-        profile_index=profile_index,
         registry=registry,
         rosters=rosters,
         route_model=route_model,

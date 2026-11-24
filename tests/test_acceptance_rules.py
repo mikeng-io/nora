@@ -49,6 +49,7 @@ RULE_TESTS = {
         "test_a_closed_replay_records_the_exact_inputs_and_a_failed_replay_records_none",
     "proactive-claim": "test_a_due_intention_delivers_once_and_closes_only_on_a_reply_outcome",
     "debrief-pass-items": "test_debrief_writes_only_commit_operations_citing_its_pass_items",
+    "cognition-profile-accounts": "test_cognition_offers_no_profile_account_tools",
     "cognition-event-surface": "test_cognition_offers_reminders_and_wakes_without_event_writes",
     "DEC-97": "test_running_identity_is_independent_of_the_latest_release",
     "DEC-324": "test_a_server_entry_admits_a_discovered_channel_by_guild_id",
@@ -440,7 +441,6 @@ RULE_TESTS = {
     "graph-dispute": "test_another_persons_dispute_marks_the_claim_for_weighing",
     "graph-forget-self-only": "test_only_the_person_a_claim_is_about_may_ask_to_forget_it",
 }
-
 
 def _collected() -> set[str]:
     out = subprocess.run(["uv", "run", "pytest", "--collect-only", "-q"],

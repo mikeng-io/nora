@@ -153,24 +153,21 @@ cases:
   category: cognition
   expect: reply
   input: room A has new messages
-  expected_output: profile_revise cites all three visits; no change based only on the first. At anchoring
-    bind the three shown visit evidence references in args_include.
+  expected_output: A graph claim about the repeated visits cites all three visits.
+    A visit on its own does not support a recurring pattern.
   metadata:
     scenario: 5
     held_out: false
     tools:
-    - memory_propose
+    - graph_propose
     required_tools:
-    - profile_revise
+    - graph_propose
     not_tools: []
-    args_include:
-      profile_revise:
-      - evidence
   parked:
     reason: 'anchor pending: chosen privately on the deploy host'
     why: No private clone has been inspected for this case. No anchor is asserted.
-    returns_when: Privately confirm scenario 5 in the eval clone, add its pseudonymised snapshot and
-      anchor-specific argument checks, then remove parked.
+    returns_when: Bind this scenario to a Cognitive Graph wake with three shown visit sources,
+      and verify their evidence IDs in the proposal before removing parked.
 - name: c06_ticket_is_plan
   entry: dreamer
   category: cognition
@@ -359,7 +356,6 @@ cases:
     - memory_propose
     required_tools: []
     not_tools:
-    - profile_revise
     - note_revise
     - note_set_status
     - memo_create

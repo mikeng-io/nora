@@ -31,7 +31,7 @@ so a bounded resume always reaches new work. Progress is the session's
 bounded session leaves the whole batch pending and failure-receipted under
 this lane's isolated `backfill-stimulus:` keys (five failures park for operator
 requeue). Later history never runs while earlier work is unresolved. The lane never touches
-`cognition_wake*`, live stimuli or profile-writer retirement.
+`cognition_wake*` or live stimuli.
 
 **Historical does not act.** The runner is a variant of the live
 composition's with act verbs already refused by `historical`, reading the
