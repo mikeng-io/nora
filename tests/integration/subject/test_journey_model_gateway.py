@@ -132,25 +132,6 @@ def _foreground_declarations(cfg, request, tool_spec):
 
 def _language_declarations(cfg, request, background, tool_spec):
     return {
-        "nora/language/character.py": [
-            (background(name), name, "Generated protocol retains the previous account.")
-            for name in ("character-nora", "character-person", "character-unit")
-        ],
-        "nora/language/culture.py": [
-            (
-                background(
-                    "culture", tools=(tool_spec("character_no_change", "entity", "string"),)
-                ),
-                "culture",
-                (
-                    "character_no_change",
-                    {
-                        "entity": "room",
-                        "why": "Generated protocol retains the previous account.",
-                    },
-                ),
-            ),
-        ],
         "nora/language/doctrine_check.py": [
             (
                 request(
@@ -220,7 +201,7 @@ def test_generated_subject_answers_every_production_declaration(tmp_path, evalua
                     tools=(tool_spec("graph_propose", "operations", "array"),),
                 ),
                 objective,
-                "Generated protocol retains the previous account.",
+                "Generated background pass completed.",
             )
             for objective in ("wake", "wake-history")
         ],
@@ -230,7 +211,7 @@ def test_generated_subject_answers_every_production_declaration(tmp_path, evalua
                 system=wake_instructions.for_objective("review").text,
                 tools=(tool_spec("graph_propose", "operations", "array"),),
             ),
-            "review", "Generated protocol retains the previous account.",
+            "review", "Generated background pass completed.",
         )],
     }
     # These three builders share the scripted turn, cognition and fold journey.
@@ -273,12 +254,6 @@ def test_generated_subject_answers_every_production_declaration(tmp_path, evalua
                 usage, found = reply.usage, reply.choices[0].message.content
             assert usage and usage.total_tokens == usage.prompt_tokens + usage.completion_tokens > 0
             assert (json.loads(found) if isinstance(expected, dict) else found) == expected
-            if isinstance(expected, tuple) and occasion == "culture":
-                continuation = dict(body, messages=[
-                    *body["messages"], {"role": "tool", "content": '{"status":"ok"}'},
-                ])
-                status, answer = protocol.dispatch(continuation)
-                assert status == 200 and _content(answer) == "Generated pass settled."
     _drive(protocol)
     status, response = protocol.dispatch(background("generated-unregistered"))
     assert status == 422 and "unsupported_objective" in response["error"]

@@ -52,7 +52,6 @@ from typing import Any
 import pytest
 
 from nora.agent.reaction import ReactionPicker, render_recent
-from nora.domain.culture import CultureRevision
 from nora.domain.media import GifCandidate
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.standing import Standing, WorkingSetItem
@@ -292,15 +291,6 @@ def _prior(*, body: str = "Dinner Saturday is agreed; where is still open.\nSeco
     )
 
 
-def _culture(
-    body: str = "They decide by attrition; <never> cancelled & \"quiet\".",
-) -> CultureRevision:
-    return CultureRevision(
-        id="rev-1", culture_key="room-1", body=body, written_at=T - 3 * 24 * H,
-        established_by="dream:culture:test",
-    )
-
-
 def _input(**kw: Any) -> str:
     kw.setdefault("trace", _trace(rows=_ordinary_rows()))
     kw.setdefault("prior", None)
@@ -323,15 +313,10 @@ async def _in_prior() -> str:
 @_case("input-prior-with-a-working-set-and-a-culture-account")
 async def _in_full() -> str:
     return _input(
-        prior=_prior(working_set=_WORKING_SET), culture=_culture(),
+        prior=_prior(working_set=_WORKING_SET),
         trace=_trace(rows=_ordinary_rows(), messages=_steps_messages()),
         since_rows=(_row(0, T + 8 * H, "Ada", "earlier in the stretch"),),
     )
-
-
-@_case("input-a-culture-account-alone")
-async def _in_culture() -> str:
-    return _input(culture=_culture())
 
 
 @_case("input-every-step-kind-clipped-and-escaped")
@@ -356,13 +341,7 @@ async def _in_odd_outcome() -> str:
 
 @_case("input-a-prior-and-a-culture-that-escape-to-nothing")
 async def _in_control_prior() -> str:
-    return _input(prior=_prior(body=_CONTROL), culture=_culture(_CONTROL))
-
-
-@_case("input-no-prior-and-a-whitespace-culture")
-async def _in_blank_prior() -> str:
-    # `Standing` refuses a blank body, so only the culture can be whitespace.
-    return _input(culture=_culture("   "))
+    return _input(prior=_prior(body=_CONTROL), )
 
 
 @_case("input-a-long-prior-and-a-working-set-past-its-ttl")
@@ -410,7 +389,7 @@ _REAL_SHAPED_OBJECTIVE = (
 
 async def _tag_fold(
     *, script: tuple[str, ...] = (), trace: TagTrace | None = None,
-    prior: Standing | None = None, culture: CultureRevision | None = None,
+    prior: Standing | None = None,
     max_chars: int = 1200, ws_items: int = 5, ws_chars: int = 600,
     objective: str = _OBJECTIVE,
 ) -> list[list[str]]:
@@ -424,7 +403,7 @@ async def _tag_fold(
         objective=_Objective(objective), metrics=Metrics(), display_name="Nora",
         record_store=FakeRecordStore(), max_chars=max_chars, fold_batch=200,
         timeout_seconds=5.0, store_timeout_seconds=5.0, now_ms=T + 10 * H + 1_000,
-        tz=UTC, culture=culture, working_set_max_items=ws_items,
+        tz=UTC, working_set_max_items=ws_items,
         working_set_max_chars=ws_chars,
     )
     return client.calls
@@ -438,7 +417,7 @@ async def _fold_bare() -> list[list[str]]:
 @_case("fold-sent-prior-working-set-culture-and-steps")
 async def _fold_full() -> list[list[str]]:
     return await _tag_fold(
-        prior=_prior(working_set=_WORKING_SET), culture=_culture(),
+        prior=_prior(working_set=_WORKING_SET),
         trace=_trace(rows=_ordinary_rows(), messages=_steps_messages()),
         objective=_REAL_SHAPED_OBJECTIVE,
     )
@@ -455,7 +434,7 @@ async def _fold_retry() -> list[list[str]]:
 async def _fold_retry_markup() -> list[list[str]]:
     return await _tag_fold(
         script=('over <tag> & "quoted"\nsecond line ' + "y" * 80, "short"), max_chars=50,
-        trace=_trace(rows=_nasty_rows()), culture=_culture(),
+        trace=_trace(rows=_nasty_rows()),
     )
 
 
@@ -495,7 +474,6 @@ def test_the_goldens_vary_the_blocks_this_step_is_about():
     assert "no working set yet" in GOLDEN["input-the-bare-turn-no-prior-no-culture"]
     assert "<standing_working_set_prior " in GOLDEN["input-prior-without-a-working-set"]
     assert "<item " in GOLDEN["input-prior-with-a-working-set-and-a-culture-account"]
-    assert GOLDEN["input-a-culture-account-alone"].startswith("<culture ")
     assert "<steps " in GOLDEN["input-every-step-kind-clipped-and-escaped"]
     assert "clipped" in GOLDEN["input-every-step-kind-clipped-and-escaped"]
     # The reaction picker's two prompts, and the second one's third block.
@@ -522,10 +500,7 @@ def test_the_empty_pairs_a_hand_join_kept_are_kept():
     assert ">\n\n</recent_chat>" in window
     assert ">\n\n</nora_reply>" in GOLDEN["reaction-a-reply-that-escapes-to-nothing"][0][1]
     control = GOLDEN["input-a-prior-and-a-culture-that-escape-to-nothing"]
-    assert ">\n\n</culture>" in control and ">\n\n</standing_prior>" in control
-    # A whitespace-only culture is NOT that case: it is absent altogether.
-    blank = GOLDEN["input-no-prior-and-a-whitespace-culture"]
-    assert "no position yet" in blank and "<culture " not in blank
+    assert ">\n\n</standing_prior>" in control
 
 
 # =============================================================================

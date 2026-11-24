@@ -418,32 +418,13 @@ class AdaptorGrant:
     home_room: bool = False
 
 
-def culture_grant() -> AdaptorGrant:
-    """The culture adaptor's grant: its own room, and NO act verb.
-
-    `home_room=True` on a SCOPE-keyed adaptor resolves the adaptor's own
-    conversation rather than a chosen one (`AdaptorGrant.home_room`,
-    `RegistryToolSource.build`). Without it every room-scoped read the adaptor
-    declares (`group_members`, `lookup_person`) answers
-    `unavailable` off the empty `Room`, so the grant is
-    the difference between a declared tool set and a reachable one.
-
-    The culture pass writes one row through its own store and speaks to nobody;
-    the read-only ceiling refuses every act verb.
-
-    A function rather than a module-level constant (DEC-13): the composition root
-    hands the SAME object to the runtime and the startup check.
-    """
-    return AdaptorGrant(home_room=True)
-
-
 def cognition_grant() -> AdaptorGrant:
     """The Cognition adaptor's grant: a real room, and NO act verb. Its write, pace
     and act verbs are not registry tools at all: the session holds them as its own
     closures (`nora.app.cognition_session`), so nothing here widens the read-only
     ceiling. It is SCOPE-resolved (`RegistryToolSource.build` with the agenda
     item's room as the key), so lineage and the roster's disclosure guard are the
-    room's own. A function, for `culture_grant`'s reason (DEC-13)."""
+    room's own."""
     return AdaptorGrant(home_room=True)
 
 

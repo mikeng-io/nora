@@ -96,7 +96,7 @@ def _trace(outcome: str = "send_reply", messages: tuple = ()) -> TagTrace:
 async def _run(*, store=None, client=None, metrics=None,
                max_chars=1200, timeout_seconds=5.0, store_timeout_seconds=5.0,
                now_ms_override=None, trace=None, record_store=None,
-               fold_batch=200, culture=None,
+               fold_batch=200,
                working_set_max_items=5, working_set_max_chars=600) -> tuple:
     store = store if store is not None else InMemoryStandingStore()
     metrics = metrics if metrics is not None else Metrics()
@@ -110,7 +110,6 @@ async def _run(*, store=None, client=None, metrics=None,
         timeout_seconds=timeout_seconds,
         store_timeout_seconds=store_timeout_seconds,
         now_ms=now_ms_override if now_ms_override is not None else 1_756_000_931_000,
-        culture=culture,
         working_set_max_items=working_set_max_items,
         working_set_max_chars=working_set_max_chars,
     )
@@ -1229,21 +1228,6 @@ def test_the_objective_v9_does_not_enumerate_working_set_cases():
     body = _objective_body()
     assert "restaurants found by web_search" not in body
     assert "other candidates from place_info" not in body
-
-
-async def test_the_fold_reads_the_rooms_account_the_turn_read():
-    """DEC-207: the tag-turn fold is handed the account the turn read at its
-    start and renders it above the prior — asserted through the PROMPT, for
-    this file's own reason."""
-    from nora.domain.culture import CultureRevision
-
-    client = _Client(_ok("revised"))
-    await _run(client=client, culture=CultureRevision(
-        id="r1", culture_key="g1", body="they decide by attrition",
-        written_at=1_756_000_000_000, established_by="dream:culture:test"))
-    prompt = client.prompts[0]
-    assert "<culture" in prompt and "they decide by attrition" in prompt
-    assert prompt.index("<culture") < prompt.index("<standing_prior")
 
 
 # --- working_set -------------------------------------------------------------

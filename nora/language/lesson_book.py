@@ -1,19 +1,9 @@
 """`LessonBook` — the one place a lesson is written, reinforced, retired or rolled
 back.
 
-It mirrors `nora.language.character_session.EntitySessions`: write verbs a model
-calls, each checked by code AS IT IS MADE and answered with a refusal the model
-can act on, so a refused write never reaches the store. Two differences, each
-forced by the data:
-
-- **A lesson write commits at once, where a Character revision is staged.** The
-  cap is judged against what the unit holds NOW, and a session that retires one
-  lesson and then writes another must see the retirement count. A staged write
-  would judge the second against a store the first had not reached.
-- **The operator reaches the same book.** `retire` and `rollback` take `by`,
-  and the CLI (`nora lessons`) calls them. Rolling back a revision appends it as
-  a new revision, never an edit, and an operator's retirement is undone the same
-  way (`rollback` to an earlier, active revision).
+The model's verbs are checked as they are called. A refused write leaves no
+revision. A write commits immediately so a later verb sees the unit's current
+book. The operator can retire or roll back lessons through the same book.
 
 **One model-facing surface: the Cognition session** — its `lesson_write` and
 `lesson_retire` verbs (through `nora.language.lessons.CognitionLessons`), built

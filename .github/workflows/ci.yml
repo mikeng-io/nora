@@ -535,7 +535,6 @@ jobs:
           tests/integration/test_managed_identity_restore.py
           tests/integration/test_managed_analytics.py
           tests/integration/test_managed_circle_cost.py
-          tests/integration/test_managed_collective_identity.py
           tests/integration/test_managed_ingest_authority.py
           tests/integration/test_platform_observation_ingest.py
           tests/web/test_management_bootstrap.py

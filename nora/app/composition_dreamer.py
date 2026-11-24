@@ -20,7 +20,6 @@ from nora.app.cognition_wiring import session_guidance as cognition_session_guid
 from nora.app.composition_cognition import cognition_session
 from nora.app.composition_dream import (
     _dream_grants_and_budgets,
-    _dream_objectives,
     _dream_tool_source,
     _lessons_evidence,
 )
@@ -147,13 +146,6 @@ async def enabled(
     cognition_session_units = None
     cognition_upcoming = None
     if cfg.dreamer.enabled:
-        objectives = _dream_objectives(
-            allowlist=allowlist, cfg=cfg, content_checks=content_checks,
-            engine=engine, metrics=metrics, note_store=note_store,
-            persons=persons, profile_index=profile_index, access=access,
-        )
-        dream_adaptors = objectives.adaptors
-        dream_schedules = objectives.schedules
         cognition_lessons = _lessons_evidence(
             allowlist=allowlist, cfg=cfg, content_checks=content_checks,
             doctrine_store=doctrine_store,

@@ -1,0 +1,16 @@
+[
+  {
+    "name": "Lessons cannot read mention-only rooms",
+    "file": "nora/app/composition_helpers.py",
+    "old": "        if conv.primary_id and conv.unit and conv.absorbed:",
+    "new": "        if conv.primary_id and conv.unit:",
+    "target": "tests/unit/test_cognition_lessons.py::test_lesson_room_keys_keep_only_absorbed_rooms_in_policy_order"
+  },
+  {
+    "name": "Lessons retain policy room order",
+    "file": "nora/app/composition_helpers.py",
+    "old": "        unit_culture_key(unit): UnitKey(unit=unit, rooms=tuple(rooms))",
+    "new": "        unit_culture_key(unit): UnitKey(unit=unit, rooms=tuple(reversed(rooms)))",
+    "target": "tests/unit/test_cognition_lessons.py::test_lesson_room_keys_keep_only_absorbed_rooms_in_policy_order"
+  }
+]

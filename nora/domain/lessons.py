@@ -53,10 +53,12 @@ __all__ = [
     "LESSON_REFUSALS",
     "LESSON_UNIT_MAX_CHARS",
     "NAMES_HER",
+    "CharacterRoom",
     "Lesson",
     "LessonConflictError",
     "LessonEvidenceView",
     "LessonRevision",
+    "UnitKey",
     "check_lesson",
     "echoes",
     "evidence_ceiling",
@@ -78,6 +80,23 @@ LESSON_BODY_MAX_CHARS = 400
 #: few characters or bare punctuation would pass it trivially. 12 is two runs
 #: and a clause; a short Cantonese practice is 12 or more.
 LESSON_BODY_MIN_CHARS = 12
+
+
+@dataclass(frozen=True)
+class CharacterRoom:
+    """An absorbed room whose messages can supply lesson evidence."""
+
+    key: str
+    platform: str
+    label: str
+
+
+@dataclass(frozen=True)
+class UnitKey:
+    """A unit and its evidence rooms in policy order."""
+
+    unit: str
+    rooms: tuple[CharacterRoom, ...]
 
 
 class LessonConflictError(Exception):

@@ -221,25 +221,18 @@ def test_every_scenario_phase_gets_its_own_production_contract(protocol):
 
 
 def test_an_interleaved_background_pass_cannot_consume_scenario_progress(protocol):
-    """A culture pass and a character-session pass between dream-model turns
-    are answered as background — `phase` stays put, and the next scenario
-    call still meets the shape its phase expects."""
+    """A review and a wake do not advance the generated foreground journey."""
     _drive_first_turn(protocol)
-    answers = {}
-    for objective in ("culture", "character-person"):
-        answers[objective] = _serve(
+    for objective, model in (("review", protocol.judge_model), ("wake", protocol.dream_model)):
+        response = _serve(
             protocol,
             _body(
-                protocol.cfg.dreamer.model,
+                model,
                 f'<dreamer_objective name="{objective}">close</dreamer_objective>',
-                tools=("character_no_change", "character_revise"),
             ),
         )
+        assert _content(response)
         assert protocol.phase == 3
-    # The culture call used its verb; the character session took the
-    # designed no-tool close — different occasions, different answers.
-    assert _call(answers["culture"])[0] == "character_no_change"
-    assert _content(answers["character-person"])
     assert _content(
         _serve(
             protocol,
@@ -247,8 +240,8 @@ def test_an_interleaved_background_pass_cannot_consume_scenario_progress(protoco
         )
     )  # the fold still lands on its own phase
     assert protocol.phase == 4 and protocol.background == 2
-    assert protocol.occasions["culture"] == 1
-    assert protocol.occasions["character-person"] == 1
+    assert protocol.occasions["review"] == 1
+    assert protocol.occasions["wake"] == 1
     assert not protocol.errors
 
 

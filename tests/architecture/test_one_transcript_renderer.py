@@ -50,8 +50,6 @@ _ELEMENT_RENDERERS = ("render_messages", "render_elements", "render_row_window")
 CONVERTED = {
     "nora/agent/prefill.py": "the tag turn's group transcript",
     "nora/ingest/relevance_gate.py": "the window the gate decides on",
-    "nora/language/culture.py": "the batch the culture fold reads",
-    "nora/language/character.py": "a person's own lines a Character session reads",
     "nora/engagement/debrief_render.py":
         "the window the fold and the grounding verdict read",
     "nora/language/context_render.py": "shared chronological transcript via render_messages",
@@ -227,7 +225,7 @@ def test_a_transcript_builder_on_render_rows_is_caught():
     offender = ast.parse("def build(rows):\n    return render_rows(rows)\n")
     assert _row_renderers_called(offender) == {"render_rows": 1}
     assert _unclassified({"nora/scratch.py"}) == {"nora/scratch.py"}
-    assert _unclassified({"nora/language/culture.py"}) == set()
+    assert _unclassified({"nora/ingest/relevance_gate.py"}) == set()
 
 
 @pytest.mark.parametrize("rel", sorted(_OPERATOR_SURFACE))

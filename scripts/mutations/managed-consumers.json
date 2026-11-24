@@ -77,13 +77,6 @@
   "target": "tests/architecture/test_ory_ci.py::test_managed_identity_changes_require_the_real_ory_job[tests/integration/test_managed_circle_cost.py]"
  },
  {
-  "name": "collective identity stays Ory-selected",
-  "file": "scripts/ci_plan.py",
-  "old": "            \"tests/integration/test_managed_collective_identity.py\",\n",
-  "new": "",
-  "target": "tests/architecture/test_ory_ci.py::test_managed_identity_changes_require_the_real_ory_job[tests/integration/test_managed_collective_identity.py]"
- },
- {
   "name": "ingest authority stays Ory-selected",
   "file": "scripts/ci_plan.py",
   "old": "            \"tests/integration/test_managed_ingest_authority.py\",\n",
@@ -130,7 +123,7 @@
   "file": "nora/testing/managed.py",
   "old": "            if s == scope and m.state is MembershipState.MEMBER",
   "new": "            if m.state is MembershipState.MEMBER",
-  "target": "tests/unit/test_managed_background_access.py::test_the_selected_population_carries_no_key_for_a_sibling_unit_member"
+  "target": "tests/unit/test_managed_background_access.py::test_room_membership_excludes_a_sibling_units_members"
  },
  {
   "name": "memory hits place only in the reading unit's rooms",
@@ -152,13 +145,6 @@
   "old": "                        MANAGED_MEMBERSHIP.c.scope_kind == scope.kind.value,\n                        MANAGED_MEMBERSHIP.c.scope_id == scope.id,\n                        MANAGED_MEMBERSHIP.c.state == MembershipState.MEMBER.value,",
   "new": "                        MANAGED_MEMBERSHIP.c.state == MembershipState.MEMBER.value,",
   "target": "tests/integration/test_managed_analytics.py::test_selected_analytics_folds_recorded_circles_without_file_authority"
- },
- {
-  "name": "collective social evidence follows this unit's room membership",
-  "file": "nora/language/background_identity.py",
-  "old": "(members is None or canonical in members)",
-  "new": "(members is None or True)",
-  "target": "tests/unit/test_managed_background_access.py::test_collective_batch_refuses_held_social_for_a_sibling_unit_member"
  },
  {
   "name": "memory hits carry only persons the reading room lists",

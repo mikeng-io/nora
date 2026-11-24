@@ -22,7 +22,6 @@ from nora.testing.context_blocks import compose_fixture
 from tests.test_prefill import (
     _computer,
     _ctx,
-    _culture,
     _documents,
     _rows,
     _subagents,
@@ -72,11 +71,9 @@ computer: existing files, terminal sessions and tasks relevant to computation or
 subagents: existing delegated jobs relevant to delegation or checking their progress.
 Candidate previews are bounded, escaped excerpts, not complete records. An empty block means no
 material was retrieved; it does not prove nothing exists.
-Culture describes this room and how it became so. Standing describes the agent's current position in
-this conversation, not reputation. Read their timestamps.
+Standing describes the agent's current position in this conversation. Read its timestamp.
 The transcript preview is oldest first, newest last; only its last eight rows are supplied. The
-agent retains the entire original transcript and all mandatory blocks, including
-Culture and Standing.
+agent retains the entire original transcript and all mandatory blocks.
 If unsure a candidate is unnecessary, include it. Return exactly one JSON object with exactly two
 keys:
 {"blocks": [unique optional block names], "transcript_window": N}
@@ -152,14 +149,13 @@ def test_the_neutral_system_contract_and_optional_blocks_are_pinned():
 
 
 def test_selector_prompt_is_byte_identical_to_the_inline_path(monkeypatch):
-    """Every candidate present: the nine declared blocks, previews clipped."""
+    """Every candidate present: the declared blocks, previews clipped."""
     ctx = _ctx(
         transcript=_rows("first", "second", "third"),
         tagger=PersonRef("ada", "Ada"),
         peer_card=("Ada: a person",),
         tagger_card=("A long history. " * 50,),  # over the 600-char preview cut
         shared=_shared(),
-        culture=_culture(),
         documents=_documents(),
         computer=_computer(),
         subagents=_subagents(),
@@ -173,7 +169,7 @@ def test_selector_prompt_is_byte_identical_to_the_inline_path(monkeypatch):
 
 
 def test_selector_prompt_is_byte_identical_when_candidates_are_absent(monkeypatch):
-    """No optional blocks, no culture or standing, an empty transcript, and
+    """No optional blocks, no standing, an empty transcript, and
     no tagger — the `unknown` sender fallback and the skips both hold."""
     ctx = _ctx()
     now = datetime(2026, 10, 7, tzinfo=UTC)

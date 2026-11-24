@@ -138,9 +138,7 @@ EXEMPT = {
 #: `dispatched` (a port or an argument hands the prompt in, so there is
 #: nothing to import; each builder must still be declared).
 RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
-    "nora/agent/dreamer.py": ((
-        "nora/language/culture.py",
-    ), "dispatched"),
+    "nora/agent/dreamer.py": (("nora/language/cognition_render.py",), "dispatched"),
     "nora/app/agent_runner.py": (("nora/agent/prefill.py",), "dispatched"),
     "nora/engagement/stages/invoke.py": (("nora/agent/prefill.py",), "dispatched"),
     "nora/engagement/pipeline.py": (("nora/agent/prefill.py",), "imports"),
@@ -476,10 +474,7 @@ def test_discovery_sees_the_known_call_sites_and_occasions(modules):
         assert known in callers, f"discovery missed {known}"
     declared = {rel for rel, tree in modules.items() if declares_blocks(tree)}
     assert len(declared) >= 6
-    adaptors = {rel for rel, tree in modules.items() if defines_inputs(tree)}
-    assert "nora/language/culture.py" in adaptors, (
-        "the `inputs` net must find culture, the one Dreamer adaptor left"
-    )
+    assert defines_inputs(ast.parse("class Example:\n    async def inputs(self): ..."))
 
 
 def _tree(source: str) -> ast.Module:

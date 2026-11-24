@@ -21,8 +21,10 @@ from tests.unit.test_cognition_session_runner import (
 def _lesson_seam(quiet_s: int | None = None):
     """The real `CognitionLessons` over the in-memory fakes — checked writes only."""
     from nora.agent.dream_screen import offence
-    from nora.domain.lessons import LESSON_MIN_EPISODES  # noqa: F401 - shape note
-    from nora.language.character import CharacterRoom
+    from nora.domain.lessons import (
+        LESSON_MIN_EPISODES,  # noqa: F401 - shape note
+        CharacterRoom,
+    )
     from nora.language.lesson_book import LessonBook
     from nora.language.lessons import (
         CognitionLessons,

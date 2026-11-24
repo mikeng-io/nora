@@ -45,12 +45,6 @@ from ..domain.quote_window import first_by_ts
 from ..domain.self_presence import Presence
 from ..language.catalogue_render import render_tool_catalogue
 from ..language.computer_render import render_computer
-from ..language.culture_render import (
-    render_character,
-    render_culture,
-    render_self,
-    render_unit_culture,
-)
 from ..language.documents_render import render_documents
 from ..language.lesson_render import render_lessons
 from ..language.memo_render import render_memos
@@ -128,16 +122,7 @@ def _now_line(now: datetime | None) -> str:
 #: message rather than the cached head. `BlockKey`'s docstring argues that
 #: rule and `test_no_block_in_this_table_belongs_in_the_cached_head` pins it.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
-    # WHO SHE IS HERE: her own Character, Nora for this unit. First in the
-    # block message, directly after the doctrine (which is the system prompt,
-    # read before this message) so the doctrine is read first and wins.
-    # `unit`: it varies by the room's unit. The row is unconditional; the
-    # block renders only where `TagContext.self_account` is filled, and a
-    # unit with no account renders none.
-    ("self", 1, "unit"),
-    # WHAT SHE HAS LEARNED HERE: her active lessons for this unit, right after
-    # `<self>` and so after the doctrine, which wins. Renders only where
-    # `TagContext.lessons` is filled.
+    # The active lessons for this unit, below the doctrine and her profile.
     ("lessons", 2, "unit"),
     # The tool catalogue. Ahead of `presence`, because it is the steadier of
     # the two: it varies by the room's tool SCOPE (a Discord room carries the
@@ -170,22 +155,6 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # filled.
     ("memos", 42, "unit"),
     ("loop_decisions", 50, "unit"),
-    # CULTURE. The ROW is unconditional and the BLOCK is not: it renders only
-    # where `TagContext.culture` is filled (every tag and fire turn in a folded
-    # room, DEC-207, and none while `[culture] enabled = false`). A row that
-    # varied per turn would end the cached prefix's hit rate for everything
-    # after it.
-    ("culture", 54, "room"),
-    # THE UNIT'S CULTURE: what the room's whole unit is like, straight after
-    # this room's own, so the room is read first and the group second. `room`:
-    # it varies by the room's unit. Renders only where `TagContext.unit_culture`
-    # is filled.
-    ("unit_culture", 55, "room"),
-    # CHARACTER (DEC-278): one account per listed person, beside the room's
-    # own. `room`, like `culture`: it varies by room (its members), and the
-    # row is unconditional while the block renders only where
-    # `TagContext.character` is filled.
-    ("character", 56, "room"),
     # What is on her computer for this room, read fresh at turn start. `turn`:
     # its ages move every turn. Before `standing` because it is the state of
     # the machine, and `standing` + the transcript are read as the pair «where
@@ -309,15 +278,7 @@ def _declared(rendered: Sequence[ContextBlock | None]) -> list[ContextBlock]:
     return out
 
 
-#: The block names `<profile>` replaces when the assembler fills
-#: `TagContext.profiles` (`[memory.profile] read`, 45 §5). Their rows stay in
-#: `_BLOCKS` — the peer and prose-culture blocks are the default and the flag is the whole
-#: rollback — but on a switched turn their stubs leave the declared list, so
-#: the span's `blocks_declared`/`blocks_empty` describe the prompt she got.
-_PROFILE_REPLACES = frozenset({
-    "self", "peer_card", "peer_history", "people_in_window",
-    "culture", "unit_culture", "character",
-})
+_PROFILE_REPLACES = frozenset({"peer_card", "peer_history", "people_in_window"})
 
 
 def _context_header(header: str = TAG_HEADER) -> str:
@@ -714,29 +675,27 @@ def _profile_blocks(ctx: TagContext, *, now: datetime) -> list[ContextBlock]:
     """The switch's blocks (45 §5): one `<profile>` per entity of the turn,
     stamped into the rows of the blocks they replace.
 
-    Nora's own account sits at `self`'s row (first, directly after the
-    doctrine, for the same reason), the room's at `culture`'s and the unit's
-    at `unit_culture`'s, and the persons share `render_profile_people`'s one
-    budget at `peer_card`'s row — "her own past, then theirs", the table's
-    order argument. Returns [] when `ctx.profiles` is empty (`[memory.profile] read` off).
+    Nora's own account comes first, followed by the room's and the unit's.
+    Persons share the peer card's row and one rendering budget.
     """
     if not ctx.profiles:
         return []
     name_of = _profile_name_of(ctx)
     blocks: list[ContextBlock] = []
     people: list[ProfileView] = []
+    collective_rows: dict[str, tuple[int, BlockKey]] = {
+        "nora": (1, "unit"), "room": (54, "room"), "unit": (55, "room"),
+    }
     for view in ctx.profiles:
         if view.entity == "person":
             people.append(view)
             continue
-        row = {"nora": "self", "room": "culture", "unit": "unit_culture"}.get(
-            view.entity,
-        )
-        if row is None:
+        slot = collective_rows.get(view.entity)
+        if slot is None:
             continue
         block = render_profile(view, name_of=name_of, now=now)
         if block is not None:
-            order, key = _ROW[row]
+            order, key = slot
             blocks.append(replace(block, order=order, key=key))
     order, key = _ROW["peer_card"]
     blocks.extend(
@@ -767,20 +726,13 @@ def _lineage(ctx: TagContext) -> DerivedView | None:
     for this context (no target, or `[lineage] mode = "off"`): every block
     renders unfiltered.
 
-    The blocks this view GATES are three: `<notes>` (a row each), `<standing>`
-    (the position's sections and findings) and `<culture>`
-    (its one section). `<unit_culture>` and `<character>` render derived rows
-    too but carry no lineage and pass through no view: their guard is their
-    unit key, and no Character session reads presence (R-31, DEC-290). Every
-    other block is authored, live, the Record of this room, or memory, and
-    carries no lineage. A section that fails is dropped whole, never cut
-    inside its prose; the rest of its row still renders.
+    The view gates individual note rows.
     """
     target = ctx.lineage_room
     if target is None or target.mode == "off":
         return None
     return derived_view(
-        notes=ctx.notes, standing=None, culture=ctx.culture,
+        notes=ctx.notes, standing=None, culture=None,
         target=target,
     )
 
@@ -1006,30 +958,6 @@ def _standing_block(
     return block
 
 
-def _culture_block(
-    ctx: TagContext, *, now: datetime, view: DerivedView | None = None,
-) -> ContextBlock | None:
-    """What this ROOM is like, as `<culture>`.
-
-    **The only block in this prompt that is about the room rather than about a
-    moment in it.** Its neighbours answer «what has happened»: the transcript
-    is what was said, `<notes>` what is unsettled, `<standing>` where she had
-    got to. This one answers «what is this place, and why is it like that»; a
-    chronicle of dynasties and their dates is not a culture.
-
-    Renders the culture revision carried by the context.
-
-    `None` until the room has been folded at least once, which is the ordinary
-    state for a while after the tier is enabled (a fold needs new messages and
-    a day). `render_culture` emits no block rather than an empty one, for
-    `render_standing`'s reason: a room she has never folded is not a room she
-    looked at and found featureless.
-    """
-    if not _shown(ctx, view, "culture"):
-        return None
-    return render_culture(ctx.culture, now=now)
-
-
 def _decisions_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
     """What NORA'S OWN LOOP already did across this UNIT, as `<loop_decisions>`.
     `""` when there is nothing, which is every turn but the two that weigh a
@@ -1117,8 +1045,7 @@ def build_prefill(
         # now.
         clock = now or local_now()
         # Lineage, decided ONCE for the whole prefill: the four blocks it
-        # gates (notes, culture, standing) all read this
-        # one view; `<unit_culture>` and `<character>` read none (`_lineage`).
+        # The note rows share one lineage view.
         view = _lineage(ctx)
         # RENDER first, DECLARE second, ASSEMBLE third. The order the blocks
         # reach her comes from `_BLOCKS`, so a block cannot be served without
@@ -1133,7 +1060,6 @@ def build_prefill(
             # what the context assembler read.
             restamp(render_tool_catalogue(catalogue), _ROW) if catalogue else None,
             _room_members_block(ctx),
-            None if switched else _restamp(render_self(ctx.self_account, now=clock)),
             _restamp(render_lessons(ctx.lessons)),
             _restamp(_presence_block(ctx)),
             None if switched else _peer_card_block(ctx),
@@ -1144,9 +1070,6 @@ def build_prefill(
                                        if memo_permits(m.head, ctx.lineage_room)),
                                   tz=clock.tzinfo or UTC)),
             _restamp(_decisions_block(ctx, now=clock)),
-            None if switched else _restamp(_culture_block(ctx, now=clock, view=view)),
-            None if switched else _restamp(render_unit_culture(ctx.unit_culture, now=clock)),
-            None if switched else _restamp(render_character(ctx.character, now=clock)),
             _restamp(render_computer(ctx.computer)),
             _restamp(render_documents(ctx.documents)),
             _restamp(render_subagents(ctx.subagents)),

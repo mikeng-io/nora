@@ -4,7 +4,6 @@ from collections.abc import Mapping
 
 from nora.agent.catalog.entries import NATIVE_TOOLS
 from nora.agent.catalog.model import TOOL_OCCASIONS
-from nora.language.culture import CULTURE_ADAPTOR_NAME
 
 NATIVE_TOOL_BUDGETS: Mapping[str, int] = {name: spec.budget for name, spec in NATIVE_TOOLS.items()}
 
@@ -92,5 +91,3 @@ LEGACY_ENGAGEMENT_TOOLS: frozenset[str] = frozenset({
     "recall_lookups", "remember", "standing_read",
     "who_said",
 })
-
-ROOM_ONLY_MEMORY_ADAPTORS: frozenset[str] = frozenset({CULTURE_ADAPTOR_NAME})

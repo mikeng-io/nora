@@ -38,7 +38,7 @@ from nora.domain.prompt import escape
 
 #: The candidate blocks the selector may withhold — the four optional
 #: prefill blocks. Mandatory context (the tag message, the peer card,
-#: culture, standing and the transcript window) is never a candidate.
+#: standing and the transcript window) is never a candidate.
 OPTIONAL = frozenset({"peer_history", "documents", "computer", "subagents"})
 
 #: The selector's scope and decision contract for the context-filter occasion.
@@ -53,11 +53,9 @@ computer: existing files, terminal sessions and tasks relevant to computation or
 subagents: existing delegated jobs relevant to delegation or checking their progress.
 Candidate previews are bounded, escaped excerpts, not complete records. An empty block means no
 material was retrieved; it does not prove nothing exists.
-Culture describes this room and how it became so. Standing describes the agent's current position in
-this conversation, not reputation. Read their timestamps.
+Standing describes the agent's current position in this conversation. Read its timestamp.
 The transcript preview is oldest first, newest last; only its last eight rows are supplied. The
-agent retains the entire original transcript and all mandatory blocks, including
-Culture and Standing.
+agent retains the entire original transcript and all mandatory blocks.
 If unsure a candidate is unnecessary, include it. Return exactly one JSON object with exactly two
 keys:
 {"blocks": [unique optional block names], "transcript_window": N}
@@ -71,7 +69,7 @@ _PREVIEW_NOTE = "first 600 characters of rendered content; escaped"
 
 #: What this prompt carries, declared as data — `order` IS the order the
 #: model reads: the message it must place, the card and history of who sent
-#: it, the room's account, then the machine, its documents and its jobs, her
+#: it, then the machine, its documents and its jobs, her
 #: position, and the transcript window the question is about last because it
 #: is adjacent to the message it explains — the sequence the carried prefill
 #: rows already produced. `key` matches the key each block carries in the
@@ -80,7 +78,6 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("tag_message", 10, "turn"),
     ("peer_card", 20, "person"),
     ("peer_history", 30, "person"),
-    ("culture", 40, "room"),
     ("computer", 50, "turn"),
     ("documents", 60, "turn"),
     ("subagents", 70, "turn"),
@@ -136,12 +133,6 @@ def selector_prompt(
         declared.append(restamp(ContextBlock(
             name="peer_history", body=legacy_composed(escape(b.body.text[:_PREVIEW_CHARS])),
             attrs=(*b.attrs, ("preview", _PREVIEW_NOTE)),
-            when_empty=b.when_empty,
-        ), _ROW))
-    if "culture" in available:
-        b = available["culture"]
-        declared.append(restamp(ContextBlock(
-            name="culture", body=b.body, attrs=b.attrs,
             when_empty=b.when_empty,
         ), _ROW))
     if "computer" in available:

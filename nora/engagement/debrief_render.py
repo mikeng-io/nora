@@ -68,14 +68,12 @@ from nora.domain.blocks import (
     restamp,
 )
 from nora.domain.composed import compose_body
-from nora.domain.culture import CultureRevision
 from nora.domain.models import TranscriptRow
 from nora.domain.profile import ProfileView
 from nora.domain.prompt import age, escape
 from nora.domain.standing import Standing, WorkingSetItem
 from nora.domain.standing_ledger import LedgerEntry
 from nora.domain.tag_trace import TagTrace
-from nora.language.culture_render import render_culture
 from nora.language.profile_render import render_profile
 from nora.obs.metrics import Metrics
 
@@ -99,9 +97,6 @@ from nora.obs.metrics import Metrics
 #: with no steps, or a body that escapes to nothing. `assemble` would
 #: otherwise drop them.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
-    ("culture", 10, "turn"),
-    # The switch (45 §5): the room's Profile account sits at `<culture>`'s row
-    # and replaces it — a fold input carries one or the other, never both.
     ("profile", 10, "turn"),
     ("standing_prior", 20, "turn"),
     ("standing_working_set_prior", 30, "turn"),
@@ -599,19 +594,13 @@ def render_debrief_input(
     metrics: Metrics,
     since_rows: Sequence[TranscriptRow] = (),
     tz: tzinfo | None = None,
-    culture: CultureRevision | None = None,
     profile_room: ProfileView | None = None,
     profile_name_of: Callable[[str], str] | None = None,
     ledger_prior: tuple[LedgerEntry, ...] | None = None,
 ) -> str:
     """The whole of what the STANDING call sees — the prior plus the turn.
 
-    `culture` (DEC-207) is the room's own account, rendered FIRST when the room
-    has one: a position is where she had got to in this room, and the account
-    is what the room is, which is how «had got to» is meant to be read. Absent,
-    nothing is rendered in its place. Under the switch (45 §5) the room's
-    Profile account (`profile_room`, the view the turn itself read) replaces
-    it at the same row, and `culture` is not rendered.
+    The room's supplied profile account precedes the standing position.
 
     `<standing_prior>` is emitted **even when there is none**, carrying an
     explicit "no position yet" rather than being omitted: an absent block and
@@ -640,13 +629,6 @@ def render_debrief_input(
         [
             *_profile_blocks(profile_room, name_of=profile_name_of,
                              now_ms=trace.created_at),
-            *_culture_blocks(
-                # The switch (45 §5): the Profile account REPLACES the culture
-                # read — when the room's view was handed through, the culture
-                # read was never made.
-                None if profile_room is not None else culture,
-                now_ms=trace.created_at,
-            ),
             prior_block, working_set_prior_block,
             # The unit fold's scoped prior rides the same declared walk —
             # `None` means this caller has no ledger prior to re-judge.
@@ -662,9 +644,7 @@ def _profile_blocks(
     view: ProfileView | None, *, name_of: Callable[[str], str] | None,
     now_ms: int,
 ) -> list[ContextBlock]:
-    """The room's `<profile>` under the switch (45 §5), `_culture_blocks`'s
-    shape and rule: nothing when the room's account would say nothing
-    (`render_profile`'s «no block, not an empty one»)."""
+    """The room profile, when the caller supplies a view."""
     if view is None or name_of is None:
         return []
     block = render_profile(
@@ -674,17 +654,6 @@ def _profile_blocks(
 
 #: The blank line the f-strings put between this input's top-level blocks.
 _SEP = "\n\n"
-
-
-def _culture_blocks(
-    culture: CultureRevision | None, *, now_ms: int,
-) -> list[ContextBlock]:
-    """The room's `<culture>` to put on top, or nothing when the room has no
-    account (`render_culture`'s «no block, not an empty one»). Its age is
-    measured against the same instant the rest of the prompt uses."""
-    block = render_culture(
-        culture, now=datetime.fromtimestamp(now_ms / 1000, tz=UTC))
-    return [] if block is None else [_stamp(block)]
 
 
 # ---------------------------------------------------------------------------

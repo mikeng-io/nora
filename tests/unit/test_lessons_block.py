@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from nora.agent.prefill import _BLOCKS as PREFILL_BLOCKS
 from nora.app.fire import FirePath
 from nora.domain.events import Event
 from nora.language.lesson_render import read_lessons, render_lessons
@@ -64,9 +63,19 @@ def test_no_lesson_renders_no_block_and_a_lesson_is_escaped():
 
 
 def test_lessons_follow_self_in_the_tag_table():
-    rows = {name: order for name, order, _key in PREFILL_BLOCKS}
-    assert rows["self"] < rows["lessons"] < min(
-        order for name, order, _ in PREFILL_BLOCKS if name not in ("self", "lessons"))
+    from dataclasses import replace
+
+    from nora.agent.prefill import build_prefill
+    from nora.domain.profile import ProfileView
+    from tests.test_prefill import _ctx
+
+    ctx = replace(
+        _ctx(lessons=("one place, not five",)),
+        profiles=(ProfileView(entity="nora", of="nora", authored=("she is brief",)),),
+    )
+    body = build_prefill(ctx, display_name="Nora", context_window=40)[1]["content"][0]["text"]
+    assert body.index("<profile ") < body.index("<lessons ")
+
 
 
 async def test_the_fire_path_reads_the_units_lessons_where_self_may_show(tmp_path):

@@ -53,7 +53,6 @@ import yaml
 
 from nora.agent.prefill import build_prefill, build_tag_message
 from nora.domain.block_types import BLOCK_TYPES
-from nora.domain.culture import CultureRevision
 from nora.domain.models import (
     DeliveryStatus,
     NormalizedMessage,
@@ -71,12 +70,8 @@ from nora.engagement.debrief_render import (
 )
 from nora.infra.transit.arrivals import Answer, Departure, Direction, describe
 from nora.ingest.relevance_gate import render_context
-from nora.language.culture import CultureAdaptor
 from nora.obs.metrics import Metrics
 from nora.skills.loader import SkillStore
-from nora.testing import (
-    InMemoryCultureStore,
-)
 
 HKT = ZoneInfo("Asia/Hong_Kong")
 NOW = datetime(2026, 9, 8, 23, 0, tzinfo=UTC)
@@ -180,10 +175,6 @@ def tag_context(
         "tag-1", message, PersonRef("miles", "Miles", aliases=("阿Miles",)),
         (row(body, name=name),), ("likes espresso",), 0.0,
         tagger_card=("asked about dinner",),
-        self_account=CultureRevision(
-            id="rev-self", culture_key="friends#nora", body="She answers short and dry.",
-            written_at=TS, established_by="character-nora",
-        ),
         notes=(),
         # TWO people, because `<person>` is a framed block that repeats — a
         # one-person fixture cannot tell a row that repeats from a block served
@@ -210,19 +201,6 @@ def standing() -> Standing:
         body="They are deciding where to eat; nobody has picked yet.",
         fold_count=3, updated_at=TS,
     )
-
-
-async def culture(body: str = "去邊食", *, name: str = "Ada") -> str:
-    # The three policy accessors are REQUIRED because the culture fold has its
-    # own `<room>` block: without them the adaptor cannot name the room it is
-    # reading. `None` for the unit keeps this builder to the blocks this file
-    # is about.
-    return await CultureAdaptor(
-        culture=InMemoryCultureStore(),
-        unit_for=lambda _k: None,
-        label_for=lambda _k: "Dinner",
-        description_for=lambda _k: None,
-    ).inputs(key="discord/g1", batch=[row(body, name=name)])
 
 
 def skills(body: str = "when someone asks the way", *, name: str = "navigation") -> str:
@@ -321,7 +299,6 @@ BUILDERS = {
         metrics=Metrics(), tz=UTC),
     "relevance_gate": lambda body="去邊食", *, name="Grant": render_context(
         (row(body, name=name),), (standing().body, TS), now=NOW),
-    "culture": culture,
     "skills": skills,
     "arrivals": arrivals,
 }
@@ -353,10 +330,6 @@ async def render(name: str, body: str = "去邊食", *, who: str = "Grant") -> s
 SHAPES = {
     "arrivals": """
 <transit_remark description fields source>""",
-    "culture": """
-<room description fields label>
-<room_messages description fields>
-  <m from n>""",
     "debrief.fold": """
 <standing_prior description fields written>
 <standing_working_set_prior description fields>
@@ -381,7 +354,6 @@ SHAPES = {
 <tag_message also_known_as description fields from>
   <replying_to author description fields>""",
     "prefill.volatile": """
-<self description fields written>
 <members description fields room source>
 <presence description>
 <peer_card description fields person>

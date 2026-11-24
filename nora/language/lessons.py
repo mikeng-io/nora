@@ -47,11 +47,11 @@ from nora.domain.culture import Citable, Episode, RoomMessage
 from nora.domain.lessons import (
     LESSON_MIN_EPISODES,
     LESSONS_OUTCOMES,
+    CharacterRoom,
     Lesson,
     LessonEvidenceView,
     is_correction,
 )
-from nora.language.character import CharacterRoom
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger(__name__)

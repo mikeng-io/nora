@@ -59,7 +59,6 @@ def classify(
             "tests/integration/test_managed_community_cost.py",
             "tests/integration/test_managed_analytics.py",
             "tests/integration/test_managed_circle_cost.py",
-            "tests/integration/test_managed_collective_identity.py",
             "tests/integration/test_managed_ingest_authority.py",
             "tests/integration/test_managed_lineage.py",
             "tests/integration/test_managed_presence.py",
