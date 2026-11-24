@@ -35,8 +35,8 @@ list read carrying its probe's counts. A probe that made a list read due does
 not advance them, so a list read that fails leaves the rise still due.
 
 **What is read is filtered here, once** (§2). Every read of items for
-perception, for a stimulus, for the Rollup's daybook, for a person's
-Character session or for `social_read` (`items_of`) leaves out an item
+perception, for a stimulus, for the Rollup's daybook or for
+`social_read` (`items_of`) leaves out an item
 whose person has `social = false` (`opted_out`, given at construction) and an
 item with a `gone` or `hidden` state row. The poller's own dedupe
 and marker reads are the writer's state and are not filtered.
@@ -892,7 +892,7 @@ def readable_social_store(
     registration: SqlItemRegistration | None = None,
 ) -> SqlSocialStreamStore:
     """The social stream's store for every reader: the poller's,
-    `social_read`'s, a person's Character session's and the Rollup's. It
+    `social_read`'s and the Rollup's. It
     leaves out each item of a person whose `identity.toml` block sets
     `social = false`, under their current id and every retired one
     (`Persons.social_off_ids`). The one store built without it is the story

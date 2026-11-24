@@ -1975,11 +1975,11 @@ async def test_a_post_published_during_custody_remains_fresh_news(world):
         async def fetch(self, *, ref):
             nonlocal published
             if published is None:
+                # Span whole source seconds on both sides of publication so
+                # a completion timestamp cannot stand in for a pre-fetch one.
                 await asyncio.sleep(1.05)
                 async with world.engine.connect() as conn:
-                    published = (await conn.execute(
-                        sa.select(sa.func.clock_timestamp())
-                    )).scalar_one()
+                    published = await conn.scalar(sa.select(sa.func.clock_timestamp()))
                 taken_at = _when(int(published.timestamp()))
                 assert taken_at is not None
                 fresh = dataclasses.replace(post(world, "during-custody"), taken_at=taken_at)

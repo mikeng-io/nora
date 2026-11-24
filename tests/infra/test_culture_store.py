@@ -49,6 +49,14 @@ async def _head_id(engine: AsyncEngine) -> str:
         )).scalar_one()
 
 
+async def _parent_id(engine: AsyncEngine, revision_id: str) -> str | None:
+    async with engine.connect() as conn:
+        return (await conn.execute(
+            sa.select(CULTURE_REVISION.c.parent_revision_id)
+            .where(CULTURE_REVISION.c.id == revision_id)
+        )).scalar_one()
+
+
 async def _append(store: SqlCultureStore, body: str, at: int) -> Any:
     return await store.append(
         key=KEY, body=body, written_at=at, established_by="culture",
@@ -63,7 +71,7 @@ async def test_the_first_revision_has_no_parent_and_becomes_the_head(
     store: SqlCultureStore, engine: AsyncEngine,
 ) -> None:
     r = await _append(store, "they talk in shorthand", T0)
-    assert r.parent_revision_id is None
+    assert await _parent_id(engine, r.id) is None
     assert await _head_id(engine) == r.id
 
 
@@ -86,19 +94,19 @@ async def test_the_second_revision_names_the_first_as_parent(
     the time it called it did not know what the head was."""
     first = await _append(store, "first", T0)
     second = await _append(store, "second", T0 + 86_400_000)
-    assert second.parent_revision_id == first.id
+    assert await _parent_id(engine, second.id) == first.id
     assert await _head_id(engine) == second.id
 
 
 async def test_append_uses_the_current_head_even_with_an_earlier_timestamp(
-    store: SqlCultureStore,
+    store: SqlCultureStore, engine: AsyncEngine,
 ) -> None:
     """Two revisions can share a millisecond, and a row can be written with an
     older clock. A timestamp sort would reorder those into a history that never
     happened; the parent links cannot."""
     a = await _append(store, "a", T0 + 500)
     b = await _append(store, "b", T0)  # EARLIER clock, later write
-    assert b.parent_revision_id == a.id
+    assert await _parent_id(engine, b.id) == a.id
 
 
 # --- nothing retires, and rooms do not leak --------------------------------
@@ -132,8 +140,8 @@ async def test_concurrent_appends_to_one_key_form_a_LINE_not_a_fork(
     head_id = await _head_id(engine)
     head = next(r for r in results if r.id == head_id)
     middle = next(r for r in results if r.id != head_id)
-    assert head.parent_revision_id == middle.id
-    assert middle.parent_revision_id == base.id
+    assert await _parent_id(engine, head.id) == middle.id
+    assert await _parent_id(engine, middle.id) == base.id
 
 
 # --- the database refuses what the code must not write ---------------------

@@ -11,11 +11,12 @@ from typing import Any, Protocol
 
 import pytest
 import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.culture import CultureRevision
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.schema import CULTURE, CULTURE_BODY_CEILING_CHARS
+from nora.infra.sql.schema import CULTURE, CULTURE_BODY_CEILING_CHARS, CULTURE_REVISION
 from nora.testing import InMemoryCultureStore
 from nora.testing.culture_store import (
     CULTURE_BODY_CEILING_CHARS as FAKE_CEILING,
@@ -40,13 +41,13 @@ def _culture_db(pg_module_url: str) -> str:
 
 
 @pytest.fixture(params=["memory", "sql"])
-async def store(request: Any) -> AsyncIterator[_CultureStore]:
+async def engine(request: Any) -> AsyncIterator[AsyncEngine | None]:
     if request.param == "memory":
-        yield InMemoryCultureStore()
+        yield None
         return
     engine = create_sql_engine(request.getfixturevalue("_culture_db"))
     try:
-        yield SqlCultureStore(engine)
+        yield engine
     finally:
         async with engine.begin() as conn:
             # A reset, not a write: TRUNCATE is refused unless capture is off
@@ -54,6 +55,23 @@ async def store(request: Any) -> AsyncIterator[_CultureStore]:
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(sa.text("truncate culture, culture_revision cascade"))
         await engine.dispose()
+
+
+@pytest.fixture
+def store(engine: AsyncEngine | None) -> _CultureStore:
+    return SqlCultureStore(engine) if engine is not None else InMemoryCultureStore()
+
+
+async def _observed_revision(
+    engine: AsyncEngine | None, written: CultureRevision,
+) -> sa.Row[Any] | CultureRevision:
+    if engine is None:
+        return written
+    async with engine.connect() as conn:
+        return (await conn.execute(
+            sa.select(CULTURE_REVISION.c.parent_revision_id, CULTURE_REVISION.c.citations)
+            .where(CULTURE_REVISION.c.id == written.id)
+        )).one()
 
 
 async def _append(store: _CultureStore, body: str, *, key: str = KEY,
@@ -66,36 +84,36 @@ def test_the_fake_and_the_schema_hold_the_same_ceiling() -> None:
     assert FAKE_CEILING == CULTURE_BODY_CEILING_CHARS
 
 
-async def test_the_first_account_has_no_parent(store):
+async def test_the_first_account_has_no_parent(store, engine):
     written = await _append(store, "they decide by attrition")
-    assert written.parent_revision_id is None
+    assert (await _observed_revision(engine, written)).parent_revision_id is None
 
 
-async def test_the_citations_a_revision_rests_on_are_kept(store):
+async def test_the_citations_a_revision_rests_on_are_kept(store, engine):
     cited = await store.append(
         key=KEY, body="they decide by attrition", written_at=NOW,
         established_by="dream:culture", citations=("4812", "response:4790"),
     )
-    assert cited.citations == ("4812", "response:4790")
+    assert tuple((await _observed_revision(engine, cited)).citations) == ("4812", "response:4790")
     uncited = await _append(store, "uncited", at=NOW + 1)
-    assert uncited.citations == ()
+    assert tuple((await _observed_revision(engine, uncited)).citations) == ()
 
 
-async def test_a_second_account_names_the_first_as_its_parent(store):
+async def test_a_second_account_names_the_first_as_its_parent(store, engine):
     """DEC-183: the old account becomes history, it is not overwritten."""
     first = await _append(store, "first account")
     second = await _append(store, "second account", at=NOW + 1)
-    assert second.parent_revision_id == first.id
+    assert (await _observed_revision(engine, second)).parent_revision_id == first.id
 
 
-async def test_keys_do_not_share_a_chain(store):
+async def test_keys_do_not_share_a_chain(store, engine):
     """Interleaved appends to two rooms: a store ordering by insertion rather
     than by parent link would splice one room's history into the other's."""
     first = await _append(store, "a1")
     other = await _append(store, "b1", key=OTHER, at=NOW + 1)
     second = await _append(store, "a2", at=NOW + 2)
-    assert other.parent_revision_id is None
-    assert second.parent_revision_id == first.id
+    assert (await _observed_revision(engine, other)).parent_revision_id is None
+    assert (await _observed_revision(engine, second)).parent_revision_id == first.id
 
 
 async def test_a_blank_body_is_refused(store):
