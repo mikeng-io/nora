@@ -9,8 +9,8 @@
   {
     "name": "the Strands wrapper forwards the configured self name",
     "file": "nora/agent/tools.py",
-    "old": "ai_peer=ai_peer,\n        display_name=display_name,\n        f",
-    "new": "        ai_peer=ai_peer,",
+    "old": "        display_name=display_name, links=links, giphy_source=giphy_source,\n",
+    "new": "        links=links, giphy_source=giphy_source,\n",
     "target": "tests/unit/test_doctrine_identity.py::test_canonical_name_reaches_transcript_tools"
   },
   {
