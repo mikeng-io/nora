@@ -90,3 +90,10 @@ async def test_a_viewer_without_listed_units_never_queries_claims():
         profile, profile_scopes_of=lambda _: (("friends", "home"),),
     )
     assert account["lines"][0]["id"] == "m1"
+
+
+async def test_retired_claim_is_marked_retired_instead_of_hidden():
+    profile = _Claims({("friends", "miles"): (_claim("m1", "used to cycle", state="retired"),)})
+    [account] = await _payload(profile, profile_scopes_of=lambda _: (("friends", "home"),))
+    [line] = account["lines"]
+    assert (line["id"], line["state"]) == ("m1", "retired")

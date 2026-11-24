@@ -6,7 +6,7 @@ from typing import Any, Protocol
 from nora.persons import Persons
 
 _PARTS = {"fact": "facts", "trait": "traits", "guess": "guesses"}
-_STATES = {"live": "current", "awaiting_weighing": "disputed", "retired": "hidden"}
+_STATES = {"live": "current", "awaiting_weighing": "disputed", "retired": "retired"}
 
 
 class SubjectClaims(Protocol):
