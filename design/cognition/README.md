@@ -16,10 +16,6 @@ The goal is **emergence**: recommendation, personalisation, follow-through and
 learning arise from the generic loops working the graph, never from a
 capability's own code, store, prompt or loop.
 
-**Status:** designed
-
-[Open issues](https://github.com/mikeng-io/nora/issues?q=is%3Aopen+%22design%2Fcognition%2F%22)
-
 ## What Nora is
 
 | part | is | defined in |
@@ -45,7 +41,7 @@ part is [emergence](emergence.md).
 | [observation](observation.md) | sources, aggregates, stimuli |
 | [retrieval](retrieval.md) | one read semantics for prefetch and read tools |
 | [surface](surface.md) | the instruction, tools per pass, admission |
-| [execution](execution.md) | executors, waking, replay, time, settlement, tracing |
+| [execution](execution.md) | executors, tool calls and their wait window, waking, replay, time, settlement, tracing |
 | [boundaries](boundaries.md) | authority of authored text, scope, egress |
 | [learning](learning.md) | verdicts, track records, lessons graded by consequences |
 | [emergence](emergence.md) | closed form over open content; capabilities through the generic loops |

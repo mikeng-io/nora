@@ -60,23 +60,28 @@ committing an intention a proactive pass later carries out.
 ## Delegated work
 
 Delegated work — a sub-agent job, a computer task, a long browser session —
-runs outside both loops under its own executor.
+runs outside both loops under its own executor. It starts in one of two ways,
+both delegation acts:
 
-- Starting it is a delegation act. The work is an achieve intention naming its
-  executor and the job's identity; it is done when the job's outcome item
-  reports success. A failed or cancelled job closes nothing: decide retries or
-  drops the intention, citing that outcome.
+| start | the work | its report |
+|---|---|---|
+| a **delegation tool** the model calls | an achieve intention naming its executor and the job's identity | a child intention, delivered by a proactive pass |
+| a **hand-over**: a tool call still running when its wait window ended ([execution](execution.md#tool-calls)) | the call itself, under its original identity and authority | the hand-over's report-pending obligation, settled by a proactive pass |
+
+- Delegated work is done when its outcome item reports success. A failed or
+  cancelled job closes nothing; where it serves an intention, decide retries or
+  drops that intention, citing the outcome.
 - The executor's own job state is authoritative for the job. Its events and
   results enter through observe as items.
-- Reporting the result is a separate child intention, delivered by a proactive
-  pass: finishing the work and telling the room are two outcomes, each with its
-  own verdict.
+- Finishing the work and telling the room are two outcomes, each with its own
+  verdict.
 - Work an executor lost track of across a restart is unknown, never failed and
-  never assumed done.
+  never assumed done; its report says so.
 
 ## What is never an act
 
 - Writing to the graph: that is admission.
 - A read, including a paid outside read: it is a read, bounded by its spend
-  controls, and its result is an item.
+  controls, and its result is an item. A read handed over at the end of its
+  wait window becomes delegated work.
 - Silence: it is the recorded outcome of a pass that chose not to act.

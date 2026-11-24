@@ -1,7 +1,8 @@
 # Execution
 
-Execution is how passes and actions run: which executor owns each, when work
-is eligible, and what a pass's outcome settles.
+Execution is how passes and actions run: which executor owns each, how long a
+pass waits for a tool call, when work is eligible, and what a pass's outcome
+settles.
 
 ## Executors
 
@@ -20,6 +21,40 @@ is eligible, and what a pass's outcome settles.
 
 No other launcher starts a pass. Collectors, reconnects and maintenance are
 plumbing, not executors of the loops.
+
+## Tool calls
+
+A pass's tool calls run under the pass's own executor; a call is an action,
+never a pass.
+
+- The calls of one model step run concurrently, and their results return in
+  the order the model asked for them.
+- All passes draw on one shared pool of tool slots. Engagement passes keep a
+  reserve that reflection passes and delegated work cannot take, so a busy
+  background never stalls a room.
+- In an engagement pass each call has a **wait window**: a configured bound on
+  how long the pass waits for it. A call that settles within its window
+  returns its result to the step.
+- A call still running when its window ends is **handed over**: it keeps
+  running as [delegated work](acts.md#delegated-work), and the step receives
+  **queued** with the work's identity in place of a result. The pass continues
+  and ends as usual, holding the room's slot no longer than its own steps.
+- A step continues once each of its calls has settled or been handed over.
+- `send_reply`, deliveries and writes to the graph are never handed over: they
+  mean something only inside their pass.
+- A hand-over leaves a durable **report-pending** obligation for the room that
+  asked. The work's outcome settles it through a proactive pass in that room,
+  retried until delivered; outcomes that settle for one room before its report
+  pass starts are reported together.
+- Reflection passes and delegated work have no wait window; their calls are
+  bounded by the pass's own limits.
+
+The window is what keeps a room answered: however long the work runs, the
+room hears from Nora within it, and the next messages are not queued behind
+work that no longer needs the slot. The clock decides, not a declaration made
+in advance per tool, because a tool's duration varies with its input. Waiting
+for a background call to rejoin the same pass was rejected: it keeps the
+slot held for the whole run and needs a second, interim kind of reply.
 
 ## Waking
 
