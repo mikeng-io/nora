@@ -968,34 +968,23 @@ async def test_the_dreamer_runs_on_a_model_that_can_stop(cfg):
 
 
 
-async def test_unit_scopes_are_the_allowlists_units_deduplicated(cfg):
-    """Two rooms of one unit are ONE unit of work, not two — which is the
-    whole reason a unit-keyed adaptor could not ride the per-scope
-    schedule, and the reason this closure exists beside `language_scopes`.
-
-    Sorted, so the tick order is stable between runs of the same build; a set
-    would make «did adaptor X run for unit Y this tick» unanswerable from
-    a log.
-
-    Asserted against the loaded allowlist rather than a hand-built one, so it
-    fails if `Conversation.unit`'s default ever stops being honoured."""
-    deps = await build_dependencies(cfg)
-
+def test_unit_scopes_are_the_allowlists_units_deduplicated(tmp_path):
     from nora.people.wire import unit_scopes
+    from nora.policy import load_policy
 
-    units = unit_scopes(deps.allowlist).unit_scopes()
+    policy_file = tmp_path / "policy.toml"
+    policy_file.write_text(
+        'default = "deny"\n'
+        '[[conversations]]\nplatform = "signal"\nid = "room-1"\nlabel = "One"\n'
+        'persons = "*"\nunit = "beta"\n'
+        '[[conversations]]\nplatform = "signal"\nid = "room-2"\nlabel = "Two"\n'
+        'persons = "*"\nunit = "alpha"\n'
+        '[[conversations]]\nplatform = "signal"\nid = "room-3"\nlabel = "Three"\n'
+        'persons = "*"\nunit = "beta"\n'
+    )
+    units = unit_scopes(load_policy(policy_file)).unit_scopes()
+    assert units == ("alpha", "beta")
 
-    assert units == tuple(sorted(set(units)))
-    assert units, "a deployment with allowed conversations has a unit"
-    # NARROWER than the per-scope population, or the distinction this closure
-    # exists for would be untestable here: DEC-105 defaults every conversation
-    # to one unit, so several rooms collapse to one key.
-    assert len(units) <= len(deps.language_scopes())
-
-
-
-
-# --- Standing / the debrief stage ---------------------------------------
 
 async def test_standing_disabled_still_wires_graph_debrief_without_legacy_fold(cfg):
     """Disabling the room fold leaves canonical action facts readable, without
