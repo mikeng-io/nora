@@ -49,7 +49,6 @@ from .judge import (
 from .rubric import OPTIONAL_CRITERIA, Criterion
 
 if TYPE_CHECKING:
-    from nora.subject.environment import IsolatedServices
     from nora.subject.obtain import Config
 
 #: The judge alias the DEPLOYMENT uses: `[evals] judge_model = "nora-judge"`.
@@ -79,11 +78,6 @@ DEFAULT_SAMPLES = 3
 
 #: Every judge request declares a finite output bound to the shared run budget.
 JUDGE_MAX_TOKENS = 4096
-
-# Coverage only: GLM-5.3-Flash defaults to max reasoning; at 4096 this
-# exhausted the entire response without content. Keep the cap, request low.
-COVERAGE_MAX_TOKENS = 4096
-COVERAGE_REASONING_EFFORT = "low"
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,16 +140,6 @@ class Judge:
             "effects": json.loads(self.lifecycle),
         })
 
-    def bind_services(self, environment: IsolatedServices) -> Judge:
-        from nora.subject.obtain import _load_config
-
-        cfg = self.config
-        if cfg is None:
-            if self.config_path is None:
-                raise ValueError("judge configuration is required for isolated routing")
-            cfg = _load_config(self.config_path, require_secrets=False)
-        return self.bind(environment.bind_config(cfg))
-
     def _endpoint(self) -> tuple[str, str, str]:
         if self.config is not None:
             from nora.subject.obtain import model_endpoint
@@ -175,67 +159,6 @@ class Judge:
             timeout=self.timeout_seconds,
             max_retries=0,
         ))
-
-    async def coverage_batch(
-        self, prompt: str, *, trace_name: str = "eval.profile_coverage.batch",
-    ) -> dict:
-        """One bounded structured coverage draw, on this SAME judge client.
-
-        No retries/majority can turn malformed per-line data into a pass.
-        Spend and local trace provenance are retained even on provider errors.
-        """
-        from opentelemetry import trace
-
-        from evals.backbone import (
-            _SPEND,
-            NORA_CACHED_TOKENS,
-            NORA_CALLS,
-            NORA_INPUT_TOKENS,
-            NORA_OUTPUT_TOKENS,
-            NORA_STOPS,
-            _prefill_capture,
-        )
-        _prefill_capture()
-        prompt = self._with_effects(prompt)
-        client = self._client()
-        spent = {NORA_CALLS: 1, NORA_INPUT_TOKENS: 0,
-                 NORA_OUTPUT_TOKENS: 0, NORA_CACHED_TOKENS: 0, NORA_STOPS: ""}
-        batch_trace = ""
-        usage_known = False
-        response: dict = {}
-        try:
-            with trace.get_tracer(__name__).start_as_current_span(
-                trace_name,
-            ) as span:
-                batch_trace = format(span.get_span_context().trace_id, "032x")
-                answer = await self._complete(client, {
-                    "model": self._endpoint()[2], "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0, "max_tokens": COVERAGE_MAX_TOKENS,
-                    "reasoning_effort": COVERAGE_REASONING_EFFORT,
-                })
-                response = {"actual_model": answer.model, "response_id": answer.id}
-                if answer.choices:
-                    response["raw"] = answer.choices[0].message.content or ""
-                usage = answer.usage
-                usage_known = usage is not None
-                if usage is not None:
-                    spent[NORA_INPUT_TOKENS] = usage.prompt_tokens
-                    spent[NORA_OUTPUT_TOKENS] = usage.completion_tokens
-                    details = usage.prompt_tokens_details
-                    spent[NORA_CACHED_TOKENS] = (details.cached_tokens or 0) if details else 0
-                spent[NORA_STOPS] = answer.choices[0].finish_reason
-                if answer.choices[0].finish_reason != "stop":
-                    raise ValueError("coverage response truncated or refused")
-                return {**response,
-                        "trace_id": format(span.get_span_context().trace_id, "032x"),
-                        "spend": spent, "usage_known": usage_known}
-        except Exception as exc:  # noqa: BLE001 - the caller serializes instrument errors
-            return {**response, "error": f"{type(exc).__name__}: {exc}",
-                    "trace_id": batch_trace, "spend": spent, "usage_known": usage_known}
-        finally:
-            spent["usage_known"] = usage_known
-            _SPEND.append(spent)
-            await client.close()
 
     async def grade(
         self,

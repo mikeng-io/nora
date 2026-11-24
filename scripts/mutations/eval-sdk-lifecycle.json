@@ -84,18 +84,18 @@
     "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_sdk_cases_use_real_subjects_in_distinct_owned_services[False]"
   },
   {
-    "name": "coverage records the actual formatted request",
+    "name": "position judging records the actual formatted request",
     "file": "evals/rebuilt/grading.py",
     "old": "                record_eval_model_request(request)",
     "new": "                pass",
-    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_frozen_sdk_judge_uses_case_recording[coverage]"
+    "target": "tests/integration/subject/test_sdk_position_judge.py::test_sdk_position_judge_retains_recorded_responses[position]"
   },
   {
-    "name": "coverage captures the actual response",
+    "name": "position judging captures the actual response",
     "file": "evals/rebuilt/grading.py",
     "old": "                async with client_capture(client, role=\"judge\") as observed:",
     "new": "                from contextlib import nullcontext\n                async with nullcontext(client) as observed:",
-    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_frozen_sdk_judge_uses_case_recording[coverage]"
+    "target": "tests/integration/subject/test_sdk_position_judge.py::test_sdk_position_judge_retains_recorded_responses[position]"
   },
   {
     "name": "cognition judges refuse incomplete lifecycle histories",
@@ -109,7 +109,7 @@
     "file": "nora/obs/tracing.py",
     "old": "        if callable(evidence):\n            selected = otel_context.set_value(EVAL_EVIDENCE_KEY, evidence, selected)\n            selected = baggage.set_baggage(\"nora.eval.capture\", \"true\", context=selected)\n",
     "new": "",
-    "target": "tests/integration/subject/test_sdk_recorded_caller.py::test_frozen_sdk_judge_uses_case_recording[detached-coverage]"
+    "target": "tests/integration/subject/test_sdk_position_judge.py::test_sdk_position_judge_retains_recorded_responses[detached-position]"
   },
   {
     "name": "SDK-owned HTTP pools follow upstream per-request lifetime",

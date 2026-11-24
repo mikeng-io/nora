@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import socket
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -27,26 +28,34 @@ NOW = 2_000_000_000_000
 IDENTITY = '[persons.miles_novak]\nname="Miles"\n[[persons.miles_novak.signal]]\nphone="+852111"\n'
 
 
-@pytest.fixture(autouse=True)
-def sdk_evidence(tmp_path):
+@contextmanager
+def sdk_capture(tmp_path):
     backbone._prefill_capture()
     budget = {}
     with eval_host_lock() as lock_fd:
         evidence = RunEvidence(run_id="generated-sdk", lock_fd=lock_fd,
             private_root=tmp_path / "capture", metadata={"behavior": "UNMEASURED"})
-        try:
-            with evidence.capture(trace.get_tracer_provider()), measured_run_budget(
-                SimpleNamespace(stop_after_tokens=20000), evidence, tmp_path, budget,
-                max_requests=20, max_output_tokens=400000,
-            ):
-                yield evidence
-        except EvidenceError as exc:
-            assert str(exc) == "incomplete_record"
-            events = read_events(evidence.path)
-            assert any(e["kind"] == "expected_invalid_capture" for e in events)
-            assert validate_events(events)["causes"] == ["capture_interrupted"]
-        else:
-            assert validate_events(read_events(evidence.path))["status"] == "PASS"
+        with evidence.capture(trace.get_tracer_provider()), measured_run_budget(
+            SimpleNamespace(stop_after_tokens=20000), evidence, tmp_path, budget,
+            max_requests=20, max_output_tokens=400000,
+        ):
+            yield evidence
+
+
+@pytest.fixture(autouse=True)
+def sdk_evidence(tmp_path):
+    evidence = None
+    try:
+        with sdk_capture(tmp_path) as evidence:
+            yield evidence
+    except EvidenceError as exc:
+        assert evidence is not None
+        assert str(exc) == "incomplete_record"
+        events = read_events(evidence.path)
+        assert any(e["kind"] == "expected_invalid_capture" for e in events)
+        assert validate_events(events)["causes"] == ["capture_interrupted"]
+    else:
+        assert validate_events(read_events(evidence.path))["status"] == "PASS"
 
 
 def recording(cfg, path="/v1/chat/completions", *, model_responses=None):
@@ -167,90 +176,6 @@ async def test_sdk_cases_use_real_subjects_in_distinct_owned_services(
         "UNMEASURED", "UNMEASURED"]
     if broken:
         sdk_evidence.record("expected_invalid_capture")
-
-
-@pytest.mark.parametrize("method", ["position", "coverage", "detached-coverage"])
-async def test_frozen_sdk_judge_uses_case_recording(
-    evaluation_config, tmp_path, monkeypatch, sdk_evidence, method,
-):
-    import json
-
-    from evals.rebuilt.domain import Outcome
-    from evals.rebuilt.entry import ENTRY_POINTS, EntryPoint
-    from evals.rebuilt.grading import Judge
-
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
-    cfg = build_config(SubjectSpec(database_url="sqlite://", workdir=tmp_path / "declared"))
-    bindings = {"llm.base_url": "judge"}
-    bindings.update({f"providers.{name}.base_url": "judge" for name in cfg.providers})
-    recorded = RecordedServices({"version": 1, "bindings": bindings, "services": {"judge": [{
-        "method": "POST", "path": "/v1/chat/completions", "response": {"status": 200, "json": {
-            "id": "generated-judge-response", "model": "generated-judge", "created": 1,
-            "object": "chat.completion", "choices": [{"index": 0, "finish_reason": "stop",
-                "message": {"role": "assistant", "content": json.dumps([{
-                    "criterion": "position_property", "score": 1.0, "confidence": 1.0,
-                    "rationale": "Generated protocol response"}])}}],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
-        }}}]}})
-
-    async def frozen(judge, case, *, now_ms):
-        if method != "position":
-            import asyncio
-
-            from opentelemetry import baggage, context
-
-            from nora.obs.tracing import attached
-
-            async def coverage():
-                if method != "detached-coverage":
-                    return await judge.coverage_batch("Generated coverage protocol input")
-                token = context.attach(baggage.set_baggage("unrelated-parent", "generated"))
-                parent = trace.get_current_span().get_span_context()
-                try:
-                    with attached(None):
-                        assert baggage.get_baggage("unrelated-parent") is None
-                        assert not trace.get_current_span().get_span_context().is_valid
-                        return await judge.coverage_batch("Generated coverage protocol input")
-                finally:
-                    assert trace.get_current_span().get_span_context() == parent
-                    context.detach(token)
-
-            got = await asyncio.create_task(coverage())
-            return Outcome(admitted=None, position="Generated position",
-                           judged="PASS" if "error" not in got else "REVIEW",
-                           error=got.get("error"))
-        got = await judge.grade_position(position="Generated position", evidence="Generated source",
-                                         kind="faithful", prop="Generated property")
-        return Outcome(admitted=None, position="Generated position",
-                       judged=got.verdict, error=got.error)
-
-    monkeypatch.setitem(ENTRY_POINTS, "generated-frozen",
-                        EntryPoint(drive=frozen, frozen_input=True))
-    case = Case(name="generated-frozen", input="", metadata={"expect": "fold"})
-    original = Judge("https://unbound.invalid/v1", model="generated-judge", samples=1,
-                     config_path=tmp_path / "missing.toml", config=cfg)
-    report = await Experiment(cases=[case], evaluators=[MeetsGrader()]).run_evaluations_async(
-        task=nora_task(Spec(source_url="unused", entry="generated-frozen", judge=original,
-                            services={case.name: recorded})), max_workers=1)
-    assert report.detailed_results[0][0].label == "PASS", (
-        report.detailed_results[0][0].reason,
-        state_of_from_row(report.cases[0], backbone.NORA_ERROR))
-    assert original.config is cfg
-    events = read_events(sdk_evidence.path)
-    calls = [e for e in events if e.get("name") == "nora.model.request"]
-    responses = [e for e in events if e.get("kind") == "transport_response"]
-    assert len(calls) == len(responses) == 1
-    assert responses[0]["model_role"] == "judge"
-    assert calls[0]["span_id"] == responses[0]["span_id"]
-    assert calls[0]["case_id"] == responses[0]["case_id"]
-    request = json.loads(calls[0]["attributes"]["nora.model.request.body"])
-    assert request["model"] == "generated-judge"
-    assert request["max_tokens"] == 4096
-    if method != "position":
-        assert request["reasoning_effort"] == "low"
-        assert request["messages"] == [{
-            "role": "user", "content": "Generated coverage protocol input"}]
-    assert state_of_from_row(report.cases[0], backbone.NORA_BEHAVIOR) == "UNMEASURED"
 
 
 def state_of_from_row(row, key):

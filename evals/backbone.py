@@ -390,7 +390,6 @@ def drain_spend() -> dict[str, Any]:
     }
     turn["fresh"] = turn["input"] - turn["cached"]
     turn["turns"] = sum(1 for x in _SPEND if f"turn.{NORA_CALLS}" in x)
-    unknown_usage = sum(int(x[NORA_CALLS]) for x in _SPEND if x.get("usage_known") is False)
     _SPEND.clear()
     return {
         "turn": turn,
@@ -398,7 +397,6 @@ def drain_spend() -> dict[str, Any]:
         "fresh": inp - cached, "stops": stops,
         # NAMED, not inferred: a `max_tokens` finish reason is the truncation.
         "truncated": [r for r in stops if "max_token" in r or "length" in r],
-        **({"unknown_usage_calls": unknown_usage} if unknown_usage else {}),
     }
 
 
@@ -1609,9 +1607,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
 
 async def _drive_uncaptured(case: Case, spec: Spec) -> dict[str, Any]:
     """One isolated protocol draw, retaining the production subject assembly."""
-    from evals.rebuilt.entry import ENTRY_POINTS
     spec = dataclasses.replace(spec, entry=(case.metadata or {}).get("entry", spec.entry))
-    port = ENTRY_POINTS[spec.entry]
     recording = (spec.services or {}).get(case.name or "unnamed")
     if recording is None:
         raise EvidenceError("external_responses_missing: " + (case.name or "unnamed"))
@@ -1619,25 +1615,6 @@ async def _drive_uncaptured(case: Case, spec: Spec) -> dict[str, Any]:
 
     if current() is None:
         raise EvidenceError("canonical_capture_unavailable")
-    if port.frozen_input:
-        async with recording.open("sqlite://") as environment:
-            judge = spec.judge.bind_services(environment) if spec.judge is not None else None
-            outcome = await port.drive(judge, case, now_ms=0)
-        return {
-            "output": "",
-            "environment_state": [
-                EnvironmentState(name=NORA_ERROR, state=outcome.error),
-                EnvironmentState(name=NORA_ADMITTED, state=None),
-                EnvironmentState(name=NORA_SAID, state=0),
-                EnvironmentState(name=NORA_WRITTEN, state=0),
-                EnvironmentState(name=NORA_CHANGED_COUNT, state=0),
-                EnvironmentState(name=NORA_STAGED_COUNT, state=0),
-                EnvironmentState(name=NORA_JUDGED, state=outcome.judged),
-                EnvironmentState(name=NORA_CHECKS_FAILED, state=outcome.checks_failed),
-                EnvironmentState(name=NORA_POSITION, state=outcome.position),
-                EnvironmentState(name=NORA_SHOWN, state=outcome.shown),
-            ],
-        }
     return await _drive_draw(case, spec, recording=recording)
 
 

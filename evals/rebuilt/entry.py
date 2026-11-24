@@ -670,10 +670,6 @@ class EntryPoint:
     #: `gate` and `dreamer` are unaffected: they read and write, and never speak.
     drives_a_turn: bool = False
 
-    #: Reads a frozen evidence census, not a writable Nora subject. The same
-    #: registered drive/Outcome contract applies; no workspace or sandbox is needed.
-    frozen_input: bool = False
-
     public_audience: bool = False
 
     #: The `App`'s own live-clock scheduling loop drives this entry — real
