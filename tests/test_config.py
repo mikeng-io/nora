@@ -937,11 +937,8 @@ def test_a_config_written_before_the_dreamer_section_existed_still_loads(toml_pa
     defaulted for exactly that reason — the `[route]`/`[presence]`/`[language]`
     shape.
 
-    Deleting from `[dreamer]` to `[obs.logging]` also removes the
-    `[dreamer.budgets.*]` tables, which is the point: a config written before
-    the runtime existed declares no budget for any adaptor, and every adaptor
-    must still come back BOUNDED rather than raising. The values asserted are
-    the class defaults, so this fails if one silently changes."""
+    Removing the section also removes its nested budget tables. The loader
+    accepts the old shape, and an undeclared adaptor still gets class defaults."""
     text = toml_path.read_text()
     start = text.index("\n[dreamer]")
     end = _section_end(text, start)
@@ -964,19 +961,8 @@ def test_a_config_written_before_the_dreamer_section_existed_still_loads(toml_pa
     # model asked to emit nothing.
     assert cfg.dreamer.max_tokens == 0
     assert cfg.dreamer_max_tokens() == cfg.llm.max_tokens
-    assert set(cfg.dreamer.budgets) == {"profile-unit", "profile-room", "profile-nora"}
+    assert set(cfg.dreamer.budgets) == set()
     assert cfg.dreamer.budget_for("note-curation") == DreamBudgetConfig()
-    # The clock's own five numbers, which moved here from the deleted
-    # `[language]`: a config predating the move still gets a bounded loop.
-    assert cfg.dreamer.tick_seconds == 300.0
-    assert cfg.dreamer.safety_lag == 300
-    assert cfg.dreamer.quiet_seconds == 1800.0
-    assert cfg.dreamer.max_age_seconds == 86_400.0
-    assert cfg.dreamer.batch_limit == 400
-    # The wall clock around a whole unit: a config predating it
-    # still gets a bounded `_run_adaptor`, not an unbounded one — `None`
-    # (unset, the class default) DERIVES a real number rather than reading as
-    # "no bound" (`Config.dreamer_max_unit_hold_seconds`).
     assert cfg.dreamer.max_unit_hold_seconds is None
     assert cfg.dreamer_max_unit_hold_seconds() > cfg._dream_unit_hold_known_minimum()
 
@@ -1051,8 +1037,8 @@ def test_an_adaptor_with_no_budget_block_gets_the_default_budget(toml_path):
     inside the dream tick is caught per unit, counted, and backed off, so it
     would look exactly like a provider outage."""
     cfg = load(toml_path)
-    assert "room_portrait" not in cfg.dreamer.budgets
-    budget = cfg.dreamer.budget_for("room_portrait")
+    assert "profile-room" not in cfg.dreamer.budgets
+    budget = cfg.dreamer.budget_for("profile-room")
     assert budget == DreamBudgetConfig()
     assert (budget.turns, budget.total_tokens, budget.output_tokens) == (6, 40_000, 4_000)
     assert budget.timeout_seconds == 120.0
@@ -1889,10 +1875,7 @@ def test_documents_public_url_refuses_anything_that_is_not_an_origin(bad) -> Non
 
 
 def test_the_template_pins_the_budget_blocks_it_declares(toml_path):
-    """`budget_for` falls back SILENTLY for an unknown key, so an adaptor with no
-    block runs on numbers nobody chose. The template declares three: culture, the
-    Cognition session and the sub-agent worker (DEC-247: rounds, tokens and
-    time, no call ceiling). Collective Profile budgets also have code defaults."""
+    """Pin the template budgets for the Cognition session and sub-agent worker."""
     from nora.config import (
         COGNITION_OUTPUT_TOKENS,
         COGNITION_TIMEOUT_SECONDS,
@@ -1901,12 +1884,7 @@ def test_the_template_pins_the_budget_blocks_it_declares(toml_path):
     )
 
     budgets = load(toml_path).dreamer.budgets
-    assert set(budgets) == {"culture", "cognition", "subagent",
-                            "profile-unit", "profile-room", "profile-nora"}
-    culture = budgets["culture"]
-    assert (culture.turns, culture.total_tokens) == (10, 120_000)
-    assert (culture.output_tokens, culture.max_memory_calls) == (6_000, 12)
-    assert culture.tool_calls == {"lookup_person": 12}
+    assert set(budgets) == {"cognition", "subagent"}
     cognition = budgets["cognition"]
     assert (cognition.turns, cognition.total_tokens) == (COGNITION_TURNS, COGNITION_TOTAL_TOKENS)
     assert (cognition.output_tokens, cognition.timeout_seconds) == (

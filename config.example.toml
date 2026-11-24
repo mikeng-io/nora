@@ -222,26 +222,12 @@ dir = "nora/dreamer"
 reload = "mtime"
 strict = true
 enabled = false
-tick_seconds = 300
-safety_lag = 300
-quiet_seconds = 1800
-max_age_seconds = 86400
-batch_limit = 400
 store_timeout_seconds = 15.0
 # max_unit_hold_seconds = 1200.0
 reasoning_effort = "none"
 
 model = "ollamacloud/deepseek-v4-flash:0731"
 max_tokens = 6000
-
-[dreamer.budgets.culture]
-turns = 10
-total_tokens = 120000
-output_tokens = 6000
-max_memory_calls = 12
-
-[dreamer.budgets.culture.tool_calls]
-lookup_person = 12
 
 [dreamer.budgets.cognition]
 turns = 200

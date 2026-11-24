@@ -164,34 +164,7 @@ MAX_CONSECUTIVE_REJECTIONS = 3
 #: forever, so keep the budgets loose.
 ACCOUNT_CHARS_OBSERVED_MAX = 1_876
 
-#: What emitting a REALISTIC account costs in OUTPUT TOKENS.
-#:
-#: `ACCOUNT_CHARS_OBSERVED_MAX` at `OUTPUT_TOKENS_PER_CHAR` —
-#: rounded UP, because rounding a fail-closed conversion down is the one
-#: direction that lets the two assertions below pass while the account
-#: truncates — plus 64 for the JSON envelope the objective requires around it
-#: (`{"account": [{"body": "…"}]}`, its escaping, and the newline the provider
-#: usually adds); a one-account envelope costs about 15 tokens, so 64 is
-#: generous.
-#:
-#: **Two ceilings must clear this, and they are different things** (see
-#: `config.example.toml`'s `[dreamer] max_tokens`, which spells the confusion
-#: out):
-#:
-#: - `DreamBudgetConfig.output_tokens` — the Strands LOOP budget, spent across
-#:   every turn of the fold. The rule is that the loop must be able to emit a
-#:   full account TWICE: once for the tool-call arguments and any preamble the
-#:   pass spends before it writes, once for the account itself. The shipped
-#:   `[dreamer.budgets.culture] output_tokens = 6000` clears 2 x 2,222.
-#: - `[dreamer] max_tokens` (0 -> `[llm] max_tokens`) — the PROVIDER's ceiling
-#:   on ONE completion, which binds as `MaxTokensReachedException` ->
-#:   `PartialReplyError` rather than as a `stop_reason`. The deployment ships
-#:   6,000 and that is the tighter one to raise if a fold is ever seen
-#:   truncating — the example file says so in those words, and the escape case
-#:   in `OUTPUT_TOKENS_PER_CHAR` above is the reading that would raise it.
-#:
-#: Both inequalities are asserted rather than argued
-#: (`tests/unit/test_culture_adaptor.py::test_an_account_at_the_cap_fits_...`).
+#: Estimated tokens for a Culture account, rounded up with room for the JSON envelope.
 ACCOUNT_OUTPUT_TOKENS = ceil(
     ACCOUNT_CHARS_OBSERVED_MAX * OUTPUT_TOKENS_PER_CHAR) + 64
 

@@ -547,8 +547,8 @@
   "internal_docstrings": 4
  },
  "nora/config.py": {
-  "comment_blocks": 94,
-  "file_lines": 4409,
+  "comment_blocks": 86,
+  "file_lines": 4221,
   "internal_docstrings": 20
  },
  "nora/doctrine/loader.py": {
@@ -612,7 +612,7 @@
   "comment_blocks": 2
  },
  "nora/domain/culture.py": {
-  "comment_blocks": 12
+  "comment_blocks": 11
  },
  "nora/domain/decision_log.py": {
   "comment_blocks": 10,
@@ -2574,8 +2574,8 @@
   "internal_docstrings": 2
  },
  "tests/test_config.py": {
-  "comment_blocks": 8,
-  "file_lines": 2170,
+  "comment_blocks": 7,
+  "file_lines": 2147,
   "internal_docstrings": 6
  },
  "tests/test_discord_adapter.py": {

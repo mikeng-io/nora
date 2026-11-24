@@ -14,13 +14,6 @@
     "target": "tests/unit/test_dreamer_runtime.py::test_two_broken_scopes_are_logged_SEPARATELY_not_collapsed_onto_one"
   },
   {
-    "name": "part 2d: the shipped loop budget is cut under the account cap",
-    "file": "config.example.toml",
-    "old": "output_tokens = 6000",
-    "new": "output_tokens = 1000",
-    "target": "tests/test_config.py::test_the_template_pins_the_budget_blocks_it_declares"
-  },
-  {
     "name": "F5: the no-grant branch reads the scope room anyway (the safety bound)",
     "file": "nora/agent/dreamer.py",
     "old": "        home = self._scope_rooms.get(key) if allowance.home_room else None",
