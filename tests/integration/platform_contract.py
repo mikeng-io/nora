@@ -13,12 +13,19 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, get_args
+from uuid import uuid4
 
 import sqlalchemy as sa
 from aiohttp import web
 
 from nora.domain.service_api import OperationOutcome, status_for
-from nora.infra.service_api_schema import BLOB_PUT, VOICE_ANSWERS, validator
+from nora.infra.service_api_schema import (
+    BLOB_PUT,
+    MUSIC_ANSWERS,
+    MUSIC_READ_ANSWERS,
+    VOICE_ANSWERS,
+    validator,
+)
 from nora.infra.sql.schema import MESSAGES
 
 DOCUMENT = Path(__file__).resolve().parents[2] / "docs/service-api/openapi.json"
@@ -29,7 +36,7 @@ CONTRACT_PREFIXES = ("/v1/platform/", "/v1/operations/")
 PARTS = {"outcome", "payload", "when", "from", "scope", "trace"}
 #: The collections the old wire served; none may be registered.
 OLD_COLLECTIONS = ("actions", "self", "reads", "attachments", "health",
-                   "groups", "guilds", "channels", "presence")
+                   "groups", "guilds", "channels", "presence", "music")
 
 
 def documented_routes() -> set[tuple[str, str]]:
@@ -69,16 +76,28 @@ _SCHEMAS = {
 
 async def envelope(resp: Any, *, kind: str | None = None) -> dict[str, Any]:
     """An answer's body, held to the six parts, its route's documented schema (the
-    one the app's client validates by; a voice `kind`'s own when given) and its
+    one the app's client validates by; a voice or music `kind`'s own when given) and its
     outcome's status."""
     body = await resp.json()
     assert set(body) == PARTS, body
     assert resp.status == status_for(body["outcome"]), (resp.status, body)
     route = (resp.method, "/".join(resp.url.path.split("/")[:4]))
-    schema = validator(VOICE_ANSWERS[kind]) if kind else _SCHEMAS[route]
+    if kind is None:
+        schema = _SCHEMAS[route]
+    else:
+        answers = MUSIC_READ_ANSWERS if resp.method == "GET" else MUSIC_ANSWERS
+        schema = validator(answers[kind] if kind in answers else VOICE_ANSWERS[kind])
     errors = [e.message for e in schema.iter_errors(body)]
     assert not errors, (route, errors, body)
     return body
+
+
+async def music_operation(http: Any, auth: dict[str, str], kind: str,
+                          effect: dict[str, Any], *,
+                          operation_id: str | None = None) -> dict[str, Any]:
+    return await envelope(await http.post(OPERATIONS, headers=auth, json={
+        "operation_id": operation_id or str(uuid4()), "kind": kind, "effect": effect}),
+        kind=kind)
 
 
 async def pending_row(engine: Any, *, platform: str, conversation_id: str) -> int:

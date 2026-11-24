@@ -22,6 +22,7 @@ wording, that one owns the destination.
 from __future__ import annotations
 
 from nora.domain.music import QueuedTrack
+from nora.domain.service_api import OperationOutcome
 
 
 def now_playing_line(track: QueuedTrack, *, paused: bool = False) -> str:
@@ -182,3 +183,27 @@ def disconnected_note() -> str:
 def join_failed_note() -> str:
     """Model-facing note: the voice join itself failed."""
     return "Couldn't join the voice channel."
+
+
+_NOTE_ERRORS: dict[tuple[str, str], tuple[OperationOutcome, str]] = {
+    ("nothing_found", nothing_found_line()): ("rejected", "nothing_found"),
+    ("nothing_found", nothing_playing_line()): ("rejected", "nothing_playing"),
+    ("nothing_found", nothing_queued_at_position_line()): (
+        "rejected", "nothing_queued_at_position"),
+    ("unavailable", disconnected_note()): ("unavailable", "disconnected"),
+    ("unavailable", not_in_voice_note()): ("unavailable", "not_in_voice"),
+    ("unavailable", join_failed_note()): ("unavailable", "join_failed"),
+    ("unavailable", not_in_allowed_guild_note()): ("unavailable", "not_in_allowed_guild"),
+    ("unavailable", volume_out_of_range_line()): ("unavailable", "volume_out_of_range"),
+}
+_ERROR_NOTES = {kind: note for (_, note), (_, kind) in _NOTE_ERRORS.items()}
+
+
+def music_error(status: str, note: str) -> tuple[OperationOutcome, str]:
+    """Encode a music tool failure as its operation outcome and error kind."""
+    return _NOTE_ERRORS.get((status, note), ("unavailable", "music_failed"))
+
+
+def music_error_note(kind: str) -> str:
+    """Render a music error kind with the same note the bridge's tool produced."""
+    return _ERROR_NOTES.get(kind, "")

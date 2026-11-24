@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SCANNED = ("nora/", "deploy/", "tests/", "scripts/", "design/platform-bridges/",
            "docs/runbook.md", "docker-compose.yml")
 OLD_ROUTES = ("/v1/actions", "/v1/reads", "/v1/attachments", "/v1/self",
-              "/v1/groups", "/v1/guilds")
+              "/v1/groups", "/v1/guilds", "/v1/music/")
 
 
 def _tracked() -> list[Path]:
@@ -33,6 +33,7 @@ def test_the_scan_reads_the_bridges_and_the_client() -> None:
     """Positive control: the scan covers the files that carried the old wire."""
     scanned = {path.relative_to(ROOT).as_posix() for path in _tracked()}
     assert {"nora/platform/bridge/client.py", "deploy/signal-bridge/wrapper.py",
+            "nora/platform/discord/bridge_app.py", "nora/platform/discord/bridge_control.py",
             "docker-compose.yml", "docs/runbook.md"} <= scanned
 
 

@@ -58,7 +58,7 @@ import { StreamProducer, streamName } from './queue.js';
 import { Projection } from './projection.js';
 import { AttachmentStore } from './media.js';
 import { ActionStore, receiptIntentIds } from './store.js';
-import { createV1, runAction } from './actions.js';
+import { buildAccount, createV1, runAction, selfForms } from './actions.js';
 import { initTracing, otlpEndpoint } from './tracing.js';
 import { createPipeline } from './pipeline.js';
 import { Metrics, jlog } from './obs.js';
@@ -217,18 +217,8 @@ function onChain(fn) {
   return task;
 }
 
-function selfForms() {
-  const me = sock?.user || {};
-  const jid = normalizeJid(me.id);
-  const lidJid = normalizeJid(me.lid);
-  return {
-    phone: jid ? jidUserDigits(jid) || null : null,
-    lid: lidJid ? jidUserDigits(lidJid) || null : null,
-  };
-}
-
 function selfAliases() {
-  const s = selfForms();
+  const s = selfForms(sock?.user);
   return new Set([s.phone && phoneForm(s.phone), s.lid && lidForm(s.lid)].filter(Boolean));
 }
 
@@ -459,7 +449,7 @@ async function startSocket() {
         }
         continue;
       }
-      const event = extractMessageEvent(source, { lidToPhone, phoneToLid, recentCache: recentMessages, self: selfForms() });
+      const event = extractMessageEvent(source, { lidToPhone, phoneToLid, recentCache: recentMessages, self: selfForms(sock?.user) });
       if (!event) {
         if (!obsEvents.length) {
           // WHAT WAS DROPPED, by SHAPE only — the message's own keys and the
@@ -901,21 +891,7 @@ const handleV1 = createV1({
   tracer,
   get attachments() { return attachments; },
   get sock() { return sock; },
-  self: () => {
-    if (!sock || !connected) return null;
-    const s = selfForms();
-    const aliases = [s.phone && phoneForm(s.phone), s.lid && lidForm(s.lid)].filter(Boolean);
-    if (!aliases.length) return null;
-    return {
-      platform: 'whatsapp',
-      primary: aliases[0],
-      aliases,
-      phone: s.phone,
-      lid: s.lid,
-      jid: normalizeJid(sock.user?.id) || null,
-      lid_jid: normalizeJid(sock.user?.lid) || null,
-    };
-  },
+  self: () => connected ? buildAccount(sock?.user) : null,
   health: healthV1,
   liveness,
   // Beside the stores, a live paired socket and an account identity, the

@@ -231,9 +231,7 @@ def platforms(
     # `None` under `cfg.music.enabled = false` (its own construction above), and `"discord"…
     music_bridge: DiscordMusicToolBridge | BridgeMusicTool | None = None
     if _discord_bridge and "discord" in registry:
-        # Bridge mode: the app holds NO manager — the deterministic music
-        # surface forwards to the bridge's `/v1/music/{op}`, which executes
-        # against the bridge's own manager and voice cache.
+        # The bridge's platform music routes use its own manager and voice cache.
         if cfg.music.enabled and discord_control is not None:
             music_bridge = BridgeMusicTool(control=discord_control)
     elif music_manager is not None and "discord" in registry:
