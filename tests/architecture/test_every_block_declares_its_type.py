@@ -27,9 +27,18 @@ import ast
 import re
 from pathlib import Path
 
-from nora.domain.block_types import BLOCK_TYPES
+import pytest
+
+from nora.domain.block_types import BLOCK_TYPES, BlockType
+from tests.architecture.test_every_model_call_is_a_declared_occasion import EXTRA_MODEL_DOORS
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _renderer_paths() -> tuple[Path, ...]:
+    # The model-occasion scope includes the evidence renderer used by the rebuilt eval judge.
+    return (*sorted((ROOT / "nora").rglob("*.py")), *EXTRA_MODEL_DOORS)
+
 
 def _table_names() -> set[str]:
     """The block names in `prefill._BLOCKS` and `_TAG_MESSAGE_BLOCKS` — the
@@ -59,7 +68,7 @@ def _wrapper_names() -> set[str]:
     convention.
     """
     names: set[str] = set()
-    for path in (ROOT / "nora").rglob("*.py"):
+    for path in _renderer_paths():
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -115,7 +124,7 @@ def _rendered_names() -> set[str]:
     descriptions of blocks that ship on every tag turn.
     """
     found: set[str] = set(_table_names()) | _wrapper_names()
-    for path in sorted((ROOT / "nora").rglob("*.py")):
+    for path in _renderer_paths():
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError:                                # pragma: no cover
@@ -154,6 +163,19 @@ def test_every_declared_type_is_actually_rendered():
         "a description for a block that does not exist is prose no reader will "
         "ever see, and it will be believed by the next person who greps for it."
     )
+
+
+def test_a_type_rendered_only_by_an_unlisted_script_is_caught(tmp_path, monkeypatch):
+    """Positive control: an unlisted script cannot justify a block type."""
+    name = "scratch_script_only"
+    renderer = tmp_path / "scripts" / "scratch_renderer.py"
+    renderer.parent.mkdir()
+    renderer.write_text(f"b = ContextBlock(name={name!r}, body='x')\n", encoding="utf-8")
+    monkeypatch.setattr(f"{__name__}.ROOT", tmp_path)
+    monkeypatch.setattr(f"{__name__}.BLOCK_TYPES", {name: BlockType(name, "Synthetic test block.")})
+
+    with pytest.raises(AssertionError, match=r"\['scratch_script_only'\] are declared types"):
+        test_every_declared_type_is_actually_rendered()
 
 
 def test_a_description_describes_rather_than_labels():
