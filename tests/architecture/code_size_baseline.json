@@ -1743,8 +1743,8 @@
   "internal_docstrings": 4
  },
  "nora/policy.py": {
-  "comment_blocks": 29,
-  "file_lines": 1116,
+  "comment_blocks": 27,
+  "file_lines": 1097,
   "functions": {
    "load_policy": 276
   },
@@ -1799,8 +1799,8 @@
   "comment_blocks": 3
  },
  "nora/subject/sandbox.py": {
-  "comment_blocks": 12,
-  "file_lines": 1180,
+  "comment_blocks": 11,
+  "file_lines": 1167,
   "internal_docstrings": 6
  },
  "nora/subject/sandbox_index.py": {
@@ -2488,9 +2488,6 @@
  "tests/integration/test_signal_bridge_routes.py": {
   "file_lines": 1485,
   "internal_docstrings": 2
- },
- "tests/integration/test_sigterm_releases_the_claim.py": {
-  "internal_docstrings": 1
  },
  "tests/integration/test_silent_failures.py": {
   "comment_blocks": 1

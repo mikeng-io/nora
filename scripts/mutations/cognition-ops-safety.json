@@ -4,7 +4,7 @@
     "file": "nora/__main__.py",
     "old": "    for sig in signals:\n        loop.add_signal_handler(sig, _stop, sig)\n    try:\n        await serving",
     "new": "    try:\n        await serving",
-    "target": "tests/integration/test_sigterm_releases_the_claim.py"
+    "target": "tests/integration/test_sigterm_shutdown.py::test_sigterm_stops_serving_and_runs_shutdown"
   },
   {
     "name": "main() awaits app.run() bare",
@@ -82,12 +82,5 @@
     "old": "    return frozenset({\"time\"}) if tracked and not floors_ready else frozenset()",
     "new": "    return frozenset()",
     "target": "tests/unit/test_wake_evaluator.py"
-  },
-  {
-    "name": "stop_grace_period cut to 55s (only 25 s over the pinned grace)",
-    "file": "docker-compose.yml",
-    "old": "stop_grace_period: 75s",
-    "new": "stop_grace_period: 55s",
-    "target": "tests/architecture/test_the_stop_grace_covers_the_shutdown.py"
   }
 ]

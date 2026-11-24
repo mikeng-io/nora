@@ -436,7 +436,7 @@
  "nora/platform/whatsapp/parser.py": 4,
  "nora/platform/whatsapp/react.py": 1,
  "nora/platform/whatsapp/self_id.py": 1,
- "nora/policy.py": 20,
+ "nora/policy.py": 18,
  "nora/presence/__main__.py": 4,
  "nora/presence/collector.py": 1,
  "nora/presence/composition.py": 3,

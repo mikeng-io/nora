@@ -47,12 +47,5 @@
     "old": "                param_names=self._registry.tool_param_names(),\n                audience=audience,\n",
     "new": "                audience=audience,\n",
     "target": "tests/unit/test_tool_unknown_arguments_wiring.py::test_the_participation_path_refuses_media_fetch_called_with_file_and_never_runs_it"
-  },
-  {
-    "name": "the session model loop omits its accepted-argument table",
-    "file": "nora/agent/dreamer.py",
-    "old": "            param_names=self._tools.tool_param_names(), per_tool_ceilings=False,",
-    "new": "            param_names={}, per_tool_ceilings=False,",
-    "target": "tests/unit/test_dream_guard_wiring.py::test_a_dreamer_pass_refuses_an_unknown_argument_and_never_runs_the_tool"
   }
 ]

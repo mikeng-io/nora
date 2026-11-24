@@ -131,17 +131,9 @@ class Conversation:
     # traffic" — and it still does nothing while `[relevance_gate] enabled =
     # false` in config.toml (the shipped default).
     relevance_gate: bool = False
-    # THE UNIT'S HOME ROOM (DEC-162).
-    # Default False. A unit has no conversation of its own, and every
-    # room-scoped read — `where_is`, `group_members` —
-    # resolves through ONE room's roster. `home_room = true` is the operator
-    # saying "when Nora acts for this unit with nobody asking, THIS is
-    # the room she stands in": the proactive adaptor's `Room` is built from
-    # it (with this room's `location` flag threaded exactly as on a tag), and
-    # the rows it writes fire into it. That is the R-31 disclosure decision
-    # `UNIT_SAFE_TOOLS` said «nobody has made», made here, per
-    # unit, in the file where room trust already lives. At most one per
-    # unit; a second is a startup error, not a guess.
+    # Room-scoped reads use one room's roster and location policy. The home
+    # room binds unit-scoped Cognition work to a room. Each unit may name
+    # at most one home room.
     home_room: bool = False
     # PROACTIVE-SPEECH TRUST. Default False: a `kind="proactive"`
     # reminder row is owned by Nora's own `ai_peer` id, which is deliberately

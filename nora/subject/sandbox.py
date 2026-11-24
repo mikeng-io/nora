@@ -964,12 +964,8 @@ async def sandbox_from_snapshot(
         subject, as_knowledge(shot), now_ms=before_ms,
         leave_room_for_arrival=leave_room_for_arrival,
     )
-    # READ BACK through the store her turn reads, so the source is the rows
-    # she is shown rather than the rows they were copied from — and JOINED as
-    # every transcript builder joins them: the judge is a model too, and
-    # a bare `[image a3f2c1]` where she read what the photo showed would grade
-    # her against less than she had. Its own `path=` label, for
-    # `nora/subject/dreaming.py`'s reason.
+    # Read the seeded rows and join their media as the turn does, so the
+    # judge grades against the same evidence. Label the judge's own read.
     join: MediaJoin = subject.deps.media_join
     shown = await join.enrich(
         await subject.deps.audit.recent(

@@ -36,9 +36,7 @@ def test_datetime_and_ms_arithmetic_agree():
 
 
 def test_the_drivers_wait_to_a_cadence_boundary_not_a_fixed_interval():
-    """`seconds_to_boundary` is what heartbeat, wake and dream loops sleep
-    on: a wait that ends ON the next multiple of the interval in epoch time,
-    so a slow pass advances phase rather than drifting it."""
+    """The heartbeat and wake drivers sleep to the next epoch boundary."""
     from nora.domain.ticks import seconds_to_boundary
 
     # 40s into the minute -> 20s to the boundary.
