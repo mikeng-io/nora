@@ -241,7 +241,7 @@ async def _record(
     from nora.domain.models import NormalizedMessage
     from nora.domain.presence import PresenceFix, WireState
     from nora.infra.sql.audit import SqlRecordStore
-    from nora.infra.sql.schema import MESSAGE_REACTION, MESSAGES, PRESENCE_FIXES
+    from nora.infra.sql.schema import MESSAGE_REACTION, MESSAGES
 
     await PresenceStore(engine, registration=registration).record_fix(
         fix=PresenceFix(
@@ -262,7 +262,7 @@ async def _record(
     if reaction:
         await store.append_reaction(message_id=message, message=source, person_id=_PERSON)
     if restricted:
-        inputs = (MESSAGE_REACTION,) if reaction else (MESSAGES, PRESENCE_FIXES)
+        inputs = (MESSAGE_REACTION,) if reaction else (MESSAGES,)
         async with engine.begin() as conn:
             for tab in inputs:
                 await conn.execute(
@@ -487,9 +487,13 @@ async def test_rollup_registers_and_inherits_actual_input_scope(
         assert row["occurred_at"] == end and row["valid_from"] is row["valid_to"] is None
     else:
         assert row["occurred_at"] == row["valid_from"] == start and row["valid_to"] == end
-    assert row["excluded_identities"] == (["test-excluded"] if restricted else [])
+    restricted_graph_input = restricted and family in {
+        "rollup_daybook", "rollup_tie", "rollup_response",
+    }
+    assert row["excluded_identities"] == (["test-excluded"] if restricted_graph_input else [])
     assert row["exposure"] == (
-        "operator" if restricted else "external" if family == "rollup_response" else "internal"
+        "operator" if restricted_graph_input
+        else "external" if family == "rollup_response" else "internal"
     )
     assert row["rev_config"] == "test-config"
     assert all(row[name] is None for name in ("replaces", "occasion", "pass", "model", "trace"))

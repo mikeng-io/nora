@@ -642,10 +642,13 @@ def test_the_spec_carries_the_arm_and_a_disagreeing_subject_is_refused(monkeypat
     monkeypatch.setattr(scenarios, "nora_task", lambda spec: captured.append(spec))
     scenarios.experiment_for("tool_selection", source_url="x", memory_index=True)
     scenarios.experiment_for("tool_selection", source_url="x")
-    assert [s.memory_surface for s in captured] == ["graph", None]
+    assert [s.memory_surface for s in captured] == ["graph", "off"]
     refuse_a_memory_surface_mismatch("graph", True)
+    refuse_a_memory_surface_mismatch("off", False)
     refuse_a_memory_surface_mismatch(None, True)
     refuse_a_memory_surface_mismatch(None, False)
+    with pytest.raises(ValueError, match="disagree"):
+        refuse_a_memory_surface_mismatch("off", True)
     with pytest.raises(ValueError, match="disagree"):
         refuse_a_memory_surface_mismatch("graph", False)
 

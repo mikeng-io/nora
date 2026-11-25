@@ -80,6 +80,15 @@ def test_the_retired_honcho_section_is_accepted_and_ignored_for_one_release(toml
         "tagger_card_conclusions": 3,
     }
     assert not hasattr(cfg, "workspace_id")
+    assert "honcho" not in cfg.model_dump()
+
+    keyless_text = toml_path.read_text().replace(
+        '\n[honcho]\nbase_url = "http://g.invalid"\n'
+        'workspace_id = "generated-workspace"\ntagger_card_conclusions = 3\n',
+        "\n",
+    )
+    toml_path.write_text(keyless_text)
+    assert load(toml_path).model_dump() == cfg.model_dump()
 
 
 def _trigger_line(toml_path) -> str:

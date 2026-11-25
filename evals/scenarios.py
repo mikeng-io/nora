@@ -518,7 +518,7 @@ def selected_cases(
     # Indexed memory cases exist only on the graph surface. Naming one without
     # the index is refused, never silently dropped: that run would report a
     # clean corpus it never drew.
-    arm = "graph" if memory_index else None
+    arm = "graph" if memory_index else "off"
     other = sorted(c.name for c in cases if c.metadata.get("memory_surface") not in (None, arm))
     if only is not None and other:
         raise ValueError(f"{name}: {other} need the graph memory surface; pass --memory-index")
@@ -611,7 +611,7 @@ def experiment_for(
         full_restore=name in FULL_RESTORE_CORPORA,
         overrides=({**(dict(MEMORY_INDEX_OVERRIDES) if memory_index else {}),
                    **(dict(overrides) if overrides else {})} or None),
-        memory_surface="graph" if memory_index else None,
+        memory_surface="graph" if memory_index else "off",
     )
     grader = ToolRouteGrader() if name in ROUTED_CORPORA else MeetsGrader()
     experiment = Experiment(cases=cases, evaluators=[grader])

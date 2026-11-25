@@ -141,7 +141,8 @@ async def test_stored_rows_match_live_planes_leave_unscoped_out_and_validate(eng
                     row[revision] is None for revision in PLANES - COMPARED - {"asserted_at"}
                 ), name
     assert {name: stats.registered for name, stats in report.items()} == {
-        name: len(rows) for name, rows in expected.items()
+        **{name: len(rows) for name, rows in expected.items()},
+        "presence_fixes": 0,
     }
     assert report["messages"].unscoped == 1
     assert sum(stats.unscoped for stats in report.values()) == 1
@@ -246,11 +247,25 @@ async def test_unregistered_source_is_backfilled_once_per_observing_unit(engine)
     )
     await legacy.replace_places(circle_id=_CIRCLE, places=[_place("one")])
     await _probes(engine, 1)
+    async with engine.connect() as conn:
+        original = (await conn.execute(sa.select(PRESENCE_FIXES))).mappings().one()
     command = RegisterStoredRows(SqlStoredRows(engine, _registration(multiple=True).scope))
     report = await command.run()
 
     async with engine.connect() as conn:
-        for table in (PRESENCE_FIXES, PRESENCE_PLACES, SOURCE_HEALTH):
+        fixes = (await conn.execute(
+            sa.select(PRESENCE_FIXES).order_by(PRESENCE_FIXES.c.unit),
+        )).mappings().all()
+        assert {row["unit"] for row in fixes} == {_UNIT, _SECOND}
+        assert len(fixes) == 2
+        collector_fields = set(PRESENCE_FIXES.c.keys()) - {"id", "unit"}
+        expected = {name: original[name] for name in collector_fields}
+        assert all(
+            {name: row[name] for name in collector_fields} == expected for row in fixes
+        )
+        assert report[PRESENCE_FIXES.name].registered == 2
+
+        for table in (PRESENCE_PLACES, SOURCE_HEALTH):
             rows = (await conn.execute(sa.select(table))).mappings().all()
             assert {row["unit"] for row in rows} == {_UNIT, _SECOND}
             assert len({row["graph_id"] for row in rows}) == len(rows) == 2
@@ -260,7 +275,22 @@ async def test_unregistered_source_is_backfilled_once_per_observing_unit(engine)
                     row["graph_id"] == item_graph_id(table.name, (row["id"],), row["unit"])
                     for row in rows
                 )
-    assert not any(result.registered for result in (await command.run()).values())
+        registered = await conn.scalar(sa.select(sa.func.count()).select_from(REGISTRY))
+        stimuli = await conn.scalar(sa.select(sa.func.count()).select_from(GRAPH_STIMULUS))
+        assert registered == 4
+        assert stimuli == 0
+        before = sorted((dict(row) for row in fixes), key=lambda row: row["id"])
+
+    again = await command.run()
+    assert not any(result.registered for result in again.values())
+    async with engine.connect() as conn:
+        after = sorted(
+            (dict(row) for row in (
+                await conn.execute(sa.select(PRESENCE_FIXES).order_by(PRESENCE_FIXES.c.unit))
+            ).mappings().all()),
+            key=lambda row: row["id"],
+        )
+    assert after == before
 
 
 async def test_discord_backfill_uses_the_offline_directory_and_refuses_missing_guilds(

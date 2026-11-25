@@ -1,0 +1,30 @@
+[
+  {
+    "name": "raw fixes are operational input to presence aggregates",
+    "file": "nora/infra/sql/aggregate_writes.py",
+    "old": "        if source is PRESENCE_FIXES:\n            inputs = [\n                InputScope((), \"internal\", Lineage())\n                for _ in inputs\n            ]\n",
+    "new": "",
+    "target": "tests/infra/test_aggregate_registration.py::test_rollup_registers_and_inherits_actual_input_scope[unrestricted-presence_stays]"
+  },
+  {
+    "name": "the cutover assigns stored fixes to observing units",
+    "file": "nora/memory/app/register_stored_rows.py",
+    "old": "        counts[\"presence_fixes\"] = await self._store.backfill_presence_fix_units(\n            batch_size=self._batch_size,\n        )\n",
+    "new": "",
+    "target": "tests/infra/test_register_stored_rows.py::test_unregistered_source_is_backfilled_once_per_observing_unit"
+  },
+  {
+    "name": "index-off eval selection is explicit",
+    "file": "evals/scenarios.py",
+    "old": "        memory_surface=\"graph\" if memory_index else \"off\",\n",
+    "new": "        memory_surface=\"graph\" if memory_index else None,\n",
+    "target": "tests/unit/test_eval_scenarios.py::test_the_spec_carries_the_arm_and_a_disagreeing_subject_is_refused"
+  },
+  {
+    "name": "the retired honcho shim is outside effective config",
+    "file": "nora/config.py",
+    "old": "    honcho: dict[str, object] | None = Field(default=None, exclude=True)\n",
+    "new": "    honcho: dict[str, object] | None = None\n",
+    "target": "tests/test_config.py::test_the_retired_honcho_section_is_accepted_and_ignored_for_one_release"
+  }
+]

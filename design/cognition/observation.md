@@ -72,7 +72,8 @@ aggregates (routines, relationships, counts) and baselines.
   any target it cannot resolve. A partial snapshot replaces only what it
   covers.
 - **Presence** is a current head per identity, folded from every source's
-  latest items: where they are or that they are travelling, and since when;
+  latest items and the computed location episodes: where they are or that
+  they are travelling, and since when;
   whether they are online, playing or listening, and to what. Each part
   carries the source and time it was observed and that source's health, so a
   stale or unhealthy part reads as such, never as current. Where an identity is
