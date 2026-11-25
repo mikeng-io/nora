@@ -54,7 +54,7 @@ _OPTIONAL = frozenset({"comment"})  # prose for the reader; the runner ignores i
 def _target_path(target: str) -> tuple[str, bool]:
     """`(path, is_go_module_dir)` of what a `target` names.
 
-    A pytest selector is `<path>[::node] [pytest args]`; a Go target is
+    A pytest selector is `<path>[::node]`; a Go target is
     `go:<module dir> <go test args>`."""
     if target.startswith("go:"):
         return target.removeprefix("go:").split()[0], True
