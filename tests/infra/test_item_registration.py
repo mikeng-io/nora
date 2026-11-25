@@ -417,17 +417,39 @@ async def test_a_raw_presence_fix_is_collector_input_not_a_graph_item(
     assert written is True
     async with engine.connect() as conn:
         fixes = (await conn.execute(
-            sa.select(sa.func.count()).select_from(METADATA.tables["presence_fixes"]),
-        )).scalar_one()
+            sa.select(METADATA.tables["presence_fixes"].c.unit).order_by(
+                METADATA.tables["presence_fixes"].c.unit,
+            ),
+        )).scalars().all()
         registered = (await conn.execute(
             sa.select(sa.func.count()).select_from(REGISTRY),
         )).scalar_one()
         stimuli = (await conn.execute(
             sa.select(sa.func.count()).select_from(GRAPH_STIMULUS),
         )).scalar_one()
-    assert fixes == 1
+    assert fixes == [_UNIT, _SECOND]
     assert registered == 0
     assert stimuli == 0
+
+
+async def test_a_raw_presence_fix_dedupes_inside_each_observing_unit(engine: AsyncEngine) -> None:
+    registration = _registration(multiple=True)
+    store = PresenceStore(engine, registration=registration)
+    fix = PresenceFix(_CIRCLE, _PERSON, _MS, 1.0, 2.0, WireState.LIVE, _MS)
+    assert await store.record_fix(fix=fix) is True
+    table = METADATA.tables["presence_fixes"]
+    async with engine.begin() as conn:
+        await conn.execute(sa.delete(table).where(table.c.unit == _SECOND))
+
+    assert await store.record_fix(fix=fix) is True
+    assert await store.record_fix(fix=fix) is False
+
+    async with engine.connect() as conn:
+        rows = (await conn.execute(
+            sa.select(table.c.unit, sa.func.count().label("copies"))
+            .group_by(table.c.unit).order_by(table.c.unit),
+        )).all()
+    assert rows == [(_UNIT, 1), (_SECOND, 1)]
 
 
 @pytest.mark.parametrize("name", _FANOUT_SOURCES)

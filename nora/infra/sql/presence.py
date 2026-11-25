@@ -84,7 +84,7 @@ class PresenceStore:
         return {person: tuple(circles) for person, circles in out.items()}
 
     async def record_fix(self, *, fix: PresenceFix) -> bool:
-        """Insert `fix` iff its `ts` advances past the member's last stored `ts`.
+        """Insert one copy of `fix` in each observing unit whose last stored `ts` it advances.
 
         Returns True when a row was written, False when the fix was a duplicate
         of (or older than) the last one — which is the ordinary steady state for
@@ -112,12 +112,19 @@ class PresenceStore:
             wire_state=fix.wire_state.value,
             recorded_at=fix.recorded_at,
         )
+        registration = self._registration
+        units = await registration.scope.person_units(fix.person_id) if registration else ()
+        written = False
         async with self._engine.begin() as conn:
-            last_ts = (await conn.execute(latest)).scalar_one_or_none()
-            if last_ts is not None and fix.ts <= last_ts:
-                return False
-            await conn.execute(insert)
-        return True
+            for unit in units or (None,):
+                last_ts = (await conn.execute(
+                    latest.where(PRESENCE_FIXES.c.unit.is_not_distinct_from(unit)),
+                )).scalar_one_or_none()
+                if last_ts is not None and fix.ts <= last_ts:
+                    continue
+                await conn.execute(insert.values(unit=unit))
+                written = True
+        return written
 
     async def latest_fix(
         self, *, circle_id: str, person_id: str

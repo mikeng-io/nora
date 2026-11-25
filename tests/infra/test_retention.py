@@ -39,6 +39,7 @@ from nora.infra.sql.schema import (
     MESSAGES,
     PLATFORM_OBSERVATION,
     PRESENCE_FIXES,
+    ROW_HISTORY,
     SOURCE_HEALTH,
 )
 from nora.memory.adapters.act_store import SqlActStore
@@ -281,22 +282,23 @@ async def test_closed_by_witness_survives_message_retention(engine):
     assert (await _registry(engine, witness_id))["state"] == "tombstoned"
 
 
-async def test_presence_sweep_records_the_exact_span_of_the_batch(engine):
+async def test_presence_sweep_deletes_collector_input_inside_row_history(engine):
     person = "generated-person"
     record = RollupFixture(engine, people=(person,))
     for at in (_MS, _MS + 90_000, _MS + 180_000):
         await record.fix(person, at)
-    ids = {row["ts"]: row["graph_id"] for row in (await _rows(engine, PRESENCE_FIXES)).values()}
     assert await PresenceStore(engine, retention_days=1).prune(now_ms=_MS + 86_520_000) == 2
     (fix,) = (await _rows(engine, PRESENCE_FIXES)).values()
     assert fix["ts"] == _MS + 180_000
-    for at in (_MS, _MS + 90_000):
-        assert (await _registry(engine, ids[at], record.unit))["occurred_at"] == epoch_ms(at)
-        assert (await _registry(engine, ids[at], record.unit))["state"] == "tombstoned"
-    coverage = (await _rows(engine, EXPIRED_COVERAGE)).values()
-    assert [(r["unit"], r["source"], r["identity"], r["from"], r["to"]) for r in coverage] == [
-        (record.unit, "presence_fixes", person, _AT, _AT + timedelta(seconds=90)),
-    ]
+    async with engine.connect() as conn:
+        history = (await conn.execute(sa.select(ROW_HISTORY.c.image).where(
+            ROW_HISTORY.c.table_name == "presence_fixes", ROW_HISTORY.c.op == "delete",
+        ))).scalars().all()
+        registered = await conn.scalar(sa.select(sa.func.count()).select_from(REGISTRY))
+        coverage = await conn.scalar(sa.select(sa.func.count()).select_from(EXPIRED_COVERAGE))
+    assert sorted(image["ts"] for image in history) == [_MS, _MS + 90_000]
+    assert registered == 0
+    assert coverage == 0
 
 
 async def test_predicate_is_unknown_over_expired_witness_input(engine):

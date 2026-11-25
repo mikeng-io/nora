@@ -654,7 +654,6 @@ _TOMBSTONE_NULLABLE = {
     "platform_observation": ("payload", "coverage"),
     "presence_corridors": ("sequence", "sample_count"),
     "presence_derived_places": ("lat", "lng", "radius_m", "place_confidence"),
-    "presence_fixes": ("lat", "lng"),
     "presence_occupancy": ("dwell_ms",),
     "presence_place_rhythm": ("sample_count",),
     "presence_stays": ("lat", "lng", "radius_m", "fix_count"),

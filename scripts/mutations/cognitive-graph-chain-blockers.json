@@ -2,9 +2,23 @@
   {
     "name": "a raw presence fix cannot register or stimulate the graph",
     "file": "nora/infra/sql/presence.py",
-    "old": "            await conn.execute(insert)\n",
-    "new": "            if self._registration:\n                units = await self._registration.scope.person_units(fix.person_id)\n                for unit in units:\n                    await self._registration.planes(\n                        conn, PRESENCE_FIXES, unit=unit, occurred_at=epoch_ms(fix.ts),\n                        identities=(fix.person_id,),\n                    )\n            await conn.execute(insert)\n",
+    "old": "                await conn.execute(insert.values(unit=unit))\n",
+    "new": "                await self._registration.planes(\n                    conn, PRESENCE_FIXES, unit=unit, occurred_at=epoch_ms(fix.ts),\n                    identities=(fix.person_id,),\n                )\n                await conn.execute(insert.values(unit=unit))\n",
     "target": "tests/infra/test_item_registration.py::test_a_raw_presence_fix_is_collector_input_not_a_graph_item"
+  },
+  {
+    "name": "a raw presence fix keeps its observing unit",
+    "file": "nora/infra/sql/presence.py",
+    "old": "                await conn.execute(insert.values(unit=unit))\n",
+    "new": "                await conn.execute(insert)\n",
+    "target": "tests/infra/test_item_registration.py::test_a_raw_presence_fix_is_collector_input_not_a_graph_item"
+  },
+  {
+    "name": "presence fix dedup is scoped to each observing unit",
+    "file": "nora/infra/sql/presence.py",
+    "old": "                    latest.where(PRESENCE_FIXES.c.unit.is_not_distinct_from(unit)),\n",
+    "new": "                    latest,\n",
+    "target": "tests/infra/test_item_registration.py::test_a_raw_presence_fix_dedupes_inside_each_observing_unit"
   },
   {
     "name": "0177 downgrade disables the append-only trigger before deleting",

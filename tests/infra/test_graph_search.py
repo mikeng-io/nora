@@ -95,10 +95,8 @@ async def test_presence_fixes_and_aggregates_are_outside_the_closed_map(engine) 
     await writer.write("presence_fixes")
     graph_id = await _message(engine)
     async with engine.connect() as conn:
-        fix = await conn.scalar(sa.select(PRESENCE_FIXES.c.graph_id).where(
-            PRESENCE_FIXES.c.unit == _UNIT,
-        ))
-    assert fix is not None
+        fix_unit = await conn.scalar(sa.select(PRESENCE_FIXES.c.unit))
+    assert fix_unit == _UNIT
     assert "presence_fixes" not in SEARCHABLE_SOURCES
     assert AGGREGATE_FAMILIES.keys().isdisjoint(SEARCHABLE_SOURCES)
     assert await _indexed(engine) == {graph_id: "Lanternmessage"}

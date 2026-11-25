@@ -40,7 +40,7 @@ def _healthy(unit: str, source: str, scope: str, outcome: str) -> Any:
 def _presence_frontier(unit: str, circle: str, people: tuple[str, ...]) -> sa.Select[Any]:
     fix = PRESENCE_FIXES.c
     fixes = sa.select(sa.func.max(fix.recorded_at)).where(
-        sa.or_(fix.unit == unit, fix.unit.is_(None)), fix.state == "live",
+        sa.or_(fix.unit == unit, fix.unit.is_(None)),
         fix.circle_id == circle, fix.person_id.in_(people),
     ).scalar_subquery()
     frontier = sa.func.greatest(fixes, _healthy(unit, "presence", circle, "ok"))

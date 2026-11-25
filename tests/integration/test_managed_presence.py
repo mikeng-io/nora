@@ -411,7 +411,7 @@ async def location(case):
             store=store, room_scope=room_scope, services=services, observations=observations)
 
 
-async def test_graph_places_fixes_by_membership_without_a_view_grant(case, location):
+async def test_collector_places_fixes_by_membership_without_a_view_grant(case, location):
     from nora.domain.managed import Verdict
     from nora.domain.management import Scope, ScopeKind
     from nora.domain.presence import PresenceFix, WireState
@@ -444,10 +444,9 @@ async def test_graph_places_fixes_by_membership_without_a_view_grant(case, locat
             circle_id=CIRCLE, person_id=person_id, ts=ts, lat=22.3, lng=114.1,
             wire_state=WireState.LIVE, recorded_at=ts,
         ))
-    by_person = {r["person_id"]: (r["unit"], r["graph_id"])
-                 for r in await _fixes(case) if r["ts"] == ts}
-    assert by_person[PERSON][0] == unit and by_person[PERSON][1] is not None
-    assert by_person[nonmember] == (None, None)
+    by_person = {r["person_id"]: r["unit"] for r in await _fixes(case) if r["ts"] == ts}
+    assert by_person[PERSON] == unit
+    assert by_person[nonmember] is None
 
 
 async def test_real_location_tool_reads_current_managed_circle_and_preserves_provider_boundary(
