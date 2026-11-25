@@ -21,6 +21,13 @@
     "target": "tests/infra/test_item_registration.py::test_a_raw_presence_fix_dedupes_inside_each_observing_unit"
   },
   {
+    "name": "presence prune records expiry coverage for exactly deleted rows",
+    "file": "nora/infra/sql/presence.py",
+    "old": "            if coverage:\n",
+    "new": "            if False:\n",
+    "target": "tests/infra/test_retention.py::test_rebuilt_healthy_silence_is_absence_only_for_the_person_without_expiry"
+  },
+  {
     "name": "0177 downgrade disables the append-only trigger before deleting",
     "file": "nora/infra/sql/migrations/versions/0177_debrief_obligation.py",
     "old": "    op.execute(\"ALTER TABLE nora_pass_output DISABLE TRIGGER nora_pass_output_append_only\")\n",

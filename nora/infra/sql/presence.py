@@ -26,7 +26,8 @@ import hashlib
 import json
 import logging
 from collections.abc import Mapping, Sequence
-from typing import Any
+from datetime import datetime
+from typing import Any, cast
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import distinct_on
@@ -34,6 +35,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.presence import PresenceFix, SavedPlace, WireState
+from nora.infra.sql.cognitive_graph_schema import EXPIRED_COVERAGE
 from nora.infra.sql.item_registration import SqlItemRegistration, epoch_ms
 from nora.infra.sql.schema import PRESENCE_FIXES, PRESENCE_PLACES
 
@@ -274,17 +276,37 @@ class PresenceStore:
         ]
 
     async def prune(self, *, now_ms: int) -> int:
-        """Delete every fix older than the retention window. Returns the count.
+        """Delete every fix older than the retention window and return the count.
 
         Time-windowed, not count-windowed: `now_ms - retention_days` in
         milliseconds, computed here so the cutoff is never a hard-coded constant.
-        Called by the collector's periodic sweep, never on the write path.
+        Called by the collector's periodic sweep, never on the write path. The
+        exact rows deleted are returned by the delete itself, so expiry coverage
+        can only be written for input this sweep actually removed. That coverage
+        is operational evidence for the Rollup's silence judgement; it is not a
+        graph tombstone.
         """
         cutoff = now_ms - self._retention_days * _MS_PER_DAY
-        stmt = sa.delete(PRESENCE_FIXES).where(PRESENCE_FIXES.c.ts < cutoff)
+        stmt = sa.delete(PRESENCE_FIXES).where(PRESENCE_FIXES.c.ts < cutoff).returning(
+            PRESENCE_FIXES.c.unit, PRESENCE_FIXES.c.person_id, PRESENCE_FIXES.c.ts,
+        )
         async with self._engine.begin() as conn:
-            result = await conn.execute(stmt)
-        return int(result.rowcount or 0)
+            rows = (await conn.execute(stmt)).mappings().all()
+            coverage: dict[tuple[str, str], tuple[datetime, datetime]] = {}
+            for row in rows:
+                if row["unit"] is None:
+                    continue
+                at = cast(datetime, epoch_ms(int(row["ts"])))
+                key = row["unit"], row["person_id"]
+                first, last = coverage.get(key, (at, at))
+                coverage[key] = min(first, at), max(last, at)
+            if coverage:
+                await conn.execute(sa.insert(EXPIRED_COVERAGE), [
+                    {"unit": unit, "source": "presence_fixes", "identity": person,
+                     "from": first, "to": last}
+                    for (unit, person), (first, last) in coverage.items()
+                ])
+        return len(rows)
 
     async def aclose(self) -> None:
         await self._engine.dispose()

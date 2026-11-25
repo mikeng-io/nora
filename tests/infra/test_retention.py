@@ -282,7 +282,7 @@ async def test_closed_by_witness_survives_message_retention(engine):
     assert (await _registry(engine, witness_id))["state"] == "tombstoned"
 
 
-async def test_presence_sweep_deletes_collector_input_inside_row_history(engine):
+async def test_presence_sweep_records_expiry_coverage_without_a_graph_tombstone(engine):
     person = "generated-person"
     record = RollupFixture(engine, people=(person,))
     for at in (_MS, _MS + 90_000, _MS + 180_000):
@@ -295,10 +295,12 @@ async def test_presence_sweep_deletes_collector_input_inside_row_history(engine)
             ROW_HISTORY.c.table_name == "presence_fixes", ROW_HISTORY.c.op == "delete",
         ))).scalars().all()
         registered = await conn.scalar(sa.select(sa.func.count()).select_from(REGISTRY))
-        coverage = await conn.scalar(sa.select(sa.func.count()).select_from(EXPIRED_COVERAGE))
+    coverage = (await _rows(engine, EXPIRED_COVERAGE)).values()
     assert sorted(image["ts"] for image in history) == [_MS, _MS + 90_000]
     assert registered == 0
-    assert coverage == 0
+    assert [(r["unit"], r["source"], r["identity"], r["from"], r["to"]) for r in coverage] == [
+        (record.unit, "presence_fixes", person, _AT, _AT + timedelta(seconds=90)),
+    ]
 
 
 async def test_predicate_is_unknown_over_expired_witness_input(engine):
