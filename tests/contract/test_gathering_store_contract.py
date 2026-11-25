@@ -159,9 +159,7 @@ async def test_a_rows_platform_round_trips_and_scopes_its_room_read(store):
 
 
 async def test_list_for_conversation_quarantines_a_row_with_no_stored_platform(store):
-    """A row with no persisted platform has no durable owner, so it is never
-    returned — not even with a current policy claim. The positive control is
-    the owned row, so the negative cannot pass by returning nothing at all."""
+    """Both scoped and unfiltered reads quarantine rows without a durable owner."""
     unit = f"unit-{uuid4()}"
     unresolved = _event(conversation_id="signal:group-5", unit_id=unit, platform="")
     owned = _event(conversation_id="signal:group-5", unit_id=unit, platform="signal")
@@ -172,6 +170,11 @@ async def test_list_for_conversation_quarantines_a_row_with_no_stored_platform(s
         conversation_id="signal:group-5", unit_id=unit, platform="signal",
     )
     assert [e.id for e in scoped] == [owned.id]
+
+    unfiltered = await store.list_for_conversation(
+        conversation_id="signal:group-5", unit_id=unit, platform=None,
+    )
+    assert [e.id for e in unfiltered] == [owned.id]
 
 
 async def test_list_for_person_includes_events_i_created(store):

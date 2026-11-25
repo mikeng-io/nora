@@ -105,11 +105,11 @@
     "target": "tests/unit/test_cognition_wiring.py::test_shutdown_cancels_the_evaluators_sessions_then_the_runners_and_only_once"
   },
   {
-    "name": "wiring: the boot check refuses a shadow mode with no runner",
-    "file": "nora/app/cognition_wiring.py",
-    "old": "    if runner is None:\n        raise RuntimeError(",
-    "new": "    if False:\n        raise RuntimeError(",
-    "target": "tests/unit/test_cognition_wiring.py::test_the_boot_check_refuses_an_enabled_loop_that_built_no_session tests/unit/test_cognition_wiring.py::test_the_boot_check_refuses_shadow_when_no_unit_can_run_a_session tests/test_composition.py::test_cognition_on_that_built_no_runner_refuses_to_boot"
+    "name": "wiring: startup refuses enabled Cognition without a runner",
+    "file": "nora/app/composition_dreamer.py",
+    "old": "        if cfg.cognition.enabled:\n            raise StartupError(\"[cognition] enabled but no session runner was built\")",
+    "new": "        if False:\n            raise StartupError(\"[cognition] enabled but no session runner was built\")",
+    "target": "tests/test_composition.py::test_cognition_on_that_built_no_runner_refuses_to_boot"
   },
   {
     "name": "wiring: the result caps reach the agent runner",

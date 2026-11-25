@@ -383,11 +383,13 @@ def _rows_without_enforcement(rows: list[tuple[str, int, str]]) -> list[str]:
             continue
         enforcement = cells[-1].strip() if cells else ""
         app_tests = re.findall(r"`(app/[\w./-]+\.(?:spec|test)\.ts)`", enforcement)
-        if any((ROOT / path).is_file() for path in app_tests):
-            continue
-        if not _TEST_PATH.search(enforcement) and not re.match(
-            r"(?:\*\*)?NOT ENFORCED\b", enforcement,
-        ):
+        if app_tests:
+            enforced = all((ROOT / path).is_file() for path in app_tests)
+        else:
+            enforced = _TEST_PATH.search(enforcement) or re.match(
+                r"(?:\*\*)?NOT ENFORCED\b", enforcement,
+            )
+        if not enforced:
             missing.append(f"{identifier} (line {number})")
     return missing
 
@@ -395,6 +397,22 @@ def _rows_without_enforcement(rows: list[tuple[str, int, str]]) -> list[str]:
 def test_each_live_decision_names_a_test_or_explicitly_says_not_enforced() -> None:
     missing = _rows_without_enforcement(_rows())
     assert not missing, "Missing enforcement column in: " + ", ".join(missing)
+
+
+def test_a_live_decision_requires_every_cited_app_test(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("tests.architecture.test_decision_index_tests_exist.ROOT", tmp_path)
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app/document.spec.ts").touch()
+    sibling = tmp_path / "app/print.test.ts"
+    sibling.touch()
+    row = (
+        "| DEC-999 | Documents print. | `app/document.spec.ts`, `app/print.test.ts` "
+        "(app suites; NOT ENFORCED by `make gate`) |"
+    )
+    rows = [("DEC-999", 1, row)]
+    assert _rows_without_enforcement(rows) == []
+    sibling.unlink()
+    assert _rows_without_enforcement(rows) == ["DEC-999 (line 1)"]
 
 
 def test_the_index_still_cites_tests_at_all() -> None:

@@ -201,12 +201,5 @@
     "old": "                if view.tracked:\n                    # The session sees what the wake CLAIMED",
     "new": "                if True:\n                    # The session sees what the wake CLAIMED",
     "target": "tests/unit/test_cognition_session_units.py"
-  },
-  {
-    "name": "minor 1: shadow boots with no unit that can run a session",
-    "file": "nora/app/cognition_wiring.py",
-    "old": "    if session_units is not None and not session_units:",
-    "new": "    if False:",
-    "target": "tests/unit/test_cognition_wiring.py::test_the_boot_check_refuses_shadow_when_no_unit_can_run_a_session"
   }
 ]

@@ -269,9 +269,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ("design/09-decision-index.md", "evals/run.py"): (
         "R-83 identifies the invocation path of its historical measurement."
     ),
-    ("design/09-decision-index.md", "nora/language/note_curator.py"): (
-        "DEC-194 contrasts the note model with the historical curator's heuristic."
-    ),
     ("design/capability-drop/03-code-surface.md", "tests/test_reminder_tools.py"): (
         "The capability-drop brief describes how the original agenda-tool test would change."
     ),
