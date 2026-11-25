@@ -96,7 +96,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
     },
     "expired_coverage": lambda i: {
         "id": 90000 + i, "unit": "u", "source": "messages",
-        "person": "generated-person", "from": T0, "to": T0 + timedelta(hours=1),
+        "identity": "generated-person", "from": T0, "to": T0 + timedelta(hours=1),
     },
     "legacy_graph_arrival": lambda i: {
         "unit": "u", "message_id": 1000+i, "revision": f"generated-{i}", "room": "signal:g1",

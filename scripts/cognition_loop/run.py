@@ -2,7 +2,7 @@
 
 Restore at the first wake; for every later wake advance the Record —
 never a derived row — then record the wake the production way, run the
-deployment's `CognitionSessionRunner` in the live lane (`historical`
+retained `CognitionSessionRunner` in the sandbox's live lane (`historical`
 nowhere: the close — lesson settlement, Standing fold, carries,
 watermark — is the production close), and diff every owned store around
 it. Failures at any step are `ERROR`, never `PASS`.
@@ -19,7 +19,7 @@ from typing import Any, cast
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from nora.domain.stimuli import Stimulus, UnitView, WakeReason, decide
+from nora.domain.stimuli import Stimulus, UnitView, WakeReason
 from nora.infra.sql.cognition_replay import recorded_wake
 from nora.infra.sql.schema import (
     COGNITION_SESSION,
@@ -28,7 +28,7 @@ from nora.infra.sql.schema import (
     STIMULUS,
 )
 from nora.infra.sql.stimuli import SqlStimulusStore, _stimulus
-from nora.subject import SubjectSpec, obtain, sandbox_as_of
+from nora.subject import Subject, SubjectSpec, obtain, sandbox_as_of
 from nora.subject.effects import (
     effect_boundary,
     effect_scope,
@@ -59,7 +59,7 @@ from scripts.cognition_loop.verdicts import (
     Rollup,
     rollup,
 )
-from scripts.cognition_loop.wakes import eval_verdict, record_eval_wake
+from scripts.cognition_loop.wakes import record_eval_wake
 from scripts.memory_graph_spike import freeze, index_replay_sandbox
 
 
@@ -110,7 +110,7 @@ OPEN_LOOP: dict[str, Any] = {
 
 
 async def _compose(spec_args: Any, url: str, at_ms: int, room: tuple[str, str],
-                   policy_text: str, identity_text: str) -> Any:
+                   policy_text: str, identity_text: str) -> Subject:
     return await obtain(SubjectSpec(
         database_url=url, workdir=Path(spec_args.workdir), room=room, now=_dt(at_ms),
         identity=identity_text, policy=policy_text,
@@ -330,12 +330,14 @@ async def _run_wake(
                 raise ValueError("the composed policy assigns the source room to another unit")
             if judges is not None:
                 judges = judges.bind(subject.cfg)
+            environment = subject.environment
+            if environment is None:
+                raise ValueError("the replay subject needs an isolated environment")
             egress = assert_no_egress(subject)
             await index_replay_sandbox(subject, source_url=args.database_url)
             runner = subject.deps.cognition_runner
-            evaluator = subject.deps.wake_evaluator
-            if runner is None or evaluator is None:
-                raise ValueError("the subject composes no cognition runner/evaluator")
+            if runner is None:
+                raise ValueError("the subject composes no legacy cognition runner")
         except Exception as exc:  # noqa: BLE001 — a failed step is ERROR, not a crash
             return _wake_error(
                 output, index, wake_id, at_ms, reason, advance,
@@ -345,14 +347,14 @@ async def _run_wake(
         try:
             engine = create_async_engine(url)
             try:
-                await prepare_effect_reads(engine, subject.environment)
+                await prepare_effect_reads(engine, environment)
                 scope = effect_scope(subject)
                 stimuli = SqlStimulusStore(engine)
+                config = subject.cfg.cognition
                 view = await stimuli.view(
                     unit=case.unit, mode="live", now_ms=at_ms,
-                    limit=evaluator._policy.batch_max,
-                    stale_before_ms=at_ms - int(
-                        evaluator._policy.session_timeout_seconds * 1000),
+                    limit=config.batch_max,
+                    stale_before_ms=at_ms - int(config.session_timeout_seconds * 1000),
                 )
                 if recorded_meta is not None:
                     view, missing = await _batch_view(
@@ -368,14 +370,9 @@ async def _run_wake(
                 offered = sorted(s.id for s in view.pending)
                 offered_self = sorted(
                     s.id for s in view.pending if s.kind == "self")
-                decided = decide(view, evaluator._policy, at_ms)
-                recorded_reason = cast(WakeReason, reason)
-                verdict, forced = eval_verdict(
-                    view, decided, reason=recorded_reason)
                 wake = await record_eval_wake(
-                    evaluator, view, verdict,
-                    verdict.reason or recorded_reason, at_ms,
-                    forced=forced,
+                    stimuli, view, cast(WakeReason, reason), at_ms,
+                    config=config, metrics=subject.deps.metrics,
                 )
                 before = await state_mod.snapshot(
                     engine, unit=scope.unit, rooms=scope.rooms,
