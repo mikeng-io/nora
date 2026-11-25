@@ -32,7 +32,7 @@
     "file": "nora/subject/sandbox_index.py",
     "old": "    if require_vectors:\n        refuse_low_coverage(coverage, source_cov)\n",
     "new": "    refuse_low_coverage(coverage, source_cov)\n",
-    "target": "tests/integration/test_eval_sandbox_vectors.py::test_a_sandbox_is_indexed_and_read_back"
+    "target": "tests/integration/test_eval_sandbox_vectors.py::test_an_identical_text_adopts_its_vector_and_a_changed_one_does_not"
   },
   {
     "name": "vector consumers still refuse a source without vectors",
@@ -53,7 +53,7 @@
     "file": "nora/subject/sandbox_index.py",
     "old": "    if require_vectors:\n        refuse_low_coverage(coverage, source_cov)\n",
     "new": "    if False:\n        refuse_low_coverage(coverage, source_cov)\n",
-    "target": "tests/integration/test_eval_sandbox_vectors.py::test_a_sandbox_is_indexed_and_read_back"
+    "target": "tests/integration/test_eval_sandbox_index_reuse.py::test_a_build_refused_under_its_floor_is_not_kept"
   },
   {
     "name": "a service mismatch retains the actual route and expected recording position",
