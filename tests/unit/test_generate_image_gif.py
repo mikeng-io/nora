@@ -55,7 +55,7 @@ def persons(tmp_path):
 def _tool(persons, generator, deliverer):
     specs = build_tool_specs(
         store=FakeRecordStore(), conversation_id="g", conversation_type="group",
-        persons=persons, honcho=None, deliverer=deliverer, metrics=Metrics(),
+        persons=persons, deliverer=deliverer, metrics=Metrics(),
         room=Room(platform="signal", conversation_id="g",
                   roster_source=FakeRosterSource(groups={}), persons=persons),
         transit_source=None, image_generator=generator, image_refs_allowed=False,
