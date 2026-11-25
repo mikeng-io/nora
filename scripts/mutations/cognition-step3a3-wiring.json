@@ -18,105 +18,105 @@
     "file": "nora/testing/stimuli.py",
     "old": "        if owner != outcome.unit:",
     "new": "        if False:",
-    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k another_units_session"
+    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py::test_an_outcome_from_another_units_session_is_refused"
   },
   {
     "name": "stimuli (memory double): an outcome for a wake nobody wrote is refused",
     "file": "nora/testing/stimuli.py",
     "old": "        if owner is None:",
     "new": "        if False:",
-    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k wake_nobody_wrote"
+    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py::test_an_outcome_for_a_wake_nobody_wrote_is_refused"
   },
   {
     "name": "stimuli (sql): a tracked wake without a guard is refused",
     "file": "nora/infra/sql/stimuli.py",
     "old": "        check_wake_guard(wake, guard)\n",
     "new": "",
-    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k tracked_wake_without_a_guard"
+    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py::test_a_tracked_wake_without_a_guard_is_refused_and_an_untracked_one_is_not"
   },
   {
     "name": "stimuli (memory double): a tracked wake without a guard is refused",
     "file": "nora/testing/stimuli.py",
     "old": "        if wake.tracked and guard is None:\n            raise ValueError(\"a tracked wake must be recorded under a WakeGuard\")\n",
     "new": "",
-    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k tracked_wake_without_a_guard"
+    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py::test_a_tracked_wake_without_a_guard_is_refused_and_an_untracked_one_is_not"
   },
   {
     "name": "session runner: the objective is read at every session",
     "file": "nora/app/cognition_session.py",
     "old": "        if self._doctrine_source is not None:\n            return self._doctrine_source()",
     "new": "        if False:\n            return self._doctrine_source()",
-    "target": "tests/unit/test_cognition_wiring.py -k read_at_every_session"
+    "target": "tests/unit/test_cognition_wiring.py::test_the_objective_is_read_at_every_session_not_captured_at_startup"
   },
   {
     "name": "session runner: a spanning agenda binds the reads to the home room, not each item's room",
     "file": "nora/app/cognition_session.py",
     "old": "                unit, rooms, clock=historical_clock,\n                on_rows=on_rows if self._memory is not None else None),",
     "new": "                unit, [self._home_rooms[unit]], clock=historical_clock,\n                on_rows=on_rows if self._memory is not None else None),",
-    "target": "tests/unit/test_cognition_wiring.py -k spanning_rooms_asks"
+    "target": "tests/unit/test_cognition_wiring.py::test_an_agenda_spanning_rooms_asks_for_each_rooms_reads_and_never_the_home_room_instead"
   },
   {
     "name": "session runner: a read tool handed twice is refused",
     "file": "nora/app/cognition_session.py",
     "old": "                if name in seen:",
     "new": "                if False:",
-    "target": "tests/unit/test_cognition_wiring.py -k handed_twice"
+    "target": "tests/unit/test_cognition_wiring.py::test_a_read_tool_handed_twice_is_refused_not_kept_last"
   },
   {
     "name": "session runner: the prompt carries the clock",
     "file": "nora/language/cognition_render.py",
     "old": "if now is not None:\n        blocks.append(render_clock(now=now, last_session_ms=last_session_ms))",
     "new": "if False:\n        blocks.append(render_clock(now=now, last_session_ms=last_session_ms))",
-    "target": "tests/unit/test_cognition_wiring.py -k says_what_time_it_is"
+    "target": "tests/unit/test_cognition_wiring.py::test_the_prompt_says_what_time_it_is_and_how_old_each_item_is"
   },
   {
     "name": "agent runner: the root span keeps the trace in Langfuse",
     "file": "nora/app/cognition_agent_runner.py",
     "old": "**{TRACE_KIND: \"generation\",",
     "new": "**{TRACE_KIND: \"plumbing\",",
-    "target": "tests/unit/test_cognition_wiring.py -k one_root_span"
+    "target": "tests/unit/test_cognition_wiring.py::test_a_session_is_one_root_span_that_stays_in_langfuse_and_names_its_outcome"
   },
   {
     "name": "agent runner: a failed session names its outcome",
     "file": "nora/app/cognition_agent_runner.py",
     "old": "                annotate(**{\"nora.outcome\": \"failed\"})\n                self._metrics.inc(\"nora_errors_total\", stage=\"cognition_session\")",
     "new": "                self._metrics.inc(\"nora_errors_total\", stage=\"cognition_session\")",
-    "target": "tests/unit/test_cognition_wiring.py -k failed_or_timed_out_session"
+    "target": "tests/unit/test_cognition_wiring.py::test_a_failed_or_timed_out_session_names_its_outcome_and_still_raises"
   },
   {
     "name": "wiring: a flagged read stays withheld until its flag is on",
     "file": "nora/app/cognition_wiring.py",
     "old": "        if name in present and flag not in enabled_flags",
     "new": "        if name in present and False",
-    "target": "tests/unit/test_cognition_wiring.py -k record_query_is_withheld"
+    "target": "tests/unit/test_cognition_wiring.py::test_record_query_is_withheld_until_its_flag_is_on"
   },
   {
     "name": "wiring: a unit with no home room is not woken",
     "file": "nora/app/cognition_wiring.py",
     "old": "    wakeable = [u for u in units if u in homes]",
     "new": "    wakeable = list(units)",
-    "target": "tests/unit/test_cognition_wiring.py -k units_without_a_home_room"
+    "target": "tests/unit/test_cognition_wiring.py::test_units_without_a_home_room_are_named_not_woken"
   },
   {
     "name": "wiring: shutdown runs once",
     "file": "nora/app/cognition_wiring.py",
     "old": "        if self._done:\n            return\n        self._done = True",
     "new": "        self._done = True",
-    "target": "tests/unit/test_cognition_wiring.py -k shutdown_cancels"
+    "target": "tests/unit/test_cognition_wiring.py::test_shutdown_cancels_the_evaluators_sessions_then_the_runners_and_only_once"
   },
   {
-    "name": "wiring: the boot check refuses a shadow mode with no runner",
-    "file": "nora/app/cognition_wiring.py",
-    "old": "    if runner is None:\n        raise RuntimeError(",
-    "new": "    if False:\n        raise RuntimeError(",
-    "target": "tests/unit/test_cognition_wiring.py -k boot_check tests/test_composition.py -k built_no_runner"
+    "name": "wiring: startup refuses enabled Cognition without a runner",
+    "file": "nora/app/composition_dreamer.py",
+    "old": "        if cfg.cognition.enabled:\n            raise StartupError(\"[cognition] enabled but no session runner was built\")",
+    "new": "        if False:\n            raise StartupError(\"[cognition] enabled but no session runner was built\")",
+    "target": "tests/test_composition.py::test_cognition_on_that_built_no_runner_refuses_to_boot"
   },
   {
     "name": "wiring: the result caps reach the agent runner",
     "file": "nora/app/cognition_wiring.py",
     "old": "        result_caps=result_caps,\n    )\n\n    def doctrine()",
     "new": "    )\n\n    def doctrine()",
-    "target": "tests/test_composition.py -k cognition_on_builds_one_runner"
+    "target": "tests/test_composition.py::test_cognition_on_builds_one_runner_for_backfill_alongside_graph_wake"
   },
   {
     "name": "main: shutdown stops the cognition sessions first",
@@ -130,7 +130,7 @@
     "file": "evals/rebuilt/entry.py",
     "old": "    if runner is None:\n        return Outcome(\n            admitted=None, source=\"fail_closed\",\n            error=\"the subject built no Cognition",
     "new": "    if False:\n        return Outcome(\n            admitted=None, source=\"fail_closed\",\n            error=\"the subject built no Cognition",
-    "target": "tests/unit/test_cognition_wiring.py -k subject_with_no_session_runner"
+    "target": "tests/unit/test_cognition_wiring.py::test_a_subject_with_no_session_runner_is_an_error_never_a_pass"
   },
   {
     "name": "wiring: the argument table handed to the guard holds read tools only",
@@ -144,6 +144,6 @@
     "file": "nora/app/cognition_session.py",
     "old": "            {} if self._skill_versions_for is None else dict(self._skill_versions_for())",
     "new": "            {}",
-    "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_session_row_records_the_skill_it_ran_with"
+    "target": "tests/unit/test_cognition_agenda_skills.py::test_the_session_row_records_the_skill_it_ran_with"
   }
 ]

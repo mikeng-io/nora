@@ -125,7 +125,10 @@ _DEPRECATED_BANNER = re.compile(r">\s*\*\*DEPRECATED")
 
 _LIST_ITEM = re.compile(r"\s*(?:[-*+]|\d+[.)])\s")
 
-_PATH_TOKEN = re.compile(r"`([A-Za-z0-9_./-]+/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)`")
+_PATH_TOKEN = re.compile(
+    r"`([A-Za-z0-9_./-]+/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)"
+    r"(?:::[\w.]+(?:::[\w.]+)*|:\d+(?:[-,:]\d+)*)?`"
+)
 
 
 def _is_checked_path(path: str) -> bool:
@@ -249,6 +252,31 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ): (
         "The accepted ADR records the feed path at the revision it describes. The "
         "reference resolves in Git history."
+    ),
+    (
+        "docs/adr/0002-honcho-session-binding-deferred.md",
+        "nora/infra/honcho/client.py",
+    ): "The accepted ADR records the Honcho client at the revision it describes.",
+    ("design/08-stack-refactor-brief.md", "nora/handler.py"): (
+        "The pre-refactor brief cites two separate call sites in the old handler."
+    ),
+    ("design/08-stack-refactor-brief.md", "nora/models.py"): (
+        "The pre-refactor brief cites the old TagContext type."
+    ),
+    ("design/08-stack-refactor-brief.md", "nora/store/honcho.py"): (
+        "The pre-refactor brief records the old Honcho health probe."
+    ),
+    ("design/09-decision-index.md", "evals/run.py"): (
+        "R-83 identifies the invocation path of its historical measurement."
+    ),
+    ("design/capability-drop/03-code-surface.md", "tests/test_reminder_tools.py"): (
+        "The capability-drop brief describes how the original agenda-tool test would change."
+    ),
+    ("design/capability-drop/implementation-brief.md", "tests/test_reminder_tools.py"): (
+        "The historical implementation checklist names the original agenda-tool test."
+    ),
+    ("design/group-situation/00-intent.md", "nora/language/proactive.py"): (
+        "The original situation proposal identifies the narrow wake trigger it planned to extend."
     ),
     (
         'docs/adr/0028-pull-requests-are-labelled-and-assigned-by-a-workflow-and-a-visible-commit-has-a-body.md',
@@ -448,6 +476,20 @@ def test_an_unresolved_reference_is_flagged(tmp_path: Path) -> None:
     (tmp_path / "nora").mkdir()
     (tmp_path / "nora" / "totally_made_up_module_for_this_test.py").write_text("")
     assert unresolved(tmp_path, candidates, frozenset()) == []
+
+
+def test_a_symbol_or_line_suffix_cannot_hide_a_dangling_path(tmp_path: Path) -> None:
+    markdown = (
+        "See `nora/missing_symbol.py::Class::method` and `nora/missing_line.py:24-26`.\n"
+        "See `nora/existing.py::function`.\n"
+    )
+    (tmp_path / "nora").mkdir()
+    (tmp_path / "nora" / "existing.py").touch()
+
+    assert unresolved(tmp_path, candidate_references(markdown), frozenset()) == [
+        (1, "nora/missing_symbol.py"),
+        (1, "nora/missing_line.py"),
+    ]
 
 
 def test_a_superpowers_target_is_never_flagged_even_though_it_cannot_resolve() -> None:

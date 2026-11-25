@@ -4,14 +4,14 @@
   "file": "nora/app/cognition_session.py",
   "old": "id=n, sender=sender, person_id=None,",
   "new": "id=n, sender=\"\", person_id=None,",
-  "target": "tests/unit/test_cognition_record_query_ids.py::test_a_note_citing_a_message_the_real_record_query_returned_is_checked_against_its_sender"
+  "target": "tests/unit/test_cognition_record_query_ids.py::test_a_note_checks_the_sender_of_a_fetched_record_row"
  },
  {
   "name": "M6: a stale base passes",
   "file": "nora/domain/standing_revise.py",
   "old": "    if base_revision_id != current_revision_id:",
   "new": "    if False:",
-  "target": "tests/unit/test_standing_revise.py::test_a_base_behind_the_current_revision_is_stale tests/unit/test_cognition_session_verbs_c.py::test_a_standing_revise_against_a_stale_revision_id_is_refused_and_a_fresh_one_passes"
+  "target": "tests/unit/test_standing_revise.py::test_a_base_behind_the_current_revision_is_stale tests/unit/test_cognition_live_writes.py::test_a_standing_revise_against_a_stale_base_is_refused"
  },
  {
   "name": "m4: a Rollup key no read returned is accepted",
@@ -39,7 +39,7 @@
   "file": "nora/conversation/adapters/tools/query.py",
   "old": "with_ids=dream_adaptor == COGNITION_ADAPTOR,",
   "new": "with_ids=False,",
-  "target": "tests/unit/test_cognition_record_query_ids.py::test_the_cognition_sessions_record_query_rows_carry_their_number tests/unit/test_cognition_record_query_ids.py::test_what_the_real_record_query_returns_is_what_the_watcher_keeps tests/unit/test_cognition_record_query_ids.py::test_a_note_citing_a_message_the_real_record_query_returned_is_checked_against_its_sender"
+  "target": "tests/unit/test_cognition_record_query_ids.py::test_the_cognition_sessions_record_query_rows_carry_their_number tests/unit/test_cognition_record_query_ids.py::test_what_the_real_record_query_returns_is_what_the_watcher_keeps"
  },
  {
   "name": "major 2: record_query prints a number on every turn",

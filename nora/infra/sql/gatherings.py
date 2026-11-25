@@ -3,15 +3,9 @@ the engine comes through `__init__`, every write is one statement (or one
 transaction of a few) inside `async with self._engine.begin()`, every read
 inside `async with self._engine.connect()`.
 
-`events` is a head, a compare-and-swap cache over the append-only
-`event_revision` chain (migration `0074_event_revision`), mirroring `nora.infra.sql.notes`'
-`note`/`note_revision` split — `create` mints both the head and its first
-revision in one transaction, `update` appends a new revision and moves the
-head, optionally refusing a stale `base_revision_id` (`StaleEventRevisionError`:
-a stale one is refused `stale_base`, with the current row). RSVPs
-are append-only too (`event_rsvps`): `add_rsvp` INSERTs, never upserts;
-`rsvps_for` projects the newest row per person, so callers see the same
-"one current RSVP per person" shape.
+`events` points to an append-only `event_revision` chain. Venue backfill
+appends a revision and moves the head. RSVP reads project the newest row
+per person from `event_rsvps`.
 
 `FakeGatheringStore` (`nora/testing/gatherings.py`) is the second
 implementation; `tests/contract/test_gathering_store_contract.py` is the one
@@ -27,12 +21,10 @@ from uuid import UUID, uuid4
 
 import sqlalchemy as sa
 from sqlalchemy.engine import Row
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.gatherings import (
     RSVP,
-    DuplicateGatheringError,
     EventEvidence,
     EventRevision,
     Gathering,
@@ -48,12 +40,6 @@ from nora.domain.lineage import Lineage
 from nora.infra.sql import memory_index
 from nora.infra.sql.event_evidence import apply_evidence
 from nora.infra.sql.schema import EVENT_REVISION, EVENT_RSVPS, EVENTS
-
-# PostgreSQL SQLSTATE 23505, unique_violation — matched exactly, the same
-# reasoning as `nora.infra.sql.reminders._PG_UNIQUE_VIOLATION`: this table
-# also carries a CHECK constraint, and a bad status value must not be
-# reported as "duplicate id".
-_PG_UNIQUE_VIOLATION = "23505"
 
 
 def _row_to_event(r: Row[*tuple[Any, ...]]) -> Gathering:
@@ -232,43 +218,6 @@ class SqlGatheringStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
-    async def create(
-        self, event: Gathering, *, evidence: EventEvidence | None = None,
-        receipt: Any = None,
-    ) -> Gathering:
-        row = normalise_gathering(event)
-        try:
-            async with self._engine.begin() as conn:
-                if evidence is not None:
-                    lineage, as_of = await apply_evidence(
-                        conn, event=row, held=row.lineage, evidence=evidence,
-                    )
-                    row = _replace(row, lineage=lineage, as_of=as_of)
-                revision = _revision_of(
-                    row, parent_revision_id=None,
-                    citations=(
-                        event_citations({}, evidence)
-                        if evidence is not None else None
-                    ),
-                )
-                row_with_head = _replace(row, head_revision_id=revision.id)
-                await conn.execute(
-                    sa.insert(EVENTS).values(**_event_values(row_with_head)),
-                )
-                await conn.execute(
-                    sa.insert(EVENT_REVISION).values(**_revision_values(revision)),
-                )
-                await memory_index.project(conn, "event", str(row.id))
-                # Called with (conn, row) inside this write's transaction: the
-                # Cognition session binds its idempotency receipt to the commit.
-                if receipt is not None:
-                    await receipt(conn, row_with_head)
-        except IntegrityError as exc:
-            if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
-                raise
-            raise DuplicateGatheringError(row.id) from exc
-        return row_with_head
-
     async def get(self, event_id: UUID) -> Gathering | None:
         stmt = sa.select(EVENTS).where(EVENTS.c.id == event_id)
         async with self._engine.connect() as conn:
@@ -392,30 +341,6 @@ class SqlGatheringStore:
                 await receipt(conn, row_with_head)
         return row_with_head
 
-    async def add_rsvp(self, rsvp: RSVP) -> None:
-        # Append-only (`0074_event_revision`): a repeat RSVP is a new row,
-        # never an UPDATE of the old one — `rsvps_for` is what projects "the current one" back out.
-        stmt = sa.insert(EVENT_RSVPS).values(
-            id=uuid4(),
-            event_id=rsvp.event_id,
-            person_id=rsvp.person_id,
-            response=rsvp.response.value,
-            responded_at=rsvp.responded_at,
-            recorded_at=rsvp.responded_at,
-        )
-        async with self._engine.begin() as conn:
-            # Locked as `update` locks it: the projection below re-reads the
-            # whole event row, and without the lock a concurrent `update`
-            # committing between that read and this commit would have its
-            # node overwritten with the older values (a newly added
-            # `exclude_persons` undone in the index).
-            await conn.execute(
-                sa.select(EVENTS.c.id).where(EVENTS.c.id == rsvp.event_id).with_for_update(),
-            )
-            await conn.execute(stmt)
-            # The person who answered is someone the event is about.
-            await memory_index.project(conn, "event", str(rsvp.event_id))
-
     async def rsvps_for(self, event_id: UUID) -> Sequence[RSVP]:
         # DISTINCT ON the newest row per person (Postgres extension; both
         # implementations of this port already assume Postgres elsewhere —
@@ -446,45 +371,6 @@ class SqlGatheringStore:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_revision(r) for r in rows]
-
-    async def search(
-        self, *, unit_id: str, place: str | None = None, person: str | None = None,
-        start: Any = None, end: Any = None,
-    ) -> Sequence[Gathering]:
-        """Unit-wide: `event_search`'s store side (`place?`, `person?`,
-        `interval?`). `place` matches
-        `venue_name`/`venue_text` by containment; `person` matches the
-        creator or an RSVP; `start`/`end` bound `events.when`.
-
-        The unit is the read boundary (DEC-231), so every persisted platform in
-        it is in scope. A row with no stored platform is quarantined: the old
-        `room_ids` widening inferred historical ownership from current policy
-        and is gone."""
-        stmt = sa.select(EVENTS).where(EVENTS.c.unit_id == unit_id)
-        # A row with no stored platform is quarantined. The unit read is
-        # platform-blind otherwise (DEC-231), so this is the only place the
-        # quarantine is enforced for a unit-wide search.
-        stmt = stmt.where(EVENTS.c.platform != "")
-        if place:
-            needle = f"%{place}%"
-            stmt = stmt.where(sa.or_(
-                EVENTS.c.venue_name.ilike(needle), EVENTS.c.venue_text.ilike(needle),
-            ))
-        if person:
-            rsvpd = sa.select(EVENT_RSVPS.c.event_id).where(
-                EVENT_RSVPS.c.person_id == person,
-            )
-            stmt = stmt.where(sa.or_(
-                EVENTS.c.created_by == person, EVENTS.c.id.in_(rsvpd),
-            ))
-        if start is not None:
-            stmt = stmt.where(sa.or_(EVENTS.c.when.is_(None), EVENTS.c.when >= start))
-        if end is not None:
-            stmt = stmt.where(sa.or_(EVENTS.c.when.is_(None), EVENTS.c.when <= end))
-        stmt = stmt.order_by(EVENTS.c.created_at)
-        async with self._engine.connect() as conn:
-            rows = (await conn.execute(stmt)).all()
-        return [_row_to_event(r) for r in rows]
 
     async def aclose(self) -> None:
         await self._engine.dispose()

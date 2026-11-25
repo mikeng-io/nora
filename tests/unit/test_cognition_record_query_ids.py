@@ -33,6 +33,7 @@ from nora.persons import load_persons
 from nora.policy import load_policy
 from nora.testing import FakeRecordStore
 from tests.fakes import SinkSender
+from tests.unit.cognition_rig import session
 
 NOW = datetime(2026, 9, 29, 4, 0, tzinfo=UTC)
 ROOM = "room-a"
@@ -152,6 +153,31 @@ async def test_what_the_real_record_query_returns_is_what_the_watcher_keeps(poli
     [watched] = watch_reads([_cognition_tool(policy, persons)], fetched, [room_key])
     await _stream(watched, start="2026-09-28")
     assert fetched.of(room_key).messages == {MESSAGE_ID: "Ada"}
+
+
+async def test_a_note_checks_the_sender_of_a_fetched_record_row(policy, persons):
+    tool = _cognition_tool(policy, persons)
+    note = {
+        "title": "dinner", "description": "where", "uncertainty": "the place",
+        "closing_condition": "a booking", "anchor_entities": ["Ada"],
+    }
+    correct = f"## Decided\n- going (Ada) [{MESSAGE_ID}]\n## Open\n- where [{MESSAGE_ID}]\n"
+    wrong = correct.replace("(Ada)", "(Ben)")
+    answers = []
+
+    async def behave(by, tools):
+        answers.append(await by["note_create"](**note, body=correct))
+        await _stream(by["record_query"], start="2026-09-28")
+        answers.append(await by["note_create"](**note, body=wrong))
+        answers.append(await by["note_create"](**note, body=correct))
+
+    await session(behave, runner_kwargs={
+        "read_tools_for": lambda unit, rooms: [tool],
+        "read_only_tools": frozenset({"record_query"}),
+    })
+    assert answers[0]["reason"] == "unknown_id"
+    assert answers[1]["reason"] == "misattributed"
+    assert answers[2]["status"] == "ok", answers[2]
 
 
 async def test_a_tag_turns_record_query_prints_no_ids(policy, persons):

@@ -18,7 +18,7 @@
   "file": "nora/domain/media.py",
   "old": "    if label in (\"sticker\", \"cover image\"):",
   "new": "    if label == \"sticker\":",
-  "target": "tests/unit/test_media_cover_label.py -k refines_an_image"
+  "target": "tests/unit/test_media_cover_label.py::test_cover_image_refines_an_image_and_nothing_else"
  },
  {
   "name": "custody never records the cover role",
@@ -46,7 +46,7 @@
   "file": "nora/domain/media.py",
   "old": "            role=str(item.get(\"role\") or \"\"),\n",
   "new": "",
-  "target": "tests/unit/test_media_cover_label.py -k round_trips"
+  "target": "tests/unit/test_media_cover_label.py::test_the_role_round_trips_through_media_json"
  },
  {
   "name": "the cover note is dropped from the ok result",
@@ -60,7 +60,7 @@
   "file": "nora/media/adapters/tools/create.py",
   "old": "                \"note\": f\"{withheld} {_COVER_NOTE}\" if cover else withheld,",
   "new": "                \"note\": withheld,",
-  "target": "tests/integration/test_media_fetch_covers.py -k withheld_cover"
+  "target": "tests/integration/test_media_fetch_covers.py::test_a_withheld_cover_keeps_both_sentences"
  },
  {
   "name": "the stored-reading path does not pass the cover flag",
@@ -74,35 +74,35 @@
   "file": "nora/domain/media.py",
   "old": "            elif old.cover and not is_cover:\n                seen[blob.sha256] = replace(old, cover=False, cover_body=\"\")",
   "new": "            elif False:\n                seen[blob.sha256] = replace(old, cover=False, cover_body=\"\")",
-  "target": "tests/integration/test_media_fetch_covers.py -k sent_as_a_photo"
+  "target": "tests/integration/test_media_fetch_covers.py::test_bytes_that_were_also_sent_as_a_photo_are_not_called_a_cover tests/integration/test_media_fetch_covers.py::test_bytes_shared_as_a_cover_after_they_were_sent_as_a_photo_are_not_called_a_cover"
  },
  {
   "name": "an older cover sighting marks the handle although a newer photo of the same bytes is in view",
   "file": "nora/domain/media.py",
   "old": "            elif old.cover and is_cover and not old.cover_body:\n                seen[blob.sha256] = replace(old, cover_body=row.body or \"\")",
   "new": "            elif is_cover:\n                seen[blob.sha256] = replace(old, cover=True, cover_body=row.body or \"\")",
-  "target": "tests/integration/test_media_fetch_covers.py -k sent_as_a_photo"
+  "target": "tests/integration/test_media_fetch_covers.py::test_bytes_that_were_also_sent_as_a_photo_are_not_called_a_cover tests/integration/test_media_fetch_covers.py::test_bytes_shared_as_a_cover_after_they_were_sent_as_a_photo_are_not_called_a_cover"
  },
  {
   "name": "an ordinary photo is called a cover (role check dropped)",
   "file": "nora/domain/media.py",
   "old": "            is_cover = blob.role == COVER_ROLE",
   "new": "            is_cover = True",
-  "target": "tests/integration/test_media_fetch_covers.py -k ordinary_photo_carries_no_cover_note"
+  "target": "tests/integration/test_media_fetch_covers.py::test_an_ordinary_photo_carries_no_cover_note"
  },
  {
   "name": "the outbound marker strip is a hand-written list again, without cover image",
   "file": "nora/agent/toolkit/transcript.py",
   "old": "    + \"|\".join(re.escape(x) for x in sorted(MEDIA_LABELS, key=len, reverse=True))\n",
   "new": "    + \"image|sticker|video|audio|voice note|document|file\"\n",
-  "target": "tests/test_tools.py -k strip_media_markers_covers_all_marker_shapes"
+  "target": "tests/test_tools.py::test_strip_media_markers_covers_all_marker_shapes"
  },
  {
   "name": "the instagram_read when-clause is reverted to a pasted link only",
   "file": "nora/social/adapters/tools/instagram.py",
   "old": "        \"\"\"Read Instagram posts, profiles and stories, or every item, videos included,\n        in a post or reel. Call this when somebody shares, links or asks about one.\n",
   "new": "        \"\"\"Read an Instagram profile, story, post or reel, by name, handle or\n        link. Call this when somebody asks about someone's Instagram or pastes\n        an Instagram link.\n",
-  "target": "tests/unit/test_instagram_read_tool.py -k catalogue_line_names_every_item"
+  "target": "tests/unit/test_instagram_read_tool.py::test_the_catalogue_line_names_every_item_and_a_share"
  },
  {
   "name": "custody records the role on on_demand alone, not on the label's predicate",

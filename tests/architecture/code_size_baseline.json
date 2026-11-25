@@ -142,8 +142,8 @@
   "comment_blocks": 4
  },
  "nora/agent/dream_guard.py": {
-  "comment_blocks": 17,
-  "internal_docstrings": 3
+  "comment_blocks": 6,
+  "internal_docstrings": 2
  },
  "nora/agent/dream_screen.py": {
   "comment_blocks": 1,
@@ -462,10 +462,6 @@
    "FirePath._turn": 379
   },
   "internal_docstrings": 25
- },
- "nora/app/gatherings.py": {
-  "comment_blocks": 4,
-  "internal_docstrings": 5
  },
  "nora/app/graph_project.py": {
   "comment_blocks": 1
@@ -1095,7 +1091,7 @@
   "internal_docstrings": 1
  },
  "nora/infra/sql/gatherings.py": {
-  "comment_blocks": 3,
+  "comment_blocks": 1,
   "internal_docstrings": 1
  },
  "nora/infra/sql/geocode_cache.py": {
@@ -2943,9 +2939,6 @@
   "comment_blocks": 1
  },
  "tests/unit/test_dream_guard.py": {
-  "comment_blocks": 1
- },
- "tests/unit/test_dream_memory_budget.py": {
   "comment_blocks": 1
  },
  "tests/unit/test_dream_screen.py": {

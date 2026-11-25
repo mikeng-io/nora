@@ -6,7 +6,7 @@ from aiohttp import web
 
 from nora.agent.whereis import Circle
 from nora.app.gatherings import GatheringService
-from nora.domain.gatherings import RSVPResponse
+from nora.domain.gatherings import RSVP, RSVPResponse
 from nora.domain.models import PersonRef
 from nora.domain.presence import PresenceFix, WireState
 from nora.persons import Persons
@@ -338,12 +338,12 @@ async def client_with_events(aiohttp_client):
         created_by="miles",
         title="Dinner",
     ))
-    await events_service.rsvp(
+    await gatherings.add_rsvp(RSVP(
         event_id=event.id,
-        conversation_id="signal:group-1", platform="signal",
         person_id="daisy",
         response=RSVPResponse.YES,
-    )
+        responded_at=event.created_at,
+    ))
     app = web.Application()
     register_web_routes(
         app,

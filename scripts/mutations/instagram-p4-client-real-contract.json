@@ -144,7 +144,7 @@
     "file": "nora/infra/social/instagram_client.py",
     "old": "    text = \" \".join(value.split())",
     "new": "    text = value.strip()",
-    "target": "tests/unit/test_instagram_profile_search_snapshot.py -k hostile_display_name"
+    "target": "tests/unit/test_instagram_profile_search_snapshot.py::test_a_profile_or_search_result_is_byte_identical_to_before_the_views[search_hostile_display_name]"
   },
   {
     "name": "a 20-digit igid is sent",

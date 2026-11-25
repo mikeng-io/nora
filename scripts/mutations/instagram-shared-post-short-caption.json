@@ -81,7 +81,7 @@
   "file": "nora/agent/toolkit/pages.py",
   "old": "    return url, False\n",
   "new": "    return link, False\n",
-  "target": "tests/unit/test_instagram_read_links.py -k url"
+  "target": "tests/unit/test_instagram_read_links.py::test_a_hostile_link_never_reaches_the_bridge tests/unit/test_instagram_read_links.py::test_exactly_one_input_is_required[blank_url] tests/unit/test_instagram_read_links.py::test_exactly_one_input_is_required[handle_and_url] tests/unit/test_instagram_read_links.py::test_exactly_one_input_is_required[person_and_url] tests/unit/test_instagram_read_links.py::test_url_is_read_exactly_as_link_would_be tests/unit/test_instagram_read_links.py::test_url_survives_strands_argument_validation tests/unit/test_instagram_read_links.py::test_url_and_link_that_differ_read_nothing tests/unit/test_instagram_read_links.py::test_url_and_link_spelling_the_same_link_agree"
  },
  {
   "name": "url and link that differ are not refused: url silently wins",
@@ -95,14 +95,14 @@
   "file": "nora/agent/toolkit/pages.py",
   "old": "    return parsed_a == parsed_b\n",
   "new": "    return a.strip() == b.strip()\n",
-  "target": "tests/unit/test_instagram_read_links.py -k spelling_the_same_link"
+  "target": "tests/unit/test_instagram_read_links.py::test_url_and_link_spelling_the_same_link_agree"
  },
  {
   "name": "the web_fetch Instagram page guard is removed (design/social-per-network/links.md PR1: the shared registry's page claim): the page goes to the provider",
   "file": "nora/agent/link_owners.py",
   "old": "    if kind == \"page\":\n        return LinkClaim(network=\"instagram\", kind=\"page\", readable=True)\n",
   "new": "    if False:\n        return LinkClaim(network=\"instagram\", kind=\"page\", readable=True)\n",
-  "target": "tests/test_web_fetch_tool.py -k instagram"
+  "target": "tests/test_web_fetch_tool.py::test_an_instagram_page_link_is_routed_to_instagram_read_and_never_fetched tests/test_web_fetch_tool.py::test_the_guard_holds_with_instagram_off_and_in_a_fire_turn tests/test_web_fetch_tool.py::test_a_mobile_instagram_page_link_asks_for_the_www_link"
  },
  {
   "name": "the web_fetch guard judges only links with a scheme: a pasted one is refused as not a link",

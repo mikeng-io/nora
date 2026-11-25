@@ -4,6 +4,6 @@
     "file": "tests/unit/test_bridge_projection_fleet.py",
     "old": "            except ClientConnectorError:\n                await asyncio.sleep(0.05)",
     "new": "            except ClientConnectorError:\n                raise",
-    "target": "tests/unit/test_bridge_projection_fleet.py -k fleet_health"
+    "target": "tests/unit/test_bridge_projection_fleet.py::test_fleet_health_aggregates_per_platform_and_live_never_stales tests/unit/test_bridge_projection_fleet.py::test_fleet_health_200_only_when_every_publisher_is_fresh"
   }
 ]

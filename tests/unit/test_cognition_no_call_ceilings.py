@@ -18,14 +18,14 @@ from nora.app.cognition_agent_runner import DreamerAgentRunner
 from nora.app.cognition_session import AdaptorBudget
 from nora.obs.metrics import Metrics
 from tests.fakes import dreamer_runtime_for
-from tests.unit.test_dream_memory_budget import (
+from tests.fixtures.dreamer_calls import (
     _After,
     _Before,
     _ScriptedModel,
     _Tools,
 )
 
-RULES = ("tool-budget", "memory-budget", "pass-budget", "R-7", "R-99")
+RULES = ("tool-budget", "R-7", "R-99")
 
 
 class _Models:

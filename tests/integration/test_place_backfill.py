@@ -17,10 +17,10 @@ from nora.domain.models import NormalizedMessage
 from nora.domain.ports import PlaceArea
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.geocode_cache import SqlGeocodeCacheStore
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.schema import MEMORY_EDGE
+from tests.fixtures.gatherings import SeededGatheringStore
 
 _AREA = PlaceArea(district="旺角 / Mong Kok", city="九龍 / Kowloon")
 
@@ -63,7 +63,7 @@ async def test_a_dry_run_asks_nothing_and_apply_places_what_is_left_once(clean_p
                                   "dinner?", {}),
         person_id="member-a",
     )
-    events, cache = SqlGatheringStore(engine), SqlGeocodeCacheStore(engine)
+    events, cache = SeededGatheringStore(engine), SqlGeocodeCacheStore(engine)
     two = [await events.create(_event("place-1")), await events.create(_event("place-1"))]
     await events.create(_event("place-2"))  # the geocoder names no area for it
     await cache.put(lat_rounded=1.0, lng_rounded=2.0, address="cached")
@@ -113,7 +113,7 @@ async def test_a_cached_geocodes_area_is_screened_before_it_is_written(clean_pg_
     is written."""
     run_migrations(clean_pg_url)
     engine = create_sql_engine(clean_pg_url)
-    events, cache = SqlGatheringStore(engine), SqlGeocodeCacheStore(engine)
+    events, cache = SeededGatheringStore(engine), SqlGeocodeCacheStore(engine)
     await cache.put(lat_rounded=1.0, lng_rounded=2.0, address="cached")
     done = await backfill_places(
         events=events, cache=cache, places=_Places(),

@@ -932,7 +932,7 @@ async def _project_event(conn: AsyncConnection, source_id: str) -> None:
         await _venue_chains(conn, before, was_in)
         return
     room = await _room_of(conn, row.conversation_id)
-    # An event is read unit-wide (`SqlGatheringStore.search`). One written
+    # The memory index reads events at unit scope. One written
     # before `0074` carries no unit (`unit_id = ''`) and is found only in its
     # own room, so it is scoped to that room; a room the Record cannot name
     # keeps the bare id, which matches no room key and so no read.

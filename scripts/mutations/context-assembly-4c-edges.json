@@ -4,7 +4,7 @@
     "file": "nora/agent/reaction.py",
     "old": "        lines.append(f\"{speaker_label(who)}: {escape(body)}\")",
     "new": "        lines.append(f\"{escape(one_line(who))}: {escape(body)}\")",
-    "target": "tests/unit/test_reaction.py -k a_profile_name_cannot_write_a_line"
+    "target": "tests/unit/test_reaction.py::test_a_profile_name_cannot_write_a_line_that_reads_as_another_speakers"
   },
   {
     "name": "4c: the same revert, read by the goldens (a hostile name keeps its delimiters)",
@@ -18,7 +18,7 @@
     "file": "nora/agent/reaction.py",
     "old": "        who = (display_name or row.sender_name or \"you\") if row.is_nora else row_speaker(row)\n        if row.turn_handle is not None:\n            who += f\" (turn {row.turn_handle})\"\n        lines.append(f\"{speaker_label(who)}: {escape(body)}\")",
     "new": "        who = (display_name or row.sender_name or \"you\") if row.is_nora else row_speaker(row)\n        if row.turn_handle is not None:\n            who += f\" (turn {row.turn_handle})\"\n        lines.append(f\"{escape(display_name if row.is_nora else speaker_label(who))}: {escape(body)}\")",
-    "target": "tests/unit/test_reaction.py -k hers_goes_through_the_same_label"
+    "target": "tests/unit/test_reaction.py::test_hers_goes_through_the_same_label"
   },
   {
     "name": "4c: the shared resolver is last-wins again (the tie goes to the row that came after)",
@@ -74,14 +74,14 @@
     "file": "nora/domain/blocks.py",
     "old": "_ASCII_DELIMITERS = \"[]:\"",
     "new": "_ASCII_DELIMITERS = \"[\"",
-    "target": "tests/unit/test_reaction.py -k a_profile_name_cannot_write tests/unit/test_speaker_label.py"
+    "target": "tests/unit/test_reaction.py::test_a_profile_name_cannot_write_a_line_that_reads_as_another_speakers tests/unit/test_speaker_label.py::test_the_look_alike_set_is_what_unicode_says tests/unit/test_speaker_label.py::test_the_look_alikes_that_are_not_letters_of_names tests/unit/test_speaker_label.py::test_a_look_alike_cannot_forge_the_next_speaker tests/unit/test_speaker_label.py::test_the_look_alike_is_gone_and_nothing_else_is tests/unit/test_speaker_label.py::test_an_ordinary_name_is_byte_identical_to_what_master_rendered tests/unit/test_speaker_label.py::test_only_a_name_containing_a_new_delimiter_changes"
   },
   {
     "name": "4c review: the speaker strip drops `:` only",
     "file": "nora/domain/blocks.py",
     "old": "_ASCII_DELIMITERS = \"[]:\"",
     "new": "_ASCII_DELIMITERS = \":\"",
-    "target": "tests/unit/test_reaction.py -k a_profile_name_cannot_write tests/unit/test_speaker_label.py"
+    "target": "tests/unit/test_reaction.py::test_a_profile_name_cannot_write_a_line_that_reads_as_another_speakers tests/unit/test_speaker_label.py::test_the_look_alike_set_is_what_unicode_says tests/unit/test_speaker_label.py::test_the_look_alikes_that_are_not_letters_of_names tests/unit/test_speaker_label.py::test_a_look_alike_cannot_forge_the_next_speaker tests/unit/test_speaker_label.py::test_the_look_alike_is_gone_and_nothing_else_is tests/unit/test_speaker_label.py::test_an_ordinary_name_is_byte_identical_to_what_master_rendered tests/unit/test_speaker_label.py::test_only_a_name_containing_a_new_delimiter_changes"
   },
   {
     "name": "4c review: the speaker is the raw `or` chain (a lone NBSP is truthy)",

@@ -25,91 +25,91 @@
     "file": "nora/app/heartbeat.py",
     "old": "    return ReminderState.DONE if outcome in (SENT, SILENT) else ReminderState.FAILED",
     "new": "    return ReminderState.DONE if outcome == SENT else ReminderState.FAILED",
-    "target": "tests/unit/test_heartbeat_loop.py -k silent"
+    "target": "tests/unit/test_heartbeat_loop.py::test_silent_is_done_not_failed tests/unit/test_heartbeat_loop.py::test_a_silent_proactive_turn_resolves_done_with_outcome_silent"
   },
   {
     "name": "D5 a proactive row is screened by the room flag, never by is_allowed",
     "file": "nora/app/heartbeat.py",
     "old": "            if row.kind == PROACTIVE_KIND:",
     "new": "            if False:",
-    "target": "tests/unit/test_heartbeat_loop.py -k screened_on_the_flag_not_on_a_person"
+    "target": "tests/unit/test_heartbeat_loop.py::test_a_proactive_row_is_screened_on_the_flag_not_on_a_person"
   },
   {
     "name": "D11 a retired note cancels the row",
     "file": "nora/app/proactive_screen.py",
     "old": "        if current[0].retired_at is not None and not merged:\n            return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED",
     "new": "        if current[0].retired_at is not None and not merged:\n            return None",
-    "target": "tests/unit/test_heartbeat_loop.py -k a_retired_note_cancels_the_row"
+    "target": "tests/unit/test_heartbeat_loop.py::test_a_retired_note_cancels_the_row"
   },
   {
     "name": "D11 the tag-path predicate walks from the LINKED revision",
     "file": "nora/app/proactive_screen.py",
     "old": "            last_wake_revision_id=linked_at,",
     "new": "            last_wake_revision_id=current[0].head_revision_id,",
-    "target": "tests/unit/test_heartbeat_loop.py -k a_tag_path_revision_since_the_link_cancels_the_row"
+    "target": "tests/unit/test_heartbeat_loop.py::test_a_tag_path_revision_since_the_link_cancels_the_row"
   },
   {
     "name": "D5 the room flag is the grant",
     "file": "nora/app/proactive_screen.py",
     "old": "        if not self._policy.proactive_allowed(",
     "new": "        if False and not self._policy.proactive_allowed(",
-    "target": "tests/unit/test_heartbeat_loop.py -k screened_on_the_flag_not_on_a_person"
+    "target": "tests/unit/test_heartbeat_loop.py::test_a_proactive_row_is_screened_on_the_flag_not_on_a_person"
   },
   {
     "name": "R-27 an unscreenable row does not fire",
     "file": "nora/app/proactive_screen.py",
     "old": "            return ReminderState.FAILED, FAILED_ERROR\n        convo = self._policy.conversation(",
     "new": "            return None\n        convo = self._policy.conversation(",
-    "target": "tests/unit/test_heartbeat_loop.py -k no_note_store_does_not_fire_unverified"
+    "target": "tests/unit/test_heartbeat_loop.py::test_a_linked_row_with_no_note_store_does_not_fire_unverified"
   },
   {
     "name": "D12 SILENT is reachable for proactive",
     "file": "nora/app/fire.py",
     "old": "                    return SILENT\n                if proactive:",
     "new": "                    return SILENT\n                if False:",
-    "target": "tests/unit/test_fire_path.py -k a_quiet_proactive_turn_is_silent_not_a_failure"
+    "target": "tests/unit/test_fire_path.py::test_a_quiet_proactive_turn_is_silent_not_a_failure"
   },
   {
     "name": "D12 the act turn runs on the auto runner",
     "file": "nora/app/fire.py",
     "old": "            runner = self._proactive_runner",
     "new": "            runner = self._runner",
-    "target": "tests/unit/test_fire_path.py -k a_quiet_proactive_turn_is_silent_not_a_failure"
+    "target": "tests/unit/test_fire_path.py::test_a_quiet_proactive_turn_is_silent_not_a_failure"
   },
   {
     "name": "D12 prose under auto is never recovered as a reply",
     "file": "nora/app/fire.py",
     "old": "            and not proactive\n            and failure is None",
     "new": "            and failure is None",
-    "target": "tests/unit/test_fire_path.py -k a_quiet_proactive_turn_is_silent_not_a_failure"
+    "target": "tests/unit/test_fire_path.py::test_a_quiet_proactive_turn_is_silent_not_a_failure"
   },
   {
     "name": "D12 a declined act turn is counted on its own series",
     "file": "nora/app/fire.py",
     "old": "            elif proactive and stop_reason not in deliver.BUDGET_STOP_REASONS:",
     "new": "            elif False:",
-    "target": "tests/unit/test_fire_path.py -k a_quiet_proactive_turn_is_silent_not_a_failure"
+    "target": "tests/unit/test_fire_path.py::test_a_quiet_proactive_turn_is_silent_not_a_failure"
   },
   {
     "name": "D12 the proactive audience is its own",
     "file": "nora/app/fire.py",
     "old": "            else PROACTIVE_AUDIENCE if proactive",
     "new": "            else AUDIENCE if proactive",
-    "target": "tests/unit/test_fire_path.py -k a_proactive_turn_with_no_runner_is_a_counted_wiring_fault"
+    "target": "tests/unit/test_fire_path.py::test_a_proactive_turn_with_no_runner_is_a_counted_wiring_fault"
   },
   {
     "name": "D5 proactive_allowed reads the flag",
     "file": "nora/policy.py",
     "old": "        return convo is not None and convo.proactive",
     "new": "        return convo is not None",
-    "target": "tests/test_policy.py -k proactive_is_checked_on_the_room_not_on_a_person"
+    "target": "tests/test_policy.py::test_proactive_is_checked_on_the_room_not_on_a_person"
   },
   {
     "name": "D2 two home rooms refuse to start",
     "file": "nora/policy.py",
     "old": "        other = homes.get(convo.unit)\n        if other is not None:",
     "new": "        other = homes.get(convo.unit)\n        if False:",
-    "target": "tests/test_policy.py -k two_home_rooms_in_one_unit_refuse_to_start"
+    "target": "tests/test_policy.py::test_two_home_rooms_in_one_unit_refuse_to_start"
   },
   {
     "name": "D7 the log honours since (sql)",
@@ -130,20 +130,20 @@
     "file": "nora/app/proactive_screen.py",
     "old": "                row.id, note_id, convo.unit,\n            )\n            return ReminderState.FAILED, FAILED_ERROR",
     "new": "                row.id, note_id, convo.unit,\n            )\n            return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED",
-    "target": "tests/unit/test_heartbeat_loop.py -k a_note_the_rows_unit_cannot_reach_fails_closed"
+    "target": "tests/unit/test_heartbeat_loop.py::test_a_note_the_rows_unit_cannot_reach_fails_closed"
   },
   {
     "name": "audit: the act runner remains available with the Dreamer off",
     "file": "nora/app/composition_models.py",
     "old": "    proactive_runner = _auto_runner(\n        cfg.proactive.reasoning_effort,\n        \"[proactive] reasoning_effort\",\n        max_tokens=cfg.proactive.max_tokens,\n    )",
     "new": "    proactive_runner = _auto_runner(\n        cfg.proactive.reasoning_effort,\n        \"[proactive] reasoning_effort\",\n        max_tokens=cfg.proactive.max_tokens,\n    ) if cfg.dreamer.enabled else None",
-    "target": "tests/test_composition.py -k a_home_room_keeps_the_proactive_runner_even_with_the_dreamer_off"
+    "target": "tests/test_composition.py::test_a_home_room_keeps_the_proactive_runner_even_with_the_dreamer_off"
   },
   {
     "name": "audit: a silent failure behind a silent act turn is ERROR",
     "file": "evals/rebuilt/entry.py",
     "old": "    if result.token not in (SENT, SILENT):",
     "new": "    if False:",
-    "target": "tests/integration/test_the_rebuilt_suite_runs.py::test_a_proactive_case_never_grades_on_a_wiring_refusal -k proactive_act"
+    "target": "tests/integration/test_the_rebuilt_suite_runs.py::test_a_proactive_case_never_grades_on_a_wiring_refusal"
   }
 ]

@@ -33,7 +33,6 @@ from nora.infra.sql import memory_index
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.memo import SqlMemoStore
@@ -46,6 +45,7 @@ from nora.infra.sql.schema import (
     MESSAGES,
 )
 from nora.subject.sandbox import sandbox_as_of
+from tests.fixtures.gatherings import SeededGatheringStore
 from tests.integration.test_rollup_builds import (
     _WATERMARK,
     ROOM,
@@ -152,7 +152,7 @@ async def _seed_everything(engine: Any) -> dict[str, Any]:
         established_by="lessons",
     )
     now = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
-    gatherings = SqlGatheringStore(engine)
+    gatherings = SeededGatheringStore(engine)
     event = await gatherings.create(Gathering(
         id=uuid4(), conversation_id="g1", title="Dinner", created_by="member-a",
         when=now + timedelta(days=3), venue_text="the noodle place", venue_place_id="place-1",

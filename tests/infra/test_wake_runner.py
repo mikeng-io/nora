@@ -40,6 +40,7 @@ from nora.obs.metrics import Metrics
 from nora.testing.fakes import FakeRosterSource
 from nora.testing.scripted_agent import ScriptedTurn
 from tests.fakes import dreamer_runtime_for
+from tests.fixtures.dreamer_calls import _ScriptedModel
 from tests.infra.test_graph_debrief import opening, wiring
 from tests.infra.test_pass_anchors import NOW, pointers
 from tests.infra.test_proactive_claims import claim_rows
@@ -49,7 +50,6 @@ from tests.infra.test_room_busy import KEY, SUBJECT, service, slots
 from tests.infra.test_situation_staleness import intention
 from tests.infra.test_wake_claims import GROUP, ORIGIN, stimulus
 from tests.infra.test_wake_pass import tick
-from tests.unit.test_dream_memory_budget import _ScriptedModel
 
 
 class WakeModel(_ScriptedModel):

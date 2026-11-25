@@ -33,9 +33,12 @@ Table format, a JSON list of objects:
         "file":   "nora/domain/media_join.py",
         "old":    "<exact text as committed, appearing EXACTLY once>",
         "new":    "<that text as it was before the fix>",
-        "target": "tests/unit/test_media_join.py -k hanging_store"
+        "target": "tests/unit/test_media_join.py::test_a_hanging_store_costs_the_join_and_not_the_turn"
       }
     ]
+
+Python targets are pytest node IDs separated by spaces. The shared gate
+accepts selectors as positional arguments.
 
 A `target` starting with `go:` is a Go test run instead of a pytest selector,
 for the Go services under `deploy/` (the instagram-bridge):

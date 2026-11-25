@@ -55,7 +55,7 @@ An entry is five fields:
 | `file` | repo-relative path |
 | `old` | the text **as committed** — must appear exactly once |
 | `new` | that text **as it was before the fix** |
-| `target` | the pytest selector that is supposed to guard it |
+| `target` | pytest node IDs separated by spaces, or a `go:` target |
 
 A good entry reverts behaviour and nothing else. Three ways to write a bad one,
 all of which the runner reports as `BROKEN ENTRY` rather than as a pass:

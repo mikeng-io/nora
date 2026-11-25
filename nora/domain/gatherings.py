@@ -508,15 +508,6 @@ def event_in_scope(
 
 @runtime_checkable
 class GatheringStore(Protocol):
-    async def create(
-        self, event: Gathering, *, evidence: EventEvidence | None = None,
-        receipt: Any = None,
-    ) -> Gathering:
-        """Mint the head and its first revision. `evidence`, when given, is
-        what the write rests on: the store computes the lineage of
-        `evidence.parts` from its `EventCitation`s. None leaves the row's own
-        lineage."""
-
     async def get(self, event_id: UUID) -> Gathering | None:
         """The row as stored."""
 
@@ -540,21 +531,9 @@ class GatheringStore(Protocol):
         evidence: EventEvidence | None = None, receipt: Any = None,
     ) -> Gathering: ...
 
-    async def add_rsvp(self, rsvp: RSVP) -> None: ...
-
     async def rsvps_for(self, event_id: UUID) -> Sequence[RSVP]: ...
 
     async def revisions_for(self, event_id: UUID) -> Sequence[EventRevision]: ...
-
-    async def search(
-        self, *, unit_id: str, place: str | None = None, person: str | None = None,
-        start: datetime | None = None, end: datetime | None = None,
-    ) -> Sequence[Gathering]:
-        """Unit-wide (`unit_id == unit_id`). This is the unit read boundary
-        (DEC-231): every persisted platform in that unit is in scope, and a row
-        with no stored platform is quarantined (never matched by the old
-        `room_ids` widening, which inferred historical ownership from current
-        policy)."""
 
     async def aclose(self) -> None: ...
 

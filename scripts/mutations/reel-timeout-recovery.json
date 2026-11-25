@@ -4,14 +4,14 @@
     "file": "nora/infra/vision/comprehend.py",
     "old": "        todo = [i for i in todo if _timed_out(outcomes[i])]",
     "new": "        todo = []",
-    "target": "tests/unit/test_media_comprehender.py -k asked_once_more_and_recovers"
+    "target": "tests/unit/test_media_comprehender.py::test_a_timed_out_window_is_asked_once_more_and_recovers"
   },
   {
     "name": "every attempt is bounded by the read's remaining budget",
     "file": "nora/infra/vision/comprehend.py",
     "old": "            return await asyncio.wait_for(\n                ask(cut.windows[index].data, len(cut.windows)), timeout=remaining)",
     "new": "            return await ask(cut.windows[index].data, len(cut.windows))",
-    "target": "tests/unit/test_media_comprehender.py -k spent_budget"
+    "target": "tests/unit/test_media_comprehender.py::test_a_spent_budget_starts_no_recovery_wave"
   },
   {
     "name": "the read spends only the look's own allowance",
@@ -25,48 +25,48 @@
     "file": "nora/infra/social/readings.py",
     "old": "            with look_deadline(allowance):",
     "new": "            if True:",
-    "target": "tests/unit/test_instagram_look_recovery.py -k timed_out_opening"
+    "target": "tests/unit/test_instagram_look_recovery.py::test_a_timed_out_opening_window_gets_its_recovery_on_the_real_path"
   },
   {
     "name": "a persisted look keeps the item's bytes, video included",
     "file": "nora/media/adapters/tools/fetch.py",
     "old": "        (c.media_type in _KEEPABLE_IMAGE_TYPES or _modality_of(c.media_type) == \"video\")\n        and c.persist_look",
     "new": "        c.media_type in _KEEPABLE_IMAGE_TYPES\n        and c.persist_look",
-    "target": "tests/test_media_fetch.py -k instagram_look_keeps"
+    "target": "tests/test_media_fetch.py::test_an_instagram_look_keeps_the_clip_whose_code_re_reads_it"
   },
   {
     "name": "only verified custody serves a code",
     "file": "nora/media/adapters/tools/fetch.py",
     "old": "    c.answer_code = c.serve_code",
     "new": "    c.answer_code = c.serve_code or c.sha256[:HANDLE_CHARS]",
-    "target": "tests/unit/test_instagram_look_recovery.py -k custody_failed"
+    "target": "tests/unit/test_instagram_look_recovery.py::test_a_look_whose_custody_failed_carries_no_bogus_code"
   },
   {
     "name": "the held item's code rides the Reading",
     "file": "nora/infra/social/readings.py",
     "old": "                return Reading(\"seen\", body, coverage, code=code)",
     "new": "                return Reading(\"seen\", body, coverage)",
-    "target": "tests/unit/test_instagram_read_readings.py -k carries_the_held_items_code"
+    "target": "tests/unit/test_instagram_read_readings.py::test_an_ok_reading_carries_the_held_items_code_and_the_item_ref_hands_it_on"
   },
   {
     "name": "a failed look still hands the held code",
     "file": "nora/infra/social/readings.py",
     "old": "    return Reading(\"failed\", code=code)",
     "new": "    return Reading(\"failed\")",
-    "target": "tests/unit/test_instagram_look_recovery.py -k every_look_failing"
+    "target": "tests/unit/test_instagram_look_recovery.py::test_every_look_failing_still_hands_the_held_items_code"
   },
   {
     "name": "the all-unseen note offers the held handle",
     "file": "nora/infra/social/render.py",
     "old": "    if kept and key in (\"mixed\", \"unseen\"):\n        key = f\"{key}_kept\"\n",
     "new": "",
-    "target": "tests/unit/test_instagram_look_recovery.py -k every_look_failing"
+    "target": "tests/unit/test_instagram_look_recovery.py::test_every_look_failing_still_hands_the_held_items_code"
   },
   {
     "name": "the item's code reaches items[] for media_fetch",
     "file": "nora/infra/social/render.py",
     "old": "    if item.reading is not None and item.reading.code:\n        ref[\"code\"] = item.reading.code\n    if item.duration_seconds is not None:",
     "new": "    if item.duration_seconds is not None:",
-    "target": "tests/unit/test_instagram_read_readings.py -k carries_the_held_items_code"
+    "target": "tests/unit/test_instagram_read_readings.py::test_an_ok_reading_carries_the_held_items_code_and_the_item_ref_hands_it_on"
   }
 ]

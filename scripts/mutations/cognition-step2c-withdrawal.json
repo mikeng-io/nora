@@ -4,27 +4,27 @@
     "file": "nora/infra/sql/audit.py",
     "old": "hidden: sa.ColumnElement[bool] = MESSAGES.c.hidden_at.is_(None)",
     "new": "hidden: sa.ColumnElement[bool] = sa.true()",
-    "target": "tests/infra/test_withdrawal.py -k test_hide_message"
+    "target": "tests/infra/test_withdrawal.py::test_hide_message_hides_a_row_once_and_a_snapshot_before_it_restores_the_row"
   },
   {
     "name": "PR #622 review: message_facts' main select actually excludes a hidden message from the daybook/tie/response rollups",
     "file": "nora/infra/sql/rollups.py",
     "old": "            .where(\n                self._in_rooms(unit.rooms),\n                MESSAGES.c.id <= mark.message_id,\n                MESSAGES.c.hidden_at.is_(None),\n            )\n",
     "new": "            .where(\n                self._in_rooms(unit.rooms),\n                MESSAGES.c.id <= mark.message_id,\n            )\n",
-    "target": "tests/integration/test_rollup_builds.py -k test_a_forgotten_persons_message_is_no_longer_a_reply_target_in_the_tie_rollup"
+    "target": "tests/integration/test_rollup_builds.py::test_a_forgotten_persons_message_is_no_longer_a_reply_target_in_the_tie_rollup"
   },
   {
     "name": "PR #622 review: message_facts' quoted-message join actually excludes a hidden quoted message from the tie rollup's reply count",
     "file": "nora/infra/sql/rollups.py",
     "old": "                quoted.c.id <= mark.message_id,\n                quoted.c.hidden_at.is_(None),\n            )))",
     "new": "                quoted.c.id <= mark.message_id,\n            )))",
-    "target": "tests/integration/test_rollup_builds.py -k test_a_forgotten_persons_message_is_no_longer_a_reply_target_in_the_tie_rollup"
+    "target": "tests/integration/test_rollup_builds.py::test_a_forgotten_persons_message_is_no_longer_a_reply_target_in_the_tie_rollup"
   },
   {
     "name": "PR #622 review: message_facts' reaction join actually excludes a reaction whose TARGET message is hidden",
     "file": "nora/infra/sql/rollups.py",
     "old": "                MESSAGE_REACTION.c.person_id.is_not(None),\n                target.c.hidden_at.is_(None),\n",
     "new": "                MESSAGE_REACTION.c.person_id.is_not(None),\n",
-    "target": "tests/integration/test_rollup_builds.py -k test_a_forgotten_persons_message_is_no_longer_a_reply_target_in_the_tie_rollup"
+    "target": "tests/integration/test_rollup_builds.py::test_a_forgotten_persons_message_is_no_longer_a_reply_target_in_the_tie_rollup"
   }
 ]

@@ -1,6 +1,5 @@
 """The Cognition session loop: the
-background writer of the notebook, the events, a room's Standing and Nora's own
-reminders.
+background writer of the notebook, a room's Standing and Nora's reminders.
 
 The composition root registers `wake_hook` only when cognition is enabled.
 The production WakeEvaluator records the wakes this runner consumes.
@@ -293,7 +292,7 @@ class CognitionSessionOutcome:
 
 # ---------------------------------------------------------------------------
 # What the runner reads from the world, each a narrow seam returning plain data.
-# Its writes go to the tiers' own stores, handed in whole (`notes`, `events`,
+# Its writes go to the tiers' own stores, handed in whole (`notes`,
 # `standing`, `reminders`).
 # ---------------------------------------------------------------------------
 
@@ -590,7 +589,7 @@ class CognitionSessionRunner:
     `ToolRegistry.read_only_tools()`); empty, the default, refuses every
     read tool: a session with no declared read surface has none.
 
-    `notes` (`SqlNoteStore`), `events` (`GatheringService`), `standing`
+    `notes` (`SqlNoteStore`), `standing`
     (`SqlStandingStore`) and `reminders` (`ReminderStore`) are the live
     stores the tag path writes through; the session's writes land there.
     `memos` (`SqlMemoStore`, DEC-306) is the memo tier's, which only a
@@ -659,7 +658,7 @@ class CognitionSessionRunner:
         nora_names: frozenset[str] = frozenset(), room_proactive: RoomProactive | None = None,
         max_pending_per_requester: int | None = None,
         remind_min_lead_seconds: int | None = None, remind_max_horizon_days: int | None = None,
-        notes: Any = None, events: Any = None,
+        notes: Any = None,
         standing: Any = None, reminders: Any = None,
         ai_peer: str = "nora", memos: Any = None, ledger: Any = None,
         # The shared entry store the topic-account verbs write.
@@ -693,7 +692,6 @@ class CognitionSessionRunner:
         self._store = store
         self._notes = notes
         self._memos, self._entries = memos, entries
-        self._events = events
         self._standing = standing
         self._reminders = reminders
         self._ledger = ledger

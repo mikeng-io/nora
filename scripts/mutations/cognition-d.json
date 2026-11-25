@@ -21,13 +21,6 @@
   "target": "tests/unit/test_event_evidence_d.py::test_a_session_is_shown_and_may_move_every_event_before_happened"
  },
  {
-  "name": "E1a: create ignores its evidence",
-  "file": "nora/infra/sql/gatherings.py",
-  "old": "                if evidence is not None:\n                    lineage, as_of = await apply_evidence(\n                        conn, event=row, held=row.lineage, evidence=evidence,",
-  "new": "                if False:\n                    lineage, as_of = await apply_evidence(\n                        conn, event=row, held=row.lineage, evidence=evidence,",
-  "target": "tests/infra/test_event_citations.py::test_a_create_leaves_one_edge_per_part_and_a_recite_adds_none tests/infra/test_event_citations.py::test_lineage_is_computed_per_field_from_the_rooms_the_citations_were_said_in"
- },
- {
   "name": "E1a: update ignores its evidence",
   "file": "nora/infra/sql/gatherings.py",
   "old": "            if evidence is not None:\n                # The lineage the row holds NOW",

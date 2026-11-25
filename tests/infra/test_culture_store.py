@@ -75,13 +75,20 @@ async def test_the_first_revision_has_no_parent_and_becomes_the_head(
     assert await _head_id(engine) == r.id
 
 
-async def test_the_runtimes_provenance_round_trips(store: SqlCultureStore) -> None:
+async def test_the_runtimes_provenance_round_trips(
+    store: SqlCultureStore, engine: AsyncEngine,
+) -> None:
     """Provenance is the runtime's and this store must not invent or drop it —
     a revision that cannot say which instruction and model produced it is not
     re-derivable, which is the property the whole chain rests on."""
     head = await _append(store, "an account", T0)
-    assert head.instruction_sha256 == "a" * 64 and head.model == "flash"
-    assert head.established_by == "culture"
+    async with engine.connect() as conn:
+        revision = CULTURE_REVISION.c
+        saved = (await conn.execute(
+            sa.select(revision.instruction_sha256, revision.model, revision.established_by)
+            .where(revision.id == head.id)
+        )).one()
+    assert tuple(saved) == ("a" * 64, "flash", "culture")
 
 
 # --- the chain -------------------------------------------------------------
@@ -141,6 +148,41 @@ async def test_concurrent_appends_to_one_key_form_a_LINE_not_a_fork(
     middle = next(r for r in results if r.id != head_id)
     assert await _parent_id(engine, head.id) == middle.id
     assert await _parent_id(engine, middle.id) == base.id
+
+
+async def test_append_locks_the_existing_head_before_inserting_its_child(
+    store: SqlCultureStore, engine: AsyncEngine,
+) -> None:
+    head = await _append(store, "base", T0)
+    observed = []
+
+    async def competing_head_is_lockable() -> bool:
+        try:
+            async with engine.begin() as conn:
+                return (await conn.execute(
+                    sa.select(CULTURE.c.key).where(CULTURE.c.key == KEY)
+                    .with_for_update(nowait=True)
+                )).scalar_one() == KEY
+        except sa.exc.DBAPIError as exc:
+            if getattr(exc.orig, "sqlstate", None) != "55P03":
+                raise
+            return False
+
+    def before_insert(conn, cursor, statement, parameters, context, executemany):
+        if statement.startswith("INSERT INTO culture_revision "):
+            observed.append(conn.connection.dbapi_connection.run_async(
+                lambda _: competing_head_is_lockable(),
+            ))
+
+    sa.event.listen(engine.sync_engine, "before_cursor_execute", before_insert)
+    try:
+        child = await _append(store, "child", T0 + 1)
+    finally:
+        sa.event.remove(engine.sync_engine, "before_cursor_execute", before_insert)
+
+    assert observed == [False]
+    assert await competing_head_is_lockable()
+    assert await _parent_id(engine, child.id) == head.id
 
 
 # --- the database refuses what the code must not write ---------------------

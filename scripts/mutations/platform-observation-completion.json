@@ -11,14 +11,14 @@
     "file": "nora/domain/observations.py",
     "old": "                if r.sender_id not in actors and state[\"counts\"].get(r.emoji):\n                    ambiguous = True\n",
     "new": "",
-    "target": "tests/contract/test_reaction_union_contract.py::test_removal_with_unknown_snapshot_actor_overlap_is_partial -k False"
+    "target": "tests/contract/test_reaction_union_contract.py::test_removal_with_unknown_snapshot_actor_overlap_is_partial[memory-False] tests/contract/test_reaction_union_contract.py::test_removal_with_unknown_snapshot_actor_overlap_is_partial[sql-False]"
   },
   {
     "name": "legacy recording time is insert time rather than transaction start",
     "file": "nora/infra/sql/audit.py",
     "old": "            created_at=sa.func.clock_timestamp(),\n",
     "new": "",
-    "target": "tests/contract/test_reaction_union_contract.py::test_a_waiting_transaction_does_not_backdate_a_later_reaction -k sql"
+    "target": "tests/contract/test_reaction_union_contract.py::test_a_waiting_transaction_does_not_backdate_a_later_reaction[sql]"
   },
   {
     "name": "new legacy change refreshes old typed reaction discovery",
@@ -53,7 +53,7 @@
     "file": "nora/agent/prefill.py",
     "old": "                None if e.kind == \"reaction\" and e.handle in reaction_targets",
     "new": "                None if False",
-    "target": "tests/unit/test_platform_observation_wired.py::test_old_target_reaction_union_reaches_standing_and_real_tools -k False"
+    "target": "tests/unit/test_platform_observation_wired.py::test_old_target_reaction_union_reaches_standing_and_real_tools[False]"
   },
   {
     "name": "typed query does not mislabel current-room data as all rooms",

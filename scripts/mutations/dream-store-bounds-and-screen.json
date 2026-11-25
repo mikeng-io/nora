@@ -4,6 +4,6 @@
     "file": "nora/testing/note_store.py",
     "old": "        return f\"{n:08x}-0000-4000-8000-{ord(kind[0]):012x}\"",
     "new": "        return f\"{kind}-{n}\"",
-    "target": "tests/contract/test_note_store_contract.py -k minted_id_is_shaped"
+    "target": "tests/contract/test_note_store_contract.py::test_a_minted_id_is_shaped_the_way_the_egress_screen_reads"
   }
 ]

@@ -10,6 +10,7 @@ What each test catches if its fix is reverted is named in
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
@@ -29,13 +30,13 @@ from nora.domain.lineage import Lineage, message
 from nora.domain.models import NormalizedMessage
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.schema import (
     PRESENCE_STAYS,
     ROLLUP_BUILD,
     ROLLUP_COLOCATION,
 )
+from tests.fixtures.gatherings import SeededGatheringStore
 from tests.infra.rollup_fixtures import insert_rollup_row
 
 pytestmark = pytest.mark.asyncio
@@ -122,10 +123,11 @@ def _msg(part: str, mid: int) -> EventCitation:
 # ---------------------------------------------------------------------------
 
 async def test_lineage_is_computed_per_field_from_the_rooms_the_citations_were_said_in(engine):
-    store = SqlGatheringStore(engine)
+    store = SeededGatheringStore(engine)
     in_a = await _message(engine, conversation_id="ga", ts=1000)
     in_b = await _message(engine, conversation_id="gb", ts=5000)
-    event = await store.create(_event(), evidence=EventEvidence(
+    event = await store.create(_event())
+    event = await store.update(event, evidence=EventEvidence(
         parts=frozenset({"what", "place"}),
         citations=(_msg("what", in_a), _msg("place", in_b)),
     ))
@@ -135,10 +137,11 @@ async def test_lineage_is_computed_per_field_from_the_rooms_the_citations_were_s
 
 
 async def test_a_revision_replaces_the_fields_it_states_and_keeps_the_rest(engine):
-    store = SqlGatheringStore(engine)
+    store = SeededGatheringStore(engine)
     in_a = await _message(engine, conversation_id="ga")
     in_b = await _message(engine, conversation_id="gb")
-    event = await store.create(_event(), evidence=EventEvidence(
+    event = await store.create(_event())
+    event = await store.update(event, evidence=EventEvidence(
         parts=frozenset({"what", "place"}),
         citations=(_msg("what", in_a), _msg("place", in_a)),
     ))
@@ -152,12 +155,13 @@ async def test_a_revision_replaces_the_fields_it_states_and_keeps_the_rest(engin
 
 
 async def test_a_citation_that_cannot_be_resolved_is_unresolved_never_widened(engine):
-    store = SqlGatheringStore(engine)
+    store = SeededGatheringStore(engine)
     gone = await _message(engine, conversation_id="gb")
     async with engine.begin() as conn:
         await conn.execute(sa.text("UPDATE messages SET hidden_at = 1 WHERE id = :i"),
                            {"i": gone})
-    event = await store.create(_event(), evidence=EventEvidence(
+    event = await store.create(_event())
+    event = await store.update(event, evidence=EventEvidence(
         parts=frozenset({"what", "end"}),
         citations=(_msg("what", gone), _msg("end", 987654)),
     ))
@@ -169,8 +173,9 @@ async def test_a_citation_that_cannot_be_resolved_is_unresolved_never_widened(en
 async def test_a_tag_turn_s_event_rests_on_the_room_it_was_said_in(engine):
     """No row to cite, so no edge; the lineage is the room (an empty lineage
     renders nowhere but its origin)."""
-    store = SqlGatheringStore(engine)
-    event = await store.create(_event(), evidence=EventEvidence(
+    store = SeededGatheringStore(engine)
+    event = await store.create(_event())
+    event = await store.update(event, evidence=EventEvidence(
         parts=frozenset({"what", "status"}), room=ROOM_A,
     ))
     assert event.lineage.section("what") == (message(ROOM_A),)
@@ -178,7 +183,7 @@ async def test_a_tag_turn_s_event_rests_on_the_room_it_was_said_in(engine):
 
 
 async def test_a_write_with_no_evidence_leaves_lineage_as_the_row_carries_it(engine):
-    store = SqlGatheringStore(engine)
+    store = SeededGatheringStore(engine)
     event = await store.create(_event())
     assert event.lineage == Lineage()
     assert (await store.update(event)).lineage == Lineage()
@@ -221,8 +226,9 @@ async def test_a_rollup_row_brings_its_own_lineage(engine):
     stay = f"stay|p_ada|{hkt(start_ms)}/{hkt(end_ms)}"
     other_unit = f"colocation|other|p_ada,p_ben|{hkt(start_ms)}/{hkt(end_ms)}"
     nothing = f"colocation|u|p_ada,p_ben|{hkt(start_ms + 60_000)}/{hkt(end_ms)}"
-    store = SqlGatheringStore(engine)
-    event = await store.create(_event(), evidence=EventEvidence(
+    store = SeededGatheringStore(engine)
+    event = await store.create(_event())
+    event = await store.update(event, evidence=EventEvidence(
         parts=frozenset({"people", "status", "place", "end"}),
         citations=(
             EventCitation(part="people", store="rollup", ref=coloc),
@@ -245,15 +251,16 @@ async def test_a_rollup_row_brings_its_own_lineage(engine):
 
 
 async def test_per_field_reasoning_round_trips_through_the_head_and_the_revision(engine):
-    store = SqlGatheringStore(engine)
+    store = SeededGatheringStore(engine)
     meta = (
         FieldMeta(field="place", reasoning="told", confidence="high", as_of=5),
         FieldMeta(field="people", reasoning="deduced", confidence="medium"),
     )
-    event = await store.create(_event(field_meta=meta))
+    seed = await store.create(_event())
+    event = await store.update(replace(seed, field_meta=meta))
     got = await store.get(event.id)
     assert got is not None and got.field_meta == meta
-    [rev] = await store.revisions_for(event.id)
+    _, rev = await store.revisions_for(event.id)
     assert rev.field_meta == meta
 
 

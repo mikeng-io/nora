@@ -1,34 +1,18 @@
-"""Gathering reads and room-scoped RSVP handling."""
+"""Gathering reads for the portal."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Sequence
-from datetime import UTC, datetime
+from collections.abc import Collection, Sequence
 from uuid import UUID
 
 from nora.agent.lineage import LineagePolicy, visible_sections
 from nora.agent.security import looks_like_coordinate, scan_identifiers
 from nora.domain.gatherings import (
     RSVP,
-    TERMINAL_STATUSES,
     Gathering,
-    GatheringStatus,
     GatheringStore,
     RoomClaims,
-    RSVPResponse,
     event_in_scope,
-)
-from nora.domain.gatherings import (
-    AmbiguousOpenGatheringsError as AmbiguousOpenGatheringsError,
-)
-from nora.domain.gatherings import (
-    GatheringCancelledError as GatheringCancelledError,
-)
-from nora.domain.gatherings import (
-    GatheringNotFoundError as GatheringNotFoundError,
-)
-from nora.domain.gatherings import (
-    StaleEventRevisionError as StaleEventRevisionError,
 )
 from nora.domain.ports import PlaceArea
 from nora.domain.rollup import room_key
@@ -56,71 +40,13 @@ class GatheringService:
         self,
         *,
         store: GatheringStore,
-        now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._store = store
-        self._now = now
-
-    async def rsvp(
-        self, *, event_id: UUID, conversation_id: str, person_id: str,
-        response: RSVPResponse,
-        platform: str = "",
-        unit_id: str = "",
-    ) -> RSVP:
-        current = await self._require_in_conversation(
-            event_id,
-            conversation_id,
-            unit_id=unit_id,
-            platform=platform,
-        )
-        if current.status in TERMINAL_STATUSES:
-            # An RSVP would make a terminal event appear to be still on.
-            raise GatheringCancelledError(event_id, current.status)
-        row = RSVP(
-            event_id=event_id, person_id=person_id, response=response,
-            responded_at=self._now(),
-        )
-        await self._store.add_rsvp(row)
-        return row
-
-    async def list_events(
-        self, *, conversation_id: str, status: GatheringStatus | None = None,
-        unit_id: str = "",
-        platform: str = "",
-    ) -> Sequence[Gathering]:
-        """This room's events, scoped by the PERSISTED owner: the row's
-        `(unit_id, platform, conversation_id)` must be this caller's. A row
-        with no stored platform is quarantined — current policy is not proof of
-        who owned it when it was written. The in-memory filter repeats the
-        store's check, so a store that widened a read cannot leak past it."""
-        rows = await self._store.list_for_conversation(
-            conversation_id=conversation_id, status=status, unit_id=unit_id,
-            platform=platform or None,
-        )
-        return [
-            e
-            for e in rows
-            if event_in_scope(
-                e,
-                unit_id=unit_id,
-                conversation_id=conversation_id,
-                platform=platform or None,
-            )
-        ]
-
-    async def get_event(self, *, event_id: UUID) -> Gathering | None:
-        """A reader: an id that does not exist reads as absent."""
-        return await self._store.get(event_id)
 
     async def list_events_for_person(
         self, *, person_id: str, conversation_ids: Collection[str] = (),
     ) -> Sequence[Gathering]:
-        """The web app's ONLY read path (not conversation-scoped, unlike
-        `list_events`, which the chat tools use): every event `person_id`
-        created or RSVP'd to, across every conversation, plus every event held
-        in one of `conversation_ids`, the rooms they are a member of. Without
-        the rooms, an event Cognition records (created by `cognition:<unit>`,
-        no RSVPs) is shown to nobody."""
+        """List events the reader created, answered, or can see by room membership."""
         return await self._store.list_for_person(
             person_id=person_id, conversation_ids=conversation_ids,
         )
@@ -128,12 +54,7 @@ class GatheringService:
     async def get_event_for_person(
         self, *, event_id: UUID, person_id: str, conversation_ids: Collection[str] = (),
     ) -> Gathering | None:
-        """The web app's per-event read: `None` (→ 404, never a distinct
-        "forbidden") unless `person_id` created this event or has an RSVP
-        on it — the same "an id from outside your scope reads as unknown"
-        discipline `_require_in_conversation` already applies for the chat
-        tools, applied here to event-level participation instead of
-        conversation membership."""
+        """Read an event within the reader's participation or room membership."""
         event = await self._store.get(event_id)
         if event is None:
             return None
@@ -149,43 +70,6 @@ class GatheringService:
         passthrough `nora.web.gatherings` calls instead of reaching past the
         underscore into `self._store` directly."""
         return await self._store.rsvps_for(event_id)
-
-    # ── internals ────────────────────────────────────────────────────────
-
-    async def _require(self, event_id: UUID) -> Gathering:
-        event = await self._store.get(event_id)
-        if event is None:
-            raise GatheringNotFoundError(event_id)
-        return event
-
-    async def _require_in_conversation(
-        self, event_id: UUID, conversation_id: str,
-        *,
-        unit_id: str = "",
-        platform: str = "",
-    ) -> Gathering:
-        """`_require`, plus the scope check `ReminderStore.cancel`
-        (`nora.domain.reminders`) already documents the reasoning for: "a
-        uuid carries no scope of its own — the STORE enforces the scope."
-        An RSVP can carry a bare event id. An id from another room refuses exactly
-        like an unknown one (`GatheringNotFoundError`), never a distinct "wrong
-        room" message that would confirm a stranger's event id is real.
-
-        The check is not conversation-only: `event_in_scope` requires the
-        row's persisted `(unit_id, platform)` to be this caller's. A row with
-        no stored platform (an unresolved historical row) is quarantined, not
-        attributed from current `policy.toml`. An OMITTED platform is not a
-        wildcard either: `platform=""` matches no persisted row, so a caller
-        that has not resolved the platform fails closed."""
-        event = await self._require(event_id)
-        if not event_in_scope(
-            event,
-            unit_id=unit_id,
-            conversation_id=conversation_id,
-            platform=platform,
-        ):
-            raise GatheringNotFoundError(event_id)
-        return event
 
 #: The event fields a room's view shows, the same four the Cognition session's
 #: event index is checked over (`nora.app.cognition_grounding._EVENT_SHOWN_FIELDS`).

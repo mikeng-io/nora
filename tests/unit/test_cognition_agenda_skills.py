@@ -304,7 +304,7 @@ def _build_with(instructions: Any, skills: SessionGuidance) -> Any:
         cfg=stub, models=stub, retry=stub, metrics=Metrics(),
         tools=SimpleNamespace(tool_param_names=lambda: {}),
         instructions=instructions, store=stub, stimulus_store=stub,
-        note_titles=stub, room_proactive=stub, notes=stub, events=stub, standing=stub,
+        note_titles=stub, room_proactive=stub, notes=stub, standing=stub,
         reminders=stub, ai_peer="nora",
         reminder_caps=stub, open_events_in=stub, standing_of=stub, homes={}, units=(),
         skills=skills, grounder=stub, render_budget=stub,

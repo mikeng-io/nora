@@ -25,7 +25,6 @@ from nora.infra.sql import memory_index
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.migrations_runner import run_migrations
@@ -39,6 +38,7 @@ from nora.infra.sql.schema import (
     NOTE_REVISION,
 )
 from nora.subject.knowledge import _seed_note_with_id
+from tests.fixtures.gatherings import SeededGatheringStore
 
 pytestmark = pytest.mark.asyncio
 
@@ -337,7 +337,7 @@ def _event(**overrides: Any) -> Gathering:
 
 async def test_an_event_its_people_and_its_venue_are_projected(engine):
     await _said(engine)
-    store = SqlGatheringStore(engine)
+    store = SeededGatheringStore(engine)
     event = await store.create(_event())
     sid = str(event.id)
 
@@ -395,7 +395,7 @@ async def test_a_venue_is_located_in_its_district_and_city_and_goes_when_nothing
     it: nothing else lies in them. A rebuild from empty writes exactly what
     live projection wrote."""
     await _said(engine)
-    store = SqlGatheringStore(engine)
+    store = SeededGatheringStore(engine)
     first = await store.create(_event(
         venue_district="旺角 / Mong Kok", venue_city="九龍 / Kowloon",
     ))
@@ -452,7 +452,7 @@ async def test_a_venue_an_event_leaves_keeps_the_chain_the_others_give_it(engine
     (resolved before 0118, no area) still names, and the venue then lies in
     nothing, exactly as a rebuild from the store writes it."""
     await _said(engine)
-    store = SqlGatheringStore(engine)
+    store = SeededGatheringStore(engine)
     moved = await store.create(_event(
         venue_district="旺角 / Mong Kok", venue_city="九龍 / Kowloon",
     ))
@@ -473,7 +473,7 @@ async def test_a_district_two_sources_place_in_two_cities_lies_in_both_until_one
     when one venue's event moves away the other city goes with it. Live and
     rebuilt agree at each step."""
     await _said(engine)
-    store = SqlGatheringStore(engine)
+    store = SeededGatheringStore(engine)
     first = await store.create(_event(
         venue_district="旺角 / Mong Kok", venue_city="九龍 / Kowloon",
     ))
@@ -502,7 +502,7 @@ async def test_an_event_with_no_unit_is_scoped_to_its_room(engine):
     """A row from before `0074` carries `unit_id = ''`: its room, not every
     unit's, and a room the Record cannot name matches no read."""
     await _said(engine)
-    store = SqlGatheringStore(engine)
+    store = SeededGatheringStore(engine)
     known = await store.create(_event(unit_id="", venue_place_id=None))
     unknown = await store.create(_event(unit_id="", conversation_id="nowhere"))
     nodes = await _nodes(engine)

@@ -4,77 +4,77 @@
   "file": "nora/ingest/comprehension.py",
   "old": "            async with self._slots:\n                await self._read(",
   "new": "            if True:\n                await self._read(",
-  "target": "tests/unit/test_media_comprehension.py -k concurrent_reads_are_bounded"
+  "target": "tests/unit/test_media_comprehension.py::test_concurrent_reads_are_bounded"
  },
  {
   "name": "K3 the join's query is bounded",
   "file": "nora/domain/media_join.py",
   "old": "        return await asyncio.wait_for(\n            self._store.lookup(sha256s=shas), timeout=self._timeout,\n        )",
   "new": "        return await self._store.lookup(sha256s=shas)",
-  "target": "tests/unit/test_media_join.py -k hanging_store"
+  "target": "tests/unit/test_media_join.py::test_a_hanging_store_costs_the_join_and_not_the_turn"
  },
  {
   "name": "K4 every blob is joined, in bounded batches",
   "file": "nora/domain/media_join.py",
   "old": "        for start in range(0, len(shas), self._query_blobs):\n            found = await self._lookup(shas[start:start + self._query_blobs])",
   "new": "        for start in range(0, min(len(shas), self._query_blobs), self._query_blobs):\n            found = await self._lookup(shas[start:start + self._query_blobs])",
-  "target": "tests/unit/test_media_join.py -k backfill_is_joined_in_bounded_batches"
+  "target": "tests/unit/test_media_join.py::test_every_blob_in_a_backfill_is_joined_in_bounded_batches"
  },
  {
   "name": "K4b the true blob count is measured",
   "file": "nora/domain/media_join.py",
   "old": "        self._metrics.observe(\"nora_media_blobs_joined\", len(wanted), path=path)",
   "new": "        self._metrics.observe(\n            \"nora_media_blobs_joined\", min(len(wanted), self._query_blobs),\n            path=path)",
-  "target": "tests/unit/test_media_join.py -k blob_count_is_the_true_count"
+  "target": "tests/unit/test_media_join.py::test_the_blob_count_is_the_true_count"
  },
  {
   "name": "K6 a failed write is not counted ok",
   "file": "nora/ingest/comprehension.py",
   "old": "        if not stored:",
   "new": "        if False:",
-  "target": "tests/unit/test_media_comprehension.py -k write_that_did_not_land"
+  "target": "tests/unit/test_media_comprehension.py::test_a_write_that_did_not_land_is_not_counted_ok"
  },
  {
   "name": "K7 a forwarded voice note does not re-write",
   "file": "nora/ingest/comprehension.py",
   "old": "                if existing is not None and existing.content == content:",
   "new": "                if False:",
-  "target": "tests/unit/test_media_comprehension.py -k forwarded_voice_note"
+  "target": "tests/unit/test_media_comprehension.py::test_a_forwarded_voice_note_does_not_re_write_the_same_words"
  },
  {
   "name": "K7b the already-read gate uses the availability axis",
   "file": "nora/ingest/comprehension.py",
   "old": "        found = await self._store.lookup(sha256s=(blob.sha256,))\n        if not found.available:\n            return self._count(platform, label, \"unavailable\", \"store\")\n        existing = found.objects.get(blob.sha256)",
   "new": "        existing = await self._store.get(sha256=blob.sha256)",
-  "target": "tests/unit/test_media_comprehension.py -k unreadable_index_does_not_look"
+  "target": "tests/unit/test_media_comprehension.py::test_an_unreadable_index_does_not_look_like_an_unread_blob"
  },
  {
   "name": "K9a the outer except is counted, not only logged",
   "file": "nora/domain/media_join.py",
   "old": "            self._count(path, \"unavailable\", \"error\")\n            return tuple(rows)",
   "new": "            return tuple(rows)",
-  "target": "tests/unit/test_media_join.py -k store_that_raises_is_counted"
+  "target": "tests/unit/test_media_join.py::test_a_store_that_raises_is_counted_not_only_logged"
  },
  {
   "name": "K9b each builder labels its own path",
   "file": "nora/app/fire.py",
   "old": "path=\"fire\"",
   "new": "path=\"tag\"",
-  "target": "tests/architecture/test_media_join_reaches_every_transcript.py -k labels_its_own_path"
+  "target": "tests/architecture/test_media_join_reaches_every_transcript.py::test_each_builder_labels_its_own_path"
  },
  {
   "name": "K9c label_agrees' sticker branch",
   "file": "nora/domain/media.py",
   "old": "    if label in (\"sticker\", \"cover image\"):\n        return derived == \"image\"",
   "new": "    if label in (\"sticker\", \"cover image\"):\n        return True",
-  "target": "tests/unit/test_media_join.py -k label_agrees_refines"
+  "target": "tests/unit/test_media_join.py::test_label_agrees_refines_but_never_contradicts"
  },
  {
   "name": "K9d the join histograms can measure a batch",
   "file": "nora/obs/metric_specs.py",
   "old": "        (0.005, 0.025, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30),",
   "new": "        (0.005, 0.025, 0.1, 0.25, 0.5, 1),",
-  "target": "tests/test_metrics_export.py -k media_join_histograms"
+  "target": "tests/test_metrics_export.py::test_the_media_join_histograms_can_measure_a_batch_path"
  },
  {
   "name": "K9e build_tools forwards everything it accepts",
@@ -88,21 +88,21 @@
   "file": "tests/architecture/test_media_join_reaches_every_transcript.py",
   "old": "        if hits:\n            found[rel] = hits",
   "new": "        if hits and rel in BUILDERS:\n            found[rel] = hits",
-  "target": "tests/architecture/test_media_join_reaches_every_transcript.py -k discovery_finds"
+  "target": "tests/architecture/test_media_join_reaches_every_transcript.py::test_the_discovery_finds_a_builder_it_has_never_seen"
  },
  {
   "name": "MED the fake matches the real store on an empty lookup",
   "file": "nora/testing/fakes.py",
   "old": "        if not sha256s:\n            # BEFORE the failure check, matching the SQL store exactly: no",
   "new": "        if False:\n            # BEFORE the failure check, matching the SQL store exactly: no",
-  "target": "tests/contract/test_media_object_store_contract.py -k empty_lookup"
+  "target": "tests/contract/test_media_object_store_contract.py::test_an_empty_lookup_is_available_even_while_the_store_is_down"
  },
  {
   "name": "MED the path vocabulary is checked at runtime",
   "file": "nora/domain/media_join.py",
   "old": "        if path not in JOIN_PATHS:",
   "new": "        if False:",
-  "target": "tests/unit/test_media_join.py -k unknown_path"
+  "target": "tests/unit/test_media_join.py::test_an_unknown_path_label_is_refused_at_runtime"
  },
  {
   "name": "D2 layer 2's question is screened before it leaves",
@@ -116,55 +116,55 @@
   "file": "nora/media/adapters/tools/fetch.py",
   "old": "c.cacheable_modality = c.modality != \"video\"",
   "new": "c.cacheable_modality = True",
-  "target": "tests/test_media_fetch.py -k capped_clip_still_admits"
+  "target": "tests/test_media_fetch.py::test_a_second_look_at_a_capped_clip_still_admits_what_it_missed"
  },
  {
   "name": "R3 load_transcript joins",
   "file": "nora/conversation/adapters/tools/record.py",
   "old": "if c.media_join is not None:\n        c.rows = list(await c.media_join.enrich(c.rows, path=\"load_transcript\"))",
   "new": "        # difference.\n        if c.media_join is not None:\n            pass",
-  "target": "tests/test_media_fetch.py -k load_transcript_renders_media"
+  "target": "tests/test_media_fetch.py::test_load_transcript_renders_media_the_way_the_prefill_does"
  },
  {
   "name": "R3 a forged label cannot switch off the bound",
   "file": "nora/domain/media_join.py",
   "old": "            label = asked if label_agrees(asked, obj.media_type) else record_label",
   "new": "            label = asked or record_label",
-  "target": "tests/unit/test_media_join.py -k forged_label"
+  "target": "tests/unit/test_media_join.py::test_a_forged_label_cannot_switch_off_the_render_bound"
  },
  {
   "name": "R3 describe_model keyed on the model (SQL)",
   "file": "nora/infra/sql/media_objects.py",
   "old": "                \"describe_model\": sa.func.coalesce(\n                    insert.excluded.describe_model,\n                    MEDIA_OBJECTS.c.describe_model,\n                ),",
   "new": "                \"describe_model\": sa.case(\n                    (\n                        insert.excluded.description != \"\",\n                        insert.excluded.describe_model,\n                    ),\n                    else_=MEDIA_OBJECTS.c.describe_model,\n                ),",
-  "target": "tests/contract/test_media_object_store_contract.py -k video_with_no_description"
+  "target": "tests/contract/test_media_object_store_contract.py::test_a_video_with_no_description_still_records_its_describer"
  },
  {
   "name": "R3 empty-clobber guard (SQL)",
   "file": "nora/infra/sql/media_objects.py",
   "old": "                \"title\": _keep(MEDIA_OBJECTS.c.title, insert.excluded.title),",
   "new": "                \"title\": insert.excluded.title,",
-  "target": "tests/contract/test_media_object_store_contract.py -k resent_voice_note"
+  "target": "tests/contract/test_media_object_store_contract.py::test_a_resent_voice_note_does_not_wipe_its_own_title"
  },
  {
   "name": "R3 _stored_reading carries the caveat",
   "file": "nora/agent/toolkit/media.py",
   "old": "    if obj.caveat:\n        parts.append(obj.caveat)",
   "new": "    pass",
-  "target": "tests/test_media_fetch.py -k layer_1_carries_the_caveat"
+  "target": "tests/test_media_fetch.py::test_layer_1_carries_the_caveat_too"
  },
  {
   "name": "R3 unattributed selects media_json",
   "file": "nora/infra/sql/audit.py",
   "old": "                media_json=r.media_json,",
   "new": "",
-  "target": "tests/contract/test_audit_store_contract.py -k custody_index"
+  "target": "tests/contract/test_audit_store_contract.py::test_an_unattributed_row_carries_its_custody_index"
  },
  {
   "name": "R3 the port's model field",
   "file": "nora/infra/vision/comprehend.py",
   "old": "            available=True, title=title, text=description,\n            model=self._text_model,\n        )",
   "new": "            available=True, title=title, text=description,\n            model=\"WRONG-MODEL\",\n        )",
-  "target": "tests/contract/test_media_interpreter_contract.py -k text_model"
+  "target": "tests/contract/test_media_interpreter_contract.py::test_the_text_lane_names_the_text_model_not_the_describer"
  }
 ]

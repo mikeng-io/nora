@@ -26,6 +26,7 @@ from nora.memory.domain.pass_declarations import declaration
 from nora.obs.metrics import Metrics
 from nora.testing.scripted_agent import ScriptedTurn
 from tests.fakes import dreamer_runtime_for
+from tests.fixtures.dreamer_calls import _tool_results
 from tests.infra.test_graph_propose import BASIS
 from tests.infra.test_intention_verdict import _tick, _verdicts
 from tests.infra.test_lesson_tally import ended, resting, tally_rows
@@ -37,7 +38,6 @@ from tests.infra.test_review_admission import changed_tally, grade_rows, guess, 
 from tests.infra.test_room_busy import service, slots
 from tests.infra.test_situation_staleness import intention
 from tests.infra.test_wake_runner import WakeModel
-from tests.unit.test_dream_memory_budget import _tool_results
 
 
 class _Room:

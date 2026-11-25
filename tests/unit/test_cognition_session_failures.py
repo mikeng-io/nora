@@ -53,14 +53,15 @@ class _Ledger(InMemoryCognitionStore):
 
 
 class _Counting(Metrics):
-    """A `Metrics` whose counter raises, as one does on an undeclared name."""
+    """Fail the counter reached after an accepted self-wake is written."""
 
-    def __init__(self, *, broken: bool = False) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.broken = broken
+        self.attempted = 0
 
     def inc(self, name: str, value: float = 1.0, **labels: object) -> None:
-        if self.broken:
+        if name == "nora_self_wake_total" and labels.get("outcome") == "created":
+            self.attempted += 1
             raise KeyError(name)
         super().inc(name, value, **labels)
 
@@ -98,6 +99,19 @@ def _true_text(answer: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 # wake_at
 # ---------------------------------------------------------------------------
+
+async def test_a_counter_failure_does_not_turn_a_committed_wake_into_a_refusal():
+    answers = []
+    metrics = _Counting()
+
+    async def behave(by, tools):
+        answers.append(await by["wake_at"](subject_rows=["event:1"], at=AT, why="look"))
+
+    _, stimuli = await _run(behave, metrics=metrics)
+    assert metrics.attempted == 1
+    assert answers[0]["status"] == "ok"
+    assert len(await _live(stimuli)) == 1
+
 
 async def test_a_wake_at_whose_ledger_write_fails_leaves_none_standing_and_a_retry_makes_one():
     answers: list[Any] = []

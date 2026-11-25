@@ -18,10 +18,10 @@ from nora.domain.models import NormalizedMessage
 from nora.infra.sql.cognitive_graph_schema import CLAIM
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
+from tests.fixtures.dreamer_calls import _ScriptedModel
 from tests.infra.test_graph_propose import claim_payload
 from tests.test_main import _run_briefly
 from tests.test_main import env as env
-from tests.unit.test_dream_memory_budget import _ScriptedModel
 
 
 @pytest.fixture
