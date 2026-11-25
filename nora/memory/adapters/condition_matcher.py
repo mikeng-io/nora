@@ -30,12 +30,12 @@ from nora.memory.domain.conditions import (
     ActEvent,
     ConditionValue,
     Ending,
+    IdentityEvent,
     OwnDelivery,
-    PersonEvent,
     Predicate,
 )
 
-_FORMS = ("act_event", "person_event", "predicate")
+_FORMS = ("act_event", "identity_event", "predicate")
 _ACT, _OUTCOME = NORA_ACT.c, NORA_ACT_OUTCOME.c
 _INTENT = INTENTION.c
 
@@ -83,8 +83,8 @@ class SqlIntentionBatch:
     ) -> Evaluation:
         if isinstance(condition, (ActEvent, OwnDelivery)):
             return await self._act(intention, condition, trigger=trigger)
-        if isinstance(condition, PersonEvent):
-            return await self._person(intention, condition, trigger=trigger)
+        if isinstance(condition, IdentityEvent):
+            return await self._identity_event(intention, condition, trigger=trigger)
         return await self._predicate(intention, condition)
 
     async def _healthy(self, unit: str, source: Source) -> bool:
@@ -127,15 +127,15 @@ class SqlIntentionBatch:
             return Evaluation("unknown")
         return Evaluation("true" if done else "false", _witness(row, row["asserted_at"]))
 
-    async def _person(
-        self, intention: Mapping[str, Any], condition: PersonEvent, *, trigger: bool,
+    async def _identity_event(
+        self, intention: Mapping[str, Any], condition: IdentityEvent, *, trigger: bool,
     ) -> Evaluation:
         unit = intention["unit"]
         if not await self._sources_healthy(unit, await self._sources.resolve(intention, condition)):
             return Evaluation("unknown")
         m = MESSAGES.c
         stmt = sa.select(MESSAGES).where(
-            m.unit == unit, m.person_id == condition.person_id, m.platform == condition.platform,
+            m.unit == unit, m.person_id == condition.identity_id, m.platform == condition.platform,
             m.conversation_id == condition.room, m.is_nora == 0, m.state == "live",
             m.graph_id.is_not(None), m.asserted_at >= intention["asserted_at"],
             m.body == condition.text,
@@ -151,7 +151,7 @@ class SqlIntentionBatch:
         if row is None:
             expired = await self._conn.scalar(sa.select(expired_between(
                 unit, intention["asserted_at"], sa.func.clock_timestamp(),
-                sources=("messages",), persons=(condition.person_id,),
+                sources=("messages",), identities=(condition.identity_id,),
             )))
             return Evaluation("unknown" if expired else "false")
         return Evaluation("true", _witness(row, row["asserted_at"]))
@@ -192,7 +192,7 @@ class SqlIntentionBatch:
                              for source in item_sources.get(entry.kind, ())})
         return bool(await self._conn.scalar(sa.select(expired_between(
             row["unit"], min(start, end), max(start, end),
-            sources=sources, persons=row["persons"] or None,
+            sources=sources, identities=row["identities"] or None,
         ))))
 
     async def _revision_time(self, table: sa.Table, row: RowData) -> datetime | None:

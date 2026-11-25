@@ -216,11 +216,11 @@ async def _carry_inferred_about(
         e.unit == head.unit, e.src_id == base, e.type == "about", e.state == "live",
         e.basis == "inferred",
     ).with_for_update(read=True))
-    head_scope = InputScope(head.excluded_persons, cast(Exposure, head.exposure), head.lineage)
+    head_scope = InputScope(head.excluded_identities, cast(Exposure, head.exposure), head.lineage)
     edges = []
     for old in rows.mappings():
         old_scope = InputScope(
-            tuple(old["excluded_persons"]), old["exposure"], Lineage.from_json(old["lineage"]),
+            tuple(old["excluded_identities"]), old["exposure"], Lineage.from_json(old["lineage"]),
         )
         scope = inherited_scope(
             (head_scope, old_scope), build_lineage=Lineage(), minimum="external",
@@ -231,8 +231,8 @@ async def _carry_inferred_about(
         )
         edges.append({
             **_stamp(context), **_link_values(link), "id": f"edge:{uuid4().hex}",
-            "unit": head.unit, "origin_room": head.origin_room, "persons": list(head.persons),
-            "excluded_persons": list(scope.excluded_persons), "exposure": scope.exposure,
+            "unit": head.unit, "origin_room": head.origin_room, "identities": list(head.identities),
+            "excluded_identities": list(scope.excluded_identities), "exposure": scope.exposure,
             "lineage": scope.lineage.to_json(),
         })
     if edges:
@@ -241,33 +241,33 @@ async def _carry_inferred_about(
 
 
 async def _computed_about(conn: AsyncConnection, row: RowFacts, context: PassContext) -> None:
-    people = {person for person in row.persons if person is not None}
+    people = {identity for identity in row.identities if identity is not None}
     if not people:
         return
     entity = ENTITY.c
     query = sa.select(
-        entity.id, entity.exposure, entity.excluded_persons, entity.lineage,
+        entity.id, entity.exposure, entity.excluded_identities, entity.lineage,
     ).where(
-        entity.unit == row.unit, entity.pointer_kind == "person",
+        entity.unit == row.unit, entity.pointer_kind == "identity",
         entity.pointer_ref.in_(people), entity.state == "admitted",
     ).ext(distinct_on(entity.pointer_ref)).order_by(entity.pointer_ref, entity.id)
     pointers = (await conn.execute(query)).mappings().all()
     if not pointers:
         return
 
-    source = InputScope(row.excluded_persons, cast(Exposure, row.exposure), row.lineage)
+    source = InputScope(row.excluded_identities, cast(Exposure, row.exposure), row.lineage)
     edges = []
     for pointer in pointers:
         target = InputScope(
-            tuple(pointer["excluded_persons"]), pointer["exposure"],
+            tuple(pointer["excluded_identities"]), pointer["exposure"],
             Lineage.from_json(pointer["lineage"]),
         )
         scope = inherited_scope((source, target), build_lineage=Lineage(), minimum="external")
         link = Link(type="about", source=row.id, target=pointer["id"], basis="computed")
         edges.append({
             **_stamp(context), **_link_values(link), "id": f"edge:{uuid4().hex}",
-            "unit": row.unit, "origin_room": row.origin_room, "persons": list(row.persons),
-            "excluded_persons": list(scope.excluded_persons), "exposure": scope.exposure,
+            "unit": row.unit, "origin_room": row.origin_room, "identities": list(row.identities),
+            "excluded_identities": list(scope.excluded_identities), "exposure": scope.exposure,
             "lineage": scope.lineage.to_json(),
         })
     await _register(conn, edges)
@@ -319,8 +319,8 @@ def _serialize(
         **_stamp(context),
         "unit": row.unit,
         "origin_room": row.origin_room,
-        "persons": list(row.persons),
-        "excluded_persons": list(row.excluded_persons),
+        "identities": list(row.identities),
+        "excluded_identities": list(row.excluded_identities),
         "exposure": row.exposure,
         "lineage": row.lineage.to_json(),
     }

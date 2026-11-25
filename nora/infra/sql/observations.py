@@ -391,7 +391,7 @@ class SqlObservationStore:
                     room=scope.conversation_id,
                     occurred_at=epoch_ms(obs.received_ms if obs.occurred_ms is None
                                          else obs.occurred_ms),
-                    persons=(
+                    identities=(
                         await registration.scope.person_id(scope.platform, obs.actor_id),
                         await registration.scope.person_id(scope.platform, obs.target_author_id),
                     ),

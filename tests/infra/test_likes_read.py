@@ -107,6 +107,6 @@ async def test_like_excluded_for_an_audience_member_is_absent(scenario) -> None:
     await scenario.entity("topic")
     await about(scenario, "visible-trait", person.graph_id, "topic", part="trait")
     await about(scenario, "excluded-trait", person.graph_id, "topic", part="trait",
-                excluded_persons=[PERSON])
+                excluded_identities=[PERSON])
     entries = likes(await anchored(scenario, person), person)
     assert [entry.claim.graph_id for entry in entries] == ["visible-trait"]

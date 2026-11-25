@@ -36,16 +36,16 @@ def _grounded_person(
     relation: Relation,
     evidence: tuple[Evidence, ...],
     sources: Mapping[Key, Source],
-    shown_persons: frozenset[str],
+    shown_identities: frozenset[str],
 ) -> Entity | None:
     """The unit's pointer for a person end, when a cited source is in that person's
-    scope or the session showed a row they authored (`shown_persons`)."""
+    scope or the session showed a row they authored (`shown_identities`)."""
     prefix = f"{relation.unit}:person:"
     if key[0] != "person" or not key[1].startswith(prefix):
         return None
     ref = key[1].removeprefix(prefix)
-    if ref not in shown_persons and not any(
-        ref in sources[e.source].persons for e in evidence if e.source in sources
+    if ref not in shown_identities and not any(
+        ref in sources[e.source].identities for e in evidence if e.source in sources
     ):
         return None
     # ponytail: named by its id until the projection upserts the authored name.
@@ -79,7 +79,7 @@ class AdmissionState:
         evidence: tuple[Evidence, ...],
         sources: Mapping[Key, Source],
         corrections: tuple[Correction, ...] = (),
-        shown_persons: frozenset[str] = frozenset(),
+        shown_identities: frozenset[str] = frozenset(),
     ) -> Admission:
         refused: list[Refusal] = []
         before = dict(self.entities)
@@ -108,7 +108,7 @@ class AdmissionState:
             staged: dict[str, Entity] = {}
             if reason is None:
                 for key in (relation.src, relation.dst):
-                    pointer = _grounded_person(key, relation, ev, sources, shown_persons)
+                    pointer = _grounded_person(key, relation, ev, sources, shown_identities)
                     if pointer is not None and key[1] not in candidates | pointers:
                         # The projection has not reached this person yet; a cited
                         # source scopes them or a shown row authored them. Staged
@@ -154,7 +154,7 @@ class AdmissionState:
                     reason = "notebook_evidence"
                 elif e.span is not None and not contains_source_span(e.span, source.text):
                     reason = "span_not_in_source"
-                elif source.unit != target_entity.unit or source.persons:
+                elif source.unit != target_entity.unit or source.identities:
                     reason = "scope_wider_than_evidence"
                 if reason:
                     refused.append(Refusal(
@@ -258,7 +258,7 @@ class AdmissionState:
                 or (only.until_ms is not None and at_ms > only.until_ms)
             ):
                 return False
-            subjects = set(r.persons)
+            subjects = set(r.identities)
             for key in (r.src, r.dst):
                 entity = self.entities.get(key[1])
                 if entity and entity.kind == "person":
@@ -314,7 +314,7 @@ class AdmissionState:
             for r in self.relations.values()
             if r.unit == query.unit
             and scoped(r)
-            and set(r.persons) <= query.persons
+            and set(r.identities) <= query.identities
             and r.status == "current"
             and r.layer in query.layers
             and (not query.relations or r.rel in query.relations)

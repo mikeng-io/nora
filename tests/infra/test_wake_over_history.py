@@ -26,11 +26,11 @@ async def test_history_admits_understanding_and_stamps_its_evidence_clock(engine
     await SqlCognitiveGraph(engine).create(ENTITY, {
         "id": "person-fixture", "unit": PASS.unit, "kind": "entity", "basis": "computed",
         "state": "admitted", "writer": "fixture", "exposure": "internal",
-        "name": PERSON.name, "pointer_kind": "person", "pointer_ref": PERSON.person_id,
+        "name": PERSON.name, "pointer_kind": "identity", "pointer_ref": PERSON.person_id,
     })
     [outcome] = (await _service(engine).admit(
         (replace(CLAIM_PROPOSAL, scope=replace(CLAIM_PROPOSAL.scope,
-                                               persons=(PERSON.person_id,))),),
+                                               identities=(PERSON.person_id,))),),
         HISTORICAL, ("item-1",),
     )).outcomes
     assert outcome == Stored(CLAIM_PROPOSAL.id)

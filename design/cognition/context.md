@@ -20,7 +20,7 @@ bounds. Passes differ only in those.
 
 | block | presents |
 |---|---|
-| **profile**, one per subject among the anchors | the claims about that entity — a person present, the room, the unit, Nora — in its [parts](claims.md) |
+| **profile**, one per subject among the anchors | the claims about that entity — an identity present, the room, the unit, Nora — in its [parts](claims.md) |
 | **Standing** | Nora's current position in the room: open intentions with their children, recently settled ones with their outcomes, and the situation claims about where the conversation stands |
 | **lessons** | the claims about Nora's practice in the unit |
 | **related** | evidence reached from the pass's anchors: items and claims, by distance |
@@ -50,7 +50,7 @@ holds; Standing and related last.
 
 Code prefetches from anchors it can resolve without interpreting meaning: the
 message, what it quotes, its people, its room. Presence in the floor is the
-[presence](observation.md#aggregates) head of each person the pass concerns,
+[presence](observation.md#aggregates) head of each identity the pass concerns,
 so a pass can relate a request to where they are without being asked to
 look. A reference code cannot resolve — "that place we went last month" — is
 the model's to pull. No separate model

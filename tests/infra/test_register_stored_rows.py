@@ -6,6 +6,7 @@ from time import monotonic
 import pytest
 import sqlalchemy as sa
 
+from nora.domain.graph_registration import identities_column
 from nora.infra.sql.cognitive_graph_schema import GRAPH_STIMULUS, REGISTRY
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import MESSAGES, METADATA, SOURCE_HEALTH
@@ -75,12 +76,11 @@ async def _legacy_fixture(engine):
             values["graph_id"] = None
             if not name.startswith("rollup_"):
                 values["unit"] = None
+            column = identities_column(name)
+            values[column] = sa.text("'{}'::text[]") if column == "identities" else table.c[column]
             values.update(
-                persons=sa.text("'{}'::text[]") if name not in (
-                    "rollup_colocation", "rollup_outing",
-                ) else table.c.persons,
                 occurred_at=None, valid_from=None, valid_to=None, origin_room=None,
-                excluded_persons=sa.text("'{}'::text[]"), lineage=sa.text("'{}'::jsonb"),
+                excluded_identities=sa.text("'{}'::text[]"), lineage=sa.text("'{}'::jsonb"),
             )
             await conn.execute(sa.update(table).values(values))
             await conn.execute(sa.text(

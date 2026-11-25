@@ -125,7 +125,7 @@ class PresenceStore:
                     continue
                 values = await registration.planes(
                     conn, PRESENCE_FIXES, unit=unit, occurred_at=epoch_ms(fix.ts),
-                    persons=(fix.person_id,),
+                    identities=(fix.person_id,),
                 ) if registration else {}
                 await conn.execute(insert.values(**values))
                 written = True
@@ -240,7 +240,7 @@ class PresenceStore:
             planes = await self._aggregate_graph.aggregate_planes(
                 conn, PRESENCE_PLACES, unit=unit, key=(circle_id, place.place_id, unit),
                 occurred_at=at, asserted_at=at, minimum="internal",
-                persons=persons,
+                identities=persons,
                 inputs=(source for source in inputs if source.get("unit") == unit),
                 revisions=registration.revisions(),
             )

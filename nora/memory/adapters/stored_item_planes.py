@@ -65,22 +65,22 @@ class ItemPlanes:
         self, name: str, row: RowData, parents: Mapping[Any, Any],
     ) -> tuple[tuple[str, ...], str | None, list[str]]:
         origin = None
-        persons = []
+        identities = []
         if name == "messages":
             origin = row["conversation_id"]
             units = self._room(row["platform"], origin)
-            persons = [row["person_id"]]
+            identities = [row["person_id"]]
         elif name in {"message_edit", "message_reaction", "message_delete"}:
             parent = parents.get(row["message_id"])
             if parent is None:
                 return (), None, []
             origin = parent.conversation_id
             units = self._room(parent.platform, origin)
-            persons = [parent.person_id if name == "message_edit" else row["person_id"]]
+            identities = [parent.person_id if name == "message_edit" else row["person_id"]]
         elif name == "platform_observation":
             platform, origin = row["platform"], row["conversation_id"]
             units = self._room(platform, origin)
-            persons = [
+            identities = [
                 await self.scope.person_id(platform, row[name])
                 for name in ("actor_id", "target_author_id")
             ]
@@ -104,14 +104,14 @@ class ItemPlanes:
                 person = parents.get((row["network"], row["item_id"]))
             else:
                 person = row["person"]
-            persons = [person] if person else []
+            identities = [person] if person else []
             units = await self._person(person) if person else ()
-        return units, origin, sorted({person for person in persons if person})
+        return units, origin, sorted({person for person in identities if person})
 
     @staticmethod
     def values(
         name: str, row: RowData, *, unit: str, key: tuple[Any, ...],
-        origin: str | None, persons: list[str],
+        origin: str | None, identities: list[str],
     ) -> dict[str, Any]:
         if name == "platform_observation":
             occurred = row["occurred_ms"]
@@ -132,7 +132,7 @@ class ItemPlanes:
         source = BACKFILL_ITEM_SOURCES[name]
         return {
             "unit": unit, "graph_id": item_graph_id(name, key, unit),
-            "persons": persons, "origin_room": origin, "exposure": source.exposure,
+            "identities": identities, "origin_room": origin, "exposure": source.exposure,
             "writer": source.writer, "occurred_at": at, "valid_from": at,
             "asserted_at": _clock(row[asserted]),
         }

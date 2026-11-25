@@ -31,11 +31,11 @@ people's responses to her acts, never only her own earlier words.
   said belong to different units.
 - The **origin room** binds where a row may render and where an act about it
   lands; a row whose room does not resolve is refused, never redirected.
-- **Excluded persons** are never revealed to or through: not in a reply, a
+- **Excluded identities** are never revealed to or through: not in a reply, a
   reminder or its context.
 - **Exposure**: external rows may reach a room through the guards; internal
   rows are read by Nora and never egress; operator rows are never read by Nora.
-- A person in two units has independent state in each.
+- An identity in two units has independent state in each.
 - **A DM is a room of the primary unit.** It reads that unit's understanding
   through the ordinary disclosure rules and reads no affiliate unit. Its raw
   items are never shown outside the DM. A claim citing DM items carries the DM
@@ -65,9 +65,9 @@ people's responses to her acts, never only her own earlier words.
   three-state results never switch off.
 - Silence is a valid outcome of every delivering pass.
 - An outside query carries only the minimum public question: never a private
-  person's name, handle, address, identifier, coordinate or trace.
+  identity's name, handle, address, identifier, coordinate or trace.
 - A saved place is an entity. Its coordinate may serve a requested route
   inside code; it never reaches model prose or an outside query, and a
-  person's live position is never a routing endpoint.
+  identity's live position is never a routing endpoint.
 - The Cognitive Graph is Nora's only memory. No third-party memory is fed or
   read.

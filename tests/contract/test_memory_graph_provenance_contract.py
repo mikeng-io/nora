@@ -41,7 +41,7 @@ async def test_api_punctuation_span_keeps_store_provenance(graph, span, accepted
 
 @pytest.mark.parametrize("invented_tail", [False, True])
 async def test_api_punctuation_attribute_keeps_store_provenance(graph, invented_tail):
-    source = replace(SOURCE, persons=(), text="I attended the event — by train.")
+    source = replace(SOURCE, identities=(), text="I attended the event — by train.")
     event = replace(EVENT, attributes={"travel": "train"})
     attribute = Evidence(source.key, entity_id=event.id, attribute="travel",
                          span="event, by train" + (" invented" if invented_tail else ""))

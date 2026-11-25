@@ -39,12 +39,12 @@ _REFUSALS = {
     "passive_commit_only": "This pass can open an intention without scheduling a delivery, "
         "or revise one it opened in this pass.",
     "invalid_field": "Fix the named field and submit that operation again.",
-    "invalid_trigger": "Use a time or an act_event, person_event or predicate condition.",
+    "invalid_trigger": "Use a time or an act_event, identity_event or predicate condition.",
     "citation_not_shown": "Use a citation from this pass's context or graph reads.",
     "unrooted_citation": "Cite a graph row grounded in observation or computation.",
     "illegal_endpoints": "Check the referenced IDs and their row kinds.",
     "illegal_basis": "Use a row that supports the requested relation.",
-    "unresolved_person": "Use a known person ID for the named field.",
+    "unresolved_identity": "Use a known identity ID for the named field.",
     "illegal_transition": "Read the intention and check which operations it permits.",
     "pointer_entity": "Use an intention ID for the base.",
     "duplicate_delivery": "Read the conflicting intention before scheduling another delivery.",
@@ -78,11 +78,11 @@ def _make_intention_commit(deps):
         A proactive pass without a delivered intention can open passive
         intentions and revise them during the same pass.
         For choose_moment, use a time trigger or a condition trigger with the
-        act_event, person_event or predicate form.
+        act_event, identity_event or predicate form.
         Returns `status`: ok, refused or unavailable, with a `note`.
 
         Args:
-            operations: Intention operations in order. Give person IDs or nora for owner
+            operations: Intention operations in order. Give identity IDs or nora for owner
                 and owed_to. Use graph IDs shown in this pass for references.
         """
         return await submit_operations(

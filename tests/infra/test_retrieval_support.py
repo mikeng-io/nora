@@ -78,8 +78,8 @@ async def test_item_has_no_claim_part_or_support(scenario) -> None:
 
 
 async def test_only_pointer_entity_has_pointer_kind(scenario) -> None:
-    await scenario.entity("person", pointer_kind="person", pointer_ref=PERSON)
+    await scenario.entity("person", pointer_kind="identity", pointer_ref=PERSON)
     await scenario.entity("topic")
     rows = await _read(scenario, "person", "topic")
-    assert rows["person"].pointer_kind == "person"
+    assert rows["person"].pointer_kind == "identity"
     assert rows["topic"].pointer_kind is None

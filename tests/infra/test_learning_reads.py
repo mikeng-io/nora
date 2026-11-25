@@ -24,13 +24,13 @@ from tests.infra.test_item_registration import (
     engine,  # noqa: F401
 )
 
-_CLASS = IntentionClass("achieve", _PERSON, "person_event")
+_CLASS = IntentionClass("achieve", _PERSON, "identity_event")
 _START = _AT - timedelta(minutes=1)
 _END = _NOW + timedelta(minutes=1)
 
 
-async def _ended(engine, id_, ending, *, unit=_UNIT, form="person_event"):
-    value = _PERSON_EVENT if form == "person_event" else "Generated condition"
+async def _ended(engine, id_, ending, *, unit=_UNIT, form="identity_event"):
+    value = _PERSON_EVENT if form == "identity_event" else "Generated condition"
     await _intention(engine, id_, form, value, unit=unit, deadline=_DEADLINE)
     async with engine.begin() as conn:
         await conn.execute(sa.update(INTENTION).where(
@@ -61,7 +61,7 @@ async def _seed(engine):
         await _ended(engine, id_, ending)
     await _ended(engine, "untyped", "unknown", form="untyped")
     await _ended(engine, "with-lesson", "leaked", unit=_SECOND)
-    await _intention(engine, "draft", "person_event", _PERSON_EVENT, unit=_UNIT)
+    await _intention(engine, "draft", "identity_event", _PERSON_EVENT, unit=_UNIT)
     draft = (await _rows(engine, INTENTION))["draft"]
     await graph.revise(INTENTION, dict(
         draft, id="revised", replaces="draft", asserted_at=_END,

@@ -284,13 +284,13 @@ class SqlItemRegistration:
     async def insert_once(
         self, conn: AsyncConnection, table: sa.Table, stmt: Insert, *,
         unit: str | None, occurred_at: datetime | None,
-        persons: Iterable[str | None] = (), room: str | None = None,
+        identities: Iterable[str | None] = (), room: str | None = None,
         cues: tuple[str, ...] = (),
     ) -> Any:
         async with conn.begin_nested() as attempt:
             planes = await self.planes(
                 conn, table, unit=unit, occurred_at=occurred_at,
-                persons=persons, room=room, cues=cues,
+                identities=identities, room=room, cues=cues,
             )
             inserted = (await conn.execute(stmt.values(**planes).returning(table.c.id))).scalar()
             if inserted is None:
@@ -300,13 +300,13 @@ class SqlItemRegistration:
     async def planes(
         self, conn: AsyncConnection, table: sa.Table, *,
         unit: str | None, occurred_at: datetime | None,
-        persons: Iterable[str | None] = (), room: str | None = None,
+        identities: Iterable[str | None] = (), room: str | None = None,
         key: tuple[Any, ...] | None = None, asserted_at: datetime | None = None,
         cues: tuple[str, ...] = (), own: bool = False, failed: bool = False,
     ) -> dict[str, Any]:
-        people = tuple(person for person in persons if person)
+        people = tuple(person for person in identities if person)
         values: dict[str, Any] = {
-            "unit": unit, "persons": sorted(set(people)),
+            "unit": unit, "identities": sorted(set(people)),
             "origin_room": room, "occurred_at": occurred_at, "valid_from": occurred_at,
             "asserted_at": asserted_at if asserted_at is not None else sa.func.clock_timestamp(),
             **self._revisions.current(),
@@ -363,7 +363,7 @@ async def touch_planes(
     ).where(MESSAGES.c.id == message_id))).scalar_one()
     return await registration.planes(
         conn, table, unit=registration.scope.message_unit(message),
-        room=origin_room, occurred_at=epoch_ms(message.timestamp), persons=(person_id,),
+        room=origin_room, occurred_at=epoch_ms(message.timestamp), identities=(person_id,),
         cues=graph_item_cues(None, addressed=message.conversation_type == "dm"), own=own,
     )
 

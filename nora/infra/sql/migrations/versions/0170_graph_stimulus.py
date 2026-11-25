@@ -19,7 +19,7 @@ def upgrade() -> None:
             recorded_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
             source TEXT NOT NULL,
             room TEXT,
-            person TEXT,
+            identity TEXT,
             cues TEXT[] DEFAULT '{}' NOT NULL,
             revision_id TEXT,
             dependents TEXT[] DEFAULT '{}' NOT NULL,

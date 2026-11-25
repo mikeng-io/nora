@@ -33,7 +33,7 @@ class ActIdentity:
 @dataclass(frozen=True, slots=True)
 class ActAuthority:
     unit: str | None
-    person: str | None = None
+    identity: str | None = None
     intention: str | None = None
     room: str | None = None
     pass_context: PassContext | None = None

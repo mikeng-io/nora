@@ -110,7 +110,7 @@ def _row_scope(
     reading_aliases: frozenset[str], dm_rooms: frozenset[str],
 ) -> sa.ColumnElement[bool]:
     row = rows.c
-    exclusions = row.image["excluded_persons"]
+    exclusions = row.image["excluded_identities"]
     raw_dm = sa.or_(
         sa.func.coalesce(row.origin_room.in_(dm_rooms), False),
         row.image["conversation_type"].astext.is_not_distinct_from("dm"),

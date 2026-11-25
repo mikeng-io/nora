@@ -130,8 +130,8 @@ async def test_failed_act_ends_maintain_intention_with_its_outcome_as_witness(en
 
 async def test_the_explicit_message_must_come_from_the_awaited_person(engine):
     text = "I accept the generated option."
-    await _intention(engine, "waiting", "person_event", {
-        "person_id": _PERSON, "platform": "signal", "room": _ROOM, "text": text,
+    await _intention(engine, "waiting", "identity_event", {
+        "identity_id": _PERSON, "platform": "signal", "room": _ROOM, "text": text,
     })
     await _health(engine, "signal", "up")
     writer = _Writer(engine, _registration())
@@ -254,8 +254,8 @@ async def test_deadline_and_untyped_intentions_are_left_for_verify(engine):
         deadline=_AT + timedelta(minutes=1), drop=("deadline", _AT.isoformat()),
     )
     text = "I confirm."
-    await _intention(engine, "positive-control", "person_event", {
-        "person_id": _PERSON, "platform": "signal", "room": _ROOM, "text": text,
+    await _intention(engine, "positive-control", "identity_event", {
+        "identity_id": _PERSON, "platform": "signal", "room": _ROOM, "text": text,
     })
     await _health(engine, "signal", "up")
     writer = _Writer(engine, _registration())

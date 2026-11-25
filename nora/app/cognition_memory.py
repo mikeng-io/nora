@@ -63,7 +63,12 @@ def historical_graph(graph: Subgraph, at: datetime) -> Subgraph:
 
 
 def _source_payload(sources: Iterable[Source]) -> list[dict[str, Any]]:
-    rows = [{**asdict(source), "persons": sorted(source.persons)} for source in sources]
+    rows = []
+    for source in sources:
+        row = asdict(source)
+        # Keep the digest compatible with existing completion receipts.
+        row["persons"] = sorted(row.pop("identities"))
+        rows.append(row)
     return sorted(rows, key=lambda row: json.dumps(row, sort_keys=True, default=str))
 
 
@@ -232,11 +237,11 @@ class WakeMemory:
             for loaded in loaded_items:
                 anchors.extend(preview_seeds(loaded, aliases))
             state.memory_items[index] = item
-        persons = frozenset(
+        identities = frozenset(
             p for item in state.memory_items.values()
-            for s in item.sources for p in s.persons)
+            for s in item.sources for p in s.identities)
         seeds = tuple(dict.fromkeys(anchors))
-        graph = await self.graph.walk(seeds, Walk(unit=state.unit, persons=persons, depth=2,
+        graph = await self.graph.walk(seeds, Walk(unit=state.unit, identities=identities, depth=2,
                                                 # Unversioned heads are withheld below.
                                                 layers=("record", "rollup", "notebook"),
                                                 valid_at=at,
@@ -275,7 +280,7 @@ class WakeMemory:
         `render_agenda` has rewritten each item's `source_keys` to the rows it
         actually rendered (after clipping/dropping); only those hydrate, and
         with the emitted body — a tail the budget clipped was never shown.
-        Code keeps the Source's key/layer/unit/persons; only a later explicit
+        Code keeps the Source's key/layer/unit/identities; only a later explicit
         tool read may grant a larger snapshot."""
         for item in state.memory_items.values():
             emitted = {
@@ -326,19 +331,19 @@ class WakeMemory:
         combined = replace(combined, work=replace(combined.work, input_hash=hashlib.sha256(
             json.dumps(_source_payload(combined.sources),
                        sort_keys=True).encode()).hexdigest()))
-        # `shown_persons` is emitted-row authorship, never a source's scope:
+        # `shown_identities` is emitted-row authorship, never a source's scope:
         # every item's rendered rows (a clipped or withheld row contributes
         # nothing) plus the rows the read tools handed out (`on_rows`).
         scope = proposal_scope(
             inputs, state.graph_fetched,
             shown_keys=getattr(state, "shown_keys", frozenset()),
             shown_relations=getattr(state, "shown_relations", frozenset()),
-            shown_persons={
+            shown_identities={
                 str(r["person_id"])
                 for item in state.memory_items.values()
                 for r in item.snapshot.get("messages", ())
                 if r.get("person_id")
-            } | set(getattr(state, "shown_persons", ())),
+            } | set(getattr(state, "shown_identities", ())),
             admitted=set(getattr(state, "admitted_relations", ())))
         result, local_refusals, aux = await self.admission._admit(
             combined.work, output, state.graph_fetched, state.session_id, scope,
@@ -362,7 +367,7 @@ class WakeMemory:
                    *({"kind": "schema", "reason": "schema"} for _i in pre_refused)]
         seeds = tuple(dict.fromkeys(k for r in result.relations for k in (r.src, r.dst)))
         graph = await self.graph.walk(seeds, Walk(unit=state.unit, depth=1,
-            persons=frozenset(p for s in combined.sources for p in s.persons),
+            identities=frozenset(p for s in combined.sources for p in s.identities),
             valid_at=combined.work.as_of,
             known_at=combined.work.as_of if state.historical else None))
         if graph.status == "unavailable":

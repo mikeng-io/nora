@@ -87,7 +87,7 @@ def test_vocabulary_is_complete() -> None:
         ({}, SOURCE, replace(EV, source=("message", "unseen")), "unseen_source"),
         ({}, SOURCE, replace(EV, span="not present"), "span_not_in_source"),
         ({"unit": "u2"}, SOURCE, EV, "scope_wider_than_evidence"),
-        ({"persons": ()}, SOURCE, EV, "scope_wider_than_evidence"),
+        ({"identities": ()}, SOURCE, EV, "scope_wider_than_evidence"),
     ],
 )
 async def test_refusals(
@@ -206,7 +206,7 @@ async def test_work_lifecycle(graph: MemoryGraph) -> None:
 
 async def test_attribute_evidence_is_admitted_independently(graph: MemoryGraph) -> None:
     event = replace(EVENT, attributes={"category": "generated", "venue": "unsupported"})
-    public = replace(SOURCE, persons=())
+    public = replace(SOURCE, identities=())
     attribute = Evidence(SOURCE.key, entity_id=EVENT.id, attribute="category", span="event")
     result = await graph.stage_and_admit(
         entities=(PERSON, event),
@@ -257,7 +257,7 @@ async def test_unavailable_is_not_empty_success(graph: MemoryGraph) -> None:
 
 
 async def test_attributes_accumulate_across_batches(graph: MemoryGraph) -> None:
-    public = replace(SOURCE, persons=())
+    public = replace(SOURCE, identities=())
     first = replace(EVENT, attributes={"category": "generated"})
     first_ev = Evidence(SOURCE.key, entity_id=EVENT.id, attribute="category", span="event")
     await graph.stage_and_admit(
@@ -396,7 +396,7 @@ async def test_corrections_keep_history(graph: MemoryGraph, kind: str) -> None:
         ({"evidence": ()}, SOURCE, "missing_evidence"),
         ({"evidence": (("message", "unseen"),)}, SOURCE, "unseen_source"),
         ({}, replace(SOURCE, unit="u2"), "scope_wider_than_evidence"),
-        ({}, replace(SOURCE, persons=("p2",)), "scope_wider_than_evidence"),
+        ({}, replace(SOURCE, identities=("p2",)), "scope_wider_than_evidence"),
         ({}, replace(SOURCE, layer="notebook"), "notebook_evidence"),
         ({"kind": "supersede", "by": "absent"}, SOURCE, "missing_replacement"),
         ({"kind": "supersede", "by": REL.id}, SOURCE, "missing_replacement"),
@@ -643,7 +643,7 @@ async def test_same_as_never_joins_two_units(graph: MemoryGraph) -> None:
         ("p-generated",),
         asserted_at=NOW,
     )
-    source = replace(SOURCE, unit="unit-a", persons=("p-generated",))
+    source = replace(SOURCE, unit="unit-a", identities=("p-generated",))
     result = await graph.stage_and_admit(
         entities=(),
         relations=(merge,),
@@ -660,10 +660,10 @@ def test_pointer_ids_are_unique_across_kinds() -> None:
 
 async def test_a_shown_author_grounds_without_source_scope(graph: MemoryGraph) -> None:
     """A unit-wide room's cited sources are scoped to no one, so a shown
-    author's pointer cannot come from `Source.persons`: `shown_persons`
+    author's pointer cannot come from `Source.identities`: `shown_identities`
     grounds it the way a cited privacy person would — and the relation's
     persons stay the cited sources' empty union."""
-    public = replace(SOURCE, persons=())
+    public = replace(SOURCE, identities=())
     work = Entity("w1", "work", "u1", "Generated Work")
     relation = Relation(
         "r-shown", ("person", "u1:person:p1"), "likes", work.key, "notebook",
@@ -674,19 +674,19 @@ async def test_a_shown_author_grounds_without_source_scope(graph: MemoryGraph) -
         relations=(relation,),
         evidence=(Evidence(public.key, relation_id="r-shown", span="attended"),),
         sources={public.key: public},
-        shown_persons=frozenset({"p1"}),
+        shown_identities=frozenset({"p1"}),
     )
     assert result.relations == (relation,)
     pointer = next(e for e in result.entities if e.kind == "person")
     assert pointer.key == ("person", "u1:person:p1")
     assert pointer.attributes == {"ref": "p1"}
-    assert relation.persons == ()
+    assert relation.identities == ()
 
 
 async def test_an_unshown_author_does_not_ground(graph: MemoryGraph) -> None:
     """Without shown authorship or a cited scope person the end refuses
     `wrong_ends` and no pointer is committed."""
-    public = replace(SOURCE, persons=())
+    public = replace(SOURCE, identities=())
     work = Entity("w1", "work", "u1", "Generated Work")
     relation = Relation(
         "r-unshown", ("person", "u1:person:p1"), "likes", work.key, "notebook",
@@ -697,7 +697,7 @@ async def test_an_unshown_author_does_not_ground(graph: MemoryGraph) -> None:
         relations=(relation,),
         evidence=(Evidence(public.key, relation_id="r-unshown", span="attended"),),
         sources={public.key: public},
-        shown_persons=frozenset({"someone-else"}),
+        shown_identities=frozenset({"someone-else"}),
     )
     assert not result.relations
     assert Refusal("relation", relation.id, "wrong_ends") in result.refused
@@ -707,7 +707,7 @@ async def test_an_unshown_author_does_not_ground(graph: MemoryGraph) -> None:
 async def test_another_units_author_does_not_ground(graph: MemoryGraph) -> None:
     """A pointer key is one unit's own: a shown author never grounds another
     unit's person pointer."""
-    public = replace(SOURCE, persons=())
+    public = replace(SOURCE, identities=())
     work = Entity("w1", "work", "u1", "Generated Work")
     relation = Relation(
         "r-other", ("person", "u2:person:p1"), "likes", work.key, "notebook",
@@ -718,7 +718,7 @@ async def test_another_units_author_does_not_ground(graph: MemoryGraph) -> None:
         relations=(relation,),
         evidence=(Evidence(public.key, relation_id="r-other", span="attended"),),
         sources={public.key: public},
-        shown_persons=frozenset({"p1"}),
+        shown_identities=frozenset({"p1"}),
     )
     assert not result.relations
     assert Refusal("relation", relation.id, "wrong_ends") in result.refused
@@ -742,9 +742,9 @@ async def test_topic_activity_direct_evidence_counts_times_and_failure(graph: Me
         assert admitted.relations
     result = await graph.topic_activity(unit="u1", topic=topic.key, at=NOW)
     assert result.status == "ok"
-    assert len(result.persons) == 1
-    activity = result.persons[0]
-    assert activity.person == PERSON.key and activity.evidence_count == 2
+    assert len(result.identities) == 1
+    activity = result.identities[0]
+    assert activity.identity == PERSON.key and activity.evidence_count == 2
     assert (activity.first_asserted_at, activity.last_asserted_at) == (early, NOW)
     assert activity.sources == (SOURCE.key, ("message", "m2"))
     assert (
@@ -763,7 +763,7 @@ async def test_topic_activity_direct_evidence_counts_times_and_failure(graph: Me
         async with graph.engine.begin() as lock:
             await lock.execute(sa.text("LOCK TABLE legacy_relation IN ACCESS EXCLUSIVE MODE"))
             failed = await slow.topic_activity(unit="u1", topic=topic.key, at=NOW)
-    assert failed.status == "unavailable" and not failed.persons
+    assert failed.status == "unavailable" and not failed.identities
     await graph.stage_and_admit(
         entities=(),
         relations=(),
@@ -825,8 +825,8 @@ async def test_cognition_04_correction_closes_without_deleting(graph: MemoryGrap
 async def test_cognition_scope_inside_walk(graph: MemoryGraph, scenario: int):
     # A hidden intermediate must not become a bridge to an otherwise public node.
     topic = Entity("scope-topic", "topic", "u1", "Generated topic")
-    hidden = replace(REL, id="hidden", rel="interested_in", dst=topic.key, persons=("p1", "p2"))
-    source = replace(SOURCE, persons=("p1", "p2"))
+    hidden = replace(REL, id="hidden", rel="interested_in", dst=topic.key, identities=("p1", "p2"))
+    source = replace(SOURCE, identities=("p1", "p2"))
     admitted = await graph.stage_and_admit(
         entities=(PERSON, topic),
         relations=(hidden,),
@@ -854,8 +854,8 @@ async def test_cognition_12_interest_weight_counts_distinct_evidence(graph: Memo
     assert admitted.relations == (relation,)
     activity = await graph.topic_activity(unit="u1", topic=topic.key, at=NOW)
     assert activity.status == "ok"
-    assert activity.persons[0].evidence_count == 3
-    assert set(activity.persons[0].sources) == {s.key for s in sources}
+    assert activity.identities[0].evidence_count == 3
+    assert set(activity.identities[0].sources) == {s.key for s in sources}
     outside = await graph.topic_activity(unit="other-unit", topic=topic.key, at=NOW)
     assert outside.status == "nothing_found"
 
@@ -890,10 +890,10 @@ async def test_tool_scope_cuts_path_at_evidence(graph, rule):
     relation = replace(
         REL,
         dst=target.key,
-        persons=node.persons,
+        identities=node.persons,
         rel="lives_in" if rule.startswith("presence") else REL.rel,
     )
-    source = replace(SOURCE, key=node.key, persons=node.persons)
+    source = replace(SOURCE, key=node.key, identities=node.persons)
     await graph.stage_and_admit(
         entities=(PERSON, target),
         relations=(relation,),
@@ -985,7 +985,7 @@ async def test_entity_only_rollups_honor_person_and_date_filters(graph):
     from nora.domain.memory_index import MemoryFilter, MemoryScope
 
     place = Entity("generated-place", "place", "u1", "Generated place")
-    relation = replace(REL, rel="stayed_at", layer="rollup", dst=place.key, persons=())
+    relation = replace(REL, rel="stayed_at", layer="rollup", dst=place.key, identities=())
     assert (
         await graph.stage_and_admit(
             entities=(PERSON, place), relations=(relation,), evidence=(), sources={}

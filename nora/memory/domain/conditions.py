@@ -20,8 +20,8 @@ class OwnDelivery:
 
 
 @dataclass(frozen=True, slots=True)
-class PersonEvent:
-    person_id: str
+class IdentityEvent:
+    identity_id: str
     platform: str
     room: str
     text: str
@@ -46,7 +46,7 @@ class Predicate:
         return "true" if field == self.equals else "false"
 
 
-ConditionValue = ActEvent | OwnDelivery | PersonEvent | Predicate
+ConditionValue = ActEvent | OwnDelivery | IdentityEvent | Predicate
 
 
 def _strings(value: Mapping[str, object], *keys: str) -> tuple[str, ...] | None:
@@ -64,11 +64,11 @@ def decode_condition(form: str | None, value: object) -> ConditionValue | None:
         return ActEvent(parts[0])
     if form == "act_event" and value == {"own_delivery": True} and value["own_delivery"] is True:
         return OwnDelivery()
-    if form == "person_event" and (
-        parts := _strings(value, "person_id", "platform", "room", "text")
+    if form == "identity_event" and (
+        parts := _strings(value, "identity_id", "platform", "room", "text")
     ):
-        person, platform, room, text = parts
-        return PersonEvent(person, platform, room, text)
+        identity, platform, room, text = parts
+        return IdentityEvent(identity, platform, room, text)
     if form == "predicate" and (parts := _strings(value, "graph_id")):
         path = value.get("path")
         target = value.get("equals")

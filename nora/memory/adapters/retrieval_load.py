@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.sql import FromClause
 
 from nora.access import IdentityAccess
+from nora.domain.graph_registration import identities_column
 from nora.infra.sql.cognitive_graph_schema import GRAPH_STIMULUS
 from nora.infra.sql.cognitive_graph_store import content_digest, visible_to_reads
 from nora.memory.adapters.retrieval_rows import tombstoned_ids
@@ -19,8 +20,8 @@ from nora.memory.domain.retrieval import (
     RetrievalScope,
     RetrievalUnavailableError,
     RetrievedEdge,
+    RetrievedIdentity,
     RetrievedLessonTally,
-    RetrievedPerson,
     RetrievedRow,
     RetrievedSupport,
 )
@@ -31,8 +32,8 @@ _ROLE = {
     "actor_id": "author",
     "target_author_id": "target",
     "person": "subject",
-    "authority_person": "author",
-    "nora_act.authority_person": "author",
+    "authority_identity": "author",
+    "nora_act.authority_identity": "author",
     "requester_person_id": "author",
     "author": "author",
 }
@@ -57,9 +58,9 @@ async def _item_person(
             row.image["id"].astext == str(image.get("message_id")),
         ).limit(1))
         return cast(str | None, value)
-    if key == "nora_act.authority_person":
+    if key == "nora_act.authority_identity":
         row = rows.c
-        value = await conn.scalar(sa.select(row.image["authority_person"].astext).where(
+        value = await conn.scalar(sa.select(row.image["authority_identity"].astext).where(
             row.source == "nora_act", row.graph_id == image.get("act_id"),
         ))
         return cast(str | None, value)
@@ -76,22 +77,22 @@ async def _item_person(
 async def _people(
     conn: AsyncConnection, rows: FromClause, access: IdentityAccess,
     source: str, image: Mapping[str, Any],
-) -> tuple[RetrievedPerson, ...]:
-    persons = tuple(image.get("persons") or ())
+) -> tuple[RetrievedIdentity, ...]:
+    identities = tuple(image.get(identities_column(source)) or ())
     if source == "claim":
-        return tuple(RetrievedPerson(person, "subject") for person in persons)
+        return tuple(RetrievedIdentity(person, "subject") for person in identities)
     if source in ("intention", "intention_verdict"):
-        roles = tuple(RetrievedPerson(image[key], key) for key in ("owner", "owed_to")
+        roles = tuple(RetrievedIdentity(image[key], key) for key in ("owner", "owed_to")
                       if image.get(key) is not None)
     else:
         spec = ITEM_SOURCES.get(source)
         roles = tuple([
-            RetrievedPerson(await _item_person(conn, rows, access, image, key), _ROLE[key])
-            for key in spec.person_columns
+            RetrievedIdentity(await _item_person(conn, rows, access, image, key), _ROLE[key])
+            for key in spec.identity_columns
         ]) if spec is not None else ()
     assigned = {entry.id for entry in roles}
-    return (*roles, *(RetrievedPerson(person, "participant")
-                      for person in persons if person not in assigned))
+    return (*roles, *(RetrievedIdentity(person, "participant")
+                      for person in identities if person not in assigned))
 
 
 async def _relations(
@@ -334,7 +335,7 @@ async def load_rows(
             occurred_at=_instant(image.get("occurred_at")), asserted_at=entry["asserted_at"],
             valid_from=_instant(image.get("valid_from")), valid_to=_instant(image.get("valid_to")),
             state=entry["state"], origin_room=entry["origin_room"], exposure=entry["exposure"],
-            persons=() if unavailable else await _people(conn, rows, access, source, image),
+            identities=() if unavailable else await _people(conn, rows, access, source, image),
             edges=tuple(edges.get(graph_id, ())), evidence=tuple(handles.get(graph_id, ())),
             content=None if unavailable else _content(source, image),
             close_when=close_when,

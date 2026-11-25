@@ -107,7 +107,7 @@ def _line(
     basis = row.basis
     if basis == "inferred":
         basis = f"{basis} ({row.reasoning}, {row.confidence} confidence)"
-    people = ", ".join(f"{person.role}={person.id or 'unknown'}" for person in row.persons)
+    people = ", ".join(f"{person.role}={person.id or 'unknown'}" for person in row.identities)
     edges = ", ".join(
         f"{edge.type} to {edge.target}" if edge.source == row.graph_id
         else f"{edge.type} from {edge.source}"

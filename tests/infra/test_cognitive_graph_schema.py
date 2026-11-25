@@ -25,7 +25,7 @@ from nora.infra.sql.cognitive_graph_schema import (
 
 PLANES = {
     "id", "kind", "basis", "reasoning", "confidence", "unit", "origin_room",
-    "persons", "excluded_persons", "lineage", "exposure", "writer", "occasion",
+    "identities", "excluded_identities", "lineage", "exposure", "writer", "occasion",
     "pass", "trace", "model", "rev_code", "rev_instruction", "rev_skill",
     "rev_config", "rev_identity", "rev_policy", "occurred_at", "asserted_at",
     "valid_from", "valid_to", "replaces", "state",
@@ -211,8 +211,8 @@ async def test_a_kind_row_whose_registry_kind_disagrees_is_refused(engine) -> No
     ("entity", {"basis": "observed"}),
     ("entity", {"state": "live"}),
     ("entity", {"pointer_kind": "place"}),
-    ("entity", {"pointer_kind": "person", "pointer_ref": None}),
-    ("entity", {"pointer_kind": "person", "pointer_ref": "p1", "basis": "inferred",
+    ("entity", {"pointer_kind": "identity", "pointer_ref": None}),
+    ("entity", {"pointer_kind": "identity", "pointer_ref": "p1", "basis": "inferred",
                 "reasoning": "told", "confidence": "low"}),
     ("claim", {"basis": "computed"}),
     ("claim", {"state": "archived"}),
@@ -266,7 +266,7 @@ async def test_a_row_breaking_a_closed_rule_is_refused(engine, kind, over) -> No
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind,over", [
-    ("entity", {"pointer_kind": "person", "pointer_ref": "p1"}),
+    ("entity", {"pointer_kind": "identity", "pointer_ref": "p1"}),
     ("entity", {"basis": "inferred", "reasoning": "told", "confidence": "low"}),
     ("claim", {"part": "guess", "prediction": "p", "window_end": datetime(2027, 1, 1, tzinfo=UTC)}),
     ("claim", {"part": "grade", "grade": "holds"}),

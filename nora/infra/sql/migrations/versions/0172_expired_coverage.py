@@ -18,7 +18,7 @@ def upgrade() -> None:
         sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
         sa.Column("unit", sa.Text, nullable=False),
         sa.Column("source", sa.Text, nullable=False),
-        sa.Column("person", sa.Text),
+        sa.Column("identity", sa.Text),
         sa.Column("from", sa.DateTime(timezone=True), nullable=False),
         sa.Column("to", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint('"from" <= "to"', name="ck_expired_coverage_order"),

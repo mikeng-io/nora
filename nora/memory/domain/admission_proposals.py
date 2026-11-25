@@ -61,11 +61,11 @@ class RoomReference:
 @dataclass(frozen=True, slots=True)
 class ResolvedReferences:
     rooms: Mapping[str, RoomReference | None]
-    persons: Mapping[str, str | None]
+    identities: Mapping[str, str | None]
 
 
 @dataclass(frozen=True, slots=True)
-class PersonAuthor:
+class IdentityAuthor:
     id: str
 
 
@@ -78,8 +78,8 @@ class RowFacts:
     unit: str
     origin_room: str | None = None
     room_is_dm: bool = False
-    persons: tuple[str | None, ...] = ()
-    excluded_persons: tuple[str, ...] = ()
+    identities: tuple[str | None, ...] = ()
+    excluded_identities: tuple[str, ...] = ()
     exposure: str = "external"
     lineage: Lineage = field(default_factory=Lineage)
     form: str | None = None
@@ -87,7 +87,7 @@ class RowFacts:
     delivery_mode: str | None = None
     pointer_kind: str | None = None
     source: str | None = None
-    author: PersonAuthor | Literal["nora"] | None = None
+    author: IdentityAuthor | Literal["nora"] | None = None
     dependencies: tuple[str, ...] = ()
     source_ref: SourceReference | None = None
     fetched_url: str | None = None
@@ -105,8 +105,8 @@ class RowFacts:
 class Scope:
     unit: str
     origin_room: str | None = None
-    persons: tuple[str, ...] = ()
-    excluded_persons: tuple[str, ...] = ()
+    identities: tuple[str, ...] = ()
+    excluded_identities: tuple[str, ...] = ()
     # None inherits the restrictions of the base and the evidence.
     exposure: str | None = "external"
 

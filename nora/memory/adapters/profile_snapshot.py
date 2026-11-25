@@ -24,8 +24,8 @@ async def profile_snapshot(
     ).where(
         CLAIM.c.unit == unit, CLAIM.c.origin_room.in_(tuple(rooms)),
         CLAIM.c.part.in_(PROFILE_PARTS), CLAIM.c.state.in_(("live", "awaiting_weighing")),
-        CLAIM.c.exposure == "external", sa.func.cardinality(CLAIM.c.excluded_persons) == 0,
+        CLAIM.c.exposure == "external", sa.func.cardinality(CLAIM.c.excluded_identities) == 0,
         visible_to_reads(CLAIM),
-        sa.true() if people is None else CLAIM.c.persons.contained_by(list(people)),
+        sa.true() if people is None else CLAIM.c.identities.contained_by(list(people)),
     ).order_by(CLAIM.c.id))).mappings()
     return [dict(row) for row in rows]

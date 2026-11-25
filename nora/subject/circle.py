@@ -237,7 +237,7 @@ class CircleMemory:
             sources[key] = Source(key, 'record', unit, (person,), text)
             relation = Relation(f'circle-preference-{i}', person_entity.key,
                 'likes' if i == 0 else 'dislikes', topic.key, 'notebook', unit,
-                persons=(person,), asserted_at=datetime.fromtimestamp(stamp / 1000, UTC))
+                identities=(person,), asserted_at=datetime.fromtimestamp(stamp / 1000, UTC))
             evidence = Evidence(key, relation_id=relation.id, span=text)
             admission = await self.graph.stage_and_admit(
                 entities=(topic,) if i == 0 else (),
@@ -248,7 +248,7 @@ class CircleMemory:
             if admission.refused:
                 raise ValueError(f'generated preference refused: {admission.refused}')
             record = Relation(f'circle-authorship-{i}', key, 'authored_by',
-                person_entity.key, 'record', unit, persons=(person,),
+                person_entity.key, 'record', unit, identities=(person,),
                 asserted_at=datetime.fromtimestamp(stamp / 1000, UTC))
             admitted_record = await self.graph.stage_and_admit(entities=(), relations=(record,),
                 evidence=(Evidence(key, relation_id=record.id, span=text),), sources=sources)

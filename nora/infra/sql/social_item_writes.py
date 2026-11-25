@@ -68,7 +68,7 @@ class SocialItemWrites:
             else:
                 for unit in await reg.scope.person_units(person) or (None,):
                     inserted = await reg.insert_once(
-                        conn, SOCIAL_ITEM, stmt, unit=unit, persons=(person,),
+                        conn, SOCIAL_ITEM, stmt, unit=unit, identities=(person,),
                         occurred_at=item.taken_at, cues=graph_item_cues(item.caption),
                     )
                     wrote |= inserted is not None
@@ -121,7 +121,7 @@ class SocialItemWrites:
             values = {
                 **values, "recorded_at": now,
                 **await reg.planes(
-                    conn, table, unit=unit, occurred_at=now, persons=(person,),
+                    conn, table, unit=unit, occurred_at=now, identities=(person,),
                     key=(values["id"],) if "id" in values else None,
                 ),
             }

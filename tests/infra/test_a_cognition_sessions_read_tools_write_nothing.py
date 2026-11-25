@@ -409,7 +409,7 @@ async def world(request, engine, tmp_path):
                 await conn.execute(sa.insert(REGISTRY).values(id=graph_id, unit="u1", kind="item"))
                 await conn.execute(sa.update(MESSAGES).where(MESSAGES.c.id == mid).values(
                     graph_id=graph_id, unit="u1", origin_room=room.conversation_id,
-                    persons=[who], occurred_at=at, asserted_at=at, valid_from=at,
+                    identities=[who], occurred_at=at, asserted_at=at, valid_from=at,
                 ))
             if i == 0:
                 w.memory_id = graph_id

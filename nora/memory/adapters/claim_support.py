@@ -17,7 +17,7 @@ from nora.infra.sql.cognitive_graph_store import (
 from nora.infra.sql.schema import METADATA
 from nora.memory.domain.registration import ITEM_SOURCES
 
-_SCOPE = ("excluded_persons", "exposure", "lineage")
+_SCOPE = ("excluded_identities", "exposure", "lineage")
 
 
 class SqlClaimSupport:
@@ -30,7 +30,7 @@ class SqlClaimSupport:
         claim = CLAIM.c
         async with self._engine.begin() as conn:
             parent = (await conn.execute(sa.select(
-                claim.persons, claim.origin_room, *(claim[key] for key in _SCOPE),
+                claim.identities, claim.origin_room, *(claim[key] for key in _SCOPE),
             ).where(
                 claim.unit == unit, claim.id == claim_id,
                 claim.state.in_(("live", "awaiting_weighing")), visible_to_reads(CLAIM),
@@ -41,7 +41,7 @@ class SqlClaimSupport:
             last = counted[-1]["occurred_at"] if counted else None
             planes = await self._graph.aggregate_planes(
                 conn, CLAIM_SUPPORT, unit=unit, key=(claim_id,), occurred_at=last,
-                asserted_at=at, persons=parent["persons"], room=parent["origin_room"],
+                asserted_at=at, identities=parent["identities"], room=parent["origin_room"],
                 inputs=(parent, *counted), minimum="internal",
             )
             values = {**planes, "support_count": len(counted), "last_evidenced_at": last}

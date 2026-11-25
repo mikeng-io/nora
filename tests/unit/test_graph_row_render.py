@@ -10,7 +10,7 @@ from nora.memory.adapters.graph_row_render import render_graph_row, render_graph
 from nora.memory.domain.retrieval import (
     EvidenceHandle,
     RetrievedEdge,
-    RetrievedPerson,
+    RetrievedIdentity,
     RetrievedRow,
     RetrievedSupport,
 )
@@ -25,13 +25,13 @@ ITEM = RetrievedRow(
     graph_id="row-1", kind="item", source="messages", basis="observed",
     reasoning=None, confidence=None, occurred_at=EARLIER, asserted_at=NOW,
     valid_from=None, valid_to=None, state="live", origin_room="room", exposure="internal",
-    persons=(RetrievedPerson("fixture-person", "author"),), content="a message",
+    identities=(RetrievedIdentity("fixture-person", "author"),), content="a message",
     edges=(), evidence=(), close_when={}, distance=17, already_shown=True,
 )
 CLAIM = replace(
     ITEM, kind="claim", source=None, part="trait", basis="inferred", reasoning="told",
     confidence="high", occurred_at=None, content="a trait",
-    persons=(RetrievedPerson("fixture-person", "subject"),),
+    identities=(RetrievedIdentity("fixture-person", "subject"),),
     edges=(RetrievedEdge("cites", "row-1", "item-2"),),
     evidence=(EvidenceHandle("item-2"),), support=RetrievedSupport(2, EARLIER),
 )
@@ -56,7 +56,7 @@ CLAIM = replace(
             id="claim",
         ),
         pytest.param(
-            replace(ITEM, kind="intention", basis="committed", state="open", persons=(),
+            replace(ITEM, kind="intention", basis="committed", state="open", identities=(),
                     content={"holds_while": "the room stays open"},
                     close_when={"drop_when": "the pass is cancelled", "deadline": None}),
             "intention: row-1 | basis=committed | occurred=2h ago | asserted=just now"
@@ -66,7 +66,7 @@ CLAIM = replace(
             id="intention",
         ),
         pytest.param(
-            replace(ITEM, kind="entity", basis="computed", state="admitted", persons=(),
+            replace(ITEM, kind="entity", basis="computed", state="admitted", identities=(),
                     content={"name": "a topic"},
                     edges=(RetrievedEdge("about", "claim-2", "row-1"),)),
             "entity: row-1 | basis=computed | occurred=2h ago | asserted=just now"
@@ -75,13 +75,13 @@ CLAIM = replace(
             id="entity",
         ),
         pytest.param(
-            replace(ITEM, kind="aggregate", basis="computed", persons=(), content={}),
+            replace(ITEM, kind="aggregate", basis="computed", identities=(), content={}),
             "aggregate: row-1 | basis=computed | occurred=2h ago | asserted=just now"
             " | state=live | exposure=internal | people=none | edges=none",
             id="aggregate",
         ),
         pytest.param(
-            replace(ITEM, kind="edge", basis="computed", persons=(),
+            replace(ITEM, kind="edge", basis="computed", identities=(),
                     content={"type": "cites", "src_id": "claim-2", "dst_id": "item-2"}),
             "edge: row-1 | basis=computed | occurred=2h ago | asserted=just now | state=live"
             " | exposure=internal"

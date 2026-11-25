@@ -101,7 +101,7 @@ async def _write(
     evidence_at = verdicts[-1]["ended_at"] if verdicts else lesson["asserted_at"]
     planes = await graph.aggregate_planes(
         conn, LESSON_TALLY, unit=unit, key=(claim_id,), occurred_at=evidence_at,
-        asserted_at=asserted_at, persons=lesson["persons"], room=lesson["origin_room"],
+        asserted_at=asserted_at, identities=lesson["identities"], room=lesson["origin_room"],
         inputs=(lesson, *verdicts, *edges), minimum="internal",
     )
     values = {**planes, "support": support, "contradiction": contradiction}

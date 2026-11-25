@@ -210,7 +210,7 @@ async def test_unresolved_open_is_admitted_without_scanning_prior_acts(engine):
     await SqlCognitiveGraph(engine).create(ENTITY, {
         "id": "entity:delivery-person", "unit": PASS.unit, "kind": "entity",
         "basis": "computed", "state": "admitted", "writer": "fixture", "exposure": "internal",
-        "name": PERSON.name, "pointer_kind": "person", "pointer_ref": PERSON.person_id,
+        "name": PERSON.name, "pointer_kind": "identity", "pointer_ref": PERSON.person_id,
     })
     first = await _opened(tool, _scheduled())
 

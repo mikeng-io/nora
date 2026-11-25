@@ -132,7 +132,7 @@ class AggregateWrites:
             occurred_at=occurred_at,
             asserted_at=recorded_at,
             room=row.get("conversation_id"),
-            persons=_participants(row),
+            identities=_participants(row),
             minimum=minimum,
             build_lineage=row.get("build_lineage"),
             inputs=inputs,

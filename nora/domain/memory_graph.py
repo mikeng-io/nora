@@ -276,7 +276,7 @@ class Relation:
     dst: Key
     layer: Layer
     unit: str
-    persons: tuple[str, ...] = ()
+    identities: tuple[str, ...] = ()
     valid_from: datetime | None = None
     valid_to: datetime | None = None
     asserted_at: datetime = field(kw_only=True)
@@ -330,14 +330,14 @@ class Source:
     key: Key
     layer: Layer
     unit: str
-    persons: tuple[str, ...] = ()
+    identities: tuple[str, ...] = ()
     text: str = ""
 
 
 def validate_relation(
     relation: Relation, evidence: tuple[Evidence, ...], sources: Mapping[Key, Source]
 ) -> RefusalReason | None:
-    """Pure admission check; persons are restrictions, so may narrow, never widen."""
+    """Pure admission check; identities are restrictions, so may narrow, never widen."""
     rule = RELATION_RULES.get(relation.rel)
     if rule is None:
         return "vocabulary"
@@ -355,7 +355,7 @@ def validate_relation(
             return "notebook_evidence"
         if item.span is not None and not contains_source_span(item.span, source.text):
             return "span_not_in_source"
-        if source.unit != relation.unit or not set(source.persons) <= set(relation.persons):
+        if source.unit != relation.unit or not set(source.identities) <= set(relation.identities):
             return "scope_wider_than_evidence"
     return None
 
@@ -381,7 +381,7 @@ class Admission:
 @dataclass(frozen=True)
 class Walk:
     unit: str
-    persons: frozenset[str]
+    identities: frozenset[str]
     depth: int = 2
     nodes: int = 100
     fan_out: int = 20
@@ -422,8 +422,8 @@ class Subgraph:
 
 
 @dataclass(frozen=True)
-class PersonTopicActivity:
-    person: Key
+class IdentityTopicActivity:
+    identity: Key
     evidence_count: int
     first_asserted_at: datetime
     last_asserted_at: datetime
@@ -433,7 +433,7 @@ class PersonTopicActivity:
 @dataclass(frozen=True)
 class TopicActivity:
     status: Literal["ok", "nothing_found", "unavailable"]
-    persons: tuple[PersonTopicActivity, ...] = ()
+    identities: tuple[IdentityTopicActivity, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -474,7 +474,7 @@ class MemoryGraph(Protocol):
         evidence: tuple[Evidence, ...],
         sources: Mapping[Key, Source],
         corrections: tuple[Correction, ...] = (),
-        shown_persons: frozenset[str] = frozenset(),
+        shown_identities: frozenset[str] = frozenset(),
     ) -> Admission: ...
     async def topic_activity(self, *, unit: str, topic: Key, at: datetime) -> TopicActivity:
         """Unit-internal evidence counts of current interests, valid at the supplied clock."""

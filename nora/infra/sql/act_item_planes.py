@@ -38,17 +38,17 @@ async def executor_item_planes(
     stamp = {}
     if parent is not None:
         unit, room = parent["unit"], parent["origin_room"]
-        persons = parent["persons"]
+        identities = parent["identities"]
         stamp = {key: parent[key] for key in _PROVENANCE}
         stamp["act_id"] = parent["id"]
     elif (active is not None and context is not None
           and tag == context.pass_id and room == context.room):
-        unit, persons = context.unit, (active.person,)
+        unit, identities = context.unit, (active.identity,)
         stamp = context.provenance()
     else:
         unit = registration.scope.room_unit(platform, room) if platform else None
-        persons = (person,)
+        identities = (person,)
     planes = await registration.planes(
-        conn, table, unit=unit, occurred_at=at, persons=persons, room=room, key=(row_id,),
+        conn, table, unit=unit, occurred_at=at, identities=identities, room=room, key=(row_id,),
     )
     return {**planes, **stamp}

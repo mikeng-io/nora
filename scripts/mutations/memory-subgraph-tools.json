@@ -9,7 +9,7 @@
  {
   "name": "listed persons cut paths before expansion",
   "file": "nora/domain/memory_admission.py",
-  "old": "            and set(r.persons) <= query.persons",
+  "old": "            and set(r.identities) <= query.identities",
   "new": "",
   "target": "tests/contract/test_memory_graph_contract.py::test_unit_and_listed_rules_cut_nonentity_intermediates[fake]"
  },
@@ -45,7 +45,7 @@
   "name": "presence includes endpoint people without audience restrictions",
   "file": "nora/domain/memory_admission.py",
   "old": "not subjects <= scope.presence_persons",
-  "new": "not set(r.persons) <= scope.presence_persons",
+  "new": "not set(r.identities) <= scope.presence_persons",
   "target": "tests/contract/test_memory_graph_contract.py::test_tool_scope_cuts_path_at_evidence[fake-presence_unrestricted]"
  },
  {

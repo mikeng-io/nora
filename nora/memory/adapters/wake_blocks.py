@@ -41,7 +41,7 @@ def wake_blocks(
     corrections = tuple(
         s for s in stimuli
         if s.kind == "strong_cue" and "addresses_nora" in s.cues
-        and s.person not in (None, "nora") and rows[s.graph_id].kind == "item"
+        and s.identity not in (None, "nora") and rows[s.graph_id].kind == "item"
     )
     verdicts = tuple(
         s for s in stimuli

@@ -320,7 +320,7 @@ async def sql_answer(
 ) -> list[str]:
     query = Walk(
         unit=question["unit"],
-        persons=frozenset(question["persons"]),
+        identities=frozenset(question["persons"]),
         # Both arms exclude record edges, including the seed's depth-0 edges.
         layers=("rollup", "notebook"),
         depth=3,

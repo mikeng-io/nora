@@ -152,7 +152,7 @@ async def test_catch_up_preserves_reminder_unit_scope_and_selected_graph_anchors
         graph_fetched=GraphFetched(), shown_keys=set())
     await memory.prepare(state, {9: pending}, SimpleNamespace(records={}, rollups={}))
     assert ("event", "e1") in walked[0][0]
-    assert walked[0][1].persons == frozenset({"p1"})
+    assert walked[0][1].identities == frozenset({"p1"})
 
 
 @pytest.mark.asyncio
@@ -208,7 +208,7 @@ async def test_prepared_input_hash_ignores_source_and_person_iteration_order():
         sources = [Source(("social", "first"), "record", "u1", persons, text),
                    Source(("social", "second"), "record", "u1", persons, "Generated second")]
         if reverse:
-            sources = [replace(source, persons=tuple(reversed(source.persons)))
+            sources = [replace(source, identities=tuple(reversed(source.identities)))
                        for source in reversed(sources)]
         records = InMemoryComprehendRecords()
         records.items["social", "generated-read"] = ComprehendItem(

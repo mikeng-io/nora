@@ -45,13 +45,13 @@ class SqlMemoryIntake:
         self._registration = registration
         self._graph = graph
 
-    async def claim_persons(self, *, unit: str, claim_id: str) -> tuple[str, ...] | None:
+    async def claim_identities(self, *, unit: str, claim_id: str) -> tuple[str, ...] | None:
         """Who a claim of this unit is about, or `None` when the unit holds no such claim."""
         async with self._engine.connect() as conn:
-            row = (await conn.execute(sa.select(CLAIM.c.persons).where(
+            row = (await conn.execute(sa.select(CLAIM.c.identities).where(
                 CLAIM.c.unit == unit, CLAIM.c.id == claim_id,
             ))).first()
-        return None if row is None else tuple(row.persons or ())
+        return None if row is None else tuple(row.identities or ())
 
     async def forget(
         self, *, unit: str, author: str, targets: Sequence[str], at: datetime,
@@ -62,14 +62,15 @@ class SqlMemoryIntake:
         blocked: list[BlockedTarget] = []
         async with self._engine.begin() as conn:
             planes = await self._registration.planes(
-                conn, FORGET_REQUEST, unit=unit, occurred_at=at, persons=(author,),
+                conn, FORGET_REQUEST, unit=unit, occurred_at=at, identities=(author,),
             )
             await conn.execute(sa.insert(FORGET_REQUEST).values(
                 **planes, author=author, targets=list(targets), delete_now=delete_now,
             ))
             graph_id: str = planes["graph_id"]
             await conn.execute(sa.update(CLAIM).where(
-                CLAIM.c.unit == unit, CLAIM.c.id.in_(targets), sa.any_(CLAIM.c.persons) == author,
+                CLAIM.c.unit == unit, CLAIM.c.id.in_(targets),
+                sa.any_(CLAIM.c.identities) == author,
                 CLAIM.c.state != "tombstoned",
             ).values(state="hidden"))
             if delete_now:
@@ -91,11 +92,11 @@ class SqlMemoryIntake:
     ) -> str:
         async with self._engine.begin() as conn:
             claim = (await conn.execute(sa.select(
-                CLAIM.c.persons, CLAIM.c.state, CLAIM.c.origin_room,
+                CLAIM.c.identities, CLAIM.c.state, CLAIM.c.origin_room,
             ).where(CLAIM.c.unit == unit, CLAIM.c.id == claim_id).with_for_update()
             )).mappings().one()
             planes = await self._registration.planes(
-                conn, DISPUTE, unit=unit, occurred_at=at, persons=(author,),
+                conn, DISPUTE, unit=unit, occurred_at=at, identities=(author,),
                 room=claim["origin_room"],
             )
             await conn.execute(sa.insert(DISPUTE).values(
@@ -105,7 +106,7 @@ class SqlMemoryIntake:
             if claim["state"] not in {"hidden", "tombstoned"}:
                 await conn.execute(sa.update(CLAIM).where(
                     CLAIM.c.id == claim_id, CLAIM.c.unit == unit,
-                ).values(state="hidden" if author in claim["persons"] else "awaiting_weighing"))
+                ).values(state="hidden" if author in claim["identities"] else "awaiting_weighing"))
             if dependents := await dependent_claims(conn, unit, claim_id):
                 await SqlGraphStimuli.append_in(conn, GraphStimulus(
                     unit, "dependency", claim_id, at, "dispute",

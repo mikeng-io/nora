@@ -19,7 +19,7 @@ def graph_stimulus_table(metadata: sa.MetaData) -> sa.Table:
         ),
         sa.Column("source", sa.Text, nullable=False),
         sa.Column("room", sa.Text),
-        sa.Column("person", sa.Text),
+        sa.Column("identity", sa.Text),
         sa.Column("cues", ARRAY(sa.Text), nullable=False, server_default="{}"),
         sa.Column("revision_id", sa.Text),
         sa.Column("dependents", ARRAY(sa.Text), nullable=False, server_default="{}"),

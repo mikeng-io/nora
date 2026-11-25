@@ -56,7 +56,7 @@ class RegisterGraphLinks:
             (source,),
             Walk(
                 unit=unit,
-                persons=frozenset(p for s in sources.values() for p in s.persons),
+                identities=frozenset(p for s in sources.values() for p in s.identities),
                 depth=1,
                 nodes=100,
                 fan_out=20,
@@ -106,7 +106,7 @@ class RegisterGraphLinks:
                     target,
                     "notebook",
                     unit,
-                    tuple(sorted({p for s in sources.values() for p in s.persons})),
+                    tuple(sorted({p for s in sources.values() for p in s.identities})),
                     asserted_at=at,
                     written_by=f"cognition:register:{session_id}",
                 )

@@ -270,8 +270,8 @@ def _history_scope(table: str, unit: str, rooms: tuple[tuple[str, str], ...],
             image["origin_room"].astext.in_(tuple(room_key(p, r) for p, r in rooms)),
             image["part"].astext.in_(memory.wire.PROFILE_PARTS),
             image["exposure"].astext == "external",
-            image["excluded_persons"] == sa.cast(sa.literal("[]"), image.type),
-            image["persons"].contained_by(people),
+            image["excluded_identities"] == sa.cast(sa.literal("[]"), image.type),
+            image["identities"].contained_by(people),
         )
     if table == "legacy_relation_evidence":
         relation = METADATA.tables["legacy_relation"]

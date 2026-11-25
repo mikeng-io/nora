@@ -424,7 +424,7 @@ class _RunState:
     #: `@person:` handles a statement may name (the `shown_keys` rule, one
     #: axis over). The agenda's rendered rows are read back at `propose`;
     #: a read tool's handed-out rows add theirs in `on_rows`.
-    shown_persons: set[str] = field(default_factory=set)
+    shown_identities: set[str] = field(default_factory=set)
     #: `object` handles this session was actually shown, to the room the
     #: grounder read them from — the only refs a note's `object_refs` may
     #: name (the `shown_keys` rule, one axis over).
@@ -1594,7 +1594,7 @@ class CognitionSessionRunner:
             lookups = LookupState(state.graph_fetched, unit, state.session_id,
                 self._memory.records, self._metrics, self._memory.private_names,
                 persons=tuple({p for v in state.memory_items.values()
-                               for source in v.sources for p in source.persons}),
+                               for source in v.sources for p in source.identities}),
                 shown_keys=state.shown_keys,
                 shown_relations=state.shown_relations,
                 scopes=tuple(Scope(ScopeKind.ROOM, room_scope_id(r.platform, r.conversation_id))
@@ -1607,7 +1607,7 @@ class CognitionSessionRunner:
                     if r.body is None:
                         continue
                     if r.person_id:
-                        state.shown_persons.add(r.person_id)
+                        state.shown_identities.add(r.person_id)
                     state.graph_fetched.show(Source(
                         ("message", str(r.id)), "record", unit,
                         (r.person_id,) if r.person_id else (),

@@ -139,7 +139,7 @@ async def project_about(
             # Every citation must be eligible here; dropping one would lose its restriction.
             continue
         restricted = tuple(sorted(
-            set(persons) | {p for s in unit_sources.values() for p in s.persons}
+            set(persons) | {p for s in unit_sources.values() for p in s.identities}
         ))
         for dst in {(r.dst_kind, r.dst_id) for r in about}:
             await _about_relation(

@@ -14,6 +14,11 @@ from nora.domain.lineage import ROW, Lineage, LineageEntry
 Exposure = Literal["external", "internal", "operator"]
 SourceKind = Literal["page", "account", "place"]
 _EXPOSURE = ("external", "internal", "operator")
+DEPLOYED_ROLLUP_PERSONS = frozenset({"rollup_colocation", "rollup_outing"})
+
+
+def identities_column(table: str) -> str:
+    return "persons" if table in DEPLOYED_ROLLUP_PERSONS else "identities"
 
 
 class StaleBaseError(Exception):
@@ -30,7 +35,7 @@ def aggregate_graph_id(
 
 @dataclass(frozen=True, slots=True)
 class InputScope:
-    excluded_persons: tuple[str, ...]
+    excluded_identities: tuple[str, ...]
     exposure: Exposure
     lineage: Lineage
 
@@ -49,7 +54,7 @@ def inherited_scope(
     lineage = build_lineage
     exposure = minimum
     for source in inputs:
-        exclusions.update(source.excluded_persons)
+        exclusions.update(source.excluded_identities)
         exclusions.update(_excluded(source.lineage.section(ROW)))
         if _EXPOSURE.index(source.exposure) > _EXPOSURE.index(exposure):
             exposure = source.exposure

@@ -72,7 +72,7 @@ class EvidenceHandle:
 
 
 @dataclass(frozen=True, slots=True)
-class RetrievedPerson:
+class RetrievedIdentity:
     id: str | None
     role: str
 
@@ -111,7 +111,7 @@ class RetrievedRow:
     state: str
     origin_room: str | None
     exposure: str
-    persons: tuple[RetrievedPerson, ...]
+    identities: tuple[RetrievedIdentity, ...]
     content: object
     edges: tuple[RetrievedEdge, ...]
     evidence: tuple[EvidenceHandle, ...]

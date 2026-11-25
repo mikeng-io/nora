@@ -44,9 +44,9 @@ def _open(*, form: IntentionForm = "achieve", **changes) -> dict:
         "op": "open", "form": form, "delivery": "when_it_comes_up",
         "owner": "nora", "owed_to": PERSON.person_id, "citations": ["item-1"],
         "condition": {
-            "form": "person_event",
+            "form": "identity_event",
             "value": {
-                "person_id": PERSON.person_id, "platform": "signal",
+                "identity_id": PERSON.person_id, "platform": "signal",
                 "room": "room-1", "text": _TEXT,
             },
         },
@@ -79,7 +79,7 @@ async def _witness(engine):
         await conn.execute(sa.insert(MESSAGES).values(
             graph_id=_WITNESS, unit=PASS.unit, platform="signal", conversation_id="room-1",
             origin_room="room-1", conversation_type="group", sender_id=ACCOUNT, ts=2000,
-            person_id=PERSON.person_id, persons=[PERSON.person_id], body=_TEXT,
+            person_id=PERSON.person_id, identities=[PERSON.person_id], body=_TEXT,
         ))
     await _health(engine, "signal", "up", unit=PASS.unit)
 
@@ -88,16 +88,16 @@ async def test_open_stamps_pass_provenance_and_computes_people_links(engine):
     await SqlCognitiveGraph(engine).create(ENTITY, {
         "id": "entity:person", "unit": PASS.unit, "kind": "entity", "basis": "computed",
         "state": "admitted", "writer": "fixture", "exposure": "internal",
-        "name": PERSON.name, "pointer_kind": "person", "pointer_ref": PERSON.person_id,
+        "name": PERSON.name, "pointer_kind": "identity", "pointer_ref": PERSON.person_id,
     })
     async with engine.begin() as conn:
         await conn.execute(sa.update(MESSAGES).where(MESSAGES.c.graph_id == "item-1").values(
-            exposure="internal", excluded_persons=["generated-exclusion"],
+            exposure="internal", excluded_identities=["generated-exclusion"],
         ))
     graph_id = await _opened(_tool(engine))
     row = (await _rows(engine, INTENTION))[graph_id]
     assert row["exposure"] == "internal"
-    assert row["excluded_persons"] == ["generated-exclusion"]
+    assert row["excluded_identities"] == ["generated-exclusion"]
     assert row["state"] == "open"
     assert {name: row[name] for name in _CONTEXT.provenance()} == _CONTEXT.provenance()
     assert {(r["type"], r["dst_id"], r["basis"]) for r in (await _rows(engine, EDGE)).values()} == {
@@ -343,7 +343,7 @@ async def test_a_called_revision_carries_only_live_inferred_about_and_derives_pe
     from tests.infra.test_room_busy import service, slots
 
     await scenario.item("observed-source")
-    await scenario.entity("fixture-person-pointer", pointer_kind="person", pointer_ref=MEMBER)
+    await scenario.entity("fixture-person-pointer", pointer_kind="identity", pointer_ref=MEMBER)
     result = await _wake_tools(
         scenario, topic("live-topic"), topic("retired-topic"),
         opening(citations=["observed-source"], owed_to=MEMBER,

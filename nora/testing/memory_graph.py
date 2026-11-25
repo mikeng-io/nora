@@ -10,8 +10,8 @@ from nora.domain.memory_graph import (
     Correction,
     Entity,
     Evidence,
+    IdentityTopicActivity,
     Key,
-    PersonTopicActivity,
     Relation,
     Source,
     Subgraph,
@@ -42,7 +42,7 @@ class FakeMemoryGraph(AdmissionState):
         evidence: tuple[Evidence, ...],
         sources: Mapping[Key, Source],
         corrections: tuple[Correction, ...] = (),
-        shown_persons: frozenset[str] = frozenset(),
+        shown_identities: frozenset[str] = frozenset(),
     ) -> Admission:
         return await self._admit(
             entities=entities,
@@ -50,7 +50,7 @@ class FakeMemoryGraph(AdmissionState):
             evidence=evidence,
             sources=sources,
             corrections=corrections,
-            shown_persons=shown_persons,
+            shown_identities=shown_identities,
         )
 
     async def walk(self, seeds: tuple[Key, ...], query: Walk) -> Subgraph:
@@ -75,17 +75,17 @@ class FakeMemoryGraph(AdmissionState):
                 for e in self.evidence:
                     if e.relation_id == r.id:
                         grouped.setdefault(r.src, []).append((r.asserted_at, e.source))
-        persons = tuple(
-            PersonTopicActivity(
-                person,
+        identities = tuple(
+            IdentityTopicActivity(
+                identity,
                 len(rows),
                 min(t for t, _ in rows),
                 max(t for t, _ in rows),
                 tuple(sorted({k for _, k in rows})),
             )
-            for person, rows in sorted(grouped.items())
+            for identity, rows in sorted(grouped.items())
         )
-        return TopicActivity("ok" if persons else "nothing_found", persons)
+        return TopicActivity("ok" if identities else "nothing_found", identities)
 
     async def aliases(self, *, unit: str) -> Mapping[str, Key]:
         return {

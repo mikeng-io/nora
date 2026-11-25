@@ -107,7 +107,7 @@ class RollupFixture:
                 MESSAGES,
                 unit=self.unit,
                 occurred_at=at,
-                persons=(person,),
+                identities=(person,),
                 room=room,
                 own=True,
             )
@@ -153,7 +153,7 @@ class RollupFixture:
                 PRESENCE_FIXES,
                 unit=self.unit,
                 occurred_at=epoch_ms(at_ms),
-                persons=(person,),
+                identities=(person,),
                 own=True,
             )
             await conn.execute(

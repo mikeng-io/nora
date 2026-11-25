@@ -110,14 +110,14 @@ def _own_statement(
 ) -> bool:
     return row.reasoning == "told" and any(
         author.role == "author" and author.id in people
-        for item in items for author in item.persons
+        for item in items for author in item.identities
     )
 
 
 def _order(row: RetrievedRow, items: Mapping[str, RetrievedRow]) -> tuple[int, bool, float]:
     if row.reasoning == "told":
         subjects = {
-            person.id for person in row.persons
+            person.id for person in row.identities
             if person.role == "subject" and person.id is not None
         }
         precedence = int(not _own_statement(row, _cited_items(row, items), subjects))

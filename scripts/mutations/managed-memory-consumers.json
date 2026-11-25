@@ -51,7 +51,7 @@
  {
   "name": "later transcript sources contribute their private person names before egress",
   "file": "nora/agent/comprehend_tools.py",
-  "old": "        for source in self._state.fetched.sources.values():\n            people.update(source.persons)\n",
+  "old": "        for source in self._state.fetched.sources.values():\n            people.update(source.identities)\n",
   "new": "        people.update(())\n",
   "target": "tests/unit/test_managed_memory_scope.py::test_managed_source_names_are_screened_live_before_external_reads"
  },

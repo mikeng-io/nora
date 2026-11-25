@@ -27,8 +27,8 @@ from nora.domain.memory_graph import (
     Correction,
     Entity,
     Evidence,
+    IdentityTopicActivity,
     Key,
-    PersonTopicActivity,
     Relation,
     Source,
     Subgraph,
@@ -218,7 +218,7 @@ def walk_parameters(seeds: tuple[Key, ...], query: Walk) -> dict[str, Any]:
         "ids": [i for _, i in seeds],
         "unit": query.unit,
         "scoped": query.scope is not None,
-        "persons": sorted(query.persons),
+        "persons": sorted(query.identities),
         "layers": list(query.layers),
         "rels": list(query.relations),
         "at": query.valid_at,
@@ -308,13 +308,14 @@ def relation_row(row: Mapping[Any, Any]) -> Relation:
     values = dict(row)
     values["src"] = (values.pop("src_kind"), values.pop("src_id"))
     values["dst"] = (values.pop("dst_kind"), values.pop("dst_id"))
-    values["persons"] = tuple(values["persons"])
+    values["identities"] = tuple(values.pop("persons"))
     values["created_at"] = None
     return Relation(**values)
 
 
 def relation_values(relation: Relation) -> dict[str, Any]:
     values = asdict(relation)
+    values["persons"] = values.pop("identities")
     values.pop("src")
     values.pop("dst")
     values.update(
@@ -408,7 +409,7 @@ class SqlMemoryGraph:
         evidence: tuple[Evidence, ...],
         sources: Mapping[Key, Source],
         corrections: tuple[Correction, ...] = (),
-        shown_persons: frozenset[str] = frozenset(),
+        shown_identities: frozenset[str] = frozenset(),
     ) -> Admission:
         async with self.engine.begin() as conn:
             # ponytail: serialize admission globally; use per-unit advisory locks
@@ -447,7 +448,7 @@ class SqlMemoryGraph:
                 evidence=evidence,
                 sources=sources,
                 corrections=corrections,
-                shown_persons=shown_persons,
+                shown_identities=shown_identities,
             )
             for e in admitted.entities:
                 await upsert_entity(conn, e)
@@ -615,17 +616,17 @@ class SqlMemoryGraph:
             grouped: dict[Key, list[Any]] = {}
             for row in rows:
                 grouped.setdefault((row.src_kind, row.src_id), []).append(row)
-            persons = tuple(
-                PersonTopicActivity(
-                    person,
+            identities = tuple(
+                IdentityTopicActivity(
+                    identity,
                     len(items),
                     min(r.asserted_at for r in items),
                     max(r.asserted_at for r in items),
                     tuple(sorted({(r.source_kind, r.source_id) for r in items})),
                 )
-                for person, items in sorted(grouped.items())
+                for identity, items in sorted(grouped.items())
             )
-            return TopicActivity("ok" if persons else "nothing_found", persons)
+            return TopicActivity("ok" if identities else "nothing_found", identities)
         except (SQLAlchemyError, OSError, TimeoutError):
             return TopicActivity("unavailable")
 
@@ -674,7 +675,7 @@ class SqlMemoryGraph:
                     await conn.execute(
                         sa.select(LEGACY_RELATION).where(
                             LEGACY_RELATION.c.unit == query.unit,
-                            LEGACY_RELATION.c.persons.contained_by(sorted(query.persons)),
+                            LEGACY_RELATION.c.persons.contained_by(sorted(query.identities)),
                             sa.or_(LEGACY_RELATION.c.id.in_(ids), seed_edges),
                         )
                     )

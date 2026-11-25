@@ -130,7 +130,7 @@ class SqlStoredRows:
         ids = await _ids(conn, table, count)
         changes, copies = [], []
         unscoped = 0
-        for row, (units, origin, persons) in inputs:
+        for row, (units, origin, identities) in inputs:
             if not units:
                 unscoped += 1
                 continue
@@ -138,7 +138,7 @@ class SqlStoredRows:
             for index, unit in enumerate(units):
                 key = original if index == 0 else (next(ids),)
                 values = self._items.values(
-                    name, row, unit=unit, key=key, origin=origin, persons=persons,
+                    name, row, unit=unit, key=key, origin=origin, identities=identities,
                 )
                 if index == 0:
                     changes.append({**values, **{

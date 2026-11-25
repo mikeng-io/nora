@@ -28,7 +28,9 @@ from tests.infra.test_intention_verify import _Errors
 from tests.infra.test_item_registration import _AT
 
 _DEADLINE = _AT + timedelta(minutes=10)
-_CONDITION = {"person_id": "fixture-person", "platform": "signal", "room": "room-1", "text": "Yes."}
+_CONDITION = {
+    "identity_id": "fixture-person", "platform": "signal", "room": "room-1", "text": "Yes.",
+}
 
 
 async def _tick(engine, now):
@@ -50,7 +52,7 @@ async def _stimuli(engine):
 async def test_every_ended_achieve_head_has_one_verdict_and_stimulus(engine):
     for id_ in ("achieved", "leaked", "before-drop"):
         await _intention(
-            engine, id_, "person_event", _CONDITION, unit="u", origin_room="signal:room-1",
+            engine, id_, "identity_event", _CONDITION, unit="u", origin_room="signal:room-1",
             deadline=_DEADLINE,
         )
     await _intention(
@@ -63,7 +65,7 @@ async def test_every_ended_achieve_head_has_one_verdict_and_stimulus(engine):
     async with engine.begin() as conn:
         await conn.execute(sa.update(MESSAGES).where(MESSAGES.c.graph_id == "item-1").values(
             body=_CONDITION["text"], asserted_at=_AT + timedelta(seconds=5),
-            excluded_persons=["generated-witness-exclusion"],
+            excluded_identities=["generated-witness-exclusion"],
         ))
         await conn.execute(sa.update(INTENTION).where(INTENTION.c.id == "leaked").values(
             done_when={**_CONDITION, "text": "Generated unmatched reply"},
@@ -86,8 +88,8 @@ async def test_every_ended_achieve_head_has_one_verdict_and_stimulus(engine):
         ending: ending for ending in ("achieved", "dropped", "leaked", "unknown")
     }
     assert verdicts["achieved"]["witness_id"] == "item-1"
-    assert verdicts["achieved"]["excluded_persons"] == ["generated-witness-exclusion"]
-    assert verdicts["achieved"]["condition_form"] == "person_event"
+    assert verdicts["achieved"]["excluded_identities"] == ["generated-witness-exclusion"]
+    assert verdicts["achieved"]["condition_form"] == "identity_event"
     assert verdicts["leaked"]["witness_id"] is None
     assert verdicts["leaked"]["ended_at"] == _DEADLINE
     assert (await _rows(engine, INTENTION))["maintain"]["ending"] == "dropped"
@@ -97,7 +99,7 @@ async def test_every_ended_achieve_head_has_one_verdict_and_stimulus(engine):
     assert {s.graph_id for s in stimuli} == set(by_id)
     for s in stimuli:
         row = by_id[s.graph_id]
-        assert (s.source, s.occurrence, s.eligible_at, s.room, s.person) == (
+        assert (s.source, s.occurrence, s.eligible_at, s.room, s.identity) == (
             "verify", "", now, row["origin_room"], row["owed_to"],
         )
 
@@ -131,13 +133,14 @@ async def test_verdict_is_citable_as_an_aggregate_in_admission(engine):
 
 async def test_operator_verdict_is_rebuilt_without_publishing_a_stimulus(engine):
     await _clock_end(
-        engine, id_="operator-only", exposure="operator", excluded_persons=["generated-exclusion"],
+        engine, id_="operator-only", exposure="operator",
+        excluded_identities=["generated-exclusion"],
     )
     await _clock_end(engine)
     await _tick(engine, datetime.now(UTC))
     expected = await _verdicts(engine)
     assert expected["operator-only"]["exposure"] == "operator"
-    assert expected["operator-only"]["excluded_persons"] == ["generated-exclusion"]
+    assert expected["operator-only"]["excluded_identities"] == ["generated-exclusion"]
     assert {s.graph_id for s in await _stimuli(engine)} == {expected["due"]["graph_id"]}
     async with engine.begin() as conn:
         await conn.execute(sa.delete(INTENTION_VERDICT))

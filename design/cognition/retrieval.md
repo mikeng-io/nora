@@ -7,7 +7,7 @@ first, resolve what is asked once, find seeds, walk edges, load current rows.
 
 | step | actor | does |
 |---|---|---|
-| **scope** | code | fixes the unit, room, persons, exclusions and exposure the read may see, before any search |
+| **scope** | code | fixes the unit, room, identities, exclusions and exposure the read may see, before any search |
 | **resolve** | model | turns "that image", "we", "back then" into a reference with handles, time constraints and what stays ambiguous |
 | **seed** | code | exact references first, then keyword and vector search inside the scope |
 | **walk** | code | follows edges from the seeds, bounded in depth, fan-out, rows and time |
@@ -39,7 +39,7 @@ model-chosen anchors. Both return the same shape.
   reflection has revised it.
 - Raw location fixes are never indexed; only computed episodes such as stays
   and trips are a read surface.
-- Structural edges support evidence lookup; a person is never a fan-out to
+- Structural edges support evidence lookup; an identity is never a fan-out to
   everything they wrote.
 - Current content comes from the row's table, so stale index text cannot
   revive a retired claim.

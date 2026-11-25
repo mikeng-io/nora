@@ -221,7 +221,7 @@ def _fresh_links(rows: FromClause, distances: Mapping[str, int]) -> FromClause:
     tagged = rows.alias("item_about").c
     claim_src, claim_dst, claim_type = _endpoints(about)
     item_src, item_dst, item_type = _endpoints(tagged)
-    person = anchor.image["pointer_ref"].astext
+    identity = anchor.image["pointer_ref"].astext
     matches_tag = sa.exists(sa.select(1).where(
         tagged.source == "edge", tagged.state == "live", item_type == "about",
         item_src == item.graph_id, item_dst == anchor.graph_id,
@@ -234,6 +234,6 @@ def _fresh_links(rows: FromClause, distances: Mapping[str, int]) -> FromClause:
         item.asserted_at > claim.asserted_at,
         about.source == "edge", about.state == "live", claim_type == "about",
         claim_src == claim.graph_id, claim_dst == anchor.graph_id, anchor.source == "entity",
-        matches_tag | ((anchor.image["pointer_kind"].astext == "person")
-                       & item.image["persons"].op("?")(person)),
+        matches_tag | ((anchor.image["pointer_kind"].astext == "identity")
+                       & item.image["identities"].op("?")(identity)),
     ).distinct().cte("fresh")

@@ -74,6 +74,6 @@ async def _publish(
 ) -> None:
     await SqlGraphStimuli.append_in(conn, GraphStimulus(
         row["unit"], kind, row["id"], at, "clock", row["origin_room"],
-        row.get("owed_to") or next(iter(row["persons"]), None),
+        row.get("owed_to") or next(iter(row["identities"]), None),
         occurrence=at.astimezone(UTC).isoformat(),
     ))

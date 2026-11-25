@@ -135,7 +135,7 @@ class GraphReadTools:
 
     async def _pointer(
         self, reading: ReadingRoom, concerns: frozenset[str], historical: datetime | None,
-        person: str, *, ceiling: datetime | None = None,
+        identity: str, *, ceiling: datetime | None = None,
     ) -> str | None:
         target, scope, dm_rooms = await self._access.authority(reading, concerns, historical)
         async with self._engine.connect() as raw:
@@ -143,8 +143,8 @@ class GraphReadTools:
             rows = (await scoped_rows(conn, scope, target, dm_rooms, ceiling=ceiling)).c
             return cast(str | None, await conn.scalar(sa.select(rows.graph_id).where(
                 rows.kind == "entity", rows.state == "admitted",
-                rows.image["pointer_kind"].astext == "person",
-                rows.image["pointer_ref"].astext == person,
+                rows.image["pointer_kind"].astext == "identity",
+                rows.image["pointer_ref"].astext == identity,
             ).order_by(rows.graph_id).limit(1)))
 
 

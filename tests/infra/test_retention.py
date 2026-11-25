@@ -204,7 +204,7 @@ async def test_prune_skips_a_referenced_message_and_finishes_both_sweeps(engine,
         assert endpoint["state"] == "live"
         assert endpoint["content_hash"] is endpoint["tombstoned_at"] is None
     coverage = (await _rows(engine, EXPIRED_COVERAGE)).values()
-    assert {(r["source"], r["person"], r["from"], r["to"]) for r in coverage} == {
+    assert {(r["source"], r["identity"], r["from"], r["to"]) for r in coverage} == {
         ("messages", _PERSON, epoch_ms(_MS + 1), epoch_ms(_MS + 2)),
         ("messages", _PERSON, epoch_ms(_MS + day + 1), epoch_ms(_MS + day + 1)),
     }
@@ -268,8 +268,8 @@ async def test_closed_by_witness_survives_message_retention(engine):
     writer = _Writer(engine, _registration())
     store = SqlRecordStore(engine, registration=writer.registration, max_per_conversation=0)
     text = "Generated acceptance."
-    await _intention(engine, "target", "person_event", {
-        "person_id": _PERSON, "platform": "signal", "room": _ROOM, "text": text,
+    await _intention(engine, "target", "identity_event", {
+        "identity_id": _PERSON, "platform": "signal", "room": _ROOM, "text": text,
     })
     await _health(engine, "signal", "up")
     await store.append(message=replace(writer._message(), body=text), person_id=_PERSON)
@@ -294,7 +294,7 @@ async def test_presence_sweep_records_the_exact_span_of_the_batch(engine):
         assert (await _registry(engine, ids[at], record.unit))["occurred_at"] == epoch_ms(at)
         assert (await _registry(engine, ids[at], record.unit))["state"] == "tombstoned"
     coverage = (await _rows(engine, EXPIRED_COVERAGE)).values()
-    assert [(r["unit"], r["source"], r["person"], r["from"], r["to"]) for r in coverage] == [
+    assert [(r["unit"], r["source"], r["identity"], r["from"], r["to"]) for r in coverage] == [
         (record.unit, "presence_fixes", person, _AT, _AT + timedelta(seconds=90)),
     ]
 
@@ -315,8 +315,10 @@ async def test_predicate_is_unknown_over_expired_witness_input(engine):
 
 
 async def test_person_event_is_unknown_after_its_matching_message_expires(engine):
-    value = {"person_id": _PERSON, "platform": "signal", "room": _ROOM, "text": "Generated answer."}
-    await _intention(engine, "waiting", "person_event", value)
+    value = {
+        "identity_id": _PERSON, "platform": "signal", "room": _ROOM, "text": "Generated answer.",
+    }
+    await _intention(engine, "waiting", "identity_event", value)
     await _health(engine, "signal", "up")
     writer = _Writer(engine, _registration())
     store = SqlRecordStore(engine, registration=writer.registration, max_per_conversation=0)
@@ -324,7 +326,7 @@ async def test_person_event_is_unknown_after_its_matching_message_expires(engine
     async with engine.begin() as conn:
         batch = SqlIntentionBatch(conn, SqlCognitiveGraph(engine))
         (row,) = await batch.open()
-        condition = decode_condition("person_event", value)
+        condition = decode_condition("identity_event", value)
         assert (await batch.evaluate(row, condition)).truth == "true"
     assert await store.prune_all() == 1
     async with engine.begin() as conn:
@@ -347,7 +349,7 @@ async def test_rebuilt_healthy_silence_is_absence_only_for_the_person_without_ex
     report = await record.runner.run(build_id=rebuilt, through_ms=_END)
     assert report.failed == ()
     stimuli = await SqlGraphStimuli(engine).read(record.unit)
-    assert [s.person for s in stimuli if s.kind == "absence"] == [other]
+    assert [s.identity for s in stimuli if s.kind == "absence"] == [other]
 
 
 
@@ -368,7 +370,7 @@ async def test_expiry_covers_both_people_on_an_observation(engine):
             conn, PLATFORM_OBSERVATION, PLATFORM_OBSERVATION.c.id == row["id"],
         )
     coverage = (await _rows(engine, EXPIRED_COVERAGE)).values()
-    assert {r["person"] for r in coverage} == {_PERSON, other}
+    assert {r["identity"] for r in coverage} == {_PERSON, other}
 
 
 async def test_retention_rolls_back_if_the_memory_index_cannot_drop_a_message(engine):
