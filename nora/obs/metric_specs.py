@@ -28,7 +28,7 @@ from nora.domain.doctrine_check import CHECK_OUTCOMES
 from nora.domain.lessons import LESSONS_OUTCOMES
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
-from nora.domain.memory_admission import GRAPH_BATCH_OUTCOMES, GRAPH_PROJECTION_OUTCOMES
+from nora.domain.memory_admission import GRAPH_PROJECTION_OUTCOMES
 from nora.domain.memory_index import (
     EMBED_OUTCOMES,
     EMBEDDED_KINDS,
@@ -118,11 +118,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_memory_graph_projection_total",
         "Graph projection skips: " + "/".join(GRAPH_PROJECTION_OUTCOMES),
-        ("outcome",),
-    ),
-    _CounterSpec(
-        "nora_memory_graph_batches_total",
-        "Graph batch outcomes: " + "/".join(GRAPH_BATCH_OUTCOMES),
         ("outcome",),
     ),
     _CounterSpec("nora_comprehend_items_total",

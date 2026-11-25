@@ -340,8 +340,8 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         # `SqlEntryStore.held` (the topic-account index) shares the name with
         # the lesson store's held read; both are driven by contract suites.
         "held",
-        # Explicit legacy queue recovery and the graph embedding worker tick.
-        "drain_index_queue", "run_once",
+        # The graph embedding tick shares its name with other workers.
+        "run_once",
         # `SqlObservationStore.current` shares the name with
         # `VersionManifest.current`, `WeatherSource.current` and the two
         # config watchers (`nora/config_reload.py`,

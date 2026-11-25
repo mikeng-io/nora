@@ -1684,7 +1684,7 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
                 environment=environment, overrides=spec.overrides,
                 identity=spec.identity if spec.identity is not None else _deployment_identity(),
                 policy=spec.policy if spec.policy is not None else _deployment_policy(), now=now,
-            ), legacy_replay=spec.entry in {"dreamer", "standing_unit"})
+            ), legacy_replay=port.legacy_replay)
             if spec.judge is not None:
                 spec = dataclasses.replace(spec, judge=spec.judge.bind(subject.cfg))
             from nora.subject.eval_evidence import current, fingerprint
