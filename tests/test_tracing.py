@@ -74,17 +74,18 @@ def test_file_exporter_writes_to_a_path(tmp_path, monkeypatch):
         provider.shutdown()
 
 
-def test_otlp_http_setup_does_not_crash_on_an_unreachable_endpoint():
-    """PROBE: tracing is never load-bearing. Building the OTLP/HTTP exporter is network-free
-    (it only configures a `requests.Session`); later, async export failures never
-    propagate either — they are retried and logged on BatchSpanProcessor's own background
-    thread, never raised here. `StrandsTelemetry.setup_otlp_exporter` has its own internal
-    `try/except Exception: logger.exception(...)`, so this holds even though
-    `setup_agent_tracing` itself does not wrap the call."""
+def test_otlp_http_setup_does_not_crash_on_an_unreachable_endpoint(monkeypatch):
+    """Construct the real exporter and keep its provider local to this test."""
+    from opentelemetry import trace
+
+    registered = []
+    monkeypatch.setattr(trace, "set_tracer_provider", registered.append)
     setup_agent_tracing(
         sampler=build_sampler(), service_name="nora", exporter="otlp_http",
         endpoint="http://127.0.0.1:1/v1/traces", headers_env="",
     )
+    (provider,) = registered
+    provider.shutdown()
 
 
 def test_setup_agent_tracing_raises_on_an_unknown_exporter():
