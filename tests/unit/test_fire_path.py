@@ -134,6 +134,13 @@ async def test_the_fire_turn_carries_the_requester(fire_path: FirePath) -> None:
     assert ctx.message.timestamp == 0                 # falsy AND an int
 
 
+def test_a_fire_event_without_a_policy_room_counts_the_unavailable_unit(
+    fire_path: FirePath, metrics: Metrics,
+) -> None:
+    assert fire_path._unit_for(_job_occasion()) is None
+    assert metrics.get("nora_errors_total", stage="fire_unit", platform="signal") == 1
+
+
 async def test_the_transcript_is_the_conversation_the_row_names(
     fire_path: FirePath, record_store: FakeRecordStore,
 ) -> None:
@@ -1796,14 +1803,7 @@ def test_the_proactive_occasion_is_owed_to_nobody_and_names_the_note() -> None:
 
 
 def test_the_proactive_header_keeps_the_whole_apparatus_out_of_the_message() -> None:
-    """The header's clause says what the apparatus IS, not one forbidden sentence.
-
-    A single named sentence («I set myself a reminder») generalises to none: the
-    same turn's prompt also hands her the note title, the `<notes>` index and the
-    intent her earlier pass wrote, so a turn can explain the mechanism to the
-    room and read a curator-written summary back at the person it was about. So
-    the clause says what the apparatus IS (why she is here, not what she says),
-    names the note alongside the reminder, and points at what she says instead."""
+    """Keep the earlier note and reminder as provenance for opening the turn."""
     header = fire_module.proactive_occasion([_proactive_row()]).header(None, T0)
 
     assert "never as «I set myself a reminder»" in header
@@ -1811,10 +1811,6 @@ def test_the_proactive_header_keeps_the_whole_apparatus_out_of_the_message() -> 
     assert "never in the note's own words" in header
     # WHY vs WHAT.
     assert "WHY you are here, never WHAT you have to say" in header
-    # And what she says instead is already two sentences up, unchanged. The
-    # clause deliberately does NOT repeat it: restating «raise the thing itself,
-    # out of what you can see in front of you now» duplicates the header's own
-    # «Read what is in front of you NOW … decide again».
     assert "Read what is in front of you NOW" in header
 
 
@@ -2405,7 +2401,7 @@ async def test_a_deferred_ambient_turn_gets_the_graph_catalogue(
     await path.speak(_participation())
 
     call = calls[-1]
-    assert {t.tool_name for t in call["tools"]} == (HOT_TOOLS - {"note_read"}) | {
+    assert {t.tool_name for t in call["tools"]} == HOT_TOOLS | {
         LOADER_TOOL,
     }
     assert "<tool_catalogue" in call["tag_message"]

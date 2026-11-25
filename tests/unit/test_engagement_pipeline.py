@@ -423,7 +423,7 @@ async def test_deferring_ships_the_hot_set_the_loader_and_the_catalogue():
     await _drain(background)
     call = pipeline._runner.calls[-1]
     names = {t.tool_name for t in call["tools"]}
-    assert names == ((HOT_TOOLS - {"note_read"}) | {LOADER_TOOL})
+    assert names == HOT_TOOLS | {LOADER_TOOL}
     assert "<tool_catalogue" in _prompt_text(call)
     assert "weather" in _prompt_text(call)  # a shelved tool is still NAMED
     assert call["limits"]["turns"] == LIMITS["turns"] + 1
@@ -457,7 +457,7 @@ async def test_a_spoken_tag_is_handed_the_voice_tools_and_a_typed_one_is_not():
         await _drain(background)
         handed[voice] = {t.tool_name for t in pipeline._runner.calls[-1]["tools"]}
     assert seen == ["voice", None]
-    assert handed[False] == (HOT_TOOLS - {"note_read"}) | {LOADER_TOOL}
+    assert handed[False] == HOT_TOOLS | {LOADER_TOOL}
     assert {"play_music", "set_music_volume"} <= handed[True]
     assert handed[True] - handed[False] <= DISCORD_ONLY_TOOLS
 

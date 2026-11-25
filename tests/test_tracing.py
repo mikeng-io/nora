@@ -80,12 +80,15 @@ def test_otlp_http_setup_does_not_crash_on_an_unreachable_endpoint(monkeypatch):
 
     registered = []
     monkeypatch.setattr(trace, "set_tracer_provider", registered.append)
-    setup_agent_tracing(
-        sampler=build_sampler(), service_name="nora", exporter="otlp_http",
-        endpoint="http://127.0.0.1:1/v1/traces", headers_env="",
-    )
-    (provider,) = registered
-    provider.shutdown()
+    try:
+        setup_agent_tracing(
+            sampler=build_sampler(), service_name="nora", exporter="otlp_http",
+            endpoint="http://127.0.0.1:1/v1/traces", headers_env="",
+        )
+        assert len(registered) == 1
+    finally:
+        for provider in registered:
+            provider.shutdown()
 
 
 def test_setup_agent_tracing_raises_on_an_unknown_exporter():

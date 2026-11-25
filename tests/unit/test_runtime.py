@@ -19,6 +19,7 @@ from nora.app.runtime import (
     BackgroundTasks,
     SupervisedAdapter,
     debounce_sweep_loop,
+    graph_embed_loop,
     prune_loop,
     start_adapters,
     supervise_adapter,
@@ -222,13 +223,30 @@ async def test_debounce_sweep_loop_survives_a_failing_sweep():
 
 
 # ---------------------------------------------------------------------------
-# memory_drain_loop
+# graph_embed_loop
 # ---------------------------------------------------------------------------
 
 
+async def test_graph_embed_loop_survives_a_failing_batch():
+    calls = 0
+    metrics = Metrics()
 
+    class FailingFirstBatch:
+        async def run_once(self) -> int:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("fixture embedding failure")
+            if calls == 3:
+                raise asyncio.CancelledError
+            return 1
 
+    with pytest.raises(asyncio.CancelledError):
+        async with asyncio.timeout(5):
+            await graph_embed_loop(FailingFirstBatch(), metrics, interval_seconds=0)
 
+    assert calls == 3
+    assert metrics.get("nora_errors_total", stage="memory_embed") == 1
 
 # ---------------------------------------------------------------------------
 # adapter supervision

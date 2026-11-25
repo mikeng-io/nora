@@ -205,10 +205,8 @@ def proactive_occasion(rows: Sequence[Reminder]) -> Event:
     asked, in the asker's words, and the asker is her earlier self. The header carries
     when she decided it and for when, and names the note it is about
     (`payload["note_title"]`, stamped in code by `remind` at decision
-    time). The note's CURRENT body is not here: the fire turn renders the
-    `<notes>` index like every fire turn and she reads it with `note_read`,
-    which is the point of splitting decide from act — research at 08:00 is
-    what to raise, research at 14:00 is where everybody is.
+    time). The room transcript and graph presentations ground the act turn's
+    decision about whether the intention is still worth raising.
 
     The heartbeat has already screened the row (`ProactiveScreen`): the flag,
     and whether the note moved on the tag path since the row was linked. So a

@@ -325,6 +325,8 @@ async def test_fire_prefill_uses_the_room_unit_person_and_nora_graph_profiles(
         ("person-other", "Unrelated person observation"),
     ):
         await _trait(scenario, f"trait-{pointer}", pointer, body)
+    await scenario.claim("fixture-lesson", part="lesson")
+    await write_edge(scenario, "fixture-lesson", "nora-pointer", "about")
     calls = []
     fire = _fire_path(
         doctrine_store=doctrine_store, persons=scenario.persons, metrics=Metrics(),
@@ -352,6 +354,13 @@ async def test_fire_prefill_uses_the_room_unit_person_and_nora_graph_profiles(
         assert body in fragment.split("</graph_profile>", 1)[0]
     assert ('<graph_profile of="nora-pointer"' in prefill) is show_nora
     assert ("Nora observation" in prefill) is show_nora
+    lesson = prefill.index("<graph_lessons")
+    assert "fixture-lesson" in prefill[lesson:].split("</graph_lessons>", 1)[0]
+    assert lesson < prefill.index('<graph_profile of="room-here"') < prefill.index(
+        '<graph_profile of="unit-pointer"'
+    )
+    if show_nora:
+        assert prefill.index('<graph_profile of="nora-pointer"') < lesson
     assert "Unrelated person observation" not in prefill
     assert "<culture" not in prefill
 

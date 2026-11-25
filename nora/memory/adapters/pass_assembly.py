@@ -182,6 +182,7 @@ def _presentation_order(
     shown: set[str] = set(floor_ids)
     hidden: set[str] = set()
     chosen = choice.presentations
+    lesson_slot = 0
     if "graph_profile" in chosen:
         for subject in seeds.collective:
             block, ids = builder.profile_block(result, subject, seeds.names)
@@ -190,16 +191,17 @@ def _presentation_order(
                 continue
             early.append(block)
             shown.update(ids)
-            if (choice.input_type is WakeInput and subject.pointer_ref == "nora"
-                    and subject.graph_id):
-                shown.add(subject.graph_id)
+            if subject.pointer_ref == "nora":
+                lesson_slot = 1
+                if choice.input_type is WakeInput and subject.graph_id:
+                    shown.add(subject.graph_id)
         for subject in seeds.people:
             block, ids = builder.profile_block(result, subject, seeds.names)
             late.append(block)
             shown.update(ids)
     if "graph_lessons" in chosen:
         rows = lessons(result)
-        early.insert(1, builder.lessons_block(result, rows))
+        early.insert(lesson_slot, builder.lessons_block(result, rows))
         shown.update(row.graph_id for row in rows)
     if "graph_standing" in chosen:
         block, ids = builder.standing_block(
