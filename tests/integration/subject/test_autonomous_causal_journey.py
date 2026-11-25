@@ -23,7 +23,7 @@ from tests.integration.subject.test_recorded_wake_runtime import services
 
 async def _closed_wake(driver, body):
     claim = GRAPH_STIMULUS_CLAIM.c
-    stmt = sa.select(claim.pass_id, claim.state).join_from(
+    stmt = sa.select(claim.pass_id, claim.state, claim.attempts).join_from(
         GRAPH_STIMULUS_CLAIM, MESSAGES,
         (claim.graph_id == MESSAGES.c.graph_id) & (claim.unit == MESSAGES.c.unit),
     ).where(claim.claimant == "wake", MESSAGES.c.body == body)
@@ -33,8 +33,9 @@ async def _closed_wake(driver, body):
             async with driver.engine.connect() as conn:
                 row = (await conn.execute(stmt)).one_or_none()
             if row is not None:
-                assert row.state in {"claimed", "closed", "released"}, row
+                assert row.state in {"claimed", "closed"}, row
                 if row.state == "closed":
+                    assert row.attempts == 0, row
                     return row.pass_id
             await asyncio.sleep(0.05)
 
@@ -79,12 +80,20 @@ async def test_real_app_settles_graph_wakes_for_initial_message_and_correction(
     calls = [event for event in events if event.get("name") == "nora.model.request"]
     assert [json.loads(call["attributes"]["nora.model.request.body"])
             for call in calls] == protocol.requests
+    wake_spans = [
+        event for event in events if event["kind"] == "span_finished" and event["name"] == "wake"
+    ]
+    for event in wake_spans:
+        assert event["attributes"].get("nora.outcome") == "closed", event
     settled_traces = {
-        event["trace_id"] for event in events
-        if event["kind"] == "span_finished" and event["name"] == "wake"
-        and event["attributes"].get("nora.tag_id") in {first, second}
+        event["trace_id"] for event in wake_spans
+        if event["attributes"].get("nora.tag_id") in {first, second}
     }
     assert len(settled_traces) == 2
     assert settled_traces <= {call["trace_id"] for call in calls}
+    faults = [event for event in events if event["kind"] == "log"
+              and event.get("logger", "").startswith("nora.")
+              and event.get("level") in {"ERROR", "CRITICAL"}]
+    assert not faults, faults
     evidence.record("protocol_assertions", status="PASS", execution="PASS",
                     validity="PASS", behavior="UNMEASURED")
