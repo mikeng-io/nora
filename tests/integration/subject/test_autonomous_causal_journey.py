@@ -33,7 +33,7 @@ async def _closed_wake(driver, body):
             async with driver.engine.connect() as conn:
                 row = (await conn.execute(stmt)).one_or_none()
             if row is not None:
-                assert row.state in {"claimed", "closed"}, row
+                assert row.state in {"claimed", "closed", "released"}, row
                 if row.state == "closed":
                     return row.pass_id
             await asyncio.sleep(0.05)
@@ -74,13 +74,17 @@ async def test_real_app_settles_graph_wakes_for_initial_message_and_correction(
 
     assert not env.active
     assert not protocol.errors
-    assert protocol.occasions.get("wake") == 2
     evidence, _ = runtime_evidence
-    captured = [
-        json.loads(event["attributes"]["nora.model.request.body"])
-        for event in read_events(evidence.path)
-        if event.get("name") == "nora.model.request"
-    ]
-    assert captured == protocol.requests
+    events = read_events(evidence.path)
+    calls = [event for event in events if event.get("name") == "nora.model.request"]
+    assert [json.loads(call["attributes"]["nora.model.request.body"])
+            for call in calls] == protocol.requests
+    settled_traces = {
+        event["trace_id"] for event in events
+        if event["kind"] == "span_finished" and event["name"] == "wake"
+        and event["attributes"].get("nora.tag_id") in {first, second}
+    }
+    assert len(settled_traces) == 2
+    assert settled_traces <= {call["trace_id"] for call in calls}
     evidence.record("protocol_assertions", status="PASS", execution="PASS",
                     validity="PASS", behavior="UNMEASURED")

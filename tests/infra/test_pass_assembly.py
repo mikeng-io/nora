@@ -305,6 +305,7 @@ async def test_fire_prefill_uses_the_room_unit_person_and_nora_graph_profiles(
         doctrine_store=doctrine_store, persons=scenario.persons, metrics=Metrics(),
         runner=FakeAgentRunner(_send_turns("Done."), on_call=calls.append),
         policy=scenario.policy, graph_profiles=_assembler(scenario), clock=lambda: NOW,
+        standing_store_timeout_seconds=20,
     )
     outcome = await fire.speak(Event(
         "reminder", "signal", alias, "group", PERSON, "Fixture reminder",
