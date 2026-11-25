@@ -47,7 +47,7 @@ def _instant(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value is not None else None
 
 
-async def _item_person(
+async def _item_identity(
     conn: AsyncConnection, rows: FromClause, access: IdentityAccess,
     image: Mapping[str, Any], key: str,
 ) -> str | None:
@@ -80,19 +80,19 @@ async def _people(
 ) -> tuple[RetrievedIdentity, ...]:
     identities = tuple(image.get(identities_column(source)) or ())
     if source == "claim":
-        return tuple(RetrievedIdentity(person, "subject") for person in identities)
+        return tuple(RetrievedIdentity(identity, "subject") for identity in identities)
     if source in ("intention", "intention_verdict"):
         roles = tuple(RetrievedIdentity(image[key], key) for key in ("owner", "owed_to")
                       if image.get(key) is not None)
     else:
         spec = ITEM_SOURCES.get(source)
         roles = tuple([
-            RetrievedIdentity(await _item_person(conn, rows, access, image, key), _ROLE[key])
+            RetrievedIdentity(await _item_identity(conn, rows, access, image, key), _ROLE[key])
             for key in spec.identity_columns
         ]) if spec is not None else ()
     assigned = {entry.id for entry in roles}
-    return (*roles, *(RetrievedIdentity(person, "participant")
-                      for person in identities if person not in assigned))
+    return (*roles, *(RetrievedIdentity(identity, "participant")
+                      for identity in identities if identity not in assigned))
 
 
 async def _relations(

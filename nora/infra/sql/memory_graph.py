@@ -57,7 +57,7 @@ WITH RECURSIVE paths(kind, id, depth, seen, edge) AS (
  AND EXISTS (
    SELECT 1 FROM legacy_relation r WHERE
      ((r.src_kind=s.kind AND r.src_id=s.id) OR (r.dst_kind=s.kind AND r.dst_id=s.id))
-     AND r.unit=:unit AND r.persons <@ CAST(:persons AS text[])
+     AND r.unit=:unit AND r.persons <@ CAST(:identities AS text[])
      AND r.status='current' AND r.layer=ANY(CAST(:layers AS text[]))
      AND (cardinality(CAST(:rels AS text[]))=0 OR r.rel=ANY(CAST(:rels AS text[])))
      AND (CAST(:at AS timestamptz) IS NULL OR
@@ -73,11 +73,11 @@ WITH RECURSIVE paths(kind, id, depth, seen, edge) AS (
      FROM (
        SELECT r.*, r.dst_kind AS other_kind, r.dst_id AS other_id FROM legacy_relation r
        WHERE r.src_kind=p.kind AND r.src_id=p.id
-         AND r.unit=:unit AND r.persons <@ CAST(:persons AS text[])
+         AND r.unit=:unit AND r.persons <@ CAST(:identities AS text[])
        UNION ALL
        SELECT r.*, r.src_kind AS other_kind, r.src_id AS other_id FROM legacy_relation r
        WHERE r.dst_kind=p.kind AND r.dst_id=p.id
-         AND r.unit=:unit AND r.persons <@ CAST(:persons AS text[])
+         AND r.unit=:unit AND r.persons <@ CAST(:identities AS text[])
      ) adjacent
      WHERE status='current'
        AND (layer!='record' OR (p.depth=0 AND src_kind=p.kind AND src_id=p.id))
@@ -122,26 +122,26 @@ def walk_sql(query: Walk) -> tuple[str, dict[str, Any]]:
         # Only code-owned column expressions and a compiled bound predicate enter SQL.
         return f"""(EXISTS (SELECT 1 FROM legacy_entity e WHERE e.kind={kind} AND e.id={ident}
           AND e.unit=:unit AND (e.kind!='person'
-            OR coalesce(e.attributes->>'ref',e.id)=ANY(CAST(:persons AS text[]))))
+            OR coalesce(e.attributes->>'ref',e.id)=ANY(CAST(:identities AS text[]))))
           OR EXISTS (SELECT 1 FROM ({predicate}) scoped_node
           WHERE scoped_node.kind=CASE WHEN {kind}='event_entry' THEN 'event' ELSE {kind} END
           AND scoped_node.source_id={ident}
           AND (scoped_node.origin_room IS NULL OR NOT EXISTS (
             SELECT 1 FROM (
-              SELECT unnest(r.persons) AS person UNION
+              SELECT unnest(r.persons) AS identity UNION
               SELECT coalesce(subject.attributes->>'ref',subject.id) FROM legacy_entity subject
               WHERE subject.kind='person' AND subject.unit=:unit
                 AND (subject.id=r.src_id OR subject.id=r.dst_id)
             ) subjects WHERE NOT EXISTS (
-              SELECT 1 FROM jsonb_each(CAST(:room_persons AS jsonb)) room
-              WHERE room.key=scoped_node.origin_room AND room.value ? subjects.person))))
+              SELECT 1 FROM jsonb_each(CAST(:room_identities AS jsonb)) room
+              WHERE room.key=scoped_node.origin_room AND room.value ? subjects.identity))))
           OR ({kind}='web_page' AND EXISTS (SELECT 1 FROM comprehend_web_page page
               WHERE page.id={ident} AND page.unit=:unit
                 AND (CAST(:since_ms AS bigint) IS NULL
                   OR extract(epoch FROM page.fetched_at)*1000>=:since_ms)
                 AND (CAST(:until_ms AS bigint) IS NULL
                   OR extract(epoch FROM page.fetched_at)*1000<=:until_ms)
-                AND CAST(:only_person AS text) IS NULL)))"""  # noqa: S608
+                AND CAST(:only_identity AS text) IS NULL)))"""  # noqa: S608
 
     conditions = [permitted("r.src_kind", "r.src_id"), permitted("r.dst_kind", "r.dst_id")]
     conditions.append("""(NOT (r.rel=ANY(CAST(:location_rels AS text[]))) OR (
@@ -169,10 +169,10 @@ def walk_sql(query: Walk) -> tuple[str, dict[str, Any]]:
     conditions.append("""(
         (CAST(:since_ms AS bigint) IS NULL OR extract(epoch FROM r.asserted_at)*1000>=:since_ms)
         AND (CAST(:until_ms AS bigint) IS NULL OR extract(epoch FROM r.asserted_at)*1000<=:until_ms)
-        AND (CAST(:only_person AS text) IS NULL OR :only_person=ANY(r.persons)
+        AND (CAST(:only_identity AS text) IS NULL OR :only_identity=ANY(r.persons)
           OR EXISTS (SELECT 1 FROM legacy_entity subject WHERE subject.kind='person'
             AND subject.unit=:unit AND subject.id IN (r.src_id,r.dst_id)
-            AND coalesce(subject.attributes->>'ref',subject.id)=:only_person)
+            AND coalesce(subject.attributes->>'ref',subject.id)=:only_identity)
           OR NOT EXISTS (SELECT 1 FROM legacy_entity e WHERE e.kind=r.src_kind AND e.id=r.src_id)
           OR NOT EXISTS (SELECT 1 FROM legacy_entity e WHERE e.kind=r.dst_kind AND e.id=r.dst_id)
           OR EXISTS (SELECT 1 FROM legacy_relation_evidence ev WHERE ev.relation_id=r.id
@@ -194,10 +194,10 @@ def walk_sql(query: Walk) -> tuple[str, dict[str, Any]]:
     params.update(
         since_ms=only.since_ms if only else None,
         until_ms=only.until_ms if only else None,
-        only_person=only.person if only else None,
+        only_identity=only.person if only else None,
     )
     params.update(
-        room_persons=json.dumps({k: sorted(v) for k, v in query.scope.room_persons.items()}),
+        room_identities=json.dumps({k: sorted(v) for k, v in query.scope.room_persons.items()}),
         presence=sorted(query.scope.presence_persons),
         location_rels=[
             "works_at",
@@ -218,7 +218,7 @@ def walk_parameters(seeds: tuple[Key, ...], query: Walk) -> dict[str, Any]:
         "ids": [i for _, i in seeds],
         "unit": query.unit,
         "scoped": query.scope is not None,
-        "persons": sorted(query.identities),
+        "identities": sorted(query.identities),
         "layers": list(query.layers),
         "rels": list(query.relations),
         "at": query.valid_at,

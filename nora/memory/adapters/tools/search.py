@@ -41,7 +41,7 @@ class GraphReadTools:
 
     async def read(
         self, room: Room, conversation_id: str, scope: PassScope | None, now: datetime, *,
-        anchors: RetrievalAnchors, depth: int, person: str | None = None,
+        anchors: RetrievalAnchors, depth: int, identity: str | None = None,
         since: datetime | None = None, until: datetime | None = None, content_checks: bool = True,
     ) -> dict:
         authority = active_act_authority()
@@ -77,12 +77,12 @@ class GraphReadTools:
                 raise RetrievalUnavailableError("reading_room_unavailable")
             if target.room.persons is None and not self._access.access.is_file_backend:
                 raise RetrievalUnavailableError("access_view_unavailable")
-            if person is not None:
+            if identity is not None:
                 if (room.platform != reading.platform
                         or not target.room.is_room(conversation_id)
                         or not view.available):
                     raise RetrievalUnavailableError("person_lookup_unavailable")
-                matches = view.find(person)
+                matches = view.find(identity)
                 if target.room.persons is not None:
                     members = {target.canonical(member) for member in target.room.persons}
                     matches = tuple(p for p in matches if target.canonical(p.person_id) in members)
@@ -93,10 +93,10 @@ class GraphReadTools:
                         "status": "nothing_found",
                         "note": "More than one person goes by that name here. Ask which one.",
                     }
-                person_id = matches[0].person_id
-                concerns |= {person_id}
+                identity_id = matches[0].person_id
+                concerns |= {identity_id}
                 pointer = await self._pointer(
-                    reading, concerns, historical, person_id, ceiling=clock,
+                    reading, concerns, historical, identity_id, ceiling=clock,
                 )
                 if pointer is None:
                     subject_note = " Nothing is remembered about them as a subject."
@@ -186,7 +186,7 @@ def _make_memory_search(deps):
         result = await graph.read(
             room, deps.bound_conversation_id, scope, deps.now_fn(),
             anchors=RetrievalAnchors(query=query), depth=depth,
-            person=person, since=since_at, until=until_at, content_checks=deps.content_checks,
+            identity=person, since=since_at, until=until_at, content_checks=deps.content_checks,
         )
         _record_room(metrics, "memory_search", result["status"])
         return _with_note(result, _GRAPH_NOTES)

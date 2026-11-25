@@ -137,9 +137,9 @@ class SqlAdmissionRows:
             if row.get("source_is_nora") or self._identity.is_nora(platform, sender):
                 author = "nora"
             elif sender and row["sender_identity"]:
-                person = await self._identity.identity(row["sender_identity"])
-                if person is not None:
-                    author = IdentityAuthor(person)
+                identity = await self._identity.identity(row["sender_identity"])
+                if identity is not None:
+                    author = IdentityAuthor(identity)
         is_dm = row.get("source_room_type") == "dm" or bool(room and room.is_dm)
         origin_id = room.id if room and room.unit == unit else (None if is_dm else origin)
         return RowFacts(

@@ -18,7 +18,7 @@ _PROVENANCE = ("writer", "occasion", "pass", "trace", "model", "rev_code",
 
 async def executor_item_planes(
     conn: AsyncConnection, table: sa.Table, row_id: UUID, at: datetime, *,
-    room: str, platform: str | None = None, person: str | None = None,
+    room: str, platform: str | None = None, identity: str | None = None,
     task_id: UUID | None = None, tag: str | None = None,
 ) -> dict[str, Any]:
     sync_connection = conn.sync_connection
@@ -47,7 +47,7 @@ async def executor_item_planes(
         stamp = context.provenance()
     else:
         unit = registration.scope.room_unit(platform, room) if platform else None
-        identities = (person,)
+        identities = (identity,)
     planes = await registration.planes(
         conn, table, unit=unit, occurred_at=at, identities=identities, room=room, key=(row_id,),
     )

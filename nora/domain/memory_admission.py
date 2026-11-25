@@ -31,14 +31,14 @@ GraphProjectionOutcome = Literal["excluded", "ungrounded"]
 GRAPH_PROJECTION_OUTCOMES: tuple[str, ...] = get_args(GraphProjectionOutcome)
 
 
-def _grounded_person(
+def _grounded_identity(
     key: Key,
     relation: Relation,
     evidence: tuple[Evidence, ...],
     sources: Mapping[Key, Source],
     shown_identities: frozenset[str],
 ) -> Entity | None:
-    """The unit's pointer for a person end, when a cited source is in that person's
+    """The unit's pointer for an identity endpoint, when a cited source is in that identity's
     scope or the session showed a row they authored (`shown_identities`)."""
     prefix = f"{relation.unit}:person:"
     if key[0] != "person" or not key[1].startswith(prefix):
@@ -108,7 +108,7 @@ class AdmissionState:
             staged: dict[str, Entity] = {}
             if reason is None:
                 for key in (relation.src, relation.dst):
-                    pointer = _grounded_person(key, relation, ev, sources, shown_identities)
+                    pointer = _grounded_identity(key, relation, ev, sources, shown_identities)
                     if pointer is not None and key[1] not in candidates | pointers:
                         # The projection has not reached this person yet; a cited
                         # source scopes them or a shown row authored them. Staged
