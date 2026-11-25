@@ -308,11 +308,23 @@ def check_pr(github, repository: str, number: int, event_head: str = "") -> int:
             )
         raise
     save_text(item)
-    run = github(
-        "POST",
-        f"/repos/{repository}/check-runs",
-        {"name": "PR content", "head_sha": item["head"]["sha"], "status": "in_progress"},
-    )
+
+    def publish(conclusion: str, title: str, summary: str) -> None:
+        # One POST with the final result: PATCHing a just-created run can 404
+        # before GitHub makes it readable.
+        github(
+            "POST",
+            f"/repos/{repository}/check-runs",
+            {
+                "name": "PR content",
+                "head_sha": item["head"]["sha"],
+                "status": "completed",
+                "conclusion": conclusion,
+                "completed_at": datetime.now(UTC).isoformat(),
+                "output": {"title": title, "summary": summary},
+            },
+        )
+
     try:
         # Private Apps cannot be looked up with this repository's GITHUB_TOKEN.
         # Pin GitHub's immutable bot user ID in trusted repository settings instead.
@@ -336,37 +348,20 @@ def check_pr(github, repository: str, number: int, event_head: str = "") -> int:
         advice = style_advice(item.get("body") or "")
         if advice:
             summary += "\n\nAdvisory style suggestions:\n" + "\n".join(f"- {x}" for x in advice)
-        github(
-            "PATCH",
-            f"/repos/{repository}/check-runs/{run['id']}",
-            {
-                "status": "completed",
-                "conclusion": "failure" if errors else "success",
-                "completed_at": datetime.now(UTC).isoformat(),
-                "output": {
-                    "title": "PR content needs changes"
-                    if errors
-                    else "PR content follows the rules",
-                    "summary": summary,
-                },
-            },
-        )
-        print(summary)
-        return int(bool(errors))
     except Exception:
-        github(
-            "PATCH",
-            f"/repos/{repository}/check-runs/{run['id']}",
-            {
-                "status": "completed",
-                "conclusion": "failure",
-                "output": {
-                    "title": "Metadata validation unavailable",
-                    "summary": "Validation failed to complete. Resolve the API error and rerun.",
-                },
-            },
+        publish(
+            "failure",
+            "Metadata validation unavailable",
+            "Validation failed to complete. Resolve the API error and rerun.",
         )
         raise
+    publish(
+        "failure" if errors else "success",
+        "PR content needs changes" if errors else "PR content follows the rules",
+        summary,
+    )
+    print(summary)
+    return int(bool(errors))
 
 
 def check_issue(github, repository: str, number: int) -> int:

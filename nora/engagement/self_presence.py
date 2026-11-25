@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Set
 from typing import Protocol
 
 from nora.domain.ports import AdapterHealth, RosterSource
@@ -72,7 +72,7 @@ class PresenceReader:
         handles: Mapping[str, str] | None = None,
         live_handles: Mapping[str, Callable[[], Awaitable[str | None]]] | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
-        self_ids: frozenset[str] = frozenset(),
+        self_ids: Set[str] = frozenset(),
         timeout_seconds: float = DEFAULT_READ_TIMEOUT_SECONDS,
     ) -> None:
         self._policy = policy
@@ -80,7 +80,7 @@ class PresenceReader:
         # map `Room` reads, and her own ids so she is not counted as one of a
         # room's members. `<presence>` never reads either.
         self._rosters = dict(rosters or {})
-        self._self_ids = frozenset(self_ids)
+        self._self_ids = self_ids  # the live view, never a copy
         # The SAME map the tag path sends through (`registry.adapters`): a
         # network with no adapter here is one she cannot hear or speak on in
         # this process, which is `not_running`, not `reconnecting`.

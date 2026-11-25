@@ -2679,13 +2679,11 @@ class ImageGenerator(Protocol):
     """Provider boundary for generating images from text prompts.
 
     Provider-agnostic by construction: the port's vocabulary (prompt,
-    reference images, size, quality) is deliberately NOT any vendor's —
-    the first implementation is xAI's subscription lane, later providers
-    plug in behind the same seam and the model-facing tool does not change
-    (DEC-137). NEVER raises — matching `TrackSource`
-    / `WeatherProvider`'s discipline in this file: every failure is a
-    three-state `ImageResult`, and a wiring gap is `unavailable`, never a
-    raise and never `nothing_found`.
+    reference images, size, quality) is deliberately NOT any vendor's, so
+    providers plug in behind one seam and the model-facing tool does not
+    change (DEC-137). NEVER raises, like `TrackSource` / `WeatherProvider`:
+    every failure is a three-state `ImageResult`, and a wiring gap is
+    `unavailable`, never a raise and never `nothing_found`.
 
     Reference images are custody handles only (`ImageReference.marker_code`
     resolved inside the caller's own conversation) — the adapter refuses an
@@ -2693,12 +2691,14 @@ class ImageGenerator(Protocol):
 
     `max_reference_images` is how many references this provider takes in one
     call: its vendor's limit, or a lower operator override from its config
-    section. The tool states it and refuses a call above it; the provider is
-    the only thing that knows it (DEC-307).
+    section. The tool states it and refuses a call above it (DEC-307).
+    `max_gif_frames` is the most frames of a looping GIF; 0 makes stills only.
     """
 
     @property
     def max_reference_images(self) -> int: ...
+    @property
+    def max_gif_frames(self) -> int: ...
 
     async def generate(
         self,
@@ -2707,7 +2707,7 @@ class ImageGenerator(Protocol):
         reference_images: Sequence[ImageReference] | None = None,
         size: ImageSize | None = None,
         quality: Literal["standard", "quality"] | None = None,
-        reference_resolver: ReferenceResolver | None = None,
+        reference_resolver: ReferenceResolver | None = None, gif_frames: int | None = None,
     ) -> ImageResult: ...
 
     async def health(self) -> bool: ...

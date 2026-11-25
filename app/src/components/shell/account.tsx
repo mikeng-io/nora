@@ -14,11 +14,6 @@ export const LANGS: Array<{ locale: Locale; short: string; name: string }> = [
   { locale: "en", short: "EN", name: "English" },
 ];
 
-// The same key the site's language switch writes (site/src/scripts/
-// prefs.ts), so a choice made here also decides which landing page the
-// site opens on.
-const SITE_LANG_KEY = "nora-lang";
-
 export function useLanguageSwitch() {
   const router = useRouter();
   const pathname = usePathname();
@@ -27,9 +22,6 @@ export function useLanguageSwitch() {
   const [pending, start] = useTransition();
   const switchTo = (locale: Locale) => {
     if (locale === current) return;
-    try {
-      localStorage.setItem(SITE_LANG_KEY, locale);
-    } catch {}
     const query = Object.fromEntries(params.entries());
     start(() => router.replace({ pathname, query }, { locale, scroll: false }));
   };

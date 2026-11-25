@@ -1834,8 +1834,8 @@ def test_documents_public_url_defaults_to_no_link_and_the_example_ships_it_empty
 @pytest.mark.parametrize(
     ("given", "kept"),
     [
-        ("https://nora.67.zone", "https://nora.67.zone"),
-        ("https://nora.67.zone/", "https://nora.67.zone"),
+        ("https://nora.67.example", "https://nora.67.example"),
+        ("https://nora.67.example/", "https://nora.67.example"),
         ("http://localhost:3000", "http://localhost:3000"),
         ("https://a-b.example.com:8443", "https://a-b.example.com:8443"),
         ("https://xn--nora-8na.example", "https://xn--nora-8na.example"),
@@ -1848,20 +1848,20 @@ def test_documents_public_url_accepts_an_origin_and_drops_a_trailing_slash(given
 @pytest.mark.parametrize(
     "bad",
     [
-        "nora.67.zone",  # no scheme
+        "nora.67.example",  # no scheme
         "javascript:alert(1)",
-        "ftp://nora.67.zone",
+        "ftp://nora.67.example",
         "https://",
-        "https://nora.67.zone/app",  # a path
-        "https://nora.67.zone/?x=1",
-        "https://nora.67.zone/#frag",
-        "https://user:pw@nora.67.zone",  # credentials
-        "https://nora.67.zone extra",
-        "//nora.67.zone",
+        "https://nora.67.example/app",  # a path
+        "https://nora.67.example/?x=1",
+        "https://nora.67.example/#frag",
+        "https://user:pw@nora.67.example",  # credentials
+        "https://nora.67.example extra",
+        "//nora.67.example",
         "https://ho\x00st.com",  # a control character
         "https://host\x7f",
         "https://good.com\\evil.com",  # a bare backslash
-        "https://nora.67.zone.",  # a trailing dot
+        "https://nora.67.example.",  # a trailing dot
         "https://host:99999",  # a port out of range
         "https://host:abc",
         "https://+85212345678.example.com",  # not a host (and a phone to egress)

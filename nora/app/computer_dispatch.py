@@ -21,7 +21,7 @@ submitter.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Set
 from typing import Any
 
 from nora.access import IdentityAccess
@@ -74,7 +74,7 @@ class ComputerToolDispatch:
     def __init__(
         self, *, registry: Any, store: Any, persons: Any,
         metrics: Any, rosters: Mapping[str, Any] | None = None,
-        self_ids: frozenset[str] = frozenset(),
+        self_ids: Set[str] = frozenset(),
         policy: Any, scope_for: Any, access: Any = None,
     ) -> None:
         self._registry = registry
@@ -83,7 +83,7 @@ class ComputerToolDispatch:
         self._access = access
         self._metrics = metrics
         self._rosters = dict(rosters or {})
-        self._self_ids = frozenset(self_ids)
+        self._self_ids = self_ids  # the live view, never a copy
         # The CURRENT policy and scope resolver: admission is re-decided at
         # execution time, not inherited from when the row was written.
         self._policy = policy

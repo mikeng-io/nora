@@ -1,5 +1,7 @@
 """The actual startup helper mounts a scoped private API in managed mode only."""
 
+import re
+
 import pytest
 from aiohttp import web
 
@@ -20,6 +22,13 @@ from nora.testing.managed import (
     FakeLinkRequests,
     FakeTopologySource,
 )
+
+_ORY_URLS = re.compile(r"http://127\.0\.0\.1:(?:4434|4466|4467)\b")
+
+
+def _point_ory_at(settings: str, url: str) -> str:
+    """Replace Ory endpoints in one pass to avoid rewriting the assigned port."""
+    return _ORY_URLS.sub(url, settings)
 
 ROOM = Scope(ScopeKind.ROOM, "discord/generated-guild/generated-channel")
 TOKEN = "generated-private-provisioning-token"  # noqa: S105
@@ -277,9 +286,7 @@ async def test_ory_boot_probes_receive_resolved_private_credentials(
     app.router.add_get("/relation-tuples", keto)
     server = await aiohttp_server(app)
     url = str(server.make_url("")).rstrip("/")
-    settings = SETTINGS.replace("http://127.0.0.1:4434", url).replace(
-        "http://127.0.0.1:4466", url,
-    ).replace("http://127.0.0.1:4467", url).replace(
+    settings = _point_ory_at(SETTINGS, url).replace(
         "[identity.managed]", '[identity.managed]\n'
         'keto_key_env = "NORA_TEST_KETO_ADMIN_KEY"\n'
         'kratos_admin_key_env = "NORA_TEST_KRATOS_ADMIN_KEY"',
@@ -340,8 +347,7 @@ async def test_selected_backend_refuses_unavailable_ory_instead_of_borrowing_fil
     app.router.add_get("/relation-tuples", keto)
     server = await aiohttp_server(app)
     url = str(server.make_url("")).rstrip("/")
-    settings = SETTINGS.replace("http://127.0.0.1:4434", url).replace(
-        "http://127.0.0.1:4466", url).replace("http://127.0.0.1:4467", url)
+    settings = _point_ory_at(SETTINGS, url)
     cfg = configuration(settings)
     engine = create_sql_engine(pg_module_url)
     wiring = None
@@ -380,9 +386,7 @@ async def test_file_selection_reads_and_refuses_mutation_without_ory_or_a_databa
     app.router.add_route("*", "/{tail:.*}", unavailable)
     server = await aiohttp_server(app)
     url = str(server.make_url("")).rstrip("/")
-    settings = SETTINGS.replace('backend = "managed"', 'backend = "file"').replace(
-        "http://127.0.0.1:4434", url).replace("http://127.0.0.1:4466", url).replace(
-        "http://127.0.0.1:4467", url)
+    settings = _point_ory_at(SETTINGS.replace('backend = "managed"', 'backend = "file"'), url)
     cfg = configuration(settings, secret=None)
     cfg.identity_file.write_text('[persons.generated_file_identity]\nname="Generated File Name"\n'
         '[[persons.generated_file_identity.discord]]\nuser_id="generated-file-account"\n')

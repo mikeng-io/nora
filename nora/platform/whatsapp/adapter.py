@@ -13,6 +13,7 @@ from __future__ import annotations
 import time
 from collections.abc import Awaitable, Callable, Set
 
+from ...domain.latch import DegradeLatch
 from ...domain.models import ConversationTarget, NormalizedMessage
 from ...domain.ports import (
     AdapterHealth,
@@ -32,7 +33,7 @@ from .self_id import derive_identity
 from .send import WhatsAppSender
 
 
-class WhatsAppAdapter:
+class WhatsAppAdapter(DegradeLatch):
     platform = "whatsapp"
 
     def __init__(self, base_url: str, *, dm_recipients: Set[str] = frozenset(),

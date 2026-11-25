@@ -5,7 +5,7 @@ Evidence bodies include stored attachment handles such as `[image a3f2c1]`.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Sequence, Set
 from typing import Any
 
 import sqlalchemy as sa
@@ -42,7 +42,7 @@ class SqlCharacterEvidence:
 
     async def addressed_since(
         self, *, rooms: Sequence[tuple[str, str]], since_ms: int, until_ms: int,
-        limit: int, self_ids: frozenset[str] = frozenset(),
+        limit: int, self_ids: Set[str] = frozenset(),
     ) -> list[RoomMessage]:
         """Human messages in `rooms` sent in `(since_ms, until_ms]` that address
         Nora: they quote one of her messages in the same room, @-mention one of

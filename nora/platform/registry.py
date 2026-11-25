@@ -1,39 +1,32 @@
-"""`AdapterRegistry` — builds every enabled platform adapter from config and
-resolves each one's own identity before returning.
+"""`AdapterRegistry` — builds every enabled platform from one table, resolves
+each one's own identity, and owns each platform's liveness
+(design/platform-bridges/platform-liveness.md).
 
-**Fail-fast is the point.** R-12 (`nora.engagement.stages.admission`) checks
-membership in a resolved `PlatformIdentity.aliases`, so an adapter whose
-identity nobody could establish must never be handed to the rest of the
-process pretending everything is fine — that is exactly the shape of bug
-that would let Nora trigger herself. `from_config` raises
-`AdapterRegistryError` for any enabled platform that cannot be built or
-cannot resolve who it is; the caller
-(`nora.app.composition.build_dependencies`) routes that through
-`StartupError`, the same as every other fatal, ordered startup step.
+**One platform's failure stays on that platform.** R-12
+(`nora.engagement.stages.admission`) checks membership in a resolved
+`PlatformIdentity.aliases`, so an adapter whose identity nobody could
+establish must never emit an event. The rule is enforced at PLATFORM scope:
+an enabled platform whose identity cannot be resolved is registered DEGRADED
+— its `DegradeLatch` refuses sends, reactions and health, its inbound gates
+stay closed, and it has NO `identities` entry — while every other platform
+starts live. A background `recover` re-resolves it and `promote`s it with no
+restart: identity registered → latch cleared → inbound opened.
 
-Each enabled platform is one more `if platforms.<x>.enabled:` block — Signal,
-Discord (DEC-102), WhatsApp and Instagram. A disabled platform is built and
-resolved by no one, silently.
+**Misconfiguration still refuses to start** (`AdapterRegistryError`, routed
+through `StartupError` by `nora.app.composition_platforms`): a builder that
+cannot even be built (no Discord token, an underivable Signal account) and an
+identity answer of 401/403 to Nora's own credentials. A retry cannot cure
+those.
 
-**Instagram is the one exception to fail-fast, and it is Instagram-shaped.**
-Failing to resolve identity means a misconfiguration on Signal and Discord;
-on Instagram it means *a captcha happened overnight*, and under the unmodified rule one
-checkpoint stops Nora starting AT ALL — Signal and Discord included. So an
-enabled Instagram adapter that cannot authenticate is built and registered
-DEGRADED: it answers no sends, emits no events, logs one ERROR line naming the
-reason, and reports `degraded` on Nora's `/health`. It is also registered with
-NO entry in `identities`, deliberately — see the block itself. This is an
-exception with a stated reason, not a general loosening; do not extend it to
-WhatsApp.
+**The table is the abstraction.** `PLATFORMS` lists every platform as a name
+and a builder; startup, the identity wait, degrade, recovery, promotion, the
+inbound gates, the state gauge and `/health` run once over it. A new platform
+is a config section, an adapter that joins `DegradeLatch`, and a row.
 
 **Nora's own account is never written to `identity.toml`** (DEC-9) — that
 file describes other people, not Nora. This module never writes to it and
-never reads it; the identity it resolves comes from the platform's own daemon
-(`nora.platform.signal.account.derive_account` and
-`nora.platform.signal.self_id.derive_identifiers`), not from person mapping.
-Nora's own ids are typed `nora.domain.identity.Identifier`s — the same model
-`identity.toml` uses for everybody else — so "is this sender
-Nora?" and "which person is this sender?" are answered by the same flattening.
+never reads it; the identity it resolves comes from the platform's own daemon,
+not from person mapping.
 """
 
 from __future__ import annotations
@@ -43,8 +36,10 @@ import logging
 import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Set
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any
 
+from nora.domain.live import LiveSet
+from nora.domain.platform_state import PLATFORM_STATES, PlatformState
 from nora.domain.ports import MediaSource, PlatformAdapter, PlatformIdentity
 from nora.domain.summons import SummonsSink
 from nora.infra.voice.hub import VoiceControllerHub
@@ -73,8 +68,9 @@ log = logging.getLogger("nora.platform.registry")
 
 
 class AdapterRegistryError(Exception):
-    """An enabled adapter could not be built, or could not resolve its own
-    identity. Fatal — the caller is expected to refuse to start."""
+    """An enabled platform is MISCONFIGURED: it could not be built, or its
+    identity read refused Nora's credentials. Fatal — the caller refuses to
+    start. (An identity that is merely unavailable degrades instead.)"""
 
 
 # A deploy that recreates nora and its bridges in the same moment asks
@@ -144,112 +140,215 @@ async def _resolve_bridge_identity(
         return identity
 
 
-async def _resolve_or_refuse(
-    adapter: PlatformAdapter,
-    platform: str,
-    *,
-    bridge: bool,
-    sleep: Callable[[float], Awaitable[None]],
-    clock: Callable[[], float],
-) -> PlatformIdentity:
-    """Resolve one adapter's identity, refusing startup when it cannot."""
-    try:
-        if bridge:
-            return await _resolve_bridge_identity(adapter, sleep=sleep, clock=clock)
-        return await adapter.resolve_identity()
-    except Exception as exc:
-        kind = "bridge" if bridge else "adapter"
-        raise AdapterRegistryError(
-            f"{platform} {kind} could not resolve its own identity: {exc}"
-        ) from exc
+@dataclass(frozen=True)
+class BuildContext:
+    """Everything a platform builder may need, threaded from `from_config`'s
+    keywords — one value, so a new platform's builder takes the same single
+    argument every other one does."""
 
-
-class _SignalPlatformConfig(Protocol):
-    @property
-    def base_url(self) -> str: ...
-    @property
-    def account(self) -> str: ...
-    @property
-    def enabled(self) -> bool: ...
-
-
-class _DiscordPlatformConfig(Protocol):
-    @property
-    def enabled(self) -> bool: ...
-    @property
-    def token_env(self) -> str: ...
-    @property
-    def base_url(self) -> str: ...
-
-
-class _WhatsAppPlatformConfig(Protocol):
-    """No secret and no account field — the bridge holds the paired session
-    and answers `GET /self`; see `nora.config.WhatsAppPlatformConfig`."""
-    @property
-    def enabled(self) -> bool: ...
-    @property
-    def base_url(self) -> str: ...
-
-
-class _InstagramPlatformConfig(Protocol):
-    """Same shape as WhatsApp's and for the same reason — the bridge holds the
-    cookie session and answers `GET /health`; see
-    `nora.config.InstagramPlatformConfig`."""
-    @property
-    def enabled(self) -> bool: ...
-    @property
-    def base_url(self) -> str: ...
-
-
-class _PlatformsConfig(Protocol):
-    """The narrow slice of `nora.config.Config` this module needs — not
-    `nora.config.Config` itself, which `nora.platform` is forbidden from
-    importing (`layered architecture` / `only app and __main__ read config`,
-    both enforced by `lint-imports`). `nora.app.composition` passes
-    `cfg.platforms` (a `nora.config.PlatformsConfig`), which satisfies this
-    shape structurally without this module ever seeing `nora.config`.
-
-    Every member is a read-only `@property`, not a plain attribute: mypy
-    checks a mutable Protocol attribute for exact nominal type equality
-    (so a mutation through the Protocol view can't violate what the
-    concrete type promised), which a nested Protocol attribute — `signal:
-    _SignalPlatformConfig` — can never satisfy structurally against
-    `nora.config.PlatformsConfig`'s pydantic-model `signal` field. A
-    read-only property is checked covariantly instead, which is what
-    structural (duck-typed) compatibility actually needs here.
-    """
-
-    @property
-    def signal(self) -> _SignalPlatformConfig: ...
-    @property
-    def discord(self) -> _DiscordPlatformConfig: ...
-    @property
-    def whatsapp(self) -> _WhatsAppPlatformConfig: ...
-    @property
-    def instagram(self) -> _InstagramPlatformConfig: ...
+    metrics: MetricsSink
+    discord_token: str = ""
+    music_manager: MusicPlayerManager | None = None
+    discord_speaker: Any = None
+    voice_hub: VoiceControllerHub | None = None
+    voice_guild_ids: frozenset[str] = frozenset()
+    resolve_music_channel: ResolveMusicChannel = no_music_channel
+    discord_command_acts: DiscordCommandActs | None = None
+    discord_control_effects: EffectRecorder | None = None
+    instagram_summons: SummonsSink | None = None
+    dm_recipients: Mapping[str, Set[str]] = field(default_factory=dict)
+    dm_gates: Mapping[str, Callable[[str], Awaitable[bool]]] = field(default_factory=dict)
+    signal_consent: Callable[
+        [str], Callable[[dict], Awaitable[bool]] | None
+    ] | None = None
+    bridge_token: str = ""
 
 
 @dataclass(frozen=True)
-class AdapterRegistry:
-    """Built adapters and their resolved identities, keyed by platform name.
+class Built:
+    """A builder's answer: the adapter, and whether it is bridge-backed (a
+    bridge gets the bounded startup identity wait)."""
 
-    Frozen and built once, at startup, by `from_config` — nothing in this
-    class does I/O itself; it is a lookup table over work already done.
+    adapter: Any
+    bridge: bool
+
+
+Builder = Callable[[Any, BuildContext], Awaitable[Built]]
+
+
+def _is_bridge(cfg: Any) -> bool:
+    return getattr(cfg, "mode", "direct") == "bridge"
+
+
+async def _build_signal(cfg: Any, ctx: BuildContext) -> Built:
+    if _is_bridge(cfg):
+        # The standalone signal-bridge holds the daemon; `account` is the
+        # wire's account_key — no derive_account against signal-cli.
+        return Built(BridgeAdapter(
+            "signal", BridgeEndpoint(cfg.base_url, ctx.bridge_token),
+            dm_recipients=ctx.dm_recipients.get("signal", frozenset()),
+            dm_gate=ctx.dm_gates.get("signal")), bridge=True)
+    try:
+        account = await derive_account(cfg.base_url, override=cfg.account)
+    except AccountError as exc:
+        # Misconfiguration: the account cannot be derived from this daemon
+        # (0.14.7 serves no accounts endpoint) — fatal, never degraded.
+        raise AdapterRegistryError(f"signal account error: {exc}") from exc
+    return Built(SignalAdapter(
+        cfg.base_url, account, metrics=ctx.metrics,
+        dm_recipients=ctx.dm_recipients.get("signal", frozenset()),
+        # The private consent seam is bound to the DERIVED daemon account
+        # (never the configured claim), so provenance the parser checks is
+        # the account signal-cli actually serves.
+        on_consent=(ctx.signal_consent(account) if ctx.signal_consent else None),
+        dm_gate=ctx.dm_gates.get("signal"),
+    ), bridge=False)
+
+
+async def _build_discord(cfg: Any, ctx: BuildContext) -> Built:
+    if _is_bridge(cfg):
+        # The standalone discord-bridge owns the Gateway, the music manager
+        # and the voice-controller hub; the app holds only proxies.
+        endpoint = BridgeEndpoint(cfg.base_url, ctx.bridge_token)
+        return Built(BridgeDiscordAdapter(
+            delegate=BridgeAdapter("discord", endpoint),
+            control=BridgeControlClient(endpoint, effects=ctx.discord_control_effects),
+            speaker=ctx.discord_speaker), bridge=True)
+    if not ctx.discord_token:
+        raise AdapterRegistryError(
+            f"discord is enabled but no token was resolved from "
+            f"${cfg.token_env} — refusing to start with a platform that "
+            "cannot authenticate"
+        )
+    return Built(DiscordAdapter(
+        ctx.discord_token, music_manager=ctx.music_manager,
+        speaker=ctx.discord_speaker, voice_hub=ctx.voice_hub,
+        voice_guild_ids=ctx.voice_guild_ids,
+        resolve_music_channel=ctx.resolve_music_channel, command_acts=ctx.discord_command_acts,
+    ), bridge=False)
+
+
+async def _build_whatsapp(cfg: Any, ctx: BuildContext) -> Built:
+    if _is_bridge(cfg):
+        return Built(BridgeAdapter(
+            "whatsapp", BridgeEndpoint(cfg.base_url, ctx.bridge_token),
+            dm_recipients=ctx.dm_recipients.get("whatsapp", frozenset()),
+            dm_gate=ctx.dm_gates.get("whatsapp")), bridge=True)
+    return Built(WhatsAppAdapter(
+        cfg.base_url, dm_recipients=ctx.dm_recipients.get("whatsapp", frozenset()),
+        dm_gate=ctx.dm_gates.get("whatsapp"),
+    ), bridge=False)
+
+
+async def _build_instagram(cfg: Any, ctx: BuildContext) -> Built:
+    if _is_bridge(cfg):
+        return Built(BridgeAdapter(
+            "instagram", BridgeEndpoint(cfg.base_url, ctx.bridge_token)),
+            bridge=True)
+    return Built(InstagramAdapter(cfg.base_url, summons=ctx.instagram_summons),
+                 bridge=False)
+
+
+@dataclass(frozen=True)
+class PlatformEntry:
+    """One row of the platform table: the platform's name (its
+    `[platforms.<name>]` section and its `platform` label everywhere) and the
+    builder that turns that section into an adapter. Everything else —
+    startup, the identity wait, degrade, recovery, promotion, the inbound
+    gates, the state gauge, `/health` — is the registry's, once, for every
+    row (design/platform-bridges/platform-liveness.md)."""
+
+    name: str
+    build: Builder
+
+
+#: Every platform Nora knows. Adding one is a config section, an adapter that
+#: joins `DegradeLatch`, and a row here.
+PLATFORMS: tuple[PlatformEntry, ...] = (
+    PlatformEntry("signal", _build_signal),
+    PlatformEntry("discord", _build_discord),
+    PlatformEntry("whatsapp", _build_whatsapp),
+    PlatformEntry("instagram", _build_instagram),
+)
+PLATFORM_NAMES: tuple[str, ...] = tuple(e.name for e in PLATFORMS)
+
+
+def bridge_platforms(platforms: Any,
+                     table: tuple[PlatformEntry, ...] = PLATFORMS) -> list[str]:
+    """Every enabled platform in `mode = "bridge"`, in table order — what the
+    composition's pre-registry bridge checks and the stream readers cover."""
+    out: list[str] = []
+    for entry in table:
+        cfg = getattr(platforms, entry.name, None)
+        if cfg is not None and cfg.enabled and _is_bridge(cfg):
+            out.append(entry.name)
+    return out
+
+
+def _refused(exc: BaseException) -> bool:
+    """A 401/403 to Nora's own credentials: misconfiguration, never degraded."""
+    return getattr(exc, "status", None) in (401, 403)
+
+
+#: Background recovery limits (platform-liveness.md «Promotion»): each
+#: attempt is bounded; the wait between attempts doubles from the first value
+#: up to the cap; attempts never stop — a logged-out bridge is re-paired by a
+#: person at a time nobody can predict.
+RECOVERY_ATTEMPT_TIMEOUT_SECONDS = 10.0
+RECOVERY_FIRST_BACKOFF_SECONDS = 5.0
+RECOVERY_MAX_BACKOFF_SECONDS = 300.0
+
+
+async def _resolve(
+    adapter: Any, *, bridge: bool,
+    sleep: Callable[[float], Awaitable[None]], clock: Callable[[], float],
+) -> PlatformIdentity:
+    if bridge:
+        return await _resolve_bridge_identity(adapter, sleep=sleep, clock=clock)
+    identity: PlatformIdentity = await adapter.resolve_identity()
+    return identity
+
+
+@dataclass
+class AdapterRegistry:
+    """Built adapters, their resolved identities and each platform's
+    liveness state, keyed by platform name.
+
+    `adapters` holds every ENABLED platform, live or degraded; `identities`
+    holds only the live ones — a degraded platform never has an entry, and no
+    placeholder identity is ever built. `states` covers every platform in the
+    table, `disabled` included.
+
+    The one mutation after startup is `promote`, run by the background
+    recovery: identity registered → latch cleared → inbound opened, in that
+    order (R-12 depends on it).
 
     `adapters` is typed `dict[str, PlatformAdapter]`, the port, not a concrete
-    adapter. Both
-    concrete adapters satisfy `PlatformAdapter` in full
-    (`tests/contract/test_port_conformance.py`), so a caller reading through
-    this registry never needs to know which one it got.
+    adapter (`tests/contract/test_port_conformance.py`).
     """
 
     adapters: dict[str, PlatformAdapter] = field(default_factory=dict)
     identities: dict[str, PlatformIdentity] = field(default_factory=dict)
+    states: dict[str, PlatformState] = field(default_factory=dict)
+    metrics: MetricsSink | None = None
+    _bridged: dict[str, bool] = field(default_factory=dict, repr=False)
+    _live: dict[str, asyncio.Event] = field(default_factory=dict, repr=False)
+    _aliases: LiveSet[str] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        for name in self.adapters:
+            self.states.setdefault(
+                name, "live" if name in self.identities else "degraded")
+        for name, state in self.states.items():
+            event = self._live.setdefault(name, asyncio.Event())
+            if state == "live":
+                event.set()
+        self._aliases = LiveSet(self._union_aliases)
 
     @classmethod
     async def from_config(
         cls,
-        platforms: _PlatformsConfig,
+        platforms: Any,
         *,
         metrics: MetricsSink,
         discord_token: str = "",
@@ -270,217 +369,166 @@ class AdapterRegistry:
         owner: Any = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], float] = time.monotonic,
+        table: tuple[PlatformEntry, ...] = PLATFORMS,
     ) -> AdapterRegistry:
-        """Build enabled platform adapters and resolve their identities.
+        """Build and admit every enabled platform in `table`.
 
-        `discord_token` is the one exception to "this module never reads
-        secrets": it arrives already resolved from `platforms.discord.
-        token_env` by the caller (`nora.app.composition.build_dependencies`,
-        the same place every other `*_env` secret — the LLM key, the route
-        key — is resolved before being handed to whatever constructs the
-        client that needs it). An enabled platform with an empty token is a
-        startup failure, not a broken adapter allowed to build (fail-fast is
-        the point — see this module's own docstring).
+        `platforms` is `cfg.platforms` (a `nora.config.PlatformsConfig`), read
+        structurally: `getattr(platforms, entry.name)` is the section. A
+        missing section is a disabled platform.
 
-        `metrics` is threaded to each adapter so `resolve_identity()`'s
-        enrichment can count its own degradation (R-17). It is required for the
-        reason `SignalAdapter.__init__` gives.
-
-        `music_manager` is `None` unless
-        `[music] enabled` — composition builds it, this module only threads it
-        through to `DiscordAdapter`, same shape as `discord_token`.
-
-        `voice_hub` is the audio-controller's
-        per-guild session registry — `None` when `[speech.tts]
-        sidecars` is empty, which leaves every voice join and speech
-        stream failing closed.
-
-        `resolve_music_channel`
-        maps a guild id to the channel its music announcements belong in, from
-        a `policy.toml` room's `music_channel`. Threaded, never consulted here
-        — same posture as `music_manager`. The default answers `None` for every
-        guild (announce where the session started), so a harness that builds a
-        registry without it is
-        unaffected.
-
-        `instagram_summons` is where the
-        Instagram adapter hands a `summons` SSE event, built by composition
-        (`nora.app.summons_inbox.SummonsInbox`). Threaded, never consulted
-        here — same posture as `music_manager`.
-
-        `dm_recipients` maps a platform to every direct-message address its
-        people hold in `identity.toml` (`Persons.direct_addresses`). Signal's
-        and WhatsApp's senders refuse a 1:1 message to any other address; a
-        platform missing from it refuses every 1:1 message.
+        A builder raising `AdapterRegistryError` (a missing token, an
+        underivable Signal account) and an identity answer of 401/403 are
+        MISCONFIGURATION and refuse startup. Any other identity failure
+        degrades that platform alone (platform-liveness.md «Startup»).
 
         `owner` is the startup's acquisition register (structural — this
         layer does not import `nora.app`): each adapter is owned the moment
         it exists, BEFORE the `resolve_identity` await that can strand its
         session; a raise unwinds every adapter built so far.
 
-        `sleep`/`clock` are the time seam for `_resolve_bridge_identity`'s
-        bounded wait — collaborators through construction, so a test can
-        drive the bound without waiting in real time."""
-        dms = dm_recipients or {}
-        gates = dm_gates or {}
+        `sleep`/`clock` are the time seam for the bounded bridge wait.
+        `table` is the platform table — a test passes its own row."""
+        ctx = BuildContext(
+            metrics=metrics, discord_token=discord_token,
+            music_manager=music_manager, discord_speaker=discord_speaker,
+            voice_hub=voice_hub, voice_guild_ids=voice_guild_ids,
+            resolve_music_channel=resolve_music_channel,
+            discord_command_acts=discord_command_acts,
+            discord_control_effects=discord_control_effects,
+            instagram_summons=instagram_summons,
+            dm_recipients=dm_recipients or {}, dm_gates=dm_gates or {},
+            signal_consent=signal_consent, bridge_token=bridge_token,
+        )
         adapters: dict[str, PlatformAdapter] = {}
         identities: dict[str, PlatformIdentity] = {}
+        states: dict[str, PlatformState] = {}
+        bridged: dict[str, bool] = {}
 
-        def _register(adapter: Any) -> None:
-            if owner is None:
-                return
-            close = getattr(adapter, "close", None)
-            if close is not None:
-                owner.own_adapter(close)
-
-        signal_cfg = platforms.signal
-        if signal_cfg.enabled and getattr(signal_cfg, "mode", "direct") == "bridge":
-            # Bridge mode: the standalone signal-bridge holds the daemon; the
-            # app is a client of its action API + Redis consumer. `account` is
-            # the wire's account_key — no derive_account against signal-cli.
-            adapter: PlatformAdapter = BridgeAdapter(
-                "signal", BridgeEndpoint(signal_cfg.base_url, bridge_token),
-                dm_recipients=dms.get("signal", frozenset()),
-                dm_gate=gates.get("signal"))
-            _register(adapter)
-            identity = await _resolve_or_refuse(
-                adapter, "signal", bridge=True, sleep=sleep, clock=clock)
-            adapters["signal"] = adapter
-            identities["signal"] = identity
-        elif signal_cfg.enabled:
+        for entry in table:
+            section = getattr(platforms, entry.name, None)
+            if section is None or not section.enabled:
+                states[entry.name] = "disabled"
+                continue
+            built = await entry.build(section, ctx)
+            adapter = built.adapter
+            if owner is not None:
+                close = getattr(adapter, "close", None)
+                if close is not None:
+                    owner.own_adapter(close)
+            adapters[entry.name] = adapter
+            bridged[entry.name] = built.bridge
             try:
-                account = await derive_account(
-                    signal_cfg.base_url, override=signal_cfg.account,
-                )
-            except AccountError as exc:
-                raise AdapterRegistryError(f"signal account error: {exc}") from exc
-
-            adapter = SignalAdapter(
-                signal_cfg.base_url, account, metrics=metrics,
-                dm_recipients=dms.get("signal", frozenset()),
-                # The private consent seam is bound to the DERIVED daemon
-                # account (never the configured claim), so provenance the
-                # parser checks is the account signal-cli actually serves.
-                on_consent=(
-                    signal_consent(account) if signal_consent else None),
-                dm_gate=gates.get("signal"),
-            )
-            _register(adapter)
-            identity = await _resolve_or_refuse(
-                adapter, "signal", bridge=False, sleep=sleep, clock=clock)
-
-            adapters["signal"] = adapter
-            identities["signal"] = identity
-
-        discord_cfg = platforms.discord
-        if discord_cfg.enabled and getattr(discord_cfg, "mode", "direct") == "bridge":
-            # Bridge mode: the standalone discord-bridge owns the Gateway,
-            # the music manager and the voice-controller hub. The app holds
-            # ONLY proxies — `BridgeAdapter` for identity/stream/text +
-            # `BridgeDiscordAdapter`'s control client for the voice send
-            # path — never a `discord.Client`, `MusicPlayerManager` or
-            # `VoiceControllerHub` of its own.
-            endpoint = BridgeEndpoint(discord_cfg.base_url, bridge_token)
-            discord_adapter: PlatformAdapter = BridgeDiscordAdapter(
-                delegate=BridgeAdapter("discord", endpoint),
-                control=BridgeControlClient(endpoint, effects=discord_control_effects),
-                speaker=discord_speaker)
-            _register(discord_adapter)
-            discord_identity = await _resolve_or_refuse(
-                discord_adapter, "discord", bridge=True, sleep=sleep, clock=clock)
-            adapters["discord"] = discord_adapter
-            identities["discord"] = discord_identity
-        elif discord_cfg.enabled:
-            if not discord_token:
-                raise AdapterRegistryError(
-                    f"discord is enabled but no token was resolved from "
-                    f"${discord_cfg.token_env} — refusing to start with a "
-                    "platform that cannot authenticate"
-                )
-            discord_adapter = DiscordAdapter(
-                discord_token, music_manager=music_manager,
-                speaker=discord_speaker,
-                voice_hub=voice_hub,
-                voice_guild_ids=voice_guild_ids,
-                resolve_music_channel=resolve_music_channel,
-                command_acts=discord_command_acts,
-            )
-            _register(discord_adapter)
-            discord_identity = await _resolve_or_refuse(
-                discord_adapter, "discord", bridge=False, sleep=sleep, clock=clock)
-
-            adapters["discord"] = discord_adapter
-            identities["discord"] = discord_identity
-
-        whatsapp_cfg = platforms.whatsapp
-        if whatsapp_cfg.enabled and getattr(whatsapp_cfg, "mode", "direct") == "bridge":
-            whatsapp_adapter: PlatformAdapter = BridgeAdapter(
-                "whatsapp", BridgeEndpoint(whatsapp_cfg.base_url, bridge_token),
-                dm_recipients=dms.get("whatsapp", frozenset()),
-                dm_gate=gates.get("whatsapp"))
-            _register(whatsapp_adapter)
-            whatsapp_identity = await _resolve_or_refuse(
-                whatsapp_adapter, "whatsapp", bridge=True, sleep=sleep, clock=clock)
-            adapters["whatsapp"] = whatsapp_adapter
-            identities["whatsapp"] = whatsapp_identity
-        elif whatsapp_cfg.enabled:
-            # Same shape as Discord's block, one platform later: no token to
-            # resolve (the bridge holds the session), so the ONLY failure mode
-            # here is identity — an unpaired or unreachable bridge must fail
-            # startup, not produce a deaf adapter (fail-fast is the point —
-            # this module's own docstring).
-            whatsapp_adapter = WhatsAppAdapter(
-                whatsapp_cfg.base_url, dm_recipients=dms.get("whatsapp", frozenset()),
-                dm_gate=gates.get("whatsapp"),
-            )
-            _register(whatsapp_adapter)
-            whatsapp_identity = await _resolve_or_refuse(
-                whatsapp_adapter, "whatsapp", bridge=False, sleep=sleep, clock=clock)
-
-            adapters["whatsapp"] = whatsapp_adapter
-            identities["whatsapp"] = whatsapp_identity
-
-        instagram_cfg = platforms.instagram
-        if instagram_cfg.enabled and getattr(instagram_cfg, "mode", "direct") == "bridge":
-            instagram_adapter: BridgeAdapter | InstagramAdapter = BridgeAdapter(
-                "instagram", BridgeEndpoint(instagram_cfg.base_url, bridge_token))
-            _register(instagram_adapter)
-            try:
-                instagram_identity = await instagram_adapter.resolve_identity()
-            except Exception as exc:  # noqa: BLE001 — degrade, never refuse to start
-                instagram_adapter.degrade(f"{type(exc).__name__}: {exc}")
-                adapters["instagram"] = instagram_adapter
+                identity = await _resolve(
+                    adapter, bridge=built.bridge, sleep=sleep, clock=clock)
+            except Exception as exc:
+                kind = "bridge" if built.bridge else "adapter"
+                if _refused(exc):
+                    raise AdapterRegistryError(
+                        f"{entry.name} {kind} refused Nora's credentials while "
+                        f"resolving its identity: {exc}") from exc
+                # NO `identities` entry, and this is load-bearing: a
+                # placeholder identity would put its placeholder value into
+                # the very set R-12 and `MentionPolicy` test membership in.
+                adapter.degrade(
+                    f"{entry.name} {kind} could not resolve its own identity: "
+                    f"{type(exc).__name__}: {exc}")
+                states[entry.name] = "degraded"
             else:
-                adapters["instagram"] = instagram_adapter
-                identities["instagram"] = instagram_identity
-        elif instagram_cfg.enabled:
-            # THE ONE BLOCK THAT DOES NOT FAIL FAST. See this module's
-            # docstring for why, and `nora.platform.instagram.adapter` for what
-            # "degraded" is defined to mean.
-            instagram_adapter = InstagramAdapter(
-                instagram_cfg.base_url, summons=instagram_summons,
-            )
-            _register(instagram_adapter)
-            try:
-                instagram_identity = await instagram_adapter.resolve_identity()
-            except Exception as exc:  # noqa: BLE001 — degrade, never refuse to start
-                instagram_adapter.degrade(f"{type(exc).__name__}: {exc}")
-                adapters["instagram"] = instagram_adapter
-                # NO `identities` ENTRY, and this is load-bearing rather than
-                # an omission. `self_aliases()` is a UNION over this mapping
-                # and `PlatformIdentity` derives `aliases` from `primary`, so a
-                # placeholder identity built to keep the shape rectangular
-                # would put its placeholder value — `""` for the obvious
-                # choice — into the very set `MentionPolicy` and
-                # `ReplyToNoraPolicy` test membership in. Inventing an answer
-                # to "who is Nora" is exactly the R-12 bug class fail-fast
-                # exists to prevent, and a degraded adapter emits no messages,
-                # so nothing ever asks `identity_for("instagram")`.
-            else:
-                adapters["instagram"] = instagram_adapter
-                identities["instagram"] = instagram_identity
+                identities[entry.name] = identity
+                states[entry.name] = "live"
 
-        return cls(adapters=adapters, identities=identities)
+        registry = cls(adapters=adapters, identities=identities, states=states,
+                       metrics=metrics, _bridged=bridged)
+        registry.publish_states()
+        return registry
+
+    # ---- liveness ----------------------------------------------------------
+
+    def state_of(self, platform: str) -> PlatformState:
+        return self.states.get(platform, "disabled")
+
+    def is_live(self, platform: str) -> bool:
+        return self.states.get(platform) == "live"
+
+    def live_platforms(self) -> frozenset[str]:
+        return frozenset(p for p, s in self.states.items() if s == "live")
+
+    def degraded_platforms(self) -> tuple[str, ...]:
+        return tuple(p for p, s in self.states.items() if s == "degraded")
+
+    async def wait_live(self, platform: str) -> None:
+        """Return once `platform` is live — the gate every inbound path
+        (supervised listen, stream reader) awaits before its first read.
+        Returns at once for a live platform."""
+        await self._live.setdefault(platform, asyncio.Event()).wait()
+
+    def publish_states(self) -> None:
+        """`nora_platform_state{platform,state}`, one-hot over
+        `PLATFORM_STATES`, for every platform the registry knows."""
+        if self.metrics is None:
+            return
+        for platform, current in self.states.items():
+            for state in PLATFORM_STATES:
+                self.metrics.gauge("nora_platform_state",
+                                   1.0 if state == current else 0.0,
+                                   platform=platform, state=state)
+
+    def promote(self, platform: str, identity: PlatformIdentity) -> None:
+        """Make a degraded platform live. THE ORDER IS R-12's: the identity is
+        registered (so `identity_for` and the live `self_aliases()` view hold
+        it) BEFORE the latch clears and BEFORE inbound opens — no event from
+        this platform can be admitted while its identity is absent."""
+        self.identities[platform] = identity
+        self.adapters[platform].promote()  # type: ignore[attr-defined]
+        self.states[platform] = "live"
+        self.publish_states()
+        self._live.setdefault(platform, asyncio.Event()).set()
+        log.warning("%s identity resolved — platform promoted to live", platform)
+
+    async def recover(
+        self, platform: str, *,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        wait_for: Callable[..., Awaitable[Any]] = asyncio.wait_for,
+    ) -> None:
+        """Re-resolve one degraded platform until it answers, then promote it.
+
+        Each attempt is bounded by `RECOVERY_ATTEMPT_TIMEOUT_SECONDS`; the
+        wait after a failure starts at `RECOVERY_FIRST_BACKOFF_SECONDS` and
+        doubles to `RECOVERY_MAX_BACKOFF_SECONDS`. Never gives up. A 401/403
+        is logged once per occurrence and keeps retrying: at runtime the
+        process stays up, and the operator's credential fix is what clears it.
+
+        `sleep`/`wait_for` are the time seam, so a test drives the backoff and
+        the attempt bound on a fake clock.
+        """
+        adapter = self.adapters[platform]
+        delay = RECOVERY_FIRST_BACKOFF_SECONDS
+        while self.states.get(platform) == "degraded":
+            try:
+                identity = await wait_for(
+                    adapter.resolve_identity(),
+                    timeout=RECOVERY_ATTEMPT_TIMEOUT_SECONDS)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — a failed attempt retries
+                if _refused(exc):
+                    log.error("%s refused Nora's credentials: %s", platform, exc)
+                await sleep(delay)
+                delay = min(delay * 2, RECOVERY_MAX_BACKOFF_SECONDS)
+                continue
+            self.promote(platform, identity)
+
+    async def recover_forever(
+        self, *, sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
+        """One `recover` per platform degraded at startup, concurrently —
+        one platform's backoff never delays another's promotion."""
+        degraded = self.degraded_platforms()
+        if degraded:
+            await asyncio.gather(*(self.recover(p, sleep=sleep) for p in degraded))
+
+    # ---- lookup ------------------------------------------------------------
 
     def get(self, platform: str) -> PlatformAdapter:
         return self.adapters[platform]
@@ -488,16 +536,22 @@ class AdapterRegistry:
     def identity_for(self, platform: str) -> PlatformIdentity:
         return self.identities[platform]
 
-    def self_aliases(self) -> frozenset[str]:
-        """Every id form Nora answers to, ACROSS every enabled platform.
+    def _union_aliases(self) -> frozenset[str]:
+        if not self.identities:
+            return frozenset()
+        return frozenset().union(
+            *(identity.aliases for identity in self.identities.values()))
+
+    def self_aliases(self) -> LiveSet[str]:
+        """Every id form Nora answers to, ACROSS every LIVE platform — a LIVE
+        view, read at each membership test, never a snapshot: a platform
+        promoted after composition reaches every holder of this view with no
+        rebuild (platform-liveness.md «Promotion»). Holders keep the view;
+        a copy (`frozenset(...)`) would freeze the startup answer.
 
         What `MentionPolicy`/`ReplyToNoraPolicy` test membership in, so that
         "did somebody tag Nora?" is answered the same way wherever the message
-        came from. Built here rather than inline at the composition root
-        because it is a property of the registry — and because an expression
-        living only inside `build_dependencies` cannot be called by a test
-        without re-typing it, which is a test that asserts about its own copy
-        rather than about the code.
+        came from.
 
         A UNION. A Signal phone is `+…` and its ACI a hyphenated UUID, so
         neither can collide with anything; a WhatsApp phone is `+…` on a
@@ -523,11 +577,7 @@ class AdapterRegistry:
         strictly per-platform and reads `identity_for(message.platform)`
         (DEC-102).
         """
-        if not self.identities:
-            return frozenset()
-        return frozenset().union(
-            *(identity.aliases for identity in self.identities.values())
-        )
+        return self._aliases
 
     def __contains__(self, platform: str) -> bool:
         return platform in self.adapters

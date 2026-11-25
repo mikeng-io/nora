@@ -55,7 +55,7 @@ NON_RUNTIME_FILES = frozenset(
     }
 )
 DECLARATION = re.compile(
-    r"^(?:[a-z]+(?:\([^)]*\))?!: |BREAKING[ -]CHANGE:|Release-Bump: minor[ \t]*$)", re.M
+    r"^(?:[a-z]+(?:\([^)]*\))?!: |BREAKING[ -]CHANGE:)", re.M
 )
 GENERATED = re.compile(
     r"^(?:chore\(master\): release \d+\.\d+\.\d+|"

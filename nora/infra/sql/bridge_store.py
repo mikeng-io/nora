@@ -219,7 +219,8 @@ class SqlBridgeStore:
     async def claim_next(self, *, owner: str, lease_seconds: int = 300,
                          platform: str | None = None,
                          conversation_id: str | None = None,
-                         kinds: frozenset[str] | tuple[str, ...] | None = None
+                         kinds: frozenset[str] | tuple[str, ...] | None = None,
+                         platforms: frozenset[str] | None = None,
                          ) -> BridgeWork | None:
         """Claim the earliest due non-terminal work row, skipping locked rows.
 
@@ -230,6 +231,10 @@ class SqlBridgeStore:
         """
         cond = [BRIDGE_WORK.c.state.in_(("pending", "retryable_failure")),
                 BRIDGE_WORK.c.due_at <= sa.func.now()]
+        if platforms is not None:
+            # Only LIVE platforms' rows (platform-liveness.md): a degraded
+            # platform's work waits, pending, for its promotion.
+            cond += [BRIDGE_WORK.c.platform.in_(tuple(sorted(platforms)))]
         if platform is not None:
             cond += [BRIDGE_WORK.c.platform == platform]
         if conversation_id is not None:

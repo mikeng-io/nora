@@ -270,6 +270,7 @@ KNOWN_CALLS = {'agent/comprehend_tools.py': {'ComprehendRead.stream self._inner.
                                   '_xlsx pkg.stream': 3},
  'infra/geocode.py': {'CachingBilingualGeocoder.address_for self._store.put': 1},
  'infra/google/auth.py': {'GoogleCredentials._refresh client.stream': 1},
+ 'infra/image_gen/openai_api_adapter.py': {"OpenAIImageGenerator._send session.post f'{self._url}/{endpoint}'": 1},
  'infra/image_gen/openai_codex_adapter.py': {"OpenAICodexImageGenerator._post session.post f'{self._url}/{endpoint}'": 1},
  'infra/image_gen/openai_codex_oauth.py': {'OpenAICodexOAuth._exchange session.post self._token_url': 1,
                                            "device_flow_login session.post f'{accounts}/deviceauth/token'": 1,

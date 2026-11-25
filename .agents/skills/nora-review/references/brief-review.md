@@ -46,9 +46,11 @@ disposition (`ORCHESTRATION.md` «Bounded independent review») but never
 lowers or raises the severity.
 
 After a repair, a re-check covers the repair delta, the open findings and
-any evidence that was unavailable. Rounds continue without asking while each
-one closes blocker classes. Mike decides how to proceed when a re-check leaves
-blockers open and closes no class, or a repair introduces a new blocker class.
+any evidence that was unavailable. One focused re-check follows a repair,
+without asking. A BLOCKER it leaves open gets one more repair (a round with no
+BLOCKER ends review, `ORCHESTRATION.md`); a new blocker
+class, or a finding open after its second repair, is an architecture verdict
+for Mike (`nora-work/references/lifecycle.md` «Escalation»), never another round.
 
 When fixing a reported defect class, the author searches for every sibling
 instance, as the reviewer does when reporting one. A re-check that finds an

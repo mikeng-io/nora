@@ -3,6 +3,13 @@
 The plan is the plan phase's output on the standard and full routes. It is
 attached to the brief. The reviewer by rule validates it during brief review.
 
+## Surface inventory
+
+Before units, list every surface the work touches (module, table, config key,
+tool, prompt, test file) and mark each `reuse`, `patch`, `defer` or
+`out of scope`. A new guard, policy, permission or abstraction is a surface:
+it is in the plan with the Done-when item that needs it, or it is not built.
+
 ## Units
 
 The plan lists units. Each unit states:

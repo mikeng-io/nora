@@ -302,7 +302,7 @@ class Dependencies:
     # paths that must not be — starting each listener, routing a reply back to
     # the platform it came from, reporting health per platform — read instead.
     registry: AdapterRegistry
-    account: str
+    account: str | None  # her Signal account; None while Signal is degraded
     doctrine: Doctrine
     doctrine_store: DoctrineStore
     debounce: Debounce
@@ -604,7 +604,8 @@ async def _compose_dependencies(
     _social_inbox = inbox(cfg=cfg, metrics=metrics)
     summons_inbox = _social_inbox.summons_inbox
     summons_wired = _social_inbox.summons_wired
-    link_delivery = signal_link_delivery(cfg, _memory_wire.act_envelope(engine))
+    link_delivery = signal_link_delivery(cfg, _memory_wire.act_envelope(engine),
+                                         live=lambda: registry.is_live("signal"))
     _platforms_adapters = await adapters(
         cfg=cfg,
         engine=engine,

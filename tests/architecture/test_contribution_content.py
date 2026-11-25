@@ -250,9 +250,10 @@ class GitHub:
             return getattr(self, "commits", GOOD_COMMITS)
         if method == "POST" and path == "/repos/owner/repo/check-runs":
             assert body["head_sha"] == self.item["head"]["sha"]
+            # A run is published once, already completed: PATCHing a just-created
+            # run 404s while GitHub catches up, so no PATCH endpoint exists here.
+            assert body["status"] == "completed"
             return {"id": 7}
-        if method == "PATCH" and path == "/repos/owner/repo/check-runs/7":
-            return body
         raise AssertionError(f"unexpected API call: {method} {path}")
 
 
@@ -262,7 +263,7 @@ def test_result_attaches_to_current_api_head_not_stale_event_head():
     github = GitHub(item)
     assert content.check_pr(github, "owner/repo", 104) == 0
     assert github.calls[-1][2]["conclusion"] == "success"
-    assert github.calls[1][2]["name"] == "PR content"
+    assert github.calls[-1][2]["name"] == "PR content"
 
 
 def test_invalid_live_body_fails_the_published_check():

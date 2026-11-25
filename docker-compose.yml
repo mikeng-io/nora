@@ -581,6 +581,10 @@ services:
       #   The rotating token after it lives in ./state/openai-codex-oauth.json.
       #   Read only when `[image_gen] provider = "openai_codex"`.
       - OPENAI_CODEX_REFRESH_TOKEN=${OPENAI_CODEX_REFRESH_TOKEN:-}
+      #   OPENAI_IMAGE_API_KEY — the metered OpenAI platform image lane, a
+      #   key scoped to its own budgeted project. Read only when
+      #   `[image_gen] provider = "openai"`.
+      - OPENAI_IMAGE_API_KEY=${OPENAI_IMAGE_API_KEY:-}
       #   DISCORD_BOT_TOKEN     — the Gateway/REST credential for the Discord
       #   adapter ([platforms.discord] enabled, DEC-102). Passed explicitly for
       #   the same reason as every value above: Compose does not inherit host
@@ -685,7 +689,9 @@ services:
       - AUTH_SECRET=${AUTH_SECRET:?set AUTH_SECRET in the host environment first}
       - AUTH_TELEGRAM_ID=${AUTH_TELEGRAM_ID:-}
       - AUTH_TELEGRAM_SECRET=${AUTH_TELEGRAM_SECRET:-}
-      - AUTH_URL=${AUTH_URL:?set AUTH_URL (the public origin, e.g. https://nora.67.zone) in the host environment first}
+      - AUTH_URL=${AUTH_URL:?set AUTH_URL (the public origin, e.g. https://nora.example.com) in the host environment first}
+      # The operator's contact address on the public privacy and terms pages.
+      - LEGAL_CONTACT=${LEGAL_CONTACT:?set LEGAL_CONTACT (the operator's contact address) in the host environment first}
       # One-time code sign-in (DEC-287): the SAME value `nora` gets above, the
       # bearer its /app/v1/otp/* routes require. Empty, the login page offers
       # Discord alone.
@@ -703,24 +709,6 @@ services:
       # bind-mounted host dir would be root-owned and unwritable. Same fix as
       # audio-controller-state below.
       - app-downloads:/data/downloads
-
-  # site — Nora's public site (site/, Astro, static). Loopback-only like
-  # `app`; it answers `/`, `/en/`, `/_astro/*`, `/_site/*`, `/favicon.ico`,
-  # `/robots.txt`, `/sitemap.xml` and `/llms.txt` on the portal's own
-  # hostname once the tunnel routes those paths here (site/README.md, "Going
-  # live"). Behind a profile until then, so `docker compose up -d` does not
-  # start it:
-  #   docker compose --profile site build site && docker compose --profile site up -d site
-  site:
-    build:
-      context: .
-      dockerfile: site/Dockerfile
-      network: host
-    image: nora-site:latest
-    container_name: nora-site
-    profiles: [site]
-    restart: unless-stopped
-    ports: ["127.0.0.1:3401:8080"]
 
   # presence — the Life360 presence collector (DEC-55). Same image as
   # nora, a DIFFERENT command and a SEPARATE process: `python -m nora.presence`

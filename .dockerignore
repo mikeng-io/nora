@@ -16,7 +16,6 @@ design/
 .env.*
 config.toml
 identity.toml
-showreel/
 
 secret.toml
 **/.secret-delivery/

@@ -69,9 +69,10 @@ These boundaries authorize no host stop, deletion, restart or deployment.
 ## Release deployment with Komodo
 
 The installed [Komodo release deployment](komodo/README.md) is the normal path:
-ordinary master pushes prepare patch/minor metadata, auto-merge it after required
-checks on its exact head and let release-please publish. Breaking ranges stop for
-an owner-only exact-candidate major dispatch (`nora-release`). The resulting Release triggers
+every releasable master push prepares patch metadata, auto-merges it after
+required checks on its exact head and lets release-please publish. Minor and
+major are owner dispatches; a breaking range ships with its host change in the
+notes, and the deploy refuses a host missing a required setting (`nora-release`). The resulting Release triggers
 `release-images.yml` to build or prove reuse of every artifact and commit
 `compose.json` and `release.json` to `deployments`. The enabled
 `nora-release-poll` Procedure checks every ten minutes and deploys `nora-releases`

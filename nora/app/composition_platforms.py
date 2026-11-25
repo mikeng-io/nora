@@ -3,7 +3,7 @@ from __future__ import annotations
 import functools
 import importlib
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence, Set
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,7 +34,7 @@ from nora.platform.discord.bridge_control import (
 )
 from nora.platform.discord.channels import ClientChannelDirectory
 from nora.platform.discord.command_acts import DiscordCommandActs
-from nora.platform.registry import AdapterRegistry, AdapterRegistryError
+from nora.platform.registry import AdapterRegistry, AdapterRegistryError, bridge_platforms
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.roster import SignalRoster
 from nora.policy import Policy
@@ -44,7 +44,7 @@ from nora.policy import Policy
 
 async def _presence_preflight(
     allowlist: Policy, rosters: Mapping[str, RosterSource], persons: Persons,
-    circles: Sequence[Circle], metrics: Metrics, self_ids: frozenset[str] = frozenset(),
+    circles: Sequence[Circle], metrics: Metrics, self_ids: Set[str] = frozenset(),
     access: Any = None,
 ) -> None:
     """The R-21/R-31 disclosure pre-flight: for every policy"""
@@ -173,14 +173,14 @@ def channels(cfg: Any, reload_files: Any)-> ChannelsWiring:
     )
 
 
-def signal_link_delivery(cfg: Any, envelope: Any) -> Any:
+def signal_link_delivery(cfg: Any, envelope: Any, *, live: Callable[[], bool]) -> Any:
     signal = cfg.platforms.signal
     if (cfg.identity.backend != "managed" or not signal.enabled
             or getattr(signal, "mode", "direct") != "direct"):
         return None
     from nora.platform.signal.consent import SignalLinkDelivery
 
-    return SignalLinkDelivery(signal.base_url, envelope=envelope)
+    return SignalLinkDelivery(signal.base_url, envelope=envelope, live=live)
 
 
 def signal_link_consent(services: Any, delivery: Any) -> Any:
@@ -214,6 +214,23 @@ async def adapters(
     summons_inbox: Any, voice_guild_ids: Any, voice_hub: Any, engine: Any,
     owner: Any = None, signal_consent: Any = None, access: Any = None,
 ) -> AdaptersWiring:
+    # Bridge misconfiguration (no bearer, no Redis URL) is refused before any
+    # adapter exists: a retry cannot cure it, so it never reaches the registry,
+    # where an identity failure only degrades one platform (platform-liveness.md).
+    bridged = bridge_platforms(cfg.platforms)
+    if bridged:
+        if not cfg.credentials.get(cfg.bridges.token_env, ""):
+            raise StartupError(
+                f"bridge mode is enabled for {bridged} but "
+                f"${cfg.bridges.token_env} (bridges.token_env) is not set — "
+                "refusing to start with bridges that cannot authenticate"
+            )
+        if not cfg.credentials.get(cfg.bridges.redis_url_env, ""):
+            raise StartupError(
+                f"bridge mode is enabled for {bridged} but "
+                f"${cfg.bridges.redis_url_env} (bridges.redis_url_env) is not "
+                "set — refusing to start deaf"
+            )
     scope = engine.get_execution_options()["item_registration"].scope
     try:
         registry = await AdapterRegistry.from_config(
@@ -275,7 +292,10 @@ async def adapters(
     # `Protocol` only checks method/attribute NAMES, not signatures
     # (tests/contract/test_port_conformance.py::…
     _adapter_satisfies_platform_adapter: PlatformAdapter = adapter
-    account = registry.identity_for("signal").primary
+    # `None` while Signal is degraded: her Signal account is unknown until the
+    # registry's recovery promotes it, and no placeholder is ever invented.
+    signal_identity = registry.identities.get("signal")
+    account = signal_identity.primary if signal_identity is not None else None
     return AdaptersWiring(account=account, adapter=adapter, registry=registry)
 
 

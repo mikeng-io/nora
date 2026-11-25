@@ -27,7 +27,7 @@ from aiohttp.test_utils import TestServer
 
 from nora.obs.metrics import Metrics
 from nora.platform import registry as reg
-from nora.platform.registry import AdapterRegistry, AdapterRegistryError
+from nora.platform.registry import AdapterRegistry
 
 TOKEN = "test-bearer"  # noqa: S105 — a synthetic fixture token, not a secret
 PRIMARY = "100000000000000001"
@@ -185,24 +185,21 @@ async def test_a_still_starting_bridge_is_waited_for_until_its_identity_resolves
     assert len(starting) == 1 and len(resolved) == 1
 
 
-async def test_a_bridge_that_stays_not_ready_fails_startup_at_the_bound(
+async def test_a_bridge_that_stays_not_ready_degrades_at_the_bound(
     caplog: pytest.LogCaptureFixture,
 ):
-    """The wait is BOUNDED — a bridge that never becomes ready fails with
-    the same startup error as today, not a hang and not a success."""
+    """The wait is BOUNDED — a bridge that never becomes ready is DEGRADED
+    at the bound (design/platform-bridges/platform-liveness.md): not a
+    hang, not a success, and not a process-wide startup failure."""
     state = _state(not_ready=10**9)
     clock = _FakeTime()
     state["clock"] = clock
     async with _serve(state) as base_url:
-        with (
-            caplog.at_level(logging.WARNING, logger="nora.platform.registry"),
-            pytest.raises(
-                AdapterRegistryError,
-                match="could not resolve its own identity"),
-        ):
-            await AdapterRegistry.from_config(
+        with caplog.at_level(logging.WARNING, logger="nora.platform.registry"):
+            registry = await AdapterRegistry.from_config(
                 _bridge_cfg("discord", base_url), metrics=Metrics(),
                 bridge_token=TOKEN, sleep=clock.sleep, clock=clock)
+    assert registry.state_of("discord") == "degraded"
 
     waits = int(reg._BRIDGE_IDENTITY_WAIT_SECONDS
                 // reg._BRIDGE_IDENTITY_INTERVAL_SECONDS)
@@ -220,20 +217,19 @@ async def test_a_bridge_that_stays_not_ready_fails_startup_at_the_bound(
     ],
     ids=["non-503-status", "malformed-identity"],
 )
-async def test_a_bridge_failure_that_is_not_still_starting_fails_immediately(
+async def test_a_bridge_failure_that_is_not_still_starting_degrades_immediately(
     state: dict,
 ):
-    """Fail-closed, exactly as before: another status or a malformed
-    identity is a startup error on the FIRST answer — never waited on."""
+    """Fail-closed on the FIRST answer: another status or a malformed
+    identity degrades the platform at once — never waited on, and never a
+    guessed identity."""
     clock = _FakeTime()
     state["clock"] = clock
     async with _serve(state) as base_url:
-        with pytest.raises(
-                AdapterRegistryError,
-                match="could not resolve its own identity"):
-            await AdapterRegistry.from_config(
-                _bridge_cfg("discord", base_url), metrics=Metrics(),
-                bridge_token=TOKEN, sleep=clock.sleep, clock=clock)
+        registry = await AdapterRegistry.from_config(
+            _bridge_cfg("discord", base_url), metrics=Metrics(),
+            bridge_token=TOKEN, sleep=clock.sleep, clock=clock)
+        assert registry.state_of("discord") == "degraded"
 
     assert state["calls"] == 1
     assert clock.sleeps == []
@@ -242,15 +238,13 @@ async def test_a_bridge_failure_that_is_not_still_starting_fails_immediately(
 async def test_a_refused_connection_is_waited_out_to_the_same_bound():
     """Connection refused — the container exists but its HTTP surface has
     not bound yet — is the same still-starting signal: waited, then the
-    same bounded startup failure."""
+    same bounded degrade."""
     clock = _FakeTime()
     cfg = _bridge_cfg("discord", "http://127.0.0.1:1")
-    with pytest.raises(
-            AdapterRegistryError,
-            match="could not resolve its own identity"):
-        await AdapterRegistry.from_config(
-            cfg, metrics=Metrics(), bridge_token=TOKEN,
-            sleep=clock.sleep, clock=clock)
+    registry = await AdapterRegistry.from_config(
+        cfg, metrics=Metrics(), bridge_token=TOKEN,
+        sleep=clock.sleep, clock=clock)
+    assert registry.state_of("discord") == "degraded"
 
     waits = int(reg._BRIDGE_IDENTITY_WAIT_SECONDS
                 // reg._BRIDGE_IDENTITY_INTERVAL_SECONDS)
@@ -270,12 +264,10 @@ async def test_a_bridge_that_stays_not_ready_when_answers_take_time():
     clock = _FakeTime()
     state["clock"] = clock
     async with _serve(state) as base_url:
-        with pytest.raises(
-                AdapterRegistryError,
-                match="could not resolve its own identity"):
-            await AdapterRegistry.from_config(
-                _bridge_cfg("discord", base_url), metrics=Metrics(),
-                bridge_token=TOKEN, sleep=clock.sleep, clock=clock)
+        registry = await AdapterRegistry.from_config(
+            _bridge_cfg("discord", base_url), metrics=Metrics(),
+            bridge_token=TOKEN, sleep=clock.sleep, clock=clock)
+        assert registry.state_of("discord") == "degraded"
 
     assert clock.sleeps[-1] < reg._BRIDGE_IDENTITY_INTERVAL_SECONDS
     assert clock.now <= reg._BRIDGE_IDENTITY_WAIT_SECONDS + 0.5
@@ -290,12 +282,10 @@ async def test_a_not_ready_answer_after_the_bound_stops_without_sleeping():
     clock = _FakeTime()
     state["clock"] = clock
     async with _serve(state) as base_url:
-        with pytest.raises(
-                AdapterRegistryError,
-                match="could not resolve its own identity"):
-            await AdapterRegistry.from_config(
-                _bridge_cfg("discord", base_url), metrics=Metrics(),
-                bridge_token=TOKEN, sleep=clock.sleep, clock=clock)
+        registry = await AdapterRegistry.from_config(
+            _bridge_cfg("discord", base_url), metrics=Metrics(),
+            bridge_token=TOKEN, sleep=clock.sleep, clock=clock)
+        assert registry.state_of("discord") == "degraded"
 
     # Call 9 starts at t=56 and answers at t=61 — already over the bound,
     # so the wait must not schedule another sleep on top of it.
@@ -312,12 +302,10 @@ async def test_an_identity_that_resolves_after_the_bound_is_refused():
     clock = _FakeTime()
     state["clock"] = clock
     async with _serve(state) as base_url:
-        with pytest.raises(
-                AdapterRegistryError,
-                match="could not resolve its own identity"):
-            await AdapterRegistry.from_config(
-                _bridge_cfg("discord", base_url), metrics=Metrics(),
-                bridge_token=TOKEN, sleep=clock.sleep, clock=clock)
+        registry = await AdapterRegistry.from_config(
+            _bridge_cfg("discord", base_url), metrics=Metrics(),
+            bridge_token=TOKEN, sleep=clock.sleep, clock=clock)
+        assert registry.state_of("discord") == "degraded"
 
     assert state["calls"] == 5
     assert clock.now <= reg._BRIDGE_IDENTITY_WAIT_SECONDS + 0.5
@@ -332,12 +320,10 @@ async def test_a_request_in_flight_at_the_bound_is_not_accepted():
     clock = _FakeTime()
     state["clock"] = clock
     async with _serve(state) as base_url:
-        with pytest.raises(
-                AdapterRegistryError,
-                match="could not resolve its own identity"):
-            await AdapterRegistry.from_config(
-                _bridge_cfg("discord", base_url), metrics=Metrics(),
-                bridge_token=TOKEN, sleep=clock.sleep, clock=clock)
+        registry = await AdapterRegistry.from_config(
+            _bridge_cfg("discord", base_url), metrics=Metrics(),
+            bridge_token=TOKEN, sleep=clock.sleep, clock=clock)
+        assert registry.state_of("discord") == "degraded"
 
     # The call was allowed to start — it began inside the budget — but
     # its late answer is refused. The fake records the request's whole
@@ -357,12 +343,10 @@ async def test_the_bound_is_wall_time(monkeypatch: pytest.MonkeyPatch):
     state = _state(not_ready=0, response_delay=2.0)
     async with _serve(state) as base_url:
         started = time.monotonic()
-        with pytest.raises(
-                AdapterRegistryError,
-                match="could not resolve its own identity"):
-            await AdapterRegistry.from_config(
-                _bridge_cfg("discord", base_url), metrics=Metrics(),
-                bridge_token=TOKEN)
+        registry = await AdapterRegistry.from_config(
+            _bridge_cfg("discord", base_url), metrics=Metrics(),
+            bridge_token=TOKEN)
+        assert registry.state_of("discord") == "degraded"
         elapsed = time.monotonic() - started
 
     assert state["calls"] == 1

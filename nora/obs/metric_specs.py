@@ -38,6 +38,7 @@ from nora.domain.memory_index import (
 )
 from nora.domain.otp import CHECK_OUTCOMES as OTP_CHECK_OUTCOMES
 from nora.domain.otp import REQUEST_OUTCOMES as OTP_REQUEST_OUTCOMES
+from nora.domain.platform_state import PLATFORM_STATES
 from nora.domain.reasoning_strip import (
     PATHS_HELP,
     STRIP_OUTCOMES,
@@ -2108,6 +2109,9 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "may have happened and need an operator.",
         ("platform", "state"),
     ),
+    # One-hot liveness per platform, `disabled` included (platform-liveness.md).
+    _GaugeSpec("nora_platform_state", "1 for the platform's current liveness state, "
+               "0 for the others: " + ", ".join(PLATFORM_STATES), ("platform", "state")),
 )
 
 _HISTOGRAMS: tuple[_HistogramSpec, ...] = (

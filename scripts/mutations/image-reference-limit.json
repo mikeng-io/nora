@@ -43,9 +43,9 @@
  },
  {
   "name": "Codex declares OpenAI's documented limit of 16",
-  "file": "nora/infra/image_gen/openai_codex_adapter.py",
-  "old": "CODEX_MAX_REFERENCE_IMAGES = 16\n",
-  "new": "CODEX_MAX_REFERENCE_IMAGES = 3\n",
+  "file": "nora/infra/image_gen/gpt_image.py",
+  "old": "GPT_IMAGE_MAX_REFERENCE_IMAGES = 16\n",
+  "new": "GPT_IMAGE_MAX_REFERENCE_IMAGES = 3\n",
   "target": "tests/contract/test_image_generator_contract.py::test_codex_sends_every_reference_up_to_its_documented_limit"
  },
  {

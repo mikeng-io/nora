@@ -1686,10 +1686,7 @@
   "internal_docstrings": 6
  },
  "nora/platform/registry.py": {
-  "comment_blocks": 4,
-  "functions": {
-   "AdapterRegistry.from_config": 234
-  },
+  "comment_blocks": 2,
   "internal_docstrings": 1
  },
  "nora/platform/signal/adapter.py": {
@@ -1957,17 +1954,6 @@
  },
  "scripts/verify-deploy.py": {
   "comment_blocks": 1
- },
- "scripts/visual_assets.py": {
-  "functions": {
-   "report": 126
-  }
- },
- "site/scripts/make_rig.py": {
-  "comment_blocks": 1,
-  "functions": {
-   "build": 129
-  }
  },
  "tests/architecture/test_agent_skills.py": {
   "internal_docstrings": 1

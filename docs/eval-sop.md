@@ -57,8 +57,11 @@ runner, corpus fields, private evidence and trace hierarchy.
    private evidence/receipt to bind the subject, grading policy, cohort/snapshot,
    controls, draws, source/config versions, budget, retries/cache behavior and
    stop condition. Declare intended differences between arms. Preserve every
-   attempted case, error and exclusion. A completed budgeted run does not leave
-   open-ended credit for reruns or rescoring.
+   attempted case, error and exclusion. A completed run leaves no open-ended
+   credit: a rerun is covered only while the brief's scenario budget remains
+   and, on the goal-driven track, the convergence budget too (`.agents/lanes.md`);
+   each invocation's receipt records its effective cutoff (`--stop-after-tokens`,
+   or the frozen job's `budget.measured_tokens`), and rescoring is never covered.
 6. **Read back and adjudicate.** Apply Coherence, Consistency, Conformance,
    Correctness and Completeness to scenario → criterion → evidence → verdict
    → report. Separate execution, valid measurement, content quality, governance
@@ -209,7 +212,7 @@ uses the existing memory support/eligibility/coverage and reply graders under
 one shared measured budget and `eval_host_lock()` (the same inner lock as the
 official suite); it runs no subject. The operator wrapper may hold the separate
 outer `/tmp/nora-eval.lock` without the command taking that lock again.
-Execution requires separate operator spending approval. The job fingerprint is
+Execution needs a spending authority: the brief's scenario budget, or Mike's approval. The job fingerprint is
 an artifact binding, never permission or proof that its answer key is correct.
 
 The job pins source head and tracked diff, config, opaque ordered controls,

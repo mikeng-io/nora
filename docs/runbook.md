@@ -133,6 +133,17 @@ To tell "quiet" from "broken":
    `platforms` entirely; a platform that is enabled and has never connected is present
    with `connected: false`. Those are different facts and the block distinguishes them.
 
+   **`platforms.<name>.state`** is the platform's liveness (`live`, `degraded`,
+   `disabled`; also `nora_platform_state{platform,state}`). A platform whose
+   identity could not be resolved (a logged-out or still-starting bridge) is
+   `degraded` ALONE: it hears and sends nothing, the other platforms serve, and
+   Nora re-resolves it in the background (every 5 s, backing off to 5 min)
+   and promotes it to `live` without a restart. Re-pairing the bridge is the
+   whole fix. `/health` is `503` only when no enabled platform is live
+   (design/platform-bridges/platform-liveness.md). A refused credential
+   (401/403), a missing bridge bearer or Redis URL, or an unknown `mode`
+   still stops startup: those are configuration, not availability.
+
    ```jsonc
    "platforms": {
      "signal":  {"connected": true,  "last_event_age_seconds": 4.2,  "account": "+852…"},
@@ -302,10 +313,10 @@ frontmatter, missing required key, unparseable YAML) fails to parse.
 ## 3. "Rollback"
 
 The normal path is the installed Komodo Stack `nora-releases`. A fix merges to
-master; ordinary pushes automatically prepare patch/minor metadata and enable
-exact-head auto-merge after required checks. Release-please publishes the merged
-metadata; breaking ranges stop for an owner-only exact-candidate major dispatch
-(`nora-release`). Publication triggers `release-images.yml`;
+master; every releasable push prepares patch metadata and enables exact-head
+auto-merge after required checks. Release-please publishes the merged metadata;
+minor and major are owner dispatches, and a breaking range ships with its host
+change in the notes (`nora-release`). Publication triggers `release-images.yml`;
 a complete image build commits `compose.json` and `release.json` to `deployments`.
 The enabled `nora-release-poll` Procedure calls `DeployStackIfChanged` every ten
 minutes. The installed wrapper deploys and writes `release-deploy.json`.

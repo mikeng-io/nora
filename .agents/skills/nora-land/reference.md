@@ -1,21 +1,9 @@
-# nora-land: tool notes
+# nora-land: reference
 
-**Claude Code with the rtk hook, in a worktree-isolated subagent.** Every `git`
-call is refused: the hook rewrites it to `rtk git ...`, and the isolation guard
-refuses a launcher with git among its operands (`git -C`, `rtk proxy`, `PATH=`
-too, 2026-09-24). Measured fix: write `<scratchpad>/vcs` (no "git" in the
-name) with the file-writing tool, `chmod +x` it, then `V=<scratchpad>/vcs; $V status -sb`.
-
-```bash
-#!/bin/bash
-cd <worktree> || exit 1
-exec "$(command -v git)" "$@"
-```
-
-`command -v` takes whichever git PATH gives (`/usr/bin/git` or Homebrew's
-`/opt/homebrew/bin/git`). Verify the prepared branch and assigned base before editing; create a new
-branch only if the assignment calls for it. Install dependencies only for
-selected checks. Claude Code commits end with a `Claude-Session:` footer.
+Runtime quirks (sandboxed git, output-compressing hooks, commit footers) are in
+[.agents/runtimes/](../../runtimes/README.md). Verify the prepared branch and
+assigned base before editing; create a new branch only if the assignment calls
+for it. Install dependencies only for selected checks.
 
 ## Choosing a worker
 
@@ -23,10 +11,10 @@ selected checks. Claude Code commits end with a `Claude-Session:` footer.
 adaptive routing, independence and review selection. Resolve the available
 worker and its advertised options at launch.
 
-**T3 `delegate_task` (`isolation: worktree`).** The worktree starts from the
-orchestrator's local commit. Verify it against the assigned base and preserve
-required unpublished commits; do not restart dependent work on master or create
-a second worktree. A reviewer selects the exact head under review.
+**A delegated worktree** starts from wherever the session host prepared it
+(`.agents/runtimes/`). Verify it against the assigned base and preserve required
+unpublished commits; do not restart dependent work on master or create a second
+worktree. A reviewer selects the exact head under review.
 
 ## Pre-merge scanner findings
 
@@ -82,7 +70,7 @@ stack extension, configure checks or prove repository readiness.
    PR. Independently releasable layers may use master as trunk. Record the trunk,
    PR order and project link in the existing PR/brief. Verify actual trunk
    protections/checks first; master-only workflows may not run on integration.
-2. **Prepare and link.** Each worker keeps its assigned T3 worktree/base. Build
+2. **Prepare and link.** Each worker keeps its assigned worktree/base. Build
    the next layer from the required lower head without waiting for its merge;
    review each layer's own delta. Create or extend the GitHub-native stack
    yourself with `gh api`; `gh stack` is optional and never installed implicitly.
@@ -99,7 +87,7 @@ stack extension, configure checks or prove repository readiness.
    if the PR cannot follow); `unstack` removes every unmerged layer.
 3. **Repair and restack.** Fix the owning layer; have the stack owner coordinate
    with affected writers before rebasing/restacking upper layers. Preserve dirty
-   work and active T3 bindings; workers fetch and reconcile rewritten remote heads
+   work and active session bindings; workers fetch and reconcile rewritten remote heads
    before resuming. Assess changed interactions and renew only affected review/
    checks, while honoring required hosted checks. Restack is not acceptance.
 4. **Link work and evidence.** Relate each PR to its actual Linear work; use

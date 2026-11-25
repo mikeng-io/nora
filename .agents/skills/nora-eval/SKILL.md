@@ -158,11 +158,11 @@ Preserve originals; posthoc regrades are calibration. Replays, diagnostics and r
    UNSTABLE prints `[p pass / f fail / e error]`; ERROR is never PASS; report n with
    every number (`reference.md` "Reading the log": census, spend, TRUNCATED, memory-reading draws,
    judged baselines, Discord anchors). A FAIL is the end of the run, not a reason
-   for more samples: go back to "An eval confirms a fix" and read the case's input,
-   anchor and expectation. A wrong expectation fails every draw.
+   for more samples: reread the case's input, anchor and expectation ("An eval confirms a fix").
    Check: every number you will quote has its n, draw split and arm beside it.
 
-9. **Write it into the PR body** (a `What` block, per `CONTRIBUTING.md`):
+9. **Write the receipt where the decision lives:** a confirmed change's PR body (`What`,
+   `CONTRIBUTING.md`); else the conversation, issue or goal-driven checkpoint:
    ```
    Eval: `python -m evals <corpus> --grading-contract FILE --grading-contract-sha256 SHA [--case …] --sample N [--judge]`, on nora-host,
    source refreshed <newest_ts>, one run on the host at a time.
@@ -179,10 +179,10 @@ A delegated agent told "run the eval if you can" burns tokens waiting: hours
 of poll loops, a second arm queued before the first was read. The brief
 carries the budget and the ending:
 
-- State each arm's `estimate:` line; never `--allow-long` unless the operator asked.
-- Launch with `run_in_background` (Tool notes) and END the turn. No sleep-polling,
-  no holding a subagent open: the parent reads `/tmp/eval-<arm>.rc` at the
-  computed finish, then the log.
+- State each arm's `estimate:` line; never `--allow-long` unless the operator asked;
+  spend, re-runs and escalation: [reference.md](reference.md#budget-repeats-and-escalation).
+- Launch in the background (Tool notes) and END the turn. No sleep-polling or
+  open subagent: the parent reads `/tmp/eval-<arm>.rc` at the computed finish, then the log.
 - A brand-new tool has no before arm that can pass: that arm only proves the arms
   differ (step 5). Spend draws on the after arm and the negatives.
 - A positive failing every draw (`0 pass / 5 fail`) is an input or budget defect:
@@ -198,7 +198,6 @@ unanchored case before a run.
 
 ## Tool notes
 
-- **Claude Code:** launch the long run as the Bash command itself with
-  `run_in_background`, never `nohup … &` inside it: the completion notice then
-  reports the wrapper, and a live run looks dead. The notice's exit
-  code is the last command's, so read the rc file, not the notice.
+- Runtime quirks (output-compressing hooks, background notices, sandboxed git): `.agents/runtimes/`.
+  Launch the run itself in the background, not a wrapper around it, and read the
+  rc file, not the notice.

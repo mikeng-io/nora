@@ -166,10 +166,9 @@ three times becomes a row here.
 
 | Rule | A reviewer checks | Held by |
 |---|---|---|
-| The public site ships no unhashed inline script. | `script-src` takes build-time hashes, never `'unsafe-inline'`. | `test_site_csp_takes_script_hashes` |
 | Both locales make the same claims. | A correction in one locale is made in the other; the same keys are not enough. | `test_portal_locales_make_the_same_claims` |
 | How she looks follows `DESIGN.md`. | The change is checked against its section before it is built. | review |
-| A change under `site/` or `app/` runs its own tests and build. | `npm test` and `npm run build` for the package touched. | CI `site` and portal jobs |
+| A change under `app/` runs its own tests and build. | `npm test` and `npm run build` in `app/`. | CI portal jobs |
 
 ### Deploy, config and secrets
 

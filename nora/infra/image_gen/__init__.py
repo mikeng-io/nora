@@ -2,8 +2,8 @@
 `[image_gen].provider` name to a concrete `ImageGenerator` implementation.
 
 DEC-137: the port is provider-agnostic; the composition root asks for a
-named provider and this module answers: `xai` (DEC-137) or `openai_codex`
-(DEC-304, design/video-generation/README.md). Any other `provider` value degrades to
+named provider and this module answers: `xai` (DEC-137), `openai_codex`
+(DEC-304) or `openai`, the platform API on a key. Any other `provider` value degrades to
 None (M6): the `generate_image` tool answers `unavailable` with
 a composition-side warning, exactly like an unset token — never a raise at
 boot and never a guessed provider.
@@ -15,6 +15,7 @@ from pathlib import Path
 
 from nora.domain.ports import ImageGenerator
 
+from .openai_api_adapter import OpenAIImageGenerator
 from .openai_codex_adapter import OpenAICodexImageGenerator
 from .openai_codex_oauth import OpenAICodexOAuth
 from .xai_adapter import XaiImageGenerator
@@ -34,18 +35,33 @@ def build_image_generator(
     standard_quality: str = "medium",
     high_quality: str = "high",
     max_reference_images: int | None = None,
+    api_key: str = "",
+    max_gif_frames: int = 0,
 ) -> ImageGenerator | None:
     """Build the `ImageGenerator` the config selects.
 
     Pass an existing `oauth` (the process-lifetime lane the keepalive also
     holds, DEC-308: one refresh lock) OR a fresh `refresh_token` +
-    `state_file` (for the CLI / one-shot paths).
+    `state_file` (for the CLI / one-shot paths). The `openai` lane takes an
+    `api_key` instead.
     Returns None when the lane cannot be constructed (empty token, or an
     unknown provider — the honest wiring-gap state the tool answers
     `unavailable` for, never a crash and never a guessed provider). M6: an
     unknown provider name degrades to None with a composition-side warning,
     matching the weather/presence lanes, instead of raising at boot.
     """
+    if provider == "openai":
+        if not api_key:
+            return None
+        return OpenAIImageGenerator(
+            api_key=api_key,
+            model=model,
+            standard_quality=standard_quality,
+            high_quality=high_quality,
+            timeout_seconds=timeout_seconds,
+            max_reference_images=max_reference_images,
+            max_gif_frames=max_gif_frames,
+        )
     if provider == "openai_codex":
         # `refresh_token` is the BOOTSTRAP token from `.env`; the live,
         # rotating one is kept in `state_file` (openai_codex_oauth).
@@ -64,6 +80,7 @@ def build_image_generator(
             high_quality=high_quality,
             timeout_seconds=timeout_seconds,
             max_reference_images=max_reference_images,
+            max_gif_frames=max_gif_frames,
         )
     if provider == "xai":
         lane = oauth if isinstance(oauth, XaiOAuth) else None
@@ -94,6 +111,7 @@ def build_image_generator(
 __all__ = [
     "OpenAICodexImageGenerator",
     "OpenAICodexOAuth",
+    "OpenAIImageGenerator",
     "XaiImageGenerator",
     "XaiOAuth",
     "build_image_generator",

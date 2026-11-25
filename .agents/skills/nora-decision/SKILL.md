@@ -148,6 +148,5 @@ conflict, so the number is chosen immediately before merge (`nora-land` §8).
 
 ## Tool notes
 
-- **Claude Code with the rtk hook:** `git` and `ls` output can come back
-  condensed. For any number you parse, run the command through
-  `rtk proxy <command>`.
+- Runtime quirks (output-compressing hooks, background notices, sandboxed git): `.agents/runtimes/`.
+  For any number you parse, read uncompacted output.

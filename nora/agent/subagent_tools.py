@@ -31,7 +31,7 @@ the computer actor `subagent` and its lease its own.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Set
 from typing import Any
 
 from nora.domain.models import PersonRef
@@ -98,7 +98,7 @@ class SubagentToolSource:
     def __init__(
         self, *, registry: ToolRegistry, store: Any, persons: Any,
         metrics: Metrics, rosters: Mapping[str, Any] | None = None,
-        self_ids: frozenset[str] = frozenset(), access: Any = None,
+        self_ids: Set[str] = frozenset(), access: Any = None,
     ) -> None:
         self._registry = registry
         self._store = store
@@ -109,7 +109,7 @@ class SubagentToolSource:
         self._view = access.persons_view() if access is not None else persons
         self._metrics = metrics
         self._rosters = dict(rosters or {})
-        self._self_ids = frozenset(self_ids)
+        self._self_ids = self_ids  # the live view, never a copy
 
     def tool_param_names(self) -> Mapping[str, frozenset[str]]:
         """R-99's table, for the guard."""

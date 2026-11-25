@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-"""Inventory and synchronize tracked visual assets; no model calls or video renders.
+"""Inventory and synchronize the images this repository ships; no model calls.
 
 uv run python scripts/visual_assets.py check|report|sync
-sync reuses existing icon, showreel and rig processors (see their prerequisites).
-Optional --sources JSON maps repository master paths to local generated PNGs.
-Full sync prerequisites (already used by those processors):
-uv run --no-project --python 3.12 --with pillow --with numpy --with scipy \
-    --with pymatting --with "rembg[cpu]" --with fonttools --with brotli \
-    python scripts/visual_assets.py sync --sources /tmp/mini08-sources.json
-The site needs npm ci and site/.cache/NotoSansHK-wght.ttf for OG typography.
+Her art's masters live in the private nora-assets repository. A
+copy here names its source as `nora-assets:<path>@<commit>`; refreshing it is a
+PR that copies the new file in. sync rebuilds only what is made here: the
+portal's icons from the emblem (app/scripts/make-icons.py, needs rsvg-convert).
 """
 
 from __future__ import annotations
@@ -17,9 +14,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
-import re
 import shutil
-import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -41,6 +36,9 @@ IMAGE_SUFFIXES = {
     ".tif",
     ".tiff",
 }
+
+
+EXTERNAL = "nora-assets:"  # a master kept in the private art repository
 
 
 def digest(path: Path) -> str:
@@ -76,12 +74,18 @@ def validate(data: dict, *, hashes: bool = True) -> list[str]:
             errors.append(f"missing asset: {a['path']}")
             continue
         for parent in a["parents"]:
+            if parent.startswith(EXTERNAL):
+                continue
             if parent not in paths or not (ROOT / parent).is_file():
                 errors.append(f"{a['path']}: missing declared source {parent}")
         if not a["consumers"] or not a["provenance"]:
             errors.append(f"{a['path']}: missing consumer/provenance")
         if hashes and a.get("status") in {"pending-refresh", "needs-recapture"}:
             errors.append(f"pending Mini refresh: {a['path']}")
+        local = [p for p in a["parents"] if not p.startswith(EXTERNAL)]
+        copy_of = ROOT / local[0] if a.get("recipe") == "copy" and local else None
+        if hashes and copy_of and copy_of.is_file() and digest(path) != digest(copy_of):
+            errors.append(f"{a['path']}: copy differs from {local[0]}; run sync")
         if hashes and a.get("sha256") != digest(path):
             errors.append(f"changed bytes; run sync after reviewing source: {a['path']}")
     exports = {e["path"] for e in data["historical_exports"]}
@@ -107,34 +111,19 @@ def report(data: dict) -> str:
         "",
         (
             "All tracked repository images and newly declared source artwork are listed, "
-            "including app/site/GitHub README inputs, "
-            "dynamic art registries, rig textures and retained screenshots. Build-generated "
-            "Astro/Next images are derived at build time and are not tracked. Paths and "
-            "public URLs stay stable."
-        ),
-        "",
-        (
-            "Baseline production setting, 2026-10-26: **2D anime Bauhinia for non-3D "
-            "uses of adult and Mini Nora**. The accepted 2026-11-02 cinematic artwork set in assets/cinematic/ is a scoped exception; existing website/runtime inputs and 3D models are retained. Baseline stylized 3D PNGs are Meshy inputs only. "
-            "Mini retains option08 eyes, no nose marker and one tiny mouth. Simplified "
-            "broad hair clumps and five-petal clasp apply to new references. Per-file rows "
-            "record current source imports and derivative state. Parent integrated browser "
-            "acceptance passed for the current 2D artwork; props and historical exports retain bytes."
+            "including the portal's art and icons, the README's images and retained "
+            "screenshots. Her art's masters are in the private nora-assets repository; a "
+            "copy names its source as `nora-assets:<path>@<commit>`. Build-generated Next "
+            "images are derived at build time and are not tracked."
         ),
         "",
         (
             "Run `check` to verify coverage, source existence, byte fingerprints and the "
-            "runtime handle; `sync` to rebuild app copies, icons, OG previews, showreel "
-            "images and the live rig using existing processors. These commands do not "
-            "generate new artwork, ingest media, publish profiles, deploy or render videos. A "
-            "source edit requires a sync before its derivatives can be accepted."
+            "runtime handle; `sync` to rebuild the portal's icons. These commands do not "
+            "generate new artwork, ingest media, publish profiles or deploy."
         ),
         "",
-        (
-            "Generation sources are retained in the repository at the declared master paths. "
-            "Unmodified generated originals and their metadata remain in the operator's local "
-            "archive. Source-family prompts record intent, not modeling or visual acceptance."
-        ),
+        ("Her art here is all rights reserved (LICENSE); MIT covers the rest of the repository."),
         "",
         "## Verification boundaries",
         "",
@@ -227,98 +216,25 @@ def report(data: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def sanitize_png(content: bytes) -> bytes:
-    """Drop identifying ancillary chunks without decoding or re-encoding IDAT."""
-    signature = b"\x89PNG\r\n\x1a\n"
-    if not content.startswith(signature):
-        raise ValueError("source is not a PNG")
-    result = bytearray(signature)
-    offset = len(signature)
-    while offset < len(content):
-        length = struct.unpack_from(">I", content, offset)[0]
-        end = offset + length + 12
-        if end > len(content):
-            raise ValueError("truncated PNG chunk")
-        kind = content[offset + 4 : offset + 8]
-        if kind not in {b"caBX", b"tEXt", b"zTXt", b"iTXt", b"eXIf"}:
-            result.extend(content[offset:end])
-        offset = end
-        if kind == b"IEND":
-            break
-    return bytes(result)
-
-
-def import_sources(data: dict, mapping: dict[str, str]) -> None:
-    """Map repository master paths to local generated PNGs; keep public paths."""
-    assets = {a["path"]: a for a in data["assets"]}
-    for target, source in mapping.items():
-        if (
-            target not in assets
-            or assets[target]["recipe"] != "source"
-            or assets[target]["form"] not in {"mini", "ui"}
-        ):
-            raise ValueError(f"not a declared source master: {target}")
-        path = ROOT / target
-        path.parent.mkdir(parents=True, exist_ok=True)
-        assets[target]["status"] = "active"
-        assets[target]["eyes"] = (
-            "mini08"
-            if assets[target]["eyes"] not in {"closed", "no-eyes"}
-            else assets[target]["eyes"]
-        )
-        assets[target]["unchanged_reason"] = None
-        assets[target]["provenance"] = (
-            "2D anime Bauhinia production source import, 2026-10-26; "
-            "original metadata retained locally."
-        )
-        if path.suffix == ".png":
-            path.write_bytes(sanitize_png(Path(source).read_bytes()))
-        else:
-            with Image.open(source) as image:
-                image.save(path, "WEBP", quality=90, method=6, alpha_quality=100, exact=True)
-    # This pin describes repository bytes only; no live media ingest occurs.
-    skill = ROOT / "nora/skills/image-generation/SKILL.md"
-    skill.write_text(
-        re.sub(
-            r"\[image [0-9a-f]{64}\]",
-            f"[image {digest(ROOT / 'assets/nora-canonical-self.png')}]",
-            skill.read_text(),
-        )
-    )
-
-
 def sync(data: dict) -> None:
     errors = validate(data, hashes=False)
     if errors:
         raise SystemExit("\n".join(errors))
-    app = load_module("nora_app_icons", "app/scripts/make-icons.py")
     for a in data["assets"]:
-        dst = ROOT / a["path"]
-        if a["recipe"] == "copy":
-            shutil.copyfile(ROOT / a["parents"][0], dst)
-        elif a["recipe"] == "webp":
-            Image.open(ROOT / a["parents"][0]).save(dst, "WEBP", quality=90, method=6)
-        elif a["recipe"] == "app-icon-webp":
-            app.bare_icon(512).save(
-                dst, "WEBP", quality=90, method=6, exact=True, alpha_quality=100
-            )
-    app.main()
-    load_module("nora_site_images", "site/scripts/make_images.py").main()
-    rc = load_module("nora_showreel_art", "showreel/pipeline/process_art.py").main()
-    if rc:
-        raise SystemExit(rc)
-    subprocess.run(  # noqa: S603 - fixed repository processor, no external arguments
-        [sys.executable, str(ROOT / "site/scripts/make_rig.py"), "--debug"], cwd=ROOT, check=True
-    )
+        local = [p for p in a["parents"] if not p.startswith(EXTERNAL)]
+        if a["recipe"] == "copy" and local:
+            shutil.copyfile(ROOT / local[0], ROOT / a["path"])
+    load_module("nora_app_icons", "app/scripts/make-icons.py").main()
     by_path = {a["path"]: a for a in data["assets"]}
 
     # Masters precede outputs in the dependency graph, regardless of list order.
     def refresh(entry: dict) -> None:
-        if entry["recipe"] == "source":
+        local = [p for p in entry["parents"] if not p.startswith(EXTERNAL)]
+        if entry["recipe"] == "source" or not local:
             return
-        for parent in entry["parents"]:
+        for parent in local:
             refresh(by_path[parent])
-        parents = [by_path[p] for p in entry["parents"]]
+        parents = [by_path[p] for p in local]
         entry["status"] = (
             "pending-refresh"
             if any(p["status"] == "pending-refresh" for p in parents)
@@ -340,15 +256,8 @@ def sync(data: dict) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["check", "report", "sync"])
-    parser.add_argument(
-        "--sources", type=Path, help="JSON object: repository master path to local PNG"
-    )
     args = parser.parse_args()
     data = json.loads(MANIFEST.read_text())
-    if args.sources:
-        if args.command != "sync":
-            parser.error("--sources requires sync")
-        import_sources(data, json.loads(args.sources.read_text()))
     if args.command == "sync":
         sync(data)
     rendered = report(data)

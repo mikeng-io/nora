@@ -56,6 +56,7 @@ RULE_TESTS = {
     "DEC-324": "test_a_server_entry_admits_a_discovered_channel_by_guild_id",
     "DEC-323": "test_policy_reload_admits_the_next_message_from_a_new_room",
     "DEC-329": "test_cognition_is_the_live_topic_writer",
+    "DEC-330": "test_a_generation_carries_the_key_and_no_chatgpt_headers",
     "R-1": "test_ambient_reaches_the_agent_only_through_participation_gating",
     "R-1b": "test_only_the_tag_path_and_the_fire_path_can_send",
     "R-2": "test_a_reaction_and_a_text_reply_share_the_message_cap",
@@ -128,8 +129,7 @@ RULE_TESTS = {
     # R-31: the presence disclosure seam is fail-closed (DEC-54). `whereis`
     # refuses to disclose a circle member's position into a conversation whose
     # people are NOT a subset of the circle — a REFUSAL, not a silent omission.
-    # This is the INVERSE of the room tools' R-21, and nothing else in Nora
-    # enforces it.
+    # The INVERSE of the room tools' R-21; nothing else in Nora enforces it.
     "R-31": "test_whereis_refuses_to_disclose_outside_the_circle",
     # R-32: the collector is a change-recorder, not a sampler (DEC-55). A row is
     # written only when a member's `ts` advances, so two reads of an UNMOVED
@@ -144,8 +144,7 @@ RULE_TESTS = {
     # with the honest caveat that a bare local number is a residual risk equal
     # to R-18's. A describable modality with no describer configured is
     # `unavailable` (a wiring gap, R-27); only a blob no describer reads is
-    # `not_an_image` (DEC-114). Inert-by-config behind [media] enabled. See
-    # DEC-56.
+    # `not_an_image` (DEC-114). Inert-by-config behind [media] enabled. See DEC-56.
     "R-33": "test_a_stored_image_is_read_only_within_scope_and_screened_on_serve",
     # R-34 is retired (DEC-73); the number is not reused.
     # R-35: saved-place resolution is subset-scoped and falls through, never
@@ -411,6 +410,7 @@ RULE_TESTS = {
     "R-100": "test_a_reply_with_a_made_up_link_is_sent_without_it_and_counted",
     # Nobody outside identity.toml is sent, or recorded from, a direct message.
     "R-101": "test_a_dm_to_an_address_not_in_identity_toml_is_refused",
+    "R-102": "test_an_identity_failure_degrades_that_platform_and_the_rest_start_live",
     "wake-claims-close": "test_a_closed_wake_closes_its_whole_set",
     "wake-room-busy": "test_engagement_alias_acquisition_blocks_a_wake_write_and_defers_debrief",
     "wake-never-delivers": "test_wake_offers_only_graph_tools_and_its_one_objective",
