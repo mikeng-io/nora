@@ -1738,13 +1738,13 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
             # `[lessons] render` decides whether the turn reads them.
             await seed_lessons(subject, case.name, varied_lessons(md), now_ms=seeded.now_ms)
             if spec.memory_surface == "graph":
-                # LAST, after every seed: the sandbox's memory index, projected
-                # by production's rebuild and holding the source's vectors
-                # where the input is identical, or the draw is refused
+                # LAST, after every seed: the sandbox's Cognitive Graph search
+                # index, rebuilt by production's projection and holding the
+                # source's vectors where the indexed text is identical, or refused
                 # (`nora.subject.sandbox_index`). One line per sandbox.
                 # Built once per key and applied to the next draw seeded alike
                 # (`IndexCache`): the key declares what decided the rows, and
-                # `index_sandbox` adds the digest of what seeding projected.
+                # `index_sandbox` adds the digest of the searchable rows seeding projects.
                 built = await index_sandbox(
                     subject.database_url, source_url=spec.source_url,
                     model_id=subject.cfg.memory.index.embedder_model,

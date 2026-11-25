@@ -5,8 +5,8 @@ sandbox engine — `SqlNoteStore.standing`, `SqlMemoStore.kept`,
 `SqlGatheringStore.list_for_conversation`, `SqlReminderStore.in_rooms`,
 `SqlStandingStore.read_head`, `SqlStandingLedger.read`,
 `SqlLessonStore.lessons`, the graph profile snapshot,
-`SqlMemoryGraph.aliases`, the graph's full relation set through
-`unit_relations`, and the stimulus store's `view`
+the Cognitive Graph's entity anchors and complete typed edge set through
+`nora.memory.wire`'s graph-state readers, and the stimulus store's `view`
 plus `pending_self_wakes` — never an eval-side SQL projection. Entries
 key by the store's own id; the diff classifies created / revised
 (before and after) / retired-or-closed / unchanged.
@@ -28,8 +28,6 @@ from nora.infra.sql.entries import SqlEntryStore
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.memo import SqlMemoStore
-from nora.infra.sql.memory_graph import SqlMemoryGraph
-from nora.infra.sql.memory_relations import unit_relations
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.standing import SqlStandingStore
@@ -93,9 +91,12 @@ class StateDiff:
 
 
 def _payload(obj: Any) -> Mapping[str, Any]:
-    out = dict(vars(obj)) if hasattr(obj, "__dict__") else {
-        k: getattr(obj, k) for k in getattr(obj, "__dataclass_fields__", {})
-    }
+    if isinstance(obj, Mapping):
+        out = dict(obj)
+    elif hasattr(obj, "__dict__"):
+        out = dict(vars(obj))
+    else:
+        out = {k: getattr(obj, k) for k in getattr(obj, "__dataclass_fields__", {})}
     return {k: str(v) for k, v in sorted(out.items())}
 
 
@@ -172,13 +173,13 @@ async def snapshot(
         )
     kinds["profile"] = {str(claim["id"]): claim for claim in claims}
 
-    graph = SqlMemoryGraph(engine)
     kinds["graph"] = {
-        f"{r.rel}:{r.id}": _payload(r)
-        for r in await unit_relations(engine, unit=unit)
+        f"{edge['type']}:{edge['id']}": _payload(edge)
+        for edge in await memory.wire.unit_edges(engine, unit=unit)
     }
-    anchors = {f"anchor:{n}": {"kind": k[0], "id": k[1]}
-               for n, k in (await graph.aliases(unit=unit)).items()}
+    entity_aliases = await memory.wire.entity_anchor_aliases(engine, unit=unit)
+    anchors = {f"anchor:{name}": {"kind": "entity", "id": entity_id}
+               for name, entity_id in entity_aliases.items()}
     notebook = {f"entry:{e.id}": _payload(e)
                 for e in await SqlEntryStore(engine).held(unit=unit) if e.kind == "topic"}
     kinds["topic"] = {**anchors, **notebook}

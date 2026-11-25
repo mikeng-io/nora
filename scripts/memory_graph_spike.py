@@ -26,7 +26,9 @@ from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
 from nora.domain.composed import compose_body
 from nora.domain.memory_graph import Walk
 from nora.domain.prompt import escape
-from nora.infra.sql.engine import create_sql_engine
+from nora.infra.embedder import fingerprint as embedder_fingerprint
+from nora.infra.sql import memory_index
+from nora.infra.sql.engine import create_readonly_sql_engine, create_sql_engine
 from nora.infra.sql.memory_graph import WALK_SQL, walk_parameters
 from nora.infra.sql.schema import METADATA
 from nora.language.cognition_parse import ledger_source_row, shown_source_rows
@@ -653,34 +655,47 @@ def evidence_exchanges(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return exchanges
 
 
-async def index_replay_sandbox(subject: Any, *, source_url: str) -> SandboxIndex:
-    """The replay sandbox's memory index, built before inspect or replay:
-    `sandbox_as_of` restores no `memory_*` table
-    (`nora.infra.sql.history.NOT_RESTORED`), and a `social` or `play`
-    stimulus's `records.load` reads a `memory_node` row that does not exist
-    until the index is projected. The same preparation a graph-surface eval
-    draw gets between seeding and the drive (`evals.backbone`,
-    `nora.subject.sandbox_index`): production's `rebuild` on the restored
-    rows, the source's vectors adopted where the input is identical, and the
-    coverage read back fail-closed — never an empty index, never a model
-    call to fill it."""
+async def _legacy_replay_substrate(subject: Any, *, source_url: str) -> None:
+    """The legacy derived substrate the retained replay runner still consumes."""
     index = subject.cfg.memory.index
-    if index.read and index.embed:
-        await check_served_model(index.embedder_url, index.embedder_model)
-    graph = None
+    model = embedder_fingerprint(index.embedder_model)
+    target = create_sql_engine(subject.database_url)
     if subject.cfg.memory.graph.enabled:
         from nora.app.graph_project import projection_context
 
         reload = subject.deps.config_reload
-        graph = projection_context(
+        target.update_execution_options(memory_graph=projection_context(
             reload.policy, reload.persons,
-            nora_name=subject.cfg.doctrine.display_name, produce=False)
+            nora_name=subject.cfg.doctrine.display_name, produce=False,
+        ))
+    source = create_readonly_sql_engine(source_url)
+    try:
+        await memory_index.rebuild(target)
+        async with source.connect() as src, target.begin() as dst:
+            await memory_index.adopt_worker_state(src, dst, model=model)
+    finally:
+        await source.dispose()
+        await target.dispose()
+
+
+async def index_replay_sandbox(subject: Any, *, source_url: str) -> SandboxIndex:
+    """Build both derived substrates a recordedwake replay needs.
+
+    `sandbox_as_of` restores no derived row (`nora.infra.sql.history.NOT_RESTORED`).
+    The current graph read tools need `graph_search`, built exactly as a
+    graph-surface eval draw builds it; the retained legacy replay runner also
+    needs its own `memory_node` input projection. Vectors are adopted from the
+    source in both substrates — never generated with a model call.
+    """
+    index = subject.cfg.memory.index
+    if index.read and index.embed:
+        await check_served_model(index.embedder_url, index.embedder_model)
+    await _legacy_replay_substrate(subject, source_url=source_url)
     return await index_sandbox(
         subject.database_url,
         source_url=source_url,
         model_id=subject.cfg.memory.index.embedder_model,
-        graph=graph,
-        require_vectors=index.read or subject.cfg.memory.graph.enabled,
+        require_vectors=index.read,
     )
 
 

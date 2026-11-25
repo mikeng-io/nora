@@ -1794,9 +1794,6 @@
   "file_lines": 1167,
   "internal_docstrings": 6
  },
- "nora/subject/sandbox_index.py": {
-  "comment_blocks": 1
- },
  "nora/subject/standing_fold.py": {
   "comment_blocks": 5,
   "functions": {
@@ -2384,12 +2381,6 @@
  },
  "tests/integration/test_eval_official_entry_scoped.py": {
   "internal_docstrings": 1
- },
- "tests/integration/test_eval_sandbox_index_reuse.py": {
-  "internal_docstrings": 2
- },
- "tests/integration/test_eval_sandbox_vectors.py": {
-  "internal_docstrings": 2
  },
  "tests/integration/test_full_restore_recall.py": {
   "internal_docstrings": 3

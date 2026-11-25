@@ -1,30 +1,16 @@
 [
   {
     "name": "identity: a text adopts only a vector made from the same text",
-    "file": "nora/infra/sql/memory_index.py",
-    "old": "return (sha256 or \"\") if kind in ATTACHMENT_KINDS else text",
-    "new": "return (sha256 or \"\") if kind in ATTACHMENT_KINDS else kind",
+    "file": "nora/subject/sandbox_index.py",
+    "old": "        adopted = source_rows.get(str(t.text))\n",
+    "new": "        adopted = source_rows.get(str(t.unit))\n",
     "target": "tests/integration/test_eval_sandbox_vectors.py::test_an_identical_text_adopts_its_vector_and_a_changed_one_does_not"
   },
   {
-    "name": "identity: an attachment adopts only from the same file",
-    "file": "nora/infra/sql/memory_index.py",
-    "old": "return (sha256 or \"\") if kind in ATTACHMENT_KINDS else text",
-    "new": "return \"\" if kind in ATTACHMENT_KINDS else text",
-    "target": "tests/integration/test_eval_sandbox_vectors.py::test_a_failure_the_worker_will_not_retry_is_adopted_for_the_same_file"
-  },
-  {
-    "name": "identity: a reading's vector moves only with that reading",
-    "file": "nora/infra/sql/memory_index.py",
-    "old": "source.embed_input == \"bytes\" or node.text == source.text",
-    "new": "True",
-    "target": "tests/integration/test_eval_sandbox_vectors.py::test_a_reading_vector_moves_only_with_its_reading"
-  },
-  {
     "name": "identity: another model's vector is never adopted",
-    "file": "nora/infra/sql/memory_index.py",
-    "old": "held = sa.and_(node.embedding.isnot(None), node.embedding_model == model)\n    terminal",
-    "new": "held = sa.and_(node.embedding.isnot(None))\n    terminal",
+    "file": "nora/subject/sandbox_index.py",
+    "old": "    current = sa.and_(row.embedding.isnot(None), row.embedding_model == model)\n    source_rows: dict[str, tuple[Any, ...]] = {}\n",
+    "new": "    current = sa.and_(row.embedding.isnot(None), row.embedding_model.isnot(None))\n    source_rows: dict[str, tuple[Any, ...]] = {}\n",
     "target": "tests/integration/test_eval_sandbox_vectors.py::test_another_models_vector_is_never_adopted"
   },
   {

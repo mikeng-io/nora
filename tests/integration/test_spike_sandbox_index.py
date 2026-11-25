@@ -1,14 +1,14 @@
-"""A replay sandbox's empty derived index is projected before inspect.
+"""A replay sandbox's empty derived substrates are projected before inspect.
 
-`sandbox_as_of` restores no `memory_*` table (`history.NOT_RESTORED`), so a
+`sandbox_as_of` restores neither the legacy `memory_*` tables nor the
+Cognitive Graph's derived `graph_search` rows (`history.NOT_RESTORED`). A
 wake whose pending stimuli carry a `social` read finds no `memory_node` and
 `WakeMemory.prepare`'s `records.load` raises NoResultFound — the smoke's
-social-wake ERROR. The spike's `index_replay_sandbox` projects the index
-the way a graph-surface eval draw gets it (`nora.subject.sandbox_index`):
-production's `rebuild` over the rows restored as of the wake's instant,
-the source's vectors adopted where the input is identical. Everything here
-is generated; the as-of controls pin that the index comes from the
-restored rows, never from the source's later state.
+social-wake ERROR — while the graph read tools find no search index. The
+spike's `index_replay_sandbox` projects both: the legacy substrate the
+retained replay runner still consumes, and the graph index the current read
+tools consume. Everything here is generated; the as-of controls pin that
+both come from the restored rows, never from the source's later state.
 """
 
 from __future__ import annotations
@@ -29,6 +29,8 @@ from nora.domain.memory_graph import WorkItem
 from nora.infra.embedder import fingerprint
 from nora.infra.sql import memory_index
 from nora.infra.sql.cognition_replay import recorded_wake
+from nora.infra.sql.cognitive_graph_schema import CLAIM, GRAPH_SEARCH
+from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.comprehend import SqlComprehendRecords
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.memory_graph import SqlMemoryGraph
@@ -94,6 +96,22 @@ def _item(item_id: str, caption: str, read_id: str) -> dict:
     }
 
 
+def _claim() -> dict:
+    return {
+        "id": "claim-before-instant", "unit": UNIT, "kind": "claim",
+        "basis": "inferred", "reasoning": "deduced", "confidence": "medium",
+        "state": "live", "exposure": "internal", "writer": "generated",
+        "part": "fact", "content": {"text": "Generated graph text at the instant"},
+    }
+
+
+async def _graph_text(engine) -> str:
+    async with engine.connect() as conn:
+        return await conn.scalar(sa.select(GRAPH_SEARCH.c.text).where(
+            GRAPH_SEARCH.c.graph_id == "claim-before-instant", GRAPH_SEARCH.c.unit == UNIT,
+        ))
+
+
 async def test_the_replay_preparation_indexes_the_restored_sandbox(clean_pg_url, pg_template):
     engine = create_sql_engine(clean_pg_url)
     try:
@@ -133,6 +151,7 @@ async def test_the_replay_preparation_indexes_the_restored_sandbox(clean_pg_url,
                 through_stimulus_id=sid_soc, stimulus_count=2, eligible_count=2,
                 at_ms=at_ms + 60_000,
             ).returning(COGNITION_WAKE.c.id))).scalar_one()
+        await SqlCognitiveGraph(engine).create(CLAIM, _claim())
         # The restore instant, strictly after every row above and before every
         # later one: `recorded_at <= at` decides what the sandbox holds.
         async with engine.connect() as conn:
@@ -192,11 +211,10 @@ async def test_the_replay_preparation_indexes_the_restored_sandbox(clean_pg_url,
                     assert await conn.scalar(sa.select(sa.func.count()).select_from(
                         MEMORY_NODE).where(MEMORY_NODE.c.kind == "social")) == 2, (
                         "replay preparation must project the as-of social sources")
-                assert built.source.ratio == 1.0
-                # The two nodes a vector cannot be adopted for: one source no
-                # longer holds (item-2), one whose input moved (the edit).
-                assert built.coverage.owed == 2
-                assert built.coverage.embedded == FILLER + 1
+                # The graph substrate is the instant's claim, owed its missing vector.
+                assert (built.source.ratio, built.coverage.owed) == (0.0, 1)
+                assert built.coverage.embedded == 0
+                assert await _graph_text(sandbox) == "Generated graph text at the instant"
 
                 async with sandbox.connect() as conn:
                     def node(kind, sid):
