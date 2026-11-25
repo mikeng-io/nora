@@ -59,8 +59,9 @@ written in orient and cited to the item.
 
 ## Aggregates
 
-An aggregate is a pure function of observed and computed rows at a logical
-watermark: episodes (stays, co-locations, outings, response windows),
+At a logical watermark, an aggregate is a pure function of its recorded
+inputs, which can include observed or computed graph rows and a collector's
+operational input: episodes (stays, co-locations, outings, response windows),
 aggregates (routines, relationships, counts) and baselines.
 
 - An incremental build and a full rebuild at the same watermark agree.
