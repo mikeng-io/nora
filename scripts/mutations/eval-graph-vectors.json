@@ -18,7 +18,7 @@
     "file": "nora/subject/sandbox_index.py",
     "old": "    if sandbox.ratio < floor:",
     "new": "    if False:",
-    "target": "tests/integration/test_eval_sandbox_vectors.py::test_a_sandbox_is_indexed_and_read_back"
+    "target": "tests/integration/test_eval_sandbox_vectors.py::test_the_floor_is_relative_to_the_source"
   },
   {
     "name": "coverage: a source with an incomplete backfill is refused",
