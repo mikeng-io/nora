@@ -334,6 +334,7 @@ async def open_rollup(cfg: Config) -> AsyncIterator[AnalyticsDependencies]:
 
     reload = FileReload(cfg.policy_file, policy, load_policy, validate, Metrics())
     engine = create_sql_engine(database_url)
+    engine.update_execution_options(legacy_memory_projection=False)
     try:
         async with ClientSession() as session:
             try:

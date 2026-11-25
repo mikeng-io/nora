@@ -257,6 +257,7 @@ async def open_collector(cfg: Config) -> AsyncIterator[PresenceDependencies]:
         raise PresenceStartupError(
             f"managed presence setup failed ({type(exc).__name__})") from None
     engine = create_sql_engine(database_url)
+    engine.update_execution_options(legacy_memory_projection=False)
     try:
         async with ClientSession() as session:
             try:
