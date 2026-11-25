@@ -1090,41 +1090,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "limit_total_tokens, limit_output_tokens, timeout.",
         ("adaptor", "reason"),
     ),
-    # TWO findings on one series, separated by `rule`
-    # (`nora.agent.dream_guard.GuardRule`); read them separately.
-    #
-    #   rule="R-7"           - the model asked for a tool its adaptor never granted.
-    #                          Under a read-only ceiling that is not a leak, but it
-    #                          is the tell that an objective and its tool subset
-    #                          disagree about what the job needs. A CONFIG fault: it
-    #                          should be near zero, and a steady rate is something
-    #                          to fix.
-    #   rule="tool-budget"   - the model spent one tool's own per-pass ceiling and
-    #                          called it again. Split off `R-7` so it can answer
-    #                          whether a ceiling is binding. This is the instrument
-    #                          for `[dreamer.budgets.<adaptor>] tool_calls`: a
-    #                          sustained rate on a READ verb says the number is too
-    #                          low for the work, the same reading `memory-budget`
-    #                          carries below.
-    #   rule="memory-budget" - the pass spent its whole memory ration and asked again
-    #                          (R-91). Ordinary model behaviour that the ceiling
-    #                          absorbs, not a fault; the pass is answered
-    #                          `unavailable` and carries on. A NON-ZERO rate is the
-    #                          ceiling doing its job. What is worth an alert is the
-    #                          pathological arm, a pass that spends its whole `turns`
-    #                          budget on refusals: this series climbing alongside
-    #                          `nora_dream_stop_reason_total{reason="limit_turns"}`
-    #                          and a `run_total` `unavailable` for the same adaptor.
-    #   rule="pass-budget"   - the pass made its whole `max_tool_calls` over every
-    #                          verb together and asked again. `memory-budget`'s
-    #                          reading, one ration wider: a sustained rate says the
-    #                          cap binds.
     _CounterSpec(
         "nora_dream_guard_vetoes_total",
-        "Tool calls refused by DreamGuard, by adaptor and rule: R-7 is a tool "
-        "never granted, tool-budget is that tool's own per-pass ceiling spent, "
-        "memory-budget is the pass's memory ration spent, pass-budget is the "
-        "pass's whole tool-call ration spent.",
+        "Tool calls refused by DreamGuard, by adaptor and rule: R-7 is an "
+        "ungranted tool, tool-budget is a per-tool call ceiling, and R-99 is "
+        "an undeclared argument.",
         ("adaptor", "rule"),
     ),
     _CounterSpec(

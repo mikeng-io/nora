@@ -359,7 +359,7 @@ there by design (`tests/test_env_template.py::_load_live_or_skip`); nothing
 in the established workflow (worktrees only, never the deploy checkout —
 "Reaching the deployment" above) runs them for real. What
 DOES run automatically, once per eval, is a different and narrower property:
-`evals/subject_config.materialise()` rebuilds the eval subject's config from
+`evals/subject_config.py::materialise` rebuilds the eval subject's config from
 the live `config.toml` and REFUSES to start the run if the two still disagree
 outside `ALLOWED_TO_DIFFER` (issue #321). It does not subsume the drift
 checks — it self-heals around a template that is stale or incomplete rather
@@ -829,9 +829,7 @@ clause was the one that shipped the defect.
 
 ## The five operational constraints (spec §2, with corrections)
 
-These came from `design/08-stack-refactor-brief.md` and are preserved here
-because the spec that retired that document said they were the most
-operationally valuable text in it. Losing any of these wastes an afternoon.
+The SQLite stack refactor brief in Git history records the original list.
 
 1. Direct builds require `docker build --network=host` — BuildKit's default
    bridge cannot resolve `deb.debian.org` on this host (systemd-resolved stub

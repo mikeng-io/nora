@@ -142,8 +142,8 @@
   {
     "name": "session runner: skill versions are recorded on the session",
     "file": "nora/app/cognition_session.py",
-    "old": "            {} if self._skill_versions_for is None else dict(self._skill_versions_for())",
-    "new": "            {}",
+    "old": "            return text, dict(versions)",
+    "new": "            return text, {}",
     "target": "tests/unit/test_cognition_agenda_skills.py::test_the_session_row_records_the_skill_it_ran_with"
   }
 ]
