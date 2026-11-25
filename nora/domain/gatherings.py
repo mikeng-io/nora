@@ -68,20 +68,11 @@ class RSVPResponse(StrEnum):
     MAYBE = "maybe"
 
 
-#: Any status before `happened` may be revised; `happened`, `cancelled`,
-#: `lapsed` and `evicted` are terminal. Derived from `GatheringStatus` itself
-#: (every member except the three that sit BEFORE `happened`) rather than
-#: hand-listed a second time, so a new status added to the enum lands in
-#: exactly one bucket by construction instead of silently falling into neither.
-_PRE_HAPPENED_STATUSES: frozenset[GatheringStatus] = frozenset({
-    GatheringStatus.STAGED, GatheringStatus.PROPOSED, GatheringStatus.CONFIRMED,
-})
 #: The statuses an event may still be revised out of (every one before
 #: `happened`): what a Cognition session may move, and what it is shown.
-OPEN_STATUSES: frozenset[GatheringStatus] = _PRE_HAPPENED_STATUSES
-TERMINAL_STATUSES: frozenset[GatheringStatus] = frozenset(
-    s for s in GatheringStatus if s not in _PRE_HAPPENED_STATUSES
-)
+OPEN_STATUSES: frozenset[GatheringStatus] = frozenset({
+    GatheringStatus.STAGED, GatheringStatus.PROPOSED, GatheringStatus.CONFIRMED,
+})
 
 
 class DuplicateGatheringError(Exception):
@@ -422,41 +413,6 @@ class RSVP:
     person_id: str
     response: RSVPResponse
     responded_at: datetime
-
-
-class GatheringNotFoundError(Exception):
-    """Raised by `GatheringService` (`nora.app.gatherings`) whenever an `event_id`
-    does not resolve. Lives here, not on `GatheringService` itself, so
-    `nora.agent` — which sits BELOW `nora.app` in the layered-architecture
-    import-linter contract and may not import it — can still catch it: a
-    caller several layers up mints the concrete `GatheringService`, but the
-    exception TYPE has to be reachable from every layer that calls a method
-    which can raise it."""
-
-    def __init__(self, event_id: UUID) -> None:
-        super().__init__(f"event {event_id} not found")
-        self.event_id = event_id
-
-
-class GatheringCancelledError(Exception):
-    """An RSVP was requested for an event in a terminal status."""
-
-    def __init__(self, event_id: UUID, status: GatheringStatus | None = None) -> None:
-        label = status.value if status is not None else "cancelled"
-        super().__init__(f"event {event_id} is {label}")
-        self.event_id = event_id
-        self.status = status
-
-
-class AmbiguousOpenGatheringsError(Exception):
-    """More than one open proposed event matches the conversation."""
-
-    def __init__(self, conversation_id: str, open_events: Sequence[Gathering]) -> None:
-        super().__init__(
-            f"{len(open_events)} open events for {conversation_id}"
-        )
-        self.conversation_id = conversation_id
-        self.open_events = tuple(open_events)
 
 
 def still_open_gatherings(

@@ -127,7 +127,8 @@ _LIST_ITEM = re.compile(r"\s*(?:[-*+]|\d+[.)])\s")
 
 _PATH_TOKEN = re.compile(
     r"`([A-Za-z0-9_./-]+/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)"
-    r"(?:::[\w.]+(?:::[\w.]+)*|:\d+(?:[-,:]\d+)*)?`"
+    r"(?:(?:::[\w.]+)+(?:\[[^`\r\n]+\]|\(\))?|:\d+(?:[-,:]\d+)*"
+    r"|\(\)|[ \t]+--[\w-]+[^`\r\n]*)?`"
 )
 
 
@@ -257,23 +258,8 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "docs/adr/0002-honcho-session-binding-deferred.md",
         "nora/infra/honcho/client.py",
     ): "The accepted ADR records the Honcho client at the revision it describes.",
-    ("design/08-stack-refactor-brief.md", "nora/handler.py"): (
-        "The pre-refactor brief cites two separate call sites in the old handler."
-    ),
-    ("design/08-stack-refactor-brief.md", "nora/models.py"): (
-        "The pre-refactor brief cites the old TagContext type."
-    ),
-    ("design/08-stack-refactor-brief.md", "nora/store/honcho.py"): (
-        "The pre-refactor brief records the old Honcho health probe."
-    ),
     ("design/09-decision-index.md", "evals/run.py"): (
         "R-83 identifies the invocation path of its historical measurement."
-    ),
-    ("design/capability-drop/03-code-surface.md", "tests/test_reminder_tools.py"): (
-        "The capability-drop brief describes how the original agenda-tool test would change."
-    ),
-    ("design/capability-drop/implementation-brief.md", "tests/test_reminder_tools.py"): (
-        "The historical implementation checklist names the original agenda-tool test."
     ),
     ("design/group-situation/00-intent.md", "nora/language/proactive.py"): (
         "The original situation proposal identifies the narrow wake trigger it planned to extend."
@@ -286,13 +272,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "records the earlier workflow and remains historical; resolves in git history."
     ),
 
-    (
-        "design/online-status/04-consumers.md",
-        "scripts/render_release_notes.py",
-    ): (
-        "deleted 2026-10-16 with the manual release scheme and the upgrade "
-        "note (DEC-314, ADR 0024). A design record keeps naming it as it was."
-    ),
     (
         "docs/adr/0020-documents-are-json-specs-the-portal-renders.md",
         "deploy/drop/rendering.py",
@@ -351,38 +330,15 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     # The OPERATOR-facing docs (`docs/runbook.md`, `docs/eval-sop.md`,
     # `docs/maintainers/conventions-rationale.md`, the `make eval-*` targets)
     # name `python -m evals`, because those tell somebody to run a command.
-    **{
-        (doc, "evals/run.py"): (
-            "the old eval CLI, deleted 2026-09-18; this line records what was "
-            "true when it was written (design/evaluation Step 5)"
-        )
-        for doc in (
-            "design/ambient-loop/02-doctrine-and-measurement.md",
-            "design/capability-drop/03-code-surface.md",
-            "design/capability-drop/implementation-brief.md",
-        )
-    },
+    ("design/ambient-loop/02-doctrine-and-measurement.md", "evals/run.py"): (
+        "the old eval CLI, deleted 2026-09-18; this line records what was "
+        "true when it was written (design/evaluation Step 5)"
+    ),
     # The eval-layer modules live in `tests/`; these references name where the
     # code was before.
-    ("design/capability-drop/03-code-surface.md", "evals/harness.py"): (
-        "re-homed into `tests/` 2026-09-18; the reference records where "
-        "it lived (design/evaluation Step 5)"
-    ),
     ("design/13-trace-content-and-redaction.md", "evals/judge.py"): (
         "re-homed into `tests/` 2026-09-18; the reference records where "
         "it lived (design/evaluation Step 5)"
-    ),
-    ("design/capability-drop/03-code-surface.md", "nora/app/eval_support.py"): (
-        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/capability-drop/implementation-brief.md", "evals/harness.py"): (
-        "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/capability-drop/implementation-brief.md", "nora/app/eval_support.py"): (
-        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
     ),
     (
         "docs/adr/0011-the-relevance-gate-stays-off-the-sdk-transport.md",
@@ -404,14 +360,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "condition with a real delivery path; this design records the reasoning as it "
         "stood, and rewriting a decision record to match later code is what this "
         "repo's design docs deliberately do not do"
-    ),
-    ("design/08-stack-refactor-brief.md", "nora/store/db.py"): (
-        "pre-refactor handoff brief describing the SQLite-era code the brief itself "
-        "proposed replacing; nora/store/ no longer exists post-refactor"
-    ),
-    ("design/08-stack-refactor-brief.md", "nora/store/migrate.py"): (
-        "pre-refactor handoff brief describing the SQLite-era code the brief itself "
-        "proposed replacing; nora/store/ no longer exists post-refactor"
     ),
     ("design/09-decision-index.md", ".github/workflows/gates.yml"): (
         "A12 names a CI gate file; this repo deliberately runs no CI (operator decision) "
@@ -490,6 +438,27 @@ def test_a_symbol_or_line_suffix_cannot_hide_a_dangling_path(tmp_path: Path) -> 
         (1, "nora/missing_symbol.py"),
         (1, "nora/missing_line.py"),
     ]
+
+
+def test_a_parameter_call_or_command_suffix_cannot_hide_a_dangling_path(tmp_path: Path) -> None:
+    markdown = (
+        "Run `tests/missing.py::TestClass::test_something[case-id]`.\n"
+        "Call `nora/missing.py::lookup()` or `nora/missing.lookup()`.\n"
+        "Run `scripts/missing.py --base master`.\n"
+        "Call `nora/existing.py::lookup()`.\n"
+    )
+    (tmp_path / "nora").mkdir()
+    (tmp_path / "nora" / "existing.py").touch()
+    candidates = candidate_references(markdown)
+
+    assert candidates == [
+        (1, "tests/missing.py"),
+        (2, "nora/missing.py"),
+        (2, "nora/missing.lookup"),
+        (3, "scripts/missing.py"),
+        (4, "nora/existing.py"),
+    ]
+    assert unresolved(tmp_path, candidates, frozenset()) == candidates[:-1]
 
 
 def test_a_superpowers_target_is_never_flagged_even_though_it_cannot_resolve() -> None:

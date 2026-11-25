@@ -395,7 +395,7 @@
  "nora/obs/errors.py": 3,
  "nora/obs/health.py": 4,
  "nora/obs/logging.py": 1,
- "nora/obs/metric_specs.py": 46,
+ "nora/obs/metric_specs.py": 43,
  "nora/obs/metrics.py": 1,
  "nora/obs/tracing.py": 9,
  "nora/people/wire.py": 1,

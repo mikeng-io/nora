@@ -25,10 +25,6 @@
   "date",
   "history-marker"
  ],
- "design/08-stack-refactor-brief.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
  "design/09-decision-index.md": [
   "numbered-or-dated-name",
   "not-a-design-file",
@@ -124,26 +120,6 @@
   "date"
  ],
  "design/ambient-loop/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
- "design/capability-drop/00-overview.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/capability-drop/01-when-stays-in-schema.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/capability-drop/02-rules-to-conduct.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/capability-drop/03-code-surface.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "design/capability-drop/_index.yaml": [
   "not-a-design-file",
   "date"
  ],

@@ -108,13 +108,3 @@ lives in the operator's agent skills, not in this repo):
 - **Discord channel resolution** — `channel_name` resolves through the
   client's guild/channel cache, the same path `music_tool_bridge.py` uses;
   do not hardcode channel labels.
-
-## Verification discipline
-
-Per repo convention: worktree → PR → merge, never a direct master commit;
-independent adversarial review of the bundle before merge (never
-self-review); release fragment written (`release-fragments/released/V5/online-status.json`,
-`type: "feat"` for the tool, or "none" for a design-only branch per the
-release-fragment gate); both gates run green:
-`scripts/check_release_fragments.py --base master` +
-`scripts/render_release_notes.py`.
