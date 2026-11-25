@@ -1,25 +1,11 @@
 """The memory index's one writer: `project`, `reproject_media`, `drop`.
 
-Each store method that writes an indexed table calls one of these INSIDE its
-own `engine.begin()` block, on the same connection, beside the write it
-projects: Nora has no shared unit of work, so the store's transaction is the
-one place the source row and its node can change together.
-`tests/architecture/test_every_indexed_kind_is_projected.py` holds every
-write to an `INDEXED_WRITES` table to that, and holds the `memory_*` tables to this module.
+Store writes and offline rebuilds share the projector. The live service
+disables new legacy projections. An explicit projection runs in a savepoint,
+beside its source write. A failure queues the source without undoing its write.
 
-`project(conn, kind, source_id)` re-reads the source row on the caller's
-connection and upserts its node and its column edges, or drops them when the
-row is hidden or gone, so one call serves an insert, an edit, a hide and an
-attribution alike. Every call runs in a SAVEPOINT: a projection that fails
-rolls back only itself, puts the source on `memory_projection_queue` and is
-counted `nora_memory_projection_total{outcome="queued"}`. It never undoes the
-store's own write: a message the index missed is a search miss until
-the next pass; a message lost because its index row failed is a lost message.
-
-It projects messages and their attachments, the Notebook (notes, memos,
-lessons, events, culture and Character accounts), the social stream's items
-and their media, and the entity hubs they point at.
-`nora.infra.sql.memory_read` reads the index.
+`project` re-reads a source and upserts its node and edges; `drop` removes
+retired sources. `nora.infra.sql.memory_read` reads the standalone index.
 
 **What a node's text holds** (R-18, R-28): a message's body, and an
 attachment's reading. Never a sender id, a sender name, a raw envelope or a
@@ -280,6 +266,10 @@ INDEXED_WRITES: dict[str, str] = {
 _METRIC = "nora_memory_projection_total"
 
 
+def _projection_enabled(conn: AsyncConnection) -> bool:
+    return bool(conn.engine.get_execution_options().get("legacy_memory_projection", True))
+
+
 async def project(
     conn: AsyncConnection, kind: str, source_id: str | int, *,
     metrics: Any = None, strict: bool = False,
@@ -287,6 +277,8 @@ async def project(
     """Upsert `kind`'s node for `source_id` and its column edges, or drop
     them when the source is hidden or gone. A message brings its attachments
     with it, so an attachment is never projected on its own."""
+    if not _projection_enabled(conn):
+        return
     sid = str(source_id)
     await _guarded(conn, kind, [sid], lambda: _PROJECTORS[kind](conn, sid), metrics, strict=strict)
 
@@ -297,6 +289,8 @@ async def reproject_media(
     """Copy the reading of `sha256` into every attachment of those bytes. A
     reading that lands before its message is ingested is copied by that
     message's own `project` instead; this is the reading landing after."""
+    if not _projection_enabled(conn):
+        return
     await _guarded(conn, "media", [sha256], lambda: _reproject_media(conn, sha256), metrics)
 
 
@@ -1327,6 +1321,8 @@ async def project_episodes(
     The build's row is read FOR SHARE: `switch_build` updates it, so a
     projection of the build being switched out lands before the switch drops
     its nodes, never after."""
+    if not _projection_enabled(conn):
+        return
     wanted = list(dict.fromkeys(keys))
     if not wanted:
         from nora.infra.sql.graph_projection import project_rollups
@@ -1353,6 +1349,8 @@ async def reproject_episodes(conn: AsyncConnection, *, metrics: Any = None) -> N
     holds the same happening under the same key, and every episode of the new
     build is projected. A failure queues every key involved, so the next
     drain finishes the switch one key at a time."""
+    if not _projection_enabled(conn):
+        return
     for kind in _EPISODES:
         try:
             async with conn.begin_nested():
@@ -1618,11 +1616,11 @@ async def drain_queue(conn: AsyncConnection, *, limit: int = 500, metrics: Any =
     node: `switch_build` takes that row and then writes nodes, so a drain
     that wrote a hub node and then waited on the build row could deadlock
     with it. With no build yet, there is nothing to lock."""
+    if not _projection_enabled(conn):
+        return 0
     with contextlib.suppress(_NoCurrentBuildError):
         await _current_build(conn)
-    # SKIP LOCKED: two processes drain (the analytics tick and the nora
-    # process's `memory_drain_loop`, S4), and each takes only rows the other
-    # is not already re-projecting, so they never wait on or repeat each other.
+    # Concurrent explicit drains take disjoint unlocked rows.
     rows = (await conn.execute(
         sa.select(MEMORY_PROJECTION_QUEUE.c.kind, MEMORY_PROJECTION_QUEUE.c.source_id)
         .order_by(

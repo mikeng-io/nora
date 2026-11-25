@@ -23,30 +23,19 @@ from nora.agent.catalog.model import turn_occasion
 from nora.agent.guards import ReplyGuard
 from nora.agent.lineage import (
     LineagePolicy,
-    excluded,
-    section_permits,
-    visible_sections,
 )
 from nora.agent.outbound import OutboundComposer
-from nora.agent.prefill import (
-    build_prefill,
-    build_tag_message,
-)
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.agent.standing_ledger import ledger_permits, ledger_target
 from nora.app.fire_engagement import AmbientEngagement
 from nora.doctrine.loader import DoctrineStore
 from nora.domain import audience as audience_names
-from nora.domain.blocks import ContextBlock, RowStyle, render_rows
+from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.cognition_remind import INTENTS
 from nora.domain.compute import ComputeJob, DocumentReadBack
 from nora.domain.computer_context import ComputerView
 from nora.domain.decision_log import (
-    PARTICIPATION_DECISION_WRITERS,
-    PROACTIVE_ACT_DECISION_WRITERS,
     DecisionLogRecorder,
-    DecisionRow,
     DecisionWriter,
 )
 from nora.domain.documents_context import DocumentsView
@@ -62,19 +51,10 @@ from nora.domain.framing import (
     RelayHeader,
     RequestBody,
 )
-from nora.domain.lineage import (
-    BODY,
-    HOLD_OPEN,
-    I_OWE,
-    WORKING_SET,
-    LiveRoom,
-    room_key,
-)
 from nora.domain.managed import room_scope_id
 from nora.domain.management import Scope, ScopeKind
 from nora.domain.media import MediaBlob
 from nora.domain.media_join import MediaJoin
-from nora.domain.memo import Memo, MemoStore
 from nora.domain.models import (
     ConversationTarget,
     NormalizedMessage,
@@ -82,7 +62,6 @@ from nora.domain.models import (
     TagContext,
     TranscriptRow,
 )
-from nora.domain.notes import Note
 from nora.domain.ports import (
     JobResult,
     JobStatus,
@@ -99,20 +78,15 @@ from nora.domain.self_presence import Presence
 from nora.domain.shared_state import SharedView
 from nora.domain.standing import (
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
-    Standing,
 )
-from nora.domain.standing_ledger import LedgerEntry
 from nora.domain.subagent import written_title
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.domain.turn_deadline import turn_deadline
 from nora.domain.turn_record import (
-    DisclosureRequirement,
     TurnCapture,
     capture_turn,
 )
-from nora.engagement.character_who import fire_character_people
 from nora.engagement.computer_context import ComputerContextReader
-from nora.engagement.context import StandingNotesReader
 from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.graph_context import EngagementGraph
 from nora.engagement.mentions import MentionRenderer
@@ -120,11 +94,7 @@ from nora.engagement.self_presence import PresenceReader
 from nora.engagement.stages import deliver
 from nora.engagement.stages.invoke import AgentRunner
 from nora.ingest.relevance_gate import SCORE_ABSENT
-from nora.language.lesson_render import ActiveLessons, read_lessons
 from nora.memory import (
-    GraphProfileReader,
-    PointerKind,
-    ReadingRoom,
     active_act_authority,
     record_pass_silence,
 )
@@ -203,11 +173,6 @@ PROACTIVE_AUDIENCE = audience_names.PROACTIVE
 # spelled out here, so the writers a query asks for and the deciders the
 # block's note glosses cannot drift apart — the module's own rule, and the
 # reason those constants exist at all.
-_DECISION_WRITERS_BY_KIND: dict[str, tuple[DecisionWriter, ...]] = {
-    "participation": PARTICIPATION_DECISION_WRITERS,
-    "proactive": PROACTIVE_ACT_DECISION_WRITERS,
-}
-
 # The shadow mirror's audience label: the mirror IS a send (it goes
 # through `deliver.build` and every guard that carries), but it is operator
 # review traffic, never room speech — its failures must not pollute the tag,
@@ -240,10 +205,8 @@ def proactive_occasion(rows: Sequence[Reminder]) -> Event:
     asked, in the asker's words, and the asker is her earlier self. The header carries
     when she decided it and for when, and names the note it is about
     (`payload["note_title"]`, stamped in code by `remind` at decision
-    time). The note's CURRENT body is not here: the fire turn renders the
-    `<notes>` index like every fire turn and she reads it with `note_read`,
-    which is the point of splitting decide from act — research at 08:00 is
-    what to raise, research at 14:00 is where everybody is.
+    time). The room transcript and graph presentations ground the act turn's
+    decision about whether the intention is still worth raising.
 
     The heartbeat has already screened the row (`ProactiveScreen`): the flag,
     and whether the note moved on the tag path since the row was linked. So a
@@ -499,11 +462,8 @@ class FirePath:
         tool_call_log_store: ToolCallLogStore | None = None,
         reasoning_strip_store: Any = None,
         event_registry: Mapping[str, EventFactory] | None = None,
-        graph_profiles: GraphProfileReader | None = None,
-        lessons: ActiveLessons | None = None,
         standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
         ambient: AmbientEngagement | None = None,
-        notes: StandingNotesReader | None = None,
         policy: Policy | None = None,
         participation_runner: AgentRunner | None = None,
         proactive_runner: AgentRunner | None = None,
@@ -520,9 +480,6 @@ class FirePath:
         # `<documents>`: the SAME reader the tag path's assembler
         # holds. `None` while `[documents]` is off.
         documents: DocumentsContextReader | None = None,
-        # `<memos>` (DEC-306): the SAME store the tag path's assembler reads,
-        # keyed on the unit like `notes`. `None` renders no block.
-        memos: MemoStore | None = None,
         tag_trace_store: Any = None,
         # The unit's shared cognitive state reader (design/notebook-memory-
         # types/20-standing.md): bound at the composition root
@@ -537,9 +494,6 @@ class FirePath:
         self._shared_reader = shared
         self._computer = computer
         self._documents = documents
-        self._graph_profiles = graph_profiles
-        # `<lessons>` (L5): `None` while `[lessons] render` is off.
-        self._lessons = lessons
         # BOUNDED, for the reason the debrief stage's own store calls are:
         # the heartbeat holds this conversation's slot around the whole fire
         # turn (`heartbeat.py` try_acquire -> release_and_dispatch), and
@@ -547,21 +501,11 @@ class FirePath:
         # here wedges the conversation exactly as the unbounded read in
         # `debrief.run` did.
         self._standing_store_timeout_seconds = standing_store_timeout_seconds
-        # The note tier on the fire path. A participation determination
-        # grounds on «transcript + standing/notes», so `build_context` passes
-        # the notes reader for every occasion kind: one `build_context` shape,
-        # no per-occasion special case, and the tier is default-disabled.
-        #
-        # `policy` is here for exactly one read: the tier is keyed on
-        # `Conversation.unit` (DEC-105), so scoping it needs the same
-        # `Policy` instance the assembler holds — a fire path with its own
-        # idea of a room's unit would render another social unit's notes
-        # into this one. `None` keeps the tier inert.
-        self._notes, self._memos, self._policy = notes, memos, policy
         # Lineage: the SAME value the
         # tag path's assembler holds (`nora.app.assembler.lineage_policy`), so
         # a fire turn's derived blocks are filtered for its room exactly as a
         # tag reply's are. `None` is `[lineage] mode = "off"`.
+        self._policy = policy
         self._lineage = lineage
         self._persons = persons
         self._access = access or IdentityAccess.for_files(persons, policy)
@@ -675,7 +619,7 @@ class FirePath:
         self._presence = presence
 
     async def build_context(self, occasion: Event) -> TagContext:
-        """Read the room floor, and the legacy context for other fire occasions."""
+        """Read the room floor and the action state used by the proactive gate."""
         # Resolve the occasion's room view; an absent requester remains None.
         scope = Scope(ScopeKind.ROOM, room_scope_id(occasion.platform, occasion.conversation_id))
         ref = (await self._access.person_ref(occasion.person_id, scope=scope)
@@ -731,68 +675,36 @@ class FirePath:
                 documents=self._read_documents(occasion), members=self._room_members(occasion),
             )
 
-        # The unit is resolved ONCE per turn and read by several tiers (notes,
-        # memos, the decision log), so the `notes` guard is not the whole
-        # condition: a turn that skipped the lookup because the note tier was
-        # off would render no decisions block for a reason unrelated to
-        # decisions. Skipped entirely when none is wired (the dormant default
-        # must not count a gap it does not have).
-        unit: str | None = None
-        if (self._notes is not None or self._decisions is not None
-                or self._memos is not None or self._shared_reader is not None):
-            unit = self._unit_for(occasion)
-
-        # CONCURRENT, for `TranscriptInjection.assemble`'s reason: these are
-        # independent reads, and awaited one after another their latencies
-        # stack on the front of every fire turn (`<presence>` alone is a
-        # health read per network and a live Instagram handle read).
-        # Each helper keeps its own fail-soft handling and none raises, which
-        # is what makes one `gather` safe: an exception would otherwise cancel
-        # its siblings and take the turn down with it.
-        # Nested: `asyncio.gather` types at most six awaitables, and a seventh makes every
-        # result a union (the tag path's assembler nests its reads for the same reason).
-        (
-            (notes, decisions, presence, computer),
-            documents,
-            (lessons, memos, shared),
-        ) = await asyncio.gather(
-            asyncio.gather(
-
-                self._read_notes(occasion, unit),
-                self._read_decisions(occasion, unit),
-                self._read_presence(occasion),
-                self._read_computer(occasion),
-            ),
-            self._read_documents(occasion),
-            asyncio.gather(self._read_lessons(occasion), self._read_memos(occasion, unit),
-
-                           self._read_shared(occasion, ref)),
+        presence, members, shared = await asyncio.gather(
+            self._read_presence(occasion),
+            self._room_members(occasion),
+            self._action_state(occasion),
         )
         return TagContext(
-            tag_id=uuid.uuid4().hex,
-            message=_synthetic_message(occasion, ref),
-            tagger=ref,
-            transcript=transcript,
-            peer_card=(),
-            started_at=time.perf_counter(),
-
-            shared=shared,
-            lessons=lessons,
-            notes=notes,
-            memos=memos,
-            decisions=decisions,
-            presence=presence,
-            computer=computer,
-            documents=documents,
-            room_members=await self._room_members(occasion),
+            tag_id=uuid.uuid4().hex, message=_synthetic_message(occasion, ref), tagger=ref,
+            transcript=transcript, peer_card=(), started_at=time.perf_counter(),
+            presence=presence, room_members=members, shared=shared,
             lineage_room=(
                 await self._lineage.read_room(
-                    platform=occasion.platform,
-                    conversation_id=occasion.conversation_id,
-                )
-                if self._lineage is not None else None
+                    platform=occasion.platform, conversation_id=occasion.conversation_id,
+                ) if self._lineage is not None else None
             ),
         )
+
+    async def _action_state(self, occasion: Event) -> SharedView | None:
+        if occasion.kind != "proactive" or self._shared_reader is None:
+            return None
+        unit = self._unit_for(occasion)
+        now_ms = int(self._clock().timestamp() * 1000)
+        if unit is not None:
+            try:
+                return await asyncio.wait_for(self._shared_reader(
+                    unit=unit, room=(occasion.platform, occasion.conversation_id),
+                    now_ms=now_ms,
+                ), timeout=self._standing_store_timeout_seconds)
+            except Exception:
+                log.exception("fire action-state read failed")
+        return SharedView(unit=unit or "", status="unavailable", as_of_ms=now_ms)
 
     async def _room_members(self, occasion: Event) -> tuple[PersonRef, ...]:
         """This room's listed persons for `<room_members>` (a pure lookup, no
@@ -801,16 +713,6 @@ class FirePath:
             return ()
         return await self._access.room_refs(
             occasion.platform, occasion.conversation_id)
-
-    async def _render_room(self, occasion: Event) -> Any:
-        """The lineage policy's room view — configured lineage or policy-derived."""
-        lineage = self._lineage
-        if lineage is None:
-            if self._policy is None:
-                raise ValueError("a room view requires lineage or policy")
-            lineage = LineagePolicy.from_policy(self._policy, access=self._access)
-        return await lineage.read_room(
-            platform=occasion.platform, conversation_id=occasion.conversation_id)
 
     async def _read_computer(self, occasion: Event) -> ComputerView | None:
         """`<computer>` for this occasion's room, or `None` (no reader, or a
@@ -850,99 +752,8 @@ class FirePath:
             )
             return None
 
-    async def _read_decisions(
-        self, occasion: Event, unit: str | None,
-    ) -> tuple[tuple[str, tuple[DecisionRow, ...]], ...]:
-        """What her AMBIENT LOOP already did across this UNIT, for the two
-        occasions that decide whether to take a floor nobody offered them.
-        `(room label, rows)` groups.
-
-        **Unit-scoped, because «this room» would miss the case it exists
-        for.** A `kind="proactive"` row fires into the unit's home room and
-        nowhere else, which can be a Discord room while the thread is on
-        Signal. A participation turn in the Signal room reading «this room,
-        last 24 hours» sees nothing and speaks anyway. The room a decision was made in is rendered
-        as its policy
-        LABEL instead, which is what a reader actually needs from it.
-
-        **Two occasions, and the restriction is the decision.** Both are
-        turns deciding whether to speak into a room nobody addressed her in, so
-        «she raised this two hours ago in another room» is the fact that changes
-        the answer. A compute result or a relay was decided when its work was
-        started and is not weighing the floor at all; handing it this block
-        would cost a read and change nothing.
-
-        **The proactive act turn reads it too.** The decide pass's index says
-        what she MEANT TO RAISE and nothing about what the loop has since DONE:
-        two rows about two notes can come due apart, and the second turn would
-        raise again what the first already raised (its window carries the first
-        message only as an unlabelled line of her own speech). This block is
-        what marks it.
-
-        **Each occasion gets its own writer set** (`decision_log`'s constants,
-        which carry the reasoning): participation excludes its own verdicts,
-        the act turn excludes `proactive_decide` — the deliberation that
-        produced this very turn, already in front of her in the header — and
-        reads `proactive_act`, which is the sibling-row fact it exists for.
-        Neither reads `tag`: a tag is somebody asking, so what it answered
-        belongs in the transcript underneath, where it already is.
-
-        **A turn with no unit renders NO block, rather than falling back
-        to this room.** No unit is the wiring gap `_unit_for` already
-        refuses to guess past, and a narrower read presented under a block that
-        says «across this group» would be a claim the rows cannot support.
-
-        Fail-soft with no `except` here — `DecisionLogRecorder.read_unit`
-        answers `()` on every failure and counts it. `None` is the dormant
-        default.
-        """
-        # A MAPPING, not a chain of `or`s: the set a turn reads with IS the
-        # decision, and a lookup that answers `None` for an unlisted kind makes
-        # «this occasion does not read the log» and «this occasion reads it
-        # with these writers» one statement instead of two that can disagree.
-        writers = _DECISION_WRITERS_BY_KIND.get(occasion.kind)
-        if self._decisions is None or writers is None or not unit:
-            return ()
-        rows = await self._decisions.read_unit(
-            platform=occasion.platform, unit=unit,
-            # In the QUERY, never a filter over what came back. The bound is a
-            # row count, so a post-filter could let one busy writer's rows evict
-            # every other decider's, silently, in exactly the busy room.
-            #
-            # The SAME constant `build_prefill` hands the renderer, so the
-            # block's note names exactly the deciders the query asked for.
-            writers=writers,
-        )
-        return tuple((self._room_label(row), (row,)) for row in rows)
-
-    def _room_label(self, row: DecisionRow) -> str:
-        """The operator-authored policy label for the room a decision was made
-        in, or `""`. NEVER the conversation id (R-18/R-28) — an unlabelled room
-        renders with no prefix rather than with an identifier."""
-        if self._policy is None:
-            return ""
-        try:
-            convo = self._policy.conversation(row.platform, row.conversation_id)
-        except Exception:
-            log.exception("policy read failed while labelling a decision row")
-            return ""
-        return convo.label if convo is not None else ""
-
     def _unit_for(self, occasion: Event) -> str | None:
-        """The unit this occasion's room belongs to, or `None`.
-
-        The unit-keyed tier scopes through the SAME `Policy` read the
-        tag path's own note prefill uses (`nora.engagement.context.
-        TranscriptInjection._notes`, DEC-105): two readers each carrying
-        their own idea of a room's unit disagree the first time a
-        deployment runs two social units.
-
-        `None` — a store wired but no `Policy` or no `Conversation` for the
-        room — is a WIRING GAP, not an empty tier: guessing a unit would
-        render another unit's notes into this room. Counted, because a
-        block missing for the life of a deployment with nothing saying so is
-        a silent failure.
-        """
+        """Resolve the fire event's graph reading unit from destination policy."""
         try:
             convo = (
                 self._policy.conversation(occasion.platform, occasion.conversation_id)
@@ -950,14 +761,8 @@ class FirePath:
                 else None
             )
         except Exception:
-            # Fail-soft like the two sibling reads (`_read_notes`,
-            # `_read_standing`): a Policy read that raises must
-            # not turn a deliverable reminder into a silent no-send. Counted,
-            # because a block missing for the life of a deployment with
-            # nothing saying so is a silent failure.
             log.exception(
-                "policy conversation read failed for %s/%s — the note "
-                "tier cannot be scoped to a unit; continuing without it",
+                "fire policy scope unavailable for %s/%s",
                 occasion.platform, occasion.conversation_id,
             )
             self._metrics.inc(
@@ -967,8 +772,7 @@ class FirePath:
             return None
         if convo is None:
             log.warning(
-                "no policy conversation for %s/%s — the note tier cannot "
-                "be scoped to a unit; continuing without it",
+                "no policy conversation for fire scope %s/%s",
                 occasion.platform, occasion.conversation_id,
             )
             self._metrics.inc(
@@ -977,183 +781,6 @@ class FirePath:
             )
             return None
         return convo.unit
-
-    async def _read_notes(
-        self, occasion: Event, unit: str | None,
-    ) -> tuple[Note, ...]:
-        """The standing note index, `TranscriptInjection._notes` mirrored.
-
-        Fail-SOFT and COUNTED, the same three states: no store is the dormant
-        default (not an error, not counted); no unit is the wiring gap
-        above (counted there, once); a FAILED read is neither — a thinner
-        prompt beats a reminder that does not fire, but a note index that
-        exists and could not be fetched reported as «there are none» is the
-        `unavailable`-as-`nothing_found` substitution R-27 exists to prevent.
-        """
-        if self._notes is None or unit is None:
-            return ()
-        try:
-            return tuple(await self._notes.standing(unit=unit))
-        except Exception:
-            log.exception("fire note-index read failed; continuing without it")
-            self._metrics.inc(
-                "nora_errors_total", stage="fire_notes",
-                platform=occasion.platform,
-            )
-            return ()
-
-    async def _read_memos(self, occasion: Event, unit: str | None) -> tuple[Memo, ...]:
-        """The unit's kept memos (DEC-306), `_read_notes` mirrored: no store or
-        no unit renders none; a failed read is counted (`stage="fire_memos"`)
-        and renders none, never «nothing is kept» said with confidence."""
-        if self._memos is None or unit is None:
-            return ()
-        try:
-            return tuple(await self._memos.kept(unit=unit))
-        except Exception:
-            log.exception("fire memo-index read failed; continuing without it")
-            self._metrics.inc(
-                "nora_errors_total", stage="fire_memos", platform=occasion.platform,
-            )
-            return ()
-
-    async def _read_lessons(self, occasion: Event) -> tuple[str, ...]:
-        """Her active lessons in this room's UNIT:
-        A bounded read. `()` while `[lessons] render`
-        is off, with no unit, or where `<self>` may not show (R-31)."""
-        if self._lessons is None or self._policy is None:
-            return ()
-        convo = self._policy.conversation(occasion.platform, occasion.conversation_id)
-        if convo is None or not convo.unit:
-            return ()
-        if not self._policy.shows_self_in(occasion.platform, occasion.conversation_id):
-            return ()
-        return await read_lessons(
-            self._lessons.bodies(unit=convo.unit),
-            stage="fire_lessons", platform=occasion.platform, metrics=self._metrics,
-            timeout_seconds=self._standing_store_timeout_seconds,
-        )
-
-    async def _read_graph_profiles(
-        self, ctx: TagContext, room: Room, now: datetime,
-    ) -> tuple[ContextBlock, ...]:
-        if self._graph_profiles is None or self._policy is None:
-            return ()
-        conversation_id = ctx.message.conversation_id
-        convo = self._policy.conversation(room.platform, conversation_id)
-        if convo is None or not convo.unit:
-            return ()
-        view = await room.scope()
-        reading = ReadingRoom(
-            room.platform, conversation_id,
-            LiveRoom(frozenset(p.person_id for p in view.people), view.unnamed,
-                     view.available, view.degraded),
-        )
-        people = await fire_character_people(
-            ctx.room_members, access=self._access, platform=room.platform,
-            person=ctx.tagger, transcript=ctx.transcript,
-        )
-        subjects: dict[tuple[PointerKind, str], str] = {}
-        if self._policy.shows_self_in(room.platform, conversation_id):
-            subjects["nora", "nora"] = self._display_name
-        subjects["room", room_key(room.platform, conversation_id)] = convo.label or ""
-        subjects["unit", convo.unit] = convo.unit
-        subjects.update({("identity", person.person_id): person.name for person in people})
-        profiles = await self._graph_profiles.read_profiles(
-            reading, subjects, now, concerns=frozenset(person.person_id for person in people),
-        )
-        if any(read.profile.status == "unavailable" for read in profiles.values()):
-            self._metrics.inc(
-                "nora_errors_total", stage="fire_graph_profiles", platform=room.platform,
-            )
-        return tuple(profile.block() for profile in profiles.values())
-
-    async def _read_shared(
-        self, occasion: Event, ref: PersonRef | None,
-    ) -> SharedView | None:
-        """The unit's shared cognitive state for this occasion's destination.
-
-        Unlike every sibling read this one is NOT fail-soft in what it
-        returns: a failed reader comes back as a `SharedView` whose `status`
-        is `unavailable`, because the proactive occasion's gate reads it —
-        an unread premise must withhold the autonomous act, not degrade to
-        «nothing pending». The gate itself is in `speak`.
-        """
-        if self._shared_reader is None:
-            return None
-        unit = self._unit_for(occasion)
-        if unit is None:
-            return SharedView(
-                unit="", status="unavailable", as_of_ms=int(time.time() * 1000),
-            )
-        permit = None
-        permit_req = None
-        standing_permits = None
-        if self._lineage is not None:
-            room = Room(
-                platform=occasion.platform, conversation_id=occasion.conversation_id,
-                roster_source=self._rosters.get(occasion.platform), access=self._access,
-                tagger=ref, self_ids=self._profile_self_ids,
-            )
-            target = await self._render_room(occasion)
-            try:
-                narrowed = await ledger_target(target, room)
-            except Exception:
-                # Fail closed: the unfiltered unit read into this room is the
-                # disclosure failure, so the view is `unavailable` — which on
-                # a proactive occasion withholds the act in `speak`.
-                log.exception(
-                    "fire shared-state permit build failed for %s",
-                    occasion.conversation_id,
-                )
-                return SharedView(
-                    unit=unit, status="unavailable",
-                    as_of_ms=int(time.time() * 1000),
-                )
-            if narrowed is not None:
-                def permit(entry: LedgerEntry) -> bool:
-                    return ledger_permits(entry, narrowed)
-
-                def permit_req(requirements: tuple[DisclosureRequirement, ...]) -> bool:
-                    # Turn-record items carry their own per-item disclosure;
-                    # the same lineage predicates decide it for this room.
-                    # An item carrying NO requirements has no gate to
-                    # check — withhold, never vacuously permit.
-                    return bool(requirements) and all(
-                        req.known
-                        and not excluded(req.exclude_persons, narrowed)
-                        and section_permits(
-                            req.entries, narrowed, origin=req.origin)
-                        for req in requirements
-                    )
-
-                def standing_permits(position: Standing) -> dict[str, bool]:
-                    # The derived-view gate, run against the destination's
-                    # RenderRoom: an excluded or unpermitted section is
-                    # withheld exactly as the retired standing blocks did.
-                    return visible_sections(
-                        position.lineage,
-                        (BODY, HOLD_OPEN, I_OWE, WORKING_SET), narrowed,
-                        origin=room_key(position.platform, position.conversation_id),
-                        exclude_persons=position.exclude_persons,
-                    )
-        try:
-            return await asyncio.wait_for(self._shared_reader(
-                unit=unit,
-                room=(occasion.platform, occasion.conversation_id),
-                permit=permit, permit_req=permit_req,
-                standing_permits=standing_permits,
-                now_ms=int(time.time() * 1000),
-            ), timeout=self._standing_store_timeout_seconds)
-        except Exception:
-            log.exception("fire shared-state read failed")
-            self._metrics.inc(
-                "nora_errors_total", stage="shared_state",
-                platform=occasion.platform)
-            return SharedView(
-                unit=unit, status="unavailable",
-                as_of_ms=int(time.time() * 1000),
-            )
 
     async def run(self, rows: Sequence[Reminder]) -> str:
         """The heartbeat's `fire` collaborator: due rows in, outcome out.
@@ -1498,8 +1125,8 @@ class FirePath:
                 # `[llm] defer_tools`.
                 defer=self._defer_tools,
                 occasion=turn_occasion(voice=ctx.message.voice),
-                engagement=participation,
-                commit_intentions=occasion.commit_intentions,
+                engagement=True,
+                commit_intentions=participation or occasion.commit_intentions,
                 store=self._records, conversation_id=occasion.conversation_id,
                 conversation_type=occasion.conversation_type, persons=self._persons,
                 deliverer=handle.deliverer, room=room,
@@ -1536,21 +1163,15 @@ class FirePath:
             now = self._clock().astimezone()
             speaker = tagger.name if tagger is not None else occasion.speaker
             header = occasion.header(tagger, now)
-            if participation:
-                pre_fill, tag_message = await self._ambient.prompt(
-                    ctx, unit=self._unit_for(occasion), display_name=self._display_name,
-                    speaker=speaker, context_window=self._context_window,
-                    now=now, catalogue=surface.prompt_catalogue, header=header, room=room,
-                )
-            else:
-                pre_fill = build_prefill(
-                    ctx, display_name=self._display_name, context_window=self._context_window,
-                    now=now, header=header, catalogue=surface.prompt_catalogue,
-                    graph_profiles=await self._read_graph_profiles(ctx, room, now),
-                )
-                tag_message = build_tag_message(
-                    ctx, tagger_name=speaker, display_name=self._display_name,
-                )
+            pre_fill, tag_message = await self._ambient.prompt(
+                ctx, unit=self._unit_for(occasion), display_name=self._display_name,
+                speaker=speaker, context_window=self._context_window,
+                now=now, catalogue=surface.prompt_catalogue, header=header, room=room,
+                proactive_event=not participation,
+                show_nora_profile=participation or bool(self._policy and self._policy.shows_self_in(
+                    occasion.platform, occasion.conversation_id,
+                )),
+            )
 
             failure, stop_reason, final_text = await self._invoke(
                 doctrine=doctrine, tools=surface.tools, limits=surface.limits(self._limits),

@@ -120,20 +120,8 @@ class ProactiveHeader:
     note title is escaped like every other value a prompt carries (R-13); it
     was model-chosen and code-resolved.
 
-    **The closing clause is about the whole apparatus, not just the reminder.**
-    The turn's prompt also carries the note's title, the `<notes>` index, and the
-    intent her own earlier pass wrote, so the clause names the note beside the
-    reminder, rules out the note's own words, and says what the whole of it is
-    FOR: the reason she is here, never the content of what she says. One named
-    forbidden sentence generalises to none.
-
-    It deliberately does NOT say where what she says comes from instead,
-    because the paragraph above already does («Read what is in front of you NOW —
-    the transcript, the standing, the notes … and decide again»); repeating it
-    adds risk and buys nothing.
-
-    `nora.language.note_render.NOTES_BLOCK_NOTE` carries the same identity on the
-    tier's own block, which is the half that reaches an ordinary tag turn.
+    The note title and the earlier intention explain why the turn opened.
+    The transcript and graph context inform whether it is still worth speaking.
     """
 
     rows: tuple[Reminder, ...]
@@ -163,9 +151,8 @@ class ProactiveHeader:
             f"{self._decided()}"
             "The tag_message below is what you wrote to yourself then: an "
             "intention, not a script, and not a fact about the room. Read what "
-            "is in front of you NOW — the transcript, the standing, the notes "
-            "(note_read gives you a note's current body; where_is and route are "
-            "worth asking now, not earlier) — and decide again. If the thing has "
+            "is in front of you NOW — the transcript and the graph context available "
+            "for this turn — and decide again. If the thing has "
             "since been settled, or somebody already said it, or it would not "
             "help, stay silent: silence is a complete answer here, not a failure, "
             "and most turns like this one end that way. "

@@ -179,7 +179,7 @@ async def wake_input(sandbox_url: str, at_ms: int, view, room: str,
             overrides=_overrides(memory_index), now=now,
             identity=(config_dir / "identity.toml").read_text(),
             policy=(config_dir / "policy.toml").read_text(),
-            environment=environment))
+            environment=environment), legacy_replay=True)
         try:
             runner = subject.deps.cognition_runner
             if runner is None or subject.unit != view.unit:

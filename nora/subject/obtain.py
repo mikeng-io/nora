@@ -475,7 +475,7 @@ def _conversation_for(spec: SubjectSpec, policy: Policy) -> Conversation:
     return convo
 
 
-async def obtain(spec: SubjectSpec) -> Subject:
+async def obtain(spec: SubjectSpec, *, legacy_replay: bool = False) -> Subject:
     """Compose an isolated subject with scoped credentials and database mapping."""
     environment = spec.environment
     if environment is None or not environment.active:
@@ -495,7 +495,9 @@ async def obtain(spec: SubjectSpec) -> Subject:
         def clock() -> datetime:
             return _at
     # Semantic time is controlled; operational leases and deadlines advance.
-    deps = await build_dependencies(cfg, clock=clock, operational_clock=wall_clock)
+    deps = await build_dependencies(
+        cfg, clock=clock, operational_clock=wall_clock, legacy_replay=legacy_replay,
+    )
     subject = None
     try:
         convo = _conversation_for(spec, deps.config_reload.policy)

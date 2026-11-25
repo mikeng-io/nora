@@ -51,7 +51,6 @@ from typing import Any
 from nora.agent.catalog.surface import _apply_link_owners, on_memory_surface
 from nora.agent.lineage import LineagePolicy
 from nora.agent.links import LinkCarry
-from nora.agent.memory_search import MemorySearch
 from nora.agent.ports import ToolSpec, adapt
 from nora.agent.reaction import ReactionPicker
 from nora.agent.relay import Relay
@@ -398,7 +397,6 @@ def build_tool_specs(
     google_account: str = "",
     # `[memory.index] read`: the retrieval service. `None` (the shipped
     # default, offline, eval) leaves it unwired.
-    memory_retrieval: MemorySearch | None = None,
     graph_retrieval: Any = None,
     pass_scope: PassScope | None = None,
     intention_admission: Any = None,
@@ -524,7 +522,7 @@ def build_tool_specs(
         video_ref_kinds=video_ref_kinds,
         external_files=external_files,
         google_account=google_account,
-        memory_retrieval=memory_retrieval, graph_retrieval=graph_retrieval,
+        graph_retrieval=graph_retrieval,
         pass_scope=pass_scope, intention_admission=intention_admission,
         memory_intake=memory_intake,
         all_memory_surfaces=all_memory_surfaces,
@@ -566,9 +564,6 @@ def _on_surface(name: str, deps: ToolDeps) -> bool:
     if name == "intention_commit":
         return deps.all_memory_surfaces or deps.intention_admission is not None
     graph = deps.graph_retrieval is not None
-    legacy = deps.memory_retrieval is not None
-    if name not in {"memory_read", "memory_search", "profile_dispute"}:
-        graph = graph or legacy
     return on_memory_surface(name, graph=graph, everything=deps.all_memory_surfaces)
 
 
@@ -659,7 +654,6 @@ def build_tools(
     subagent: SubagentDesk | None = None,
     video: VideoDesk | None = None,
     video_ref_kinds: frozenset[str] = frozenset(),
-    memory_retrieval: MemorySearch | None = None,
     graph_retrieval: Any = None,
     pass_scope: PassScope | None = None,
     intention_admission: Any = None,
@@ -695,7 +689,7 @@ def build_tools(
         record=record, lineage=lineage, rollup=rollup, standing_head=standing_head, ledger=ledger,
         graph_profiles=graph_profiles, observations=observations, social_items=social_items,
         subagent=subagent, video=video, video_ref_kinds=video_ref_kinds,
-        memory_retrieval=memory_retrieval, graph_retrieval=graph_retrieval, pass_scope=pass_scope,
+        graph_retrieval=graph_retrieval, pass_scope=pass_scope,
         intention_admission=intention_admission, memory_intake=memory_intake,
         relay=relay, relay_turn=relay_turn,
         room_management=room_management, message=message,

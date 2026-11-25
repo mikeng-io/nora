@@ -167,7 +167,6 @@ def build_offline_pipeline(
         subagents=None,
         # `<recalled>`, the pre-fetch — `None`: no memory index here; the live
         # eval subject builds the real search through composition.
-        memory_search=None,
         # The typed platform-observation Record (design/platform-observations
         # 04/05): the transcript window's source events and the standing
         # slot's folded object heads. `None` renders neither — the honest
@@ -269,8 +268,6 @@ def build_offline_pipeline(
             computer=None,
             # `<documents>`: `None`, the assembler's reason above.
             documents=None,
-            # `<memos>`: `None`, the assembler's reason above.
-            memos=None,
             quote_window=quote_window,
             doctrine_store=doctrine_store, metrics=metrics,
             runner=runner, adapters=adapters,
@@ -317,9 +314,6 @@ def build_offline_pipeline(
             # whatever standing/notes the room has — an eval whose
             # FirePath read emptier tiers than its tag path would grade the
             # knowledge-cut cases against a prompt production never builds.
-            notes=notes,
-            graph_profiles=None,
-            lessons=None,
             policy=room_allowlist(),
             participation_runner=participation_runner,
             # The proactive act turn's runner: its OWN, as the composition root builds

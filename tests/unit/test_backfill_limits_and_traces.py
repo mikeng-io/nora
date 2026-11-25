@@ -170,7 +170,7 @@ async def test_cli_root_contains_session_and_generation_spans(
     deps = SimpleNamespace(client=client, model_clients=[],
         registry=SimpleNamespace(self_aliases=lambda: ()))
 
-    async def build(cfg):
+    async def build(cfg, *, legacy_replay=False):
         return deps
 
     async def dispose():

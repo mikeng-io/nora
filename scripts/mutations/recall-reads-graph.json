@@ -1,9 +1,0 @@
-[
-  {
-    "name": "read false leaves index prefetch unwired",
-    "file": "nora/memory/wire.py",
-    "old": "        if cfg.memory.index.read\n        else None",
-    "new": "        if True\n        else None",
-    "target": "tests/test_composition.py::test_legacy_prefetch_and_graph_reads_are_wired_on_the_graph_surface"
-  }
-]

@@ -97,7 +97,6 @@ from ..infra.vision.preprocess import VIDEO_CHUNK_SECONDS, VIDEO_MAX_CHUNKS
 from .lineage import LineagePolicy
 from .links import LinkCarry
 from .mcp import McpToolGroup, stream_mounted
-from .memory_search import MemorySearch
 from .ports import ToolSpec, adapt
 from .reaction import ReactionPicker
 from .relay import Relay
@@ -361,7 +360,6 @@ class ToolRegistry:
         # link is opened through; `None` answers the open `unavailable`. Its
         # `google_account` names who the NOT_SHARED note says to share with.
         external_files: ExternalFilesSource | None = None, google_account: str = "",
-        memory_search: MemorySearch | None = None,
         graph_retrieval: Any = None,
         engagement_graph_retrieval: Any = None,
         intention_admission: Any = None,
@@ -380,7 +378,6 @@ class ToolRegistry:
         self._room_management = room_management
         self._budget_overrides = dict(budget_overrides or {})
         self._external_files, self._google_account = external_files, google_account
-        self._memory_search = memory_search
         self._graph_retrieval = graph_retrieval
         self._engagement_graph_retrieval = engagement_graph_retrieval
         self._intention_admission = intention_admission
@@ -414,7 +411,7 @@ class ToolRegistry:
             | ({"profile_dispute"} if memory_intake is None else set())
             | ({"memory_search", "memory_read"} if graph_retrieval is None else set())
             | (OFF_GRAPH_ONLY_TOOLS
-               if graph_retrieval is not None or memory_search is not None else set())
+               if graph_retrieval is not None else set())
             | GRAPH_PASS_TOOLS
         )
         self._subagent = subagent
@@ -723,21 +720,10 @@ class ToolRegistry:
             and name != LOADER_TOOL
         )
 
-    def with_memory_search(self, search: MemorySearch) -> ToolRegistry:
-        """The shadow comprehension reader, without switching the live tag surface."""
-        from copy import copy
-
-        scoped = copy(self)
-        scoped._memory_search = search
-        scoped._withheld = self._withheld | OFF_GRAPH_ONLY_TOOLS
-        return scoped
-
     def with_clock(self, clock: Callable[[], datetime]) -> ToolRegistry:
         """This registry with the one injected clock swapped, for an occasion
         whose reads must see a fixed instant rather than the process's wall
-        clock (the historical lane's evidence time). A copy, the same seam as
-        `with_memory_search`: collaborators, withheld set and budgets are the
-        shared ones."""
+        clock (the historical lane's evidence time)."""
         from copy import copy
 
         scoped = copy(self)
@@ -1065,7 +1051,7 @@ class ToolRegistry:
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
         message: Any = None,
         engagement: bool = False,
-        commit_intentions: bool = False,
+        commit_intentions: bool | None = None,
     ) -> tuple[ToolSpec, ...]:
         """Build room-bound tool specs before Strands adaptation."""
         return build_tool_specs(
@@ -1107,11 +1093,11 @@ class ToolRegistry:
             rooms=self._rooms,
             record=self._record,
             observations=self._observations,
-            memory_retrieval=self._memory_search,
             graph_retrieval=(self._engagement_graph_retrieval if engagement
                              else self._graph_retrieval),
             intention_admission=(
-                self._intention_admission if engagement or commit_intentions else None
+                self._intention_admission
+                if (engagement if commit_intentions is None else commit_intentions) else None
             ),
             memory_intake=self._memory_intake,
             lineage=self._lineage,
@@ -1221,9 +1207,11 @@ class ToolRegistry:
         occasion: str | None = None,
         message: Any = None,
         engagement: bool = False,
-        commit_intentions: bool = False,
+        commit_intentions: bool | None = None,
     ) -> ToolSurface:
         """Build the resident tools, deferred shelf and catalogue from one admitted set."""
+        if commit_intentions is None:
+            commit_intentions = engagement
         scope = ToolScope(
             platform=None if room is None else room.platform,
             dreamer=bool(dream_adaptor),
@@ -1249,7 +1237,7 @@ class ToolRegistry:
         withheld = self._withheld
         if engagement and self._engagement_graph_retrieval is not None:
             withheld = withheld - {"memory_search", "memory_read"}
-        if (engagement or commit_intentions) and self._intention_admission is not None:
+        if commit_intentions and self._intention_admission is not None:
             withheld = withheld - {"intention_commit"}
         loader = next(spec for spec in specs if spec.name == LOADER_TOOL)
         admitted = [

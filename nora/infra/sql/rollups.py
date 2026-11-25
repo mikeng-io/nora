@@ -234,12 +234,6 @@ class SqlRollupStore:
             )
             await memory_index.reproject_episodes(conn, metrics=self._metrics)
 
-    async def drain_index_queue(self, *, limit: int = 500) -> int:
-        """Re-project what the memory index's projections queued (the
-        analytics process drains once per tick). Returns the rows tried."""
-        async with self._engine.begin() as conn:
-            return await memory_index.drain_queue(conn, limit=limit, metrics=self._metrics)
-
     async def abandon_build(self, *, build_id: int) -> None:
         async with self._engine.begin() as conn:
             await conn.execute(

@@ -6,7 +6,6 @@ transcript deduplication, fail-closed statuses and the prefetch budget.
 
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -110,7 +109,6 @@ async def _assemble(
         audit=audit or FakeRecordStore(), # type: ignore[arg-type]
         persons=persons, context_window=10, metrics=metrics, policy=policy,
         lineage=LineagePolicy.from_policy(policy),
-        memory_search=_search(index, metrics) if index is not None else None,
         clock=clock, shared=shared,
     )
     return await assembler.assemble(request=_request(msg))
@@ -132,10 +130,6 @@ async def test_the_honcho_surface_reads_nothing_and_renders_no_block() -> None:
     assert "<recalled" not in body
 
 
-async def test_a_room_outside_the_policy_is_never_searched() -> None:
-    index = FakeMemoryIndex([IndexedNode("message", "1", "ramen", OLD, origin_room=ROOM)])
-    ctx = await _assemble(index, _msg(conversation_id="elsewhere"))
-    assert ctx.recalled == () and index.calls == []
 
 
 def test_the_block_escapes_what_it_carries() -> None:
@@ -224,19 +218,3 @@ async def test_more_sharings_of_a_picture_than_pins_never_outrank_the_rest() -> 
         index, scope, terms=[], person_id=None, hops=0, admits=lambda n: True, media=[SHA],
     )
     assert len(hits) == PINNED_LIMIT and all(h.pin for h in hits)
-
-
-async def test_an_unlisted_mention_does_not_seed_person_facts() -> None:
-    persons = replace(
-        _PERSONS,
-        by_person={**_PERSONS.by_person,
-                   "rin": PersonRef(person_id="rin", name="Rin")},
-        index={**_PERSONS.index, ("signal", "rin-uuid"): "rin"},
-    )
-    index = FakeMemoryIndex(
-        [IndexedNode("note", "n1", "Rin's birthday plan", OLD, unit="u1")],
-        [("note", "n1", "about", "person", "rin")],
-    )
-    ctx = await _assemble(index, _msg("nora.000 hm", mentions=frozenset({"rin-uuid"})),
-                          persons=persons)
-    assert "Rin" not in "".join(_texts(ctx))

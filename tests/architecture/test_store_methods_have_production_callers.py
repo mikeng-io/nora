@@ -340,14 +340,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         # `SqlEntryStore.held` (the topic-account index) shares the name with
         # the lesson store's held read; both are driven by contract suites.
         "held",
-        # `SqlRecordStore.drain_index_queue` (memory index S4) shares the name
-        # with `SqlRollupStore`'s: both drain the one queue, from the nora and
-        # the analytics process. Callers: `nora.app.runtime.memory_drain_loop`
-        # and `nora.analytics.runner`.
-        "drain_index_queue",
-        # `MemoryEmbedWorker.run_once` shares the
-        # name with other workers' ticks. Caller: `nora.app.runtime.
-        # memory_drain_loop`, pinned by `tests/unit/test_runtime.py`.
+        # The graph embedding tick shares its name with other workers.
         "run_once",
         # `SqlObservationStore.current` shares the name with
         # `VersionManifest.current`, `WeatherSource.current` and the two

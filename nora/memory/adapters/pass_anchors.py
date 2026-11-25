@@ -227,6 +227,10 @@ class _AnchorQueries:
         )
 
     async def proactive(self, data: ProactiveInput) -> _Seeds:
+        if data.event is not None:
+            return self.called(CalledInput(data.event))
+        if data.intention is None:
+            raise ValueError("A proactive pass needs an intention or an event")
         r = self._rows
         row = (await self._conn.execute(sa.select(
             r.origin_room, r.image["identities"],

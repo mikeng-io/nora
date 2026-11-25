@@ -19,6 +19,7 @@ class PassScope:
     nora_name: str = "Nora"
     unit_name: str | None = None
     anchor_failure: str | None = None
+    show_nora_profile: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,7 +42,8 @@ class AmbientInput:
 
 @dataclass(frozen=True, slots=True)
 class ProactiveInput:
-    intention: str
+    intention: str | None
+    event: AnchorItem | None = None
 
 
 @dataclass(frozen=True, slots=True)

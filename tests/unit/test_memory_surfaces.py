@@ -22,7 +22,6 @@ from nora.agent.dreamer import (
     RegistryToolSource,
     cognition_grant,
 )
-from nora.agent.memory_search import MemorySearch
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.subagent_tools import SubagentToolSource
@@ -31,7 +30,6 @@ from nora.domain.cognition_session import Room as AgendaRoom
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import FakeRosterSource
-from nora.testing.memory_index import FakeMemoryIndex
 from tests.fakes import SinkSender
 from tests.test_room_tools import GROUP, IDENTITY, MILES, NORA, TYLER, _NullStore
 
@@ -84,7 +82,6 @@ def persons(tmp_path: Any) -> Any:
 def _registry(graph: bool) -> ToolRegistry:
     """The registry offers the Cognitive Graph reads when their service is wired."""
     return ToolRegistry(
-        memory_search=MemorySearch(FakeMemoryIndex([]), Metrics()) if graph else None,
         graph_retrieval=object() if graph else None,
         memory_intake=object(),
     )

@@ -28,7 +28,7 @@ from nora.domain.doctrine_check import CHECK_OUTCOMES
 from nora.domain.lessons import LESSONS_OUTCOMES
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
-from nora.domain.memory_admission import GRAPH_BATCH_OUTCOMES, GRAPH_PROJECTION_OUTCOMES
+from nora.domain.memory_admission import GRAPH_PROJECTION_OUTCOMES
 from nora.domain.memory_index import (
     EMBED_OUTCOMES,
     EMBEDDED_KINDS,
@@ -120,11 +120,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Graph projection skips: " + "/".join(GRAPH_PROJECTION_OUTCOMES),
         ("outcome",),
     ),
-    _CounterSpec(
-        "nora_memory_graph_batches_total",
-        "Graph batch outcomes: " + "/".join(GRAPH_BATCH_OUTCOMES),
-        ("outcome",),
-    ),
     _CounterSpec("nora_comprehend_items_total",
                  f"Graph work attempts: outcomes {ITEM_OUTCOMES}, lanes {LANES}.",
                  ("outcome", "lane")),
@@ -205,11 +200,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "operator can see a block go missing: the block is lost, never the "
         "turn, so absence is the only symptom and this series is the only "
         "tell. An operator asking WHICH half of the context went blind must "
-        "not have to guess. An unavailable graph profile read is counted per "
-        "occasion as fire_graph_profiles or room_list_culture. "
-        "The <recalled> pre-fetch (design/unified-memory/README.md) is "
-        "stage=\"tag_prefetch\": a memory search that failed, timed out or "
-        "could not be rendered, so the turn went on without the block.",
+        "not have to guess. An unavailable room profile lookup is counted with "
+        "stage=\"room_list_culture\".",
         ("stage", "platform"),
     ),
     _CounterSpec(

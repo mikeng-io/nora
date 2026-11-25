@@ -222,7 +222,9 @@ def build_rollup(
         except Exception as exc:
             raise AnalyticsStartupError(f"migration error: {exc}") from exc
 
-    engine = engine or create_sql_engine(database_url)
+    if engine is None:
+        engine = create_sql_engine(database_url)
+        engine.update_execution_options(legacy_memory_projection=False)
     if policy is None:
         raise AnalyticsStartupError("analytics policy is unavailable")
     registration = SqlItemRegistration(
@@ -230,10 +232,7 @@ def build_rollup(
         RuntimeRevisions(cfg.model_dump(), policy, persons),
     )
     mobility = SqlMobilityStore(engine, metrics=metrics, registration=registration)
-    # Google-cache-only labelling: this process READS `geocode_cache` only —
-    # it never calls a geocoder itself. REUSES `engine` for the same reason
-    # `nora.app.composition` reuses its own (a second `create_sql_engine`
-    # forks the pool).
+    # Labelling reads the shared geocode cache and uses the existing pool.
     geocode_cache = SqlGeocodeCacheStore(engine)
     rollup_config = RollupConfig(
         tick_seconds=analytics.tick_seconds, safety_lag=analytics.safety_lag,
@@ -335,6 +334,7 @@ async def open_rollup(cfg: Config) -> AsyncIterator[AnalyticsDependencies]:
 
     reload = FileReload(cfg.policy_file, policy, load_policy, validate, Metrics())
     engine = create_sql_engine(database_url)
+    engine.update_execution_options(legacy_memory_projection=False)
     try:
         async with ClientSession() as session:
             try:

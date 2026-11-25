@@ -685,59 +685,6 @@ async def test_thread_has_no_body_and_whole_standing_writes_are_refused(ledger, 
     assert await ledger.read(unit="u", platform="signal", conversation_id="room-a") == ()
 
 
-@pytest.mark.parametrize("kind", ["fire", "participation"])
-async def test_the_unit_ledger_still_reaches_legacy_fire_only(
-    ledger,
-    ledger_db,
-    doctrine_store,
-    kind,
-):
-    from nora.agent.prefill import build_prefill
-    from nora.agent.shared_state import shared_reader
-    from nora.app.fire import FirePath
-    from nora.domain.events import Event
-
-    entry, _ = await plant(ledger, ledger_db)
-    persons, policy, roster, lineage = collaborators()
-    from datetime import UTC, datetime
-
-    path = FirePath(
-        persons=persons,
-        records=SqlRecordStore(ledger_db),
-        doctrine_store=doctrine_store,
-        metrics=Metrics(),
-        runner=None,
-        adapters={},
-        registry=None,
-        canary="test-canary",
-        display_name="Nora",
-        ai_peer="nora",
-        context_window=20,
-        limits={},
-        timeout_seconds=5,
-        clock=lambda: datetime(2026, 10, 1, tzinfo=UTC),
-        policy=policy,
-        rosters={"signal": roster},
-        lineage=lineage,
-        shared=shared_reader(
-            ledger=ledger, ai_peer="nora",
-            rooms_of_unit=lambda unit: (("signal", "room-a"), ("signal", "room-b")),
-        ),
-    )
-    occasion = Event(
-        platform="signal",
-        conversation_id="room-b",
-        conversation_type="group",
-        person_id=None,
-        body="Continue",
-        header=lambda _p, _n: "Continue",
-        kind=kind,
-    )
-    ctx = await path.build_context(occasion)
-    text = str(build_prefill(ctx, display_name="Nora", context_window=20))
-    assert (entry.id in text) is (kind == "fire")
-
-
 async def test_revising_one_section_preserves_evidence_after_source_retention(ledger, ledger_db):
     from nora.domain.tag_trace import TagTrace
     from nora.infra.sql.schema import TAG_TRACE

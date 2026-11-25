@@ -2,8 +2,8 @@
  {
   "name": "CLI initializes the existing trace exporter",
   "file": "nora/app/cli.py",
-  "old": "        _profile_tracing(cfg)\n        deps = await build_dependencies(cfg)\n        engine = create_sql_engine(_database_url(cfg))",
-  "new": "        deps = await build_dependencies(cfg)\n        engine = create_sql_engine(_database_url(cfg))",
+  "old": "        _profile_tracing(cfg)\n        deps = await build_dependencies(cfg, legacy_replay=True)\n        engine = create_sql_engine(_database_url(cfg))",
+  "new": "        deps = await build_dependencies(cfg, legacy_replay=True)\n        engine = create_sql_engine(_database_url(cfg))",
   "target": "tests/unit/test_backfill_limits_and_traces.py::test_cli_root_contains_session_and_generation_spans"
  },
  {

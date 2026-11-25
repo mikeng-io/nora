@@ -49,7 +49,6 @@ from nora.app.composition_computer import build_computer
 from nora.app.composition_documents import service
 from nora.app.composition_dreamer import (
     enabled,
-    guidance,
     legacy_cognition_shutdown,
 )
 from nora.app.composition_fire import (
@@ -98,7 +97,6 @@ from nora.app.composition_wake import build_wake
 from nora.app.computer_sweeper import ComputerSessionSweeper
 from nora.app.documents_service import DocumentService, room_label, rooms_named
 from nora.app.fire_engagement import AmbientEngagement
-from nora.app.graph_batches import GraphBatchProducer
 from nora.app.graph_observe import GraphObserve, graph_observe
 from nora.app.lifecycle import StartupOwner
 from nora.app.memory_routing import (
@@ -128,7 +126,6 @@ from nora.domain.ports import (
     BlobStore,
     ContextAssembler,
     EngagePolicy,
-    RecordStore,
     Speaker,
 )
 from nora.domain.reminders import ReminderStore
@@ -137,7 +134,9 @@ from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.self_presence import PresenceReader
 from nora.infra.computer.probe import ComputerdProbe
 from nora.infra.embedder import LlamaEmbedder, fingerprint, model_file
+from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.memory_embed import MemoryEmbedWorker
+from nora.infra.sql.memory_read import SqlMemoryIndex
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.revisions import SqlRevisionStore
@@ -199,7 +198,7 @@ class Dependencies:
     and `nora.__main__.App.shutdown` closes it directly.
     """
 
-    audit: RecordStore
+    audit: SqlRecordStore
     persons: Persons
     access: IdentityAccess
     config_reload: ReloadFiles
@@ -407,7 +406,6 @@ class Dependencies:
     # The memory index's embedding worker: `None` under `[memory.index] embed =
     # false`, the default. `__main__` hands it to the memory drain loop.
     memory_embed: MemoryEmbedWorker | None = None
-    graph_batches: GraphBatchProducer | None = None
     graph_observe: GraphObserve | None = None
     # The social stream's poller: `None` unless `[social.poll] enabled`.
     # `nora/__main__.py` starts it; the eval subject, which composes the same
@@ -433,6 +431,7 @@ async def build_dependencies(
     *,
     clock: Callable[[], datetime] = wall_clock,
     operational_clock: Callable[[], datetime] | None = None,
+    legacy_replay: bool = False,
 ) -> Dependencies:
     """Build the process graph from cfg and return its runtime Dependencies.
 
@@ -451,12 +450,13 @@ async def build_dependencies(
     """
     return await StartupOwner.run(
         _compose_dependencies, cfg,
-        clock=clock, operational_clock=operational_clock)
+        clock=clock, operational_clock=operational_clock, legacy_replay=legacy_replay)
 
 
 async def _compose_dependencies(
     cfg: Config, *, clock: Callable[[], datetime],
     operational_clock: Callable[[], datetime] | None,
+    legacy_replay: bool,
     owner: StartupOwner,
 ) -> Dependencies:
     op_clock = operational_clock or clock
@@ -649,13 +649,9 @@ async def _compose_dependencies(
     onboarding_runner = onboarding(
         cfg=cfg, managed_services=_stores_managed.services,
         discord_control=discord_control, discord_token=discord_token).onboarding
-    _stores_readers = readers(cfg=cfg, content_checks=content_checks, engine=engine)
+    _stores_readers = readers(cfg=cfg, engine=engine)
     lessons_reader = _stores_readers.lessons_reader
-    profile_reader = _stores_readers.profile_reader
     _people_note_maps = _people_wire.note_maps(allowlist=allowlist)
-    _memory_search = _memory_wire.search(cfg=cfg, engine=engine, metrics=metrics, access=access)
-    memory_index_reader = _memory_search.memory_index_reader
-    memory_search = _memory_search.memory_search
     _people_unit_rooms = _people_wire.unit_rooms(allowlist=allowlist)
     unit_rooms = _people_unit_rooms.unit_rooms
     _pipelines_shared = build_shared(
@@ -672,7 +668,6 @@ async def _compose_dependencies(
         lessons_reader=lessons_reader,
         media_join=media_join,
         memo_store=memo_store,
-        memory_search=memory_search,
         metrics=metrics,
         note_store=note_store,
         observation_store=observation_store,
@@ -871,7 +866,6 @@ async def _compose_dependencies(
         media_join=media_join,
         media_objects=media_objects,
         memo_store=memo_store,
-        memory_search=memory_search,
         graph_retrieval=graph_reads,
         engagement_graph_retrieval=(
             graph_reads or _memory_wire.graph_read_tools(engine, access, lineage, None, None)
@@ -1002,7 +996,6 @@ async def _compose_dependencies(
     _fire_path = path(
         access=access,
         ambient=AmbientEngagement(engagement_graph, graph_debrief, subagents_context),
-        graph_profiles=graph_profiles,
         allowlist=allowlist,
         audit=audit,
         background=background,
@@ -1012,15 +1005,12 @@ async def _compose_dependencies(
         decision_log=decision_log,
         doctrine_store=doctrine_store,
         documents_context=documents_context,
-        lessons_reader=lessons_reader,
         limits=limits,
         lineage=lineage,
         llm_state=llm_state,
         lost_jobs=lost_jobs,
         media_join=media_join,
-        memo_store=memo_store,
         metrics=metrics,
-        note_store=note_store,
         participation_runner=participation_runner,
         persons=persons_view,
         presence_reader=presence_reader,
@@ -1031,7 +1021,7 @@ async def _compose_dependencies(
         registry=registry,
         rosters=rosters,
         runner=runner,
-        shared=shared,
+        shared=_pipelines_shared.action_state,
         slots=slots,
         tag_trace_store=tag_trace_store,
         tool_call_log_store=tool_call_log_store,
@@ -1148,35 +1138,21 @@ async def _compose_dependencies(
         room_command=room_commands.is_command,
     )
     bridge_runtime = _bridge_runtime.bridge_runtime
-    _dreamer_guidance = guidance(dreamer_instructions=dreamer_instructions)
-    cognition_lessons = _dreamer_guidance.cognition_lessons
-    cognition_memory = _dreamer_guidance.cognition_memory
-    cognition_runner = _dreamer_guidance.cognition_runner
-    session_guidance = _dreamer_guidance.session_guidance
-    _memory_graph = _memory_wire.graph(
-        allowlist=allowlist,
-        cfg=cfg,
-        content_checks=content_checks,
-        engine=engine,
-        media_join=media_join,
-        metrics=metrics,
-        persons=persons_view,
-        presence_circles=presence_circles,
-        registry=registry,
-        rosters=rosters,
-        route_model=route_model,
-        tier=tier,
-        unit_scopes=unit_scopes,
-        access=access,
-    )
-    cognition_memory = _memory_graph.cognition_memory
+    cognition_memory = None
+    if legacy_replay:
+        cognition_memory = _memory_wire.graph(
+            allowlist=allowlist, cfg=cfg, content_checks=content_checks, engine=engine,
+            media_join=media_join, metrics=metrics, persons=persons_view,
+            presence_circles=presence_circles, registry=registry, rosters=rosters,
+            route_model=route_model, tier=tier, unit_scopes=unit_scopes, access=access,
+        ).cognition_memory
     _dreamer_enabled = await enabled(
+        legacy_replay=legacy_replay,
         allowlist=allowlist,
         audit=audit,
         cfg=cfg,
         clock=clock,
         cognition_context_screen=cognition_context_screen,
-        cognition_lessons=cognition_lessons,
         cognition_memory=cognition_memory,
         content_checks=content_checks,
         doctrine_store=doctrine_store,
@@ -1199,14 +1175,12 @@ async def _compose_dependencies(
         persons=persons_view,
         presence_circles=presence_circles,
         presence_reader=presence_reader,
-        profile_reader=profile_reader,
         reasoning_strip_store=reasoning_strip_store,
         registry=registry,
         reminder_caps=reminder_caps,
         reminders=reminders,
         rosters=rosters,
         route_model=route_model,
-        session_guidance=session_guidance,
         shared=shared,
         standing_fold=standing_fold,
         standing_store=standing_store,
@@ -1226,7 +1200,7 @@ async def _compose_dependencies(
         graph_reads, metrics, clock, rosters, registry, content_checks, media_join,
         review=_dreamer_enabled.review,
     )
-    cognition_shutdown = legacy_cognition_shutdown(cfg, cognition_runner)
+    cognition_shutdown = legacy_cognition_shutdown(cognition_runner)
     if cognition_shutdown is not None:
         owner.own_cognition(cognition_shutdown)
     _stores_otp = build_otp(
@@ -1270,7 +1244,7 @@ async def _compose_dependencies(
         profile_scopes_of=(
             functools.partial(profile_scopes_of_person, allowlist) if profile_read else None
         ),
-        index_state=memory_index_reader.index_state,
+        index_state=SqlMemoryIndex(engine).index_state,
         documents=documents_store,
         document_service=document_service,
         rooms_of=functools.partial(rooms_named, allowlist),
@@ -1344,18 +1318,15 @@ async def _compose_dependencies(
         story_expiry=story_expiry,
         graph_observe=graph_observe(engine, op_clock, metrics, fetch_client or search_client,
             analytics=cfg.analytics, room_slots=WakeRoomSlots(policy, slots)),
-        graph_batches=(
-            GraphBatchProducer(engine, metrics=metrics) if cfg.memory.graph.enabled else None
-        ),
         memory_embed=(
             MemoryEmbedWorker(
                 engine,
                 LlamaEmbedder(cfg.memory.index.embedder_url),
-                blobs,
+                None,
                 model=fingerprint(cfg.memory.index.embedder_model),
                 model_file=model_file(cfg.memory.index.embedder_model),
                 batch=cfg.memory.index.embed_batch,
-                images_per_hour=cfg.memory.index.embed_images_per_hour,
+                images_per_hour=0,
                 metrics=metrics,
             )
             if cfg.memory.index.embed

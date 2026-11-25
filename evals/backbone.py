@@ -1679,12 +1679,14 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
         async with (_sandbox_for(spec, now) as database_url,
                     recording.open(database_url, redis=True) as environment,
                     contextlib.AsyncExitStack() as owned):
-            subject = await obtain(SubjectSpec(
+            drawn_subject = SubjectSpec(
                 database_url=database_url, workdir=workdir, room=room,
                 environment=environment, overrides=spec.overrides,
                 identity=spec.identity if spec.identity is not None else _deployment_identity(),
                 policy=spec.policy if spec.policy is not None else _deployment_policy(), now=now,
-            ))
+            )
+            subject = (await obtain(drawn_subject, legacy_replay=True) if port.legacy_replay
+                       else await obtain(drawn_subject))
             if spec.judge is not None:
                 spec = dataclasses.replace(spec, judge=spec.judge.bind(subject.cfg))
             from nora.subject.eval_evidence import current, fingerprint

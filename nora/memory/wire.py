@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nora.access import IdentityAccess
 from nora.agent.egress import LeakGuard
 from nora.agent.lineage import LineagePolicy
-from nora.agent.memory_search import MemorySearch
 from nora.agent.room import Room
 from nora.app.cognition_grounding import place_release
 from nora.domain.live import LiveMapping
@@ -22,8 +21,6 @@ from nora.infra.sql.item_registration import (
     SqlItemRegistration,
 )
 from nora.infra.sql.memo import SqlMemoStore
-from nora.infra.sql.memory_graph import SqlMemoryGraph
-from nora.infra.sql.memory_read import SqlMemoryIndex
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.rollups import SqlRollupStore
 from nora.infra.sql.standing import SqlStandingStore
@@ -156,48 +153,6 @@ def notes(cfg, engine) -> NotesWiring:
     entry_store = SqlEntryStore(engine)
     return NotesWiring(
         memo_store=memo_store, note_store=note_store, entry_store=entry_store)
-
-
-@dataclass(frozen=True)
-class SearchWiring:
-    memory_index_reader: Any
-    memory_search: Any
-
-
-def search(cfg, engine, metrics, access=None) -> SearchWiring:
-
-    # `[memory.index] read` (ships off): the one retrieval service, held by the tag path's
-    # pre-fetch (`<recalled>`) and by the tool registry's `memory_search` below, one
-    # instance for both; `None` keeps the `read = false` surface and no pre-fetch.
-    memory_index_reader = SqlMemoryIndex(engine)
-    memory_search = (
-        MemorySearch(
-            memory_index_reader,
-            metrics,
-            graph=SqlMemoryGraph(engine, metrics=metrics),
-            profile_render=cfg.memory.profile.write and cfg.memory.profile.read,
-            # `[memory.index] embed`: dense and exact seeds, the
-            # lexical seed only as the fallback; off, every answer is
-            # the fallback's `partial`.
-            embedder=LlamaEmbedder(
-                cfg.memory.index.embedder_url,
-                timeout_seconds=QUERY_TIMEOUT_SECONDS,
-                query_model_file=model_file(cfg.memory.index.embedder_model),
-            )
-            if cfg.memory.index.embed
-            else None,
-            model=(
-                fingerprint(cfg.memory.index.embedder_model) if cfg.memory.index.embed else None
-            ),
-            access=access,
-            # The embedding worker's tick: a node waiting less than a
-            # few of them is fresh, not a backlog that answers `partial`.
-            drain_seconds=cfg.memory.index.refresh_seconds,
-        )
-        if cfg.memory.index.read
-        else None
-    )
-    return SearchWiring(memory_index_reader=memory_index_reader, memory_search=memory_search)
 
 
 @dataclass(frozen=True)

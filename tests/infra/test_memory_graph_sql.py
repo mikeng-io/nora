@@ -674,31 +674,3 @@ async def test_projected_pointers_use_authored_display_names(sql, tmp_path):
         ).key
     )
     assert scope.members["late-unit"] == frozenset({"generated_a"})
-
-
-async def test_graph_batch_tick_records_nothing_found(sql, monkeypatch):
-    import asyncio
-    from contextlib import suppress
-
-    from nora.app.graph_batches import GraphBatchProducer
-
-    recorded = asyncio.Event()
-    original = sql.metrics.inc
-
-    def record(name, value=1, **labels):
-        original(name, value, **labels)
-        if name == "nora_memory_graph_batches_total":
-            recorded.set()
-
-    monkeypatch.setattr(sql.metrics, "inc", record)
-    producer = GraphBatchProducer(sql.engine, metrics=sql.metrics)
-    task = asyncio.create_task(producer.run())
-    try:
-        await asyncio.wait_for(recorded.wait(), timeout=5)
-        assert sql.metrics.get("nora_memory_graph_batches_total", outcome="nothing_found") == 1
-        assert sql.metrics.get("nora_memory_graph_batches_total", outcome="ok") == 0
-        assert sql.metrics.get("nora_memory_graph_batches_total", outcome="unavailable") == 0
-    finally:
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task

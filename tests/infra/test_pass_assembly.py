@@ -12,8 +12,10 @@ from nora.access import IdentityAccess
 from nora.agent.lineage import LineagePolicy
 from nora.agent.room import Room
 from nora.agent.tools import build_tools
+from nora.app.fire_engagement import AmbientEngagement
 from nora.domain.blocks import ContextBlock
 from nora.domain.events import Event
+from nora.engagement.graph_context import EngagementGraph
 from nora.engagement.self_presence import PresenceReader
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.schema import CULTURE_REVISION
@@ -323,11 +325,17 @@ async def test_fire_prefill_uses_the_room_unit_person_and_nora_graph_profiles(
         ("person-other", "Unrelated person observation"),
     ):
         await _trait(scenario, f"trait-{pointer}", pointer, body)
+    await scenario.claim("fixture-lesson", part="lesson")
+    await write_edge(scenario, "fixture-lesson", "nora-pointer", "about")
     calls = []
     fire = _fire_path(
         doctrine_store=doctrine_store, persons=scenario.persons, metrics=Metrics(),
         runner=FakeAgentRunner(_send_turns("Done."), on_call=calls.append),
-        policy=scenario.policy, graph_profiles=_assembler(scenario), clock=lambda: NOW,
+        policy=scenario.policy, clock=lambda: NOW,
+        ambient=AmbientEngagement(EngagementGraph(
+            IdentityAccess.for_files(scenario.persons, scenario.policy),
+            assembler=_assembler(scenario),
+        )),
     )
     outcome = await fire.speak(Event(
         "reminder", "signal", alias, "group", PERSON, "Fixture reminder",
@@ -335,7 +343,7 @@ async def test_fire_prefill_uses_the_room_unit_person_and_nora_graph_profiles(
     ))
     assert outcome == "sent"
     (call,) = calls
-    prefill = call["pre_fill"][1]["content"][0]["text"]
+    prefill = call["tag_message"]
     for pointer, body in (
         ("room-here", "Room observation"), ("unit-pointer", "Unit observation"),
         ("person-here", "Person observation"),
@@ -346,6 +354,13 @@ async def test_fire_prefill_uses_the_room_unit_person_and_nora_graph_profiles(
         assert body in fragment.split("</graph_profile>", 1)[0]
     assert ('<graph_profile of="nora-pointer"' in prefill) is show_nora
     assert ("Nora observation" in prefill) is show_nora
+    lesson = prefill.index("<graph_lessons")
+    assert "fixture-lesson" in prefill[lesson:].split("</graph_lessons>", 1)[0]
+    assert lesson < prefill.index('<graph_profile of="room-here"') < prefill.index(
+        '<graph_profile of="unit-pointer"'
+    )
+    if show_nora:
+        assert prefill.index('<graph_profile of="nora-pointer"') < lesson
     assert "Unrelated person observation" not in prefill
     assert "<culture" not in prefill
 
@@ -360,7 +375,11 @@ async def test_fire_prefill_keeps_graph_profiles_after_the_standing_deadline(
     fire = _fire_path(
         doctrine_store=doctrine_store, persons=scenario.persons, metrics=Metrics(),
         runner=FakeAgentRunner(_send_turns("Done."), on_call=calls.append),
-        policy=scenario.policy, graph_profiles=PassAssembler(reader(scenario), retrieval),
+        policy=scenario.policy,
+        ambient=AmbientEngagement(EngagementGraph(
+            IdentityAccess.for_files(scenario.persons, scenario.policy),
+            assembler=PassAssembler(reader(scenario), retrieval),
+        )),
         clock=lambda: NOW,
     )
     outcome = await fire.speak(Event(
@@ -369,7 +388,7 @@ async def test_fire_prefill_keeps_graph_profiles_after_the_standing_deadline(
     ))
     assert outcome == "sent"
     (call,) = calls
-    assert "Room observation" in call["pre_fill"][1]["content"][0]["text"]
+    assert "Room observation" in call["tag_message"]
 
 
 async def test_wake_profile_requires_every_agenda_room_to_permit_the_claim(scenario):

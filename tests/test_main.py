@@ -292,45 +292,6 @@ async def test_the_retention_sweep_is_spawned_when_the_flag_is_on(env, monkeypat
     )
 
 
-async def test_the_memory_index_drain_is_spawned_at_the_configured_interval(env, monkeypatch):
-    """`App.run` spawns `memory_drain_loop` with `[memory.index]
-    drain_seconds`: the queue a failed projection fills
-    is drained by the nora process, not only by analytics."""
-    import asyncio
-    import contextlib
-    import tomllib
-
-    import tomli_w
-
-    import nora.__main__ as main_module
-
-    cfg = tomllib.loads(env.read_text())
-    cfg["memory"]["index"] = {"refresh_seconds": 7.5}
-    env.write_text(tomli_w.dumps(cfg))
-    calls: list[dict] = []
-
-    async def _never() -> None:
-        await asyncio.sleep(3600)
-
-    def _spy(*args: object, **kwargs: object) -> object:
-        calls.append(dict(kwargs))
-        return _never()
-
-    monkeypatch.setattr(main_module.runtime, "memory_drain_loop", _spy)
-    app = await build_app(env)
-    try:
-        task = asyncio.create_task(app.run())
-        for _ in range(50):
-            await asyncio.sleep(0.02)
-            if calls:
-                break
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-    finally:
-        await app.shutdown()
-    # `[memory.index] embed` is off by default: no embedding worker is handed in.
-    assert calls == [{"interval_seconds": 7.5, "embed": None}]
 
 
 @pytest.mark.parametrize(
@@ -502,3 +463,50 @@ async def test_no_wake_poller_when_cognition_is_off(env):
         assert app.deps.wake_poller is None
     finally:
         await app.shutdown()
+
+
+async def test_app_embeds_graph_search_and_stops_projecting_legacy_messages(
+    env, clean_pg_url, aiohttp_server,
+):
+    import sqlalchemy as sa
+
+    from nora.domain.models import NormalizedMessage
+    from nora.infra.sql.cognitive_graph_schema import GRAPH_SEARCH
+    from nora.infra.sql.engine import create_sql_engine
+    from nora.infra.sql.schema import MEMORY_NODE
+    from tests.integration.test_memory_vectors import MODEL, MODEL_ID
+    from tests.unit.test_embedder import FakeLlamaServer
+
+    server = await aiohttp_server(FakeLlamaServer().app())
+    url = str(server.make_url("")).rstrip("/")
+    cfg = tomllib.loads(env.read_text())
+    cfg["memory"]["index"].update(
+        embed=True, embedder_url=url, embedder_model=MODEL_ID, refresh_seconds=0.05,
+    )
+    env.write_text(tomli_w.dumps(cfg))
+    policy = env.parent / "policy.toml"
+    policy.write_text(policy.read_text() + 'unit = "friends"\nhome_room = true\n')
+    app = await build_app(env)
+    engine = create_sql_engine(clean_pg_url)
+    try:
+        record_id = await app.store.append(message=NormalizedMessage(
+            "signal", "Z3JvdXA=", "group", "+852111", None, 1_800_000_000_000,
+            "Generated graph vector input.", {},
+        ), person_id="miles")
+        await _run_briefly(
+            app, until=lambda: app.deps.metrics.get("nora_memory_embed_total", outcome="ok") > 0,
+        )
+    finally:
+        await app.shutdown()
+    try:
+        async with engine.connect() as conn:
+            graph = (await conn.execute(sa.select(
+                GRAPH_SEARCH.c.embedding, GRAPH_SEARCH.c.embedding_model,
+            ).where(GRAPH_SEARCH.c.text == "Generated graph vector input."))).one()
+            legacy = await conn.scalar(sa.select(MEMORY_NODE.c.id).where(
+                MEMORY_NODE.c.kind == "message", MEMORY_NODE.c.source_id == str(record_id),
+            ))
+        assert len(graph.embedding) == 2048 and graph.embedding_model == MODEL
+        assert legacy is None
+    finally:
+        await engine.dispose()

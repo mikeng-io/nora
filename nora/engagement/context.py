@@ -16,7 +16,6 @@ change later.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence, Set
@@ -26,7 +25,6 @@ from typing import Any, NamedTuple, Protocol
 
 from nora.access import IdentityAccess
 from nora.agent.clock import local_now
-from nora.agent.egress import scan_identifiers
 from nora.agent.lineage import (
     LineagePolicy,
     derived_view,
@@ -34,17 +32,11 @@ from nora.agent.lineage import (
     section_permits,
     visible_sections,
 )
-from nora.agent.memory_search import (
-    PREFETCH_TOKENS,
-    MemorySearch,
-)
 from nora.agent.room import Room
 from nora.agent.standing_ledger import ledger_permits, ledger_target
 from nora.domain.blocks import row_speaker
-from nora.domain.comprehend import ComprehendItem, Preview, preview_seeds
 from nora.domain.computer_context import ComputerView
 from nora.domain.documents_context import DocumentsView
-from nora.domain.external_files import render_file_links
 from nora.domain.lineage import (
     BODY,
     HOLD_OPEN,
@@ -56,7 +48,7 @@ from nora.domain.managed import room_scope_id
 from nora.domain.management import Scope, ScopeKind
 from nora.domain.media_join import MediaJoin
 from nora.domain.memo import Memo, MemoStore
-from nora.domain.memory_graph import Subgraph, WorkItem
+from nora.domain.memory_graph import Subgraph
 from nora.domain.models import (
     NormalizedMessage,
     PersonRef,
@@ -93,8 +85,6 @@ from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.self_presence import PresenceReader
 from nora.engagement.subagents_context import SubagentsContextReader
-from nora.language.comprehend_render import preview_text
-from nora.language.computer_render import estimate_tokens
 from nora.language.lesson_render import ActiveLessons, read_lessons
 from nora.obs.tracing import traced_read
 from nora.persons import Persons
@@ -186,7 +176,6 @@ class TranscriptInjection:
         documents: DocumentsContextReader | None = None,
         subagents: SubagentsContextReader | None = None,
         memos: MemoStore | None = None,
-        memory_search: MemorySearch | None = None,
         shared: Callable[..., Awaitable[SharedView]] | None = None,
         clock: Callable[[], datetime] | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
@@ -201,11 +190,6 @@ class TranscriptInjection:
         # wires none renders neither — never a guessed source line.
         self._observations = observations
         self._audit = audit
-        # `<recalled>`, the pre-fetch: the SAME retrieval service the tool
-        # registry's `memory_search` holds, `None` with
-        # `[memory.index] read = false` and in every harness that wires
-        # none, which renders no block.
-        self._memory_search = memory_search
         # The graph's one clock (`build_dependencies`' `clock`), so a harness
         # at a fixed instant ranks and dates the pre-fetch at that instant.
         # `None` is the wall clock.
@@ -316,108 +300,6 @@ class TranscriptInjection:
             source_events_more=more, source_objects_more=objects_more,
             room_members=await self._room_members(msg),
         )
-
-    async def _prefetch(
-        self, msg: NormalizedMessage, ref: PersonRef | None,
-        transcript: Sequence[TranscriptRow] = (),
-    ) -> _Prefetch | None:
-        """Read the tools' scoped graph from structural anchors and index hits."""
-        if self._memory_search is None or self._lineage is None:
-            return None
-        target = await self._render_room(msg)
-        if target.room is None:
-            return None
-        listed = target.room.persons
-        mentioned = [
-            r.person_id for v in sorted(msg.mentions)
-            if (r := await self._access.resolve_ref(
-                    msg.platform, v, scope=self._room_scope(msg))) is not None
-        ]
-        about = list(dict.fromkeys(
-            ([ref.person_id] if ref is not None else []) + mentioned,
-        ))
-        media = [b.sha256 for b in msg.media_blobs]
-        query = render_file_links(msg.body or "")[:500]
-        # In the process's own zone, the zone of the clock line her prompt
-        # opens on, so an item's date reads on the same calendar.
-        now = self._clock().astimezone()
-        try:
-            item = ComprehendItem(
-                WorkItem("prefetch", ("unit", f"{target.room.unit}:unit:{target.room.unit}"),
-                         target.room.unit, "", now),
-                (), msg.platform, msg.conversation_id,
-                author=ref.person_id if ref else "", mentions=tuple(mentioned),
-                reply_parent=next((("message", str(r.id)) for r in transcript
-                    if msg.quote is not None and r.ts == msg.quote.quoted_ts), None))
-            # ponytail: prefetch cache is local; thread it through TagContext to
-            # the tools' graph_reads when sharing automatic and tool walks.
-            cache: dict[str, Any] = {}
-            found = await asyncio.wait_for(traced_read(
-                "memory_index", "prefetch", self._memory_search.read(
-                    query=query, depth=2, person_id=None, target=target,
-                    now_ms=int(now.timestamp() * 1000), people=await self._room_members(msg),
-                    social_off=await self._access.social_off_ids(listed or ()),
-                    about=about, media=media,
-                    anchors=preview_seeds(item, {}), cache=cache,
-                    content_checks=target.content_checks,
-                ),
-                count=lambda r: sum(len(g.nodes) for _, g in cache.get("_subgraphs", [])
-                                    if g is not None),
-            ), timeout=PREFETCH_TIMEOUT_SECONDS)
-        except Exception:  # noqa: BLE001 — the bound, or anything else: unavailable, counted
-            log.warning("memory pre-fetch did not answer; reporting unavailable")
-            self._metrics.inc("nora_errors_total", stage="tag_prefetch", platform=msg.platform)
-            return _Prefetch(target, {"status": "unavailable"}, None, now)
-        if found["status"] == "unavailable":
-            self._metrics.inc("nora_errors_total", stage="tag_prefetch", platform=msg.platform)
-        graphs = [g for _, g in cache.get("_subgraphs", []) if g is not None]
-        return _Prefetch(target, found, graphs[0] if graphs else None, now)
-
-    def _recalled(
-        self, prefetch: _Prefetch | None, msg: NormalizedMessage,
-        shown: Sequence[TranscriptRow],
-    ) -> tuple[dict[str, Any], ...]:
-        """Render the scoped graph, omitting transcript bodies already shown."""
-        if prefetch is None:
-            return ()
-        if prefetch.found["status"] == "unavailable":
-            return ({"status": "unavailable", "text": "Memory could not be checked."},)
-        if prefetch.found["status"] not in ("ok", "partial"):
-            return ()
-        try:
-            return self._render_recalled(prefetch, msg, shown)
-        except Exception:
-            log.exception("memory pre-fetch render failed; reporting unavailable")
-            self._metrics.inc("nora_errors_total", stage="tag_prefetch", platform=msg.platform)
-            return ({"status": "unavailable", "text": "Memory could not be checked."},)
-
-    def _render_recalled(
-        self, prefetch: _Prefetch, msg: NormalizedMessage,
-        shown: Sequence[TranscriptRow],
-    ) -> tuple[dict[str, Any], ...]:
-        here = room_key(msg.platform, msg.conversation_id)
-        since = min((row.ts for row in shown), default=msg.timestamp)
-        from dataclasses import replace
-
-        if prefetch.graph is None:
-            return ()
-        nodes = tuple(n for n in prefetch.graph.nodes if not (
-            n.indexed is not None and n.key[0] in _TRANSCRIPT_KINDS
-            and n.indexed.origin_room == here and n.indexed.at_ms is not None
-            and n.indexed.at_ms >= since))
-        # Keep semantic edges when their source is already in the transcript.
-        graph = replace(prefetch.graph, nodes=nodes)
-        if not nodes and not graph.relations:
-            return ()
-        text = preview_text(Preview((), graph, (), (prefetch.now, prefetch.now)),
-                            tokens=PREFETCH_TOKENS)
-        while estimate_tokens(json.dumps({"text": text}, ensure_ascii=False)) > PREFETCH_TOKENS:
-            text = text.rsplit("\n", 1)[0].replace("more=none", "more=available", 1)
-        if scan_identifiers(text, content_checks=prefetch.target.content_checks):
-            raise ValueError("unsafe graph preview")
-        if text.startswith("more=available"):
-            prefetch.found["status"] = "partial"
-        return ({"text": text},)
 
     async def _room_members(self, msg: NormalizedMessage) -> tuple[PersonRef, ...]:
         """This room's listed persons, for `<room_members>`; empty for a room

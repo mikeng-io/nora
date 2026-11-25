@@ -123,26 +123,29 @@ async def test_rebuild_matches_incremental_after_revision_hide_and_tombstone(eng
     assert await _indexed(engine) == before
 
 
-async def test_worker_embeds_both_indices_in_the_same_run(engine, llama) -> None:
+async def test_worker_embeds_graph_search_without_embedding_the_legacy_index(engine, llama):
     _, url = llama
     graph_id = await _message(engine)
+    search_row = GRAPH_SEARCH.c.graph_id == graph_id
     async with engine.connect() as conn:
-        graph_before = await conn.scalar(sa.select(GRAPH_SEARCH.c.embedding).where(
-            GRAPH_SEARCH.c.graph_id == graph_id,
-        ))
-        legacy_before = await conn.scalar(sa.select(MEMORY_NODE.c.embedding).where(
+        graph_before = (await conn.execute(sa.select(GRAPH_SEARCH.c.embedding).where(
+            search_row,
+        ))).one()
+        legacy_before = (await conn.execute(sa.select(MEMORY_NODE.c.embedding).where(
             MEMORY_NODE.c.kind == "message",
-        ))
-    assert graph_before is None and legacy_before is None
-    assert await worker(engine, url).run_once() == 2
+        ))).one()
+    assert graph_before.embedding is None and legacy_before.embedding is None
+
+    assert await worker(engine, url, legacy_index=False).run_once() == 1
+
     async with engine.connect() as conn:
-        for table, identity in (
-            (MEMORY_NODE, MEMORY_NODE.c.kind == "message"),
-            (GRAPH_SEARCH, GRAPH_SEARCH.c.graph_id == graph_id),
-        ):
-            row = (await conn.execute(sa.select(
-                table.c.embedding, table.c.embedding_model, table.c.embed_input,
-            ).where(identity))).one()
-            assert len(row.embedding) == 2048
-            assert row.embedding_model == MODEL
-            assert row.embed_input == "text"
+        row = (await conn.execute(sa.select(
+            GRAPH_SEARCH.c.embedding, GRAPH_SEARCH.c.embedding_model, GRAPH_SEARCH.c.embed_input,
+        ).where(search_row))).one()
+        legacy = (await conn.execute(sa.select(MEMORY_NODE.c.embedding).where(
+            MEMORY_NODE.c.kind == "message",
+        ))).one()
+    assert len(row.embedding) == 2048
+    assert row.embedding_model == MODEL
+    assert row.embed_input == "text"
+    assert legacy.embedding is None

@@ -709,9 +709,7 @@ async def test_the_delete_half_of_the_diff_drops_the_outing_node(clean_pg_url):
 
 
 async def test_a_tick_on_the_current_build_projects_what_it_folds(clean_pg_url):
-    """The daemon's path, not a switch: each run on the current build adds its
-    new stays, trips and outings to the index as `commit_fold` and `apply`
-    write them."""
+    """An explicit legacy index receives fold writes and retains queued work."""
     engine = create_sql_engine(clean_pg_url)
     mobility = SqlMobilityStore(engine)
     await _seed(engine, mobility)
@@ -727,7 +725,7 @@ async def test_a_tick_on_the_current_build_projects_what_it_folds(clean_pg_url):
     async with engine.connect() as conn:
         assert (await conn.execute(
             sa.select(sa.func.count()).select_from(MEMORY_PROJECTION_QUEUE)
-        )).scalar_one() == 0, "the run drained the queue"
+        )).scalar_one() == 1, "analytics must leave legacy queued work for explicit recovery"
     async with engine.connect() as conn:
         held = {
             kind: {
@@ -749,10 +747,7 @@ async def test_a_tick_on_the_current_build_projects_what_it_folds(clean_pg_url):
 
 
 async def test_a_drain_waiting_on_a_switch_keeps_the_new_builds_episode(clean_pg_url):
-    """A drain that blocks on the build row while a switch commits must read
-    the NEW current build after it, never «no build»: under READ COMMITTED the
-    locked re-check sees only the old row, now superseded, and acting on it
-    would drop the node the switch had just projected and clear its queue row."""
+    """A concurrent drain reads the new current build after its switch commits."""
     engine = create_sql_engine(clean_pg_url)
     key = episode_key("a", _t(0, 19), _t(0, 20))
     async with engine.begin() as conn:
@@ -770,8 +765,6 @@ async def test_a_drain_waiting_on_a_switch_keeps_the_new_builds_episode(clean_pg
         await conn.execute(sa.insert(MEMORY_PROJECTION_QUEUE).values(
             kind="stay", source_id=key, last_error="RuntimeError",
         ))
-    rollups = SqlRollupStore(engine)
-    # `switch_build`'s statements, held open so the drain meets them mid-switch.
     switching = await engine.connect()
     tx = await switching.begin()
     await switching.execute(
@@ -781,7 +774,11 @@ async def test_a_drain_waiting_on_a_switch_keeps_the_new_builds_episode(clean_pg
         sa.update(ROLLUP_BUILD).where(ROLLUP_BUILD.c.id == new).values(status="current")
     )
     await memory_index.reproject_episodes(switching)
-    drain = asyncio.create_task(rollups.drain_index_queue())
+
+    async def drain_legacy_queue():
+        async with engine.begin() as conn:
+            return await memory_index.drain_queue(conn)
+    drain = asyncio.create_task(drain_legacy_queue())
     await asyncio.sleep(1.0)
     assert not drain.done(), "the drain waits on the build row the switch holds"
     await tx.commit()

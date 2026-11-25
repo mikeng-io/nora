@@ -139,11 +139,11 @@ async def test_obtain_returns_the_production_graph(spec, clean_pg_url, cognition
     retired = {
         "dream_adaptors", "dream_schedule_clock", "dream_schedules", "language_scopes",
         "language_store", "memory", "profile_cited", "unit_scopes", "wake_evaluator",
-        "wake_tick_seconds",
+        "wake_tick_seconds", "graph_batches",
     }
     assert added | {"access", "managed_services", "managed_session"} <= fields
     assert retired.isdisjoint(fields), retired & fields
-    assert len(fields) == 79, "Dependency shape changed; reconcile the production subject."
+    assert len(fields) == 78, "Dependency shape changed; reconcile the production subject."
     if cognition:
         assert isinstance(subject.deps.wake_poller, WakePoller)
         assert subject.deps.wake_poller._review is not None
@@ -471,7 +471,7 @@ async def test_actual_production_composition_retains_fire_bridge_and_cognition(
     environment = IsolatedServices(database_url=clean_pg_url,
                                     applications=applications, redis=True)
     async with environment:
-        subject = await obtain(replace(spec, environment=environment))
+        subject = await obtain(replace(spec, environment=environment), legacy_replay=True)
         assert isinstance(subject.deps, Dependencies)
         assert subject.deps.fire_path is not None
         assert subject.deps.bridge_runtime is not None
@@ -488,7 +488,7 @@ async def test_actual_production_composition_retains_fire_bridge_and_cognition(
         # actual SDK wire bodies, not an inspection/pre-assembly substitute.
         control_cfg = environment.bind_config(build_config(spec))
         control_deps = await build_dependencies(control_cfg, clock=lambda: now,
-                                                operational_clock=wall_clock)
+                                                operational_clock=wall_clock, legacy_replay=True)
         control = replace(subject, cfg=control_cfg, deps=control_deps)
         environment.register_subject(control)
         assert control.deps.memory_embed is not None

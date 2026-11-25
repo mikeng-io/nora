@@ -26,13 +26,14 @@ class SharedWiring:
     _spawn: Any
     assembler: Any
     shared: Any
+    action_state: Any
 
 
 def build_shared(
     access: Any, allowlist: Any, audit: Any, background: Any, cfg: Any,
     clock: Any, computer_context: Any, documents_context: Any,
     engine: Any, ledger_store: Any, lessons_reader: Any, media_join: Any,
-    memo_store: Any, memory_search: Any, metrics: Any,
+    memo_store: Any, metrics: Any,
     note_store: Any, observation_store: Any, persons: Any, presence_reader: Any,
     quote_window: Any, registry: Any, reminders: Any,
     rosters: Any, standing_store: Any, subagents_context: Any, tag_trace_store: Any,
@@ -47,13 +48,16 @@ def build_shared(
         ai_peer=cfg.agent.name,
         rooms_of_unit=lambda unit: unit_rooms.get(unit, ()),
     )
+    action_state = shared_reader(
+        reminders=reminders, record_query=SqlRecordQuery(engine), traces=tag_trace_store,
+        ai_peer=cfg.agent.name, rooms_of_unit=lambda unit: unit_rooms.get(unit, ()),
+    )
     assembler = build_assembler(
         cfg,
         access=access,
         audit=audit,
         persons=persons,
         metrics=metrics,
-        memory_search=memory_search,
         clock=clock,
         rosters=rosters,
         self_ids=registry.self_aliases(),
@@ -98,7 +102,9 @@ def build_shared(
         # call it directly), so this drops the return value rather than widening the pipeline's…
         background.spawn(coro)
 
-    return SharedWiring(_spawn=_spawn, assembler=assembler, shared=shared)
+    return SharedWiring(
+        _spawn=_spawn, assembler=assembler, shared=shared, action_state=action_state,
+    )
 
 
 @dataclass(frozen=True)

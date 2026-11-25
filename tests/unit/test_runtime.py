@@ -19,7 +19,7 @@ from nora.app.runtime import (
     BackgroundTasks,
     SupervisedAdapter,
     debounce_sweep_loop,
-    memory_drain_loop,
+    graph_embed_loop,
     prune_loop,
     start_adapters,
     supervise_adapter,
@@ -223,75 +223,30 @@ async def test_debounce_sweep_loop_survives_a_failing_sweep():
 
 
 # ---------------------------------------------------------------------------
-# memory_drain_loop
+# graph_embed_loop
 # ---------------------------------------------------------------------------
 
 
-async def test_memory_drain_loop_keeps_draining_after_a_failing_drain():
-    """It drains on its interval, and a drain that raises is counted and
-    never ends the loop."""
-    kept_draining = asyncio.Event()
-
-    class _Store:
-        calls = 0
-
-        async def drain_index_queue(self) -> int:
-            self.calls += 1
-            if self.calls == 1:
-                raise RuntimeError("database away")
-            if self.calls >= 3:
-                kept_draining.set()
-            return 1
-
-    store, metrics = _Store(), Metrics()
-    task = asyncio.create_task(memory_drain_loop(store, metrics, interval_seconds=0.01))
-    try:
-        await asyncio.wait_for(kept_draining.wait(), timeout=5.0)
-    finally:
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-    assert store.calls >= 3
-    assert metrics.get("nora_errors_total", stage="memory_drain") == 1
-
-
-async def test_memory_drain_loop_embeds_after_each_drain_and_survives_a_failure():
-    """`[memory.index] embed`: one embedding batch after every drain,
-    a failing batch counted under its own stage, and a failing drain never
-    skipping the batch."""
-    order: list[str] = []
-    done = asyncio.Event()
-
-    class _Store:
-        async def drain_index_queue(self) -> int:
-            order.append("drain")
-            if order.count("drain") == 2:
-                raise RuntimeError("database away")
-            return 0
-
-    class _Embed:
-        async def run_once(self) -> int:
-            order.append("embed")
-            if order.count("embed") == 1:
-                raise RuntimeError("embedder away")
-            if order.count("embed") >= 3:
-                done.set()
-            return 1
-
+async def test_graph_embed_loop_survives_a_failing_batch():
+    calls = 0
     metrics = Metrics()
-    task = asyncio.create_task(
-        memory_drain_loop(_Store(), metrics, interval_seconds=0.01, embed=_Embed()),
-    )
-    try:
-        await asyncio.wait_for(done.wait(), timeout=5.0)
-    finally:
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-    assert order[:6] == ["drain", "embed"] * 3
-    assert metrics.get("nora_errors_total", stage="memory_embed") == 1
-    assert metrics.get("nora_errors_total", stage="memory_drain") == 1
 
+    class FailingFirstBatch:
+        async def run_once(self) -> int:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("fixture embedding failure")
+            if calls == 3:
+                raise asyncio.CancelledError
+            return 1
+
+    with pytest.raises(asyncio.CancelledError):
+        async with asyncio.timeout(5):
+            await graph_embed_loop(FailingFirstBatch(), metrics, interval_seconds=0)
+
+    assert calls == 3
+    assert metrics.get("nora_errors_total", stage="memory_embed") == 1
 
 # ---------------------------------------------------------------------------
 # adapter supervision

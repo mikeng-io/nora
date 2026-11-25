@@ -84,13 +84,6 @@
     "target": "tests/contract/test_memory_index_contract.py::test_a_fresh_wait_is_counted_apart_and_lexical_reads_every_unembedded_node"
   },
   {
-    "name": "composition wires the worker tick",
-    "file": "nora/memory/wire.py",
-    "old": "            drain_seconds=cfg.memory.index.refresh_seconds,",
-    "new": "",
-    "target": "tests/test_composition.py::test_legacy_prefetch_index_uses_the_configured_worker_tick"
-  },
-  {
     "name": "review 1: an attachment with no text is never fresh (store)",
     "file": "nora/infra/sql/memory_index.py",
     "old": "sa.and_(owed, node.text != \"\", node.owed_since > since)",

@@ -12,7 +12,6 @@ HOT_TOOLS: frozenset[str] = frozenset(
         "web_search",
         "send_reply",
         "reaction_send",
-        "note_read",
         "web_fetch",
         "now",
         "memory_search",

@@ -624,6 +624,8 @@ class EntryPoint:
     #: a `snapshot:` instant and never a forced wake.
     live_clock: bool = False
 
+    legacy_replay: bool = False
+
     #: What a judge grades, when a judge is configured: `"reply"` — what she
     #: said, against the reply rubric — or `"position"` — the standing position
     #: a fold wrote. Data here, not a
@@ -673,7 +675,7 @@ ENTRY_POINTS = {
     # cheapest of the three to drive.
     "tag": EntryPoint(drive=tag, delivers_input=True, drives_a_turn=True),
     # Cognition uses the Dreamer runtime. The corpus sets its session flags.
-    "dreamer": EntryPoint(drive=dreamer, config={"dreamer.enabled": True}),
+    "dreamer": EntryPoint(drive=dreamer, config={"dreamer.enabled": True}, legacy_replay=True),
     # The act turn needs the FIRE PATH, which `[participation]` also builds,
     # and the note tier its row points at. NOT `[heartbeat]`: composition
     # spawns `heartbeat.run()` as an endless task, so a subject with it on
@@ -697,7 +699,7 @@ ENTRY_POINTS = {
         drive=standing, config={"standing.enabled": True}, judged_on="position",
     ),
     "standing_unit": EntryPoint(
-        drive=standing_unit,
+        drive=standing_unit, legacy_replay=True,
         config={**_PARTICIPATION_SUBSYSTEM, "standing.enabled": True, "cognition.enabled": True},
         judged_on="position",
     ),

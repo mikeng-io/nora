@@ -64,15 +64,17 @@ async def _setup(monkeypatch, *, trace_changes=None, outcome_code="written", kee
 
     rooms = (("signal", "generated-a"), ("discord", "generated-b"))
 
-    async def shared(**kwargs):
-        return await read_shared(rooms=rooms, ledger=ledger, ai_peer="generated-nora", **kwargs)
-
     destinations = []
+    bound_views = {}
 
-    async def destination(occasion, ref):
-        destinations.append((occasion.platform, occasion.conversation_id))
-        return await shared(unit="generated-unit", now_ms=2000,
-                            room=(occasion.platform, occasion.conversation_id))
+    async def shared(*, room=None, **kwargs):
+        if room is not None:
+            destinations.append(room)
+            if room in bound_views:
+                return await bound_views[room](room=room, **kwargs)
+        return await read_shared(
+            rooms=rooms, ledger=ledger, ai_peer="generated-nora", room=room, **kwargs,
+        )
 
     runner = SimpleNamespace(
         _standing_fold=complete,
@@ -84,7 +86,7 @@ async def _setup(monkeypatch, *, trace_changes=None, outcome_code="written", kee
         cfg=SimpleNamespace(doctrine=SimpleNamespace(display_name="Nora")),
         deps=SimpleNamespace(
             cognition_runner=runner, metrics=metrics,
-            fire_path=SimpleNamespace(_read_shared=destination, destinations=destinations),
+            destinations=destinations, bound_views=bound_views,
             engagement=SimpleNamespace(_standing_replay_wiring=SimpleNamespace(objective=shipped_objectives())),
         ),
     )
@@ -105,7 +107,7 @@ async def test_unit_eval_folds_once_and_reads_actual_canonical_state(monkeypatch
     assert (await target.by_tag(tag_id=case.metadata["tag_id"])).handle is not None
     assert "generated pending check" in result.position
     assert "scheduled" in result.evidence
-    assert subject.deps.fire_path.destinations == [
+    assert subject.deps.destinations == [
         ("signal", "generated-a"), ("discord", "generated-b"),
     ]
 
@@ -113,7 +115,7 @@ async def test_unit_eval_folds_once_and_reads_actual_canonical_state(monkeypatch
 @pytest.mark.asyncio
 async def test_a_missing_destination_projection_is_not_shared_state_success(monkeypatch):
     subject, case, calls, _ = await _setup(monkeypatch)
-    subject.deps.fire_path._read_shared = AsyncMock(return_value=None)
+    subject.deps.bound_views[("signal", "generated-a")] = AsyncMock(return_value=None)
     result = await standing_unit(subject, case, now_ms=2000)
     assert len(calls) == 1
     assert result.error and result.position is None
@@ -126,19 +128,20 @@ async def test_a_withheld_destination_keeps_the_entry_without_disclosing_content
     subject, case, calls, _ = await _setup(monkeypatch)
     checked = []
 
-    async def withheld(occasion, ref):
-        view = await subject.deps.cognition_runner._shared(
-            unit="generated-unit", now_ms=2000,
-            room=(occasion.platform, occasion.conversation_id), permit=lambda _: False,
-        )
+    shared = subject.deps.cognition_runner._shared
+
+    async def withheld(*, room=None, **kwargs):
+        if room is None:
+            return await shared(**kwargs)
+        view = await shared(room=room, permit=lambda _: False, **kwargs)
         assert view.entries and all(not e.permitted for e in view.entries)
         block = render_shared_state(view, now_ms=2000)
         assert block is not None and "withheld" in block.body.text.lower()
         assert "generated pending check" not in block.body.text
-        checked.append(occasion.platform)
+        checked.append(room[0])
         return view
 
-    subject.deps.fire_path._read_shared = withheld
+    subject.deps.cognition_runner._shared = withheld
     result = await standing_unit(subject, case, now_ms=2000)
     assert len(calls) == 1 and result.error is None
     assert checked == ["signal", "discord"]

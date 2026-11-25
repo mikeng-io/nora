@@ -1046,31 +1046,14 @@ class OnlineConfig(BaseModel):
 
 
 class MemoryIndexConfig(BaseModel):
-    """The memory index. The index is written by every store's own write whatever this
-    says; `refresh_seconds` is how often the nora process re-projects what those writes
-    queued (`nora.app.runtime.memory_drain_loop`). Optional and defaulted, so a
-    `config.toml` without the section loads.
+    """Search and embedding settings for graph retrieval.
 
-    `read` (DEC-316) is the READ, and it selects ONE memory tool surface wherever
-    tools are built: on, the memory graph's, `memory_search` over the index through
-    `nora.agent.memory_search`, with no `who_said` offered; off (the default), no
-    `memory_search`, and `who_said`. Both offer `load_transcript`.
-
-    `embed` starts the embedding worker on the same drain tick: up to `embed_batch`
-    nodes per tick through llama-server at `embedder_url` (the `embedder` compose
-    service), and at most `embed_images_per_hour` images an hour (about 3.4 s of CPU
-    each on the deploy host). `embedder_model` is `<gguf file name>@<sha256 prefix>`:
-    the worker refuses to embed unless the server reports loading that file name
-    (/props), and with the formatter's version it is the fingerprint stored with every
-    vector, so changing it clears every stored vector at the worker's first tick and
-    re-embeds them. The hash prefix is recorded, not checked: the server exposes no
-    file hash. Off by default: the `embedder` service must be up first.
-
-    While both are on, `memory_search` seeds from the question's vector (embedded by
-    the same server, with the query instruction) and pins exact references ahead of it;
-    the lexical seed runs only when the embedder fails or no node holds a current vector
-    yet, and that answer is `partial`. With `read` on and `embed` off, every answer
-    is that fallback's `partial`."""
+    `read` enables the graph tools on surfaces that use the configured
+    memory catalogue. `embed` enables text vectors in `graph_search`, up to
+    `embed_batch` per `refresh_seconds` tick. The embedder must report the
+    configured model file before the worker stamps vectors with its fingerprint.
+    `embed_images_per_hour` is retained for existing configurations.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

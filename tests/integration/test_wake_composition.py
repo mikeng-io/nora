@@ -30,7 +30,7 @@ def wake_config(env):
     config["cognition"] = {"enabled": True}
     config["lessons"]["check_model"] = "fixture-lesson-check"
     config["dreamer"]["enabled"] = True
-    config["notes"] = {"enabled": True}
+    config["notes"] = {"enabled": False}
     config["dreamer"].setdefault("budgets", {})["cognition"] = {
         "turns": 200, "total_tokens": 10240000, "output_tokens": 120000,
         "timeout_seconds": 3600.0,
@@ -69,7 +69,7 @@ async def test_app_recovers_and_starts_the_graph_poller_without_a_legacy_wake(
     app = await build_app(env)
     poller = app.deps.wake_poller
     assert isinstance(poller, WakePoller)
-    assert app.deps.cognition_runner is not None
+    assert app.deps.cognition_runner is None
     assert lifecycle == []
     try:
         await _run_briefly(app, until=lambda: ("started", poller) in lifecycle)

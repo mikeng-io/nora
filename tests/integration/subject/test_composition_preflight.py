@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import os
+import shutil
 import socket
 from contextlib import nullcontext
 from dataclasses import replace
@@ -95,6 +96,11 @@ async def test_cold_composition_preserves_features_and_closes_owned_resources(
     spec = preflight_spec(source, evaluation_config, clean_pg_url, tmp_path, exit_mode)
     await asyncio.to_thread(Path(spec.overrides["computer.scoped.registry"]).mkdir)
     cfg = build_config(spec)
+    if exit_mode == "startup_error":
+        dreamer = tmp_path / "dreamer-missing-wake"
+        shutil.copytree(cfg.dreamer.dir, dreamer)
+        (dreamer / "objectives" / "wake.md").unlink()
+        spec = replace(spec, overrides={**spec.overrides, "dreamer.dir": str(dreamer)})
     # The process is the production credential seam; no deployed credential is read.
     for name in credential_names(cfg.model_dump()):
         monkeypatch.setenv(name, "generated-preflight-credential")
@@ -126,7 +132,7 @@ async def test_cold_composition_preserves_features_and_closes_owned_resources(
     before = asyncio.all_tasks()
     expected = (pytest.raises(StartupError, match="unset or empty")
                 if exit_mode == "missing_token" else
-                pytest.raises(StartupError, match=r"needs \[notes\] enabled")
+                pytest.raises(StartupError, match="Wake objective error")
                 if exit_mode == "startup_error" else
                 pytest.raises(RuntimeError, match="generated exit")
                 if exit_mode == "case_error" else nullcontext())
@@ -239,10 +245,6 @@ def preflight_spec(source, evaluation_config, clean_pg_url, tmp_path, exit_mode)
                  "computer.scoped.lifecycle_socket": str(tmp_path / "lifecycle.sock")}
     if source == evaluation_config:
         overrides["cognition.enabled"] = True
-        if exit_mode == "startup_error":
-            # `[cognition] enabled` requires the notebook; no_home_room only
-            # warns and leaves the unit un-woken, so it cannot refuse a boot.
-            overrides["notes.enabled"] = False
         overrides.update({
             "computer.enabled": True, "computer.scoped.enabled": True,
             "media.enabled": True, "media.rustfs.enabled": True,

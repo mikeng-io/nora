@@ -115,7 +115,9 @@ def _row_scope(
         sa.func.coalesce(row.origin_room.in_(dm_rooms), False),
         row.image["conversation_type"].astext.is_not_distinct_from("dm"),
     )
-    excluded = exclusions.bool_op("?|")(array(sorted(scope.audience), type_=sa.Text))
+    excluded: sa.ColumnElement[bool] = exclusions.bool_op("?|")(
+        array(sorted(scope.audience), type_=sa.Text),
+    )
     if not scope.audience_complete:
         excluded = exclusions != sa.literal([], type_=pg.JSONB)
     opted_out = row.image["person"].astext.in_(scope.social_off)

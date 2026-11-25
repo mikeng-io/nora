@@ -13,7 +13,6 @@ from nora.agent.catalog.groups import LOAD_TRANSCRIPT_MAX
 from nora.agent.computer_ctx import build_computer_ctx
 from nora.agent.lineage import LineagePolicy
 from nora.agent.links import LinkCarry
-from nora.agent.memory_search import MemorySearch
 from nora.agent.reaction import ReactionPicker
 from nora.agent.relay import Relay
 from nora.agent.room import Room
@@ -206,7 +205,6 @@ class ToolDeps:
     # `[google] account`: Nora's own Google mailbox, named in the NOT_SHARED
     # note so the owner knows who to share with. "" → a generic phrasing.
     google_account: str = ""
-    memory_retrieval: MemorySearch | None = None
     graph_retrieval: Any = None
     pass_scope: PassScope | None = None
     intention_admission: Any = None
