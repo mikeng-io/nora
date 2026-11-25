@@ -755,20 +755,7 @@ class FirePath:
             return None
 
     def _unit_for(self, occasion: Event) -> str | None:
-        """The unit this occasion's room belongs to, or `None`.
-
-        The unit-keyed tier scopes through the SAME `Policy` read the
-        tag path's own note prefill uses (`nora.engagement.context.
-        TranscriptInjection._notes`, DEC-105): two readers each carrying
-        their own idea of a room's unit disagree the first time a
-        deployment runs two social units.
-
-        `None` — a store wired but no `Policy` or no `Conversation` for the
-        room — is a WIRING GAP, not an empty tier: guessing a unit would
-        render another unit's notes into this room. Counted, because a
-        block missing for the life of a deployment with nothing saying so is
-        a silent failure.
-        """
+        """Resolve the fire event's graph reading unit from destination policy."""
         try:
             convo = (
                 self._policy.conversation(occasion.platform, occasion.conversation_id)
@@ -776,14 +763,8 @@ class FirePath:
                 else None
             )
         except Exception:
-            # Fail-soft like the two sibling reads (`_read_notes`,
-            # `_read_standing`): a Policy read that raises must
-            # not turn a deliverable reminder into a silent no-send. Counted,
-            # because a block missing for the life of a deployment with
-            # nothing saying so is a silent failure.
             log.exception(
-                "policy conversation read failed for %s/%s — the note "
-                "tier cannot be scoped to a unit; continuing without it",
+                "fire policy scope unavailable for %s/%s",
                 occasion.platform, occasion.conversation_id,
             )
             self._metrics.inc(
@@ -793,8 +774,7 @@ class FirePath:
             return None
         if convo is None:
             log.warning(
-                "no policy conversation for %s/%s — the note tier cannot "
-                "be scoped to a unit; continuing without it",
+                "no policy conversation for fire scope %s/%s",
                 occasion.platform, occasion.conversation_id,
             )
             self._metrics.inc(
