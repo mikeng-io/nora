@@ -168,7 +168,7 @@ account restored. Read back from norty the same day:
 The 500s are the endpoints whose scope the token was not granted. A token
 from the dashboard's generator carried the same five scopes on a second try,
 so the token was minted again through the OAuth flow (authorize with an
-explicit `scope=` list, redirect `https://nora.67.zone/`, exchange, then
+explicit `scope=` list, redirect `https://nora.example.com/`, exchange, then
 `th_exchange_token` for 60 days). Read back 2026-09-25:
 
 | call | answer |

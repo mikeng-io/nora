@@ -53,6 +53,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+from collections.abc import Set
 from typing import Any
 
 from nora.agent.egress import scan_identifiers
@@ -80,7 +81,7 @@ class MentionRenderer:
 
     def __init__(
         self, *, persons: Persons | None = None, display_name: str,
-        self_ids: frozenset[str], metrics: Any,
+        self_ids: Set[str], metrics: Any,
         access: Any = None,
         content_checks: bool = True,
     ) -> None:
@@ -89,7 +90,9 @@ class MentionRenderer:
         self._persons = (persons if persons is not None
                          else access.persons_view())
         self._display_name = display_name
-        self._self_ids = frozenset(self_ids)
+        # The registry's LIVE view, kept — never copied: a platform promoted
+        # after startup must reach this renderer (platform-liveness.md).
+        self._self_ids = self_ids
         self._metrics = metrics
 
     async def rehydrate(self, ctx: TagContext) -> TagContext:

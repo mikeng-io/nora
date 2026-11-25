@@ -46,10 +46,22 @@ def _sum_series(metrics, name: str) -> float:
     return sum(v for (n, _labels), v in metrics.snapshot().items() if n == name)
 
 
+async def _account(registry, adapter) -> str | None:
+    """Her account: the registered identity, else the memoized resolve."""
+    if registry is not None:
+        identity = registry.identities.get(adapter.platform)
+        return identity.primary if identity is not None else None
+    try:
+        return (await adapter.resolve_identity()).primary
+    except Exception:                      # noqa: BLE001 — a health check never raises
+        return None
+
+
 def build_health_app(
     *, adapter, store, doctrine_store, metrics, started_at: float,
     llm_state: LLMState,
     adapters=None,
+    registry=None,
     identity_file: str | Path | None = None, policy_file: str | Path | None = None,
     index_state=None, config_reload=None,
 ) -> web.Application:
@@ -103,14 +115,12 @@ def build_health_app(
             # field: identity and connectivity are different concerns, and
             # SignalAdapter.resolve_identity() is memoized, so this costs a
             # network round trip at most once per process, not once per poll.
-            try:
-                identity = await a["adapter"].resolve_identity()
-                sse["account"] = identity.primary
-            except Exception:                  # noqa: BLE001 — a health check never raises
-                sse["account"] = None
+            sse_degraded = adapter_health.degraded
+            sse["account"] = await _account(registry, a["adapter"])
         except Exception:                      # noqa: BLE001 — a health check never raises
             sse = {"connected": False}
-        if not sse.get("connected", False):
+            sse_degraded = False
+        if not sse.get("connected", False) and not sse_degraded:
             healthy = False
 
         # One entry per enabled platform, same three facts `sse` carries. A
@@ -130,19 +140,20 @@ def build_health_app(
                     "degraded": plat_health.degraded,
                     "detail": plat_health.detail,
                 }
-                try:
-                    entry["account"] = (await plat_adapter.resolve_identity()).primary
-                except Exception:              # noqa: BLE001 — a health check never raises
-                    entry["account"] = None
+                entry["account"] = await _account(registry, plat_adapter)
             except Exception:                  # noqa: BLE001 — a health check never raises
                 entry = {"connected": False, "last_event_age_seconds": None, "account": None,
                          "degraded": False, "detail": ""}
+            if registry is not None:
+                entry["state"] = registry.state_of(name)
             # A DEGRADED platform does not make Nora unhealthy: a 503 would
             # fail the container healthcheck and take the other platforms down
             # with it. It is reported in the entry instead.
             if not entry["connected"] and not entry.get("degraded"):
                 healthy = False
             platforms[name] = entry
+        if registry is not None and registry.adapters and not registry.live_platforms():
+            healthy = False
 
         try:
             stats = await a["store"].stats()

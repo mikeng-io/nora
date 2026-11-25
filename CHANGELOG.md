@@ -1,5 +1,90 @@
 # Changelog
 
+## [7.21.3](https://github.com/mikeng-io/nora/compare/v7.21.2...v7.21.3) (2026-11-23)
+
+
+### Bug Fixes
+
+* **platform:** gate the managed Signal link challenge on liveness, harden the verifier read ([d8b5756](https://github.com/mikeng-io/nora/commit/d8b57565897fae9eb90087f47b6e228c76558e4d))
+* **platform:** one platform's identity failure degrades that platform, not Nora ([6ed48f2](https://github.com/mikeng-io/nora/commit/6ed48f2eefec891d46b46511be7147c45a51042e))
+
+## [7.21.2](https://github.com/mikeng-io/nora/compare/v7.21.1...v7.21.2) (2026-11-23)
+
+
+### Features
+
+* **image-gen:** add the metered OpenAI platform API image lane ([fb6c658](https://github.com/mikeng-io/nora/commit/fb6c658ad0bd3b9e34aea7809e21ff165301f7b0))
+* **image-gen:** make looping GIFs on GPT Image models that animate ([07bce28](https://github.com/mikeng-io/nora/commit/07bce28618d8e0f656c33dd6ee161822f6f1d2bd))
+
+
+### Bug Fixes
+
+* **image-gen:** a GIF cap is 0 or 2..16, and the skill says when to make a GIF ([2051d76](https://github.com/mikeng-io/nora/commit/2051d76d0fe55e00fb49193889a225bc1406269d))
+* **image-gen:** billing refusals are quota, and the spend cap is an enforced hard limit ([7bfae64](https://github.com/mikeng-io/nora/commit/7bfae64a00085ebbee9ed84c306f2ba794e78e8e))
+
+## [7.21.1](https://github.com/mikeng-io/nora/compare/v7.21.0...v7.21.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* **release:** link a breaking change to its commit instead of copying its footer ([f606b20](https://github.com/mikeng-io/nora/commit/f606b2059b581d0655784d7ee9e5371cb5656ba9))
+* **release:** say what the host must do, and update every release passage ([8f6532d](https://github.com/mikeng-io/nora/commit/8f6532dda19b2a1810161b261f20887bfc29c21f))
+
+## [7.21.0](https://github.com/mikeng-io/nora/compare/v7.20.7...v7.21.0) (2026-11-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* move the public site and her art out of this repository (ADR 0039) ([c103ace](https://github.com/mikeng-io/nora/commit/c103ace4011fe9fb125f396e28f46b8e9a68ad34))
+
+
+### Features
+
+* move the public site and her art out of this repository (ADR 0039) ([c103ace](https://github.com/mikeng-io/nora/commit/c103ace4011fe9fb125f396e28f46b8e9a68ad34))
+
+
+### Bug Fixes
+
+* **agents:** ground unknown triage, end evidence-only goals, gate reruns on both budgets ([dd471ba](https://github.com/mikeng-io/nora/commit/dd471bad7056eb87e047eb27e47daf673225ca67))
+* **ci:** publish PR content as one completed check run ([0b559dd](https://github.com/mikeng-io/nora/commit/0b559dd318123a8849dfd2f8e42f5ee8b50c7a07))
+* accept pre-split releases for rollback and keep copies of her art honest ([daf7dec](https://github.com/mikeng-io/nora/commit/daf7dec292a98950fc20e1484551e6822d41d66c))
+
+## [7.20.7](https://github.com/mikeng-io/nora/compare/v7.20.6...v7.20.7) (2026-11-21)
+
+
+### Maintenance
+
+* **assets:** say the favicons come from the emblem, not her portrait ([422cfd5](https://github.com/mikeng-io/nora/commit/422cfd57bcb10b784ae6798fabc0f18549d1ca5a))
+
+## [7.20.6](https://github.com/mikeng-io/nora/compare/v7.20.5...v7.20.6) (2026-11-21)
+
+
+### Features
+
+* **assets:** make the clasp emblem Nora's canonical mark ([d1dd5e4](https://github.com/mikeng-io/nora/commit/d1dd5e46aa46659c6482aa5a39c21eb406686d83))
+
+
+### Bug Fixes
+
+* **app:** show the emblem beside the portal wordmark and refresh cached icons ([732d341](https://github.com/mikeng-io/nora/commit/732d341186d1eb455a6f21a7af4777b078978a38))
+
+## [7.20.5](https://github.com/mikeng-io/nora/compare/v7.20.4...v7.20.5) (2026-11-21)
+
+
+### Features
+
+* **site:** tell the landing page as a journey up the mountain, with Nora alive in it ([2749470](https://github.com/mikeng-io/nora/commit/2749470a307b98ef671535a0e35bfac7bbf710fc))
+
+
+### Bug Fixes
+
+* **site:** answer the review of the landing journey, and give Nora's site the clasp emblem ([729877e](https://github.com/mikeng-io/nora/commit/729877e32c853e81c7a3508098b95accbe1ec8bf))
+* **site:** keep the circle labels under the story's words ([0f9961e](https://github.com/mikeng-io/nora/commit/0f9961eafba1ac7300c8078e2af7333010926bc5))
+* **site:** one release for every stage failure, a scrollable chat, phone-safe labels ([ed295cb](https://github.com/mikeng-io/nora/commit/ed295cb409ae878ced7ef76c7b5bc34c39556360))
+* **site:** open on the hero, label the circles, and make take two a real map ([82ef845](https://github.com/mikeng-io/nora/commit/82ef84556648e6ecd3793092bb7c7541101cb327))
+* **site:** own the rig before it loads and release a stage that cannot start ([dfac8ee](https://github.com/mikeng-io/nora/commit/dfac8ee6b0fc274415858797679d8b73ac952c18))
+* **site:** readable words over every scene, a bigger Nora, and the re-check's repairs ([e0d3219](https://github.com/mikeng-io/nora/commit/e0d3219e4b50e14492f384d062e5e73e215e2ec8))
+
 ## [7.20.4](https://github.com/mikeng-io/nora/compare/v7.20.3...v7.20.4) (2026-11-21)
 
 

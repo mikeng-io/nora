@@ -37,7 +37,7 @@ list, resolves to nobody in `identity.toml`, and would otherwise be reported as
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Sequence, Set
 from dataclasses import dataclass
 from typing import Any
 
@@ -181,7 +181,7 @@ class Room:
         persons: Persons | None = None,
         access: Any = None,
         tagger: PersonRef | None = None,
-        self_ids: frozenset[str] = frozenset(),
+        self_ids: Set[str] = frozenset(),
         tagger_card_injected: bool = False,
         trigger_message_ids: tuple[int, ...] = (),
     ) -> None:

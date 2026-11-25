@@ -15,6 +15,7 @@ docs:
   - 03-ownership-and-recovery.md
   - 04-operations.md
   - 05-build-and-acceptance.md
+  - platform-liveness.md
 open_questions:
   - 'Per-platform transition identity lacking an upstream revision must be proved with synthetic protocol fixtures; unavailable identity retains a failure, never guesses dedupe.'
   - 'Installed collector configuration is outside this checkout: queue routing must be validated before claiming trace visibility.'
@@ -28,3 +29,5 @@ edges:
   - {src: 03-ownership-and-recovery, dst: ../standing-ledger/30-turn-records.md, rel: extends, provenance: proposed}
   - {src: 04-operations, dst: ../../docs/observability.md, rel: amends, provenance: operator-requested-proposal}
   - {src: 05-build-and-acceptance, dst: 03-ownership-and-recovery, rel: verifies, provenance: proposed}
+  - {src: platform-liveness, dst: 00-contract, rel: extends, provenance: operator-requested}
+  - {src: platform-liveness, dst: ../self-awareness/presence.md, rel: grounds, provenance: operator-requested}

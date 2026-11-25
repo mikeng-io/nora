@@ -81,3 +81,81 @@ def test_selective_readback_binds_restart_allowance_to_container_identity(
         with pytest.raises(RuntimeError, match='new restarts'):
             vd.verify_services('nora', {'nora': 'synthetic-image'}, settle=0, timeout=0,
                                baseline={'retained': 2})
+
+
+@pytest.mark.parametrize(("health", "warned"), [
+    ({"platforms": {"signal": {"state": "live", "degraded": False},
+                    "whatsapp": {"state": "degraded", "degraded": True,
+                                 "detail": "logged out"}}}, ["whatsapp"]),
+    ({"platforms": {"signal": {"state": "live", "degraded": False}}}, []),
+])
+def test_a_degraded_platform_is_a_warning_not_a_failure(monkeypatch, capsys, health, warned):
+    """`verify_services` — the function `scripts/komodo_deploy.py` calls —
+    passes a healthy release whose Nora reports a degraded platform, printing
+    a WARNING naming it (design/platform-bridges/platform-liveness.md
+    «Visibility»). The container checks still decide pass or fail."""
+    import json
+
+    vd = _load()
+    monkeypatch.setattr(vd, 'image_id', lambda image: 'sha256:new')
+    monkeypatch.setattr(vd, 'containers_for_services', lambda project, services: [
+        dict(_row(), service='nora', container_id='c1')])
+    calls = []
+
+    def docker(*args):
+        calls.append(args)
+        return json.dumps(health)
+
+    monkeypatch.setattr(vd, '_docker', docker)
+    vd.verify_services('nora', {'nora': 'synthetic-image'}, settle=0, timeout=0)
+
+    out = capsys.readouterr().out
+    assert "VERIFIED" in out
+    assert [line.split()[2] for line in out.splitlines()
+            if line.startswith("WARNING: platform")] == warned
+    assert calls == [("exec", "c1", "curl", "-sS", "--max-time", "5",
+                      "http://127.0.0.1:9100/health")]
+
+
+@pytest.mark.parametrize(('state', 'match'), [
+    ({'health': 'unhealthy'}, 'not healthy'),
+    ({'restarts': 1}, 'new restarts'),
+])
+def test_an_unhealthy_or_restarted_nora_still_fails_with_platform_warnings_wired(
+        monkeypatch, state, match):
+    """The positive control: the warning path never turns a failed container
+    into a pass — `/health` is not even read before the container checks pass."""
+    vd = _load()
+    monkeypatch.setattr(vd, 'image_id', lambda image: 'sha256:new')
+    monkeypatch.setattr(vd, 'containers_for_services', lambda project, services: [
+        dict(_row(**state), service='nora', container_id='c1')])
+    monkeypatch.setattr(vd, '_docker', lambda *a: (_ for _ in ()).throw(
+        AssertionError("health read before the container passed")))
+    monkeypatch.setattr(vd.time, 'sleep', lambda s: None)
+    with pytest.raises(RuntimeError, match=match):
+        vd.verify_services('nora', {'nora': 'synthetic-image'}, settle=0, timeout=0)
+
+
+def test_a_failed_health_read_through_the_komodo_wrapper_is_only_a_warning(
+        monkeypatch, capsys):
+    """Komodo replaces `_docker` with a wrapper that raises its own
+    `CommandError` (`scripts/komodo_deploy.py`). An optional `/health` read
+    that fails that way after `VERIFIED` must stay a warning, never fail the
+    deploy."""
+    spec = importlib.util.spec_from_file_location(
+        "komodo_deploy", SCRIPT.with_name("komodo_deploy.py"))
+    assert spec and spec.loader
+    komodo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(komodo)
+    vd = _load()
+    monkeypatch.setattr(vd, 'image_id', lambda image: 'sha256:new')
+    monkeypatch.setattr(vd, 'containers_for_services', lambda project, services: [
+        dict(_row(), service='nora', container_id='c1')])
+
+    def wrapper(*args):
+        raise komodo.CommandError("readback", 124, None)
+
+    monkeypatch.setattr(vd, '_docker', wrapper)
+    vd.verify_services('nora', {'nora': 'synthetic-image'}, settle=0, timeout=0)
+    out = capsys.readouterr().out
+    assert "VERIFIED" in out and "WARNING: could not read Nora's /health" in out

@@ -41,6 +41,7 @@ _DOTENV = {
     "DISCORD_CLIENT_ID": "1234",
     "DISCORD_CLIENT_SECRET": "test-client-secret",
     "INSTAGRAM_BRIDGE_ACCOUNT_KEY": "ig-1",
+    "LEGAL_CONTACT": "operator@example.invalid",
     "NORA_BRIDGE_CORRELATION_KEY": CORRELATION_KEY,
     "NORA_BRIDGE_TOKEN": "test-bridge-token",
     "NORA_BRIDGE_API_TOKEN": "test-api-override",

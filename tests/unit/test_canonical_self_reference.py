@@ -54,9 +54,10 @@ class _ResolvingGenerator:
         self.sizes: list[object] = []
 
     max_reference_images = 3
+    max_gif_frames = 0
 
     async def generate(self, *, prompt, reference_images=None, size=None,
-                       quality=None, reference_resolver=None) -> ImageResult:
+                       quality=None, reference_resolver=None, gif_frames=None) -> ImageResult:
         self.sizes.append(size)
         if reference_images:
             if reference_resolver is None:

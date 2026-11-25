@@ -16,7 +16,7 @@ startup failure with its name, not the first job's).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Set
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -44,7 +44,7 @@ def subagent_budget(b: Any) -> Any:
 
 def build_subagent_backend(
     *, cfg: Any, client: Any, tier: Any, registry: ToolRegistry, store: Any, persons: Any,
-    metrics: Any, rosters: Mapping[str, Any], self_ids: frozenset[str],
+    metrics: Any, rosters: Mapping[str, Any], self_ids: Set[str],
     clock: Callable[[], datetime], result_caps: Mapping[str, int],
     reasoning_effort: str, jobs: Any = None,
     admission: Any = None,

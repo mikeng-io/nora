@@ -136,3 +136,34 @@ def test_agents_md_lists_every_skill_and_only_real_ones() -> None:
     unlisted, phantom = sorted(on_disk - listed), sorted(listed - on_disk)
     assert unlisted == [], f"skills AGENTS.md does not list: {unlisted}"
     assert phantom == [], f"AGENTS.md lists skills that do not exist: {phantom}"
+
+
+#: Runtime names match across line wraps. Devin Review and release automation
+#: name external services. "Cursor" names the product only when capitalised.
+_AGENT_SPECIFIC = re.compile(
+    r"claude\s+code|\bcodex\b|\bt3\b|(?-i:\bCursor\b)|\bkimi\b|run_in_background|"
+    r"delegate_task|\brtk\b|\bsonnet\b|\bopus\b|gpt-\d|swe-2|"
+    r"\bdevin\b(?!\s+(?:review|release\s+automation))",
+    re.IGNORECASE,
+)
+
+
+def test_policy_and_skills_name_no_coding_agent() -> None:
+    """The lifecycle has to work for whichever agent orchestrates. A runtime's
+    quirk belongs in `.agents/runtimes/` and a model in `.agents/lanes.md`;
+    written into a skill, it is followed by every other agent too. Vendored
+    third-party skills (a PROVENANCE.md beside SKILL.md) are theirs."""
+    paths = [ROOT / "AGENTS.md", ROOT / "ORCHESTRATION.md", ROOT / "REVIEW.md"]
+    for skill in _skill_dirs():
+        if (skill / "PROVENANCE.md").exists():
+            continue
+        paths += sorted(skill.rglob("*.md"))
+    hits = []
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        for match in _AGENT_SPECIFIC.finditer(text):
+            line = text.count("\n", 0, match.start()) + 1
+            hits.append(f"{path.relative_to(ROOT)}:{line}: {' '.join(match.group(0).split())}")
+    assert hits == [], "agent-specific names outside .agents/runtimes and lanes.md:\n" + "\n".join(
+        hits
+    )

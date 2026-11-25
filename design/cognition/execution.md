@@ -1,7 +1,8 @@
 # Execution
 
-Execution is how passes and actions run: which executor owns each, when work
-is eligible, and what a pass's outcome settles.
+Execution is how passes and actions run: which executor owns each, how long a
+pass waits for a tool call, when work is eligible, and what a pass's outcome
+settles.
 
 ## Executors
 
@@ -14,12 +15,52 @@ is eligible, and what a pass's outcome settles.
 | **tag pipeline** | the engagement loop's called pass for one room, followed by its debrief |
 | **fire path** | the engagement loop's ambient and proactive passes for one room, each followed by its debrief |
 | **bridge work runner** | durable intake from transport bridges: owns each event before acknowledging it, and launches the pass |
-| **job executors** | delegated work: sub-agent jobs, computer and browser tasks ([acts](acts.md)) |
+| **job executors** | delegated work: sub-agent jobs, computer and browser tasks, handed-over tool calls ([acts](acts.md)) |
 | **verifier** | study's verify and report |
 | **judge** | study's grade, on a model independent of the writer |
 
 No other launcher starts a pass. Collectors, reconnects and maintenance are
 plumbing, not executors of the loops.
+
+## Tool calls
+
+A pass's tool calls run under the pass's own executor; a call is an action,
+never a pass.
+
+- The calls of one model step run concurrently, and their results return in
+  the order the model asked for them.
+- All passes draw on one shared pool of tool slots. Engagement passes keep a
+  reserve that reflection passes and delegated work cannot take, so a busy
+  background never stalls a room.
+- In an engagement pass each call has a **wait window**: a configured bound on
+  how long the pass waits for it. A call that settles within its window
+  returns its result to the step.
+- A call still running when its window ends is **handed over**: it keeps
+  running as [delegated work](acts.md#delegated-work), gives up any slot of
+  the engagement reserve, and the step receives **started** with the work's
+  identity in place of a result. The pass continues and ends as usual,
+  holding the room's slot no longer than its own steps.
+- A step continues once each of its calls has settled or been handed over.
+- `send_reply`, deliveries and writes to the graph are never handed over: they
+  mean something only inside their pass.
+- The handed-over work and its report are intentions like those of any
+  delegated work: the pass commits them when its reply promises the result,
+  and the debrief commits what the pass left. A proactive pass delivers the
+  report once the work's outcome is recorded and may stay silent. A proactive
+  pass that hands over a call moves its own intention to that outcome rather
+  than creating another.
+- Reflection passes have no wait window; their calls, like a handed-over
+  call's, are bounded by the pass's or the job's own limits.
+
+The window is what keeps a room answered: however long the work runs, the
+room hears from Nora within it, and the next messages are not queued behind
+work that no longer needs the slot. The clock decides, not a declaration made
+in advance per tool, because a tool's duration varies with its input. Waiting
+for a background call to rejoin the same pass was rejected: it keeps the
+slot held for the whole run and needs a second, interim kind of reply. A
+separate timeout result was rejected too: work still running at the window is
+started, and work stopped at a bound is unavailable with its reason, or
+uncertain when an effect may have happened ([acts](acts.md)).
 
 ## Waking
 

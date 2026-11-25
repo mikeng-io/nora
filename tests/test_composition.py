@@ -1766,7 +1766,7 @@ def test_a_public_url_egress_would_block_refuses_to_start(origin) -> None:
         nora.documents.wire._require_a_sendable_public_url(origin)
 
 
-@pytest.mark.parametrize("origin", ["", "https://nora.67.zone", "http://localhost:3000"])
+@pytest.mark.parametrize("origin", ["", "https://nora.67.example", "http://localhost:3000"])
 def test_a_sendable_public_url_or_none_starts(origin) -> None:
     nora.documents.wire._require_a_sendable_public_url(origin)
 

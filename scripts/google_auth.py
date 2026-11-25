@@ -25,7 +25,7 @@ token for norty's `.env` (`GOOGLE_OAUTH_REFRESH_TOKEN`, or whatever
 - **Nothing is written to disk.** The token is printed once; put it in `.env`
   yourself. A browser on the machine running this is required (run it on the
   Mac, not on norty).
-- Sign in as `nora@67.zone`. With the consent screen in Testing, the token
+- Sign in as Nora's own Google account. With the consent screen in Testing, the token
   dies after 7 days: set it to In production first.
 """
 
@@ -126,7 +126,7 @@ def main() -> int:
     url = consent_url(
         client_id=client_id, redirect_uri=redirect_uri, state=state, challenge=challenge,
     )
-    print("Sign in as nora@67.zone and approve:\n  " + "\n  ".join(SCOPES) + "\n\n" + url + "\n")
+    print("Sign in as Nora's own Google account and approve:\n  " + "\n  ".join(SCOPES) + "\n\n" + url + "\n")
     webbrowser.open(url)
     try:
         code = _wait_for_code(server, state)

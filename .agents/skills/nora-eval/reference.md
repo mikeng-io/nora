@@ -37,3 +37,15 @@ The long form of step 8.
      "An eval confirms a fix" and read the case's input, anchor and expectation.
      A wrong expectation fails every draw and measures the anchor, not the model.
    Check: every number you will quote has its n, draw split and arm beside it.
+
+## Budget, repeats and escalation
+
+Spend follows the scenario: the brief states its budget, and a goal-driven
+eval (`nora-work/references/lifecycle.md` «Goal-driven track») spends to its
+convergence budget without asking per run (`.agents/lanes.md`). Before the first
+paid run, a zero-cost smoke of the real production path must pass. Re-running
+after your own fix needs no approval; the cases and grading criteria do not
+change during the run, and changing a criterion to make a case pass is Mike's
+call. The same target failing a third round is an architecture verdict: stop
+drawing and tuning, and run `nora-diagnose` across the eval harness, the
+runtime, the context and the prompt («Escalation»).

@@ -121,7 +121,7 @@ would miss exactly the known real names, hostnames and ids that are the
 commonest finding; it would catch phones, emails, ids, coordinate tables and
 media GPS. Not built in this change.
 
-**Git LFS** is used for showreel media (`showreel/.gitattributes`). An LFS file
+**Git LFS** stores no file here today; if one is added, an LFS file
 reaches the scanner as pointer text, not binary content. `core.hooksPath=.githooks`
 replaces LFS's own `pre-push` hook, so after its own checks pass this `pre-push`
 chains to `git lfs pre-push` with the same ref lines when `git-lfs` is on PATH;
@@ -239,7 +239,7 @@ hit), `binary` (opened as above instead of refused), `symlink`,
 `gitlink`, `large`, `coords <path> sha256=<digest>` (a location table pinned
 to its content: `python3 scripts/pii_scan.py declare-coords <path>` prints
 the line), `value` and `value-re` (placeholders). A path pattern must be
-narrow: a literal path, a directory at least two levels deep (`site/public/*`)
+narrow: a literal path, a directory at least two levels deep (`app/public/*`)
 or a named kind (`assets/*.png`); `*`, `**`, a leading wildcard and a bare
 wildcard under a top-level directory (`vendor/*`, and `vendor/[!.]*`: a
 `[...]` class is a wildcard too) are refused for every path form, `coords`

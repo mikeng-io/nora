@@ -8,17 +8,17 @@ the first-install bootstrap below is not the normal production deploy procedure.
 
 ## Ownership and flow
 
-1. Every ordinary master push automatically prepares patch/minor release metadata.
+1. Every releasable master push automatically prepares patch release metadata.
    GitHub auto-merges only the generated metadata PR after required checks and
    exact-source guards; release-please then publishes the stable `vX.Y.Z` tag and
-   GitHub Release. Breaking ranges stop for owner-only exact-candidate major
-   preparation (`nora-release`). Published Releases trigger `Release images`
+   GitHub Release. Minor and major are owner dispatches; a breaking range ships,
+   and the deploy refuses a host missing a required setting (`nora-release`). Published Releases trigger `Release images`
    under its existing control; missing App setup fails closed. Manual image
    dispatch can rebuild an already-published stable tag. The separate default-off
    **Deploy master** entry selects current master without a formal release. Both
    entries share the existing complete-bundle publisher and installed route.
 2. Hosted AMD64 runners account for all eleven artifacts named by the root Compose file:
-   Nora, app, site, STT, voice sidecar/wake, Signal/Discord/WhatsApp/Instagram bridges
+   Nora, app, STT, voice sidecar/wake, Signal/Discord/WhatsApp/Instagram bridges
    and the bridge projection publisher,
    with Signal's signed tarball preparation retained. The
    Nora manifest must name the exact selected source and truthful version. CI gets registry
@@ -48,7 +48,6 @@ the first-install bootstrap below is not the normal production deploy procedure.
 The owned cohort is every repository-built service, plus `presence` and
 `analytics` sharing Nora's image. Those three share one artifact; other services
 change independently.
-The public `site` remains opt-in (`--site` in the installed wrapper command).
 Third-party database, object storage, embedder and monitoring images are excluded
 from automatic recreation; `--no-deps` prevents implicit upgrades. The separately
 managed computer service is outside this root Compose project.
@@ -150,9 +149,10 @@ Python dependency manifests too. Layer caching does not promise dependency-insta
 hits for Nora; no manifest normalization or new staging environment is introduced.
 
 The context hash deliberately overcounts ignored files. In particular Nora and the
-site have repository-root contexts, so an unrelated root change can rebuild the site.
-There is no Dockerfile/ignore parser or list of selected COPY paths. This conservative
-ceiling holds unless measured unnecessary site builds justify a narrower native context.
+bridges built from the repository root have root contexts, so an unrelated root change
+can rebuild them. There is no Dockerfile/ignore parser or list of selected COPY paths.
+This conservative ceiling holds unless measured unnecessary builds justify a narrower
+native context.
 Nora always rebuilds, because its global version/source/build-time stamp is baked in;
 formal app-only releases therefore also update Nora, presence and analytics.
 
@@ -197,11 +197,9 @@ The generated Compose file removes `build` entries and doctrine/Dreamer source
 mounts. The image's own instructions become authoritative. Relative host binds
 become `${NORA_RUNTIME_ROOT:?}/...`, preserving the existing runtime directory,
 private config and transport account stores outside Komodo's managed clone.
-The default native monitoring exclusions are `site` and `embedder`, since the
-secret-safe discovery pass includes inactive profiles. Remove `site` from those
-exclusions when enabling `--site`; the wrapper then enables the profile for both
-resolution and recreation. Remove `embedder` only where that separate infrastructure
-profile is already running.
+The default native monitoring exclusion is `embedder`, since the secret-safe
+discovery pass includes inactive profiles. Remove it only where that separate
+infrastructure profile is already running.
 
 Production's runtime root is still `~/workspace/nora`: it holds `config.toml`,
 `policy.toml`, `identity.toml`, `.env`, `data/` and `state/` outside git. Database,
@@ -259,7 +257,7 @@ They are not performed by the publisher or by merging its PR.
 
 1. Back up the current Compose/Periphery settings, runtime config and database;
    confirm that the database backup can be restored. Record the existing project
-   name, bind paths, named volumes and enabled site profile. Keep the existing
+   name, bind paths and named volumes. Keep the existing
    manual deployment path available while the Komodo schedule is off.
 2. The stock Periphery image has Docker and `flock`, but no Python. The audited
    Compose CLI is 5.5.0, also checksum-pinned in CI: 2.38.2 rejects required-path
@@ -283,8 +281,8 @@ They are not performed by the publisher or by merging its PR.
    for a stable release containing this implementation; check every image job,
    the generated branch, exact source/version stamps and all immutable digests.
 5. Import an operator-filled copy of the example resources **with the schedule
-   still off**. Use the correct existing project/root/server and add `--site`
-   only where enabled, with matching monitoring exclusions. Configure and test
+   still off**. Use the correct existing project/root/server, with matching
+   monitoring exclusions. Configure and test
    the Komodo failure-alert destination.
    Verify the native generated Compose command reaches the wrapper for both
    `config` and `up`. Never bypass the wrapper to make an error green.
@@ -363,6 +361,17 @@ so the source runtime and credentials can remain mounted read-only. Direct
 `secret_delivery.prepare` calls still default to `<runtime>/.secret-delivery/`
 unless given `output_directory`. No new shared secret mounts are needed.
 Candidate validation remains network-disabled and also validates required model credentials using only the Nora service environment projection.
+
+## The site leaves the cohort
+
+The public site is no longer a Nora service (ADR 0039). The installed
+`komodo_deploy.py` needs this release's version before the first site-free
+release can apply; the old wrapper refuses it. The updated wrapper still
+accepts a release that lists `site`, for rollback, and never starts it. Remove
+`--site` and the `site` monitoring exclusion from the Stack, then the old
+container with `docker rm -f nora-site`, and route `/` on the instance's
+hostname to the portal. A release older than the split cannot be rebuilt from
+its tag; roll back by selecting its existing image bundle.
 
 ## Shared HTTP egress cohort (implementation candidate, 2026-11-05)
 

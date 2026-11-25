@@ -39,7 +39,7 @@ session's own evidence blocks are `nora.language.cognition_render`'s.
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence, Set
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -89,7 +89,7 @@ class _Episodes(Protocol):
 
     async def addressed_since(
         self, *, rooms: Sequence[tuple[str, str]], since_ms: int, until_ms: int,
-        limit: int, self_ids: frozenset[str] = ...,
+        limit: int, self_ids: Set[str] = ...,
     ) -> list[RoomMessage]: ...
 
     async def last_run_ms(self, *, adaptor: str, key: str) -> int | None: ...
@@ -144,7 +144,7 @@ class LessonEvidence:
         self, *, store: _Episodes, book: _Book, keys: Mapping[str, LessonsKey],
         clock_ms: Callable[[], int],
         correction_quiet_seconds: int | None = None, stale_seconds: int = 604_800,
-        self_ids: frozenset[str] = frozenset(),
+        self_ids: Set[str] = frozenset(),
     ) -> None:
         """`correction_quiet_seconds` turns on the correction fast path:
         `None` is off. A correction is handed in once it is that old, so the

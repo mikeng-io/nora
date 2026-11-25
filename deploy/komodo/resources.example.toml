@@ -20,15 +20,14 @@ poll_for_updates = false
 destroy_before_deploy = false
 webhook_enabled = false
 send_alerts = true
-# Discovery includes inactive profiles. Remove site here when enabling --site.
-# Remove embedder only if that separately managed infrastructure profile is running.
-ignore_services = ["site", "embedder"]
+# Discovery includes inactive profiles. Remove embedder only if that separately
+# managed infrastructure profile is running.
+ignore_services = ["embedder"]
 env_file_path = ".komodo.env"
 environment = "NORA_RUNTIME_ROOT=/srv/nora-runtime"
 additional_env_files = [{ path = "/srv/nora-runtime/.env", track = false }]
 config_files = [{ path = "release.json", requires = "Redeploy" }]
 # Wrapper ignores the supplied up selection and applies only its installed owned cohort.
-# Add --site only on installations where the public site is already enabled.
 compose_cmd_wrapper = "python3 /etc/komodo/nora-deploy/komodo_deploy.py --runtime-root /srv/nora-runtime --project nora -- [[COMPOSE_COMMAND]]"
 compose_cmd_wrapper_include = ["config", "up"]
 

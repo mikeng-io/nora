@@ -119,14 +119,18 @@ class SignalLinkDelivery:
     def __init__(
         self, base_url: str, *, sender: SignalSender | None = None,
         envelope: ActEnvelope | None = None,
+        live: Callable[[], bool] | None = None,
     ) -> None:
         self._sender = sender if sender is not None else SignalSender(
             base_url, dm_recipients=None)
         self._envelope = envelope
+        self._live = live
 
     async def deliver(self, *, account: Identifier, text: str) -> bool:
         if account.platform != "signal" or not account.value.strip():
             return False
+        if self._live is not None and not self._live():
+            return False  # degraded: the authenticated view carries the challenge
         target = ConversationTarget(
             platform="signal", conversation_id=account.value,
             conversation_type="dm")

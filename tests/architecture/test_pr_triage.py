@@ -68,7 +68,6 @@ def test_the_type_label_is_the_title_type_and_a_bang_adds_breaking():
         ("nora/skills/a/SKILL.md", {"doctrine"}),
         ("nora/web/portal.py", {"portal"}),
         ("app/src/a.ts", {"portal"}),
-        ("site/src/a.astro", {"site"}),
         ("deploy/komodo/README.md", {"deploy"}),
         ("Dockerfile", {"deploy"}),
         (".github/workflows/ci.yml", {"ci"}),

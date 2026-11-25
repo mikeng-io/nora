@@ -1,6 +1,6 @@
 # 0031 · Master pushes automatically release patch/minor; major stays owner-selected
 
-- **Status:** accepted (operator, 2026-10-28)
+- **Status:** superseded in part by 0040 (operator, 2026-11-22); accepted 2026-10-28
 - **Date:** 2026-10-28
 - **Reverses, in part:** ADR 0027 Manual release amendment; its historical runtime-only eligibility and automatic marker-major policy
 - **Index:** existing DEC-314 amendment, no new ID

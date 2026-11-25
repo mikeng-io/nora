@@ -209,6 +209,42 @@ def service_errors(rows: list[dict], expected: dict[str, str],
     return errors
 
 
+NORA_SERVICE = "nora"
+NORA_HEALTH_URL = "http://127.0.0.1:9100/health"
+
+
+def platform_warnings(rows: list[dict]) -> list[str]:
+    """WARNING lines for every platform Nora's `/health` reports degraded.
+
+    Read AFTER the container checks passed, and never a failure: a platform
+    that could not resolve its identity (a logged-out bridge) is degraded
+    alone while Nora serves the rest
+    (design/platform-bridges/platform-liveness.md «Visibility»), and the
+    release did not cause it. An unreadable body is a warning too — the
+    container's own healthcheck already decided pass or fail."""
+    nora = [r for r in rows if r.get("service") == NORA_SERVICE]
+    if not nora:
+        return []
+    try:
+        body = json.loads(_docker(
+            "exec", nora[0]["container_id"], "curl", "-sS", "--max-time", "5",
+            NORA_HEALTH_URL))
+    # Any failure — including the Komodo wrapper's own `CommandError` around
+    # `_docker` — is a warning: this read is optional, the container decided.
+    except (Exception, SystemExit) as exc:  # noqa: BLE001
+        return [f"WARNING: could not read Nora's /health for platform state: {exc}"]
+    platforms = body.get("platforms") if isinstance(body, dict) else None
+    if not isinstance(platforms, dict):
+        return ["WARNING: Nora's /health carried no platforms block"]
+    return [
+        f"WARNING: platform {name} is degraded ({entry.get('detail') or 'no reason given'})"
+        " — Nora is healthy and serving the other platforms; it rejoins by itself"
+        for name, entry in sorted(platforms.items())
+        if isinstance(entry, dict)
+        and (entry.get("state") == "degraded" or entry.get("degraded"))
+    ]
+
+
 def verify_services(project: str, images: dict[str, str], *, settle: int = 20,
                     timeout: int = 300, baseline: dict[str, int] | None = None) -> None:
     """Read every named service, including missing or previous-release containers."""
@@ -220,6 +256,8 @@ def verify_services(project: str, images: dict[str, str], *, settle: int = 20,
         errors = service_errors(rows, expected, baseline)
         if not errors:
             print(f"VERIFIED: all {len(images)} release services on expected images and healthy")
+            for warning in platform_warnings(rows):
+                print(warning)
             return
         if any(row["restarts"] > (baseline or {}).get(row.get("container_id", ""), 0)
                for row in rows) or time.monotonic() >= deadline:

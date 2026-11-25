@@ -14,7 +14,7 @@ so a shared helper in the same package needs no new edge in the import graph.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Set
 from datetime import datetime
 
 from nora.agent.lineage import LineagePolicy
@@ -75,7 +75,7 @@ def build_assembler(
     shared: Callable[..., Awaitable[SharedView]] | None = None,
     clock: Callable[[], datetime] | None = None,
     rosters: Mapping[str, RosterSource] | None = None,
-    self_ids: frozenset[str] = frozenset(),
+    self_ids: Set[str] = frozenset(),
     observations: object = None,
     access: object = None,
 ) -> TranscriptInjection:

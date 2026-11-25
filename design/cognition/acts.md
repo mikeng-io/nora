@@ -59,13 +59,17 @@ committing an intention a proactive pass later carries out.
 
 ## Delegated work
 
-Delegated work — a sub-agent job, a computer task, a long browser session —
-runs outside both loops under its own executor.
+Delegated work — a sub-agent job, a computer task, a long browser session, a
+handed-over tool call — runs outside both loops under its own executor.
 
-- Starting it is a delegation act. The work is an achieve intention naming its
-  executor and the job's identity; it is done when the job's outcome item
-  reports success. A failed or cancelled job closes nothing: decide retries or
-  drops the intention, citing that outcome.
+- Starting it is a delegation act: a delegation tool the model calls, or a
+  tool call handed over when its wait window ended
+  ([execution](execution.md#tool-calls)), which keeps its original identity
+  and authority.
+- The work is an achieve intention naming its executor and the job's
+  identity; it is done when the job's outcome item reports success. A failed
+  or cancelled job closes nothing: decide retries or drops the intention,
+  citing that outcome.
 - The executor's own job state is authoritative for the job. Its events and
   results enter through observe as items.
 - Reporting the result is a separate child intention, delivered by a proactive
@@ -78,5 +82,6 @@ runs outside both loops under its own executor.
 
 - Writing to the graph: that is admission.
 - A read, including a paid outside read: it is a read, bounded by its spend
-  controls, and its result is an item.
+  controls, and its result is an item. A read handed over at the end of its
+  wait window becomes delegated work.
 - Silence: it is the recorded outcome of a pass that chose not to act.

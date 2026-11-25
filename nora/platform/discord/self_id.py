@@ -27,7 +27,15 @@ from .send import DEFAULT_API_BASE
 
 
 class DiscordIdentityError(Exception):
-    """`GET /users/@me` failed or returned a body with no usable id."""
+    """`GET /users/@me` failed or returned a body with no usable id.
+
+    `status` is the HTTP status when Discord answered one — a 401/403 is a
+    refused token (misconfiguration, fatal at startup), anything else is
+    unavailability (`nora.platform.registry` degrades the platform)."""
+
+    def __init__(self, message: str, *, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 def render_handle(username: object, discriminator: object) -> str | None:
@@ -65,7 +73,8 @@ async def derive_identity(
         session.get(f"{base_url.rstrip('/')}/users/@me", headers=headers) as resp,
     ):
         if resp.status != 200:
-            raise DiscordIdentityError(f"GET /users/@me returned HTTP {resp.status}")
+            raise DiscordIdentityError(
+                f"GET /users/@me returned HTTP {resp.status}", status=resp.status)
         body = await resp.json()
 
     user_id = body.get("id") if isinstance(body, dict) else None

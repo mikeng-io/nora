@@ -1,16 +1,9 @@
 [
   {
-    "name": "a signal bridge adapter is owned before its identity await",
+    "name": "every bridge adapter is owned before its identity await",
     "file": "nora/platform/registry.py",
-    "old": "                dm_recipients=dms.get(\"signal\", frozenset()),\n                dm_gate=gates.get(\"signal\"))\n            _register(adapter)\n            identity = await _resolve_or_refuse(\n                adapter, \"signal\", bridge=True, sleep=sleep, clock=clock)",
-    "new": "                dm_recipients=dms.get(\"signal\", frozenset()),\n                dm_gate=gates.get(\"signal\"))\n            identity = await _resolve_or_refuse(\n                adapter, \"signal\", bridge=True, sleep=sleep, clock=clock)",
-    "target": "tests/integration/test_composition_unwind.py::test_a_later_bridge_failure_closes_the_adapters_already_built"
-  },
-  {
-    "name": "a discord bridge adapter is owned before its identity await",
-    "file": "nora/platform/registry.py",
-    "old": "                speaker=discord_speaker)\n            _register(discord_adapter)\n            discord_identity = await _resolve_or_refuse(\n                discord_adapter, \"discord\", bridge=True, sleep=sleep, clock=clock)",
-    "new": "                speaker=discord_speaker)\n            discord_identity = await _resolve_or_refuse(\n                discord_adapter, \"discord\", bridge=True, sleep=sleep, clock=clock)",
+    "old": "            if owner is not None:\n                close = getattr(adapter, \"close\", None)\n                if close is not None:\n                    owner.own_adapter(close)\n            adapters[entry.name] = adapter",
+    "new": "            adapters[entry.name] = adapter",
     "target": "tests/integration/test_composition_unwind.py::test_a_later_bridge_failure_closes_the_adapters_already_built"
   },
   {

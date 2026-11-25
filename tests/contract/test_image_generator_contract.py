@@ -33,10 +33,9 @@ from aiohttp.test_utils import TestServer
 
 from nora.domain.ports import ImageReference, ImageSize
 from nora.infra.image_gen import build_image_generator
-from nora.infra.image_gen.openai_codex_adapter import (
-    CODEX_MAX_REFERENCE_IMAGES,
-    OpenAICodexImageGenerator,
-)
+from nora.infra.image_gen.gpt_image import GPT_IMAGE_MAX_REFERENCE_IMAGES
+from nora.infra.image_gen.openai_api_adapter import OpenAIImageGenerator
+from nora.infra.image_gen.openai_codex_adapter import OpenAICodexImageGenerator
 from nora.infra.image_gen.openai_codex_oauth import CodexAuth
 from nora.infra.image_gen.xai_adapter import XAI_MAX_REFERENCE_IMAGES, XaiImageGenerator
 from nora.infra.image_gen.xai_oauth import (
@@ -646,9 +645,19 @@ async def test_xai_sends_every_reference_up_to_its_documented_limit(server_facto
     assert [img["url"] for img in captured[0]["images"]] == [_uri(i) for i in range(5)]
 
 
-async def test_codex_sends_every_reference_up_to_its_documented_limit():
+def _gpt_lane(lane: str, base_url: str):
+    if lane == "openai":
+        return OpenAIImageGenerator(api_key="k", base_url=base_url, timeout_seconds=5.0)
+    return OpenAICodexImageGenerator(
+        oauth=_CannedCodexAuth(),  # type: ignore[arg-type]
+        base_url=base_url, timeout_seconds=5.0,
+    )
+
+
+@pytest.mark.parametrize("lane", ["openai_codex", "openai"])
+async def test_codex_sends_every_reference_up_to_its_documented_limit(lane):
     """OpenAI documents sixteen input images for gpt-image; all sixteen travel,
-    in order, as `images` entries alongside the prompt."""
+    in order, as `images` entries alongside the prompt, on either GPT lane."""
     captured: list[dict] = []
     async def responses(request: web.Request) -> web.Response:
         captured.append(await request.json())
@@ -659,11 +668,8 @@ async def test_codex_sends_every_reference_up_to_its_documented_limit():
     server = TestServer(app)
     await server.start_server()
     try:
-        gen = OpenAICodexImageGenerator(
-            oauth=_CannedCodexAuth(),  # type: ignore[arg-type]
-            base_url=str(server.make_url("/")).rstrip("/"), timeout_seconds=5.0,
-        )
-        assert gen.max_reference_images == CODEX_MAX_REFERENCE_IMAGES == 16
+        gen = _gpt_lane(lane, str(server.make_url("/")).rstrip("/"))
+        assert gen.max_reference_images == GPT_IMAGE_MAX_REFERENCE_IMAGES == 16
         result = await gen.generate(
             prompt="all of us", reference_images=_refs(16), reference_resolver=_resolve,
         )
@@ -677,7 +683,11 @@ async def test_codex_sends_every_reference_up_to_its_documented_limit():
 
 @pytest.mark.parametrize(
     ("section", "vendor"),
-    [("xai", XAI_MAX_REFERENCE_IMAGES), ("openai_codex", CODEX_MAX_REFERENCE_IMAGES)],
+    [
+        ("xai", XAI_MAX_REFERENCE_IMAGES),
+        ("openai_codex", GPT_IMAGE_MAX_REFERENCE_IMAGES),
+        ("openai", GPT_IMAGE_MAX_REFERENCE_IMAGES),
+    ],
 )
 def test_an_operator_override_only_lowers_the_limit(section, vendor):
     """`max_reference_images` in a provider's config section lowers its limit
@@ -696,7 +706,7 @@ def test_an_operator_override_only_lowers_the_limit(section, vendor):
 
     def build(**extra):
         return build_image_generator(
-            provider=section, refresh_token="rt",  # noqa: S106
+            provider=section, refresh_token="rt", api_key="k",  # noqa: S106
             state_file=Path("no-state"), **extra,
         )
 

@@ -29,17 +29,17 @@ outside it are not newly reviewed or implicitly passed.
 
 Lenses follow what changed and can break, never a fixed panel —
 application, security/privacy, data/concurrency, measurement/operations —
-and ORCHESTRATION.md's risk floors.
+and ORCHESTRATION.md's risk floors. Over-build is always a lens: a guard,
+policy, permission or abstraction the brief did not ask for is a scope finding.
 
 ## Findings and return
 
-Admit a defect only with basis, reachability and consequence — the
-violated requirement, contract or trust boundary, a real entry or
-attacker path, concrete harm — and name the agreed condition left unmet
-or boundary regressed; a new capability is no repair requirement. NONE
-is valid. Severity — P1 material correctness, safety or availability
-failure, P2 bounded impact — is the reviewer's; disposition, verdicts,
-classes and convergence are the policy's.
+Admit a defect only with basis, reachability and consequence — the violated
+requirement, contract or trust boundary, a real entry or attacker path, concrete
+harm — and name the agreed condition left unmet or boundary regressed; a new
+capability is no repair requirement. NONE is valid. Severity — P1 material
+correctness, safety or availability failure, P2 bounded impact — is the
+reviewer's; disposition, verdicts, classes and convergence are the policy's.
 
 Lead with APPROVE or REQUEST CHANGES for the reviewed scope, then base/head,
 type/tier and reviewer vendor/independence where required. Return only

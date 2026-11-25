@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { LegalPage, type LegalSection } from "@/components/legal/legal-page";
-import { GOOGLE_PERMISSIONS, GOOGLE_USER_DATA_POLICY, LEGAL_CONTACT, LEGAL_EFFECTIVE } from "@/lib/legal";
+import { GOOGLE_PERMISSIONS, GOOGLE_USER_DATA_POLICY, LEGAL_EFFECTIVE, legalContact } from "@/lib/legal";
+
+// The operator's contact comes from the environment, read per request.
+export const dynamic = "force-dynamic";
 
 type Props = { params: Promise<{ locale: string }> };
 
@@ -18,7 +21,8 @@ export default async function PrivacyPage({ params }: Props) {
   setRequestLocale(locale);
   const t = await getTranslations({ locale, namespace: "legal" });
   const p = await getTranslations({ locale, namespace: "legal.privacy" });
-  const email = { email: LEGAL_CONTACT };
+  const contact = legalContact();
+  const email = { email: contact };
   const sections: LegalSection[] = [
     { id: "who", title: p("whoTitle"), body: p("whoBody", email) },
     {
@@ -60,6 +64,7 @@ export default async function PrivacyPage({ params }: Props) {
   ];
   return (
     <LegalPage
+      contact={contact}
       locale={locale}
       sections={sections}
       labels={{

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence, Set
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
@@ -119,7 +119,7 @@ class RegistryToolSource:
         metrics: Metrics, ai_peer: str = "nora", access: Any = None,
         scope_rooms: Mapping[str, HomeRoom] | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
-        self_ids: frozenset[str] = frozenset(),
+        self_ids: Set[str] = frozenset(),
     ) -> None:
         self._registry = registry
         self._store = store
@@ -132,7 +132,7 @@ class RegistryToolSource:
         # room on a platform with no roster answers `available=False`, the
         # honest state, never an empty room.
         self._rosters = dict(rosters or {})
-        self._self_ids = frozenset(self_ids)
+        self._self_ids = self_ids  # the live view, never a copy
         self._home_room_reported: set[tuple[str, str]] = set()
 
     def read_only(self) -> frozenset[str]:

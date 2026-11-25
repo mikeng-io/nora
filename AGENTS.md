@@ -136,6 +136,9 @@ Master pushes release automatically (`nora-release`); `nora-deploy` deploys.
 
 ## Skills: the procedures
 
+Policy and skills name no coding agent, session host or model: how a runtime
+does a step is in `.agents/runtimes/`, which model does it is `.agents/lanes.md`,
+and a ruling lives in the repo or Linear, never in one tool's memory.
 Each is `.agents/skills/<name>/SKILL.md`, linked from `.claude/skills/<name>`: the
 order of the commands and the check after each; a new skill adds both at once.
 
@@ -150,6 +153,7 @@ order of the commands and the check after each; a new skill adds both at once.
 | putting merged code or config live on `nora-host`, or checking it is live | `nora-deploy` |
 | cutting a release: the release-please PR, the `vX.Y.Z` tag, the GitHub Release | `nora-release` |
 | reading a trace, a metric, a row or a log as evidence | `nora-readback` |
+| investigating a failure to its root cause, or an architecture verdict | `nora-diagnose` |
 | confirming a built prompt, doctrine, tool-text or routing fix with the eval suite (find the cause offline first) | `nora-eval` |
 | writing or changing a test under `tests/` | `nora-test` |
 | proving a fix is guarded (revert, watch a named test go red, restore) | `nora-prove-fix` |

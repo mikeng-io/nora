@@ -3,9 +3,7 @@
 import { useCallback, useSyncExternalStore } from "react";
 
 // Two lightings, the landing page's: Studio (light) and Late night (dark).
-// The choice is stored under the SAME key the site uses (site/src/scripts/
-// prefs.ts), on the same origin, so picking one in either place carries to
-// the other. No choice means following the system.
+// No choice means following the system.
 export const THEME_KEY = "nora-theme";
 export type ThemeChoice = "light" | "dark" | "system";
 

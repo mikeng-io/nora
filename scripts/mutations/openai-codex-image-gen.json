@@ -77,9 +77,9 @@
     "target": "tests/contract/test_openai_codex_image_generator.py::test_import_refuses_codex_home_and_a_copy_of_the_operators_token"
   },
   {
-    "name": "non-PNG image bytes are never ok",
-    "file": "nora/infra/image_gen/openai_codex_adapter.py",
-    "old": "        if not raw.startswith(_PNG_MAGIC):\n",
+    "name": "bytes not in the asked format are never ok",
+    "file": "nora/infra/image_gen/gpt_image.py",
+    "old": "        if not raw.startswith(_GIF_MAGIC if gif else _PNG_MAGIC):\n",
     "new": "        if False:\n",
     "target": "tests/contract/test_openai_codex_image_generator.py::test_a_response_without_a_usable_image_is_never_ok"
   },
