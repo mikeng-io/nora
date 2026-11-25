@@ -1,5 +1,6 @@
 """Assemble a pass using real scoped anchor and retrieval readers."""
 
+import asyncio
 from dataclasses import replace
 from unittest.mock import patch
 from xml.etree import ElementTree
@@ -59,6 +60,23 @@ def _counted(scenario: Scenario) -> tuple[PassAssembler, CountedRetrieval]:
     retrieval = CountedRetrieval(scenario)
     service = RetrievalService(retrieval, FakeQueryEmbedder())
     return PassAssembler(reader(scenario), service), retrieval
+
+
+class DelayedRetrieval(RetrievalService):
+    def __init__(self, retrieval: SqlRetrieval, delay: float) -> None:
+        super().__init__(retrieval, FakeQueryEmbedder())
+        self._delay = delay
+
+    async def retrieve(self, *args, **kwargs):
+        result = await super().retrieve(*args, **kwargs)
+        loop = asyncio.get_running_loop()
+        ready = asyncio.Event()
+        completion = loop.time() + self._delay
+        # Advance the real timeout scheduler while the read is still in flight.
+        with patch.object(loop, "time", return_value=completion):
+            loop.call_at(completion, ready.set)
+            await ready.wait()
+        return result
 
 
 def _floor() -> tuple[ContextBlock, ...]:
@@ -196,16 +214,21 @@ async def _trait(scenario: Scenario, key: str, subject: str, body: str, **fields
     await write_edge(scenario, key, subject, "about")
 
 
-async def test_room_list_bounds_the_graph_profile_read_to_five_seconds(scenario) -> None:
-    assembler = _assembler(scenario)
-    room_list = _room_list(scenario, assembler=assembler)
-
-    with patch.object(assembler, "read_profiles", wraps=assembler.read_profiles) as read:
-        result = await room_list()
-
+@pytest.mark.parametrize(("delay", "expected"), [
+    (6.0, {"status": "ok", "part": "trait", "summary": "Room observation"}),
+    (13.0, {"status": "unavailable", "note": "This room's profile could not be checked."}),
+], ids=["within-graph-budget", "over-graph-budget"])
+async def test_room_list_bounds_profiles_to_the_graph_read_budget(
+    scenario, delay, expected,
+) -> None:
+    await pointers(scenario)
+    await _trait(scenario, "room-culture", "room-here", "Room observation")
+    retrieval = CountedRetrieval(scenario)
+    assembler = PassAssembler(reader(scenario), DelayedRetrieval(retrieval, delay))
+    result = await _room_list(scenario, assembler=assembler)()
     assert result["status"] == "ok"
-    read.assert_awaited_once()
-    assert read.await_args.kwargs.get("timeout_seconds") == 5.0
+    assert len(retrieval.reads) == 1
+    assert next(r["culture"] for r in result["rooms"] if r["here"]) == expected
 
 
 async def test_room_list_reads_each_rooms_graph_profile_in_the_turn_audience(scenario) -> None:
@@ -305,8 +328,6 @@ async def test_fire_prefill_uses_the_room_unit_person_and_nora_graph_profiles(
         doctrine_store=doctrine_store, persons=scenario.persons, metrics=Metrics(),
         runner=FakeAgentRunner(_send_turns("Done."), on_call=calls.append),
         policy=scenario.policy, graph_profiles=_assembler(scenario), clock=lambda: NOW,
-        # Isolate content from the 5 s single-row standing timeout under parallel Phase 0 load.
-        standing_store_timeout_seconds=12,
     )
     outcome = await fire.speak(Event(
         "reminder", "signal", alias, "group", PERSON, "Fixture reminder",
@@ -327,6 +348,28 @@ async def test_fire_prefill_uses_the_room_unit_person_and_nora_graph_profiles(
     assert ("Nora observation" in prefill) is show_nora
     assert "Unrelated person observation" not in prefill
     assert "<culture" not in prefill
+
+
+async def test_fire_prefill_keeps_graph_profiles_after_the_standing_deadline(
+    scenario, doctrine_store,
+) -> None:
+    await pointers(scenario)
+    await _trait(scenario, "room-culture", "room-here", "Room observation")
+    retrieval = DelayedRetrieval(CountedRetrieval(scenario), 6.0)
+    calls = []
+    fire = _fire_path(
+        doctrine_store=doctrine_store, persons=scenario.persons, metrics=Metrics(),
+        runner=FakeAgentRunner(_send_turns("Done."), on_call=calls.append),
+        policy=scenario.policy, graph_profiles=PassAssembler(reader(scenario), retrieval),
+        clock=lambda: NOW,
+    )
+    outcome = await fire.speak(Event(
+        "reminder", "signal", ROOM, "group", PERSON, "Fixture reminder",
+        lambda _ref, _now: "A reminder is due.",
+    ))
+    assert outcome == "sent"
+    (call,) = calls
+    assert "Room observation" in call["pre_fill"][1]["content"][0]["text"]
 
 
 async def test_wake_profile_requires_every_agenda_room_to_permit_the_claim(scenario):
