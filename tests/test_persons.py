@@ -1,5 +1,3 @@
-import re
-
 import pytest
 
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow

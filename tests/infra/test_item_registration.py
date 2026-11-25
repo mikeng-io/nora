@@ -419,8 +419,12 @@ async def test_a_raw_presence_fix_is_collector_input_not_a_graph_item(
         fixes = (await conn.execute(
             sa.select(sa.func.count()).select_from(METADATA.tables["presence_fixes"]),
         )).scalar_one()
-        registered = (await conn.execute(sa.select(sa.func.count()).select_from(REGISTRY))).scalar_one()
-        stimuli = (await conn.execute(sa.select(sa.func.count()).select_from(GRAPH_STIMULUS))).scalar_one()
+        registered = (await conn.execute(
+            sa.select(sa.func.count()).select_from(REGISTRY),
+        )).scalar_one()
+        stimuli = (await conn.execute(
+            sa.select(sa.func.count()).select_from(GRAPH_STIMULUS),
+        )).scalar_one()
     assert fixes == 1
     assert registered == 0
     assert stimuli == 0

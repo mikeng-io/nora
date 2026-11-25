@@ -46,7 +46,7 @@ def test_the_retired_backend_is_named_nowhere_the_gate_reads() -> None:
         (shim if path == "nora/config.py" and text in compatibility else unexpected).append(line)
     assert not unexpected, (
         "the retired memory backend is named again; say what the surviving thing "
-        f"does instead:\n" + "\n".join(unexpected)
+        "does instead:\n" + "\n".join(unexpected)
     )
     assert len(shim) in (0, 2), "the one-release shim is a pair or is removed whole"
 
