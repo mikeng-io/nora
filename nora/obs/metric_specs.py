@@ -200,11 +200,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "operator can see a block go missing: the block is lost, never the "
         "turn, so absence is the only symptom and this series is the only "
         "tell. An operator asking WHICH half of the context went blind must "
-        "not have to guess. An unavailable graph profile read is counted per "
-        "occasion as fire_graph_profiles or room_list_culture. "
-        "The <recalled> pre-fetch (design/unified-memory/README.md) is "
-        "stage=\"tag_prefetch\": a memory search that failed, timed out or "
-        "could not be rendered, so the turn went on without the block.",
+        "not have to guess. An unavailable room profile lookup is counted with "
+        "stage=\"room_list_culture\".",
         ("stage", "platform"),
     ),
     _CounterSpec(

@@ -68,11 +68,9 @@ class EngagementGraph:
     ) -> tuple[list[dict[str, Any]], str, frozenset[str]]:
         msg = ctx.message
         scope = PassScope(ReadingRoom(msg.platform, msg.conversation_id), unit or "",
-                          nora_name=display_name)
+                          nora_name=display_name, show_nora_profile=show_nora_profile)
         with span("agent.prefill", **{"nora.tag_id": ctx.tag_id}):
-            assembled = await self._assemble(
-                pass_name, ctx, floor, scope, now, row_id, room, show_nora_profile,
-            )
+            assembled = await self._assemble(pass_name, ctx, floor, scope, now, row_id, room)
             annotate(**{
                 "nora.prefill.blocks_declared": len(assembled.blocks),
                 "nora.prefill.blocks_rendered": ",".join(
@@ -89,7 +87,6 @@ class EngagementGraph:
     async def _assemble(
         self, pass_name: EngagementPass, ctx: TagContext, floor: Sequence[ContextBlock],
         scope: PassScope, now: datetime, row_id: int | None, room: Room | None,
-        show_nora_profile: bool,
     ) -> AssembledPass:
         if self._assembler is None:
             return _unavailable(floor, "graph_reader_unavailable")
@@ -101,13 +98,13 @@ class EngagementGraph:
                         live = LiveRoom(frozenset(person.person_id for person in view.people),
                                         view.unnamed, view.available, view.degraded)
                         scope = replace(scope, room=replace(scope.room, live=live))
-                    data = await self._inputs(pass_name, ctx, scope, row_id, show_nora_profile)
+                    data = await self._inputs(pass_name, ctx, scope, row_id)
                 except Exception:
                     log.warning("Engagement anchors unavailable", exc_info=True)
                     scope = replace(scope, anchor_failure="message_anchor_read_failed")
                     event = AnchorItem(None, ctx.message.body)
                     if pass_name == _PROACTIVE:
-                        data = ProactiveInput(None, event, show_nora_profile)
+                        data = ProactiveInput(None, event)
                     else:
                         data = CalledInput(event) if pass_name == _CALLED else AmbientInput(())
                 return await self._assembler.assemble(pass_name, data, floor, scope, now)
@@ -116,12 +113,11 @@ class EngagementGraph:
 
     async def _inputs(
         self, pass_name: EngagementPass, ctx: TagContext, scope: PassScope, row_id: int | None,
-        show_nora_profile: bool,
     ) -> CalledInput | AmbientInput | ProactiveInput:
         msg = ctx.message
         if pass_name == _PROACTIVE:
             actor = (ctx.tagger.person_id,) if ctx.tagger is not None else ()
-            return ProactiveInput(None, AnchorItem(None, msg.body, actor), show_nora_profile)
+            return ProactiveInput(None, AnchorItem(None, msg.body, actor))
         if pass_name == _AMBIENT:
             ids = await self._read_ids(scope, tuple(row.id for row in ctx.transcript))
             return AmbientInput(tuple(

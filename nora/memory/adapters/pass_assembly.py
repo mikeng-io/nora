@@ -155,7 +155,7 @@ class PassAssembler:
         blocks, shown = _presentation_order(
             choice, seeds, result, floor, now, open_room_and_unit=isinstance(data, DebriefInput),
             floor_ids=due_ids,
-            show_nora_profile=not isinstance(data, ProactiveInput) or data.show_nora_profile,
+            show_nora_profile=scope.show_nora_profile,
         )
         observed: tuple[tuple[str, str], ...] = ()
         if clock is not None and isinstance(data, WakeInput):

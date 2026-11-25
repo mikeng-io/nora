@@ -541,7 +541,7 @@ async def test_compose_preserves_declared_arm_and_active_service_boundary(
 
     captured = {}
 
-    async def fake_obtain(spec):
+    async def fake_obtain(spec, *, legacy_replay=False):
         captured["spec"] = spec
         return SimpleNamespace(spec=spec)
 

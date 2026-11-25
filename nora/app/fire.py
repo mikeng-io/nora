@@ -1190,7 +1190,7 @@ class FirePath:
                 speaker=speaker, context_window=self._context_window,
                 now=now, catalogue=surface.prompt_catalogue, header=header, room=room,
                 proactive_event=not participation,
-                show_nora_profile=bool(self._policy and self._policy.shows_self_in(
+                show_nora_profile=participation or bool(self._policy and self._policy.shows_self_in(
                     occasion.platform, occasion.conversation_id,
                 )),
             )
