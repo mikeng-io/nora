@@ -1,0 +1,23 @@
+[
+  {
+    "name": "a raw presence fix cannot register or stimulate the graph",
+    "file": "nora/infra/sql/presence.py",
+    "old": "            await conn.execute(insert)\n",
+    "new": "            if self._registration:\n                units = await self._registration.scope.person_units(fix.person_id)\n                for unit in units:\n                    await self._registration.planes(\n                        conn, PRESENCE_FIXES, unit=unit, occurred_at=epoch_ms(fix.ts),\n                        identities=(fix.person_id,),\n                    )\n            await conn.execute(insert)\n",
+    "target": "tests/infra/test_item_registration.py::test_a_raw_presence_fix_is_collector_input_not_a_graph_item"
+  },
+  {
+    "name": "0177 downgrade disables the append-only trigger before deleting",
+    "file": "nora/infra/sql/migrations/versions/0177_debrief_obligation.py",
+    "old": "    op.execute(\"ALTER TABLE nora_pass_output DISABLE TRIGGER nora_pass_output_append_only\")\n",
+    "new": "    op.execute(\"SELECT 1\")\n",
+    "target": "tests/infra/test_alembic.py::test_0177_downgrade_deletes_tool_call_rows_on_a_populated_database"
+  },
+  {
+    "name": "0177 downgrade re-enables the append-only trigger after deleting",
+    "file": "nora/infra/sql/migrations/versions/0177_debrief_obligation.py",
+    "old": "    op.execute(\"ALTER TABLE nora_pass_output ENABLE TRIGGER nora_pass_output_append_only\")\n",
+    "new": "    op.execute(\"SELECT 1\")\n",
+    "target": "tests/infra/test_alembic.py::test_0177_downgrade_deletes_tool_call_rows_on_a_populated_database"
+  }
+]
