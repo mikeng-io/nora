@@ -219,9 +219,13 @@ async def test_a_character_is_reachable_from_its_subject(engine):
 
 
 async def test_an_event_is_reachable_from_its_people(engine):
+    from dataclasses import replace
+
     mid = await _said(engine, person="member-a", room="ga")
-    event = await SeededGatheringStore(engine).create(
-        _event(people=("member-a",)),
+    store = SeededGatheringStore(engine)
+    seed = await store.create(_event(people=()))
+    event = await store.update(
+        replace(seed, people=("member-a",)),
         evidence=EventEvidence(
             parts=frozenset({"what"}),
             citations=(EventCitation(part="what", store="message", ref=mid),),
@@ -306,8 +310,9 @@ async def test_a_revision_replaces_and_a_retire_retires(engine):
 async def test_an_event_revision_replaces_and_cancellation_retires(engine):
     first = await _said(engine, person="member-a", room="ga")
     store = SeededGatheringStore(engine)
-    event = await store.create(
-        _event(people=("member-a",)),
+    seed = await store.create(_event(people=("member-a",)))
+    event = await store.update(
+        seed,
         evidence=EventEvidence(
             parts=frozenset({"what"}),
             citations=(EventCitation(part="what", store="message", ref=first),),
@@ -491,8 +496,9 @@ async def test_event_citations_live_on_the_revision_and_survive_a_rebuild(engine
     projects none."""
     mid = await _said(engine, person="member-a", room="ga")
     store = SeededGatheringStore(engine)
-    event = await store.create(
-        _event(people=("member-a",)),
+    seed = await store.create(_event(people=("member-a",)))
+    event = await store.update(
+        seed,
         evidence=EventEvidence(
             parts=frozenset({"what"}),
             citations=(EventCitation(part="what", store="message", ref=mid),),
@@ -503,7 +509,7 @@ async def test_event_citations_live_on_the_revision_and_survive_a_rebuild(engine
         stored = (
             await conn.execute(
                 sa.select(EVENT_REVISION.c.citations).where(
-                    EVENT_REVISION.c.event_id == event.id
+                    EVENT_REVISION.c.id == event.head_revision_id
                 )
             )
         ).scalar_one()

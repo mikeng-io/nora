@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 
 from nora.app.gatherings import GatheringService
-from nora.domain.gatherings import Gathering, RSVPResponse
+from nora.domain.gatherings import RSVP, Gathering, RSVPResponse
 from nora.testing.gatherings import FakeGatheringStore
 from nora.web.gatherings import build_gathering_payload, build_gatherings_payload
 from tests.builders import make_gathering
@@ -80,12 +80,12 @@ async def test_build_gathering_payload_includes_rsvps():
         created_by="miles",
         title="Dinner",
     ))
-    await svc.rsvp(
+    await store.add_rsvp(RSVP(
         event_id=ev.id,
-        conversation_id="signal:group-1", platform="signal",
         person_id="daisy",
         response=RSVPResponse.YES,
-    )
+        responded_at=ev.created_at,
+    ))
 
     out = await build_gathering_payload(events=svc, event_id=ev.id, person_id="miles")
     assert out["rsvps"] == [{"person_id": "daisy", "response": "yes"}]
