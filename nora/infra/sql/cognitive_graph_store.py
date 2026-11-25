@@ -470,19 +470,21 @@ class SqlCognitiveGraph:
         room: str | None = None,
         minimum: Exposure = "external",
         build_lineage: Any = None,
-        inputs: Iterable[RowData] = (),
+        inputs: Iterable[RowData | InputScope] = (),
         revisions: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Prepare aggregate planes and register their identity in the caller's transaction."""
+        def input_scope(row: RowData | InputScope) -> InputScope:
+            if isinstance(row, InputScope):
+                return row
+            return InputScope(
+                tuple(row["excluded_identities"]),
+                row["exposure"],
+                Lineage.from_json(row["lineage"]),
+            )
+
         scope = inherited_scope(
-            (
-                InputScope(
-                    tuple(row["excluded_identities"]),
-                    row["exposure"],
-                    Lineage.from_json(row["lineage"]),
-                )
-                for row in inputs
-            ),
+            (input_scope(row) for row in inputs),
             build_lineage=Lineage.from_json(build_lineage),
             minimum=minimum,
         )

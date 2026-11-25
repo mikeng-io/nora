@@ -16,7 +16,7 @@ from nora.infra.sql.aggregate_writes import AggregateWrites
 from nora.infra.sql.cognitive_graph_schema import REGISTRY
 from nora.infra.sql.cognitive_graph_store import RowData, SqlCognitiveGraph
 from nora.infra.sql.item_registration import RegistrationScope
-from nora.infra.sql.schema import METADATA, PRESENCE_PLACES
+from nora.infra.sql.schema import METADATA, PRESENCE_FIXES, PRESENCE_PLACES
 from nora.memory.adapters.stored_aggregate_planes import AggregatePlanes
 from nora.memory.adapters.stored_item_planes import ItemPlanes
 from nora.memory.app.register_stored_rows import TableRegistration
@@ -88,6 +88,7 @@ async def _ids(conn: AsyncConnection, table: sa.Table, count: int) -> Iterator[A
 class SqlStoredRows:
     def __init__(self, engine: AsyncEngine, scope: RegistrationScope) -> None:
         self._engine = engine
+        self._scope = scope
         graph = SqlCognitiveGraph(engine)
         self._items = ItemPlanes(scope)
         self._aggregates = AggregatePlanes(AggregateWrites(graph, None), scope)
@@ -179,6 +180,48 @@ class SqlStoredRows:
                     await conn.execute(sa.insert(table).values(copy))
                 registered += 1
         return registered, unscoped
+
+    async def backfill_presence_fix_units(self, *, batch_size: int) -> TableRegistration:
+        """Assign pre-cutover raw fixes to their observing units, without graph writes."""
+        table = PRESENCE_FIXES
+        stmt = (
+            sa.select(table).where(table.c.unit.is_(None))
+            .order_by(table.c.id).limit(batch_size).with_for_update()
+        )
+        cursor = None
+        registered = unscoped = covered = 0
+        while True:
+            async with self._engine.begin() as conn:
+                batch = (await conn.execute(
+                    stmt if cursor is None else stmt.where(table.c.id > cursor),
+                )).mappings().all()
+                if not batch:
+                    return TableRegistration(registered, unscoped, covered)
+                cursor = batch[-1]["id"]
+                for row in batch:
+                    units = tuple(sorted(await self._scope.person_units(row["person_id"])))
+                    if not units:
+                        unscoped += 1
+                        continue
+                    represented = set((await conn.execute(sa.select(table.c.unit).where(
+                        table.c.circle_id == row["circle_id"],
+                        table.c.person_id == row["person_id"],
+                        table.c.ts == row["ts"],
+                        table.c.unit.in_(units),
+                    ))).scalars())
+                    missing = [unit for unit in units if unit not in represented]
+                    if not missing:
+                        covered += 1
+                        continue
+                    await conn.execute(sa.update(table).where(
+                        table.c.id == row["id"],
+                    ).values(unit=missing[0]))
+                    registered += 1
+                    for unit in missing[1:]:
+                        copy = {**row, "unit": unit}
+                        copy.pop("id", None)
+                        await conn.execute(sa.insert(table).values(copy))
+                        registered += 1
 
     async def validate_pairs(self) -> None:
         async with self._engine.begin() as conn:

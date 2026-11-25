@@ -580,23 +580,23 @@ def test_memory_index_composes_the_graph_surface_and_only_when_asked(monkeypatch
     assert captured[1].overrides is None
 
 
-def test_each_arm_runs_only_the_cases_its_memory_surface_can_route():
-    """A `memory_surface: graph` case runs only under `--memory-index`, a
-    `honcho` one only without it, and a case stating neither on both. Naming
-    a case of the other surface is refused, not skipped in silence."""
+def test_indexed_memory_cases_run_only_on_the_graph_surface():
+    """A `memory_surface: graph` case runs only under `--memory-index`; a case
+    stating neither runs with or without it. Naming an indexed case without
+    the index is refused, not skipped in silence."""
     from evals.scenarios import load_corpus
 
     cases = {c.name: c.metadata.get("memory_surface") for c in load_corpus("tool_selection")}
     graph = {n for n, s in cases.items() if s == "graph"}
-    honcho = {n for n, s in cases.items() if s == "honcho"}
-    assert graph and honcho, "positive control: the corpus marks both surfaces"
+    assert graph, "positive control: the corpus marks the graph surface"
+    assert "honcho" not in set(cases.values())
     on, _ = experiment_for("tool_selection", source_url="x", memory_index=True)
     off, _ = experiment_for("tool_selection", source_url="x")
     on_names = {c.name for c in on.cases}
     off_names = {c.name for c in off.cases}
-    assert graph <= on_names and not honcho & on_names
-    assert honcho <= off_names and not graph & off_names
-    assert on_names - graph == off_names - honcho
+    assert graph <= on_names
+    assert not graph & off_names
+    assert on_names - graph == off_names
     with pytest.raises(ValueError, match="pass --memory-index"):
         experiment_for("tool_selection", source_url="x", only=frozenset(graph))
 
@@ -616,12 +616,12 @@ def test_an_unknown_memory_surface_is_refused(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(("config", "flag", "graph", "says"), [
-    ("[memory.index]\nread = false\n", False, False, "honcho"),
+    ("[memory.index]\nread = false\n", False, False, "need --memory-index"),
     ("[memory.index]\nread = false\n", True, True, "--memory-index"),
     # The live config has the index on: a run without the flag measures
-    # the graph surface, and says why, instead of filtering for honcho.
+    # the graph surface, and says why.
     ("[memory.index]\nread = true\n", False, True, "deployment's config"),
-    ("", False, False, "honcho"),
+    ("", False, False, "need --memory-index"),
 ])
 def test_the_arm_is_resolved_from_the_generated_config_or_the_flag(
     config: str, flag: bool, graph: bool, says: str,
@@ -631,7 +631,7 @@ def test_the_arm_is_resolved_from_the_generated_config_or_the_flag(
     deployed = memory_index_enabled(config)
     assert (deployed or flag) is graph
     line = memory_surface_line(deployed, flag)
-    assert line.startswith("graph" if graph else "honcho") and says in line
+    assert line.startswith("graph" if graph else "off") and says in line
 
 
 def test_the_spec_carries_the_arm_and_a_disagreeing_subject_is_refused(monkeypatch):
@@ -642,12 +642,13 @@ def test_the_spec_carries_the_arm_and_a_disagreeing_subject_is_refused(monkeypat
     monkeypatch.setattr(scenarios, "nora_task", lambda spec: captured.append(spec))
     scenarios.experiment_for("tool_selection", source_url="x", memory_index=True)
     scenarios.experiment_for("tool_selection", source_url="x")
-    assert [s.memory_surface for s in captured] == ["graph", "honcho"]
+    assert [s.memory_surface for s in captured] == ["graph", "off"]
     refuse_a_memory_surface_mismatch("graph", True)
-    refuse_a_memory_surface_mismatch("honcho", False)
+    refuse_a_memory_surface_mismatch("off", False)
     refuse_a_memory_surface_mismatch(None, True)
+    refuse_a_memory_surface_mismatch(None, False)
     with pytest.raises(ValueError, match="disagree"):
-        refuse_a_memory_surface_mismatch("honcho", True)
+        refuse_a_memory_surface_mismatch("off", True)
     with pytest.raises(ValueError, match="disagree"):
         refuse_a_memory_surface_mismatch("graph", False)
 

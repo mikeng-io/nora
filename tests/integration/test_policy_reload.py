@@ -41,6 +41,15 @@ async def reloaded(deps, file, outcome, count=1):
             await asyncio.sleep(0.005)
 
 
+async def reload_seen(deps, file):
+    async with asyncio.timeout(2):
+        while sum(  # noqa: ASYNC110 — observe the real asynchronous poller
+            deps.metrics.get("nora_config_reloads_total", file=file, outcome=outcome)
+            for outcome in ("applied", "refused", "restart_required")
+        ) == 0:
+            await asyncio.sleep(0.005)
+
+
 async def admitted(deps, room_id):
     return await scope.run(
         message=NormalizedMessage(
@@ -104,26 +113,48 @@ async def test_identity_reload_resolves_a_new_person_and_keeps_last_good(running
     assert "nora" not in running.persons.by_person
 
 
-async def test_a_reload_carrying_a_removed_identity_table_is_refused_without_changing_people(
+async def test_a_reload_carrying_the_retired_workspaces_table_is_accepted_without_changing_people(
     running, cfg,
 ):
-    # The host's shape arriving on a hot reload: refused, the last good file kept.
-    await running.background.cancel_all()
-    cfg.policy_file.write_text(
-        'default = "deny"\n[units.nora]\nworkspace = "home"\n' + room("g1", "First")
+    before = set(running.persons.by_person)
+    assert before == {"miles"}
+    cfg.identity_file.write_text(
+        cfg.identity_file.read_text()
+        + '[workspaces.home]\nhoncho_workspace = "nora-home"\n'
     )
-    deps = await build_dependencies(cfg)
-    try:
-        cfg.identity_file.write_text(
-            '[workspaces.home]\nhoncho_workspace = "nora-home"\n'
-            '[persons.miles_old_id]\nname = "Miles"\n'
-        )
-        await reloaded(deps, "identity.toml", "refused")
-        assert "miles" in deps.persons.by_person
-        assert "miles_old_id" not in deps.persons.by_person
-    finally:
-        await deps.background.cancel_all()
-        await deps.audit.aclose()
+
+    await reload_seen(running, "identity.toml")
+
+    assert running.metrics.get(
+        "nora_config_reloads_total", file="identity.toml", outcome="applied",
+    ) == 1
+    assert running.metrics.get(
+        "nora_config_reloads_total", file="identity.toml", outcome="refused",
+    ) == 0
+    assert set(running.persons.by_person) == before
+
+
+async def test_a_reload_carrying_an_unknown_identity_table_is_refused_without_changing_people(
+    running, cfg,
+):
+    before = set(running.persons.by_person)
+    assert before == {"miles"}
+    cfg.identity_file.write_text(
+        '[honcho]\nworkspace_id = "nora-home"\n'
+        '[persons.miles]\nname = "Miles"\n'
+        '[persons.miles_old_id]\nname = "Miles"\n'
+    )
+
+    await reload_seen(running, "identity.toml")
+
+    assert running.metrics.get(
+        "nora_config_reloads_total", file="identity.toml", outcome="refused",
+    ) == 1
+    assert running.metrics.get(
+        "nora_config_reloads_total", file="identity.toml", outcome="applied",
+    ) == 0
+    assert set(running.persons.by_person) == before
+    assert "miles_old_id" not in running.persons.by_person
 
 
 async def test_presence_and_analytics_recompute_their_identity_and_room_scopes(cfg, monkeypatch):

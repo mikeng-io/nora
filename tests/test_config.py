@@ -62,12 +62,33 @@ def toml_path(example_config_path, monkeypatch):
     return example_config_path
 
 
-@pytest.mark.parametrize(("section", "body"), [  # a typo, and the host's removed section
-    ("tagg", 'trigger = "x"'), ("honcho", 'base_url = "http://g.invalid"')], ids=["typo", "gone"])
-def test_unknown_key_is_a_startup_failure(toml_path, section, body):
-    toml_path.write_text(toml_path.read_text() + f'\n[{section}]\n{body}\n')
-    with pytest.raises(ConfigError, match=rf"(?m)^{section}$"):
+def test_unknown_key_is_a_startup_failure(toml_path):
+    toml_path.write_text(toml_path.read_text() + '\n[tagg]\ntrigger = "x"\n')
+    with pytest.raises(ConfigError, match=r"(?m)^tagg$"):
         load(toml_path)
+
+
+def test_the_retired_honcho_section_is_accepted_and_ignored_for_one_release(toml_path):
+    toml_path.write_text(
+        toml_path.read_text()
+        + '\n[honcho]\nbase_url = "http://g.invalid"\n'
+        + 'workspace_id = "generated-workspace"\ntagger_card_conclusions = 3\n'
+    )
+    cfg = load(toml_path)
+    assert cfg.honcho == {
+        "base_url": "http://g.invalid", "workspace_id": "generated-workspace",
+        "tagger_card_conclusions": 3,
+    }
+    assert not hasattr(cfg, "workspace_id")
+    assert "honcho" not in cfg.model_dump()
+
+    keyless_text = toml_path.read_text().replace(
+        '\n[honcho]\nbase_url = "http://g.invalid"\n'
+        'workspace_id = "generated-workspace"\ntagger_card_conclusions = 3\n',
+        "\n",
+    )
+    toml_path.write_text(keyless_text)
+    assert load(toml_path).model_dump() == cfg.model_dump()
 
 
 def _trigger_line(toml_path) -> str:

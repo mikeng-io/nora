@@ -108,7 +108,6 @@ _ITEM_WRITERS = {
     "message_edit": ("SqlRecordStore", "external"),
     "message_reaction": ("SqlRecordStore", "external"),
     "message_delete": ("SqlRecordStore", "external"),
-    "presence_fixes": ("PresenceStore", "internal"),
     "fetched_pages": ("SqlFetchedPageStore", "external"),
     "social_item": ("SqlSocialStreamStore", "external"),
     "social_item_count": ("SqlSocialStreamStore", "external"),

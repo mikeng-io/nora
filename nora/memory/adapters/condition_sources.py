@@ -118,6 +118,6 @@ class ConditionSources:
             return set()
         p = PRESENCE_FIXES.c
         circles = await self._conn.scalars(sa.select(p.circle_id).where(
-            p.unit == unit, p.person_id == subject, p.state == "live",
+            p.unit == unit, p.person_id == subject,
         ).distinct())
         return {("presence", circle) for circle in circles}

@@ -113,6 +113,39 @@ def test_extraction_drop_migration_round_trip_preserves_legacy_attempts(clean_pg
         engine.dispose()
 
 
+
+
+@pytest.mark.fresh_database
+def test_0177_downgrade_deletes_tool_call_rows_on_a_populated_database(clean_pg_url):
+    """The append-only trigger is row-level: an empty round trip cannot prove
+    rollback. One tool-call row must survive upgrade and be removed by it."""
+    cfg = alembic_config(clean_pg_url)
+    command.upgrade(cfg, "0177_debrief_obligation")
+    engine = sa.create_engine(sync_url_for(clean_pg_url))
+    try:
+        with engine.begin() as conn:
+            conn.execute(sa.text(
+                "INSERT INTO nora_pass_output (id, output_kind, content) "
+                "VALUES ('generated-output', 'tool_call', '{}'::jsonb)"
+            ))
+            assert conn.execute(sa.text(
+                "SELECT count(*) FROM nora_pass_output WHERE output_kind = 'tool_call'"
+            )).scalar_one() == 1
+        command.downgrade(cfg, "0176_claim_parts")
+        with engine.connect() as conn:
+            assert conn.execute(sa.text(
+                "SELECT count(*) FROM nora_pass_output WHERE output_kind = 'tool_call'"
+            )).scalar_one() == 0
+            trigger_enabled = conn.execute(sa.text(
+                "SELECT tgenabled FROM pg_trigger "
+                "WHERE tgname = 'nora_pass_output_append_only'"
+            )).scalar_one()
+            assert trigger_enabled == "O"
+        command.upgrade(cfg, "head")
+        assert current_revision(clean_pg_url) == head_revision()
+    finally:
+        engine.dispose()
+
 def test_a_migrated_database_passes_alembic_check(clean_pg_url):
     """Also the proof that `include_object` suppresses the phantom index pair:
     without the hook this raises on every run because `idx_messages_conv_ts`'s

@@ -148,17 +148,9 @@ class RollupFixture:
 
     async def fix(self, person, at_ms, *, lat=22.4, lng=114.1, driving=False, address=None):
         async with self.engine.begin() as conn:
-            fields = await self.registration.planes(
-                conn,
-                PRESENCE_FIXES,
-                unit=self.unit,
-                occurred_at=epoch_ms(at_ms),
-                identities=(person,),
-                own=True,
-            )
             await conn.execute(
                 sa.insert(PRESENCE_FIXES).values(
-                    **fields,
+                    unit=self.unit,
                     circle_id=self.circle,
                     person_id=person,
                     ts=at_ms,

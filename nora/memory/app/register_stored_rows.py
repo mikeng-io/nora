@@ -10,10 +10,12 @@ from nora.memory.domain.registration import BACKFILL_AGGREGATE_FAMILIES, BACKFIL
 class TableRegistration:
     registered: int
     unscoped: int
+    covered: int = 0
 
 
 class StoredRows(Protocol):
     async def register_table(self, name: str, *, batch_size: int) -> TableRegistration: ...
+    async def backfill_presence_fix_units(self, *, batch_size: int) -> TableRegistration: ...
     async def validate_pairs(self) -> None: ...
 
 
@@ -28,7 +30,7 @@ class RegisterStoredRows:
         # Parents are registered before dependent evidence or buckets.
         items = (
             "messages", "message_edit", "message_reaction", "message_delete",
-            "presence_fixes", "fetched_pages", "social_poll", "social_item",
+            "fetched_pages", "social_poll", "social_item",
             "social_item_count", "social_item_state", "platform_observation", "source_health",
         )
         aggregates = (
@@ -46,5 +48,8 @@ class RegisterStoredRows:
             name: await self._store.register_table(name, batch_size=self._batch_size)
             for name in (*items, *aggregates)
         }
+        counts["presence_fixes"] = await self._store.backfill_presence_fix_units(
+            batch_size=self._batch_size,
+        )
         await self._store.validate_pairs()
         return counts

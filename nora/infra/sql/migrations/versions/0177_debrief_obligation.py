@@ -57,6 +57,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("debrief_obligation")
+    # The append-only trigger guards application writes; this rollback removes rows
+    # only the widened constraint being reverted could admit.
+    op.execute("ALTER TABLE nora_pass_output DISABLE TRIGGER nora_pass_output_append_only")
     op.execute("""
         WITH dropped AS (
             DELETE FROM nora_pass_output WHERE output_kind = 'tool_call'
@@ -66,5 +69,6 @@ def downgrade() -> None:
             content_hash = dropped.content_hash
         FROM dropped WHERE registry.id = dropped.graph_id AND registry.unit = dropped.unit
     """)
+    op.execute("ALTER TABLE nora_pass_output ENABLE TRIGGER nora_pass_output_append_only")
     _output_checks("'expression', 'silence'",
                    "(output_kind = 'expression') = (content IS NOT NULL)")

@@ -82,7 +82,10 @@ async def _register(path: Path, channel_directory: Path | None) -> None:
     finally:
         await engine.dispose()
     for family, report in counts.items():
-        print(f"{family} registered={report.registered} unscoped={report.unscoped}")
+        print(
+            f"{family} registered={report.registered} unscoped={report.unscoped} "
+            f"covered={report.covered}"
+        )
 
 
 def main() -> None:

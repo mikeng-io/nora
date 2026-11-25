@@ -15,7 +15,7 @@ from nora.domain.presence import PresenceFix, WireState
 from nora.domain.social_stream import ItemCounts, SocialItem
 from nora.domain.tool_call_log import ToolCallLogEntry
 from nora.infra.sql.audit import SqlRecordStore
-from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY, INTENTION, REGISTRY
+from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY, GRAPH_STIMULUS, INTENTION, REGISTRY
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.computer_events import SqlComputerEventStore
 from nora.infra.sql.engine import create_sql_engine
@@ -407,6 +407,55 @@ async def test_item_from_room_outside_a_unit_keeps_its_record(
     assert registered == 0
 
 
+async def test_a_raw_presence_fix_is_collector_input_not_a_graph_item(
+    engine: AsyncEngine,
+) -> None:
+    registration = _registration(multiple=True)
+    written = await PresenceStore(engine, registration=registration).record_fix(
+        fix=PresenceFix(_CIRCLE, _PERSON, _MS, 1.0, 2.0, WireState.LIVE, _MS),
+    )
+    assert written is True
+    async with engine.connect() as conn:
+        fixes = (await conn.execute(
+            sa.select(METADATA.tables["presence_fixes"].c.unit).order_by(
+                METADATA.tables["presence_fixes"].c.unit,
+            ),
+        )).scalars().all()
+        registered = (await conn.execute(
+            sa.select(sa.func.count()).select_from(REGISTRY),
+        )).scalar_one()
+        stimuli = (await conn.execute(
+            sa.select(sa.func.count()).select_from(GRAPH_STIMULUS),
+        )).scalar_one()
+    assert fixes == [_UNIT, _SECOND]
+    assert registered == 0
+    assert stimuli == 0
+
+
+async def test_a_raw_presence_fix_dedupes_inside_each_observing_unit(engine: AsyncEngine) -> None:
+    registration = _registration(multiple=True)
+    store = PresenceStore(engine, registration=registration)
+    fix = PresenceFix(_CIRCLE, _PERSON, _MS, 1.0, 2.0, WireState.LIVE, _MS)
+    assert await store.record_fix(fix=fix) is True
+    table = METADATA.tables["presence_fixes"]
+    async with engine.begin() as conn:
+        await conn.execute(sa.delete(table).where(table.c.unit == _SECOND))
+
+    assert await store.record_fix(fix=fix) is True
+    assert await store.record_fix(fix=fix) is False
+
+    async with engine.connect() as conn:
+        rows = (await conn.execute(
+            sa.select(table.c.unit, sa.func.count().label("copies"))
+            .group_by(table.c.unit).order_by(table.c.unit),
+        )).all()
+    assert rows == [(_UNIT, 1), (_SECOND, 1)]
+    fixes = await PresenceStore(engine).window(
+        circle_id=_CIRCLE, person_id=_PERSON, since_ts=_MS, until_ts=_MS,
+    )
+    assert len(fixes) == 1
+
+
 @pytest.mark.parametrize("name", _FANOUT_SOURCES)
 async def test_one_item_per_observing_unit(engine: AsyncEngine, name: str) -> None:
     await _Writer(engine, _registration(multiple=True)).write(name)
@@ -418,11 +467,6 @@ async def test_one_item_per_observing_unit(engine: AsyncEngine, name: str) -> No
     assert {row.unit for row in rows} == {_UNIT, _SECOND}
     assert all(row in registry_rows and row.graph_id for row in rows)
     assert len({row.graph_id for row in rows}) == 2
-    if name == "presence_fixes":
-        fixes = await PresenceStore(engine).window(
-            circle_id=_CIRCLE, person_id=_PERSON, since_ts=_MS, until_ts=_MS,
-        )
-        assert len(fixes) == 1
     if name == "social_item":
         through = int(datetime.now(UTC).timestamp() * 1000) + 1000
         posted = await SqlSocialStreamStore(engine).posted(persons=[_PERSON], through_ms=through)

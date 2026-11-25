@@ -11,7 +11,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from nora.domain.graph_registration import Exposure
+from nora.domain.graph_registration import Exposure, InputScope
 from nora.domain.lineage import ROW, Lineage, split_room
 from nora.infra.sql.cognitive_graph_store import RowData, SqlCognitiveGraph
 from nora.infra.sql.item_registration import SqlItemRegistration, epoch_ms, item_graph_id
@@ -102,7 +102,7 @@ class AggregateWrites:
         *,
         key: tuple[Any, ...],
         unit: str | None,
-        inputs: Iterable[RowData] = (),
+        inputs: Iterable[RowData | InputScope] = (),
         asserted_at: datetime | None = None,
         live: bool = True,
     ) -> dict[str, Any]:
@@ -305,7 +305,14 @@ class AggregateWrites:
                 unit,
                 row.get("hour_of_week"),
             )
-        inputs = (await conn.execute(source_query)).mappings().all()
+        inputs: Iterable[RowData | InputScope] = (
+            await conn.execute(source_query)
+        ).mappings().all()
+        if source is PRESENCE_FIXES:
+            inputs = [
+                InputScope((), "internal", Lineage())
+                for _ in inputs
+            ]
         return await self.annotate(
             conn,
             table,

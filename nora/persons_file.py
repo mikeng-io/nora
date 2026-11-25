@@ -218,6 +218,9 @@ class _PersonsFile(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     persons: dict[str, _PersonEntry] = Field(default_factory=dict)
+    # ponytail: accept the host's retired [workspaces.*] bindings for one
+    # release, ignored; the follow-up identity cleanup removes this field.
+    workspaces: dict[str, dict[str, object]] = Field(default_factory=dict)
 
     @field_validator("persons")
     @classmethod

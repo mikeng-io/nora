@@ -234,7 +234,7 @@ NOT_BLOB_KEYS: Mapping[tuple[str, str], str] = {
             "culture_revision", "event_revision", "events", "note", "note_revision",
             "notebook_entry_revision", "fetched_pages", "message_delete", "message_edit",
             "message_reaction", "messages", "platform_object_state", "platform_observation",
-            "presence_fixes", "presence_places", "social_item", "social_item_count",
+            "presence_places", "social_item", "social_item_count",
             "social_item_state", "social_poll", "source_health",
             "computer_events", "nora_act", "nora_act_outcome", "nora_pass_output", "tool_call_log",
             "presence_corridors", "presence_derived_places", "presence_occupancy",

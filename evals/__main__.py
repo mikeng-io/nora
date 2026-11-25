@@ -493,7 +493,7 @@ def memory_surface_line(deployed: bool, flag: bool) -> str:
         return "graph ([memory.index] read = true in the deployment's config)"
     if flag:
         return "graph (--memory-index overrides the deployment's index setting)"
-    return "honcho ([memory.index] read = false in the deployment's config)"
+    return "off ([memory.index] read = false; memory cases need --memory-index)"
 
 
 def main() -> int:

@@ -697,6 +697,22 @@ def _scripts_call_sites() -> dict[str, list[_Site]]:
     return calls
 
 
+def test_the_operator_recovery_pin_shape_cannot_grow_in_silence() -> None:
+    """`operator_recovery` is the retained direct Profile recovery path, not a
+    general reason to keep dead store methods. Its population is exact, so a
+    new unpinned callerless method cannot borrow the shape unnoticed."""
+    expected = {
+        ("profile.py", "account_heads"),
+        ("profile.py", "account_state"),
+        ("profile.py", "profile_write"),
+    }
+    actual = {
+        (mod, name) for (mod, name), pin in _NO_PRODUCTION_CALLER.items()
+        if pin.shape == "operator_recovery"
+    }
+    assert actual == expected
+
+
 def test_every_operator_script_pin_has_a_caller_under_scripts() -> None:
     """`operator_script` is not a rebadged `read_back_affordance` — it claims
     a REAL caller exists, just outside `_call_sites`' `nora/`-only scan. A pin

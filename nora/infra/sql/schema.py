@@ -402,6 +402,9 @@ PRESENCE_FIXES = sa.Table(
     sa.Column("id", sa.Integer, sa.Identity(always=False), primary_key=True),
     sa.Column("circle_id", sa.Text, nullable=False),
     sa.Column("person_id", sa.Text, nullable=False),
+    # The observing unit this collector copy belongs to; NULL is unscoped input,
+    # never a graph registration.
+    sa.Column("unit", sa.Text),
     # Epoch MILLISECONDS — the position's own timestamp (Life360's unit). BIGINT
     # for the same overflow reason `messages.ts` is.
     sa.Column("ts", sa.BigInteger, nullable=False),

@@ -2257,7 +2257,7 @@
   "internal_docstrings": 1
  },
  "tests/infra/test_alembic.py": {
-  "file_lines": 956
+  "file_lines": 989
  },
  "tests/infra/test_audit_store.py": {
   "internal_docstrings": 1
@@ -2557,7 +2557,7 @@
  },
  "tests/test_config.py": {
   "comment_blocks": 7,
-  "file_lines": 2147,
+  "file_lines": 2168,
   "internal_docstrings": 6
  },
  "tests/test_discord_adapter.py": {

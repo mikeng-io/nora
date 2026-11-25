@@ -141,7 +141,8 @@ async def test_stored_rows_match_live_planes_leave_unscoped_out_and_validate(eng
                     row[revision] is None for revision in PLANES - COMPARED - {"asserted_at"}
                 ), name
     assert {name: stats.registered for name, stats in report.items()} == {
-        name: len(rows) for name, rows in expected.items()
+        **{name: len(rows) for name, rows in expected.items()},
+        "presence_fixes": 0,
     }
     assert report["messages"].unscoped == 1
     assert sum(stats.unscoped for stats in report.values()) == 1
@@ -246,11 +247,25 @@ async def test_unregistered_source_is_backfilled_once_per_observing_unit(engine)
     )
     await legacy.replace_places(circle_id=_CIRCLE, places=[_place("one")])
     await _probes(engine, 1)
+    async with engine.connect() as conn:
+        original = (await conn.execute(sa.select(PRESENCE_FIXES))).mappings().one()
     command = RegisterStoredRows(SqlStoredRows(engine, _registration(multiple=True).scope))
     report = await command.run()
 
     async with engine.connect() as conn:
-        for table in (PRESENCE_FIXES, PRESENCE_PLACES, SOURCE_HEALTH):
+        fixes = (await conn.execute(
+            sa.select(PRESENCE_FIXES).order_by(PRESENCE_FIXES.c.unit),
+        )).mappings().all()
+        assert {row["unit"] for row in fixes} == {_UNIT, _SECOND}
+        assert len(fixes) == 2
+        collector_fields = set(PRESENCE_FIXES.c.keys()) - {"id", "unit"}
+        expected = {name: original[name] for name in collector_fields}
+        assert all(
+            {name: row[name] for name in collector_fields} == expected for row in fixes
+        )
+        assert report[PRESENCE_FIXES.name].registered == 2
+
+        for table in (PRESENCE_PLACES, SOURCE_HEALTH):
             rows = (await conn.execute(sa.select(table))).mappings().all()
             assert {row["unit"] for row in rows} == {_UNIT, _SECOND}
             assert len({row["graph_id"] for row in rows}) == len(rows) == 2
@@ -260,7 +275,59 @@ async def test_unregistered_source_is_backfilled_once_per_observing_unit(engine)
                     row["graph_id"] == item_graph_id(table.name, (row["id"],), row["unit"])
                     for row in rows
                 )
-    assert not any(result.registered for result in (await command.run()).values())
+        registered = await conn.scalar(sa.select(sa.func.count()).select_from(REGISTRY))
+        stimuli = await conn.scalar(sa.select(sa.func.count()).select_from(GRAPH_STIMULUS))
+        assert registered == 4
+        assert stimuli == 0
+        before = sorted((dict(row) for row in fixes), key=lambda row: row["id"])
+
+    again = await command.run()
+    assert not any(result.registered for result in again.values())
+    async with engine.connect() as conn:
+        after = sorted(
+            (dict(row) for row in (
+                await conn.execute(sa.select(PRESENCE_FIXES).order_by(PRESENCE_FIXES.c.unit))
+            ).mappings().all()),
+            key=lambda row: row["id"],
+        )
+    assert after == before
+
+
+async def test_a_represented_null_unit_fix_is_counted_and_left_for_the_fold(engine):
+    from nora.domain.presence import PresenceFix, WireState
+    from nora.domain.rollup import EventPosition, FixEvent
+    from nora.infra.sql.mobility import SqlMobilityStore
+    from nora.infra.sql.presence import PresenceStore
+    from nora.infra.sql.schema import PRESENCE_FIXES
+    from tests.infra.test_aggregate_registration import _PERSON, _UPDATED
+
+    registration = _registration(multiple=True)
+    store = PresenceStore(engine, registration=registration)
+    fix = PresenceFix(
+        _CIRCLE, _PERSON, _UPDATED, 1.0, 2.0, WireState.LIVE, _UPDATED, accuracy_m=10.0,
+    )
+    assert await store.record_fix(fix=fix) is True
+    async with engine.connect() as conn:
+        row = (await conn.execute(sa.select(PRESENCE_FIXES))).mappings().all()[0]
+    legacy = dict(row)
+    legacy.pop("id")
+    legacy["unit"] = None
+    async with engine.begin() as conn:
+        await conn.execute(sa.insert(PRESENCE_FIXES).values(legacy))
+
+    report = await SqlStoredRows(engine, registration.scope).backfill_presence_fix_units(
+        batch_size=10,
+    )
+
+    assert (report.registered, report.unscoped, report.covered) == (0, 0, 1)
+    async with engine.connect() as conn:
+        rows = (await conn.execute(sa.select(PRESENCE_FIXES.c.unit))).scalars().all()
+    assert len(rows) == 3 and rows.count(None) == 1
+    events = await SqlMobilityStore(engine).events_since(
+        person_ids=[_PERSON], circle_ids=[_CIRCLE], after=EventPosition(0, -1, 0),
+        through_ms=_UPDATED, limit=10,
+    )
+    assert len([event for event in events if isinstance(event, FixEvent)]) == 1
 
 
 async def test_discord_backfill_uses_the_offline_directory_and_refuses_missing_guilds(

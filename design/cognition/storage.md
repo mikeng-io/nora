@@ -10,7 +10,7 @@ rebuildable; it is never the truth.
 
 | holds | tables | lifecycle code enforces |
 |---|---|---|
-| items | one table per source shape (messages, media, location fixes, fetched pages, watch results, acts, tool outcomes) | append-only |
+| items | one table per source shape (messages, media, fetched pages, watch results, acts, tool outcomes) | append-only |
 | aggregates | one table per aggregate family | recomputable: dropping and rebuilding gives the same rows |
 | entities | one table | admitted, merged, retired |
 | claims | one table | revisions append; a stale base is refused |
@@ -23,6 +23,9 @@ basis, scope, provenance, time, revision, lifecycle. A column specific to a
 kind exists only for that kind's lifecycle, such as an intention's conditions
 or its verdict. Basis and scope are columns, never implied by which table a row
 is in.
+
+A collector's raw input rows are operational source state, not graph items.
+The episodes computed from them are aggregates.
 
 **Integrity.**
 

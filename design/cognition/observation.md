@@ -1,7 +1,7 @@
 # Observation
 
-Observation is the code that records everything admitted as items, derives
-aggregates from them and turns changes into stimuli. No model decides what is
+Observation is the code that records admitted source input, derives
+aggregates from it and turns changes into stimuli. No model decides what is
 recorded.
 
 ## Sources
@@ -10,15 +10,21 @@ recorded.
 |---|---|---|
 | platform events: messages and their edits, reactions, deletions; online status; social items; play and listening | the platform pushes | items |
 | platform state: polls and votes, pins, membership, room changes, shared artifacts | the platform pushes or a collector reads | items, folded into current heads |
-| sources that cannot push | a collector polls | items |
+| event sources that cannot push | a collector polls | items |
+| location fixes | the presence collector polls | collector input rows; computed stays, trips and place heads become aggregates |
 | outside sources a maintain intention watches | the watch poller polls while the intention holds | items citing the watch |
 | Nora's own acts and tool outcomes, silence included | the executor that performed them | items |
 | source health | probes | items |
 
 Every source enters through one **intake**: an adapter per source turns what
-the source pushes, or what its collector reads, into items with their planes
-and registry rows, and reports the source's health. A new source is a new
-adapter, never a new store, table family or write path.
+the source pushes, or what its collector reads, into rows carrying their
+planes, and reports the source's health. **Which rows those are belongs to the
+source, not to the intake.** Most become graph items, with registry rows and a
+stimulus. A source whose reads are operational state — a position sampled on a
+schedule, where the reading is machinery and the episode is the event — keeps
+them in its collector's own input table, with no registry row and no stimulus;
+its graph surface is the episode or head computed from them. A new source is a
+new adapter, never a new store, table family or write path.
 
 - An adapter records a change of state, never a repeated read of the same one.
 - A failed read is an unhealthy source, never an empty one.
@@ -53,8 +59,9 @@ written in orient and cited to the item.
 
 ## Aggregates
 
-An aggregate is a pure function of observed and computed rows at a logical
-watermark: episodes (stays, co-locations, outings, response windows),
+At a logical watermark, an aggregate is a pure function of its recorded
+inputs, which can include observed or computed graph rows and a collector's
+operational input: episodes (stays, co-locations, outings, response windows),
 aggregates (routines, relationships, counts) and baselines.
 
 - An incremental build and a full rebuild at the same watermark agree.
@@ -67,7 +74,8 @@ aggregates (routines, relationships, counts) and baselines.
   any target it cannot resolve. A partial snapshot replaces only what it
   covers.
 - **Presence** is a current head per identity, folded from every source's
-  latest items: where they are or that they are travelling, and since when;
+  latest items and the computed location episodes: where they are or that
+  they are travelling, and since when;
   whether they are online, playing or listening, and to what. Each part
   carries the source and time it was observed and that source's health, so a
   stale or unhealthy part reads as such, never as current. Where an identity is

@@ -3695,6 +3695,9 @@ class Config(BaseModel):
     bridges: BridgesConfig = Field(default_factory=BridgesConfig)
     llm: LLMConfig
     memory: MemoryConfig = MemoryConfig()
+    # ponytail: accept the host's retired [honcho] section for one release,
+    # ignored; the follow-up config cleanup removes this compatibility field.
+    honcho: dict[str, object] | None = Field(default=None, exclude=True)
     store: StoreConfig
     # Optional, and defaulted — see `MediaConfig`.
     media: MediaConfig = MediaConfig()
