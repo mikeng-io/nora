@@ -621,7 +621,7 @@ class FirePath:
         self._presence = presence
 
     async def build_context(self, occasion: Event) -> TagContext:
-        """Read the room floor, and the legacy context for other fire occasions."""
+        """Read the room floor and the action state used by the proactive gate."""
         # Resolve the occasion's room view; an absent requester remains None.
         scope = Scope(ScopeKind.ROOM, room_scope_id(occasion.platform, occasion.conversation_id))
         ref = (await self._access.person_ref(occasion.person_id, scope=scope)
