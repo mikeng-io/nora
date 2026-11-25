@@ -94,7 +94,7 @@ async def enabled(
     ledger_store: Any, lineage: Any, media_join: Any,
     memo_store: Any, metrics: Any, mobility: Any,
     model_client_for: Any, note_store: Any, observation_store: Any, persons: Any,
-    presence_circles: Any, presence_reader: Any, profile_index: Any,
+    presence_circles: Any, presence_reader: Any,
     profile_reader: Any, reasoning_strip_store: Any, registry: Any, reminder_caps: Any,
     reminders: Any, rosters: Any, route_model: Any, session_guidance: Any,
     shared: Any, standing_fold: Any, standing_store: Any, stimulus_store: Any,

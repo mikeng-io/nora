@@ -277,7 +277,6 @@ def instructions(cfg: Any, metrics: Any)-> InstructionsWiring:
 @dataclass(frozen=True)
 class ReadersWiring:
     lessons_reader: Any
-    profile_index: Any
     profile_reader: Any
     profile_store_reader: Any
 
@@ -301,13 +300,8 @@ def readers(cfg: Any, content_checks: Any, engine: Any)-> ReadersWiring:
         else None
     )
     profile_reader: ProfileHeads | None = profile_store_reader
-    # The same gate, for the writers (the dream sessions and the graph surface's
-    # `remember`): on, a profile write projects its lines into the memory index in its own
-    # transaction (45 §1, 25 §7); off is the shadow, and the shadow's lines join at the…
-    profile_index = cfg.memory.profile.write and cfg.memory.profile.read
     return ReadersWiring(
         lessons_reader=lessons_reader,
-        profile_index=profile_index,
         profile_reader=profile_reader,
         profile_store_reader=profile_store_reader,
     )

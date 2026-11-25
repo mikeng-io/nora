@@ -2,8 +2,7 @@
 
 `[memory.index] read` (the registry holding a `MemorySearch`) selects the
 graph's surface, `memory_search`; off (the shipped default) it is `who_said`
-and no `memory_search`. `remember` is the Profile `told` line on both
-(DEC-317); `load_transcript` reads the room's own rows and is on both.
+and no `memory_search`. Both offer `load_transcript` to read the room's rows.
 
 Pinned at every place tools are assembled, each through its own production
 builder: a tag, a fire turn, the Cognition session, each Dreamer adaptor that
@@ -27,7 +26,6 @@ from nora.agent.memory_search import MemorySearch
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.subagent_tools import SubagentToolSource
-from nora.agent.tools import build_tool_specs
 from nora.app.cognition_wiring import read_surface, read_tools_for
 from nora.domain.cognition_session import Room as AgendaRoom
 from nora.obs.metrics import Metrics
@@ -51,19 +49,18 @@ def test_memory_verbs_cover_both_surfaces() -> None:
     assert OFF_GRAPH_ONLY_TOOLS | GRAPH_MEMORY_TOOLS <= MEMORY_VERBS
 
 #: What each assembly point offers of `MEMORY_VERBS`, per surface. The graph
-#: column is the off-graph column with `who_said` taken out (`remember` stays,
-#: as the Profile write) and `memory_search` put in where that place has it. The
+#: column swaps `who_said` for `memory_search` where permitted. The
 #: worker holds no `memory_search`: it reads the unit's other rooms, and the
 #: worker's reach is its one room (`NOT_LOOKUPS`).
 EXPECTED: dict[str, dict[bool, frozenset[str]]] = {
     "tag": {
-        False: frozenset({"who_said", "remember", "load_transcript"}),
-        True: frozenset({"memory_search", "memory_read", "remember", "profile_dispute",
+        False: frozenset({"who_said", "load_transcript"}),
+        True: frozenset({"memory_search", "memory_read", "profile_dispute",
                          "load_transcript"}),
     },
     "fire": {
-        False: frozenset({"who_said", "remember", "load_transcript"}),
-        True: frozenset({"memory_search", "memory_read", "remember", "profile_dispute",
+        False: frozenset({"who_said", "load_transcript"}),
+        True: frozenset({"memory_search", "memory_read", "profile_dispute",
                          "load_transcript"}),
     },
     "cognition": {
@@ -162,26 +159,22 @@ async def test_the_off_graph_surface_has_no_memory_search(
 async def test_the_graph_surface_offers_memory_search_and_no_off_graph_tool(
     persons: Any, where: str,
 ) -> None:
-    """`[memory.index]` on: `memory_search`, and not `who_said` (`remember` there
-    is the Profile write, below)."""
+    """`[memory.index]` on: `memory_search`, and no `who_said`."""
     offered = await _built(where, True, persons) & MEMORY_VERBS
     assert offered == EXPECTED[where][True]
     assert not offered & OFF_GRAPH_ONLY_TOOLS
 
 
 @pytest.mark.parametrize("graph", [False, True])
-def test_remember_is_the_profile_write_on_both_surfaces(
-    persons: Any, graph: bool,
-) -> None:
-    """`remember` is the Profile `told` line whether or not the graph is on."""
-    specs = build_tool_specs(
+def test_the_retired_write_is_absent_from_general_specs(persons: Any, graph: bool) -> None:
+    registry = _registry(graph)
+    specs = registry.specs(
         store=_NullStore(), conversation_id=GROUP, conversation_type="group",
-        persons=persons, deliverer=SinkSender(),
-        metrics=Metrics(), room=_room(persons), question="", context_window=40,
-        transit_source=None,
-        memory_retrieval=MemorySearch(FakeMemoryIndex([]), Metrics()) if graph else None,
+        persons=persons, deliverer=SinkSender(), metrics=Metrics(), room=_room(persons),
     )
-    assert [s.call.__name__ for s in specs if s.name == "remember"] == ["remember_told"]
+    names = {spec.name for spec in specs}
+    assert "now" in names
+    assert "remember" not in names
 
 
 def test_cognition_takes_the_memory_surface_from_the_registry() -> None:

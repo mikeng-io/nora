@@ -86,14 +86,6 @@ TOOLS = {
         output_contract="three_state",
         level=1,
     ),
-    "remember": NativeTool(
-        1,
-        side_effect_state="confirmed",
-        idempotency="non_idempotent",
-        retry="never",
-        output_contract="three_state",
-        level=2,
-    ),
     "profile_dispute": NativeTool(
         1,
         side_effect_state="confirmed",

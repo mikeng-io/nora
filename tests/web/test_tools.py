@@ -65,9 +65,9 @@ def test_catalog_is_sorted_by_name():
 
 @pytest.mark.parametrize(
     "name",
-    ["now", "media_fetch", "web_fetch", "send_reply", "remember"],
+    ["now", "media_fetch", "web_fetch", "send_reply", "profile_dispute"],
 )
 def test_representative_tools_present(name):
     """Spot-check a spread of tool kinds (clock, media, web, delivery,
-    memory-write) — the catalog is not missing a whole family."""
+    claim dispute) — the catalog is not missing a whole family."""
     assert name in {entry["name"] for entry in build_tools_payload()}

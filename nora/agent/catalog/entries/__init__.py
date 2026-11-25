@@ -83,7 +83,6 @@ _KEY_ORDER = [
     "note_read",
     "note_search",
     "memo_read",
-    "remember",
     "profile_dispute",
     "computer_run",
     "computer_read",

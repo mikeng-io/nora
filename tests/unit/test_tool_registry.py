@@ -251,7 +251,6 @@ def test_the_registry_exposes_every_declared_tool():
         # DEC-306: one kept memo of the unit.
         "memo_read",
         # The remember verb.
-        "remember",
     }
 
 
@@ -466,7 +465,7 @@ def test_budgets_match_todays_table():
         # model looping on a tool it should have trusted to have worked (the
         # remember verb's write lane). `profile_dispute` is its graph-surface
         # sibling (35 §2), the same one-call write.
-        "remember": 1, "profile_dispute": 1,
+        "profile_dispute": 1,
         # `rollup_read` is 4 like `where_been` (cheap local SELECTs, so the round
         # trip is the cost); `standing_read` is 1 (the head does not move inside a
         # session's read of one room). A Cognition session raises both per agenda
@@ -913,7 +912,7 @@ ACT_VERBS = frozenset({"document_revise", "intention_commit",
     # the Dreamer may never be granted it.
     # `profile_dispute` (the graph surface's dispute door, 35 §2) writes and
     # can hide a line at once: an act for the same reason.
-    "member_update", "remember", "profile_dispute",
+    "member_update", "profile_dispute",
     # Discord-only music — every verb
     # but `music_status` mutates the voice session or its queue.
     "play_music", "skip_music", "top_music", "stop_music",

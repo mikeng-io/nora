@@ -4,9 +4,6 @@ from nora.agent.toolkit.spec import _spec
 
 
 def build(deps):
-    from nora.memory.adapters.tools.profile import _make_remember_told
-
-    remember_told = _make_remember_told(deps)
     from nora.memory.adapters.tools.standing import _make_rollup_read
 
     rollup_read = _make_rollup_read(deps)
@@ -56,7 +53,6 @@ def build(deps):
         _spec("note_read", note_read),
         _spec("note_search", note_search),
         _spec("memo_read", memo_read),
-        _spec("remember", remember_told),
         _spec("profile_dispute", profile_dispute),
         _spec("version_list", version_list),
         _spec("version_read", version_read),

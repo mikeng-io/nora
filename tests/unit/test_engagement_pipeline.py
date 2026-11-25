@@ -413,7 +413,7 @@ async def test_deferring_ships_the_hot_set_the_loader_and_the_catalogue():
     hot tools plus `load_tools`, the prompt carries `<tool_catalogue>`, and
     the loop gets one more turn for the load. All three come from ONE
     `ToolSurface`, so they cannot disagree about what was deferred."""
-    from nora.agent.catalog.groups import HOT_TOOLS, LEGACY_ENGAGEMENT_TOOLS, LOADER_TOOL
+    from nora.agent.catalog.groups import HOT_TOOLS, LOADER_TOOL
 
     registry = ToolRegistry(engagement_graph_retrieval=object(), intention_admission=object())
     pipeline, _metrics, _audit, background = _build_pipeline(
@@ -423,7 +423,7 @@ async def test_deferring_ships_the_hot_set_the_loader_and_the_catalogue():
     await _drain(background)
     call = pipeline._runner.calls[-1]
     names = {t.tool_name for t in call["tools"]}
-    assert names == ((HOT_TOOLS - LEGACY_ENGAGEMENT_TOOLS) | {LOADER_TOOL})
+    assert names == ((HOT_TOOLS - {"note_read"}) | {LOADER_TOOL})
     assert "<tool_catalogue" in _prompt_text(call)
     assert "weather" in _prompt_text(call)  # a shelved tool is still NAMED
     assert call["limits"]["turns"] == LIMITS["turns"] + 1
@@ -435,7 +435,7 @@ async def test_a_spoken_tag_is_handed_the_voice_tools_and_a_typed_one_is_not():
     tools declared `hot_on` voice and the same words typed do not."""
     import dataclasses
 
-    from nora.agent.catalog.groups import HOT_TOOLS, LEGACY_ENGAGEMENT_TOOLS, LOADER_TOOL
+    from nora.agent.catalog.groups import HOT_TOOLS, LOADER_TOOL
     from nora.agent.surface import DISCORD_ONLY_TOOLS
 
     seen: list = []
@@ -457,7 +457,7 @@ async def test_a_spoken_tag_is_handed_the_voice_tools_and_a_typed_one_is_not():
         await _drain(background)
         handed[voice] = {t.tool_name for t in pipeline._runner.calls[-1]["tools"]}
     assert seen == ["voice", None]
-    assert handed[False] == (HOT_TOOLS - LEGACY_ENGAGEMENT_TOOLS) | {LOADER_TOOL}
+    assert handed[False] == (HOT_TOOLS - {"note_read"}) | {LOADER_TOOL}
     assert {"play_music", "set_music_volume"} <= handed[True]
     assert handed[True] - handed[False] <= DISCORD_ONLY_TOOLS
 

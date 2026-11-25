@@ -86,7 +86,6 @@ from ..domain.ports import (
     VoicePresenceSource,
     WeatherProvider,
 )
-from ..domain.profile import ProfileWriter
 from ..domain.tool_call_log import ToolCallLogStore
 from ..infra.parking import ParkingClient, StreetParkingClient
 from ..infra.releases import GithubReleases
@@ -369,9 +368,6 @@ class ToolRegistry:
         # The graph's dispute and forget verbs `profile_dispute` writes through;
         # without them the registry withholds the tool from every turn.
         memory_intake: Any = None,
-        # The Profile write the graph surface's `remember` makes (a `told`
-        # line, design/unified-memory/profiles.md). Wired with `memory_search`.
-        profile: ProfileWriter | None = None,
         # Typed observation reads; None withholds them, not the message Record read.
         observations: Any = None,
         # Shared management invocation; specs supplies the verified per-turn message.
@@ -383,7 +379,6 @@ class ToolRegistry:
         self._observations = observations
         self._room_management = room_management
         self._budget_overrides = dict(budget_overrides or {})
-        self._profile = profile
         self._external_files, self._google_account = external_files, google_account
         self._memory_search = memory_search
         self._graph_retrieval = graph_retrieval
@@ -1119,7 +1114,6 @@ class ToolRegistry:
                 self._intention_admission if engagement or commit_intentions else None
             ),
             memory_intake=self._memory_intake,
-            profile=self._profile,
             lineage=self._lineage,
             rollup=self._rollup,
             standing_head=self._standing_head, ledger=self._ledger,
