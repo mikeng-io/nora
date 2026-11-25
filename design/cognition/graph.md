@@ -22,7 +22,7 @@ basis or scope, never by a third axis.
 |---|---|---|---|
 | **authored** | a human wrote it | the file is the truth | the operator; it lives outside the graph as doctrine and configuration |
 | **observed** | it happened | the recorded row is the proof | code, at intake |
-| **computed** | code derived it from observed or computed rows | re-deriving it gives the same result | code |
+| **computed** | code derived it from recorded rows: observed or computed graph rows, or a collector's operational input | re-deriving it gives the same result | code |
 | **inferred** | Nora judges it to be so | never proven; supported or contradicted by what it cites | the model proposes, code admits |
 | **committed** | Nora decided it | its own admitted write is the proof that she decided; its outcome is proven by an observed row | the model proposes, code admits |
 
@@ -40,10 +40,14 @@ Nora's own words are observed as her act; they ground only that she said them.
 
 **Citation rules.** An inferred row cites only observed or computed rows; a
 claim may *guide* a search for another, but it never supports it. A computed
-row derives only from observed or computed rows, and from the conditions and
-rests-on edges of the intentions it evaluates; never from a claim's content.
-A committed row may rest on rows of any basis, because resting is what makes
-its reasons reconsiderable.
+row derives only from observed or computed rows, from a collector's
+operational input, and from the conditions and rests-on edges of the
+intentions it evaluates; never from a claim's content. **Deriving from and
+citing are not the same relation**: a citation names a registered row, so a
+computed row derived from operational input cites nothing for that input and
+is re-derived from the collector's own table instead. A committed row may rest
+on rows of any basis, because resting is what makes its reasons
+reconsiderable.
 
 **Edges take a basis by the same rule.** An edge recorded with an item
 (authored by, replied to) is observed; an edge code derives (co-located with,

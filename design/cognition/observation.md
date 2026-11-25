@@ -10,7 +10,7 @@ recorded.
 |---|---|---|
 | platform events: messages and their edits, reactions, deletions; online status; social items; play and listening | the platform pushes | items |
 | platform state: polls and votes, pins, membership, room changes, shared artifacts | the platform pushes or a collector reads | items, folded into current heads |
-| sources that cannot push | a collector polls | items |
+| event sources that cannot push | a collector polls | items |
 | location fixes | the presence collector polls | collector input rows; computed stays, trips and place heads become aggregates |
 | outside sources a maintain intention watches | the watch poller polls while the intention holds | items citing the watch |
 | Nora's own acts and tool outcomes, silence included | the executor that performed them | items |
