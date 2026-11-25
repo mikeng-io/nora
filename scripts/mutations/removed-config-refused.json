@@ -4,14 +4,14 @@
     "file": "nora/config.py",
     "old": "    model_config = ConfigDict(extra=\"forbid\", frozen=True)\n\n    @model_validator(mode=\"before\")\n    @classmethod\n    def reject_retired_memory_names",
     "new": "    model_config = ConfigDict(extra=\"ignore\", frozen=True)\n\n    @model_validator(mode=\"before\")\n    @classmethod\n    def reject_retired_memory_names",
-    "target": "tests/test_config.py::test_unknown_key_is_a_startup_failure[gone]"
+    "target": "tests/test_config.py::test_unknown_key_is_a_startup_failure"
   },
   {
     "name": "a removed identity table is refused by _PersonsFile's own extra=forbid",
     "file": "nora/persons_file.py",
     "old": "class _PersonsFile(BaseModel):\n    model_config = ConfigDict(extra=\"forbid\", frozen=True)",
     "new": "class _PersonsFile(BaseModel):\n    model_config = ConfigDict(extra=\"ignore\", frozen=True)",
-    "target": "tests/test_persons.py::test_a_removed_identity_table_is_refused_by_its_own_name"
+    "target": "tests/test_persons.py::test_unknown_top_level_key_is_a_startup_failure"
   },
   {
     "name": "a managed export records an archived workspaces table as dropped",

@@ -43,6 +43,7 @@ def test_the_retired_backend_is_named_nowhere_the_gate_reads() -> None:
     shim = []
     for line in lines:
         path, _number, text = line.split(":", 2)
+        text = text.strip()
         (shim if path == "nora/config.py" and text in compatibility else unexpected).append(line)
     assert not unexpected, (
         "the retired memory backend is named again; say what the surviving thing "
