@@ -1379,15 +1379,6 @@ cases:
         memory_search: [person]
     snapshot: *room_a
 
-  - name: route_who_said_in_view_not_memory_search
-    entry: tag
-    expect: reply
-    mention: true
-    input: 頭先邊個話要book枱？
-    # `who_said` reads attribution in the visible transcript window.
-    metadata: {tools: [who_said], not_tools: [memory_search], memory_surface: honcho}
-    snapshot: *room_a
-
   - name: route_load_transcript_thread
     entry: tag
     expect: reply

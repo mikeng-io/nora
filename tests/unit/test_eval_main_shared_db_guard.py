@@ -388,10 +388,10 @@ def test_context_experiment_requires_a_prefill_receipt_for_each_draw(monkeypatch
 
 
 @pytest.mark.parametrize(("deployed", "flag", "graph", "header"), [
-    (False, False, False, "memory surface: honcho"),
+    (False, False, False, "memory surface: off"),
     (False, True, True, "memory surface: graph (--memory-index"),
     # The live config already runs the graph surface: a run without the flag
-    # must measure it, not the Honcho surface's case filter (DEC-316).
+    # must measure it, not an index-disabled case filter (DEC-316).
     (True, False, True, "memory surface: graph ([memory.index] read = true"),
 ])
 def test_main_resolves_the_memory_surface_from_the_generated_config(

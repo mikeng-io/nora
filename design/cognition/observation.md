@@ -1,7 +1,7 @@
 # Observation
 
-Observation is the code that records everything admitted as items, derives
-aggregates from them and turns changes into stimuli. No model decides what is
+Observation is the code that records admitted source input, derives
+aggregates from it and turns changes into stimuli. No model decides what is
 recorded.
 
 ## Sources
@@ -11,6 +11,7 @@ recorded.
 | platform events: messages and their edits, reactions, deletions; online status; social items; play and listening | the platform pushes | items |
 | platform state: polls and votes, pins, membership, room changes, shared artifacts | the platform pushes or a collector reads | items, folded into current heads |
 | sources that cannot push | a collector polls | items |
+| location fixes | the presence collector polls | collector input rows; computed stays, trips and place heads become aggregates |
 | outside sources a maintain intention watches | the watch poller polls while the intention holds | items citing the watch |
 | Nora's own acts and tool outcomes, silence included | the executor that performed them | items |
 | source health | probes | items |
@@ -19,6 +20,10 @@ Every source enters through one **intake**: an adapter per source turns what
 the source pushes, or what its collector reads, into items with their planes
 and registry rows, and reports the source's health. A new source is a new
 adapter, never a new store, table family or write path.
+
+Raw location fixes stay in the collector's input table. They have no registry
+row and no stimulus; the graph surface is the computed episode or head derived
+from them.
 
 - An adapter records a change of state, never a repeated read of the same one.
 - A failed read is an unhealthy source, never an empty one.

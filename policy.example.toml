@@ -189,22 +189,3 @@ persons  = "*"               # Anyone in this chat, including senders Nora canno
 # Not supported: granting by role (`roles = [...]`) or by admin status
 # (`admins = true`). Policy grants only on person_id, so this file stays a
 # complete description of who has access.
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. UNITS -> WORKSPACES (DEC-214). Optional. Hierarchy: workspace > unit > room.
-#    Retiring with Honcho; the unit becomes the only boundary.
-#
-#    A workspace holds one or more units. Within a workspace a person is
-#    one person-model across all its units, each unit is its own scope, and recall for a unit
-#    comes from that unit's rooms. Different workspaces keep separate person-models:
-#    use one when a group's people must not share memory with another's.
-#
-#    With no [units] table, every unit is in one implicit workspace bound to
-#    config.toml's `honcho.workspace_id`. Once the table exists it must name
-#    every unit a room uses, and no unit without a room.
-#
-#    The Honcho workspace a Nora workspace maps to is set in identity.toml's
-#    [workspaces.<name>], not here.
-#
-# [units.family]
-# workspace = "home"

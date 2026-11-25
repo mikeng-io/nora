@@ -250,7 +250,6 @@ def test_the_registry_exposes_every_declared_tool():
         "note_read", "note_search",
         # DEC-306: one kept memo of the unit.
         "memo_read",
-        # The remember verb.
     }
 
 
@@ -461,10 +460,8 @@ def test_budgets_match_todays_table():
         "note_read": 3, "note_search": 2,
         # `memo_read` is 3 like `note_read` (DEC-306): a couple of memos and a re-read.
         "memo_read": 3,
-        # 1: one write answers the ask; a second call is the
-        # model looping on a tool it should have trusted to have worked (the
-        # remember verb's write lane). `profile_dispute` is its graph-surface
-        # sibling (35 §2), the same one-call write.
+        # 1: one write answers the ask; a second call is the model looping on
+        # a tool it should have trusted to have worked (35 §2).
         "profile_dispute": 1,
         # `rollup_read` is 4 like `where_been` (cheap local SELECTs, so the round
         # trip is the cost); `standing_read` is 1 (the head does not move inside a
@@ -908,8 +905,6 @@ ACT_VERBS = frozenset({"document_revise", "intention_commit",
     # media_send delivers a stored attachment (an act, like send_gif);
     # media_search is a read.
     "media_send",
-    # The remember verb: writing a Honcho conclusion is a write —
-    # the Dreamer may never be granted it.
     # `profile_dispute` (the graph surface's dispute door, 35 §2) writes and
     # can hide a line at once: an act for the same reason.
     "member_update", "profile_dispute",

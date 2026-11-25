@@ -35,7 +35,6 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.presence import PresenceFix, SavedPlace, WireState
 from nora.infra.sql.item_registration import SqlItemRegistration, epoch_ms
-from nora.infra.sql.item_retention import tombstone_items
 from nora.infra.sql.schema import PRESENCE_FIXES, PRESENCE_PLACES
 
 log = logging.getLogger("nora.presence.store")
@@ -113,23 +112,12 @@ class PresenceStore:
             wire_state=fix.wire_state.value,
             recorded_at=fix.recorded_at,
         )
-        registration = self._registration
-        units = await registration.scope.person_units(fix.person_id) if registration else ()
-        written = False
         async with self._engine.begin() as conn:
-            for unit in units or (None,):
-                last_ts = (await conn.execute(
-                    latest.where(PRESENCE_FIXES.c.unit.is_not_distinct_from(unit)),
-                )).scalar_one_or_none()
-                if last_ts is not None and fix.ts <= last_ts:
-                    continue
-                values = await registration.planes(
-                    conn, PRESENCE_FIXES, unit=unit, occurred_at=epoch_ms(fix.ts),
-                    identities=(fix.person_id,),
-                ) if registration else {}
-                await conn.execute(insert.values(**values))
-                written = True
-        return written
+            last_ts = (await conn.execute(latest)).scalar_one_or_none()
+            if last_ts is not None and fix.ts <= last_ts:
+                return False
+            await conn.execute(insert)
+        return True
 
     async def latest_fix(
         self, *, circle_id: str, person_id: str
@@ -286,9 +274,10 @@ class PresenceStore:
         Called by the collector's periodic sweep, never on the write path.
         """
         cutoff = now_ms - self._retention_days * _MS_PER_DAY
+        stmt = sa.delete(PRESENCE_FIXES).where(PRESENCE_FIXES.c.ts < cutoff)
         async with self._engine.begin() as conn:
-            rows = await tombstone_items(conn, PRESENCE_FIXES, PRESENCE_FIXES.c.ts < cutoff)
-        return len(rows)
+            result = await conn.execute(stmt)
+        return int(result.rowcount or 0)
 
     async def aclose(self) -> None:
         await self._engine.dispose()

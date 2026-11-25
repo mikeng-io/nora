@@ -15,7 +15,7 @@ from nora.domain.presence import PresenceFix, WireState
 from nora.domain.social_stream import ItemCounts, SocialItem
 from nora.domain.tool_call_log import ToolCallLogEntry
 from nora.infra.sql.audit import SqlRecordStore
-from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY, INTENTION, REGISTRY
+from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY, GRAPH_STIMULUS, INTENTION, REGISTRY
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.computer_events import SqlComputerEventStore
 from nora.infra.sql.engine import create_sql_engine
@@ -405,6 +405,25 @@ async def test_item_from_room_outside_a_unit_keeps_its_record(
         registered = (await conn.execute(sa.select(sa.func.count()).select_from(REGISTRY))).scalar()
     assert row == (None, None)
     assert registered == 0
+
+
+async def test_a_raw_presence_fix_is_collector_input_not_a_graph_item(
+    engine: AsyncEngine,
+) -> None:
+    registration = _registration(multiple=True)
+    written = await PresenceStore(engine, registration=registration).record_fix(
+        fix=PresenceFix(_CIRCLE, _PERSON, _MS, 1.0, 2.0, WireState.LIVE, _MS),
+    )
+    assert written is True
+    async with engine.connect() as conn:
+        fixes = (await conn.execute(
+            sa.select(sa.func.count()).select_from(METADATA.tables["presence_fixes"]),
+        )).scalar_one()
+        registered = (await conn.execute(sa.select(sa.func.count()).select_from(REGISTRY))).scalar_one()
+        stimuli = (await conn.execute(sa.select(sa.func.count()).select_from(GRAPH_STIMULUS))).scalar_one()
+    assert fixes == 1
+    assert registered == 0
+    assert stimuli == 0
 
 
 @pytest.mark.parametrize("name", _FANOUT_SOURCES)

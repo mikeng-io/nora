@@ -472,9 +472,9 @@ JUDGED_CORPORA = frozenset({
 JUDGE_REQUIRED = frozenset({"standing", "standing_unit", "conversational_recall"})
 
 
-#: Route tags select index-enabled (`graph`) or index-disabled (`honcho`)
-#: subjects. Untagged cases run with either setting.
-MEMORY_SURFACES = frozenset({"graph", "honcho"})
+#: Route tags select index-enabled (`graph`) subjects. Untagged cases run with
+#: or without the index; indexed memory cases run only on the graph surface.
+MEMORY_SURFACES = frozenset({"graph"})
 
 #: An explicit memory-surface experiment; dependency origins remain deployment-owned.
 MEMORY_INDEX_OVERRIDES: dict[str, object] = {
@@ -515,16 +515,13 @@ def selected_cases(
                 f"or misspelt. Active: {sorted(known)}"
             )
         cases = [c for c in cases if c.name in only]
-    # One memory surface per arm (`MEMORY_SURFACES`). A case NAMED with
-    # `--case` on the other arm is refused, never silently dropped: that run
-    # would report a clean corpus it never drew.
-    arm = "graph" if memory_index else "honcho"
+    # Indexed memory cases exist only on the graph surface. Naming one without
+    # the index is refused, never silently dropped: that run would report a
+    # clean corpus it never drew.
+    arm = "graph" if memory_index else None
     other = sorted(c.name for c in cases if c.metadata.get("memory_surface") not in (None, arm))
     if only is not None and other:
-        raise ValueError(
-            f"{name}: {other} route on the other memory surface; "
-            + ("drop --memory-index" if memory_index else "pass --memory-index")
-        )
+        raise ValueError(f"{name}: {other} need the graph memory surface; pass --memory-index")
     cases = [c for c in cases if c.metadata.get("memory_surface") in (None, arm)]
     return cases
 
@@ -614,7 +611,7 @@ def experiment_for(
         full_restore=name in FULL_RESTORE_CORPORA,
         overrides=({**(dict(MEMORY_INDEX_OVERRIDES) if memory_index else {}),
                    **(dict(overrides) if overrides else {})} or None),
-        memory_surface="graph" if memory_index else "honcho",
+        memory_surface="graph" if memory_index else None,
     )
     grader = ToolRouteGrader() if name in ROUTED_CORPORA else MeetsGrader()
     experiment = Experiment(cases=cases, evaluators=[grader])

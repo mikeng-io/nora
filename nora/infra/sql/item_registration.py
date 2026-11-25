@@ -37,8 +37,7 @@ _OWN_ITEMS = frozenset({
     "nora_act", "nora_act_outcome", "nora_pass_output", "computer_events", "tool_call_log",
 })
 _PER_UNIT_SOURCES = frozenset({
-    "presence_fixes", "social_item", "social_item_count",
-    "social_item_state", "social_poll", "source_health",
+    "social_item", "social_item_count", "social_item_state", "social_poll", "source_health",
 })
 
 

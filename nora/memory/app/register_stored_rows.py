@@ -28,7 +28,7 @@ class RegisterStoredRows:
         # Parents are registered before dependent evidence or buckets.
         items = (
             "messages", "message_edit", "message_reaction", "message_delete",
-            "presence_fixes", "fetched_pages", "social_poll", "social_item",
+            "fetched_pages", "social_poll", "social_item",
             "social_item_count", "social_item_state", "platform_observation", "source_health",
         )
         aggregates = (

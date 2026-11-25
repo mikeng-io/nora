@@ -1,5 +1,6 @@
 """The Cognitive Graph is the only memory: the retired backend, Honcho, is named
-nowhere in the code, the compose file or the two config templates.
+nowhere in the code, the compose file or the two config templates outside the
+one-release config compatibility shim.
 
 The test runs the project's locked command itself, against the working tree,
 so the gate and its test cannot drift apart:
@@ -33,10 +34,21 @@ def test_the_retired_backend_is_named_nowhere_the_gate_reads() -> None:
         "nora", "docker-compose.yml", "config.example.toml", "identity.example.toml",
     )
     assert found.returncode in (0, 1), f"git grep failed: {found.stderr}"
-    assert (found.returncode, found.stdout) == (1, ""), (
+    compatibility = {
+        "# ponytail: accept the host's retired [honcho] section for one release,",
+        "honcho: dict[str, object] | None = None",
+    }
+    lines = found.stdout.splitlines()
+    unexpected = []
+    shim = []
+    for line in lines:
+        path, _number, text = line.split(":", 2)
+        (shim if path == "nora/config.py" and text in compatibility else unexpected).append(line)
+    assert not unexpected, (
         "the retired memory backend is named again; say what the surviving thing "
-        f"does instead:\n{found.stdout}"
+        f"does instead:\n" + "\n".join(unexpected)
     )
+    assert len(shim) in (0, 2), "the one-release shim is a pair or is removed whole"
 
 
 def test_the_gate_matches_the_name_in_either_case() -> None:
