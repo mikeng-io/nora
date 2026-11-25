@@ -114,7 +114,7 @@ row inspectable.
 |---|---|---|---|
 | **entity** | computed when code resolves it; inferred when its identity is judged | an anchor: an identity, room, unit, Nora, a game, a place, a topic | admitted, merged, retired |
 | **item** | observed | something that happened: a message, link, reaction, online-status change, fetched page, watch result, tool outcome, Nora's own send | append-only |
-| **aggregate** | computed | a derivation over items: episodes, rollups, counts and baselines, verdicts, track records, support tallies | recomputed, never edited |
+| **aggregate** | computed | a derivation over items, or over a collector's operational input rows: episodes, rollups, counts and baselines, verdicts, track records, support tallies | recomputed, never edited |
 | **claim** | inferred | a belief about an entity or a relation | revised, retired, or ended by its valid-to time |
 | **intention** | committed | what Nora has committed to | open, then closed by an outcome or dropped |
 

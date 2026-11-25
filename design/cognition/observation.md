@@ -17,13 +17,14 @@ recorded.
 | source health | probes | items |
 
 Every source enters through one **intake**: an adapter per source turns what
-the source pushes, or what its collector reads, into items with their planes
-and registry rows, and reports the source's health. A new source is a new
-adapter, never a new store, table family or write path.
-
-Raw location fixes stay in the collector's input table. They have no registry
-row and no stimulus; the graph surface is the computed episode or head derived
-from them.
+the source pushes, or what its collector reads, into rows carrying their
+planes, and reports the source's health. **Which rows those are belongs to the
+source, not to the intake.** Most become graph items, with registry rows and a
+stimulus. A source whose reads are operational state — a position sampled on a
+schedule, where the reading is machinery and the episode is the event — keeps
+them in its collector's own input table, with no registry row and no stimulus;
+its graph surface is the episode or head computed from them. A new source is a
+new adapter, never a new store, table family or write path.
 
 - An adapter records a change of state, never a repeated read of the same one.
 - A failed read is an unhealthy source, never an empty one.
