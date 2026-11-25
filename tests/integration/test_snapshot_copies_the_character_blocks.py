@@ -60,7 +60,7 @@ OVERRIDES = {"culture.enabled": True}
 
 NORA_ENTITY = "nora:nora:nora"
 UNIT_ENTITY = "nora:unit:nora"
-MILES_ENTITY = "nora:person:miles_novak"
+MILES_ENTITY = "nora:identity:miles_novak"
 
 
 async def _graph_accounts(engine: Any, item_id: str) -> None:
@@ -75,7 +75,7 @@ async def _graph_accounts(engine: Any, item_id: str) -> None:
     async def entity(eid: str, unit: str, name: str, kind: str, ref: str) -> None:
         await graph.create(ENTITY, {
             "id": eid, "kind": "entity", "basis": "computed", "state": "admitted", "unit": unit,
-            "name": name, "pointer_kind": kind, "pointer_ref": ref, "persons": [],
+            "name": name, "pointer_kind": kind, "pointer_ref": ref, "identities": [],
             "exposure": "internal", "writer": "test", "asserted_at": old,
         })
 
@@ -107,10 +107,10 @@ async def _graph_accounts(engine: Any, item_id: str) -> None:
         (NORA_ENTITY, "nora", "Nora", "nora", "nora"),
         (UNIT_ENTITY, "nora", "nora", "unit", "nora"),
         ("nora:room:signal:g1", "nora", "g1", "room", "signal:g1"),
-        (MILES_ENTITY, "nora", "Miles", "person", "miles_novak"),
-        ("nora:person:bo", "nora", "Bo", "person", "bo"),
+        (MILES_ENTITY, "nora", "Miles", "identity", "miles_novak"),
+        ("nora:identity:bo", "nora", "Bo", "identity", "bo"),
         ("elsewhere:nora:nora", "elsewhere", "Nora", "nora", "nora"),
-        ("elsewhere:person:miles_novak", "elsewhere", "Miles", "person",
+        ("elsewhere:identity:miles_novak", "elsewhere", "Miles", "identity",
          "miles_novak"),
     ):
         await entity(eid, unit, name, kind, ref)
@@ -133,12 +133,12 @@ async def _graph_accounts(engine: Any, item_id: str) -> None:
                 at_ms=BEFORE_MS + HOUR, about=MILES_ENTITY)
     # The room does not list Bo: his pointer is never an anchor.
     await claim("claim:bo:account", "UNLISTED: Bo is loud", unit="nora",
-                at_ms=BEFORE_MS - HOUR, about="nora:person:bo")
+                at_ms=BEFORE_MS - HOUR, about="nora:identity:bo")
     # Other-unit accounts are outside the read's unit scope.
     await claim("claim:other:nora", "OTHER UNIT: her", unit="elsewhere",
                 at_ms=BEFORE_MS - HOUR, about="elsewhere:nora:nora")
     await claim("claim:other:miles", "OTHER UNIT: Miles", unit="elsewhere",
-                at_ms=BEFORE_MS - HOUR, about="elsewhere:person:miles_novak")
+                at_ms=BEFORE_MS - HOUR, about="elsewhere:identity:miles_novak")
 
 
 async def _clock(engine: Any) -> datetime:

@@ -319,8 +319,7 @@ def relation_values(relation: Relation) -> dict[str, Any]:
     values.pop("src")
     values.pop("dst")
     values.update(
-        src_kind=relation.src[0],
-        src_id=relation.src[1],
+        src_kind=relation.src[0], src_id=relation.src[1],
         dst_kind=relation.dst[0],
         dst_id=relation.dst[1],
     )

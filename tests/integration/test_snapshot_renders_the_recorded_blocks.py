@@ -108,7 +108,7 @@ async def _graph_knowledge(engine: Any) -> SqlCognitiveGraph:
         await graph.create(ENTITY, {
             "id": eid, "kind": "entity", "basis": "computed" if pointer else "inferred",
             "state": "admitted", "unit": unit, "name": name, "pointer_kind": pointer,
-            "pointer_ref": ref, "persons": [], "exposure": "internal", "writer": "test",
+            "pointer_ref": ref, "identities": [], "exposure": "internal", "writer": "test",
             "asserted_at": datetime.fromtimestamp(
                 (BEFORE_MS - 30 * 24 * HOUR) / 1000, tz=UTC),
         })

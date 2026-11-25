@@ -344,7 +344,7 @@ def test_named_origin_must_resolve_and_unknown_person_stays_unresolved() -> None
     )
 
 
-@pytest.mark.parametrize("pointer", ["person", "room", "unit", "nora"])
+@pytest.mark.parametrize("pointer", ["identity", "room", "unit", "nora"])
 def test_model_cannot_create_revise_merge_or_retire_pointer_entities(pointer: str) -> None:
     pointer_row = replace(ENTITY, pointer_kind=pointer, basis="computed")
     create = replace(NEW_ENTITY, pointer_kind=pointer, pointer_ref="identity")

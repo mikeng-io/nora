@@ -104,7 +104,7 @@ class ConditionSources:
             elif entry.kind == "social" and entry.subject:
                 s = SOCIAL_ITEM.c
                 networks = set(await self._conn.scalars(sa.select(s.network).where(
-                    s.unit == row["unit"], s.identity == entry.subject, s.state == "live",
+                    s.unit == row["unit"], s.person == entry.subject, s.state == "live",
                 ).distinct()))
                 if not networks:
                     return set()
