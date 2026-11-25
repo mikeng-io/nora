@@ -26,5 +26,12 @@
     "old": "    honcho: dict[str, object] | None = Field(default=None, exclude=True)\n",
     "new": "    honcho: dict[str, object] | None = None\n",
     "target": "tests/test_config.py::test_the_retired_honcho_section_is_accepted_and_ignored_for_one_release"
+  },
+  {
+    "name": "represented pre-cutover fixes are counted and retained",
+    "file": "nora/memory/adapters/stored_row_registration.py",
+    "old": "                    if not missing:\n                        covered += 1\n                        continue\n",
+    "new": "                    if not missing:\n                        await conn.execute(sa.delete(table).where(table.c.id == row[\"id\"]))\n                        continue\n",
+    "target": "tests/infra/test_register_stored_rows.py::test_a_represented_null_unit_fix_is_counted_and_left_for_the_fold"
   }
 ]

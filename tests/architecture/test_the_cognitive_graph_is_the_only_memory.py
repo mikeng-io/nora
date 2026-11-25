@@ -36,7 +36,7 @@ def test_the_retired_backend_is_named_nowhere_the_gate_reads() -> None:
     assert found.returncode in (0, 1), f"git grep failed: {found.stderr}"
     compatibility = {
         "# ponytail: accept the host's retired [honcho] section for one release,",
-        "honcho: dict[str, object] | None = None",
+        "honcho: dict[str, object] | None = Field(default=None, exclude=True)",
     }
     lines = found.stdout.splitlines()
     unexpected = []

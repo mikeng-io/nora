@@ -189,14 +189,14 @@ class SqlStoredRows:
             .order_by(table.c.id).limit(batch_size).with_for_update()
         )
         cursor = None
-        registered = unscoped = 0
+        registered = unscoped = covered = 0
         while True:
             async with self._engine.begin() as conn:
                 batch = (await conn.execute(
                     stmt if cursor is None else stmt.where(table.c.id > cursor),
                 )).mappings().all()
                 if not batch:
-                    return TableRegistration(registered, unscoped)
+                    return TableRegistration(registered, unscoped, covered)
                 cursor = batch[-1]["id"]
                 for row in batch:
                     units = tuple(sorted(await self._scope.person_units(row["person_id"])))
@@ -211,7 +211,7 @@ class SqlStoredRows:
                     ))).scalars())
                     missing = [unit for unit in units if unit not in represented]
                     if not missing:
-                        await conn.execute(sa.delete(table).where(table.c.id == row["id"]))
+                        covered += 1
                         continue
                     await conn.execute(sa.update(table).where(
                         table.c.id == row["id"],

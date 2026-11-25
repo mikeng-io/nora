@@ -19,5 +19,19 @@
     "old": "    dropped.extend(f\"workspaces:{name}\" for name in sorted(archive_workspaces))",
     "new": "    pass",
     "target": "tests/unit/test_managed_export.py::test_export_drops_an_archived_workspaces_table_and_still_loads"
+  },
+  {
+    "name": "the retired workspaces identity table is accepted without changing people",
+    "file": "nora/persons_file.py",
+    "old": "    workspaces: dict[str, dict[str, object]] = Field(default_factory=dict)\n",
+    "new": "",
+    "target": "tests/integration/test_policy_reload.py::test_a_reload_carrying_the_retired_workspaces_table_is_accepted_without_changing_people"
+  },
+  {
+    "name": "an unknown identity table is refused without changing people on reload",
+    "file": "nora/persons_file.py",
+    "old": "class _PersonsFile(BaseModel):\n    model_config = ConfigDict(extra=\"forbid\", frozen=True)",
+    "new": "class _PersonsFile(BaseModel):\n    model_config = ConfigDict(extra=\"ignore\", frozen=True)",
+    "target": "tests/integration/test_policy_reload.py::test_a_reload_carrying_an_unknown_identity_table_is_refused_without_changing_people"
   }
 ]

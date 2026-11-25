@@ -10,6 +10,7 @@ from nora.memory.domain.registration import BACKFILL_AGGREGATE_FAMILIES, BACKFIL
 class TableRegistration:
     registered: int
     unscoped: int
+    covered: int = 0
 
 
 class StoredRows(Protocol):
