@@ -18,7 +18,6 @@ from collections.abc import Awaitable, Callable, Mapping, Set
 from datetime import datetime
 
 from nora.agent.lineage import LineagePolicy
-from nora.agent.memory_search import MemorySearch
 from nora.agent.whereis import circles_from_persons
 from nora.config import Config
 from nora.domain.live import LiveSequence
@@ -71,7 +70,6 @@ def build_assembler(
     documents: DocumentsContextReader | None = None,
     subagents: SubagentsContextReader | None = None,
     memos: MemoStore | None = None,
-    memory_search: MemorySearch | None = None,
     shared: Callable[..., Awaitable[SharedView]] | None = None,
     clock: Callable[[], datetime] | None = None,
     rosters: Mapping[str, RosterSource] | None = None,
@@ -125,10 +123,6 @@ def build_assembler(
         # `<subagents>`. TAG PATH ONLY: the fire path is given no such reader.
         # `None` while `[subagent]` is off, which renders no block.
         subagents=subagents,
-        # `<recalled>`, the pre-fetch (design/unified-memory/README.md): the
-        # SAME `MemorySearch` the tool registry's `memory_search` holds.
-        # `None` with `[memory.index] read = false`, which renders no block.
-        memory_search=memory_search,
         # The graph's one clock, so the pre-fetch dates and ranks its items
         # at the instant every other component reads.
         clock=clock,

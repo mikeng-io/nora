@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable, Collection, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -21,8 +20,6 @@ from nora.app.composition_dream import (
 )
 from nora.app.composition_helpers import _reasoning_effort
 from nora.app.composition_review import build_review_runner
-from nora.app.startup import StartupError
-from nora.language.lessons import CognitionLessons
 
 """Dreamer and Cognition wiring steps."""
 
@@ -33,60 +30,15 @@ log = logging.getLogger("nora.app.composition")
 
 
 @dataclass(frozen=True)
-class GuidanceWiring:
-    cognition_lessons: Any
-    cognition_memory: Any
-    cognition_runner: Any
-    session_guidance: Any
-
-
-def guidance(dreamer_instructions: Any)-> GuidanceWiring:
-
-    # The Cognition session: built inside the Dreamer block below ONLY under `[cognition]
-    # enabled`; off builds nothing here, no model client and no agent-runner import. : Hot-
-    # loaded session guidance, gated by the offered tools during assembly.
-    session_guidance = cognition_session_guidance(dreamer_instructions)
-    cognition_runner: CognitionSessionRunner | None = None
-    cognition_memory = None
-    # The lesson evidence seam the session reads and settles (`[lessons]
-    # enabled` fills it inside the Dreamer block below; Cognition needs the
-    # Dreamer anyway — `_lessons_need_cognition`).
-    cognition_lessons: CognitionLessons | None = None
-    return GuidanceWiring(
-        cognition_lessons=cognition_lessons,
-        cognition_memory=cognition_memory,
-        cognition_runner=cognition_runner,
-        session_guidance=session_guidance,
-    )
-
-
-@dataclass(frozen=True)
-class CognitionInitsWiring:
-    cognition_session_units: Any
-    cognition_upcoming: Any
-
-
-def cognition_inits() -> CognitionInitsWiring:
-    #: The units a session can run for (a home room each); only they are woken.
-    cognition_session_units: Collection[str] | None = None
-    cognition_upcoming: Callable[[str, int], Awaitable[Sequence[tuple[str, str]]]] | None = None
-    return CognitionInitsWiring(
-        cognition_session_units=cognition_session_units, cognition_upcoming=cognition_upcoming
-    )
-
-
-@dataclass(frozen=True)
 class EnabledWiring:
     cognition_runner: Any
-    cognition_session_units: Any
-    cognition_upcoming: Any
     dreamer_runtime: Any
     review: Any = None
 
 
 async def enabled(
     allowlist: Any, audit: Any, cfg: Any, clock: Any,
-    cognition_context_screen: Any, cognition_lessons: Any, cognition_memory: Any,
+    cognition_context_screen: Any, cognition_memory: Any,
     content_checks: Any, doctrine_store: Any, document_service: Any,
     documents_context: Any,
     dreamer_instructions: Any, engine: Any, entry_store: Any,
@@ -95,25 +47,16 @@ async def enabled(
     memo_store: Any, metrics: Any, mobility: Any,
     model_client_for: Any, note_store: Any, observation_store: Any, persons: Any,
     presence_circles: Any, presence_reader: Any,
-    profile_reader: Any, reasoning_strip_store: Any, registry: Any, reminder_caps: Any,
-    reminders: Any, rosters: Any, route_model: Any, session_guidance: Any,
+    reasoning_strip_store: Any, registry: Any, reminder_caps: Any,
+    reminders: Any, rosters: Any, route_model: Any,
     shared: Any, standing_fold: Any, standing_store: Any, stimulus_store: Any,
     tag_trace_store: Any, tier: Any, tool_registry: Any, unit_rooms: Any,
-    unit_scopes: Any, access: Any = None,
+    unit_scopes: Any, access: Any = None, *, legacy_replay: bool = False,
 ) -> EnabledWiring:
     dreamer_runtime = None
     review = None
     cognition_runner = None
-    cognition_session_units = None
-    cognition_upcoming = None
     if cfg.dreamer.enabled:
-        cognition_lessons = _lessons_evidence(
-            allowlist=allowlist, cfg=cfg, content_checks=content_checks,
-            doctrine_store=doctrine_store,
-            dreamer_instructions=dreamer_instructions, engine=engine,
-            metrics=metrics, model_client_for=model_client_for,
-            persons=persons, registry=registry, route_model=route_model,
-        )
         rt = _dreamer_runtime(
             allowlist=allowlist, audit=audit, cfg=cfg,
             metrics=metrics, model_client_for=model_client_for,
@@ -126,7 +69,14 @@ async def enabled(
         review = build_review_runner(
             cfg, dreamer_instructions, rt.dream_tools, model_client_for, metrics,
         )
-        if cfg.cognition.enabled and stimulus_store is not None:
+        if legacy_replay and cfg.cognition.enabled and stimulus_store is not None:
+            cognition_lessons = _lessons_evidence(
+                allowlist=allowlist, cfg=cfg, content_checks=content_checks,
+                doctrine_store=doctrine_store,
+                dreamer_instructions=dreamer_instructions, engine=engine,
+                metrics=metrics, model_client_for=model_client_for,
+                persons=persons, registry=registry, route_model=route_model,
+            )
             cog = await cognition_session(
                 allowlist=allowlist, audit=audit, cfg=cfg, clock=clock,
                 cognition_context_screen=cognition_context_screen,
@@ -147,9 +97,9 @@ async def enabled(
                 observation_store=observation_store, persons=persons,
                 presence_circles=presence_circles,
                 presence_reader=presence_reader,
-                profile_reader=profile_reader, registry=registry,
+                registry=registry,
                 reminder_caps=reminder_caps, reminders=reminders,
-                rosters=rosters, session_guidance=session_guidance,
+                rosters=rosters, session_guidance=cognition_session_guidance(dreamer_instructions),
                 shared=shared, standing_fold=standing_fold,
                 standing_store=standing_store,
                 stimulus_store=stimulus_store,
@@ -158,23 +108,15 @@ async def enabled(
                 unit_scopes=unit_scopes,
             )
             cognition_runner = cog.cognition_runner
-            cognition_session_units = cog.cognition_session_units
-            cognition_upcoming = cog.cognition_upcoming
     return EnabledWiring(
         cognition_runner=cognition_runner,
-        cognition_session_units=cognition_session_units,
-        cognition_upcoming=cognition_upcoming,
         dreamer_runtime=dreamer_runtime,
         review=review,
     )
 
 
-def legacy_cognition_shutdown(cfg: Any, runner: Any) -> CognitionShutdown | None:
-    if runner is None:
-        if cfg.cognition.enabled:
-            raise StartupError("[cognition] enabled but no session runner was built")
-        return None
-    return CognitionShutdown(runner=runner)
+def legacy_cognition_shutdown(runner: CognitionSessionRunner | None) -> CognitionShutdown | None:
+    return CognitionShutdown(runner=runner) if runner is not None else None
 
 
 @dataclass(frozen=True)

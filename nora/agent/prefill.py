@@ -1128,21 +1128,21 @@ def _tag_block(ctx: TagContext, tagger_name: str, quote: str = "") -> ContextBlo
 
 def engagement_floor(
     ctx: TagContext, *, display_name: str, tagger_name: str, context_window: int,
-    now: datetime, catalogue: str,
+    now: datetime, catalogue: str, proactive_event: bool = False,
 ) -> tuple[ContextBlock, ...]:
-    """The declared room context shared by called and ambient passes."""
+    """The declared room context for engagement passes."""
     blocks = (
         _room_members_block(ctx),
         ContextBlock("clock", compose_body(_now_line(now).strip()),
                      attrs=(("as_of", now.isoformat()),)),
         _presence_block(ctx),
         render_tool_catalogue(catalogue) if catalogue else None,
-        render_computer(ctx.computer),
-        render_documents(ctx.documents),
-        render_subagents(ctx.subagents),
+        render_computer(ctx.computer) if not proactive_event else None,
+        render_documents(ctx.documents) if not proactive_event else None,
+        render_subagents(ctx.subagents) if not proactive_event else None,
         _transcript_block(ctx, display_name, now, context_window),
-        _spoken_turn_block(ctx),
-        _replying_to_block(ctx, display_name),
+        _spoken_turn_block(ctx) if not proactive_event else None,
+        _replying_to_block(ctx, display_name) if not proactive_event else None,
         _tag_block(ctx, tagger_name),
     )
     return tuple(b for b in blocks if b is not None)

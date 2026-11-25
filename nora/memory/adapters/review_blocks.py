@@ -46,7 +46,7 @@ def review_block(
         return text
 
     text = render_elements(rows, tag="item", attrs=attrs, body=body)
-    details = (("status", result.status),)
+    details: tuple[tuple[str, str], ...] = (("status", result.status),)
     if result.limits:
         details += (("limit", ", ".join(result.limits)),)
     if result.cause:

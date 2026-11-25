@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import functools
 import importlib
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from nora.agent.dream_screen import text_offence
 from nora.agent.registry import ToolRegistry
 from nora.app.composition_helpers import _otp_secrets
 from nora.app.otp import OtpService
@@ -28,14 +26,12 @@ from nora.infra.sql.item_registration import (
 from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.observations import SqlObservationStore
 from nora.infra.sql.otp import SqlOtpStore
-from nora.infra.sql.profile import SqlProfileStore
 from nora.infra.sql.reasoning_strip import SqlReasoningStripStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
 from nora.language.lesson_render import ActiveLessons
-from nora.language.profile_render import ProfileHeads
 from nora.persons import PersonsError
 from nora.policy import PolicyError
 
@@ -97,23 +93,11 @@ def database(allowlist: Any, cfg: Any, metrics: Any, persons: Any)-> DatabaseWir
     # `PresenceStore`'s own docstring asks for. `audit.aclose()` (in
     # `nora.__main__.App.shutdown`) disposes it for both; `PresenceStore.aclose` is…
     engine = create_sql_engine(database_url)
+    engine.update_execution_options(legacy_memory_projection=False)
     engine.update_execution_options(item_registration=SqlItemRegistration(
         RegistrationScope(allowlist, persons),
         RuntimeRevisions(cfg.model_dump(), allowlist, persons),
     ))
-    if cfg.memory.graph.enabled:
-        from nora.app.graph_project import projection_context
-
-        # produce=False: the session reads stimuli; nothing drains work items now.
-        engine.update_execution_options(
-            memory_graph=projection_context(
-                allowlist,
-                persons,
-                nora_name=cfg.doctrine.display_name,
-                metrics=metrics,
-                produce=False,
-            )
-        )
     return DatabaseWiring(engine=engine)
 
 
@@ -277,34 +261,16 @@ def instructions(cfg: Any, metrics: Any)-> InstructionsWiring:
 @dataclass(frozen=True)
 class ReadersWiring:
     lessons_reader: Any
-    profile_reader: Any
-    profile_store_reader: Any
 
 
-def readers(cfg: Any, content_checks: Any, engine: Any)-> ReadersWiring:
+def readers(cfg: Any, engine: Any) -> ReadersWiring:
 
     # `<lessons>` on tag and fire turns: read-only,
     # bodies of active lessons. `None` while `[lessons] render` is off.
     lessons_reader: ActiveLessons | None = (
         ActiveLessons(SqlLessonStore(engine)) if cfg.lessons.render else None
     )
-    # THE SWITCH (design/unified-memory/profiles.md): the Profile accounts'
-    # read half — one store, read-only by the Protocol the readers are typed against
-    # (`ProfileHeads` has `account_heads` and nothing else), handed to the tag assembler,…
-    profile_store_reader = (
-        SqlProfileStore(
-            engine,
-            screen=functools.partial(text_offence, content_checks=content_checks),
-        )
-        if cfg.memory.profile.write and cfg.memory.profile.read
-        else None
-    )
-    profile_reader: ProfileHeads | None = profile_store_reader
-    return ReadersWiring(
-        lessons_reader=lessons_reader,
-        profile_reader=profile_reader,
-        profile_store_reader=profile_store_reader,
-    )
+    return ReadersWiring(lessons_reader=lessons_reader)
 
 
 @dataclass(frozen=True)

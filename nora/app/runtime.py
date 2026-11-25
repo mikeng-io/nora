@@ -88,52 +88,22 @@ async def prune_loop(store: _PrunableStore, metrics: Metrics, *, interval_second
             metrics.inc("nora_errors_total", stage="prune")
 
 
-class _DrainsIndexQueue(Protocol):
-    """The one method `memory_drain_loop` needs
-    (`nora.infra.sql.audit.SqlRecordStore.drain_index_queue`)."""
-
-    async def drain_index_queue(self) -> int: ...
-
-
-class _EmbedsIndexNodes(Protocol):
-    """The one method the drain loop's embedding step needs
-    (`nora.infra.sql.memory_embed.MemoryEmbedWorker.run_once`)."""
-
+class _EmbedsGraphSearch(Protocol):
     async def run_once(self) -> int: ...
 
 
-async def memory_drain_loop(
-    store: _DrainsIndexQueue, metrics: Metrics, *, interval_seconds: float,
-    embed: _EmbedsIndexNodes | None = None,
+async def graph_embed_loop(
+    worker: _EmbedsGraphSearch, metrics: Metrics, *, interval_seconds: float,
 ) -> None:
-    """Re-project what the memory index queued, `prune_loop`'s shape: sleep, drain, and on
-    failure log + count `nora_errors_total{stage=memory_drain}` and keep
-    looping. The analytics process drains on its own tick; this one covers a
-    deployment that runs no analytics. It runs during a `nora memory
-    rebuild` too: a drain calls the projector a rebuild calls, which writes
-    the source's current row, so the two converge whichever lands last.
-
-    `embed` (`[memory.index] embed`) is the
-    embedding worker: one batch after each drain, so a node re-projected
-    this tick is embedded on it. Its failure is its own
-    (`nora_errors_total{stage=memory_embed}`) and never stops the drain."""
+    """Refresh the Cognitive Graph's search vectors once per tick."""
     while True:
         await asyncio.sleep(interval_seconds)
         try:
-            tried = await store.drain_index_queue()
-            if tried:
-                log.info("memory index drain re-projected %d queued sources", tried)
-        except Exception:
-            log.exception("memory index drain failed")
-            metrics.inc("nora_errors_total", stage="memory_drain")
-        if embed is None:
-            continue
-        try:
-            embedded = await embed.run_once()
+            embedded = await worker.run_once()
             if embedded:
-                log.info("memory index embedding tried %d nodes", embedded)
+                log.info("graph search embedding tried %d rows", embedded)
         except Exception:
-            log.exception("memory index embedding failed")
+            log.exception("graph search embedding failed")
             metrics.inc("nora_errors_total", stage="memory_embed")
 
 

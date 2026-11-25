@@ -36,7 +36,7 @@ from tests.test_room_tools import _UNREACHABLE_TRANSIT, MILES
 
 
 def specs(scenario, *, clock=lambda: NOW, room_id=ROOM, scope=SCOPE, metrics=None,
-          graph=True, memory_retrieval=None, content_checks=True):
+          graph=True, content_checks=True):
     member_account = "fixture-reader-account"
     people = replace(scenario.persons, index={
         **scenario.persons.index, ("signal", member_account): PERSON,
@@ -56,7 +56,7 @@ def specs(scenario, *, clock=lambda: NOW, room_id=ROOM, scope=SCOPE, metrics=Non
         store=None, conversation_id=room_id, conversation_type="group", room=room,
         persons=people, deliverer=SinkSender(),
         metrics=metrics or Metrics(), transit_source=_UNREACHABLE_TRANSIT, clock=clock,
-        graph_retrieval=graph_retrieval, pass_scope=scope, memory_retrieval=memory_retrieval,
+        graph_retrieval=graph_retrieval, pass_scope=scope,
         content_checks=content_checks,
     )
     return {spec.name: spec.call for spec in built}

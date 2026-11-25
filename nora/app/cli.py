@@ -812,7 +812,7 @@ async def cmd_unified_backfill(args: argparse.Namespace) -> int:
             raise CliError(
                 f"--apply requires positive finite values: {', '.join(invalid)}")
         _profile_tracing(cfg)
-        deps = await build_dependencies(cfg)
+        deps = await build_dependencies(cfg, legacy_replay=True)
         engine = create_sql_engine(_database_url(cfg))
         try:
             home_rooms = {
@@ -856,7 +856,7 @@ async def cmd_unified_backfill(args: argparse.Namespace) -> int:
             raise CliError(
                 "--catch-up gates on the whole unit; a --from-ms/--until-ms "
                 "window cannot certify completion")
-        deps = await build_dependencies(cfg)
+        deps = await build_dependencies(cfg, legacy_replay=True)
         engine = create_sql_engine(_database_url(cfg))
         try:
             live = deps.cognition_runner

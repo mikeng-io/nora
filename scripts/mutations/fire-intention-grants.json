@@ -30,8 +30,8 @@
   {
     "name": "REV-R2-2 intention opt-in requires admission wiring",
     "file": "nora/agent/registry.py",
-    "old": "        if (engagement or commit_intentions) and self._intention_admission is not None:\n",
-    "new": "        if engagement or commit_intentions:\n",
+    "old": "        if commit_intentions and self._intention_admission is not None:\n",
+    "new": "        if commit_intentions:\n",
     "target": "tests/unit/test_fire_intention_surface.py::test_fire_intention_opt_in_requires_admission[prebuilt]"
   }
 ]

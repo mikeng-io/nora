@@ -41,7 +41,9 @@ class AmbientInput:
 
 @dataclass(frozen=True, slots=True)
 class ProactiveInput:
-    intention: str
+    intention: str | None
+    event: AnchorItem | None = None
+    show_nora_profile: bool = True
 
 
 @dataclass(frozen=True, slots=True)

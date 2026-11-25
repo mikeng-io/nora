@@ -38,7 +38,6 @@ from nora.access import IdentityAccess
 from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, OFF_GRAPH_ONLY_TOOLS
 from nora.agent.dreamer import HomeRoom, RegistryToolSource, cognition_grant
 from nora.agent.lineage import LineagePolicy
-from nora.agent.memory_search import MemorySearch
 from nora.agent.registry import ToolRegistry
 from nora.agent.whereis import Circle
 from nora.app.cognition_wiring import (
@@ -61,8 +60,6 @@ from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.memo import SqlMemoStore
-from nora.infra.sql.memory_graph import SqlMemoryGraph
-from nora.infra.sql.memory_read import SqlMemoryIndex
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.observations import SqlObservationStore
@@ -215,10 +212,6 @@ class World:
             graph_retrieval=wire.graph_read_tools(
                 engine, access, lineage, FakeQueryEmbedder(), None,
             ) if graph else None,
-            memory_search=(
-                MemorySearch(SqlMemoryIndex(engine), self.metrics, graph=SqlMemoryGraph(engine))
-                if graph else None
-            ),
             note_unit=lambda platform, cid: "u1", unit_for=lambda platform, cid: "u1",
             mobility=SqlMobilityStore(engine), circles=(circle,),
             media_join=media_join,

@@ -1135,14 +1135,6 @@ class SqlRecordStore:
             "schema_revision": head_revision(),
         }
 
-    async def drain_index_queue(self, *, limit: int = 500) -> int:
-        """Re-project what the memory index's projections queued, from the
-        nora process (`nora.app.runtime.memory_drain_loop`); the analytics
-        process drains too (`SqlRollupStore.drain_index_queue`), and the two
-        take disjoint rows. Returns the rows tried."""
-        async with self._engine.begin() as conn:
-            return await memory_index.drain_queue(conn, limit=limit, metrics=self._metrics)
-
     async def prune_all(self, *, now: datetime | None = None) -> int:
         """Sweep configured horizons and trim each conversation to its count bound."""
         return await prune_sources(

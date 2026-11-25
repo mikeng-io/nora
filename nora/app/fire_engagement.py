@@ -48,14 +48,17 @@ class AmbientEngagement:
     async def prompt(
         self, ctx: TagContext, *, unit: str | None, display_name: str, speaker: str,
         context_window: int, now: datetime, catalogue: str, header: str, room: Room,
+        proactive_event: bool = False, show_nora_profile: bool = True,
     ) -> tuple[list[dict[str, Any]], str]:
         floor = engagement_floor(
             ctx, display_name=display_name, tagger_name=speaker,
             context_window=context_window, now=now, catalogue=catalogue,
+            proactive_event=proactive_event,
         )
         prefill, message, shown = await self.graph.prompt(
-            "ambient", ctx, floor=floor, unit=unit, display_name=display_name,
-            now=now, header=header, room=room,
+            "proactive" if proactive_event else "ambient",
+            ctx, floor=floor, unit=unit, display_name=display_name,
+            now=now, header=header, room=room, show_nora_profile=show_nora_profile,
         )
         seed_pass_shown(shown)
         return prefill, message

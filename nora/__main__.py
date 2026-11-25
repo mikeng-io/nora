@@ -21,12 +21,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
+from aiohttp.web import AppRunner
+
 from . import config
 from .agent.telemetry import setup_agent_tracing
 from .app import adoption, cli, lifecycle, runtime
-from .app.composition import Dependencies, StartupError, build_dependencies
+from .app.composition import Dependencies, build_dependencies
 from .app.management import mount_management
 from .app.revisions import RevisionRecorder
+from .app.startup import StartupError as StartupError
 from .config import ConfigError
 from .obs.errors import setup_errors
 from .obs.health import build_health_app, serve
@@ -114,7 +117,7 @@ class App:
         self.cfg = cfg
         self.deps = deps
         self.config_path = config_path
-        self._health_runner = None
+        self._health_runner: AppRunner | None = None
 
     # Convenience accessors: tests and the health app read these directly
     # rather than reaching into `deps`.
@@ -171,7 +174,7 @@ class App:
         register_web_routes(
             health_app, store=deps.audit, reminders=deps.reminders,
             persons=deps.persons, started_at=started_at,
-            presence=deps.presence, presence_circles=deps.presence_circles,
+            presence=deps.presence, presence_circles=tuple(deps.presence_circles),
             mobility=deps.mobility,
             skills_dir=deps.skills_dir, events=deps.events,
             doctrine_store=deps.doctrine_store,
@@ -243,16 +246,11 @@ class App:
             ))
         else:
             log.info("retention sweep disabled (store.prune_enabled = false)")
-        if deps.graph_batches is not None:
-            deps.background.spawn(deps.graph_batches.run())
-        # Unconditional: every store write projects into the memory index,
-        # so there is always a queue a failed projection may have filled.
-        deps.background.spawn(runtime.memory_drain_loop(
-            deps.audit, deps.metrics,
-            interval_seconds=self.cfg.memory.index.refresh_seconds,
-            # `[memory.index] embed`; None while off.
-            embed=deps.memory_embed,
-        ))
+        if deps.memory_embed is not None:
+            deps.background.spawn(runtime.graph_embed_loop(
+                deps.memory_embed, deps.metrics,
+                interval_seconds=self.cfg.memory.index.refresh_seconds,
+            ))
         # Eval subjects compose the graph without starting its wake poller.
         if deps.wake_poller is not None:
             await deps.wake_poller.recover()

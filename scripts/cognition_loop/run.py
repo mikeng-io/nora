@@ -116,7 +116,7 @@ async def _compose(spec_args: Any, url: str, at_ms: int, room: tuple[str, str],
         identity=identity_text, policy=policy_text,
         overrides=getattr(spec_args, "overrides", {}) or None,
         environment=getattr(spec_args, "environment", None),
-    ))
+    ), legacy_replay=True)
 
 
 def validate_recorded_wakes(

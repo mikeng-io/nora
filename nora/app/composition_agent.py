@@ -105,7 +105,7 @@ def build_registry(
     document_service: Any, engine: Any, fetch_client: Any,
     geocoder: Any, giphy_client: Any, image_generator: Any, image_refs_allowed: Any,
     ledger_store: Any, lineage: Any, mcp_tool_groups: Any, media_descriptions: Any,
-    media_join: Any, media_objects: Any, memo_store: Any, memory_search: Any,
+    media_join: Any, media_objects: Any, memo_store: Any,
     metrics: Any, mobility: Any, music_bridge: Any, note_store: Any,
     observation_store: Any, persons: Any, presence_circles: Any, presence_reader: Any,
     presence_store: Any, reaction_picker: Any,
@@ -131,7 +131,7 @@ def build_registry(
         image_generator=image_generator, image_refs_allowed=image_refs_allowed,
         ledger_store=ledger_store, lineage=lineage, mcp_tool_groups=mcp_tool_groups,
         media_descriptions=media_descriptions, media_join=media_join,
-        media_objects=media_objects, memo_store=memo_store, memory_search=memory_search,
+        media_objects=media_objects, memo_store=memo_store,
         graph_retrieval=graph_retrieval,
         engagement_graph_retrieval=engagement_graph_retrieval,
         intention_admission=intention_admission,
@@ -160,7 +160,7 @@ def _build_tool_registry(
     computer_dm_scope_for: Any, content_checks: Any, graph_profiles: Any,
     subagent_desk: Any, giphy_client: Any, discord_presence: Any, computer: Any,
     presence_store: Any, mcp_tool_groups: Any, image_generator: Any, ledger_store: Any,
-    memo_store: Any, memory_search: Any, observation_store: Any,
+    memo_store: Any, observation_store: Any,
     graph_retrieval: Any, engagement_graph_retrieval: Any, intention_admission: Any,
     browser: Any, computer_context: Any, computer_settings: Any, presence_reader: Any,
     search_client: Any, engine: Any, version_manifest: Any,
@@ -197,7 +197,7 @@ def _build_tool_registry(
         **_memory_tool_args(
             graph_profiles=graph_profiles,
             engine=engine, ledger_store=ledger_store, lineage=lineage,
-            memo_store=memo_store, memory_search=memory_search, graph_retrieval=graph_retrieval,
+            memo_store=memo_store, graph_retrieval=graph_retrieval,
             standing_store=standing_store,
         ),
         **_record_tool_args(
@@ -241,14 +241,13 @@ def _build_tool_registry(
 
 def _memory_tool_args(
     graph_profiles: Any, engine: Any,
-    ledger_store: Any, lineage: Any, memo_store: Any, memory_search: Any,
+    ledger_store: Any, lineage: Any, memo_store: Any,
     standing_store: Any, graph_retrieval: Any,
 ) -> Any:
     """The memory tier's tools: index search, graph verbs, standing, ledger."""
     import nora.memory as memory_area
 
     return {
-        "memory_search": memory_search,
         "graph_retrieval": graph_retrieval,
         # `profile_dispute`'s writes: the graph's dispute and forget verbs. No flag:
         # the engagement turn always reads the graph whose IDs the tool takes.

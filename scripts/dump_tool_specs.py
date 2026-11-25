@@ -29,6 +29,7 @@ import hashlib
 import inspect
 import json
 import sys
+from typing import Any
 
 from nora.agent.ports import adapt
 from nora.agent.registry import ToolRegistry
@@ -39,18 +40,18 @@ def _specs() -> list[dict]:
     # The full declared surface: every optional collaborator wired, mirroring
     # `test_the_registry_exposes_every_declared_tool`'s registry. `object()`
     # sentinels are enough — introspection builds, never calls.
+    collaborator: Any = object()
     registry = ToolRegistry(
-        record=object(),
-        rollup=object(),
-        standing_head=object(),
-        culture=object(),
-        social_items=object(),
-        memos=object(),
+        record=collaborator,
+        rollup=collaborator,
+        standing_head=collaborator,
+        social_items=collaborator,
+        memos=collaborator,
         computer=FakeSandboxRuntime(),
         browser=FakeBrowserRunner(),
-        documents=object(),
-        computer_admission=object(),
-        browser_manager=object(),
+        documents=collaborator,
+        computer_admission=collaborator,
+        browser_manager=collaborator,
     )
     out = []
     for spec in registry._introspection_specs():

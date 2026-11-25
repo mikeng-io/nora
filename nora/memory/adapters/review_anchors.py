@@ -54,7 +54,7 @@ async def review_anchors(
     row = graph.c
     part = row.image["part"].astext
     priority = sa.case((part == "lesson", 0), else_=1)
-    origin = row.origin_room.in_(room_aliases)
+    origin: sa.ColumnElement[bool] = row.origin_room.in_(room_aliases)
     if data.include_roomless:
         origin = origin | row.origin_room.is_(None)
     due_guesses = _due_guesses(unit, now).with_only_columns(CLAIM.c.id)
@@ -83,17 +83,19 @@ async def review_anchors(
     evidence: list[tuple[str, str]] = []
     cursor = None
     since = None
-    for row in candidates:
-        id_ = row.graph_id
-        if row.window_end is None:
+    for candidate in candidates:
+        id_ = candidate.graph_id
+        if candidate.window_end is None:
             evidence_rows = await _lesson_evidence(conn, graph, unit, id_, now)
         else:
-            evidence_rows = await _guess_evidence(conn, graph, row.asserted_at, row.window_end, now)
+            evidence_rows = await _guess_evidence(
+                conn, graph, candidate.asserted_at, candidate.window_end, now,
+            )
         refs = tuple(dict.fromkeys(item.graph_id for item in evidence_rows))
-        since = min(since or now, row.event_time, *(item.event_time for item in evidence_rows))
+        since = min(since or now, candidate.event_time, *(r.event_time for r in evidence_rows))
         due.append(id_)
         evidence.extend((ref, id_) for ref in refs)
-        cursor = ReviewCursor((row.priority, id_))
+        cursor = ReviewCursor((candidate.priority, id_))
     return tuple(due), tuple(evidence), cursor, since
 
 

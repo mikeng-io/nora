@@ -190,7 +190,7 @@ async def test_wake_input_composes_the_production_spec(
         monkeypatch: Any, tmp_path: Any) -> None:
     seen: dict[str, SubjectSpec] = {}
 
-    async def obtain(spec: SubjectSpec) -> Any:
+    async def obtain(spec: SubjectSpec, *, legacy_replay: bool = False) -> Any:
         seen["spec"] = spec
         runner = SimpleNamespace(inspect=AsyncMock(return_value={
             "system": "generated-system", "agenda": "generated-agenda"}))

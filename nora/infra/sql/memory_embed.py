@@ -1,8 +1,8 @@
 """The embedding worker.
 
-One batch per tick of the nora process's memory drain loop
-(`nora.app.runtime.memory_drain_loop`), only while `[memory.index] embed`.
-The node is the queue: `embed_pick` finds live, embeddable nodes
+The service embeds Cognitive Graph search rows while `[memory.index] embed`.
+Offline use can also supply the legacy index. Its node is the queue:
+`embed_pick` finds live, embeddable nodes
 with no vector, each is embedded and stored with the model's fingerprint, and
 lexical search finds a node before its vector exists. The Cognitive Graph has
 a separate text-only queue with the same attempt schedule and fingerprint.
@@ -89,7 +89,9 @@ class MemoryEmbedWorker:
         self, engine: AsyncEngine, embedder: LlamaEmbedder, blobs: BlobStore | None, *,
         model: str, model_file: str, batch: int, images_per_hour: int,
         metrics: Any = None, clock: Callable[[], float] = time.time,
+        legacy_index: bool = False,
     ) -> None:
+        self._legacy_index = legacy_index
         self._engine = engine
         self._embedder = embedder
         self._blobs = blobs
@@ -123,8 +125,9 @@ class MemoryEmbedWorker:
             )
             return False
         async with self._engine.begin() as conn:
-            cleared = await memory_index.clear_embeddings(conn, keep_model=self._model)
-            cleared += await graph_search_embed.clear_other_models(conn, keep_model=self._model)
+            cleared = await graph_search_embed.clear_other_models(conn, keep_model=self._model)
+            if self._legacy_index:
+                cleared += await memory_index.clear_embeddings(conn, keep_model=self._model)
         if cleared:
             log.info("memory embed: cleared %d vectors of other models", cleared)
         self._ready = True
@@ -137,16 +140,19 @@ class MemoryEmbedWorker:
         now = self._clock()
         media = self._blobs is None or self._image_budget(now) > 0
         async with self._engine.connect() as conn:
-            picked = await memory_index.embed_pick(
-                conn, limit=self._batch, now_ms=int(now * 1000), media=media,
-            )
             graph = await graph_search_embed.pick(conn, limit=self._batch, now_ms=int(now * 1000))
-            types = await memory_index.media_types(
-                conn, [(n.source_id, n.sha256 or "") for n in picked if n.kind == "media"],
-                social=[
-                    (n.source_id, n.sha256 or "") for n in picked if n.kind == "social_media"
-                ],
-            )
+            picked: list[Embeddable] = []
+            types: dict[str, str] = {}
+            if self._legacy_index:
+                picked = await memory_index.embed_pick(
+                    conn, limit=self._batch, now_ms=int(now * 1000), media=media,
+                )
+                types = await memory_index.media_types(
+                    conn, [(n.source_id, n.sha256 or "") for n in picked if n.kind == "media"],
+                    social=[
+                        (n.source_id, n.sha256 or "") for n in picked if n.kind == "social_media"
+                    ],
+                )
         tried = 0
         items: list[Embeddable | GraphEmbeddable] = [*picked, *graph]
         for item in items:

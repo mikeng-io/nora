@@ -485,6 +485,8 @@ async def fold_recorded_unit(
     if (trace is None or trace.occasion != "cognition" or trace.unit != subject.unit
             or trace.created_at != now_ms or not trace.messages):
         raise LookupError("anchor must name a complete Cognition Record")
+    if runner._rooms_of_unit is None:
+        raise LookupError("unit room reader unavailable")
     available = {room_key(*r): r for r in runner._rooms_of_unit(subject.unit)}
     if not trace.bound_rooms or any(r not in available for r in trace.bound_rooms):
         raise LookupError("Record rooms do not resolve inside the unit")
@@ -530,14 +532,8 @@ async def fold_recorded_unit(
                            if e.kind in {"decision", "commitment", "thread"} and e.scope == "unit")
     if not ledger_entries:
         raise LookupError("unit fold retained no judged state")
-    from nora.app.fire import participation_occasion
-
-    fire = subject.deps.fire_path
-    if fire is None:
-        raise LookupError("destination Standing reader unavailable")
     for platform, cid in rooms:
-        destination = await fire._read_shared(
-            participation_occasion(platform=platform, conversation_id=cid), ref=None)
+        destination = await runner._shared(unit=subject.unit, room=(platform, cid), now_ms=now_ms)
         # The common view retains a withheld entry's existence. Disclosure
         # governs its content; it does not require every room to see it.
         projected = {e.id for e in destination.entries} if destination else set()

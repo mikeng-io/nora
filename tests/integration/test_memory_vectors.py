@@ -83,11 +83,13 @@ def _message(body: str, *, ts: int = 1000, blobs: tuple[MediaBlob, ...] = ()) ->
 def worker(
     engine: Any, url: str, *, blobs: Any = None, model_id: str = MODEL_ID, batch: int = 16,
     images_per_hour: int = 100, metrics: Any = None, clock: Any = None,
+    legacy_index: bool = True,
 ) -> MemoryEmbedWorker:
     return MemoryEmbedWorker(
         engine, LlamaEmbedder(url), blobs, model=fingerprint(model_id),
         model_file=model_file(model_id), batch=batch,
         images_per_hour=images_per_hour, metrics=metrics, clock=clock or Clock(),
+        legacy_index=legacy_index,
     )
 
 

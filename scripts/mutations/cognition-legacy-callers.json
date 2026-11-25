@@ -2,8 +2,8 @@
   {
     "name": "the wake's subject is composed inside its recorded environment",
     "file": "scripts/confirm_cognition_anchors.py",
-    "old": "            policy=(config_dir / \"policy.toml\").read_text(),\n            environment=environment))",
-    "new": "            policy=(config_dir / \"policy.toml\").read_text()))",
+    "old": "            policy=(config_dir / \"policy.toml\").read_text(),\n            environment=environment), legacy_replay=True)",
+    "new": "            policy=(config_dir / \"policy.toml\").read_text()), legacy_replay=True)",
     "target": "tests/unit/test_cognition_anchor_confirmation.py::test_wake_input_composes_the_production_spec"
   },
   {

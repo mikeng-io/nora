@@ -14,7 +14,6 @@ import pytest
 import nora.documents
 from nora.agent import tool_choice
 from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS
-from nora.app import composition_cognition
 from nora.app.composition import (
     Dependencies,
     build_dependencies,
@@ -1489,7 +1488,7 @@ async def test_cognition_on_builds_one_runner_for_backfill_alongside_graph_wake(
     cfg, tmp_path,
 ):
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    deps = await build_dependencies(override_config(cfg, _SESSION_ON))
+    deps = await build_dependencies(override_config(cfg, _SESSION_ON), legacy_replay=True)
     runner = deps.cognition_runner
     assert runner is not None and deps.wake_poller is not None
     assert deps.cognition_shutdown is not None and not deps.cognition_shutdown.done
@@ -1553,7 +1552,9 @@ async def test_a_session_whose_objective_or_skill_is_missing_is_a_startup_error(
         (root / "skills" / "cognition-register.md").unlink()
     expect = "cognition-register" if how == "skill deleted" else "cognition"
     with pytest.raises(StartupError, match=expect):
-        await build_dependencies(override_config(cfg, {**_SESSION_ON, "dreamer.dir": root}))
+        await build_dependencies(
+            override_config(cfg, {**_SESSION_ON, "dreamer.dir": root}), legacy_replay=True,
+        )
 
 
 async def test_the_same_tree_builds_when_nothing_is_taken_out_of_it(cfg, tmp_path):
@@ -1561,7 +1562,7 @@ async def test_the_same_tree_builds_when_nothing_is_taken_out_of_it(cfg, tmp_pat
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(
         cfg, {**_SESSION_ON, "dreamer.dir": _dreamer_tree(tmp_path)},
-    ))
+    ), legacy_replay=True)
     assert deps.cognition_runner is not None
 
 
@@ -1571,10 +1572,10 @@ async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withho
     from nora.domain.cognition_session import Room
 
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    off = await build_dependencies(override_config(cfg, _SESSION_ON))
+    off = await build_dependencies(override_config(cfg, _SESSION_ON), legacy_replay=True)
     on = await build_dependencies(override_config(
         cfg, {**_SESSION_ON, "record_query.enabled": True},
-    ))
+    ), legacy_replay=True)
     assert "record_query" not in off.cognition_runner._read_only_tools
     assert "record_query" in on.cognition_runner._read_only_tools
     wired = off.cognition_runner._read_only_tools
@@ -1595,26 +1596,18 @@ async def test_the_configured_model_window_reaches_the_runner_the_overflow_proof
     """Unset (the default) is «window unknown», so no overflow is the agenda's;
     a configured window and fraction are what the runner proves one against."""
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    default = (await build_dependencies(override_config(cfg, _SESSION_ON))).cognition_runner
+    baseline = await build_dependencies(override_config(cfg, _SESSION_ON), legacy_replay=True)
+    default = baseline.cognition_runner
     assert default is not None and default._window_tokens is None
     deps = await build_dependencies(override_config(cfg, {
         **_SESSION_ON, "cognition.model_window_tokens": 123_456,
         "cognition.overflow_window_fraction": 0.5,
-    }))
+    }), legacy_replay=True)
     assert deps.cognition_runner is not None
     assert (deps.cognition_runner._window_tokens,
             deps.cognition_runner._window_fraction) == (123_456, 0.5)
 
 
-async def test_cognition_on_that_built_no_runner_refuses_to_boot(
-    cfg, tmp_path, monkeypatch,
-):
-    """The boot check: a loop that wakes and runs no session must not boot."""
-
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    monkeypatch.setattr(composition_cognition, "build_cognition_runner", lambda **kw: None)
-    with pytest.raises(StartupError, match="no session runner"):
-        await build_dependencies(override_config(cfg, _SESSION_ON))
 
 
 async def test_the_session_is_grounded_from_the_record_with_record_query_off(
@@ -1630,7 +1623,7 @@ async def test_the_session_is_grounded_from_the_record_with_record_query_off(
     from nora.infra.sql.engine import create_sql_engine
 
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    deps = await build_dependencies(override_config(cfg, _SESSION_ON))
+    deps = await build_dependencies(override_config(cfg, _SESSION_ON), legacy_replay=True)
     assert "record_query" not in deps.cognition_runner._read_only_tools  # the tool is OFF
     engine = create_sql_engine(clean_pg_url)
     now = 1_790_000_000_000
@@ -1687,7 +1680,7 @@ async def test_graph_wake_can_compose_with_no_home_room_for_legacy_sessions(cfg,
         'default = "deny"\n[[conversations]]\nplatform = "signal"\nid = "g1"\npersons = "*"\n'
         'unit = "friends"\nlabel = "Friends"\n',
     )
-    deps = await build_dependencies(override_config(cfg, _SESSION_ON))
+    deps = await build_dependencies(override_config(cfg, _SESSION_ON), legacy_replay=True)
     assert deps.wake_poller is not None
     assert deps.metrics.get("nora_cognition_session_units", state="no_home_room") == 1
 
@@ -1844,46 +1837,8 @@ async def test_the_senders_hold_identity_toml_as_their_direct_message_allowlist(
     assert deps.registry.adapters["signal"]._sender._dm_recipients == frozenset({"+852111"})
 
 
-async def test_legacy_prefetch_index_uses_the_configured_worker_tick(cfg):
-    """The legacy prefetch waits for the configured index worker tick."""
-    from nora.agent.memory_search import BACKLOG_TICKS
-
-    deps = await build_dependencies(override_config(
-        cfg, {"memory.index.read": True, "memory.index.refresh_seconds": 7.5},
-    ))
-    search = deps.engagement._tool_registry._memory_search
-    assert search is not None
-    assert search._fresh_seconds == BACKLOG_TICKS * 7.5
 
 
-@pytest.mark.parametrize("graph", [False, True])
-async def test_legacy_prefetch_and_graph_reads_are_wired_on_the_graph_surface(cfg, graph):
-    """Cognition uses the graph read service while legacy prefetch keeps its index."""
-    deps = await build_dependencies(override_config(
-        cfg, {"memory.index.read": graph},
-    ))
-    search = deps.engagement._tool_registry._memory_search
-    assert deps.engagement._context._memory_search is search
-    assert (search is not None) is graph
-    assert (deps.engagement._tool_registry._graph_retrieval is not None) is graph
-    from nora.agent.prefill import build_prefill
-    from nora.domain.models import TagContext
-
-    message = NormalizedMessage(
-        platform="signal", conversation_id="g1", conversation_type="group",
-        sender_id="generated-sender", sender_name="Generated", timestamp=1000,
-        body="generated recall probe", raw={},
-    )
-    context = deps.engagement._context
-    prefetched = await context._prefetch(message, None)
-    assert (prefetched is not None) is graph
-    if not graph:
-        baseline = TagContext("generated-tag", message, None, (), (), 0.0)
-        from dataclasses import replace
-
-        actual = replace(baseline, recalled=context._recalled(prefetched, message, ()))
-        assert build_prefill(actual, display_name="Nora", context_window=10) == build_prefill(
-            baseline, display_name="Nora", context_window=10)
 
 
 @pytest.mark.parametrize("graph", [False, True])
@@ -1897,7 +1852,7 @@ async def test_cognition_holds_the_memory_surface_the_flag_selects(cfg, tmp_path
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(
         cfg, {**_SESSION_ON, "memory.index.read": graph},
-    ))
+    ), legacy_replay=True)
     runner = deps.cognition_runner
     assert runner is not None
     unit, home = next(iter(runner._home_rooms.items()))
@@ -1922,7 +1877,7 @@ async def test_markdown_identity_reaches_live_tools_and_cognition_writers(cfg, t
     )
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     renamed = override_config(cfg, {**_SESSION_ON, "doctrine.dir": directory})
-    deps = await build_dependencies(renamed)
+    deps = await build_dependencies(renamed, legacy_replay=True)
     assert deps.cognition_runner is not None
     assert deps.cognition_runner._nora_names == frozenset({"AgentAlpha"})
     registry = deps.engagement._tool_registry

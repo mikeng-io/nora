@@ -19,7 +19,6 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from nora.agent.prefill import build_prefill
 from nora.agent.registry import ToolRegistry
 from nora.app import fire as fire_module
 from nora.app.fire import (
@@ -29,10 +28,9 @@ from nora.app.fire import (
     proactive_occasion,
 )
 from nora.domain.compute import ComputeJob, ComputeJobState
-from nora.domain.decision_log import DecisionLogRecorder, DecisionRow
+from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.events import Event
 from nora.domain.models import ConversationTarget, PersonRef
-from nora.domain.notes import Note, NoteRevision
 from nora.domain.ports import (
     JobResult,
     JobStatus,
@@ -49,7 +47,6 @@ from nora.testing import (
     FakeRosterSource,
     FakeSteamPresenceProvider,
     InMemoryDecisionLogStore,
-    InMemoryNoteStore,
     ScriptedTurn,
 )
 from nora.testing.fakes import FakeRecordStore
@@ -361,7 +358,7 @@ def _fire_path(
     standing_store_timeout_seconds: float = 5.0,
     decisions=None,
     policy=None,
-    defer_tools: bool = False, ambient=None, graph_profiles=None, clock=lambda: T0,
+    defer_tools: bool = False, ambient=None, clock=lambda: T0,
 ) -> FirePath:
     extra = {"shared": shared,
              "standing_store_timeout_seconds": standing_store_timeout_seconds,
@@ -382,7 +379,7 @@ def _fire_path(
         canary="test-canary", display_name="Nora",
         ai_peer="nora", context_window=40,
         limits=LIMITS, timeout_seconds=timeout_seconds, clock=clock,
-        defer_tools=defer_tools, ambient=ambient, graph_profiles=graph_profiles,
+        defer_tools=defer_tools, ambient=ambient,
         participation_runner=participation_runner,
         shadow_channel=shadow_channel, shadow_platform=shadow_platform,
         gate_shadow_channel=gate_shadow_channel,
@@ -898,85 +895,10 @@ async def test_a_reminder_row_has_no_occasion_and_fails_closed(
 
 # --- <standing> on the fire path --------------------------------------
 
-async def _fire_path_with_standing(
-    persons, record_store, doctrine_store, metrics,
-    standing, store_timeout: float = 5.0,
-) -> FirePath:
-    """`fire_path`'s own builder plus the standing collaborator — same
-    model-side-collaborators-are-None shape, for the same reason: these tests
-    call `build_context` only."""
-    return FirePath(
-        persons=persons, records=record_store,
-        doctrine_store=doctrine_store, metrics=metrics,
-        runner=None, adapters={}, registry=None,                # type: ignore[arg-type]
-        canary="test-canary", display_name="Nora",
-        ai_peer="nora", context_window=40, limits={},
-        timeout_seconds=120.0, clock=lambda: T0,
-        shared=_shared_reader(standing, rooms=[("signal", "conv-1")]),
-        standing_store_timeout_seconds=store_timeout,
-        policy=permissive_policy(),
-    )
 
 
-async def test_the_fire_path_renders_the_conversations_position(
-    persons, record_store, doctrine_store, metrics,
-) -> None:
-    """`<standing>` reaches the fire turn's prefill. `build_prefill` is shared
-    and parameterised only by `header=`, so SUPPRESSING `<standing>` here is
-    the special case needing justification — and a `build_context` that does
-    not pass `standing=` suppresses it silently, because the field defaults
-    to `None`.
-
-    It matters most on this path: a fire turn speaks into a room UNPROMPTED, so
-    «where had this conversation got to» is the context she is least likely to
-    have any other way — there is no tagging message to infer it from.
-    """
-    from nora.domain.standing import Standing
-    from nora.testing import InMemoryStandingStore
-
-    store = InMemoryStandingStore()
-    fire = await _fire_path_with_standing(
-        persons, record_store, doctrine_store, metrics, store)
-    occasion = _job_occasion()
-    await store.write(standing=Standing(
-        platform=occasion.platform, conversation_id=occasion.conversation_id,
-        body="They settled on somewhere for the 9th; Grant is travelling.",
-        fold_count=2, updated_at=1,
-    ))
-
-    ctx = await fire.build_context(occasion)
-
-    pos = next((e for e in ctx.shared.entries if e.kind == "standing"), None)
-    assert pos is not None and "Grant is travelling" in pos.subject
 
 
-async def test_a_hanging_standing_read_cannot_wedge_a_fire_turn(
-    persons, record_store, doctrine_store, metrics,
-) -> None:
-    """**An unbounded read here wedges the conversation.**
-
-    The heartbeat holds this conversation's slot around the whole fire turn
-    (`try_acquire` -> `release_and_dispatch`) and `create_sql_engine` sets no
-    `command_timeout`, so an unbounded standing read would hold the slot
-    indefinitely.
-
-    Falsification: drop the `asyncio.wait_for` around `_read_shared`'s
-    reader call and this hangs instead of failing.
-    """
-    class _Hangs:
-        async def read(self, **kw):
-            await asyncio.sleep(30)
-            raise AssertionError("should have been cut off")
-
-    fire = await _fire_path_with_standing(
-        persons, record_store, doctrine_store, metrics,
-        _Hangs(), store_timeout=0.05)
-
-    ctx = await asyncio.wait_for(
-        fire.build_context(_job_occasion()), timeout=5)
-
-    assert ctx.shared is not None and ctx.shared.status == "unavailable"
-    assert metrics.get("nora_errors_total", stage="shared_state") == 1
 
 
 # ---------------------------------------------------------------------------
@@ -985,139 +907,20 @@ async def test_a_hanging_standing_read_cannot_wedge_a_fire_turn(
 # The participation determination grounds on «transcript + standing/notes»;
 # these pin the read itself, the fail-soft accounting, and the wiring-gap state.
 
-async def _fire_path_with_tiers(
-    persons, record_store, doctrine_store, metrics, *,
-    notes=None, policy="permissive", shared=None, memos=None,
-) -> FirePath:
-    """`fire_path`'s own builder plus the tier collaborators — same
-    model-side-collaborators-are-None shape, for the same reason: these tests
-    call `build_context` only. `policy="permissive"` resolves every room to
-    the `nora` unit, matching where the seeds below are keyed."""
-    return FirePath(
-        persons=persons, records=record_store,
-        doctrine_store=doctrine_store, metrics=metrics,
-        runner=None, adapters={}, registry=None,                # type: ignore[arg-type]
-        canary="test-canary", display_name="Nora",
-        ai_peer="nora", context_window=40, limits={},
-        timeout_seconds=120.0, clock=lambda: T0,
-        notes=notes, shared=shared, memos=memos,
-        policy=permissive_policy() if policy == "permissive" else None,
-    )
 
 
-def _shared_reader(standing, rooms=()):
-    """A real `shared_reader` over the given standing store — the position
-    paragraph reaches the fire context as a `standing` entry in the ONE
-    `standing` view (design/notebook-memory-types/20-standing.md)."""
-    from nora.agent.shared_state import shared_reader
-    return shared_reader(
-        standing=standing, ai_peer="nora",
-        rooms_of_unit=lambda unit: tuple(rooms))
 
 
-def _seeded_note_store() -> InMemoryNoteStore:
-    store = InMemoryNoteStore()
-    store.notes["11111111-0000-4000-8000-000000000001"] = Note(
-        id="11111111-0000-4000-8000-000000000001", unit="nora",
-        title="Raft roadmap", description="when the next Raft update ships",
-        uncertainty="no date announced", closing_condition="Raft announces a date",
-        established_in="conv-1", created_at=1,
-        head_revision_id="22222222-0000-4000-8000-000000000002",
-        anchor_date=20260101,
-    )
-    store.revisions["22222222-0000-4000-8000-000000000002"] = NoteRevision(
-        id="22222222-0000-4000-8000-000000000002",
-        note_id="11111111-0000-4000-8000-000000000001",
-        body="still no date", parent_revision_id=None,
-        written_at=1, established_by="test-seed",
-    )
-    return store
 
 
-async def test_the_fire_path_reads_the_note_index(
-    persons, record_store, doctrine_store, metrics,
-) -> None:
-    """The determination's `<notes>` block: the standing index for the room's
-    UNIT, not the room — DEC-105's keying, mirrored from
-    `TranscriptInjection._notes`."""
-    fire = await _fire_path_with_tiers(
-        persons, record_store, doctrine_store, metrics,
-        notes=_seeded_note_store(),
-    )
-
-    ctx = await fire.build_context(_job_occasion())
-
-    assert [n.title for n in ctx.notes] == ["Raft roadmap"]
 
 
-async def test_a_standing_head_reaches_the_fire_context(
-    persons, record_store, doctrine_store, metrics,
-) -> None:
-    from nora.domain.standing import Standing
-    from nora.testing import InMemoryStandingStore
-
-    occasion = _job_occasion()
-    standing = InMemoryStandingStore()
-    await standing.write(standing=Standing(
-        platform=occasion.platform, conversation_id=occasion.conversation_id,
-        body="a position", fold_count=1, updated_at=1,
-    ))
-    fire = await _fire_path_with_tiers(
-        persons, record_store, doctrine_store, metrics,
-        shared=_shared_reader(standing, rooms=[("signal", "conv-1")]),
-    )
-    ctx = await fire.build_context(occasion)
-    pos = next((e for e in ctx.shared.entries if e.kind == "standing"), None)
-    assert pos is not None and pos.subject == "a position"
 
 
-async def test_a_failed_note_read_is_counted_not_silent(
-    persons, record_store, doctrine_store, metrics,
-) -> None:
-    """R-27 on this path: an index that exists but could not be read is
-    `unavailable` (counted), never folded silently into «there are none»."""
-    class _Down:
-        async def standing(self, *, unit: str):
-            raise RuntimeError("db down")
-
-    fire = await _fire_path_with_tiers(
-        persons, record_store, doctrine_store, metrics,
-        notes=_Down(),
-    )
-
-    ctx = await fire.build_context(_job_occasion())
-
-    assert ctx.notes == ()
-    assert metrics.get("nora_errors_total", stage="fire_notes") == 1
 
 
-async def test_a_wired_tier_without_a_policy_is_a_counted_wiring_gap(
-    persons, record_store, doctrine_store, metrics,
-) -> None:
-    """A store wired but no `Policy` to scope it by: the tier defaults safely
-    AND the gap is counted ONCE for the turn — guessing a unit would
-    render another social unit's notes into this room (DEC-105)."""
-    fire = await _fire_path_with_tiers(
-        persons, record_store, doctrine_store, metrics,
-        notes=_seeded_note_store(), policy=None,
-    )
-
-    ctx = await fire.build_context(_job_occasion())
-
-    assert ctx.notes == ()
-    assert metrics.get("nora_errors_total", stage="fire_unit") == 1
 
 
-async def test_the_dormant_default_reads_nothing_and_counts_nothing(
-    fire_path: FirePath, metrics,
-) -> None:
-    """No tier collaborator wired (the shipped `[notes] enabled = false`):
-    empty field, and no wiring-gap count — a deployment with the tier off does
-    not HAVE the gap."""
-    ctx = await fire_path.build_context(_job_occasion())
-
-    assert ctx.notes == ()
-    assert metrics.get("nora_errors_total", stage="fire_unit") == 0
 
 
 # ---------------------------------------------------------------------------
@@ -2371,117 +2174,10 @@ async def test_a_decision_log_that_is_down_never_fails_a_fire_turn(
     ) == 1
 
 
-async def test_a_proactive_act_turn_sees_the_raise_its_sibling_row_just_made(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """**A second proactive row in the same room reads the first, end to end.**
-
-    The shape: a row about note A fires at 20:00 and takes the floor; 31
-    minutes later a row about note B comes due in the same room. Without the
-    block, the second turn's only trace of the first is an unlabelled line of her
-    own speech in the transcript, and it raises again. The block is what says «that
-    was you, unprompted, 31 minutes ago» — with an AGE, because every question
-    it is read to answer is a question about when.
-
-    Falsification: drop `"proactive"` from `_DECISION_WRITERS_BY_KIND`.
-    """
-    store = InMemoryDecisionLogStore()
-    await store.append(row=DecisionRow(
-        id="r1", writer="proactive_act", platform="signal",
-        conversation_id="conv-1", unit="friends", note_id=None,
-        verdict="spoke", reason="spoke",
-        ts=int(T0.timestamp() * 1000) - 31 * 60_000,
-    ))
-    path = _fire_path(
-        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
-        runner=FakeAgentRunner([]), participation_runner=FakeAgentRunner([]),
-        decisions=_decision_recorder(store), policy=_decision_policy(),
-    )
-
-    ctx = await path.build_context(
-        fire_module.proactive_occasion([_proactive_row()]),
-    )
-    rendered = "\n".join(str(m) for m in build_prefill(
-        ctx, display_name="Nora", context_window=40, now=T0,
-    ))
-
-    # `spoke` once, not twice: `decision_line` suppresses a reason that merely
-    # repeats the verdict. The AGE is the half this test is about.
-    assert "(31m ago) Friends proactive_act spoke" in rendered
-    block = rendered.split("<loop_decisions")[1].split("</loop_decisions>")[0]
-    assert "conv-1" not in block
 
 
-async def test_only_the_legacy_proactive_turn_reads_the_decision_log(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """The legacy proactive context still reads its unit's decision history."""
-    store = InMemoryDecisionLogStore()
-    await store.append(row=DecisionRow(
-        id="r1", writer="proactive_act", platform="signal",
-        conversation_id="conv-1", unit="friends", note_id=None,
-        verdict="spoke", reason="spoke", ts=int(T0.timestamp() * 1000),
-    ))
-    path = _fire_path(
-        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
-        runner=FakeAgentRunner([]), participation_runner=FakeAgentRunner([]),
-        decisions=_decision_recorder(store), policy=_decision_policy(),
-    )
-
-    assert (await path.build_context(_participation())).decisions == ()
-    assert (await path.build_context(
-        fire_module.proactive_occasion([_proactive_row()]),
-    )).decisions != ()
-    assert (await path.build_context(_job_occasion())).decisions == ()
 
 
-async def test_the_proactive_act_turn_reads_its_siblings_and_not_its_own_decide_row(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """The writer set a proactive act turn reads.
-
-    Two proactive rows about two notes come due 30 minutes apart in one room;
-    `heartbeat._by_turn` coalesces only rows due in the SAME tick, so they are
-    two turns, and the second would raise what the first had already said. The
-    second turn's window DOES carry the first message — as an unlabelled line of
-    her own speech. `proactive_act` in this set is what labels it.
-
-    `proactive_decide` is excluded for the rule's own reason: it is the
-    deliberation that produced THIS turn, `_proactive_header` already puts it
-    in front of her, and reading it back leans toward speaking. `tag` is
-    excluded because what a tag answered is in the transcript underneath, and
-    because it is the highest-volume writer — 20 rows of it would evict the one
-    `proactive_act` row this set exists to carry.
-
-    Falsification: add `proactive_decide` to `PROACTIVE_ACT_DECISION_WRITERS`,
-    or drop `proactive_act` from it.
-    """
-    store = InMemoryDecisionLogStore()
-    ts = int(T0.timestamp() * 1000)
-    for row_id, writer, verdict, reason in (
-        ("a", "participation", "silent", "declined"),
-        ("b", "tag", "replied", "send_reply"),
-        ("c", "proactive_decide", "remind", ""),
-        ("d", "proactive_act", "spoke", "spoke"),
-    ):
-        await store.append(row=DecisionRow(
-            id=row_id, writer=writer, platform="signal",
-            conversation_id="conv-1", unit="friends", note_id=None,
-            verdict=verdict, reason=reason, ts=ts,
-        ))
-    path = _fire_path(
-        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
-        runner=FakeAgentRunner([]), participation_runner=FakeAgentRunner([]),
-        decisions=_decision_recorder(store), policy=_decision_policy(),
-    )
-
-    ctx = await path.build_context(
-        fire_module.proactive_occasion([_proactive_row()]),
-    )
-
-    assert [row.writer for _, rows in ctx.decisions for row in rows] == [
-        "participation", "proactive_act",
-    ]
 
 
 def _decision_policy() -> Policy:
@@ -2686,48 +2382,6 @@ async def test_a_fire_turn_reads_presence_for_the_occasions_room(
     assert ctx.presence is not None and ctx.presence.label == "Friends"
 
 
-async def test_the_fire_context_reads_run_concurrently_not_one_after_another(
-    persons: Persons, record_store: FakeRecordStore,
-    doctrine_store, metrics: Metrics,
-) -> None:
-    """The standing read below cannot finish until the presence read has
-    STARTED. Awaited in sequence (standing first), presence never starts, the
-    standing read hits its own timeout and the turn gets no `<standing>`;
-    gathered, both complete. So a green run is only possible concurrently."""
-    import asyncio
-
-    from nora.domain.self_presence import Presence
-    from nora.domain.standing import Standing
-
-    presence_started = asyncio.Event()
-
-    class _Reader:
-        async def read(self, *, platform: str, conversation_id: str, direct: bool = False):
-            presence_started.set()
-            return Presence(platform=platform)
-
-    class _Standing:
-        async def read(self, *, platform: str, conversation_id: str):
-            await presence_started.wait()
-            return Standing(platform=platform, conversation_id=conversation_id,
-                            body="dinner is still open", fold_count=1, updated_at=1)
-
-    path = FirePath(
-        persons=persons, records=record_store,
-        doctrine_store=doctrine_store, metrics=metrics,
-        runner=None, adapters={}, registry=None,                # type: ignore[arg-type]
-        canary="test-canary", display_name="Nora",
-        ai_peer="nora", context_window=40, limits={},
-        timeout_seconds=120.0, clock=lambda: T0,
-        shared=_shared_reader(_Standing()),                   # type: ignore[arg-type]
-        standing_store_timeout_seconds=0.5,
-        presence=_Reader(),                                     # type: ignore[arg-type]
-    )
-
-    ctx = await path.build_context(_job_occasion())
-
-    assert ctx.shared is not None and ctx.shared.status == "unavailable"
-    assert ctx.presence is not None
 
 async def test_a_deferred_ambient_turn_gets_the_graph_catalogue(
     persons: Persons, doctrine_store, metrics: Metrics,
@@ -2784,36 +2438,6 @@ async def test_a_fire_turn_publishes_the_heartbeat_deadline_not_the_loops(
     assert seen and seen[0] is not None and 6.0 < seen[0] <= 7.0, seen
 
 
-async def test_a_fire_turn_reads_its_units_kept_memos_and_counts_a_failed_read(
-    persons, record_store, doctrine_store, metrics,
-) -> None:
-    """`<memos>` on the fire path (DEC-306), `_read_notes` mirrored: the unit's
-    kept memos, another unit's never, and a failed read counted."""
-    from nora.testing.memo_store import InMemoryMemoStore
-
-    memos = InMemoryMemoStore()
-    for unit in ("nora", "elsewhere"):
-        await memos.create(
-            unit=unit, platform="signal", conversation_id="conv-1", title=f"{unit} wifi",
-            body="## Kept\n- kept [1]", citations=("1",), mode="told",
-            established_by="cognition:u", model=None, now_ms=1,
-        )
-    fire = await _fire_path_with_tiers(
-        persons, record_store, doctrine_store, metrics, memos=memos,
-    )
-    ctx = await fire.build_context(_job_occasion())
-    assert [m.title for m in ctx.memos] == ["nora wifi"]
-
-    class _Down:
-        async def kept(self, *, unit: str):
-            raise RuntimeError("db down")
-
-    fire = await _fire_path_with_tiers(
-        persons, record_store, doctrine_store, metrics, memos=_Down(),
-    )
-    ctx = await fire.build_context(_job_occasion())
-    assert ctx.memos == ()
-    assert metrics.get("nora_errors_total", stage="fire_memos") == 1
 
 
 @pytest.mark.parametrize("location", [True, False])
@@ -3008,3 +2632,67 @@ async def test_a_proactive_act_is_withheld_when_the_whole_read_failed(
         policy=permissive_policy(),
     )
     assert await path.run([_proactive_row()]) == "failed_error"
+
+
+@pytest.mark.parametrize("kind", ["compute", "compute_lost", "relay"])
+async def test_proactive_event_offers_graph_reads_and_excludes_legacy_tools(
+    kind, persons, doctrine_store, metrics,
+):
+    from nora.testing.memo_store import InMemoryMemoStore
+    from nora.testing.note_store import InMemoryNoteStore
+
+    room = Conversation(
+        platform="signal", ids=frozenset({"conv-1"}), persons=None,
+        label="Friends", primary_id="conv-1", unit="friends",
+    )
+    policy = Policy(conversations=(room,), _by_id={("signal", "conv-1"): room})
+    if kind == "compute":
+        occasion = _job_occasion()
+    elif kind == "compute_lost":
+        occasion = fire_module.lost_job_occasion(_compute_job())
+    else:
+        occasion = fire_module.relay_occasion(
+            destination=room, requester=MILES, text="dinner at 8", from_platform="discord",
+        )
+    calls: list[dict] = []
+    registry = ToolRegistry(
+        notes=InMemoryNoteStore(), memos=InMemoryMemoStore(), standing_head=object(),
+        note_unit=lambda *_: "friends",
+        graph_retrieval=object(), engagement_graph_retrieval=object(), intention_admission=object(),
+    )
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics, policy=policy,
+        registry=registry, runner=FakeAgentRunner(_send_turns("Done."), on_call=calls.append),
+    )
+
+    assert await path.speak(occasion) == "sent"
+
+    (call,) = calls
+    tools = {tool.tool_name for tool in call["tools"]}
+    assert {"memory_read", "memory_search", "send_reply"} <= tools
+    assert not {"note_read", "note_search", "memo_read", "standing_read"} & tools
+    assert ("intention_commit" in tools) == (kind in {"compute", "relay"})
+    assert "<graph_standing" in call["tag_message"]
+    assert "<tag_message" in call["tag_message"]
+
+
+async def test_a_hanging_action_state_read_withholds_a_proactive_act(
+    persons, doctrine_store, metrics,
+):
+    started = asyncio.Event()
+
+    async def hung_read(**_):
+        started.set()
+        await asyncio.Event().wait()
+
+    calls: list[dict] = []
+    path = _fire_path(
+        persons=persons, doctrine_store=doctrine_store, metrics=metrics,
+        runner=FakeAgentRunner(_send_turns("Done."), on_call=calls.append),
+        policy=_decision_policy(), shared=hung_read, standing_store_timeout_seconds=0.01,
+    )
+    event = fire_module.proactive_occasion([_proactive_row()])
+    assert await asyncio.wait_for(path.speak(event), timeout=1) == "failed_error"
+    assert started.is_set()
+    assert metrics.get("nora_errors_total", stage="shared_state", platform="signal") == 1
+    assert calls == []

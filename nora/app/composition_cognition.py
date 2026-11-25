@@ -70,7 +70,7 @@ async def cognition_session(
     dreamer_runtime: Any, engine: Any, entry_store: Any, event_store: Any,
     ledger_store: Any, lineage: Any, media_join: Any, memo_store: Any,
     metrics: Any, mobility: Any, note_store: Any, observation_store: Any,
-    persons: Any, presence_circles: Any, presence_reader: Any, profile_reader: Any,
+    persons: Any, presence_circles: Any, presence_reader: Any,
     registry: Any, reminder_caps: Any, reminders: Any, rosters: Any,
     session_guidance: Any, shared: Any, standing_fold: Any, standing_store: Any,
     stimulus_store: Any, tag_trace_store: Any, tier: Any, tool_registry: Any,
@@ -115,7 +115,7 @@ async def cognition_session(
         media_join=media_join, memo_store=memo_store, metrics=metrics,
         mobility=mobility, observation_store=observation_store,
         persons=persons, presence_circles=presence_circles,
-        presence_reader=presence_reader, profile_reader=profile_reader,
+        presence_reader=presence_reader,
         readers=readers, registry=registry, reminders=reminders,
         rosters=rosters, unit_rooms=unit_rooms, access=access,
     )
@@ -179,7 +179,7 @@ def _session_units(
         )
     if note_store is None:
         raise StartupError(
-            "[cognition] enabled needs [notes] enabled: a session writes the notebook",
+            "legacy Cognition replay needs [notes] enabled: a session writes the notebook",
         )
     return SessionUnitsWiring(
         cognition_session_units=cognition_session_units,
@@ -265,7 +265,7 @@ def _session_grounder(
     cognition_context_screen: Any, content_checks: Any,
     documents_context: Any, engine: Any, entry_store: Any, lineage: Any, media_join: Any,
     memo_store: Any, metrics: Any, mobility: Any, observation_store: Any,
-    persons: Any, presence_circles: Any, presence_reader: Any, profile_reader: Any,
+    persons: Any, presence_circles: Any, presence_reader: Any,
     readers: Any, registry: Any, reminders: Any, rosters: Any,
     unit_rooms: Any, access: Any = None,
 ) -> Any:

@@ -126,6 +126,10 @@ class PassAssembler:
             if "graph_lessons" in choice.presentations and seeds.collective[0].graph_id:
                 nora = seeds.collective[0].graph_id
                 anchors = replace(anchors, graph_ids=(*anchors.graph_ids, nora))
+            if isinstance(data, ProactiveInput) and data.event is not None:
+                unit = seeds.collective[2].graph_id
+                if unit:
+                    anchors = replace(anchors, graph_ids=(*anchors.graph_ids, unit))
             result = await self._retrieval.retrieve(
                 scope.room, anchors, bounds,
                 concerns=scope.concerns if clock is not None else seeds.concerns,
@@ -135,7 +139,7 @@ class PassAssembler:
         due_ids: frozenset[str] = frozenset()
         agenda_stimuli: tuple[str, ...] = ()
         review_due: tuple[tuple[str, datetime], ...] = ()
-        if isinstance(data, ProactiveInput):
+        if isinstance(data, ProactiveInput) and data.intention is not None:
             due, due_ids = builder.due_intention(result, data.intention)
             floor = (due, *floor)
         elif isinstance(data, WakeInput):
@@ -151,6 +155,7 @@ class PassAssembler:
         blocks, shown = _presentation_order(
             choice, seeds, result, floor, now, open_room_and_unit=isinstance(data, DebriefInput),
             floor_ids=due_ids,
+            show_nora_profile=not isinstance(data, ProactiveInput) or data.show_nora_profile,
         )
         observed: tuple[tuple[str, str], ...] = ()
         if clock is not None and isinstance(data, WakeInput):
@@ -160,7 +165,8 @@ class PassAssembler:
             )
         return AssembledPass(
             blocks, result.status, result.cause, shown,
-            not isinstance(data, ProactiveInput) or data.intention in due_ids, observed,
+            not isinstance(data, ProactiveInput) or data.event is not None
+            or data.intention in due_ids, observed,
             agenda_stimuli, review_due, seeds.review_next,
         )
 
@@ -168,16 +174,20 @@ class PassAssembler:
 def _presentation_order(
     choice: PassDeclaration, seeds: AnchorRead, result: RetrievalResult,
     floor: Sequence[ContextBlock], now: datetime, *, open_room_and_unit: bool = False,
-    floor_ids: frozenset[str] = frozenset(),
+    floor_ids: frozenset[str] = frozenset(), show_nora_profile: bool = True,
 ) -> tuple[tuple[ContextBlock, ...], frozenset[str]]:
     builder = GraphPresentationBlocks(now, seeds.room, seeds.dm_rooms)
     early: list[ContextBlock] = []
     late: list[ContextBlock] = []
     shown: set[str] = set(floor_ids)
+    hidden: set[str] = set()
     chosen = choice.presentations
     if "graph_profile" in chosen:
         for subject in seeds.collective:
             block, ids = builder.profile_block(result, subject, seeds.names)
+            if subject.pointer_ref == "nora" and not show_nora_profile:
+                hidden.update(ids)
+                continue
             early.append(block)
             shown.update(ids)
             if (choice.input_type is WakeInput and subject.pointer_ref == "nora"
@@ -198,7 +208,7 @@ def _presentation_order(
         late.append(block)
         shown.update(ids)
     if "related" in chosen:
-        rows = related(result, shown)
+        rows = related(result, shown | hidden)
         late.append(builder.related_block(result, rows))
         shown.update(row.graph_id for row in rows)
     return (*early, *floor, *late), frozenset(shown if result.status != "unavailable" else ())
