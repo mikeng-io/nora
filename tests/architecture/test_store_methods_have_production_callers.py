@@ -15,7 +15,7 @@ up. Several of them SHOULD NOT be wired; there is nothing on the other end. It
 exists so that the inventory is a checked artifact, and so that the NEXT method
 to arrive unwired has to be classified deliberately rather than by default.
 
-THE FIVE SHAPES, because lumping them together makes the list look like a pile
+THE SHAPES, because lumping them together makes the list look like a pile
 of bugs:
 
   `read_back_affordance` — a by-id read shipped on the store's own surface for
@@ -34,6 +34,8 @@ of bugs:
   `scheduled_removal`    — its caller left in an earlier layer and the method
       leaves with its store in a later one. The reason names that layer and
       what removes the tests that still use it.
+  `operator_recovery`    — the operator retains the method for recovery.
+      Direct contract tests exercise it with no daemon caller.
 
 Methods in `_AMBIGUOUS` (below) may also have no production caller and cannot
 be proven so here; `SqlTagTraceStore.recent` is one, because its name is shared
@@ -133,7 +135,7 @@ SQL = ROOT / "nora" / "infra" / "sql"
 
 Shape = Literal[
     "read_back_affordance", "deferred_consumer", "defect", "operator_script",
-    "scheduled_removal",
+    "scheduled_removal", "operator_recovery",
 ]
 SHAPES: frozenset[str] = frozenset(get_args(Shape))
 
@@ -166,6 +168,13 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("profile.py", "open_disputes"): _Pin(
         "scheduled_removal", "The portal reads graph disputes. Remove with the legacy store.",
     ),
+    **{
+        ("profile.py", name): _Pin(
+            "operator_recovery",
+            "The operator retains direct Profile recovery until graph re-derivation is measured.",
+        )
+        for name in ("account_heads", "account_state", "profile_write")
+    },
     **{
         ("profile.py", name): _Pin("scheduled_removal", _PROFILE_SESSION_READ)
         for name in ("room_context", "pending_told", "pending_disputes",

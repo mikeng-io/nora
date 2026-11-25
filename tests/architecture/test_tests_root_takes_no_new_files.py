@@ -109,7 +109,6 @@ _ALLOWED: frozenset[str] = frozenset(
         "test_presence_refresh.py",
         "test_preview_source.py",
         "test_relay.py",
-        "test_remember_tool.py",
         "test_room_tools.py",
         "test_route_position_trust.py",
         "test_routes.py",
