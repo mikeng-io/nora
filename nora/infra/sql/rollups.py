@@ -35,6 +35,7 @@ from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.cognition_remind import INTENTS
+from nora.domain.graph_registration import identities_column
 from nora.domain.graph_stimuli import GraphStimulus
 from nora.domain.models import parse_mentions_json
 from nora.domain.rollup import (
@@ -162,15 +163,17 @@ class SqlRollupStore:
         async with self._engine.begin() as conn:
             if await conn.scalar(sa.select(expired_between(
                 deviation.unit, _at(deviation.start_ms), _at(deviation.end_ms),
-                persons=(deviation.person_id,),
+                identities=(deviation.person_id,),
             ))):
                 return
-            person = await self._graph.person_pointer_in(conn, deviation.unit, deviation.person_id)
+            person = await self._graph.identity_pointer_in(
+                conn, deviation.unit, deviation.person_id,
+            )
             if person is None:
                 return
             await SqlGraphStimuli.append_in(conn, GraphStimulus(
                 deviation.unit, "absence", person, _at(deviation.end_ms), "rollup",
-                person=deviation.person_id, occurrence=deviation.ref,
+                identity=deviation.person_id, occurrence=deviation.ref,
             ))
 
     # -- builds --------------------------------------------------------------
@@ -678,7 +681,7 @@ class SqlRollupStore:
         from nora.infra.sql.cognitive_graph_schema import ENTITY
 
         identity = {"id", "graph_id", "recorded_at", "build_id"}
-        extra_planes = set(ENTITY.c.keys()) - {"unit", "persons"}
+        extra_planes = set(ENTITY.c.keys()) - {"unit", identities_column(table.name)}
         return [
             {k: plain(v) for k, v in r.items() if k not in identity | extra_planes} for r in rows
         ]

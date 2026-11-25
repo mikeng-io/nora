@@ -35,7 +35,7 @@ async def intention(scenario: Scenario, graph_id: str, **fields) -> None:
     await scenario.graph.create(INTENTION, {
         "id": graph_id, "unit": UNIT, "kind": "intention", "basis": "committed",
         "state": "open", "writer": "fixture", "exposure": "internal", "origin_room": ROOM,
-        "asserted_at": AT, "owner": "nora", "owed_to": PERSON, "persons": [PERSON],
+        "asserted_at": AT, "owner": "nora", "owed_to": PERSON, "identities": [PERSON],
         "form": "achieve", "done_when_form": "act_event", "done_when": {"act": "fixture"},
         "delivery_mode": "when_it_comes_up", **fields,
     })
@@ -65,7 +65,7 @@ def refuse_count(engine: AsyncEngine, marker: str) -> Iterator[None]:
 async def test_situation_counts_three_visible_later_room_messages(scenario) -> None:
     await scenario.claim("situation", part="situation", origin_room=f"signal:{ROOM}")
     await scenario.item("same-instant")
-    await scenario.item("excluded", at=AT + timedelta(minutes=1), excluded_persons=[PERSON])
+    await scenario.item("excluded", at=AT + timedelta(minutes=1), excluded_identities=[PERSON])
     await scenario.item("after-pass", at=AT + timedelta(minutes=4))
     for index in range(1, 4):
         await scenario.item(f"later-{index}", at=AT + timedelta(minutes=index))
@@ -127,7 +127,7 @@ async def test_dm_count_is_unknown_outside_its_dm(scenario) -> None:
 
 
 async def test_failed_count_returns_a_partial_row_and_keeps_the_snapshot_usable(scenario) -> None:
-    await scenario.claim("situation", part="situation", persons=[PERSON])
+    await scenario.claim("situation", part="situation", identities=[PERSON])
     await scenario.item("later", at=AT + timedelta(minutes=1))
     service = scenario.service()
     anchors = references("situation")

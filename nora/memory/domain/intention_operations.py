@@ -42,16 +42,16 @@ class ActEventInput(TypedDict):
     value: ActById | DeliveryOfThisIntention
 
 
-class PersonEventValue(TypedDict):
-    person_id: str
+class IdentityEventValue(TypedDict):
+    identity_id: str
     platform: str
     room: str
     text: str
 
 
-class PersonEventInput(TypedDict):
-    form: Literal["person_event"]
-    value: PersonEventValue
+class IdentityEventInput(TypedDict):
+    form: Literal["identity_event"]
+    value: IdentityEventValue
 
 
 class PredicateValue(TypedDict):
@@ -79,7 +79,7 @@ class UntypedInput(TypedDict):
     value: str
 
 
-ConditionInput = ActEventInput | PersonEventInput | PredicateInput | DeadlineInput | UntypedInput
+ConditionInput = ActEventInput | IdentityEventInput | PredicateInput | DeadlineInput | UntypedInput
 
 
 class RecurrenceInput(TypedDict):
@@ -100,7 +100,7 @@ class ActEventTriggerInput(ActEventInput):
     kind: Literal["condition"]
 
 
-class PersonEventTriggerInput(PersonEventInput):
+class IdentityEventTriggerInput(IdentityEventInput):
     kind: Literal["condition"]
 
 
@@ -116,7 +116,7 @@ class IntentionFields(TypedDict):
     review_time: NotRequired[str]
     delivery: DeliveryMode
     trigger: NotRequired[
-        TimeTriggerInput | ActEventTriggerInput | PersonEventTriggerInput | PredicateTriggerInput
+        TimeTriggerInput | ActEventTriggerInput | IdentityEventTriggerInput | PredicateTriggerInput
     ]
     owner: str
     owed_to: str
@@ -250,7 +250,7 @@ def _intention(
         for field in ("rests_on", "serves") for target in _ids(raw, field)
     )
     return CreateIntention(
-        id=graph_id, basis="committed", scope=Scope(context.unit, persons=people, exposure=None),
+        id=graph_id, basis="committed", scope=Scope(context.unit, identities=people, exposure=None),
         owner=owner, owed_to=owed_to, form=str(form), condition=condition, drop_when=drop,
         deadline=deadline, review_time=_instant(raw, "review_time"),
         delivery_mode=str(mode), trigger=trigger, citations=_ids(raw, "citations"),
@@ -267,7 +267,7 @@ def _condition(raw: object, field: str) -> Condition:
     if not isinstance(raw, Mapping):
         raise InvalidFieldError(field)
     form, value = raw.get("form"), raw.get("value")
-    if form in ("act_event", "person_event", "predicate"):
+    if form in ("act_event", "identity_event", "predicate"):
         if decode_condition(form, value) is None:
             raise InvalidFieldError(f"{field}.value")
     elif form == "deadline":

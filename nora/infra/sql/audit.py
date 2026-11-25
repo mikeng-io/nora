@@ -458,7 +458,7 @@ class SqlRecordStore:
                     conn, MESSAGES,
                     unit=registration.scope.message_unit(message),
                     room=message.conversation_id, occurred_at=epoch_ms(message.timestamp),
-                    persons=(person_id,), own=is_nora,
+                    identities=(person_id,), own=is_nora,
                     cues=() if is_nora else await message_graph_cues(
                         conn, message, self._self_ids(message.platform)),
                 ))
@@ -859,7 +859,7 @@ class SqlRecordStore:
                     conn, MESSAGE_EDIT,
                     unit=registration.scope.message_unit(message),
                     room=original.conversation_id, occurred_at=epoch_ms(message.timestamp),
-                    persons=(original.person_id,), own=bool(original.is_nora),
+                    identities=(original.person_id,), own=bool(original.is_nora),
                     cues=() if original.is_nora else await message_graph_cues(
                         conn, message, self._self_ids(message.platform)),
                 ))

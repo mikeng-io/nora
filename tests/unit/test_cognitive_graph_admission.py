@@ -20,11 +20,11 @@ from nora.memory.domain.admission_proposals import (
     CreateClaim,
     CreateEntity,
     CreateIntention,
+    IdentityAuthor,
     Link,
     MergeEntities,
     Occasion,
     PassContext,
-    PersonAuthor,
     Proposal,
     ResolvedReferences,
     Retire,
@@ -64,7 +64,7 @@ ITEM = RowFacts(
     "primary",
     origin_room="group",
     source="messages",
-    author=PersonAuthor("person-a"),
+    author=IdentityAuthor("person-a"),
 )
 AGG = RowFacts(
     "aggregate",
@@ -97,7 +97,7 @@ NEW_INTENTION = CreateIntention(
     owner="nora",
     owed_to="author",
     form="achieve",
-    condition=Condition("person_event", {"test": "a response"}),
+    condition=Condition("identity_event", {"test": "a response"}),
 )
 NEW_ENTITY = CreateEntity(
     id="new",
@@ -207,11 +207,11 @@ def test_told_requires_a_person_authored_message_edit_or_reaction() -> None:
         assert isinstance(_one(proposal, extra=(replace(ITEM, source=source),)), Admitted)
     for author in ("nora", None):
         assert _one(proposal, extra=(replace(ITEM, author=author),)) == Refusal(
-            "told_without_person",
+            "told_without_identity",
             "citations",
         )
     assert _one(proposal, extra=(replace(ITEM, source="fetched_pages"),)) == Refusal(
-        "told_without_person",
+        "told_without_identity",
         "citations",
     )
 
@@ -294,11 +294,13 @@ def test_unit_is_the_pass_unit() -> None:
 
 def test_scope_narrows_every_exclusion_and_exposure_and_retains_lineage() -> None:
     lineage = Lineage.of({ROW: (message("group"),)})
-    input_row = replace(ITEM, exposure="internal", excluded_persons=("person-b",), lineage=lineage)
-    narrowed = replace(SCOPE, exposure="operator", excluded_persons=("restricted",))
+    input_row = replace(
+        ITEM, exposure="internal", excluded_identities=("person-b",), lineage=lineage,
+    )
+    narrowed = replace(SCOPE, exposure="operator", excluded_identities=("restricted",))
     decision = _one(replace(NEW_CLAIM, scope=narrowed), extra=(input_row,))
     assert isinstance(decision, Admitted)
-    assert (decision.row.exposure, decision.row.excluded_persons, decision.row.lineage) == (
+    assert (decision.row.exposure, decision.row.excluded_identities, decision.row.lineage) == (
         "operator",
         ("person-b",),
         lineage,
@@ -308,10 +310,10 @@ def test_scope_narrows_every_exclusion_and_exposure_and_retains_lineage() -> Non
         "scope_widening",
         "exposure",
     )
-    wide_exclusions = replace(narrowed, excluded_persons=())
+    wide_exclusions = replace(narrowed, excluded_identities=())
     assert _one(replace(NEW_CLAIM, scope=wide_exclusions), extra=(input_row,)) == Refusal(
         "scope_widening",
-        "excluded_persons",
+        "excluded_identities",
     )
 
 
@@ -328,21 +330,21 @@ def test_dm_citation_marks_origin_and_refuses_affiliate_unit() -> None:
 
 
 def test_named_origin_must_resolve_and_unknown_person_stays_unresolved() -> None:
-    scope = replace(SCOPE, origin_room="dm", persons=("author", "unknown"))
+    scope = replace(SCOPE, origin_room="dm", identities=("author", "unknown"))
     decision = _one(replace(NEW_CLAIM, scope=scope))
     assert isinstance(decision, Admitted)
-    assert (decision.row.origin_room, decision.row.persons) == ("dm", ("person-a", None))
+    assert (decision.row.origin_room, decision.row.identities) == ("dm", ("person-a", None))
     assert _one(replace(NEW_CLAIM, scope=replace(scope, origin_room="typo"))) == Refusal(
         "unresolved_room",
         "origin_room",
     )
-    assert _one(replace(NEW_CLAIM, scope=replace(scope, excluded_persons=("typo",)))) == Refusal(
-        "unresolved_person",
-        "excluded_persons",
+    assert _one(replace(NEW_CLAIM, scope=replace(scope, excluded_identities=("typo",)))) == Refusal(
+        "unresolved_identity",
+        "excluded_identities",
     )
 
 
-@pytest.mark.parametrize("pointer", ["person", "room", "unit", "nora"])
+@pytest.mark.parametrize("pointer", ["identity", "room", "unit", "nora"])
 def test_model_cannot_create_revise_merge_or_retire_pointer_entities(pointer: str) -> None:
     pointer_row = replace(ENTITY, pointer_kind=pointer, basis="computed")
     create = replace(NEW_ENTITY, pointer_kind=pointer, pointer_ref="identity")
@@ -459,7 +461,7 @@ def test_refusal_literal_covers_all_reachable_form_and_write_reasons() -> None:
         (NEW_CLAIM, {"extra": (replace(ITEM, exposure="internal"),)}),
         (replace(NEW_CLAIM, scope=Scope("primary", "invalid")), {}),
         (replace(NEW_INTENTION, owner="invalid"), {}),
-        (replace(NEW_ENTITY, pointer_kind="person"), {}),
+        (replace(NEW_ENTITY, pointer_kind="identity"), {}),
         (NEW_ENTITY, {}),
         (replace(MERGE, citations=()), {}),
         (

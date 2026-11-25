@@ -18,7 +18,7 @@ async def test_question_sql_cannot_cross_unit(_graph_db):
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             await conn.execute(sa.text(
                 "TRUNCATE legacy_relation_evidence, legacy_relation, legacy_entity CASCADE"))
-        await load(SqlMemoryGraph(engine), replace(REL, persons=("p1",)))
+        await load(SqlMemoryGraph(engine), replace(REL, identities=("p1",)))
         question = {"unit": "u1", "persons": ["p1"], "seed": list(PERSON.key)}
         assert await sql_answer(engine, question) == ["event:e1", "person:p1"]
         assert await sql_answer(engine, {**question, "unit": "foreign-generated"}) == []

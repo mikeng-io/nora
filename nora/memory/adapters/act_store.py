@@ -56,7 +56,7 @@ class SqlActStore:
         return Act(
             ActIdentity(row["executor"], row["trigger_id"], row["ordinal"]),
             cast(ActKind, row["act_kind"]), row["destination"],
-            ActAuthority(row["unit"], row["authority_person"], row["authority_intention"],
+            ActAuthority(row["unit"], row["authority_identity"], row["authority_intention"],
                          row["origin_room"]),
             cast(Guarantee, row["guarantee"]), row["idempotency_key"],
         )
@@ -66,7 +66,7 @@ class SqlActStore:
         stmt = insert(ACT).values(
             id=identity.id, executor=identity.executor, trigger_id=identity.trigger_id,
             ordinal=identity.ordinal, act_kind=act.kind, destination=act.destination,
-            authority_person=authority.person, authority_intention=authority.intention,
+            authority_identity=authority.identity, authority_intention=authority.intention,
             guarantee=act.guarantee, idempotency_key=act.key,
         ).on_conflict_do_nothing(index_elements=[ACT.c.id])
         async with self._engine.begin() as conn, conn.begin_nested() as attempt:
@@ -74,7 +74,7 @@ class SqlActStore:
                 return False
             planes = await self._registration.planes(
                 conn, ACT, unit=authority.unit, occurred_at=datetime.now(UTC),
-                persons=(authority.person,), room=authority.room, key=(identity.id,),
+                identities=(authority.identity,), room=authority.room, key=(identity.id,),
             )
             if authority.pass_context is None:
                 planes["writer"] = identity.executor
@@ -115,7 +115,7 @@ class SqlActStore:
                 return
             planes = await self._registration.planes(
                 conn, OUTCOME, unit=parent["unit"], occurred_at=datetime.now(UTC),
-                persons=parent["persons"], room=parent["origin_room"],
+                identities=parent["identities"], room=parent["origin_room"],
                 failed=outcome.verdict == "failed",
             )
             planes.update({column: parent[column] for column in _PROVENANCE})
@@ -141,7 +141,7 @@ class SqlActStore:
                 return
             planes = await self._registration.planes(
                 conn, table, unit=context.unit, occurred_at=datetime.now(UTC),
-                persons=(authority.person,), room=context.room, key=(row_id,),
+                identities=(authority.identity,), room=context.room, key=(row_id,),
             )
             planes.update(_stamp(context))
             await conn.execute(

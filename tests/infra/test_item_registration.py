@@ -8,6 +8,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.fetched_page import FetchedPage
+from nora.domain.graph_registration import identities_column
 from nora.domain.models import NormalizedMessage, PersonRef
 from nora.domain.observations import Observation, PollPayload, SourceScope
 from nora.domain.presence import PresenceFix, WireState
@@ -57,6 +58,7 @@ def test_every_item_and_aggregate_carries_the_planes(
 ) -> None:
     entity_fields = {field["name"]: field["type"] for field in graph_schema.get_columns("entity")}
     expected = {name: str(entity_fields[name]) for name in PLANES - {"id"}}
+    expected[identities_column(name)] = expected.pop("identities")
     expected["graph_id"] = str(entity_fields["id"])
     actual = {field["name"]: field["type"] for field in graph_schema.get_columns(name)}
     assert {field: str(actual[field]) for field in actual.keys() & expected.keys()} == expected
@@ -293,9 +295,9 @@ async def test_item_writer_registers_with_its_planes(engine: AsyncEngine, name: 
     } else _AT
     assert row["occurred_at"] == row["valid_from"] == expected_at
     assert row["origin_room"] == (_ROOM if name in _ROOM_SOURCES else None)
-    assert row["persons"] == ([_PERSON] if source.person_columns else [])
+    assert row["identities"] == ([_PERSON] if source.identity_columns else [])
     assert before <= row["asserted_at"] <= datetime.now(UTC)
-    assert row["excluded_persons"] == []
+    assert row["excluded_identities"] == []
     assert row["lineage"] == {}
     assert {key: row[key] for key in _REVISIONS} == _REVISIONS
     for null in (
@@ -318,7 +320,7 @@ async def test_executor_writer_registers_with_its_pass_planes(
             REGISTRY.c.id == row["graph_id"], REGISTRY.c.unit == _UNIT,
         ))).mappings().one()
 
-    assert (row["unit"], row["origin_room"], row["persons"]) == (_UNIT, _ROOM, [_PERSON])
+    assert (row["unit"], row["origin_room"], row["identities"]) == (_UNIT, _ROOM, [_PERSON])
     assert registered["kind"] == row["kind"] == "item"
     assert registered["state"] == row["state"] == "live"
     assert row["basis"] == "observed"

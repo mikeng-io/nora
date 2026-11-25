@@ -76,8 +76,8 @@ def _interval(row: RowData, table: str) -> tuple[datetime, datetime] | None:
 
 
 def _participants(row: RowData) -> Iterable[str]:
-    if persons := row.get("persons"):
-        return tuple(persons)
+    if identities := row.get("persons"):
+        return tuple(identities)
     if "person_a" in row:
         return (row["person_a"], row["person_b"])
     if "responders" in row:
@@ -132,7 +132,7 @@ class AggregateWrites:
             occurred_at=occurred_at,
             asserted_at=recorded_at,
             room=row.get("conversation_id"),
-            persons=_participants(row),
+            identities=_participants(row),
             minimum=minimum,
             build_lineage=row.get("build_lineage"),
             inputs=inputs,

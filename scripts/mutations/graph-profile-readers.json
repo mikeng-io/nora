@@ -16,8 +16,8 @@
   {
     "name": "portal claims stay within the requested unit",
     "file": "nora/memory/adapters/subject_claims.py",
-    "old": "CLAIM.c.unit == unit, sa.any_(CLAIM.c.persons) == viewer,",
-    "new": "sa.any_(CLAIM.c.persons) == viewer,",
+    "old": "CLAIM.c.unit == unit, sa.any_(CLAIM.c.identities) == viewer,",
+    "new": "sa.any_(CLAIM.c.identities) == viewer,",
     "target": "tests/infra/test_retrieval_scope.py::test_portal_keeps_the_own_claim_but_never_shows_dm_evidence_to_a_nonmember"
   },
   {
@@ -44,7 +44,7 @@
   {
     "name": "portal evidence bodies respect source exclusions",
     "file": "nora/memory/adapters/subject_claims.py",
-    "old": "viewer != sa.all_(msg.excluded_persons),",
+    "old": "viewer != sa.all_(msg.excluded_identities),",
     "new": "sa.true(),",
     "target": "tests/infra/test_retrieval_scope.py::test_portal_keeps_the_own_claim_but_never_shows_dm_evidence_to_a_nonmember"
   },

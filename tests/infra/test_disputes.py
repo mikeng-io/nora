@@ -31,11 +31,12 @@ from tests.infra.test_item_registration import (
 _OTHER = "generated-other"
 
 
-async def _claim(graph, claim_id, *, unit=_UNIT, persons=(_PERSON, _OTHER), **revision):
+async def _claim(graph, claim_id, *, unit=_UNIT, identities=(_PERSON, _OTHER), **revision):
     row = {
         "id": claim_id, "kind": "claim", "unit": unit, "basis": "inferred",
         "reasoning": "induced", "confidence": "low", "part": "fact", "content": {"text": "fixture"},
-        "state": "live", "writer": "generated", "exposure": "internal", "persons": list(persons),
+        "state": "live", "writer": "generated", "exposure": "internal",
+        "identities": list(identities),
         **revision,
     }
     if revision:
@@ -79,7 +80,7 @@ async def test_any_subjects_dispute_hides_the_claim_and_its_revisions(engine):
 
 
 async def test_another_persons_dispute_leaves_the_claim_readable_for_weighing(engine):
-    await _claim(SqlCognitiveGraph(engine), "generated-claim", persons=(_PERSON,))
+    await _claim(SqlCognitiveGraph(engine), "generated-claim", identities=(_PERSON,))
     intake = memory_intake(engine, _registration())
     dispute = await intake.dispute(unit=_UNIT, author=_OTHER, claim_id="generated-claim", at=_AT)
     assert (await _rows(engine, CLAIM))["generated-claim"]["state"] == "awaiting_weighing"

@@ -194,7 +194,7 @@ class SqlObservationHeadWriter:
                 asserted_at=asserted,
                 room=scope.conversation_id,
                 inputs=inputs,
-                persons={p for source in inputs for p in source["persons"]},
+                identities={p for source in inputs for p in source["identities"]},
                 revisions=reg.revisions(),
             ),
         }

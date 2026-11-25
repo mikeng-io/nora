@@ -7,6 +7,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.domain.graph_registration import identities_column
 from nora.domain.presence import SavedPlace
 from nora.infra.sql.cognitive_graph_schema import EDGE, REGISTRY
 from nora.infra.sql.engine import create_sql_engine
@@ -80,9 +81,9 @@ async def test_saved_places_register_once_per_observing_unit(
     for row in rows:
         assert (row["unit"] is None) == (row["graph_id"] is None)
         assert row["kind"] == "aggregate" and row["basis"] == "computed"
-        assert row["persons"] == [_PERSON]
+        assert row["identities"] == [_PERSON]
         assert row["writer"] == "PresenceStore"
-        assert row["excluded_persons"] == []
+        assert row["excluded_identities"] == []
         assert row["exposure"] == "internal"
         assert row["occurred_at"] == row["asserted_at"] == time
         assert row["valid_from"] is row["valid_to"] is row["origin_room"] is None
@@ -195,21 +196,21 @@ async def test_saved_places_inherit_only_their_own_units_input_scope(
             {
                 "unit": first,
                 "exposure": "operator",
-                "excluded_persons": ["test-excluded"],
+                "excluded_identities": ["test-excluded"],
                 "lineage": [["presence", _PERSON, None]],
             },
-            {"unit": second, "exposure": "external", "excluded_persons": [], "lineage": {}},
+            {"unit": second, "exposure": "external", "excluded_identities": [], "lineage": {}},
         ],
     )
     async with engine.connect() as conn:
         planes = {
-            r.unit: (r.exposure, r.excluded_persons)
+            r.unit: (r.exposure, r.excluded_identities)
             for r in (
                 await conn.execute(
                     sa.select(
                         PRESENCE_PLACES.c.unit,
                         PRESENCE_PLACES.c.exposure,
-                        PRESENCE_PLACES.c.excluded_persons,
+                        PRESENCE_PLACES.c.excluded_identities,
                     )
                 )
             ).all()
@@ -267,7 +268,7 @@ async def _record(
                 await conn.execute(
                     sa.update(tab).values(
                         exposure="operator",
-                        excluded_persons=["test-excluded"],
+                        excluded_identities=["test-excluded"],
                     )
                 )
     return message
@@ -478,7 +479,7 @@ async def test_rollup_registers_and_inherits_actual_input_scope(
         )
     assert entry["state"] == row["state"] == "live"
     assert entry["kind"] == row["kind"] == "aggregate" and row["basis"] == "computed"
-    assert row["unit"] == _UNITS[0] and _PERSON in row["persons"]
+    assert row["unit"] == _UNITS[0] and _PERSON in row[identities_column(family)]
     assert row["asserted_at"] == row["recorded_at"]
     start = datetime.fromtimestamp(_UPDATED / 1000, tz=UTC)
     end = datetime.fromtimestamp(_END / 1000, tz=UTC)
@@ -486,7 +487,7 @@ async def test_rollup_registers_and_inherits_actual_input_scope(
         assert row["occurred_at"] == end and row["valid_from"] is row["valid_to"] is None
     else:
         assert row["occurred_at"] == row["valid_from"] == start and row["valid_to"] == end
-    assert row["excluded_persons"] == (["test-excluded"] if restricted else [])
+    assert row["excluded_identities"] == (["test-excluded"] if restricted else [])
     assert row["exposure"] == (
         "operator" if restricted else "external" if family == "rollup_response" else "internal"
     )
@@ -625,7 +626,7 @@ async def test_platform_head_inherits_scope_folds_partial_and_survives_replay(
         async with engine.begin() as conn:
             await conn.execute(sa.update(PLATFORM_OBSERVATION).where(
                 PLATFORM_OBSERVATION.c.id == row_id,
-            ).values(exposure="internal", excluded_persons=["test-excluded"]))
+            ).values(exposure="internal", excluded_identities=["test-excluded"]))
         await store.rebuild_heads(scope=scope, through_id=row_id)
     watermark = await store.append(
         observation=Observation(
@@ -647,7 +648,7 @@ async def test_platform_head_inherits_scope_folds_partial_and_survives_replay(
     assert before["occurred_at"] == datetime.fromtimestamp(_END / 1000, tz=UTC)
     assert before["asserted_at"] == before["updated_at"]
     assert before["origin_room"] == room and before["valid_from"] is before["valid_to"] is None
-    assert before["excluded_persons"] == (["test-excluded"] if restricted else [])
+    assert before["excluded_identities"] == (["test-excluded"] if restricted else [])
     assert before["exposure"] == ("internal" if restricted else "external")
     assert len(before["source_state"]["pins"]) == 2
     graph = SqlCognitiveGraph(engine)
@@ -663,7 +664,7 @@ async def test_platform_head_inherits_scope_folds_partial_and_survives_replay(
             REGISTRY.c.id == reg["id"],
         ))).mappings().one()
     assert reg == current
-    for column in ("graph_id", "source_state", "exposure", "excluded_persons"):
+    for column in ("graph_id", "source_state", "exposure", "excluded_identities"):
         assert before[column] == after[column]
     await store.rebuild_heads(scope=scope, through_id=0)
     async with engine.connect() as conn:

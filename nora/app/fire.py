@@ -1058,7 +1058,7 @@ class FirePath:
             subjects["nora", "nora"] = self._display_name
         subjects["room", room_key(room.platform, conversation_id)] = convo.label or ""
         subjects["unit", convo.unit] = convo.unit
-        subjects.update({("person", person.person_id): person.name for person in people})
+        subjects.update({("identity", person.person_id): person.name for person in people})
         profiles = await self._graph_profiles.read_profiles(
             reading, subjects, now, concerns=frozenset(person.person_id for person in people),
             timeout_seconds=self._standing_store_timeout_seconds,

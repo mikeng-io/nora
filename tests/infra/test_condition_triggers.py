@@ -16,8 +16,8 @@ from tests.infra.test_retrieval_scope import scenario as scenario
 from tests.infra.test_situation_staleness import intention
 
 _TEXT = "The generated event has started."
-_PERSON_TRIGGER = {"kind": "condition", "form": "person_event", "value": {
-    "person_id": PERSON, "platform": "signal", "room": ROOM, "text": _TEXT,
+_PERSON_TRIGGER = {"kind": "condition", "form": "identity_event", "value": {
+    "identity_id": PERSON, "platform": "signal", "room": ROOM, "text": _TEXT,
 }}
 
 

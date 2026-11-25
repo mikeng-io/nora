@@ -12,7 +12,7 @@ recorded, and able to close an intention the same way.
 | **kind** | delivery (reaches a room or an output channel: a message, a reaction, an image, a GIF, an announcement), effect (changes something that is not a conversation: a document, the computer, a play queue, a network), or delegation (starts work another executor carries on) |
 | **executor** | what performs it: an engagement pass's delivery or act tool, a deterministic notifier, a job runner |
 | **destination** | the room, surface or system it affects |
-| **authority** | the pass and person on whose behalf it runs, and the intention it serves, if any |
+| **authority** | the pass and identity on whose behalf it runs, and the intention it serves, if any |
 | **identity** | a stable id, so a retry recognises the same act |
 | **outcome** | an observed item reporting **done**, **failed** or **uncertain** |
 
@@ -26,7 +26,7 @@ recorded, and able to close an intention the same way.
 - Deliveries also pass the delivery arbitration; effects and delegations pass
   their area's admission.
 - An act's outcome closes only an intention whose condition is that act being
-  done; an intention waiting on a person or a state closes on that witness
+  done; an intention waiting on an identity or a state closes on that witness
   instead ([graph](graph.md)). A failed outcome closes nothing: it is a
   stimulus, and decide retries or drops the intention, citing the failure.
 - Public publication on a surface without a unit records its outcome in its

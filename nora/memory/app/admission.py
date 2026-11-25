@@ -176,12 +176,12 @@ class AdmissionService:
         related: tuple[Stored, ...] = ()
         inputs = (data, *(fields(topic) for topic in topics))
         try:
-            rooms, persons = await self._identity.references(
+            rooms, identities = await self._identity.references(
                 context.unit,
                 rooms=(*destinations, *(part.scope.origin_room for part in inputs
                                        if part.scope.origin_room is not None)),
-                persons=tuple(ref for part in inputs
-                              for ref in (*part.scope.persons, *part.scope.excluded_persons)),
+                identities=tuple(ref for part in inputs
+                              for ref in (*part.scope.identities, *part.scope.excluded_identities)),
                 principals=(data.owner, data.owed_to) if isinstance(data, CreateIntention) else (),
             )
             rows = await self._store.read(context.unit, frozenset(readable))
@@ -191,7 +191,7 @@ class AdmissionService:
                 if subject is not None and (refusal := self._wake_room(rows.get(subject))):
                     return refusal, ()
             choice = self._choose(
-                proposal, context, shown, rows, ResolvedReferences(rooms, persons), topics,
+                proposal, context, shown, rows, ResolvedReferences(rooms, identities), topics,
             )
             if isinstance(choice, Refusal):
                 return choice, ()

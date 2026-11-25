@@ -57,7 +57,7 @@ class AggregatePlanes:
             return await self.writes.graph.aggregate_planes(
                 conn, table, unit=unit, key=(row["circle_id"], row["place_id"], unit),
                 occurred_at=at, asserted_at=at, minimum="internal",
-                persons=(await self._places(row["circle_id"]))[unit],
+                identities=(await self._places(row["circle_id"]))[unit],
             )
         if family.startswith("rollup_"):
             inputs = await self.writes.rollup_inputs(conn, table, row, row["build_id"])
@@ -93,5 +93,5 @@ class AggregatePlanes:
         return await self.writes.graph.aggregate_planes(
             conn, table, unit=unit, key=(*key, unit), occurred_at=epoch_ms(row["observed_ms"]),
             asserted_at=row["updated_at"], room=row["conversation_id"], inputs=inputs,
-            persons={person for source in inputs for person in source["persons"]},
+            identities={person for source in inputs for person in source["identities"]},
         )

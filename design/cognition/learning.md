@@ -66,7 +66,7 @@ so Nora learns to make suggestions worth taking, not to raise her reply rate.
 
 ## Signals, strongest first
 
-1. A person's correction aimed at Nora: enough alone to ground a lesson.
+1. An identity's correction aimed at Nora: enough alone to ground a lesson.
 2. A verdict: whether what she set out to do happened.
 3. Reception — replies, reactions, edits: how an act was received, never
    whether it was right.

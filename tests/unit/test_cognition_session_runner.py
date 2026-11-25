@@ -587,7 +587,7 @@ async def test_alias_free_admitted_association_survives_create_and_later_read():
     # A later read through the same scoped walk still reaches the association.
     seen = await memory.graph.walk(
         (("note", note_id),),
-        Walk(unit="u", persons=frozenset({"p_ada"}), depth=1,
+        Walk(unit="u", identities=frozenset({"p_ada"}), depth=1,
              relations=("concerns",)))
     assert seen.status == "ok"
     assert [e.relation.dst for e in seen.relations] == [event.key]
@@ -641,7 +641,7 @@ async def test_note_revise_replaces_the_semantic_association():
     later = datetime.fromtimestamp(NOW / 1000 + 3600, UTC)
     seen = await memory.graph.walk(
         (("note", note_id),),
-        Walk(unit="u", persons=frozenset({"p_ada"}), depth=1,
+        Walk(unit="u", identities=frozenset({"p_ada"}), depth=1,
              relations=("concerns",), valid_at=later))
     assert [e.relation.dst for e in seen.relations] == [second.key]
     stale = next(r for r in memory.graph.relations.values()
@@ -766,7 +766,7 @@ async def test_revise_without_associations_keeps_the_semantic_link():
     assert answers[0]["status"] == "ok"
     seen = await memory.graph.walk(
         (("note", note_id),),
-        Walk(unit="u", persons=frozenset({"p_ada"}), depth=1,
+        Walk(unit="u", identities=frozenset({"p_ada"}), depth=1,
              relations=("concerns",), valid_at=datetime.fromtimestamp(
                  NOW / 1000 + 3600, UTC)))
     assert [e.relation.dst for e in seen.relations] == [event.key]
@@ -799,7 +799,7 @@ async def test_reselecting_a_closed_association_relinks_with_a_new_relation():
     assert [a["status"] for a in answers] == ["ok", "ok"]
     seen = await memory.graph.walk(
         (("note", note_id),),
-        Walk(unit="u", persons=frozenset({"p_ada"}), depth=1,
+        Walk(unit="u", identities=frozenset({"p_ada"}), depth=1,
              relations=("concerns",), valid_at=datetime.fromtimestamp(
                  NOW / 1000 + 3600, UTC)))
     assert [e.relation.dst for e in seen.relations] == [first.key]
@@ -832,7 +832,7 @@ async def test_revise_with_empty_associations_clears_the_link():
     assert answers[0]["status"] == "ok"
     seen = await memory.graph.walk(
         (("note", note_id),),
-        Walk(unit="u", persons=frozenset({"p_ada"}), depth=1,
+        Walk(unit="u", identities=frozenset({"p_ada"}), depth=1,
              relations=("concerns",), valid_at=datetime.fromtimestamp(
                  NOW / 1000 + 3600, UTC)))
     assert seen.relations == ()

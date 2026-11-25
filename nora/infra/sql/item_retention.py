@@ -25,14 +25,14 @@ _Item = tuple[sa.Table, sa.RowMapping]
 
 def expired_between(
     unit: str, start: datetime, end: datetime | sa.ColumnElement[datetime], *,
-    sources: Iterable[str] | None = None, persons: Sequence[str] | None = None,
+    sources: Iterable[str] | None = None, identities: Sequence[str] | None = None,
 ) -> sa.ColumnElement[bool]:
     c = EXPIRED_COVERAGE.c
     query = sa.exists().where(c.unit == unit, c["from"] <= end, c["to"] >= start)
     if sources is not None:
         query = query.where(c.source.in_(sources))
-    if persons is not None:
-        query = query.where(sa.or_(c.person.is_(None), c.person.in_(persons)))
+    if identities is not None:
+        query = query.where(sa.or_(c.identity.is_(None), c.identity.in_(identities)))
     return query
 
 
@@ -125,14 +125,14 @@ async def _record_coverage(conn: AsyncConnection, items: Iterable[_Item]) -> Non
             continue
         # A source with no occurrence can only put its coverage at observation time.
         at = row["occurred_at"] or row["asserted_at"]
-        for person in row["persons"] or (None,):
-            key = row["unit"], table.name, person
+        for identity in row["identities"] or (None,):
+            key = row["unit"], table.name, identity
             first, last = coverage.get(key, (at, at))
             coverage[key] = min(first, at), max(last, at)
     if coverage:
         await conn.execute(sa.insert(EXPIRED_COVERAGE), [
-            {"unit": unit, "source": source, "person": person, "from": first, "to": last}
-            for (unit, source, person), (first, last) in coverage.items()
+            {"unit": unit, "source": source, "identity": identity, "from": first, "to": last}
+            for (unit, source, identity), (first, last) in coverage.items()
         ])
 
 

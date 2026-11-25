@@ -110,15 +110,15 @@ def _own_statement(
 ) -> bool:
     return row.reasoning == "told" and any(
         author.role == "author" and author.id in people
-        for item in items for author in item.persons
+        for item in items for author in item.identities
     )
 
 
 def _order(row: RetrievedRow, items: Mapping[str, RetrievedRow]) -> tuple[int, bool, float]:
     if row.reasoning == "told":
         subjects = {
-            person.id for person in row.persons
-            if person.role == "subject" and person.id is not None
+            identity.id for identity in row.identities
+            if identity.role == "subject" and identity.id is not None
         }
         precedence = int(not _own_statement(row, _cited_items(row, items), subjects))
     else:
@@ -157,18 +157,18 @@ def profile(result: RetrievalResult, entity: EntityAnchor, names: Mapping[str, s
     return Profile(_profile_name(entity, rows, names), parts, status, result.limits, result.cause)
 
 
-def likes(result: RetrievalResult, person: EntityAnchor) -> tuple[Like, ...]:
-    """Read a person's traits about things and identify their cited evidence."""
+def likes(result: RetrievalResult, identity: EntityAnchor) -> tuple[Like, ...]:
+    """Read an identity's traits about things and identify their cited evidence."""
     items = {row.graph_id: row for row in result.rows if row.kind == "item"}
     topics = {row.graph_id: row for row in result.rows
               if row.kind == "entity" and row.pointer_kind is None}
-    subject = (person.pointer_ref,) if person.pointer_ref is not None else ()
+    subject = (identity.pointer_ref,) if identity.pointer_ref is not None else ()
     entries: list[Like] = []
     for row in result.rows:
         if row.kind != "claim" or row.part != "trait":
             continue
         about = _about(row)
-        if person.graph_id not in about:
+        if identity.graph_id not in about:
             continue
         evidence = _cited_items(row, items)
         sources = tuple(sorted({item.source for item in evidence if item.source is not None}))

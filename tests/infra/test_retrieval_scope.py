@@ -66,7 +66,7 @@ class Scenario:
                 graph_id=graph_id, unit=unit, platform="signal", conversation_id=room,
                 conversation_type="dm" if dm else "group", origin_room=room,
                 sender_id=token, ts=int(at.timestamp() * 1000), occurred_at=at,
-                asserted_at=at, valid_from=at, person_id=person, persons=[person], body=body,
+                asserted_at=at, valid_from=at, person_id=person, identities=[person], body=body,
                 **fields,
             ))
 
@@ -75,7 +75,7 @@ class Scenario:
             await conn.execute(sa.insert(REGISTRY).values(id=graph_id, unit=UNIT, kind="item"))
             await conn.execute(sa.insert(SOCIAL_ITEM).values(
                 graph_id=graph_id, unit=UNIT, network="instagram", item_id=graph_id,
-                account="fixture-social", source_kind="post", person=person, persons=[person],
+                account="fixture-social", source_kind="post", person=person, identities=[person],
                 origin="poll", taken_at=AT, seen_at=AT, occurred_at=AT,
                 asserted_at=AT, caption="Generated social item",
             ))
@@ -155,8 +155,8 @@ async def test_operator_exposure_is_excluded(scenario) -> None:
 
 
 async def test_excluded_persons_apply_to_room_members_and_pass_subjects(scenario) -> None:
-    await scenario.item("member-excluded", excluded_persons=[PERSON])
-    await scenario.item("subject-excluded", excluded_persons=[OTHER])
+    await scenario.item("member-excluded", excluded_identities=[PERSON])
+    await scenario.item("subject-excluded", excluded_identities=[OTHER])
     await scenario.item("audience-visible")
     anchors = references("member-excluded", "subject-excluded", "audience-visible")
     svc = scenario.service()
@@ -235,7 +235,7 @@ async def test_unavailable_access_view_cannot_substitute_an_empty_audience(scena
 async def test_scope_precedes_the_lexical_candidate_bound(scenario) -> None:
     term = "Lantern celebration"
     for i in range(50):
-        await scenario.item(f"out-of-scope-{i}", term, excluded_persons=[PERSON])
+        await scenario.item(f"out-of-scope-{i}", term, excluded_identities=[PERSON])
     keep = [f"inside-{i}" for i in range(5)]
     for i, key in enumerate(keep):
         await scenario.item(key, f"{term} fixture extra context {i}")
@@ -258,20 +258,20 @@ async def test_portal_keeps_the_own_claim_but_never_shows_dm_evidence_to_a_nonme
                         person=OTHER, exposure="external")
     restricted = {
         "generated-internal-item": {"exposure": "internal"},
-        "generated-excluded-item": {"exposure": "external", "excluded_persons": [PERSON]},
+        "generated-excluded-item": {"exposure": "external", "excluded_identities": [PERSON]},
         deleted: {"exposure": "external"},
         forgotten: {"exposure": "external"},
     }
     for ref, options in restricted.items():
         await scenario.item(ref, f"body of {ref}", room=DM, dm=True, person=OTHER, **options)
-    await scenario.claim("own-derived-claim", persons=[PERSON], origin_room=origin,
+    await scenario.claim("own-derived-claim", identities=[PERSON], origin_room=origin,
                          exposure="external",
                          lineage=Lineage.of({ROW: (message(origin),)}).to_json())
-    await scenario.claim("foreign-subject", persons=[OTHER], origin_room=origin,
+    await scenario.claim("foreign-subject", identities=[OTHER], origin_room=origin,
                          exposure="external")
-    await scenario.claim("withdrawn-own", persons=[PERSON], state="hidden", origin_room=origin,
+    await scenario.claim("withdrawn-own", identities=[PERSON], state="hidden", origin_room=origin,
                          exposure="external")
-    await scenario.claim("own-claim-in-another-unit", unit="another-unit", persons=[PERSON],
+    await scenario.claim("own-claim-in-another-unit", unit="another-unit", identities=[PERSON],
                          origin_room=origin, exposure="external")
     for ref in (private, *restricted):
         await write_edge(scenario, "own-derived-claim", ref, "cites")
@@ -326,7 +326,7 @@ async def test_portal_subject_page_withholds_internal_and_operator_claims(scenar
     from nora.web.memory import build_memory_payload
 
     for exposure in ("external", "internal", "operator"):
-        await scenario.claim(f"{exposure}-claim", persons=[PERSON], exposure=exposure)
+        await scenario.claim(f"{exposure}-claim", identities=[PERSON], exposure=exposure)
     [account] = await build_memory_payload(
         persons=scenario.persons, person_id=PERSON, screen=scan_reply,
         profile=wire.subject_claims(scenario.engine).read,
@@ -340,11 +340,11 @@ async def test_portal_guess_verdict_uses_only_a_visible_grade_for_the_same_subje
     from nora.memory import wire
 
     for guess in ("own-graded-guess", "other-graded-guess"):
-        await scenario.claim(guess, part="guess", persons=[PERSON], prediction="Observed later",
+        await scenario.claim(guess, part="guess", identities=[PERSON], prediction="Observed later",
                              window_end=AT, exposure="external")
-    await scenario.claim("own-grade", part="grade", persons=[PERSON], grade="confirmed",
+    await scenario.claim("own-grade", part="grade", identities=[PERSON], grade="confirmed",
                          exposure="external")
-    await scenario.claim("other-grade", part="grade", persons=[OTHER], grade="refuted",
+    await scenario.claim("other-grade", part="grade", identities=[OTHER], grade="refuted",
                          exposure="external")
     await write_edge(scenario, "own-grade", "own-graded-guess", "grades")
     await write_edge(scenario, "other-grade", "other-graded-guess", "grades")
@@ -368,7 +368,7 @@ async def test_profile_snapshot_keeps_visible_graph_heads_in_the_requested_room(
     await scenario.claim("profile-other-room", exposure="external",
                          origin_room=f"signal:{OTHER_ROOM}")
     await scenario.claim("profile-excluded", exposure="external", origin_room=origin,
-                         excluded_persons=[PERSON])
+                         excluded_identities=[PERSON])
     async with scenario.engine.connect() as conn:
         [head] = await wire.profile_snapshot(conn, unit=UNIT, rooms=(origin,))
         assert head["id"] == "profile-kept"

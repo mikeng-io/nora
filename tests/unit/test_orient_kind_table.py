@@ -607,13 +607,13 @@ async def test_duplicate_recovery_clears_only_connected_entity_orphans():
 
 
 async def test_citing_a_message_derives_relation_persons_from_the_source():
-    """persons is the union of the cited Source.persons, never model-authored."""
+    """persons is the union of the cited Source.identities, never model-authored."""
     memory = wake_memory()
     state = _state(memory)
     result = await memory.propose(state,  statements=_payload()["statements"])
     assert result["status"] == "ok", result
     relation = memory.graph.relations[result["committed"][0]]
-    assert relation.persons == ("generated-person",)
+    assert relation.identities == ("generated-person",)
 
 
 async def test_a_cross_unit_citation_is_refused():

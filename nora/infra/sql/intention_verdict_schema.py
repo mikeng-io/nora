@@ -19,7 +19,7 @@ def intention_verdict_table(metadata: sa.MetaData) -> sa.Table:
         ),
         sa.CheckConstraint("form = 'achieve'", name="ck_intention_verdict_form"),
         sa.CheckConstraint(
-            "condition_form IN ('act_event', 'person_event', 'predicate', 'deadline', 'untyped')",
+            "condition_form IN ('act_event', 'identity_event', 'predicate', 'deadline', 'untyped')",
             name="ck_intention_verdict_condition_form",
         ),
     )

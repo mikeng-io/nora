@@ -23,7 +23,7 @@ from tests.infra.test_retrieval_scope import (
 )
 
 
-async def pointer(scenario, kind="person", ref=PERSON, *, graph_id="profile-anchor"):
+async def pointer(scenario, kind="identity", ref=PERSON, *, graph_id="profile-anchor"):
     await scenario.entity(
         graph_id, pointer_kind=kind, pointer_ref=ref, name="Name from the stored pointer",
     )
@@ -33,7 +33,7 @@ async def pointer(scenario, kind="person", ref=PERSON, *, graph_id="profile-anch
 async def about(scenario, key, *targets, part="fact", **fields):
     if part == "guess":
         fields |= {"prediction": "A generated prediction", "window_end": AT + timedelta(days=7)}
-    await scenario.claim(key, part=part, persons=[PERSON], **fields)
+    await scenario.claim(key, part=part, identities=[PERSON], **fields)
     for target in targets:
         await write_edge(scenario, key, target, "about")
 
@@ -68,7 +68,7 @@ async def test_profile_precedence_keeps_outranked_claims_and_uses_recency(scenar
                     asserted_at=AT + timedelta(hours=age_in_hours))
     await scenario.item("own-item", person=PERSON)
     await scenario.item("other-item", person=OTHER)
-    await scenario.item("excluded-item", excluded_persons=[PERSON])
+    await scenario.item("excluded-item", excluded_identities=[PERSON])
     await write_edge(scenario, "own-told", "own-item", "cites")
     await write_edge(scenario, "other-told", "other-item", "cites")
     await write_edge(scenario, "unseen-author", "excluded-item", "cites")
@@ -133,7 +133,7 @@ async def test_profile_of_a_topic_uses_the_entity_name(scenario) -> None:
 async def test_profile_excludes_audience_hidden_claims(scenario) -> None:
     anchor = await pointer(scenario)
     await about(scenario, "visible-claim", anchor.graph_id)
-    await about(scenario, "excluded-claim", anchor.graph_id, excluded_persons=[PERSON])
+    await about(scenario, "excluded-claim", anchor.graph_id, excluded_identities=[PERSON])
     assert _ids(profile(await anchored(scenario, anchor), anchor, {}), "fact") == ["visible-claim"]
 
 

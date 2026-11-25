@@ -34,6 +34,6 @@ class SqlAggregateCrossings:
                 at = datetime.fromtimestamp(row.ended_ts / 1000, UTC)
                 await SqlGraphStimuli.append_in(conn, GraphStimulus(
                     row.unit, "aggregate_crossing", row.graph_id, at, table.name,
-                    person=row.person_id, cues=("baseline_crossed",),
+                    identity=row.person_id, cues=("baseline_crossed",),
                     occurrence=at.isoformat(),
                 ))

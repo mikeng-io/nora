@@ -1,16 +1,16 @@
 [
   {
-    "name": "relation persons is derived from the cited Source.persons",
+    "name": "relation identities are derived from the cited Source.identities",
     "file": "nora/app/comprehend.py",
-    "old": "            persons = sorted({p for s in sources.values() for p in s.persons})",
-    "new": "            persons = []",
+    "old": "            identities = sorted({p for s in sources.values() for p in s.identities})",
+    "new": "            identities = []",
     "target": "tests/unit/test_orient_kind_table.py::test_citing_a_message_derives_relation_persons_from_the_source"
   },
   {
     "name": "only the rendered rows hydrate citable sources",
     "file": "nora/app/cognition_memory.py",
-    "old": "            state.memory_items[index] = item\n        persons = frozenset(",
-    "new": "            state.memory_items[index] = item\n            for source in sources:\n                state.graph_fetched.show(source)\n        persons = frozenset(",
+    "old": "            state.memory_items[index] = item\n        identities = frozenset(",
+    "new": "            state.memory_items[index] = item\n            for source in sources:\n                state.graph_fetched.show(source)\n        identities = frozenset(",
     "target": "tests/unit/test_cognition_source_rows.py::test_a_loaded_but_unemitted_row_cannot_be_cited"
   },
   {
@@ -30,15 +30,15 @@
   {
     "name": "a person handle is citable only for an emitted row's author",
     "file": "nora/app/comprehend.py",
-    "old": "        shown_persons=frozenset(shown_persons) | frozenset(\n            str(r[\"person_id\"]) for item in inputs\n            for r in item.snapshot.get(\"messages\", ())\n            if r.get(\"person_id\")),",
-    "new": "        shown_persons=frozenset(\n            p for s in fetched.sources.values() for p in s.persons),",
+    "old": "        shown_identities=frozenset(shown_identities) | frozenset(\n            str(r[\"person_id\"]) for item in inputs\n            for r in item.snapshot.get(\"messages\", ())\n            if r.get(\"person_id\")),",
+    "new": "        shown_identities=frozenset(\n            p for s in fetched.sources.values() for p in s.identities),",
     "target": "tests/unit/test_cognition_source_rows.py::test_an_emitted_rows_author_is_handle_citable_without_source_scope"
   },
   {
     "name": "a shown author's pointer is grounded by shown authorship",
     "file": "nora/domain/memory_admission.py",
-    "old": "    if ref not in shown_persons and not any(\n        ref in sources[e.source].persons for e in evidence if e.source in sources\n    ):",
-    "new": "    if not any(\n        ref in sources[e.source].persons for e in evidence if e.source in sources\n    ):",
+    "old": "    if ref not in shown_identities and not any(\n        ref in sources[e.source].identities for e in evidence if e.source in sources\n    ):",
+    "new": "    if not any(\n        ref in sources[e.source].identities for e in evidence if e.source in sources\n    ):",
     "target": "tests/unit/test_cognition_source_rows.py::test_a_shown_author_grounds_a_pointer_the_projection_has_not_written"
   },
   {

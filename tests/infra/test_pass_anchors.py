@@ -48,7 +48,7 @@ def reader(scenario: Scenario) -> SqlPassAnchors:
 
 async def pointers(scenario: Scenario) -> None:
     for kind, ref, key in (
-        ("person", PERSON, "person-here"), ("person", OTHER, "person-other"),
+        ("identity", PERSON, "person-here"), ("identity", OTHER, "person-other"),
         ("room", f"signal:{ROOM}", "room-here"), ("room", f"signal:{OTHER_ROOM}", "room-other"),
         ("unit", UNIT, "unit-pointer"), ("nora", "nora", "nora-pointer"),
     ):
@@ -57,7 +57,7 @@ async def pointers(scenario: Scenario) -> None:
 
 async def test_called_anchors_its_item_quote_room_and_resolved_people(scenario) -> None:
     await pointers(scenario)
-    await scenario.entity("stray-person", pointer_kind="person", pointer_ref="unresolved")
+    await scenario.entity("stray-identity", pointer_kind="identity", pointer_ref="unresolved")
     data = CalledInput(AnchorItem("addressing", "Own question", (PERSON, "unresolved")), "quote")
     result = await reader(scenario).build(declaration("called"), data, SCOPE, NOW)
     assert result.cause is None
@@ -82,7 +82,7 @@ async def test_ambient_anchors_window_ids_text_room_and_people(scenario) -> None
 
 async def test_proactive_anchors_intention_basis_parent_room_and_people(scenario) -> None:
     await pointers(scenario)
-    await intention(scenario, "due", persons=[OTHER], origin_room=OTHER_ROOM)
+    await intention(scenario, "due", identities=[OTHER], origin_room=OTHER_ROOM)
     await intention(scenario, "parent")
     await scenario.claim("basis")
     await write_edge(scenario, "due", "basis", "rests_on")

@@ -223,14 +223,14 @@ class Scope:
     catalogue: dict[int, Key] = field(default_factory=dict)
     shown_keys: frozenset[Key] = frozenset()
     shown_relations: frozenset[str] = frozenset()
-    shown_persons: frozenset[str] = frozenset()
+    shown_identities: frozenset[str] = frozenset()
     admitted: frozenset[str] = frozenset()
 
 
 def proposal_scope(
     inputs: list[Any], fetched: GraphFetched, *,
     shown_keys: Any = frozenset(), shown_relations: Any = frozenset(),
-    shown_persons: Any = frozenset(), admitted: Any = frozenset(),
+    shown_identities: Any = frozenset(), admitted: Any = frozenset(),
 ) -> Scope:
     """The citable catalogue of one proposal call: the union of the named
     items' rendered rows, plus the tool-fetched rows the session was shown.
@@ -242,7 +242,7 @@ def proposal_scope(
     scope = Scope(
         shown_keys=frozenset(shown_keys) | frozenset(fetched.sources),
         shown_relations=frozenset(shown_relations),
-        shown_persons=frozenset(shown_persons) | frozenset(
+        shown_identities=frozenset(shown_identities) | frozenset(
             str(r["person_id"]) for item in inputs
             for r in item.snapshot.get("messages", ())
             if r.get("person_id")),
@@ -305,7 +305,7 @@ class MemoryProposalAdmission:
             key = (kind, ref)
             # A person handle is shown when a rendered row authored them or
             # the pointer was already shown/committed this session.
-            if (kind == "person" and ref.rpartition(":")[2] in scope.shown_persons) \
+            if (kind == "person" and ref.rpartition(":")[2] in scope.shown_identities) \
                     or key in scope.shown_keys:
                 return key, None, None
             return None, None, ("relation", "unshown")
@@ -338,8 +338,8 @@ class MemoryProposalAdmission:
         try:
             candidates = await named_candidates(
                 self.graph, unit=work.unit, kind=new.kind, name=new.name,
-                persons=frozenset(
-                    p for s in fetched.sources.values() for p in s.persons),
+                identities=frozenset(
+                    p for s in fetched.sources.values() for p in s.identities),
                 near=work.source, as_of=work.as_of, historical=work.historical,
                 drop=lambda e: e.key == proposed.key
                                or new.name in (e.name, *e.aliases))
@@ -488,9 +488,9 @@ class MemoryProposalAdmission:
             src, dst = keys["src"], keys["dst"]
             rel_id = stable("relation:" + json.dumps(
                 st.model_dump(mode="json"), sort_keys=True))
-            persons = sorted({p for s in sources.values() for p in s.persons})
+            identities = sorted({p for s in sources.values() for p in s.identities})
             if any(s.key[0] == "web_page" for s in sources.values()) and (
-                "person" in (src[0], dst[0]) or persons
+                "person" in (src[0], dst[0]) or identities
             ):
                 report[index] = {"status": "refused",
                                  "reason": "private_web_evidence", "kind": "relation"}
@@ -499,7 +499,7 @@ class MemoryProposalAdmission:
             try:
                 relation = Relation(
                     rel_id, src, st.rel, dst, "notebook", work.unit,
-                    tuple(persons), valid_from, valid_to,
+                    tuple(identities), valid_from, valid_to,
                     asserted_at=work.as_of,
                     written_by=f"cognition:comprehend:{session}",
                 )
@@ -600,7 +600,7 @@ class MemoryProposalAdmission:
             evidence=tuple(evidence),
             sources=fetched.sources,
             corrections=tuple(corrections),
-            shown_persons=scope.shown_persons,
+            shown_identities=scope.shown_identities,
         )
         duplicates = {r.id for r in admission.refused if r.reason == "duplicate_relation"}
         if duplicates:
@@ -608,7 +608,7 @@ class MemoryProposalAdmission:
                 tuple(dict.fromkeys(k for r in relations for k in (r.src, r.dst))),
                 Walk(
                     unit=work.unit,
-                    persons=frozenset(p for r in relations for p in r.persons),
+                    identities=frozenset(p for r in relations for p in r.identities),
                     depth=1,
                     nodes=max(100, len(relations) * 2),
                     fan_out=max(20, len(relations)),

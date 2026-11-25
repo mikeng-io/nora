@@ -9,7 +9,7 @@ from nora.memory.domain.graph import Exposure
 
 @dataclass(frozen=True, slots=True)
 class ItemSource:
-    person_columns: tuple[str, ...]
+    identity_columns: tuple[str, ...]
     exposure: Exposure
     writer: str
 
@@ -32,8 +32,8 @@ BACKFILL_ITEM_SOURCES = MappingProxyType({
 
 ITEM_SOURCES = MappingProxyType({
     **BACKFILL_ITEM_SOURCES,
-    "nora_act": ItemSource(("authority_person",), "internal", "SqlActStore"),
-    "nora_act_outcome": ItemSource(("nora_act.authority_person",), "internal", "SqlActStore"),
+    "nora_act": ItemSource(("authority_identity",), "internal", "SqlActStore"),
+    "nora_act_outcome": ItemSource(("nora_act.authority_identity",), "internal", "SqlActStore"),
     "nora_pass_output": ItemSource((), "internal", "SqlActStore"),
     "computer_events": ItemSource(("requester_person_id",), "internal", "SqlComputerEventStore"),
     "tool_call_log": ItemSource((), "internal", "SqlToolCallLogStore"),

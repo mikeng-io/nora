@@ -462,7 +462,7 @@ class HolderLinkService:
             if nonce is None:
                 continue
             try:
-                authority = ActAuthority(None, person=link.owners[LinkSide.INITIATING])
+                authority = ActAuthority(None, identity=link.owners[LinkSide.INITIATING])
                 with act_event(f"{link.request_id}:{side.value}", authority):
                     await self._signal_delivery.deliver(
                         account=account, text=_challenge_text(link, side, nonce))

@@ -75,7 +75,7 @@ async def _graph_seed(engine: Any, unit: str, room: str, *, at_ms: int) -> None:
     await graph.create(ENTITY, {
         "id": room_entity, "kind": "entity", "basis": "computed", "state": "admitted",
         "unit": unit, "name": room, "pointer_kind": "room",
-        "pointer_ref": f"signal:{room}", "persons": [], "exposure": "internal",
+        "pointer_ref": f"signal:{room}", "identities": [], "exposure": "internal",
         "writer": "test", "asserted_at": old,
     })
     when = datetime.fromtimestamp((at_ms - 30_000) / 1000, tz=UTC)

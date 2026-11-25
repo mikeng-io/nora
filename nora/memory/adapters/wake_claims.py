@@ -35,7 +35,7 @@ def _available(now: datetime, *where: sa.ColumnElement[bool]) -> sa.Select:
 
 def _stimulus(row: Any) -> GraphStimulus:
     return GraphStimulus(
-        row.unit, row.kind, row.graph_id, row.eligible_at, row.source, row.room, row.person,
+        row.unit, row.kind, row.graph_id, row.eligible_at, row.source, row.room, row.identity,
         tuple(row.cues), row.revision_id, tuple(row.dependents), row.occurrence,
     )
 

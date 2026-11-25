@@ -9,8 +9,8 @@
   {
     "name": "person-set iteration cannot change a completion digest",
     "file": "nora/app/cognition_memory.py",
-    "old": "    rows = [{**asdict(source), \"persons\": sorted(source.persons)} for source in sources]",
-    "new": "    rows = [asdict(source) for source in sources]",
+    "old": "        row[\"persons\"] = sorted(row.pop(\"identities\"))",
+    "new": "        row[\"persons\"] = row.pop(\"identities\")",
     "target": "tests/unit/test_unified_backfill_boundaries.py::test_prepared_input_hash_ignores_source_and_person_iteration_order"
   }
 ]

@@ -220,7 +220,7 @@ class CognitionContextReader:
                 )
         for pid in related:
             if (person := self._persons.by_person.get(pid)) is not None:
-                subjects["person", pid] = person.name
+                subjects["identity", pid] = person.name
         reading, *others = (
             ReadingRoom(room.platform, room.conversation_id, target.live or LiveRoom(
                 frozenset(), available=False,

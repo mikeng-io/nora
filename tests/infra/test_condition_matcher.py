@@ -9,14 +9,23 @@ from typing import cast
 import pytest
 import sqlalchemy as sa
 
+from nora.domain.lineage import ROW, Lineage, LineageEntry
 from nora.domain.observations import Observation, Operation, PollPayload, SourceScope
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY, INTENTION, NORA_ACT_OUTCOME
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.infra.sql.observations import SqlObservationStore
-from nora.infra.sql.schema import MESSAGES, PLATFORM_OBJECT_STATE, ROW_HISTORY, SOURCE_HEALTH
+from nora.infra.sql.schema import (
+    MESSAGES,
+    PLATFORM_OBJECT_STATE,
+    ROLLUP_OUTING,
+    ROW_HISTORY,
+    SOCIAL_ITEM,
+    SOURCE_HEALTH,
+)
 from nora.memory.adapters.act_store import SqlActStore
+from nora.memory.adapters.condition_sources import ConditionSources
 from nora.memory.domain.acts import Outcome, Verdict
 from nora.memory.wire import condition_matcher
 from tests.infra.test_act_envelope import _act
@@ -130,8 +139,8 @@ async def test_failed_act_ends_maintain_intention_with_its_outcome_as_witness(en
 
 async def test_the_explicit_message_must_come_from_the_awaited_person(engine):
     text = "I accept the generated option."
-    await _intention(engine, "waiting", "person_event", {
-        "person_id": _PERSON, "platform": "signal", "room": _ROOM, "text": text,
+    await _intention(engine, "waiting", "identity_event", {
+        "identity_id": _PERSON, "platform": "signal", "room": _ROOM, "text": text,
     })
     await _health(engine, "signal", "up")
     writer = _Writer(engine, _registration())
@@ -248,14 +257,31 @@ async def test_done_wins_and_unhealthy_or_absent_health_is_unknown(engine):
     assert await _endings(engine) == {"waiting": "achieved"}
 
 
+async def test_social_aggregate_resolves_the_lineage_subjects_live_network(engine):
+    lineage = Lineage.of({ROW: [LineageEntry(kind="social", subject=_PERSON)]})
+    async with engine.begin() as conn:
+        registration = _registration()
+        for network, subject in (("instagram", _PERSON), ("threads", "generated-other-person")):
+            planes = await registration.planes(conn, SOCIAL_ITEM, unit=_UNIT, occurred_at=_AT)
+            await conn.execute(sa.insert(SOCIAL_ITEM).values(
+                network=network, item_id=f"generated-{network}", person=subject,
+                account=f"generated-{network}-account", source_kind="post", taken_at=_AT,
+                seen_at=_AT, origin="poll", **planes,
+            ))
+        sources = await ConditionSources(conn).aggregate_sources(
+            ROLLUP_OUTING, {"unit": _UNIT, "build_lineage": lineage.to_json()},
+        )
+    assert sources == {("social.instagram", "")}
+
+
 async def test_deadline_and_untyped_intentions_are_left_for_verify(engine):
     await _intention(
         engine, "left-open", "untyped", "generated condition",
         deadline=_AT + timedelta(minutes=1), drop=("deadline", _AT.isoformat()),
     )
     text = "I confirm."
-    await _intention(engine, "positive-control", "person_event", {
-        "person_id": _PERSON, "platform": "signal", "room": _ROOM, "text": text,
+    await _intention(engine, "positive-control", "identity_event", {
+        "identity_id": _PERSON, "platform": "signal", "room": _ROOM, "text": text,
     })
     await _health(engine, "signal", "up")
     writer = _Writer(engine, _registration())

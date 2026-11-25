@@ -70,8 +70,8 @@ async def test_each_walk_bound_reports_partial(scenario, limit, changes, visible
 
 
 async def test_person_anchor_walks_incoming_claims_and_never_item_edges(scenario) -> None:
-    await scenario.entity("person-anchor", pointer_kind="person", pointer_ref=PERSON)
-    await scenario.claim("someone-claim", persons=[PERSON])
+    await scenario.entity("person-anchor", pointer_kind="identity", pointer_ref=PERSON)
+    await scenario.claim("someone-claim", identities=[PERSON])
     await scenario.item("earlier-message", at=AT - timedelta(hours=1))
     await write_edge(scenario, "someone-claim", "person-anchor", "about")
     await write_edge(scenario, "earlier-message", "person-anchor", "about")

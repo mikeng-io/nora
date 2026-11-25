@@ -36,7 +36,7 @@ _NOW = _DEADLINE + timedelta(minutes=10)
 _BEFORE = _AT - timedelta(minutes=1)
 _INSIDE = _AT + timedelta(minutes=1)
 _PERSON_EVENT = {
-    "person_id": _PERSON, "platform": "signal", "room": _ROOM, "text": "Generated reply",
+    "identity_id": _PERSON, "platform": "signal", "room": _ROOM, "text": "Generated reply",
 }
 
 
@@ -47,19 +47,19 @@ async def _tick(engine):
 
 
 @pytest.mark.parametrize(("form", "mode", "deadline", "drop_at", "ending", "ended_at"), [
-    ("person_event", "achieve", None, _AT, "dropped", _AT),
+    ("identity_event", "achieve", None, _AT, "dropped", _AT),
     ("untyped", "achieve", _DEADLINE, None, "unknown", _DEADLINE),
     ("untyped", "maintain", None, _AT, "dropped", _AT),
-    ("person_event", "maintain", None, _AT, "dropped", _AT),
-    ("person_event", "achieve", _DEADLINE, _AT, "dropped", _AT),
-    ("person_event", "achieve", _DEADLINE, _DEADLINE, "dropped", _DEADLINE),
-    ("person_event", "achieve", _DEADLINE, _DEADLINE + timedelta(seconds=1), "leaked", _DEADLINE),
+    ("identity_event", "maintain", None, _AT, "dropped", _AT),
+    ("identity_event", "achieve", _DEADLINE, _AT, "dropped", _AT),
+    ("identity_event", "achieve", _DEADLINE, _DEADLINE, "dropped", _DEADLINE),
+    ("identity_event", "achieve", _DEADLINE, _DEADLINE + timedelta(seconds=1), "leaked", _DEADLINE),
 ])
 async def test_the_first_clock_ending_has_the_deadline_and_no_witness(
     engine, form, mode, deadline, drop_at, ending, ended_at,
 ):
     await _intention(
-        engine, "due", form, _PERSON_EVENT if form == "person_event" else "Generated condition",
+        engine, "due", form, _PERSON_EVENT if form == "identity_event" else "Generated condition",
         mode=mode, deadline=deadline, drop=("deadline", {"at": drop_at.isoformat()})
         if drop_at is not None else None,
     )
@@ -82,7 +82,7 @@ async def test_the_first_clock_ending_has_the_deadline_and_no_witness(
 async def test_every_source_must_be_healthy_over_the_whole_lineage_window(
     engine, outage, has_probe, ending,
 ):
-    await _intention(engine, "first", "person_event", _PERSON_EVENT, deadline=_DEADLINE)
+    await _intention(engine, "first", "identity_event", _PERSON_EVENT, deadline=_DEADLINE)
     first = (await _rows(engine, INTENTION))["first"]
     graph = SqlCognitiveGraph(engine)
     await graph.revise(INTENTION, dict(
@@ -165,7 +165,7 @@ async def test_a_witness_recorded_before_the_deadline_wins_on_the_observe_tick(e
     now = datetime.now(UTC)
     deadline = now + timedelta(minutes=1)
     await _intention(
-        engine, "witnessed", "person_event", _PERSON_EVENT,
+        engine, "witnessed", "identity_event", _PERSON_EVENT,
         asserted_at=now - timedelta(minutes=1), deadline=deadline,
     )
     await _intention(
@@ -207,7 +207,7 @@ class _ReviseDuringHealth(SqlRollupStore):
 
 
 async def test_a_head_revised_during_health_read_is_left_for_the_next_tick(engine):
-    await _intention(engine, "first", "person_event", _PERSON_EVENT, deadline=_DEADLINE)
+    await _intention(engine, "first", "identity_event", _PERSON_EVENT, deadline=_DEADLINE)
     first = (await _rows(engine, INTENTION))["first"]
     graph = SqlCognitiveGraph(engine)
     await _health(engine, "signal", "up", at=_BEFORE)

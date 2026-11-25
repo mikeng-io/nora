@@ -15,7 +15,7 @@ from nora.domain.lessons import (
     echoes,
     normalized_lesson_length,
 )
-from nora.memory.domain.admission_proposals import Link, PersonAuthor, RowFacts
+from nora.memory.domain.admission_proposals import IdentityAuthor, Link, RowFacts
 
 LessonFormRefusal = Literal[
     "lesson_not_about_nora", "thin_evidence", "echo", "too_short", "too_long",
@@ -51,7 +51,7 @@ def lesson_form(
                 if row.table == "intention_verdict" and row.verdict_ending != "unknown"}
     # An offhand remark aimed at Nora passes this floor. Its content is judged separately.
     correction = any(
-        row.aimed_at_nora and isinstance(row.author, PersonAuthor) and row.author.id != "nora"
+        row.aimed_at_nora and isinstance(row.author, IdentityAuthor) and row.author.id != "nora"
         for row in evidence
     )
     if len(verdicts) < LESSON_MIN_EPISODES and not correction:

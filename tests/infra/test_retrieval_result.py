@@ -12,7 +12,7 @@ from nora.memory.domain.retrieval import (
     EvidenceHandle,
     RetrievalAnchors,
     RetrievedEdge,
-    RetrievedPerson,
+    RetrievedIdentity,
 )
 from tests.infra.test_retrieval_scope import (
     AT,
@@ -78,11 +78,11 @@ async def test_rows_explain_their_identity_scope_time_people_evidence_and_ending
     later = AT + timedelta(hours=1)
     await scenario.item("cited-item")
     await scenario.item("deleted-item", at=AT - timedelta(hours=1))
-    await scenario.claim("recorded-claim", persons=[PERSON], valid_from=AT)
+    await scenario.claim("recorded-claim", identities=[PERSON], valid_from=AT)
     await scenario.graph.create(INTENTION, {
         "id": "held-intention", "unit": UNIT, "kind": "intention", "basis": "committed",
         "state": "open", "writer": "fixture", "exposure": "internal", "origin_room": ROOM,
-        "asserted_at": AT, "owner": "nora", "owed_to": PERSON, "persons": [PERSON],
+        "asserted_at": AT, "owner": "nora", "owed_to": PERSON, "identities": [PERSON],
         "form": "achieve", "done_when_form": "act_event", "done_when": {"act": "fixture"},
         "drop_when_form": "deadline", "drop_when": {"at": later.isoformat()},
         "deadline": later, "review_time": later, "delivery_mode": "when_it_comes_up",
@@ -106,18 +106,18 @@ async def test_rows_explain_their_identity_scope_time_people_evidence_and_ending
     assert (item.origin_room, item.exposure, item.distance, item.already_shown) == (
         ROOM, "external", 1, False,
     )
-    assert item.persons == (RetrievedPerson(PERSON, "author"),)
+    assert item.identities == (RetrievedIdentity(PERSON, "author"),)
     assert item.content == {"body": "Generated observation"}
     assert (claim.kind, claim.basis, claim.reasoning, claim.confidence) == (
         "claim", "inferred", "deduced", "high",
     )
-    assert claim.persons == (RetrievedPerson(PERSON, "subject"),)
+    assert claim.identities == (RetrievedIdentity(PERSON, "subject"),)
     assert claim.close_when == {"valid_to": None, "window_end": None}
     assert claim.edges == (RetrievedEdge("cites", "recorded-claim", "cited-item"),)
     assert claim.evidence == (EvidenceHandle("cited-item"), EvidenceHandle("deleted-item", True))
     assert (intention.kind, intention.basis, intention.state) == ("intention", "committed", "open")
-    assert intention.persons == (
-        RetrievedPerson("nora", "owner"), RetrievedPerson(PERSON, "owed_to"),
+    assert intention.identities == (
+        RetrievedIdentity("nora", "owner"), RetrievedIdentity(PERSON, "owed_to"),
     )
     assert intention.close_when == {
         "done_when": {"act": "fixture"}, "drop_when": {"at": later.isoformat()},

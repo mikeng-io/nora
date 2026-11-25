@@ -40,7 +40,7 @@ async def _pointer(engine: AsyncEngine, person: PersonRef) -> str:
         "id": f"pointer:{person.person_id}", "unit": PASS.unit, "kind": "entity",
         "name": person.person_id, "basis": "computed", "state": "admitted",
         "exposure": "internal", "writer": "fixture",
-        "pointer_kind": "person", "pointer_ref": person.person_id,
+        "pointer_kind": "identity", "pointer_ref": person.person_id,
     })
     return f"pointer:{person.person_id}"
 
@@ -69,7 +69,7 @@ async def test_admitted_claim_derives_one_edge_per_person(engine: AsyncEngine) -
     first = await _pointer(engine, PERSON)
     second = await _pointer(engine, OTHER)
     proposal = replace(CLAIM_PROPOSAL, scope=Scope(
-        PASS.unit, persons=(PERSON.person_id, OTHER.person_id, PERSON.person_id),
+        PASS.unit, identities=(PERSON.person_id, OTHER.person_id, PERSON.person_id),
     ))
     admission_result = await _service(engine).admit((proposal,), PASS, proposal.citations)
     assert admission_result.outcomes == (Stored(proposal.id),)
@@ -81,8 +81,8 @@ async def test_admitted_claim_derives_one_edge_per_person(engine: AsyncEngine) -
 async def test_claim_revision_rederives_about_from_its_own_persons(engine: AsyncEngine) -> None:
     first = await _pointer(engine, PERSON)
     second = await _pointer(engine, OTHER)
-    initial = replace(CLAIM_PROPOSAL, scope=Scope(PASS.unit, persons=(PERSON.person_id,)))
-    current = replace(initial, id="claim-2", scope=Scope(PASS.unit, persons=(OTHER.person_id,)))
+    initial = replace(CLAIM_PROPOSAL, scope=Scope(PASS.unit, identities=(PERSON.person_id,)))
+    current = replace(initial, id="claim-2", scope=Scope(PASS.unit, identities=(OTHER.person_id,)))
     result = await _service(engine).admit(
         (initial, Revise(base=initial.id, replacement=current)), PASS, initial.citations,
     )
@@ -97,11 +97,11 @@ async def test_about_skips_unresolved_people_and_never_creates_missing_pointers(
 ) -> None:
     pointer = await _pointer(engine, PERSON)
     proposal = replace(CLAIM_PROPOSAL, scope=Scope(
-        PASS.unit, persons=(PERSON.person_id, "unmapped-fixture-person", OTHER.person_id),
+        PASS.unit, identities=(PERSON.person_id, "unmapped-fixture-person", OTHER.person_id),
     ))
     result = await _service(engine).admit((proposal,), PASS, proposal.citations)
     assert result.outcomes == (Stored(proposal.id),)
-    assert (await _rows(engine, CLAIM))[proposal.id]["persons"] == [
+    assert (await _rows(engine, CLAIM))[proposal.id]["identities"] == [
         PERSON.person_id, None, OTHER.person_id,
     ]
     assert set(await _rows(engine, ENTITY)) == {pointer}
@@ -119,7 +119,9 @@ async def test_inferred_about_from_claim_and_recorded_message_is_admitted(
         reasoning="deduced", confidence="high",
     )
     claim = replace(CLAIM_PROPOSAL, links=(link,))
-    edge = replace(_proposal(message, topic), scope=Scope(PASS.unit, persons=(PERSON.person_id,)))
+    edge = replace(
+        _proposal(message, topic), scope=Scope(PASS.unit, identities=(PERSON.person_id,)),
+    )
     result = await _service(engine).admit((claim, edge), PASS, (message, topic))
     assert result.outcomes == (Stored(claim.id), Stored(edge.id))
     assert await _about(engine) == {(claim.id, topic, "inferred"), (message, topic, "inferred")}

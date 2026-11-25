@@ -16,10 +16,10 @@ from nora.memory.domain.admission_proposals import (
     CreateEntity,
     CreateIntention,
     ExposureOrder,
+    IdentityAuthor,
     Link,
     MergeEntities,
     PassContext,
-    PersonAuthor,
     Proposal,
     ProposalFields,
     ResolvedReferences,
@@ -51,11 +51,11 @@ FormRefusal = Literal[
     "missing_evidence",
     "invalid_reasoning",
     "invalid_confidence",
-    "told_without_person",
+    "told_without_identity",
     "wrong_unit",
     "scope_widening",
     "unresolved_room",
-    "unresolved_person",
+    "unresolved_identity",
     "pointer_entity",
     "orphan_entity",
     "invalid_merge",
@@ -269,7 +269,7 @@ def admit_batch(
                     origin_room=choice.row.origin_room,
                     room_is_dm=choice.row.room_is_dm,
                     exposure=choice.row.exposure,
-                    excluded_persons=choice.row.excluded_persons,
+                    excluded_identities=choice.row.excluded_identities,
                     lineage=choice.row.lineage,
                 )
             elif choice.base.kind != "entity":
@@ -489,15 +489,15 @@ class _Admission:
         if reasoning == "told" and not any(
             row.kind == "item"
             and row.source in _SPEECH_SOURCES
-            and isinstance(row.author, PersonAuthor)
+            and isinstance(row.author, IdentityAuthor)
             for row in evidence
         ):
-            raise _RefusalError("told_without_person", "citations")
+            raise _RefusalError("told_without_identity", "citations")
 
-    def _person(self, ref: str, field: str) -> str:
-        value = self.refs.persons.get(ref)
+    def _identity(self, ref: str, field: str) -> str:
+        value = self.refs.identities.get(ref)
         if value is None:
-            raise _RefusalError("unresolved_person", field)
+            raise _RefusalError("unresolved_identity", field)
         return value
 
     def _shape(self, data: ProposalFields) -> tuple[str | None, str | None]:
@@ -518,7 +518,7 @@ class _Admission:
                 raise _RefusalError("invalid_field", "claim")
         if isinstance(data, CreateIntention):
             self._intention_shape(data)
-            return self._person(data.owner, "owner"), self._person(data.owed_to, "owed_to")
+            return self._identity(data.owner, "owner"), self._identity(data.owed_to, "owed_to")
         return None, None
 
     @staticmethod
@@ -569,7 +569,9 @@ class _Admission:
         ranked = ExposureOrder
         if scope.exposure is not None and scope.exposure not in ranked:
             raise _RefusalError("invalid_field", "exposure")
-        excluded = tuple(self._person(ref, "excluded_persons") for ref in scope.excluded_persons)
+        excluded = tuple(
+            self._identity(ref, "excluded_identities") for ref in scope.excluded_identities
+        )
         inherited = (*inputs, base) if base is not None else inputs
         private_rooms = {r.origin_room for r in inherited if r.room_is_dm}
         if len(private_rooms) > 1:
@@ -580,7 +582,7 @@ class _Admission:
                 raise _RefusalError("unresolved_room", "origin_room")
         restrictions = inherited_scope(
             (
-                InputScope(r.excluded_persons, cast(Exposure, r.exposure), _lineage(r))
+                InputScope(r.excluded_identities, cast(Exposure, r.exposure), _lineage(r))
                 for r in inherited
             ),
             build_lineage=Lineage(),
@@ -590,10 +592,10 @@ class _Admission:
         if ranked.index(exposure) < ranked.index(restrictions.exposure):
             raise _RefusalError("scope_widening", "exposure")
         if scope.exposure is None:
-            excluded = tuple(dict.fromkeys((*excluded, *restrictions.excluded_persons)))
-        if not set(restrictions.excluded_persons).issubset(excluded):
-            raise _RefusalError("scope_widening", "excluded_persons")
-        persons = tuple(self.refs.persons.get(ref) for ref in scope.persons)
+            excluded = tuple(dict.fromkeys((*excluded, *restrictions.excluded_identities)))
+        if not set(restrictions.excluded_identities).issubset(excluded):
+            raise _RefusalError("scope_widening", "excluded_identities")
+        identities = tuple(self.refs.identities.get(ref) for ref in scope.identities)
         return RowFacts(
             data.id,
             kind,
@@ -602,7 +604,7 @@ class _Admission:
             self.context.unit,
             room,
             dm,
-            persons,
+            identities,
             excluded,
             exposure,
             restrictions.lineage,
@@ -713,7 +715,7 @@ class _Admission:
             self._check_citation(source.kind, source.basis, target, "target")
             exposure = ExposureOrder
             if exposure.index(source.exposure) < exposure.index(target.exposure) or (
-                not set(target.excluded_persons).issubset(source.excluded_persons)
+                not set(target.excluded_identities).issubset(source.excluded_identities)
                 or _lineage(source).union(_lineage(target)) != _lineage(source)
                 or (target.room_is_dm and source.origin_room != target.origin_room)
             ):

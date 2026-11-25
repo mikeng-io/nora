@@ -10,6 +10,7 @@ from sqlalchemy.sql import FromClause
 
 from nora.access import IdentityAccess
 from nora.agent.lineage import LineagePolicy
+from nora.domain.graph_registration import DEPLOYED_ROLLUP_PERSONS
 from nora.domain.lineage import RoomFacts, split_room
 from nora.domain.managed import room_scope_id
 from nora.domain.management import Scope, ScopeKind
@@ -85,7 +86,7 @@ class SqlPassAnchors:
         rooms = tuple(
             ref for kind, ref in subjects if kind == "room" and ref in authority.room_keys
         )
-        people = tuple(ref for kind, ref in subjects if kind == "person")
+        people = tuple(ref for kind, ref in subjects if kind == "identity")
         try:
             async with self._engine.connect() as raw:
                 conn = await raw.execution_options(isolation_level="REPEATABLE READ")
@@ -149,8 +150,8 @@ class SqlPassAnchors:
 
         id_for = pointers.get
         people_subjects = tuple(
-            EntityAnchor(pointers["person", person], person) for person in sorted(people)
-            if ("person", person) in pointers
+            EntityAnchor(pointers["identity", identity], identity) for identity in sorted(people)
+            if ("identity", identity) in pointers
         )
         pointer_seeds = (
             *(id_for(("room", ref)) for ref in rooms),
@@ -228,7 +229,7 @@ class _AnchorQueries:
     async def proactive(self, data: ProactiveInput) -> _Seeds:
         r = self._rows
         row = (await self._conn.execute(sa.select(
-            r.origin_room, r.image["persons"],
+            r.origin_room, r.image["identities"],
         ).where(r.graph_id == data.intention, r.kind == "intention"))).one_or_none()
         links = await self._conn.scalars(sa.select(r.image["dst_id"].astext).where(
             r.kind == "edge", r.state == "live", r.image["src_id"].astext == data.intention,
@@ -248,7 +249,10 @@ class _AnchorQueries:
         ))
         r = self._rows
         rows = await self._conn.execute(sa.select(
-            r.graph_id, r.kind, r.origin_room, r.image["persons"],
+            r.graph_id, r.kind, r.origin_room, sa.case(
+                (r.source.in_(DEPLOYED_ROLLUP_PERSONS), r.image["persons"]),
+                else_=r.image["identities"],
+            ),
         ).where(r.graph_id.in_(refs)))
         visible = {graph_id: (kind, room, people) for graph_id, kind, room, people in rows}
         claimed_ids = {stimulus.graph_id for stimulus in stimuli}
@@ -264,8 +268,8 @@ class _AnchorQueries:
             tuple(dict.fromkeys((*ids, *earlier, *links))),
             (*tuple(row.room for row in stimuli if row.room is not None),
              *tuple(visible[ref][1] for ref in ids if visible[ref][1] is not None)),
-            (*tuple(row.person for row in stimuli if row.person is not None),
-             *tuple(person for ref in ids for person in (visible[ref][2] or ()) if person)),
+            (*tuple(row.identity for row in stimuli if row.identity is not None),
+             *tuple(identity for ref in ids for identity in (visible[ref][2] or ()) if identity)),
         )
 
     async def _earlier_verdicts(self, claimed: set[str]) -> tuple[str, ...]:
@@ -328,7 +332,7 @@ class _AnchorQueries:
             kind.label("pointer_kind"), ref.label("pointer_ref"), r.graph_id,
         ).where(
             r.kind == "entity", r.state == "admitted", sa.or_(
-                sa.and_(kind == "person", ref.in_(people)),
+                sa.and_(kind == "identity", ref.in_(people)),
                 sa.and_(kind == "room", ref.in_((*rooms, self._scope.room))),
                 sa.and_(kind == "unit", ref == self._scope.unit),
                 sa.and_(kind == "nora", ref == "nora"),

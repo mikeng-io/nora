@@ -36,7 +36,7 @@ async def _schedule(engine, kind, at):
         await SqlCognitiveGraph(engine).create(CLAIM, {
             "unit": _UNIT, "id": _EVENT, "kind": "claim", "basis": "inferred",
             "state": "live", "writer": "fixture", "exposure": "internal",
-            "origin_room": _ROOM, "persons": [_PERSON], "part": "fact",
+            "origin_room": _ROOM, "identities": [_PERSON], "part": "fact",
             "content": {"text": "Generated claim."}, "valid_to": at,
             "reasoning": "told", "confidence": "low",
         })

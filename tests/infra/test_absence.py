@@ -67,8 +67,8 @@ async def test_covered_silence_produces_one_absence_anchored_to_the_person(recor
         pointer, = (await conn.execute(sa.select(ENTITY).where(
             ENTITY.c.id == absence.graph_id, ENTITY.c.unit == record.unit,
         ))).mappings()
-    assert (pointer["pointer_kind"], pointer["pointer_ref"], absence.person) == (
-        "person", record.people[0], record.people[0],
+    assert (pointer["pointer_kind"], pointer["pointer_ref"], absence.identity) == (
+        "identity", record.people[0], record.people[0],
     )
     assert len(await _legacy(record)) == 1
 

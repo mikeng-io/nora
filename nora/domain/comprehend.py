@@ -111,7 +111,7 @@ async def build_preview(graph: MemoryGraph, item: ComprehendItem) -> Preview:
     window = item_window(item.text, work.as_of)
     scope = Walk(
         unit=work.unit,
-        persons=frozenset(p for s in item.sources for p in s.persons),
+        identities=frozenset(p for s in item.sources for p in s.identities),
         depth=2,
         nodes=100,
         fan_out=20,
@@ -127,7 +127,7 @@ async def build_preview(graph: MemoryGraph, item: ComprehendItem) -> Preview:
 
 async def named_candidates(
     graph: MemoryGraph, *, unit: str, kind: str, name: str,
-    persons: frozenset[str], near: Key | None = None,
+    identities: frozenset[str], near: Key | None = None,
     window: tuple[datetime, datetime] | None = None,
     as_of: datetime | None = None, historical: bool = False,
     limit: int = 5, drop: Callable[[Entity], bool] | None = None,
@@ -148,7 +148,7 @@ async def named_candidates(
             (entity.key,),
             Walk(
                 unit=unit,
-                persons=persons,
+                identities=identities,
                 depth=1,
                 nodes=6,
                 fan_out=3,
@@ -182,7 +182,7 @@ async def resolution_candidates(
     work = item.work
     text = item.text.casefold()
     named = (*item.urls, *item.accounts, item.place)
-    persons = frozenset(p for s in item.sources for p in s.persons)
+    identities = frozenset(p for s in item.sources for p in s.identities)
     resolved: list[Subgraph] = []
     # ponytail: known aliases and explicit item labels seed resolution; novel names
     # remain the model's memory tools' job until the recall spike measures a gap.
@@ -191,7 +191,7 @@ async def resolution_candidates(
     ):
         for kind in PROPOSED_KINDS:
             resolved.extend(await named_candidates(
-                graph, unit=work.unit, kind=kind, name=name, persons=persons,
+                graph, unit=work.unit, kind=kind, name=name, identities=identities,
                 near=seeds[0], window=window, as_of=work.as_of,
                 historical=work.historical))
     return tuple(resolved)

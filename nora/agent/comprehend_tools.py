@@ -142,7 +142,7 @@ class ComprehendRead(AgentTool):
     def _source_people(self) -> set[str]:
         people = set(self._state.persons)
         for source in self._state.fetched.sources.values():
-            people.update(source.persons)
+            people.update(source.identities)
         return people
 
     async def _private_names(self) -> tuple[str, ...]:

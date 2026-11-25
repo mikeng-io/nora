@@ -10,7 +10,7 @@ _TOPIC = SubjectEdge("about", "entity:topic-head", _CURRENT)
 
 
 def test_pointer_only_subject_is_unresolved():
-    pointer = SubjectEdge("about", "entity:person", _CURRENT, pointer_kind="person")
+    pointer = SubjectEdge("about", "entity:identity", _CURRENT, pointer_kind="identity")
     assert resolve_delivery(_ROW, [pointer]).identity is None
 
 

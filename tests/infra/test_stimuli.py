@@ -119,7 +119,7 @@ async def test_only_failed_act_outcome_gets_a_stimulus(engine, verdict):
     (outcome,) = (await _rows(engine, NORA_ACT_OUTCOME)).values()
     expected = (GraphStimulus(
         act.authority.unit, "failed_act", outcome["graph_id"], outcome["occurred_at"],
-        "nora_act_outcome", act.authority.room, act.authority.person,
+        "nora_act_outcome", act.authority.room, act.authority.identity,
     ),) if verdict == "failed" else ()
     assert await SqlGraphStimuli(engine).read(act.authority.unit) == expected
 
@@ -183,7 +183,7 @@ async def test_crossing_references_the_registered_aggregate_without_an_intention
     assert at is not None
     assert await stimuli.read(_UNITS[0]) == (
         GraphStimulus(_UNITS[0], "aggregate_crossing", row["graph_id"], at, "presence_stays",
-                      person=row["person_id"], cues=("baseline_crossed",),
+                      identity=row["person_id"], cues=("baseline_crossed",),
                       occurrence=at.isoformat()),
     )
     async with engine.connect() as conn:

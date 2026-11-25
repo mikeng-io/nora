@@ -137,7 +137,7 @@ class WakeToolSurface:
             Returns `status`: ok, refused or unavailable, with a `note`.
 
             Args:
-                operations: Intention operations in order. Give person IDs or nora for
+                operations: Intention operations in order. Give identity IDs or nora for
                     owner and owed_to. Use shown graph IDs for references.
             """
             return await submit_operations(

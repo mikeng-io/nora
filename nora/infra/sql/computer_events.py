@@ -46,7 +46,7 @@ class SqlComputerEventStore:
         async with self._engine.begin() as conn:
             values.update(await executor_item_planes(
                 conn, COMPUTER_EVENTS, row.id, row.created_at, room=row.conversation_id,
-                platform=row.platform, person=row.requester_person_id,
+                platform=row.platform, identity=row.requester_person_id,
                 task_id=current_segment.get() or row.operation_id, tag=row.tag_id,
             ))
             await conn.execute(sa.insert(COMPUTER_EVENTS).values(**values))

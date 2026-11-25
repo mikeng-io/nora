@@ -56,7 +56,7 @@ class AdmissionIdentity:
             not selected.ids.isdisjoint(direct),
         )
 
-    async def person(self, ref: str) -> str | None:
+    async def identity(self, ref: str) -> str | None:
         try:
             person = await self._access.person(ref)
         except Exception as exc:
@@ -73,11 +73,11 @@ class AdmissionIdentity:
         unit: str,
         *,
         rooms: Collection[str],
-        persons: Collection[str],
+        identities: Collection[str],
         principals: Collection[str],
     ) -> tuple[dict[str, RoomReference | None], dict[str, str | None]]:
         room_refs = {ref: await self.room(ref, unit) for ref in rooms}
-        person_refs = {ref: await self.person(ref) for ref in set(persons)}
+        identity_refs = {ref: await self.identity(ref) for ref in set(identities)}
         for ref in set(principals):
-            person_refs[ref] = "nora" if ref == "nora" else await self.person(ref)
-        return room_refs, person_refs
+            identity_refs[ref] = "nora" if ref == "nora" else await self.identity(ref)
+        return room_refs, identity_refs

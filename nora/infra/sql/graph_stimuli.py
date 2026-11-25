@@ -36,7 +36,7 @@ class SqlGraphStimuli:
         return tuple(
             GraphStimulus(
                 row["unit"], cast(StimulusKind, row["kind"]), row["graph_id"],
-                row["eligible_at"], row["source"], row["room"], row["person"],
+                row["eligible_at"], row["source"], row["room"], row["identity"],
                 tuple(row["cues"]), row["revision_id"], tuple(row["dependents"]), row["occurrence"],
             )
             for row in rows

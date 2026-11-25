@@ -41,7 +41,7 @@ async def _record(
     inputs = (intention, witness) if witness is not None else (intention,)
     planes = await graph.aggregate_planes(
         conn, INTENTION_VERDICT, unit=unit, key=(id_,), occurred_at=ended_at,
-        asserted_at=ended_at, persons=intention["persons"], room=intention["origin_room"],
+        asserted_at=ended_at, identities=intention["identities"], room=intention["origin_room"],
         inputs=inputs, minimum="internal",
     )
     role = "drop_when_form" if intention["ending"] == "dropped" else "done_when_form"

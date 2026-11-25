@@ -20,7 +20,7 @@ class GraphStimulus:
     eligible_at: datetime
     source: str
     room: str | None = None
-    person: str | None = None
+    identity: str | None = None
     cues: tuple[str, ...] = ()
     revision_id: str | None = None
     dependents: tuple[str, ...] = ()

@@ -93,7 +93,8 @@ class _Attempt:
         unit, edge = self.key
         row = self._row
         scope = {
-            name: row[name] for name in ("origin_room", "persons", "excluded_persons", "lineage")
+            name: row[name]
+            for name in ("origin_room", "identities", "excluded_identities", "lineage")
         }
         scope["exposure"] = "operator" if row["exposure"] == "operator" else "internal"
         if digest is None:

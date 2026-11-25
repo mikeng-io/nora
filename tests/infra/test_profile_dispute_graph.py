@@ -48,7 +48,7 @@ async def _rows(engine, table):
 
 
 async def test_the_subjects_own_dispute_hides_the_claim_at_once(engine):
-    await _claim(SqlCognitiveGraph(engine), "generated-claim", persons=(_PERSON,))
+    await _claim(SqlCognitiveGraph(engine), "generated-claim", identities=(_PERSON,))
     result = await _call(_dispute(engine), claim_id="generated-claim")
     assert result["status"] == "ok" and result["effect"] == "hidden"
     assert [(r["author"], r["claim_id"]) for r in await _rows(engine, DISPUTE)] == [
@@ -58,7 +58,7 @@ async def test_the_subjects_own_dispute_hides_the_claim_at_once(engine):
 
 
 async def test_another_persons_dispute_marks_the_claim_for_weighing(engine):
-    await _claim(SqlCognitiveGraph(engine), "generated-claim", persons=(_PERSON,))
+    await _claim(SqlCognitiveGraph(engine), "generated-claim", identities=(_PERSON,))
     result = await _call(_dispute(engine, speaker=_OTHER), claim_id="generated-claim")
     assert result["status"] == "ok" and result["effect"] == "disputed"
     [claim] = await _rows(engine, CLAIM)
@@ -67,7 +67,7 @@ async def test_another_persons_dispute_marks_the_claim_for_weighing(engine):
 
 
 async def test_the_subjects_own_forget_hides_the_claim(engine):
-    await _claim(SqlCognitiveGraph(engine), "generated-claim", persons=(_PERSON,))
+    await _claim(SqlCognitiveGraph(engine), "generated-claim", identities=(_PERSON,))
     result = await _call(_dispute(engine), claim_id="generated-claim", kind="forget")
     assert result["status"] == "ok" and result["effect"] == "hidden"
     [request] = await _rows(engine, FORGET_REQUEST)
@@ -76,7 +76,7 @@ async def test_the_subjects_own_forget_hides_the_claim(engine):
 
 
 async def test_only_the_person_a_claim_is_about_may_ask_to_forget_it(engine):
-    await _claim(SqlCognitiveGraph(engine), "generated-claim", persons=(_PERSON,))
+    await _claim(SqlCognitiveGraph(engine), "generated-claim", identities=(_PERSON,))
     result = await _call(
         _dispute(engine, speaker=_OTHER), claim_id="generated-claim", kind="forget",
     )
@@ -86,7 +86,7 @@ async def test_only_the_person_a_claim_is_about_may_ask_to_forget_it(engine):
 
 
 async def test_an_id_no_claim_of_this_unit_holds_is_not_found_and_writes_nothing(engine):
-    await _claim(SqlCognitiveGraph(engine), "generated-claim", persons=(_PERSON,), unit="other")
+    await _claim(SqlCognitiveGraph(engine), "generated-claim", identities=(_PERSON,), unit="other")
     for kind in ("dispute", "forget"):
         result = await _call(_dispute(engine), claim_id="generated-claim", kind=kind)
         assert result["status"] == "not_found"

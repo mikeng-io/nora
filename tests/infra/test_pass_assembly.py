@@ -213,9 +213,9 @@ async def test_room_list_reads_each_rooms_graph_profile_in_the_turn_audience(sce
     await _trait(scenario, "local-culture", "room-here", "Keeps its decisions brief.\nSecond line.")
     await _trait(scenario, "unit-culture", "unit-pointer", "This belongs to the unit.")
     await _trait(scenario, "excluded-culture", "room-other", "Must stay outside this audience.",
-                 excluded_persons=[PERSON])
+                 excluded_identities=[PERSON])
     await _trait(scenario, "unverified-culture", "room-other", "Must wait for the live roster.",
-                 excluded_persons=[OTHER])
+                 excluded_identities=[OTHER])
 
     room_list = _room_list(scenario)
     restricted = await room_list()
@@ -335,7 +335,7 @@ async def test_wake_profile_requires_every_agenda_room_to_permit_the_claim(scena
     await pointers(scenario)
     await scenario.claim("public-profile", exposure="external")
     await scenario.claim("excluded-in-second-room", exposure="external",
-                         excluded_persons=[OTHER])
+                         excluded_identities=[OTHER])
     for claim in ("public-profile", "excluded-in-second-room"):
         await write_edge(scenario, claim, "nora-pointer", "about")
 
@@ -364,7 +364,7 @@ async def test_wake_profile_needs_live_roster_evidence_for_audience_exclusions(s
     await pointers(scenario)
     await scenario.claim("public-profile", exposure="external")
     await scenario.claim("exclusion-sensitive-profile", exposure="external",
-                         excluded_persons=["fixture-unlisted-person"])
+                         excluded_identities=["fixture-unlisted-person"])
     for claim in ("public-profile", "exclusion-sensitive-profile"):
         await write_edge(scenario, claim, "nora-pointer", "about")
 

@@ -15,7 +15,7 @@ from nora.infra.sql.schema import (
     SOCIAL_ITEM,
 )
 from nora.memory.domain.act_executors import executor_health_platform
-from nora.memory.domain.conditions import ActEvent, ConditionValue, OwnDelivery, PersonEvent
+from nora.memory.domain.conditions import ActEvent, ConditionValue, IdentityEvent, OwnDelivery
 from nora.memory.domain.registration import AGGREGATE_FAMILIES
 
 Source = tuple[str, str]
@@ -30,7 +30,7 @@ class ConditionSources:
         self._conn = conn
 
     async def resolve(self, intention: RowData, condition: ConditionValue) -> set[Source]:
-        if isinstance(condition, PersonEvent):
+        if isinstance(condition, IdentityEvent):
             return {(condition.platform, "")}
         if isinstance(condition, (ActEvent, OwnDelivery)):
             stmt = sa.select(_ACT.executor, _ACT.destination).where(

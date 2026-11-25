@@ -38,14 +38,14 @@ Confidence = Literal["low", "medium", "high"]
 
 ClaimPart = Literal["fact", "trait", "guess", "lesson", "situation", "grade"]
 Grade = Literal["confirmed", "refuted", "expired", "holds", "weakened"]
-PointerKind = Literal["person", "room", "unit", "nora"]
+PointerKind = Literal["identity", "room", "unit", "nora"]
 
 ConditionForm = Literal[
-    "act_event", "person_event", "predicate", "deadline", "untyped",
+    "act_event", "identity_event", "predicate", "deadline", "untyped",
 ]
 #: A done-when admits every condition form but `deadline`; the deadline is the
 #: `deadline` column.
-DoneWhenForm = Literal["act_event", "person_event", "predicate", "untyped"]
+DoneWhenForm = Literal["act_event", "identity_event", "predicate", "untyped"]
 IntentionForm = Literal["achieve", "maintain"]
 AchieveEnding = Literal["achieved", "dropped", "leaked", "unknown"]
 MaintainEnding = Literal["ceased", "dropped"]

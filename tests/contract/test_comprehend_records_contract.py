@@ -436,7 +436,7 @@ async def _insert_social(engine, access, *, item, person):
     assert await scope.person_units(person) == (_MUNIT,)
     async with engine.begin() as conn:
         planes = await registration.planes(
-            conn, SOCIAL_ITEM, unit=_MUNIT, occurred_at=at, persons=(person,),
+            conn, SOCIAL_ITEM, unit=_MUNIT, occurred_at=at, identities=(person,),
         )
         await conn.execute(sa.insert(SOCIAL_ITEM).values(
             network="instagram", item_id=item, person=person,
@@ -465,7 +465,7 @@ async def test_managed_social_read_checks_the_live_preference_at_read_time(store
         text="Generated caption")
     item = await records.load(_mwork(("social", "instagram:generated-item")))
     assert item.sources[0].text == "Generated caption"
-    assert item.sources[0].persons == (_MP,)
+    assert item.sources[0].identities == (_MP,)
     # The construction-time answer would still say enabled; the live read says
     # opted out, and the withheld distinction is the existing ValueError.
     registry.identities[_MP]["traits"]["social"] = False
@@ -523,7 +523,7 @@ async def test_managed_source_admission_uses_current_room_membership(store):
         persons=(_MP,), text="Generated note text")
     item = await records.load(_mwork(("note", "generated-note")))
     assert item.sources[0].text == "Generated note text"
-    assert item.sources[0].persons == (_MP,)
+    assert item.sources[0].identities == (_MP,)
     # A departure recorded after construction denies the next read.
     assert (await bindings.set_membership(
         person_id=_MP, scope=Scope(ScopeKind.ROOM, "signal/generated-managed-room"),
@@ -586,7 +586,7 @@ async def test_managed_admission_folds_a_retired_alias_for_permission(store):
         engine, kind="note", source_id="generated-alias-note", unit=None,
         persons=(former,), text="Generated aliased note")
     item = await records.load(_mwork(("note", "generated-alias-note")))
-    assert item.sources[0].persons == (former,)
+    assert item.sources[0].identities == (former,)
     assert item.sources[0].text == "Generated aliased note"
 
 

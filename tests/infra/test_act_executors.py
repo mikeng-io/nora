@@ -153,7 +153,7 @@ async def test_private_signal_link_challenge_executor(acts):
     assert view.request_id in body
     act, outcome = await _recorded(engine, "signal.private_link", composed=False, unit=None)
     assert act["trigger_id"] == f"{view.request_id}:receiving" and act["ordinal"] == 0
-    assert act["authority_person"] == PERSON_A
+    assert act["authority_identity"] == PERSON_A
     assert (act["graph_id"], outcome["graph_id"]) == (None, None)
     assert "!!!link" not in repr(act) + repr(outcome)
 
@@ -182,7 +182,7 @@ async def test_discord_scoped_deterministic_executors(acts, executor):
         assert room.sent == [("Generated music notice", True)]
     act, _ = await _recorded(engine, executor, composed=False)
     if executor == "discord.command_reply":
-        assert act["authority_person"] == "canonical-person"
+        assert act["authority_identity"] == "canonical-person"
 
 
 async def test_voice_death_without_generation_sends_one_teardown_notice(acts):

@@ -122,7 +122,7 @@ async def wake(budget=None, seed=None, historical=False, reaction=False, reactio
         items_by_index=dict(enumerate(items)),
         memory_items={},
         shown_keys=set(),
-        shown_persons=set(),
+        shown_identities=set(),
         graph_fetched=GraphFetched(),
     )
     grounding = Grounding(records=records)
@@ -407,9 +407,9 @@ async def test_an_emitted_preview_relation_can_be_corrected():
 @pytest.mark.parametrize("historical", [False, True])
 async def test_an_emitted_rows_author_is_handle_citable_without_source_scope(historical):
     """A unit-wide room: the emitted row renders `person=generated-a` while
-    its citable Source is scoped to no one (`persons=()`). The author the
-    session was shown is handle-citable — `persons` is a source's scope, not
-    its authorship — and the relation keeps the cited sources' empty persons
+    its citable Source is scoped to no one (`identities=()`). The author the
+    session was shown is handle-citable — `identities` is a source's scope, not
+    its authorship — and the relation keeps the cited sources' empty identities
     union, so nothing widens. A live and a historical session answer alike."""
     from dataclasses import replace as _replace
 
@@ -423,7 +423,7 @@ async def test_an_emitted_rows_author_is_handle_citable_without_source_scope(his
     state, prompt = await wake(historical=historical, seed=seed)
     assert 'person="generated-a"' in prompt
     for source in list(state.graph_fetched.sources.values()):
-        state.graph_fetched.show(_replace(source, persons=()))
+        state.graph_fetched.show(_replace(source, identities=()))
     result = await state.memory.propose(
         state,
         statements=[{
@@ -434,7 +434,7 @@ async def test_an_emitted_rows_author_is_handle_citable_without_source_scope(his
         }])
     assert result["statements"][0]["status"] == "saved", result
     relation = state.memory.graph.relations[result["committed"][0]]
-    assert relation.persons == ()
+    assert relation.identities == ()
 
 
 @pytest.mark.asyncio
@@ -442,7 +442,7 @@ async def test_a_shown_author_grounds_a_pointer_the_projection_has_not_written()
     """No pointer exists for the emitted row's author — the projection has
     not reached her, and the group room's Sources are scoped to no one.
     Admission stages the unit's pointer from shown authorship alone: the
-    statement saves, the pointer is committed, and the relation's persons
+    statement saves, the pointer is committed, and the relation's identities
     stay the cited sources' empty union."""
     from dataclasses import replace as _replace
 
@@ -450,7 +450,7 @@ async def test_a_shown_author_grounds_a_pointer_the_projection_has_not_written()
     assert 'person="generated-a"' in prompt
     assert "generated-unit:person:generated-a" not in state.memory.graph.entities
     for source in list(state.graph_fetched.sources.values()):
-        state.graph_fetched.show(_replace(source, persons=()))
+        state.graph_fetched.show(_replace(source, identities=()))
     result = await state.memory.propose(
         state,
         statements=[{
@@ -463,7 +463,7 @@ async def test_a_shown_author_grounds_a_pointer_the_projection_has_not_written()
     pointer = state.memory.graph.entities["generated-unit:person:generated-a"]
     assert pointer.attributes == {"ref": "generated-a"}
     relation = state.memory.graph.relations[result["committed"][0]]
-    assert relation.persons == ()
+    assert relation.identities == ()
 
 
 @pytest.mark.asyncio

@@ -42,8 +42,8 @@ def _planes(basis_check: str, state_check: str, kind: str) -> list[sa.schema.Sch
         sa.Column("confidence", sa.Text),
         sa.Column("unit", sa.Text, nullable=False),
         sa.Column("origin_room", sa.Text),
-        sa.Column("persons", pg.ARRAY(sa.Text), nullable=False, server_default="{}"),
-        sa.Column("excluded_persons", pg.ARRAY(sa.Text), nullable=False, server_default="{}"),
+        sa.Column("identities", pg.ARRAY(sa.Text), nullable=False, server_default="{}"),
+        sa.Column("excluded_identities", pg.ARRAY(sa.Text), nullable=False, server_default="{}"),
         sa.Column("lineage", pg.JSONB(none_as_null=True), nullable=False,
                   server_default=sa.text("'{}'::jsonb")),
         sa.Column("exposure", sa.Text, nullable=False),
@@ -144,7 +144,7 @@ sa.Table(
         "state = 'tombstoned' OR name IS NOT NULL", name="ck_entity_name"
     ),
     sa.CheckConstraint(
-        "pointer_kind IS NULL OR pointer_kind IN ('person', 'room', 'unit', 'nora')",
+        "pointer_kind IS NULL OR pointer_kind IN ('identity', 'room', 'unit', 'nora')",
         name="ck_entity_pointer_kind",
     ),
     sa.CheckConstraint(
@@ -211,17 +211,17 @@ sa.Table(
     sa.CheckConstraint("form IN ('achieve', 'maintain')", name="ck_intention_form"),
     sa.CheckConstraint(
         "done_when_form IS NULL OR done_when_form IN "
-        "('act_event', 'person_event', 'predicate', 'untyped')",
+        "('act_event', 'identity_event', 'predicate', 'untyped')",
         name="ck_intention_done_when_form",
     ),
     sa.CheckConstraint(
         "holds_while_form IS NULL OR holds_while_form IN "
-        "('act_event', 'person_event', 'predicate', 'deadline', 'untyped')",
+        "('act_event', 'identity_event', 'predicate', 'deadline', 'untyped')",
         name="ck_intention_holds_while_form",
     ),
     sa.CheckConstraint(
         "drop_when_form IS NULL OR drop_when_form IN "
-        "('act_event', 'person_event', 'predicate', 'deadline', 'untyped')",
+        "('act_event', 'identity_event', 'predicate', 'deadline', 'untyped')",
         name="ck_intention_drop_when_form",
     ),
     sa.CheckConstraint(

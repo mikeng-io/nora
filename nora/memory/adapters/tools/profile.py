@@ -144,11 +144,11 @@ def _make_profile_dispute(deps):
             _record(metrics, "profile_dispute", "unavailable", reason="unwired")
             return dict(_PROFILE_DISPUTE_UNAVAILABLE)
         try:
-            persons = await intake.claim_persons(unit=unit, claim_id=target)
-            if persons is None:
+            identities = await intake.claim_identities(unit=unit, claim_id=target)
+            if identities is None:
                 _record(metrics, "profile_dispute", "not_found")
                 return dict(_PROFILE_DISPUTE_NOT_FOUND)
-            subject = tagger.person_id in persons
+            subject = tagger.person_id in identities
             if kind == "forget" and not subject:
                 # The self-only rule. The store hides every target a forget
                 # request names from every read, whoever asked.

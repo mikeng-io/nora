@@ -144,7 +144,7 @@ async def engine(clean_pg_url: str) -> AsyncIterator[AsyncEngine]:
                 sender_id=ACCOUNT,
                 ts=1000,
                 person_id=PERSON.person_id,
-                persons=[PERSON.person_id],
+                identities=[PERSON.person_id],
             )
         )
     try:
@@ -503,16 +503,16 @@ async def test_reads_registered_edit_and_reaction_authors_and_preserves_dm_origi
                 origin_room=ACCOUNT,
                 sender_id=SELF_ACCOUNT,
                 emoji="fixture",
-                persons=[PERSON.person_id],
+                identities=[PERSON.person_id],
             )
         )
-    basis = replace(CLAIM_PROPOSAL, reasoning="told", scope=Scope("u", persons=("unknown",)))
+    basis = replace(CLAIM_PROPOSAL, reasoning="told", scope=Scope("u", identities=("unknown",)))
     edit = replace(basis, id="by-edit", citations=("edit",))
     reaction = replace(basis, id="by-reaction", citations=("reaction",))
     result = await service.admit((edit, reaction), PASS, ("edit", "reaction"))
-    assert result.outcomes == (Stored("by-edit"), Refusal("told_without_person", "citations"))
+    assert result.outcomes == (Stored("by-edit"), Refusal("told_without_identity", "citations"))
     row = (await _rows(engine, CLAIM))["by-edit"]
-    assert row["origin_room"] == f"signal:{ACCOUNT}" and row["persons"] == [None]
+    assert row["origin_room"] == f"signal:{ACCOUNT}" and row["identities"] == [None]
     other = replace(edit, id="affiliate", scope=Scope("affiliate"))
     result = await service.admit(
         (other,),

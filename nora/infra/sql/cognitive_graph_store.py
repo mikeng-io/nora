@@ -23,10 +23,10 @@ from nora.domain.graph_registration import (
     InputScope,
     StaleBaseError,
     aggregate_graph_id,
+    identities_column,
     inherited_scope,
 )
 from nora.domain.lineage import Lineage
-from nora.domain.memory_graph import pointer_entity
 from nora.infra.sql.cognitive_graph_schema import (
     CLAIM,
     EDGE,
@@ -46,7 +46,7 @@ class AdmissionTopic:
     base_state: str | None
 
 
-# person_pointer_in, _admission_base and _merge support writes and use raw identities.
+# identity_pointer_in, _admission_base and _merge support writes and use raw identities.
 GRAPH_READERS = (
     "nora.memory.adapters.claim_support",
     "nora.memory.adapters.intention_verdicts",
@@ -249,25 +249,25 @@ class SqlCognitiveGraph:
             await self._insert(conn, table, row)
 
     @staticmethod
-    async def person_pointer_in(conn: AsyncConnection, unit: str, person: str) -> str | None:
+    async def identity_pointer_in(conn: AsyncConnection, unit: str, identity: str) -> str | None:
         entity = ENTITY.c
         query = sa.select(entity.id).where(
-            entity.unit == unit, entity.pointer_kind == "person", entity.pointer_ref == person,
+            entity.unit == unit, entity.pointer_kind == "identity", entity.pointer_ref == identity,
             entity.state == "admitted",
         ).order_by(entity.id).limit(1)
         if existing := cast(str | None, await conn.scalar(query)):
             return existing
-        pointer = pointer_entity("person", unit, person, person)
+        pointer_id = f"{unit}:identity:{identity}"
         created = await conn.scalar(pg_insert(REGISTRY).values(
-            id=pointer.id, unit=unit, kind="entity",
+            id=pointer_id, unit=unit, kind="entity",
         ).on_conflict_do_nothing().returning(REGISTRY.c.id))
         if created is not None:
             await conn.execute(sa.insert(ENTITY).values(
-                id=pointer.id, unit=unit, kind="entity", basis="computed", state="admitted",
-                name=pointer.name, pointer_kind="person", pointer_ref=person, persons=[person],
+                id=pointer_id, unit=unit, kind="entity", basis="computed", state="admitted",
+                name=identity, pointer_kind="identity", pointer_ref=identity, identities=[identity],
                 exposure="internal", writer="SqlRollupStore",
             ))
-            return pointer.id
+            return pointer_id
         return cast(str | None, await conn.scalar(query))
 
     @staticmethod
@@ -401,7 +401,7 @@ class SqlCognitiveGraph:
             sa.update(ENTITY).where(ENTITY.c.unit == unit, ENTITY.c.id == endpoints[0])
             .values(
                 state="merged", exposure=edge["exposure"], lineage=edge["lineage"],
-                excluded_persons=edge["excluded_persons"], origin_room=edge["origin_room"],
+                excluded_identities=edge["excluded_identities"], origin_room=edge["origin_room"],
             )
         )
 
@@ -410,7 +410,7 @@ class SqlCognitiveGraph:
         witness_id: str, witness_at: datetime, witness_scope: Mapping[str, Any],
     ) -> None:
         scope = inherited_scope(
-            (InputScope(tuple(row["excluded_persons"]), row["exposure"],
+            (InputScope(tuple(row["excluded_identities"]), row["exposure"],
                         Lineage.from_json(row["lineage"])) for row in (intention, witness_scope)),
             build_lineage=Lineage(), minimum="internal",
         )
@@ -426,9 +426,9 @@ class SqlCognitiveGraph:
             "src_id": intention_id, "dst_id": witness_id, "type": "closed_by",
             "basis": "computed", "state": "live", "writer": "ConditionMatcher",
             "origin_room": intention["origin_room"], "occurred_at": witness_at,
-            "asserted_at": ended, "persons": intention["persons"],
+            "asserted_at": ended, "identities": intention["identities"],
             "exposure": scope.exposure, "lineage": scope.lineage.to_json(),
-            "excluded_persons": list(scope.excluded_persons),
+            "excluded_identities": list(scope.excluded_identities),
         })
         await self._retire_watches(conn, intention)
 
@@ -466,7 +466,7 @@ class SqlCognitiveGraph:
         asserted_at: datetime,
         interval: tuple[datetime, datetime] | None = None,
         identity_interval: tuple[datetime, datetime] | None = None,
-        persons: Iterable[str] = (),
+        identities: Iterable[str] = (),
         room: str | None = None,
         minimum: Exposure = "external",
         build_lineage: Any = None,
@@ -477,7 +477,7 @@ class SqlCognitiveGraph:
         scope = inherited_scope(
             (
                 InputScope(
-                    tuple(row["excluded_persons"]),
+                    tuple(row["excluded_identities"]),
                     row["exposure"],
                     Lineage.from_json(row["lineage"]),
                 )
@@ -504,8 +504,8 @@ class SqlCognitiveGraph:
             "graph_id": graph_id,
             "unit": unit,
             "state": "live",
-            "persons": sorted(set(persons)),
-            "excluded_persons": list(scope.excluded_persons),
+            identities_column(table.name): sorted(set(identities)),
+            "excluded_identities": list(scope.excluded_identities),
             "exposure": scope.exposure,
             "lineage": scope.lineage.to_json(),
             "origin_room": room,

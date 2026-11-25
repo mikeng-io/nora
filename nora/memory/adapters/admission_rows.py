@@ -10,6 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from sqlalchemy.sql import FromClause
 
+from nora.domain.graph_registration import identities_column
 from nora.domain.lineage import Lineage
 from nora.infra.sql.cognitive_graph_schema import (
     CLAIM,
@@ -22,7 +23,7 @@ from nora.infra.sql.cognitive_graph_schema import (
 from nora.infra.sql.schema import MESSAGES, METADATA
 from nora.memory.app.admission_identity import AdmissionIdentity
 from nora.memory.domain.admission_ports import AdmissionUnavailableError
-from nora.memory.domain.admission_proposals import PersonAuthor, RowFacts, SourceReference
+from nora.memory.domain.admission_proposals import IdentityAuthor, RowFacts, SourceReference
 from nora.memory.domain.graph import Kind
 from nora.memory.domain.registration import AGGREGATE_FAMILIES, ITEM_SOURCES
 
@@ -33,8 +34,7 @@ _PLANES = (
     "state",
     "unit",
     "origin_room",
-    "persons",
-    "excluded_persons",
+    "excluded_identities",
     "exposure",
     "lineage", "asserted_at",
 )
@@ -131,15 +131,15 @@ class SqlAdmissionRows:
         origin, unit = row["origin_room"], row["unit"]
         platform = row.get("source_platform")
         room = await self._identity.room(origin, unit, platform=platform) if origin else None
-        author: PersonAuthor | Literal["nora"] | None = None
+        author: IdentityAuthor | Literal["nora"] | None = None
         if table in _SPEECH:
             sender = row["sender"]
             if row.get("source_is_nora") or self._identity.is_nora(platform, sender):
                 author = "nora"
-            elif sender and row["sender_person"]:
-                person = await self._identity.person(row["sender_person"])
-                if person is not None:
-                    author = PersonAuthor(person)
+            elif sender and row["sender_identity"]:
+                identity = await self._identity.identity(row["sender_identity"])
+                if identity is not None:
+                    author = IdentityAuthor(identity)
         is_dm = row.get("source_room_type") == "dm" or bool(room and room.is_dm)
         origin_id = room.id if room and room.unit == unit else (None if is_dm else origin)
         return RowFacts(
@@ -150,8 +150,8 @@ class SqlAdmissionRows:
             unit,
             origin_id,
             is_dm,
-            tuple(row["persons"]),
-            tuple(row["excluded_persons"]),
+            tuple(row["identities"]),
+            tuple(row["excluded_identities"]),
             row["exposure"],
             Lineage.from_json(row["lineage"], origin=origin),
             form=row.get("form"),
@@ -173,6 +173,7 @@ class SqlAdmissionRows:
 
 def _select(table: sa.Table, id_column: str) -> sa.Select:
     needed = [table.c[id_column].label("id"), *(table.c[name] for name in _PLANES)]
+    needed.append(table.c[identities_column(table.name)].label("identities"))
     needed.append(sa.func.coalesce(table.c.occurred_at, table.c.asserted_at).label(
         "evidence_at",
     ))
@@ -201,7 +202,7 @@ def _select(table: sa.Table, id_column: str) -> sa.Select:
     stmt = sa.select(
         *needed,
         sender.c.sender_id.label("sender"),
-        sender.c.person_id.label("sender_person"),
+        sender.c.person_id.label("sender_identity"),
         parent.c.platform.label("source_platform"),
         parent.c.conversation_type.label("source_room_type"),
         (parent.c.is_nora if sender is parent else sa.literal(0)).label("source_is_nora"),

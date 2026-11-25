@@ -18,7 +18,7 @@ import sqlalchemy as sa
 from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy.dialects import postgresql as pg
 
-from nora.domain.graph_registration import SourceKind
+from nora.domain.graph_registration import SourceKind, identities_column
 from nora.infra.sql.graph_replay_schema import GRAPH_REPLAY_RECEIPT as GRAPH_REPLAY_RECEIPT
 from nora.infra.sql.graph_stimulus_schema import graph_stimulus_claim_table, graph_stimulus_table
 from nora.infra.sql.intention_verdict_schema import (
@@ -51,8 +51,8 @@ def _planes(
         sa.Column("confidence", sa.Text),
         sa.Column("unit", sa.Text, nullable=False),
         sa.Column("origin_room", sa.Text),
-        sa.Column("persons", pg.ARRAY(sa.Text), nullable=False, server_default="{}"),
-        sa.Column("excluded_persons", pg.ARRAY(sa.Text), nullable=False, server_default="{}"),
+        sa.Column("identities", pg.ARRAY(sa.Text), nullable=False, server_default="{}"),
+        sa.Column("excluded_identities", pg.ARRAY(sa.Text), nullable=False, server_default="{}"),
         sa.Column("lineage", pg.JSONB(none_as_null=True), nullable=False,
                   server_default=sa.text("'{}'::jsonb")),
         sa.Column("exposure", sa.Text, nullable=False),
@@ -142,7 +142,7 @@ EXPIRED_COVERAGE = sa.Table(
     sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
     sa.Column("unit", sa.Text, nullable=False),
     sa.Column("source", sa.Text, nullable=False),
-    sa.Column("person", sa.Text),
+    sa.Column("identity", sa.Text),
     sa.Column("from", sa.DateTime(timezone=True), nullable=False),
     sa.Column("to", sa.DateTime(timezone=True), nullable=False),
     sa.CheckConstraint('"from" <= "to"', name="ck_expired_coverage_order"),
@@ -168,7 +168,7 @@ ENTITY = sa.Table(
         "state = 'tombstoned' OR name IS NOT NULL", name="ck_entity_name"
     ),
     sa.CheckConstraint(
-        "pointer_kind IS NULL OR pointer_kind IN ('person', 'room', 'unit', 'nora')",
+        "pointer_kind IS NULL OR pointer_kind IN ('identity', 'room', 'unit', 'nora')",
         name="ck_entity_pointer_kind",
     ),
     sa.CheckConstraint(
@@ -244,17 +244,17 @@ INTENTION = sa.Table(
     sa.CheckConstraint("form IN ('achieve', 'maintain')", name="ck_intention_form"),
     sa.CheckConstraint(
         "done_when_form IS NULL OR done_when_form IN "
-        "('act_event', 'person_event', 'predicate', 'untyped')",
+        "('act_event', 'identity_event', 'predicate', 'untyped')",
         name="ck_intention_done_when_form",
     ),
     sa.CheckConstraint(
         "holds_while_form IS NULL OR holds_while_form IN "
-        "('act_event', 'person_event', 'predicate', 'deadline', 'untyped')",
+        "('act_event', 'identity_event', 'predicate', 'deadline', 'untyped')",
         name="ck_intention_holds_while_form",
     ),
     sa.CheckConstraint(
         "drop_when_form IS NULL OR drop_when_form IN "
-        "('act_event', 'person_event', 'predicate', 'deadline', 'untyped')",
+        "('act_event', 'identity_event', 'predicate', 'deadline', 'untyped')",
         name="ck_intention_drop_when_form",
     ),
     sa.CheckConstraint(
@@ -417,7 +417,7 @@ NORA_ACT = sa.Table(
     sa.Column("ordinal", sa.Integer, nullable=False),
     sa.Column("act_kind", sa.Text, nullable=False),
     sa.Column("destination", sa.Text, nullable=False),
-    sa.Column("authority_person", sa.Text),
+    sa.Column("authority_identity", sa.Text),
     sa.Column("authority_intention", sa.Text),
     sa.Column("guarantee", sa.Text, nullable=False),
     sa.Column("idempotency_key", sa.Text),
@@ -555,7 +555,7 @@ def _registration_planes(
         if isinstance(field, sa.Column):
             if field.name == "unit" and table.startswith("rollup_"):
                 continue
-            if field.name == "persons" and table in {"rollup_colocation", "rollup_outing"}:
+            if field.name == "identities" and identities_column(table) != field.name:
                 continue
             if field.name in {"unit", "graph_id"} and table not in _SCOPED_ONLY:
                 field.nullable = True

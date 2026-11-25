@@ -2,8 +2,11 @@
 
 ## Rows, edges and two axes
 
-The Cognitive Graph is rows and the typed edges between them. Every row and
-every edge carries two axes and nothing else classifies it:
+The Cognitive Graph is rows and the typed edges between them. An **entity** is
+a neutral anchor. An **identity** is a registered subject, using the same model
+for humans, bots and agents. Humanity is a claim about the subject.
+
+Every row and edge carries two axes:
 
 - **basis** — how the row is proven, which decides who may write it and how it
   is checked;
@@ -52,7 +55,7 @@ Evidence, indexes and typed relations each have their own edge:
 | edge | from → to | is evidence |
 |---|---|---|
 | **cites** | a row → the observed or computed rows it rests on | yes, the only evidence |
-| **about** | a row → an entity it concerns. Admission computes links from claims and intentions to their resolved person pointers. Nora proposes inferred links from claims, intentions and recorded items. | no: an index for retrieval |
+| **about** | a row → an entity it concerns. Admission computes links from claims and intentions to their resolved identity pointers. Nora proposes inferred links from claims, intentions and recorded items. | no: an index for retrieval |
 | **draws on** | a claim or intention → another claim or intention | no: context or premise |
 | **grades** | a grade claim → the guess or lesson it assesses | no: the grade cites its evidence separately |
 
@@ -70,12 +73,12 @@ endpoint kinds. A new meaning is a reviewed edge type, never a new store.
 
 - **unit** — the read boundary. A row is read only inside its unit. Each Nora
   has one **primary** unit, her home circle; other units are **affiliates**,
-  helper or ad hoc circles, each still its own boundary. A person's DM with
+  helper or ad hoc circles, each still its own boundary. An identity's DM with
   Nora is a room of her primary unit.
 - **origin room** — where the row was established, which governs where it may
   render and where an act about it lands.
-- **persons** — the people it concerns, by id.
-- **excluded persons** — people it must not be revealed to or through.
+- **identities** — the registered subjects it concerns, by ID.
+- **excluded identities** — registered subjects it must not be revealed to or through.
 - **lineage** — the source restrictions inherited from what it cites: what a
   row may be rendered as, where, and to whom. Exclusions and exposure always
   inherit. For DM-origin evidence the raw items stay in the DM, while a claim
@@ -109,7 +112,7 @@ row inspectable.
 
 | kind | basis | is | lifecycle |
 |---|---|---|---|
-| **entity** | computed when code resolves it; inferred when its identity is judged | an anchor: a person, room, unit, Nora, a game, a place, a topic | admitted, merged, retired |
+| **entity** | computed when code resolves it; inferred when its identity is judged | an anchor: an identity, room, unit, Nora, a game, a place, a topic | admitted, merged, retired |
 | **item** | observed | something that happened: a message, link, reaction, online-status change, location fix, fetched page, watch result, tool outcome, Nora's own send | append-only |
 | **aggregate** | computed | a derivation over items: episodes, rollups, counts and baselines, verdicts, track records, support tallies | recomputed, never edited |
 | **claim** | inferred | a belief about an entity or a relation | revised, retired, or ended by its valid-to time |
@@ -125,7 +128,7 @@ a graph entity or inferred same-as claim never establishes account ownership.
 
 ### Intentions
 
-An intention names its **owner** (Nora, or the person whose request she holds)
+An intention names its **owner** (Nora, or the identity whose request she holds)
 and who it is **owed to**, and has one of two **forms**:
 
 - **achieve** — closes when its **done-when** condition is met by the recorded
@@ -168,7 +171,7 @@ true, false or unknown. The form decides the witness and who writes the ending:
 | what it waits for | form | closing witness | written by |
 |---|---|---|---|
 | Nora's own work done | event match on her act | the act's outcome item reporting done | observe's compute |
-| a person's response, such as accepting a suggestion | event match on their item | the person's explicit item: the acceptance, the pick, the confirmation | observe's compute |
+| an identity's response, such as accepting a suggestion | event match on their item | the identity's explicit item: the acceptance, the pick, the confirmation | observe's compute |
 | a state reached | predicate over an aggregate or current head, such as a poll having a winner | the aggregate revision that meets it | observe's compute |
 | time passing | deadline | the clock instant, with the health of the sources it depended on | study's verify; no closed-by edge |
 | nothing code can evaluate | untyped | none | study's verify, at its deadline |
@@ -218,7 +221,7 @@ presentation.
 | memory-graph entity and relation | entity; claim, or an observed or computed edge |
 | note (an open matter) | achieve intention |
 | memo (a settled matter) | a closed intention, kept with its verdict |
-| commitment | achieve intention owed to a person |
+| commitment | achieve intention owed to an identity |
 | decision | intention whose deliberation recorded the options; "reopen if" is a rests-on condition |
 | reminder | the scheduled delivery of an intention |
 | event, a gathering | an item once it happens; before it, a claim about the plan, and an intention for Nora's own part |
