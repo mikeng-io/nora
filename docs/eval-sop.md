@@ -83,6 +83,24 @@ These are pre-run obligations, not a claim every check is automated. A missing
 obligation stays unmet/unavailable for the selected claim; do not add a parallel
 harness or run models to discover a cause already visible in retained evidence.
 
+### Measure anchored tool routing
+
+For a live comparison, select only `tool_selection` with
+`--measure behavioral`, repeat `--case` for each reviewed case, and supply
+`--services`, an explicit `--run-budget` and the fixed grading contract.
+The routing grader uses executed tools and their captured inputs. A tool
+call can establish the route even when its result cannot establish the
+requested facts. Use service responses appropriate to the claim being scored.
+
+Every selected case has a `routing_recording` entry in the private services
+manifest. Its `external` field holds the existing recording with non-model
+bindings. Its `model_gateway` declares the configured gateway upstream and
+allowed model aliases. Model bindings in the recording are refused.
+The contract selection binds the behavioral mode, manifest fingerprint
+and request budget to the roster. The existing gateway fence and budget apply to every
+model dispatch. The evidence retains routing verdicts alongside execution
+and validity.
+
 ### Bind the selected measurement
 
 Paid standard evaluations

@@ -617,14 +617,15 @@ def experiment_for(
     from evals.journey_cohort import bound_journey_services
     from evals.measurement import PROTOCOL
     from evals.reading import sampled
+    from evals.services import ROUTING_CORPUS
 
     if measurement is None:
         measurement = PROTOCOL
-    if measurement.behavioral and name not in JOURNEY_CORPORA:
+    behavioral_corpora = JOURNEY_CORPORA | {ROUTING_CORPUS}
+    if measurement.behavioral and name not in behavioral_corpora:
         raise ValueError(
-            f"{name}: a behavioral measurement binds "
-            f"{sorted(JOURNEY_CORPORA)} only; every other corpus is a "
-            "protocol rehearsal")
+            f"{name}: a behavioral measurement binds {sorted(behavioral_corpora)} only; "
+            "every other corpus is a protocol rehearsal")
 
     if name in JOURNEY_CORPORA:
         if sample != 1:
@@ -659,6 +660,7 @@ def experiment_for(
         overrides=({**(dict(MEMORY_INDEX_OVERRIDES) if memory_index else {}),
                    **(dict(overrides) if overrides else {})} or None),
         memory_surface="graph" if memory_index else "honcho",
+        measurement=measurement,
     )
     grader = ToolRouteGrader() if name in ROUTED_CORPORA else MeetsGrader()
     experiment = Experiment(cases=cases, evaluators=[grader])
