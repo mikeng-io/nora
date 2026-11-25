@@ -42,7 +42,6 @@ BACKED_TOOLS = frozenset(
     {
         "weather", "web_search", "web_fetch", "place_info", "route", "transit",
         "where_is", "saved_places",
-        "remember",
         "parking_status", "find_parking",
     }
 )

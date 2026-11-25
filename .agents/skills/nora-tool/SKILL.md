@@ -131,7 +131,7 @@ What the tests enforce:
      --case route_where_is_now --case route_where_been_today \
      --case route_routine_read_future --case route_routine_read_english \
      --case route_routine_read_usually --case route_routine_read_arrival \
-     --case route_routine_read_departure_english --case route_typed_residence_correction \
+     --case route_routine_read_departure_english \
      --case route_weather_not_web --sample N --reasons \
      --grading-contract "$GRADING_CONTRACT" --grading-contract-sha256 "$GRADING_CONTRACT_SHA256"
    ```

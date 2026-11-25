@@ -55,9 +55,8 @@ VERBS: tuple[str, ...] = (
     # boundary. The pair is Claude Code's own words for the two directions.
     "export", "import",
     # `conclude` records an explicit producer conclusion into the turn's own
-    # Record — the shared-state producer contract (design/cognition-loop/data.md). `remember`
-    # writes a Notebook entry a person asked for; `conclude` writes nothing
-    # but the call itself, which the turn trace retains and the shared view
+    # Record — the shared-state producer contract (design/cognition-loop/data.md).
+    # `conclude` writes only the call itself, which the turn trace retains and the shared view
     # projects to every later read. Neither `write` nor `create` names that.
     "conclude",
     # Documents (ADR 0020): `publish` makes a written piece readable in the web
@@ -139,6 +138,7 @@ _RENAMED_SINCE: frozenset[str] = frozenset({
     # Retired: the graph's `graph_profile` presentation carries the accounts it read.
     "character_read",
     "profile_read", "profile_revise",
+    "remember",
 })
 
 _PREDATES_THE_RULE = _SNAPSHOT_2026_09_24 - _RENAMED_SINCE

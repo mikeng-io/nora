@@ -49,7 +49,7 @@ _INPUT_ROW_KEYS = frozenset({"t", "speaker", "text"})
 #: The five event/note negative kinds, then the memo corpus's own (DEC-306,
 #: `assess_memo.yaml`): a memo already withdrawn or superseded, and the three
 #: things that look settled but are not a memo: about the speaker alone
-#: (`remember`), still open (a note), dated and attended (an event).
+#: (a claim), still open (a note), dated and attended (an event).
 NEGATIVE_KINDS: tuple[str, ...] = (
     "joke", "hypothetical", "other_unit", "already_cancelled", "already_settled",
     "already_withdrawn", "about_the_speaker", "still_open", "dated",

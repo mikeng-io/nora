@@ -1,7 +1,9 @@
 # Claims
 
-A claim is what Nora believes about an entity or a relation: inferred, never
-proven, supported or contradicted by the observed and computed rows it cites.
+A claim is an inference about an entity or a relation. The wake proposes claims
+through `graph_propose` and admission checks their cited observed or computed
+evidence. A told claim cites an identity's statement. A called pass has no
+synchronous personal-fact write.
 
 ## Parts of a profile
 

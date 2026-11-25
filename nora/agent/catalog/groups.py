@@ -88,6 +88,6 @@ GRAPH_PASS_TOOLS: frozenset[str] = frozenset({"intention_commit"})
 LEGACY_ENGAGEMENT_TOOLS: frozenset[str] = frozenset({
     "checkpoint_update",
     "memo_read", "note_read", "note_search",
-    "recall_lookups", "remember", "standing_read",
+    "recall_lookups", "standing_read",
     "who_said",
 })

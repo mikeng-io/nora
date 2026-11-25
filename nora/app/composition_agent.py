@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import functools
 import logging
 from dataclasses import dataclass
 from typing import Any
 
-from nora.agent.dream_screen import text_offence
 from nora.agent.dreamer import TOOL_RESULT_CAPS
 from nora.agent.mcp import McpMount, build_mcp_tools
 from nora.agent.registry import ToolRegistry
@@ -19,7 +17,6 @@ from nora.domain.ports import ComputeBackend
 from nora.domain.subagent import SUBAGENT_KIND
 from nora.infra.releases import GithubReleases
 from nora.infra.sql.fetched_pages import SqlFetchedPageStore
-from nora.infra.sql.profile import SqlProfileStore
 from nora.infra.sql.record_query import SqlRecordQuery
 from nora.infra.sql.rollup_read import SqlRollupRead
 from nora.infra.sql.social_stream import readable_social_store
@@ -111,7 +108,7 @@ def build_registry(
     media_join: Any, media_objects: Any, memo_store: Any, memory_search: Any,
     metrics: Any, mobility: Any, music_bridge: Any, note_store: Any,
     observation_store: Any, persons: Any, presence_circles: Any, presence_reader: Any,
-    presence_store: Any, profile_index: Any, reaction_picker: Any,
+    presence_store: Any, reaction_picker: Any,
     refresher: Any, relay: Any,
     route_client: Any, room_management: Any, search_client: Any, social_client: Any,
     standing_store: Any, graph_retrieval: Any,
@@ -141,7 +138,7 @@ def build_registry(
         metrics=metrics, mobility=mobility, music_bridge=music_bridge,
         note_store=note_store, observation_store=observation_store, persons=persons,
         presence_circles=presence_circles, presence_reader=presence_reader,
-        presence_store=presence_store, profile_index=profile_index,
+        presence_store=presence_store,
         reaction_picker=reaction_picker,
         refresher=refresher, relay=relay,
         route_client=route_client, search_client=search_client,
@@ -155,7 +152,7 @@ def build_registry(
 
 
 def _build_tool_registry(
-    profile_index: Any, browser_manager: Any, music_bridge: Any, presence_circles: Any,
+    browser_manager: Any, music_bridge: Any, presence_circles: Any,
     reaction_picker: Any, steam_client: Any, cfg: Any, route_client: Any,
     computer_admission: Any, computer_sessions: Any, video_desk: Any, fetch_client: Any,
     persons: Any, computer_leases: Any, media_descriptions: Any, media_join: Any,
@@ -198,10 +195,9 @@ def _build_tool_registry(
         budget_overrides=cfg.llm.budgets,
         content_checks=content_checks,
         **_memory_tool_args(
-            cfg=cfg, content_checks=content_checks, graph_profiles=graph_profiles,
+            graph_profiles=graph_profiles,
             engine=engine, ledger_store=ledger_store, lineage=lineage,
             memo_store=memo_store, memory_search=memory_search, graph_retrieval=graph_retrieval,
-            profile_index=profile_index,
             standing_store=standing_store,
         ),
         **_record_tool_args(
@@ -244,9 +240,9 @@ def _build_tool_registry(
 
 
 def _memory_tool_args(
-    cfg: Any, content_checks: Any, graph_profiles: Any, engine: Any,
+    graph_profiles: Any, engine: Any,
     ledger_store: Any, lineage: Any, memo_store: Any, memory_search: Any,
-    profile_index: Any, standing_store: Any, graph_retrieval: Any,
+    standing_store: Any, graph_retrieval: Any,
 ) -> Any:
     """The memory tier's tools: index search, graph verbs, standing, ledger."""
     import nora.memory as memory_area
@@ -257,19 +253,6 @@ def _memory_tool_args(
         # `profile_dispute`'s writes: the graph's dispute and forget verbs. No flag:
         # the engagement turn always reads the graph whose IDs the tool takes.
         "memory_intake": memory_area.wire.memory_intake(engine),
-        # The graph surface's `remember` writes a Profile `told` line
-        # (design/unified-memory/profiles.md); wired with `memory_search`, never alone.
-        "profile": (
-            SqlProfileStore(
-                engine,
-                screen=functools.partial(
-                    text_offence, content_checks=content_checks
-                ),
-                index=profile_index,
-            )
-            if memory_search is not None
-            else None
-        ),
         "lineage": lineage,
         # The current Rollup build's rows and the Standing head. SELECTs, so no flag. The
         # Standing head is Dreamer-only (`DREAMER_ONLY_TOOLS`); the Rollup read is also a tag

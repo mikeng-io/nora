@@ -75,7 +75,11 @@ def test_the_graph_dispute_verb_is_offered_on_the_engagement_surface_with_its_in
 def test_load_tools_cannot_reach_any_retired_tool(ambient):
     surface = _surface(fire_turn=ambient, defer=True)
     agent = Agent(tools=surface.tools)
-    names = sorted(LEGACY_ENGAGEMENT_TOOLS)
+    names = sorted({
+        "checkpoint_update", "memo_read", "note_read", "note_search",
+        "recall_lookups", "standing_read", "who_said",
+    })
+    assert set(names) == LEGACY_ENGAGEMENT_TOOLS
     for i in range(0, len(names), 4):
         asked = names[i:i + 4]
         result = load_onto(agent, surface.shelf, asked)

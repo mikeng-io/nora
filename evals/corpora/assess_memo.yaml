@@ -8,7 +8,7 @@
 # `expect.outcome`: write | revise | withdraw | none. `none` is every NEGATIVE
 # case: a joke, a hypothetical, another unit's fact, a memo already withdrawn or
 # superseded, one already kept as said (`already_settled`), and the three
-# routing negatives (`routes_to`): about the speaker alone (remember), still
+# routing negatives (`routes_to`): about the speaker alone (claim), still
 # open (a note), dated and attended (an event). `cites` indexes `input`.
 cases:
 - name: memo_positive_01_wifi_keep
@@ -527,7 +527,7 @@ cases:
     text: '@Nora 記低 我食素'
   expect:
     outcome: none
-    routes_to: remember
+    routes_to: claim
 - name: memo_negative_15_speaker_allergy
   category: negative
   negative_kind: about_the_speaker
@@ -537,7 +537,7 @@ cases:
     text: Nora note that I'm allergic to peanuts
   expect:
     outcome: none
-    routes_to: remember
+    routes_to: claim
 - name: memo_negative_16_speaker_birthday
   category: negative
   negative_kind: about_the_speaker
@@ -547,7 +547,7 @@ cases:
     text: 我生日係 3 月 4 號，記住
   expect:
     outcome: none
-    routes_to: remember
+    routes_to: claim
 - name: memo_negative_17_open_who_pays
   category: negative
   negative_kind: still_open

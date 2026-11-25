@@ -64,31 +64,6 @@ _STANDING_WITHHELD = (
     "Some sections are not shown in this conversation. Do not read the rest as complete."
 )
 
-_PROFILE_UNAVAILABLE: Mapping[str, str] = MappingProxyType(
-    {
-        "status": "unavailable",
-        "note": "I couldn't keep that right now, so nothing was saved. Say so, never "
-        "say 記低咗, and don't write it down as a note instead.",
-    }
-)
-
-_PROFILE_REFUSED_NOTES: Mapping[str, str] = MappingProxyType(
-    {
-        "instruction_not_subject": "Nothing was saved: only they can tell me how they "
-        "want to be treated. Say so.",
-        "unlisted_room": "Nothing was saved: they are not one of this room's members, so "
-        "what is said about them here is not mine to keep. Say so.",
-        "over_cap": "Nothing was saved: I already hold as much as I keep about them. "
-        "Say you couldn't keep this one.",
-        "identifier": "Nothing was saved: it carries a number or handle I never keep. "
-        "Say it without that, then call again.",
-        "coordinate": "Nothing was saved: it carries a location I never keep. Say it "
-        "without that, then call again.",
-        "ids_in_text": "Nothing was saved: a message number is not a fact. Say the fact "
-        "itself, then call again.",
-    }
-)
-
 _PROFILE_DISPUTE_UNAVAILABLE: Mapping[str, str] = MappingProxyType(
     {
         "status": "unavailable",

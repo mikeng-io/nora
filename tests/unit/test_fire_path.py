@@ -2736,7 +2736,7 @@ async def test_a_deferred_ambient_turn_gets_the_graph_catalogue(
     SAME `ToolRegistry.surface()` the tag path does, so `[llm] defer_tools`
     means the same thing on both — hot tools plus the loader, the catalogue
     in the prompt, one more turn for the load."""
-    from nora.agent.catalog.groups import HOT_TOOLS, LEGACY_ENGAGEMENT_TOOLS, LOADER_TOOL
+    from nora.agent.catalog.groups import HOT_TOOLS, LOADER_TOOL
 
     calls: list = []
     path = _fire_path(
@@ -2751,7 +2751,7 @@ async def test_a_deferred_ambient_turn_gets_the_graph_catalogue(
     await path.speak(_participation())
 
     call = calls[-1]
-    assert {t.tool_name for t in call["tools"]} == (HOT_TOOLS - LEGACY_ENGAGEMENT_TOOLS) | {
+    assert {t.tool_name for t in call["tools"]} == (HOT_TOOLS - {"note_read"}) | {
         LOADER_TOOL,
     }
     assert "<tool_catalogue" in call["tag_message"]

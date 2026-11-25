@@ -23,8 +23,8 @@
   {
     "name": "the engagement turn does not refuse profile_dispute",
     "file": "nora/agent/catalog/groups.py",
-    "old": "    \"recall_lookups\", \"remember\", \"standing_read\",\n",
-    "new": "    \"profile_dispute\", \"recall_lookups\", \"remember\", \"standing_read\",\n",
+    "old": "    \"recall_lookups\", \"standing_read\",\n",
+    "new": "    \"profile_dispute\", \"recall_lookups\", \"standing_read\",\n",
     "target": "tests/unit/test_engagement_surface.py::test_the_graph_dispute_verb_is_offered_on_the_engagement_surface_with_its_intake"
   }
 ]

@@ -1054,7 +1054,7 @@ class MemoryIndexConfig(BaseModel):
     `read` (DEC-316) is the READ, and it selects ONE memory tool surface wherever
     tools are built: on, the memory graph's, `memory_search` over the index through
     `nora.agent.memory_search`, with no `who_said` offered; off (the default), no
-    `memory_search`, and `who_said`. `remember` and `load_transcript` are on both.
+    `memory_search`, and `who_said`. Both offer `load_transcript`.
 
     `embed` starts the embedding worker on the same drain tick: up to `embed_batch`
     nodes per tick through llama-server at `embedder_url` (the `embedder` compose
@@ -2497,17 +2497,7 @@ class NoraProfileConfig(BaseModel):
 
 
 class ProfileConfig(BaseModel):
-    """`[memory.profile]`: the Profile sessions, in shadow (design/unified-memory/profiles.md,
-    ). One Dreamer session per (unit, listed person), woken
-    like the person's Character session (`[memory.profile.person] update_every_messages` and
-    `[memory.profile] update_every_seconds`) and at once by a `told` line a turn wrote about them,
-    writing typed lines through `profile_write`.
-
-    **Off by default.** On, the sessions write `profile_line` and nothing reads
-    it: no prompt changes until the switch (step 8). The first session of each
-    person is the backfill. Needs `[dreamer] enabled` and `[culture]
-    enabled` (it reads the Character head and the room cultures).
-    """
+    """Legacy Profile settings retained for recovery reads and config compatibility."""
 
     model_config = ConfigDict(extra="forbid")
 

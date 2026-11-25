@@ -651,7 +651,6 @@ async def _compose_dependencies(
         discord_control=discord_control, discord_token=discord_token).onboarding
     _stores_readers = readers(cfg=cfg, content_checks=content_checks, engine=engine)
     lessons_reader = _stores_readers.lessons_reader
-    profile_index = _stores_readers.profile_index
     profile_reader = _stores_readers.profile_reader
     _people_note_maps = _people_wire.note_maps(allowlist=allowlist)
     _memory_search = _memory_wire.search(cfg=cfg, engine=engine, metrics=metrics, access=access)
@@ -885,7 +884,7 @@ async def _compose_dependencies(
         observation_store=observation_store, persons=persons_view,
         presence_circles=presence_circles,
         presence_reader=presence_reader,
-        presence_store=presence_store, profile_index=profile_index,
+        presence_store=presence_store,
         reaction_picker=reaction_picker,
         refresher=refresher,
         relay=relay,
@@ -1200,7 +1199,6 @@ async def _compose_dependencies(
         persons=persons_view,
         presence_circles=presence_circles,
         presence_reader=presence_reader,
-        profile_index=profile_index,
         profile_reader=profile_reader,
         reasoning_strip_store=reasoning_strip_store,
         registry=registry,

@@ -215,7 +215,6 @@ def test_every_declared_tool_is_built(wiring):
         # DEC-306: one kept memo of the unit.
         "memo_read",
         # The remember verb.
-        "remember",
     }
 
 

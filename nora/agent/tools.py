@@ -96,9 +96,6 @@ from nora.domain.ports import (
     SteamPresenceProvider,
     VoicePresenceSource,
 )
-from nora.domain.profile import (
-    ProfileWriter,
-)
 from nora.domain.standing_ledger import StandingLedger
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.infra.vision.preprocess import (
@@ -180,7 +177,6 @@ _ORDER = [
     "note_read",
     "note_search",
     "memo_read",
-    "remember",
     "profile_dispute",
     "computer_run",
     "computer_read",
@@ -409,9 +405,6 @@ def build_tool_specs(
     # The graph's dispute and forget verbs; `None` withholds `profile_dispute`.
     memory_intake: Any = None,
     all_memory_surfaces: bool = False,
-    # The Profile write (design/unified-memory/profiles.md): the graph surface's
-    # `remember` writes a `told` line through it. `None` answers `unavailable`.
-    profile: ProfileWriter | None = None,
     # Management requires both the shared invocation and verified trigger message.
     room_management=None,
     message=None,
@@ -535,7 +528,6 @@ def build_tool_specs(
         pass_scope=pass_scope, intention_admission=intention_admission,
         memory_intake=memory_intake,
         all_memory_surfaces=all_memory_surfaces,
-        profile=profile,
         room_management=room_management,
         message=message,
         content_checks=content_checks,
@@ -672,7 +664,6 @@ def build_tools(
     pass_scope: PassScope | None = None,
     intention_admission: Any = None,
     memory_intake: Any = None,
-    profile: ProfileWriter | None = None,
     relay: Relay | None = None,
     relay_turn: bool = False,
     room_management=None,
@@ -706,7 +697,7 @@ def build_tools(
         subagent=subagent, video=video, video_ref_kinds=video_ref_kinds,
         memory_retrieval=memory_retrieval, graph_retrieval=graph_retrieval, pass_scope=pass_scope,
         intention_admission=intention_admission, memory_intake=memory_intake,
-        profile=profile, relay=relay, relay_turn=relay_turn,
+        relay=relay, relay_turn=relay_turn,
         room_management=room_management, message=message,
         content_checks=content_checks
     )

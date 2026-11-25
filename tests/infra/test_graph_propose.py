@@ -2,9 +2,12 @@
 
 from dataclasses import replace
 
+import sqlalchemy as sa
+
 from nora.access import IdentityAccess
 from nora.agent.lineage import LineagePolicy
 from nora.agent.room import Room
+from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE
 from nora.memory import ActAuthority, act_pass, wire
 from nora.memory.app.act_scope import pass_shown
 from nora.obs.metrics import Metrics
@@ -79,6 +82,24 @@ async def test_graph_propose_refuses_a_real_citation_the_pass_did_not_see(scenar
     assert (refused["status"], refused.get("reason")) == ("refused", "citation_not_shown")
 
 
+async def test_wake_admits_a_told_claim_citing_the_speaker(scenario):
+    statement = "I work as a carpenter"
+    await scenario.item("observed-source", body=statement)
+    with wake_scope("observed-source"):
+        result = await propose(scenario, [claim_payload(content=statement, reasoning="told")])
+    [claim] = result["operations"]
+    assert claim["status"] == "admitted", result
+    async with scenario.engine.connect() as conn:
+        row = (await conn.execute(sa.select(
+            CLAIM.c.reasoning, CLAIM.c.content,
+        ).where(CLAIM.c.id == claim["id"]))).one()
+        citations = (await conn.execute(sa.select(EDGE.c.dst_id).where(
+            EDGE.c.src_id == claim["id"], EDGE.c.type == "cites",
+        ))).scalars().all()
+    assert row == ("told", statement)
+    assert citations == ["observed-source"]
+
+
 async def test_orphan_entity_needs_an_evidenced_sibling(scenario):
     await scenario.item("observed-source")
     with wake_scope("observed-source"):
@@ -101,10 +122,6 @@ async def test_graph_propose_checks_lessons_separately_from_unknown_fields(scena
 
 
 async def test_an_inferred_edge_keeps_its_own_observed_citation(scenario):
-    import sqlalchemy as sa
-
-    from nora.infra.sql.cognitive_graph_schema import EDGE
-
     await scenario.item("observed-source")
     await scenario.item("observed-evidence")
     await scenario.entity("observed-topic")

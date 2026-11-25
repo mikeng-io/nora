@@ -93,9 +93,6 @@ from nora.domain.ports import (
     SteamPresenceProvider,
     VoicePresenceSource,
 )
-from nora.domain.profile import (
-    ProfileWriter,
-)
 from nora.domain.standing_ledger import StandingLedger
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.infra.social.readings import READ_CONCURRENCY as _INSTAGRAM_READ_CONCURRENCY
@@ -216,7 +213,6 @@ class ToolDeps:
     # The graph's dispute and forget verbs (`SqlMemoryIntake`).
     memory_intake: Any = None
     all_memory_surfaces: bool = False
-    profile: ProfileWriter | None = None
     content_checks: bool = True
     now_fn: Any = field(init=False, default=None)
     link_carry: Any = field(init=False, default=None)

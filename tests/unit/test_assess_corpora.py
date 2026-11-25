@@ -128,10 +128,10 @@ def test_a_negative_case_must_expect_outcome_none(tmp_path, monkeypatch):
 
 def test_the_memo_corpus_routes_every_settled_looking_negative_somewhere():
     """DEC-306's routing rule: a speaker's own fact is
-    `remember`'s, an open one a note's, a dated one an event's, never a memo;
+    a graph claim, an open one a note's, a dated one an event's, never a memo;
     and the corpus carries revisions, withdrawals and her own send cited."""
     cases = load_assess_corpus("assess_memo")
-    routes = {"about_the_speaker": "remember", "still_open": "note", "dated": "event"}
+    routes = {"about_the_speaker": "claim", "still_open": "note", "dated": "event"}
     for case in cases:
         if case.negative_kind in routes:
             assert case.expect["routes_to"] == routes[case.negative_kind], case.name

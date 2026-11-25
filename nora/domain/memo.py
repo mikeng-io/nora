@@ -4,8 +4,8 @@ The three Register kinds differ by whether the thing is settled: a note is not
 (it closes on its closing condition), a memo is (it never closes; it is
 revised or withdrawn), an event is dated and attended. «The wifi password is
 X», «the deposit is $500, split four ways», a landlord's number, a booking
-reference. A settled fact about the speaker alone is Memory's (`remember`),
-never a memo.
+reference. A settled fact about the speaker alone belongs to the Cognitive Graph's
+claims about that identity.
 
 **One memo is one chain of revisions, never overwritten and never deleted**
 (the lesson's shape, `nora.domain.lessons`): `memo` is an identity in a unit
