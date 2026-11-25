@@ -135,9 +135,15 @@ async def test_obtain_returns_the_production_graph(spec, clean_pg_url, cognition
         subject = await obtain(replace(spec, environment=environment))
     assert isinstance(subject.deps, Dependencies)
     fields = {f.name for f in dataclasses.fields(Dependencies)}
-    assert len(fields) == 85, "Dependency shape changed; reconcile the production subject."
-    assert {"access", "managed_services", "managed_session", "graph_observe"} <= fields
-    assert "wake_poller" in fields
+    added = {"graph_observe", "managed_link_delivery", "profile_screen", "wake_poller"}
+    retired = {
+        "dream_adaptors", "dream_schedule_clock", "dream_schedules", "language_scopes",
+        "language_store", "memory", "profile_cited", "unit_scopes", "wake_evaluator",
+        "wake_tick_seconds",
+    }
+    assert added | {"access", "managed_services", "managed_session"} <= fields
+    assert retired.isdisjoint(fields), retired & fields
+    assert len(fields) == 79, "Dependency shape changed; reconcile the production subject."
     if cognition:
         assert isinstance(subject.deps.wake_poller, WakePoller)
         assert subject.deps.wake_poller._review is not None

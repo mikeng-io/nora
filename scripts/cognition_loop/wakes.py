@@ -1,12 +1,10 @@
-"""The eval's wake: the sandbox's own view, recorded the production way.
+"""Replay legacy wakes with the sandbox's own view and guarded row writer.
 
 `decide` computes the claim a tick would from the sandbox's `UnitView`.
 When it does not fire — a no-change wake, or a brake the candidate's own
 divergence caused — the recorded case still says the unit woke: the eval
 synthesises a full-claim verdict over what the view shows, marks the
-wake's evidence `forced`, and the divergence is in the record, not
-hidden. The wake row is written by `WakeEvaluator.record`, production's
-own write path.
+wake's evidence `forced` so the divergence is in the record.
 """
 
 from __future__ import annotations
@@ -14,7 +12,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from nora.domain.stimuli import UnitView, Verdict, WakeReason, decide
+from nora.app.wake import WakeEvaluator
+from nora.config import CognitionConfig
+from nora.domain.ports import StimulusStore
+from nora.domain.stimuli import UnitView, Verdict, WakePolicy, WakeReason, decide
+from nora.obs.metrics import Metrics
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,18 +55,38 @@ def eval_verdict(
 
 
 async def record_eval_wake(
-    evaluator: Any, view: UnitView, verdict: Verdict,
-    reason: WakeReason, at_ms: int, *, forced: bool,
+    stimuli: StimulusStore, view: UnitView, reason: WakeReason, at_ms: int, *,
+    config: CognitionConfig, metrics: Metrics,
 ) -> EvalWake:
-    """The wake row, written by `WakeEvaluator.record` — the write `tick`
-    uses, claims and guard included."""
-    wake_id = await evaluator.record(view, verdict, reason, at_ms)
+    """Write the legacy wake row with its claim and guard."""
+    policy = _replay_policy(config)
+    verdict, forced = eval_verdict(view, decide(view, policy, at_ms), reason=reason)
+    evaluator = WakeEvaluator(
+        store=stimuli, units=lambda: (view.unit,), policy=policy,
+        metrics=metrics, clock=lambda: at_ms / 1000,
+        store_timeout_seconds=config.store_timeout_seconds,
+    )
+    wake_id = await evaluator.record(view, verdict, verdict.reason or reason, at_ms)
     if wake_id is None:
         raise RuntimeError(
             "the sandbox's own write refused its wake: the view changed "
             "between read and write inside one eval pass"
         )
     return EvalWake(wake_id=wake_id, verdict=verdict, forced=forced)
+
+
+def _replay_policy(config: CognitionConfig) -> WakePolicy:
+    return WakePolicy(
+        quiet_seconds=config.quiet_seconds,
+        cue_quiet_seconds=config.cue_quiet_seconds,
+        batch_max=config.batch_max,
+        max_age_seconds=config.max_age_seconds,
+        cooldown_seconds=config.cooldown_seconds,
+        max_concurrent_sessions=config.max_concurrent_sessions,
+        session_timeout_seconds=config.session_timeout_seconds,
+        backoff_max_seconds=config.backoff_max_seconds,
+        max_consecutive_failures=config.max_consecutive_failures,
+    )
 
 
 def verdict_for(view: UnitView, policy: Any, now_ms: int) -> Verdict:

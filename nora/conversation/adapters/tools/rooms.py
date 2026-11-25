@@ -56,9 +56,6 @@ from nora.memory import PointerKind, ReadingRoom, remember_internal
 
 log = logging.getLogger("nora.tools")
 
-# Keep the room list's five-second budget for reading room accounts.
-_ROOM_PROFILE_READ_TIMEOUT_SECONDS = 5.0
-
 _PROFILE_NOTES = {
     "nothing_found": "No profile claims were found for this room.",
     "partial": "The profile read reached a limit.",
@@ -462,7 +459,6 @@ async def _room_profiles(c) -> tuple[dict[str, str], ...]:
     profiles = await c.graph_profiles.read_profiles(
         reading, subjects, c.now, as_of=scope.as_of if scope is not None else None,
         concerns=scope.concerns if scope is not None else frozenset(),
-        timeout_seconds=_ROOM_PROFILE_READ_TIMEOUT_SECONDS,
     )
     if any(read.profile.status == "unavailable" for read in profiles.values()):
         c.metrics.inc("nora_errors_total", stage="room_list_culture", platform=c.room.platform)

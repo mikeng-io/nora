@@ -47,6 +47,8 @@ def _wake_args(tmp_path):
 def _runner_subject(inspection=None, outcome=None):
     from types import SimpleNamespace
 
+    from nora.config import CognitionConfig
+
     class _Runner:
         async def inspect(self, **k):
             return inspection
@@ -58,12 +60,10 @@ def _runner_subject(inspection=None, outcome=None):
         def wake_hook(self):
             return self.on_wake
 
-    return SimpleNamespace(unit="u", cfg=SimpleNamespace(),
+    return SimpleNamespace(unit="u", cfg=SimpleNamespace(cognition=CognitionConfig()),
         environment=SimpleNamespace(guarded=True, check=lambda: None),
         deps=SimpleNamespace(
         cognition_runner=_Runner(),
-        wake_evaluator=SimpleNamespace(_policy=SimpleNamespace(
-            batch_max=5, session_timeout_seconds=10)),
         metrics=SimpleNamespace(get=lambda *a, **k: 0),
         config_reload=SimpleNamespace(policy=SimpleNamespace(rooms=lambda: [
             SimpleNamespace(unit="u", platform="signal", primary_id="r",
@@ -121,10 +121,6 @@ def _wake_seam(monkeypatch, tmp_path, subject):
         run_mod, "SqlStimulusStore",
         lambda engine: SimpleNamespace(view=_view))
     monkeypatch.setattr(run_mod, "_stimuli_by_id", _by_id)
-    monkeypatch.setattr(run_mod, "decide", lambda *a, **k: None)
-    monkeypatch.setattr(
-        run_mod, "eval_verdict",
-        lambda *a, **k: (SimpleNamespace(reason="time"), False))
     monkeypatch.setattr(run_mod, "record_eval_wake", _wake_record)
     monkeypatch.setattr(run_mod, "state_mod", SimpleNamespace(
         snapshot=_state, diff=lambda a, b: SimpleNamespace(kinds={})))
