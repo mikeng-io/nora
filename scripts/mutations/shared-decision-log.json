@@ -42,21 +42,21 @@
     "target": "tests/unit/test_engagement_pipeline.py::test_a_tag_turn_that_said_nothing_is_written_too"
   },
   {
-    "name": "#199 the participation turn READS the log",
+    "name": "the legacy proactive context omits its decision log read",
     "file": "nora/app/fire.py",
     "old": "            self._read_decisions(occasion, unit),",
     "new": "            asyncio.sleep(0, result=()),",
     "target": "tests/unit/test_fire_path.py::test_a_proactive_act_turn_sees_the_raise_its_sibling_row_just_made"
   },
   {
-    "name": "#199 only the floor-weighing occasions read the log",
+    "name": "a compute occasion falls back to participation decision writers",
     "file": "nora/app/fire.py",
     "old": "        writers = _DECISION_WRITERS_BY_KIND.get(occasion.kind)",
     "new": "        writers = _DECISION_WRITERS_BY_KIND.get(occasion.kind, PARTICIPATION_DECISION_WRITERS)",
     "target": "tests/unit/test_fire_path.py::test_only_the_legacy_proactive_turn_reads_the_decision_log"
   },
   {
-    "name": "#199 the participation prompt RENDERS the block",
+    "name": "the legacy proactive prefill omits the decision log block",
     "file": "nora/agent/prefill.py",
     "old": "            _restamp(_decisions_block(ctx, now=clock)),\n",
     "new": "",
