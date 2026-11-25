@@ -46,7 +46,10 @@ async def engine(clean_pg_url):
 async def _snapshots(conn):
     return {
         name: {
-            row["graph_id"]: {column: row[column] for column in COMPARED}
+            row["graph_id"]: {
+                column: row[identities_column(name) if column == "identities" else column]
+                for column in COMPARED
+            }
             for row in (await conn.execute(sa.select(METADATA.tables[name]))).mappings()
             if row["graph_id"] is not None
         }
