@@ -210,14 +210,18 @@ def _scan(tree: ast.Module) -> list[tuple[str, str, bool]]:
 
 
 def _writes() -> list[tuple[str, str, str, bool]]:
-    """Every write in `nora/`: (path, enclosing function, table, projects?)."""
+    """Every write under `_SCAN_ROOTS`: (path, enclosing function, table, projects?).
+
+    Operator scripts open the deployment database, so a direct write from one
+    reaches the same tables a wired writer does."""
     out: list[tuple[str, str, str, bool]] = []
-    for path in sorted((ROOT / "nora").rglob("*.py")):
-        if "migrations" in path.parts:
-            continue
-        rel = str(path.relative_to(ROOT))
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        out.extend((rel, scope, table, projects) for scope, table, projects in _scan(tree))
+    for root in _SCAN_ROOTS:
+        for path in sorted((ROOT / root).rglob("*.py")):
+            if "migrations" in path.parts:
+                continue
+            rel = str(path.relative_to(ROOT))
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            out.extend((rel, scope, table, projects) for scope, table, projects in _scan(tree))
     return out
 
 
